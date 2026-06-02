@@ -40,6 +40,11 @@ const EXPECTED_FIELDS = {
     important: ['AccountNumber'],
     chargeFields: [],
   },
+  'City of Baldwin City': {
+    critical: ['BillingPeriodStart', 'BillingPeriodEnd', 'TotalAmountDue'],
+    important: ['AccountNumber', 'ServiceAddress'],
+    chargeFields: [],
+  },
   'Propane / Fuel Oil Delivery': {
     critical: ['GallonsDelivered', 'TotalCurrentCharges'],
     important: ['DeliveryDate', 'UnitPrice'],

@@ -6986,14 +6986,18 @@ const UTILITY_RULES = [
         }
 
         // ── Sewer commodity lines ──
-        // SW - SEWER (metered)
+        // SW - SEWER (metered) — sum all SW - SEWER rows (some accounts have
+        // multiple sewer meters; exclude FRANCHISE lines, handled below).
         if (/^SW\s*-\s*SEWER\b/i.test(ln) && !/FRANCHISE/i.test(ln)) {
           const parsed = _parseMeteredLine(ln.replace(/^SW\s*-\s*SEWER\s*/i, ''));
-          if (swCharge === null && parsed.charge != null) {
-            swPrevRead = parsed.prevRead;
-            swCurrRead = parsed.currRead;
-            swUsage = parsed.usage;
-            swCharge = parsed.charge;
+          if (parsed.charge != null) {
+            // Capture reads from the first row; subsequent rows only add to totals.
+            if (swCharge === null) {
+              swPrevRead = parsed.prevRead;
+              swCurrRead = parsed.currRead;
+            }
+            swUsage = (swUsage || 0) + (parsed.usage || 0);
+            swCharge = (swCharge || 0) + parsed.charge;
           }
           continue;
         }
@@ -7008,13 +7012,19 @@ const UTILITY_RULES = [
 
         // ── Water commodity lines ──
         // WA - WATER (metered — NOT water debt, meter debt, or franchise)
+        // Sum all WA - WATER rows so multi-meter accounts (e.g. main + sub-meter)
+        // are totalled correctly.  Debt and franchise lines are excluded by the
+        // DEBT|METER|FRANCHISE guard and handled in their own branches below.
         if (/^WA\s*-\s*WATER\b/i.test(ln) && !/DEBT|METER|FRANCHISE/i.test(ln)) {
           const parsed = _parseMeteredLine(ln.replace(/^WA\s*-\s*WATER\s*/i, ''));
-          if (waCharge === null && parsed.charge != null) {
-            waPrevRead = parsed.prevRead;
-            waCurrRead = parsed.currRead;
-            waUsage = parsed.usage;
-            waCharge = parsed.charge;
+          if (parsed.charge != null) {
+            // Capture reads from the first row; subsequent rows only add to totals.
+            if (waCharge === null) {
+              waPrevRead = parsed.prevRead;
+              waCurrRead = parsed.currRead;
+            }
+            waUsage = (waUsage || 0) + (parsed.usage || 0);
+            waCharge = (waCharge || 0) + parsed.charge;
           }
           continue;
         }
@@ -7097,7 +7107,7 @@ const UTILITY_RULES = [
           Commodity: 'Water',
           StartRead: waPrevRead,
           EndRead: waCurrRead,
-          WaterUsageGallons: waUsage || null,
+          WaterUsage: waUsage || null,
           WaterCharge: waCharge,
           WaterDebtPayment: waDebtPmt || null,
           WaterFranchiseFee: waFranchiseFee || null,
@@ -7117,7 +7127,7 @@ const UTILITY_RULES = [
           Commodity: 'Sewer',
           StartRead: swPrevRead || waPrevRead,
           EndRead: swCurrRead || waCurrRead,
-          SewerUsageGallons: swUsage || null,
+          SewerUsage: swUsage || null,
           SewerCharge: swCharge,
           SewerFranchiseFee: swFranchiseFee || null,
           TotalCurrentCharges: Math.round(swTotal * 100) / 100,

@@ -104,6 +104,18 @@ var EM_EQUIP_TYPES = {
   'lighting control': 'lighting',
   // Lighting / shade programs — JOCO Courthouse naming conventions
   glpp: 'lighting',
+  // M4: Non-HVAC specific categories — eliminate generic 'other'
+  // Elevator systems
+  elevator: 'elevator',
+  // Temperature / pressure / leak monitors (non-HVAC environmental monitoring)
+  'temperature monitor': 'monitoring',
+  'temp monitor': 'monitoring',
+  'leak detection': 'monitoring',
+  'water detection': 'monitoring',
+  'pressure monitor': 'monitoring',
+  // Security / access control perimeter programs
+  'access control': 'security',
+  'card reader': 'security',
 };
 
 /* ── CATEGORY FRIENDLY LABELS ──
@@ -131,6 +143,10 @@ var EM_CATEGORY_LABELS = {
   plumbing: 'Plumbing',
   controls: 'Controls / VFD',
   sensor: 'Sensor / Weather',
+  // M4: New non-HVAC categories to eliminate generic 'other'
+  elevator: 'Elevator',
+  monitoring: 'Monitoring',
+  security: 'Security / Access',
   other: 'Other',
 };
 
@@ -554,6 +570,95 @@ var EM_POINT_MAP = [
     types: ['AI', 'AO'],
     cats: ['ct'],
   },
+  // M4 additions — VVT / air-source / zone points
+  // Zone Damper position (VVT zone-damper terminal, zone-category units)
+  {
+    col: 'zoneDamperLive',
+    label: 'Zone Damper',
+    patterns: [/\bzone damper\b/i, /zone dmp/i],
+    types: ['AO', 'AI'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+  // Air Source Supply Temp — primary air temperature from VVT air-source unit
+  {
+    col: 'airSrcSupTempLive',
+    label: 'Air Source Supply Temp',
+    patterns: [/air source supply temp/i, /primary air.*supply temp/i, /air source duct/i, /heat source supply/i],
+    negativePatterns: [/setpoint|set\s?point|request|min|max/i],
+    types: ['AI'],
+    cats: ['zone', 'vav', 'fpb', 'ahu', 'ddvav'],
+  },
+  // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSpLive)
+  {
+    col: 'zoneCoolAdjLive',
+    label: 'Cooling Setpoint Adjust',
+    patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i],
+    types: ['SP', 'AV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+  // Zone heating setpoint ADJUST
+  {
+    col: 'zoneHtgAdjLive',
+    label: 'Heating Setpoint Adjust',
+    patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i],
+    types: ['SP', 'AV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+  // Effective cooling setpoint (post-adjustment value, computed by BAS)
+  {
+    col: 'effCoolSpLive',
+    label: 'Effective Cooling Setpoint',
+    patterns: [/effective cooling setpoint/i, /eff.*cool.*setpoint/i, /effective clg setpoint/i],
+    types: ['SP', 'AV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+  // Effective heating setpoint
+  {
+    col: 'effHtgSpLive',
+    label: 'Effective Heating Setpoint',
+    patterns: [/effective heating setpoint/i, /eff.*htg.*setpoint/i, /effective htg setpoint/i],
+    types: ['SP', 'AV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+  // Primary Air Source Cool Request — DCV/demand signal from zone to air source
+  {
+    col: 'primAirSrcCoolReqLive',
+    label: 'Primary Air Source Cool Request',
+    patterns: [/primary air source cool request/i, /air source cool request/i, /primary air.*cool.*request/i],
+    types: ['AV', 'AI'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+  // Primary Air Source Heat Request
+  {
+    col: 'primAirSrcHtgReqLive',
+    label: 'Primary Air Source Heat Request',
+    patterns: [/primary air source heat request/i, /air source heat request/i, /primary air.*heat.*request/i],
+    types: ['AV', 'AI'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+  // Outside Air Dry Bulb — broadcast shared point appearing on non-ahu units via VVT controller
+  {
+    col: 'oatLiveBcast',
+    label: 'Outside Air Dry Bulb',
+    patterns: [
+      /outside air dry bulb/i,
+      /outside air temperature/i,
+      /outside air temp - rnet/i,
+      /outdoor air dry bulb/i,
+    ],
+    negativePatterns: [/setpoint|set\s?point/i],
+    types: ['AI'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'furnace'],
+  },
+  // Zone Temperature (short alias used by some controllers — "Zone Temp")
+  {
+    col: 'zoneTempShortLive',
+    label: 'Zone Temperature',
+    patterns: [/^zone temp(erature)?$/i, /^zone\s+temperature$/i],
+    negativePatterns: [/high|low|alarm|virtual|effective|set\s?point/i],
+    types: ['AI'],
+    cats: ['zone', 'fcu', 'heater', 'ef'],
+  },
 ];
 
 /* ── PHASE 1: PARSER ── */
@@ -953,6 +1058,172 @@ function emClassifyEquipType(equipTypeStr) {
   for (var fi = 0; fi < fuzzyMap.length; fi++) {
     if (key.indexOf(fuzzyMap[fi][0]) !== -1) return fuzzyMap[fi][1];
   }
+
+  // ── M4: Non-HVAC specific categories — eliminate generic 'other' ──
+  // Elevator systems (elevator equipment, pressurization fans, water-detection near elevators)
+  if (/\belevator\b/i.test(key)) return 'elevator';
+  if (/elevator\s+(pressurization|equip|lobby|room|water)/i.test(key)) return 'elevator';
+  // Radiant tube heaters (RTH-1, RTH-4 — not caught by earlier patterns)
+  if (/\brth[-\s]?\d/i.test(key)) return 'heater';
+  // VAS (Volume Air Source — shop-level VAV air sources in JOCO Fire Stations)
+  if (/\bvas[-\s]?\d/i.test(key)) return 'vav';
+  // Fan unit programs (FU-1, FU-2, etc. — ceiling fan / unit ventilator style)
+  if (/\bfu[-\s]?\d/i.test(key)) return 'fcu';
+  // Energy recovery units (standalone programs, not just ERU-N device names)
+  if (/energy recovery unit/i.test(key)) return 'ahu';
+  if (/energy recovery water system/i.test(key)) return 'plumbing';
+  // Kitchen hood / exhaust systems
+  if (/kitchen.?hood/i.test(key)) return 'fire';
+  if (/\bfume.?hood\b/i.test(key)) return 'fire';
+  // Building relief dampers (GV-N style — smoke/relief, not HVAC supply)
+  if (/building relief damper/i.test(key)) return 'fire';
+  if (/relief damper/i.test(key)) return 'fire';
+  // Fuel system integration
+  if (/fuel system/i.test(key)) return 'power';
+  if (/transfer switch/i.test(key)) return 'power';
+  if (/surge suppress/i.test(key)) return 'power';
+  if (/power loss/i.test(key)) return 'power';
+  // Irrigation and water systems
+  if (/irrigation/i.test(key)) return 'plumbing';
+  if (/water softener/i.test(key)) return 'plumbing';
+  if (/reverse osmosis/i.test(key)) return 'plumbing';
+  if (/snow melt/i.test(key)) return 'plumbing';
+  if (/heat trace/i.test(key)) return 'plumbing';
+  if (/btu meter/i.test(key)) return 'plumbing';
+  if (/hot water system/i.test(key)) return 'plumbing';
+  if (/building hot water/i.test(key)) return 'plumbing';
+  if (/building cold water/i.test(key)) return 'plumbing';
+  if (/apparatus bay hot water/i.test(key)) return 'plumbing';
+  if (/apparatus bay cold water/i.test(key)) return 'plumbing';
+  if (/differential pressure hot water/i.test(key)) return 'plumbing';
+  if (/hot water loop bypass/i.test(key)) return 'plumbing';
+  // Temperature / humidity / pressure monitors (non-HVAC spaces)
+  if (/temp(erature)?.?humidity monitor/i.test(key)) return 'monitoring';
+  if (/temp(erature)? monitor/i.test(key)) return 'monitoring';
+  if (/humidity control/i.test(key)) return 'monitoring';
+  if (/^room temp(erature)?$/i.test(key)) return 'monitoring';
+  if (/temperature monitoring/i.test(key)) return 'monitoring';
+  if (/\btemperature\s+(monitor|sensor)\b/i.test(key)) return 'monitoring';
+  // Leak / water detection programs
+  if (/leak detect/i.test(key)) return 'monitoring';
+  if (/water detect/i.test(key)) return 'monitoring';
+  if (/sump monitor/i.test(key)) return 'monitoring';
+  // Building / room pressure monitors (non-HVAC control — pure monitoring)
+  if (/pressure monitor/i.test(key)) return 'monitoring';
+  if (/\bbuilding pressure\b/i.test(key)) return 'monitoring';
+  if (/building air pressure/i.test(key)) return 'monitoring';
+  if (/kitchen pressure/i.test(key)) return 'monitoring';
+  if (/medical room pressure/i.test(key)) return 'monitoring';
+  // Gas / air-quality monitors
+  if (/no\/co monitor/i.test(key)) return 'monitoring';
+  if (/\bco monitor\b/i.test(key)) return 'monitoring';
+  if (/gas monitor/i.test(key)) return 'monitoring';
+  if (/outside air carbon dioxide/i.test(key)) return 'monitoring';
+  if (/refrigerant monitor/i.test(key)) return 'monitoring';
+  // Freezer / cooler / food-service monitoring
+  if (/freezer monitor/i.test(key)) return 'monitoring';
+  if (/cooler monitor/i.test(key)) return 'monitoring';
+  if (/freezer temperature/i.test(key)) return 'monitoring';
+  if (/cooler temperature/i.test(key)) return 'monitoring';
+  if (/refrigerator.*freezer/i.test(key)) return 'monitoring';
+  // Air compressor / air purification monitors
+  if (/air compressor/i.test(key)) return 'monitoring';
+  if (/air purif/i.test(key)) return 'monitoring';
+  if (/hepa filter/i.test(key)) return 'monitoring';
+  // IT / data room monitors
+  if (/\bdata.?center\b.*monitor|data.?closet.*monitor|data.?room.*monitor/i.test(key)) return 'monitoring';
+  if (/it.*(monitor|temp|closet|room)/i.test(key)) return 'monitoring';
+  // Medical / lab monitors
+  if (/medical system monitor|medical room/i.test(key)) return 'monitoring';
+  if (/lab control|lab \d+ monitor/i.test(key)) return 'monitoring';
+  if (/phoenix lab/i.test(key)) return 'monitoring';
+  // Security / access control
+  if (/\baccess.?control\b/i.test(key)) return 'security';
+  if (/\bcard.?reader\b/i.test(key)) return 'security';
+  if (/perimeter.*(lc-\d|zone)/i.test(key)) return 'security';
+  if (/^lc-\d/i.test(key)) return 'security'; // LC-1 through LC-6 = perimeter security zones
+  // Fire-related monitors not yet caught
+  if (/fire riser/i.test(key)) return 'fire';
+  if (/fire system/i.test(key)) return 'fire';
+  if (/fireman.?control/i.test(key)) return 'fire';
+  if (/data center fire/i.test(key)) return 'fire';
+  // Garage / bay temperature monitoring (fire stations, shops)
+  if (/garage bay temp/i.test(key)) return 'monitoring';
+  if (/bay temp/i.test(key)) return 'monitoring';
+  if (/riser room temp/i.test(key)) return 'monitoring';
+  // Room-level temperature/humidity monitoring (format: "Room Description | Temp Monitor")
+  if (/\|\s*temp monitor/i.test(key)) return 'monitoring';
+  // Corridor / permanent exhibit / collection zone averages (non-HVAC control programs)
+  if (/\|\s*zone average/i.test(key)) return 'monitoring';
+  // Fan coil units identified by room label + pipe char (format: "Room Name | FC-N")
+  if (/\|\s*fc-?\d/i.test(key)) return 'fcu';
+  if (/\|\s*msfc-?\d/i.test(key)) return 'fcu'; // mini split fan coil
+  if (/\|\s*ac-?\d/i.test(key)) return 'fcu'; // precision AC units (AC-1, AC-2A, etc.)
+  // Fan units identified by room label + pipe char (format: "Room Name | FU-N")
+  if (/\|\s*fu-?\d/i.test(key)) return 'fcu';
+  // Variable diffuser units (VD-N) — fan-terminal style
+  if (/\|\s*vd-?\d/i.test(key)) return 'fcu';
+  // Chilled ceiling / chilled beam units (CC-NNN)
+  if (/\|\s*cc-\d{3}/i.test(key)) return 'fcu';
+  // Data server/server room fan coil precision cooling (DSS-NNN)
+  if (/\|\s*dss-\d{3}/i.test(key)) return 'fcu';
+  // Liebert precision cooling units
+  if (/\bliebert\b/i.test(key)) return 'fcu';
+  // IHR (Infrared Heater) with suffix — not caught by earlier /\bigh/ pattern
+  if (/\bihr[-\s]?\d/i.test(key)) return 'heater';
+  // ASU (Air Supply Unit) — context from JOCO is hot water differential pressure monitors
+  if (/^asu[-\s]?\d/i.test(key)) return 'monitoring'; // ASU-1, ASU-2, ASU-3 (standalone = monitors)
+  if (/asu\s+\d+\s+hot water/i.test(key)) return 'plumbing'; // "ASU 12 Hot Water Differential Pressure"
+  // HRU (Heat Recovery Unit) — energy recovery type
+  if (/\bhru[-\s]?\d/i.test(key)) return 'ahu';
+  // EXU (Exhaust Unit) — exhaust fan type
+  if (/\bexu[-\s]?\d/i.test(key)) return 'ef';
+  // TH (tube heater) variants not caught earlier
+  if (/^th[-\s]?\d/i.test(key)) return 'heater';
+  // SS-N (stairwell smoke sensor / pressurization?)
+  // From JOCO context these appear near elevator/mechanical programs — monitor bucket
+  if (/^ss-\d/i.test(key)) return 'monitoring';
+  // SP-N (stairwell pressurization fans)
+  if (/^sp[-\s]?\d/i.test(key)) return 'ef'; // pressurization = exhaust fan type
+  if (/^sp-\d{1,2},/i.test(key)) return 'ef'; // "SP-1,2,3,4" combined entry
+  // Stairwell pressurization fans (combined label)
+  if (/stairwell pressurization/i.test(key)) return 'ef';
+  // F-N (fan, filter, or fixture abbreviations in fire station context)
+  if (/^f-\d+$/i.test(key)) return 'ef'; // F-2, F-4 — likely exhaust fans
+  // CU-N (condensing unit)
+  if (/^cu-\d/i.test(key)) return 'ahu';
+  // DX (direct expansion unit)
+  if (/^dx$/i.test(key)) return 'ahu';
+  // Alarm horn / panel — fire/security ancillary, route to fire
+  if (/alarm horn/i.test(key)) return 'fire';
+  // Garage / bay ventilation programs (Apparatus Bay 101 Ventilation)
+  if (/bay.*ventilation|ventilation.*bay/i.test(key)) return 'ef';
+  // Elev equipment room / elevator lobby monitors
+  if (/elev.*equipment room/i.test(key) || /elevator.*room/i.test(key)) return 'elevator';
+  if (/elevator.*lobby/i.test(key)) return 'elevator';
+  if (/elevator.*sump/i.test(key)) return 'elevator';
+  // Mechanical room / electrical room monitors (water detection, sump)
+  if (/mechanical room.*water|mechanical room.*sump/i.test(key)) return 'monitoring';
+  if (/electrical room.*water/i.test(key)) return 'monitoring';
+  // Collections / exhibit environment monitoring
+  if (/collections.*water|evidence room/i.test(key)) return 'monitoring';
+  // Building-floor labels like "1A", "2B1", "3A" — lighting zone context
+  if (/^\d+[ab]\d*$/i.test(key)) return 'lighting';
+  // Fireman's Control Panel — apostrophe breaks /fireman.?control/, needs wider wildcard
+  if (/fireman.*control/i.test(key)) return 'fire';
+  // Surge Suppression (typo variant "Supression" — single 'p')
+  if (/surge supres/i.test(key)) return 'power';
+  // Standalone precision AC units not preceded by a room label (VN-AC-N, AC-N patterns)
+  if (/^v\w+\s*-\s*ac-\d/i.test(key)) return 'fcu'; // "V7Q50 - AC-1" style
+  if (/^ac-\d/i.test(key)) return 'fcu'; // "AC-6" standalone
+  // EXT-I- exterior lighting zone variant (EXT-[letter]-[number] with uppercase)
+  if (/^ext-[a-z]-/i.test(key)) return 'lighting'; // already covered above — no-op
+  // Electric room temperature monitor
+  if (/electric.*rm.*temp|electric.*room.*temp/i.test(key)) return 'monitoring';
+  // Gymnasium / commons / kitchen spaces — these are room-level programs with no BAS
+  // equipment directly; treat as monitoring (zone average or misc room program)
+  if (/^gymnasium$/i.test(key)) return 'monitoring';
+  if (/^commons\s|^commons\/|^kitchen\s/i.test(key)) return 'monitoring';
 
   // All unrecognized types (including weather stations, etc.) are kept as 'other'
   return 'other';
@@ -1516,7 +1787,11 @@ function emMergeIntoMatrix(existingData, newRows) {
     plumbing: 16,
     controls: 17,
     sensor: 18,
-    other: 19,
+    // M4: new non-HVAC categories
+    elevator: 19,
+    monitoring: 20,
+    security: 21,
+    other: 22,
   };
   merged.sort(function (a, b) {
     var ab = (a.building || '').toLowerCase();
@@ -5387,21 +5662,25 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasEconomizer', label: 'Has Economizer', default: true },
     { key: 'hasCHWCoil', label: 'Has CHW Coil', default: true },
     { key: 'hasHWCoil', label: 'Has HW Coil', default: true },
-    { key: 'hasCO2', label: 'Has CO2 Sensor', default: false },
+    // M4 Part C: default true so missing CO2 lowers audit coverage for AHU/VAV
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOAFlow', label: 'Has OA Flow Meter', default: false },
   ],
   vav: [
     { key: 'hasReheat', label: 'Has Reheat Coil', default: true },
-    { key: 'hasCO2', label: 'Has CO2 Sensor', default: false },
+    // M4 Part C: default true so missing CO2 lowers audit coverage for VAV zones
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
   ],
   fpb: [
     { key: 'hasReheat', label: 'Has Reheat Coil', default: true },
     { key: 'isSeries', label: 'Series Fan (vs Parallel)', default: false },
-    { key: 'hasCO2', label: 'Has CO2 Sensor', default: false },
+    // M4 Part C: default true so missing CO2 lowers audit coverage for FPB zones
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
   ],
   ddvav: [
-    { key: 'hasCO2', label: 'Has CO2 Sensor', default: false },
+    // M4 Part C: default true so missing CO2 lowers audit coverage for DD-VAV zones
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
   ],
   hwp: [

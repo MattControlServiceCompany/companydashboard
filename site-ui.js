@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.01.432';
+  var CH_VERSION = 'v2026.06.01.433';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,21 +32,21 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.06.01.430',
+      v: 'v2026.06.01.433',
       date: '2026-06-01',
-      title: 'Equipment Matrix humidity sensor support, KGS multi-account extraction, and bill routing improvements',
+      title: 'Equipment Matrix recognizes far more equipment types, CO2 gap lowers coverage score, City of Baldwin water/sewer fixes',
       items: [
         {
           type: 'feature',
-          text: 'Equipment Matrix now recognizes Zone Humidity sensors — improvements to point recognition apply to your existing data automatically, no re-import needed.',
+          text: 'Equipment Matrix now recognizes far more equipment — elevators, security and access control, environmental monitoring, and more — so virtually nothing is left as generic "Other," and more BAS points map to named columns in the All Points drawer.',
+        },
+        {
+          type: 'feature',
+          text: 'Audit coverage now reflects missing CO2 sensors (demand control ventilation readiness) — units without CO2 sensors show a lower coverage score instead of silently skipping the check.',
         },
         {
           type: 'fix',
-          text: 'Gas bill reading is more accurate on multi-account PDF statements — each account’s charges and meter data now stay matched to that account.',
-        },
-        {
-          type: 'fix',
-          text: 'Bills route more reliably to the correct building when multiple units share the same street address — different door numbers now become separate meters under one building.',
+          text: 'City of Baldwin municipal bills: water and sewer usage now record correctly, and accounts with two water meters add both meters together.',
         },
       ],
     },

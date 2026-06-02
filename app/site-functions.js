@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.01.433',
+    date: '2026-06-01',
+    title: 'Equipment Matrix recognizes far more equipment types, CO2 gap lowers coverage score, City of Baldwin water/sewer fixes',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now recognizes far more equipment — elevators, security and access control, environmental monitoring, and more — so virtually nothing is left as generic "Other," and more BAS points map to named columns in the All Points drawer.',
+      },
+      {
+        type: 'feature',
+        text: 'Audit coverage now reflects missing CO2 sensors (demand control ventilation readiness) — units without CO2 sensors show a lower coverage score instead of silently skipping the check.',
+      },
+      {
+        type: 'fix',
+        text: 'City of Baldwin municipal bills: water and sewer usage now record correctly, and accounts with two water meters add both meters together.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.01.432',
     date: '2026-06-01',
     title: 'Equipment Matrix captures all BAS points with expandable All Points drawer and smart column filtering',
