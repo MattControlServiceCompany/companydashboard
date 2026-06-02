@@ -339,11 +339,20 @@ var EM_POINT_MAP = [
   {
     col: 'satLive',
     label: 'Supply Air Temp',
-    patterns: [/supply air temp/i, /sat\b/i],
+    // M1A: added /discharge air temp/i — at AHU level "Discharge Air Temperature" is an HVAC synonym
+    // for supply air temperature (discharge = leaving the AHU). This is the KEY AHU synonym test.
+    // datLive cats do not include 'ahu', so without this pattern "Discharge Air Temp" is lost when
+    // equipCategory='ahu'. cats includes 'ahu' so this only fires for AHU-category lookups.
+    patterns: [/supply air temp/i, /sat\b/i, /discharge air temp/i],
     // Phase 2A: guard against config/alarm points like "Low Supply Air Temperature Alarm",
     // "High Supply Air Temperature Cooling" (limit config), "Supply Air Temp Setpoint",
     // "Cooling Supply Air Set Point" (SAT reset setpoint — belongs in satCoolSpLive, Phase 3).
-    negativePatterns: [/\b(low|high|alarm|limit|setpoint|set\s*point|capacity|fault|heating|cooling)\b/i],
+    // M1A: added control-object exclusions — PID objects, mode-selection MSVs, diagnostic fault
+    // flags, and binary enable/output signals must not map to a live sensor column.
+    negativePatterns: [
+      /\b(low|high|alarm|limit|setpoint|set\s*point|capacity|fault|heating|cooling)\b/i,
+      /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output|bno)\b/i,
+    ],
     types: ['AI', 'SP'],
     cats: ['ahu', 'vav', 'fpb'],
   },
@@ -352,7 +361,11 @@ var EM_POINT_MAP = [
     label: 'Return Air Temp',
     patterns: [/return air temp/i, /rat\b/i],
     // Phase 2A: guard against "Return Air Temperature Alarm", "Return Air Temp Setpoint".
-    negativePatterns: [/\b(low|high|alarm|limit|setpoint|set\s*point|capacity|fault)\b/i],
+    // M1A: added control-object exclusions — control selection MSVs and diagnostic fault flags.
+    negativePatterns: [
+      /\b(low|high|alarm|limit|setpoint|set\s*point|capacity|fault)\b/i,
+      /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output)\b/i,
+    ],
     types: ['AI'],
     cats: ['ahu'],
   },
@@ -364,7 +377,11 @@ var EM_POINT_MAP = [
     patterns: [/mixed\s+air\s+temp/i, /mat\b/i],
     // Phase 2A: guard against "Low Mixed Air Temperature" / "High Mixed Air Temperature"
     // (freeze-protection limit configs) and "AHU9 Mixed Air Low Limit".
-    negativePatterns: [/\b(low|high|alarm|limit|setpoint|set\s*point|cutoff|capacity|fault)\b/i],
+    // M1A: added control-object exclusions — control selection MSVs and diagnostic fault flags.
+    negativePatterns: [
+      /\b(low|high|alarm|limit|setpoint|set\s*point|cutoff|capacity|fault)\b/i,
+      /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output)\b/i,
+    ],
     types: ['AI'],
     cats: ['ahu'],
   },
@@ -373,6 +390,9 @@ var EM_POINT_MAP = [
     label: 'OAT (Live)',
     // FIX 4d: Added dry bulb patterns to match CSV 'Outside Air Dry Bulb'
     patterns: [/outside air dry bulb/i, /outdoor air dry bulb/i, /outdoor air temp/i, /\boat\b/i, /oat \(live\)/i],
+    // M1A: added negativePatterns — oatLive previously had none. Blocks lockout setpoints (ANO),
+    // diagnostic fault flags, and sensor-alarm objects from occupying the live OAT column.
+    negativePatterns: [/\b(alarm|lockout|diagnostic|sensor\s+fail(ed|ure)?|enable|output)\b/i],
     types: ['AI'],
     cats: ['ahu', 'hwp', 'chwp'],
   },
@@ -383,7 +403,16 @@ var EM_POINT_MAP = [
     patterns: [/supply fan.*speed/i, /fan.*vfd.*speed/i, /supply fan speed/i, /fan speed/i, /sf speed/i],
     // Phase 2A: guard against "Return Fan VFD Speed" (needs rfSpeedLive, Phase 3), "Low Fan Speed
     // Alarm", "Max Fan Speed" / "Maximum Fan Speed" (config limit), "Return Fan Drive Output Speed".
-    negativePatterns: [/\b(return|exhaust|low|high|alarm|limit|maximum|minimum|fault)\b/i],
+    // M3: added boiler (combustion fan), ct-N (cooling tower fan — routes to ctFanSpeedLive),
+    // stair/pressurization (life-safety fans), manual/msv/select/command (control objects),
+    // diagnostic (diagnostic messages where "fan speed" is context only), running/enable (binary status).
+    // liebert blocks "Fan Speed Temperature Set Point To Liebert" setpoint transmission.
+    // Pump guard prevents "EF-7 VFD Speed" and similar from landing here — exhaust already guarded.
+    // M8: added 'relief' to first negativePattern so "Relief Fan VFD Speed" routes to efSpeedLive.
+    negativePatterns: [
+      /\b(return|exhaust|relief|low|high|alarm|limit|maximum|minimum|fault)\b/i,
+      /\b(boiler|ct-?\d+|tower\s*\d+|stair|pressuri[sz]ation|manual|msv|select|command|diagnostic|running|enable|liebert)\b/i,
+    ],
     types: ['AI', 'AO'],
     cats: ['ahu'],
   },
@@ -391,13 +420,22 @@ var EM_POINT_MAP = [
     col: 'dspLive',
     label: 'Duct Static Pressure',
     patterns: [/duct static pressure/i, /\bdsp\b/i],
+    // M1A: added negativePatterns. Blocks alarm objects (High/Low DSP Alarm), exhaust duct static
+    // (routes to rdspLive which has /exhaust\s+duct\s+static/i confirmed), and DSP setpoint ANOs
+    // (routes to dspSpLive). "exhaust" safe here because rdspLive already has exhaust patterns.
+    negativePatterns: [
+      /\b(alarm|lockout|diagnostic|sensor\s+fail(ed|ure)?|enable|output|pid|high|low|exhaust|setpoint|ano)\b/i,
+    ],
     types: ['AI'],
     cats: ['ahu'],
   },
   {
     col: 'oaDampLive',
     label: 'OA Damper Position',
-    patterns: [/oa damper/i, /outdoor air damper/i],
+    // M4: added /outside\s+air\s+damper/i — "Outside Air Damper Position" was missing this
+    // variant and falling through to dampPosLive. "outdoor air damper" existed; "outside air
+    // damper" is a common alternative phrasing in JOCO data.
+    patterns: [/oa damper/i, /outdoor air damper/i, /outside\s+air\s+damper/i],
     types: ['AO', 'AI'],
     cats: ['ahu'],
   },
@@ -416,17 +454,28 @@ var EM_POINT_MAP = [
     label: 'Heating Valve Position',
     // Phase 3a: removed /reheat valve/i — reheat valve must map to reheatValveLive (zone category),
     // not to the AHU heating-coil valve. Shadow was preventing zone reheat valve from auto-assigning.
-    patterns: [/heating valve/i, /hw valve/i, /htg valve/i],
+    // M1A: added /preheat\s+valve/i — preheat coil valve belongs with AHU heating valves (taxonomy
+    // confirms), blocked from reheatValveLive by M1A preheat negative added there.
+    patterns: [/heating valve/i, /hw valve/i, /htg valve/i, /preheat\s+valve/i],
     // Phase 2A: guard against "Heating Valve Capacity GPM", "Heating Valve Low Limit",
     // "Heating Valve Cutoff", "Heating Valve Maximum/Minimum".
-    negativePatterns: [/\b(limit|capacity|cutoff|gpm|alarm|fault|maximum|minimum)\b/i],
+    // M1A: added PID/float-subobject/enable/adjust exclusions.
+    // floating/close and floating/open are sub-objects; the base "Heating Valve Floating" still matches.
+    negativePatterns: [
+      /\b(limit|capacity|cutoff|gpm|alarm|fault|maximum|minimum)\b/i,
+      /\b(pid|bacnet\s*pid|floating\s*\/\s*(close|open)|enable|adjust)\b/i,
+    ],
     types: ['AO', 'AI'],
     cats: ['ahu', 'vav', 'fpb'],
   },
   {
     col: 'oaFlowLive',
     label: 'OA Airflow (cfm)',
-    patterns: [/oa airflow/i, /outdoor air flow/i, /oa cfm/i],
+    // M4: added /outdoor\s+airflow/i and /outside\s+airflow/i so "Outdoor Airflow" and
+    // "Outside Airflow" route here instead of falling through to discFlowLive.
+    // These must be positioned BEFORE discFlowLive in the array (oaFlowLive is currently before
+    // discFlowLive at lines ~429 vs ~489) — confirmed safe.
+    patterns: [/oa airflow/i, /outdoor air flow/i, /oa cfm/i, /outdoor\s+airflow/i, /outside\s+airflow/i],
     types: ['AI'],
     cats: ['ahu'],
   },
@@ -438,8 +487,10 @@ var EM_POINT_MAP = [
     // pattern matches (e.g. "High Zone Temperature", "Low Zone Temperature").
     // Phase 2B: "virtual" removed — "Virtual Zone Temperature" should map here via
     // the virtual-stripping logic in emMapPointToColumn; excluding it hides useful data.
+    // M1A: added ano (ANO = Analog Network Output command) and controlling (control output).
     negativePatterns: [
       /\b(high|low|alarm|fault|fail(ed|ure)?|diagnostic|setpoint|set\s?point|override|limit|status|enable|effective)\b/i,
+      /\b(ano\b|controlling)\b/i,
     ],
     types: ['AI'],
     cats: ['vav', 'fpb', 'ddvav'],
@@ -450,7 +501,13 @@ var EM_POINT_MAP = [
     // FIX 3b (1b74f531): Use /cooling.*setpoint/i to also match 'Cooling Occupied Setpoint'
     // (word order: Cooling → Occupied → Setpoint). negativePatterns blocks Adjust and Unoccupied.
     patterns: [/cooling.*setpoint/i, /clg setpoint/i],
-    negativePatterns: [/adjust|unoccupied/i],
+    // M1A: added exclusions for PID sub-objects, integration parameters, mismatch alarms,
+    // remote/network transmitted copies, and SAT-level cooling setpoints (route to satCoolSpLive).
+    negativePatterns: [
+      /adjust|unoccupied/i,
+      /\b(bacnet\s*pid|integration|mismatch|alarm|remote|command|mcs|bas\b)\b/i,
+      /supply\s+air/i,
+    ],
     types: ['SP'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -460,7 +517,13 @@ var EM_POINT_MAP = [
     // FIX 3b (1b74f531): Use /heating.*setpoint/i to also match 'Heating Occupied Setpoint'.
     // negativePatterns blocks Adjust and Unoccupied.
     patterns: [/heating.*setpoint/i, /htg setpoint/i],
-    negativePatterns: [/adjust|unoccupied/i],
+    // M1A: added exclusions for PID sub-objects, mismatch alarms, remote/network copies,
+    // and SAT-level heating setpoints (route to satHtgSpLive).
+    negativePatterns: [
+      /adjust|unoccupied/i,
+      /\b(bacnet\s*pid|mismatch|alarm|remote|command|mcs|diagnostic)\b/i,
+      /supply\s+air/i,
+    ],
     types: ['SP'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -468,6 +531,10 @@ var EM_POINT_MAP = [
     col: 'datLive',
     label: 'Discharge Air Temp',
     patterns: [/discharge air temp/i, /\bdat\b/i],
+    // M1A: added negativePatterns (proactive guard — same structural risk as other temp columns).
+    negativePatterns: [
+      /\b(alarm|lockout|diagnostic|sensor\s+fail(ed|ure)?|enable|output|pid|bacnet\s*pid|control\s+selection)\b/i,
+    ],
     types: ['AI'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -475,6 +542,10 @@ var EM_POINT_MAP = [
     col: 'reheatValveLive',
     label: 'Reheat Valve',
     patterns: [/reheat valve/i],
+    // M1A: added negativePatterns. "Preheat Valve" and its sub-objects contain "reheat valve"
+    // as a substring (P-REHEAT-VALVE). GPM/limit block config sizing points. Enable blocks command.
+    // "Preheat Valve" now routes to htgValveLive via /preheat\s+valve/i added there.
+    negativePatterns: [/\b(preheat|gpm|limit|enable)\b/i],
     types: ['AO', 'AI'],
     cats: ['vav', 'fpb'],
   },
@@ -482,6 +553,11 @@ var EM_POINT_MAP = [
     col: 'dampPosLive',
     label: 'Damper Position',
     patterns: [/damper position/i, /dmp pos/i],
+    // M4: added negativePatterns. "Outside Air Damper Position" now caught by oaDampLive
+    // (M4: /outside\s+air\s+damper/i added there). "Return Air Damper Position" caught by
+    // raDampLive (/return\s+air\s+damper/i confirmed). Economizer min is a config setpoint,
+    // not a live position feedback.
+    negativePatterns: [/\b(outside\s+air|return\s+air|economizer\s+min|minimum|maximum)\b/i],
     types: ['AO', 'AI'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -490,8 +566,23 @@ var EM_POINT_MAP = [
     label: 'Discharge Airflow',
     // FIX 2 (a0d29b4c): Added /\bair\s*flow\b/i and /flow.*input/i to match CSV 'Air Flow'
     // and 'Flow Control / Flow Input'. negativePatterns blocks setpoints/requests/min/max.
-    patterns: [/discharge airflow/i, /disc airflow/i, /zone airflow/i, /\bair\s*flow\b/i, /flow.*input/i],
-    negativePatterns: [/set\s*point|setpoint|request|minimum|maximum/i],
+    // M4: Tightened /flow.*input/i to /\bflow\s+(control\s*\/\s*)?input\b/i so "Chilled Water
+    // Flow Input" no longer matches (it contains "chilled water" which is a water-system point,
+    // not zone airflow). Also added broad negativePatterns for OA/water/alarm words per plan M4
+    // "discFlowLive / oaFlowLive fix": outdoor/outside redirect to oaFlowLive; chilled/condenser/
+    // hot water are plant-side flow points; supply fan/filter/switch/proof/loss/status/alarm/
+    // percentage/percent all indicate non-airflow points. These are confirmed mis-maps (Group J).
+    patterns: [
+      /discharge airflow/i,
+      /disc airflow/i,
+      /zone airflow/i,
+      /\bair\s*flow\b/i,
+      /\bflow\s+(control\s*\/\s*)?input\b/i,
+    ],
+    negativePatterns: [
+      /set\s*point|setpoint|request|minimum|maximum/i,
+      /\b(outdoor|outside|supply\s+fan|filter|switch|proof|loss|status|alarm|percentage|percent|chilled\s+water|condenser\s+water|hot\s+water)\b/i,
+    ],
     types: ['AI'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -499,6 +590,9 @@ var EM_POINT_MAP = [
     col: 'hwSupTempLive',
     label: 'HW Supply Temp',
     patterns: [/hw supply temp/i, /hot water supply/i, /hwst\b/i],
+    // M2: added negativePatterns. CHW/CHWST names contain "HW" as substring causing false matches.
+    // Domestic/DHW points are plumbing (excluded per plan decision A). High/low block alarm limits.
+    negativePatterns: [/\b(chw|chwst|domestic|dhw|high|low|alarm)\b/i],
     types: ['AI'],
     cats: ['hwp'],
   },
@@ -506,6 +600,10 @@ var EM_POINT_MAP = [
     col: 'hwRetTempLive',
     label: 'HW Return Temp',
     patterns: [/hw return temp/i, /hot water return/i, /hwrt\b/i],
+    // M2: added negativePatterns. CHWRT contains "HWRT" as substring; "DHW" contains "HW".
+    // Domestic/DHW excluded (plumbing). Flow blocks "Hot Water Return Flow" (not temperature).
+    // High/low block alarm limit names.
+    negativePatterns: [/\b(chw|chwrt|domestic|dhw|high|low|alarm|flow)\b/i],
     types: ['AI'],
     cats: ['hwp'],
   },
@@ -513,6 +611,8 @@ var EM_POINT_MAP = [
     col: 'hwDiffPresLive',
     label: 'HW Diff Pressure',
     patterns: [/hw diff pressure/i, /hw differential/i],
+    // M2: "CHW" contains "HW" so /hw differential/i fires on "CHW Differential Pressure".
+    negativePatterns: [/\bchw\b/i],
     types: ['AI'],
     cats: ['hwp'],
   },
@@ -527,6 +627,9 @@ var EM_POINT_MAP = [
     col: 'chwSupTempLive',
     label: 'CHW Supply Temp',
     patterns: [/chw supply temp/i, /chilled water supply/i, /chwst\b/i],
+    // M2: high/low block alarm limit names. Flow blocks "Chilled Water Supply Flow"
+    // (flow measurement, not temperature — routes to chwFlowLive).
+    negativePatterns: [/\b(high|low|alarm|flow)\b/i],
     types: ['AI'],
     cats: ['chwp'],
   },
@@ -534,6 +637,8 @@ var EM_POINT_MAP = [
     col: 'chwRetTempLive',
     label: 'CHW Return Temp',
     patterns: [/chw return temp/i, /chilled water return/i, /chwrt\b/i],
+    // M2: high/low block alarm limit names (High/Low Chilled Water ReturnTemperature).
+    negativePatterns: [/\b(high|low|alarm)\b/i],
     types: ['AI'],
     cats: ['chwp'],
   },
@@ -562,6 +667,8 @@ var EM_POINT_MAP = [
     col: 'cwSupTempLive',
     label: 'CW Supply Temp',
     patterns: [/cw supply temp/i, /condenser water supply/i, /cwst\b/i],
+    // M2: high/low block alarm limit names (High/Low Condenser Water Supply Temperature).
+    negativePatterns: [/\b(high|low|alarm)\b/i],
     types: ['AI'],
     cats: ['ct'],
   },
@@ -572,6 +679,24 @@ var EM_POINT_MAP = [
     types: ['AI'],
     cats: ['ct'],
   },
+  // M4 ORDERING: co2ReturnLive is placed HERE, before co2Live.
+  // co2Live has broad /\bco2\b/i which fires on any CO2 name. co2ReturnLive needs to be
+  // positioned before co2Live so the more-specific return-air CO2 patterns win.
+  // (The co2ReturnLive definition below replaces the original late-array position, which is removed.)
+  {
+    col: 'co2ReturnLive',
+    label: 'Return Air CO2',
+    patterns: [
+      /\bra\s+co2\b/i,
+      /return\s+air\s+co2/i,
+      /return\s+co2/i,
+      /ahu-?\d+\s*-\s*co2\b/i,
+      /return\s+air\s+carbon\s+dioxide/i,
+    ],
+    negativePatterns: [/alarm|setpoint|set\s?point/i],
+    types: ['AI', 'BAI'],
+    cats: ['ahu', 'dhu'],
+  },
   // FIX 1 (c0bf56e0): Zone CO2 — CSV uses 'Zone CO2' and 'Zone CO2 AV'
   {
     col: 'co2Live',
@@ -579,7 +704,15 @@ var EM_POINT_MAP = [
     patterns: [/\bco2\b/i, /zone\s*co2/i, /carbon dioxide/i, /co2\s*sensor/i, /co2\s*ppm/i],
     // Phase 2A: guard against "CO2 Alarm", "High CO2 Alarm", "CO2 Override", "CO2 Setpoint",
     // "CO2 Fault" — these are alarm/config objects, not live sensor readings.
-    negativePatterns: [/\b(alarm|high|low|override|fault|setpoint|set\s*point)\b/i],
+    // M1A: added maximum/min (CO2 Maximum 1-4 config), diagnostic (sensor failure flag),
+    // selection (control selection mode object), and oa/outdoor/outside (OA CO2 baseline —
+    // a different ASHRAE 36 point category, excluded here).
+    // NOTE: "return" and "ahu" are NOT added here — ordering fix in M4 (co2ReturnLive moved
+    // before co2Live) handles return-air CO2 routing more cleanly.
+    negativePatterns: [
+      /\b(alarm|high|low|override|fault|setpoint|set\s*point)\b/i,
+      /\b(maximum|max|minimum|min|diagnostic|selection|outdoor|outside|oa\b)\b/i,
+    ],
     types: ['AI', 'BAI', 'BAV', 'AV'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav'],
   },
@@ -602,8 +735,12 @@ var EM_POINT_MAP = [
       /\brh\s*%/i,
       /\bhumidity\b/i,
     ],
+    // M1A: expanded negativePatterns. Exhaust/supply-air humidity are not zone RH. High/low/alarm
+    // block limit configs and alarm objects. call for/controlling/selection/ano block control
+    // outputs and mode objects. Existing OA/outdoor/return guards retained.
     negativePatterns: [
       /outside|outdoor|outside\s+air|outdoor\s+air|\boa\s+hum|return\s+air|return\s+hum|\bra\s+hum|set\s?point/i,
+      /\b(exhaust|supply\s+air|high|low|alarm|call\s+for|controlling|selection|ano\b)\b/i,
     ],
     types: ['AI'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav'],
@@ -615,13 +752,29 @@ var EM_POINT_MAP = [
     col: 'oaWetBulbLive',
     label: 'OA Wet Bulb',
     patterns: [/wet bulb/i, /wb\b/i],
+    // M5: added negativePatterns. "HUWB" (High Wet Bulb) appears in smoke/zone alarm point names
+    // like "Smoke Zone 3 HUWB" — these are alarm registers, not live OA wet bulb readings.
+    // /\bhuwb\b/i blocks the confirmed Group R mis-maps without affecting "Outside Air Wet Bulb".
+    negativePatterns: [/\bhuwb\b/i],
     types: ['AI'],
     cats: ['ct', 'ahu', 'dhu'],
   },
   {
     col: 'ctFanSpeedLive',
     label: 'CT Fan Speed',
-    patterns: [/ct fan speed/i, /cooling tower fan/i, /tower fan/i],
+    // M3: added CT-N and Tower-N positive patterns so "CT-1 Fan VFD Speed" and "Tower 1 Fan Speed"
+    // route here (previously went to sfSpeedLive because ctFanSpeedLive missed the "CT-N" prefix format).
+    patterns: [
+      /ct fan speed/i,
+      /cooling tower fan/i,
+      /tower fan/i,
+      /\bct-?\d+.*fan.*speed/i,
+      /\btower\s*\d+.*fan.*speed/i,
+    ],
+    // M3: added negativePatterns. HOA (Hand/Off/Auto switch), PID (control loop), run/status
+    // (binary run feedback), disabled/enabled status sentences, and runtime alarm objects
+    // must not land in the live speed column.
+    negativePatterns: [/\b(hoa|pid|run\b|disabled|enabled|runtime|exceeded|status\s+is)\b/i],
     types: ['AI', 'AO'],
     cats: ['ct'],
   },
@@ -701,7 +854,12 @@ var EM_POINT_MAP = [
       /outside air temp - rnet/i,
       /outdoor air dry bulb/i,
     ],
-    negativePatterns: [/setpoint|set\s?point/i],
+    // M5: expanded negativePatterns. Original guard blocked setpoints only. Group W mis-maps:
+    // "Primary Outside Air Temperature Sensor Invalid" (matches "invalid"), "Outside Air
+    // Temperatures Low, Cooling Tower 3-1 Heat Trace Is Off" (matches "heat trace" and "is off"),
+    // "Outside Air Temperature Is On/Off" status booleans (matches "is on"/"is off"). These are
+    // alarm/status objects, not live temperature readings.
+    negativePatterns: [/setpoint|set\s?point/i, /\b(invalid|sensor\s+invalid|heat\s+trace|is\s+off|is\s+on)\b/i],
     types: ['AI'],
     cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'furnace'],
   },
@@ -813,7 +971,8 @@ var EM_POINT_MAP = [
     col: 'preheatAirTempLive',
     label: 'Preheat Air Temp',
     patterns: [/preheat\s+air\s+temp/i, /oa\s+pre.?coil\s+temp/i, /pre.?heat\s+coil\s+leaving/i],
-    negativePatterns: [/alarm|limit|setpoint|set\s?point|fault/i],
+    // M1A: added low/high/warning to existing negativePatterns (blocks warning alarm variants).
+    negativePatterns: [/alarm|limit|setpoint|set\s?point|fault|\b(low|high|warning)\b/i],
     types: ['AI'],
     cats: ['ahu'],
   },
@@ -860,20 +1019,14 @@ var EM_POINT_MAP = [
     col: 'rhZoneSpLive',
     label: 'Humidity Setpoint',
     patterns: [/dehumidif.*set\s?point/i, /return\s+humidity\s+set/i, /zone\s+hum.*set/i, /humidity\s+set\s?point/i],
+    // M1A: added negativePatterns. PID sub-object setpoints (Dehumidification SAT BACnet PID /
+    // Setpoint) must not land here; feedback/mismatch status points are not setpoints.
+    negativePatterns: [/\b(bacnet\s*pid|feedback|mismatch|feedack)\b/i],
     types: ['SP', 'AV'],
     cats: ['ahu', 'dhu', 'rtu', 'vav', 'fpb'],
   },
 
-  // E2: Return Air CO2 — at AHU level (distinct from zone CO2)
-  // Taxonomy: "RA CO2 (rac)", "Return Air CO2", "AHU-1 - CO2" (see AMBIG-9 — these are RA CO2).
-  {
-    col: 'co2ReturnLive',
-    label: 'Return Air CO2',
-    patterns: [/\bra\s+co2\b/i, /return\s+air\s+co2/i, /return\s+co2/i],
-    negativePatterns: [/alarm|setpoint|set\s?point/i],
-    types: ['AI', 'BAI'],
-    cats: ['ahu', 'dhu'],
-  },
+  // E2: Return Air CO2 — MOVED before co2Live (M4 ordering fix). See entry above co2Live.
 
   // H9: Unoccupied Cooling Setpoint
   // Taxonomy: "Cooling Unoccupied Setpoint", "Unoccupied Cooling Set Point",
@@ -910,6 +1063,10 @@ var EM_POINT_MAP = [
     col: 'discFlowSpLive',
     label: 'Airflow Setpoint',
     patterns: [/air\s+flow\s+set\s?point/i, /airflow\s+set\s?point/i, /flow\s+set\s?point/i],
+    // M4: added negativePatterns. "Diagnostic: Min OA Flow Setpoint Fail" and "GEV-145 Valve
+    // Flow Set Point ANI" variants are mis-maps (Group AA). "diagnostic" blocks the former;
+    // "valve" blocks GEV valve flow setpoints which belong to valve position columns, not airflow.
+    negativePatterns: [/\b(diagnostic|valve)\b/i],
     types: ['SP', 'AV'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -1047,15 +1204,34 @@ var EM_POINT_MAP = [
   // GROUP 9 — Fans & Pumps (missing columns)
 
   // J2: Return Fan VFD Speed
-  // Taxonomy: "Return Fan VFD Speed", "Return Fan Drive Output Speed".
-  // negativePatterns: "reference" and "set" excluded so speed setpoints don't collide here.
+  // Taxonomy: "Return Fan VFD Speed", "Return Fan Drive Output Speed", "RF Speed".
+  // M8: strengthened negativePatterns to block supply/exhaust/ct/boiler/alarm/fault;
+  // added /rf speed/i and /return fan drive.*speed/i patterns per plan spec.
   {
     col: 'rfSpeedLive',
     label: 'Return Fan VFD Speed',
-    patterns: [/return\s+fan\s+vfd\s+speed/i, /return\s+fan\s+drive\s+output\s+speed/i, /return\s+fan.*speed/i],
-    negativePatterns: [/reference|set\s?point/i],
+    patterns: [
+      /return\s+fan\s+vfd\s+speed/i,
+      /return\s+fan\s+drive\s+output\s+speed/i,
+      /return\s+fan.*speed/i,
+      /\brf\s+speed\b/i,
+      /return\s+fan\s+drive.*speed/i,
+    ],
+    negativePatterns: [/\b(supply|exhaust|ct|boiler|alarm|fault)\b/i],
     types: ['AI', 'AO'],
     cats: ['ahu'],
+  },
+
+  // J3: Exhaust Fan VFD Speed
+  // M8: new entry. Routes "Exhaust Fan Speed", "EF-N VFD Speed", "Relief Fan VFD Speed" here.
+  // sfSpeedLive already guards against exhaust via its negativePatterns (M3).
+  {
+    col: 'efSpeedLive',
+    label: 'Exhaust Fan Speed',
+    patterns: [/exhaust\s+fan.*speed/i, /ef.*vfd.*speed/i, /relief\s+fan\s+vfd\s+speed/i],
+    negativePatterns: [/\b(supply|return|ct|boiler|alarm|fault)\b/i],
+    types: ['AI', 'AO'],
+    cats: ['ahu', 'ef'],
   },
 
   // J4: Supply Fan Status / Enable / Command
@@ -1066,7 +1242,15 @@ var EM_POINT_MAP = [
     col: 'sfStatusLive',
     label: 'Supply Fan Status',
     patterns: [/supply\s+fan\s+status/i, /supply\s+fan\s+command/i, /supply\s+fan\s+enable/i, /\bfan\s+status\b/i],
-    negativePatterns: [/alarm|fault|speed|vfd/i],
+    // M3: expanded negativePatterns. Exhaust/EF-N fans are not supply fans. Relief/return fans are
+    // not supply fans. Smoke evac and destratification fans are life-safety/specialty. Latched failure
+    // sentences (CT fault records) contain "Fan Status" parenthetically. RTU/Unit Disabled/Enabled
+    // alarm sentences are diagnostic conditions, not live status readings.
+    negativePatterns: [
+      /alarm|fault|speed|vfd/i,
+      /\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|latched|failure|disabled|enabled)\b/i,
+      /RTU\s+(Disabled|Enabled)|Unit\s+(Disabled|Enabled)/i,
+    ],
     types: ['BI', 'BO', 'BAI', 'BAO', 'BAV', 'BV'],
     cats: ['ahu', 'rtu', 'furnace', 'fcu'],
   },
@@ -1752,6 +1936,13 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
   // maps to the same column as "Zone Temperature". The original pointName is preserved by the
   // caller — the collision resolution block uses it to detect virtual vs. real points.
   var matchName = pointName.replace(/^\s*virtual\s+/i, '');
+  // M1B: Pre-filter for BACnet control-object types. BPID/BMSV/BALM/BMBI are categorically
+  // never live sensor readings. If the caller supplies a pointType in this set, skip ALL
+  // EM_POINT_MAP entries entirely — the name-pattern layer (negativePatterns) is defense-in-depth.
+  var CONTROL_OBJ_TYPES = ['BPID', 'BMSV', 'BALM', 'BMBI'];
+  if (pointType && CONTROL_OBJ_TYPES.indexOf(pointType) !== -1) {
+    return null;
+  }
   var _mapResult = null;
   for (var i = 0; i < EM_POINT_MAP.length; i++) {
     var mapping = EM_POINT_MAP[i];
@@ -4279,7 +4470,7 @@ function emRenderSummaryView(data, filters) {
         ',' +
         JSON.stringify(bldg) +
         ');return false;" ' +
-        'style="color:var(--accent);cursor:pointer;font-weight:600;font-size:15px;text-decoration:none">' +
+        'style="color:var(--accent);cursor:pointer;font-weight:600;text-decoration:none">' +
         emHtmlEsc(bldg) +
         '</a>';
       // Zones vs Setpoints cell
@@ -6216,12 +6407,9 @@ var EM_POINT_CATEGORIES = {
       patterns: [
         /\bsat\b/i,
         /supply air temp/i,
-        /discharge air temp/i,
-        /\bdat\b/i,
         /leaving air temp/i,
         /ahu.?sat/i,
         /supply.?temp/i,
-        /discharge temp/i,
         /sa temp/i,
         /\blat\b/i,
       ],
@@ -6231,6 +6419,7 @@ var EM_POINT_CATEGORIES = {
         'discharge air temp',
         'dat',
         'discharge air temperature',
+        'discharge temp',
         'supply temp',
         'leaving air temp',
         'ahu supply temp',
@@ -6238,6 +6427,10 @@ var EM_POINT_CATEGORIES = {
         'supply-air temp',
         'ahu-sat',
         'lat',
+      ],
+      // M6 6B: block control objects, diagnostics, and mode-select points from ahu.sat
+      negativeGuards: [
+        /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output|bno)\b/i,
       ],
     },
     {
@@ -6251,12 +6444,15 @@ var EM_POINT_CATEGORIES = {
         'rat',
         'return air temp',
         'return temp',
+        'return temperature',
         'ra temp',
         'ahu return temp',
         'return-air temp',
         'ahu-rat',
         'return air temperature',
       ],
+      // M6 6B: block control objects and diagnostics from ahu.rat
+      negativeGuards: [/\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
     },
     {
       key: 'mat',
@@ -6275,6 +6471,8 @@ var EM_POINT_CATEGORIES = {
         'ahu-mat',
         'post-mix temp',
       ],
+      // M6 6B: block control objects and diagnostics from ahu.mat
+      negativeGuards: [/\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
     },
     {
       key: 'oat',
@@ -6306,6 +6504,8 @@ var EM_POINT_CATEGORIES = {
         'outside air dry bulb',
         'oa dry bulb',
       ],
+      // M6 6B: block lockouts, diagnostics, alarms from ahu.oat
+      negativeGuards: [/\b(alarm|lockout|diagnostic|sensor\s+fail(ed|ure)?|enable|output)\b/i],
     },
     {
       key: 'dsp',
@@ -6338,6 +6538,8 @@ var EM_POINT_CATEGORIES = {
         'duct-sp',
         'dp duct',
       ],
+      // FIX5: "Building Static Pressure" must fall through to bldgPressure, not match here
+      negativeGuards: [/\bbuilding\b/i],
     },
     {
       key: 'oaFlow',
@@ -6402,6 +6604,8 @@ var EM_POINT_CATEGORIES = {
         'supply fan vfd status',
         'supply fan enabled',
       ],
+      // M6 6B: block exhaust fans, relief fans, and unit-level disabled/enabled sentences
+      negativeGuards: [/\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|disabled|enabled)\b/i],
     },
     {
       key: 'sfSpeed',
@@ -6429,6 +6633,10 @@ var EM_POINT_CATEGORIES = {
         'sf vfd speed',
         'supply vfd feedback',
         'supply fan speed feedback',
+      ],
+      // M6 6B: block boiler fans, CT fans, stair fans, diagnostic and command objects
+      negativeGuards: [
+        /\b(boiler|ct-?\d+|tower\s*\d+|stair|pressuri[sz]ation|diagnostic|running|enable|command|msv|select)\b/i,
       ],
     },
     {
@@ -7308,6 +7516,78 @@ var EM_POINT_CATEGORIES = {
       patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
       aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: '5.6',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: '5.6',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: '5.6',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── FPB (Fan-Powered Box — Parallel or Series, ASHRAE 36 §5.7/5.8) ─ */
@@ -7488,6 +7768,78 @@ var EM_POINT_CATEGORIES = {
         'vfan_flow_set',
       ],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: '5.7',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: '5.7',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: '5.7',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── DDVAV (Dual Duct VAV, ASHRAE 36 §5.13) ────────────────────────── */
@@ -7580,6 +7932,78 @@ var EM_POINT_CATEGORIES = {
       patterns: [/hot.?deck.?damper/i, /hot.?damper/i, /heating.?damper/i, /warm.?damper/i, /hot air damper/i],
       aliases: ['hot deck damper', 'hot damper', 'heating damper', 'hot duct damper', 'warm damper', 'hot air damper'],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: '5.13',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: '5.13',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: '5.13',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── HWP (Hot Water Plant, ASHRAE 36 §5.19) ────────────────────────── */
@@ -7590,6 +8014,8 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Hot Water Supply Temperature',
       ashrae36Section: '5.19',
+      // M6 6B: block chilled/domestic/DHW/high/low/alarm variants from matching hwst
+      negativeGuards: [/\b(chw|chwst|domestic|dhw|high|low|alarm)\b/i],
       patterns: [
         /\bhwst\b/i,
         /hw.?supply.?temp/i,
@@ -7633,6 +8059,8 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Hot Water Return Temperature',
       ashrae36Section: '5.19',
+      // M6 6B: block chilled/domestic/DHW/high/low/alarm/flow variants from matching hwrt
+      negativeGuards: [/\b(chw|chwrt|domestic|dhw|high|low|alarm|flow)\b/i],
       patterns: [
         /\bhwrt\b/i,
         /hw.?return.?temp/i,
@@ -8001,6 +8429,7 @@ var EM_POINT_CATEGORIES = {
         'secondary hwp status',
         'sec pump status',
         'hw sec pump status',
+        'sec pump b status',
       ],
     },
     {
@@ -8023,6 +8452,78 @@ var EM_POINT_CATEGORIES = {
         'boiler 1 isolation valve enable',
         'boiler 2 isolation valve enable',
         'boiler isolation valve enable',
+      ],
+    },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: '5.19',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: '5.19',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: '5.19',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
       ],
     },
   ],
@@ -8468,6 +8969,78 @@ var EM_POINT_CATEGORIES = {
         'chw isolation valve',
       ],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: '5.20',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: '5.20',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: '5.20',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── CT (Cooling Tower Plant, ASHRAE 36 §5.21) ─────────────────────── */
@@ -8562,7 +9135,7 @@ var EM_POINT_CATEGORIES = {
       ],
     },
     {
-      key: 'oaRH',
+      key: 'oaRh',
       label: 'Outdoor Air Relative Humidity',
       required: false,
       ashrae36Name: 'Outdoor Air Relative Humidity',
@@ -8806,6 +9379,51 @@ var EM_POINT_CATEGORIES = {
         'makeup valve',
       ],
     },
+    // M7: broadcast categories — present on all equipment types
+    // Note: CT block already has 'oaRH' (capital H, legacy pre-Phase-3a). demandLevel and
+    // oaDewpoint are new additions. oaRh (lowercase) is added alongside oaRH for consistency
+    // with the broadcast standard used in all other blocks.
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: '5.21',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: '5.21',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── M3 NEW TYPE: FCU (Fan Coil Unit / VRF indoor unit) ─────────────── */
@@ -8864,6 +9482,78 @@ var EM_POINT_CATEGORIES = {
       patterns: [/fan.?status/i, /fan.?run/i, /fan speed/i, /fan.?enable/i],
       aliases: ['fan status', 'fan run', 'fan speed', 'fan enable'],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: 'FCU',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: 'FCU',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: 'FCU',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── M3 NEW TYPE: Heater (unit heater / tube heater / infrared) ─────── */
@@ -8911,6 +9601,78 @@ var EM_POINT_CATEGORIES = {
       patterns: [/oa.?enable.?setpoint/i, /outdoor.?lockout/i, /oa.?lockout/i, /outside air setpoint/i],
       aliases: ['oa enable setpoint', 'outdoor lockout', 'oa lockout', 'outside air setpoint'],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: 'Heater',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: 'Heater',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: 'Heater',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── M3 NEW TYPE: EF (Exhaust Fan) ─────────────────────────────────── */
@@ -8949,9 +9711,83 @@ var EM_POINT_CATEGORIES = {
       patterns: [/schedule/i, /occupancy/i, /occupied/i],
       aliases: ['schedule', 'occupancy', 'occupied'],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: 'EF',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: 'EF',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: 'EF',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── M3 NEW TYPE: DOAS (Dedicated Outdoor Air System / ERV) ─────────── */
+  // M7: expanded with all base AHU categories + 21 Phase-3a categories.
+  // DOAS physically runs the same sensor/control points as an AHU.
   doas: [
     {
       key: 'sat',
@@ -8961,6 +9797,104 @@ var EM_POINT_CATEGORIES = {
       ashrae36Section: 'DOAS',
       patterns: [/supply air temp/i, /\bsat\b/i, /discharge air temp/i, /\bdat\b/i],
       aliases: ['supply air temp', 'sat', 'discharge air temp', 'dat'],
+      // M7: carry negativeGuards from ahu.sat so control objects don't match here either
+      negativeGuards: [
+        /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output|bno)\b/i,
+      ],
+    },
+    {
+      key: 'rat',
+      label: 'Return Air Temperature',
+      required: false,
+      ashrae36Name: 'Return Air Temperature',
+      ashrae36Section: 'DOAS',
+      patterns: [/\brat\b/i, /return air temp/i, /ra temp/i, /return.?air.?temp/i],
+      aliases: ['rat', 'return air temp', 'return temp', 'return temperature', 'ra temp', 'return air temperature'],
+      negativeGuards: [/\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
+    },
+    {
+      key: 'mat',
+      label: 'Mixed Air Temperature',
+      required: false,
+      ashrae36Name: 'Mixed Air Temperature',
+      ashrae36Section: 'DOAS',
+      patterns: [/\bmat\b/i, /mixed air temp/i, /mix air temp/i],
+      aliases: ['mat', 'mixed air temp', 'mix air temp', 'mixed-air temp'],
+      negativeGuards: [/\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?)\b/i],
+    },
+    {
+      key: 'oat',
+      label: 'Outdoor Air Temperature',
+      required: false,
+      ashrae36Name: 'Outdoor Air Temperature',
+      ashrae36Section: 'DOAS',
+      patterns: [/\boat\b/i, /outdoor air temp/i, /outside air temp/i, /oa temp/i, /ambient temp/i],
+      aliases: ['oat', 'outdoor air temp', 'outside air temp', 'oa temp', 'ambient temp', 'outdoor temp'],
+      negativeGuards: [/\b(alarm|lockout|diagnostic|sensor\s+fail(ed|ure)?|enable|output)\b/i],
+    },
+    {
+      key: 'sfSpeed',
+      label: 'Supply Fan Speed',
+      required: false,
+      ashrae36Name: 'Supply Fan Speed',
+      ashrae36Section: 'DOAS',
+      patterns: [/supply fan.?speed/i, /sf.?speed/i, /fan speed feedback/i, /vfd speed feedback/i],
+      aliases: ['sf speed', 'supply fan vfd feedback', 'fan speed feedback', 'vfd speed feedback', 'supply fan speed'],
+      negativeGuards: [/\b(boiler|ct-?\d+|tower\s*\d+|stair|diagnostic|running|enable|command|msv|select)\b/i],
+    },
+    {
+      key: 'dsp',
+      label: 'Duct Static Pressure',
+      required: false,
+      ashrae36Name: 'Duct Static Pressure',
+      ashrae36Section: 'DOAS',
+      patterns: [/\bdsp\b/i, /duct static pressure/i, /duct static/i, /static pressure/i],
+      aliases: ['dsp', 'duct static', 'static pressure', 'supply duct static', 'duct pressure'],
+      // FIX5: "Building Static Pressure" must fall through to bldgPressure, not match here
+      negativeGuards: [/\bbuilding\b/i],
+    },
+    {
+      key: 'oaDamp',
+      label: 'OA Damper Position',
+      required: false,
+      ashrae36Name: 'OA Damper Position',
+      ashrae36Section: 'DOAS',
+      patterns: [/oa.?damper/i, /outdoor air damper/i, /outside air damper/i, /econ.?damper/i],
+      aliases: ['oa damper', 'outdoor air damper', 'outside air damper', 'econ damper'],
+    },
+    {
+      key: 'clgValve',
+      label: 'Cooling Coil Valve',
+      required: false,
+      ashrae36Name: 'Cooling Coil Valve Position Command',
+      ashrae36Section: 'DOAS',
+      patterns: [/chw.?valve/i, /cooling.?valve/i, /cooling coil valve/i, /chilled water valve/i, /clg.?valve/i],
+      aliases: ['chw valve', 'cooling valve', 'cooling coil valve', 'chilled water valve', 'clg valve'],
+    },
+    {
+      key: 'htgValve',
+      label: 'Heating Coil Valve',
+      required: false,
+      ashrae36Name: 'Heating Coil Valve Position Command',
+      ashrae36Section: 'DOAS',
+      patterns: [
+        /hw.?valve/i,
+        /heating.?valve/i,
+        /heating coil valve/i,
+        /hot water valve/i,
+        /htg.?valve/i,
+        /preheat valve/i,
+      ],
+      aliases: ['hw valve', 'heating valve', 'heating coil valve', 'hot water valve', 'htg valve', 'preheat valve'],
+    },
+    {
+      key: 'oaFlow',
+      label: 'Outdoor Air Flow',
+      required: false,
+      ashrae36Name: 'Outdoor Air Flow',
+      ashrae36Section: 'DOAS',
+      patterns: [/oa.?flow/i, /outdoor air.?cfm/i, /outside air flow/i, /oa cfm/i],
+      aliases: ['oa flow', 'outdoor air cfm', 'oa airflow', 'outside air flow', 'oa cfm'],
     },
     {
       key: 'ervWheel',
@@ -8970,15 +9904,6 @@ var EM_POINT_CATEGORIES = {
       ashrae36Section: 'DOAS',
       patterns: [/energy recovery wheel/i, /energy wheel/i, /erv wheel/i, /enthalpy wheel/i, /heat wheel/i],
       aliases: ['energy recovery wheel', 'energy wheel', 'erv wheel', 'enthalpy wheel', 'heat wheel'],
-    },
-    {
-      key: 'oaDamper',
-      label: 'OA Damper',
-      required: true,
-      ashrae36Name: 'Outdoor Air Damper Position',
-      ashrae36Section: 'DOAS',
-      patterns: [/oa.?damper/i, /outdoor air damper/i, /outside air damper/i],
-      aliases: ['oa damper', 'outdoor air damper', 'outside air damper'],
     },
     {
       key: 'bldgPressure',
@@ -8997,6 +9922,242 @@ var EM_POINT_CATEGORIES = {
       ashrae36Section: 'DOAS',
       patterns: [/supply fan.?status/i, /supply fan.?run/i, /sf.?status/i, /fan.?run/i],
       aliases: ['supply fan status', 'supply fan run', 'sf status', 'fan run'],
+      negativeGuards: [/\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|disabled|enabled)\b/i],
+    },
+    // Phase 3a categories (copied from AHU block)
+    {
+      key: 'co2Return',
+      label: 'Return Air CO2',
+      required: false,
+      ashrae36Name: 'Return Air CO2',
+      ashrae36Section: 'DOAS',
+      patterns: [/\bra\s+co2\b/i, /return\s+air\s+co2/i, /return\s+co2/i],
+      aliases: ['ra co2', 'return air co2', 'return co2', 'return air co2 ani'],
+    },
+    {
+      key: 'rhReturn',
+      label: 'Return Air Humidity',
+      required: false,
+      ashrae36Name: 'Return Air Relative Humidity',
+      ashrae36Section: 'DOAS',
+      patterns: [/return\s+air\s+hum/i, /\bra\s+hum\b/i],
+      aliases: ['return air humidity', 'return air relative humidity', 'ra hum', 'ra humidity'],
+    },
+    {
+      key: 'dspSp',
+      label: 'Duct Static Pressure Setpoint',
+      required: false,
+      ashrae36Name: 'Duct Static Pressure Setpoint',
+      ashrae36Section: 'DOAS',
+      patterns: [/supply\s+duct\s+static\s+set/i, /duct\s+static\s+set/i],
+      aliases: ['supply duct static set point', 'duct static set point', 'duct static setpoint'],
+    },
+    {
+      key: 'rdsp',
+      label: 'Return / Exhaust Duct Static',
+      required: false,
+      ashrae36Name: 'Return Duct Static Pressure',
+      ashrae36Section: 'DOAS',
+      patterns: [/return\s+duct\s+static/i, /exhaust\s+static(?!\s+set)/i, /exhaust\s+duct\s+static/i],
+      aliases: ['return duct static', 'exhaust static', 'exhaust duct static pressure'],
+    },
+    {
+      key: 'satCoolSp',
+      label: 'SAT Cooling Setpoint',
+      required: false,
+      ashrae36Name: 'Supply Air Temperature Cooling Setpoint',
+      ashrae36Section: 'DOAS',
+      patterns: [/cooling\s+supply\s+air\s+set/i, /active\s+discharge\s+temp\s+set/i, /active\s+supply\s+air\s+set/i],
+      aliases: ['cooling supply air set point', 'active discharge temp setpoint', 'sat cooling setpoint'],
+    },
+    {
+      key: 'satHtgSp',
+      label: 'SAT Heating Setpoint',
+      required: false,
+      ashrae36Name: 'Supply Air Temperature Heating Setpoint',
+      ashrae36Section: 'DOAS',
+      patterns: [/heating\s+supply\s+air\s+set/i],
+      aliases: ['heating supply air set point', 'sat heating setpoint'],
+    },
+    {
+      key: 'econSp',
+      label: 'Economizer Setpoint',
+      required: false,
+      ashrae36Name: 'Economizer Setpoint',
+      ashrae36Section: 'DOAS',
+      patterns: [/economizer\s+set\s?point/i, /economizer\s+control\s+temp/i, /oa\s+enable\s+setpoint/i],
+      aliases: ['economizer set point', 'economizer setpoint', 'oa enable setpoint'],
+    },
+    {
+      key: 'ventCfm',
+      label: 'Ventilation CFM',
+      required: false,
+      ashrae36Name: 'Ventilation Airflow',
+      ashrae36Section: 'DOAS',
+      patterns: [/ventilation\s+cfm/i],
+      aliases: ['ventilation cfm', 'ventilation airflow'],
+    },
+    {
+      key: 'ventCfmSp',
+      label: 'Ventilation CFM Setpoint',
+      required: false,
+      ashrae36Name: 'Ventilation Airflow Setpoint',
+      ashrae36Section: 'DOAS',
+      patterns: [/ventilation\s+cfm\s+set/i, /ventilation\s+cfm\s+setpoint/i],
+      aliases: ['ventilation cfm set point', 'ventilation cfm setpoint'],
+    },
+    {
+      key: 'rfCfm',
+      label: 'Return Fan CFM',
+      required: false,
+      ashrae36Name: 'Return Fan Airflow',
+      ashrae36Section: 'DOAS',
+      patterns: [/return\s+fan\s+cfm/i],
+      aliases: ['return fan cfm', 'return fan airflow'],
+    },
+    {
+      key: 'sfCfm',
+      label: 'Supply Fan CFM',
+      required: false,
+      ashrae36Name: 'Supply Fan Airflow',
+      ashrae36Section: 'DOAS',
+      patterns: [/supply\s+fan\s+(?:total\s+)?cfm/i],
+      aliases: ['supply fan cfm', 'supply fan total cfm'],
+    },
+    {
+      key: 'raDamp',
+      label: 'Return Air Damper',
+      required: false,
+      ashrae36Name: 'Return Air Damper Position',
+      ashrae36Section: 'DOAS',
+      patterns: [/return\s+air\s+damper/i, /\bra\s+damper\b/i],
+      aliases: ['return air damper', 'ra damper', 'return damper'],
+    },
+    {
+      key: 'reliefDamp',
+      label: 'Relief Damper',
+      required: false,
+      ashrae36Name: 'Relief Damper Position',
+      ashrae36Section: 'DOAS',
+      patterns: [/relief\s+damper/i, /bldg\s+relief\s+damper/i],
+      aliases: ['relief damper', 'relief damper feedback', 'bldg relief damper control'],
+    },
+    {
+      key: 'rfSpeed',
+      label: 'Return Fan VFD Speed',
+      required: false,
+      ashrae36Name: 'Return Fan Speed',
+      ashrae36Section: 'DOAS',
+      patterns: [/return\s+fan\s+vfd\s+speed/i, /return\s+fan.*speed/i],
+      aliases: ['return fan vfd speed', 'return fan speed', 'rf vfd speed', 'rf speed'],
+    },
+    {
+      key: 'sfAmps',
+      label: 'Supply Fan Amperage',
+      required: false,
+      ashrae36Name: 'Supply Fan Amperage',
+      ashrae36Section: 'DOAS',
+      patterns: [/supply\s+fan\s+amperage/i, /supply\s+fan.*amps/i, /supply\s+fan\s+vfd\s+amps/i],
+      aliases: ['supply fan amperage', 'supply fan amps', 'supply fan vfd amps', 'sf amps'],
+    },
+    {
+      key: 'preheatAirTemp',
+      label: 'Preheat Air Temperature',
+      required: false,
+      ashrae36Name: 'Preheat Air Temperature',
+      ashrae36Section: 'DOAS',
+      patterns: [/preheat\s+air\s+temp/i, /oa\s+pre.?coil\s+temp/i, /pre.?heat\s+coil\s+leaving/i],
+      aliases: ['preheat air temperature', 'preheat air temp', 'oa pre-coil temperature'],
+    },
+    {
+      key: 'clgCoilLvgTemp',
+      label: 'Cooling Coil Leaving Air Temp',
+      required: false,
+      ashrae36Name: 'Cooling Coil Leaving Air Temperature',
+      ashrae36Section: 'DOAS',
+      patterns: [/cooling\s+coil\s+leaving\s+air/i, /clg\s+coil\s+lvg/i, /cooling\s+coil\s+leaving\s+temp/i],
+      aliases: ['cooling coil leaving air temperature', 'cooling coil leaving air temp', 'clg coil leaving temp'],
+    },
+    {
+      key: 'htgCoilLvgTemp',
+      label: 'Heating Coil Leaving Air Temp',
+      required: false,
+      ashrae36Name: 'Heating Coil Leaving Air Temperature',
+      ashrae36Section: 'DOAS',
+      patterns: [/heating\s+coil\s+leaving\s+air/i, /htg\s+coil\s+lvg/i, /heating\s+coil\s+leaving\s+temp/i],
+      aliases: ['heating coil leaving air temperature', 'heating coil leaving air temp', 'htg coil leaving temp'],
+    },
+    // M7 broadcast categories
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: 'DOAS',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: 'DOAS',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: 'DOAS',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
     },
   ],
 
@@ -9047,6 +10208,78 @@ var EM_POINT_CATEGORIES = {
       patterns: [/oa.?damper/i, /outdoor air damper/i, /bypass damper/i, /supply air bypass/i],
       aliases: ['oa damper', 'outdoor air damper', 'bypass damper', 'supply air bypass damper'],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: 'Furnace/VVT',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: 'Furnace/VVT',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: 'Furnace/VVT',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 
   /* ── M3 NEW TYPE: Zone (VVT zone-damper terminal) ───────────────────── */
@@ -9066,8 +10299,8 @@ var EM_POINT_CATEGORIES = {
       required: false,
       ashrae36Name: 'Zone Relative Humidity',
       ashrae36Section: 'VVT Zone',
-      patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i],
-      aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity'],
+      patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i, /ambient.?humidity/i],
+      aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity', 'ambient humidity'],
     },
     {
       key: 'zoneDamper',
@@ -9117,6 +10350,78 @@ var EM_POINT_CATEGORIES = {
       patterns: [/air source vvt/i, /asvvt/i],
       aliases: ['air source vvt', 'asvvt', 'air source vvt msv', 'air source vvt ani'],
     },
+    // M7: broadcast categories — present on all equipment types
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: 'VVT Zone',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: 'VVT Zone',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'ambient humidity',
+      ],
+    },
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: 'VVT Zone',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
   ],
 };
 
@@ -9141,13 +10446,19 @@ function emNormalizePointName(name) {
    and "pump 2" should both match "pump" categories).                    */
 function emNormalizePointNameStrip(name) {
   if (!name) return '';
-  return name
-    .toLowerCase()
-    .replace(/[_\-\/\.#]/g, ' ')
-    .replace(/\b(ahu|asu|rtu)\b/gi, 'ahu')
-    .replace(/\d+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    name
+      .toLowerCase()
+      .replace(/[_\-\/\.#]/g, ' ')
+      .replace(/\b(ahu|asu|rtu)\b/gi, 'ahu')
+      // Strip digit sequences only (letters are preserved so "CHWP-1B" -> "chwp b"
+      // and can match role-letter aliases like 'chwp b vfd status').
+      // M7 goal (Sec Pump 1B Status matching secHWPumpStatus) is met via explicit
+      // alias 'sec pump b status' added to secHWPumpStatus instead of a greedy strip.
+      .replace(/\d+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 /* ── emNormalizePoint ───────────────────────────────────────────────────────
@@ -9169,6 +10480,23 @@ function emNormalizePoint(rawName, equipCategory) {
   return _normResult;
 }
 
+// ── M6: CONTRADICTING_PAIRS for tokenized alias veto (6A) ───────────────
+// Words in the alias -> words in the point NAME that contradict the alias meaning.
+// If aliasTokens contains pair.aliasWord AND nameTokens contains any pair.nameVeto word,
+// the alias match is vetoed. discharge/supply are NOT listed here — they are AHU synonyms.
+var _EM_CONTRADICTING_PAIRS = [
+  { aliasWord: 'chilled', nameVeto: ['hot', 'domestic', 'condenser'] },
+  { aliasWord: 'hot', nameVeto: ['chilled', 'condenser', 'domestic'] },
+  { aliasWord: 'domestic', nameVeto: ['chilled', 'condenser'] },
+  { aliasWord: 'supply', nameVeto: ['return', 'exhaust'] },
+  { aliasWord: 'return', nameVeto: ['supply', 'exhaust'] },
+  { aliasWord: 'exhaust', nameVeto: ['supply', 'return'] },
+  { aliasWord: 'fan', nameVeto: ['pump'] },
+  { aliasWord: 'pump', nameVeto: ['fan'] },
+  { aliasWord: 'heating', nameVeto: ['cooling', 'chilled'] },
+  { aliasWord: 'cooling', nameVeto: ['heating'] },
+];
+
 function emNormalizePointInner(rawName, equipCategory) {
   // ── Exclusion check ──────────────────────────────────────────────────
   for (var ei = 0; ei < EM_EXCLUSION_PATTERNS.length; ei++) {
@@ -9188,6 +10516,13 @@ function emNormalizePointInner(rawName, equipCategory) {
 
   var cats = equipCategory && EM_POINT_CATEGORIES[equipCategory] ? EM_POINT_CATEGORIES[equipCategory] : [];
 
+  // M6 6C (Option A): track whether we are in the no-category all-fallback path.
+  // When equipCategory is unknown, Tier 2 alias matching is SKIPPED entirely —
+  // only Tier 1 (exact canonical) and Tier 3 (regex) fire. This prevents
+  // equipment-specific aliases (e.g. discharge=supply at AHU) from polluting
+  // cross-category lookups where the equipment context is unknown.
+  var _skipTier2 = !cats.length;
+
   // If no category known, try all equipment types
   if (!cats.length) {
     var allCats = Object.keys(EM_POINT_CATEGORIES);
@@ -9201,6 +10536,20 @@ function emNormalizePointInner(rawName, equipCategory) {
 
   for (var ci = 0; ci < cats.length; ci++) {
     var cat = cats[ci];
+
+    // ── negativeGuards check (M6 6B) ─────────────────────────────────
+    // Applied before EVERY return in this loop. If rawName matches any guard
+    // for this category, skip the category entirely (continue to next cat).
+    var _negGuarded = false;
+    if (cat.negativeGuards) {
+      for (var gi = 0; gi < cat.negativeGuards.length; gi++) {
+        if (cat.negativeGuards[gi].test(rawName)) {
+          _negGuarded = true;
+          break;
+        }
+      }
+    }
+    if (_negGuarded) continue;
 
     // ── Tier 1: Exact canonical name match (case-insensitive) ────────
     var canonNorm = emNormalizePointName(cat.ashrae36Name || cat.label);
@@ -9219,38 +10568,71 @@ function emNormalizePointInner(rawName, equipCategory) {
       };
     }
 
-    // ── Tier 2: Standard alias exact match ──────────────────────────
-    var aliases = cat.aliases || [];
-    for (var ai = 0; ai < aliases.length; ai++) {
-      var aliasNorm = emNormalizePointName(aliases[ai]);
-      if (normDisplay === aliasNorm) {
-        return {
-          categoryKey: cat.key,
-          categoryLabel: cat.label,
-          matchTier: 2,
-          confidence: 'high',
-          auditRelevant: true,
-          ashrae36PointName: cat.ashrae36Name,
-          ashrae36Section: cat.ashrae36Section,
-          rawName: rawName,
-          required: cat.required,
-          configFlag: cat.configFlag || null,
-        };
-      }
-      // Alias substring: alias must appear within the normalized name
-      if (aliasNorm.length >= 4 && normDisplay.includes(aliasNorm)) {
-        return {
-          categoryKey: cat.key,
-          categoryLabel: cat.label,
-          matchTier: 2,
-          confidence: 'medium',
-          auditRelevant: true,
-          ashrae36PointName: cat.ashrae36Name,
-          ashrae36Section: cat.ashrae36Section,
-          rawName: rawName,
-          required: cat.required,
-          configFlag: cat.configFlag || null,
-        };
+    // ── Tier 2: Alias matching ───────────────────────────────────────
+    // Skipped entirely when equipCategory is unknown (Option A, M6 6C).
+    if (!_skipTier2) {
+      var aliases = cat.aliases || [];
+      for (var ai = 0; ai < aliases.length; ai++) {
+        var aliasNorm = emNormalizePointName(aliases[ai]);
+        // Tier 2a: exact alias match
+        if (normDisplay === aliasNorm) {
+          return {
+            categoryKey: cat.key,
+            categoryLabel: cat.label,
+            matchTier: 2,
+            confidence: 'high',
+            auditRelevant: true,
+            ashrae36PointName: cat.ashrae36Name,
+            ashrae36Section: cat.ashrae36Section,
+            rawName: rawName,
+            required: cat.required,
+            configFlag: cat.configFlag || null,
+          };
+        }
+        // Tier 2b: tokenized subset match + contradicting-word veto (M6 6A)
+        // Replaces the old substring check (aliasNorm.length >= 4 && normDisplay.includes(aliasNorm)).
+        // Step 1: tokenize
+        var aliasTokens = aliasNorm.split(' ').filter(function (t) {
+          return t.length > 0;
+        });
+        var nameTokens = normDisplay.split(' ').filter(function (t) {
+          return t.length > 0;
+        });
+        // Step 2: all alias tokens must be present in name tokens
+        var allPresent = aliasTokens.every(function (tok) {
+          return nameTokens.indexOf(tok) !== -1;
+        });
+        if (!allPresent) continue;
+        // Step 3: contradicting-word veto
+        var vetoed = false;
+        for (var vp = 0; vp < _EM_CONTRADICTING_PAIRS.length; vp++) {
+          var pair = _EM_CONTRADICTING_PAIRS[vp];
+          if (aliasTokens.indexOf(pair.aliasWord) !== -1) {
+            for (var vv = 0; vv < pair.nameVeto.length; vv++) {
+              if (nameTokens.indexOf(pair.nameVeto[vv]) !== -1) {
+                vetoed = true;
+                break;
+              }
+            }
+          }
+          if (vetoed) break;
+        }
+        if (vetoed) continue;
+        // Step 4: match accepted (confidence medium — name has more words than alias)
+        if (aliasTokens.length > 0) {
+          return {
+            categoryKey: cat.key,
+            categoryLabel: cat.label,
+            matchTier: 2,
+            confidence: 'medium',
+            auditRelevant: true,
+            ashrae36PointName: cat.ashrae36Name,
+            ashrae36Section: cat.ashrae36Section,
+            rawName: rawName,
+            required: cat.required,
+            configFlag: cat.configFlag || null,
+          };
+        }
       }
     }
 
@@ -9274,8 +10656,13 @@ function emNormalizePointInner(rawName, equipCategory) {
     }
 
     // Tier 3b: stripped alias (number-insensitive)
-    for (var ai2 = 0; ai2 < aliases.length; ai2++) {
-      var aliasStripped = emNormalizePointNameStrip(aliases[ai2]);
+    // Skipped in no-category mode (same _skipTier2 gate as Tier 2) — Tier 3b is a
+    // variant of alias matching and must not fire when equipment context is unknown.
+    if (_skipTier2) continue;
+    // Note: aliases array may be undefined if _skipTier2 path skipped the var declaration above.
+    var aliases3b = cat.aliases || [];
+    for (var ai2 = 0; ai2 < aliases3b.length; ai2++) {
+      var aliasStripped = emNormalizePointNameStrip(aliases3b[ai2]);
       if (aliasStripped.length >= 4 && normStripped === aliasStripped) {
         return {
           categoryKey: cat.key,

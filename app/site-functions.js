@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.02.440',
+    date: '2026-06-02',
+    title: 'Equipment Matrix: point-matching quality fix (M1-M8)',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now correctly classifies ~157 previously mis-mapped points -- outdoor airflow no longer lands in zone discharge-flow columns, water-system flow points no longer appear in airflow columns, building static pressure routes to the right column, and cross-system variants (CHW/DHW/alarm) are blocked from hot-water columns.',
+      },
+      {
+        type: 'feature',
+        text: 'ASHRAE 36 compliance scoring now covers DOAS, hot-water pump, chilled-water pump, and broadcast-point equipment types that were previously unscored.',
+      },
+      {
+        type: 'fix',
+        text: 'Several column-display and compliance-scoring engines now share the same improved matching logic -- a point that displays in the correct column also scores correctly for gap analysis.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.02.439',
     date: '2026-06-02',
     title:
