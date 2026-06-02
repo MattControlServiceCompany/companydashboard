@@ -6110,6 +6110,82 @@ function togglePDFRawText() {
       '</pre>';
   }
 }
+// ── OCR image-preprocessing helpers ──────────────────────────────────────────
+// rotateCanvas180: returns a new canvas that is the source rotated 180°.
+// Used by the upside-down heuristic (CHANGE 4).
+function rotateCanvas180(srcCanvas) {
+  const dst = document.createElement('canvas');
+  dst.width = srcCanvas.width;
+  dst.height = srcCanvas.height;
+  const ctx = dst.getContext('2d');
+  ctx.translate(dst.width, dst.height);
+  ctx.rotate(Math.PI);
+  ctx.drawImage(srcCanvas, 0, 0);
+  return dst;
+}
+// binarizeCanvas: Otsu threshold → pure B/W.  Returns a new canvas.
+// Used as a triggered extra pass for low-scoring pages (CHANGE 5).
+function binarizeCanvas(srcCanvas) {
+  const w = srcCanvas.width,
+    h = srcCanvas.height;
+  const dst = document.createElement('canvas');
+  dst.width = w;
+  dst.height = h;
+  const srcCtx = srcCanvas.getContext('2d');
+  const dstCtx = dst.getContext('2d');
+  const imageData = srcCtx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+  // Build grayscale histogram
+  const hist = new Array(256).fill(0);
+  const gray = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const r = data[i * 4],
+      g = data[i * 4 + 1],
+      b = data[i * 4 + 2];
+    const v = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    gray[i] = v;
+    hist[v]++;
+  }
+  // Otsu's method to find optimal threshold
+  const total = w * h;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0,
+    wB = 0,
+    maxVar = 0,
+    threshold = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > maxVar) {
+      maxVar = between;
+      threshold = t;
+    }
+  }
+  // Apply threshold
+  const out = dstCtx.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) {
+    const v = gray[i] > threshold ? 255 : 0;
+    out.data[i * 4] = v;
+    out.data[i * 4 + 1] = v;
+    out.data[i * 4 + 2] = v;
+    out.data[i * 4 + 3] = 255;
+  }
+  dstCtx.putImageData(out, 0, 0);
+  return dst;
+}
+// _countOcrSignals: count digits + dollar signs in a string — used to score
+// the upside-down orientation test (CHANGE 4).
+function _countOcrSignals(txt) {
+  return (txt.match(/[\d$]/g) || []).length;
+}
+// ── end OCR helpers ───────────────────────────────────────────────────────────
 async function extractPDFText(ab, statusCb) {
   try {
     if (typeof pdfjsLib === 'undefined') return null;
@@ -6191,6 +6267,7 @@ async function extractPDFText(ab, statusCb) {
         );
         await worker.setParameters({
           preserve_interword_spaces: '1',
+          user_defined_dpi: '300',
         });
       } catch (workerErr) {
         if (statusCb) statusCb('OCR engine failed to load: ' + workerErr.message);
@@ -6237,11 +6314,15 @@ async function extractPDFText(ab, statusCb) {
       // and preserve_interword_spaces set via setParameters above.
       // Primary passes — 2.5x and 3.5x run first (historically best scores); 2x and 3x
       // only run if the first two don't reach a good score.
+      // PSM-4 (SINGLE_COLUMN) variants are appended after the default passes; scorePage
+      // picks the winner, so this is self-selecting and cannot regress bills that already parse.
       const OCR_PASSES = [
         { scale: 2.5, psm: null, label: '2.5x' },
         { scale: 3.5, psm: null, label: '3.5x' },
         { scale: 2.0, psm: null, label: '2x' },
         { scale: 3.0, psm: null, label: '3x' },
+        { scale: 2.5, psm: '4', label: '2.5x-psm4' },
+        { scale: 3.5, psm: '4', label: '3.5x-psm4' },
       ];
       // Retry passes — only run if primary passes have issues (low score or missing values)
       const OCR_RETRY_PASSES = [
@@ -6260,7 +6341,7 @@ async function extractPDFText(ab, statusCb) {
           { logger: loggerCb || (() => {}) },
           { load_system_dawg: '0', load_freq_dawg: '0' },
         );
-        await w.setParameters({ preserve_interword_spaces: '1' });
+        await w.setParameters({ preserve_interword_spaces: '1', user_defined_dpi: '300' });
         return w;
       };
       // On timeout: terminate the hung worker and create a fresh one.
@@ -6332,7 +6413,7 @@ async function extractPDFText(ab, statusCb) {
           const ctx = canvas.getContext('2d');
           await pg.render({ canvasContext: ctx, viewport: vp }).promise;
           try {
-            const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {};
+            const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
             const t0 = performance.now();
             const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
             const text = ocrResult.data.text;
@@ -6406,7 +6487,7 @@ async function extractPDFText(ab, statusCb) {
             const ctx = canvas.getContext('2d');
             await pg.render({ canvasContext: ctx, viewport: vp }).promise;
             try {
-              const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {};
+              const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
               const t0 = performance.now();
               const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
               const text = ocrResult.data.text;
@@ -6438,6 +6519,97 @@ async function extractPDFText(ab, statusCb) {
             }
           }
         }
+        // ── CHANGE 4: 180° upside-down heuristic ──────────────────────────────
+        // Only fires when primary+retry passes all scored very low (<3).
+        // Renders the page at 2.5x, crops a small strip from the top, and
+        // runs a quick recognize at 0° vs 180°.  If the rotated crop yields
+        // significantly more digits/dollar-signs, we rotate the full canvas
+        // 180° and run a full OCR pass to replace the best result.
+        const ORIENT_SCORE_THRESHOLD = 3;
+        if (bestScore < ORIENT_SCORE_THRESHOLD) {
+          try {
+            if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
+            const pgO = await pdf.getPage(pgNum);
+            const vpO = pgO.getViewport({ scale: 2.5 });
+            const canvasO = document.createElement('canvas');
+            canvasO.width = vpO.width;
+            canvasO.height = vpO.height;
+            const ctxO = canvasO.getContext('2d');
+            await pgO.render({ canvasContext: ctxO, viewport: vpO }).promise;
+            // Crop top 20% strip for a fast orientation probe
+            const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
+            const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
+            const canvas180 = rotateCanvas180(canvasO);
+            // Quick probe: recognize top strip at both orientations
+            const [probe0, probe180] = await Promise.all([
+              recognizeWithTimeout(worker, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
+                result: { data: { text: '' } },
+              })),
+              recognizeWithTimeout(worker, canvas180, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
+                result: { data: { text: '' } },
+              })),
+            ]);
+            const sig0 = _countOcrSignals(probe0.result.data.text);
+            const sig180 = _countOcrSignals(probe180.result.data.text);
+            if (sig180 > sig0 * 1.5 + 3) {
+              // 180° clearly wins — run full OCR on the rotated canvas
+              if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — rotating 180° and re-OCR...');
+              const { result: rotResult } = await recognizeWithTimeout(worker, canvas180, { rotateAuto: true });
+              const rotText = rotResult.data.text;
+              const rotScore = scorePage(rotText);
+              allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-rot180', text: rotText, score: rotScore });
+              passScoreLog.push({
+                page: pgNum,
+                pass: '2.5x-rot180',
+                score: rotScore.toFixed(1),
+                time: '—',
+                chars: rotText.length,
+              });
+              if (rotScore > bestScore || (rotScore === bestScore && rotText.length > bestText.length)) {
+                bestText = rotText;
+                bestScore = rotScore;
+              }
+            }
+          } catch (_orientErr) {
+            /* orientation probe failed — continue with existing best */
+          }
+        }
+        // ── CHANGE 5: Otsu binarization triggered pass ────────────────────────
+        // Only fires when bestScore is still low after all passes including the
+        // orientation check.  Re-renders at 2.5x, binarizes via Otsu threshold,
+        // and OCRs the B/W image.  Kept only if it scores higher than current best.
+        const BINARIZE_SCORE_THRESHOLD = 5;
+        if (bestScore < BINARIZE_SCORE_THRESHOLD) {
+          try {
+            if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
+            const pgB = await pdf.getPage(pgNum);
+            const vpB = pgB.getViewport({ scale: 2.5 });
+            const canvasB = document.createElement('canvas');
+            canvasB.width = vpB.width;
+            canvasB.height = vpB.height;
+            const ctxB = canvasB.getContext('2d');
+            await pgB.render({ canvasContext: ctxB, viewport: vpB }).promise;
+            const binCanvas = binarizeCanvas(canvasB);
+            const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
+            const binText = binResult.data.text;
+            const binScore = scorePage(binText);
+            allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-otsu', text: binText, score: binScore });
+            passScoreLog.push({
+              page: pgNum,
+              pass: '2.5x-otsu',
+              score: binScore.toFixed(1),
+              time: '—',
+              chars: binText.length,
+            });
+            if (binScore > bestScore || (binScore === bestScore && binText.length > bestText.length)) {
+              bestText = binText;
+              bestScore = binScore;
+            }
+          } catch (_binErr) {
+            /* binarize pass failed — continue with existing best */
+          }
+        }
+        // ── end triggered passes ───────────────────────────────────────────────
         pageTexts[pgNum - 1] = bestText;
       }
       await worker.terminate();
@@ -6666,7 +6838,7 @@ async function processPDF(file) {
                 },
                 { load_system_dawg: '0', load_freq_dawg: '0' },
               );
-              await retryWorker.setParameters({ preserve_interword_spaces: '1' });
+              await retryWorker.setParameters({ preserve_interword_spaces: '1', user_defined_dpi: '300' });
             } catch (e) {
               retryWorker = null;
             }
@@ -6729,7 +6901,9 @@ async function processPDF(file) {
                   const ctx = canvas.getContext('2d');
                   await pg.render({ canvasContext: ctx, viewport: vp }).promise;
                   try {
-                    const { result: retryResult } = await recognizeWithTimeout(retryWorker, canvas, {});
+                    const { result: retryResult } = await recognizeWithTimeout(retryWorker, canvas, {
+                      rotateAuto: true,
+                    });
                     retryTexts.push(retryResult.data.text);
                   } catch (e) {
                     if (e._replacementWorker) retryWorker = e._replacementWorker;
