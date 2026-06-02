@@ -6783,9 +6783,7 @@ async function processPDF(file) {
 
           // ── POST-EXTRACTION VERIFICATION: use historical data + logic to fix issues ──
           // Bug b5951068: append parse-error rows (flagged above) so they're never lost.
-          let finalBills = (validBills.length ? validBills : bills.length ? bills : []).concat(
-            _singleDroppedBills || [],
-          );
+          let finalBills = validBills.length > 0 ? validBills.concat(_singleDroppedBills || []) : bills;
           statusMsg('Verifying extraction against historical data...');
           try {
             finalBills = await _postExtractionVerify(finalBills, rule.name, text);

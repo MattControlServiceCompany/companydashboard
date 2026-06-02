@@ -13,14 +13,14 @@ var EM_EQUIP_TYPES = {
   mau: 'ahu',
   'makeup air unit': 'ahu',
   'makeup air': 'ahu',
-  doas: 'ahu',
+  doas: 'doas',
   erv: 'ahu',
   hrv: 'ahu',
   'energy recovery ventilator': 'ahu',
-  'fan coil': 'ahu',
-  fcu: 'ahu',
-  crac: 'ahu',
-  crah: 'ahu',
+  'fan coil': 'fcu',
+  fcu: 'fcu',
+  crac: 'fcu',
+  crah: 'fcu',
   'heat pump': 'ahu',
   wshp: 'ahu',
   gshp: 'ahu',
@@ -43,9 +43,9 @@ var EM_EQUIP_TYPES = {
   'boiler plant': 'hwp',
   hwp: 'hwp',
   blr: 'hwp',
-  furnace: 'hwp',
-  'unit heater': 'hwp',
-  uh: 'hwp',
+  furnace: 'furnace',
+  'unit heater': 'heater',
+  uh: 'heater',
   'chilled water plant': 'chwp',
   'chilled water plant (chillers)': 'chwp',
   'chiller plant': 'chwp',
@@ -56,16 +56,16 @@ var EM_EQUIP_TYPES = {
   'weather station': 'other',
   'no gl36 equipment': 'other',
   'no bas equipment': 'other',
-  // Exhaust fans — map to ahu (nearest audit bucket)
-  'exhaust fan': 'ahu',
+  // Exhaust fans — dedicated ef type
+  'exhaust fan': 'ef',
   // Blower coil units (fan-coil equivalent in data rooms)
-  bcu: 'ahu',
+  bcu: 'fcu',
   // Fan terminal coils — fan-powered terminal equivalent
   ftc: 'fpb',
   // Energy recovery units
   eru: 'ahu',
   // Radiant heating ceiling panels — HW-fed terminal heating
-  rhc: 'hwp',
+  rhc: 'vav',
   // VRF outdoor units
   'vrf outdoor unit': 'ahu',
   'vrf condenser': 'ahu',
@@ -75,16 +75,63 @@ var EM_EQUIP_TYPES = {
   'destratification fans': 'ahu',
   // Fintube heat — HW terminal heating
   'fintube heat': 'hwp',
+  // Tube/infrared heaters
+  'tube heater': 'heater',
+  'infrared heater': 'heater',
+  'radiant heater': 'heater',
+  // VFD integration wrappers
+  'vfd integration': 'controls',
+  // Environmental / weather programs
+  'environmental index': 'sensor',
+  'outside air conditions': 'sensor',
+  'outiside air conditions': 'sensor',
+  'weather station': 'sensor',
+  // Fire / smoke systems
+  'smoke damper': 'fire',
+  'smoke damper monitor': 'fire',
+  // Plumbing / domestic water
+  'domestic flow': 'plumbing',
+  'domestic water': 'plumbing',
+  // Power monitoring
+  generator: 'power',
+  'electric meter': 'power',
+  'power meter': 'power',
+  ups: 'power',
+  ats: 'power',
   // Lighting — recognized category so JOCO-style "Lighting - ADC" parses correctly
   lighting: 'lighting',
   'lighting zone': 'lighting',
   'lighting control': 'lighting',
   // Lighting / shade programs — JOCO Courthouse naming conventions
   glpp: 'lighting',
-  // Non-HVAC equipment — explicitly 'other' so JOCO-style names flip correctly
-  'smoke damper': 'other',
-  'smoke damper monitor': 'other',
-  'environmental index': 'other',
+};
+
+/* ── CATEGORY FRIENDLY LABELS ──
+   Maps internal category keys (from emClassifyEquipType) to human-readable labels
+   shown in the "Equipment Type" column. Used by emFormatCell for isCategory defs. */
+var EM_CATEGORY_LABELS = {
+  ahu: 'AHU / RTU',
+  vav: 'VAV',
+  fpb: 'FPB',
+  ddvav: 'DD-VAV',
+  hwp: 'HW Plant',
+  chwp: 'CHW Plant',
+  ct: 'Cooling Tower',
+  // M3: New specific types — replace generic 'other' for HVAC
+  fcu: 'Fan Coil / VRF',
+  heater: 'Unit Heater',
+  ef: 'Exhaust Fan',
+  doas: 'DOAS / ERV',
+  furnace: 'Furnace / VVT',
+  zone: 'VVT Zone',
+  // M3: Non-HVAC specific categories
+  lighting: 'Lighting',
+  fire: 'Fire / Smoke',
+  power: 'Power / Gen',
+  plumbing: 'Plumbing',
+  controls: 'Controls / VFD',
+  sensor: 'Sensor / Weather',
+  other: 'Other',
 };
 
 /* ── EDIT MODE FLAG ── */
@@ -117,31 +164,33 @@ function emToggleEditMode(btn) {
   emRenderTable(data, _emFilters);
 }
 
-/* ── emToggleViewMode ───────────────────────────────────────────────────────
-   Switches between 'audit' (ASHRAE 36 compliance columns) and 'raw' (raw
-   point name columns). Updates the toggle button label/style and re-renders
-   the table. Also shows/hides the appropriate column-toggle controls.    */
-function emToggleViewMode() {
+/* ── emSetAuditView / emSetRawView ──────────────────────────────────────────
+   Each button selects its own mode directly (no blind toggle). Both buttons
+   stay visible at all times; emSyncViewModeControls handles active/inactive
+   styling. Re-renders the table and shows/hides column controls.           */
+function emSetAuditView() {
   _emDrillBuilding = null;
-  _emViewMode = _emViewMode === 'audit' ? 'raw' : 'audit';
-  var btn = document.getElementById('em-view-mode-btn');
-  if (btn) {
-    if (_emViewMode === 'audit') {
-      btn.textContent = 'Audit View';
-      btn.style.background = 'var(--accent)';
-      btn.style.color = '#fff';
-      btn.style.borderColor = 'transparent';
-    } else {
-      btn.textContent = 'Raw View';
-      btn.style.background = 'var(--s2)';
-      btn.style.color = 'var(--text2)';
-      btn.style.borderColor = 'var(--border)';
-    }
-  }
+  _emViewMode = 'audit';
   emSyncViewModeControls();
   var data = emLoadMatrix(window._emActivePid);
   if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
+}
+function emSetRawView() {
+  _emDrillBuilding = null;
+  _emViewMode = 'raw';
+  emSyncViewModeControls();
+  var data = emLoadMatrix(window._emActivePid);
+  if (!data) return; // DB not ready yet — user will re-click after load
+  emRenderTable(data, _emFilters);
+}
+/* Legacy alias — kept in case any caller still uses emToggleViewMode()    */
+function emToggleViewMode() {
+  if (_emViewMode === 'audit') {
+    emSetRawView();
+  } else {
+    emSetAuditView();
+  }
 }
 
 /* ── emSetSummaryView ───────────────────────────────────────────────────────
@@ -183,38 +232,46 @@ function emExitDrillBuilding(pid) {
 }
 
 /* ── emSyncViewModeControls ─────────────────────────────────────────────────
-   Shows/hides toolbar controls based on current _emViewMode.             */
+   Shows/hides toolbar controls based on current _emViewMode.
+   Manages two always-visible Audit/Raw buttons (#em-audit-btn, #em-raw-btn):
+   the active one gets accent fill; the inactive one gets btn-ghost styling
+   (visible 1px border, transparent bg, text2 color).                      */
 function emSyncViewModeControls() {
   var rawToggles = document.getElementById('em-raw-col-toggles');
   var dynControls = document.getElementById('em-dyn-col-controls');
   var auditInfo = document.getElementById('em-audit-col-info');
   var summaryBtn = document.getElementById('em-summary-btn');
-  var viewModeBtn = document.getElementById('em-view-mode-btn');
+  var auditBtn = document.getElementById('em-audit-btn');
+  var rawBtn = document.getElementById('em-raw-btn');
+
+  // Helper: set active accent style on a button
+  function setActive(btn) {
+    if (!btn) return;
+    btn.style.background = 'var(--accent)';
+    btn.style.color = '#fff';
+    btn.style.borderColor = 'transparent';
+  }
+  // Helper: set inactive ghost style on a button
+  function setInactive(btn) {
+    if (!btn) return;
+    btn.style.background = 'transparent';
+    btn.style.color = 'var(--text2)';
+    btn.style.borderColor = 'var(--border2)';
+  }
+
   if (_emViewMode === 'audit') {
     if (rawToggles) rawToggles.style.display = 'none';
     if (dynControls) dynControls.style.display = 'none';
     if (auditInfo) auditInfo.style.display = 'inline-flex';
-    if (viewModeBtn) {
-      viewModeBtn.textContent = 'Audit View';
-      viewModeBtn.style.background = 'var(--accent)';
-      viewModeBtn.style.color = '#fff';
-      viewModeBtn.style.borderColor = 'transparent';
-    }
-    if (summaryBtn) {
-      summaryBtn.style.background = 'var(--s2)';
-      summaryBtn.style.color = 'var(--text2)';
-      summaryBtn.style.borderColor = 'var(--border)';
-    }
+    setActive(auditBtn);
+    setInactive(rawBtn);
+    setInactive(summaryBtn);
   } else if (_emViewMode === 'summary') {
     if (rawToggles) rawToggles.style.display = 'none';
     if (dynControls) dynControls.style.display = 'none';
     if (auditInfo) auditInfo.style.display = 'none';
-    if (viewModeBtn) {
-      viewModeBtn.textContent = 'Audit View';
-      viewModeBtn.style.background = 'var(--s2)';
-      viewModeBtn.style.color = 'var(--text2)';
-      viewModeBtn.style.borderColor = 'var(--border)';
-    }
+    setInactive(auditBtn);
+    setInactive(rawBtn);
     if (summaryBtn) {
       summaryBtn.style.background = 'var(--accent)';
       summaryBtn.style.color = '#fff';
@@ -225,17 +282,9 @@ function emSyncViewModeControls() {
     if (rawToggles) rawToggles.style.display = 'inline-flex';
     if (dynControls) dynControls.style.display = 'inline-flex';
     if (auditInfo) auditInfo.style.display = 'none';
-    if (viewModeBtn) {
-      viewModeBtn.textContent = 'Raw View';
-      viewModeBtn.style.background = 'var(--s2)';
-      viewModeBtn.style.color = 'var(--text2)';
-      viewModeBtn.style.borderColor = 'var(--border)';
-    }
-    if (summaryBtn) {
-      summaryBtn.style.background = 'var(--s2)';
-      summaryBtn.style.color = 'var(--text2)';
-      summaryBtn.style.borderColor = 'var(--border)';
-    }
+    setInactive(auditBtn);
+    setActive(rawBtn);
+    setInactive(summaryBtn);
   }
 }
 
@@ -609,12 +658,34 @@ function emDetectColMap(headerRow) {
 }
 
 // Parse a BACnet path from WebCTRL (e.g. "/Johnson County/Courthouse/Fire/...")
-// Returns the second path segment as the building name (first is the org/county level).
+// Returns the building name.  Uses a CONSERVATIVE / WHITELIST approach to avoid
+// mistakenly expanding department/area segments into the building name:
+//
+//   Default:  building = parts[1]  (correct for ALL standard JOCO paths)
+//   Exception: extend to parts[1] + '/' + parts[2] ONLY when all three conditions hold:
+//     1. parts[1] matches the known MedAct-station nesting pattern (/^medact\s*\d+/i)
+//     2. parts[2] exists and is non-empty
+//     3. parts[2] is NOT a floor/level segment (emIsFloorSegment returns false)
+//   This yields "MedAct 51/SS Olathe" for nested MedAct campus paths while leaving
+//   every other building — including "Jo Co Northeast Offices" — exactly as parts[1].
+//
+// Examples:
+//   "/Johnson County/Courthouse/First Floor"                   → "Courthouse"
+//   "/Johnson County/Jo Co Northeast Offices/Mental Health/…"  → "Jo Co Northeast Offices"
+//   "/New Century Complex/MedAct 51/SS Olathe/Support Services"→ "MedAct 51/SS Olathe"
+//   "/New Century Complex/MedAct 1131 Shawnee/First Floor/…"   → "MedAct 1131 Shawnee"
 function emParseBACnetBuilding(pathStr) {
   if (!pathStr) return '';
   var parts = pathStr.replace(/^\//, '').split('/');
-  // Return index 1 (building) if it exists, else index 0
-  return (parts[1] || parts[0] || '').trim();
+  if (parts.length < 2) return (parts[0] || '').trim();
+  var p1 = (parts[1] || '').trim();
+  if (!p1) return '';
+  // MedAct-station nesting: extend to two segments only for the known pattern.
+  var p2 = parts.length > 2 ? (parts[2] || '').trim() : '';
+  if (/^medact\s*\d+/i.test(p1) && p2 && !emIsFloorSegment(p2)) {
+    return p1 + '/' + p2;
+  }
+  return p1;
 }
 
 // Parse a WebCTRL Control Program name.
@@ -636,7 +707,9 @@ function emParseControlProgram(cpStr) {
   var firstCategory = emClassifyEquipType(firstPart);
   var isKnownType =
     firstCategory !== 'other' ||
-    /^(smoke|environmental|exhaust|weather|fire|generator|elevator|irrigation)/i.test(firstPart);
+    /^(smoke|environmental|exhaust|weather|fire|generator|elevator|irrigation|outside air|outiside air)/i.test(
+      firstPart,
+    );
   if (isKnownType) {
     return { location: secondPart, equipName: firstPart };
   }
@@ -731,7 +804,10 @@ function emClassifyEquipType(equipTypeStr) {
   if (key in EM_EQUIP_TYPES) return EM_EQUIP_TYPES[key];
 
   // ── C. Substring scan of EM_EQUIP_TYPES keys ──
+  // Skip patterns of 2 chars or fewer — word-boundary regex handles them safely below
+  // and short keys false-match inside longer words (e.g. 'ct' inside 'MedAct', 'uh' inside 'touch').
   for (var pattern in EM_EQUIP_TYPES) {
+    if (pattern.length <= 2) continue;
     if (key.indexOf(pattern) !== -1) return EM_EQUIP_TYPES[pattern];
   }
 
@@ -740,12 +816,14 @@ function emClassifyEquipType(equipTypeStr) {
   if (/\bahu\b|air.?hand/i.test(key)) return 'ahu';
   if (/\brtu\b/i.test(key)) return 'ahu';
   if (/\bmau\b/i.test(key)) return 'ahu';
-  if (/\bdoas\b/i.test(key)) return 'ahu';
+  // M3: DOAS is its own type (dedicated energy recovery ventilation unit)
+  if (/\bdoas\b/i.test(key)) return 'doas';
   if (/\berv\b/i.test(key)) return 'ahu';
   if (/\bhrv\b/i.test(key)) return 'ahu';
-  if (/\bfcu\b/i.test(key)) return 'ahu';
-  if (/\bcrac\b/i.test(key)) return 'ahu';
-  if (/\bcrah\b/i.test(key)) return 'ahu';
+  // M3: FCU/CRAC/CRAH are their own fcu type
+  if (/\bfcu\b/i.test(key)) return 'fcu';
+  if (/\bcrac\b/i.test(key)) return 'fcu';
+  if (/\bcrah\b/i.test(key)) return 'fcu';
   if (/roof.?top/i.test(key)) return 'ahu';
   if (/make.?up.?air/i.test(key)) return 'ahu';
   if (/heat.?pump/i.test(key)) return 'ahu';
@@ -756,14 +834,15 @@ function emClassifyEquipType(equipTypeStr) {
   // misclassifying combo names like "VAV-11/EF-3" as ahu/ddvav.
   if (/vav|variable.?air.?vol/i.test(key)) return 'vav';
   if (/\bvas[\s\-]?\d/i.test(key)) return 'vav';
-  // Exhaust fans: short-code EF-N format
-  if (/\bef[-\s]?\d/i.test(key)) return 'ahu';
+  // Exhaust fans: EF-N / EF-KT04 / Ventilation-EF-XX style — M3: dedicated 'ef' type
+  if (/\bef[-\s]?[\da-z]/i.test(key)) return 'ef'; // EF-1, EF-KT04, EF-OR02
+  if (/exhaust.?fan/i.test(key)) return 'ef';
   // Make-up air units with suffix (MUA-KT01, MUA-1, etc.)
   if (/\bmua[-\s]?(?:\d|[a-z])/i.test(key)) return 'ahu';
   // Energy recovery units (ERU-1 format)
   if (/\beru[-\s]?\d/i.test(key)) return 'ahu';
-  // Blower coil units (BCU-1A format)
-  if (/\bbcu[-\s]?\d/i.test(key)) return 'ahu';
+  // Blower coil units (BCU-1A format) — M3: fcu type
+  if (/\bbcu[-\s]?\d/i.test(key)) return 'fcu';
   // Stairwell pressurization fans (SPF-1)
   if (/\bspf[-\s]?\d/i.test(key)) return 'ahu';
   // VRF outdoor condensing units
@@ -780,19 +859,39 @@ function emClassifyEquipType(equipTypeStr) {
   if (/\bboiler\b/i.test(key)) return 'hwp';
   if (/\bhwp\b/i.test(key)) return 'hwp';
   if (/\bblr\b/i.test(key)) return 'hwp';
-  if (/\bfurnace\b/i.test(key)) return 'hwp';
-  if (/unit.?heater/i.test(key)) return 'hwp';
-  if (/\buh[\-\s]?\d/i.test(key)) return 'hwp';
+  // M3: Furnace is its own type
+  if (/\bfurnace\b/i.test(key)) return 'furnace';
+  // M3: Unit/tube/infrared heaters — heater type
+  if (/unit.?heater|tube.?heater|infrared.?heater|radiant.?heater/i.test(key)) return 'heater';
+  if (/\buh[-\s]?[\da-z]/i.test(key)) return 'heater'; // UH-1, UH-5A
+  if (/\bcuh[-\s]?[\da-z]/i.test(key)) return 'heater'; // CUH-1, CUH-2 (cabinet unit heater)
+  if (/\bguh[-\s]?[\da-z]/i.test(key)) return 'heater'; // GUH-East (gas unit heater)
+  if (/\btuh[-\s]?\d/i.test(key)) return 'heater'; // tube unit heater variant
+  if (/\bigh[-\s]?\d/i.test(key)) return 'heater'; // infrared gas heater
+  if (/\btth[-\s]?\d/i.test(key)) return 'heater'; // tube type heater
   if (/hot.?water.*boil/i.test(key)) return 'hwp';
   if (/heating.?water/i.test(key)) return 'hwp';
-  // Radiant heating ceiling panels (RHC-0101 format)
-  if (/\brhc[-\s]?\d/i.test(key)) return 'hwp';
+  // Radiant heating ceiling panels (RHC-0101 format) — M3: map to vav (terminal)
+  if (/\brhc[-\s]?\d/i.test(key)) return 'vav';
   if (/\bchiller\b/i.test(key)) return 'chwp';
   if (/\bchwp\b/i.test(key)) return 'chwp';
   if (/chilled.?water/i.test(key)) return 'chwp';
   if (/chill|chw.*plant/i.test(key)) return 'chwp';
   if (/cool.*tower/i.test(key)) return 'ct';
-  if (/\bcwp\b/i.test(key)) return 'ct';
+  // Word-boundary CT guard — prevents 'ct' inside 'MedAct' from matching
+  if (/\bct\b/i.test(key)) return 'ct';
+  // M3: Non-HVAC specific categories
+  if (/outside.?air.?condition/i.test(key)) return 'sensor';
+  if (/outiside.?air.?condition/i.test(key)) return 'sensor'; // common typo in JOCO data
+  if (/environmental.?index/i.test(key)) return 'sensor';
+  if (/weather.?station/i.test(key)) return 'sensor';
+  if (/smoke.?damper/i.test(key)) return 'fire';
+  if (/fire.?alarm|fire.?panel/i.test(key)) return 'fire';
+  if (/\bgenerator\b/i.test(key)) return 'power';
+  if (/electric.?meter|power.?meter|energy.?meter/i.test(key)) return 'power';
+  if (/\bups\b|\bats\b/i.test(key)) return 'power';
+  if (/domestic.?water|domestic.?flow/i.test(key)) return 'plumbing';
+  if (/vfd.?integration|vfd.?monitor/i.test(key)) return 'controls';
   // Lighting — general keyword
   if (/\blighting\b/i.test(key)) return 'lighting';
   // Lighting / shade programs by naming convention (JOCO Courthouse)
@@ -801,18 +900,23 @@ function emClassifyEquipType(equipTypeStr) {
   if (/^glpp-\d/i.test(key)) return 'lighting'; // e.g. "GLPP-21-1A"
   // LZ-NN-* (lighting zones) — starts with LZ- followed by digits
   if (/^\[?lz[-.]?\d/i.test(key)) return 'lighting'; // "LZ-01-0", "[LZ.51][EXT-1]..."
-  // Zone-N / Zone N Color / Zone-F3-7 (lighting zone programs)
-  // Anchor tightly: "Zone" followed by hyphen-digit or space-digit (not "Zone Temp" / "Zone Damper")
-  if (/^zone[-\s]\d/i.test(key)) return 'lighting'; // "Zone-1", "Zone 9D Color"
-  if (/^zone-[a-f]\d/i.test(key)) return 'lighting'; // "Zone-F3-7" style
+  // Zone naming — M3 FIX: replace old overly-broad rules with specific ones
+  // Zone-F3-7 style (letter+digit+hyphen+digit = VVT zone-damper terminal)
+  if (/^zone-[a-f]\d+[-\s]\d+/i.test(key)) return 'zone'; // "Zone-F3-7", "Zone-F1-1"
+  // Zone-F3 style (letter+digit only, no second segment = furnace/air source unit)
+  if (/^zone-[a-f]\d+$/i.test(key)) return 'furnace'; // "Zone-F3"
+  // "Zone N Color" style (smoke zone indicator programs)
+  if (/^zone\s+\d+[a-z]?\s+color$/i.test(key)) return 'fire'; // "Zone 9 Color"
+  // "Zone N-M" style (VVT zone terminal, e.g. "Zone 3-5")
+  if (/^zone\s+\d+-\d+$/i.test(key)) return 'ddvav'; // "Zone 3-5"
+  // Zone-N / Zone N (generic lighting zone — only plain numeric suffix, no letter-floor)
+  if (/^zone[-\s]\d+[a-z]?(?:\s+|$)/i.test(key) && !/^zone-[a-f]\d/i.test(key)) return 'lighting'; // "Zone-1", "Zone 9D Color"
   // S-NN-* (shade zone programs) — two-digit shade code
   if (/^s-\d{2}[-\s]/i.test(key)) return 'lighting'; // "S-01-0", "S-09-4B"
   // Shades-* and Shades_* (alternate shade format)
   if (/^(?:\w+\s+)?shades[-_]/i.test(key)) return 'lighting'; // "Shades-00-2A", "West Shades_03-1B"
   // EXT-* (exterior lighting zones) — letter code format
   if (/^ext-[a-z]-/i.test(key)) return 'lighting'; // "EXT-A-0", "EXT-B-4B"
-  // Smoke damper — explicitly 'other' but recognized for JOCO-style flip
-  if (/smoke.?damper/i.test(key)) return 'other';
 
   // ── E. Fuzzy keyword scan (last resort) ──
   var fuzzyMap = [
@@ -823,15 +927,26 @@ function emClassifyEquipType(equipTypeStr) {
     ['boiler', 'hwp'],
     ['cooling tower', 'ct'],
     ['pump', 'hwp'],
-    ['fan coil', 'ahu'],
+    ['fan coil', 'fcu'],
     ['rooftop', 'ahu'],
     ['air handler', 'ahu'],
-    ['exhaust fan', 'ahu'],
+    ['exhaust fan', 'ef'],
     ['destratification', 'ahu'],
-    ['blower coil', 'ahu'],
+    ['blower coil', 'fcu'],
     ['radiant heat', 'hwp'],
     ['vrf', 'ahu'],
     ['lighting', 'lighting'],
+    ['unit heater', 'heater'],
+    ['tube heater', 'heater'],
+    ['infrared', 'heater'],
+    ['furnace', 'furnace'],
+    ['doas', 'doas'],
+    ['smoke', 'fire'],
+    ['generator', 'power'],
+    ['domestic', 'plumbing'],
+    ['outside air conditions', 'sensor'],
+    ['environmental index', 'sensor'],
+    ['weather station', 'sensor'],
   ];
   for (var fi = 0; fi < fuzzyMap.length; fi++) {
     if (key.indexOf(fuzzyMap[fi][0]) !== -1) return fuzzyMap[fi][1];
@@ -839,6 +954,95 @@ function emClassifyEquipType(equipTypeStr) {
 
   // All unrecognized types (including weather stations, etc.) are kept as 'other'
   return 'other';
+}
+
+/* ── emVerifyTypeByPoints ────────────────────────────────────────────────────
+   M3: Point-signature verification pass. Called after grouping is complete,
+   when the full point set for an equipment group is known. Inspects the
+   lowercased point names stored in group.pointValues and returns a refined
+   type string, or the group's existing category if no signature matches.
+
+   Rules are evaluated in priority order — first match wins.               */
+function emVerifyTypeByPoints(group) {
+  var provisional = group.category || 'other';
+  var ptKeys = Object.keys(group.pointValues || {});
+  if (ptKeys.length === 0) return provisional;
+
+  // Build a single lowercased space-joined string for quick regex scanning
+  var pts = ptKeys.map(function (k) {
+    return k.toLowerCase();
+  });
+  var ptStr = pts.join('\n'); // newline-separated so anchors don't bleed across names
+
+  function hasPoint(re) {
+    for (var i = 0; i < pts.length; i++) {
+      if (re.test(pts[i])) return true;
+    }
+    return false;
+  }
+
+  var hasZoneTemp = hasPoint(/zone.?temp|room.?temp|space.?temp/);
+  var hasSupplyFan = hasPoint(/supply fan/);
+  var hasAirFlow = hasPoint(/air.?flow|flow control|flow input|\bcfm\b/);
+  var hasTermFan = hasPoint(/\bfan\b/) && !hasPoint(/supply fan|exhaust fan|return fan/);
+
+  // 1. Fire/smoke: tiny point set with smoke zone BNI (not an HVAC unit)
+  if (ptKeys.length <= 2 && hasPoint(/smoke zone.*bni/)) return 'fire';
+
+  // 2. VFD integration wrapper: drive telemetry but no zone temp or supply fan
+  if (
+    hasPoint(/output frequency|drive temperature|motor current|motor torque|motor kw/) &&
+    !hasZoneTemp &&
+    !hasSupplyFan
+  )
+    return 'controls';
+
+  // 3. VVT zone-damper terminal: Air Source VVT + Zone Damper + zone temp, NO airflow
+  if (hasPoint(/air source vvt/) && hasPoint(/zone damper/) && hasZoneTemp && !hasAirFlow) return 'zone';
+
+  // 4. VVT furnace/air source: VVT Mode + Zone Communications Failure + supply fan + DX cooling
+  if (hasPoint(/vvt mode/) && hasPoint(/zone communications failure/) && hasSupplyFan && hasPoint(/cooling stage 1/))
+    return 'furnace';
+
+  // 5. DOAS/ERV: energy recovery wheel + supply fan + building pressure
+  if (hasPoint(/energy recovery wheel|energy wheel/) && hasSupplyFan && hasPoint(/building pressure/)) return 'doas';
+
+  // 6. Dual-deck VAV: cold deck supply or air source cold deck + hot deck + zone damper, no airflow sensor
+  if (
+    (hasPoint(/cold deck supply|air source cold deck/) || hasPoint(/hot deck/)) &&
+    hasPoint(/zone damper/) &&
+    !hasAirFlow
+  )
+    return 'ddvav';
+
+  // 7. Fan-powered box (FPB): airflow + terminal fan + heating valve + air source mode
+  if (hasAirFlow && hasTermFan && hasPoint(/heating valve|hw valve|reheat valve/) && hasPoint(/air source mode/))
+    return 'fpb';
+
+  // 8. VAV: airflow + damper position + air source mode, no terminal fan
+  if (hasAirFlow && hasPoint(/damper position|zone damper/) && hasPoint(/air source mode/) && !hasTermFan) return 'vav';
+
+  // 9. FCU (Daikin VRF): gas pipe temperature + (fan speed or daikin alarm)
+  if (hasPoint(/gas pipe temperature/) && (hasPoint(/fan speed/) || hasPoint(/daikin.*alarm/))) return 'fcu';
+
+  // 10. FCU (generic hydronic fan coil): zone temp + cooling/heating valve, no airflow, no supply fan
+  if (
+    hasZoneTemp &&
+    (hasPoint(/cooling valve|chw valve|chilled water valve/) || hasPoint(/heating valve/)) &&
+    !hasAirFlow &&
+    !hasSupplyFan
+  )
+    return 'fcu';
+
+  // 11. Tube/radiant heater: tube heater or unit heater points
+  if (hasPoint(/tube heater (enable|status|amperage)/)) return 'heater';
+  if (hasPoint(/unit heater (enable|status)/) && !hasTermFan) return 'heater';
+
+  // 12. RTU (name-only AHU with DX cooling): supply fan + DX staging + zone temp, no VVT
+  if (hasSupplyFan && hasPoint(/cooling stage 1/) && hasZoneTemp && !hasPoint(/vvt mode/)) return 'ahu';
+
+  // No signature match — keep provisional name-pass classification
+  return provisional;
 }
 
 function emMapPointToColumn(pointName, pointType, equipCategory) {
@@ -887,7 +1091,10 @@ function emExtractEquipmentGroups(rows, colMap) {
 
   // ── WebCTRL 14-column point-list format ──
   // Each row is a single BACnet point. Multiple rows share the same Control Program (col 1).
-  // Group by building + Control Program name. Parse location and equipment name from the CP string.
+  // Milestone 2: equipName = the FULL Control Program string (no longer split into
+  // location + equipment tokens). Each control program is one equipment row.
+  // Classification still uses the full CP string — emClassifyEquipType handles both
+  // standard ("Supply Duct - Air Handling Unit B1") and JOCO-style ("Cooling Towers - ADC").
   if (colMap.format === 'webctrl') {
     for (var wi = 0; wi < rows.length; wi++) {
       var wrow = rows[wi];
@@ -899,30 +1106,72 @@ function emExtractEquipmentGroups(rows, colMap) {
       if (!controlProgram) continue;
 
       var building = emParseBACnetBuilding(bacnetPath);
-      // Extract floor from BACnet path — use the last segment after the building level.
-      // This handles variable-depth paths: standard 3-segment paths are unaffected;
-      // 4-segment paths like /Org/Building/Station/Floor correctly use the last segment.
+      // Extract floor from BACnet path — use the segment after the building portion.
+      // Derive segment count from emParseBACnetBuilding's result: if the building name
+      // contains '/' it consumed 2 path segments (MedAct nested), otherwise 1.
+      // This keeps floor-search aligned with the conservative building parser above.
       var bacnetParts = bacnetPath.replace(/^\//, '').split('/');
-      // Left-to-right scan from index 2 (after project and building).
-      // Takes the first segment that passes emIsFloorSegment(), so a real floor
-      // at index 2 is found even when a sub-node at index 3+ is an equipment category.
+      var wBldgSegCount = building.indexOf('/') !== -1 ? 2 : 1;
+      // Floor search begins at the segment immediately after the building portion
       var wfloor = '';
-      for (var si = 2; si < bacnetParts.length; si++) {
+      for (var si = 1 + wBldgSegCount; si < bacnetParts.length; si++) {
         if (bacnetParts[si] && emIsFloorSegment(bacnetParts[si].trim())) {
           wfloor = bacnetParts[si].trim();
           break;
         }
       }
-      var parsed = emParseControlProgram(controlProgram);
-      var location = parsed.location;
-      var equipName = parsed.equipName || controlProgram;
 
-      // Infer equipment type from the equipment name portion
-      // emClassifyEquipType always returns a non-null string now — no rows are filtered
-      var category = emClassifyEquipType(equipName);
+      // Milestone 2: equipName = full Control Program string (no split)
+      var equipName = controlProgram;
+      // location is no longer split from equipName; retain empty string for compatibility
+      var location = '';
 
-      var groupKey = building + '||' + location + '||' + equipName;
-      if (!groups.has(groupKey)) {
+      // Classify using the parsed token from emParseControlProgram rather than the full
+      // CP string. The existing emClassifyEquipType was designed for single-token names
+      // and produces false positives on full CP strings via its substring scan
+      // (e.g. "services" contains "erv"→ahu, "MedAct" contains "ct"→ct).
+      // Passing the parsed equipName token avoids these collisions.
+      // M3 will replace this with a point-signature classifier anyway.
+      var _cpParsed = emParseControlProgram(controlProgram);
+      var category = emClassifyEquipType(_cpParsed.equipName || controlProgram);
+
+      // Group key: building + full control program. Location is no longer part of key.
+      // In JOCO WebCTRL each control program string is unique per building (it encodes
+      // both equipment type and building abbreviation), so collisions are not expected in
+      // normal data.  The guard below detects the rare case where the same key would be
+      // produced for a LOGICALLY DIFFERENT equipment (i.e. the stored group has a different
+      // bacnetPath root) and appends a numeric disambiguator to prevent silent point loss.
+      var groupKey = building + '||' + equipName;
+      if (groups.has(groupKey)) {
+        // Key already exists — check if it's from the same bacnetPath root (safe merge) or
+        // a distinct logical equipment (collision that would lose points).
+        var _existingGroup = groups.get(groupKey);
+        var _existingPathRoot = _existingGroup.bacnetPathRoot || '';
+        var _thisPathRoot = bacnetPath.split('/').slice(0, 3).join('/');
+        if (_existingPathRoot && _existingPathRoot !== _thisPathRoot) {
+          // Genuine collision from a different path: append disambiguator
+          var _disambig = 2;
+          while (groups.has(groupKey + '||#' + _disambig)) {
+            _disambig++;
+          }
+          groupKey = groupKey + '||#' + _disambig;
+          // Fall through to create a new group below
+          groups.set(groupKey, {
+            building: building,
+            floor: wfloor,
+            location: location,
+            equipName: equipName,
+            equipTypeStr: equipName,
+            category: category,
+            bacnetPathRoot: _thisPathRoot,
+            checkValues: {},
+            pointValues: {},
+            colMap: colMap,
+          });
+        }
+        // else: same path root — normal multi-point accumulation, use existing group
+      } else {
+        var _thisPathRoot2 = bacnetPath.split('/').slice(0, 3).join('/');
         groups.set(groupKey, {
           building: building,
           floor: wfloor,
@@ -930,6 +1179,7 @@ function emExtractEquipmentGroups(rows, colMap) {
           equipName: equipName,
           equipTypeStr: equipName,
           category: category,
+          bacnetPathRoot: _thisPathRoot2,
           checkValues: {},
           pointValues: {},
           colMap: colMap,
@@ -975,6 +1225,32 @@ function emExtractEquipmentGroups(rows, colMap) {
         }
       }
     }
+    // ── M3: Point-signature verification pass (WebCTRL format) ──
+    // After all rows are consumed and every group has its full point set,
+    // run the signature verifier to override name-pass classification for
+    // groups whose type is ambiguous or known to mis-classify by name alone.
+    groups.forEach(function (grp) {
+      var provisionalCat = grp.category || 'other';
+      // Run verifier when category is 'other', or is one of the types that may be
+      // refined once we have the complete point signature.
+      var needsVerify =
+        provisionalCat === 'other' ||
+        provisionalCat === 'ahu' ||
+        provisionalCat === 'furnace' ||
+        provisionalCat === 'zone' ||
+        provisionalCat === 'fcu' ||
+        provisionalCat === 'heater' ||
+        provisionalCat === 'vav' ||
+        provisionalCat === 'fpb' ||
+        provisionalCat === 'ddvav' ||
+        provisionalCat === 'doas';
+      if (needsVerify) {
+        var refined = emVerifyTypeByPoints(grp);
+        if (refined !== provisionalCat) {
+          grp.category = refined;
+        }
+      }
+    });
     return groups;
   }
 
@@ -1024,6 +1300,27 @@ function emExtractEquipmentGroups(rows, colMap) {
       }
     }
   }
+  // ── M3: Point-signature verification pass (enriched format) ──
+  groups.forEach(function (grp) {
+    var provisionalCat = grp.category || 'other';
+    var needsVerify =
+      provisionalCat === 'other' ||
+      provisionalCat === 'ahu' ||
+      provisionalCat === 'furnace' ||
+      provisionalCat === 'zone' ||
+      provisionalCat === 'fcu' ||
+      provisionalCat === 'heater' ||
+      provisionalCat === 'vav' ||
+      provisionalCat === 'fpb' ||
+      provisionalCat === 'ddvav' ||
+      provisionalCat === 'doas';
+    if (needsVerify) {
+      var refined = emVerifyTypeByPoints(grp);
+      if (refined !== provisionalCat) {
+        grp.category = refined;
+      }
+    }
+  });
   return groups;
 }
 
@@ -1112,7 +1409,19 @@ function emLoadMatrix(projId) {
   // so null never reaches the empty-state branch there. Other callers
   // (emToggleEditMode, emToggleViewMode, etc.) have explicit null guards below.
   if (window.DB && !window.DB.isReady()) return null;
-  return sget('en_eqmatrix_' + projId, { rows: [], importedAt: null, buildings: [] });
+  var _emData = sget('en_eqmatrix_' + projId, { rows: [], importedAt: null, buildings: [] });
+  // Back-compat shim (M2): the identity column key was renamed from 'equipType' to 'category'.
+  // Pre-M2 stored rows that have equipType but no category will show '--' in the Equipment Type
+  // column without this shim.  Patch at load time so no migration is needed.
+  if (_emData && _emData.rows) {
+    for (var _bci = 0; _bci < _emData.rows.length; _bci++) {
+      var _bcrow = _emData.rows[_bci];
+      if (_bcrow && (!_bcrow.category || _bcrow.category === '') && _bcrow.equipType) {
+        _bcrow.category = _bcrow.equipType;
+      }
+    }
+  }
+  return _emData;
 }
 
 function emSaveMatrix(projId, data) {
@@ -1163,7 +1472,29 @@ function emMergeIntoMatrix(existingData, newRows) {
     }
   }
   // ── Sort rows: building alphabetically, then HVAC types before non-HVAC, then equipment name ──
-  var _emTypePriority = { ahu: 0, vav: 1, fpb: 2, ddvav: 3, hwp: 4, chwp: 5, ct: 6, lighting: 7, other: 8 };
+  // M3: expanded priority map — new HVAC types slot in after their nearest equivalent
+  var _emTypePriority = {
+    ahu: 0,
+    doas: 1,
+    vav: 2,
+    fpb: 3,
+    ddvav: 4,
+    zone: 5,
+    furnace: 6,
+    fcu: 7,
+    heater: 8,
+    ef: 9,
+    hwp: 10,
+    chwp: 11,
+    ct: 12,
+    lighting: 13,
+    fire: 14,
+    power: 15,
+    plumbing: 16,
+    controls: 17,
+    sensor: 18,
+    other: 19,
+  };
   merged.sort(function (a, b) {
     var ab = (a.building || '').toLowerCase();
     var bb = (b.building || '').toLowerCase();
@@ -1461,14 +1792,21 @@ function emCalcSummaryStats(rows) {
     lighting = 0,
     other = 0,
     live = 0;
+  // M3: new type buckets for stats bar
+  var _hvacNewTypes = { doas: 0, fcu: 0, heater: 0, ef: 0, furnace: 0, zone: 0 };
+  var _nonHvacTypes = { fire: 0, power: 0, plumbing: 0, controls: 0, sensor: 0 };
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (r.building) buildings[r.building] = true;
     if (r.category === 'ahu') ahu++;
-    if (r.category === 'vav' || r.category === 'fpb' || r.category === 'ddvav') vav++;
+    // M3: VAV family now includes zone (VVT zone terminals)
+    if (r.category === 'vav' || r.category === 'fpb' || r.category === 'ddvav' || r.category === 'zone') vav++;
     if (r.category === 'hwp' || r.category === 'chwp' || r.category === 'ct') plants++;
     if (r.category === 'lighting') lighting++;
     if (r.category === 'other') other++;
+    // Count new M3 types
+    if (r.category in _hvacNewTypes) _hvacNewTypes[r.category]++;
+    if (r.category in _nonHvacTypes) _nonHvacTypes[r.category]++;
     var pts = r.points || {};
     var hasLive = false;
     for (var k in pts) {
@@ -1488,6 +1826,17 @@ function emCalcSummaryStats(rows) {
     lighting: lighting,
     other: other,
     live: live,
+    doas: _hvacNewTypes.doas,
+    fcu: _hvacNewTypes.fcu,
+    heater: _hvacNewTypes.heater,
+    ef: _hvacNewTypes.ef,
+    furnace: _hvacNewTypes.furnace,
+    zone: _hvacNewTypes.zone,
+    fire: _nonHvacTypes.fire,
+    power: _nonHvacTypes.power,
+    plumbing: _nonHvacTypes.plumbing,
+    controls: _nonHvacTypes.controls,
+    sensor: _nonHvacTypes.sensor,
   };
 }
 
@@ -1572,14 +1921,25 @@ function emRenderToolbar(data, pid, projBadge) {
   }
   var typeOpts =
     '<option value="">All Types</option>' +
-    '<option value="ahu">AHU</option>' +
+    '<option value="ahu">AHU / RTU</option>' +
+    '<option value="doas">DOAS / ERV</option>' +
     '<option value="vav">VAV</option>' +
     '<option value="fpb">FPB</option>' +
     '<option value="ddvav">DD-VAV</option>' +
+    '<option value="zone">VVT Zone</option>' +
+    '<option value="furnace">Furnace / VVT</option>' +
+    '<option value="fcu">Fan Coil / VRF</option>' +
+    '<option value="heater">Unit Heater</option>' +
+    '<option value="ef">Exhaust Fan</option>' +
     '<option value="hwp">HW Plant</option>' +
     '<option value="chwp">CHW Plant</option>' +
     '<option value="ct">Cooling Tower</option>' +
     '<option value="lighting">Lighting</option>' +
+    '<option value="fire">Fire / Smoke</option>' +
+    '<option value="power">Power / Gen</option>' +
+    '<option value="plumbing">Plumbing</option>' +
+    '<option value="controls">Controls / VFD</option>' +
+    '<option value="sensor">Sensor / Weather</option>' +
     '<option value="other">Other</option>';
   var colToggleStyle =
     'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--s2);user-select:none';
@@ -1636,7 +1996,9 @@ function emRenderToolbar(data, pid, projBadge) {
     '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px"></span>' +
     '<div style="flex:1"></div>' +
     (projBadge || '') +
-    '<button id="em-view-mode-btn" class="btn btn-sm" onclick="emToggleViewMode()" style="height:28px;font-size:11px;background:var(--accent);color:#fff;border-color:transparent">Audit View</button>' +
+    '<span style="font-size:11px;color:var(--text3)">View:</span>' +
+    '<button id="em-audit-btn" class="btn btn-sm" onclick="emSetAuditView()" style="height:28px;font-size:11px;background:var(--accent);color:#fff;border-color:transparent">Audit View</button>' +
+    '<button id="em-raw-btn" class="btn btn-ghost btn-sm" onclick="emSetRawView()" style="height:28px;font-size:11px">Raw View</button>' +
     '<button id="em-summary-btn" class="btn btn-ghost btn-sm" onclick="emSetSummaryView()" title="Aggregated stats grouped by building and equipment type" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Summary</button>' +
     '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">Edit</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
@@ -1757,8 +2119,10 @@ function emGetColDefs(projId) {
   var defs = [
     { key: 'building', label: 'Building', group: 'id', width: 180 },
     { key: 'floor', label: 'Floor', group: 'id', width: 80 },
-    { key: 'equipName', label: 'Equipment', group: 'id', width: 200 },
-    { key: 'equipType', label: 'Control Program', group: 'id', width: 160 },
+    // Milestone 2: equipName is now the FULL control program string
+    { key: 'equipName', label: 'Equipment Name', group: 'id', width: 240 },
+    // Milestone 2: renamed from "Control Program" — shows classified equipment type
+    { key: 'category', label: 'Equipment Type', group: 'id', width: 130, isCategory: true },
   ];
   for (var i = 0; i < checkCols14.length; i++) {
     var ck = checkCols14[i];
@@ -2090,9 +2454,19 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     emStatPill('Buildings', stats.buildings) +
     emStatPill('Equipment', stats.total) +
     emStatPill('AHU / RTU', stats.ahu) +
+    (stats.doas ? emStatPill('DOAS', stats.doas) : '') +
     emStatPill('VAV / FPB', stats.vav) +
+    (stats.furnace ? emStatPill('Furnace', stats.furnace) : '') +
+    (stats.fcu ? emStatPill('Fan Coil', stats.fcu) : '') +
+    (stats.heater ? emStatPill('Heater', stats.heater) : '') +
+    (stats.ef ? emStatPill('Exh Fan', stats.ef) : '') +
     emStatPill('Plants', stats.plants) +
     (stats.lighting ? emStatPill('Lighting', stats.lighting) : '') +
+    (stats.fire ? emStatPill('Fire', stats.fire) : '') +
+    (stats.power ? emStatPill('Power', stats.power) : '') +
+    (stats.plumbing ? emStatPill('Plumbing', stats.plumbing) : '') +
+    (stats.controls ? emStatPill('Controls', stats.controls) : '') +
+    (stats.sensor ? emStatPill('Sensors', stats.sensor) : '') +
     (stats.other ? emStatPill('Other', stats.other) : '') +
     emStatPill('Live Data', stats.live) +
     (totalBASPoints ? emStatPill('BAS Points', totalBASPoints.toLocaleString()) : '');
@@ -4177,6 +4551,10 @@ function emGetCellVal(row, colIdx, edits) {
 function emFormatCell(val, def) {
   if (val === null || val === undefined || val === '') return '--';
   var s = String(val);
+  // Milestone 2: render category key as a friendly equipment-type label
+  if (def.isCategory) {
+    return EM_CATEGORY_LABELS[s] || (s ? s.toUpperCase() : '--');
+  }
   if (def.key.indexOf('check_') === 0) {
     if (!def.isLive) {
       var isSeq =
@@ -7195,6 +7573,317 @@ var EM_POINT_CATEGORIES = {
         'tower fill valve',
         'makeup valve',
       ],
+    },
+  ],
+
+  /* ── M3 NEW TYPE: FCU (Fan Coil Unit / VRF indoor unit) ─────────────── */
+  fcu: [
+    {
+      key: 'zoneTemp',
+      label: 'Zone Air Temperature',
+      required: true,
+      ashrae36Name: 'Zone Air Temperature',
+      ashrae36Section: 'FCU',
+      patterns: [/zone.?temp/i, /room.?temp/i, /space temp/i, /\bzat\b/i],
+      aliases: ['zone temp', 'room temp', 'zone air temp', 'space temp', 'space temperature', 'zat'],
+    },
+    {
+      key: 'coolSP',
+      label: 'Cooling Setpoint',
+      required: false,
+      ashrae36Name: 'Zone Cooling Setpoint',
+      ashrae36Section: 'FCU',
+      patterns: [/cooling.?setpoint/i, /cool.?setpoint/i, /cooling occupied setpoint/i],
+      aliases: ['cooling setpoint', 'cool setpoint', 'cooling sp', 'cooling occupied setpoint'],
+    },
+    {
+      key: 'htgSP',
+      label: 'Heating Setpoint',
+      required: false,
+      ashrae36Name: 'Zone Heating Setpoint',
+      ashrae36Section: 'FCU',
+      patterns: [/heating.?setpoint/i, /heat.?setpoint/i, /heating occupied setpoint/i],
+      aliases: ['heating setpoint', 'heat setpoint', 'heating sp', 'heating occupied setpoint'],
+    },
+    {
+      key: 'chwValve',
+      label: 'CHW / Cooling Valve',
+      required: false,
+      ashrae36Name: 'Cooling Valve Position',
+      ashrae36Section: 'FCU',
+      patterns: [/chw.?valve/i, /cooling.?valve/i, /chilled water valve/i, /clg.?valve/i],
+      aliases: ['chw valve', 'cooling valve', 'chilled water valve', 'clg valve'],
+    },
+    {
+      key: 'hwValve',
+      label: 'HW / Heating Valve',
+      required: false,
+      ashrae36Name: 'Heating Valve Position',
+      ashrae36Section: 'FCU',
+      patterns: [/hw.?valve/i, /heating.?valve/i, /hot water valve/i, /htg.?valve/i],
+      aliases: ['hw valve', 'heating valve', 'hot water valve', 'htg valve'],
+    },
+    {
+      key: 'fanStatus',
+      label: 'Fan Status',
+      required: false,
+      ashrae36Name: 'Fan Status',
+      ashrae36Section: 'FCU',
+      patterns: [/fan.?status/i, /fan.?run/i, /fan speed/i, /fan.?enable/i],
+      aliases: ['fan status', 'fan run', 'fan speed', 'fan enable'],
+    },
+  ],
+
+  /* ── M3 NEW TYPE: Heater (unit heater / tube heater / infrared) ─────── */
+  heater: [
+    {
+      key: 'zoneTemp',
+      label: 'Zone Air Temperature',
+      required: false,
+      ashrae36Name: 'Zone Air Temperature',
+      ashrae36Section: 'Heater',
+      patterns: [/zone.?temp/i, /room.?temp/i, /space temp/i],
+      aliases: ['zone temp', 'room temp', 'space temp'],
+    },
+    {
+      key: 'enable',
+      label: 'Heater Enable / Status',
+      required: true,
+      ashrae36Name: 'Heater Enable Command',
+      ashrae36Section: 'Heater',
+      patterns: [
+        /heater.?enable/i,
+        /heater.?status/i,
+        /unit heater.?enable/i,
+        /uh.?status/i,
+        /uh.?enable/i,
+        /tube heater.?enable/i,
+        /heater.?on.?off/i,
+      ],
+      aliases: [
+        'heater enable',
+        'heater status',
+        'unit heater enable',
+        'uh status',
+        'uh enable',
+        'tube heater enable',
+        'heater on/off',
+      ],
+    },
+    {
+      key: 'oaEnable',
+      label: 'OA Lockout Setpoint',
+      required: false,
+      ashrae36Name: 'OA Enable Setpoint',
+      ashrae36Section: 'Heater',
+      patterns: [/oa.?enable.?setpoint/i, /outdoor.?lockout/i, /oa.?lockout/i, /outside air setpoint/i],
+      aliases: ['oa enable setpoint', 'outdoor lockout', 'oa lockout', 'outside air setpoint'],
+    },
+  ],
+
+  /* ── M3 NEW TYPE: EF (Exhaust Fan) ─────────────────────────────────── */
+  ef: [
+    {
+      key: 'fanStatus',
+      label: 'Fan Status / Enable',
+      required: true,
+      ashrae36Name: 'Exhaust Fan Status',
+      ashrae36Section: 'EF',
+      patterns: [
+        /exhaust fan.?enable/i,
+        /exhaust fan.?status/i,
+        /ef.?enable/i,
+        /ef.?status/i,
+        /fan.?enable/i,
+        /fan.?status/i,
+      ],
+      aliases: ['exhaust fan enable', 'exhaust fan status', 'ef enable', 'ef status', 'fan enable', 'fan status'],
+    },
+    {
+      key: 'fanSpeed',
+      label: 'VFD / Fan Speed',
+      required: false,
+      ashrae36Name: 'Fan Speed Command',
+      ashrae36Section: 'EF',
+      patterns: [/fan speed/i, /vfd.?speed/i, /ef.?speed/i, /exhaust.?vfd/i],
+      aliases: ['fan speed', 'vfd speed', 'ef speed', 'exhaust vfd speed'],
+    },
+    {
+      key: 'schedule',
+      label: 'Schedule',
+      required: false,
+      ashrae36Name: 'Occupancy Schedule',
+      ashrae36Section: 'EF',
+      patterns: [/schedule/i, /occupancy/i, /occupied/i],
+      aliases: ['schedule', 'occupancy', 'occupied'],
+    },
+  ],
+
+  /* ── M3 NEW TYPE: DOAS (Dedicated Outdoor Air System / ERV) ─────────── */
+  doas: [
+    {
+      key: 'sat',
+      label: 'Supply Air Temperature',
+      required: true,
+      ashrae36Name: 'Supply Air Temperature',
+      ashrae36Section: 'DOAS',
+      patterns: [/supply air temp/i, /\bsat\b/i, /discharge air temp/i, /\bdat\b/i],
+      aliases: ['supply air temp', 'sat', 'discharge air temp', 'dat'],
+    },
+    {
+      key: 'ervWheel',
+      label: 'Energy Recovery Wheel',
+      required: false,
+      ashrae36Name: 'Energy Recovery Wheel Speed / Status',
+      ashrae36Section: 'DOAS',
+      patterns: [/energy recovery wheel/i, /energy wheel/i, /erv wheel/i, /enthalpy wheel/i, /heat wheel/i],
+      aliases: ['energy recovery wheel', 'energy wheel', 'erv wheel', 'enthalpy wheel', 'heat wheel'],
+    },
+    {
+      key: 'oaDamper',
+      label: 'OA Damper',
+      required: true,
+      ashrae36Name: 'Outdoor Air Damper Position',
+      ashrae36Section: 'DOAS',
+      patterns: [/oa.?damper/i, /outdoor air damper/i, /outside air damper/i],
+      aliases: ['oa damper', 'outdoor air damper', 'outside air damper'],
+    },
+    {
+      key: 'bldgPressure',
+      label: 'Building Pressure',
+      required: false,
+      ashrae36Name: 'Building Static Pressure',
+      ashrae36Section: 'DOAS',
+      patterns: [/building.?pressure/i, /bldg.?static/i, /building.?dp/i],
+      aliases: ['building pressure', 'bldg static', 'building dp'],
+    },
+    {
+      key: 'sfStatus',
+      label: 'Supply Fan Status',
+      required: true,
+      ashrae36Name: 'Supply Fan Status',
+      ashrae36Section: 'DOAS',
+      patterns: [/supply fan.?status/i, /supply fan.?run/i, /sf.?status/i, /fan.?run/i],
+      aliases: ['supply fan status', 'supply fan run', 'sf status', 'fan run'],
+    },
+  ],
+
+  /* ── M3 NEW TYPE: Furnace (VVT air-source unit / split-system furnace) ─ */
+  furnace: [
+    {
+      key: 'sfStatus',
+      label: 'Supply Fan Status',
+      required: true,
+      ashrae36Name: 'Supply Fan Status',
+      ashrae36Section: 'Furnace/VVT',
+      patterns: [/supply fan.?status/i, /supply fan.?run/i, /sf.?status/i, /fan.?status/i],
+      aliases: ['supply fan status', 'supply fan run', 'sf status', 'fan status'],
+    },
+    {
+      key: 'clgStage',
+      label: 'DX Cooling Stage 1',
+      required: false,
+      ashrae36Name: 'Cooling Stage 1',
+      ashrae36Section: 'Furnace/VVT',
+      patterns: [/cooling stage 1/i, /dx cooling/i, /stage 1 cool/i, /clg stage/i],
+      aliases: ['cooling stage 1', 'dx cooling', 'stage 1 cool', 'clg stage 1'],
+    },
+    {
+      key: 'gasHeat',
+      label: 'Gas Heat Stage',
+      required: false,
+      ashrae36Name: 'Gas Heat Stage 1',
+      ashrae36Section: 'Furnace/VVT',
+      patterns: [/gas heat/i, /heat stage/i, /heating stage/i, /burner/i],
+      aliases: ['gas heat', 'heat stage', 'heating stage', 'burner enable'],
+    },
+    {
+      key: 'vvtMode',
+      label: 'VVT Mode',
+      required: false,
+      ashrae36Name: 'VVT Mode',
+      ashrae36Section: 'Furnace/VVT',
+      patterns: [/vvt mode/i, /vvt.*mode/i],
+      aliases: ['vvt mode', 'vvt mode av', 'vvt mode msv'],
+    },
+    {
+      key: 'oaDamper',
+      label: 'OA Damper',
+      required: false,
+      ashrae36Name: 'Outdoor Air Damper',
+      ashrae36Section: 'Furnace/VVT',
+      patterns: [/oa.?damper/i, /outdoor air damper/i, /bypass damper/i, /supply air bypass/i],
+      aliases: ['oa damper', 'outdoor air damper', 'bypass damper', 'supply air bypass damper'],
+    },
+  ],
+
+  /* ── M3 NEW TYPE: Zone (VVT zone-damper terminal) ───────────────────── */
+  zone: [
+    {
+      key: 'zoneTemp',
+      label: 'Zone Air Temperature',
+      required: true,
+      ashrae36Name: 'Zone Air Temperature',
+      ashrae36Section: 'VVT Zone',
+      patterns: [/zone.?temp/i, /room.?temp/i, /space temp/i],
+      aliases: ['zone temp', 'room temp', 'zone air temp', 'space temp'],
+    },
+    {
+      key: 'zoneHumidity',
+      label: 'Zone Humidity',
+      required: false,
+      ashrae36Name: 'Zone Relative Humidity',
+      ashrae36Section: 'VVT Zone',
+      patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i],
+      aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity'],
+    },
+    {
+      key: 'zoneDamper',
+      label: 'Zone Damper',
+      required: true,
+      ashrae36Name: 'Zone Damper Position Command',
+      ashrae36Section: 'VVT Zone',
+      patterns: [/zone damper/i, /damper.?position/i, /damper/i],
+      aliases: ['zone damper', 'damper position', 'damper'],
+    },
+    {
+      key: 'coolSP',
+      label: 'Cooling Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Cooling Setpoint',
+      ashrae36Section: 'VVT Zone',
+      patterns: [/cooling.?setpoint/i, /cool.?setpoint/i, /cooling occupied setpoint/i, /effective cooling setpoint/i],
+      aliases: [
+        'cooling setpoint',
+        'cool setpoint',
+        'cooling sp',
+        'cooling occupied setpoint',
+        'effective cooling setpoint',
+      ],
+    },
+    {
+      key: 'htgSP',
+      label: 'Heating Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Heating Setpoint',
+      ashrae36Section: 'VVT Zone',
+      patterns: [/heating.?setpoint/i, /heat.?setpoint/i, /heating occupied setpoint/i, /effective heating setpoint/i],
+      aliases: [
+        'heating setpoint',
+        'heat setpoint',
+        'heating sp',
+        'heating occupied setpoint',
+        'effective heating setpoint',
+      ],
+    },
+    {
+      key: 'airSourceVVT',
+      label: 'Air Source VVT Mode',
+      required: false,
+      ashrae36Name: 'Air Source VVT Mode',
+      ashrae36Section: 'VVT Zone',
+      patterns: [/air source vvt/i, /asvvt/i],
+      aliases: ['air source vvt', 'asvvt', 'air source vvt msv', 'air source vvt ani'],
     },
   ],
 };

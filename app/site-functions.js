@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.01.431',
+    date: '2026-06-01',
+    title: 'Equipment classifier overhaul, Equipment Type column, and Constellation gas bill support',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now identifies fan coils, heaters, exhaust fans, DOAS units, furnaces, and zone terminals by their actual BAS points — far fewer items appear as "Other." Re-import your CSVs to pick up the new classifications.',
+      },
+      {
+        type: 'fix',
+        text: 'Zone terminals (Zone-F3-7 style names) were incorrectly tagged as lighting — they are now classified as zone terminals. Some equipment wrongly tagged as cooling tower has also been corrected.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now shows the full control-program name in the Equipment Name column and adds a new Equipment Type column. The Audit and Raw view buttons are always visible, and long building names like "MedAct 51/SS Olathe" no longer get cut off. A phantom equipment row that appeared for some buildings has been removed.',
+      },
+      {
+        type: 'feature',
+        text: 'ASHRAE reports now include all the newly recognized equipment types in their equipment counts and summaries.',
+      },
+      {
+        type: 'feature',
+        text: 'Gas bills: Constellation NewEnergy consolidated invoices are now supported. Fixed duplicate "parse error" entries that appeared when a bill failed to extract. Multi-account Kansas Gas Service PDFs now read each account’s own usage and cost data correctly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.01.430',
     date: '2026-06-01',
     title: 'Equipment Matrix humidity sensor support, KGS multi-account extraction, and bill routing improvements',

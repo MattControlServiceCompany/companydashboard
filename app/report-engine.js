@@ -10456,7 +10456,7 @@ function collectASHRAE36Data(projId) {
   });
 
   // Auditable equipment categories (excludes 'other')
-  var AUDITABLE = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct'];
+  var AUDITABLE = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct', 'doas', 'fcu', 'zone', 'furnace', 'heater', 'ef'];
   var CAT_LABELS = {
     ahu: 'Air Handling Unit',
     vav: 'VAV Terminal',
@@ -10465,6 +10465,12 @@ function collectASHRAE36Data(projId) {
     hwp: 'Hot Water Plant',
     chwp: 'Chilled Water Plant',
     ct: 'Cooling Tower',
+    doas: 'DOAS',
+    fcu: 'Fan Coil Unit',
+    zone: 'Zone Terminal',
+    furnace: 'Furnace',
+    heater: 'Heater',
+    ef: 'Exhaust Fan',
   };
 
   // Compute per-building compliance
@@ -11032,6 +11038,12 @@ function rptPageASHRAE36Building(n, d, building) {
         hwp: 'Hot Water Plant',
         chwp: 'Chilled Water Plant',
         ct: 'Cooling Towers',
+        doas: 'DOAS Units',
+        fcu: 'Fan Coil Units',
+        zone: 'Zone Terminals',
+        furnace: 'Furnaces',
+        heater: 'Heaters',
+        ef: 'Exhaust Fans',
       };
       return (
         '<span style="font-size:10px;padding:2px 8px;background:#f1f5f9;border-radius:10px;color:var(--rpt-page-text);margin-right:4px">' +
@@ -11691,7 +11703,7 @@ function generateASHRAE36Preview() {
   }
   if (data._noAuditableEquip) {
     showToast(
-      'No auditable equipment found. Equipment must be classified as AHU, VAV, FPB, HWP, CHWP, or CT — not "Other" — to generate a report.',
+      'No auditable equipment found. Equipment must be classified as a known HVAC type (AHU, VAV, FPB, DOAS, FCU, Zone, Furnace, Heater, Exhaust Fan, etc.) — not "Other" — to generate a report.',
       'error',
     );
     return;

@@ -4758,6 +4758,207 @@ const UTILITY_RULES = [
       return _extractEvergy(t, acct, addrM?.[1]?.trim() || null);
     },
   },
+  // ── Constellation NewEnergy (Gas Supplier) ─────────────────────────────
+  // Handles consolidated multi-account / multi-site Constellation invoices.
+  // Must appear BEFORE the Gas Utility rule because Constellation invoices
+  // contain "MMBtu", "Invoice", and natural gas keywords that would otherwise
+  // trip the Gas Utility broadened detector.
+  {
+    name: 'Constellation NewEnergy (Gas Supplier)',
+    detect: (t) => /constellation/i.test(t) || /account\s*id:\s*bg-\d+/i.test(t),
+    extractAll: function (t) {
+      // ── Level 1: split the full OCR into per-invoice chunks ──
+      // Each invoice starts with "Invoice Date: MM/DD/YY" header.
+      // Use a lookahead so the split anchor text stays in each chunk.
+      const invoiceChunks = t.split(/(?=Invoice\s+Date:\s*\d{2}\/\d{2}\/\d{2})/i);
+      // Guard: if no split found, treat whole text as one invoice chunk.
+      const invoices = invoiceChunks.length > 1 ? invoiceChunks : [t];
+
+      const results = [];
+      for (const invText of invoices) {
+        if (!invText.trim()) continue;
+
+        // ── Level 2: split each invoice into per-site blocks ──
+        // Each site starts with "Service for Mon-YYYY" line.
+        const siteChunks = invText.split(/(?=Service\s+for\s+[A-Z][a-z]{2,}-\d{4})/i);
+        // Guard: if the invoice text has no "Service for" at all, try extracting
+        // it as a single site block (may be an invoice header-only chunk).
+        if (siteChunks.length <= 1) {
+          const bill = this.extract(invText);
+          if (bill && !bill._skipRecord) results.push(bill);
+          continue;
+        }
+
+        // The first chunk may be invoice-level header text before any site block.
+        // Carry the invoice header forward into each site chunk so extract() can
+        // read InvoiceDate, AccountID, etc. from the per-site context.
+        const invoiceHeader = siteChunks[0];
+        for (let i = 1; i < siteChunks.length; i++) {
+          const siteText = invoiceHeader + '\n' + siteChunks[i];
+          const bill = this.extract(siteText);
+          if (bill && !bill._skipRecord) results.push(bill);
+        }
+      }
+      return results.length > 0 ? results : [this.extract(t)];
+    },
+    extract: function (t) {
+      // ── Number cleaning helper ──
+      // Remove commas, handle "$" prefix, handle bare ":" misread as "." in OCR.
+      const fixNum = (s) => {
+        if (!s) return null;
+        return s.replace(/,/g, '').replace(/(\d):(\d)/, '$1.$2');
+      };
+
+      // ── AccountNumber ──
+      // Prefer the LDC Account number (the local distribution company meter ID).
+      // Fallback: the top-level Account ID like "BG-96832".
+      const ldcM = t.match(/LDC\s*Account:\s*([0-9]+)/i);
+      const bgM = t.match(/Account\s*ID:\s*(BG-\d+)/i);
+      const AccountNumber = (ldcM ? ldcM[1] : null) || (bgM ? bgM[1] : null);
+
+      // Guard: no usable account number means we can't identify this block.
+      if (!AccountNumber) {
+        return {
+          UtilityCompany: 'Constellation',
+          Commodity: 'Gas',
+          _skipRecord: true,
+          _lowConfidence: true,
+          _reason: 'No AccountNumber found (no LDC Account or Account ID)',
+          commodity: 'gas',
+          _utilityName: 'Constellation',
+        };
+      }
+
+      // ── ServiceAddress ──
+      // Constellation site blocks look like:
+      //   "Baker University - 03044T0906"
+      //   "618 8th St, Baldwin City, KS 66006-6010"
+      // Capture the street line that follows the "Name - SiteID" line.
+      // Pattern: a line starting with a digit (street number) followed by letters
+      // and containing ", Baldwin City" or more generically a city+state.
+      // Use multiline ^ so the match anchors to a line start, preventing
+      // the regex from spanning the site-ID line and the address line.
+      const addrM =
+        t.match(/^(\d+\s+[A-Za-z0-9 #]+,\s*Baldwin\s*City[^\n]*)/im) ||
+        t.match(/^(\d+\s+[A-Za-z0-9 .#]+,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/m);
+      const ServiceAddress = addrM ? addrM[1].trim() : null;
+
+      // ── BillingPeriod ──
+      // "Service for Dec-2024 - Actual" → month name + 4-digit year
+      const svcM = t.match(/Service\s+for\s+([A-Z][a-z]{2,})-(\d{4})/i);
+      let BillingPeriodStart = null;
+      let BillingPeriodEnd = null;
+      if (svcM) {
+        const MONTH_MAP = {
+          jan: 0,
+          feb: 1,
+          mar: 2,
+          apr: 3,
+          may: 4,
+          jun: 5,
+          jul: 6,
+          aug: 7,
+          sep: 8,
+          oct: 9,
+          nov: 10,
+          dec: 11,
+        };
+        const monthName = svcM[1].toLowerCase().slice(0, 3);
+        const year = parseInt(svcM[2], 10);
+        const mo = MONTH_MAP[monthName];
+        if (mo !== undefined && !isNaN(year)) {
+          // Start = first day of month
+          const startD = new Date(year, mo, 1);
+          // End = last day of month (day 0 of next month)
+          const endD = new Date(year, mo + 1, 0);
+          const pad = (n) => String(n).padStart(2, '0');
+          BillingPeriodStart = pad(startD.getMonth() + 1) + '/' + pad(startD.getDate()) + '/' + startD.getFullYear();
+          BillingPeriodEnd = pad(endD.getMonth() + 1) + '/' + pad(endD.getDate()) + '/' + endD.getFullYear();
+        }
+      }
+
+      // ── NaturalGasTherms ──
+      // Constellation invoices report usage in MMBtu. 1 MMBtu = 10 therms exactly.
+      // Sum all MMBtu values found in the block (multiple charge lines can each
+      // carry an MMBtu quantity, e.g. Incremental Costs and Base Supply).
+      const mmBtuMatches = [...t.matchAll(/([\d.]+)\s*MMBtu/gi)];
+      let NaturalGasTherms = null;
+      if (mmBtuMatches.length > 0) {
+        const totalMMBtu = mmBtuMatches.reduce((sum, m) => sum + parseFloat(m[1]), 0);
+        // Round to 2 decimal places to avoid floating-point noise.
+        NaturalGasTherms = String(Math.round(totalMMBtu * 10 * 100) / 100);
+      }
+
+      // ── TotalCurrentCharges ──
+      // Prefer per-site "Total Current Site Charges $NNN.NN".
+      // Fallback: invoice-level "Total New Charges $NNN.NN" or "Total Amount Due $NNN.NN".
+      const siteChargeM = t.match(/Total\s+Current\s+Site\s+Charges\s*\$?([\d,]+\.\d{2})/i);
+      const newChargeM = t.match(/Total\s+New\s+Charges\s*\$?([\d,]+\.\d{2})/i);
+      const amtDueM = t.match(/Total\s+Amount\s+Due\s*\$?([\d,]+\.\d{2})/i);
+      const rawTotal = siteChargeM ? siteChargeM[1] : newChargeM ? newChargeM[1] : amtDueM ? amtDueM[1] : null;
+      const TotalCurrentCharges = fixNum(rawTotal);
+      const TotalAmountDue = TotalCurrentCharges;
+
+      // ── StatementDate ──
+      // "Invoice Date: 01/16/25" — two-digit year
+      const invDateM = t.match(/Invoice\s+Date:\s*(\d{2}\/\d{2}\/\d{2})/i);
+      let StatementDate = null;
+      if (invDateM) {
+        // Normalize two-digit year to four-digit (20YY).
+        const parts = invDateM[1].split('/');
+        StatementDate = parts[0] + '/' + parts[1] + '/20' + parts[2];
+      }
+
+      // ── Validity guard ──
+      // A bill is valid if it has AccountNumber + a billing period + a total.
+      const hasMinFields = AccountNumber && (BillingPeriodStart || BillingPeriodEnd) && TotalCurrentCharges;
+      if (!hasMinFields) {
+        return {
+          UtilityCompany: 'Constellation',
+          Commodity: 'Gas',
+          AccountNumber,
+          BillingPeriodStart,
+          BillingPeriodEnd,
+          TotalCurrentCharges,
+          TotalAmountDue,
+          StatementDate,
+          ServiceAddress,
+          NaturalGasTherms,
+          _skipRecord: true,
+          _lowConfidence: true,
+          _reason: 'Missing required fields (AccountNumber + period + total)',
+          commodity: 'gas',
+          _utilityName: 'Constellation',
+        };
+      }
+
+      return {
+        UtilityCompany: 'Constellation',
+        Commodity: 'Gas',
+        AccountNumber,
+        ServiceAddress,
+        BillingPeriodStart,
+        BillingPeriodEnd,
+        StatementDate,
+        NaturalGasTherms,
+        NaturalGasCCF: null,
+        GasCharge: NaturalGasTherms && TotalCurrentCharges ? null : null, // not split out
+        CustomerCharge: null,
+        TotalCurrentCharges,
+        TotalAmountDue,
+        commodity: 'gas',
+        _utilityName: 'Constellation',
+      };
+    },
+    _hasKeyField: function (extracted) {
+      return !!(
+        extracted.AccountNumber &&
+        (extracted.BillingPeriodStart || extracted.BillingPeriodEnd) &&
+        extracted.TotalCurrentCharges
+      );
+    },
+  },
+  // ── End Constellation NewEnergy ─────────────────────────────────────────
   {
     name: 'Gas Utility (Spire / Kansas Gas Service / Atmos / Laclede / Black Hills)',
     // Broadened detector — accepts any common gas-bill signature so multi-bill PDFs
