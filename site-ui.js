@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.02.435';
+  var CH_VERSION = 'v2026.06.02.436';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,38 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.02.436',
+      date: '2026-06-02',
+      title:
+        'Equipment Matrix Phase 1 fixes: safer temp ranges, better tooltips, improved point classification, sticky Summary header',
+      items: [
+        {
+          type: 'fix',
+          text: 'Equipment Matrix no longer shows implausible temperature readings -- values outside the valid sensor range are now flagged and excluded.',
+        },
+        {
+          type: 'fix',
+          text: 'Snapshot tooltips in Equipment Matrix now show the actual point name instead of a generic label.',
+        },
+        {
+          type: 'fix',
+          text: 'Demand and schedule exclusion rules are narrowed so fewer valid points are accidentally filtered out.',
+        },
+        {
+          type: 'fix',
+          text: 'Air-source equipment points are no longer excluded; they now appear correctly in the matrix.',
+        },
+        {
+          type: 'fix',
+          text: 'Summary table header in Equipment Matrix stays visible while scrolling through long building lists.',
+        },
+        {
+          type: 'fix',
+          text: 'Equipment Matrix table zoom is now consistent -- all tables scale together when you adjust zoom.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.02.435',
       date: '2026-06-02',

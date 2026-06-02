@@ -1487,10 +1487,10 @@ function emExtractEquipmentGroups(rows, colMap) {
         var newIsNumeric = !isNaN(newNum);
         var isTempCol =
           pointCol === 'zoneAirTempLive' ||
-          pointCol === 'supplyAirTempLive' ||
-          pointCol === 'returnAirTempLive' ||
-          pointCol === 'oaTempLive' ||
-          pointCol === 'mixedAirTempLive';
+          pointCol === 'satLive' ||
+          pointCol === 'ratLive' ||
+          pointCol === 'oatLive' ||
+          pointCol === 'matLive';
         var newInRange = !isTempCol || (newNum >= 30 && newNum <= 120);
         // Allow write only when:
         //   slot is empty, OR
@@ -2276,8 +2276,8 @@ function emRenderToolbar(data, pid, projBadge) {
     '</span>' +
     // Audit-view legend bar — always visible in audit mode, shows all cell state symbols
     '<span id="em-audit-col-info" style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">' +
-    '<span title="BAS point present — showing live value. Green background = automatic match" style="padding:1px 6px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">Yes</span>' +
-    '<span title="Similar point found — showing live value. Amber background = lower confidence match" style="padding:1px 6px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">Fuzzy</span>' +
+    '<span title="BAS point present — showing snapshot value from imported CSV. Green background = automatic match" style="padding:1px 6px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">Yes</span>' +
+    '<span title="Similar point found — showing snapshot value from imported CSV. Amber background = lower confidence match" style="padding:1px 6px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">Fuzzy</span>' +
     '<span title="Required ASHRAE 36 point not found in BAS" style="padding:1px 6px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">No</span>' +
     '<span title="Not applicable to this equipment type" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
     '<span title="Optional point — not present in BAS data" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
@@ -3045,8 +3045,7 @@ function emComputeAuditFooterTotals(rows, defs) {
    label: text for the first (sticky) cell.
    isBold: true → bold style (Total), false → italic style (Page Total).     */
 function buildAuditFooterRow(totalsMap, defs, label, isBold) {
-  var tdBase =
-    'padding:8px 12px;vertical-align:middle;border-top:2px solid var(--border);font-size:13px;background:var(--s1);';
+  var tdBase = 'padding:8px 12px;vertical-align:middle;border-top:2px solid var(--border);background:var(--s1);';
   var html = '<tr style="background:var(--s1);">';
   for (var di = 0; di < defs.length; di++) {
     var def = defs[di];
@@ -3118,8 +3117,7 @@ function buildAuditFooterRow(totalsMap, defs, label, isBold) {
    hasEditCol: true → prepend an extra empty <td> for the edit/delete column.  */
 function buildAvgFooterRow(avgMap, defs, label, isBold, hasEditCol) {
   var rowStyle = 'background:var(--s1);';
-  var tdBase =
-    'padding:8px 12px;vertical-align:middle;border-top:2px solid var(--border);font-size:13px;background:var(--s1);';
+  var tdBase = 'padding:8px 12px;vertical-align:middle;border-top:2px solid var(--border);background:var(--s1);';
   var html = '<tr style="' + rowStyle + '">';
   if (hasEditCol) {
     html += '<td style="' + tdBase + '"></td>';
@@ -3757,12 +3755,13 @@ function emRenderSummaryView(data, filters) {
 
   var pid = window._emActivePid || '';
   var thStyle =
-    'padding:12px 16px;font-size:14px;font-weight:600;background:var(--s1);' +
-    'border-bottom:2px solid var(--border);color:var(--text2);white-space:nowrap;';
+    'padding:12px 16px;font-weight:600;background:var(--s1);' +
+    'border-bottom:2px solid var(--border);color:var(--text2);white-space:nowrap;' +
+    'position:sticky;top:0;z-index:2;';
   var thStyleCenter = thStyle + 'text-align:center;';
   var thStyleLeft = thStyle + 'text-align:left;';
 
-  var html = '<div style="padding:24px;overflow:auto;height:100%;box-sizing:border-box">';
+  var html = '<div style="padding:24px;overflow:visible;height:100%;box-sizing:border-box">';
   html +=
     '<h2 style="font-size:20px;font-weight:600;margin:0 0 20px 0;color:var(--text)">Equipment Summary — Zone Comfort</h2>';
   html += '<table style="width:100%;border-collapse:collapse;font-size:15px">';
@@ -3780,7 +3779,7 @@ function emRenderSummaryView(data, filters) {
       '<tr><td colspan="5" style="padding:48px;text-align:center;font-size:14px;color:var(--text2)">' +
       'No zone equipment (VAV/FPB/DD-VAV) found for the current filter selection.</td></tr>';
   } else {
-    var tdStyle = 'padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle;font-size:15px;';
+    var tdStyle = 'padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle;';
     var tdCenter = tdStyle + 'text-align:center;';
     for (var bi = 0; bi < bldgNames.length; bi++) {
       var bldg = bldgNames[bi];
@@ -5629,18 +5628,17 @@ function emCopyFromProject(targetProjId) {
 var EM_EXCLUSION_PATTERNS = [
   /^EI\s/i, // Environmental Index points (WebCTRL)
   /environmental\s*index/i,
-  /air\s*source\s*status/i, // WebCTRL VAV "Air Source Status" (mode enum, not a control point)
-  /air\s*source\s*mode/i,
+  // Note: air source mode/status are ASHRAE 36 Group 10 VVT control points — NOT excluded
   /smoke\s*(detector|zone|alarm|damper|stat)?/i,
   /\bsmoke\b/i,
-  /\bschedule\b/i, // BACnet schedule objects
+  /\bbacnet\s+schedule\b/i, // BACnet Schedule objects only (not occupancy/zone schedule control points)
   /\bruntime\b/i,
   /run\s*hours?/i,
   /energy.*month/i,
   /energy.*year/i,
   /monthly.*energy/i,
   /yearly.*energy/i,
-  /\bdemand\b/i, // demand meter readings (not control)
+  /\b(peak\s+demand|interval\s+demand|billing\s+demand|demand\s+meter|demand\s+kw|kw\s+demand|kwh\s+demand)\b/i, // billing/meter demand readings only (not BAS control demand points)
   /electrical\s*bypass/i,
   /\bbypass\b.*\b(relay|contact|switch)\b/i,
   /\balarm\b/i,
