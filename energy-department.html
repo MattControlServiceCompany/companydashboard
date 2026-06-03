@@ -6314,6 +6314,13 @@
         position: sticky;
         top: 0;
         z-index: 5;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      .ma-tabs::-webkit-scrollbar {
+        display: none;
       }
       .ma-tab {
         font-size: 12px;
@@ -6323,6 +6330,7 @@
         border-bottom: 2px solid transparent;
         background: transparent;
         cursor: pointer;
+        flex-shrink: 0;
         color: var(--text3);
         transition: all 0.13s;
         font-family: var(--font);
@@ -7974,7 +7982,7 @@
                   "
                 >
                   <span style="font-size: 11px; font-weight: 700; color: var(--text2)" id="udProjPanelBarTitle"></span>
-                  <div style="display: flex; gap: 6px; margin-left: auto">
+                  <div style="display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap">
                     <button
                       class="btn btn-ghost btn-sm"
                       id="ud-proj-baseline-btn"
@@ -14609,14 +14617,14 @@
     <script src="app/report-preview.js?v=399"></script>
     <script src="app/calculators.js?v=399"></script>
     <script src="app/ecm-calculators.js?v=441"></script>
-    <script src="app/equipment-matrix.js?v=442"></script>
+    <script src="app/equipment-matrix.js?v=443"></script>
     <script src="app/graphics-setpoints.js?v=441"></script>
     <script src="app/budget.js?v=441"></script>
     <script src="app/scorecard.js?v=399"></script>
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=399"></script>
 
-    <script src="app/site-functions.js?v=441"></script>
+    <script src="app/site-functions.js?v=443"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */

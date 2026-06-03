@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.03.442';
+  var CH_VERSION = 'v2026.06.03.443';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,29 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.03.443',
+      date: '2026-06-03',
+      title: 'Equipment Matrix building-filter scoping and ASHRAE column ordering; Utility Data tab bar scrolls at narrow widths',
+      items: [
+        {
+          type: 'fix',
+          text: 'Equipment Matrix: when you filter by building, optional audit columns with no matching points in that building are now hidden, keeping the view focused on what that building actually has.',
+        },
+        {
+          type: 'feature',
+          text: 'Equipment Matrix: audit columns are now ordered by ASHRAE 36 logical groups (Air Temps, Outside Air, Zone/Space, Setpoints, Flow/Damper/Valve, Fan/Status/Commands, Plant/Central) instead of insertion order.',
+        },
+        {
+          type: 'fix',
+          text: 'Equipment Matrix: required columns are no longer accidentally hidden when a DOAS row appears before an AHU row for the same shared key (e.g. Outdoor Air Temp).',
+        },
+        {
+          type: 'fix',
+          text: 'Utility Data: the Saved Bills and meter tab bar now scrolls horizontally at narrow widths instead of clipping off the last tabs.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.03.442',
       date: '2026-06-03',

@@ -3244,6 +3244,12 @@ function emGetAuditColDefs(filteredRows) {
           required: c.required,
           configFlag: c.configFlag || null,
         };
+      } else {
+        // Promote required to true if ANY equipment type marks this key required.
+        // Prevents first-writer-wins from hiding a real compliance gap when a
+        // DOAS row (required:false) precedes an AHU row (required:true) for
+        // shared keys like oat/rat/mat.
+        if (c.required) categoryMap[c.key].required = true;
       }
       if (categoryMap[c.key].equipTypes.indexOf(et) === -1) {
         categoryMap[c.key].equipTypes.push(et);
@@ -3283,10 +3289,148 @@ function emGetAuditColDefs(filteredRows) {
     },
   ];
 
-  // Add one column per point category (required and optional)
+  // CHANGE 1 (1fc747b4): Build a set of category keys that have at least one match
+  // across the filtered rows so optional zero-match columns can be hidden.
+  // Required columns are always kept (red "not found" cells are intentional audit findings).
+  // emComputeCompliance is cached by row.id so this scan is cheap on repeat renders.
+  var coveredCatKeys = {};
+  for (var si = 0; si < filteredRows.length; si++) {
+    var sRow = filteredRows[si];
+    if (!sRow.category || !EM_POINT_CATEGORIES[sRow.category]) continue;
+    var sCompliance = emComputeCompliance(sRow);
+    for (var sci = 0; sci < sCompliance.coveredPoints.length; sci++) {
+      coveredCatKeys[sCompliance.coveredPoints[sci].categoryKey] = true;
+    }
+  }
+
+  // CHANGE 2 (column ordering): ASHRAE-36 logical group rank for stable column order.
+  // Groups: 1=Air Temps, 2=Outside Air, 3=Zone/Space, 4=Setpoints,
+  //         5=Flow/Damper/Valve, 6=Fan/Status/Commands, 7=Plant/Central, 8=Other
+  var _emAshraeCatGroup = {
+    // Group 1 — Air Temperatures
+    sat: 1,
+    rat: 1,
+    mat: 1,
+    dat: 1,
+    ahuSAT: 1,
+    preheatAirTemp: 1,
+    clgCoilLvgTemp: 1,
+    htgCoilLvgTemp: 1,
+    hwst: 1,
+    hwrt: 1,
+    chwst: 1,
+    chwrt: 1,
+    cwst: 1,
+    cwrt: 1,
+    // Group 2 — Outside Air Conditions
+    oat: 2,
+    oaRh: 2,
+    oaDewpoint: 2,
+    oaEnthalpy: 2,
+    oaWetBulb: 2,
+    // Group 3 — Zone / Space Conditions
+    zoneTemp: 3,
+    zoneHumidity: 3,
+    co2: 3,
+    rhReturn: 3,
+    co2Return: 3,
+    // Group 4 — Setpoints
+    coolSP: 4,
+    htgSP: 4,
+    dspSp: 4,
+    satCoolSp: 4,
+    satHtgSp: 4,
+    econSp: 4,
+    ventCfmSp: 4,
+    hwSetpoint: 4,
+    chwSetpoint: 4,
+    oaEnable: 4,
+    // Group 5 — Flow / Damper / Valve
+    oaFlow: 5,
+    discFlow: 5,
+    primaryFlow: 5,
+    ventCfm: 5,
+    rfCfm: 5,
+    sfCfm: 5,
+    oaDampCmd: 5,
+    raDampCmd: 5,
+    oaDamp: 5,
+    raDamp: 5,
+    reliefDamp: 5,
+    dampCmd: 5,
+    coldDampCmd: 5,
+    hotDampCmd: 5,
+    zoneDamper: 5,
+    clgValve: 5,
+    htgValve: 5,
+    reheatValve: 5,
+    chwValve: 5,
+    hwValve: 5,
+    hwIsoValve: 5,
+    hwIsoValveCmd: 5,
+    chwIsoValveStatus: 5,
+    chwIsoValveCmd: 5,
+    cwIsoValveStatus: 5,
+    cwIsoValveCmd: 5,
+    makeupValveCmd: 5,
+    // Group 6 — Fan / Status / Commands / Pressure
+    sfStatus: 6,
+    sfSpeed: 6,
+    sfEnable: 6,
+    sfSpeedCmd: 6,
+    rfEnable: 6,
+    rfSpeedCmd: 6,
+    rfSpeed: 6,
+    sfAmps: 6,
+    fanStatus: 6,
+    fanSpeed: 6,
+    termFanStatus: 6,
+    termFanEnable: 6,
+    termFanSpeed: 6,
+    ctFanStatus: 6,
+    ctFanEnable: 6,
+    ctFanSpeed: 6,
+    dsp: 6,
+    bldgPressure: 6,
+    rdsp: 6,
+    hwdp: 6,
+    chwdp: 6,
+    chillerEvapDP: 6,
+    // Group 7 — Plant / Central Equipment / Mode
+    hwFlow: 7,
+    chwFlow: 7,
+    boilerStatus: 7,
+    boilerEnable: 7,
+    hwPumpStatus: 7,
+    hwPumpEnable: 7,
+    hwPumpSpeed: 7,
+    secHWPumpStatus: 7,
+    chillerStatus: 7,
+    chillerEnable: 7,
+    pchwpStatus: 7,
+    schwpStatus: 7,
+    schwpEnable: 7,
+    schwpSpeed: 7,
+    pchwpEnable: 7,
+    cwPumpStatus: 7,
+    cwPumpEnable: 7,
+    sumpLevel: 7,
+    hwIsoValveStatus: 7,
+    freezeStat: 7,
+    enable: 7,
+    vvtMode: 7,
+    airSourceVVT: 7,
+    oaDamper: 7,
+    demandLevel: 7,
+    schedule: 7,
+  };
+
+  // Add one column per point category (required, or optional with at least one match)
   var catKeys = Object.keys(categoryMap);
   for (var ki = 0; ki < catKeys.length; ki++) {
     var cd = categoryMap[catKeys[ki]];
+    // CHANGE 1: skip optional categories that have zero matches in the filtered rows
+    if (!cd.required && !coveredCatKeys[cd.key]) continue;
     var reqLabel = cd.required ? 'Required' : 'Optional';
     var appliesToLabel = cd.equipTypes
       .map(function (t) {
@@ -3310,6 +3454,24 @@ function emGetAuditColDefs(filteredRows) {
         '. Green = matched, Amber = likely match (non-standard name), Red = not found, N/A = not applicable.',
     });
   }
+
+  // CHANGE 2: Sort audit-cat columns by ASHRAE logical group, then by definition order within each group.
+  // Fixed-position columns (id, audit metadata) are prepended before this sort — only audit-cat entries move.
+  var _auditCatStart =
+    defs.length -
+    catKeys.filter(function (k) {
+      var c = categoryMap[k];
+      return c.required || coveredCatKeys[c.key];
+    }).length;
+  var _nonCatDefs = defs.slice(0, _auditCatStart);
+  var _catDefs = defs.slice(_auditCatStart);
+  _catDefs.sort(function (a, b) {
+    var ga = _emAshraeCatGroup[a.catKey] || 8;
+    var gb = _emAshraeCatGroup[b.catKey] || 8;
+    return ga - gb;
+  });
+  // Rebuild defs: fixed prefix + sorted audit-cat + any remaining (seq, behavior) appended after
+  defs = _nonCatDefs.concat(_catDefs);
 
   // Add one column per relevant ASHRAE 36 sequence (Sequences group)
   // Only include sequences that apply to at least one equipment type visible in the filtered rows
