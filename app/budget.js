@@ -24,6 +24,17 @@
    }
    ══════════════════════════════════════════════════════ */
 
+/* Inject base budget cell styles once — .bgt-cell-sm carries font-size:11px
+   so the zoom rule (#budget-*-wrap td { … }) can override it (ID+element
+   specificity beats a class). */
+(function _injectBudgetCellCSS() {
+  if (document.getElementById('bgt-cell-styles')) return;
+  var s = document.createElement('style');
+  s.id = 'bgt-cell-styles';
+  s.textContent = '.bgt-cell-sm { font-size:11px; }';
+  document.head.appendChild(s);
+})();
+
 /* ── Storage helpers ── */
 function loadBudgetData(projId) {
   return sget('en_budget_' + projId, null);
@@ -169,8 +180,37 @@ function initBudgetTab(projId) {
     _budgetSelYear[projId] = year;
   }
   el.innerHTML = _renderBudgetTab(projId, bd);
-  // Render charts after DOM insertion
-  requestAnimationFrame(() => _renderBudgetCharts(projId, bd));
+  // Render charts and restore zoom after DOM insertion
+  requestAnimationFrame(() => {
+    _renderBudgetCharts(projId, bd);
+    // Restore persisted zoom for budget tables
+    if (typeof setTableZoom === 'function') {
+      var bLines = document.getElementById('budget-lines-wrap-' + projId);
+      if (bLines)
+        setTableZoom(
+          'budget-lines-wrap-' + projId,
+          null,
+          'en_budget_lines_zoom_' + projId,
+          'budget-lines-zoom-lbl-' + projId,
+        );
+      var bd2 = _getOrInitBudgetData(projId);
+      var year2 = _budgetSelYear[projId];
+      (bd2.budgets || [])
+        .filter(function (b) {
+          return b.year === year2;
+        })
+        .forEach(function (line) {
+          var vWrap = document.getElementById('budget-var-wrap-' + line.id);
+          if (vWrap)
+            setTableZoom(
+              'budget-var-wrap-' + line.id,
+              null,
+              'en_budget_var_zoom_' + line.id,
+              'budget-var-zoom-lbl-' + line.id,
+            );
+        });
+    }
+  });
 }
 
 function _renderBudgetTab(projId, bd) {
@@ -243,8 +283,11 @@ function _renderBudgetTab(projId, bd) {
         lines.length > 0
           ? `
       <div class="card" style="margin-bottom:16px">
-        <div class="card-hdr"><span class="card-title">Budget Lines — ${fyLabel}</span></div>
-        <div style="overflow-x:auto">
+        <div class="card-hdr" style="justify-content:space-between">
+          <span class="card-title">Budget Lines — ${fyLabel}</span>
+          ${typeof tableZoomControlHTML === 'function' ? tableZoomControlHTML('budget-lines-wrap-' + projId, 'en_budget_lines_zoom_' + projId, 'budget-lines-zoom-lbl-' + projId) : ''}
+        </div>
+        <div id="budget-lines-wrap-${projId}" style="overflow-x:auto">
           <table class="dtbl" style="width:100%;font-size:12px">
             <thead>
               <tr>
@@ -271,8 +314,8 @@ function _renderBudgetTab(projId, bd) {
                   <td style="font-weight:600">${commLabel}</td>
                   <td style="color:var(--text2)">${bldgName}</td>
                   <td style="text-align:right;font-family:var(--mono)">$${Math.round(annAmt).toLocaleString()}</td>
-                  <td style="font-size:11px;color:var(--text3)">${line.entryMode === 'monthly' ? 'Monthly' : 'Annual ÷ 12'}</td>
-                  <td style="font-size:11px;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${line.notes || ''}">${line.notes || '—'}</td>
+                  <td class="bgt-cell-sm" style="color:var(--text3)">${line.entryMode === 'monthly' ? 'Monthly' : 'Annual ÷ 12'}</td>
+                  <td class="bgt-cell-sm" style="color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${line.notes || ''}">${line.notes || '—'}</td>
                   <td style="text-align:center">
                     <button class="btn btn-ghost btn-sm" style="font-size:10px;margin-right:4px" onclick="_budgetOpenEditModal(${projId},'${line.id}')">Edit</button>
                     <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--danger);border-color:rgba(240,80,80,.3)" onclick="_budgetDeleteLine(${projId},'${line.id}')">Delete</button>
@@ -355,11 +398,11 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
       const ytdActCell =
         r.ytdActual === null
           ? `<td style="text-align:right;color:var(--text3)">—</td>`
-          : `<td style="text-align:right;font-family:var(--mono);font-size:11px">${$f(r.ytdActual)}</td>`;
+          : `<td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono)">${$f(r.ytdActual)}</td>`;
       const ytdVarCell =
         r.ytdVariance === null
           ? `<td style="text-align:right;color:var(--text3)">—</td>`
-          : `<td style="text-align:right;font-family:var(--mono);font-size:11px;color:${varColor(r.ytdVariance, r.ytdBudget > 0 ? (r.ytdVariance / r.ytdBudget) * 100 : 0)}">
+          : `<td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono);color:${varColor(r.ytdVariance, r.ytdBudget > 0 ? (r.ytdVariance / r.ytdBudget) * 100 : 0)}">
           ${r.ytdVariance > 0 ? '+' : ''}${$f(r.ytdVariance)}
          </td>`;
       return `<tr style="${!r.isPast ? 'opacity:.45' : ''}">
@@ -367,7 +410,7 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
       <td style="text-align:right;font-family:var(--mono)">${$f(r.budget)}</td>
       ${actCell}
       ${varCell}
-      <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">${$f(r.ytdBudget || 0)}</td>
+      <td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono);color:var(--text2)">${$f(r.ytdBudget || 0)}</td>
       ${ytdActCell}
       ${ytdVarCell}
     </tr>`;
@@ -379,6 +422,7 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
       <div class="card-hdr" style="justify-content:space-between">
         <span class="card-title">${commLabel} Budget — ${_fyLabel(line.year)} · ${bldgName}</span>
         <div style="display:flex;gap:6px;align-items:center">
+          ${typeof tableZoomControlHTML === 'function' ? tableZoomControlHTML('budget-var-wrap-' + line.id, 'en_budget_var_zoom_' + line.id, 'budget-var-zoom-lbl-' + line.id) : ''}
           <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="_budgetExportCSV(${projId},'${line.id}')">Export CSV</button>
         </div>
       </div>
@@ -416,7 +460,7 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
           : ''
       }
       <!-- Variance table -->
-      <div style="overflow-x:auto">
+      <div id="budget-var-wrap-${line.id}" style="overflow-x:auto">
         <table class="dtbl" style="width:100%;font-size:12px">
           <thead>
             <tr>

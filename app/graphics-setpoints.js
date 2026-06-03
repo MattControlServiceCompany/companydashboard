@@ -30,7 +30,12 @@ function _pvToggleBldg(projId, bldgId) {
 }
 
 function _pvRenderMeterPerf(m, bills, incl, projId, bldgId) {
-  var result = buildMeterPerfTableHTML(m, bills, incl, { mode: 'tab', projId: projId, bldgId: bldgId });
+  var result = buildMeterPerfTableHTML(m, bills, incl, {
+    mode: 'tab',
+    wrapperId: 'perf-table-wrap-pv',
+    projId: projId,
+    bldgId: bldgId,
+  });
   if (!result.html) return '';
   return (
     '<div style="margin-bottom:12px">' +

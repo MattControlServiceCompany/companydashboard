@@ -697,10 +697,12 @@ var EM_POINT_MAP = [
     types: ['AI', 'BAI'],
     cats: ['ahu', 'dhu'],
   },
-  // FIX 1 (c0bf56e0): Zone CO2 — CSV uses 'Zone CO2' and 'Zone CO2 AV'
+  // Fix c0bf56e0: Zone CO2 — CSV uses 'Zone CO2' and 'Zone CO2 AV'
   {
     col: 'co2Live',
     label: 'Zone CO2',
+    // Fix c0bf56e0: 'Zone CO2 AV' is a known CSV column header variant; mapped via labelAliases.
+    labelAliases: ['Zone CO2 AV'],
     patterns: [/\bco2\b/i, /zone\s*co2/i, /carbon dioxide/i, /co2\s*sensor/i, /co2\s*ppm/i],
     // Phase 2A: guard against "CO2 Alarm", "High CO2 Alarm", "CO2 Override", "CO2 Setpoint",
     // "CO2 Fault" — these are alarm/config objects, not live sensor readings.
@@ -1349,8 +1351,19 @@ function emDetectColMap(headerRow) {
   for (var pi = pointStart; pi < headerRow.length; pi++) {
     var hdr = (headerRow[pi] || '').trim().toLowerCase();
     for (var mi = 0; mi < EM_POINT_MAP.length; mi++) {
-      if (EM_POINT_MAP[mi].label.toLowerCase() === hdr) {
-        liveColKeyByIdx[pi] = EM_POINT_MAP[mi].col;
+      var mapEntry = EM_POINT_MAP[mi];
+      // Fix c0bf56e0: also check labelAliases so variants like 'Zone CO2 AV' map correctly.
+      var labelMatch = mapEntry.label.toLowerCase() === hdr;
+      if (!labelMatch && mapEntry.labelAliases) {
+        for (var ai = 0; ai < mapEntry.labelAliases.length; ai++) {
+          if (mapEntry.labelAliases[ai].toLowerCase() === hdr) {
+            labelMatch = true;
+            break;
+          }
+        }
+      }
+      if (labelMatch) {
+        liveColKeyByIdx[pi] = mapEntry.col;
         break;
       }
     }
@@ -1993,7 +2006,7 @@ function emExtractEquipmentGroups(rows, colMap) {
       var bacnetPath = (wrow[0] || '').trim();
       var controlProgram = (wrow[1] || '').trim();
       var pointName = (wrow[2] || '').trim();
-      var pointVal = (wrow[3] || '').trim();
+      var pointVal = wrow[3] != null ? String(wrow[3]).trim() : '';
       if (!controlProgram) continue;
 
       var building = emParseBACnetBuilding(bacnetPath);
@@ -4282,13 +4295,12 @@ function emComputeBuildingZoneStats(rows) {
   var result = {};
   var zoneCategories = { vav: true, fpb: true, ddvav: true };
 
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    if (!zoneCategories[row.category]) continue;
-
-    var bldg = row.building || '(No Building)';
-    if (!result[bldg]) {
-      result[bldg] = {
+  // First pass: seed every building with a blank stat entry so that AHU-only /
+  // plant-only buildings always appear in the Summary view (Fix 8c7dcc71).
+  for (var si = 0; si < rows.length; si++) {
+    var sbldg = rows[si].building || '(No Building)';
+    if (!result[sbldg]) {
+      result[sbldg] = {
         zoneTemp: { sum: 0, count: 0, avg: 0 },
         htgSp: { sum: 0, count: 0, avg: 0 },
         coolSp: { sum: 0, count: 0, avg: 0 },
@@ -4298,8 +4310,17 @@ function emComputeBuildingZoneStats(rows) {
         totalZones: 0,
       };
     }
+  }
 
-    var pts = row.points || {};
+  // Second pass: fill in zone stats for rows that belong to zone-category equipment.
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (!zoneCategories[row.category]) continue;
+
+    var bldg = row.building || '(No Building)';
+    // Entry already exists from first pass; no need to create.
+    // Fix 58cf0031: route through normalized-point engine so raw BAS names are resolved.
+    var pts = emGetNormalizedPoints(row);
     var bldgStats = result[bldg];
     bldgStats.totalZones++;
 
@@ -4474,16 +4495,23 @@ function emRenderSummaryView(data, filters) {
         emHtmlEsc(bldg) +
         '</a>';
       // Zones vs Setpoints cell
-      var vsCell =
-        '<span style="color:#c0392b;font-weight:500">' +
-        bs.hot +
-        ' hot</span> <span style="color:var(--text3)">|</span> ' +
-        '<span style="color:#27ae60;font-weight:500">' +
-        bs.ok +
-        ' ok</span> <span style="color:var(--text3)">|</span> ' +
-        '<span style="color:#2980b9;font-weight:500">' +
-        bs.cold +
-        ' cold</span>';
+      var vsCell;
+      if (bs.totalZones === 0) {
+        vsCell =
+          '<span style="color:var(--text3)">—</span>' +
+          '<span style="color:var(--text3);font-size:0.85em;margin-left:6px">(no zone equip)</span>';
+      } else {
+        vsCell =
+          '<span style="color:#c0392b;font-weight:500">' +
+          bs.hot +
+          ' hot</span> <span style="color:var(--text3)">|</span> ' +
+          '<span style="color:#27ae60;font-weight:500">' +
+          bs.ok +
+          ' ok</span> <span style="color:var(--text3)">|</span> ' +
+          '<span style="color:#2980b9;font-weight:500">' +
+          bs.cold +
+          ' cold</span>';
+      }
       html += '<tr style="min-height:48px">';
       html += '<td style="' + tdStyle + 'font-weight:600">' + bldgLink + '</td>';
       html += '<td style="' + tdCenter + 'font-weight:600">' + fmtAvg(bs.zoneTemp, '°F') + '</td>';
@@ -11882,118 +11910,13 @@ function emOpenManageMappings(pid) {
     return;
   }
 
-  var allPoints = emGetAllPoints(rows);
-  var customMappings = emLoadCustomMappings(pid);
+  // ── Fix d5fe0454: non-blocking modal build ────────────────────────────────
+  // Previously the entire HTML was built synchronously, which caused the UI
+  // thread to freeze for several seconds on large datasets (~2700 rows).
+  // Now we: (1) insert the modal shell immediately so it renders, then
+  // (2) compute+inject the row content in a deferred callback so the browser
+  // can paint the loading state first.
 
-  // Build lookup: normName -> { categoryKey, equipCategory } from existing custom mappings
-  var existingCustomMap = {};
-  for (var mi = 0; mi < customMappings.length; mi++) {
-    var m = customMappings[mi];
-    if (m.rawName) existingCustomMap[emNormalizePointName(m.rawName)] = m;
-  }
-
-  // Separate into unmatched (need attention) and matched (auto-detected)
-  var unmatchedPoints = [];
-  var matchedPoints = [];
-  for (var pi = 0; pi < allPoints.length; pi++) {
-    var pt = allPoints[pi];
-    var normName = emNormalizePointName(pt.name);
-    var hasCustom = !!existingCustomMap[normName];
-    if (pt.status === 'unmatched' || hasCustom) {
-      // Unmatched OR previously custom-mapped — show in editable section
-      unmatchedPoints.push(pt);
-    } else if (pt.status === 'matched') {
-      matchedPoints.push(pt);
-    }
-    // excluded points are silently omitted (they're already handled)
-  }
-
-  // Build functional category options for dropdown
-  var allCatOptions = emBuildFunctionalCatOptions();
-
-  // ── Section 1: Unmatched Points ──────────────────────────────────────────
-  var unmatchedRowsHtml = '';
-  var unmatchedTotalOccurrences = 0;
-  for (var ui = 0; ui < unmatchedPoints.length; ui++) {
-    unmatchedTotalOccurrences += unmatchedPoints[ui].count;
-  }
-
-  if (unmatchedPoints.length === 0) {
-    unmatchedRowsHtml =
-      '<tr><td colspan="3" style="padding:16px 12px;text-align:center;color:var(--text3);font-size:11px">' +
-      'All points are matched — nothing needs mapping.' +
-      '</td></tr>';
-  } else {
-    for (var upi = 0; upi < unmatchedPoints.length; upi++) {
-      var up = unmatchedPoints[upi];
-      var normUp = emNormalizePointName(up.name);
-      // currentVal: use existing custom mapping if present, else empty
-      var existingEntry = existingCustomMap[normUp];
-      var currentVal = '';
-      if (existingEntry) {
-        currentVal =
-          existingEntry.categoryKey === '__exclude__'
-            ? '__exclude__'
-            : existingEntry.equipCategory
-              ? existingEntry.equipCategory + ':' + existingEntry.categoryKey
-              : existingEntry.categoryKey;
-      }
-      var countTitle = 'This point appears on ' + up.count + ' equipment row' + (up.count !== 1 ? 's' : '');
-      var selectHtml = emBuildCategoryDropdown(up.name, up.equipCategory, currentVal, allCatOptions);
-      unmatchedRowsHtml +=
-        '<tr style="border-bottom:1px solid var(--border)">' +
-        '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
-        emHtmlEsc(up.name) +
-        '</td>' +
-        '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
-        emHtmlEsc(countTitle) +
-        '">' +
-        up.count +
-        '</td>' +
-        '<td style="padding:6px 8px;font-size:11px">' +
-        selectHtml +
-        '</td>' +
-        '</tr>';
-    }
-  }
-
-  // ── Section 2: Auto-Matched Points ───────────────────────────────────────
-  var matchedRowsHtml = '';
-  for (var mpi = 0; mpi < matchedPoints.length; mpi++) {
-    var mp = matchedPoints[mpi];
-    var confColor = mp.confidence === 'high' ? '#27ae60' : mp.confidence === 'medium' ? '#e67e22' : '#888';
-    var confLabel = mp.confidence === 'high' ? 'High' : mp.confidence === 'medium' ? 'Medium' : 'Low';
-    var confTitle =
-      'Auto-match confidence: ' +
-      confLabel +
-      '. Click Save if this looks correct, or use the Unmatched section to override.';
-    var mCountTitle = 'This point appears on ' + mp.count + ' equipment row' + (mp.count !== 1 ? 's' : '');
-    matchedRowsHtml +=
-      '<tr style="border-bottom:1px solid var(--border)">' +
-      '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:280px;word-break:break-word">' +
-      emHtmlEsc(mp.name) +
-      '</td>' +
-      '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
-      emHtmlEsc(mCountTitle) +
-      '">' +
-      mp.count +
-      '</td>' +
-      '<td style="padding:6px 12px;font-size:11px;color:var(--text2)">' +
-      emHtmlEsc(mp.matchedLabel) +
-      '</td>' +
-      '<td style="padding:6px 12px;font-size:11px;text-align:center" title="' +
-      emHtmlEsc(confTitle) +
-      '">' +
-      '<span style="color:' +
-      confColor +
-      ';font-weight:600;font-size:10px">' +
-      confLabel +
-      '</span>' +
-      '</td>' +
-      '</tr>';
-  }
-
-  // ── Assemble modal HTML ───────────────────────────────────────────────────
   var thStyle =
     'padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
     'letter-spacing:0.05em;text-align:left;border-bottom:1px solid var(--border);' +
@@ -12004,24 +11927,14 @@ function emOpenManageMappings(pid) {
     'letter-spacing:0.06em;background:var(--s1);border-bottom:1px solid var(--border);' +
     'border-top:2px solid var(--border)';
 
-  var matchedSection =
-    matchedPoints.length === 0
-      ? ''
-      : '<tr><td colspan="4" style="' +
-        sectionHeadStyle +
-        '">Auto-Matched Points (' +
-        matchedPoints.length +
-        ') — verify these look correct</td></tr>' +
-        matchedRowsHtml;
-
-  var modalHtml =
+  // Modal shell — tbody starts with a single loading row; content is injected below.
+  var shellHtml =
     '<div id="em-manage-mappings-overlay" ' +
     'style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px" ' +
     'onclick="emCloseManageMappings(event)">' +
     '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;width:860px;max-width:100%;' +
     'max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.4)" ' +
     'onclick="event.stopPropagation()">' +
-    // Header
     '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;flex-shrink:0">' +
     '<div style="flex:1">' +
     '<div style="font-size:14px;font-weight:700;color:var(--text)">Manage Point Mappings</div>' +
@@ -12029,24 +11942,11 @@ function emOpenManageMappings(pid) {
     'title="Map unrecognized BAS points to ASHRAE 36 categories. Hover any point name or count for details.">' +
     'Map unrecognized BAS points to ASHRAE 36 categories. Hover any point for details.' +
     '</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-top:2px">' +
-    unmatchedPoints.length +
-    ' unmatched &nbsp;|&nbsp; ' +
-    matchedPoints.length +
-    ' auto-matched &nbsp;|&nbsp; ' +
-    (unmatchedTotalOccurrences +
-      (function () {
-        var t = 0;
-        for (var i = 0; i < matchedPoints.length; i++) t += matchedPoints[i].count;
-        return t;
-      })()) +
-    ' total point occurrences' +
-    '</div>' +
+    '<div id="em-mm-summary" style="font-size:11px;color:var(--text3);margin-top:2px">Loading…</div>' +
     '</div>' +
     '<button onclick="emCloseManageMappings()" ' +
     'style="font-size:16px;background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 8px;line-height:1;flex-shrink:0">X</button>' +
     '</div>' +
-    // Table scroll area
     '<div style="flex:1;overflow-y:auto;min-height:0">' +
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead>' +
@@ -12065,35 +11965,198 @@ function emOpenManageMappings(pid) {
     ';width:10px"></th>' +
     '</tr>' +
     '</thead>' +
-    '<tbody>' +
-    // Unmatched section header
-    '<tr><td colspan="4" style="' +
-    sectionHeadStyle +
-    'border-top:none">Unmatched Points (' +
-    unmatchedPoints.length +
-    ') — need mapping</td></tr>' +
-    unmatchedRowsHtml +
-    // Matched section
-    matchedSection +
+    '<tbody id="em-mm-tbody">' +
+    '<tr><td colspan="4" style="padding:32px;text-align:center;color:var(--text3);font-size:12px">Building point list…</td></tr>' +
     '</tbody>' +
     '</table>' +
     '</div>' +
-    // Footer
     '<div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0">' +
     '<span style="font-size:11px;color:var(--text3);flex:1">Mappings are saved per project. Re-import is not required — the matrix re-renders immediately.</span>' +
     '<button onclick="emCloseManageMappings()" ' +
     'style="font-size:11px;padding:6px 16px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:4px;cursor:pointer;height:30px">Cancel</button>' +
-    '<button onclick="emSaveManageMappings(\'' +
+    '<button id="em-mm-save-btn" onclick="emSaveManageMappings(\'' +
     pid +
-    '\')" ' +
-    'style="font-size:11px;padding:6px 16px;background:var(--accent);border:none;color:#fff;border-radius:4px;cursor:pointer;height:30px;font-weight:600">Save Mappings</button>' +
+    '\')" disabled ' +
+    'style="font-size:11px;padding:6px 16px;background:var(--accent);border:none;color:#fff;border-radius:4px;cursor:pointer;height:30px;font-weight:600;opacity:0.6">Save Mappings</button>' +
     '</div>' +
     '</div>' +
     '</div>';
 
   var el = document.createElement('div');
-  el.innerHTML = modalHtml;
+  el.innerHTML = shellHtml;
   document.body.appendChild(el.firstChild);
+
+  // Defer the expensive computation so the modal shell can paint first.
+  setTimeout(function () {
+    // Guard: modal may have been closed before we get here.
+    var tbody = document.getElementById('em-mm-tbody');
+    if (!tbody) return;
+
+    var allPoints = emGetAllPoints(rows);
+    var customMappings = emLoadCustomMappings(pid);
+
+    // Build lookup: normName -> mapping entry from existing custom mappings
+    var existingCustomMap = {};
+    for (var mi = 0; mi < customMappings.length; mi++) {
+      var m = customMappings[mi];
+      if (m.rawName) existingCustomMap[emNormalizePointName(m.rawName)] = m;
+    }
+
+    // Separate into unmatched and matched
+    var unmatchedPoints = [];
+    var matchedPoints = [];
+    for (var pi = 0; pi < allPoints.length; pi++) {
+      var pt = allPoints[pi];
+      var normName = emNormalizePointName(pt.name);
+      var hasCustom = !!existingCustomMap[normName];
+      if (pt.status === 'unmatched' || hasCustom) {
+        unmatchedPoints.push(pt);
+      } else if (pt.status === 'matched') {
+        matchedPoints.push(pt);
+      }
+      // excluded points are silently omitted
+    }
+
+    var allCatOptions = emBuildFunctionalCatOptions();
+
+    // Count total occurrences for summary line
+    var unmatchedTotalOccurrences = 0;
+    for (var ui = 0; ui < unmatchedPoints.length; ui++) unmatchedTotalOccurrences += unmatchedPoints[ui].count;
+    var matchedTotalOccurrences = 0;
+    for (var mti = 0; mti < matchedPoints.length; mti++) matchedTotalOccurrences += matchedPoints[mti].count;
+
+    // Update summary line
+    var summaryEl = document.getElementById('em-mm-summary');
+    if (summaryEl) {
+      summaryEl.textContent =
+        unmatchedPoints.length +
+        ' unmatched  |  ' +
+        matchedPoints.length +
+        ' auto-matched  |  ' +
+        (unmatchedTotalOccurrences + matchedTotalOccurrences) +
+        ' total point occurrences';
+    }
+
+    // ── Build tbody HTML in chunks to stay non-blocking ───────────────────
+    // Each chunk processes CHUNK_SIZE points before yielding via setTimeout.
+    var CHUNK_SIZE = 80;
+    var htmlParts = [];
+
+    // Section 1 header
+    htmlParts.push(
+      '<tr><td colspan="4" style="' +
+        sectionHeadStyle +
+        'border-top:none">Unmatched Points (' +
+        unmatchedPoints.length +
+        ') — need mapping</td></tr>',
+    );
+
+    if (unmatchedPoints.length === 0) {
+      htmlParts.push(
+        '<tr><td colspan="3" style="padding:16px 12px;text-align:center;color:var(--text3);font-size:11px">' +
+          'All points are matched — nothing needs mapping.</td></tr>',
+      );
+    } else {
+      for (var upi = 0; upi < unmatchedPoints.length; upi++) {
+        var up = unmatchedPoints[upi];
+        var normUp = emNormalizePointName(up.name);
+        var existingEntry = existingCustomMap[normUp];
+        var currentVal = '';
+        if (existingEntry) {
+          currentVal =
+            existingEntry.categoryKey === '__exclude__'
+              ? '__exclude__'
+              : existingEntry.equipCategory
+                ? existingEntry.equipCategory + ':' + existingEntry.categoryKey
+                : existingEntry.categoryKey;
+        }
+        var countTitle = 'This point appears on ' + up.count + ' equipment row' + (up.count !== 1 ? 's' : '');
+        var selectHtml = emBuildCategoryDropdown(up.name, up.equipCategory, currentVal, allCatOptions);
+        htmlParts.push(
+          '<tr style="border-bottom:1px solid var(--border)">' +
+            '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
+            emHtmlEsc(up.name) +
+            '</td>' +
+            '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
+            emHtmlEsc(countTitle) +
+            '">' +
+            up.count +
+            '</td>' +
+            '<td style="padding:6px 8px;font-size:11px">' +
+            selectHtml +
+            '</td>' +
+            '<td></td></tr>',
+        );
+      }
+    }
+
+    // Section 2 header + rows
+    if (matchedPoints.length > 0) {
+      htmlParts.push(
+        '<tr><td colspan="4" style="' +
+          sectionHeadStyle +
+          '">Auto-Matched Points (' +
+          matchedPoints.length +
+          ') — verify these look correct</td></tr>',
+      );
+      for (var mpi = 0; mpi < matchedPoints.length; mpi++) {
+        var mp = matchedPoints[mpi];
+        var confColor = mp.confidence === 'high' ? '#27ae60' : mp.confidence === 'medium' ? '#e67e22' : '#888';
+        var confLabel = mp.confidence === 'high' ? 'High' : mp.confidence === 'medium' ? 'Medium' : 'Low';
+        var confTitle =
+          'Auto-match confidence: ' +
+          confLabel +
+          '. Click Save if this looks correct, or use the Unmatched section to override.';
+        var mCountTitle = 'This point appears on ' + mp.count + ' equipment row' + (mp.count !== 1 ? 's' : '');
+        htmlParts.push(
+          '<tr style="border-bottom:1px solid var(--border)">' +
+            '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:280px;word-break:break-word">' +
+            emHtmlEsc(mp.name) +
+            '</td>' +
+            '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
+            emHtmlEsc(mCountTitle) +
+            '">' +
+            mp.count +
+            '</td>' +
+            '<td style="padding:6px 12px;font-size:11px;color:var(--text2)">' +
+            emHtmlEsc(mp.matchedLabel) +
+            '</td>' +
+            '<td style="padding:6px 12px;font-size:11px;text-align:center" title="' +
+            emHtmlEsc(confTitle) +
+            '">' +
+            '<span style="color:' +
+            confColor +
+            ';font-weight:600;font-size:10px">' +
+            confLabel +
+            '</span>' +
+            '</td></tr>',
+        );
+      }
+    }
+
+    // Inject in chunks so the UI thread stays responsive during large builds.
+    var chunkIdx = 0;
+    function injectChunk() {
+      var tbodyNow = document.getElementById('em-mm-tbody');
+      if (!tbodyNow) return; // modal was closed
+      if (chunkIdx === 0) tbodyNow.innerHTML = ''; // clear the loading row on first chunk
+      var end = Math.min(chunkIdx + CHUNK_SIZE, htmlParts.length);
+      var fragment = htmlParts.slice(chunkIdx, end).join('');
+      tbodyNow.insertAdjacentHTML('beforeend', fragment);
+      chunkIdx = end;
+      if (chunkIdx < htmlParts.length) {
+        setTimeout(injectChunk, 0);
+      } else {
+        // All rows injected — enable Save button
+        var saveBtn = document.getElementById('em-mm-save-btn');
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.style.opacity = '1';
+        }
+      }
+    }
+    injectChunk();
+  }, 0);
 }
 
 /* ── emCloseManageMappings ──────────────────────────────────────────────────

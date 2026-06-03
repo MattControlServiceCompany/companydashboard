@@ -9185,7 +9185,12 @@ function renderPerfPane(pane, m, bills, incl) {
     chartSection +
     demandSection +
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Baseline</div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:4px">' +
+    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Post-Baseline Monthly vs Baseline</div>' +
+    (filteredPostRows.length && _perfResult.html && typeof tableZoomControlHTML === 'function'
+      ? tableZoomControlHTML('perf-table-wrap', 'en_perf_zoom', 'perf-zoom-lbl')
+      : '') +
+    '</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">' +
     (hasRegr_p
       ? 'Baseline = weather-normalized calendar month value · <span style="color:var(--violet)">🔬 R</span> = regression-derived'
@@ -9199,6 +9204,13 @@ function renderPerfPane(pane, m, bills, incl) {
     '</div>' +
     anomalySection +
     perfControlBar;
+
+  // Apply persisted zoom to perf table (restores stored zoom level on every tab open)
+  if (filteredPostRows.length && _perfResult.html && typeof setTableZoom === 'function') {
+    requestAnimationFrame(function () {
+      setTableZoom('perf-table-wrap', null, 'en_perf_zoom', 'perf-zoom-lbl');
+    });
+  }
 
   if (_perfChartVis) {
     requestAnimationFrame(() => {

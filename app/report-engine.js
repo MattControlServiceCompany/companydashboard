@@ -9772,639 +9772,639 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'Supply air temperature sensor',
     impact: '3–8% heating & cooling savings',
     plain:
-      'A supply air temperature sensor tells the system exactly how warm or cold the air leaving the air handler is. Without it, the system cannot reset temperature setpoints based on outside conditions — a key ASHRAE 36 energy-saving strategy.',
+      'Without this sensor, the system cannot adjust how warm or cold it delivers air based on outdoor conditions — one of the primary ways smart controls cut heating and cooling costs.',
   },
   rat: {
     short: 'Return air temperature sensor',
     impact: '2–5% fan and cooling savings',
     plain:
-      'The return air sensor measures the temperature of air coming back from the occupied spaces. Combined with supply air temperature, it lets the BAS calculate how effectively the system is conditioning the building and adjust accordingly.',
+      'Measures the temperature of air returning from occupied spaces, giving the system the feedback it needs to verify how effectively it is conditioning the building.',
   },
   mat: {
     short: 'Mixed air temperature sensor',
     impact: '3–6% cooling savings',
     plain:
-      'The mixed air sensor measures the blend of outdoor and return air before it reaches heating and cooling coils. It is essential for economizer control — the ability to use free outdoor air for cooling — which is one of the biggest energy-saving opportunities in commercial HVAC.',
+      'Required for free-cooling (economizer) control — without it, the system cannot determine when outdoor air is cool enough to replace mechanical cooling at no operating cost.',
   },
   oat: {
     short: 'Outdoor air temperature sensor',
     impact: '4–10% combined savings',
     plain:
-      'Outdoor air temperature is used by nearly every ASHRAE 36 sequence: reset schedules, economizer control, warm-up/cool-down, and heating/cooling staging. Without a reliable OAT reading, the system cannot adapt its operation to changing weather.',
+      'Nearly every energy-saving sequence depends on outdoor temperature; without a reliable reading, the system cannot adapt to changing weather conditions.',
   },
   dsp: {
     short: 'Duct static pressure sensor',
     impact: '15–30% fan energy savings',
     plain:
-      'Duct static pressure control is required for variable-speed fan drives. When static pressure is measured and reset based on actual zone needs, fan speed drops significantly during mild weather — often cutting fan energy use by 20–30%.',
+      'Enables variable fan speed control — when pressure is measured and reset based on actual demand, fan energy drops 15–30% compared to fixed-speed operation.',
   },
   sfVfd: {
     short: 'Supply fan VFD',
     impact: '20–40% fan energy savings',
     plain:
-      'A variable frequency drive (VFD) on the supply fan allows fan speed to vary with actual building load. At 80% speed, a fan uses roughly half the energy it uses at full speed. This is one of the highest-return hardware investments in building controls.',
+      'Allows fan speed to match actual load — at 80% speed a fan uses roughly half the energy of full-speed operation, making this one of the highest-return hardware upgrades available.',
   },
   satReset: {
     short: 'Supply air temperature reset sequence',
     impact: '5–12% heating & cooling savings',
     plain:
-      'Supply air temperature reset adjusts how warm or cold the air handler delivers air based on what zones actually need. In mild weather, the system delivers less extreme temperatures, reducing the energy needed to heat or cool the air.',
+      'Adjusts supply air temperature based on what zones actually need, delivering less extreme temperatures during mild weather and reducing conditioning energy.',
   },
   dspReset: {
     short: 'Duct static pressure reset sequence',
     impact: '10–25% fan energy savings',
     plain:
-      'Static pressure reset lowers the duct pressure target when most zones have their dampers wide open — meaning the system can deliver the right amount of air at lower fan speed. This sequence alone can cut fan energy use by 15% or more.',
+      'Lowers the duct pressure target when zones have adequate airflow, allowing the fan to slow down — this sequence alone typically cuts fan energy by 15% or more.',
   },
   economizer: {
     short: 'Economizer control sequence',
     impact: '5–15% cooling savings',
     plain:
-      'Economizer control uses outdoor air for free cooling whenever conditions allow — typically when outdoor air is cooler and drier than return air. Without a properly programmed economizer, mechanical cooling runs when it does not need to.',
+      'Uses outdoor air for free cooling whenever conditions allow; without it, mechanical cooling runs even when outdoor air could do the same job at no operating cost.',
   },
   demandCtrl: {
     short: 'CO2-based demand control ventilation',
     impact: '5–10% fan and cooling savings',
     plain:
-      'Demand control ventilation uses CO2 sensors to bring in only as much outdoor air as occupancy actually requires. Without it, the system must heat and cool full design outdoor air even when rooms are nearly empty.',
+      'Brings in only as much outdoor air as current occupancy requires; without it, the system conditions full design ventilation air even when rooms are nearly empty.',
   },
   optStart: {
     short: 'Optimal start/stop sequence',
     impact: '3–8% overall savings',
     plain:
-      'Optimal start calculates the shortest warmup or cooldown period needed to reach comfort before occupancy, then delays startup accordingly. Without it, systems often start 1–2 hours earlier than necessary, wasting energy conditioning an empty building.',
+      'Calculates the minimum warm-up or cool-down time needed before occupancy, eliminating the 1–2 hours of early starts that condition an empty building every day.',
   },
   hwReset: {
     short: 'Hot water supply temperature reset',
     impact: '5–15% boiler savings',
     plain:
-      'Hot water reset lowers the boiler supply temperature setpoint when outdoor air is warmer, reducing heat loss and improving boiler efficiency. Modern condensing boilers can achieve efficiency gains of 3–5% for every 10°F reduction in return water temperature.',
+      'Reduces boiler water temperature as outdoor air warms, cutting heat loss and improving efficiency — especially valuable for condensing boilers.',
   },
   chwReset: {
     short: 'Chilled water supply temperature reset',
     impact: '3–10% chiller savings',
     plain:
-      'Chilled water reset raises the chilled water setpoint when the building load is light, allowing the chiller to operate more efficiently. Chillers are significantly more efficient at higher leaving water temperatures.',
+      'Raises chilled water temperature during light loads, allowing the chiller to operate more efficiently during the many hours buildings run below peak cooling demand.',
   },
   leadLag: {
     short: 'Lead/lag equipment rotation',
     impact: '2–5% equipment life extension',
     plain:
-      'Lead/lag rotation alternates which pump or boiler serves as the primary unit, distributing runtime evenly across equipment. This extends equipment life and ensures all units are exercised regularly to prevent seizing.',
+      'Alternates which pump or boiler serves as the primary unit, distributing wear evenly and keeping all equipment operational between maintenance cycles.',
   },
   zoneCoolSp: {
     short: 'Zone cooling setpoint',
     impact: 'Baseline requirement',
     plain:
-      'Zone cooling setpoints define the target temperature for cooling in each space. Properly programmed setpoints with appropriate deadbands between heating and cooling are required for ASHRAE 36 compliance and prevent simultaneous heating and cooling.',
+      'Defines the target temperature for cooling each space; required for code compliance and to prevent the system from heating and cooling the same zone simultaneously.',
   },
   zoneHtgSp: {
     short: 'Zone heating setpoint',
     impact: 'Baseline requirement',
     plain:
-      'Zone heating setpoints define the minimum temperature for each space. ASHRAE 36 requires setbacks during unoccupied periods and prohibits simultaneous heating and cooling within the deadband range.',
+      'Defines the minimum temperature for each space and enables temperature setbacks during unoccupied hours to avoid heating empty rooms.',
   },
   discFlow: {
     short: 'Discharge airflow measurement',
     impact: 'Required for VAV minimum ventilation',
     plain:
-      'Airflow measurement at terminal units is required by ASHRAE 62.1 for minimum ventilation compliance and enables the static pressure reset sequences that cut fan energy. Without measured airflow, the system cannot verify that spaces are receiving adequate ventilation.',
+      'Confirms each space receives its required minimum ventilation air and enables the fan pressure reset sequences that cut fan energy — both are impossible without measured airflow.',
   },
   hwSupTemp: {
     short: 'Hot water supply temperature sensor',
     impact: 'Required for HW reset',
     plain:
-      'The hot water supply temperature sensor is essential for monitoring boiler output and enabling hot water temperature reset sequences. Without it, the system cannot verify that distribution temperatures are appropriate for building load conditions.',
+      'Verifies boiler output and is required for the temperature reset strategy that reduces boiler energy during milder weather.',
   },
   hwRetTemp: {
     short: 'Hot water return temperature sensor',
     impact: 'Required for delta-T monitoring',
     plain:
-      'Return temperature monitoring allows the BAS to calculate the temperature differential across the heating system. Low delta-T is a common source of inefficiency in hot water systems and can indicate pump, balancing, or coil issues.',
+      'Measures the temperature drop across the heating system, flagging inefficiencies such as pump, balancing, or coil problems that raise operating costs.',
   },
   hwDiffPres: {
     short: 'Hot water differential pressure sensor',
     impact: '10–20% pump energy savings',
     plain:
-      'Differential pressure measurement enables pump speed control: the pump slows when fewer zones call for heat. Without it, the pump runs at full speed regardless of load, wasting significant energy during partial-load conditions.',
+      'Enables the pump to slow down when fewer zones call for heat; without it, the pump runs at full speed regardless of load.',
   },
   chwSupTemp: {
     short: 'Chilled water supply temperature sensor',
     impact: 'Required for CHW reset',
     plain:
-      'The chilled water supply temperature sensor verifies chiller output and enables the temperature reset sequences that improve chiller efficiency during mild weather.',
+      'Verifies chiller output and enables the temperature reset strategy that improves chiller efficiency during mild weather.',
   },
   chwRetTemp: {
     short: 'Chilled water return temperature sensor',
     impact: 'Required for delta-T monitoring',
     plain:
-      'Return temperature monitoring reveals chilled water delta-T, a key indicator of plant efficiency. Low delta-T on a chilled water system often signals coil or valve issues that cause the chiller to work harder than necessary.',
+      'Measures how fully the chilled water is being utilized; poor utilization forces the chiller to work harder and cycle more often.',
   },
   chwDiffPres: {
     short: 'Chilled water differential pressure sensor',
     impact: '10–20% pump energy savings',
     plain:
-      'Chilled water differential pressure control allows pump speed to be reduced when building load is light. This is particularly valuable because chilled water pump energy scales with the cube of speed.',
+      'Allows chilled water pumps to slow during light loads — pump energy drops sharply with speed, making this sensor essential for part-load efficiency.',
   },
   cwst: {
     short: 'Condenser water supply temperature sensor',
     impact: '3–8% chiller savings',
     plain:
-      'Condenser water supply temperature monitoring is required for optimal chiller and cooling tower operation, including condenser water temperature reset to improve chiller efficiency.',
+      'Required for cooling tower and chiller coordination, including the temperature reset strategy that improves chiller efficiency during cooler weather.',
   },
   ctFanSpeed: {
     short: 'Cooling tower fan speed control',
     impact: '30–50% tower fan savings',
     plain:
-      'Variable-speed cooling tower fans can reduce tower fan energy by 30–50% during mild weather. Tower fans are required to deliver specific condenser water temperatures, and variable speed allows them to achieve this at the minimum possible energy input.',
+      'Variable-speed tower fans can cut fan energy 30–50% during mild weather by running only as fast as needed to reach the target condenser water temperature.',
   },
   // ── AHU point keys ──────────────────────────────────────────────────────
   sfStatus: {
     short: 'Supply fan status feedback',
     impact: 'Required for proof-of-operation',
     plain:
-      'The supply fan status point confirms that the fan is actually running, not just commanded on. ASHRAE 36 requires fan proof-of-operation for alarm management and to prevent sequences from running without airflow — which can damage equipment and waste energy.',
+      'Confirms the fan is actually running — not just commanded on — preventing control sequences from operating without airflow, which can damage equipment.',
   },
   sfSpeed: {
     short: 'Supply fan speed feedback',
     impact: 'Required for VFD verification',
     plain:
-      'Supply fan speed feedback confirms the actual VFD output frequency. Without it, the BAS cannot verify that speed commands are being executed or detect VFD faults that would cause the fan to run at full speed regardless of load.',
+      'Confirms the variable speed drive is responding to commands; without it, the system cannot detect a drive fault that causes the fan to run at full speed regardless of load.',
   },
   sfEnable: {
     short: 'Supply fan enable command',
     impact: 'Required for scheduled operation',
     plain:
-      'The fan enable point allows the BAS to start and stop the air handler according to occupancy schedules and optimal start/stop sequences. Without a verified enable command, the system cannot automate or verify equipment start/stop.',
+      'Allows the control system to start and stop the air handler on occupancy schedules; without it, automated scheduling and optimal start sequences cannot be verified.',
   },
   sfSpeedCmd: {
     short: 'Supply fan speed command',
     impact: '20–40% fan energy savings',
     plain:
-      'The fan speed command point is how the BAS sends a speed setpoint to the VFD. Without it, the VFD cannot be modulated by the control system and will run at a fixed speed, eliminating the energy savings that variable-speed operation provides.',
+      'The control signal that tells the drive how fast to run; without it, the drive defaults to fixed speed and all variable-speed energy savings are lost.',
   },
   oaDampCmd: {
     short: 'OA damper position command',
     impact: 'Required for economizer control',
     plain:
-      'The outdoor air damper command controls how much outdoor air the air handler brings in for ventilation and free cooling. Without it, the economizer sequence cannot operate and the system is limited to minimum fixed ventilation rates.',
+      'Controls how much outdoor air enters for ventilation and free cooling; without it, economizer operation is not possible and ventilation is fixed at a manual setting.',
   },
   raDampCmd: {
     short: 'Return air damper position command',
     impact: 'Required for economizer control',
     plain:
-      'The return air damper works in concert with the outdoor air damper: as outdoor air increases for economizer cooling, the return air damper closes to maintain proper airflow balance. Without it, economizer operation causes pressure imbalance.',
+      'Works with the outdoor air damper to maintain airflow balance — as outdoor air increases for free cooling, the return damper closes to prevent over-pressurization.',
   },
   clgValve: {
     short: 'Cooling coil valve command',
     impact: 'Required for mechanical cooling control',
     plain:
-      'The cooling coil valve modulates chilled water flow through the coil to meet supply air temperature setpoints. Without a controlled valve, the system cannot perform supply air temperature reset or economizer sequencing with mechanical cooling.',
+      'Controls chilled water flow through the cooling coil; required for supply air temperature reset and for coordinating mechanical cooling with the economizer.',
   },
   htgValve: {
     short: 'Heating coil valve command',
     impact: 'Required for preheat and morning warm-up',
     plain:
-      'The heating coil valve controls hot water flow through the preheat or heating coil. It is essential for morning warm-up sequences, freeze protection, and supply air temperature reset during cold weather.',
+      'Controls hot water flow through the heating coil; required for morning warm-up, freeze protection, and cold-weather supply air temperature control.',
   },
   freezeStat: {
     short: 'Freeze protection status',
     impact: 'Required for freeze protection safety',
     plain:
-      'The freeze stat is a low-limit safety device that shuts down the air handler if coil temperatures approach freezing. ASHRAE 36 requires the BAS to monitor and respond to freeze stat trips to protect coils from damage.',
+      'Signals the control system when coil temperatures approach freezing so the air handler can be shut down before water coils are damaged.',
   },
   oaFlow: {
     short: 'Outdoor airflow measurement',
     impact: 'Required for ventilation compliance',
     plain:
-      'A dedicated outdoor airflow station measures the actual volume of outside air entering the unit. Without measured OA flow, the system cannot verify that minimum ventilation rates required by ASHRAE 62.1 are being met.',
+      'Measures actual outdoor air volume entering the unit; without it, there is no way to confirm that code-required minimum ventilation rates are being met.',
   },
   oaEnthalpy: {
     short: 'Outdoor air enthalpy sensor',
     impact: 'Required for differential enthalpy economizer',
     plain:
-      'An enthalpy sensor measures both temperature and humidity of outdoor air. Combined with return air enthalpy, it enables differential enthalpy economizer control — the most accurate method for determining when outdoor air provides net cooling benefit.',
+      'Measures outdoor air temperature and humidity together, enabling the most accurate method for deciding when outdoor air is truly suitable for free cooling.',
   },
   rfEnable: {
     short: 'Return fan enable command',
     impact: 'Required for building pressure control',
     plain:
-      'The return fan enable command starts and stops the return fan in coordination with the supply fan. Proper return fan sequencing is required to maintain building pressurization and prevent over- or under-pressurization during economizer operation.',
+      'Coordinates return fan operation with the supply fan to maintain stable building pressure, preventing door and comfort problems during economizer operation.',
   },
   rfSpeedCmd: {
     short: 'Return fan speed command',
     impact: 'Required for building pressure control',
     plain:
-      'Return fan speed is modulated to track supply fan airflow and maintain the correct building pressure differential. Without speed control, the return fan runs at fixed speed and cannot adapt to the wide range of airflow conditions that ASHRAE 36 sequences create.',
+      'Modulates return fan speed to match supply fan airflow; without it, the return fan runs at a fixed speed and cannot adapt as the supply fan varies with load.',
   },
   bldgPressure: {
     short: 'Building static pressure sensor',
     impact: 'Required for relief fan/exhaust control',
     plain:
-      'Building static pressure is used to modulate relief fans or exhaust systems to prevent the building from becoming over-pressurized during economizer operation. Uncontrolled pressure can cause door-opening problems, infiltration, and comfort complaints.',
+      'Allows the system to modulate exhaust or relief fans to prevent over-pressurization during economizer operation, avoiding door problems, drafts, and comfort complaints.',
   },
   co2: {
     short: 'CO2 sensor (return or zone)',
     impact: '5–10% fan and cooling savings',
     plain:
-      'CO2 concentration is a proxy for occupancy: as more people occupy a space, CO2 rises. The BAS uses this signal to bring in only as much outdoor air as current occupancy requires, reducing the energy needed to condition excess ventilation air.',
+      'Tracks occupancy through air quality, allowing the system to reduce outdoor air — and the energy to condition it — when rooms are partially or fully empty.',
   },
   // ── VAV / Terminal point keys ────────────────────────────────────────────
   zoneTemp: {
     short: 'Zone air temperature sensor',
     impact: 'Required for zone control',
     plain:
-      'Zone temperature is the fundamental feedback signal for VAV control. Without it, the terminal unit cannot modulate airflow to meet heating or cooling setpoints, and the system has no way to verify that occupied spaces are comfortable.',
+      'The primary feedback signal for zone control — without it, the terminal unit cannot modulate airflow to meet setpoints and there is no way to verify that the space is comfortable.',
   },
   coolSP: {
     short: 'Zone cooling setpoint',
     impact: 'Baseline requirement',
     plain:
-      'Zone cooling setpoints define the target temperature for cooling in each space. Properly programmed setpoints with appropriate deadbands between heating and cooling are required for ASHRAE 36 compliance and prevent simultaneous heating and cooling.',
+      'Defines the cooling target temperature; required to prevent simultaneous heating and cooling and to support temperature setbacks during unoccupied hours.',
   },
   htgSP: {
     short: 'Zone heating setpoint',
     impact: 'Baseline requirement',
     plain:
-      'Zone heating setpoints define the minimum temperature for each space. ASHRAE 36 requires setbacks during unoccupied periods and prohibits simultaneous heating and cooling within the deadband range.',
+      'Defines the heating target temperature and enables unoccupied setbacks that avoid heating empty spaces overnight or on weekends.',
   },
   dat: {
     short: 'Discharge air temperature sensor',
     impact: 'Required for reheat control',
     plain:
-      'Discharge air temperature at the terminal unit is used to control reheat valve position and verify that the air delivered to the space is within acceptable limits. Without it, the BAS cannot prevent overcooling or verify reheat operation.',
+      'Monitors the temperature of air actually delivered to the space, enabling precise reheat control and preventing overcooling at minimum airflow.',
   },
   fanStatus: {
     short: 'AHU supply fan status (at terminal)',
     impact: 'Required for terminal unit sequencing',
     plain:
-      'Terminal units need to know whether the air handling unit is operating before opening their dampers. Without this signal, the VAV box may open fully when there is no primary airflow, or fail to open when the AHU is running.',
+      'Tells the terminal unit whether the air handler is running so it can open its damper at the right time — preventing wasted energy from a damper open against no airflow.',
   },
   dampCmd: {
     short: 'Damper position command',
     impact: 'Required for zone airflow control',
     plain:
-      'The VAV damper command controls how much conditioned air the terminal unit delivers to the zone. It is the primary actuator for meeting zone temperature setpoints and maintaining minimum ventilation rates — fundamental to all ASHRAE 36 terminal sequences.',
+      'The primary actuator for zone temperature control — modulates how much conditioned air the terminal unit delivers to meet setpoints and maintain minimum ventilation.',
   },
   reheatValve: {
     short: 'Reheat valve command',
     impact: 'Required for zone heating',
     plain:
-      'The reheat valve controls the flow of hot water through the terminal reheat coil. Without it, the BAS cannot provide zone heating through the VAV box, forcing all heating to come from the primary air system and significantly reducing system efficiency.',
+      'Controls hot water flow through the terminal reheat coil; without it, zone heating must come entirely from the primary air system, reducing efficiency and comfort.',
   },
   primaryFlow: {
     short: 'Primary (cold deck) airflow',
     impact: 'Required for fan-powered box control',
     plain:
-      'Primary airflow measurement on a fan-powered box tracks how much cold primary air the terminal is receiving from the air handler. This signal drives damper modulation and determines when the terminal fan should operate.',
+      'Measures how much cold primary air the terminal receives from the air handler, driving damper position and determining when the local fan should run.',
   },
   termFanStatus: {
     short: 'Terminal fan status',
     impact: 'Required for fan-powered box proof',
     plain:
-      'The terminal fan status confirms that the fan-powered box fan is actually running. ASHRAE 36 requires this proof-of-operation to enable proper sequencing and alarming when the fan fails to start.',
+      'Confirms the terminal fan is actually running, enabling proper sequencing and alarming when the fan fails to start as commanded.',
   },
   termFanEnable: {
     short: 'Terminal fan enable command',
     impact: 'Required for fan-powered box control',
     plain:
-      'The terminal fan enable command starts and stops the fan in the fan-powered box according to the zone control sequence. Without it, the fan may run continuously (wasting energy) or never run (causing comfort and air quality problems).',
+      'Starts and stops the local terminal fan on demand; without it, the fan either runs continuously (wasting energy) or never runs (causing comfort and air quality problems).',
   },
   coldDampCmd: {
     short: 'Cold deck damper command (dual-duct)',
     impact: 'Required for dual-duct cooling control',
     plain:
-      'The cold deck damper controls cool air delivery in a dual-duct system. Without a BAS-controlled cold deck damper, the system cannot modulate cooling to meet zone setpoints or coordinate cooling and heating to prevent simultaneous conditioning.',
+      'Controls cool air delivery in a dual-duct system; without it, cooling cannot be modulated to meet zone setpoints or coordinated to prevent simultaneous heating and cooling.',
   },
   hotDampCmd: {
     short: 'Hot deck damper command (dual-duct)',
     impact: 'Required for dual-duct heating control',
     plain:
-      'The hot deck damper controls warm air delivery in a dual-duct system. Without control of both hot and cold deck dampers, the BAS cannot implement the ASHRAE 36 dual-duct sequences that prevent simultaneous heating and cooling.',
+      'Controls warm air delivery in a dual-duct system; both hot and cold deck dampers must be controlled together to prevent simultaneous heating and cooling.',
   },
   // ── HW Plant point keys ──────────────────────────────────────────────────
   hwst: {
     short: 'Hot water supply temperature sensor',
     impact: 'Required for HW reset sequences',
     plain:
-      'The hot water supply temperature sensor is the primary feedback for boiler plant control and is required for hot water temperature reset sequences. Without it, the system cannot verify boiler output or reduce supply temperature during mild weather to save energy.',
+      'Primary feedback for boiler control; required for the outdoor reset strategy that lowers water temperature — and heating costs — as outdoor air warms.',
   },
   hwrt: {
     short: 'Hot water return temperature sensor',
     impact: 'Required for delta-T monitoring',
     plain:
-      'Return temperature monitoring allows the BAS to calculate the temperature differential across the heating system. Low delta-T is a common source of inefficiency in hot water systems and can indicate pump, balancing, or coil issues that increase operating costs.',
+      'Measures the temperature drop across the heating system; low temperature drop signals pump, balancing, or coil problems that raise operating costs.',
   },
   hwdp: {
     short: 'Hot water differential pressure sensor',
     impact: '10–20% pump energy savings',
     plain:
-      'Differential pressure measurement enables variable-speed pump control: the pump slows when fewer zones call for heat, following the heating load rather than running at full speed. This directly reduces pump energy and extends pump life.',
+      'Allows the pump to slow when fewer zones call for heat rather than running at full design speed regardless of load.',
   },
   boilerStatus: {
     short: 'Boiler status feedback',
     impact: 'Required for boiler staging',
     plain:
-      'Boiler status confirms that each boiler is firing and not in fault. The BAS uses this feedback for lead/lag rotation, staging additional boilers when demand increases, and generating alarms when a boiler fails.',
+      'Confirms each boiler is firing and fault-free, enabling staged operation and automatic alarms when a boiler trips offline.',
   },
   boilerEnable: {
     short: 'Boiler enable command',
     impact: 'Required for boiler sequencing',
     plain:
-      'The boiler enable point allows the BAS to start and stop individual boilers as part of staging and lead/lag sequences. Without it, the BAS cannot control which boilers run, preventing energy-efficient staging strategies.',
+      'Allows the control system to start and stop individual boilers for staging and rotation; without it, all boilers run continuously regardless of heating demand.',
   },
   hwSetpoint: {
     short: 'HW supply temperature setpoint',
     impact: 'Required for outdoor air reset',
     plain:
-      'The hot water supply setpoint command is how the BAS tells the boiler what temperature to target. Modulating this setpoint based on outdoor air temperature — hot water reset — is one of the most effective boiler plant efficiency strategies.',
+      'The command that tells the boiler what temperature to target; adjusting this setpoint with outdoor temperature is one of the most effective ways to reduce boiler energy costs.',
   },
   hwPumpStatus: {
     short: 'Hot water pump status feedback',
     impact: 'Required for pump sequencing',
     plain:
-      'Hot water pump status confirms that the pump is running and providing flow. Without this feedback, the BAS cannot verify that heating water is circulating, cannot implement lead/lag rotation, and cannot alarm on pump failures.',
+      'Confirms heating water is circulating and enables lead/lag rotation and failure alarms — without it, pump problems may go undetected.',
   },
   hwPumpEnable: {
     short: 'Hot water pump enable command',
     impact: 'Required for pump staging',
     plain:
-      'The pump enable command allows the BAS to start individual pumps as part of lead/lag and staging sequences. Without individual pump control, the plant cannot rotate equipment or respond to reduced demand by shutting down unnecessary pumps.',
+      'Starts individual pumps as part of lead/lag sequences; without individual control, the plant cannot rotate equipment or shed pumps when demand is low.',
   },
   hwPumpSpeed: {
     short: 'Hot water pump speed command',
     impact: '10–25% pump energy savings',
     plain:
-      'Variable-speed pump control reduces pump energy when heating loads are low by slowing pump speed to maintain only the differential pressure needed by the most open zone valve. Without speed control, the pump runs at full design speed regardless of demand.',
+      'Slows the pump to match actual heating demand rather than running at full design speed, directly reducing pump energy costs.',
   },
   // ── CHW Plant point keys ─────────────────────────────────────────────────
   chwst: {
     short: 'Chilled water supply temperature sensor',
     impact: 'Required for CHW reset sequences',
     plain:
-      'The chilled water supply temperature sensor verifies chiller output and is required for chilled water temperature reset sequences. Raising the chilled water setpoint during mild weather allows the chiller to operate more efficiently.',
+      'Verifies chiller output and enables the setpoint reset strategy that improves chiller efficiency during mild weather.',
   },
   chwrt: {
     short: 'Chilled water return temperature sensor',
     impact: 'Required for delta-T monitoring',
     plain:
-      'Return temperature monitoring reveals chilled water delta-T, a key indicator of plant efficiency. Low delta-T on a chilled water system — meaning the water is not being fully utilized — is a common cause of chiller over-cycling and excess energy use.',
+      'Measures how fully the chilled water is utilized; poor utilization causes the chiller to over-cycle and consume excess energy.',
   },
   chwdp: {
     short: 'Chilled water differential pressure sensor',
     impact: '10–20% pump energy savings',
     plain:
-      'Chilled water differential pressure control allows pump speed to be reduced when building load is light. Pump energy scales with the cube of speed, so even modest speed reductions deliver large energy savings during the many hours of partial-load operation.',
+      'Allows chilled water pumps to slow during light loads; pump energy drops sharply with speed, yielding large savings during the many partial-load hours typical of commercial buildings.',
   },
   // ── HWP additional point keys ───────────────────────────────────────────
   hwFlow: {
     short: 'Hot water flow meter',
     impact: 'Required for BTU metering and delta-T monitoring',
     plain:
-      'A flow meter on the hot water loop allows the BAS to calculate actual heat delivered (BTUs), monitor system efficiency, and detect low delta-T conditions that signal pumping or coil problems.',
+      'Measures actual heat delivered, enabling efficiency tracking and detection of low temperature-drop conditions that signal pumping or coil problems.',
   },
   hwIsoValve: {
     short: 'Boiler isolation valve status',
     impact: 'Required for safe boiler staging',
     plain:
-      "Isolation valve status feedback confirms that a boiler's inlet and outlet valves have opened before the boiler fires. Without it, the BAS cannot safely stage boilers — opening a boiler into a closed system risks pressure damage and failed starts.",
+      'Confirms the boiler inlet and outlet valves are open before the boiler fires; without this check, staging into a closed system risks pressure damage and failed starts.',
   },
   secHWPumpStatus: {
     short: 'Secondary hot water pump status feedback',
     impact: 'Required for secondary loop verification',
     plain:
-      'Secondary pump status confirms that distribution pumps serving the building loop are running. Without this feedback, the BAS cannot verify that heat is being delivered to terminal units, cannot implement lead/lag rotation, and cannot alarm on pump failures.',
+      'Confirms distribution pumps are running and heat is reaching terminal units; enables lead/lag rotation and failure alarms.',
   },
   hwIsoValveCmd: {
     short: 'Boiler isolation valve command',
     impact: 'Required for boiler sequencing',
     plain:
-      'The isolation valve command allows the BAS to open and close individual boiler ports as part of staging and lead/lag sequences. Without individual valve control, the plant cannot safely add or remove boilers from the loop without manual intervention.',
+      'Opens and closes individual boiler ports during staging; without it, boilers cannot be safely added to or removed from the loop without manual intervention.',
   },
   // ── CHWP additional point keys ─────────────────────────────────────────
   chillerEvapDP: {
     short: 'Chiller evaporator differential pressure sensor',
     impact: 'Required for minimum flow protection',
     plain:
-      'The evaporator differential pressure sensor verifies that adequate chilled water flow is passing through the chiller barrel. Without it, the BAS cannot detect low-flow conditions that can freeze the evaporator and damage the chiller — one of the most expensive HVAC failures.',
+      'Verifies adequate chilled water flow through the chiller barrel; without it, low-flow conditions that freeze the evaporator go undetected until costly equipment damage occurs.',
   },
   chwFlow: {
     short: 'Chilled water flow meter',
     impact: 'Required for ton metering and delta-T monitoring',
     plain:
-      'A chilled water flow meter allows the BAS to calculate actual cooling delivered in tons, monitor system efficiency, and detect low delta-T conditions. Low delta-T on a chilled water plant is a common cause of chiller over-cycling and excess energy use.',
+      'Measures actual cooling delivered in tons, enabling efficiency tracking and detection of poor chilled water utilization that causes chiller over-cycling.',
   },
   chillerStatus: {
     short: 'Chiller run status feedback',
     impact: 'Required for chiller staging and alarming',
     plain:
-      'Chiller status confirms that each chiller is running and not in fault. The BAS uses this feedback for lead/lag rotation, staging additional chillers when demand increases, and generating alarms when a chiller trips — the most critical plant equipment in the system.',
+      'Confirms each chiller is running and fault-free, enabling staged operation and immediate alarms when the most critical plant equipment trips offline.',
   },
   pchwpStatus: {
     short: 'Primary chilled water pump status feedback',
     impact: 'Required for pump sequencing and alarming',
     plain:
-      'Primary pump status confirms that chilled water is circulating through the chiller barrel. Without this feedback, the BAS cannot verify that the chiller has flow before starting it, cannot implement lead/lag rotation, and cannot detect pump failures that would lead to chiller shutdown.',
+      'Confirms chilled water is circulating through the chiller barrel before the chiller starts, preventing damage; also enables lead/lag rotation and failure alarms.',
   },
   schwpStatus: {
     short: 'Secondary chilled water pump status feedback',
     impact: 'Required for distribution loop verification',
     plain:
-      'Secondary pump status confirms that chilled water is being distributed to the building loop. Without it, the BAS cannot verify that cooling is reaching terminal units, cannot alarm on distribution pump failures, and cannot implement lead/lag rotation across secondary pumps.',
+      'Confirms cooling is being distributed to the building; without it, pump failures go undetected and lead/lag rotation is not possible.',
   },
   schwpSpeed: {
     short: 'Secondary chilled water pump speed feedback',
     impact: 'Required for pump VFD verification',
     plain:
-      'Secondary pump speed feedback confirms that the variable frequency drive is responding to speed commands. Without it, the BAS cannot verify that pump speed modulation is working or detect VFD faults that would cause the pump to run at full speed regardless of building load.',
+      'Confirms the variable speed drive is following speed commands; without it, a drive fault that locks the pump at full speed cannot be detected.',
   },
   chwIsoValveStatus: {
     short: 'Chiller CHW isolation valve status feedback',
     impact: 'Required for safe chiller staging',
     plain:
-      'Chiller isolation valve status confirms that the evaporator-side valve has opened before the chiller is enabled. Without this feedback, the BAS cannot safely stage chillers — enabling a chiller without confirmed flow through the evaporator risks freeze damage and failed starts.',
+      'Confirms the evaporator-side valve is open before the chiller is enabled; starting a chiller without confirmed flow risks freeze damage and failed starts.',
   },
   chillerEnable: {
     short: 'Chiller enable command',
     impact: 'Required for chiller staging sequences',
     plain:
-      'The chiller enable point allows the BAS to start and stop individual chillers as part of staging and lead/lag sequences. Without it, the BAS cannot control which chillers run, preventing energy-efficient staging strategies.',
+      'Starts and stops individual chillers for staged and lead/lag operation; without it, all chillers must run continuously regardless of cooling demand.',
   },
   chwSetpoint: {
     short: 'Chiller leaving water temperature setpoint command',
     impact: 'Required for CHW supply temperature reset',
     plain:
-      'The chilled water setpoint command allows the BAS to tell the chiller what temperature to target. Raising this setpoint during mild weather — chilled water temperature reset — is one of the most effective chiller plant efficiency strategies and requires this writable point.',
+      'The command that tells the chiller what temperature to target; raising this setpoint during mild weather is one of the most effective ways to reduce chiller energy costs.',
   },
   pchwpEnable: {
     short: 'Primary chilled water pump enable command',
     impact: 'Required for pump staging sequences',
     plain:
-      'The primary pump enable command allows the BAS to start individual pumps before enabling the chiller and as part of lead/lag sequences. Without individual pump control, the plant cannot safely stage chillers or rotate primary pumps to equalize runtime.',
+      'Starts individual primary pumps before chiller staging and as part of lead/lag rotation; without it, primary pumps cannot be safely managed by the control system.',
   },
   schwpEnable: {
     short: 'Secondary chilled water pump enable command',
     impact: 'Required for distribution pump staging',
     plain:
-      'The secondary pump enable command allows the BAS to start and stop distribution pumps in response to building load. Without it, secondary pumps must run continuously, wasting energy during periods of low cooling demand.',
+      'Starts and stops distribution pumps in response to cooling demand; without it, secondary pumps must run continuously, wasting energy during low-load periods.',
   },
   chwIsoValveCmd: {
     short: 'CHW isolation valve command',
     impact: 'Required for chiller isolation during staging',
     plain:
-      "The isolation valve command allows the BAS to open and close each chiller's evaporator-side port during staging and lead/lag sequences. Without individual valve control, chillers cannot be safely added to or removed from the loop without manual intervention.",
+      'Opens and closes each chiller evaporator port during staging; without it, chillers cannot be safely added to or removed from the loop without manual intervention.',
   },
   // ── CT (Cooling Tower) point keys ─────────────────────────────────────────
   cwrt: {
     short: 'Condenser water return temperature sensor',
     impact: 'Required for condenser delta-T monitoring',
     plain:
-      'Condenser water return temperature allows the BAS to calculate the heat rejected through the cooling tower. Low condenser water delta-T can indicate tower, chiller, or pumping problems that reduce overall plant efficiency.',
+      'Measures heat rejected through the cooling tower; low temperature drop signals tower, chiller, or pumping problems that reduce overall plant efficiency.',
   },
   oaWetBulb: {
     short: 'Outdoor air wet-bulb temperature sensor',
     impact: 'Required for cooling tower approach control',
     plain:
-      'Wet-bulb temperature is the fundamental limit for cooling tower performance — a tower can only cool water to within a few degrees of the wet-bulb. Wet-bulb measurement is required for optimal condenser water setpoint reset, which improves chiller efficiency during mild weather.',
+      'Sets the performance target for the cooling tower and enables the condenser water setpoint reset strategy that improves chiller efficiency during mild weather.',
   },
   oaRH: {
     short: 'Outdoor air relative humidity sensor',
     impact: 'Supports wet-bulb calculation',
     plain:
-      'Outdoor humidity combined with dry-bulb temperature allows the BAS to calculate wet-bulb temperature when a dedicated wet-bulb sensor is not available. This enables condenser water setpoint reset based on actual atmospheric conditions.',
+      'Combined with outdoor air temperature, allows the system to calculate wet-bulb temperature without a dedicated sensor, enabling condenser water reset based on actual conditions.',
   },
   ctFanStatus: {
     short: 'Cooling tower fan run status feedback',
     impact: 'Required for fan proof-of-operation',
     plain:
-      'Cooling tower fan status confirms that the tower fan is running and providing evaporative cooling. Without this feedback, the BAS cannot verify fan operation, implement lead/lag across multiple tower cells, or alarm when a fan fails — which would allow condenser water temperatures to rise and reduce chiller efficiency.',
+      'Confirms the tower fan is running and providing evaporative cooling; without it, fan failures that allow condenser water temperatures to rise cannot be detected or alarmed.',
   },
   cwPumpStatus: {
     short: 'Condenser water pump run status feedback',
     impact: 'Required for pump proof-of-operation',
     plain:
-      'Condenser pump status confirms that condenser water is circulating through the chiller and cooling tower. Without it, the BAS cannot verify that the chiller has condenser flow before starting, cannot detect pump failures, and cannot implement lead/lag pump rotation.',
+      'Confirms condenser water is circulating before the chiller starts and enables lead/lag rotation and failure alarms.',
   },
   sumpLevel: {
     short: 'Cooling tower sump/basin water level',
     impact: 'Required for freeze and overflow protection',
     plain:
-      'The sump level sensor monitors the water level in the cooling tower basin. Low level triggers makeup water valves to prevent pump cavitation; high level indicates overflow or valve problems. Without sump monitoring, the BAS cannot prevent dry-running pumps or wasted water from an open makeup valve.',
+      'Monitors basin water level to trigger makeup water when low (preventing pump cavitation) and to detect overflow or a stuck-open valve that wastes water.',
   },
   cwIsoValveStatus: {
     short: 'Condenser water isolation valve status feedback',
     impact: 'Required for safe chiller staging',
     plain:
-      'Condenser isolation valve status confirms that the condenser-side port has opened before the chiller is enabled. Without it, the BAS cannot safely stage chillers — enabling a chiller without confirmed condenser flow risks refrigerant-side damage and failed starts.',
+      'Confirms the condenser-side valve is open before the chiller is enabled; starting without confirmed condenser flow risks refrigerant-side damage and failed starts.',
   },
   ctFanEnable: {
     short: 'Cooling tower fan enable command',
     impact: 'Required for tower fan sequencing',
     plain:
-      'The tower fan enable command allows the BAS to start and stop cooling tower fans in response to condenser water temperature. Without it, fans must run continuously or be controlled manually, eliminating the significant energy savings available from fan cycling and variable-speed control.',
+      'Starts and stops tower fans in response to condenser water temperature; without it, fans run continuously or require manual control, eliminating energy savings from fan cycling.',
   },
   cwPumpEnable: {
     short: 'Condenser water pump enable command',
     impact: 'Required for condenser pump staging',
     plain:
-      'The condenser pump enable command allows the BAS to start pumps before enabling the chiller and as part of lead/lag sequences. Without individual pump control, the plant cannot safely stage chillers or rotate condenser pumps to equalize runtime.',
+      'Starts condenser pumps before chiller staging and supports lead/lag rotation; without individual pump control, safe chiller staging is not possible.',
   },
   cwIsoValveCmd: {
     short: 'Condenser water isolation valve command',
     impact: 'Required for chiller staging sequences',
     plain:
-      "The condenser isolation valve command allows the BAS to open and close each chiller's condenser-side port during staging and lead/lag sequences. Without it, chillers cannot be safely added to or removed from the condenser loop without manual intervention.",
+      'Opens and closes each condenser-side port during staging; without it, chillers cannot be safely added to or removed from the condenser loop without manual intervention.',
   },
   makeupValveCmd: {
     short: 'Cooling tower makeup water valve command',
     impact: 'Required for basin level control',
     plain:
-      'The makeup water valve command allows the BAS to automatically refill the cooling tower basin when the sump level drops. Without BAS control, the makeup valve must be set to a fixed position, risking overflow during low-load periods or pump cavitation when the basin empties.',
+      'Automatically refills the basin when level drops, preventing pump cavitation; without control, a fixed valve position risks overflow during light load or pump damage when the basin empties.',
   },
   // ── EM_SEQUENCE_DEFS sequence keys ──────────────────────────────────────
   ahu_sat_reset: {
     short: 'Supply air temperature reset sequence (AHU)',
     impact: '5–12% heating & cooling savings',
     plain:
-      'ASHRAE 36 §5.16.2: Supply air temperature reset adjusts the setpoint based on outdoor air temperature and zone demand. During mild weather the system delivers less extreme supply temperatures, reducing the energy required to heat or cool air before it reaches occupied spaces.',
+      'Adjusts supply air temperature based on outdoor conditions and zone demand, reducing conditioning energy during the many hours buildings operate below peak load.',
   },
   ahu_dsp_reset: {
     short: 'Duct static pressure reset sequence (AHU)',
     impact: '10–25% fan energy savings',
     plain:
-      'ASHRAE 36 §5.16.1: Static pressure reset lowers the duct pressure target when most VAV boxes have their dampers wide open, allowing the supply fan to slow down significantly. This sequence alone typically reduces fan energy by 15% or more across the year.',
+      'Lowers duct pressure when zones have adequate airflow, allowing the fan to slow down significantly — this sequence alone typically cuts fan energy by 15% or more annually.',
   },
   ahu_economizer: {
     short: 'Economizer control sequence (AHU)',
     impact: '5–15% cooling savings',
     plain:
-      'ASHRAE 36 §5.16.10: Economizer control uses outdoor air for free cooling whenever conditions allow. Without a properly programmed economizer sequence, mechanical cooling runs when outdoor air could cool the building at zero energy cost.',
+      'Uses outdoor air for free cooling whenever conditions allow; without it, the chiller runs even when outdoor air could do the same job at no operating cost.',
   },
   ahu_freeze_prot: {
     short: 'Freeze protection sequence (AHU)',
     impact: 'Required for coil safety',
     plain:
-      'ASHRAE 36 §5.16.12: Freeze protection monitors mixed air or coil temperatures and shuts down the air handler if freezing conditions are detected. Without this sequence, cold outdoor air can freeze water coils during fan-off periods, causing costly equipment damage.',
+      'Shuts down the air handler if freezing conditions are detected, preventing cold outdoor air from freezing water coils and causing costly equipment damage.',
   },
   ahu_min_oa: {
     short: 'Minimum outdoor air control sequence (AHU)',
-    impact: 'Required for ASHRAE 62.1 ventilation compliance',
+    impact: 'Required for ventilation compliance',
     plain:
-      'ASHRAE 36 §5.16.6: Minimum outdoor air control ensures the air handler delivers at least the code-required ventilation rate at all times. The sequence coordinates OA damper position with fan speed so that minimum ventilation is maintained even as the fan slows for energy savings.',
+      'Coordinates the outdoor air damper with fan speed to ensure code-required minimum ventilation is maintained even as the fan slows for energy savings.',
   },
   ahu_rf_control: {
     short: 'Return fan control sequence (AHU)',
     impact: 'Required for building pressure control',
     plain:
-      'ASHRAE 36 §5.16.5: Return fan speed tracks supply fan airflow to maintain building pressurization. Without coordinated return fan control, economizer operation can over-pressurize or under-pressurize the building, causing door-opening problems and comfort complaints.',
+      'Tracks supply fan airflow with the return fan to maintain building pressurization; without it, economizer operation causes pressure swings that affect door operation and occupant comfort.',
   },
   vav_zone_temp: {
     short: 'Zone temperature control sequence (VAV)',
-    impact: 'Required for zone comfort and ASHRAE 36 compliance',
+    impact: 'Required for zone comfort and compliance',
     plain:
-      'ASHRAE 36 §5.6.1: Zone temperature control is the fundamental VAV sequence — the terminal unit modulates airflow to maintain the zone between heating and cooling setpoints. Without this sequence, zone temperatures float freely and simultaneous heating and cooling is common.',
+      'The foundational zone control sequence — modulates airflow to hold each space between heating and cooling setpoints; without it, temperatures float and simultaneous heating and cooling is common.',
   },
   vav_reheat: {
     short: 'Zone reheat sequence (VAV)',
     impact: 'Required for zone heating at minimum airflow',
     plain:
-      'ASHRAE 36 §5.6.4: Reheat sequencing activates the terminal reheat valve when zone temperature drops below the heating setpoint at minimum airflow. Without it, zones cannot be heated through the VAV box and must rely entirely on primary air, which increases air handler energy and reduces comfort.',
+      'Activates terminal reheat when a zone cools below setpoint at minimum airflow; without it, all heating must come from primary air, increasing air handler energy and reducing comfort.',
   },
   hwp_supply_reset: {
     short: 'Hot water supply temperature reset sequence',
     impact: '5–15% boiler savings',
     plain:
-      'ASHRAE 36 §5.19.1: Hot water supply temperature reset reduces the boiler setpoint as outdoor air warms, cutting heat loss and improving boiler efficiency. Modern condensing boilers gain 3–5% efficiency for every 10°F reduction in return water temperature.',
+      'Reduces boiler water temperature as outdoor air warms, cutting heat loss and improving efficiency — especially valuable for condensing boilers that benefit from lower return temperatures.',
   },
   hwp_pump_dp_reset: {
     short: 'Hot water pump differential pressure reset sequence',
     impact: '10–25% pump energy savings',
     plain:
-      'ASHRAE 36 §5.19.2: Pump differential pressure reset lowers the pressure setpoint when most zone valves are wide open, allowing pump speed to drop significantly. Since pump energy scales with the cube of speed, even modest pressure reductions deliver large energy savings.',
+      'Lowers pump pressure when zone valves are wide open, allowing the pump to slow down — pump energy drops sharply with speed, delivering large savings during partial-load hours.',
   },
   hwp_staging: {
     short: 'Boiler and pump staging sequence',
     impact: 'Required for efficient multi-boiler operation',
     plain:
-      'ASHRAE 36 §5.19.3: Boiler and pump staging sequences start and stop equipment based on heating demand, rotating lead/lag assignments to equalize runtime. Without staging, systems either run all equipment at once regardless of load or rely on manual operation.',
+      'Starts and stops boilers and pumps based on actual heating demand and rotates lead/lag assignments to equalize wear; without it, all equipment runs regardless of load.',
   },
   chwp_supply_reset: {
     short: 'Chilled water supply temperature reset sequence',
     impact: '3–10% chiller savings',
     plain:
-      'ASHRAE 36 §5.20.1: Chilled water supply temperature reset raises the chiller setpoint when building load is light, allowing the chiller to operate more efficiently. Chillers are significantly more efficient at higher leaving water temperatures during mild weather.',
+      'Raises chilled water temperature when cooling demand is light, allowing the chiller to run more efficiently during the many hours below peak load.',
   },
   chwp_pump_dp_reset: {
     short: 'Chilled water pump differential pressure reset sequence',
     impact: '10–20% pump energy savings',
     plain:
-      'ASHRAE 36 §5.20.2: Chilled water pump DP reset lowers the differential pressure setpoint when coil valves are wide open, reducing pump speed and energy. This sequence is particularly valuable because chilled water systems often run at partial load for the majority of cooling hours.',
+      'Lowers pump pressure when coil valves are wide open, reducing pump speed and energy during the partial-load hours that dominate most cooling seasons.',
   },
   chwp_staging: {
     short: 'Chiller and pump staging sequence',
     impact: 'Required for efficient multi-chiller operation',
     plain:
-      'ASHRAE 36 §5.20.3: Chiller and pump staging sequences start and stop equipment based on cooling demand and rotate lead/lag assignments to equalize runtime. Without staging, systems run excess capacity at low efficiency during shoulder seasons.',
+      'Starts and stops chillers and pumps based on cooling demand and rotates lead/lag assignments; without it, systems run excess capacity at low efficiency during shoulder seasons.',
   },
 };
 

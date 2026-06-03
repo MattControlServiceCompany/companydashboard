@@ -1191,6 +1191,53 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.02.441',
+    date: '2026-06-02',
+    title: 'EM import fix, Summary view, bill parsing fix, and zoom controls on tables',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: importing a point with a value of 0 now preserves that value instead of treating it as missing.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Summary view now shows ALL buildings -- equipment with no zone assignment appears under a "no zone equip" row instead of being silently dropped.',
+      },
+      {
+        type: 'fix',
+        text: 'Zones-vs-Setpoints chart now reads from normalized point columns so zone temperatures display correctly for all equipment types.',
+      },
+      {
+        type: 'fix',
+        text: 'Manage Mappings panel opens without freezing -- point list is now rendered in chunks to keep the browser responsive.',
+      },
+      {
+        type: 'fix',
+        text: 'Zone CO2 now recognizes "AV" in the point name as an alias so more CO2 points are classified correctly.',
+      },
+      {
+        type: 'fix',
+        text: 'Toast notifications (action confirmations) are now visible on the Energy Department page.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department page now scrolls horizontally on mobile so tables are not clipped.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE report recommendations are now concise -- each recommendation is a single focused sentence instead of a multi-paragraph block.',
+      },
+      {
+        type: 'fix',
+        text: '618 8th St gas bill: billing period dates now parse correctly from this utility format.',
+      },
+      {
+        type: 'feature',
+        text: 'Zoom controls added to Meter Performance, Budget, and ECM Calculator tables -- use + / - to adjust text size for easier reading.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.02.440',
     date: '2026-06-02',
     title: 'Equipment Matrix: point-matching quality fix (M1-M8)',
@@ -3083,4 +3130,114 @@ if (typeof window.hideToast !== 'function') {
     var el = document.getElementById('toast');
     if (el) el.className = 'toast';
   };
+}
+
+/* ══ SHARED TABLE ZOOM ══
+ * setTableZoom(containerId, delta, storageKey, labelId)
+ *   containerId — ID of the element wrapping the <table>
+ *   delta       — number to add to zoom (e.g. +10, -10, or 0 to reset to 100)
+ *   storageKey  — localStorage key used to persist the zoom level
+ *   labelId     — ID of the <span> that shows "100%"
+ *
+ * Zoom is clamped 50–150%. Scales td/th font-size and padding proportionally.
+ * Base sizes: td 12px / 4px 8px padding; th 11px / 5px 8px padding.
+ * A <style> tag with id = containerId + '-zoom-style' is created/reused.
+ *
+ * tableZoomControlHTML(containerId, storageKey, labelId)
+ *   Returns the button/label HTML for +/− zoom controls. Matches EM zoom style.
+ */
+function setTableZoom(containerId, delta, storageKey, labelId) {
+  var stored = parseInt(localStorage.getItem(storageKey) || '100', 10);
+  var level = isNaN(stored) || stored < 50 || stored > 150 ? 100 : stored;
+  if (delta === 'reset') {
+    level = 100; // 1:1 reset button
+  } else if (delta === null || delta === undefined) {
+    // re-apply stored level without changing it (used on tab open to restore persisted zoom)
+  } else {
+    level = Math.min(150, Math.max(50, level + delta));
+  }
+  try {
+    localStorage.setItem(storageKey, String(level));
+  } catch (e) {}
+
+  var wrap = document.getElementById(containerId);
+  if (wrap) {
+    var ratio = level / 100;
+    var tdFs = Math.round(12 * ratio);
+    var thFs = Math.round(11 * ratio);
+    var tdPV = Math.round(4 * ratio);
+    var tdPH = Math.round(8 * ratio);
+    var thPV = Math.round(5 * ratio);
+    var thPH = Math.round(8 * ratio);
+    var styleId = containerId + '-zoom-style';
+    var styleEl = document.getElementById(styleId);
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent =
+      '#' +
+      containerId +
+      ' td { font-size:' +
+      tdFs +
+      'px; padding:' +
+      tdPV +
+      'px ' +
+      tdPH +
+      'px; } ' +
+      '#' +
+      containerId +
+      ' th { font-size:' +
+      thFs +
+      'px; padding:' +
+      thPV +
+      'px ' +
+      thPH +
+      'px; }';
+  }
+
+  var lbl = labelId ? document.getElementById(labelId) : null;
+  if (lbl) lbl.textContent = level + '%';
+}
+
+function tableZoomControlHTML(containerId, storageKey, labelId) {
+  var stored = parseInt(localStorage.getItem(storageKey) || '100', 10);
+  var level = isNaN(stored) || stored < 50 || stored > 150 ? 100 : stored;
+  return (
+    '<div style="display:inline-flex;align-items:center;gap:2px">' +
+    '<button onclick="setTableZoom(\'' +
+    containerId +
+    "',-10,'" +
+    storageKey +
+    "','" +
+    labelId +
+    '\')" ' +
+    'style="height:24px;width:22px;font-size:13px;line-height:1;background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer;padding:0" ' +
+    'title="Zoom out">−</button>' +
+    '<span id="' +
+    labelId +
+    '" style="font-size:11px;color:var(--text2);min-width:34px;text-align:center;user-select:none">' +
+    level +
+    '%</span>' +
+    '<button onclick="setTableZoom(\'' +
+    containerId +
+    "',10,'" +
+    storageKey +
+    "','" +
+    labelId +
+    '\')" ' +
+    'style="height:24px;width:22px;font-size:13px;line-height:1;background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer;padding:0" ' +
+    'title="Zoom in">+</button>' +
+    '<button onclick="setTableZoom(\'' +
+    containerId +
+    "','reset','" +
+    storageKey +
+    "','" +
+    labelId +
+    '\')" ' +
+    'style="height:24px;width:28px;font-size:10px;line-height:1;background:var(--s2);border:1px solid var(--border);color:var(--text3);border-radius:4px;cursor:pointer;padding:0;margin-left:1px" ' +
+    'title="Reset zoom">1:1</button>' +
+    '</div>'
+  );
 }

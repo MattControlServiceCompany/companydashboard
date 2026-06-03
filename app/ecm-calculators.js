@@ -2802,6 +2802,20 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
  * @param {Object|null} projectContext — { projId, buildingId, buildingName } for Save to Project
  * @param {Object|null} inputs — raw input values (for storing with the ECM record)
  */
+/* Inject base ECM result cell styles once — these carry the default font-size
+   and padding so the zoom rule (#ecm-results-table-wrap td { … }) can override
+   them (ID+element specificity beats a class). */
+(function _injectEcmResultCSS() {
+  if (document.getElementById('ecm-result-cell-styles')) return;
+  var s = document.createElement('style');
+  s.id = 'ecm-result-cell-styles';
+  s.textContent =
+    '.ecm-result-cell { font-size:13px; padding:8px 12px; }' +
+    '.ecm-result-cell--major { font-size:15px; padding:8px 12px; }' +
+    '.ecm-formula-cell { font-size:11px; padding:6px 12px 10px; }';
+  document.head.appendChild(s);
+})();
+
 function renderEcmResults(templateId, results, container, projectContext, inputs) {
   const tmpl = ECM_TEMPLATES[templateId];
   if (!tmpl || !container) return;
@@ -2836,14 +2850,14 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
 
       return `
       <tr class="ecm-result-row" style="border-bottom:1px solid var(--border)">
-        <td style="padding:8px 12px;font-size:13px;font-weight:${isMajor ? '700' : '400'};color:${isMajor ? 'var(--text)' : 'var(--text2)'}">
+        <td class="ecm-result-cell" style="font-weight:${isMajor ? '700' : '400'};color:${isMajor ? 'var(--text)' : 'var(--text2)'}">
           ${out.label}
           ${out.unit ? `<span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">${out.unit}</span>` : ''}
         </td>
-        <td style="padding:8px 12px;text-align:right;font-size:${isMajor ? '15px' : '13px'};font-weight:${isMajor ? '700' : '400'};color:${isMajor ? 'var(--em)' : 'var(--text)'};font-family:var(--mono)">
+        <td class="${isMajor ? 'ecm-result-cell--major' : 'ecm-result-cell'}" style="text-align:right;font-weight:${isMajor ? '700' : '400'};color:${isMajor ? 'var(--em)' : 'var(--text)'};font-family:var(--mono)">
           ${display}
         </td>
-        <td style="padding:8px 12px;text-align:right;width:32px">
+        <td class="ecm-result-cell" style="text-align:right;width:32px">
           <button class="btn btn-ghost btn-sm"
             style="font-size:10px;padding:2px 6px;opacity:.6"
             title="Show formula"
@@ -2853,7 +2867,7 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
         </td>
       </tr>
       <tr class="ecm-formula-row" id="ecm-formula-${out.id}" style="display:none">
-        <td colspan="3" style="padding:6px 12px 10px;font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--s2);border-bottom:1px solid var(--border)">
+        <td colspan="3" class="ecm-formula-cell" style="color:var(--text3);font-family:var(--mono);background:var(--s2);border-bottom:1px solid var(--border)">
           ${out.formula || 'No formula trace available.'}
         </td>
       </tr>`;
@@ -2874,6 +2888,10 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
        </div>`
       : '';
 
+  const _ecmZoomCtrl =
+    typeof tableZoomControlHTML === 'function'
+      ? tableZoomControlHTML('ecm-results-table-wrap', 'en_ecm_results_zoom', 'ecm-results-zoom-lbl')
+      : '';
   container.innerHTML = `
     <div class="card" style="margin-top:4px">
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
@@ -2881,14 +2899,24 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
         <span style="font-size:11px;color:var(--text3)">— click</span>
         <span style="font-size:11px;font-family:var(--mono);background:var(--s3);padding:1px 6px;border-radius:3px">ƒ</span>
         <span style="font-size:11px;color:var(--text3)">to see formula</span>
+        <span style="margin-left:auto">${_ecmZoomCtrl}</span>
       </div>
-      <table style="width:100%;border-collapse:collapse">
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
+      <div id="ecm-results-table-wrap">
+        <table style="width:100%;border-collapse:collapse">
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
       ${saveBtnHtml}
     </div>`;
+
+  // Apply persisted zoom to results table
+  if (typeof setTableZoom === 'function') {
+    requestAnimationFrame(function () {
+      setTableZoom('ecm-results-table-wrap', null, 'en_ecm_results_zoom', 'ecm-results-zoom-lbl');
+    });
+  }
 
   // Wire Save to Project button
   if (ctx && ctx.projId) {

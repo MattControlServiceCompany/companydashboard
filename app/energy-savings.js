@@ -4767,12 +4767,49 @@ const UTILITY_RULES = [
     name: 'Constellation NewEnergy (Gas Supplier)',
     detect: (t) => /constellation/i.test(t) || /account\s*id:\s*bg-\d+/i.test(t),
     extractAll: function (t) {
-      // ── Level 1: split the full OCR into per-invoice chunks ──
-      // Each invoice starts with "Invoice Date: MM/DD/YY" header.
-      // Use a lookahead so the split anchor text stays in each chunk.
-      const invoiceChunks = t.split(/(?=Invoice\s+Date:\s*\d{2}\/\d{2}\/\d{2})/i);
-      // Guard: if no split found, treat whole text as one invoice chunk.
-      const invoices = invoiceChunks.length > 1 ? invoiceChunks : [t];
+      // ── Level 1: identify unique invoice boundaries by Invoice Number ──
+      // Root-cause fix (2026-06-02): the previous approach split on every
+      // "Invoice Date:" occurrence, which fires on every page header (173 times
+      // for a 166-page PDF) and breaks each site block mid-way across its two
+      // physical pages. Result: TotalCurrentCharges from page N+1 landed in the
+      // wrong (previous) site's chunk, causing 355 duplicate bills with wrong
+      // totals and wrong account numbers.
+      //
+      // New strategy: find the FIRST occurrence of each unique Invoice Number.
+      // Every Constellation monthly invoice has a distinct Invoice Number, so
+      // this creates exactly one chunk per monthly invoice regardless of how
+      // many times the page header repeats "Invoice Date:".
+      const _invNumRe = /Invoice\s+Number:\s*(\d+)/gi;
+      const _invBoundaries = []; // [{invoiceNum, startIdx}] sorted by startIdx
+      const _seenInvoiceNums = new Set();
+      let _im;
+      while ((_im = _invNumRe.exec(t)) !== null) {
+        const invNum = _im[1];
+        if (!_seenInvoiceNums.has(invNum)) {
+          _seenInvoiceNums.add(invNum);
+          // Walk back to the "Invoice Date:" that precedes this Invoice Number
+          // (within 500 chars). If not found, use the Invoice Number position itself.
+          const searchBack = Math.max(0, _im.index - 500);
+          const prefix = t.slice(searchBack, _im.index);
+          const _allDates = [...prefix.matchAll(/Invoice\s+Date:\s*\d{2}\/\d{2}\/\d{2}/gi)];
+          const _lastDate = _allDates.length ? _allDates[_allDates.length - 1] : null;
+          const startIdx = _lastDate ? searchBack + _lastDate.index : _im.index;
+          _invBoundaries.push({ invoiceNum: invNum, startIdx });
+        }
+      }
+      // Fallback: if no Invoice Number markers found, treat entire text as one invoice
+      if (_invBoundaries.length === 0) _invBoundaries.push({ invoiceNum: '', startIdx: 0 });
+      _invBoundaries.sort((a, b) => a.startIdx - b.startIdx);
+
+      // Slice the full text into per-invoice chunks using the identified boundaries
+      const invoices = _invBoundaries.map((b, i) => {
+        const end = i + 1 < _invBoundaries.length ? _invBoundaries[i + 1].startIdx : t.length;
+        return t.slice(b.startIdx, end);
+      });
+      // Prepend any preamble text (before the first invoice boundary) to the first invoice
+      if (_invBoundaries[0].startIdx > 0) {
+        invoices[0] = t.slice(0, _invBoundaries[0].startIdx) + invoices[0];
+      }
 
       const results = [];
       for (const invText of invoices) {
