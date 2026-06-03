@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.03.442',
+    date: '2026-06-03',
+    title: 'Equipment Matrix: color-only status cells, accurate compliance counting, OA sensor mapping, Has Data label',
+    items: [
+      {
+        type: 'change',
+        text: 'Equipment Matrix status cells are now color-only (green/amber/red) -- the old Yes/Fuzzy/No text labels are gone. Hover any cell to see the point name and match confidence.',
+      },
+      {
+        type: 'fix',
+        text: 'Compliance counting is now accurate -- points with blank values and points from enriched CSV imports are both recognized, eliminating false red "Not found" cells for points that are actually present.',
+      },
+      {
+        type: 'fix',
+        text: 'OAT, zone temperature, and zone setpoint column keys are now credited toward compliance for all equipment types, including standalone sensor programs.',
+      },
+      {
+        type: 'fix',
+        text: 'Outside Air temperature points from standalone sensor programs (equipment type "sensor") are now mapped correctly in the Equipment Matrix.',
+      },
+      {
+        type: 'change',
+        text: 'The "Live Data" pill in the Equipment Matrix header has been relabeled "Has Data" to more accurately reflect that it counts imported snapshot values, not real-time readings.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.02.441',
     date: '2026-06-02',
     title: 'EM import fix, Summary view, bill parsing fix, and zoom controls on tables',

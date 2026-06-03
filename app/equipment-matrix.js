@@ -759,7 +759,7 @@ var EM_POINT_MAP = [
     // /\bhuwb\b/i blocks the confirmed Group R mis-maps without affecting "Outside Air Wet Bulb".
     negativePatterns: [/\bhuwb\b/i],
     types: ['AI'],
-    cats: ['ct', 'ahu', 'dhu'],
+    cats: ['ct', 'ahu', 'dhu', 'sensor'],
   },
   {
     col: 'ctFanSpeedLive',
@@ -863,7 +863,7 @@ var EM_POINT_MAP = [
     // alarm/status objects, not live temperature readings.
     negativePatterns: [/setpoint|set\s?point/i, /\b(invalid|sensor\s+invalid|heat\s+trace|is\s+off|is\s+on)\b/i],
     types: ['AI'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'furnace'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'sensor'],
   },
   // Zone Temperature (short alias used by some controllers — "Zone Temp")
   {
@@ -903,7 +903,7 @@ var EM_POINT_MAP = [
     ],
     negativePatterns: [/invalid|sensor\s+fail|fault|set\s?point/i],
     types: ['AI'],
-    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace'],
+    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace', 'sensor'],
   },
 
   // C2: Outside Air Dewpoint — DISTINCT from wet bulb (was mis-aliased in oaWetBulb)
@@ -920,7 +920,7 @@ var EM_POINT_MAP = [
     ],
     negativePatterns: [/return|set\s?point|invalid|fault/i],
     types: ['AI'],
-    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace'],
+    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace', 'sensor'],
   },
 
   // C3: Outside Air Enthalpy — broadcast OA enthalpy used for economizer control
@@ -934,7 +934,7 @@ var EM_POINT_MAP = [
     patterns: [/outside\s+air\s+enthalpy/i, /outdoor\s+air\s+enthalpy/i, /\boa\s+enthalpy\b/i],
     negativePatterns: [/return|economizer\s+control\s+selection|set\s?point|fault/i],
     types: ['AI'],
-    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace'],
+    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace', 'sensor'],
   },
 
   // GROUP 10 — Demand/Mode/Occupancy (user-reported missing; was blocked by EM_EXCLUSION_PATTERNS
@@ -2531,6 +2531,7 @@ var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view
 var _emZoomLevel = 100; // zoom percentage, 50–150
 var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
+var _emColKeyToCatKey = null; // FIX A: reverse map { colKey: { equipType: { catKey, catLabel, ashrae36Name, ashrae36Section, required } } } built lazily
 var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results, keyed by rawName+'\0'+category
 var _emPointsComputedCache = new WeakMap(); // Milestone 1: keyed on row object; caches emGetNormalizedPoints result
 var _emPointNameCache = new Map(); // Milestone 1: rawName -> colKey, page-lifetime memoization for emMapPointToColumn
@@ -2742,7 +2743,7 @@ function emRenderMatrix(container, data, pid) {
     emStatPill('Plants', stats.plants) +
     (stats.lighting ? emStatPill('Lighting', stats.lighting) : '') +
     (stats.other ? emStatPill('Other', stats.other) : '') +
-    emStatPill('Live Data', stats.live) +
+    emStatPill('Has Data', stats.live) +
     (data.totalBASPoints ? emStatPill('BAS Points', data.totalBASPoints.toLocaleString()) : '') +
     '</div>';
 
@@ -2970,11 +2971,15 @@ function emRenderToolbar(data, pid, projBadge) {
     'Show All Point Columns' +
     '</button>' +
     '</span>' +
-    // Audit-view legend bar — always visible in audit mode, shows all cell state symbols
+    // Audit-view legend bar — color-only cells; legend explains each color
     '<span id="em-audit-col-info" style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">' +
-    '<span title="BAS point present — showing snapshot value from imported CSV. Green background = automatic match" style="padding:1px 6px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">Yes</span>' +
-    '<span title="Similar point found — showing snapshot value from imported CSV. Amber background = lower confidence match" style="padding:1px 6px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">Fuzzy</span>' +
-    '<span title="Required ASHRAE 36 point not found in BAS" style="padding:1px 6px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">No</span>' +
+    '<span style="font-size:10px;color:var(--text3);margin-right:2px">Legend:</span>' +
+    '<span title="Green = point matched in BAS data (automatic name match). Shows snapshot value when available." style="padding:1px 10px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">&nbsp;</span>' +
+    '<span style="font-size:10px;color:var(--text3)">Matched</span>' +
+    '<span title="Amber = point likely present but name is non-standard (lower-confidence match). Hover cell for point name." style="padding:1px 10px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">&nbsp;</span>' +
+    '<span style="font-size:10px;color:var(--text3)">Likely match</span>' +
+    '<span title="Red = required ASHRAE 36 point not found in BAS data." style="padding:1px 10px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">&nbsp;</span>' +
+    '<span style="font-size:10px;color:var(--text3)">Not found</span>' +
     '<span title="Not applicable to this equipment type" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
     '<span title="Optional point — not present in BAS data" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
     '</span>' +
@@ -3302,7 +3307,7 @@ function emGetAuditColDefs(filteredRows) {
         reqLabel +
         ' ASHRAE 36 point — applies to: ' +
         appliesToLabel +
-        '. Yes = present, Fuzzy = fuzzy match, No = missing, N/A = not applicable.',
+        '. Green = matched, Amber = likely match (non-standard name), Red = not found, N/A = not applicable.',
     });
   }
 
@@ -3464,7 +3469,7 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.controls ? emStatPill('Controls', stats.controls) : '') +
     (stats.sensor ? emStatPill('Sensors', stats.sensor) : '') +
     (stats.other ? emStatPill('Other', stats.other) : '') +
-    emStatPill('Live Data', stats.live) +
+    emStatPill('Has Data', stats.live) +
     (totalBASPoints ? emStatPill('BAS Points', totalBASPoints.toLocaleString()) : '');
 }
 
@@ -5212,37 +5217,39 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       var displayVal = rawVal !== '' ? (String(rawVal).length > 8 ? String(rawVal).slice(0, 8) : String(rawVal)) : null;
       var tooltipBase = emHtmlEsc((match.pointName || '') + (rawVal !== '' ? ': ' + rawVal : ''));
       if (tier <= 2) {
-        // High confidence — green cell showing live value (fallback to "Yes" if no value)
+        // High confidence — green cell. Show snapshot value when present; color alone signals match.
+        var greenTitle = tooltipBase || 'Matched';
         return (
           '<td style="' +
           baseStyle +
           'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" title="' +
-          tooltipBase +
+          greenTitle +
           '">' +
-          (displayVal !== null ? emHtmlEsc(displayVal) : 'Yes') +
+          (displayVal !== null ? emHtmlEsc(displayVal) : '') +
           '</td>'
         );
       } else {
-        // Fuzzy match — amber cell showing live value (fallback to "Fuzzy" if no value)
+        // Lower-confidence match — amber cell. Show snapshot value when present; color signals confidence.
+        var amberTitle = tooltipBase ? tooltipBase + ' (lower-confidence match)' : 'Likely match (non-standard name)';
         return (
           '<td style="' +
           baseStyle +
           'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" title="' +
-          tooltipBase +
+          amberTitle +
           '">' +
-          (displayVal !== null ? emHtmlEsc(displayVal) : 'Fuzzy') +
+          (displayVal !== null ? emHtmlEsc(displayVal) : '') +
           '</td>'
         );
       }
     }
-    // Required but missing — red No
+    // Required but missing — red cell, color-only (no text)
     if (def.catRequired && missingMap[catKey]) {
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(192,57,43,0.15);color:#c0392b;font-weight:700" title="Missing: ' +
-        emHtmlEsc(catKey) +
-        '">No</td>'
+        'background:rgba(192,57,43,0.15);color:#c0392b;font-weight:700" title="Not found: ' +
+        emHtmlEsc(def.label || catKey) +
+        '"></td>'
       );
     }
     // Optional and not present — dash so the cell is not silently blank
@@ -6531,6 +6538,9 @@ var EM_POINT_CATEGORIES = {
         'external temperature',
         'outside air dry bulb',
         'oa dry bulb',
+        // Belt-and-suspenders: match oatLive col key label variants after (live)-strip
+        'oat (live)',
+        'outdoor air temperature',
       ],
       // M6 6B: block lockouts, diagnostics, alarms from ahu.oat
       negativeGuards: [/\b(alarm|lockout|diagnostic|sensor\s+fail(ed|ure)?|enable|output)\b/i],
@@ -8199,6 +8209,9 @@ var EM_POINT_CATEGORIES = {
         'outdoor temp',
         'oa-t',
         'external temperature',
+        // Belt-and-suspenders: match oatLive col key label variants after (live)-strip
+        'oat (live)',
+        'outdoor air temperature',
       ],
     },
     {
@@ -8729,6 +8742,9 @@ var EM_POINT_CATEGORIES = {
         'ambient temp',
         'outdoor temp',
         'external temperature',
+        // Belt-and-suspenders: match oatLive col key label variants after (live)-strip
+        'oat (live)',
+        'outdoor air temperature',
       ],
     },
     {
@@ -10721,6 +10737,76 @@ function emNormalizePointInner(rawName, equipCategory) {
   };
 }
 
+/* ── emBuildColKeyToCatKey ──────────────────────────────────────────────────
+   FIX A: builds (once) a reverse map from EM_POINT_MAP col keys to their
+   EM_POINT_CATEGORIES category key per equipment type.
+
+   Map shape:
+     _emColKeyToCatKey[colKey][equipType] = {
+       catKey, catLabel, ashrae36Name, ashrae36Section, required
+     }
+
+   This lets emComputeCompliance resolve col keys like 'zoneCoolSpLive'
+   directly to { catKey: 'coolSP' } for equipment type 'vav', bypassing the
+   human-name regex matcher which does not understand internal identifiers.
+
+   Build strategy: for each EM_POINT_MAP entry, use the entry's label as a
+   probe and run emNormalizePointInner against each equipType in entry.cats.
+   The label is designed to match its corresponding EM_POINT_CATEGORIES entry
+   (tier 1 canonical or tier 2 alias), so this reliably resolves the mapping.  */
+function emBuildColKeyToCatKey() {
+  if (_emColKeyToCatKey !== null) return;
+  _emColKeyToCatKey = {};
+  for (var mi = 0; mi < EM_POINT_MAP.length; mi++) {
+    var entry = EM_POINT_MAP[mi];
+    var colKey = entry.col;
+    var label = entry.label;
+    var equipTypes = entry.cats || [];
+    for (var ti = 0; ti < equipTypes.length; ti++) {
+      var equipType = equipTypes[ti];
+      var catDefs = EM_POINT_CATEGORIES[equipType];
+      if (!catDefs) continue;
+      // Try to find a matching category def by direct label/alias scan
+      // (exact canonical + exact alias, Tier 1+2 only — no Tier 2b/Tier 3 regex here;
+      //  also strips a trailing "(live)" or "live" suffix before matching so that
+      //  EM_POINT_MAP labels like "OAT (Live)" resolve to "oat" and hit the right category)
+      var normLabel = emNormalizePointName(label);
+      // Strip trailing "(live)" or standalone "live" suffix (e.g. "oat (live)" → "oat")
+      var normLabelStripped = normLabel
+        .replace(/\s*\(live\)\s*$/, '')
+        .replace(/\blive\s*$/, '')
+        .trim();
+      for (var ci = 0; ci < catDefs.length; ci++) {
+        var cd = catDefs[ci];
+        // Tier 1: canonical name match (try both raw and live-stripped label)
+        var canonNorm = emNormalizePointName(cd.ashrae36Name || cd.label);
+        var matched = normLabel === canonNorm || (normLabelStripped !== normLabel && normLabelStripped === canonNorm);
+        // Tier 2: alias match (try both raw and live-stripped label)
+        if (!matched && cd.aliases) {
+          for (var ai = 0; ai < cd.aliases.length; ai++) {
+            var aliasNorm = emNormalizePointName(cd.aliases[ai]);
+            if (normLabel === aliasNorm || (normLabelStripped !== normLabel && normLabelStripped === aliasNorm)) {
+              matched = true;
+              break;
+            }
+          }
+        }
+        if (matched) {
+          if (!_emColKeyToCatKey[colKey]) _emColKeyToCatKey[colKey] = {};
+          _emColKeyToCatKey[colKey][equipType] = {
+            catKey: cd.key,
+            catLabel: cd.label,
+            ashrae36Name: cd.ashrae36Name || cd.label,
+            ashrae36Section: cd.ashrae36Section || null,
+            required: !!cd.required,
+          };
+          break;
+        }
+      }
+    }
+  }
+}
+
 /* ── emComputeCompliance ────────────────────────────────────────────────────
    For a single equipment row, compute ASHRAE 36 coverage.
    equipRow.category = 'ahu'|'vav'|'fpb'|'ddvav'|'hwp'|'chwp'|'ct'
@@ -10739,8 +10825,11 @@ function emNormalizePointInner(rawName, equipCategory) {
      totalNA:        number
    }                                                                      */
 function emComputeCompliance(equipRow, configFlags, customMappings) {
-  // ── Module-level cache (keyed by row.id; all call sites pass flags={}) ──
-  var _cacheId = equipRow && equipRow.id;
+  // ── Module-level cache (keyed by row.id) ──
+  // Bypass cache entirely when customMappings is provided: different call sites pass
+  // different mapping sets (_auditStatsMaps, _footerMaps, etc.) and the first call
+  // must not win for all subsequent ones.  Default (no customMappings) still caches.
+  var _cacheId = !customMappings && equipRow && equipRow.id;
   if (_cacheId && _emComplianceCache[_cacheId]) return _emComplianceCache[_cacheId];
 
   var category = equipRow && equipRow.category;
@@ -10758,8 +10847,37 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
   }
 
   var flags = configFlags || {};
-  var points = equipRow.points || {};
-  var rawNames = Object.keys(points);
+
+  // FIX A: ensure the reverse col-key map is built before first use
+  emBuildColKeyToCatKey();
+
+  // FIX A: build a deduplicated set of point names from all available sources:
+  //   1. equipRow.points   — non-empty values (current + enriched-CSV col keys)
+  //   2. equipRow.pointsRaw — all raw names including blank-value points
+  //   3. emGetNormalizedPoints — col-key passthrough for already-mapped keys
+  // Display value is always read from row.points[pointName]; blank-value points
+  // from pointsRaw produce a colored cell with no text, which is correct.
+  var _allPointNames = {};
+  var _rawPtsObj = equipRow.pointsRaw || {};
+  var _ptsObj = equipRow.points || {};
+  // Source 1: row.points (non-empty values; also enriched-CSV col keys)
+  var _ptsKeys = Object.keys(_ptsObj);
+  for (var _pi = 0; _pi < _ptsKeys.length; _pi++) {
+    _allPointNames[_ptsKeys[_pi]] = true;
+  }
+  // Source 2: row.pointsRaw (adds blank-value points absent from row.points)
+  var _rawKeys = Object.keys(_rawPtsObj);
+  for (var _ri2 = 0; _ri2 < _rawKeys.length; _ri2++) {
+    _allPointNames[_rawKeys[_ri2]] = true;
+  }
+  // Source 3: emGetNormalizedPoints col keys (handles enriched-CSV rows where points
+  // keys are already EM_POINT_MAP col keys like 'zoneAirTempLive')
+  var _normPts = emGetNormalizedPoints(equipRow);
+  var _normKeys = Object.keys(_normPts);
+  for (var _ni = 0; _ni < _normKeys.length; _ni++) {
+    _allPointNames[_normKeys[_ni]] = true;
+  }
+  var rawNames = Object.keys(_allPointNames);
 
   // Build a set of covered category keys from matching point names
   var coveredKeys = {}; // key -> match result
@@ -10767,7 +10885,26 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
 
   for (var ri = 0; ri < rawNames.length; ri++) {
     var pName = rawNames[ri];
-    var match = emNormalizePointWithCustom(pName, category, customMappings || []);
+    var match;
+    // FIX A: if pName is a known EM_POINT_MAP col key, use the reverse map directly
+    // to avoid running the human-name regex on an internal identifier like 'zoneCoolSpLive'
+    if (_emColKeyToCatKey[pName] && _emColKeyToCatKey[pName][category]) {
+      var _catInfo = _emColKeyToCatKey[pName][category];
+      match = {
+        categoryKey: _catInfo.catKey,
+        categoryLabel: _catInfo.catLabel,
+        matchTier: 1,
+        confidence: 'high',
+        auditRelevant: true,
+        ashrae36PointName: _catInfo.ashrae36Name,
+        ashrae36Section: _catInfo.ashrae36Section,
+        rawName: pName,
+        required: _catInfo.required,
+        configFlag: null,
+      };
+    } else {
+      match = emNormalizePointWithCustom(pName, category, customMappings || []);
+    }
     if (match && match.auditRelevant && match.categoryKey) {
       // Keep the highest-confidence match per category key
       if (!coveredKeys[match.categoryKey] || match.matchTier < coveredKeys[match.categoryKey].matchTier) {
