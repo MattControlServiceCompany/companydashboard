@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.03.443';
+  var CH_VERSION = 'v2026.06.03.444';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,25 +32,32 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.06.03.443',
+      v: 'v2026.06.03.444',
       date: '2026-06-03',
-      title: 'Equipment Matrix building-filter scoping and ASHRAE column ordering; Utility Data tab bar scrolls at narrow widths',
+      title: 'Audit Report overhaul: ASHRAE 36 Audit Report rename, scope-of-work cover, per-building equipment table',
       items: [
+        { type: 'change', text: "Report is now called 'ASHRAE 36 Audit Report' (was 'ASHRAE 36 Assessment Report')." },
         {
-          type: 'fix',
-          text: 'Equipment Matrix: when you filter by building, optional audit columns with no matching points in that building are now hidden, keeping the view focused on what that building actually has.',
+          type: 'change',
+          text: 'Cover page now shows a purpose statement explaining what ASHRAE 36 is, what the report shows, and how to use it.',
+        },
+        {
+          type: 'change',
+          text: 'Cover stat cards now show actionable scope-of-work counts: Sensors to Install, Sequences to Program, Equipment Units Audited, and Buildings Assessed.',
         },
         {
           type: 'feature',
-          text: 'Equipment Matrix: audit columns are now ordered by ASHRAE 36 logical groups (Air Temps, Outside Air, Zone/Space, Setpoints, Flow/Damper/Valve, Fan/Status/Commands, Plant/Central) instead of insertion order.',
+          text: 'Per-building pages rebuilt as a structured equipment table showing what each unit has and needs, grouped by equipment type.',
         },
+        { type: 'fix', text: 'AI-style grey box fills and left-border accents removed from all report sections.' },
         {
           type: 'fix',
-          text: 'Equipment Matrix: required columns are no longer accidentally hidden when a DOAS row appears before an AHU row for the same shared key (e.g. Outdoor Air Temp).',
+          text: 'Report date no longer appears twice; date picker in Generate Report dialog controls the footer date.',
         },
+        { type: 'fix', text: 'Page numbers now appear on every page of the report.' },
         {
           type: 'fix',
-          text: 'Utility Data: the Saved Bills and meter tab bar now scrolls horizontally at narrow widths instead of clipping off the last tabs.',
+          text: "Raw internal code 'vav_dcv' no longer appears in reports -- shows as 'DCV (VAV)'. CO2/DCV items de-duplicated.",
         },
       ],
     },

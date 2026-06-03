@@ -1935,6 +1935,9 @@
 
         /* -- HDD/CDD variance highlight -- */
         --rpt-variance: #c0392b; /* HDD/CDD variance warning color */
+
+        /* -- General hairline rule (table row borders, SVG gauge tracks) -- */
+        --rpt-rule: #d9dde3; /* subtle blue-neutral, consistent with rpt-blue-light/rpt-bl-stat-border range */
       }
 
       /* -- Overlay & Toolbar -- */
@@ -2734,6 +2737,24 @@
         font-size: 8px;
         color: var(--rpt-red-dash);
         font-weight: 600;
+      }
+
+      /* -- ASHRAE 36 Callout (prose/explanatory text blocks) --
+         NO background. NO border-left. NO border. Just spacing.
+         Use this instead of inline background:#f8fafc;border-left:3px solid... */
+      .rpt-a36-callout {
+        padding: 6px 0;
+        margin: 6px 0;
+      }
+
+      /* -- ASHRAE 36 Stat Cards (cover scope-of-work cards only) --
+         Clean full border, white/transparent fill. NO left-border accent. */
+      .rpt-a36-stat-card {
+        background: transparent;
+        border: 1px solid var(--rpt-rule);
+        border-radius: 3px;
+        text-align: center;
+        padding: 10px 12px;
       }
     </style>
 
@@ -14613,7 +14634,7 @@
     <script src="app/utility-data.js?v=441"></script>
     <script src="app/pipeline-diagram.js?v=399"></script>
     <script src="app/csv-import.js?v=399"></script>
-    <script src="app/report-engine.js?v=441"></script>
+    <script src="app/report-engine.js?v=444"></script>
     <script src="app/report-preview.js?v=399"></script>
     <script src="app/calculators.js?v=399"></script>
     <script src="app/ecm-calculators.js?v=441"></script>
@@ -14624,7 +14645,7 @@
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=399"></script>
 
-    <script src="app/site-functions.js?v=443"></script>
+    <script src="app/site-functions.js?v=444"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */

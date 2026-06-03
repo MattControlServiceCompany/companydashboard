@@ -1087,6 +1087,23 @@ function showReportOverlay(html, title) {
 }
 
 /**
+ * _updateOverlayPageNumbers — populates .rpt-pg-footer-pagenum divs inside
+ * the legacy reportOverlay (#reportPages), mirroring what _updatePageNumbers()
+ * does for the new rptPreviewContainer system.  Called after showReportOverlay
+ * for any report that uses the overlay path (ASHRAE, board summary, etc.).
+ */
+function _updateOverlayPageNumbers() {
+  var pages = document.querySelectorAll('#reportPages .rpt-page');
+  var total = pages.length;
+  for (var i = 0; i < total; i++) {
+    var footer = pages[i].querySelector('.rpt-pg-footer-pagenum');
+    if (footer) {
+      footer.textContent = 'Page ' + (i + 1) + ' of ' + total;
+    }
+  }
+}
+
+/**
  * closeReportOverlay — hides the report preview overlay and cleans up.
  */
 function closeReportOverlay() {
@@ -10406,6 +10423,34 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     plain:
       'Starts and stops chillers and pumps based on cooling demand and rotates lead/lag assignments; without it, systems run excess capacity at low efficiency during shoulder seasons.',
   },
+  // ── VAV/zone DCV sequence key ──────────────────────────────────────────────
+  vav_dcv: {
+    short: 'Demand-controlled ventilation (VAV zones)',
+    impact: '5–10% fan and cooling savings',
+    plain:
+      'Adjusts outdoor air to each zone based on CO₂ readings so the system only ventilates occupied spaces — avoiding the energy cost of conditioning outside air for empty rooms.',
+  },
+  // ── Heater point key ────────────────────────────────────────────────────────
+  enable: {
+    short: 'Heater enable / status',
+    impact: 'Required for heater scheduling',
+    plain:
+      'Allows the control system to start and stop unit heaters on occupancy schedules; without it, heaters cannot be automatically disabled during unoccupied hours.',
+  },
+  // ── VVT Zone point key ──────────────────────────────────────────────────────
+  zoneDamper: {
+    short: 'Zone damper position command',
+    impact: 'Required for zone airflow control',
+    plain:
+      'Controls the volume of conditioned air delivered to each zone; without a damper command, the system cannot modulate airflow to meet setpoints or maintain minimum ventilation.',
+  },
+  // ── oaRh lowercase alias (equipment-matrix uses lowercase h) ────────────────
+  oaRh: {
+    short: 'Outdoor air relative humidity sensor',
+    impact: 'Supports wet-bulb calculation',
+    plain:
+      'Combined with outdoor air temperature, allows the system to calculate wet-bulb temperature without a dedicated sensor, enabling condenser water reset based on actual conditions.',
+  },
 };
 
 /**
@@ -10434,7 +10479,7 @@ var ASHRAE36_SECTIONS = {
  * @param {number|string} projId
  * @returns {object|null}
  */
-function collectASHRAE36Data(projId) {
+function collectASHRAE36Data(projId, reportDate) {
   if (typeof emLoadMatrix !== 'function') return null;
   var matData = emLoadMatrix(projId);
   if (!matData || !matData.rows || !matData.rows.length) return null;
@@ -10444,8 +10489,9 @@ function collectASHRAE36Data(projId) {
     return String(x.id) === String(projId);
   });
   var projName = proj ? proj.client || proj.name || 'Project' : 'Project';
-  var today = new Date();
-  var dateStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  var dateObj = reportDate ? new Date(reportDate + 'T00:00:00') : new Date();
+  if (isNaN(dateObj)) dateObj = new Date();
+  var dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   // Group rows by building
   var bldgMap = {};
@@ -10476,6 +10522,8 @@ function collectASHRAE36Data(projId) {
   // Compute per-building compliance
   var buildingsData = [];
   var portfolioGapCounts = {}; // key -> count across all buildings
+  var totalMissingHardwarePoints = 0; // sum of missing required sensor/actuator points across all equipment
+  var totalNotReadySequences = 0; // sum of blocked/partial sequences across all equipment
 
   Object.keys(bldgMap).forEach(function (bName) {
     var rows = bldgMap[bName];
@@ -10506,11 +10554,12 @@ function collectASHRAE36Data(projId) {
       // Accumulate sequence readiness using emComputeSequenceReadiness (same approach
       // as emComputeAuditStats in equipment-matrix.js). Counts non-'na' sequences as
       // required and 'ready' sequences as matched. 'blocked'/'partial' count as gaps.
+      var _equipSeqReadiness = {};
       if (typeof emComputeSequenceReadiness === 'function') {
-        var seqReadiness = emComputeSequenceReadiness(row, result);
-        for (var seqKey in seqReadiness) {
-          if (!seqReadiness.hasOwnProperty(seqKey)) continue;
-          var seqEntry = seqReadiness[seqKey];
+        _equipSeqReadiness = emComputeSequenceReadiness(row, result);
+        for (var seqKey in _equipSeqReadiness) {
+          if (!_equipSeqReadiness.hasOwnProperty(seqKey)) continue;
+          var seqEntry = _equipSeqReadiness[seqKey];
           if (seqEntry.status === 'na') continue;
           totalSeqRequired++;
           if (seqEntry.status === 'ready') {
@@ -10519,6 +10568,7 @@ function collectASHRAE36Data(projId) {
             // 'blocked' or 'partial' — accumulate as a gap for proposals/recommendations
             portfolioGapCounts[seqKey] = (portfolioGapCounts[seqKey] || 0) + 1;
             bldgGaps[seqKey] = (bldgGaps[seqKey] || 0) + 1;
+            totalNotReadySequences++; // scope-of-work: sequences to program
           }
         }
       }
@@ -10528,6 +10578,7 @@ function collectASHRAE36Data(projId) {
         portfolioGapCounts[mp.categoryKey] = (portfolioGapCounts[mp.categoryKey] || 0) + 1;
         bldgGaps[mp.categoryKey] = (bldgGaps[mp.categoryKey] || 0) + 1;
       });
+      totalMissingHardwarePoints += result.missingPoints.length; // scope-of-work: sensors to install
 
       equipResults.push({
         id: row.id,
@@ -10536,6 +10587,7 @@ function collectASHRAE36Data(projId) {
         categoryLabel: CAT_LABELS[row.category] || row.category,
         location: row.location || '',
         compliance: result,
+        seqReadiness: _equipSeqReadiness,
       });
     });
 
@@ -10549,8 +10601,16 @@ function collectASHRAE36Data(projId) {
     var statusColor = composite >= 75 ? 'var(--rpt-green)' : composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
     var statusLabel = composite >= 75 ? 'Good' : composite >= 50 ? 'Needs Attention' : 'Significant Gaps';
 
-    // Top gaps for this building
+    // Top gaps for this building.
+    // co2, vav_dcv, and demandCtrl are excluded here because the dedicated DCV
+    // readiness row (dcvRow) in recommendations and executive summary already
+    // surfaces this as one actionable item — showing them separately causes
+    // duplicate/confusing entries for the same physical intervention.
+    var DCV_KEYS = ['co2', 'vav_dcv', 'demandCtrl'];
     var topGaps = Object.keys(bldgGaps)
+      .filter(function (key) {
+        return DCV_KEYS.indexOf(key) === -1;
+      })
       .sort(function (a, b) {
         return bldgGaps[b] - bldgGaps[a];
       })
@@ -10586,8 +10646,14 @@ function collectASHRAE36Data(projId) {
 
   if (!buildingsData.length) return { _noAuditableEquip: true };
 
-  // Portfolio-level top gaps (most common missing checks across all buildings)
+  // Portfolio-level top gaps (most common missing checks across all buildings).
+  // co2, vav_dcv, and demandCtrl are excluded because the dedicated DCV readiness
+  // callout and dcvRow already surface this as one actionable item.
+  var PORTFOLIO_DCV_KEYS = ['co2', 'vav_dcv', 'demandCtrl'];
   var portfolioTopGaps = Object.keys(portfolioGapCounts)
+    .filter(function (key) {
+      return PORTFOLIO_DCV_KEYS.indexOf(key) === -1;
+    })
     .sort(function (a, b) {
       return portfolioGapCounts[b] - portfolioGapCounts[a];
     })
@@ -10677,6 +10743,8 @@ function collectASHRAE36Data(projId) {
       totalEquip: buildingsData.reduce(function (s, b) {
         return s + b.equipCount;
       }, 0),
+      totalMissingHardwarePoints: totalMissingHardwarePoints,
+      totalNotReadySequences: totalNotReadySequences,
       dcv: {
         totalAHU: dcvTotalAHU,
         ahuMissingCO2: dcvTotalAHU - dcvAHUWithCO2,
@@ -10833,53 +10901,53 @@ function rptPageASHRAE36Cover(n, d) {
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
     '<div style="text-align:center">' +
     _a36GaugeSVG(p.pointPct, 'var(--rpt-blue)', 'Points', 110) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div>' +
-    '<div style="font-size:9px;color:var(--rpt-page-text);opacity:0.65;margin-top:2px;max-width:110px">How complete are the required BAS sensors?</div></div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
     '<div style="text-align:center">' +
     _a36GaugeSVG(p.seqPct, '#7c3aed', 'Sequences', 110) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Coverage</div>' +
-    '<div style="font-size:9px;color:var(--rpt-page-text);opacity:0.65;margin-top:2px;max-width:110px">How many control sequences have all required inputs?</div></div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Coverage</div></div>' +
     '</div>';
 
   var bodyHTML =
     '<div style="padding:20px 48px 16px">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE Guideline 36 Compliance Audit</div>' +
-    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:2px">' +
+    '<div style="text-align:center;margin-bottom:0">' +
+    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
+    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:16px">' +
     d.project.name +
     '</div>' +
-    '<div style="font-size:12px;color:var(--rpt-page-text);margin-bottom:20px">' +
-    d.date +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
+    "This report evaluates the facility's building automation system against ASHRAE Guideline 36 — the industry standard for high-performance HVAC control. " +
+    'It identifies the specific sensors to install and control sequences to program that will unlock an estimated 15–30% in HVAC energy savings. ' +
+    'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
-    '<div style="background:#f8fafc;border-left:3px solid ' +
-    color +
-    ';padding:12px 14px;border-radius:0 4px 4px 0;font-size:12px;line-height:1.6;color:var(--rpt-page-text)">' +
+    '<div class="rpt-a36-callout" style="font-size:12px;line-height:1.6;color:var(--rpt-page-text)">' +
     finding +
     '</div>' +
     '<div style="display:flex;gap:16px;margin-top:16px">' +
-    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:10px 12px;text-align:center">' +
-    '<div style="font-size:20px;font-weight:700;color:var(--rpt-green)">' +
-    p.greenCount +
+    '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
+    p.totalMissingHardwarePoints +
     '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings — Good</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Sensors to Install</div>' +
     '</div>' +
-    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:10px 12px;text-align:center">' +
-    '<div style="font-size:20px;font-weight:700;color:var(--rpt-orange)">' +
-    p.amberCount +
+    '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
+    p.totalNotReadySequences +
     '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings — Needs Attention</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Sequences to Program</div>' +
     '</div>' +
-    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:10px 12px;text-align:center">' +
-    '<div style="font-size:20px;font-weight:700;color:var(--rpt-red)">' +
-    p.redCount +
-    '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings — Significant Gaps</div>' +
-    '</div>' +
-    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:10px 12px;text-align:center">' +
+    '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
     p.totalEquip +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Equipment Units Audited</div>' +
+    '</div>' +
+    '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
+    p.totalBuildings +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings Assessed</div>' +
     '</div>' +
     '</div>' +
     '</div>';
@@ -10951,10 +11019,10 @@ function rptPageASHRAE36Executive(n, d) {
     ';text-align:center">Equipment</th>' +
     '<th style="' +
     thStyle +
-    ';text-align:center">Sensors</th>' +
+    ';text-align:center">Sensor Coverage</th>' +
     '<th style="' +
     thStyle +
-    ';text-align:center">Sequences</th>' +
+    ';text-align:center">Sequence Readiness</th>' +
     '<th style="' +
     thStyle +
     '">Score</th>' +
@@ -10965,14 +11033,18 @@ function rptPageASHRAE36Executive(n, d) {
     '<tbody>' +
     tableRows +
     '</tbody>' +
-    '</table>';
+    '</table>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
+    '<strong>Score</strong> = weighted composite (40% Sensor Coverage + 60% Sequence Readiness). ' +
+    '<strong>Status thresholds:</strong> Good ≥ 75%, Needs Attention 50–74%, Significant Gaps &lt;50%.' +
+    '</div>';
 
   // Key finding callout
   var topGap = p.topGaps[0];
   var callout = '';
   if (topGap) {
     callout =
-      '<div style="background:#fffbeb;border-left:3px solid var(--rpt-orange);padding:10px 12px;border-radius:0 4px 4px 0;margin-bottom:14px">' +
+      '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
       '<div style="font-size:11px;font-weight:700;color:var(--rpt-orange);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
       '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
       (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].short : topGap.key) +
@@ -10998,7 +11070,7 @@ function rptPageASHRAE36Executive(n, d) {
     }
     var dcvSentence = dcvParts.join(' and ') + ' have no CO₂ sensor.';
     dcvCallout =
-      '<div style="background:#f0f9ff;border-left:3px solid var(--rpt-blue);padding:10px 12px;border-radius:0 4px 4px 0;margin-bottom:14px">' +
+      '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
       '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">Demand Control Ventilation Readiness</div>' +
       '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
@@ -11017,8 +11089,9 @@ function rptPageASHRAE36Executive(n, d) {
 
 // ─── rptPageASHRAE36Building ──────────────────────────────────────────────
 /**
- * Per-building detail page: equipment overview, what's working, gaps with
- * plain-language explanations.
+ * Per-building detail page: structured equipment-by-row table showing sensors
+ * present, sensors needed (with human-readable names), and sequences not ready.
+ * Replaces the prose "What Is Working" + gap-box list from the original design.
  * @param {number} n - Page number
  * @param {object} d - Data from collectASHRAE36Data
  * @param {object} building - Single building entry from d.buildings
@@ -11027,35 +11100,55 @@ function rptPageASHRAE36Building(n, d, building) {
   var b = building;
   var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
 
-  // Equipment type breakdown
+  // ── Helper: resolve human-readable name for a missing point category key ──
+  // Priority: ASHRAE36_GAP_DESCRIPTIONS[key].short → categoryLabel from compliance
+  // result → key itself (raw key is last resort, never primary).
+  function _missingPointName(mp) {
+    var desc = ASHRAE36_GAP_DESCRIPTIONS[mp.categoryKey];
+    if (desc && desc.short) return desc.short;
+    if (mp.categoryLabel) return mp.categoryLabel;
+    return mp.categoryKey; // fallback only — raw key should be rare
+  }
+
+  // ── Helper: resolve human-readable label for a sequence key ──
+  // Uses EM_SEQUENCE_DEFS array if available, otherwise ASHRAE36_GAP_DESCRIPTIONS,
+  // then falls back to the key itself.
+  function _seqLabel(seqKey, seqEntry) {
+    // seqEntry.label is populated by emComputeSequenceReadiness from EM_SEQUENCE_DEFS
+    if (seqEntry && seqEntry.label) return seqEntry.label;
+    var desc = ASHRAE36_GAP_DESCRIPTIONS[seqKey];
+    if (desc && desc.short) return desc.short;
+    return seqKey; // fallback only
+  }
+
+  // ── Coverage gauges (retained from original — useful header summary) ──
+  var CAT_LABELS_PLURAL = {
+    ahu: 'Air Handlers',
+    vav: 'VAV Terminals',
+    fpb: 'Fan-Powered Terminals',
+    ddvav: 'Dual-Duct Terminals',
+    hwp: 'Hot Water Plant',
+    chwp: 'Chilled Water Plant',
+    ct: 'Cooling Towers',
+    doas: 'DOAS Units',
+    fcu: 'Fan Coil Units',
+    zone: 'Zone Terminals',
+    furnace: 'Furnaces',
+    heater: 'Heaters',
+    ef: 'Exhaust Fans',
+  };
   var equipBreakdown = Object.keys(b.equipCounts)
     .map(function (cat) {
-      var CAT_LABELS = {
-        ahu: 'Air Handlers',
-        vav: 'VAV Terminals',
-        fpb: 'Fan-Powered Terminals',
-        ddvav: 'Dual-Duct Terminals',
-        hwp: 'Hot Water Plant',
-        chwp: 'Chilled Water Plant',
-        ct: 'Cooling Towers',
-        doas: 'DOAS Units',
-        fcu: 'Fan Coil Units',
-        zone: 'Zone Terminals',
-        furnace: 'Furnaces',
-        heater: 'Heaters',
-        ef: 'Exhaust Fans',
-      };
       return (
-        '<span style="font-size:10px;padding:2px 8px;background:#f1f5f9;border-radius:10px;color:var(--rpt-page-text);margin-right:4px">' +
+        '<span style="font-size:10px;color:var(--rpt-page-text);margin-right:8px">' +
         b.equipCounts[cat] +
-        ' ' +
-        (CAT_LABELS[cat] || cat) +
+        ' ' +
+        (CAT_LABELS_PLURAL[cat] || cat) +
         '</span>'
       );
     })
     .join('');
 
-  // Coverage gauges
   var gauges =
     '<div style="display:flex;gap:20px;margin-bottom:12px;align-items:center">' +
     '<div style="text-align:center">' +
@@ -11081,110 +11174,167 @@ function rptPageASHRAE36Building(n, d, building) {
     '</div>' +
     '</div>';
 
-  // What's working (plain-language summary grouped by equipment type)
-  var workingByType = {}; // cat -> { sensorKeys: [], commandKeys: [], seqKeys: [] }
-  var SENSOR_KEYS = [
-    'sat',
-    'rat',
-    'mat',
-    'oat',
-    'dsp',
-    'sfStatus',
-    'sfSpeed',
-    'discFlow',
-    'hwSupTemp',
-    'hwRetTemp',
-    'hwDiffPres',
-    'chwSupTemp',
-    'chwRetTemp',
-    'chwDiffPres',
-    'cwst',
-    'zoneCoolSp',
-    'zoneHtgSp',
-  ];
-  var COMMAND_KEYS = [
-    'sfEnable',
-    'sfSpeedCmd',
-    'sfVfd',
-    'oaDampCmd',
-    'raDampCmd',
-    'clgValve',
-    'htgValve',
-    'ctFanSpeed',
-  ];
-  b.equipResults.forEach(function (eq) {
-    if (!eq.compliance.coveredPoints || !eq.compliance.coveredPoints.length) return;
-    var cat = eq.category;
-    if (!workingByType[cat]) workingByType[cat] = { sensors: [], commands: [], seqs: [], label: eq.categoryLabel };
-    eq.compliance.coveredPoints.forEach(function (cp) {
-      var k = cp.categoryKey;
-      if (SENSOR_KEYS.indexOf(k) !== -1) {
-        if (workingByType[cat].sensors.indexOf(k) === -1) workingByType[cat].sensors.push(k);
-      } else if (COMMAND_KEYS.indexOf(k) !== -1) {
-        if (workingByType[cat].commands.indexOf(k) === -1) workingByType[cat].commands.push(k);
-      } else {
-        if (workingByType[cat].seqs.indexOf(k) === -1) workingByType[cat].seqs.push(k);
-      }
-    });
+  // ── Build equipment table, grouped by category (type) ──
+  // Sort equipResults so all units of the same category appear together.
+  // Within each category, sort alphabetically by name.
+  var CAT_ORDER = ['ahu', 'doas', 'fcu', 'hwp', 'chwp', 'ct', 'vav', 'fpb', 'ddvav', 'zone', 'furnace', 'heater', 'ef'];
+  var sortedEquip = b.equipResults.slice().sort(function (a, b2) {
+    var ai = CAT_ORDER.indexOf(a.category);
+    var bi2 = CAT_ORDER.indexOf(b2.category);
+    if (ai === -1) ai = 99;
+    if (bi2 === -1) bi2 = 99;
+    if (ai !== bi2) return ai - bi2;
+    return (a.name || '').localeCompare(b2.name || '');
   });
-  var typeKeys = Object.keys(workingByType);
-  var workingHTML = '';
-  if (typeKeys.length) {
-    var sentences = typeKeys
-      .map(function (cat) {
-        var wt = workingByType[cat];
-        var parts = [];
-        if (wt.sensors.length) parts.push(wt.sensors.length + ' required sensor' + (wt.sensors.length > 1 ? 's' : ''));
-        if (wt.commands.length)
-          parts.push(wt.commands.length + ' control command' + (wt.commands.length > 1 ? 's' : ''));
-        if (wt.seqs.length) parts.push(wt.seqs.length + ' control sequence' + (wt.seqs.length > 1 ? 's' : ''));
-        if (!parts.length) return null;
-        return (wt.label || cat) + ': ' + parts.join(' and ') + ' in place.';
-      })
-      .filter(Boolean);
-    if (sentences.length) {
-      workingHTML =
-        '<div style="margin-bottom:12px">' +
-        '<div style="font-size:11px;font-weight:700;color:var(--rpt-green);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em">What Is Working</div>' +
-        '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.7">' +
-        sentences.join(' ') +
-        '</div></div>';
+
+  // Compute building-level totals for summary line
+  var totalSensorsNeeded = 0;
+  var totalSeqsNotReady = 0;
+  sortedEquip.forEach(function (eq) {
+    totalSensorsNeeded += (eq.compliance.missingPoints || []).length;
+    var sr = eq.seqReadiness || {};
+    for (var k in sr) {
+      if (sr.hasOwnProperty(k) && (sr[k].status === 'blocked' || sr[k].status === 'partial')) {
+        totalSeqsNotReady++;
+      }
     }
+  });
+
+  var thStyle =
+    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
+    'border-bottom:2px solid var(--rpt-blue)';
+  var tableHead =
+    '<thead><tr>' +
+    '<th style="' +
+    thStyle +
+    ';width:22%">Equipment</th>' +
+    '<th style="' +
+    thStyle +
+    ';width:16%">Type</th>' +
+    '<th style="' +
+    thStyle +
+    ';width:8%;text-align:center">Sensors Present</th>' +
+    '<th style="' +
+    thStyle +
+    ';width:30%">Sensors Needed</th>' +
+    '<th style="' +
+    thStyle +
+    '">Sequences Not Ready</th>' +
+    '</tr></thead>';
+
+  var tbodyRows = '';
+  var lastCat = null;
+  sortedEquip.forEach(function (eq) {
+    var mp = eq.compliance.missingPoints || [];
+    var sr = eq.seqReadiness || {};
+    var presentCount = (eq.compliance.coveredPoints || []).length;
+
+    // Sensors needed: count + human-readable comma list
+    var missingNames = mp.map(_missingPointName);
+    var sensorsNeededCell =
+      mp.length === 0
+        ? '<span style="color:var(--rpt-green)">None</span>'
+        : '<strong>' + mp.length + '</strong> &mdash; ' + missingNames.join(', ');
+
+    // Sequences not ready: human-readable list (blocked or partial only)
+    var notReadySeqs = [];
+    for (var sk in sr) {
+      if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
+        notReadySeqs.push(_seqLabel(sk, sr[sk]));
+      }
+    }
+    var seqsCell =
+      notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
+
+    // Type sub-header row when category changes
+    if (eq.category !== lastCat) {
+      lastCat = eq.category;
+      tbodyRows +=
+        '<tr>' +
+        '<td colspan="5" style="padding:4px 8px 2px;font-size:10px;font-weight:700;' +
+        'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
+        'background:#f0f4fa;border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule)">' +
+        (eq.categoryLabel || eq.category) +
+        '</td>' +
+        '</tr>';
+    }
+
+    var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
+    var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
+    tbodyRows +=
+      '<tr>' +
+      '<td style="' +
+      tdBase +
+      ';font-weight:600;color:var(--rpt-page-text)">' +
+      (eq.name || '—') +
+      '</td>' +
+      '<td style="' +
+      tdBase +
+      ';color:var(--rpt-page-text)">' +
+      (eq.categoryLabel || eq.category) +
+      '</td>' +
+      '<td style="' +
+      tdBase +
+      ';text-align:center;color:var(--rpt-page-text)">' +
+      presentCount +
+      '</td>' +
+      '<td style="' +
+      tdBase +
+      ';color:var(--rpt-page-text);line-height:1.5">' +
+      sensorsNeededCell +
+      '</td>' +
+      '<td style="' +
+      tdBase +
+      ';color:var(--rpt-page-text);line-height:1.5">' +
+      seqsCell +
+      '</td>' +
+      '</tr>';
+  });
+
+  // Empty state
+  if (!sortedEquip.length) {
+    tbodyRows =
+      '<tr><td colspan="5" style="padding:8px;font-size:10px;color:var(--rpt-page-text)">No auditable equipment found for this building.</td></tr>';
   }
 
-  // Gaps section
-  var gapsHTML = '';
-  if (b.topGaps.length) {
-    var gapRows = b.topGaps
-      .map(function (gap) {
-        var desc = gap.desc || {};
-        return (
-          '<div style="margin-bottom:10px;padding:8px 10px;background:#fef9f0;border-left:3px solid var(--rpt-orange);border-radius:0 4px 4px 0">' +
-          '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
-          '<span style="font-size:11px;font-weight:700;color:var(--rpt-page-text)">' +
-          (desc.short || gap.key) +
-          '</span>' +
-          '<span style="font-size:10px;color:var(--rpt-orange)">' +
-          (desc.impact || '') +
-          '</span>' +
-          '</div>' +
-          '</div>'
-        );
-      })
-      .join('');
-    gapsHTML =
-      '<div>' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-orange);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Top Gaps — ' +
-      b.name +
-      '</div>' +
-      gapRows +
-      '</div>';
-  } else {
-    gapsHTML =
-      '<div style="font-size:11px;color:var(--rpt-green);padding:8px">No significant gaps identified for this building.</div>';
-  }
+  var equipTable =
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
+    tableHead +
+    '<tbody>' +
+    tbodyRows +
+    '</tbody>' +
+    '</table>';
 
-  var bodyHTML = gauges + workingHTML + gapsHTML;
+  // ── Building-level summary line ──
+  var summaryLine =
+    '<div class="rpt-a36-callout" style="font-size:11px;color:var(--rpt-page-text);' +
+    'border-top:1px solid var(--rpt-rule);padding-top:8px;margin-bottom:0">' +
+    '<strong>Total for ' +
+    b.name +
+    ':</strong> install ' +
+    totalSensorsNeeded +
+    ' sensor' +
+    (totalSensorsNeeded !== 1 ? 's' : '') +
+    ', program ' +
+    totalSeqsNotReady +
+    ' sequence' +
+    (totalSeqsNotReady !== 1 ? 's' : '') +
+    ' across ' +
+    b.equipCount +
+    ' equipment unit' +
+    (b.equipCount !== 1 ? 's' : '') +
+    '.' +
+    '</div>';
+
+  // ── Intro sentence ──
+  var intro =
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px;line-height:1.6">' +
+    'The table below lists every audited unit, the sensors currently in place, sensors that must be added, ' +
+    'and which control sequences cannot run until those sensors are installed.' +
+    '</div>';
+
+  var bodyHTML = gauges + intro + equipTable + summaryLine;
   return rptPage(n, 'ASHRAE 36 Audit — ' + b.name, bodyHTML, { data: fakeData, label: 'Page ' + n + ' — ' + b.name });
 }
 
@@ -11297,7 +11447,7 @@ function rptPageASHRAE36Recommendations(n, d) {
     '</table>';
 
   var nextStep =
-    '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:10px 12px">' +
+    '<div class="rpt-a36-callout" style="border-top:1px solid var(--rpt-rule)">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">What Happens Next</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
     'Control Service Company can provide a detailed scope of work and fixed-fee proposal to address these gaps through BAS programming and hardware upgrades. ' +
@@ -11323,7 +11473,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var color = p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
 
   var toc =
-    '<div style="background:#f8fafc;border-radius:4px;padding:12px 16px;margin-bottom:16px">' +
+    '<div class="rpt-a36-callout" style="margin-bottom:16px;border-top:1px solid var(--rpt-rule)">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">Contents</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:2">' +
     '<div>1. Introduction &amp; Proposal Overview</div>' +
@@ -11498,7 +11648,7 @@ function rptPageASHRAE36ProposalOutcomes(n, d) {
     '</div>';
 
   var timeline =
-    '<div style="background:#f8fafc;border-radius:4px;padding:12px 14px;margin-bottom:14px">' +
+    '<div class="rpt-a36-callout" style="margin-bottom:14px;border-top:1px solid var(--rpt-rule)">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">Typical Implementation Timeline</div>' +
     '<div style="display:flex;gap:0">' +
     _timelineStep('Weeks 1–2', 'Site Assessment', 'Final point verification and hardware list confirmation') +
@@ -11517,7 +11667,7 @@ function rptPageASHRAE36ProposalOutcomes(n, d) {
     '</div>';
 
   var nextStep =
-    '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:12px 14px">' +
+    '<div class="rpt-a36-callout" style="border-top:1px solid var(--rpt-rule)">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">Ready to Move Forward?</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
     'Contact your Control Service Company representative to schedule a pre-proposal walkthrough, finalize scope, and receive a fixed-fee project cost. ' +
@@ -11534,7 +11684,7 @@ function rptPageASHRAE36ProposalOutcomes(n, d) {
 
 function _proposalOutcomeCard(title, body, color) {
   return (
-    '<div style="background:#f8fafc;border-radius:4px;padding:10px 12px;border-top:3px solid ' +
+    '<div style="border:1px solid var(--rpt-rule);border-radius:4px;padding:10px 12px;border-top:3px solid ' +
     color +
     '">' +
     '<div style="font-size:11px;font-weight:700;color:' +
@@ -11696,7 +11846,9 @@ function generateASHRAE36Preview() {
   var projId = modal._a36ProjId;
   var type = modal._a36Type;
 
-  var data = collectASHRAE36Data(projId);
+  var dateInput = document.getElementById('a36ReportDate');
+  var reportDate = dateInput && dateInput.value ? dateInput.value : null;
+  var data = collectASHRAE36Data(projId, reportDate);
   if (!data) {
     showToast('No equipment matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
     return;
@@ -11727,5 +11879,6 @@ function generateASHRAE36Preview() {
       ? data.project.name + ' — ASHRAE 36 Service Proposal'
       : data.project.name + ' — ASHRAE 36 Audit Report';
   showReportOverlay(html, reportTitle);
+  _updateOverlayPageNumbers();
 }
 window.generateASHRAE36Preview = generateASHRAE36Preview;

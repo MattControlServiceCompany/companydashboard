@@ -1191,9 +1191,47 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.03.444',
+    date: '2026-06-03',
+    title: 'Audit Report overhaul: ASHRAE 36 Audit Report rename, scope-of-work cover, per-building equipment table',
+    items: [
+      { type: 'change', text: "Report is now called 'ASHRAE 36 Audit Report' (was 'ASHRAE 36 Assessment Report')." },
+      {
+        type: 'change',
+        text: 'Cover page now shows a purpose statement explaining what ASHRAE 36 is, what the report shows, and how to use it.',
+      },
+      {
+        type: 'change',
+        text: 'Cover stat cards now show actionable scope-of-work counts: Sensors to Install, Sequences to Program, Equipment Units Audited, and Buildings Assessed -- replacing the internal compliance status counts that were shown before.',
+      },
+      {
+        type: 'feature',
+        text: 'Per-building pages are rebuilt as a structured equipment table (Equipment | Type | Sensors Present | Sensors Needed | Sequences Not Ready) so you can see exactly what each unit has and what it needs, grouped by equipment type.',
+      },
+      {
+        type: 'fix',
+        text: 'AI-style grey box fills and left-border accents have been removed from all report sections -- prose blocks are now clean and white.',
+      },
+      {
+        type: 'fix',
+        text: 'Report date no longer appears twice; the date picker in the Generate Report dialog now controls the date shown in the footer.',
+      },
+      { type: 'fix', text: 'Page numbers now appear on every page of the report.' },
+      {
+        type: 'fix',
+        text: 'Executive Summary table columns renamed to Sensor Coverage and Sequence Readiness; a legend is added explaining the 40/60 score formula and status thresholds.',
+      },
+      {
+        type: 'fix',
+        text: "Raw internal code 'vav_dcv' no longer appears in reports -- it now shows as 'DCV (VAV)'. CO2/DCV items are de-duplicated so they appear as one row instead of three.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.03.443',
     date: '2026-06-03',
-    title: 'Equipment Matrix building-filter scoping and ASHRAE column ordering; Utility Data tab bar scrolls at narrow widths',
+    title:
+      'Equipment Matrix building-filter scoping and ASHRAE column ordering; Utility Data tab bar scrolls at narrow widths',
     items: [
       {
         type: 'fix',
