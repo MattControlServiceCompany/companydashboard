@@ -10854,45 +10854,30 @@ function _a36StatusChip(status) {
 function rptPageASHRAE36Cover(n, d) {
   var p = d.portfolio;
   var color = p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
-  var statusWord = p.composite >= 75 ? 'strong' : p.composite >= 50 ? 'moderate' : 'limited';
-  var readinessWord =
-    p.composite >= 75 ? 'largely compliant' : p.composite >= 50 ? 'partially compliant' : 'not yet compliant';
-
   // One-paragraph finding
   var finding =
-    'This ASHRAE Guideline 36 compliance audit evaluated <strong>' +
-    p.totalEquip +
-    ' pieces of HVAC equipment</strong> across <strong>' +
-    p.totalBuildings +
-    ' buildings</strong> at ' +
+    'To meet ASHRAE Guideline 36, <strong>' +
     d.project.name +
-    '. ' +
-    'The portfolio achieved an overall compliance score of <strong style="color:' +
-    color +
-    '">' +
-    p.composite +
-    '%</strong>, ' +
-    'indicating <strong>' +
-    statusWord +
-    '</strong> readiness for Guideline 36 sequences. ' +
-    'Point coverage (sensors and actuators) averaged <strong>' +
-    p.pointPct +
-    '%</strong> and ' +
-    'sequence programming coverage averaged <strong>' +
-    p.seqPct +
-    '%</strong>. ' +
-    'Of the ' +
+    '</strong> needs <strong>' +
+    p.totalMissingHardwarePoints +
+    ' sensor' +
+    (p.totalMissingHardwarePoints !== 1 ? 's' : '') +
+    ' and actuator' +
+    (p.totalMissingHardwarePoints !== 1 ? 's' : '') +
+    ' installed</strong> and <strong>' +
+    p.totalNotReadySequences +
+    ' control sequence' +
+    (p.totalNotReadySequences !== 1 ? 's' : '') +
+    ' programmed</strong> across <strong>' +
+    p.totalEquip +
+    ' piece' +
+    (p.totalEquip !== 1 ? 's' : '') +
+    ' of HVAC equipment</strong> in <strong>' +
     p.totalBuildings +
-    ' buildings audited, ' +
-    p.greenCount +
-    ' are ' +
-    readinessWord +
-    ', ' +
-    p.amberCount +
-    ' have moderate gaps, and ' +
-    p.redCount +
-    ' have significant gaps requiring attention. ' +
-    'The sections that follow detail findings by building and provide a prioritized list of recommended upgrades.';
+    ' building' +
+    (p.totalBuildings !== 1 ? 's' : '') +
+    '</strong>. ' +
+    'The sections that follow break this work down building by building and provide a prioritized list of recommended upgrades, each with its typical energy savings.';
 
   var gauges =
     '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 20px">' +
