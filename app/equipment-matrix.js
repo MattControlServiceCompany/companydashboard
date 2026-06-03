@@ -337,7 +337,7 @@ var EM_CHECK_COLS_14 = [
 
 var EM_POINT_MAP = [
   {
-    col: 'satLive',
+    col: 'supplyAirTemp',
     label: 'Supply Air Temp',
     // M1A: added /discharge air temp/i — at AHU level "Discharge Air Temperature" is an HVAC synonym
     // for supply air temperature (discharge = leaving the AHU). This is the KEY AHU synonym test.
@@ -357,7 +357,7 @@ var EM_POINT_MAP = [
     cats: ['ahu', 'vav', 'fpb'],
   },
   {
-    col: 'ratLive',
+    col: 'returnAirTemp',
     label: 'Return Air Temp',
     patterns: [/return air temp/i, /rat\b/i],
     // Phase 2A: guard against "Return Air Temperature Alarm", "Return Air Temp Setpoint".
@@ -370,7 +370,7 @@ var EM_POINT_MAP = [
     cats: ['ahu'],
   },
   {
-    col: 'matLive',
+    col: 'mixedAirTemp',
     label: 'Mixed Air Temp',
     // Phase 2A: use /mixed\s+air\s+temp/i to tolerate double-space artifact
     // "Mixed  Air Temperature" from LSSD CSV exports (see taxonomy investigation).
@@ -386,7 +386,7 @@ var EM_POINT_MAP = [
     cats: ['ahu'],
   },
   {
-    col: 'oatLive',
+    col: 'outdoorAirTemp',
     label: 'OAT (Live)',
     // FIX 4d: Added dry bulb patterns to match CSV 'Outside Air Dry Bulb'
     patterns: [/outside air dry bulb/i, /outdoor air dry bulb/i, /outdoor air temp/i, /\boat\b/i, /oat \(live\)/i],
@@ -397,7 +397,7 @@ var EM_POINT_MAP = [
     cats: ['ahu', 'hwp', 'chwp'],
   },
   {
-    col: 'sfSpeedLive',
+    col: 'supplyFanSpeed',
     label: 'Supply Fan Speed',
     // FIX 4b: Added /supply fan.*speed/i and /fan.*vfd.*speed/i to match 'Supply Fan VFD Speed'
     patterns: [/supply fan.*speed/i, /fan.*vfd.*speed/i, /supply fan speed/i, /fan speed/i, /sf speed/i],
@@ -417,7 +417,7 @@ var EM_POINT_MAP = [
     cats: ['ahu'],
   },
   {
-    col: 'dspLive',
+    col: 'ductStaticPressure',
     label: 'Duct Static Pressure',
     patterns: [/duct static pressure/i, /\bdsp\b/i],
     // M1A: added negativePatterns. Blocks alarm objects (High/Low DSP Alarm), exhaust duct static
@@ -430,17 +430,17 @@ var EM_POINT_MAP = [
     cats: ['ahu'],
   },
   {
-    col: 'oaDampLive',
+    col: 'oaDamperPosition',
     label: 'OA Damper Position',
     // M4: added /outside\s+air\s+damper/i — "Outside Air Damper Position" was missing this
-    // variant and falling through to dampPosLive. "outdoor air damper" existed; "outside air
+    // variant and falling through to damperPosition. "outdoor air damper" existed; "outside air
     // damper" is a common alternative phrasing in JOCO data.
     patterns: [/oa damper/i, /outdoor air damper/i, /outside\s+air\s+damper/i],
     types: ['AO', 'AI'],
     cats: ['ahu'],
   },
   {
-    col: 'clgValveLive',
+    col: 'coolingValve',
     label: 'Cooling Valve Position',
     patterns: [/cooling valve/i, /chw valve/i, /clg valve/i],
     // Phase 2A: guard against "Cooling Valve Capacity GPM" (sizing config), "Cooling Valve Low Limit"
@@ -450,7 +450,7 @@ var EM_POINT_MAP = [
     cats: ['ahu', 'fpb'],
   },
   {
-    col: 'htgValveLive',
+    col: 'heatingValve',
     label: 'Heating Valve Position',
     // Phase 3a: removed /reheat valve/i — reheat valve must map to reheatValveLive (zone category),
     // not to the AHU heating-coil valve. Shadow was preventing zone reheat valve from auto-assigning.
@@ -469,7 +469,7 @@ var EM_POINT_MAP = [
     cats: ['ahu', 'vav', 'fpb'],
   },
   {
-    col: 'oaFlowLive',
+    col: 'oaAirflow',
     label: 'OA Airflow (cfm)',
     // M4: added /outdoor\s+airflow/i and /outside\s+airflow/i so "Outdoor Airflow" and
     // "Outside Airflow" route here instead of falling through to discFlowLive.
@@ -480,7 +480,7 @@ var EM_POINT_MAP = [
     cats: ['ahu'],
   },
   {
-    col: 'zoneAirTempLive',
+    col: 'zoneAirTemp',
     label: 'Zone Air Temp',
     patterns: [/zone air temp/i, /room temp/i, /space temp/i, /zone temp/i],
     // Negative guard: alarm/status/setpoint names must NOT map here even if the
@@ -496,7 +496,7 @@ var EM_POINT_MAP = [
     cats: ['vav', 'fpb', 'ddvav'],
   },
   {
-    col: 'zoneCoolSpLive',
+    col: 'zoneCoolSetpoint',
     label: 'Zone Cooling Setpoint',
     // FIX 3b (1b74f531): Use /cooling.*setpoint/i to also match 'Cooling Occupied Setpoint'
     // (word order: Cooling → Occupied → Setpoint). negativePatterns blocks Adjust and Unoccupied.
@@ -512,7 +512,7 @@ var EM_POINT_MAP = [
     cats: ['vav', 'fpb', 'ddvav'],
   },
   {
-    col: 'zoneHtgSpLive',
+    col: 'zoneHtgSetpoint',
     label: 'Zone Heating Setpoint',
     // FIX 3b (1b74f531): Use /heating.*setpoint/i to also match 'Heating Occupied Setpoint'.
     // negativePatterns blocks Adjust and Unoccupied.
@@ -528,7 +528,7 @@ var EM_POINT_MAP = [
     cats: ['vav', 'fpb', 'ddvav'],
   },
   {
-    col: 'datLive',
+    col: 'dischargeAirTemp',
     label: 'Discharge Air Temp',
     patterns: [/discharge air temp/i, /\bdat\b/i],
     // M1A: added negativePatterns (proactive guard — same structural risk as other temp columns).
@@ -539,7 +539,7 @@ var EM_POINT_MAP = [
     cats: ['vav', 'fpb', 'ddvav'],
   },
   {
-    col: 'reheatValveLive',
+    col: 'reheatValve',
     label: 'Reheat Valve',
     patterns: [/reheat valve/i],
     // M1A: added negativePatterns. "Preheat Valve" and its sub-objects contain "reheat valve"
@@ -550,7 +550,7 @@ var EM_POINT_MAP = [
     cats: ['vav', 'fpb'],
   },
   {
-    col: 'dampPosLive',
+    col: 'damperPosition',
     label: 'Damper Position',
     patterns: [/damper position/i, /dmp pos/i],
     // M4: added negativePatterns. "Outside Air Damper Position" now caught by oaDampLive
@@ -562,7 +562,7 @@ var EM_POINT_MAP = [
     cats: ['vav', 'fpb', 'ddvav'],
   },
   {
-    col: 'discFlowLive',
+    col: 'dischargeAirflow',
     label: 'Discharge Airflow',
     // FIX 2 (a0d29b4c): Added /\bair\s*flow\b/i and /flow.*input/i to match CSV 'Air Flow'
     // and 'Flow Control / Flow Input'. negativePatterns blocks setpoints/requests/min/max.
@@ -587,7 +587,7 @@ var EM_POINT_MAP = [
     cats: ['vav', 'fpb', 'ddvav'],
   },
   {
-    col: 'hwSupTempLive',
+    col: 'hwSupplyTemp',
     label: 'HW Supply Temp',
     patterns: [/hw supply temp/i, /hot water supply/i, /hwst\b/i],
     // M2: added negativePatterns. CHW/CHWST names contain "HW" as substring causing false matches.
@@ -597,7 +597,7 @@ var EM_POINT_MAP = [
     cats: ['hwp'],
   },
   {
-    col: 'hwRetTempLive',
+    col: 'hwReturnTemp',
     label: 'HW Return Temp',
     patterns: [/hw return temp/i, /hot water return/i, /hwrt\b/i],
     // M2: added negativePatterns. CHWRT contains "HWRT" as substring; "DHW" contains "HW".
@@ -608,7 +608,7 @@ var EM_POINT_MAP = [
     cats: ['hwp'],
   },
   {
-    col: 'hwDiffPresLive',
+    col: 'hwDiffPressure',
     label: 'HW Diff Pressure',
     patterns: [/hw diff pressure/i, /hw differential/i],
     // M2: "CHW" contains "HW" so /hw differential/i fires on "CHW Differential Pressure".
@@ -617,14 +617,14 @@ var EM_POINT_MAP = [
     cats: ['hwp'],
   },
   {
-    col: 'hwSupSpLive',
+    col: 'hwSupplySetpoint',
     label: 'HW Supply Setpoint',
     patterns: [/hw supply setpoint/i, /hw setpoint/i],
     types: ['SP'],
     cats: ['hwp'],
   },
   {
-    col: 'chwSupTempLive',
+    col: 'chwSupplyTemp',
     label: 'CHW Supply Temp',
     patterns: [/chw supply temp/i, /chilled water supply/i, /chwst\b/i],
     // M2: high/low block alarm limit names. Flow blocks "Chilled Water Supply Flow"
@@ -634,7 +634,7 @@ var EM_POINT_MAP = [
     cats: ['chwp'],
   },
   {
-    col: 'chwRetTempLive',
+    col: 'chwReturnTemp',
     label: 'CHW Return Temp',
     patterns: [/chw return temp/i, /chilled water return/i, /chwrt\b/i],
     // M2: high/low block alarm limit names (High/Low Chilled Water ReturnTemperature).
@@ -643,28 +643,28 @@ var EM_POINT_MAP = [
     cats: ['chwp'],
   },
   {
-    col: 'chwSupSpLive',
+    col: 'chwSupplySetpoint',
     label: 'CHW Supply Setpoint',
     patterns: [/chw supply setpoint/i, /chw setpoint/i],
     types: ['SP'],
     cats: ['chwp'],
   },
   {
-    col: 'chwDiffPresLive',
+    col: 'chwDiffPressure',
     label: 'CHW Diff Pressure',
     patterns: [/chw diff pressure/i, /chw differential/i],
     types: ['AI'],
     cats: ['chwp'],
   },
   {
-    col: 'chwFlowLive',
+    col: 'chwFlow',
     label: 'CHW Flow',
     patterns: [/chw flow/i, /chilled water flow/i],
     types: ['AI'],
     cats: ['chwp'],
   },
   {
-    col: 'cwSupTempLive',
+    col: 'cwSupplyTemp',
     label: 'CW Supply Temp',
     patterns: [/cw supply temp/i, /condenser water supply/i, /cwst\b/i],
     // M2: high/low block alarm limit names (High/Low Condenser Water Supply Temperature).
@@ -673,7 +673,7 @@ var EM_POINT_MAP = [
     cats: ['ct'],
   },
   {
-    col: 'cwRetTempLive',
+    col: 'cwReturnTemp',
     label: 'CW Return Temp',
     patterns: [/cw return temp/i, /condenser water return/i, /cwrt\b/i],
     types: ['AI'],
@@ -684,7 +684,7 @@ var EM_POINT_MAP = [
   // positioned before co2Live so the more-specific return-air CO2 patterns win.
   // (The co2ReturnLive definition below replaces the original late-array position, which is removed.)
   {
-    col: 'co2ReturnLive',
+    col: 'returnAirCO2',
     label: 'Return Air CO2',
     patterns: [
       /\bra\s+co2\b/i,
@@ -699,7 +699,7 @@ var EM_POINT_MAP = [
   },
   // Fix c0bf56e0: Zone CO2 — CSV uses 'Zone CO2' and 'Zone CO2 AV'
   {
-    col: 'co2Live',
+    col: 'zoneCO2',
     label: 'Zone CO2',
     // Fix c0bf56e0: 'Zone CO2 AV' is a known CSV column header variant; mapped via labelAliases.
     labelAliases: ['Zone CO2 AV'],
@@ -725,7 +725,7 @@ var EM_POINT_MAP = [
   // (e.g. "Zone Humidity", "Space Humidity", "Media Center Humidity") but OA/outdoor/return
   // contexts are now excluded here so the more-specific columns win.
   {
-    col: 'rhZone',
+    col: 'zoneRelativeHumidity',
     label: 'Zone RH %',
     patterns: [
       /zone\s*r\.?h/i,
@@ -751,7 +751,7 @@ var EM_POINT_MAP = [
   // "Broadcast Wet Bulb" appear on AHU and DHU (pool dehumidifier) equipment in JOCO data,
   // not only on cooling towers.
   {
-    col: 'oaWetBulbLive',
+    col: 'oaWetBulb',
     label: 'OA Wet Bulb',
     patterns: [/wet bulb/i, /wb\b/i],
     // M5: added negativePatterns. "HUWB" (High Wet Bulb) appears in smoke/zone alarm point names
@@ -762,7 +762,7 @@ var EM_POINT_MAP = [
     cats: ['ct', 'ahu', 'dhu', 'sensor'],
   },
   {
-    col: 'ctFanSpeedLive',
+    col: 'ctFanSpeed',
     label: 'CT Fan Speed',
     // M3: added CT-N and Tower-N positive patterns so "CT-1 Fan VFD Speed" and "Tower 1 Fan Speed"
     // route here (previously went to sfSpeedLive because ctFanSpeedLive missed the "CT-N" prefix format).
@@ -783,7 +783,7 @@ var EM_POINT_MAP = [
   // M4 additions — VVT / air-source / zone points
   // Zone Damper position (VVT zone-damper terminal, zone-category units)
   {
-    col: 'zoneDamperLive',
+    col: 'zoneDamper',
     label: 'Zone Damper',
     patterns: [/\bzone damper\b/i, /zone dmp/i],
     types: ['AO', 'AI'],
@@ -791,16 +791,16 @@ var EM_POINT_MAP = [
   },
   // Air Source Supply Temp — primary air temperature from VVT air-source unit
   {
-    col: 'airSrcSupTempLive',
+    col: 'airSourceSupplyTemp',
     label: 'Air Source Supply Temp',
     patterns: [/air source supply temp/i, /primary air.*supply temp/i, /air source duct/i, /heat source supply/i],
     negativePatterns: [/setpoint|set\s?point|request|min|max/i],
     types: ['AI'],
     cats: ['zone', 'vav', 'fpb', 'ahu', 'ddvav'],
   },
-  // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSpLive)
+  // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSetpoint)
   {
-    col: 'zoneCoolAdjLive',
+    col: 'zoneCoolAdjust',
     label: 'Cooling Setpoint Adjust',
     patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i],
     types: ['SP', 'AV'],
@@ -808,7 +808,7 @@ var EM_POINT_MAP = [
   },
   // Zone heating setpoint ADJUST
   {
-    col: 'zoneHtgAdjLive',
+    col: 'zoneHtgAdjust',
     label: 'Heating Setpoint Adjust',
     patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i],
     types: ['SP', 'AV'],
@@ -816,7 +816,7 @@ var EM_POINT_MAP = [
   },
   // Effective cooling setpoint (post-adjustment value, computed by BAS)
   {
-    col: 'effCoolSpLive',
+    col: 'effectiveCoolSetpoint',
     label: 'Effective Cooling Setpoint',
     patterns: [/effective cooling setpoint/i, /eff.*cool.*setpoint/i, /effective clg setpoint/i],
     types: ['SP', 'AV'],
@@ -824,7 +824,7 @@ var EM_POINT_MAP = [
   },
   // Effective heating setpoint
   {
-    col: 'effHtgSpLive',
+    col: 'effectiveHtgSetpoint',
     label: 'Effective Heating Setpoint',
     patterns: [/effective heating setpoint/i, /eff.*htg.*setpoint/i, /effective htg setpoint/i],
     types: ['SP', 'AV'],
@@ -832,7 +832,7 @@ var EM_POINT_MAP = [
   },
   // Primary Air Source Cool Request — DCV/demand signal from zone to air source
   {
-    col: 'primAirSrcCoolReqLive',
+    col: 'primaryAirCoolRequest',
     label: 'Primary Air Source Cool Request',
     patterns: [/primary air source cool request/i, /air source cool request/i, /primary air.*cool.*request/i],
     types: ['AV', 'AI'],
@@ -840,7 +840,7 @@ var EM_POINT_MAP = [
   },
   // Primary Air Source Heat Request
   {
-    col: 'primAirSrcHtgReqLive',
+    col: 'primaryAirHtgRequest',
     label: 'Primary Air Source Heat Request',
     patterns: [/primary air source heat request/i, /air source heat request/i, /primary air.*heat.*request/i],
     types: ['AV', 'AI'],
@@ -848,7 +848,7 @@ var EM_POINT_MAP = [
   },
   // Outside Air Dry Bulb — broadcast shared point appearing on non-ahu units via VVT controller
   {
-    col: 'oatLiveBcast',
+    col: 'outdoorAirTempBcast',
     label: 'Outside Air Dry Bulb',
     patterns: [
       /outside air dry bulb/i,
@@ -867,7 +867,7 @@ var EM_POINT_MAP = [
   },
   // Zone Temperature (short alias used by some controllers — "Zone Temp")
   {
-    col: 'zoneTempShortLive',
+    col: 'zoneTemp',
     label: 'Zone Temperature',
     patterns: [/^zone temp(erature)?$/i, /^zone\s+temperature$/i],
     // Phase 2B: removed "virtual" — "Virtual Zone Temperature" should match after virtual-stripping
@@ -887,7 +887,7 @@ var EM_POINT_MAP = [
   // "AmbientHumidity". negativePatterns: sensor-fault flags are excluded.
   // Placed AFTER oaWetBulbLive (which has /wet bulb/i) so no collision possible.
   {
-    col: 'oaRhLive',
+    col: 'oaRelativeHumidity',
     label: 'OA Relative Humidity',
     patterns: [
       /outside\s+air\s+hum/i,
@@ -910,7 +910,7 @@ var EM_POINT_MAP = [
   // Taxonomy variants: "Outside Air Dewpoint", "Outside Air Dew Point",
   // "Current Dew Point". "Return Dewpoint" is AMBIGUOUS (return-air, not OA) — excluded here.
   {
-    col: 'oaDewpointLive',
+    col: 'oaDewpoint',
     label: 'OA Dewpoint',
     patterns: [
       /outside\s+air\s+dew\s?point/i,
@@ -929,7 +929,7 @@ var EM_POINT_MAP = [
   // Already exists in EM_POINT_CATEGORIES.ahu as 'oaEnthalpy' — this EM_POINT_MAP entry
   // allows import-time auto-assignment to show in Raw View "Mapped" column.
   {
-    col: 'oaEnthalpyLive',
+    col: 'oaEnthalpy',
     label: 'OA Enthalpy',
     patterns: [/outside\s+air\s+enthalpy/i, /outdoor\s+air\s+enthalpy/i, /\boa\s+enthalpy\b/i],
     negativePatterns: [/return|economizer\s+control\s+selection|set\s?point|fault/i],
@@ -946,7 +946,7 @@ var EM_POINT_MAP = [
   // ensures utility-meter demand readings are excluded; "set point" excluded so
   // "Demand Limit Set Point" does not collide here (it's a setpoint, not a live level).
   {
-    col: 'demandLevelLive',
+    col: 'demandLevel',
     label: 'Demand Level',
     patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
     negativePatterns: [/meter|kwh|billing|peak|interval|set\s?point|limit/i],
@@ -958,7 +958,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Schedule", "Scheduled Occupied", "Zone Schedule".
   // negativePatterns: "BACnet Schedule" is excluded (BACnet Schedule Object type, not a point name).
   {
-    col: 'schedLive',
+    col: 'scheduledOccupied',
     label: 'Scheduled Occupied',
     patterns: [/\bscheduled?\s+occupied\b/i, /\bzone\s+schedule\b/i, /\bscheduled\s+on\b/i],
     negativePatterns: [/bacnet\s+schedule|override/i],
@@ -970,7 +970,7 @@ var EM_POINT_MAP = [
   // A7: Preheat Coil Leaving Air Temperature
   // Taxonomy: "Preheat Air Temperature" (JOCO AHU1_extract), "OA Pre-Coil Temperature".
   {
-    col: 'preheatAirTempLive',
+    col: 'preheatAirTemp',
     label: 'Preheat Air Temp',
     patterns: [/preheat\s+air\s+temp/i, /oa\s+pre.?coil\s+temp/i, /pre.?heat\s+coil\s+leaving/i],
     // M1A: added low/high/warning to existing negativePatterns (blocks warning alarm variants).
@@ -982,7 +982,7 @@ var EM_POINT_MAP = [
   // A8: Cooling Coil Leaving Air Temperature
   // Taxonomy: "Cooling Coil Leaving Air Temperature".
   {
-    col: 'clgCoilLvgTempLive',
+    col: 'coolingCoilLeavingTemp',
     label: 'Cooling Coil Leaving Temp',
     patterns: [/cooling\s+coil\s+leaving\s+air/i, /clg\s+coil\s+lvg/i, /cooling\s+coil\s+leaving\s+temp/i],
     negativePatterns: [/alarm|limit|setpoint|set\s?point|fault/i],
@@ -993,7 +993,7 @@ var EM_POINT_MAP = [
   // A9: Heating Coil Leaving Air Temperature
   // Taxonomy: "Heating Coil Leaving Air Temperature".
   {
-    col: 'htgCoilLvgTempLive',
+    col: 'heatingCoilLeavingTemp',
     label: 'Heating Coil Leaving Temp',
     patterns: [/heating\s+coil\s+leaving\s+air/i, /htg\s+coil\s+lvg/i, /heating\s+coil\s+leaving\s+temp/i],
     negativePatterns: [/alarm|limit|setpoint|set\s?point|fault/i],
@@ -1007,7 +1007,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Return Air Humidity" (DHU pool unit), "RA Hum", "AHU-1 - Return Air Humidity".
   // negativePatterns: set point excluded (that's D3 below).
   {
-    col: 'rhReturnLive',
+    col: 'returnAirHumidity',
     label: 'Return Air Humidity',
     patterns: [/return\s+air\s+hum/i, /\bra\s+hum\b/i],
     negativePatterns: [/setpoint|set\s?point/i],
@@ -1018,7 +1018,7 @@ var EM_POINT_MAP = [
   // D3: Zone Humidity Setpoint / Dehumidification Setpoint
   // Taxonomy: "Dehumidification Set Point", "Return Humidity Set Point", "Zone Hum Set Point".
   {
-    col: 'rhZoneSpLive',
+    col: 'humiditySetpoint',
     label: 'Humidity Setpoint',
     patterns: [/dehumidif.*set\s?point/i, /return\s+humidity\s+set/i, /zone\s+hum.*set/i, /humidity\s+set\s?point/i],
     // M1A: added negativePatterns. PID sub-object setpoints (Dehumidification SAT BACnet PID /
@@ -1034,7 +1034,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Cooling Unoccupied Setpoint", "Unoccupied Cooling Set Point",
   // "Unoccupied Cooling Set Point ANI/ANO".
   {
-    col: 'zoneCoolUnoccSpLive',
+    col: 'zoneUnoccCoolSetpoint',
     label: 'Unocc Cooling Setpoint',
     patterns: [/cooling\s+unoccupied\s+set/i, /unoccupied\s+cool.*set/i, /unoccupied\s+cooling/i],
     types: ['SP', 'AV'],
@@ -1045,7 +1045,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Heating Unoccupied Setpoint", "Unoccupied Heating Set Point",
   // "Unoccupied Heating Set Point ANI/ANO", "Unoccupied HTSP".
   {
-    col: 'zoneHtgUnoccSpLive',
+    col: 'zoneUnoccHtgSetpoint',
     label: 'Unocc Heating Setpoint',
     patterns: [
       /heating\s+unoccupied\s+set/i,
@@ -1062,7 +1062,7 @@ var EM_POINT_MAP = [
   // F2: Discharge/Zone Airflow Setpoint
   // Taxonomy: "Air Flow Set Point", "Airflow Set Point", "Flow SP".
   {
-    col: 'discFlowSpLive',
+    col: 'airflowSetpoint',
     label: 'Airflow Setpoint',
     patterns: [/air\s+flow\s+set\s?point/i, /airflow\s+set\s?point/i, /flow\s+set\s?point/i],
     // M4: added negativePatterns. "Diagnostic: Min OA Flow Setpoint Fail" and "GEV-145 Valve
@@ -1076,7 +1076,7 @@ var EM_POINT_MAP = [
   // F4: Ventilation CFM (AHU DCV total)
   // Taxonomy: "Ventilation CFM".
   {
-    col: 'ventCfmLive',
+    col: 'ventilationCFM',
     label: 'Ventilation CFM',
     patterns: [/ventilation\s+cfm/i],
     negativePatterns: [/set\s?point/i],
@@ -1087,7 +1087,7 @@ var EM_POINT_MAP = [
   // F5: Ventilation CFM Setpoint
   // Taxonomy: "Ventilation CFM Set Point", "Ventilation CFM Setpoint".
   {
-    col: 'ventCfmSpLive',
+    col: 'ventilationCFMSetpoint',
     label: 'Ventilation CFM Setpoint',
     patterns: [/ventilation\s+cfm\s+set/i, /ventilation\s+cfm\s+setpoint/i],
     types: ['SP', 'AV'],
@@ -1097,7 +1097,7 @@ var EM_POINT_MAP = [
   // F6: Return Fan CFM
   // Taxonomy: "Return Fan CFM".
   {
-    col: 'rfCfmLive',
+    col: 'returnFanCFM',
     label: 'Return Fan CFM',
     patterns: [/return\s+fan\s+cfm/i],
     negativePatterns: [/set\s?point/i],
@@ -1108,7 +1108,7 @@ var EM_POINT_MAP = [
   // F7: Supply Fan CFM (total or per-fan)
   // Taxonomy: "Supply Fan Total CFM", "Supply Fan 1 CFM", "Supply Fan 2 CFM".
   {
-    col: 'sfCfmLive',
+    col: 'supplyFanCFM',
     label: 'Supply Fan CFM',
     patterns: [/supply\s+fan\s+(?:total\s+)?cfm/i],
     negativePatterns: [/set\s?point/i],
@@ -1121,7 +1121,7 @@ var EM_POINT_MAP = [
   // G2: Duct Static Pressure Setpoint
   // Taxonomy: "Supply Duct Static Set Point", "Supply Fan Duct Static Pressure Setpoint ANO".
   {
-    col: 'dspSpLive',
+    col: 'ductStaticSetpoint',
     label: 'Duct Static Setpoint',
     patterns: [
       /supply\s+duct\s+static\s+set/i,
@@ -1136,7 +1136,7 @@ var EM_POINT_MAP = [
   // G3: Return/Exhaust Duct Static Pressure
   // Taxonomy: "Return Duct Static - Smoothed", "Exhaust Static Set Point", "Exhaust Static - Smoothed".
   {
-    col: 'rdspLive',
+    col: 'returnDuctStatic',
     label: 'Return/Exhaust Duct Static',
     patterns: [/return\s+duct\s+static/i, /exhaust\s+static(?!\s+set)/i, /exhaust\s+duct\s+static/i],
     negativePatterns: [/alarm|fault/i],
@@ -1150,7 +1150,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Cooling Supply Air Set Point", "Active Supply Air Setpoint",
   // "Active Discharge Temp Setpoint" (from locked AMBIG-2 decision: Group 7.1).
   {
-    col: 'satCoolSpLive',
+    col: 'satCoolSetpoint',
     label: 'SAT Cooling Setpoint',
     patterns: [/cooling\s+supply\s+air\s+set/i, /active\s+discharge\s+temp\s+set/i, /active\s+supply\s+air\s+set/i],
     negativePatterns: [/heating/i],
@@ -1161,7 +1161,7 @@ var EM_POINT_MAP = [
   // H8: SAT Heating Reset Setpoint
   // Taxonomy: "Heating Supply Air Set Point".
   {
-    col: 'satHtgSpLive',
+    col: 'satHtgSetpoint',
     label: 'SAT Heating Setpoint',
     patterns: [/heating\s+supply\s+air\s+set/i],
     negativePatterns: [/cooling/i],
@@ -1172,7 +1172,7 @@ var EM_POINT_MAP = [
   // H11: Economizer Setpoint
   // Taxonomy: "Economizer Set Point", "Economizer Control Temp" (JOCO AHU1_extract trend file).
   {
-    col: 'econSpLive',
+    col: 'economizerSetpoint',
     label: 'Economizer Setpoint',
     patterns: [/economizer\s+set\s?point/i, /economizer\s+control\s+temp/i, /oa\s+enable\s+setpoint/i],
     types: ['SP', 'AV'],
@@ -1184,7 +1184,7 @@ var EM_POINT_MAP = [
   // I6: Return Air Damper Position
   // Taxonomy: "Return Air Damper". negativePatterns: "set point" and "enable" excluded.
   {
-    col: 'raDampLive',
+    col: 'returnAirDamper',
     label: 'Return Air Damper',
     patterns: [/return\s+air\s+damper/i, /\bra\s+damper\b/i],
     negativePatterns: [/set\s?point|enable/i],
@@ -1195,7 +1195,7 @@ var EM_POINT_MAP = [
   // I7: Relief Damper Position
   // Taxonomy: "Relief Damper Feedback", "Relief Damper".
   {
-    col: 'reliefDampLive',
+    col: 'reliefDamper',
     label: 'Relief Damper',
     patterns: [/relief\s+damper/i, /bldg\s+relief\s+damper/i],
     negativePatterns: [/set\s?point|enable/i],
@@ -1210,7 +1210,7 @@ var EM_POINT_MAP = [
   // M8: strengthened negativePatterns to block supply/exhaust/ct/boiler/alarm/fault;
   // added /rf speed/i and /return fan drive.*speed/i patterns per plan spec.
   {
-    col: 'rfSpeedLive',
+    col: 'returnFanSpeed',
     label: 'Return Fan VFD Speed',
     patterns: [
       /return\s+fan\s+vfd\s+speed/i,
@@ -1228,7 +1228,7 @@ var EM_POINT_MAP = [
   // M8: new entry. Routes "Exhaust Fan Speed", "EF-N VFD Speed", "Relief Fan VFD Speed" here.
   // sfSpeedLive already guards against exhaust via its negativePatterns (M3).
   {
-    col: 'efSpeedLive',
+    col: 'exhaustFanSpeed',
     label: 'Exhaust Fan Speed',
     patterns: [/exhaust\s+fan.*speed/i, /ef.*vfd.*speed/i, /relief\s+fan\s+vfd\s+speed/i],
     negativePatterns: [/\b(supply|return|ct|boiler|alarm|fault)\b/i],
@@ -1241,7 +1241,7 @@ var EM_POINT_MAP = [
   // "Fan Status" (short form on RTU/furnace). negativePatterns: speed and VFD signal excluded
   // (those go to sfSpeedLive); alarm/fault excluded.
   {
-    col: 'sfStatusLive',
+    col: 'supplyFanStatus',
     label: 'Supply Fan Status',
     patterns: [/supply\s+fan\s+status/i, /supply\s+fan\s+command/i, /supply\s+fan\s+enable/i, /\bfan\s+status\b/i],
     // M3: expanded negativePatterns. Exhaust/EF-N fans are not supply fans. Relief/return fans are
@@ -1260,7 +1260,7 @@ var EM_POINT_MAP = [
   // J6: Supply Fan Amperage
   // Taxonomy: "Supply Fan Amperage", "Supply Fan VFD Amps".
   {
-    col: 'sfAmpsLive',
+    col: 'supplyFanAmps',
     label: 'Supply Fan Amperage',
     patterns: [/supply\s+fan\s+amperage/i, /supply\s+fan.*amps/i, /supply\s+fan\s+vfd\s+amps/i],
     types: ['AI'],
@@ -1964,9 +1964,9 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
       if (mapping.patterns[p].test(matchName)) {
         // If this column has negative guards, reject names that match any of them.
         // Prevents alarm/status point names from mapping to live-reading columns
-        // (e.g. "High Zone Temperature" must not map to zoneAirTempLive).
+        // (e.g. "High Zone Temperature" must not map to zoneAirTemp).
         // Guards are tested against matchName (post-virtual-strip) so "Virtual Zone Temperature"
-        // is not blocked by the former "virtual" guard that was in zoneAirTempLive.
+        // is not blocked by the former "virtual" guard that was in zoneAirTemp.
         if (mapping.negativePatterns) {
           var blocked = false;
           for (var n = 0; n < mapping.negativePatterns.length; n++) {
@@ -3658,7 +3658,7 @@ var _EM_GROUP_COLORS = {
 
 /* ── Milestone 1: Known col-key set ─────────────────────────────────────────
    Built once from EM_POINT_MAP. Used by emGetNormalizedPoints to distinguish
-   already-mapped col keys (e.g. 'satLive') from raw BAS names in row.points. */
+   already-mapped col keys (e.g. 'supplyAirTemp') from raw BAS names in row.points. */
 var _emKnownPointColKeys = (function () {
   var s = new Set();
   for (var _ki = 0; _ki < EM_POINT_MAP.length; _ki++) {
@@ -3667,6 +3667,84 @@ var _emKnownPointColKeys = (function () {
   return s;
 })();
 
+/* -- Backward-compatibility alias map (item 65248601) -----------------
+   Maps OLD col keys (e.g. 'satLive') to NEW col keys (e.g. 'supplyAirTemp').
+   Used by emGetNormalizedPoints so previously-enriched CSVs whose row.points
+   carry old key names still resolve correctly without re-import.              */
+var _emColKeyAliases = {
+  airSrcSupTempLive: 'airSourceSupplyTemp',
+  chwDiffPresLive: 'chwDiffPressure',
+  chwFlowLive: 'chwFlow',
+  chwRetTempLive: 'chwReturnTemp',
+  chwSupSpLive: 'chwSupplySetpoint',
+  chwSupTempLive: 'chwSupplyTemp',
+  clgCoilLvgTempLive: 'coolingCoilLeavingTemp',
+  clgValveLive: 'coolingValve',
+  co2Live: 'zoneCO2',
+  co2ReturnLive: 'returnAirCO2',
+  ctFanSpeedLive: 'ctFanSpeed',
+  cwRetTempLive: 'cwReturnTemp',
+  cwSupTempLive: 'cwSupplyTemp',
+  dampPosLive: 'damperPosition',
+  datLive: 'dischargeAirTemp',
+  demandLevelLive: 'demandLevel',
+  discFlowLive: 'dischargeAirflow',
+  discFlowSpLive: 'airflowSetpoint',
+  dspLive: 'ductStaticPressure',
+  dspSpLive: 'ductStaticSetpoint',
+  econSpLive: 'economizerSetpoint',
+  efSpeedLive: 'exhaustFanSpeed',
+  effCoolSpLive: 'effectiveCoolSetpoint',
+  effHtgSpLive: 'effectiveHtgSetpoint',
+  htgCoilLvgTempLive: 'heatingCoilLeavingTemp',
+  htgValveLive: 'heatingValve',
+  hwDiffPresLive: 'hwDiffPressure',
+  hwRetTempLive: 'hwReturnTemp',
+  hwSupSpLive: 'hwSupplySetpoint',
+  hwSupTempLive: 'hwSupplyTemp',
+  matLive: 'mixedAirTemp',
+  oaDampLive: 'oaDamperPosition',
+  oaDewpointLive: 'oaDewpoint',
+  oaEnthalpyLive: 'oaEnthalpy',
+  oaFlowLive: 'oaAirflow',
+  oaRhLive: 'oaRelativeHumidity',
+  oaWetBulbLive: 'oaWetBulb',
+  oatLive: 'outdoorAirTemp',
+  oatLiveBcast: 'outdoorAirTempBcast',
+  preheatAirTempLive: 'preheatAirTemp',
+  primAirSrcCoolReqLive: 'primaryAirCoolRequest',
+  primAirSrcHtgReqLive: 'primaryAirHtgRequest',
+  raDampLive: 'returnAirDamper',
+  ratLive: 'returnAirTemp',
+  rdspLive: 'returnDuctStatic',
+  reheatValveLive: 'reheatValve',
+  reliefDampLive: 'reliefDamper',
+  rfCfmLive: 'returnFanCFM',
+  rfSpeedLive: 'returnFanSpeed',
+  rhReturnLive: 'returnAirHumidity',
+  rhZone: 'zoneRelativeHumidity',
+  rhZoneSpLive: 'humiditySetpoint',
+  satCoolSpLive: 'satCoolSetpoint',
+  satHtgSpLive: 'satHtgSetpoint',
+  satLive: 'supplyAirTemp',
+  schedLive: 'scheduledOccupied',
+  sfAmpsLive: 'supplyFanAmps',
+  sfCfmLive: 'supplyFanCFM',
+  sfSpeedLive: 'supplyFanSpeed',
+  sfStatusLive: 'supplyFanStatus',
+  ventCfmLive: 'ventilationCFM',
+  ventCfmSpLive: 'ventilationCFMSetpoint',
+  zoneAirTempLive: 'zoneAirTemp',
+  zoneCoolAdjLive: 'zoneCoolAdjust',
+  zoneCoolSpLive: 'zoneCoolSetpoint',
+  zoneCoolUnoccSpLive: 'zoneUnoccCoolSetpoint',
+  zoneDamperLive: 'zoneDamper',
+  zoneHtgAdjLive: 'zoneHtgAdjust',
+  zoneHtgSpLive: 'zoneHtgSetpoint',
+  zoneHtgUnoccSpLive: 'zoneUnoccHtgSetpoint',
+  zoneTempShortLive: 'zoneTemp',
+};
+
 /* ── emGetNormalizedPoints ───────────────────────────────────────────────────
    Returns a flat { colKey: value } map for a row, derived at read time.
 
@@ -3674,7 +3752,7 @@ var _emKnownPointColKeys = (function () {
      - Copies existing mapped values directly.
    For rows with raw BAS names mixed in (or future pointsRaw schema):
      - Runs emMapPointToColumn on unknown keys to surface new columns
-       (e.g. 'Zone Humidity' → rhZone) WITHOUT requiring re-import.
+       (e.g. 'Zone Humidity' → zoneRelativeHumidity) WITHOUT requiring re-import.
 
    Rules:
      - Never overwrites an already-set colKey.
@@ -3685,6 +3763,13 @@ function emGetNormalizedPoints(row) {
   if (_emPointsComputedCache.has(row)) return _emPointsComputedCache.get(row);
 
   var result = {};
+  // Collision-priority (item 0f00639f): track which columns were filled by a virtual point
+  // so a real/physical point can overwrite them. Virtual points are a fallback only.
+  var _virtualFilledCols = {};
+  // Returns true if the raw point name starts with "Virtual " (case-insensitive).
+  function _isVirtual(name) {
+    return /^\s*virtual\s+/i.test(name);
+  }
 
   if (row.pointsRaw) {
     // M4 schema: pointsRaw is an object { rawName: value } (string→string map)
@@ -3696,9 +3781,18 @@ function emGetNormalizedPoints(row) {
         var rawVal = rawEntries[ri][1];
         if (rawVal == null) continue;
         var rColKey = emMapPointToColumn(rawName);
-        if (rColKey && result[rColKey] == null) {
+        if (!rColKey) continue;
+        var rIsVirtual = _isVirtual(rawName);
+        if (result[rColKey] == null) {
+          // Column is empty — fill it regardless of virtual/real.
           result[rColKey] = rawVal;
+          _virtualFilledCols[rColKey] = rIsVirtual;
+        } else if (!rIsVirtual && _virtualFilledCols[rColKey]) {
+          // Real point displaces a previously written virtual point.
+          result[rColKey] = rawVal;
+          _virtualFilledCols[rColKey] = false;
         }
+        // else: column already held by a real point — do not overwrite.
       }
     } else {
       // Object format (M4): iterate keys
@@ -3708,38 +3802,61 @@ function emGetNormalizedPoints(row) {
         var rawVal2 = rawEntries[rawName2];
         if (rawVal2 == null) continue;
         var rColKey2 = emMapPointToColumn(rawName2);
-        if (rColKey2 && result[rColKey2] == null) {
+        if (!rColKey2) continue;
+        var rIsVirtual2 = _isVirtual(rawName2);
+        if (result[rColKey2] == null) {
           result[rColKey2] = rawVal2;
+          _virtualFilledCols[rColKey2] = rIsVirtual2;
+        } else if (!rIsVirtual2 && _virtualFilledCols[rColKey2]) {
+          result[rColKey2] = rawVal2;
+          _virtualFilledCols[rColKey2] = false;
         }
       }
     }
   } else if (row.points) {
     // Legacy / current schema: row.points may contain a mix of known col keys
-    // (e.g. 'satLive') and raw BAS names (e.g. 'Zone Humidity') stored at import time.
+    // (e.g. 'supplyAirTemp') and raw BAS names (e.g. 'Zone Humidity') stored at import time.
 
-    // Pass 1: copy entries that are already known col keys — these are trusted mapped values
+    // Pass 1: copy entries that are already known col keys — these are trusted mapped values.
+    // Known col keys are never raw BAS names so virtual-priority does not apply here.
+    // Backward-compat (item 65248601): also remap old col keys (e.g. 'satLive') to new keys.
+    //   - If k is a new-name key (e.g. 'supplyAirTemp'), kResolved === k → copies directly.
+    //   - If k is an old-name key (e.g. 'satLive'), kResolved is the new name → remapped.
     var pts = row.points;
     var keys = Object.keys(pts);
     for (var ki = 0; ki < keys.length; ki++) {
       var k = keys[ki];
-      if (_emKnownPointColKeys.has(k)) {
+      // Remap old key to new key if it is a known alias (backward-compat)
+      var kResolved = _emColKeyAliases[k] ? _emColKeyAliases[k] : k;
+      if (_emKnownPointColKeys.has(kResolved)) {
         var v = pts[k];
-        if (v != null) result[k] = v;
+        if (v != null && result[kResolved] == null) result[kResolved] = v;
       }
     }
 
-    // Pass 2: iterate unknown keys (raw BAS names) and try to match them
-    // This surfaces new columns (humidity, CO2 additions, etc.) on already-stored data
+    // Pass 2: iterate unknown keys (raw BAS names) and try to match them.
+    // This surfaces new columns (humidity, CO2 additions, etc.) on already-stored data.
+    // Collision-priority: a real point overwrites a virtual point that mapped to the same column.
     for (var ki2 = 0; ki2 < keys.length; ki2++) {
       var rawKey = keys[ki2];
-      if (_emKnownPointColKeys.has(rawKey)) continue; // already handled in pass 1
+      // Skip if it's a current col key OR an old col key alias (both handled in pass 1)
+      if (_emKnownPointColKeys.has(rawKey) || _emColKeyAliases[rawKey]) continue;
       var rawV = pts[rawKey];
       if (rawV == null) continue;
       var colKey = emMapPointToColumn(rawKey);
-      if (colKey && result[colKey] == null) {
-        // Only add — never overwrite a value from pass 1
+      if (!colKey) continue;
+      var isVirt = _isVirtual(rawKey);
+      if (result[colKey] == null) {
+        // Column is empty — fill it (real or virtual).
         result[colKey] = rawV;
+        _virtualFilledCols[colKey] = isVirt;
+      } else if (!isVirt && _virtualFilledCols[colKey]) {
+        // Real point displaces a previously written virtual point from pass 2.
+        // Never overwrite a value from pass 1 (known col keys are never virtual-flagged).
+        result[colKey] = rawV;
+        _virtualFilledCols[colKey] = false;
       }
+      // else: already held by a real point or a pass-1 value — do not overwrite.
     }
   }
 
@@ -4037,7 +4154,7 @@ function emRenderTable(data, filters) {
 
   // ── Dynamic point columns ──
   // Collect all unique point names from every row's .points object.
-  // Skip keys that are already covered by a mapped live column (e.g. 'satLive') or
+  // Skip keys that are already covered by a mapped live column (e.g. 'supplyAirTemp') or
   // any standard def key — only raw BACnet point names become dynamic columns.
   // PERFORMANCE LIMIT: With thousands of BAS points, showing every unique point name
   // as a column creates hundreds/thousands of columns × 100 rows = tens of thousands of
@@ -4045,7 +4162,7 @@ function emRenderTable(data, filters) {
   // point names. Use the "Show All Columns" toggle to override.
   var existingDefKeys = {};
   for (var ex = 0; ex < defs.length; ex++) existingDefKeys[defs[ex].key] = true;
-  // Also skip the short EM_POINT_MAP col names (satLive, ratLive, etc.)
+  // Also skip the EM_POINT_MAP col names (supplyAirTemp, returnAirTemp, etc.)
   for (var pm = 0; pm < EM_POINT_MAP.length; pm++) existingDefKeys[EM_POINT_MAP[pm].col] = true;
 
   // M4 Part 3: Count frequency of each raw point name across FILTERED rows only.
@@ -4491,9 +4608,9 @@ function emComputeBuildingZoneStats(rows) {
     var bldgStats = result[bldg];
     bldgStats.totalZones++;
 
-    var tempRaw = pts['zoneAirTempLive'];
-    var htgRaw = pts['zoneHtgSpLive'];
-    var coolRaw = pts['zoneCoolSpLive'];
+    var tempRaw = pts['zoneAirTemp'];
+    var htgRaw = pts['zoneHtgSetpoint'];
+    var coolRaw = pts['zoneCoolSetpoint'];
 
     var tempVal = tempRaw !== undefined && tempRaw !== '' ? parseFloat(tempRaw) : NaN;
     var htgVal = htgRaw !== undefined && htgRaw !== '' ? parseFloat(htgRaw) : NaN;
@@ -4861,13 +4978,13 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
 
     for (var ri = 0; ri < pageRows.length; ri++) {
       var row = pageRows[ri];
-      var pts = row.points || {};
+      var pts = emGetNormalizedPoints(row);
 
-      var tempRaw = pts['zoneAirTempLive'];
-      var htgRaw = pts['zoneHtgSpLive'];
-      var coolRaw = pts['zoneCoolSpLive'];
-      var dampRaw = pts['dampPosLive']; // FIX 4a: was 'dampPosnLive' (typo), correct key is 'dampPosLive'
-      var datRaw = pts['datLive'];
+      var tempRaw = pts['zoneAirTemp'];
+      var htgRaw = pts['zoneHtgSetpoint'];
+      var coolRaw = pts['zoneCoolSetpoint'];
+      var dampRaw = pts['damperPosition']; // FIX 4a: was 'dampPosnLive' (typo), correct key is 'damperPosition'
+      var datRaw = pts['dischargeAirTemp'];
 
       var tempVal = tempRaw !== undefined && tempRaw !== '' ? parseFloat(tempRaw) : NaN;
       var htgVal = htgRaw !== undefined && htgRaw !== '' ? parseFloat(htgRaw) : NaN;
@@ -10908,7 +11025,7 @@ function emNormalizePointInner(rawName, equipCategory) {
        catKey, catLabel, ashrae36Name, ashrae36Section, required
      }
 
-   This lets emComputeCompliance resolve col keys like 'zoneCoolSpLive'
+   This lets emComputeCompliance resolve col keys like 'zoneCoolSetpoint'
    directly to { catKey: 'coolSP' } for equipment type 'vav', bypassing the
    human-name regex matcher which does not understand internal identifiers.
 
@@ -11033,7 +11150,7 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
     _allPointNames[_rawKeys[_ri2]] = true;
   }
   // Source 3: emGetNormalizedPoints col keys (handles enriched-CSV rows where points
-  // keys are already EM_POINT_MAP col keys like 'zoneAirTempLive')
+  // keys are already EM_POINT_MAP col keys like 'zoneAirTemp')
   var _normPts = emGetNormalizedPoints(equipRow);
   var _normKeys = Object.keys(_normPts);
   for (var _ni = 0; _ni < _normKeys.length; _ni++) {
@@ -11049,7 +11166,7 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
     var pName = rawNames[ri];
     var match;
     // FIX A: if pName is a known EM_POINT_MAP col key, use the reverse map directly
-    // to avoid running the human-name regex on an internal identifier like 'zoneCoolSpLive'
+    // to avoid running the human-name regex on an internal identifier like 'zoneCoolSetpoint'
     if (_emColKeyToCatKey[pName] && _emColKeyToCatKey[pName][category]) {
       var _catInfo = _emColKeyToCatKey[pName][category];
       match = {
@@ -11905,8 +12022,8 @@ function emGetAllPoints(rows) {
     var pts = row.points || {};
     for (var ptKey in pts) {
       if (!pts.hasOwnProperty(ptKey)) continue;
-      // Skip internal mapped keys (camelCase + 'Live' suffix)
-      if (/Live$/.test(ptKey) && !/\s/.test(ptKey)) continue;
+      // Skip internal mapped keys (col keys — new or old alias) — mirrors Pass 2 of emGetNormalizedPoints
+      if (_emKnownPointColKeys.has(ptKey) || _emColKeyAliases[ptKey]) continue;
       var ec = row.category || 'other';
       if (!freq[ptKey]) {
         var norm = emNormalizePoint(ptKey, row.category);

@@ -178,7 +178,11 @@ function parseBillCsv(text, fname) {
 
     const row = { id: 'r' + Date.now() + Math.random(), start: startD, end: effectiveEnd };
 
-    const g = (i) => (i >= 0 && cols[i] ? parseFloat(cols[i].replace(/[$,]/g, '')) || 0 : 0);
+    const g = (i) => {
+      if (i < 0 || !cols[i] || cols[i].trim() === '') return null;
+      const n = parseFloat(cols[i].replace(/[$,]/g, ''));
+      return isNaN(n) ? null : n;
+    };
     const gs = (i) => (i >= 0 && cols[i] ? cols[i].trim().replace(/"/g, '') : '');
 
     if (isElec) {
@@ -214,9 +218,9 @@ function parseBillCsv(text, fname) {
     const key = r.start; // exact start date YYYY-MM-DD
     if (!byStart[key]) byStart[key] = r;
     else {
-      // Keep row with more non-zero data fields
-      const exScore = Object.values(byStart[key]).filter((v) => v && v !== 0 && v !== '').length;
-      const newScore = Object.values(r).filter((v) => v && v !== 0 && v !== '').length;
+      // Keep row with more non-null data fields (0 is valid data, not missing)
+      const exScore = Object.values(byStart[key]).filter((v) => v !== null && v !== undefined && v !== '').length;
+      const newScore = Object.values(r).filter((v) => v !== null && v !== undefined && v !== '').length;
       if (newScore > exScore) byStart[key] = r;
     }
   });
@@ -288,18 +292,18 @@ function showBillCsvPreview(rows, m, fname, warnings) {
     .map((r) => {
       const days = Math.round((_parseISO(r.end) - _parseISO(r.start)) / 864e5) + 1;
       let cells = '';
+      const _d = (v) => (v != null ? v : '—');
+      const _dc = (v) => (v != null ? '$' + (+v).toLocaleString() : '—');
+      const _dc2 = (v) =>
+        v != null ? '$' + (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
       if (isElec)
-        cells = `<td>${(r.kwh || 0).toLocaleString()}</td><td>${r.demandKW || '—'}</td><td>${r.facKW || '—'}</td><td>${r.kwCost ? '$' + (r.kwCost || 0).toLocaleString() : '—'}</td><td>${r.facKWCost ? '$' + (r.facKWCost || 0).toLocaleString() : '—'}</td><td>${r.totalCost ? '$' + (r.totalCost || 0).toLocaleString() : '—'}</td>`;
+        cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.kwCost)}</td><td>${_dc(r.facKWCost)}</td><td>${_dc2(r.totalCost)}</td>`;
       else if (isGas)
         cells =
-          '<td>' +
-          (r.therms || 0).toLocaleString() +
-          '</td><td>' +
-          (r.thermCost ? '$' + (r.thermCost || 0) : '—') +
-          '</td>';
+          '<td>' + (r.therms != null ? (+r.therms).toLocaleString() : '—') + '</td><td>' + _dc(r.thermCost) + '</td>';
       else
         cells =
-          '<td>' + (r.usage || 0) + '</td><td>' + (r.cost != null && r.cost !== '' ? '$' + r.cost : '—') + '</td>';
+          '<td>' + (r.usage != null ? r.usage : '—') + '</td><td>' + (r.cost != null ? '$' + r.cost : '—') + '</td>';
       return (
         '<tr><td>' + fmtDate(r.start) + '</td><td>' + fmtDate(r.end) + '</td><td>' + days + '</td>' + cells + '</tr>'
       );
@@ -994,14 +998,16 @@ function _billReadValue(row, entry) {
   return '';
 }
 // Helper: format a value for table display based on the schema entry.
+// IMPORTANT: 0 is valid data. Only null/undefined/''/'null' mean "no data" (show —).
 function _billFormatValue(val, entry) {
-  const hasVal = val !== undefined && val !== null && val !== '' && !isNaN(val);
+  const isMissing = val === undefined || val === null || val === '' || val === 'null';
+  const hasVal = !isMissing && !isNaN(val);
   if (entry.type === 'currency') {
-    if (!hasVal || +val === 0) return '—';
+    if (!hasVal) return '—';
     return '$' + (+val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   if (entry.type === 'number') {
-    if (!hasVal) return val || '—';
+    if (!hasVal) return isMissing ? '—' : val;
     // Update 94: match renderPDFFields' FOURDP_FIELDS set exactly —
     // every kW/kWh quantity, meter read, read-difference, and meter
     // multiplier renders with 4 decimal places per Evergy Billing
@@ -1030,7 +1036,6 @@ function _billFormatValue(val, entry) {
       /rkva/i.test(entry.key) ||
       /read$|multiplier|difference/i.test(entry.key)
     ) {
-      if (+val === 0) return '—';
       // Bug #18: Read Difference must always display positive (current - previous read)
       const dispVal = /difference/i.test(entry.key) ? Math.abs(+val) : +val;
       return dispVal.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
@@ -1039,15 +1044,15 @@ function _billFormatValue(val, entry) {
     return (+val).toLocaleString('en-US');
   }
   if (entry.type === 'rate5') {
-    if (!hasVal || +val === 0) return '—';
+    if (!hasVal) return '—';
     return '$' + (+val).toFixed(5);
   }
   if (entry.type === 'rate3') {
-    if (!hasVal || +val === 0) return '—';
+    if (!hasVal) return '—';
     return '$' + (+val).toFixed(3);
   }
   if (entry.type === 'date') return val ? fmtDate(val) : '—';
-  return val || '—';
+  return isMissing ? '—' : val;
 }
 // Helper: default column width for a schema entry based on type/key.
 function _billColumnWidth(entry) {

@@ -640,7 +640,8 @@ function _analyzeMeterBills(bills, m) {
   const isGas = m.commodity === 'Gas';
 
   function stats(vals) {
-    const clean = vals.filter((v) => v > 0);
+    // Include 0 as valid data; only exclude null/undefined/NaN (missing readings)
+    const clean = vals.filter((v) => v !== null && v !== undefined && !isNaN(v) && typeof v === 'number');
     if (clean.length < 2) return null;
     const mean = clean.reduce((a, b) => a + b, 0) / clean.length;
     const stddev = Math.sqrt(clean.reduce((a, b) => a + (b - mean) ** 2, 0) / clean.length);
@@ -652,17 +653,57 @@ function _analyzeMeterBills(bills, m) {
     return 3.5;
   }
 
+  // rawFn: null-preserving variant used only for stats() so the null-aware filter
+  // at stats() line can actually exclude missing readings from mean/stddev.
+  // fn remains unchanged (always returns a number) for the z-score path.
+  const _raw = (v) => (v != null && v !== '' ? parseFloat(String(v).replace(/,/g, '')) : null);
   const checks = [];
   if (isElec) {
-    checks.push({ field: 'kwh', label: 'kWh', fn: (b) => pf(b.kwh), seasonal: true });
-    checks.push({ field: 'totalCost', label: 'Total Cost', fn: (b) => pf(b.totalCost), seasonal: true });
-    checks.push({ field: 'demandKW', label: 'Demand kW', fn: (b) => pf(b.demandKW), seasonal: true });
+    checks.push({ field: 'kwh', label: 'kWh', fn: (b) => pf(b.kwh), rawFn: (b) => _raw(b.kwh), seasonal: true });
+    checks.push({
+      field: 'totalCost',
+      label: 'Total Cost',
+      fn: (b) => pf(b.totalCost),
+      rawFn: (b) => _raw(b.totalCost),
+      seasonal: true,
+    });
+    checks.push({
+      field: 'demandKW',
+      label: 'Demand kW',
+      fn: (b) => pf(b.demandKW),
+      rawFn: (b) => _raw(b.demandKW),
+      seasonal: true,
+    });
   } else if (isGas) {
-    checks.push({ field: 'therms', label: 'Therms', fn: (b) => pf(b.therms), seasonal: true });
-    checks.push({ field: 'thermCost', label: 'Cost', fn: (b) => pf(b.thermCost || b.totalCost), seasonal: true });
+    checks.push({
+      field: 'therms',
+      label: 'Therms',
+      fn: (b) => pf(b.therms),
+      rawFn: (b) => _raw(b.therms),
+      seasonal: true,
+    });
+    checks.push({
+      field: 'thermCost',
+      label: 'Cost',
+      fn: (b) => pf(b.thermCost || b.totalCost),
+      rawFn: (b) => _raw(b.thermCost != null ? b.thermCost : b.totalCost),
+      seasonal: true,
+    });
   } else {
-    checks.push({ field: 'usage', label: 'Usage', fn: (b) => pf(b.usage || b.kwh), seasonal: true });
-    checks.push({ field: 'cost', label: 'Cost', fn: (b) => pf(b.cost || b.totalCost), seasonal: true });
+    checks.push({
+      field: 'usage',
+      label: 'Usage',
+      fn: (b) => pf(b.usage || b.kwh),
+      rawFn: (b) => _raw(b.usage != null ? b.usage : b.kwh),
+      seasonal: true,
+    });
+    checks.push({
+      field: 'cost',
+      label: 'Cost',
+      fn: (b) => pf(b.cost || b.totalCost),
+      rawFn: (b) => _raw(b.cost != null ? b.cost : b.totalCost),
+      seasonal: true,
+    });
   }
   checks.push({
     field: 'days',
@@ -670,6 +711,10 @@ function _analyzeMeterBills(bills, m) {
     seasonal: false,
     fn: (b) => {
       if (!b.start || !b.end) return 0;
+      return Math.round((_parseISO(b.end) - _parseISO(b.start)) / 86400000) + 1;
+    },
+    rawFn: (b) => {
+      if (!b.start || !b.end) return null;
       return Math.round((_parseISO(b.end) - _parseISO(b.start)) / 86400000) + 1;
     },
   });
@@ -687,13 +732,15 @@ function _analyzeMeterBills(bills, m) {
   const monthStats = {};
   const seasonStats = {};
   for (const c of checks) {
-    const vals = bills.map(c.fn);
-    allStats[c.field] = stats(vals);
+    // Use rawFn (null-preserving) for stats so missing readings don't
+    // contribute a false 0 to mean/stddev. fn is kept for the z-score path.
+    const rawVals = bills.map(c.rawFn);
+    allStats[c.field] = stats(rawVals);
     if (!c.seasonal) continue;
     const byMonth = {};
     const bySeason = {};
     for (let i = 0; i < bills.length; i++) {
-      const v = vals[i];
+      const v = rawVals[i];
       const nm = normMonths[i];
       const sn = seasons[i];
       if (nm >= 0) {
@@ -898,7 +945,7 @@ function _analyzeMeterBills(bills, m) {
 
     for (const f of missingChecks) {
       const v = b[f];
-      if (v === null || v === undefined || v === '' || v === 0) {
+      if (v === null || v === undefined || v === '') {
         rowFlags.push({ field: f, msg: 'Missing ' + f + ' — this field is typically present', level: 'warn' });
       }
     }
@@ -1182,7 +1229,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           if (val !== null && val !== undefined && val !== '') continue;
           const mapping = FIELD_MAP[field];
           if (!mapping) continue;
-          const histVals = hist.map((h) => parseFloat(h[mapping.saved]) || 0).filter((v) => v > 0);
+          // Include 0 as valid (a $0 charge is still a present field); exclude NaN (truly missing)
+          const histVals = hist.map((h) => parseFloat(h[mapping.saved])).filter((v) => !isNaN(v));
           const presence = histVals.length / hist.length;
           if (presence >= 0.8) {
             // Try to recover from raw text using structural position before flagging
@@ -1241,7 +1289,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           if (!savedField) continue;
           const bComm = (b.Commodity || '').toLowerCase();
           const commHist = bComm ? hist.filter((h) => (h.commodity || '').toLowerCase() === bComm) : hist;
-          const histVals = commHist.map((h) => parseFloat(h[savedField]) || 0).filter((v) => v > 0);
+          // Include 0 as valid data; exclude NaN (truly missing). Keep mean<=0 guard for ratio safety.
+          const histVals = commHist.map((h) => parseFloat(h[savedField])).filter((v) => !isNaN(v));
           if (histVals.length < 3) continue;
           const mean = histVals.reduce((a, c) => a + c, 0) / histVals.length;
           if (mean <= 0) continue;

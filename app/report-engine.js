@@ -10860,10 +10860,7 @@ function rptPageASHRAE36Cover(n, d) {
     d.project.name +
     '</strong> needs <strong>' +
     p.totalMissingHardwarePoints +
-    ' sensor' +
-    (p.totalMissingHardwarePoints !== 1 ? 's' : '') +
-    ' and actuator' +
-    (p.totalMissingHardwarePoints !== 1 ? 's' : '') +
+    (p.totalMissingHardwarePoints === 1 ? ' sensor or actuator' : ' sensors and actuators') +
     ' installed</strong> and <strong>' +
     p.totalNotReadySequences +
     ' control sequence' +
@@ -11534,6 +11531,33 @@ function rptPageASHRAE36ProposalScope(n, d) {
     return SEQUENCE_KEYS.indexOf(g.key) !== -1;
   });
 
+  // DCV/CO2 scope row — populated from portfolio.dcv counts (excluded from topGaps).
+  // Shown only when at least one AHU or zone is missing a CO2 sensor.
+  var dcv = p.dcv || {};
+  var _dcvAhuMissing = dcv.ahuMissingCO2 || 0;
+  var _dcvZonesMissing = dcv.zonesMissingCO2 || 0;
+  var _dcvTotalMissing = _dcvAhuMissing + _dcvZonesMissing;
+  var dcvScopeRow = '';
+  if (_dcvTotalMissing > 0) {
+    var _dcvScopeParts = [];
+    if (_dcvAhuMissing > 0) _dcvScopeParts.push(_dcvAhuMissing + ' air handler' + (_dcvAhuMissing > 1 ? 's' : ''));
+    if (_dcvZonesMissing > 0) _dcvScopeParts.push(_dcvZonesMissing + ' zone' + (_dcvZonesMissing > 1 ? 's' : ''));
+    var _dcvScopeStr = _dcvScopeParts.join(', ');
+    dcvScopeRow =
+      '<tr>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      'Carbon Dioxide (CO₂) sensors for demand-controlled ventilation' +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      _dcvScopeStr +
+      ' affected' +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule)">' +
+      '5–10% fan and cooling savings' +
+      '</td>' +
+      '</tr>';
+  }
+
   function scopeRow(gap) {
     var desc = gap.desc || {};
     return (
@@ -11554,19 +11578,21 @@ function rptPageASHRAE36ProposalScope(n, d) {
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
 
-  var ph1HTML = phase1Gaps.length
-    ? '<table style="width:100%;border-collapse:collapse;margin-bottom:4px">' +
-      '<thead><tr><th style="' +
-      thStyle +
-      '">Work Item</th><th style="' +
-      thStyle +
-      '">Scope</th><th style="' +
-      thStyle +
-      '">Typical Savings</th></tr></thead>' +
-      '<tbody>' +
-      phase1Gaps.map(scopeRow).join('') +
-      '</tbody></table>'
-    : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No hardware gaps identified — all required sensors and actuators appear to be present.</div>';
+  var ph1HTML =
+    phase1Gaps.length || dcvScopeRow
+      ? '<table style="width:100%;border-collapse:collapse;margin-bottom:4px">' +
+        '<thead><tr><th style="' +
+        thStyle +
+        '">Work Item</th><th style="' +
+        thStyle +
+        '">Scope</th><th style="' +
+        thStyle +
+        '">Typical Savings</th></tr></thead>' +
+        '<tbody>' +
+        phase1Gaps.map(scopeRow).join('') +
+        dcvScopeRow +
+        '</tbody></table>'
+      : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No hardware gaps identified — all required sensors and actuators appear to be present.</div>';
 
   var ph2HTML = phase2Gaps.length
     ? '<table style="width:100%;border-collapse:collapse;margin-bottom:4px">' +
