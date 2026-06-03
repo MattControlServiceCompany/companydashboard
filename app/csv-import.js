@@ -486,11 +486,22 @@ function renderBillRow(row, m, incl, allBills, cols) {
     // Condensed-view column (Update 90): render via category.compute
     // or direct row key. No BILL_SCHEMA entry needed.
     if (c.category) {
+      // Track whether the source value is genuinely missing (null/undefined/'')
+      // vs a valid numeric 0. _pfBills collapses both to 0, so we must check
+      // the raw source BEFORE calling it. For compute-based columns the
+      // compute function already embeds _pfBills internally — we accept that
+      // a computed 0 renders as a formatted zero rather than '—' (correct
+      // behaviour: a sum of zero charges is a real value, not absent data).
       let val = 0;
+      let isMissing = false;
       if (typeof c.category.compute === 'function') {
         val = c.category.compute(row);
+        // compute always returns a number; treat only NaN/undefined as missing
+        isMissing = val === undefined || val === null || isNaN(val);
       } else if (c.category.key) {
-        val = _pfBills(row[c.category.key]);
+        const rawKey = row[c.category.key];
+        isMissing = rawKey === null || rawKey === undefined || rawKey === '' || rawKey === 'null';
+        val = isMissing ? 0 : _pfBills(rawKey);
       }
       // Apply unit conversion for usage-quantity condensed columns (Task 3).
       // Match labels like "Total kWh", "CCF", "Therms", "Water Usage" but
@@ -499,29 +510,34 @@ function renderBillRow(row, m, incl, allBills, cols) {
         c.category.type === 'number' &&
         /kwh|ccf|therm|usage|gallon/i.test(c.category.label) &&
         !/kw\b|rate|\$/i.test(c.category.label) &&
-        val !== 0
+        !isMissing
       ) {
         val = convertBillValue(val, m);
       }
       const cls = c.category.type === 'currency' ? 'td-total' : c.a || '';
       let formatted;
       if (c.category.type === 'currency') {
-        formatted =
-          val === 0 ? '—' : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        // Show '—' only when value is genuinely absent; render 0 as "$0.00"
+        // (consistent with _billFormatValue). Previously `val === 0 ? '—'`
+        // incorrectly suppressed valid zero-dollar currency values.
+        formatted = isMissing
+          ? '—'
+          : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       } else if (c.category.type === 'rate') {
         // Blended per-unit rates use 5 decimals — typical utility rate
-        // precision (e.g. $0.03854/kWh).
+        // precision (e.g. $0.03854/kWh). A computed rate of 0 means the
+        // denominator (kWh/kW) was 0 — no data available — so '—' is correct.
         formatted =
           val === 0 ? '—' : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
       } else if (c.category.type === 'number') {
+        // Show '—' only when missing; render 0 as a formatted number ("0.00")
         const isQty = /kwh|kw\b|rkva|gallon|ccf|therm|usage/i.test(c.category.label);
-        formatted =
-          val === 0
-            ? '—'
-            : val.toLocaleString('en-US', {
-                minimumFractionDigits: isQty ? 2 : 0,
-                maximumFractionDigits: 4,
-              });
+        formatted = isMissing
+          ? '—'
+          : val.toLocaleString('en-US', {
+              minimumFractionDigits: isQty ? 2 : 0,
+              maximumFractionDigits: 4,
+            });
       } else {
         formatted = val || '—';
       }

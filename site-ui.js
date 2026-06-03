@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.03.445';
+  var CH_VERSION = 'v2026.06.03.446';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.03.446',
+      date: '2026-06-03',
+      title: 'CSV condensed-column renders genuine zero as $0.00 instead of dash',
+      items: [
+        {
+          type: 'fix',
+          text: 'In the Bill Analysis condensed row view, a 0 value in a currency or usage column now shows as $0.00 (or 0) instead of a dash. Rates that are truly absent still show a dash.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.03.445',
       date: '2026-06-03',

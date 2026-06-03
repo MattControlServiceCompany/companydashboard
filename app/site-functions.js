@@ -1191,17 +1191,47 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.03.446',
+    date: '2026-06-03',
+    title: 'CSV condensed-column renders genuine zero as $0.00 instead of dash',
+    items: [
+      {
+        type: 'fix',
+        text: 'In the Bill Analysis condensed row view, a 0 value in a currency or usage column now shows as $0.00 (or 0) instead of a dash. Rates that are truly absent still show a dash.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.03.445',
     date: '2026-06-03',
-    title: 'ASHRAE report cover singular phrasing and Service Proposal CO2/DCV scope row; CSV zero-value fix; Equipment Matrix collision priority and key rename',
+    title:
+      'ASHRAE report cover singular phrasing and Service Proposal CO2/DCV scope row; CSV zero-value fix; Equipment Matrix collision priority and key rename',
     items: [
-      { type: 'fix', text: "ASHRAE 36 Audit Report cover stat cards now use singular phrasing (e.g. '1 Sensor' instead of '1 Sensors')." },
-      { type: 'feature', text: 'Service Proposal report now includes a CO2/DCV Demand-Controlled Ventilation row in the Scope of Work section.' },
-      { type: 'fix', text: 'CSV import no longer treats 0 (zero) as a missing value -- 0 kWh or 0 therms is valid data and is now preserved.' },
-      { type: 'fix', text: 'Bill analysis stats and missing-value checks updated to match: a zero reading is counted as data present, not absent.' },
-      { type: 'fix', text: 'Equipment Matrix: when a real sensor and a virtual/calculated point share the same key, the real sensor now wins (collision priority).' },
-      { type: 'fix', text: "Equipment Matrix: points stored under a 'Live'-suffix key (e.g. 'Outdoor Air TempLive') are now automatically recognized under the standard key name, so no data re-import is needed." },
-    ]
+      {
+        type: 'fix',
+        text: "ASHRAE 36 Audit Report cover stat cards now use singular phrasing (e.g. '1 Sensor' instead of '1 Sensors').",
+      },
+      {
+        type: 'feature',
+        text: 'Service Proposal report now includes a CO2/DCV Demand-Controlled Ventilation row in the Scope of Work section.',
+      },
+      {
+        type: 'fix',
+        text: 'CSV import no longer treats 0 (zero) as a missing value -- 0 kWh or 0 therms is valid data and is now preserved.',
+      },
+      {
+        type: 'fix',
+        text: 'Bill analysis stats and missing-value checks updated to match: a zero reading is counted as data present, not absent.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: when a real sensor and a virtual/calculated point share the same key, the real sensor now wins (collision priority).',
+      },
+      {
+        type: 'fix',
+        text: "Equipment Matrix: points stored under a 'Live'-suffix key (e.g. 'Outdoor Air TempLive') are now automatically recognized under the standard key name, so no data re-import is needed.",
+      },
+    ],
   },
   {
     v: 'v2026.06.03.444',
