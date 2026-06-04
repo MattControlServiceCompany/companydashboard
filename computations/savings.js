@@ -160,7 +160,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       const _sPropRate = bfr.length ? parseFloat(bfr[0].totalPropaneRate) || 0 : 0;
       const galRate = _sPropRate || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
       totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
-      unitSav.gallons = expUsage - actGallons;
+      unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
     } else {
       const actTherms = actUsage;
       const actThermCost = bfr.reduce(
@@ -170,7 +170,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       const _sGasRate = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.totalGasRate) || 0), 0) / bfr.length : 0;
       const thermRate = _sGasRate || (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);
       totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
-      unitSav.therms = expUsage - actTherms;
+      unitSav.therms = thermRate > 0 ? expUsage - actTherms : 0;
     }
 
     // Apply costSavOverrides if present (per year-month)
@@ -388,7 +388,7 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
         const _sPropRate = bfr.length ? parseFloat(bfr[0].totalPropaneRate) || 0 : 0;
         const galRate = _sPropRate || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
         totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
-        unitSav.gallons = expUsage - actGallons;
+        unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
       } else {
         const actTherms = actUsage;
         const actThermCost = bfr.reduce(
@@ -398,7 +398,7 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
         const _sGasRate = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.totalGasRate) || 0), 0) / bfr.length : 0;
         const thermRate = _sGasRate || (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);
         totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
-        unitSav.therms = expUsage - actTherms;
+        unitSav.therms = thermRate > 0 ? expUsage - actTherms : 0;
       }
 
       // Apply this baseline's costSavOverrides

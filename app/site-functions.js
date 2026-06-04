@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.04.450',
+    date: '2026-06-04',
+    title: 'Savings fix — Louisburg no longer shows phantom Therms and Gallons saved',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Savings: the Therms Saved and Gallons Saved totals for Louisburg (and any project with missing gas/propane bill data) no longer show wildly inflated numbers. The fix gates unit savings on the same condition as dollar savings, so the two figures stay internally consistent.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.04.449',
     date: '2026-06-04',
     title:

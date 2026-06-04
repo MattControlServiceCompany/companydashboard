@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.04.449';
+  var CH_VERSION = 'v2026.06.04.450';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.04.450',
+      date: '2026-06-04',
+      title: 'Savings fix — Louisburg no longer shows phantom Therms and Gallons saved',
+      items: [
+        {
+          type: 'fix',
+          text: 'Energy Savings: the Therms Saved and Gallons Saved totals for Louisburg (and any project with missing gas/propane bill data) no longer show wildly inflated numbers. The fix gates unit savings on the same condition as dollar savings, so the two figures stay internally consistent.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.04.449',
       date: '2026-06-04',
