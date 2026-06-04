@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.04.448',
+    date: '2026-06-04',
+    title: 'Budget tab security fix — user text is now safely escaped',
+    items: [
+      {
+        type: 'fix',
+        text: 'Notes, commodity names, building names, modal scope options, and modal note fields in the Budget tab are now HTML-escaped before display. This closes a security hole where specially crafted text could run as code in the browser.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.03.447',
     date: '2026-06-03',
     title: 'Hours per project tracking — new Hours subtab on every project',

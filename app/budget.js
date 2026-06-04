@@ -24,6 +24,16 @@
    }
    ══════════════════════════════════════════════════════ */
 
+/* ── XSS escape helper ── */
+function _budgetEsc(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /* Inject base budget cell styles once — .bgt-cell-sm carries font-size:11px
    so the zoom rule (#budget-*-wrap td { … }) can override it (ID+element
    specificity beats a class). */
@@ -311,11 +321,11 @@ function _renderBudgetTab(projId, bd) {
                     : 'All Buildings';
                   const commLabel = line.commodity.charAt(0).toUpperCase() + line.commodity.slice(1);
                   return `<tr>
-                  <td style="font-weight:600">${commLabel}</td>
-                  <td style="color:var(--text2)">${bldgName}</td>
+                  <td style="font-weight:600">${_budgetEsc(commLabel)}</td>
+                  <td style="color:var(--text2)">${_budgetEsc(bldgName)}</td>
                   <td style="text-align:right;font-family:var(--mono)">$${Math.round(annAmt).toLocaleString()}</td>
                   <td class="bgt-cell-sm" style="color:var(--text3)">${line.entryMode === 'monthly' ? 'Monthly' : 'Annual ÷ 12'}</td>
-                  <td class="bgt-cell-sm" style="color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${line.notes || ''}">${line.notes || '—'}</td>
+                  <td class="bgt-cell-sm" style="color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_budgetEsc(line.notes)}">${line.notes ? _budgetEsc(line.notes) : '—'}</td>
                   <td style="text-align:center">
                     <button class="btn btn-ghost btn-sm" style="font-size:10px;margin-right:4px" onclick="_budgetOpenEditModal(${projId},'${line.id}')">Edit</button>
                     <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--danger);border-color:rgba(240,80,80,.3)" onclick="_budgetDeleteLine(${projId},'${line.id}')">Delete</button>
@@ -420,7 +430,7 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
   return `
     <div class="card" style="margin-bottom:16px">
       <div class="card-hdr" style="justify-content:space-between">
-        <span class="card-title">${commLabel} Budget — ${_fyLabel(line.year)} · ${bldgName}</span>
+        <span class="card-title">${_budgetEsc(commLabel)} Budget — ${_fyLabel(line.year)} · ${_budgetEsc(bldgName)}</span>
         <div style="display:flex;gap:6px;align-items:center">
           ${typeof tableZoomControlHTML === 'function' ? tableZoomControlHTML('budget-var-wrap-' + line.id, 'en_budget_var_zoom_' + line.id, 'budget-var-zoom-lbl-' + line.id) : ''}
           <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="_budgetExportCSV(${projId},'${line.id}')">Export CSV</button>
@@ -712,7 +722,7 @@ function _budgetShowModal(projId, line) {
     )
     .join('');
   const scopeOptions = `<option value="project"${!line || line.scope === 'project' ? ' selected' : ''}>All Buildings</option>
-    ${bldgs.map((b) => `<option value="${b.id}"${line && line.buildingId === b.id ? ' selected' : ''}>${b.name}</option>`).join('')}`;
+    ${bldgs.map((b) => `<option value="${_budgetEsc(b.id)}"${line && line.buildingId === b.id ? ' selected' : ''}>${_budgetEsc(b.name)}</option>`).join('')}`;
   const isMonthly = line && line.entryMode === 'monthly';
   const annualAmt = line ? (line.entryMode === 'annual' ? line.annualAmount || '' : '') : '';
 
@@ -805,7 +815,7 @@ function _budgetShowModal(projId, line) {
           </div>
           <div>
             <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Notes (optional)</label>
-            <input class="fi" type="text" id="bm-notes" style="width:100%" placeholder="Board approved 8/12/2025..." value="${line ? line.notes || '' : ''}">
+            <input class="fi" type="text" id="bm-notes" style="width:100%" placeholder="Board approved 8/12/2025..." value="${line ? _budgetEsc(line.notes || '') : ''}">
           </div>
           ${copyOption}
         </div>
