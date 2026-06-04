@@ -1238,16 +1238,16 @@ const _PDF_TO_KEY = (function () {
   return m;
 })();
 function _billStripCurrency(v) {
-  return String(v || '').replace(/[$,\s]/g, '');
+  return (v == null ? '' : String(v)).replace(/[$,\s]/g, '');
 }
 function _billFmtCurrency(v) {
   const n = parseFloat(_billStripCurrency(v));
-  if (isNaN(n) || n === 0) return '';
+  if (isNaN(n)) return '';
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function _billFmtNumber(v) {
   const n = parseFloat(_billStripCurrency(v));
-  if (isNaN(n) || n === 0) return '';
+  if (isNaN(n)) return '';
   return n.toLocaleString('en-US', { maximumFractionDigits: 4 });
 }
 function _billModalFocus(el) {
@@ -1514,13 +1514,13 @@ function openBillModal(mid, editRowId) {
       inputType = 'text';
       extraAttr = ' inputmode="decimal"';
       ph = '0';
-      displayVal = escapeAttr(rawVal ? _billFmtNumber(rawVal) : '');
+      displayVal = escapeAttr(rawVal != null && rawVal !== '' ? _billFmtNumber(rawVal) : '');
       extraAttr += ` onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"`;
     } else if (e.type === 'currency') {
       inputType = 'text';
       extraAttr = ' inputmode="decimal"';
       ph = '$0.00';
-      displayVal = escapeAttr(rawVal ? _billFmtCurrency(rawVal) : '');
+      displayVal = escapeAttr(rawVal != null && rawVal !== '' ? _billFmtCurrency(rawVal) : '');
       extraAttr += ` onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"`;
     }
     return `<div class="ef-item"><div class="ef-key">${e.label}${required}</div><input class="ef-input" id="${id}" type="${inputType}"${step} placeholder="${ph}" value="${displayVal}"${extraAttr}></div>`;
@@ -1530,7 +1530,7 @@ function openBillModal(mid, editRowId) {
     const chargeEntry = schemaEntry(r.chargeField);
     const chargeId = 'bl-' + chargeEntry.key;
     const chargeRaw = readVal(r.chargeField);
-    const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
+    const chargeVal = escapeAttr(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
     const unit = r.unit || '';
     const dp = /kwh|therms|ccf/i.test(unit) ? 5 : 3;
     const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
@@ -1539,7 +1539,7 @@ function openBillModal(mid, editRowId) {
       const qtyEntry = schemaEntry(r.qtyField);
       const qtyId = 'bl-' + qtyEntry.key;
       const qtyRaw = readVal(r.qtyField);
-      const qtyVal = escapeAttr(qtyRaw ? _billFmtNumber(qtyRaw) : '');
+      const qtyVal = escapeAttr(qtyRaw != null && qtyRaw !== '' ? _billFmtNumber(qtyRaw) : '');
       const qtyLabel = r.label + (unit ? ' ' + unit : '');
       qtyHtml = `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input bl-qty-input" id="${qtyId}" type="text" inputmode="decimal" placeholder="0" value="${qtyVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"></div>`;
     } else {
@@ -1557,14 +1557,14 @@ function openBillModal(mid, editRowId) {
     const chargeEntry = schemaEntry(r.chargeField);
     const chargeId = 'bl-' + chargeEntry.key;
     const chargeRaw = readVal(r.chargeField);
-    const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
+    const chargeVal = escapeAttr(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
     const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
     let kwHtml;
     if (r.kwField) {
       const kwEntry = schemaEntry(r.kwField);
       const kwId = 'bl-' + kwEntry.key;
       const kwRaw = readVal(r.kwField);
-      const kwVal = escapeAttr(kwRaw ? _billFmtNumber(kwRaw) : '');
+      const kwVal = escapeAttr(kwRaw != null && kwRaw !== '' ? _billFmtNumber(kwRaw) : '');
       kwHtml = `<div class="ef-item"><div class="ef-key">${kwEntry.label}</div><input class="ef-input" id="${kwId}" type="text" inputmode="decimal" placeholder="0" value="${kwVal}" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"></div>`;
     } else {
       kwHtml = '<div></div>';
@@ -1578,12 +1578,12 @@ function openBillModal(mid, editRowId) {
     const chargeEntry = schemaEntry(r.chargeField);
     const chargeId = 'bl-' + chargeEntry.key;
     const chargeRaw = readVal(r.chargeField);
-    const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
+    const chargeVal = escapeAttr(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
     // When the user types in the Total field directly, mark it as manually edited
     // so auto-calculation stops overriding their value.
     const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billTotalManualEdit(this);_billRecalcRow('${r.chargeField}')"`;
     // If there's already a value loaded (editing existing bill), mark as manual so we don't overwrite
-    const manualAttr = chargeRaw ? ' data-manual-total="1"' : '';
+    const manualAttr = chargeRaw != null && chargeRaw !== '' ? ' data-manual-total="1"' : '';
     return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"${manualAttr}><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
   };
   // Assemble the body

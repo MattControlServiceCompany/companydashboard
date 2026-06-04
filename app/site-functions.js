@@ -1191,6 +1191,34 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.04.449',
+    date: '2026-06-04',
+    title:
+      'Equipment Matrix offline-point display, Summary stale-data callout, audit column reorder; $0 bill fields no longer dropped; provider-aware OCR scoring',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: offline points (marked with ?) now show the word "offline" instead of a question mark, and still count toward the point totals.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Summary table now flags buildings with stale data and shows setpoint tooltips on hover.',
+      },
+      {
+        type: 'change',
+        text: 'Equipment Matrix audit column order now leads with zone comfort data (temperature, setpoints) for faster gap analysis.',
+      },
+      {
+        type: 'fix',
+        text: 'Bill Analysis: $0 cost and usage fields are no longer blanked out or erased when you save — zero is a valid value and is now preserved correctly across all 11 affected sites.',
+      },
+      {
+        type: 'fix',
+        text: 'Bill Analysis OCR scoring now correctly handles all utility providers, not just Evergy — improving extraction accuracy for KGS, Spire, and generic providers.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.04.448',
     date: '2026-06-04',
     title: 'Budget tab security fix — user text is now safely escaped',

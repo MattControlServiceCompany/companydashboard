@@ -2405,6 +2405,17 @@ function emLoadMatrix(projId) {
       if (_bcrow && (!_bcrow.category || _bcrow.category === '') && _bcrow.equipType) {
         _bcrow.category = _bcrow.equipType;
       }
+      // Step 4 — Reclassify shim: re-run emClassifyEquipType in-memory for rows still tagged
+      // 'other' after the M2 shim above.  Source field is row.equipType (set at import time from
+      // CSV "Equipment Type" column — see emGroupToMatrixRow: `equipType: group.equipTypeStr`).
+      // In-memory only; emLoadMatrix never writes back to storage.
+      // Safe: any reclassification from 'other' is an improvement; non-'other' rows are untouched.
+      if (_bcrow && _bcrow.category === 'other' && _bcrow.equipType) {
+        var _recat = emClassifyEquipType(_bcrow.equipType);
+        if (_recat && _recat !== 'other') {
+          _bcrow.category = _recat;
+        }
+      }
     }
   }
   return _emData;
@@ -3304,125 +3315,128 @@ function emGetAuditColDefs(filteredRows) {
   }
 
   // CHANGE 2 (column ordering): ASHRAE-36 logical group rank for stable column order.
-  // Groups: 1=Air Temps, 2=Outside Air, 3=Zone/Space, 4=Setpoints,
-  //         5=Flow/Damper/Valve, 6=Fan/Status/Commands, 7=Plant/Central, 8=Other
+  // Groups: 1=Zone Comfort (temp+SPs lead), 2=Zone Adjacent, 3=Air Temps, 4=Water Temps,
+  //         5=Outside Air, 6=Non-Zone Setpoints, 7=Flow/Damper/Valve,
+  //         8=Fan/Status/Pressure, 9=Plant/Central/Mode, 10=Other (unmapped fallback)
   var _emAshraeCatGroup = {
-    // Group 1 — Air Temperatures
-    sat: 1,
-    rat: 1,
-    mat: 1,
-    dat: 1,
-    ahuSAT: 1,
-    preheatAirTemp: 1,
-    clgCoilLvgTemp: 1,
-    htgCoilLvgTemp: 1,
-    hwst: 1,
-    hwrt: 1,
-    chwst: 1,
-    chwrt: 1,
-    cwst: 1,
-    cwrt: 1,
-    // Group 2 — Outside Air Conditions
-    oat: 2,
-    oaRh: 2,
-    oaDewpoint: 2,
-    oaEnthalpy: 2,
-    oaWetBulb: 2,
-    // Group 3 — Zone / Space Conditions
-    zoneTemp: 3,
-    zoneHumidity: 3,
-    co2: 3,
-    rhReturn: 3,
-    co2Return: 3,
-    // Group 4 — Setpoints
-    coolSP: 4,
-    htgSP: 4,
-    dspSp: 4,
-    satCoolSp: 4,
-    satHtgSp: 4,
-    econSp: 4,
-    ventCfmSp: 4,
-    hwSetpoint: 4,
-    chwSetpoint: 4,
-    oaEnable: 4,
-    // Group 5 — Flow / Damper / Valve
-    oaFlow: 5,
-    discFlow: 5,
-    primaryFlow: 5,
-    ventCfm: 5,
-    rfCfm: 5,
-    sfCfm: 5,
-    oaDampCmd: 5,
-    raDampCmd: 5,
-    oaDamp: 5,
-    raDamp: 5,
-    reliefDamp: 5,
-    dampCmd: 5,
-    coldDampCmd: 5,
-    hotDampCmd: 5,
-    zoneDamper: 5,
-    clgValve: 5,
-    htgValve: 5,
-    reheatValve: 5,
-    chwValve: 5,
-    hwValve: 5,
-    hwIsoValve: 5,
-    hwIsoValveCmd: 5,
-    chwIsoValveStatus: 5,
-    chwIsoValveCmd: 5,
-    cwIsoValveStatus: 5,
-    cwIsoValveCmd: 5,
-    makeupValveCmd: 5,
-    // Group 6 — Fan / Status / Commands / Pressure
-    sfStatus: 6,
-    sfSpeed: 6,
-    sfEnable: 6,
-    sfSpeedCmd: 6,
-    rfEnable: 6,
-    rfSpeedCmd: 6,
-    rfSpeed: 6,
-    sfAmps: 6,
-    fanStatus: 6,
-    fanSpeed: 6,
-    termFanStatus: 6,
-    termFanEnable: 6,
-    termFanSpeed: 6,
-    ctFanStatus: 6,
-    ctFanEnable: 6,
-    ctFanSpeed: 6,
-    dsp: 6,
-    bldgPressure: 6,
-    rdsp: 6,
-    hwdp: 6,
-    chwdp: 6,
-    chillerEvapDP: 6,
-    // Group 7 — Plant / Central Equipment / Mode
-    hwFlow: 7,
-    chwFlow: 7,
-    boilerStatus: 7,
-    boilerEnable: 7,
-    hwPumpStatus: 7,
-    hwPumpEnable: 7,
-    hwPumpSpeed: 7,
-    secHWPumpStatus: 7,
-    chillerStatus: 7,
-    chillerEnable: 7,
-    pchwpStatus: 7,
-    schwpStatus: 7,
-    schwpEnable: 7,
-    schwpSpeed: 7,
-    pchwpEnable: 7,
-    cwPumpStatus: 7,
-    cwPumpEnable: 7,
-    sumpLevel: 7,
-    hwIsoValveStatus: 7,
-    freezeStat: 7,
-    enable: 7,
-    vvtMode: 7,
-    airSourceVVT: 7,
-    oaDamper: 7,
-    demandLevel: 7,
-    schedule: 7,
+    // Group 1 — Zone Comfort Leads (temp first, then setpoints adjacent)
+    zoneTemp: 1,
+    coolSP: 1,
+    htgSP: 1,
+    // Group 2 — Zone / Space Adjacent Conditions
+    zoneHumidity: 2,
+    co2: 2,
+    rhReturn: 2,
+    co2Return: 2,
+    // Group 3 — Air Temperatures
+    sat: 3,
+    rat: 3,
+    mat: 3,
+    dat: 3,
+    ahuSAT: 3,
+    preheatAirTemp: 3,
+    clgCoilLvgTemp: 3,
+    htgCoilLvgTemp: 3,
+    // Group 4 — Water Temperatures
+    hwst: 4,
+    hwrt: 4,
+    chwst: 4,
+    chwrt: 4,
+    cwst: 4,
+    cwrt: 4,
+    // Group 5 — Outside Air Conditions
+    oat: 5,
+    oaRh: 5,
+    oaDewpoint: 5,
+    oaEnthalpy: 5,
+    oaWetBulb: 5,
+    // Group 6 — Non-Zone Setpoints
+    dspSp: 6,
+    satCoolSp: 6,
+    satHtgSp: 6,
+    econSp: 6,
+    ventCfmSp: 6,
+    hwSetpoint: 6,
+    chwSetpoint: 6,
+    oaEnable: 6,
+    // Group 7 — Flow / Damper / Valve
+    oaFlow: 7,
+    discFlow: 7,
+    primaryFlow: 7,
+    ventCfm: 7,
+    rfCfm: 7,
+    sfCfm: 7,
+    oaDampCmd: 7,
+    raDampCmd: 7,
+    oaDamp: 7,
+    raDamp: 7,
+    reliefDamp: 7,
+    dampCmd: 7,
+    coldDampCmd: 7,
+    hotDampCmd: 7,
+    zoneDamper: 7,
+    clgValve: 7,
+    htgValve: 7,
+    reheatValve: 7,
+    chwValve: 7,
+    hwValve: 7,
+    hwIsoValve: 7,
+    hwIsoValveCmd: 7,
+    chwIsoValveStatus: 7,
+    chwIsoValveCmd: 7,
+    cwIsoValveStatus: 7,
+    cwIsoValveCmd: 7,
+    makeupValveCmd: 7,
+    // Group 8 — Fan / Status / Commands / Pressure
+    sfStatus: 8,
+    sfSpeed: 8,
+    sfEnable: 8,
+    sfSpeedCmd: 8,
+    rfEnable: 8,
+    rfSpeedCmd: 8,
+    rfSpeed: 8,
+    sfAmps: 8,
+    fanStatus: 8,
+    fanSpeed: 8,
+    termFanStatus: 8,
+    termFanEnable: 8,
+    termFanSpeed: 8,
+    ctFanStatus: 8,
+    ctFanEnable: 8,
+    ctFanSpeed: 8,
+    dsp: 8,
+    bldgPressure: 8,
+    rdsp: 8,
+    hwdp: 8,
+    chwdp: 8,
+    chillerEvapDP: 8,
+    // Group 9 — Plant / Central Equipment / Mode
+    hwFlow: 9,
+    chwFlow: 9,
+    boilerStatus: 9,
+    boilerEnable: 9,
+    hwPumpStatus: 9,
+    hwPumpEnable: 9,
+    hwPumpSpeed: 9,
+    secHWPumpStatus: 9,
+    chillerStatus: 9,
+    chillerEnable: 9,
+    pchwpStatus: 9,
+    schwpStatus: 9,
+    schwpEnable: 9,
+    schwpSpeed: 9,
+    pchwpEnable: 9,
+    cwPumpStatus: 9,
+    cwPumpEnable: 9,
+    sumpLevel: 9,
+    hwIsoValveStatus: 9,
+    freezeStat: 9,
+    enable: 9,
+    vvtMode: 9,
+    airSourceVVT: 9,
+    oaDamper: 9,
+    demandLevel: 9,
+    schedule: 9,
   };
 
   // Add one column per point category (required, or optional with at least one match)
@@ -3466,8 +3480,8 @@ function emGetAuditColDefs(filteredRows) {
   var _nonCatDefs = defs.slice(0, _auditCatStart);
   var _catDefs = defs.slice(_auditCatStart);
   _catDefs.sort(function (a, b) {
-    var ga = _emAshraeCatGroup[a.catKey] || 8;
-    var gb = _emAshraeCatGroup[b.catKey] || 8;
+    var ga = _emAshraeCatGroup[a.catKey] || 10;
+    var gb = _emAshraeCatGroup[b.catKey] || 10;
     return ga - gb;
   });
   // Rebuild defs: fixed prefix + sorted audit-cat + any remaining (seq, behavior) appended after
@@ -3670,7 +3684,12 @@ var _emKnownPointColKeys = (function () {
 /* -- Backward-compatibility alias map (item 65248601) -----------------
    Maps OLD col keys (e.g. 'satLive') to NEW col keys (e.g. 'supplyAirTemp').
    Used by emGetNormalizedPoints so previously-enriched CSVs whose row.points
-   carry old key names still resolve correctly without re-import.              */
+   carry old key names still resolve correctly without re-import.
+
+   PROTOCOL (Step 4 — item b3bc972e): every future EM_POINT_MAP col-key rename MUST
+   add an entry here in the form  oldKey: 'newKey'  so stored rows whose row.points
+   carry the old key still resolve without forcing a re-import.  Failure to add an
+   entry will silently zero-out that point for all previously-imported datasets.    */
 var _emColKeyAliases = {
   airSrcSupTempLive: 'airSourceSupplyTemp',
   chwDiffPresLive: 'chwDiffPressure',
@@ -4745,15 +4764,58 @@ function emRenderSummaryView(data, filters) {
   var thStyleCenter = thStyle + 'text-align:center;';
   var thStyleLeft = thStyle + 'text-align:left;';
 
+  // ── Stale-data callout detection: key on EMPTY-POINTS (not displayed dashes) ──
+  // Show callout only when: (i) every building's zoneTemp.count === 0
+  // AND (ii) at least one VAV/FPB/DD-VAV row has both points and pointsRaw empty/absent.
+  // This is intentionally decoupled from emFormatCell '?' display (Step 3).
+  var _zoneCalloutCats = { vav: true, fpb: true, ddvav: true };
+  var _allZeroTemp = true;
+  var _bldgNamesForCallout = Object.keys(zoneStats);
+  for (var _ci = 0; _ci < _bldgNamesForCallout.length; _ci++) {
+    if (zoneStats[_bldgNamesForCallout[_ci]].zoneTemp.count > 0) {
+      _allZeroTemp = false;
+      break;
+    }
+  }
+  var _hasEmptyZoneRow = false;
+  if (_allZeroTemp && _bldgNamesForCallout.length > 0) {
+    for (var _cj = 0; _cj < filtered.length; _cj++) {
+      var _cr = filtered[_cj];
+      if (!_zoneCalloutCats[_cr.category]) continue;
+      var _ptCount = Object.keys(_cr.points || {}).length;
+      var _rawCount = Object.keys(_cr.pointsRaw || {}).length;
+      if (_ptCount === 0 && _rawCount === 0) {
+        _hasEmptyZoneRow = true;
+        break;
+      }
+    }
+  }
+  var _showStaleCallout = _allZeroTemp && _hasEmptyZoneRow && _bldgNamesForCallout.length > 0;
+
   var html = '<div style="padding:24px;overflow:visible;height:100%;box-sizing:border-box">';
   html +=
     '<h2 style="font-size:20px;font-weight:600;margin:0 0 20px 0;color:var(--text)">Equipment Summary — Zone Comfort</h2>';
+  if (_showStaleCallout) {
+    html +=
+      '<div style="background:#3a2e00;border:1px solid #b8860b;border-radius:6px;' +
+      'padding:10px 16px;margin-bottom:16px;font-size:13px;color:#f0d060;display:flex;align-items:center;gap:10px">' +
+      '<span style="font-size:16px">&#9888;</span>' +
+      '<span>Zone temperature values require a fresh import — your data was imported before live values were captured. ' +
+      'Re-import your CSV.</span>' +
+      '</div>';
+  }
   html += '<table style="width:100%;border-collapse:collapse;font-size:15px">';
   html += '<thead><tr>';
   html += '<th style="' + thStyleLeft + '">Building</th>';
   html += '<th style="' + thStyleCenter + '">Zone Air Temp</th>';
-  html += '<th style="' + thStyleCenter + '">Zone Htg Setpoint</th>';
-  html += '<th style="' + thStyleCenter + '">Zone Clg Setpoint</th>';
+  html +=
+    '<th style="' +
+    thStyleCenter +
+    '" title="Setpoints require a WebCTRL point-list export, not the enriched matrix snapshot.">Zone Htg Setpoint</th>';
+  html +=
+    '<th style="' +
+    thStyleCenter +
+    '" title="Setpoints require a WebCTRL point-list export, not the enriched matrix snapshot.">Zone Clg Setpoint</th>';
   html += '<th style="' + thStyleCenter + '">Zones vs Setpoints</th>';
   html += '</tr></thead>';
   html += '<tbody>';
@@ -5992,6 +6054,13 @@ function emTogglePointDrawer(rowId) {
 function emFormatCell(val, def) {
   if (val === null || val === undefined || val === '') return '--';
   var s = String(val);
+  // Step 3 — offline sentinel display: WebCTRL "no data" markers render as muted "offline" label.
+  // DISPLAY ONLY — do NOT filter these at import time or delete from row.points.
+  // Points must still count toward Total BAS Points (Object.keys(row.points).length unchanged).
+  // Place before isCategory and check_ branches so it applies to Live + dynamic columns.
+  if (s.trim() === '?' || s.trim() === 'offline') {
+    return '<span style="color:var(--text3);font-size:11px;font-style:italic">offline</span>';
+  }
   // Milestone 2: render category key as a friendly equipment-type label
   if (def.isCategory) {
     return EM_CATEGORY_LABELS[s] || (s ? s.toUpperCase() : '--');

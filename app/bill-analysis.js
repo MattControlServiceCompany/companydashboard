@@ -444,7 +444,7 @@ function detectStatisticalOutliers(extracted, historicalCache) {
   function getStats(bills, fieldOrFn) {
     const vals = bills
       .map((b) => (typeof fieldOrFn === 'function' ? fieldOrFn(b) : pf(b[fieldOrFn])))
-      .filter((v) => v > 0);
+      .filter((v) => v !== null && v !== undefined && !isNaN(v));
     if (vals.length < 3) return null;
     const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
     const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
@@ -6323,31 +6323,106 @@ async function extractPDFText(ab, statusCb) {
         // Return whatever native text we got
         return pageTexts.join('\n').trim().length > 50 ? pageTexts.join('\n') : null;
       }
-      // Key patterns that should appear on a valid Evergy bill page
-      const BILL_SIGNALS = [
-        /service\s+from[:\s]\s*\d{2}\/\d{2}/i,
-        /Current\s+Charges/i,
-        /\$[\d,]+\.\d{2}/,
-        /kWh/i,
-        /Demand\s+Ch/i,
-        /Customer\s+Ch/i,
-        /Account\s+Number/i,
-        /Billing\s+Date/i,
+      // Provider-aware scoring: per-provider signal sets + generic bonuses.
+      // Evergy signals are the original BILL_SIGNALS verbatim — behavior unchanged.
+      // Unknown providers fall through to generic-only scoring (never worse than before).
+      const PROVIDER_SIGNALS = {
+        evergy: [
+          { rx: /service\s+from[:\s]\s*\d{2}\/\d{2}/i, w: 1 },
+          { rx: /Current\s+Charges/i, w: 1 },
+          { rx: /kWh/i, w: 1 },
+          { rx: /Demand\s+Ch/i, w: 1 },
+          { rx: /Customer\s+Ch/i, w: 1 },
+          { rx: /Account\s+Number/i, w: 1 },
+          { rx: /Billing\s+Date/i, w: 1 },
+        ],
+        constellation: [
+          { rx: /constellation/i, w: 1 },
+          { rx: /account\s*id:\s*bg-\d+/i, w: 2 },
+          { rx: /Invoice\s+Number:\s*\d+/i, w: 1 },
+          { rx: /Service\s+for\s+[A-Za-z]+-\d{4}/i, w: 2 },
+          { rx: /Total\s+Current\s+Site\s+Charges/i, w: 2 },
+          { rx: /MMBtu/i, w: 1 },
+          { rx: /Invoice\s+Date:/i, w: 1 },
+        ],
+        kgs: [
+          { rx: /kansas\s+gas\s+service/i, w: 2 },
+          { rx: /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i, w: 2 },
+          { rx: /\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/, w: 2 },
+          { rx: /Account\s+Number/i, w: 1 },
+          { rx: /\bMcf\b/i, w: 1 },
+          { rx: /Total\s+Current\s+Charges/i, w: 1 },
+          { rx: /Service\s+Charge/i, w: 1 },
+        ],
+        louisburg: [
+          { rx: /louisburgkansas\.gov|City\s*of\s*Louisburg/i, w: 2 },
+          { rx: /ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information/i, w: 2 },
+          { rx: /DETACH\s*AND\s*RETURN/i, w: 1 },
+          { rx: /Amount\s*Due\s*After/i, w: 1 },
+        ],
+        baldwin: [
+          { rx: /baldwin\s*city|baldwincitygov?/i, w: 2 },
+          { rx: /FRANCHISE\s+FEE/i, w: 1 },
+          { rx: /EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i, w: 2 },
+          { rx: /ACCOUNT\s+NUMBER/i, w: 1 },
+        ],
+        propane: [
+          { rx: /\bpropane\b|\blp\s*gas\b|\bfuel\s*oil\b|\bmfa\s*oil\b/i, w: 2 },
+          { rx: /net\s*(?:due|delivery)|invoice/i, w: 1 },
+          { rx: /Invoice\s*#/i, w: 1 },
+        ],
+      };
+      // Auto-detect provider from OCR text (same regexes as UTILITY_RULES.detect() in energy-savings.js)
+      const _detectProvider = (txt) => {
+        if (/service\s+from[:\s]\s*\d{2}\/\d{2}/i.test(txt) || (/Customer\s+Ch/i.test(txt) && /ECA\s+Ch/i.test(txt)))
+          return 'evergy';
+        if (/constellation/i.test(txt) || /account\s*id:\s*bg-\d+/i.test(txt) || /MMBtu/i.test(txt))
+          return 'constellation';
+        if (/kansas\s+gas\s+service/i.test(txt) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(txt)) return 'kgs';
+        if (/louisburgkansas\.gov|City\s*of\s*Louisburg/i.test(txt)) return 'louisburg';
+        if (/baldwin\s*city|baldwincitygov/i.test(txt) || /FRANCHISE\s+FEE/i.test(txt)) return 'baldwin';
+        if (/\bpropane\b|\blp\s*gas\b|\bmfa\s*oil\b/i.test(txt)) return 'propane';
+        return 'generic';
+      };
+      // Generic signals — always score regardless of provider (floor for unknown formats)
+      const GENERIC_SIGNALS = [
+        { rx: /Account\s+Number/i, w: 1 },
+        { rx: /Billing\s+Date/i, w: 1 },
       ];
-      // Score = keyword matches + bonus for digit quality (dollar amounts with proper formatting)
-      const scorePage = (txt) => {
+      // Generic bonuses — dollar amounts, kWh values, date patterns (preserved from original scorePage)
+      const _genericBonuses = (txt) => {
         let s = 0;
-        BILL_SIGNALS.forEach((rx) => {
-          if (rx.test(txt)) s++;
-        });
-        // Bonus for well-formed dollar amounts (indicates good digit OCR quality)
         const dollarAmts = (txt.match(/\$[\d,]+\.\d{2}/g) || []).length;
-        s += Math.min(dollarAmts / 5, 2); // up to 2 bonus points for having many proper dollar amounts
-        // Bonus for well-formed kWh values with decimals
+        s += Math.min(dollarAmts / 5, 2); // up to 2 bonus points (same as original)
         const kwhVals = (txt.match(/[\d,]+\.\d{4}\s*kWh/gi) || []).length;
-        s += Math.min(kwhVals / 3, 1); // up to 1 bonus point
+        s += Math.min(kwhVals / 3, 1); // up to 1 bonus point (same as original)
+        const datePatterns = (txt.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g) || []).length;
+        s += Math.min(datePatterns / 4, 1); // up to 1 bonus for generic date signals
         return s;
       };
+      // makeScorePage() — factory that returns a scorePage function.
+      // Provider is auto-detected from the first non-trivial pass (>100 chars) and locked
+      // for all subsequent passes of the same page, so pass-0 text drives scoring for passes 1–6.
+      // Evergy: max keyword score = 7 + up to 3 bonuses = 10+, early-exit threshold >=10 unchanged.
+      const makeScorePage = () => {
+        let detectedProvider = null;
+        return (txt) => {
+          if (!detectedProvider && txt.length > 100) {
+            detectedProvider = _detectProvider(txt);
+          }
+          const signals = PROVIDER_SIGNALS[detectedProvider] || [];
+          let s = 0;
+          for (const sig of signals) {
+            if (sig.rx.test(txt)) s += sig.w;
+          }
+          for (const sig of GENERIC_SIGNALS) {
+            if (sig.rx.test(txt)) s += sig.w;
+          }
+          s += _genericBonuses(txt);
+          return s;
+        };
+      };
+      const scorePage = makeScorePage();
       // Detect Evergy bill cover page by unique layout signals. Cover pages only
       // need the 2.5x pass — they contain no meter/charge data worth reprocessing.
       const isCoverPage = (txt) => {
