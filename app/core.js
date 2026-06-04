@@ -1016,6 +1016,11 @@ function renderDetail(p) {
                 <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading budget data...</div>
               </div>
             </div>
+            <div id="ptab-hours" class="ptab" style="padding:0;overflow-y:auto">
+              <div id="ptab-hours-body-${p.id}">
+                <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading hours data...</div>
+              </div>
+            </div>
             <div id="ptab-eq-matrix" class="ptab" style="padding:0">
               <div id="em-proj-wrap"></div>
             </div>
@@ -2337,6 +2342,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'energygfx', label: '📈 Energy Graphics' },
   { id: 'savings', label: '💡 Energy Savings' },
   { id: 'budget', label: '💰 Budget' },
+  { id: 'hours', label: '⏱️ Hours' },
   { id: 'district', label: '🗓️ District Calendar' },
   { id: 'docs', label: '📁 Documents' },
   { id: 'setpoints', label: '🌡️ Set Points' },
@@ -2486,6 +2492,7 @@ function sPTab(tab, el) {
   if (tab === 'utility') initProjUDTab(p.id);
   if (tab === 'savedbills') renderProjSavedBills(p.id);
   if (tab === 'budget') initBudgetTab(p.id);
+  if (tab === 'hours') initHoursTab(p.id);
   if (tab === 'equipment') renderProjEquip(p.id);
   if (tab === 'savings') initSavingsTab(p.id);
   if (tab === 'hvacload') requestAnimationFrame(() => initHvacLoadTab(p.id));

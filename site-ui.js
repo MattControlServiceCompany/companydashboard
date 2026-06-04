@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.03.446';
+  var CH_VERSION = 'v2026.06.03.447';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.03.447',
+      date: '2026-06-03',
+      title: 'Hours per project tracking — new Hours subtab on every project',
+      items: [
+        {
+          type: 'feature',
+          text: 'Each project now has a Hours subtab. Log time entries (0.25–24 h) with a date and optional note. The subtab shows a running log and total hours. Add, edit, or delete entries anytime.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.03.446',
       date: '2026-06-03',

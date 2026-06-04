@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.03.447',
+    date: '2026-06-03',
+    title: 'Hours per project tracking — new Hours subtab on every project',
+    items: [
+      {
+        type: 'feature',
+        text: 'Each project now has a Hours subtab. Log time entries (0.25–24 h) with a date and optional note. The subtab shows a running log and total hours. Add, edit, or delete entries anytime.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.03.446',
     date: '2026-06-03',
     title: 'CSV condensed-column renders genuine zero as $0.00 instead of dash',
