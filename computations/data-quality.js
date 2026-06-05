@@ -32,7 +32,10 @@ function computeMeterQualityScore(m) {
   // m.baseline.reg is null for inherited baselines and for baselines saved before
   // weather data was uploaded — in both cases m._reg has the real regression.
   var r2Val = null;
-  var _blReg = (m.baseline && m.baseline.reg) || null;
+  var _rawBlReg = (m.baseline && m.baseline.reg) || null;
+  // Guard: an empty {} or a reg with all-null coefficients is not valid.
+  // Same guard used by report-engine.js line 7884.
+  var _blReg = _rawBlReg && (_rawBlReg.hdd || _rawBlReg.cdd || _rawBlReg.dual) ? _rawBlReg : null;
   var _liveReg = m._reg || null;
   var reg = _blReg || _liveReg || null;
   if (reg) {

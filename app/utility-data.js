@@ -2512,7 +2512,13 @@ function renderBillsPane(pane, m, bills, incl) {
   const colgroup = '';
 
   // ── Statistical analysis on saved bills ──
-  const billFlags = _analyzeMeterBills(bills, m);
+  // Always pass an ascending-sorted copy so the rate-anomaly trailing window
+  // and YoY find() operate on chronological order regardless of the user's
+  // display sort preference (newest-first reverses the array before this point).
+  const billFlags = _analyzeMeterBills(
+    bills.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start)),
+    m,
+  );
 
   // Build rows with gap detection + outlier highlighting
   let tblBody = '';

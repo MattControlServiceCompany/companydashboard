@@ -239,7 +239,12 @@ function init() {
       if (s.view === 'detail' && s.projId != null) {
         const p = projects.find((p) => p.id == s.projId);
         if (p) {
-          const _tabToRestore = s.tab || 'dashboard';
+          // SECONDARY FIX (087dba92): Sanitize stored tab against PROJ_TABS_DEFAULT before use.
+          // If the stored tab id is no longer valid (e.g. 'equipment' was removed), fall back to
+          // 'dashboard' so the restore never tries to activate a non-existent button.
+          const _rawTab = s.tab || 'dashboard';
+          const _validTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
+          const _tabToRestore = _validTabIds.has(_rawTab) ? _rawTab : 'dashboard';
           openDetail(p.id);
           if (_tabToRestore !== 'dashboard') {
             const btn = document.querySelector('#pdTabBar button[data-tab="' + _tabToRestore + '"]');
@@ -388,13 +393,19 @@ function sv(id, btn) {
             document.getElementById('projListView').style.display = 'none';
             document.getElementById('projDetailView').style.display = 'flex';
             window._activeProjId = _p.id;
-            window._activeProjTab = _s.tab || 'dashboard';
+            // SECONDARY FIX (087dba92): Sanitize stored tab against PROJ_TABS_DEFAULT.
+            // If the stored tab id no longer exists (e.g. 'equipment' was removed), fall back to
+            // 'dashboard' so renderDetail() generates the correct active button.
+            const _rawSvTab = _s.tab || 'dashboard';
+            const _validSvTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
+            window._activeProjTab = _validSvTabIds.has(_rawSvTab) ? _rawSvTab : 'dashboard';
             renderDetail(_p);
             document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
             document.querySelectorAll(`.spfi[data-pid="${_p.id}"]`).forEach((c) => c.classList.add('active'));
-            if (_s.tab) {
-              const _btn = document.querySelector(`.pdt[data-tab="${_s.tab}"]`);
-              if (_btn) sPTab(_s.tab, _btn);
+            // Use the sanitized tab value (falls back to 'dashboard' for invalid stored tabs).
+            if (window._activeProjTab !== 'dashboard') {
+              const _btn = document.querySelector(`.pdt[data-tab="${window._activeProjTab}"]`);
+              if (_btn) sPTab(window._activeProjTab, _btn);
             }
             _restored = true;
           }
@@ -783,17 +794,24 @@ function openDetail(id) {
   }
   document.getElementById('projListView').style.display = 'none';
   document.getElementById('projDetailView').style.display = 'flex';
+  // PRIMARY FIX (087dba92): Set _activeProjTab BEFORE renderDetail() so _getProjTabHTML()
+  // generates the correct active button. Previously this was assigned AFTER renderDetail(),
+  // causing the tab bar to render with 0 active buttons when _activeProjTab held a stale/invalid id.
+  window._activeProjId = id;
+  const _dfltTab = sget('ch_defaultProjTab', 'dashboard');
+  if (_dfltTab === 'last') {
+    // Keep existing _activeProjTab if it's a known valid tab, otherwise fall back to 'dashboard'.
+    const _validTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
+    if (!window._activeProjTab || !_validTabIds.has(window._activeProjTab)) {
+      window._activeProjTab = 'dashboard';
+    }
+  } else {
+    window._activeProjTab = _dfltTab;
+  }
   renderDetail(p);
   document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
   document.querySelectorAll(`.spfi[data-pid="${id}"]`).forEach((c) => c.classList.add('active'));
   document.querySelector('.ptab.active')?.scrollTo({ top: 0, behavior: 'smooth' });
-  window._activeProjId = id;
-  const _dfltTab = sget('ch_defaultProjTab', 'dashboard');
-  if (_dfltTab === 'last') {
-    window._activeProjTab = window._activeProjTab || 'dashboard'; // fall back if no prior tab
-  } else {
-    window._activeProjTab = _dfltTab;
-  }
   saveProjSession();
 }
 

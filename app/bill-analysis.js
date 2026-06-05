@@ -844,44 +844,64 @@ function _analyzeMeterBills(bills, m) {
     }
 
     // ── Year-over-year spike ──
-    // Flag usage that deviates >40% vs the same calendar month in the prior year.
+    // Flag usage that deviates >40% vs the same normalized month in the prior year.
+    // "Normalized month" = the calendar month the billing period represents by majority
+    // billing days — computed via _billNormMonth(), the same function used by the z-score
+    // path above (line 728). This replaces the former month*30+day linearization that
+    // selected the wrong prior-year bill for meters billed mid-month (e.g. Evergy Kansas).
+    // When ≥2 prior same-month bills exist the z-score path already handles the comparison;
+    // this YoY check is the fallback for when exactly 1 prior same-month bill is available.
+    // P2: use full multi-year history — skip YoY check when monthStats has ≥2 same-month
+    // bills so the z-score path (which uses all years) is the sole decision-maker.
     const _usageField = isElec ? 'kwh' : isGas ? 'therms' : 'usage';
     const _usageFn = checks.find((c) => c.field === _usageField);
-    if (_usageFn && b.start) {
+    if (_usageFn && b.start && b.end) {
       const thisUsage = _usageFn.fn(b);
-      if (thisUsage > 0) {
-        const thisDate = _parseISO(b.start);
-        const thisMonth = thisDate.getMonth();
-        const thisYear = thisDate.getFullYear();
-        // Look for a bill starting within ±30 days of the same month in the prior year
-        const priorYearBill = bills.find((other) => {
-          if (!other.start || other.id === b.id) return false;
-          const otherDate = _parseISO(other.start);
-          if (otherDate.getFullYear() !== thisYear - 1) return false;
-          const daysDiff = Math.abs(
-            otherDate.getMonth() * 30 + otherDate.getDate() - (thisMonth * 30 + thisDate.getDate()),
-          );
-          return daysDiff <= 30;
-        });
-        if (priorYearBill) {
-          const priorUsage = _usageFn.fn(priorYearBill);
-          if (priorUsage > 0) {
-            const deviation = Math.abs(thisUsage - priorUsage) / priorUsage;
-            if (deviation > 0.4) {
-              const pct = Math.round(deviation * 100);
-              rowFlags.push({
-                field: _usageField,
-                msg:
-                  'Year-over-year spike: ' +
-                  thisUsage.toLocaleString(undefined, { maximumFractionDigits: 1 }) +
-                  ' vs prior year ' +
-                  priorUsage.toLocaleString(undefined, { maximumFractionDigits: 1 }) +
-                  ' (' +
-                  (thisUsage > priorUsage ? '+' : '-') +
-                  pct +
-                  '%)',
-                level: 'warn',
-              });
+      const thisNormMonth = nm; // nm = normMonths[idx], already computed above at line 763
+      if (thisUsage > 0 && thisNormMonth >= 0) {
+        // Skip YoY check when ≥2 PRIOR same-normalized-month bills exist (i.e. total
+        // count in monthStats ≥ 3, since monthStats includes the current bill itself).
+        // When count ≥ 3, the z-score path above already ran a multi-year comparison
+        // using a statistically appropriate threshold. When count = 2 (exactly 1 prior
+        // same-month bill + current), the z-score 3.5σ threshold is too lenient for
+        // a 2-point sample, so we keep the 40% raw fallback.
+        const sameMonthCount =
+          (_usageFn.seasonal !== false &&
+            monthStats[_usageField] &&
+            monthStats[_usageField][thisNormMonth] &&
+            monthStats[_usageField][thisNormMonth].count) ||
+          0;
+        if (sameMonthCount < 3) {
+          const thisDate = _parseISO(b.start);
+          const thisYear = thisDate.getFullYear();
+          // Find the bill whose normalized month matches this bill's normalized month
+          // AND whose start year is exactly thisYear - 1.
+          const priorYearBill = bills.find((other) => {
+            if (!other.start || !other.end || other.id === b.id) return false;
+            const otherYear = _parseISO(other.start).getFullYear();
+            if (otherYear !== thisYear - 1) return false;
+            return _billNormMonth(other) === thisNormMonth;
+          });
+          if (priorYearBill) {
+            const priorUsage = _usageFn.fn(priorYearBill);
+            if (priorUsage > 0) {
+              const deviation = Math.abs(thisUsage - priorUsage) / priorUsage;
+              if (deviation > 0.4) {
+                const pct = Math.round(deviation * 100);
+                rowFlags.push({
+                  field: _usageField,
+                  msg:
+                    'Year-over-year spike: ' +
+                    thisUsage.toLocaleString(undefined, { maximumFractionDigits: 1 }) +
+                    ' vs prior year ' +
+                    priorUsage.toLocaleString(undefined, { maximumFractionDigits: 1 }) +
+                    ' (' +
+                    (thisUsage > priorUsage ? '+' : '-') +
+                    pct +
+                    '%)',
+                  level: 'warn',
+                });
+              }
             }
           }
         }

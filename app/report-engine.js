@@ -2518,10 +2518,8 @@ function rptPageEUI(n, d) {
           ? cur < bl
             ? '<span style="color:var(--rpt-green)">&#9660;</span>'
             : cur > bl
-              ? '<span style="color:#c0392b">&#9650;</span>'
-              : '<span style="color:#000">&#9654;</span>'
-                ? '<span style="color:var(--rpt-red)">&#9650;</span>'
-                : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
+              ? '<span style="color:var(--rpt-red)">&#9650;</span>'
+              : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
           : '<span style="color:var(--rpt-page-text)">—</span>';
       return (
         '<tr>' +
@@ -2657,10 +2655,8 @@ function rptPageEUI(n, d) {
           ? cur < bl
             ? '<span style="color:var(--rpt-green)">&#9660;</span>'
             : cur > bl
-              ? '<span style="color:#c0392b">&#9650;</span>'
-              : '<span style="color:#000">&#9654;</span>'
-                ? '<span style="color:var(--rpt-red)">&#9650;</span>'
-                : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
+              ? '<span style="color:var(--rpt-red)">&#9650;</span>'
+              : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
           : '<span style="color:var(--rpt-page-text)">—</span>';
       return (
         '<tr>' +
@@ -9232,7 +9228,7 @@ function saveProjSession() {
     JSON.stringify({
       view: isDetail ? 'detail' : 'list',
       projId: isDetail ? window._activeProjId || null : null,
-      tab: window._activeProjTab || 'notes',
+      tab: window._activeProjTab || 'dashboard',
     }),
   );
 }

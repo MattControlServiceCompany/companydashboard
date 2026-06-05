@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.04.453',
+    date: '2026-06-04',
+    title: 'Bill anomaly false-flag fix, trend arrows, tab underline, Meter Data Quality R² real-data fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Bill Anomaly Detection: Louisburg High School September was incorrectly flagged as anomalous. The detector now matches bills by calendar month across years and sorts correctly, eliminating false alarms on multi-year utility accounts.',
+      },
+      {
+        type: 'fix',
+        text: 'Reports: trend arrows (up/down indicators) were displaying incorrectly due to a broken comparison. Arrows now point the right direction.',
+      },
+      {
+        type: 'fix',
+        text: 'Reports: switching tabs no longer resets to the Dashboard tab when re-opening a project. Your last-used tab is remembered correctly.',
+      },
+      {
+        type: 'fix',
+        text: 'Tab underline highlight now stays in sync when opening project detail views — the active tab indicator no longer mismatches the visible panel.',
+      },
+      {
+        type: 'fix',
+        text: 'Meter Data Quality: R² (correlation) score now calculates correctly on real meter data — was still showing 0/25 meters after the previous fix.',
+      },
+    ]
+  },
+  {
     v: 'v2026.06.04.452',
     date: '2026-06-04',
     title: 'Meter Data Quality R² fixed, bill table row numbers, Hours weekly entry/views, Equipment tab removed',
