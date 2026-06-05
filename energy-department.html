@@ -13604,68 +13604,6 @@
         </div>
       </div>
 
-      <!-- EQUIPMENT MODAL -->
-      <div class="modal-bg" id="equipModal" role="presentation" aria-label="Equipment dialog">
-        <div class="modal" role="dialog" aria-modal="true" style="width: 480px">
-          <div class="modal-hdr">
-            <span class="modal-title">+ Add Equipment</span
-            ><button class="modal-x" onclick="closeEquipModal()">✕</button>
-          </div>
-          <div class="modal-body">
-            <div class="f2">
-              <div class="fg">
-                <label class="fl">Equipment Tag</label><input class="fi" id="eq-tag" placeholder="e.g. AHU-1" />
-              </div>
-              <div class="fg">
-                <label class="fl">Type</label
-                ><select class="fs" id="eq-type">
-                  <option>AHU</option>
-                  <option>RTU</option>
-                  <option>Boiler</option>
-                  <option>Chiller</option>
-                  <option>VAV Box</option>
-                  <option>Fan Coil Unit</option>
-                  <option>Exhaust Fan</option>
-                  <option>Pump</option>
-                  <option>Cooling Tower</option>
-                  <option>HX</option>
-                  <option>Meter</option>
-                  <option>Other</option>
-                </select>
-              </div>
-            </div>
-            <div class="f2">
-              <div class="fg">
-                <label class="fl">Manufacturer</label><input class="fi" id="eq-make" placeholder="e.g. Trane" />
-              </div>
-              <div class="fg">
-                <label class="fl">Model Number</label><input class="fi" id="eq-model" placeholder="e.g. CGAM-075" />
-              </div>
-            </div>
-            <div class="f2">
-              <div class="fg">
-                <label class="fl">Capacity</label><input class="fi" id="eq-cap" placeholder="e.g. 75 Tons" />
-              </div>
-              <div class="fg">
-                <label class="fl">Efficiency</label><input class="fi" id="eq-eff" placeholder="e.g. 0.65 kW/Ton" />
-              </div>
-            </div>
-            <div class="fg">
-              <label class="fl">Location / Project</label
-              ><input class="fi" id="eq-loc" placeholder="e.g. Van Horn HS — Mech Room B" />
-            </div>
-            <div class="fg">
-              <label class="fl">Notes</label>
-              <div id="eq-notes-editor" style="min-height: 80px"></div>
-            </div>
-          </div>
-          <div class="modal-ftr">
-            <button class="btn btn-ghost" onclick="closeEquipModal()">Cancel</button
-            ><button class="btn btn-em" onclick="saveEquip()">Save Equipment</button>
-          </div>
-        </div>
-      </div>
-
       <!-- NOTIFICATION PANEL -->
       <div
         id="notifPanel"
@@ -14623,17 +14561,17 @@
     <script src="lib/perf-table.js?v=441"></script>
     <script src="lib/shared-charts.js?v=399"></script>
     <script src="computations/report-data.js?v=399"></script>
-    <script src="computations/data-quality.js?v=399"></script>
+    <script src="computations/data-quality.js?v=452"></script>
     <script src="extraction/pdf-engine.js?v=399"></script>
     <script src="app/db.js?v=422"></script>
-    <script src="app/core.js?v=447"></script>
+    <script src="app/core.js?v=452"></script>
     <script src="app/energy-savings.js?v=441"></script>
     <script src="app/bill-analysis.js?v=449"></script>
     <script src="extraction/bill-validation.js?v=399"></script>
-    <script src="app/district-calendar.js?v=399"></script>
-    <script src="app/utility-data.js?v=441"></script>
+    <script src="app/district-calendar.js?v=452"></script>
+    <script src="app/utility-data.js?v=452"></script>
     <script src="app/pipeline-diagram.js?v=399"></script>
-    <script src="app/csv-import.js?v=449"></script>
+    <script src="app/csv-import.js?v=452"></script>
     <script src="app/report-engine.js?v=451"></script>
     <script src="app/report-preview.js?v=451"></script>
     <script src="app/calculators.js?v=399"></script>
@@ -14641,12 +14579,12 @@
     <script src="app/equipment-matrix.js?v=449"></script>
     <script src="app/graphics-setpoints.js?v=441"></script>
     <script src="app/budget.js?v=448"></script>
-    <script src="app/hours.js?v=447"></script>
+    <script src="app/hours.js?v=452"></script>
     <script src="app/scorecard.js?v=399"></script>
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=399"></script>
 
-    <script src="app/site-functions.js?v=451"></script>
+    <script src="app/site-functions.js?v=452"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */

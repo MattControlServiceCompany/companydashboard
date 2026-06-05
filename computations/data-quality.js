@@ -23,13 +23,19 @@ function computeMeterQualityScore(m) {
   var dataMonths = {
     points: dataMonthsPts,
     max: 25,
-    detail: uniqueMonths + ' months',
+    detail: uniqueMonths + ' mo. history',
   };
 
   // ── 2. baselineR2 (max 25) ──
+  // Use the same fallback chain as report-engine.js: prefer frozen baseline reg,
+  // fall back to live runtime reg (m._reg, set by getNormRows in normalization.js).
+  // m.baseline.reg is null for inherited baselines and for baselines saved before
+  // weather data was uploaded — in both cases m._reg has the real regression.
   var r2Val = null;
-  if (m.baseline && m.baseline.reg) {
-    var reg = m.baseline.reg;
+  var _blReg = (m.baseline && m.baseline.reg) || null;
+  var _liveReg = m._reg || null;
+  var reg = _blReg || _liveReg || null;
+  if (reg) {
     if (reg.dual && reg.dual.r2 != null) {
       r2Val = reg.dual.r2;
     } else if (reg.hdd && reg.hdd.r2 != null) {
@@ -149,7 +155,7 @@ function getMeterQualityBadge(score) {
 function qualityBreakdownTooltip(q) {
   var c = q.components;
   return (
-    'Months ' +
+    'History ' +
     c.dataMonths.points +
     '/' +
     c.dataMonths.max +

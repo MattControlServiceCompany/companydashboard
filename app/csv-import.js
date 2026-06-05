@@ -415,7 +415,7 @@ function _billFieldWarnings(row, commodity) {
 }
 
 /* ── RENDER BILL ROW (used in Bills pane table) ── */
-function renderBillRow(row, m, incl, allBills, cols) {
+function renderBillRow(row, m, incl, allBills, cols, rowNum) {
   if (incl === undefined) incl = m.inclusive !== false;
   let days = calcDays(row.start, row.end, incl);
   // Propane deliveries use DeliveryDate as both start and end, so
@@ -452,21 +452,23 @@ function renderBillRow(row, m, incl, allBills, cols) {
         !['start', 'end', 'numberOfDays', 'utilityCompany', 'customerName', 'serviceAddress'].includes(e.key),
     );
     cols = [
-      {},
-      {},
-      {},
-      {},
+      {}, // # (row number)
+      {}, // Norm Month
+      {}, // Start
+      {}, // End
+      {}, // Days
       ...schemaForTable.map((e) => ({
         k: e.key,
         entry: e,
         a: e.type === 'text' || e.type === 'date' ? 'lbl' : '',
       })),
-      {},
+      {}, // Actions
     ];
   }
-  // First 3 base columns (Norm Month, Start, End) get the sticky-col
-  // class so they stay pinned during horizontal scroll. Days (col 3) is
-  // NOT sticky — it's the first column that scrolls with the body.
+  // Base columns: col 0 = # (row number), col 1 = Norm Month (sticky),
+  // col 2 = Start (sticky), col 3 = End (sticky), col 4 = Days (not sticky).
+  // Field columns start at index 5. data-sticky values match col indices 1-3.
+  // (Fix 3113c062: added # col at index 0, shifting former cols 0-3 to 1-4.)
   const _fieldWarningsEarly = _billFieldWarnings(row, m.commodity);
   const _hasRowWarning = Object.keys(_fieldWarningsEarly).length > 0;
   // Bug #17: rows with missing start/end dates get a special class so they're
@@ -477,11 +479,12 @@ function renderBillRow(row, m, incl, allBills, cols) {
     : 'This bill has missing or inconsistent data fields';
   let html =
     `<tr style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}>` +
-    `<td class="norm-mon-cell sticky-col" data-sticky="0">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
-    `<td class="lbl sticky-col" data-sticky="1">${fmtD(row.start)}</td>` +
-    `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.end)}</td>` +
+    `<td class="sticky-col" data-sticky="0" style="text-align:center;color:var(--text3);font-size:11px;padding:0 4px">${rowNum != null ? rowNum : ''}</td>` +
+    `<td class="norm-mon-cell sticky-col" data-sticky="1">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
+    `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.start)}</td>` +
+    `<td class="lbl sticky-col" data-sticky="3">${fmtD(row.end)}</td>` +
     `<td class="td-days">${days}</td>`;
-  for (let i = 4; i < cols.length - 1; i++) {
+  for (let i = 5; i < cols.length - 1; i++) {
     const c = cols[i];
     // Condensed-view column (Update 90): render via category.compute
     // or direct row key. No BILL_SCHEMA entry needed.

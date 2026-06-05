@@ -1724,6 +1724,15 @@ function renderUDDetail(targetWrap) {
               _mFlagCount +
               '</span>'
             : '';
+        // Fix 67cb827d (secondary): ensure m._reg is populated for R² scoring
+        // in the pill badge — same root cause as renderMeterDataPane fix.
+        // getNormRows sets m._reg transiently; without it, computeMeterQualityScore
+        // scores R² as 0/25 for meters with inherited baselines (m.baseline.reg = null).
+        if (typeof getNormRows === 'function' && typeof getWeatherForBuilding === 'function') {
+          const { byYm: _pillWeather } = getWeatherForBuilding();
+          const _pillBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+          if (_pillBills.length) getNormRows(m, _pillBills, m.inclusive !== false, _pillWeather);
+        }
         var _dq = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m) : null;
         var _dqBadge = _dq ? getMeterQualityBadge(_dq.score) : null;
         var _dqTag = _dqBadge
@@ -2365,12 +2374,16 @@ function renderBillsPane(pane, m, bills, incl) {
     : 'Sorted newest first — click to sort oldest first';
 
   // ── Column definitions (Update 82, revised in Update 90) ──
-  // Base columns (Norm. Month, Start, End, Days) come first and are
-  // sticky-frozen to the left edge so they stay visible during horizontal
-  // scroll. Then commodity-dependent columns (detailed OR condensed —
+  // Base columns (#, Norm. Month, Start, End, Days) come first. Norm. Month,
+  // Start, and End are sticky-frozen to the left edge so they stay visible
+  // during horizontal scroll. # is the leftmost non-sticky row-number column
+  // (Fix 3113c062). Then commodity-dependent columns (detailed OR condensed —
   // see Update 90 view mode). Action column last, with a gear button
   // that opens the per-meter table settings modal.
   const COL_BASE = [
+    // Fix 3113c062: row-number column — sticky so its 32px width is included
+    // in the cumulative left offset before Norm Month. Narrow, non-resizable.
+    { h: '#', a: '', w: 32, minW: 32, sticky: true },
     {
       h:
         `<span style="cursor:pointer;user-select:none" onclick="toggleBillsTableSort('${m.id}',event)" title="${sortTitle}">Norm. Month${sortArrow}</span> ` +
@@ -2506,9 +2519,10 @@ function renderBillsPane(pane, m, bills, incl) {
   let flagCount = 0;
   // Build a dynamic field→column-index map from the cols array so flag
   // icons land on the right column even after Update 82 added new
-  // commodity-aware columns. Column 0..3 are base (days at 3); field
-  // columns start at 4. `days` is always base column 3.
-  const fieldColMap = { days: 3 };
+  // commodity-aware columns. Column 0 = #, 1 = Norm Month, 2 = Start,
+  // 3 = End, 4 = Days; field columns start at 5. `days` is always base column 4.
+  // (Shifted by 1 from pre-Fix-3113c062 values due to new # column at index 0.)
+  const fieldColMap = { days: 4 };
   cols.forEach((c, i) => {
     if (c.k) fieldColMap[c.k] = i;
   });
@@ -2571,19 +2585,17 @@ function renderBillsPane(pane, m, bills, incl) {
           }))
         : billFlags[row.id] || [];
     if (flags.length) flagCount++;
-    let rowHtml = renderBillRow(row, m, incl, bills, cols);
+    let rowHtml = renderBillRow(row, m, incl, bills, cols, idx + 1);
     // Meter change and charge part indicators (icons only — onclick stays as showBillSplitPanel from renderBillRow)
     if (row.Meter1_ReadStart) {
       rowHtml = rowHtml.replace(
         /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
         '$1<span title="Meter change" style="font-size:10px;margin-right:3px;opacity:0.7">⚡</span>',
       );
-    } else if (row._chargeParts && Object.keys(row._chargeParts).length) {
-      rowHtml = rowHtml.replace(
-        /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
-        '$1<span title="Charge line items" style="font-size:10px;margin-right:3px;opacity:0.7">💲</span>',
-      );
     }
+    // Fix 8dade129: removed 💲 emoji injection from the Normalized Month cell —
+    // the dollar-sign icon was misleading in a date column. Charge-parts detail
+    // is still accessible via the row click → split panel.
     // Add amber background and colored flag badges for flagged rows
     if (flags.length) {
       const _flagTitle = flags
@@ -6519,13 +6531,15 @@ function renderMeterDataPane(pane, m, bills, incl) {
       : (v * 100).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
   const td = (v, cls = '') => `<td${cls ? ' class="' + cls + '"' : ''}>${v}</td>`;
 
-  // ── Data quality score ──
-  const _dqScore = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m) : null;
-  const _dqBadgeData = _dqScore ? getMeterQualityBadge(_dqScore.score) : null;
-
   // ── Get baseline rows (same logic as renderBuildingStatsPane getBlRows) ──
+  // NOTE: getNormRows must run BEFORE computeMeterQualityScore so that m._reg is
+  // populated when the scorer checks it for the R² component (fix for backlog 67cb827d).
   const sortedBills = (bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
   const allRows = sortedBills.length ? getNormRows(m, sortedBills, incl, weatherByYm) : [];
+
+  // ── Data quality score ── (after getNormRows so m._reg is available)
+  const _dqScore = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m) : null;
+  const _dqBadgeData = _dqScore ? getMeterQualityBadge(_dqScore.score) : null;
   const bl = m.baseline || null;
   const blMonths = bl && bl.months ? bl.months : [];
   const blRowsFull = allRows.filter((r) => blMonths.includes(r.ym));
@@ -6786,7 +6800,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
                   .map((key) => {
                     const comp = _dqScore.components[key];
                     const labels = {
-                      dataMonths: 'Months',
+                      dataMonths: 'History',
                       baselineR2: 'R²',
                       gaps: 'Gaps',
                       fieldCompleteness: 'Fields',
@@ -6795,7 +6809,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
                     const full = comp.points >= comp.max;
                     return `<div style="display:flex;flex-direction:column;gap:2px;min-width:56px">
                   <div style="font-size:9px;color:#6a90b0;text-transform:uppercase;letter-spacing:.4px;font-weight:700">${labels[key]}</div>
-                  <div style="font-size:13px;font-weight:800;color:${full ? '#22c55e' : '#e8eef8'};font-family:var(--mono)">${comp.points}<span style="font-size:9px;color:#6a90b0">/${comp.max}</span></div>
+                  <div style="font-size:13px;font-weight:800;color:${full ? '#22c55e' : '#e8eef8'};font-family:var(--mono)">${comp.points}<span style="font-size:9px;color:#6a90b0">/${comp.max} pts</span></div>
                   <div style="font-size:9px;color:#6a90b0">${comp.detail}</div>
                 </div>`;
                   })

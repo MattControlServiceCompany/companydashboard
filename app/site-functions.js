@@ -1191,13 +1191,45 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.04.452',
+    date: '2026-06-04',
+    title: 'Meter Data Quality R² fixed, bill table row numbers, Hours weekly entry/views, Equipment tab removed',
+    items: [
+      {
+        type: 'fix',
+        text: 'Meter Data Quality: the R² (correlation) score now calculates correctly — it was showing 0 for all 25 meters. The months label in the chart also no longer shows "undefined".',
+      },
+      {
+        type: 'fix',
+        text: 'Bill table: the stray dollar-sign icon that appeared on the Normalized Month column is removed. A row-number column (#) now appears at the left of the table so you can count bills at a glance.',
+      },
+      {
+        type: 'feature',
+        text: 'Hours: you can now log hours by week using a weekly entry form, and switch between Weekly and Monthly views to see your time at different levels of detail.',
+      },
+      {
+        type: 'change',
+        text: 'The broken Equipment tab under Projects has been removed — it was not functional and caused confusion.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.04.451',
     date: '2026-06-04',
     title: 'Report fixes — no stacking, no duplicate blocks, consistent margins/footers/page numbers',
     items: [
-      { type: 'fix', text: 'Reports no longer stack on top of each other when opened multiple times in a session — each preview is fully cleared before generating a new one.' },
-      { type: 'fix', text: 'Report pages no longer show duplicate content blocks (affected 9 block types in the Objective Report). Each block now appears exactly once per page.' },
-      { type: 'change', text: 'Every report page now has consistent 0.5-inch margins, a CSC footer, and Page X of Y numbering including the Board Summary page. The CSC letterhead appears on the cover page only — not on interior pages.' },
+      {
+        type: 'fix',
+        text: 'Reports no longer stack on top of each other when opened multiple times in a session — each preview is fully cleared before generating a new one.',
+      },
+      {
+        type: 'fix',
+        text: 'Report pages no longer show duplicate content blocks (affected 9 block types in the Objective Report). Each block now appears exactly once per page.',
+      },
+      {
+        type: 'change',
+        text: 'Every report page now has consistent 0.5-inch margins, a CSC footer, and Page X of Y numbering including the Board Summary page. The CSC letterhead appears on the cover page only — not on interior pages.',
+      },
     ],
   },
   {
@@ -3296,7 +3328,6 @@ document.addEventListener('keydown', function (e) {
     meterModal: typeof closeMeterModal === 'function' ? closeMeterModal : null,
     billModal: typeof closeBillModal === 'function' ? closeBillModal : null,
     taskModal: typeof closeTaskModal === 'function' ? closeTaskModal : null,
-    equipModal: typeof closeEquipModal === 'function' ? closeEquipModal : null,
   };
   Object.keys(closers).forEach(function (id) {
     var el = document.getElementById(id);

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.04.451';
+  var CH_VERSION = 'v2026.06.04.452';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -36,9 +36,18 @@
       date: '2026-06-04',
       title: 'Report fixes — no stacking, no duplicate blocks, consistent margins/footers/page numbers',
       items: [
-        { type: 'fix', text: 'Reports no longer stack on top of each other when opened multiple times in a session — each preview is fully cleared before generating a new one.' },
-        { type: 'fix', text: 'Report pages no longer show duplicate content blocks (affected 9 block types in the Objective Report). Each block now appears exactly once per page.' },
-        { type: 'change', text: 'Every report page now has consistent 0.5-inch margins, a CSC footer, and Page X of Y numbering including the Board Summary page. The CSC letterhead appears on the cover page only — not on interior pages.' },
+        {
+          type: 'fix',
+          text: 'Reports no longer stack on top of each other when opened multiple times in a session — each preview is fully cleared before generating a new one.',
+        },
+        {
+          type: 'fix',
+          text: 'Report pages no longer show duplicate content blocks (affected 9 block types in the Objective Report). Each block now appears exactly once per page.',
+        },
+        {
+          type: 'change',
+          text: 'Every report page now has consistent 0.5-inch margins, a CSC footer, and Page X of Y numbering including the Board Summary page. The CSC letterhead appears on the cover page only — not on interior pages.',
+        },
       ],
     },
     {
