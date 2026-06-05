@@ -9,6 +9,12 @@ var _reportData = null;
 var _rptInspectActive = false;
 
 function generateReportPreview() {
+  // Clear any pages from a prior report before generating a new one.
+  // This prevents DOM accumulation when the user generates multiple reports
+  // in the same session (prior reports were stacking, producing inflated page counts).
+  var _prevPages = document.getElementById('rptPreviewPages');
+  if (_prevPages) _prevPages.innerHTML = '';
+
   var config = _rptV2ReadConfig();
   if (!config.buildingIds.length) {
     showToast('Select at least one building', 'warning');
@@ -334,6 +340,10 @@ function _rptDrop(e, targetIdx) {
 function closeReportPreview() {
   document.getElementById('reportPreviewContainer').style.display = 'none';
   document.body.style.overflow = '';
+  // Clear pages from DOM so stale content cannot accumulate if a new report
+  // is generated after this preview is closed.
+  var pagesEl = document.getElementById('rptPreviewPages');
+  if (pagesEl) pagesEl.innerHTML = '';
   // Reset inspector state
   _rptInspectActive = false;
   var tip = document.getElementById('rptTextInspector');
@@ -487,6 +497,10 @@ async function downloadReportPDF() {
     var pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
     var pageW = 612,
       pageH = 792;
+    // Rule 1.2: 0.5in (36pt) margins on all four sides — matches exportReportToPDF() in report-engine.js
+    var margin = { top: 36, bottom: 36, left: 36, right: 36 };
+    var contentW = pageW - margin.left - margin.right;
+    var contentH = pageH - margin.top - margin.bottom;
 
     for (var i = 0; i < visiblePages.length; i++) {
       var el = visiblePages[i].querySelector('.rpt-page') || visiblePages[i];
@@ -502,7 +516,7 @@ async function downloadReportPDF() {
       });
       var imgData = canvas.toDataURL('image/jpeg', 0.92);
       if (i > 0) pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
+      pdf.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, contentH);
     }
 
     var config = _reportConfig || {};

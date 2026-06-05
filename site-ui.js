@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.04.450';
+  var CH_VERSION = 'v2026.06.04.451';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,16 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.04.451',
+      date: '2026-06-04',
+      title: 'Report fixes — no stacking, no duplicate blocks, consistent margins/footers/page numbers',
+      items: [
+        { type: 'fix', text: 'Reports no longer stack on top of each other when opened multiple times in a session — each preview is fully cleared before generating a new one.' },
+        { type: 'fix', text: 'Report pages no longer show duplicate content blocks (affected 9 block types in the Objective Report). Each block now appears exactly once per page.' },
+        { type: 'change', text: 'Every report page now has consistent 0.5-inch margins, a CSC footer, and Page X of Y numbering including the Board Summary page. The CSC letterhead appears on the cover page only — not on interior pages.' },
+      ],
+    },
     {
       v: 'v2026.06.04.450',
       date: '2026-06-04',

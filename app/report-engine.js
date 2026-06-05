@@ -888,7 +888,9 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       _fmtRptDate = _rdMo[_rd.getMonth()] + ' ' + _rd.getDate() + ', ' + _rd.getFullYear();
     }
   }
-  const footerImgHtml = '<div class="rpt-footer"><img src="' + CSC_FOOTER_B64 + '" alt="CSC Footer"></div>';
+  // Rule 2.2: rpt-pg-footer class on every page (including cover) for DOM check compliance.
+  const footerImgHtml =
+    '<div class="rpt-footer rpt-pg-footer"><img src="' + CSC_FOOTER_B64 + '" alt="CSC Footer"></div>';
   const footerTextHtml =
     '<div class="rpt-footer-text">' +
     '<span>' +
@@ -908,17 +910,23 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
         '</div>'
       : '';
 
+  // Rule 2.3: interior header shows period range only, no date.
+  // period.label is the range string (e.g. "Q2 2024" or "2024 Annual").
+  // The date is shown once in the footer via _fmtRptDate / period.label fallback above.
+  const interiorRangeHtml = data && data.period && data.period.label ? data.period.label : '';
+
   if (isHero) {
+    // Rule 2.1: rpt-cover class on hero pages; csc-header-img class on the letterhead image.
     return (
       '<div class="rpt-pl">' +
       pageLabel +
       '</div>' +
-      '<div class="rpt-page" data-page="' +
+      '<div class="rpt-page rpt-cover" data-page="' +
       pageNum +
       '">' +
       '<img src="' +
       CSC_HEADER_B64 +
-      '" alt="CSC Letterhead" style="width:100%;display:block">' +
+      '" alt="CSC Letterhead" class="csc-header-img" style="width:100%;display:block">' +
       bodyHTML +
       footerTextHtml +
       '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
@@ -941,8 +949,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '</div>' +
     '<div class="rpt-info">' +
     (data ? data.project.client : '') +
-    '<br>' +
-    (data ? data.period.label : '') +
+    (interiorRangeHtml ? '<br>' + interiorRangeHtml : '') +
     '</div>' +
     '</div>' +
     '<div class="rpt-body">' +
@@ -957,6 +964,29 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
 }
 
 /**
+ * _injectPageNumbers — Rule 2.4 (Plan B): bakes "Page N of Total" into the HTML
+ * string at generation time so page numbers appear even when the post-DOM JS
+ * helpers (_updateOverlayPageNumbers, _updatePageNumbers) are not called.
+ * Safe to call on any report HTML string; post-DOM helpers overwrite these when
+ * they run (same values, so no visible difference).
+ * @param {string} html - Combined page HTML from a generate*HTML() function
+ * @returns {string} HTML with page number text injected into .rpt-pg-footer-pagenum divs
+ */
+function _injectPageNumbers(html) {
+  var total = 0;
+  html.replace(/<div class="rpt-pg-footer-pagenum"/g, function () {
+    total++;
+    return '';
+  });
+  if (total === 0) return html;
+  var n = 0;
+  return html.replace(/(<div class="rpt-pg-footer-pagenum"[^>]*>)<\/div>/g, function (match, open) {
+    n++;
+    return open + 'Page ' + n + ' of ' + total + '</div>';
+  });
+}
+
+/**
  * generateReportHTML — assembles all selected report pages into HTML.
  * @param {object} data - Output from collectReportData()
  * @param {object} selectedSections - Which sections to include (all default true)
@@ -967,9 +997,10 @@ function generateReportHTML(data, selectedSections) {
   let pageNum = 1;
   const s = selectedSections || {};
 
-  // Helper: inject data-section="key" into the first .rpt-page div in an HTML string
+  // Helper: inject data-section="key" into the first .rpt-page div in an HTML string.
+  // Uses a regex so it correctly handles rpt-cover and other extra classes on the div.
   function _tagSection(html, key) {
-    return html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="' + key + '"');
+    return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
   }
 
   // Board executive summary (standalone — inserted before cover when selected)
@@ -1072,7 +1103,9 @@ function generateReportHTML(data, selectedSections) {
   if (s.appendixD !== false)
     pages.push(_tagSection(rptPageAppendixBills(pageNum++, data, _nextAppLtr('bills')), 'appendixD'));
 
-  return pages.join('\n');
+  // Rule 2.4 (Plan B): bake page numbers into the HTML at generation time so they
+  // appear on ALL paths including Board Summary (which never calls _updateOverlayPageNumbers).
+  return _injectPageNumbers(pages.join('\n'));
 }
 
 /**
@@ -2766,8 +2799,6 @@ function rptPageEnvironmentalImpact(n, d) {
 
   const bodyHTML =
     '<div contenteditable="true">' +
-    '<div style="font-size:16px;font-weight:700;color:#1a5276;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
-    '<div style="font-size:12px;color:#000;margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
     '<div style="font-size:12px;color:var(--rpt-page-text);margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
     (_annualize ? ' (values annualized ×4 from quarterly data)' : '') +
@@ -2782,7 +2813,6 @@ function rptPageEnvironmentalImpact(n, d) {
     eqLines +
     '</div>' +
     '</div>' +
-    '<div style="margin-top:24px;font-size:10px;color:#000;padding-top:6px;text-align:center">' +
     '<div style="margin-top:24px;font-size:10px;color:var(--rpt-page-text);padding-top:6px;text-align:center">' +
     'Source: EPA eGRID2023 Version 1.0 Rev 1 — https://www.epa.gov/egrid | State: ' +
     st +
@@ -4034,7 +4064,6 @@ function rptPageBuildingSummary(n, d, b) {
   var bldgNotes = b.notes || '';
   if (bldgNotes) {
     leftHTML +=
-      '<div style="font-size:11px;font-weight:600;color:#000;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
       '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
       '<div contenteditable="true" style="min-height:40px;font-size:11px;color:var(--rpt-page-text);padding:6px;line-height:1.5">' +
       bldgNotes +
@@ -4048,7 +4077,6 @@ function rptPageBuildingSummary(n, d, b) {
   // Goals and Progression header
   var rightHTML =
     '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">' +
-    '<div style="font-size:14px;font-weight:700;color:#1a5276">Goals and Progression</div>' +
     '<div style="font-size:14px;font-weight:700;color:var(--rpt-blue)">Goals and Progression</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text)">Period: ' +
     ((d && d.period && d.period.label) || '') +
@@ -4631,7 +4659,6 @@ function rptPageBuildingSummary(n, d, b) {
 
   // Notes
   leftHTML +=
-    '<div style="margin-top:10px;font-size:10px;color:#000;line-height:1.5">' +
     '<div style="margin-top:10px;font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
     '<div style="font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;font-size:9px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
     '<div>1. Achieved (%) for each energy type represents the percent of energy units saved for the months included in this report.</div>' +
@@ -4959,7 +4986,6 @@ function rptPageElectric(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:12px;color:#000;line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
     '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
     '<div style="margin-bottom:6px;font-size:11px;color:var(--rpt-page-text)">Period: ' +
     periodLabel +
@@ -5211,7 +5237,6 @@ function rptPageGas(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:12px;color:#000;line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
     '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
     '<div style="margin-bottom:6px;font-size:11px;color:var(--rpt-page-text)">Period: ' +
     periodLabel +
@@ -5724,7 +5749,6 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   var blEnd = (d.project && d.project.blEnd) || '—';
 
   var methodBox =
-    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#000000;margin-bottom:12px">' +
     '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:var(--rpt-page-text);margin-bottom:12px">' +
     '<strong>Normalization Method:</strong> Regression analysis using Heating Degree Days (HDD) and Cooling Degree Days (CDD) at balance point 60°F, per contract specification.<br>' +
     '<strong>Baseline Period:</strong> ' +
@@ -5857,9 +5881,6 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   }
 
   var regressionExplainer =
-    '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:#000000;margin-bottom:12px">' +
-    '<strong style="font-size:12px;color:#1a5276">Regression Model Overview</strong><br>' +
-    'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
     '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:var(--rpt-page-text);margin-bottom:12px">' +
     '<strong style="font-size:12px;color:var(--rpt-blue)">Regression Model Overview</strong><br>' +
     'Weather-normalized savings use an OLS regression model: <span style="font-family:var(--rpt-mono);background:var(--rpt-page-bg);border:1px solid var(--rpt-divider);padding:1px 4px;border-radius:2px">Usage = c0 — Days + —1 — HDD + —2 — CDD</span><br>' +
@@ -6022,7 +6043,6 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '</td>' +
             '<td class="rpt-n" style="color:var(--rpt-page-text)">—</td>' +
             '<td class="rpt-n" style="color:var(--rpt-page-text)">—</td>' +
-            '<td class="rpt-n" style="color:#000000">—</td>' +
             '</tr>';
         } else {
           var actual = (entry.moData && entry.moData.cur) || 0;
@@ -6119,8 +6139,8 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           '<tr style="background:#f5f5f5;color:var(--rpt-page-text)">' +
           '<td>' +
           moName +
-          ' <span style="font-size:8px;font-weight:700;color:#000000;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span></td>' +
-          ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span></td>' +
+          ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span>' +
+          '</td>' +
           '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
           days +
           '</td>' +
@@ -6130,13 +6150,10 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
           Math.round(wx.cddBl || 0).toLocaleString() +
           '</td>' +
-          '<td style="font-size:9px;color:#000000">—</td>' +
           '<td style="font-size:9px;color:var(--rpt-page-text)">—</td>' +
           '<td class="rpt-n" style="color:var(--rpt-page-text)">—</td>' +
           '<td class="rpt-n" style="color:var(--rpt-page-text)">—</td>' +
           '<td class="rpt-n" style="color:var(--rpt-page-text)">—</td>' +
-          '<td class="rpt-n" style="color:#000000">—</td>' +
-          '<td class="rpt-n" style="color:#000000">—</td>' +
           '</tr>';
       });
 
@@ -6388,7 +6405,6 @@ function rptPageAppendixWeather(n, d, appLetter) {
     '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
     narrativeBox +
     hddCddParagraph +
-    '<div style="margin-top:16px;padding:10px 12px;font-size:11px;color:#000000;line-height:1.5">' +
     '<div style="margin-top:16px;padding:10px 12px;font-size:11px;color:var(--rpt-page-text);line-height:1.5">' +
     '<div style="font-weight:700;font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">What is a degree day?</div>' +
     '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
@@ -10726,9 +10742,19 @@ function collectASHRAE36Data(projId, reportDate) {
     });
   });
 
+  // rawDate: ISO YYYY-MM-DD string for use in rptPage fakeData (period.reportDate).
+  // rptPage() parses reportDate as ISO format; date is the human-readable display string.
+  var rawDate =
+    dateObj.getFullYear() +
+    '-' +
+    String(dateObj.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(dateObj.getDate()).padStart(2, '0');
+
   return {
     project: { name: projName, id: projId },
     date: dateStr,
+    rawDate: rawDate,
     buildings: buildingsData,
     portfolio: {
       composite: portfolioComposite,
@@ -10935,7 +10961,8 @@ function rptPageASHRAE36Cover(n, d) {
     '</div>';
 
   // Use rptPage with a data-like object for footer formatting
-  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   return rptPage(n, 'ASHRAE 36 Audit — Cover', bodyHTML, {
     hero: true,
     data: fakeData,
@@ -10949,7 +10976,8 @@ function rptPageASHRAE36Cover(n, d) {
  */
 function rptPageASHRAE36Executive(n, d) {
   var p = d.portfolio;
-  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
   // Building status table
   var tableRows = '';
@@ -11080,7 +11108,8 @@ function rptPageASHRAE36Executive(n, d) {
  */
 function rptPageASHRAE36Building(n, d, building) {
   var b = building;
-  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
   // ── Helper: resolve human-readable name for a missing point category key ──
   // Priority: ASHRAE36_GAP_DESCRIPTIONS[key].short → categoryLabel from compliance
@@ -11326,7 +11355,8 @@ function rptPageASHRAE36Building(n, d, building) {
  */
 function rptPageASHRAE36Recommendations(n, d) {
   var p = d.portfolio;
-  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
   var recRows = p.topGaps
     .map(function (gap, idx) {
@@ -11451,7 +11481,8 @@ function rptPageASHRAE36Recommendations(n, d) {
  */
 function rptPageASHRAE36ProposalCover(n, d) {
   var p = d.portfolio;
-  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var color = p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
 
   var toc =
@@ -11513,7 +11544,8 @@ function rptPageASHRAE36ProposalCover(n, d) {
  */
 function rptPageASHRAE36ProposalScope(n, d) {
   var p = d.portfolio;
-  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
   // Phase 1: Hardware/sensor gaps; Phase 2: sequence programming gaps.
   // Derive the sequence key set from EM_SEQUENCE_DEFS (equipment-matrix.js)
@@ -11632,7 +11664,8 @@ function rptPageASHRAE36ProposalScope(n, d) {
  */
 function rptPageASHRAE36ProposalOutcomes(n, d) {
   var p = d.portfolio;
-  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
   var outcomes =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">' +
@@ -11739,7 +11772,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   var s = selectedSections || {};
 
   function _tagA36Section(html, key) {
-    return html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="' + key + '"');
+    return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
   }
 
   if (s.cover !== false) pages.push(_tagA36Section(rptPageASHRAE36Cover(pageNum++, data), 'cover'));
@@ -11754,7 +11787,8 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   if (s.recommendations !== false)
     pages.push(_tagA36Section(rptPageASHRAE36Recommendations(pageNum++, data), 'recommendations'));
 
-  return pages.join('\n');
+  // Rule 2.4 (Plan B): bake page numbers at generation time.
+  return _injectPageNumbers(pages.join('\n'));
 }
 
 // ─── generateASHRAE36ProposalHTML ────────────────────────────────────────
@@ -11770,7 +11804,7 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   var s = selectedSections || {};
 
   function _tagA36Section(html, key) {
-    return html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="' + key + '"');
+    return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
   }
 
   if (s.proposalCover !== false)
@@ -11780,7 +11814,8 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   if (s.proposalOutcomes !== false)
     pages.push(_tagA36Section(rptPageASHRAE36ProposalOutcomes(pageNum++, data), 'proposalOutcomes'));
 
-  return pages.join('\n');
+  // Rule 2.4 (Plan B): bake page numbers at generation time.
+  return _injectPageNumbers(pages.join('\n'));
 }
 
 // ─── openASHRAE36ReportModal ──────────────────────────────────────────────
