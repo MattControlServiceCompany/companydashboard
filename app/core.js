@@ -1002,7 +1002,7 @@ function renderDetail(p) {
                          ESCAPES the 240px Buildings rail's overflow:hidden (which previously clipped
                          the 760px-wide bills table and its per-bill ✕ delete buttons). toggleSavedBillsPanel
                          positions it under the Bills button and sizes it to fit the viewport. (fix 2026-06-05) -->
-                    <div id="ptab-savedbills-panel-${p.id}" style="display:none;position:fixed;z-index:200;width:760px;max-width:calc(100vw - 32px);background:var(--s1);border:1px solid var(--border);box-shadow:0 8px 28px rgba(0,0,0,.4);max-height:70vh;overflow-y:auto;overflow-x:auto">
+                    <div id="ptab-savedbills-panel-${p.id}" style="display:none;position:fixed;z-index:200;width:820px;max-width:calc(100vw - 32px);background:var(--s1);border:1px solid var(--border);box-shadow:0 8px 28px rgba(0,0,0,.4);max-height:70vh;overflow-y:auto;overflow-x:auto">
                       <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
                         <span style="font-size:12px;font-weight:700;color:var(--text)">Saved Bills</span>
                         <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px" onclick="toggleSavedBillsPanel(${JSON.stringify(p.id)})" title="Close">✕</button>
@@ -2844,7 +2844,7 @@ function toggleSavedBillsPanel(projId) {
     if (btn) {
       const r = btn.getBoundingClientRect();
       const margin = 16;
-      const pw = panel.offsetWidth || 760;
+      const pw = panel.offsetWidth || 820;
       // Prefer left-aligning the panel to the button; clamp so it stays fully on screen.
       let left = r.left;
       if (left + pw + margin > window.innerWidth) left = window.innerWidth - pw - margin;
@@ -2988,7 +2988,7 @@ function renderProjSavedBills(projId) {
                     </div>`
               }
             </td>
-            <td style="padding:3px 4px;text-align:center">${!isAssigned ? `<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 4px;color:var(--red);border-color:var(--red)" onclick="deleteSavedBillFromProj('${b.id}',${JSON.stringify(projId)})" title="Delete this bill">✕</button>` : ''}</td>
+            <td style="padding:3px 8px;text-align:center;border-left:1px solid var(--border)">${!isAssigned ? `<button class="btn btn-sm" style="font-size:10px;padding:2px 8px;color:#fff;background:var(--red);border:1px solid var(--red);white-space:nowrap" onclick="deleteSavedBillFromProj('${b.id}',${JSON.stringify(projId)})" title="Delete this bill">✕ Delete</button>` : ''}</td>
           </tr>`;
     })
     .join('');
@@ -3020,7 +3020,7 @@ function renderProjSavedBills(projId) {
                   <th>Total</th>
                   <th>Saved</th>
                   <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'meter')">Assign to Meter ${arrow('meter')}</th>
-                  <th style="width:30px"></th>
+                  <th style="text-align:center;white-space:nowrap;border-left:1px solid var(--border)">Delete</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>

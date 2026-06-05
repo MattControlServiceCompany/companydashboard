@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.05.459',
+    date: '2026-06-05',
+    title: 'Saved Bills panel: easier-to-find Delete button per bill',
+    items: [
+      {
+        type: 'change',
+        text: "Saved Bills panel: each bill now has a clearly labeled red 'Delete' button so individual bills are easy to remove. The panel also has a new 'Delete' column header and is a bit wider so nothing gets cut off.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.05.458',
     date: '2026-06-05',
     title: 'Project Saved Bills panel no longer clipped by the Buildings rail',
