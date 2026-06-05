@@ -9605,7 +9605,7 @@ async function deleteSavedBill(id) {
   // Update storage immediately
   let bills = sget('en_pdf_bills', []) || [];
   bills = bills.filter((b) => b.id !== id);
-  sset('en_pdf_bills', bills);
+  await sset('en_pdf_bills', bills);
   // Also remove stored PDF file from IndexedDB (and legacy localStorage) to free storage
   pdfDelete('en_pdf_file_' + id);
   try {
@@ -9651,7 +9651,7 @@ async function deleteAllSavedBills() {
   }
   // Keep only assigned bills (those with a projId)
   const remaining = bills.filter((b) => !!b.projId);
-  sset('en_pdf_bills', remaining);
+  await sset('en_pdf_bills', remaining);
   renderSavedBills();
   updateBillCountBadge();
   showToast('All ' + unassigned.length + ' saved bill(s) deleted');

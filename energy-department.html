@@ -13671,7 +13671,10 @@
 
       <!-- Saved Bills Modal -->
       <div class="modal-bg" id="savedBillsModal">
-        <div class="modal" style="width: 820px; max-width: 96vw">
+        <div
+          class="modal"
+          style="width: 96vw; max-width: 1400px; height: 88vh; max-height: 88vh; display: flex; flex-direction: column"
+        >
           <div class="modal-hdr">
             <span class="modal-title">🗄️ Saved Bill Records</span>
             <button
@@ -13684,7 +13687,7 @@
             <button class="modal-x" onclick="closeSavedBillsModal()">✕</button>
           </div>
           <div class="modal-body" style="padding: 0">
-            <div id="savedBillsList" style="padding: 16px; max-height: 65vh; overflow-y: auto"></div>
+            <div id="savedBillsList" style="padding: 16px; flex: 1; overflow-y: auto"></div>
           </div>
         </div>
       </div>
@@ -14571,7 +14574,7 @@
     <script src="app/db.js?v=422"></script>
     <script src="app/core.js?v=2026.06.05.456"></script>
     <script src="app/energy-savings.js?v=441"></script>
-    <script src="app/bill-analysis.js?v=453"></script>
+    <script src="app/bill-analysis.js?v=457"></script>
     <script src="extraction/bill-validation.js?v=399"></script>
     <script src="app/district-calendar.js?v=452"></script>
     <script src="app/utility-data.js?v=453"></script>
@@ -14589,7 +14592,7 @@
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=454"></script>
 
-    <script src="app/site-functions.js?v=2026.06.05.456"></script>
+    <script src="app/site-functions.js?v=2026.06.05.457"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */

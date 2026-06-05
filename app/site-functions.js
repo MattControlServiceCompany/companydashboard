@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.05.457',
+    date: '2026-06-05',
+    title: 'Saved Bills records open full-window and deletions now stick',
+    items: [
+      {
+        type: 'change',
+        text: 'The Saved Bill Records window now opens nearly full-screen instead of a narrow box, so you can see far more bills at once without scrolling a cramped list.',
+      },
+      {
+        type: 'fix',
+        text: 'Deleting a saved bill — or clearing all unassigned saved bills — now saves correctly. Previously a deleted bill could reappear after refreshing; deletions are now stored reliably.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.05.456',
     date: '2026-06-05',
     title: 'Energy Savings tab moves left of Energy Graphics; tab scrollbar removed',
@@ -1203,7 +1218,7 @@ var RELEASE_NOTES = [
         type: 'fix',
         text: 'The project tab strip no longer shows a cosmetic horizontal scrollbar gutter when all tabs fit on screen (a Windows display setting was triggering it). Scrolling and drag-reorder continue to work normally.',
       },
-    ]
+    ],
   },
   {
     v: 'v2026.06.04.455',
@@ -1214,7 +1229,7 @@ var RELEASE_NOTES = [
         type: 'fix',
         text: 'BAS Set Points: clicking Baseline or Current on a project with no setpoints saved was showing a false success message. It now shows a clear message explaining that no setpoints have been saved yet, so you know exactly what to do next.',
       },
-    ]
+    ],
   },
   {
     v: 'v2026.06.04.454',
@@ -1225,7 +1240,7 @@ var RELEASE_NOTES = [
         type: 'fix',
         text: 'BAS Trends tab was showing a blank screen when opened on any project. It now correctly shows the empty state ("No BAS trend data imported yet" with an Import button) or your imported trend data when available.',
       },
-    ]
+    ],
   },
   {
     v: 'v2026.06.04.453',
@@ -1252,7 +1267,7 @@ var RELEASE_NOTES = [
         type: 'fix',
         text: 'Meter Data Quality: R² (correlation) score now calculates correctly on real meter data — was still showing 0/25 meters after the previous fix.',
       },
-    ]
+    ],
   },
   {
     v: 'v2026.06.04.452',
