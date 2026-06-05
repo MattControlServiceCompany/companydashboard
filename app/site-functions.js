@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.04.454',
+    date: '2026-06-04',
+    title: 'BAS Trends tab renders correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'BAS Trends tab was showing a blank screen when opened on any project. It now correctly shows the empty state ("No BAS trend data imported yet" with an Import button) or your imported trend data when available.',
+      },
+    ]
+  },
+  {
     v: 'v2026.06.04.453',
     date: '2026-06-04',
     title: 'Bill anomaly false-flag fix, trend arrows, tab underline, Meter Data Quality R² real-data fix',

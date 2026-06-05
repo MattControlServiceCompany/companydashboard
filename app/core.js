@@ -2516,6 +2516,7 @@ function sPTab(tab, el) {
   if (tab === 'district') renderDistCalTable(p.id);
   if (tab === 'setpoints') renderSetpointsTab(p.id);
   if (tab === 'eq-matrix' && typeof initEquipMatrix === 'function') initEquipMatrix(p.id);
+  if (tab === 'bas-trends' && typeof btInitView === 'function') btInitView(p.id);
   window._activeProjTab = tab;
   saveProjSession();
 }

@@ -2090,7 +2090,7 @@ function btRunImport() {
       }
       showToast(result.imported + ' days of BAS data imported for ' + equipTag, 'success');
       // Refresh BAS view if open
-      if (typeof btRenderView === 'function') btRenderView();
+      if (typeof btRenderView === 'function') btRenderView(window._activeProjId);
     },
     onError: function (msg) {
       showToast('Import failed: ' + msg, 'error');
@@ -2118,8 +2118,8 @@ var _btFaultSort = { col: 'date', asc: false };
 var _btFaultFilter = { type: '', equip: '', dateFrom: '', dateTo: '', status: '' };
 
 /** Initialize the BAS Trends view when first activated */
-function btInitView() {
-  btRenderView();
+function btInitView(projId) {
+  btRenderView(projId);
 }
 
 /** Switch BAS subtab (health | faults) */
@@ -2138,15 +2138,15 @@ function btSwitchSubtab(tab) {
 }
 
 /** Render the BAS Trends main view */
-function btRenderView() {
-  var container = document.getElementById('view-bas-trends');
+function btRenderView(projId) {
+  var container = document.getElementById('ptab-bas-trends');
   if (!container) return;
 
-  var body = document.getElementById('bt-view-body');
+  var body = document.getElementById('ptab-bas-trends-body-' + projId);
   if (!body) return;
 
-  // Get active project from URL/session
-  var projId = window._activeProjId || null;
+  // Get active project from URL/session (use passed projId, fall back to window._activeProjId)
+  projId = projId || window._activeProjId || null;
   if (!projId) {
     body.innerHTML =
       '<div style="padding:32px;text-align:center;color:var(--text3);">Select a project from the sidebar to view BAS trend data.</div>';
@@ -5793,8 +5793,8 @@ function _btDaysBetween(start, end) {
 
   // Wrap btRenderView to register Phase 3 + Phase 4 tabs after the bar renders
   var _origRenderView = btRenderView;
-  btRenderView = function () {
-    _origRenderView();
+  btRenderView = function (projId) {
+    _origRenderView(projId);
     if (typeof btPhase3RegisterTabs === 'function') btPhase3RegisterTabs();
     if (typeof btPhase4RegisterTab === 'function') btPhase4RegisterTab();
   };
