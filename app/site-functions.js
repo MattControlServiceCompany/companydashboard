@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.04.455',
+    date: '2026-06-04',
+    title: 'BAS Set Points version selector honest error message',
+    items: [
+      {
+        type: 'fix',
+        text: 'BAS Set Points: clicking Baseline or Current on a project with no setpoints saved was showing a false success message. It now shows a clear message explaining that no setpoints have been saved yet, so you know exactly what to do next.',
+      },
+    ]
+  },
+  {
     v: 'v2026.06.04.454',
     date: '2026-06-04',
     title: 'BAS Trends tab renders correctly',

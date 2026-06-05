@@ -2301,7 +2301,10 @@ function spSetVersionType(projId, type) {
   var p = projects.find(function (x) {
     return String(x.id) === String(projId);
   });
-  if (!p || !p.setpoints) return;
+  if (!p || !p.setpoints || !p.setpoints.length) {
+    showToast('Save zone set point data first to apply a version label');
+    return;
+  }
   p.setpoints.forEach(function (sp) {
     sp.versionType = type;
   });
@@ -2314,7 +2317,10 @@ function spSetVersionDate(projId, date) {
   var p = projects.find(function (x) {
     return String(x.id) === String(projId);
   });
-  if (!p || !p.setpoints) return;
+  if (!p || !p.setpoints || !p.setpoints.length) {
+    showToast('Save zone set point data first to apply a version date');
+    return;
+  }
   p.setpoints.forEach(function (sp) {
     sp.versionDate = date || null;
   });
