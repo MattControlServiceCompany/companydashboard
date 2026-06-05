@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.05.458',
+    date: '2026-06-05',
+    title: 'Project Saved Bills panel no longer clipped by the Buildings rail',
+    items: [
+      {
+        type: 'fix',
+        text: 'Saved Bills panel now opens full-width so bills and the delete buttons are no longer cut off in the project Bills view.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.05.457',
     date: '2026-06-05',
     title: 'Saved Bills records open full-window and deletions now stick',
