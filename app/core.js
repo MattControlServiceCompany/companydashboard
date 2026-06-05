@@ -210,6 +210,24 @@ function init() {
     } catch (e) {}
     localStorage.setItem('ch_projTabOrder_v397', '1');
   }
+  // Migrate: move 'savings' to immediately before 'energygfx' in stored tab order
+  if (!localStorage.getItem('ch_projTabOrder_savingsBeforeGfx')) {
+    try {
+      const _sbgSaved = JSON.parse(localStorage.getItem('ch_projTabOrder'));
+      if (Array.isArray(_sbgSaved) && _sbgSaved.length) {
+        const _sbgSavingsIdx = _sbgSaved.indexOf('savings');
+        const _sbgGfxIdx = _sbgSaved.indexOf('energygfx');
+        // Only migrate if savings currently comes AFTER energygfx (i.e. the violation exists)
+        if (_sbgSavingsIdx > _sbgGfxIdx && _sbgGfxIdx !== -1 && _sbgSavingsIdx !== -1) {
+          const _sbgNew = _sbgSaved.filter((id) => id !== 'savings');
+          const _sbgGfxNewIdx = _sbgNew.indexOf('energygfx');
+          _sbgNew.splice(_sbgGfxNewIdx, 0, 'savings');
+          localStorage.setItem('ch_projTabOrder', JSON.stringify(_sbgNew));
+        }
+      }
+    } catch (e) {}
+    localStorage.setItem('ch_projTabOrder_savingsBeforeGfx', '1');
+  }
   checkRecurringMeetings();
   buildWeekStrip();
   buildHomeCal();
@@ -2356,8 +2374,8 @@ const PROJ_TABS_DEFAULT = [
   { id: 'eq-matrix', label: '⚙️ Equipment Matrix' },
   { id: 'bas-trends', label: '📉 BAS Trends' },
   { id: 'hvacload', label: '🌡️ HVAC Load Est' },
-  { id: 'energygfx', label: '📈 Energy Graphics' },
   { id: 'savings', label: '💡 Energy Savings' },
+  { id: 'energygfx', label: '📈 Energy Graphics' },
   { id: 'budget', label: '💰 Budget' },
   { id: 'hours', label: '⏱️ Hours' },
   { id: 'district', label: '🗓️ District Calendar' },

@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.05.456',
+    date: '2026-06-05',
+    title: 'Energy Savings tab moves left of Energy Graphics; tab scrollbar removed',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Savings tab now appears immediately to the left of Energy Graphics in the project tab strip. If you had previously reordered your tabs, a one-time migration moves Savings into place while preserving all your other custom ordering.',
+      },
+      {
+        type: 'fix',
+        text: 'The project tab strip no longer shows a cosmetic horizontal scrollbar gutter when all tabs fit on screen (a Windows display setting was triggering it). Scrolling and drag-reorder continue to work normally.',
+      },
+    ]
+  },
+  {
     v: 'v2026.06.04.455',
     date: '2026-06-04',
     title: 'BAS Set Points version selector honest error message',
