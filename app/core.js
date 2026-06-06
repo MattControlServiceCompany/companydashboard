@@ -2988,7 +2988,7 @@ function renderProjSavedBills(projId) {
                     </div>`
               }
             </td>
-            <td style="padding:3px 8px;text-align:center;border-left:1px solid var(--border)">${!isAssigned ? `<button class="btn btn-sm" style="font-size:10px;padding:2px 8px;color:#fff;background:var(--red);border:1px solid var(--red);white-space:nowrap" onclick="deleteSavedBillFromProj('${b.id}',${JSON.stringify(projId)})" title="Delete this bill">✕ Delete</button>` : ''}</td>
+            <td style="padding:3px 8px;text-align:center;border-left:1px solid var(--border)"><button class="btn btn-sm" style="font-size:10px;padding:2px 8px;color:#fff;background:var(--red);border:1px solid var(--red);white-space:nowrap" onclick="deleteSavedBillFromProj('${b.id}',${JSON.stringify(projId)})" title="Delete this bill">✕ Delete</button></td>
           </tr>`;
     })
     .join('');
@@ -3031,6 +3031,23 @@ function renderProjSavedBills(projId) {
 function deleteSavedBillFromProj(billId, projId) {
   if (!confirm('Delete this saved bill? This cannot be undone.')) return;
   let bills = sget('en_pdf_bills', []) || [];
+  const sb = bills.find((b) => b.id === billId);
+
+  // If this saved bill is assigned to a meter, also remove the meter-side copy
+  // (meter.bills entries link back via pdfBillId === saved bill id). Otherwise an
+  // orphaned meter copy is left behind.
+  if (sb && sb.projId) {
+    const udProj = getUDProj(sb.projId);
+    (udProj?.buildings || []).forEach((bldg) => {
+      (bldg.meters || []).forEach((meter) => {
+        if (Array.isArray(meter.bills)) {
+          meter.bills = meter.bills.filter((r) => r.pdfBillId !== billId);
+        }
+      });
+    });
+    saveUtilityData();
+  }
+
   bills = bills.filter((b) => b.id !== billId);
   sset('en_pdf_bills', bills);
   showToast('Bill deleted ✓');

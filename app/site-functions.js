@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.05.460',
+    date: '2026-06-05',
+    title: 'Saved Bills panel: delete bills already assigned to a meter',
+    items: [
+      {
+        type: 'fix',
+        text: 'Saved Bills panel: bills already assigned to a meter now have a working Delete button, and deleting one removes it from both the saved list and the meter.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.05.459',
     date: '2026-06-05',
     title: 'Saved Bills panel: easier-to-find Delete button per bill',
