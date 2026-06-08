@@ -2370,24 +2370,24 @@ function isCalcCommodity(projectId, commodity) {
 // but hidden from the visible bar — their content now appears in the merged tabs.
 const PROJ_TABS_HIDDEN = new Set(['notes', 'tasks', 'savedbills']);
 const PROJ_TABS_DEFAULT = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'contacts', label: 'Contacts' },
-  { id: 'utility', label: 'Utility Data' },
-  { id: 'savedbills', label: 'Saved Bills' },
-  { id: 'eq-matrix', label: 'Equipment Matrix' },
-  { id: 'bas-trends', label: 'BAS Trends' },
-  { id: 'hvacload', label: 'HVAC Load Est' },
-  { id: 'savings', label: 'Energy Savings' },
-  { id: 'energygfx', label: 'Energy Graphics' },
-  { id: 'budget', label: 'Budget' },
-  { id: 'hours', label: 'Hours' },
-  { id: 'district', label: 'District Calendar' },
-  { id: 'docs', label: 'Documents' },
-  { id: 'setpoints', label: 'Set Points' },
-  { id: 'settings', label: 'Project Settings' },
+  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+  { id: 'contacts', label: 'Contacts', icon: '👥' },
+  { id: 'utility', label: 'Utility Data', icon: '⚡' },
+  { id: 'savedbills', label: 'Saved Bills', icon: '🗄️' },
+  { id: 'eq-matrix', label: 'Equipment Matrix', icon: '⚙️' },
+  { id: 'bas-trends', label: 'BAS Trends', icon: '📉' },
+  { id: 'hvacload', label: 'HVAC Load Est', icon: '🌡️' },
+  { id: 'savings', label: 'Energy Savings', icon: '💡' },
+  { id: 'energygfx', label: 'Energy Graphics', icon: '📈' },
+  { id: 'budget', label: 'Budget', icon: '💰' },
+  { id: 'hours', label: 'Hours', icon: '⏱️' },
+  { id: 'district', label: 'District Calendar', icon: '🗓️' },
+  { id: 'docs', label: 'Documents', icon: '📁' },
+  { id: 'setpoints', label: 'Set Points', icon: '🌡️' },
+  { id: 'settings', label: 'Project Settings', icon: '⚙️' },
   // Backward-compat: merged tabs — retained so stored orders stay valid
-  { id: 'notes', label: 'Notes' },
-  { id: 'tasks', label: 'Tasks' },
+  { id: 'notes', label: 'Notes', icon: '📝' },
+  { id: 'tasks', label: 'Tasks', icon: '✅' },
 ];
 function _getProjTabOrder() {
   try {
@@ -2419,7 +2419,7 @@ function _getProjTabHTML() {
       if (PROJ_TABS_HIDDEN.has(id)) return '';
       const t = PROJ_TABS_DEFAULT.find((x) => x.id === id);
       if (!t) return '';
-      return `<button class="pdt${id === activeTab ? ' active' : ''}" draggable="true" data-tab="${id}" onclick="sPTab('${id}',this)">${t.label}</button>`;
+      return `<button class="pdt${id === activeTab ? ' active' : ''}" draggable="true" data-tab="${id}" onclick="sPTab('${id}',this)"><span class="pdt-ico">${t.icon || ''}</span>${t.label}</button>`;
     })
     .join('');
 }

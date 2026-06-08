@@ -3734,6 +3734,8 @@
         flex: 1;
         overflow: hidden;
         min-height: 0;
+        container-type: inline-size;
+        container-name: proj-detail;
       }
       .pd-back {
         display: inline-flex;
@@ -3874,15 +3876,17 @@
         font-family: var(--mono);
         color: var(--text);
       }
+      /* ── Project tab bar — default (wide/full) look ── */
       .pd-tabs {
         display: flex;
         gap: 2px;
-        padding: 8px 8px 0;
+        padding: 12px 18px 0;
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
         overflow-x: auto;
         flex-wrap: nowrap;
         -webkit-overflow-scrolling: touch;
+        /* thin scrollbar always present; only visible when content overflows */
         scrollbar-width: thin;
         scrollbar-color: var(--border2) transparent;
       }
@@ -3897,7 +3901,7 @@
         font-family: var(--font);
         font-size: 12px;
         font-weight: 500;
-        padding: 6px 8px;
+        padding: 6px 12px;
         border-radius: 6px 6px 0 0;
         border: none;
         cursor: pointer;
@@ -3906,6 +3910,15 @@
         border-bottom: 2px solid transparent;
         transition: all 0.13s;
         user-select: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+      }
+      .pdt-ico {
+        font-style: normal;
+        line-height: 1;
+        flex-shrink: 0;
       }
       .pdt.active {
         color: var(--em);
@@ -3917,6 +3930,22 @@
       }
       .pdt.dragging {
         opacity: 0.4;
+      }
+      /* ── Compact tab bar: kicks in when proj-detail container < 1700px ── */
+      /* Breakpoint reasoning: 14 tabs × ~(emoji + label + 24px padding) ≈ 1650px total.        */
+      /* At 1700px container width the full row barely fits; below that, icons cause overflow.   */
+      /* The container is #projDetailContent (full viewport minus ~240px sidebar).               */
+      /* At 1440p (2560px viewport): container ≈ 2320px → wide. At ~1940px viewport: borderline.*/
+      @container proj-detail (max-width: 1700px) {
+        .pd-tabs {
+          padding: 8px 8px 0;
+        }
+        .pdt {
+          padding: 6px 8px;
+        }
+        .pdt-ico {
+          display: none;
+        }
       }
       .ptab {
         display: none;
