@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.465',
+    date: '2026-06-08',
+    title: 'ASHRAE 36 PDF export and Save now work for both Audit Report and Service Proposal',
+    items: [
+      {
+        type: 'fix',
+        text: 'Export to PDF and Save Report in the ASHRAE 36 Audit Report and Service Proposal now work correctly — they were silently doing nothing before. Export filenames now also distinguish between the two report types (e.g. "Project - ASHRAE 36 Audit Report 2026.06.08.pdf" vs "...Service Proposal...").',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.08.464',
     date: '2026-06-08',
     title: 'Cache-bust fix: v463 responsive tabs now load correctly in all browsers',

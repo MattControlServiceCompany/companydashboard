@@ -6580,12 +6580,15 @@ function saveReportToHistory() {
 
   const history = DB.get('en_report_history', []);
   const cleanHTML = pagesHTML.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, '');
+  // ASHRAE reports have no .period; use the report type label instead
+  const periodLabel = data._ashrae ? data._ashrae.title : (data.period && data.period.label) || '';
+  const periodType = data._ashrae ? data._ashrae.type : (data.period && data.period.type) || '';
   const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     projectId: String(data.project.id),
     projectName: data.project.client || data.project.name,
-    period: data.period.label,
-    type: data.period.type,
+    period: periodLabel,
+    type: periodType,
     savedAt: new Date().toISOString(),
     html: cleanHTML,
   };
@@ -6721,10 +6724,17 @@ async function exportReportToPDF() {
 
     // Generate filename
     const client = data.project.client || data.project.name || 'Report';
-    const period = data.period.label || '';
-    const typeLabel = data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
-    const filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.pdf';
+    let filename;
+    if (data._ashrae) {
+      // ASHRAE 36 reports: use report type to produce distinct, collision-free names
+      const ashraeLabel = data._ashrae.type === 'proposal' ? 'Service Proposal' : 'Audit Report';
+      filename = client + ' - ASHRAE 36 ' + ashraeLabel + ' ' + dateStr + '.pdf';
+    } else {
+      const period = (data.period && data.period.label) || '';
+      const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
+      filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.pdf';
+    }
 
     doc.save(filename);
     showToast('Report exported to PDF ?');
@@ -11923,6 +11933,12 @@ function generateASHRAE36Preview() {
     type === 'proposal'
       ? data.project.name + ' — ASHRAE 36 Service Proposal'
       : data.project.name + ' — ASHRAE 36 Audit Report';
+
+  // Expose report data so exportReportToPDF() and saveReportToHistory() can use it.
+  // Store the report type alongside so the filename builder can distinguish Audit vs Proposal.
+  data._ashrae = { type: type, title: reportTitle };
+  window._currentReportData = data;
+
   showReportOverlay(html, reportTitle);
   _updateOverlayPageNumbers();
 }
