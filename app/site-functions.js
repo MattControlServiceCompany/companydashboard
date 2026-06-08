@@ -1191,6 +1191,28 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.464',
+    date: '2026-06-08',
+    title: 'Cache-bust fix: v463 responsive tabs now load correctly in all browsers',
+    items: [
+      {
+        type: 'fix',
+        text: 'Browser cache-busting tags updated so the v463 responsive project sub-tabs (icons at wide width, compact when narrow) load correctly without requiring a hard refresh.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.06.08.463',
+    date: '2026-06-08',
+    title: 'Project tabs are now responsive — icons at full width, compact when narrow',
+    items: [
+      {
+        type: 'feature',
+        text: 'Project sub-tabs now show emoji icons and full spacing when the window is wide enough, and automatically switch to a compact (icon-free) layout with a thin scrollbar when the window is too narrow to fit them all.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.08.462',
     date: '2026-06-08',
     title: 'Project tabs: icons removed, spacing tightened, thin scrollbar added',
