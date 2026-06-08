@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.461',
+    date: '2026-06-08',
+    title: 'Report chart fix, letter-grade badge restored, propane/gas pages, anomaly kWh, z-score',
+    items: [
+      {
+        type: 'fix',
+        text: 'Savings Performance report: bar chart now shows one bar per metric instead of two stacked bars — the duplicate bars left over from the Jun-5 fix are removed.',
+      },
+      {
+        type: 'fix',
+        text: 'Data Quality badge on meter tiles: letter grade (A/B/C/D/F) is restored; Jun-5 inadvertently replaced it with a percentage score.',
+      },
+      {
+        type: 'feature',
+        text: 'Propane and natural gas utility data now have dedicated allocation pages in the Pipeline Diagram tab, consistent with electric meters.',
+      },
+      {
+        type: 'change',
+        text: 'Anomaly Detection panel: Actual column now shows the real billed kWh from your utility bill instead of the prorated estimate.',
+      },
+      {
+        type: 'change',
+        text: 'Anomaly z-score calculation uses leave-one-out averaging, which prevents the flagged month itself from pulling the mean and masking a real spike.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.05.460',
     date: '2026-06-05',
     title: 'Saved Bills panel: delete bills already assigned to a meter',

@@ -771,7 +771,15 @@ function _analyzeMeterBills(bills, m) {
       let compLabel = 'avg';
 
       if (c.seasonal && nm >= 0) {
-        const ms = monthStats[c.field] && monthStats[c.field][nm];
+        // Leave-one-out: build same-month stats excluding the current bill (idx)
+        // so an outlier cannot inflate its own peer group and escape detection.
+        // rawFn is used (null-preserving) to match how monthStats was built.
+        const sameMonthVals = [];
+        for (let i = 0; i < bills.length; i++) {
+          if (i === idx) continue; // exclude self
+          if (normMonths[i] === nm) sameMonthVals.push(c.rawFn(bills[i]));
+        }
+        const ms = stats(sameMonthVals);
         if (ms && ms.stddev > 0 && ms.count >= 2) {
           s = ms;
           compLabel = _MONTH_LABELS[nm] + ' avg';

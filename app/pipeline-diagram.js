@@ -481,6 +481,15 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
         if (!rows.length || !reg) {
           return '<p style="color:var(--text3)">Anomaly detection requires bills and regression data.</p>';
         }
+        // Build rawUsageByYm: sum of REAL billed usage per normalized month (matches Bills table KWH CONSUMED).
+        // This is used only for display — detection residuals still use the day-prorated getNormRows() values.
+        const rawUsageByYm = {};
+        bills.forEach((b) => {
+          const ym = normMonth ? normMonth(b.start, b.end, incl, bills) : null;
+          if (!ym) return;
+          const val = isElec ? parseFloat(b.kwh || 0) : parseFloat(b.therms || b.usage || b.kwh || 0);
+          rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + val;
+        });
         // Compute residuals and z-scores (exclude partial months to avoid false anomalies)
         const residuals = rows.filter((r) => r.regrBaseline != null && !r.partial).map((r) => r.usage - r.regrBaseline);
         if (!residuals.length) return '<p style="color:var(--text3)">No regression baseline rows to check.</p>';
@@ -492,7 +501,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
           .map((r) => {
             const residual = r.usage - r.regrBaseline;
             const z = stddev > 0 ? (residual - mean) / stddev : 0;
-            return { ym: r.ym, residual, z, usage: r.usage, baseline: r.regrBaseline };
+            return { ym: r.ym, residual, z, usage: rawUsageByYm[r.ym] ?? r.usage, baseline: r.regrBaseline };
           })
           .filter((r) => Math.abs(r.z) >= 2.0)
           .sort((a, b) => Math.abs(b.z) - Math.abs(a.z));

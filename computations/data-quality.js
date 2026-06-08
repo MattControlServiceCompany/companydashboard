@@ -24,6 +24,7 @@ function computeMeterQualityScore(m) {
     points: dataMonthsPts,
     max: 25,
     detail: uniqueMonths + ' mo. history',
+    rawValue: uniqueMonths,
   };
 
   // ── 2. baselineR2 (max 25) ──
@@ -57,6 +58,7 @@ function computeMeterQualityScore(m) {
     points: r2Pts,
     max: 25,
     detail: r2Detail,
+    r2Val: r2Val, // actual 0-1 statistic; kept separate so display layer shows the real number
   };
 
   // ── 3. gaps (max 15) ──
@@ -79,6 +81,7 @@ function computeMeterQualityScore(m) {
     points: gapsPts,
     max: 15,
     detail: gapCount + ' gap' + (gapCount !== 1 ? 's' : ''),
+    rawValue: gapCount,
   };
 
   // ── 4. fieldCompleteness (max 20) ──
@@ -98,6 +101,8 @@ function computeMeterQualityScore(m) {
     points: fieldPts,
     max: 20,
     detail: missingCount + ' missing field' + (missingCount !== 1 ? 's' : ''),
+    rawValue: last3.length * 4 - missingCount,
+    rawMax: last3.length * 4,
   };
 
   // ── 5. flags (max 15) ──
@@ -115,6 +120,7 @@ function computeMeterQualityScore(m) {
     points: flagsPts,
     max: 15,
     detail: totalFlags + ' flag' + (totalFlags !== 1 ? 's' : ''),
+    rawValue: totalFlags,
   };
 
   var score = dataMonthsPts + r2Pts + gapsPts + fieldPts + flagsPts;
@@ -159,24 +165,14 @@ function qualityBreakdownTooltip(q) {
   var c = q.components;
   return (
     'History ' +
-    c.dataMonths.points +
-    '/' +
-    c.dataMonths.max +
-    ' · R² ' +
-    c.baselineR2.points +
-    '/' +
-    c.baselineR2.max +
+    c.dataMonths.rawValue +
+    ' mo · R² ' +
+    (c.baselineR2.r2Val != null ? c.baselineR2.r2Val.toFixed(2) : 'n/a') +
     ' · Gaps ' +
-    c.gaps.points +
-    '/' +
-    c.gaps.max +
+    c.gaps.rawValue +
     ' · Fields ' +
-    c.fieldCompleteness.points +
-    '/' +
-    c.fieldCompleteness.max +
+    c.fieldCompleteness.rawValue +
     ' · Flags ' +
-    c.flags.points +
-    '/' +
-    c.flags.max
+    c.flags.rawValue
   );
 }

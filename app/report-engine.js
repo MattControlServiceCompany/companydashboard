@@ -1071,10 +1071,16 @@ function generateReportHTML(data, selectedSections) {
   // Commodity detail pages
   if (s.electricDetail !== false) pages.push(_tagSection(rptPageElectric(pageNum++, data), 'electricDetail'));
   var _hasGasBldgs = data.buildings.some(function (b) {
-    return b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
+    return b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.monthly && b.gas.monthly.length > 0;
   });
   var _hasPropBldgs = data.buildings.some(function (b) {
-    return b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
+    return (
+      b.commodities &&
+      b.commodities.includes('Propane') &&
+      b.propane &&
+      b.propane.monthly &&
+      b.propane.monthly.length > 0
+    );
   });
   if (_hasGasBldgs && _hasPropBldgs) {
     if (s.gasDetail !== false || s.propaneDetail !== false)
@@ -2207,7 +2213,6 @@ function rptPageSavingsPerformance(n, d) {
           '<div style="display:flex;gap:2px;align-items:center">' +
           '<div style="width:' +
           projPct +
-          '%;height:7px;background:#f39c12;border-radius:2px;min-width:1px"></div>' +
           '%;height:7px;background:var(--rpt-chart-orange);border-radius:2px;min-width:1px"></div>' +
           '<span style="font-size:8px;color:var(--rpt-page-text)">' +
           $c(moProj[ym]) +
@@ -2216,7 +2221,6 @@ function rptPageSavingsPerformance(n, d) {
           '<div style="display:flex;gap:2px;align-items:center;margin-top:1px">' +
           '<div style="width:' +
           actPct +
-          '%;height:7px;background:#27ae60;border-radius:2px;min-width:1px"></div>' +
           '%;height:7px;background:var(--rpt-chart-green);border-radius:2px;min-width:1px"></div>' +
           '<span style="font-size:8px;color:var(--rpt-page-text)">' +
           $c(moActual[ym]) +
@@ -2231,7 +2235,6 @@ function rptPageSavingsPerformance(n, d) {
       '<div class="rpt-chart-box">' +
       '<div class="rpt-chart-title">Monthly Savings — Projected (orange) vs Actual (green) — Dollar Cost</div>' +
       '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:9px">' +
-      '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Projected Baseline</span>' +
       '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-orange);border-radius:2px;vertical-align:middle"></span> Projected Baseline</span>' +
       '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-green);border-radius:2px;vertical-align:middle"></span> Actual</span>' +
       '</div>' +
@@ -2601,7 +2604,7 @@ function rptPageEUI(n, d) {
       const barColor = cur <= cbecs ? 'var(--rpt-chart-green)' : 'var(--rpt-chart-orange)';
       return (
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
-        '<div style="width:140px;text-align:right;font-size:10px;color:#000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
+        '<div style="width:140px;text-align:right;font-size:10px;color:var(--rpt-page-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
         (b.name || '—') +
         '</div>' +
         '<div style="flex:1;height:18px;background:var(--rpt-progress-bg);border-radius:3px;position:relative">' +
@@ -2619,7 +2622,7 @@ function rptPageEUI(n, d) {
             '%;top:0;bottom:0;width:2px;background:var(--rpt-eui-purple);z-index:1"></div>'
           : '') +
         '</div>' +
-        '<div style="width:35px;font-size:9px;font-weight:600;color:#000000;flex-shrink:0">' +
+        '<div style="width:35px;font-size:9px;font-weight:600;color:var(--rpt-page-text);flex-shrink:0">' +
         (cur > 0 ? cur.toFixed(1) : '—') +
         '</div>' +
         '</div>'
@@ -5692,7 +5695,7 @@ function rptPageGasPropane(n, d) {
   });
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:11px;color:#000;line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
+    '<p contenteditable="true" style="font-size:11px;color:var(--rpt-page-text);line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
     _barChart(thermsMonthly, 'var(--rpt-gas-bl)', 'var(--rpt-gas-cur)', 'Therms', 'Natural Gas Therms') +
     '<h2 style="font-size:11px;font-weight:700;color:var(--rpt-gas-head);margin:8px 0 3px">Natural Gas by Building</h2>' +
     _table(

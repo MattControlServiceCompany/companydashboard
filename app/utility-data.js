@@ -6795,9 +6795,8 @@ function renderMeterDataPane(pane, m, bills, incl) {
               _dqScore
                 ? `<div style="background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
               <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
-                <span style="font-size:28px;font-weight:900;color:${_dqBadgeData.textColor};background:${_dqBadgeData.bgColor};padding:2px 14px;border-radius:10px;line-height:1.3">${_dqBadgeData.label}</span>
                 <div>
-                  <div style="font-size:18px;font-weight:800;color:#e8eef8;font-family:var(--mono);line-height:1">${_dqScore.score}<span style="font-size:11px;color:#8ab0d0;font-weight:600">/100</span></div>
+                  <div style="font-size:18px;font-weight:800;color:${_dqBadgeData.textColor};background:${_dqBadgeData.bgColor};font-family:var(--mono);line-height:1.3;padding:2px 14px;border-radius:10px">${_dqBadgeData.label}</div>
                   <div style="font-size:9.5px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-top:2px">Data Quality</div>
                 </div>
               </div>
@@ -6813,10 +6812,73 @@ function renderMeterDataPane(pane, m, bills, incl) {
                       flags: 'Flags',
                     };
                     const full = comp.points >= comp.max;
-                    return `<div style="display:flex;flex-direction:column;gap:2px;min-width:56px">
+                    // R² component: show the actual 0-1 statistic as the primary value,
+                    // not a points score. The points still feed the composite total internally.
+                    if (key === 'baselineR2') {
+                      const r2v = comp.r2Val;
+                      const r2Str = r2v != null ? r2v.toFixed(2) : '—';
+                      const r2Color =
+                        r2v == null
+                          ? '#6a90b0'
+                          : r2v >= 0.85
+                            ? '#22c55e'
+                            : r2v >= 0.65
+                              ? 'var(--amber,#f59e0b)'
+                              : 'var(--danger,#ef4444)';
+                      const r2Tooltip = `R² measures how well the baseline regression fits the data (0–1). Higher is better; 0.85+ is strong.`;
+                      return `<div style="display:flex;flex-direction:column;gap:2px;min-width:56px" title="${r2Tooltip}">
                   <div style="font-size:9px;color:#6a90b0;text-transform:uppercase;letter-spacing:.4px;font-weight:700">${labels[key]}</div>
-                  <div style="font-size:13px;font-weight:800;color:${full ? '#22c55e' : '#e8eef8'};font-family:var(--mono)">${comp.points}<span style="font-size:9px;color:#6a90b0">/${comp.max} pts</span></div>
-                  <div style="font-size:9px;color:#6a90b0">${comp.detail}</div>
+                  <div style="font-size:13px;font-weight:800;color:${r2Color};font-family:var(--mono)">${r2Str}</div>
+                  <div style="font-size:9px;color:#6a90b0">${r2v != null ? (r2v >= 0.85 ? 'strong fit' : r2v >= 0.65 ? 'moderate fit' : 'weak fit') : 'no baseline'}</div>
+                </div>`;
+                    }
+                    const rv = comp.rawValue;
+                    const rm = comp.rawMax;
+                    const displayValue = key === 'dataMonths' ? rv + ' months' : String(rv);
+                    const hint =
+                      key === 'dataMonths'
+                        ? 'more = better'
+                        : key === 'gaps'
+                          ? '0 = no gaps'
+                          : key === 'fieldCompleteness'
+                            ? 'more = better'
+                            : '0 = none';
+                    const tileColor =
+                      key === 'dataMonths'
+                        ? rv >= 24
+                          ? '#22c55e'
+                          : rv >= 12
+                            ? 'var(--amber,#f59e0b)'
+                            : 'var(--danger,#ef4444)'
+                        : key === 'gaps'
+                          ? rv === 0
+                            ? '#22c55e'
+                            : rv <= 2
+                              ? 'var(--amber,#f59e0b)'
+                              : 'var(--danger,#ef4444)'
+                          : key === 'fieldCompleteness'
+                            ? rv >= rm
+                              ? '#22c55e'
+                              : rv >= rm - 2
+                                ? 'var(--amber,#f59e0b)'
+                                : 'var(--danger,#ef4444)'
+                            : rv === 0
+                              ? '#22c55e'
+                              : rv <= 3
+                                ? 'var(--amber,#f59e0b)'
+                                : 'var(--danger,#ef4444)';
+                    const tileTooltip =
+                      key === 'dataMonths'
+                        ? 'Months of billing history. More is better; 24+ months is ideal.'
+                        : key === 'gaps'
+                          ? 'Gaps larger than 45 days between consecutive bills. Zero is ideal.'
+                          : key === 'fieldCompleteness'
+                            ? 'Populated fields in the last 3 bills (start, end, cost, usage). Higher is better.'
+                            : 'Active (non-dismissed) data flags on any bill. Zero is ideal.';
+                    return `<div style="display:flex;flex-direction:column;gap:2px;min-width:56px" title="${tileTooltip}">
+                  <div style="font-size:9px;color:#6a90b0;text-transform:uppercase;letter-spacing:.4px;font-weight:700">${labels[key]}</div>
+                  <div style="font-size:13px;font-weight:800;color:${tileColor};font-family:var(--mono)">${displayValue}</div>
+                  <div style="font-size:9px;color:#6a90b0">${hint}</div>
                 </div>`;
                   })
                   .join('')}
@@ -9202,8 +9264,6 @@ function renderPerfPane(pane, m, bills, incl) {
     basisNote_p +
     weatherModeBar +
     yearPills +
-    chartSection +
-    demandSection +
     '<div style="margin-bottom:14px">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:4px">' +
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Post-Baseline Monthly vs Baseline</div>' +
@@ -9223,7 +9283,9 @@ function renderPerfPane(pane, m, bills, incl) {
         '</strong></div>') +
     '</div>' +
     anomalySection +
-    perfControlBar;
+    perfControlBar +
+    chartSection +
+    demandSection;
 
   // Apply persisted zoom to perf table (restores stored zoom level on every tab open)
   if (filteredPostRows.length && _perfResult.html && typeof setTableZoom === 'function') {
