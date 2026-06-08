@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.462',
+    date: '2026-06-08',
+    title: 'Project tabs: icons removed, spacing tightened, thin scrollbar added',
+    items: [
+      {
+        type: 'fix',
+        text: 'Project sub-tabs no longer get cut off at narrow window widths — icons are removed, spacing is tightened, and a thin scrollbar appears when tabs overflow so you can scroll to any tab.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.08.461',
     date: '2026-06-08',
     title: 'Report chart fix, letter-grade badge restored, propane/gas pages, anomaly kWh, z-score',

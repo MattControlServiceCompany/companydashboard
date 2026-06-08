@@ -3877,23 +3877,27 @@
       .pd-tabs {
         display: flex;
         gap: 2px;
-        padding: 12px 18px 0;
+        padding: 8px 8px 0;
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
         overflow-x: auto;
         flex-wrap: nowrap;
         -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border2) transparent;
       }
       .pd-tabs::-webkit-scrollbar {
-        display: none;
+        height: 3px;
+      }
+      .pd-tabs::-webkit-scrollbar-thumb {
+        background: var(--border2);
+        border-radius: 2px;
       }
       .pdt {
         font-family: var(--font);
         font-size: 12px;
         font-weight: 500;
-        padding: 6px 12px;
+        padding: 6px 8px;
         border-radius: 6px 6px 0 0;
         border: none;
         cursor: pointer;
@@ -14572,7 +14576,7 @@
     <script src="computations/data-quality.js?v=461"></script>
     <script src="extraction/pdf-engine.js?v=399"></script>
     <script src="app/db.js?v=422"></script>
-    <script src="app/core.js?v=2026.06.05.460"></script>
+    <script src="app/core.js?v=2026.06.08.462"></script>
     <script src="app/energy-savings.js?v=441"></script>
     <script src="app/bill-analysis.js?v=461"></script>
     <script src="extraction/bill-validation.js?v=399"></script>
@@ -14592,7 +14596,7 @@
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=454"></script>
 
-    <script src="app/site-functions.js?v=2026.06.08.461"></script>
+    <script src="app/site-functions.js?v=2026.06.08.462"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */

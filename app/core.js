@@ -2370,24 +2370,24 @@ function isCalcCommodity(projectId, commodity) {
 // but hidden from the visible bar — their content now appears in the merged tabs.
 const PROJ_TABS_HIDDEN = new Set(['notes', 'tasks', 'savedbills']);
 const PROJ_TABS_DEFAULT = [
-  { id: 'dashboard', label: '📊 Dashboard' },
-  { id: 'contacts', label: '👥 Contacts' },
-  { id: 'utility', label: '⚡ Utility Data' },
-  { id: 'savedbills', label: '🗄️ Saved Bills' },
-  { id: 'eq-matrix', label: '⚙️ Equipment Matrix' },
-  { id: 'bas-trends', label: '📉 BAS Trends' },
-  { id: 'hvacload', label: '🌡️ HVAC Load Est' },
-  { id: 'savings', label: '💡 Energy Savings' },
-  { id: 'energygfx', label: '📈 Energy Graphics' },
-  { id: 'budget', label: '💰 Budget' },
-  { id: 'hours', label: '⏱️ Hours' },
-  { id: 'district', label: '🗓️ District Calendar' },
-  { id: 'docs', label: '📁 Documents' },
-  { id: 'setpoints', label: '🌡️ Set Points' },
-  { id: 'settings', label: '⚙️ Project Settings' },
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'contacts', label: 'Contacts' },
+  { id: 'utility', label: 'Utility Data' },
+  { id: 'savedbills', label: 'Saved Bills' },
+  { id: 'eq-matrix', label: 'Equipment Matrix' },
+  { id: 'bas-trends', label: 'BAS Trends' },
+  { id: 'hvacload', label: 'HVAC Load Est' },
+  { id: 'savings', label: 'Energy Savings' },
+  { id: 'energygfx', label: 'Energy Graphics' },
+  { id: 'budget', label: 'Budget' },
+  { id: 'hours', label: 'Hours' },
+  { id: 'district', label: 'District Calendar' },
+  { id: 'docs', label: 'Documents' },
+  { id: 'setpoints', label: 'Set Points' },
+  { id: 'settings', label: 'Project Settings' },
   // Backward-compat: merged tabs — retained so stored orders stay valid
-  { id: 'notes', label: '📝 Notes' },
-  { id: 'tasks', label: '✅ Tasks' },
+  { id: 'notes', label: 'Notes' },
+  { id: 'tasks', label: 'Tasks' },
 ];
 function _getProjTabOrder() {
   try {
