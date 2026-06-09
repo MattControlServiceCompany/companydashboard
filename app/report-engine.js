@@ -4492,7 +4492,8 @@ function rptPageBuildingSummary(n, d, b) {
     _tWater += water;
     _tWaterCost += waterCost;
     _tTotalCost += totalCost;
-    var hasData = kwh || therms || gal || water || totalCost;
+    var hasData =
+      _bm.elecByMo[mi] != null || _bm.gasByMo[mi] != null || _bm.propaneByMo[mi] != null || _bm.waterByMo[mi] != null;
     if (!hasData) continue;
     var costPerKwh = kwh > 0 ? enCost / kwh : 0;
     blDataRows += '<tr><td>' + MO_SHORT[mi] + '</td>';
@@ -11043,14 +11044,11 @@ function _a36GaugeSVG(pct, color, label, size) {
 // ─── Status chip helper ────────────────────────────────────────────────────
 function _a36StatusChip(status) {
   var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
-  var bg = status === 'green' ? '#f0fdf4' : status === 'amber' ? '#fff7ed' : '#fef2f2';
   var label = status === 'green' ? 'Good' : status === 'amber' ? 'Needs Attention' : 'Significant Gaps';
   return (
     '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;color:' +
     color +
-    ';background:' +
-    bg +
-    ';border:1px solid ' +
+    ';background:transparent;border:1px solid ' +
     color +
     '">' +
     label +
@@ -11451,7 +11449,7 @@ function rptPageASHRAE36Building(n, d, building) {
         '<tr>' +
         '<td colspan="5" style="padding:4px 8px 2px;font-size:10px;font-weight:700;' +
         'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
-        'background:#f0f4fa;border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule)">' +
+        'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule)">' +
         (eq.categoryLabel || eq.category) +
         '</td>' +
         '</tr>';
@@ -11777,23 +11775,23 @@ function rptPageASHRAE36SetpointReview(n, d) {
     if (displayStatus === 'NEEDS_REVIEW') {
       return (
         '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-        'color:#92400e;background:#fef3c7;border:1px solid #f59e0b">Needs Review</span>'
+        'color:#92400e;background:transparent;border:1px solid #f59e0b">Needs Review</span>'
       );
     } else if (displayStatus === 'NOT_SCHEDULED') {
       return (
         '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-        'color:#6b7280;background:#f3f4f6;border:1px solid #d1d5db">Not Scheduled</span>'
+        'color:#6b7280;background:transparent;border:1px solid #d1d5db">Not Scheduled</span>'
       );
     }
     return (
       '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-      'color:#166534;background:#f0fdf4;border:1px solid #4ade80">Matches</span>'
+      'color:#166534;background:transparent;border:1px solid #4ade80">Matches</span>'
     );
   }
 
   // ── Row-level background highlight for Needs-Review rows ─────────────────
   function _rowBg(displayStatus) {
-    return displayStatus === 'NEEDS_REVIEW' ? 'background:#fffbeb' : '';
+    return '';
   }
 
   // ── Building roll-up ──────────────────────────────────────────────────────
@@ -11926,10 +11924,8 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var tdCenter = tdBase + ';text-align:center';
 
   // Style constants for building-header rows
-  var thdrBg = 'background:#eff6ff';
   var thdrStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;vertical-align:middle;border-bottom:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue);' +
-    thdrBg;
+    'padding:5px 8px;font-size:10px;font-weight:700;vertical-align:middle;border-bottom:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)';
   var thdrStyleC = thdrStyle + ';text-align:center';
 
   // Helper: render a single zone row (indented under a building header)

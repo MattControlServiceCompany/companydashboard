@@ -4830,13 +4830,39 @@ const UTILITY_RULES = [
         // Carry the invoice header forward into each site chunk so extract() can
         // read InvoiceDate, AccountID, etc. from the per-site context.
         const invoiceHeader = siteChunks[0];
+        // Architecture note: In Constellation PDFs each site block spans two physical
+        // pages. The Customer ID and LDC Account for site N appear at the END of the
+        // text before site N's "Service for" line — i.e., at the END of siteChunks[N-1].
+        // Prepending invoiceHeader (which has site 1's Customer ID) to all chunks
+        // causes extract() to always return site 1's Customer ID for sites 2-14.
+        // Fix: for each chunk i, prepend the LAST 600 chars of chunk i-1 (which has
+        // the correct Customer ID) PLUS the invoice header (for Invoice Date / BG Account).
         for (let i = 1; i < siteChunks.length; i++) {
-          const siteText = invoiceHeader + '\n' + siteChunks[i];
+          const prevTail = siteChunks[i - 1].slice(-600);
+          const siteText = invoiceHeader + '\n' + prevTail + '\n' + siteChunks[i];
           const bill = this.extract(siteText);
           if (bill && !bill._skipRecord) results.push(bill);
         }
       }
-      return results.length > 0 ? results : [this.extract(t)];
+      // C3 fix: deduplicate amendment/reversal pages.
+      // A correction invoice (e.g. June 2025, 46 pages) repeats "Service for Mon-YYYY"
+      // for prior months, producing duplicate (AccountNumber, BillingPeriodStart) pairs.
+      // Keep the LAST occurrence — the correction supersedes the original.
+      const dedupedResults = [];
+      if (results.length > 0) {
+        const seenKey = new Map(); // key → index in dedupedResults
+        for (const bill of results) {
+          const key = (bill.AccountNumber || '') + '|' + (bill.BillingPeriodStart || '');
+          if (seenKey.has(key)) {
+            // Replace the earlier duplicate with this later one
+            dedupedResults[seenKey.get(key)] = bill;
+          } else {
+            seenKey.set(key, dedupedResults.length);
+            dedupedResults.push(bill);
+          }
+        }
+      }
+      return dedupedResults.length > 0 ? dedupedResults : [this.extract(t)];
     },
     extract: function (t) {
       // ── Number cleaning helper ──
@@ -4847,11 +4873,32 @@ const UTILITY_RULES = [
       };
 
       // ── AccountNumber ──
-      // Prefer the LDC Account number (the local distribution company meter ID).
-      // Fallback: the top-level Account ID like "BG-96832".
-      const ldcM = t.match(/LDC\s*Account:\s*([0-9]+)/i);
+      // Priority: Customer ID (unique per building) > LDC Account (shared across
+      // all Baker campus buildings) > BG Account ID (invoice-level only).
+      //
+      // C2 fix: Use Customer ID (RG-XXXXXX) as the per-building unique key.
+      // All 14 Baker buildings share the same LDC Account (510000123 1562920 000),
+      // so LDC Account alone cannot distinguish buildings. Customer ID is unique per
+      // building and appears in every site block. Format varies: "RG-233590" (with
+      // dash) or "RG43506046" (no dash, OCR misread on some pages) — normalize by
+      // keeping the raw match and stripping non-alphanumeric chars after "RG".
+      //
+      // IMPORTANT: the siteText passed to extract() is structured as:
+      //   invoiceHeader (has site 1's Customer ID) + prevTail (has THIS site's Customer ID) + site charges
+      // We must use the LAST Customer ID found in the text, not the first.
+      const _custIdAll = [...t.matchAll(/Customer\s+ID:\s*(RG-?\d+)/gi)];
+      const custIdM = _custIdAll.length > 0 ? _custIdAll[_custIdAll.length - 1] : null;
+      // C1 fix: capture full multi-segment LDC Account (e.g. "510000123 1562920 000").
+      // Old regex ([0-9]+) stopped at first space, capturing only "510000123".
+      // New pattern allows digits + spaces up to 30 chars, then trim trailing spaces.
+      // Similarly use the LAST match to get the per-site LDC Account (not the header's).
+      const _ldcAll = [...t.matchAll(/LDC\s*Account:\s*([0-9][0-9 ]{5,30})/gi)];
+      const ldcM = _ldcAll.length > 0 ? _ldcAll[_ldcAll.length - 1] : null;
       const bgM = t.match(/Account\s*ID:\s*(BG-\d+)/i);
-      const AccountNumber = (ldcM ? ldcM[1] : null) || (bgM ? bgM[1] : null);
+      const AccountNumber =
+        (custIdM ? custIdM[1].replace(/[^A-Z0-9]/gi, '') : null) ||
+        (ldcM ? ldcM[1].trim() : null) ||
+        (bgM ? bgM[1] : null);
 
       // Guard: no usable account number means we can't identify this block.
       if (!AccountNumber) {

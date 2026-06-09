@@ -394,7 +394,8 @@ var EM_POINT_MAP = [
     // diagnostic fault flags, and sensor-alarm objects from occupying the live OAT column.
     negativePatterns: [/\b(alarm|lockout|diagnostic|sensor\s+fail(ed|ure)?|enable|output)\b/i],
     types: ['AI'],
-    cats: ['ahu', 'hwp', 'chwp'],
+    // M5+: added 'sensor' so dedicated outdoor-air sensor programs can map live OAT.
+    cats: ['ahu', 'hwp', 'chwp', 'sensor'],
   },
   {
     col: 'supplyFanSpeed',
@@ -3838,7 +3839,7 @@ function emGetNormalizedPoints(row) {
       for (var ri = 0; ri < rawEntries.length; ri++) {
         var rawName = rawEntries[ri][0];
         var rawVal = rawEntries[ri][1];
-        if (rawVal == null) continue;
+        if (rawVal == null || rawVal === '') continue;
         var rColKey = emMapPointToColumn(rawName);
         if (!rColKey) continue;
         var rIsVirtual = _isVirtual(rawName);
@@ -3859,7 +3860,7 @@ function emGetNormalizedPoints(row) {
       for (var rki = 0; rki < rawKeys.length; rki++) {
         var rawName2 = rawKeys[rki];
         var rawVal2 = rawEntries[rawName2];
-        if (rawVal2 == null) continue;
+        if (rawVal2 == null || rawVal2 === '') continue;
         var rColKey2 = emMapPointToColumn(rawName2);
         if (!rColKey2) continue;
         var rIsVirtual2 = _isVirtual(rawName2);

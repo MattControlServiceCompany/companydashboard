@@ -1191,6 +1191,35 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.468',
+    date: '2026-06-08',
+    title:
+      'Report style cleanup, zero-value baseline months, Equipment Matrix mapping fixes, Constellation per-building bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report: colored background fills have been removed from status badges and category rows — the report now matches a clean print-ready style.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: the Baseline Data table now shows months with recorded zero values instead of silently dropping them — no baseline data is hidden.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: points with a blank value no longer block a real value from showing up in the same column for the same piece of equipment.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: dedicated outdoor-air temperature sensors now correctly map their live reading to the Outdoor Air Temp column.',
+      },
+      {
+        type: 'fix',
+        text: 'Constellation gas invoices: each building is now identified by its unique Customer ID, full account numbers are captured correctly, and duplicate amendment pages are de-duplicated so bills are not double-counted.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.08.467',
     date: '2026-06-08',
     title: 'ASHRAE 36 Setpoint Programming Review: smarter building roll-up',
