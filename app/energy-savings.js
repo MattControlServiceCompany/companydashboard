@@ -7048,6 +7048,9 @@ const UTILITY_RULES = [
         if (/^[\d,]*\.\d{2}$/.test(s)) return parseFloat(s.replace(/,/g, ''));
         // ".00" style (zero charge shown as "\.00")
         if (/^\.\d{2}$/.test(s)) return parseFloat(s);
+        // 3-4 decimal OCR noise: "30.271" or "50.6234" → round to 2 decimals.
+        // OCR occasionally adds a trailing digit to the cents field.
+        if (/^[\d,]+\.\d{3,4}$/.test(s)) return Math.round(parseFloat(s.replace(/,/g, '')) * 100) / 100;
         return null;
       };
 
@@ -7060,6 +7063,10 @@ const UTILITY_RULES = [
             let v = m[0];
             // "1460-87" → 1460.87 (OCR cents encoding)
             if (/^\d+-\d{2}$/.test(v)) v = v.replace(/-(\d{2})$/, '.$1');
+            // European decimal: "104,03" or "10,00" — comma IS the decimal separator.
+            // Detect: 1-4 integer digits, comma, exactly 2 decimal digits, no period.
+            // Exclude real thousands like "44,576.64" (has a period) or "1,234,567" (>4 pre-comma).
+            if (/^\d{1,4},\d{2}$/.test(v)) return parseFloat(v.replace(',', '.'));
             return parseFloat(v.replace(/,/g, ''));
           })
           .filter((n) => !isNaN(n));
@@ -7073,8 +7080,16 @@ const UTILITY_RULES = [
         if (toks.length < 2) return { prevRead: null, currRead: null, usage: null, charge: null };
         // Last token should be the charge (decimal with .XX).
         // Preceding integers are meter reads and/or usage.
-        const charge = toks[toks.length - 1];
+        let charge = toks[toks.length - 1];
         if (isNaN(charge)) return { prevRead: null, currRead: null, usage: null, charge: null };
+        // Guard: if the candidate "charge" is an integer with no decimal part AND
+        // equals one of the other tokens (i.e. a meter read), the line has no valid
+        // charge (OCR garble like "271200 271200 -.Co" loses the real amount and
+        // leaves only the meter reads). Real charges always have a decimal component.
+        // Note: Number.isInteger() is true for e.g. 271200 but false for 44576.64.
+        if (Number.isInteger(charge) && toks.slice(0, -1).includes(charge)) {
+          return { prevRead: null, currRead: null, usage: null, charge: null };
+        }
         // Filter to integer-valued tokens (meter reads and usage are whole numbers).
         const intToks = toks.slice(0, -1).filter((n) => Number.isInteger(n) && n >= 0);
         let prevRead = null,
@@ -7174,11 +7189,15 @@ const UTILITY_RULES = [
         }
 
         // EL/GH - FRANCHISE FEE (electric franchise — old format uses GH)
+        // OCR variants of "EL": "EI", "E1", "EI." (letter I or digit 1 substituted
+        // for L, with optional trailing period). Match E followed by L/I/1 plus
+        // optional dot, to catch all common OCR garbles of the EL prefix.
         // Also catches "S5W - FRANCHISE FRE" (OCR of "SW - FRANCHISE FEE") here
-        // only if code is EL or GH; S5W/SW franchise handled under sewer below.
-        if (/^(?:EL|GH)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(ln)) {
-          const raw = ln.replace(/^(?:EL|GH)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE\s+FEE?\s*/i, '').trim();
-          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+        // only if code is EL/EI/E1/GH; S5W/SW franchise handled under sewer below.
+        if (/^(?:E[LlIi1]\.?|GH)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(ln)) {
+          const raw = ln.replace(/^(?:E[LlIi1]\.?|GH)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE\s+FEE?\s*/i, '').trim();
+          // Drop trailing anchor so OCR noise chars after the amount still match.
+          const m = raw.match(/([\d,]+\.\d{2})/);
           if (m) elFranchiseFee = (elFranchiseFee || 0) + parseFloat(m[1].replace(/,/g, ''));
           continue;
         }
@@ -7206,7 +7225,8 @@ const UTILITY_RULES = [
         // OCR variants: "S5W - FRANCHISE FRE", "SW ~ FRANCHISE FEE"
         if (/^[Ss][W5w][\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(ln)) {
           const raw = ln.replace(/^[Ss][W5w][\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE\s+FEE?\s*/i, '').trim();
-          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          // Drop trailing anchor so OCR noise chars after the amount still match.
+          const m = raw.match(/([\d,]+\.\d{2})/);
           if (m && swFranchiseFee === null) swFranchiseFee = parseFloat(m[1].replace(/,/g, ''));
           continue;
         }
@@ -7241,7 +7261,8 @@ const UTILITY_RULES = [
             .replace(/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}(?:METER\s+)?DEBT\s+PMT\s*/i, '')
             .replace(/\s*[|i]\s*$/, '')
             .trim();
-          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          // Drop trailing anchor so OCR noise chars (H, ;, etc.) after the amount still match.
+          const m = raw.match(/([\d,]+\.\d{2})/);
           if (m && waDebtPmt === null) waDebtPmt = parseFloat(m[1].replace(/,/g, ''));
           continue;
         }
@@ -7249,7 +7270,8 @@ const UTILITY_RULES = [
         // WA - WATER DEBT PMT (older format label variant)
         if (/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER\s+DEBT\s+PMT/i.test(ln)) {
           const raw = ln.replace(/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER\s+DEBT\s+PMT\s*/i, '').trim();
-          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          // Drop trailing anchor so OCR noise chars after the amount still match.
+          const m = raw.match(/([\d,]+\.\d{2})/);
           if (m && waDebtPmt === null) waDebtPmt = parseFloat(m[1].replace(/,/g, ''));
           continue;
         }
@@ -7261,9 +7283,113 @@ const UTILITY_RULES = [
             .replace(/^(?:[Ww]{1,2}[Aa]|HA)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE\s+FEE?\s*/i, '')
             .replace(/\s*\|\s*$/, '')
             .trim();
-          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          // Drop trailing anchor so OCR noise chars (;, H, etc.) after the amount still match.
+          const m = raw.match(/([\d,]+\.\d{2})/);
           if (m && waFranchiseFee === null) waFranchiseFee = parseFloat(m[1].replace(/,/g, ''));
           continue;
+        }
+      }
+
+      // ── Prefix-stripped fallback ──
+      // On some scanned pages Tesseract OCR drops the two-letter commodity
+      // code (EL, SW, WA) from every charge line, producing lines like:
+      //   "— ELECTRIC  415360  417400  2040"
+      //   "~ FUEL ADJUSTMENT"
+      //   "— FRANCHISE FEE"
+      //   "— SEWER  1999992  2001712  1721"
+      //   "— WATER  19992992  2001712  1721"
+      //   "— METER DEBT PMT"
+      // These fail ALL patterns in the main loop above because every pattern
+      // requires the prefix. This fallback runs ONLY when the main loop found
+      // nothing and maps charge lines by keyword order instead of prefix code.
+      if (elMeters.length === 0 && swCharge === null && waCharge === null) {
+        // Gather lines that look like prefix-stripped charge lines:
+        // Start with "—", "–", "~" (OCR of "—") followed by a known keyword.
+        const _pfxStrippedLines = lines
+          .map((l) => l.trim())
+          .filter((l) =>
+            /^[-–~]\s*(ELECTRIC|SEWER|WATER|FRANCHISE\s+FEE|FUEL\s+ADJ(?:USTMENT)?|(?:METER\s+)?DEBT\s+PMT)/i.test(l),
+          );
+
+        if (_pfxStrippedLines.length > 0) {
+          for (const sl of _pfxStrippedLines) {
+            // Strip the leading dash/tilde separator
+            const rest = sl.replace(/^[-–~]\s*/, '').trim();
+
+            if (/^ELECTRIC/i.test(rest) && !/FRANCHISE/i.test(rest)) {
+              const body = rest.replace(/^ELECTRIC\s*/i, '');
+              const m = _parseMeteredLine(body);
+              if (m.charge != null) elMeters.push(m);
+            } else if (/^FUEL\s+ADJ/i.test(rest) && fuelAdjCharge === null) {
+              const body = rest.replace(/^FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
+              const mv = body.match(/(-?[\d,]+\.\d{2})/);
+              if (mv) {
+                let v = mv[1];
+                const trailingMinus = v.endsWith('-');
+                if (trailingMinus) v = v.slice(0, -1);
+                fuelAdjCharge = parseFloat(v.replace(/,/g, ''));
+                if (trailingMinus && fuelAdjCharge > 0) fuelAdjCharge = -fuelAdjCharge;
+              }
+            } else if (/^FRANCHISE\s+FEE/i.test(rest)) {
+              // Attribute to the most recently seen metered commodity so far in this
+              // pass. We scan lines in order, so accumulate under the last seen type.
+              const body = rest.replace(/^FRANCHISE\s+FEE\s*/i, '').trim();
+              const mv = body.match(/([\d,]+\.\d{2})/);
+              if (mv) {
+                const fv = parseFloat(mv[1].replace(/,/g, ''));
+                // Determine which commodity the franchise fee belongs to by looking
+                // at what was detected immediately before it in _pfxStrippedLines.
+                const slIdx = _pfxStrippedLines.indexOf(sl);
+                let lastCommodity = null;
+                for (let pi = slIdx - 1; pi >= 0; pi--) {
+                  const prev = _pfxStrippedLines[pi].replace(/^[-–~]\s*/, '');
+                  if (/^ELECTRIC/i.test(prev)) {
+                    lastCommodity = 'EL';
+                    break;
+                  }
+                  if (/^SEWER/i.test(prev)) {
+                    lastCommodity = 'SW';
+                    break;
+                  }
+                  if (/^WATER/i.test(prev)) {
+                    lastCommodity = 'WA';
+                    break;
+                  }
+                }
+                if (lastCommodity === 'EL') elFranchiseFee = (elFranchiseFee || 0) + fv;
+                else if (lastCommodity === 'SW' && swFranchiseFee === null) swFranchiseFee = fv;
+                else if (lastCommodity === 'WA' && waFranchiseFee === null) waFranchiseFee = fv;
+                // If we can't determine commodity, default to most recently seen type
+                else if (elMeters.length > 0) elFranchiseFee = (elFranchiseFee || 0) + fv;
+              }
+            } else if (/^(?:METER\s+)?DEBT\s+PMT/i.test(rest) && waDebtPmt === null) {
+              const body = rest.replace(/^(?:METER\s+)?DEBT\s+PMT\s*/i, '').trim();
+              const mv = body.match(/([\d,]+\.\d{2})/);
+              if (mv) waDebtPmt = parseFloat(mv[1].replace(/,/g, ''));
+            } else if (/^SEWER/i.test(rest) && !/FRANCHISE/i.test(rest)) {
+              const body = rest.replace(/^SEWER\s*/i, '');
+              const m = _parseMeteredLine(body);
+              if (m.charge != null) {
+                if (swCharge === null) {
+                  swPrevRead = m.prevRead;
+                  swCurrRead = m.currRead;
+                }
+                swUsage = (swUsage || 0) + (m.usage || 0);
+                swCharge = (swCharge || 0) + m.charge;
+              }
+            } else if (/^WATER/i.test(rest) && !/DEBT|METER|FRANCHISE/i.test(rest)) {
+              const body = rest.replace(/^WATER\s*/i, '');
+              const m = _parseMeteredLine(body);
+              if (m.charge != null) {
+                if (waCharge === null) {
+                  waPrevRead = m.prevRead;
+                  waCurrRead = m.currRead;
+                }
+                waUsage = (waUsage || 0) + (m.usage || 0);
+                waCharge = (waCharge || 0) + m.charge;
+              }
+            }
+          }
         }
       }
 

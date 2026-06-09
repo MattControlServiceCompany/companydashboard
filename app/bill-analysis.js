@@ -6600,6 +6600,15 @@ async function extractPDFText(ab, statusCb) {
           if (pass === 0 && isCoverPage(bestText)) break;
           // Early exit after pass 1 (3.5x) if 2.5x + 3.5x already hit a strong score
           if (pass === 1 && bestScore >= 10) break;
+          // Baldwin early exit at pass 1: scanned Baldwin pages have a lower max score ceiling than Evergy;
+          // score >= 7 after 2 passes means account number + charge codes + dollar amounts are all present —
+          // no benefit from running 4 more primary passes on a well-scanned page
+          if (
+            pass === 1 &&
+            bestScore >= 7 &&
+            (/baldwin\s*city|baldwincitygov/i.test(bestText) || /FRANCHISE\s+FEE/i.test(bestText))
+          )
+            break;
         }
         // Run retry passes if primary results have issues (low score or missing key patterns)
         // KGS bills never have a "service from" pattern — don't require it for retry decision
@@ -6610,9 +6619,19 @@ async function extractPDFText(ab, statusCb) {
             (/\$\d+\.\d{2}/.test(bestText) ? 2 : 0) +
             (/\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/.test(bestText) ? 2 : 0)
           : 0;
+        // Baldwin bills never have a "service from MM/DD" pattern — don't require it for retry decision
+        // Use a content-quality score instead: account number + dollar amounts + charge-line codes
+        const isBaldwinText = /baldwin\s*city|baldwincitygov/i.test(bestText) || /FRANCHISE\s+FEE/i.test(bestText);
+        const baldwinScore = isBaldwinText
+          ? (/ACCOUNT\s+NUMBER/i.test(bestText) ? 2 : 0) +
+            ((bestText.match(/\$[\d,]+\.\d{2}/g) || []).length >= 3 ? 2 : 0) +
+            (/EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i.test(bestText) ? 2 : 0)
+          : 0;
         const needsRetry = isKGSText
           ? kgsScore < 4 // KGS: retry only if account+dollar+meter dates all missing
-          : bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
+          : isBaldwinText
+            ? baldwinScore < 4 // Baldwin: retry only if account+dollar amounts+charge codes all missing
+            : bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
         if (needsRetry) {
           for (let pass = 0; pass < OCR_RETRY_PASSES.length; pass++) {
             if (window._pdfAbort) break; // Bug #134: honour cancel inside retry pass loop
@@ -9193,6 +9212,11 @@ function renderPDFFields(parsed, warnings) {
       'FranchiseFee',
       'SolarCredit',
       'RenewableCharge',
+      // Baldwin City electric bills use ElectricCharge + FuelAdjustment instead of
+      // Evergy-style per-charge fields. These are null on Evergy bills so they
+      // contribute 0 and do not affect Evergy validation.
+      'ElectricCharge',
+      'FuelAdjustment',
     ],
     Gas: [
       'CustomerCharge',
@@ -9204,8 +9228,8 @@ function renderPDFFields(parsed, warnings) {
       'WinterEventCost',
       'FranchiseFee',
     ],
-    Water: ['WaterCharge', 'WaterProtectionFee'],
-    Sewer: ['SewerCharge'],
+    Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
+    Sewer: ['SewerCharge', 'SewerFranchiseFee'],
     Stormwater: ['StormWaterCharge'],
     Propane: ['Subtotal', 'Tax'],
   };

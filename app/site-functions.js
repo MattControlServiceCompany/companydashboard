@@ -1191,6 +1191,34 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.476',
+    date: '2026-06-09',
+    title: 'City of Baldwin bill import accuracy and speed improved',
+    items: [
+      {
+        type: 'fix',
+        text: 'City of Baldwin electric bills: charges were being inflated 100x due to a decimal-comma misread in OCR text — e.g. "1,234" was parsed as 1234 instead of the correct 1.234. Dollar amounts now import correctly.',
+      },
+      {
+        type: 'fix',
+        text: 'City of Baldwin bills: franchise fee (EI-prefixed line items) was being skipped and not included in the imported total. It now counts toward the billed amount.',
+      },
+      {
+        type: 'fix',
+        text: 'City of Baldwin bills: the meter-read numbers (e.g. previous/current readings) were occasionally being mistaken for charge amounts. A guard now prevents meter-read values from being counted as charges.',
+      },
+      {
+        type: 'fix',
+        text: 'City of Baldwin bills: validation was flagging correct imports as mismatches due to the decimal-comma and dropped-fee issues above. Imports that pass the corrected extraction should no longer show false validation warnings.',
+      },
+      {
+        type: 'change',
+        text: 'City of Baldwin OCR extraction is now faster — PDF text is processed with an optimized pass that reduces redundant scanning.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.475',
     date: '2026-06-09',
     title: 'Contract Projection chart direction glyphs fixed; report sequence labels now fully spelled out',
