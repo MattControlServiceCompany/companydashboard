@@ -30,6 +30,7 @@ var EM_EQUIP_TYPES = {
   'vav box': 'vav',
   'vav terminal': 'vav',
   'parallel fan terminal': 'fpb',
+  'fan terminal unit': 'fpb',
   'fan powered terminal': 'fpb',
   'fan-powered terminal': 'fpb',
   fpt: 'fpb',
@@ -573,6 +574,12 @@ var EM_POINT_MAP = [
     // "discFlowLive / oaFlowLive fix": outdoor/outside redirect to oaFlowLive; chilled/condenser/
     // hot water are plant-side flow points; supply fan/filter/switch/proof/loss/status/alarm/
     // percentage/percent all indicate non-airflow points. These are confirmed mis-maps (Group J).
+    // 2e6322d5/a0d29b4c: expanded cats to include fcu and zone — FCU/FTU units and VVT zone
+    // terminals may report discharge cfm; ahu added so RTU airflow readings surface on AHU rows.
+    // v469 fix: removed 'ahu' from cats — discharge airflow is a terminal-unit concept; AHU
+    // supply-side airflow belongs to supplyFanCFM (cats: ahu). Also added /supply\s+air/ to
+    // negativePatterns as belt-and-suspenders so "Supply Air Flow" never routes here even on
+    // terminal rows where the broad /\bair\s*flow\b/i pattern would otherwise match.
     patterns: [
       /discharge airflow/i,
       /disc airflow/i,
@@ -582,10 +589,11 @@ var EM_POINT_MAP = [
     ],
     negativePatterns: [
       /set\s*point|setpoint|request|minimum|maximum/i,
+      /\bsupply\s+air(?:\s*flow)?\b/i,
       /\b(outdoor|outside|supply\s+fan|filter|switch|proof|loss|status|alarm|percentage|percent|chilled\s+water|condenser\s+water|hot\s+water)\b/i,
     ],
     types: ['AI'],
-    cats: ['vav', 'fpb', 'ddvav'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'zone'],
   },
   {
     col: 'hwSupplyTemp',
@@ -703,7 +711,9 @@ var EM_POINT_MAP = [
     col: 'zoneCO2',
     label: 'Zone CO2',
     // Fix c0bf56e0: 'Zone CO2 AV' is a known CSV column header variant; mapped via labelAliases.
-    labelAliases: ['Zone CO2 AV'],
+    // 2e6322d5/c0bf56e0: added snapshot-format header 'Zone CO2 (zone_co2)' as labelAlias so
+    // enriched-format snapshot CSVs with that column name map to this col at import time.
+    labelAliases: ['Zone CO2 AV', 'Zone CO2 (zone_co2)'],
     patterns: [/\bco2\b/i, /zone\s*co2/i, /carbon dioxide/i, /co2\s*sensor/i, /co2\s*ppm/i],
     // Phase 2A: guard against "CO2 Alarm", "High CO2 Alarm", "CO2 Override", "CO2 Setpoint",
     // "CO2 Fault" — these are alarm/config objects, not live sensor readings.
@@ -712,12 +722,14 @@ var EM_POINT_MAP = [
     // a different ASHRAE 36 point category, excluded here).
     // NOTE: "return" and "ahu" are NOT added here — ordering fix in M4 (co2ReturnLive moved
     // before co2Live) handles return-air CO2 routing more cleanly.
+    // 2e6322d5: expanded cats to include fcu — FCU/FTU equipment (FTU maps to fpb already but
+    // fcu is needed for standalone fan-coil units that may carry zone CO2 sensors).
     negativePatterns: [
       /\b(alarm|high|low|override|fault|setpoint|set\s*point)\b/i,
       /\b(maximum|max|minimum|min|diagnostic|selection|outdoor|outside|oa\b)\b/i,
     ],
     types: ['AI', 'BAI', 'BAV', 'AV'],
-    cats: ['ahu', 'vav', 'fpb', 'ddvav'],
+    cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu'],
   },
   // Milestone 1: Zone Humidity — surfaces from raw BAS point names at read time
   // Phase 3a: added negativePatterns to block "Outside Air Humidity", "Outdoor Humidity",
@@ -725,9 +737,18 @@ var EM_POINT_MAP = [
   // The broad /\bhumidity\b/i pattern is intentionally kept for zone-level humidity labels
   // (e.g. "Zone Humidity", "Space Humidity", "Media Center Humidity") but OA/outdoor/return
   // contexts are now excluded here so the more-specific columns win.
+  // 2e6322d5: expanded cats to include fcu and zone — RTU units (→ahu) were already covered;
+  // fcu added for standalone fan-coil units; zone added for VVT zone terminals with humidity.
+  // labelAliases added for snapshot-format column headers:
+  //   'Zone Hum (zone_humidity)' — WebCTRL multi-col snapshot with BACnet key in parens
+  //   'Zone Hum (zhum)'          — alternate WebCTRL snapshot key variant
+  //   'Zone Humidity'            — plain descriptive variant used in some CSV exports
+  //   'Zone Hum'                 — abbreviated form in older snapshot exports
+  // negativePatterns block "Zone Hum (sph)" (setpoint variant) via set\s?point guard.
   {
     col: 'zoneRelativeHumidity',
     label: 'Zone RH %',
+    labelAliases: ['Zone Hum (zone_humidity)', 'Zone Hum (zhum)', 'Zone Humidity', 'Zone Hum'],
     patterns: [
       /zone\s*r\.?h/i,
       /space\s*r\.?h/i,
@@ -737,16 +758,18 @@ var EM_POINT_MAP = [
       /space\s*humid/i,
       /\brh\s*%/i,
       /\bhumidity\b/i,
+      /\bzone\s+hum\b/i,
     ],
     // M1A: expanded negativePatterns. Exhaust/supply-air humidity are not zone RH. High/low/alarm
     // block limit configs and alarm objects. call for/controlling/selection/ano block control
     // outputs and mode objects. Existing OA/outdoor/return guards retained.
+    // 2e6322d5: added sph (setpoint humidity) guard so 'Zone Hum (sph)' stays out of this col.
     negativePatterns: [
-      /outside|outdoor|outside\s+air|outdoor\s+air|\boa\s+hum|return\s+air|return\s+hum|\bra\s+hum|set\s?point/i,
+      /outside|outdoor|outside\s+air|outdoor\s+air|\boa\s+hum|return\s+air|return\s+hum|\bra\s+hum|set\s?point|\bsph\b/i,
       /\b(exhaust|supply\s+air|high|low|alarm|call\s+for|controlling|selection|ano\b)\b/i,
     ],
     types: ['AI'],
-    cats: ['ahu', 'vav', 'fpb', 'ddvav'],
+    cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'zone'],
   },
   // Phase 2C: expanded cats from ['ct'] to ['ct', 'ahu', 'dhu'] — "Outside Air Wet Bulb" and
   // "Broadcast Wet Bulb" appear on AHU and DHU (pool dehumidifier) equipment in JOCO data,
@@ -1590,6 +1613,8 @@ function emClassifyEquipType(equipTypeStr) {
   if (/fan.?pow|parallel.?fan|\bfpt\b/i.test(key)) return 'fpb';
   if (/fan.?power/i.test(key)) return 'fpb';
   if (/\bftu\b/i.test(key)) return 'fpb';
+  // "Fan Terminal Unit" full name (a6bd97ef) — with or without room/number suffix
+  if (/fan\s+terminal\s+unit/i.test(key)) return 'fpb';
   // Fan terminal coils (FTC-1.01) — fpb bucket
   if (/\bftc[-\s.]?\d/i.test(key)) return 'fpb';
   // Dual-duct abbreviation DD-N — must come BEFORE the broader dual.?duct line
@@ -10529,6 +10554,28 @@ var EM_POINT_CATEGORIES = {
         'oa dew point',
         'current dewpoint',
       ],
+    },
+    // 2e6322d5: added co2 and zoneHumidity to fcu — fan-coil units may carry zone CO2 sensors
+    // and zone RH sensors (per ASHRAE 62.1 DCV requirements). Without these, the audit view
+    // shows no CO2 or humidity columns for FCU rows even when data is present.
+    {
+      key: 'co2',
+      label: 'Zone CO2 Sensor',
+      required: false,
+      ashrae36Name: 'Zone CO2 Concentration',
+      ashrae36Section: 'FCU / DCV',
+      configFlag: 'hasCO2',
+      patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
+      aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
+    },
+    {
+      key: 'zoneHumidity',
+      label: 'Zone Humidity',
+      required: false,
+      ashrae36Name: 'Zone Relative Humidity',
+      ashrae36Section: 'FCU',
+      patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i, /zone\s+hum\b/i],
+      aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity', 'zone hum', 'zone relative humidity'],
     },
   ],
 

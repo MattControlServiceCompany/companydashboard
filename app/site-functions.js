@@ -1191,6 +1191,30 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.469',
+    date: '2026-06-08',
+    title: 'Equipment Matrix FTU/VFD classification, Zone sensor mapping, project tab order fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: Fan Terminal Units are now correctly classified as fan-powered boxes — they no longer appear in the air-handler category.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: VFD Integration control programs are no longer grouped under air handlers — they are excluded from that category so AHU rows stay clean.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: Zone Humidity, Zone CO2, and Discharge Airflow points on terminal units now map to their correct columns instead of being dropped.',
+      },
+      {
+        type: 'fix',
+        text: 'Project tab order corrected: Equipment Matrix now appears after Utility Data and BAS Trends now appears before Project Settings. Tab order also persists correctly after navigating away and back.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.08.468',
     date: '2026-06-08',
     title:

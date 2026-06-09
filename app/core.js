@@ -228,6 +228,25 @@ function init() {
     } catch (e) {}
     localStorage.setItem('ch_projTabOrder_savingsBeforeGfx', '1');
   }
+  // Migrate: move 'bas-trends' to immediately before 'settings' in stored tab order
+  // (user confirmed 2026-06-04: BAS Trends must be to the LEFT of Project Settings — item 5d7e3f42)
+  if (!localStorage.getItem('ch_projTabOrder_basBeforeSettings')) {
+    try {
+      const _bbsSaved = JSON.parse(localStorage.getItem('ch_projTabOrder'));
+      if (Array.isArray(_bbsSaved) && _bbsSaved.length) {
+        const _bbsBasIdx = _bbsSaved.indexOf('bas-trends');
+        const _bbsSettIdx = _bbsSaved.indexOf('settings');
+        // Only migrate if bas-trends currently comes AFTER settings (i.e. the violation exists)
+        if (_bbsBasIdx > _bbsSettIdx && _bbsSettIdx !== -1 && _bbsBasIdx !== -1) {
+          const _bbsNew = _bbsSaved.filter((id) => id !== 'bas-trends');
+          const _bbsSettNewIdx = _bbsNew.indexOf('settings');
+          _bbsNew.splice(_bbsSettNewIdx, 0, 'bas-trends');
+          localStorage.setItem('ch_projTabOrder', JSON.stringify(_bbsNew));
+        }
+      }
+    } catch (e) {}
+    localStorage.setItem('ch_projTabOrder_basBeforeSettings', '1');
+  }
   checkRecurringMeetings();
   buildWeekStrip();
   buildHomeCal();
