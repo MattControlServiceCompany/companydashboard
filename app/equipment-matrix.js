@@ -12875,6 +12875,40 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
   return result;
 }
 
+/* ── _emCatKeyLabel ─────────────────────────────────────────────────────────
+   Returns a human-readable label for a point category key by looking it up
+   in ASHRAE36_GAP_DESCRIPTIONS (report-engine.js) or EM_POINT_CATEGORIES.
+   Falls back to the raw key only when no label is found.                   */
+var _emCatKeyLabelCache = null;
+function _emCatKeyLabel(catKey) {
+  // Build a flat key→label map on first call (lazy, cached).
+  if (!_emCatKeyLabelCache) {
+    _emCatKeyLabelCache = {};
+    // First priority: ASHRAE36_GAP_DESCRIPTIONS.short (report-engine.js, same global scope)
+    if (typeof ASHRAE36_GAP_DESCRIPTIONS !== 'undefined') {
+      for (var gk in ASHRAE36_GAP_DESCRIPTIONS) {
+        if (ASHRAE36_GAP_DESCRIPTIONS.hasOwnProperty(gk) && ASHRAE36_GAP_DESCRIPTIONS[gk].short) {
+          _emCatKeyLabelCache[gk] = ASHRAE36_GAP_DESCRIPTIONS[gk].short;
+        }
+      }
+    }
+    // Second priority: EM_POINT_CATEGORIES[type][].label — fills in any key not in GAP_DESCRIPTIONS
+    if (typeof EM_POINT_CATEGORIES !== 'undefined') {
+      for (var et in EM_POINT_CATEGORIES) {
+        if (!EM_POINT_CATEGORIES.hasOwnProperty(et)) continue;
+        var cats = EM_POINT_CATEGORIES[et];
+        for (var ci = 0; ci < cats.length; ci++) {
+          var c = cats[ci];
+          if (c.key && c.label && !_emCatKeyLabelCache[c.key]) {
+            _emCatKeyLabelCache[c.key] = c.label;
+          }
+        }
+      }
+    }
+  }
+  return _emCatKeyLabelCache[catKey] || catKey;
+}
+
 /* ── emRenderSequenceCell ───────────────────────────────────────────────────
    Renders a single <td> for a sequence status column in audit view.
    Returns an HTML string.
@@ -12885,7 +12919,7 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
      'blocked' — red    ✗  (key points missing)
      'na'      — gray   —  (not applicable)
 
-   Tooltip shows present and missing category keys for quick diagnosis.    */
+   Tooltip shows present and missing point labels for quick diagnosis.      */
 function emRenderSequenceCell(seqName, readiness) {
   var baseStyle =
     'border-bottom:1px solid var(--border);' +
@@ -12900,8 +12934,9 @@ function emRenderSequenceCell(seqName, readiness) {
   }
 
   var status = readiness.status;
-  var presentList = (readiness.presentCats || []).join(', ');
-  var missingList = (readiness.missingCats || []).join(', ');
+  // Resolve raw category keys to human-readable labels for tooltip display
+  var presentList = (readiness.presentCats || []).map(_emCatKeyLabel).join(', ');
+  var missingList = (readiness.missingCats || []).map(_emCatKeyLabel).join(', ');
   var tooltip = seqName + ' (' + (readiness.ashrae36 || '') + ')';
   if (presentList) tooltip += '\nPresent: ' + presentList;
   if (missingList) tooltip += '\nMissing: ' + missingList;
@@ -13275,6 +13310,10 @@ function emOpenManageMappings(pid) {
   if (!pid) pid = window._emActivePid;
   if (!pid) return;
 
+  // d5fe0454: Guard against double-open — if modal is already present (e.g. user
+  // clicked again while the deferred content was still loading), do nothing.
+  if (document.getElementById('em-manage-mappings-overlay')) return;
+
   var data = emLoadMatrix(pid);
   if (!data) {
     showToast('Equipment data still loading — try again in a moment', 'warn');
@@ -13368,170 +13407,188 @@ function emOpenManageMappings(pid) {
     var tbody = document.getElementById('em-mm-tbody');
     if (!tbody) return;
 
-    var allPoints = emGetAllPoints(rows);
-    var customMappings = emLoadCustomMappings(pid);
+    // d5fe0454: wrap in try/catch so any unexpected exception surfaces as a toast
+    // instead of silently swallowing the error and leaving the modal stuck on "Loading…".
+    try {
+      var allPoints = emGetAllPoints(rows);
+      var customMappings = emLoadCustomMappings(pid);
 
-    // Build lookup: normName -> mapping entry from existing custom mappings
-    var existingCustomMap = {};
-    for (var mi = 0; mi < customMappings.length; mi++) {
-      var m = customMappings[mi];
-      if (m.rawName) existingCustomMap[emNormalizePointName(m.rawName)] = m;
-    }
-
-    // Separate into unmatched and matched
-    var unmatchedPoints = [];
-    var matchedPoints = [];
-    for (var pi = 0; pi < allPoints.length; pi++) {
-      var pt = allPoints[pi];
-      var normName = emNormalizePointName(pt.name);
-      var hasCustom = !!existingCustomMap[normName];
-      if (pt.status === 'unmatched' || hasCustom) {
-        unmatchedPoints.push(pt);
-      } else if (pt.status === 'matched') {
-        matchedPoints.push(pt);
+      // Build lookup: normName -> mapping entry from existing custom mappings
+      var existingCustomMap = {};
+      for (var mi = 0; mi < customMappings.length; mi++) {
+        var m = customMappings[mi];
+        if (m.rawName) existingCustomMap[emNormalizePointName(m.rawName)] = m;
       }
-      // excluded points are silently omitted
-    }
 
-    var allCatOptions = emBuildFunctionalCatOptions();
-
-    // Count total occurrences for summary line
-    var unmatchedTotalOccurrences = 0;
-    for (var ui = 0; ui < unmatchedPoints.length; ui++) unmatchedTotalOccurrences += unmatchedPoints[ui].count;
-    var matchedTotalOccurrences = 0;
-    for (var mti = 0; mti < matchedPoints.length; mti++) matchedTotalOccurrences += matchedPoints[mti].count;
-
-    // Update summary line
-    var summaryEl = document.getElementById('em-mm-summary');
-    if (summaryEl) {
-      summaryEl.textContent =
-        unmatchedPoints.length +
-        ' unmatched  |  ' +
-        matchedPoints.length +
-        ' auto-matched  |  ' +
-        (unmatchedTotalOccurrences + matchedTotalOccurrences) +
-        ' total point occurrences';
-    }
-
-    // ── Build tbody HTML in chunks to stay non-blocking ───────────────────
-    // Each chunk processes CHUNK_SIZE points before yielding via setTimeout.
-    var CHUNK_SIZE = 80;
-    var htmlParts = [];
-
-    // Section 1 header
-    htmlParts.push(
-      '<tr><td colspan="4" style="' +
-        sectionHeadStyle +
-        'border-top:none">Unmatched Points (' +
-        unmatchedPoints.length +
-        ') — need mapping</td></tr>',
-    );
-
-    if (unmatchedPoints.length === 0) {
-      htmlParts.push(
-        '<tr><td colspan="3" style="padding:16px 12px;text-align:center;color:var(--text3);font-size:11px">' +
-          'All points are matched — nothing needs mapping.</td></tr>',
-      );
-    } else {
-      for (var upi = 0; upi < unmatchedPoints.length; upi++) {
-        var up = unmatchedPoints[upi];
-        var normUp = emNormalizePointName(up.name);
-        var existingEntry = existingCustomMap[normUp];
-        var currentVal = '';
-        if (existingEntry) {
-          currentVal =
-            existingEntry.categoryKey === '__exclude__'
-              ? '__exclude__'
-              : existingEntry.equipCategory
-                ? existingEntry.equipCategory + ':' + existingEntry.categoryKey
-                : existingEntry.categoryKey;
+      // Separate into unmatched and matched
+      var unmatchedPoints = [];
+      var matchedPoints = [];
+      for (var pi = 0; pi < allPoints.length; pi++) {
+        var pt = allPoints[pi];
+        var normName = emNormalizePointName(pt.name);
+        var hasCustom = !!existingCustomMap[normName];
+        if (pt.status === 'unmatched' || hasCustom) {
+          unmatchedPoints.push(pt);
+        } else if (pt.status === 'matched') {
+          matchedPoints.push(pt);
         }
-        var countTitle = 'This point appears on ' + up.count + ' equipment row' + (up.count !== 1 ? 's' : '');
-        var selectHtml = emBuildCategoryDropdown(up.name, up.equipCategory, currentVal, allCatOptions);
-        htmlParts.push(
-          '<tr style="border-bottom:1px solid var(--border)">' +
-            '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
-            emHtmlEsc(up.name) +
-            '</td>' +
-            '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
-            emHtmlEsc(countTitle) +
-            '">' +
-            up.count +
-            '</td>' +
-            '<td style="padding:6px 8px;font-size:11px">' +
-            selectHtml +
-            '</td>' +
-            '<td></td></tr>',
-        );
+        // excluded points are silently omitted
       }
-    }
 
-    // Section 2 header + rows
-    if (matchedPoints.length > 0) {
+      var allCatOptions = emBuildFunctionalCatOptions();
+
+      // Count total occurrences for summary line
+      var unmatchedTotalOccurrences = 0;
+      for (var ui = 0; ui < unmatchedPoints.length; ui++) unmatchedTotalOccurrences += unmatchedPoints[ui].count;
+      var matchedTotalOccurrences = 0;
+      for (var mti = 0; mti < matchedPoints.length; mti++) matchedTotalOccurrences += matchedPoints[mti].count;
+
+      // Update summary line
+      var summaryEl = document.getElementById('em-mm-summary');
+      if (summaryEl) {
+        summaryEl.textContent =
+          unmatchedPoints.length +
+          ' unmatched  |  ' +
+          matchedPoints.length +
+          ' auto-matched  |  ' +
+          (unmatchedTotalOccurrences + matchedTotalOccurrences) +
+          ' total point occurrences';
+      }
+
+      // ── Build tbody HTML in chunks to stay non-blocking ───────────────────
+      // Each chunk processes CHUNK_SIZE points before yielding via setTimeout.
+      var CHUNK_SIZE = 80;
+      var htmlParts = [];
+
+      // Section 1 header
       htmlParts.push(
         '<tr><td colspan="4" style="' +
           sectionHeadStyle +
-          '">Auto-Matched Points (' +
-          matchedPoints.length +
-          ') — verify these look correct</td></tr>',
+          'border-top:none">Unmatched Points (' +
+          unmatchedPoints.length +
+          ') — need mapping</td></tr>',
       );
-      for (var mpi = 0; mpi < matchedPoints.length; mpi++) {
-        var mp = matchedPoints[mpi];
-        var confColor = mp.confidence === 'high' ? '#27ae60' : mp.confidence === 'medium' ? '#e67e22' : '#888';
-        var confLabel = mp.confidence === 'high' ? 'High' : mp.confidence === 'medium' ? 'Medium' : 'Low';
-        var confTitle =
-          'Auto-match confidence: ' +
-          confLabel +
-          '. Click Save if this looks correct, or use the Unmatched section to override.';
-        var mCountTitle = 'This point appears on ' + mp.count + ' equipment row' + (mp.count !== 1 ? 's' : '');
-        htmlParts.push(
-          '<tr style="border-bottom:1px solid var(--border)">' +
-            '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:280px;word-break:break-word">' +
-            emHtmlEsc(mp.name) +
-            '</td>' +
-            '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
-            emHtmlEsc(mCountTitle) +
-            '">' +
-            mp.count +
-            '</td>' +
-            '<td style="padding:6px 12px;font-size:11px;color:var(--text2)">' +
-            emHtmlEsc(mp.matchedLabel) +
-            '</td>' +
-            '<td style="padding:6px 12px;font-size:11px;text-align:center" title="' +
-            emHtmlEsc(confTitle) +
-            '">' +
-            '<span style="color:' +
-            confColor +
-            ';font-weight:600;font-size:10px">' +
-            confLabel +
-            '</span>' +
-            '</td></tr>',
-        );
-      }
-    }
 
-    // Inject in chunks so the UI thread stays responsive during large builds.
-    var chunkIdx = 0;
-    function injectChunk() {
-      var tbodyNow = document.getElementById('em-mm-tbody');
-      if (!tbodyNow) return; // modal was closed
-      if (chunkIdx === 0) tbodyNow.innerHTML = ''; // clear the loading row on first chunk
-      var end = Math.min(chunkIdx + CHUNK_SIZE, htmlParts.length);
-      var fragment = htmlParts.slice(chunkIdx, end).join('');
-      tbodyNow.insertAdjacentHTML('beforeend', fragment);
-      chunkIdx = end;
-      if (chunkIdx < htmlParts.length) {
-        setTimeout(injectChunk, 0);
+      if (unmatchedPoints.length === 0) {
+        htmlParts.push(
+          '<tr><td colspan="3" style="padding:16px 12px;text-align:center;color:var(--text3);font-size:11px">' +
+            'All points are matched — nothing needs mapping.</td></tr>',
+        );
       } else {
-        // All rows injected — enable Save button
-        var saveBtn = document.getElementById('em-mm-save-btn');
-        if (saveBtn) {
-          saveBtn.disabled = false;
-          saveBtn.style.opacity = '1';
+        for (var upi = 0; upi < unmatchedPoints.length; upi++) {
+          var up = unmatchedPoints[upi];
+          var normUp = emNormalizePointName(up.name);
+          var existingEntry = existingCustomMap[normUp];
+          var currentVal = '';
+          if (existingEntry) {
+            currentVal =
+              existingEntry.categoryKey === '__exclude__'
+                ? '__exclude__'
+                : existingEntry.equipCategory
+                  ? existingEntry.equipCategory + ':' + existingEntry.categoryKey
+                  : existingEntry.categoryKey;
+          }
+          var countTitle = 'This point appears on ' + up.count + ' equipment row' + (up.count !== 1 ? 's' : '');
+          var selectHtml = emBuildCategoryDropdown(up.name, up.equipCategory, currentVal, allCatOptions);
+          htmlParts.push(
+            '<tr style="border-bottom:1px solid var(--border)">' +
+              '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
+              emHtmlEsc(up.name) +
+              '</td>' +
+              '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
+              emHtmlEsc(countTitle) +
+              '">' +
+              up.count +
+              '</td>' +
+              '<td style="padding:6px 8px;font-size:11px">' +
+              selectHtml +
+              '</td>' +
+              '<td></td></tr>',
+          );
         }
       }
+
+      // Section 2 header + rows
+      if (matchedPoints.length > 0) {
+        htmlParts.push(
+          '<tr><td colspan="4" style="' +
+            sectionHeadStyle +
+            '">Auto-Matched Points (' +
+            matchedPoints.length +
+            ') — verify these look correct</td></tr>',
+        );
+        for (var mpi = 0; mpi < matchedPoints.length; mpi++) {
+          var mp = matchedPoints[mpi];
+          var confColor = mp.confidence === 'high' ? '#27ae60' : mp.confidence === 'medium' ? '#e67e22' : '#888';
+          var confLabel = mp.confidence === 'high' ? 'High' : mp.confidence === 'medium' ? 'Medium' : 'Low';
+          var confTitle =
+            'Auto-match confidence: ' +
+            confLabel +
+            '. Click Save if this looks correct, or use the Unmatched section to override.';
+          var mCountTitle = 'This point appears on ' + mp.count + ' equipment row' + (mp.count !== 1 ? 's' : '');
+          htmlParts.push(
+            '<tr style="border-bottom:1px solid var(--border)">' +
+              '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:280px;word-break:break-word">' +
+              emHtmlEsc(mp.name) +
+              '</td>' +
+              '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
+              emHtmlEsc(mCountTitle) +
+              '">' +
+              mp.count +
+              '</td>' +
+              '<td style="padding:6px 12px;font-size:11px;color:var(--text2)">' +
+              emHtmlEsc(mp.matchedLabel) +
+              '</td>' +
+              '<td style="padding:6px 12px;font-size:11px;text-align:center" title="' +
+              emHtmlEsc(confTitle) +
+              '">' +
+              '<span style="color:' +
+              confColor +
+              ';font-weight:600;font-size:10px">' +
+              confLabel +
+              '</span>' +
+              '</td></tr>',
+          );
+        }
+      }
+
+      // Inject in chunks so the UI thread stays responsive during large builds.
+      var chunkIdx = 0;
+      function injectChunk() {
+        var tbodyNow = document.getElementById('em-mm-tbody');
+        if (!tbodyNow) return; // modal was closed
+        if (chunkIdx === 0) tbodyNow.innerHTML = ''; // clear the loading row on first chunk
+        var end = Math.min(chunkIdx + CHUNK_SIZE, htmlParts.length);
+        var fragment = htmlParts.slice(chunkIdx, end).join('');
+        tbodyNow.insertAdjacentHTML('beforeend', fragment);
+        chunkIdx = end;
+        if (chunkIdx < htmlParts.length) {
+          setTimeout(injectChunk, 0);
+        } else {
+          // All rows injected — enable Save button
+          var saveBtn = document.getElementById('em-mm-save-btn');
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = '1';
+          }
+        }
+      }
+      injectChunk();
+    } catch (e) {
+      // d5fe0454: surface unexpected exceptions so the user sees what went wrong
+      // instead of the modal staying stuck on "Building point list..."
+      console.error('[EM] emOpenManageMappings deferred build failed:', e);
+      var tbodyErr = document.getElementById('em-mm-tbody');
+      if (tbodyErr) {
+        tbodyErr.innerHTML =
+          '<tr><td colspan="4" style="padding:24px;text-align:center;color:#ef4444;font-size:12px">' +
+          'Error building point list — check browser console for details. Try closing and reopening.' +
+          '</td></tr>';
+      }
+      if (typeof showToast === 'function') {
+        showToast('Manage Mappings failed to load — see console for details', 'error');
+      }
     }
-    injectChunk();
   }, 0);
 }
 

@@ -1191,6 +1191,30 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.473',
+    date: '2026-06-09',
+    title: 'Equipment Matrix fixes + Baker KGS multi-account parsing fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: clicking Manage Mappings no longer gets stuck on "Building point list..." when your data triggers an error — the error now surfaces as a visible message instead of silently failing.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: clicking Manage Mappings a second time while the modal is loading no longer stacks a duplicate overlay.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: sequence readiness cells in the audit view now show proper labels (e.g. "DCV (VAV)") in their hover tooltips instead of raw internal keys.',
+      },
+      {
+        type: 'fix',
+        text: "Baker KGS bills: OCR'd bills that include a payment stub repeating the same account number no longer produce phantom parse-error records.",
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.472',
     date: '2026-06-09',
     title: 'Light mode fix on energy pages + empty state positioning',

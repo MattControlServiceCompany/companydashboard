@@ -5125,9 +5125,13 @@ const UTILITY_RULES = [
         // "Account Number" boundary so each account is extracted independently.
         // Only applies to KGS sections (identified by the KGS brand text or Statement Date pattern).
         const isKGSSection = /kansas\s+gas\s+service/i.test(s) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(s);
-        const accountMatches = isKGSSection ? [...s.matchAll(/(?=Account\s+Number[\s:]*[0-9 ]{10,30})/gi)] : [];
+        const accountMatches = isKGSSection ? [...s.matchAll(/Account\s+Number[\s:]*([0-9 ]{10,30})/gi)] : [];
+        // Build a Set of distinct normalised account numbers. A KGS payment stub repeats the SAME
+        // account number, so accountMatches.length can be 2 while there is only ONE real account.
+        // Only invoke _splitAccountBlocks when there are genuinely different account numbers.
+        const distinctAccounts = new Set(accountMatches.map((m) => m[1].replace(/\s+/g, '')));
 
-        if (isKGSSection && accountMatches.length > 1) {
+        if (isKGSSection && accountMatches.length > 1 && distinctAccounts.size > 1) {
           // Split the section text at each "Account Number" boundary.
           // Each sub-block starts at an "Account Number" line and ends at the next one.
           // Use a helper that recursively splits until no sub-block contains more than one
