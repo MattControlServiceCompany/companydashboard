@@ -1191,17 +1191,54 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.467',
+    date: '2026-06-08',
+    title: 'ASHRAE 36 Setpoint Programming Review: smarter building roll-up',
+    items: [
+      {
+        type: 'change',
+        text: 'Setpoint Programming Review report: when every zone in a building has the same setpoint deviation (e.g., all cooling setpoints are 1 °F high), those individual zone rows are now collapsed into a single building-level finding — making the report shorter and easier to act on.',
+      },
+      {
+        type: 'feature',
+        text: 'Setpoint Programming Review report: zones whose setpoints could not be found in the BAS export are now surfaced as a separate finding, so nothing is silently skipped.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.08.466',
     date: '2026-06-08',
     title: 'Quarterly report fixes (6 bugs) and Equipment Matrix ASHRAE 36 setpoint value compliance',
     items: [
-      { type: 'fix', text: 'Environmental Impact report page: duplicate pollutant entries and an unclosed div are fixed — the page now renders correctly.' },
-      { type: 'fix', text: 'Observations page: building status arrows now show the correct up/right/down direction instead of a question mark.' },
-      { type: 'fix', text: 'Propane report page: buildings are now filtered by whether they have propane monthly data, not by whether a baseline value is set. Buildings with propane deliveries but no set baseline will now appear correctly.' },
-      { type: 'fix', text: 'Financial Summary page: the Quarterly Savings vs Baseline sub-table header columns no longer clip — the last column (Actual Savings) now wraps and displays fully.' },
-      { type: 'fix', text: 'Observations & Recommendations page: content now paginates across multiple report pages when there are many buildings, instead of overflowing off the bottom.' },
-      { type: 'fix', text: 'Savings Performance page: the savings percentage now uses the same usage-based formula as Financial Summary (baseline usage minus actual usage, divided by baseline usage). The pages now agree.' },
-      { type: 'feature', text: 'Equipment Matrix Audit View: new Setpoint Values column checks actual zone setpoint values from your BAS export against ASHRAE Guideline 36 defaults (GL36 Section 3.1.1.1 / Table 3.1.1.3). Heating/cooling and CO2 setpoints flagged if they differ from GL36 defaults by more than 1 deg F or 50 ppm. Gray = no setpoint data; green = all match; orange/red = mismatches (hover for detail). Mark intentional overrides in the compliance detail panel.' },
+      {
+        type: 'fix',
+        text: 'Environmental Impact report page: duplicate pollutant entries and an unclosed div are fixed — the page now renders correctly.',
+      },
+      {
+        type: 'fix',
+        text: 'Observations page: building status arrows now show the correct up/right/down direction instead of a question mark.',
+      },
+      {
+        type: 'fix',
+        text: 'Propane report page: buildings are now filtered by whether they have propane monthly data, not by whether a baseline value is set. Buildings with propane deliveries but no set baseline will now appear correctly.',
+      },
+      {
+        type: 'fix',
+        text: 'Financial Summary page: the Quarterly Savings vs Baseline sub-table header columns no longer clip — the last column (Actual Savings) now wraps and displays fully.',
+      },
+      {
+        type: 'fix',
+        text: 'Observations & Recommendations page: content now paginates across multiple report pages when there are many buildings, instead of overflowing off the bottom.',
+      },
+      {
+        type: 'fix',
+        text: 'Savings Performance page: the savings percentage now uses the same usage-based formula as Financial Summary (baseline usage minus actual usage, divided by baseline usage). The pages now agree.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Audit View: new Setpoint Values column checks actual zone setpoint values from your BAS export against ASHRAE Guideline 36 defaults (GL36 Section 3.1.1.1 / Table 3.1.1.3). Heating/cooling and CO2 setpoints flagged if they differ from GL36 defaults by more than 1 deg F or 50 ppm. Gray = no setpoint data; green = all match; orange/red = mismatches (hover for detail). Mark intentional overrides in the compliance detail panel.',
+      },
     ],
   },
 
