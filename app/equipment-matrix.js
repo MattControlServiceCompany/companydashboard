@@ -1030,6 +1030,19 @@ var EM_POINT_MAP = [
 
   // E2: Return Air CO2 — MOVED before co2Live (M4 ordering fix). See entry above co2Live.
 
+  // SP-CO2: CO2 Setpoint — the programmed CO2 SP point (distinct from co2Live which is the
+  // measured CO2 level). Typical BAS names: "CO2 Setpoint", "CO2 Set Point", "Zone CO2 Setpoint".
+  // negativePatterns exclude alarm/limit objects and unocc variants (separate point category).
+  // RENDER-VERIFY DEFERRED: col routing against live JOCO data requires headless render.
+  {
+    col: 'zoneCO2Setpoint',
+    label: 'Zone CO2 Setpoint',
+    patterns: [/co2.*set\s*point/i, /co2.*setpoint/i],
+    negativePatterns: [/unocc|alarm|high|low|reset/i],
+    types: ['SP'],
+    cats: ['vav', 'fpb', 'ddvav', 'ahu', 'fcu'],
+  },
+
   // H9: Unoccupied Cooling Setpoint
   // Taxonomy: "Cooling Unoccupied Setpoint", "Unoccupied Cooling Set Point",
   // "Unoccupied Cooling Set Point ANI/ANO".
@@ -3532,6 +3545,32 @@ function emGetAuditColDefs(filteredRows) {
       'Upload trend CSVs via the BAS Trends view to populate this column.',
   });
 
+  // Phase 4.1 — "Setpoint Values" column (GL36 §3.1.1.1 / Table 3.1.1.3 value compliance).
+  // Only applies to zone equipment (vav, fpb, ddvav, zone, fcu). Shows pill per row.
+  var _spZoneCats = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+  var _hasSpZoneType = false;
+  for (var _spti = 0; _spti < equipTypes.length; _spti++) {
+    if (_spZoneCats[equipTypes[_spti]]) {
+      _hasSpZoneType = true;
+      break;
+    }
+  }
+  if (_hasSpZoneType) {
+    defs.push({
+      key: '_spValues',
+      label: 'Setpoint Values',
+      group: 'audit-sp',
+      width: 130,
+      isAuditSpValues: true,
+      spZoneEquipTypes: Object.keys(_spZoneCats),
+      title:
+        'GL36 §3.1.1.1 / Table 3.1.1.3 — Compares actual zone setpoint values against GL36 defaults. ' +
+        'Green = All Match, Amber = Needs Review (deviations found — may be intentional per §3.1.1.1), ' +
+        'Gray = No Data (setpoints not in BAS export), — = not applicable to this equipment type. ' +
+        'Click Coverage % cell to see the full GL36 Setpoint Check detail.',
+    });
+  }
+
   return defs;
 }
 
@@ -3755,6 +3794,7 @@ var _emColKeyAliases = {
   ventCfmSpLive: 'ventilationCFMSetpoint',
   zoneAirTempLive: 'zoneAirTemp',
   zoneCoolAdjLive: 'zoneCoolAdjust',
+  zoneCO2SpLive: 'zoneCO2Setpoint',
   zoneCoolSpLive: 'zoneCoolSetpoint',
   zoneCoolUnoccSpLive: 'zoneUnoccCoolSetpoint',
   zoneDamperLive: 'zoneDamper',
@@ -5701,6 +5741,68 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     );
   }
 
+  // ── Setpoint Values column (Phase 4.1) ──
+  // GL36 §3.1.1.1 / Table 3.1.1.3 value compliance pill.
+  // Green "All Match", Amber "N Needs Review", Gray "No Data", dash for N/A types.
+  if (def.isAuditSpValues) {
+    var _spCats = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+    if (!row.category || !_spCats[row.category]) {
+      return (
+        '<td style="' +
+        baseStyle +
+        'color:var(--text3)" title="Setpoint value checks apply to zone equipment only">&#8212;</td>'
+      );
+    }
+    var _spPid = window._emActivePid || '';
+    var _spFlags = emLoadEquipConfigFlags(_spPid, row.id);
+    var _spOvr = emLoadSpOverrides(_spPid, row.id);
+    var _spResult = emComputeSetpointCompliance(row, _spFlags, _spOvr);
+    if (!_spResult.hasAnyData) {
+      // No numeric setpoint values in BAS export for this equipment
+      var _spNoDataTooltip = 'No setpoint values found in the imported BAS export for this equipment.';
+      return (
+        '<td style="' +
+        baseStyle +
+        'color:var(--text3);font-size:11px" title="' +
+        emHtmlEsc(_spNoDataTooltip) +
+        '">No Data</td>'
+      );
+    }
+    // Count deviations (excluding intentionally-marked ones)
+    var _spDevCount = 0;
+    var _spDevLines = [];
+    for (var _spri = 0; _spri < _spResult.results.length; _spri++) {
+      var _spr = _spResult.results[_spri];
+      if (_spr.status === 'DEVIATION' && !_spr.intentionalFlag) {
+        _spDevCount++;
+        _spDevLines.push(_spr.label + ': ' + (_spr.deviationNote || 'Needs Review'));
+      }
+    }
+    if (_spDevCount === 0) {
+      // All checks passed (or all deviations are marked intentional)
+      return (
+        '<td style="' +
+        baseStyle +
+        'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700;font-size:11px" ' +
+        'title="All setpoint checks match GL36 defaults (±1°F / ±50 ppm)">All Match</td>'
+      );
+    }
+    // Amber — deviations need review
+    var _spTooltip = _spDevCount + ' check(s) need review: ' + _spDevLines.join('; ');
+    return (
+      '<td style="' +
+      baseStyle +
+      'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700;font-size:11px;cursor:pointer" ' +
+      'title="' +
+      emHtmlEsc(_spTooltip) +
+      '" onclick="emShowComplianceDetail(\'' +
+      String(row.id).replace(/'/g, "\\'") +
+      '\')">' +
+      _spDevCount +
+      ' Needs Review</td>'
+    );
+  }
+
   // ── Fallback ──
   // Milestone 1: use != null guard (0-safe) instead of || '' (was falsy)
   return '<td style="' + baseStyle + '">' + emHtmlEsc(String(row[def.key] != null ? row[def.key] : '')) + '</td>';
@@ -5763,15 +5865,36 @@ function emAuditGetSortVal(row, def) {
     }
     return 4; // no BAS data — sort last
   }
+  // Setpoint Values column sort: 0=has deviations (worst first), 1=all match, 2=no data, 3=N/A
+  if (def.isAuditSpValues) {
+    var _spSortCats = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+    if (!row.category || !_spSortCats[row.category]) return 3; // N/A — sort last
+    var _spSortPid = window._emActivePid || '';
+    var _spSortFlags = emLoadEquipConfigFlags(_spSortPid, row.id);
+    var _spSortOvr = emLoadSpOverrides(_spSortPid, row.id);
+    var _spSortResult = emComputeSetpointCompliance(row, _spSortFlags, _spSortOvr);
+    if (!_spSortResult.hasAnyData) return 2;
+    // Count unacknowledged deviations
+    var _spSortDevs = 0;
+    for (var _spsi = 0; _spsi < _spSortResult.results.length; _spsi++) {
+      var _spse = _spSortResult.results[_spsi];
+      if (_spse.status === 'DEVIATION' && !_spse.intentionalFlag) _spSortDevs++;
+    }
+    return _spSortDevs > 0 ? 0 : 1;
+  }
   return '';
 }
 
 /* ── emShowComplianceDetail ─────────────────────────────────────────────────
-   Clicking the Coverage % cell opens a simple detail view showing which
-   points were matched, fuzzy-matched, or missing.
-   Phase 3 will replace this with a panel — for now, shows an alert summary. */
+   Clicking the Coverage % cell (or an amber Setpoint Values pill) opens a
+   side panel showing:
+     1. Point Coverage breakdown (matched / missing / N/A)
+     2. Equipment Config Flags — checkboxes + select dropdowns (Phase 2.3)
+     3. GL36 Setpoint Check table (Phase 4.2)
+   The panel slides in from the right edge of the em-table-wrap container.  */
 function emShowComplianceDetail(rowId) {
-  var data = emLoadMatrix(window._emActivePid);
+  var pid = window._emActivePid || '';
+  var data = emLoadMatrix(pid);
   if (!data) return;
   var row = null;
   for (var i = 0; i < (data.rows || []).length; i++) {
@@ -5781,35 +5904,329 @@ function emShowComplianceDetail(rowId) {
     }
   }
   if (!row) return;
-  var _detailMaps = emLoadCustomMappings(window._emActivePid || '');
+
+  var _detailMaps = emLoadCustomMappings(pid);
   var c = emComputeCompliance(row, {}, _detailMaps);
-  var lines = [
-    (row.equipName || row.name || rowId) + ' — ' + (row.category || '').toUpperCase() + ' Compliance',
-    'Coverage: ' + c.coveragePct + '% (' + c.totalMatched + '/' + (c.totalRequired - c.totalNA) + ' required points)',
-    '',
-  ];
+  var flags = emLoadEquipConfigFlags(pid, rowId);
+  var spOvr = emLoadSpOverrides(pid, rowId);
+  var category = row.category || '';
+  var equipName = row.equipName || row.name || rowId;
+  var catLabel = category ? category.toUpperCase() : 'Unknown';
+
+  // ── Section 1: Point Coverage ─────────────────────────────────────────────
+  var covHtml =
+    '<div style="margin-bottom:16px">' +
+    '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Point Coverage</div>' +
+    '<div style="font-size:13px;margin-bottom:6px">Coverage: <strong>' +
+    c.coveragePct +
+    '%</strong> (' +
+    c.totalMatched +
+    '/' +
+    (c.totalRequired - c.totalNA) +
+    ' required points)</div>';
+
   if (c.coveredPoints.length) {
-    lines.push('Matched (' + c.coveredPoints.length + '):');
+    covHtml +=
+      '<div style="font-size:11px;color:#27ae60;margin-bottom:4px">Matched (' + c.coveredPoints.length + '):</div>';
     for (var cp = 0; cp < c.coveredPoints.length; cp++) {
       var p = c.coveredPoints[cp];
-      lines.push('  ' + (p.matchTier <= 2 ? '[OK]' : '[~]') + ' ' + p.categoryLabel + ' — "' + p.pointName + '"');
+      var tier = p.matchTier <= 2 ? '' : ' style="color:#e67e22"';
+      covHtml +=
+        '<div style="font-size:11px;padding:2px 0;border-bottom:1px solid var(--border)"' +
+        tier +
+        '>' +
+        emHtmlEsc((p.matchTier <= 2 ? '✓ ' : '~ ') + p.categoryLabel + ' — “' + (p.pointName || '') + '”') +
+        '</div>';
     }
-    lines.push('');
   }
   if (c.missingPoints.length) {
-    lines.push('Missing required (' + c.missingPoints.length + '):');
+    covHtml +=
+      '<div style="font-size:11px;color:#c0392b;margin-top:6px;margin-bottom:4px">Missing Required (' +
+      c.missingPoints.length +
+      '):</div>';
     for (var mp = 0; mp < c.missingPoints.length; mp++) {
-      lines.push('  [X] ' + c.missingPoints[mp].categoryLabel);
+      covHtml +=
+        '<div style="font-size:11px;padding:2px 0;border-bottom:1px solid var(--border);color:#c0392b">' +
+        emHtmlEsc('✗ ' + c.missingPoints[mp].categoryLabel) +
+        '</div>';
     }
-    lines.push('');
   }
   if (c.naPoints.length) {
-    lines.push('N/A (' + c.naPoints.length + '):');
+    covHtml +=
+      '<div style="font-size:11px;color:var(--text3);margin-top:6px;margin-bottom:4px">N/A (' +
+      c.naPoints.length +
+      '):</div>';
     for (var np = 0; np < c.naPoints.length; np++) {
-      lines.push('  [-] ' + c.naPoints[np].categoryLabel);
+      covHtml +=
+        '<div style="font-size:11px;padding:2px 0;color:var(--text3)">' +
+        emHtmlEsc('— ' + c.naPoints[np].categoryLabel) +
+        '</div>';
     }
   }
-  alert(lines.join('\n'));
+  covHtml += '</div>';
+
+  // ── Section 2: Equipment Config Flags (Phase 2.3) ─────────────────────────
+  var flagDefs = (category && EM_EQUIP_CONFIG_FLAGS[category]) || [];
+  var cfHtml = '';
+  if (flagDefs.length) {
+    cfHtml =
+      '<div style="margin-bottom:16px">' +
+      '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Equipment Configuration</div>';
+
+    for (var fi = 0; fi < flagDefs.length; fi++) {
+      var fd = flagDefs[fi];
+      var storedVal = fd.key in flags ? flags[fd.key] : fd['default'];
+      var safeRowId = JSON.stringify(rowId);
+      var safePid = JSON.stringify(pid);
+      var safeFdKey = JSON.stringify(fd.key);
+
+      if (fd.type === 'select') {
+        // ── Select dropdown (zoneType, occupancyCat) ──────────────────────
+        var optionKeys;
+        if (fd.options === 'Object.keys(GL36_CO2_DEFAULTS)') {
+          optionKeys = Object.keys(GL36_CO2_DEFAULTS);
+        } else {
+          optionKeys = Array.isArray(fd.options) ? fd.options : [];
+        }
+
+        // Determine current value: stored override, or inferred default
+        var currentVal = storedVal;
+        var isInferred = !(fd.key in flags);
+        if (fd.key === 'zoneType' && isInferred) {
+          currentVal = emInferZoneType(row);
+        } else if (!(fd.key in flags)) {
+          currentVal = fd['default'];
+        }
+
+        // Build friendly label lookup for zoneType
+        var zoneTypeLabels = {
+          vav: 'General VAV Zone',
+          mech_elec: 'Mechanical/Electrical Room',
+          networking: 'Networking/Server Room',
+        };
+
+        var optionsHtml = '';
+        for (var oi = 0; oi < optionKeys.length; oi++) {
+          var oKey = optionKeys[oi];
+          var oLabel;
+          if (GL36_CO2_DEFAULTS[oKey]) {
+            oLabel = GL36_CO2_DEFAULTS[oKey].label + ' (' + GL36_CO2_DEFAULTS[oKey].group + ')';
+          } else {
+            oLabel = zoneTypeLabels[oKey] || oKey;
+          }
+          var isSelected = oKey === currentVal ? ' selected' : '';
+          optionsHtml += '<option value="' + emHtmlEsc(oKey) + '"' + isSelected + '>' + emHtmlEsc(oLabel) + '</option>';
+        }
+
+        var inferredHint =
+          isInferred && fd.key === 'zoneType'
+            ? ' <span style="color:var(--text3);font-style:italic;font-size:10px">(inferred)</span>'
+            : '';
+        cfHtml +=
+          '<div style="margin-bottom:8px">' +
+          '<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">' +
+          emHtmlEsc(fd.label) +
+          inferredHint +
+          '</label>' +
+          '<select style="font-size:11px;padding:3px 6px;background:var(--s2);border:1px solid var(--border);' +
+          'color:var(--text);border-radius:4px;width:100%" ' +
+          'onchange="emSaveEquipConfigFlagFromPanel(' +
+          safePid +
+          ',' +
+          safeRowId +
+          ',' +
+          safeFdKey +
+          ',this.value)">' +
+          optionsHtml +
+          '</select>' +
+          '</div>';
+      } else {
+        // ── Boolean checkbox ──────────────────────────────────────────────
+        var isChecked = storedVal === true || storedVal === 'true';
+        cfHtml +=
+          '<div style="margin-bottom:6px;display:flex;align-items:center;gap:8px">' +
+          '<input type="checkbox"' +
+          (isChecked ? ' checked' : '') +
+          ' onchange="emSaveEquipConfigFlagFromPanel(' +
+          safePid +
+          ',' +
+          safeRowId +
+          ',' +
+          safeFdKey +
+          ',this.checked)"' +
+          ' style="width:14px;height:14px;cursor:pointer">' +
+          '<span style="font-size:12px;color:var(--text)">' +
+          emHtmlEsc(fd.label) +
+          '</span>' +
+          '</div>';
+      }
+    }
+    cfHtml += '</div>';
+  }
+
+  // ── Section 3: GL36 Setpoint Check (Phase 4.2) ────────────────────────────
+  var _spCatsForDetail = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+  var spHtml = '';
+  if (category && _spCatsForDetail[category]) {
+    var spResult = emComputeSetpointCompliance(row, flags, spOvr);
+    var statusIcons = { PASS: '✓ Matches', DEVIATION: '⚠ Needs Review', NOT_SCHEDULED: 'Not Scheduled', NA: 'N/A' };
+    var statusColors = { PASS: '#27ae60', DEVIATION: '#e67e22', NOT_SCHEDULED: 'var(--text3)', NA: 'var(--text3)' };
+
+    spHtml =
+      '<div style="margin-bottom:16px">' +
+      '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">GL36 Setpoint Check</div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:8px" ' +
+      'title="GL36 §3.1.1.1/Table 3.1.1.3 provides default setpoints. Designers may intentionally use different values; ' +
+      'items marked Needs Review should be confirmed as intentional.">' +
+      'GL36 §3.1.1.1/Table 3.1.1.3 defaults. Deviations may be intentional (hover for details).' +
+      '</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
+      '<thead><tr style="background:var(--s1)">' +
+      '<th style="text-align:left;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">Check</th>' +
+      '<th style="text-align:right;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">Your Setting</th>' +
+      '<th style="text-align:right;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">GL36 Default</th>' +
+      '<th style="text-align:left;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">Status</th>' +
+      '</tr></thead><tbody>';
+
+    for (var sri = 0; sri < spResult.results.length; sri++) {
+      var sr = spResult.results[sri];
+      var srColor = statusColors[sr.status] || 'var(--text)';
+      var srIcon = statusIcons[sr.status] || sr.status;
+
+      var actualDisp = sr.actualValue !== null ? String(Math.round(sr.actualValue * 10) / 10) : '—';
+      var defaultDisp;
+      if (sr.checkKey === 'co2') {
+        defaultDisp = sr.gl36Default + ' ppm';
+        actualDisp = sr.actualValue !== null ? sr.actualValue + ' ppm' : '—';
+      } else if (sr.checkKey === 'deadband') {
+        defaultDisp = '≥1°F (rec. 2°F)';
+        actualDisp = sr.actualValue !== null ? sr.actualValue.toFixed(1) + '°F' : '—';
+      } else {
+        defaultDisp = sr.gl36Default + '°F';
+        actualDisp = sr.actualValue !== null ? sr.actualValue + '°F' : '—';
+      }
+
+      var intentionalBadge = '';
+      var markBtn = '';
+      if (sr.status === 'DEVIATION') {
+        if (sr.intentionalFlag) {
+          srIcon = '✓ Confirmed intentional';
+          srColor = '#27ae60';
+          intentionalBadge = '';
+        } else {
+          markBtn =
+            ' <button onclick="emMarkSpOverrideIntentional(' +
+            JSON.stringify(pid) +
+            ',' +
+            JSON.stringify(rowId) +
+            ',' +
+            JSON.stringify(sr.checkKey) +
+            ')" ' +
+            'style="font-size:10px;padding:1px 6px;background:var(--s2);border:1px solid var(--border);' +
+            'color:var(--text2);border-radius:3px;cursor:pointer;margin-left:4px" ' +
+            'title="Mark this deviation as intentional (designer override per GL36 §3.1.1.1)">Mark as intentional</button>';
+        }
+      }
+
+      var trTooltip = sr.deviationNote ? ' title="' + emHtmlEsc(sr.deviationNote) + '"' : '';
+      spHtml +=
+        '<tr' +
+        trTooltip +
+        '>' +
+        '<td style="padding:4px 6px;border:1px solid var(--border)">' +
+        emHtmlEsc(sr.label) +
+        '</td>' +
+        '<td style="padding:4px 6px;border:1px solid var(--border);text-align:right">' +
+        emHtmlEsc(actualDisp) +
+        '</td>' +
+        '<td style="padding:4px 6px;border:1px solid var(--border);text-align:right;color:var(--text3)">' +
+        emHtmlEsc(defaultDisp) +
+        '</td>' +
+        '<td style="padding:4px 6px;border:1px solid var(--border);color:' +
+        srColor +
+        ';white-space:nowrap">' +
+        emHtmlEsc(srIcon) +
+        markBtn +
+        '</td>' +
+        '</tr>';
+    }
+    spHtml += '</tbody></table></div>';
+  }
+
+  // ── Assemble panel HTML ────────────────────────────────────────────────────
+  var panelId = 'em-compliance-detail-panel';
+  var existing = document.getElementById(panelId);
+  if (existing) existing.parentNode.removeChild(existing);
+
+  var panelHtml =
+    '<div id="' +
+    panelId +
+    '" style="position:fixed;top:0;right:0;width:380px;height:100vh;background:var(--bg);' +
+    'border-left:2px solid var(--border);box-shadow:-4px 0 16px rgba(0,0,0,0.18);z-index:9999;' +
+    'display:flex;flex-direction:column;overflow:hidden">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;' +
+    'border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
+    '<div>' +
+    '<div style="font-weight:700;font-size:13px;color:var(--text)">' +
+    emHtmlEsc(equipName) +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text3)">' +
+    emHtmlEsc(catLabel) +
+    ' &mdash; ASHRAE 36 Detail</div>' +
+    '</div>' +
+    '<button onclick="emCloseComplianceDetail()" style="background:none;border:none;font-size:18px;' +
+    'cursor:pointer;color:var(--text2);padding:4px;line-height:1" title="Close">&times;</button>' +
+    '</div>' +
+    '<div style="flex:1;overflow-y:auto;padding:16px">' +
+    covHtml +
+    cfHtml +
+    spHtml +
+    '</div>' +
+    '</div>';
+
+  var container = document.createElement('div');
+  container.innerHTML = panelHtml;
+  document.body.appendChild(container.firstChild);
+}
+
+/* ── emCloseComplianceDetail ─────────────────────────────────────────────────
+   Closes the compliance detail side panel.                                 */
+function emCloseComplianceDetail() {
+  var panel = document.getElementById('em-compliance-detail-panel');
+  if (panel) panel.parentNode.removeChild(panel);
+}
+
+/* ── emSaveEquipConfigFlagFromPanel ──────────────────────────────────────────
+   Called by checkbox/select onchange handlers inside the compliance detail
+   panel. Saves a single config flag value and re-renders the panel +
+   the audit table so the Setpoint Values column updates immediately.
+
+   Phase 2.3 — supports boolean (checkbox) and string (select) values.     */
+function emSaveEquipConfigFlagFromPanel(pid, rowId, flagKey, value) {
+  var flags = emLoadEquipConfigFlags(pid, rowId);
+  flags[flagKey] = value;
+  emSaveEquipConfigFlags(pid, rowId, flags);
+  // Invalidate compliance cache so the table re-evaluates immediately
+  if (typeof _emComplianceCache !== 'undefined') delete _emComplianceCache[rowId];
+  // Re-render the panel with updated flags
+  emShowComplianceDetail(rowId);
+  // Re-render the audit table so the Setpoint Values column pill updates
+  var data = emLoadMatrix(pid);
+  if (data) emRenderTable(data, _emFilters);
+}
+
+/* ── emMarkSpOverrideIntentional ─────────────────────────────────────────────
+   Called by "Mark as intentional" buttons in the GL36 Setpoint Check table.
+   Saves a spOverride and re-renders the detail panel.
+
+   Phase 4.2 — persists via emSaveSpOverride; re-renders panel + audit row.  */
+function emMarkSpOverrideIntentional(pid, rowId, checkKey) {
+  emSaveSpOverride(pid, rowId, checkKey, true);
+  // Re-render panel to show confirmed badge
+  emShowComplianceDetail(rowId);
+  // Re-render audit table so the Setpoint Values pill updates
+  var data = emLoadMatrix(pid);
+  if (data) emRenderTable(data, _emFilters);
 }
 
 /**
@@ -6741,17 +7158,63 @@ var EM_EQUIP_CONFIG_FLAGS = {
     // M4 Part C: default true so missing CO2 lowers audit coverage for VAV zones
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
+    // Phase 2 (setpoint-value-compliance): zone classification for GL36 §3.1.1.1 + §3.1.1.3.
+    // type:'select' — renderer not yet built (Phase 2.3). options/default stored here for later.
+    {
+      key: 'zoneType',
+      label: 'Zone Type (GL36 §3.1.1.1)',
+      type: 'select',
+      options: ['vav', 'mech_elec', 'networking'],
+      default: 'vav',
+    },
+    {
+      key: 'occupancyCat',
+      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      type: 'select',
+      options: 'Object.keys(GL36_CO2_DEFAULTS)',
+      default: 'office_space',
+    },
   ],
   fpb: [
     { key: 'hasReheat', label: 'Has Reheat Coil', default: true },
     { key: 'isSeries', label: 'Series Fan (vs Parallel)', default: false },
     // M4 Part C: default true so missing CO2 lowers audit coverage for FPB zones
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
+    // Phase 2 (setpoint-value-compliance): zone classification for GL36 §3.1.1.1 + §3.1.1.3.
+    {
+      key: 'zoneType',
+      label: 'Zone Type (GL36 §3.1.1.1)',
+      type: 'select',
+      options: ['vav', 'mech_elec', 'networking'],
+      default: 'vav',
+    },
+    {
+      key: 'occupancyCat',
+      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      type: 'select',
+      options: 'Object.keys(GL36_CO2_DEFAULTS)',
+      default: 'office_space',
+    },
   ],
   ddvav: [
     // M4 Part C: default true so missing CO2 lowers audit coverage for DD-VAV zones
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
+    // Phase 2 (setpoint-value-compliance): zone classification for GL36 §3.1.1.1 + §3.1.1.3.
+    {
+      key: 'zoneType',
+      label: 'Zone Type (GL36 §3.1.1.1)',
+      type: 'select',
+      options: ['vav', 'mech_elec', 'networking'],
+      default: 'vav',
+    },
+    {
+      key: 'occupancyCat',
+      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      type: 'select',
+      options: 'Object.keys(GL36_CO2_DEFAULTS)',
+      default: 'office_space',
+    },
   ],
   hwp: [
     { key: 'hasSecPump', label: 'Has Secondary HW Pump', default: true },
@@ -6769,6 +7232,126 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasCWIsoValve', label: 'Has CW Isolation Valve', default: true },
     { key: 'hasMakeupValve', label: 'Has Makeup Water Valve', default: true },
   ],
+  // Phase 2 (setpoint-value-compliance): zone + fcu categories added so zoneType/occupancyCat
+  // flags are accessible for equipment imported under these category keys.
+  zone: [
+    {
+      key: 'zoneType',
+      label: 'Zone Type (GL36 §3.1.1.1)',
+      type: 'select',
+      options: ['vav', 'mech_elec', 'networking'],
+      default: 'vav',
+    },
+    {
+      key: 'occupancyCat',
+      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      type: 'select',
+      options: 'Object.keys(GL36_CO2_DEFAULTS)',
+      default: 'office_space',
+    },
+  ],
+  fcu: [
+    {
+      key: 'zoneType',
+      label: 'Zone Type (GL36 §3.1.1.1)',
+      type: 'select',
+      options: ['vav', 'mech_elec', 'networking'],
+      default: 'vav',
+    },
+    {
+      key: 'occupancyCat',
+      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      type: 'select',
+      options: 'Object.keys(GL36_CO2_DEFAULTS)',
+      default: 'office_space',
+    },
+  ],
+};
+
+/* ── GL36_TEMP_DEFAULTS ─────────────────────────────────────────────────────
+   GL36-2021 Table 3.1.1.1, p.4 — Default zone temperature setpoints (°F)   */
+var GL36_TEMP_DEFAULTS = {
+  vav: { occHeat: 70, occCool: 75, unoccHeat: 60, unoccCool: 90, deadbandMin: 1, deadbandRec: 2 },
+  mech_elec: { occHeat: 65, occCool: 85, unoccHeat: 65, unoccCool: 85, deadbandMin: 1, deadbandRec: 2 },
+  networking: { occHeat: 65, occCool: 75, unoccHeat: 65, unoccCool: 75, deadbandMin: 1, deadbandRec: 2 },
+};
+
+/* ── GL36_CO2_DEFAULTS ──────────────────────────────────────────────────────
+   GL36-2021 Table 3.1.1.3, pp.5-6 — Default CO2 setpoints (ppm)
+   Values assume 400 ppm outdoor air, 90% steady-state per Lawrence 2008     */
+var GL36_CO2_DEFAULTS = {
+  /* Correctional Facilities */
+  correctional_cell: { ppm: 965, label: 'Cell', group: 'Correctional Facilities' },
+  correctional_dayroom: { ppm: 1656, label: 'Dayroom', group: 'Correctional Facilities' },
+  correctional_guard: { ppm: 1200, label: 'Guard Stations', group: 'Correctional Facilities' },
+  correctional_booking: { ppm: 1200, label: 'Booking/Waiting', group: 'Correctional Facilities' },
+  /* Educational Facilities */
+  edu_daycare_age4: { ppm: 1027, label: 'Day Care (Through Age 4)', group: 'Educational Facilities' },
+  edu_daycare_sickroom: { ppm: 716, label: 'Day Care Sickroom', group: 'Educational Facilities' },
+  edu_classroom_5_8: { ppm: 864, label: 'Classrooms (Age 5-8)', group: 'Educational Facilities' },
+  edu_classroom_9plus: { ppm: 942, label: 'Classrooms (Age 9+)', group: 'Educational Facilities' },
+  edu_lecture_classroom: { ppm: 1305, label: 'Lecture Classroom', group: 'Educational Facilities' },
+  edu_lecture_hall: { ppm: 1305, label: 'Lecture Hall (Fixed Seats)', group: 'Educational Facilities' },
+  edu_art_classroom: { ppm: 837, label: 'Art Classroom', group: 'Educational Facilities' },
+  edu_science_lab: { ppm: 894, label: 'Science Laboratories', group: 'Educational Facilities' },
+  edu_college_lab: { ppm: 894, label: 'University/College Lab', group: 'Educational Facilities' },
+  edu_wood_metal_shop: { ppm: 1156, label: 'Wood/Metal Shop', group: 'Educational Facilities' },
+  edu_computer_lab: { ppm: 965, label: 'Computer Lab', group: 'Educational Facilities' },
+  edu_media_center: { ppm: 965, label: 'Media Center', group: 'Educational Facilities' },
+  edu_music_theater: { ppm: 1620, label: 'Music/Theater/Dance', group: 'Educational Facilities' },
+  edu_multiuse_assembly: { ppm: 1778, label: 'Multiuse Assembly', group: 'Educational Facilities' },
+  /* Food and Beverage Service */
+  food_restaurant: { ppm: 1418, label: 'Restaurant Dining Rooms', group: 'Food and Beverage Service' },
+  food_cafeteria: { ppm: 1536, label: 'Cafeteria/Fast-Food Dining', group: 'Food and Beverage Service' },
+  food_bars: { ppm: 1536, label: 'Bars, Cocktail Lounges', group: 'Food and Beverage Service' },
+  /* General */
+  general_break_room: { ppm: 1267, label: 'Break Rooms', group: 'General' },
+  general_coffee: { ppm: 1185, label: 'Coffee Stations', group: 'General' },
+  general_conference: { ppm: 1620, label: 'Conference/Meeting', group: 'General' },
+  /* Hotels, Motels, Resorts, Dormitories */
+  hotel_bedroom: { ppm: 910, label: 'Bedroom/Living Area', group: 'Hotels, Motels, Resorts, Dormitories' },
+  hotel_barracks: { ppm: 1116, label: 'Barracks Sleeping Areas', group: 'Hotels, Motels, Resorts, Dormitories' },
+  hotel_laundry_central: { ppm: 1249, label: 'Laundry Rooms, Central', group: 'Hotels, Motels, Resorts, Dormitories' },
+  hotel_laundry_dwelling: { ppm: 983, label: 'Laundry Within Dwelling', group: 'Hotels, Motels, Resorts, Dormitories' },
+  hotel_lobby: { ppm: 1494, label: 'Lobbies/Prefunction', group: 'Hotels, Motels, Resorts, Dormitories' },
+  hotel_multipurpose: { ppm: 2250, label: 'Multipurpose Assembly', group: 'Hotels, Motels, Resorts, Dormitories' },
+  /* Office Buildings */
+  office_space: { ppm: 894, label: 'Office Space', group: 'Office Buildings' },
+  office_reception: { ppm: 1656, label: 'Reception Areas', group: 'Office Buildings' },
+  office_telephone: { ppm: 1872, label: 'Telephone/Data Entry', group: 'Office Buildings' },
+  office_main_lobby: { ppm: 1391, label: 'Main Entry/Lobbies', group: 'Office Buildings' },
+  /* Miscellaneous Spaces */
+  misc_bank_vault: { ppm: 805, label: 'Bank Vaults/Safe Deposit', group: 'Miscellaneous Spaces' },
+  misc_computer: { ppm: 738, label: 'Computer (Not Printing)', group: 'Miscellaneous Spaces' },
+  misc_pharmacy: { ppm: 820, label: 'Pharmacy (Preparation Area)', group: 'Miscellaneous Spaces' },
+  misc_photo_studio: { ppm: 983, label: 'Photo Studios', group: 'Miscellaneous Spaces' },
+  misc_transport_waiting: { ppm: 1305, label: 'Transportation Waiting', group: 'Miscellaneous Spaces' },
+  /* Public Assembly Spaces */
+  pub_auditorium: { ppm: 1872, label: 'Auditorium Seating Area', group: 'Public Assembly Spaces' },
+  pub_religious: { ppm: 1872, label: 'Place of Religious Worship', group: 'Public Assembly Spaces' },
+  pub_courtroom: { ppm: 1872, label: 'Courtrooms', group: 'Public Assembly Spaces' },
+  pub_legislative: { ppm: 1872, label: 'Legislative Chambers', group: 'Public Assembly Spaces' },
+  pub_library: { ppm: 805, label: 'Libraries', group: 'Public Assembly Spaces' },
+  pub_lobby: { ppm: 2628, label: 'Lobbies', group: 'Public Assembly Spaces' },
+  pub_museum_childrens: { ppm: 1391, label: "Museums (Children's)", group: 'Public Assembly Spaces' },
+  pub_museum_galleries: { ppm: 1620, label: 'Museum/Galleries', group: 'Public Assembly Spaces' },
+  /* Retail */
+  retail_sales: { ppm: 1069, label: 'Sales (Except Below)', group: 'Retail' },
+  retail_mall: { ppm: 1620, label: 'Mall Common Areas', group: 'Retail' },
+  retail_barbershop: { ppm: 1267, label: 'Barbershop', group: 'Retail' },
+  retail_beauty_nails: { ppm: 723, label: 'Beauty and Nail Salons', group: 'Retail' },
+  retail_pet_shop: { ppm: 709, label: 'Pet Shops (Animal Areas)', group: 'Retail' },
+  retail_supermarket: { ppm: 1116, label: 'Supermarket', group: 'Retail' },
+  retail_laundry: { ppm: 1322, label: 'Coin-operated Laundries', group: 'Retail' },
+  /* Sports and Entertainment */
+  sport_spectator: { ppm: 1778, label: 'Spectator Areas', group: 'Sports and Entertainment' },
+  sport_disco: { ppm: 1440, label: 'Disco/Dance Floors', group: 'Sports and Entertainment' },
+  sport_aerobics: { ppm: 1735, label: 'Health Clubs/Aerobics Room', group: 'Sports and Entertainment' },
+  sport_weight_room: { ppm: 1232, label: 'Health Clubs/Weight Room', group: 'Sports and Entertainment' },
+  sport_bowling: { ppm: 1232, label: 'Bowling Alley (Seating)', group: 'Sports and Entertainment' },
+  sport_casino: { ppm: 1368, label: 'Gambling Casinos', group: 'Sports and Entertainment' },
+  sport_arcade: { ppm: 894, label: 'Game Arcades', group: 'Sports and Entertainment' },
+  sport_stages: { ppm: 1391, label: 'Stages, Studios', group: 'Sports and Entertainment' },
 };
 
 /* ── EM_POINT_CATEGORIES ────────────────────────────────────────────────────
@@ -11352,6 +11935,266 @@ function emSaveEquipConfigFlags(projId, rowId, flags) {
   var editKey = 'en_eqmatrix_edits_' + projId;
   var edits = DB.get(editKey, {});
   edits[rowId + '::config'] = flags;
+  DB.set(editKey, edits);
+}
+
+/* ── emInferZoneType ────────────────────────────────────────────────────────
+   Infers GL36 §3.1.1.1 zone type from equipment name and location string.
+   Returns 'networking', 'mech_elec', or 'vav' (general, the safe fallback).
+   Called by setpoint compliance engine (Phase 3) and config flag pre-fill (Phase 2.3).
+   Standalone — not wired to any call sites yet.
+
+   Keyword sets (case-insensitive, applied to equipName + ' ' + location):
+     networking: server, network, \bidf\b, \bmdf\b, comms, telecom, data ?center
+     mech_elec:  \bmer\b, \beer\b, \belec\b, electric, mechanical room, boiler,
+                 chiller, pump room, generator
+     vav:        everything else (most zones in office/courthouse/school)       */
+function emInferZoneType(equipRow) {
+  var haystack = ((equipRow.equipName || '') + ' ' + (equipRow.location || '')).toLowerCase();
+  if (/server|network|\bidf\b|\bmdf\b|comms|telecom|data ?center/.test(haystack)) {
+    return 'networking';
+  }
+  if (/\bmer\b|\beer\b|\belec\b|electric|mechanical room|boiler|chiller|pump room|generator/.test(haystack)) {
+    return 'mech_elec';
+  }
+  return 'vav';
+}
+
+/* ── emComputeSetpointCompliance ────────────────────────────────────────────
+   Phase 3 — Setpoint Value Compliance Engine.
+   Compares actual BAS setpoint values against GL36-2021 defaults.
+   Does NOT extend emComputeCompliance (that answers "present?"; this answers
+   "value within limits?" — different shape, different call surface).
+
+   Parameters:
+     equipRow    — standard equipRow object (same as emComputeCompliance)
+     configFlags — object from emLoadEquipConfigFlags(); uses .zoneType and
+                   .occupancyCat if present; both fallback to inferred/defaults.
+     overrides   — optional spOverrides object from emLoadSpOverrides(); if
+                   omitted AND projId+rowId are derivable the caller should
+                   pass it; defaults to {}.
+
+   Checks performed (VAV / FPB / DDVAV / Zone categories):
+     occHeat     — zone occupied heating setpoint vs GL36 default (±1°F)
+     occCool     — zone occupied cooling setpoint vs GL36 default (±1°F)
+     unoccHeat   — zone unoccupied heating setpoint vs GL36 default (±1°F)
+     unoccCool   — zone unoccupied cooling setpoint vs GL36 default (±1°F)
+     deadband    — occCool minus occHeat; <1°F→DEVIATION, 1–<2°F→PASS w/ note
+     co2         — zone CO2 setpoint vs GL36 Table 3.1.1.3 default (±50 ppm)
+
+   Status values:
+     PASS          — within tolerance of GL36 default
+     DEVIATION     — present but beyond tolerance; confirm intentional per §3.1.1.1
+     NOT_SCHEDULED — point category expected but no numeric value in export
+     NA            — check does not apply to this equipment or zone type
+
+   Returns:
+     { results, hasAnyData, hasAnyDeviation, hasAnyNotScheduled }             */
+function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
+  var _empty = { results: [], hasAnyData: false, hasAnyDeviation: false, hasAnyNotScheduled: false };
+  if (!equipRow) return _empty;
+
+  // Only applies to zone-type equipment
+  var cat = equipRow.category;
+  var _zoneCategories = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+  if (!cat || !_zoneCategories[cat]) return _empty;
+
+  var flags = configFlags || {};
+  var spOvr = overrides || {};
+
+  // ── 1. Read setpoint values via emGetNormalizedPoints ───────────────────
+  var pts = emGetNormalizedPoints(equipRow);
+  function _toFloat(v) {
+    if (v === null || v === undefined || v === '') return null;
+    var n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+  var occCool = _toFloat(pts.zoneCoolSetpoint);
+  var occHeat = _toFloat(pts.zoneHtgSetpoint);
+  var unoccCool = _toFloat(pts.zoneUnoccCoolSetpoint);
+  var unoccHeat = _toFloat(pts.zoneUnoccHtgSetpoint);
+  var co2Setpoint = _toFloat(pts.zoneCO2Setpoint);
+
+  // ── 2. Determine zone type and look up GL36 temp limits ─────────────────
+  var zoneType = flags.zoneType || emInferZoneType(equipRow);
+  var tempLimits = GL36_TEMP_DEFAULTS[zoneType] || GL36_TEMP_DEFAULTS.vav;
+
+  // ── 3. Determine occupancy category and CO2 limit ───────────────────────
+  var occupancyCat = flags.occupancyCat || 'office_space';
+  var co2Entry = GL36_CO2_DEFAULTS[occupancyCat] || GL36_CO2_DEFAULTS.office_space;
+  var co2Default = co2Entry ? co2Entry.ppm : 894;
+
+  // ── 4. Helper: build one result entry ────────────────────────────────────
+  function _makeResult(checkKey, label, actual, gl36Default, toleranceAbs, deadbandOther) {
+    var status, deviationNote;
+    var intentionalFlag = spOvr[checkKey] === true;
+
+    if (actual === null) {
+      status = 'NOT_SCHEDULED';
+      deviationNote = null;
+    } else {
+      var diff = Math.abs(actual - gl36Default);
+      if (diff <= toleranceAbs) {
+        status = 'PASS';
+        deviationNote = null;
+      } else {
+        status = 'DEVIATION';
+        var unit = toleranceAbs === 50 ? ' ppm' : '°F';
+        deviationNote = 'Actual ' + actual + unit + ' vs GL36 default ' + gl36Default + unit;
+      }
+    }
+
+    return {
+      checkKey: checkKey,
+      label: label,
+      actualValue: actual,
+      gl36Default: gl36Default,
+      deadbandOtherValue: deadbandOther !== undefined ? deadbandOther : null,
+      status: status,
+      deviationNote: deviationNote,
+      intentionalFlag: intentionalFlag,
+    };
+  }
+
+  var results = [];
+
+  // ── 5. Occupied heating setpoint ─────────────────────────────────────────
+  results.push(_makeResult('occHeat', 'Occ Heat Setpoint', occHeat, tempLimits.occHeat, 1));
+
+  // ── 6. Occupied cooling setpoint ─────────────────────────────────────────
+  results.push(_makeResult('occCool', 'Occ Cool Setpoint', occCool, tempLimits.occCool, 1));
+
+  // ── 7. Unoccupied heating setpoint ───────────────────────────────────────
+  results.push(_makeResult('unoccHeat', 'Unocc Heat Setpoint', unoccHeat, tempLimits.unoccHeat, 1));
+
+  // ── 8. Unoccupied cooling setpoint ───────────────────────────────────────
+  results.push(_makeResult('unoccCool', 'Unocc Cool Setpoint', unoccCool, tempLimits.unoccCool, 1));
+
+  // ── 9. Deadband check ────────────────────────────────────────────────────
+  // deadband = occCool - occHeat; only when both present.
+  // <1°F  → DEVIATION ('Deadband Xf below GL36 1f minimum')
+  // 1–<2°F → PASS with note 'below recommended 2f deadband'
+  // ≥2°F  → PASS
+  var dbEntry;
+  if (occCool === null || occHeat === null) {
+    dbEntry = {
+      checkKey: 'deadband',
+      label: 'Deadband (Occ Cool − Occ Heat)',
+      actualValue: null,
+      gl36Default: tempLimits.deadbandMin,
+      deadbandOtherValue: tempLimits.deadbandRec,
+      status: 'NOT_SCHEDULED',
+      deviationNote: null,
+      intentionalFlag: spOvr['deadband'] === true,
+    };
+  } else {
+    var db = occCool - occHeat;
+    var dbStatus, dbNote;
+    if (db < tempLimits.deadbandMin) {
+      dbStatus = 'DEVIATION';
+      dbNote = 'Deadband ' + db.toFixed(1) + '°F below GL36 ' + tempLimits.deadbandMin + '°F minimum';
+    } else if (db < tempLimits.deadbandRec) {
+      dbStatus = 'PASS';
+      dbNote = 'Below recommended ' + tempLimits.deadbandRec + '°F deadband (actual ' + db.toFixed(1) + '°F)';
+    } else {
+      dbStatus = 'PASS';
+      dbNote = null;
+    }
+    dbEntry = {
+      checkKey: 'deadband',
+      label: 'Deadband (Occ Cool − Occ Heat)',
+      actualValue: db,
+      gl36Default: tempLimits.deadbandMin,
+      deadbandOtherValue: tempLimits.deadbandRec,
+      status: dbStatus,
+      deviationNote: dbNote,
+      intentionalFlag: spOvr['deadband'] === true,
+    };
+  }
+  results.push(dbEntry);
+
+  // ── 10. CO2 setpoint ────────────────────────────────────────────────────
+  // NA if: no zoneCO2Setpoint value AND no hasCO2 config flag set.
+  // NOT_SCHEDULED if: hasCO2 flag is true but value is null.
+  // Otherwise use normal PASS/DEVIATION logic (±50 ppm).
+  var co2Status, co2Note;
+  var hasCO2Flag = flags.hasCO2 === true;
+  if (co2Setpoint === null && !hasCO2Flag) {
+    results.push({
+      checkKey: 'co2',
+      label: 'CO₂ Setpoint',
+      actualValue: null,
+      gl36Default: co2Default,
+      deadbandOtherValue: null,
+      status: 'NA',
+      deviationNote: null,
+      intentionalFlag: spOvr['co2'] === true,
+    });
+  } else if (co2Setpoint === null) {
+    // hasCO2 flag is true but no exported value
+    results.push({
+      checkKey: 'co2',
+      label: 'CO₂ Setpoint',
+      actualValue: null,
+      gl36Default: co2Default,
+      deadbandOtherValue: null,
+      status: 'NOT_SCHEDULED',
+      deviationNote: null,
+      intentionalFlag: spOvr['co2'] === true,
+    });
+  } else {
+    results.push(_makeResult('co2', 'CO₂ Setpoint', co2Setpoint, co2Default, 50));
+  }
+
+  // ── 11. Derive summary flags ─────────────────────────────────────────────
+  var hasAnyData = false;
+  var hasAnyDeviation = false;
+  var hasAnyNotScheduled = false;
+  for (var ri = 0; ri < results.length; ri++) {
+    var r = results[ri];
+    if (r.status === 'PASS' || r.status === 'DEVIATION') hasAnyData = true;
+    if (r.status === 'DEVIATION') hasAnyDeviation = true;
+    if (r.status === 'NOT_SCHEDULED') hasAnyNotScheduled = true;
+  }
+
+  return {
+    results: results,
+    hasAnyData: hasAnyData,
+    hasAnyDeviation: hasAnyDeviation,
+    hasAnyNotScheduled: hasAnyNotScheduled,
+  };
+}
+
+/* ── emLoadSpOverrides / emSaveSpOverride ───────────────────────────────────
+   Per-equipment intentional-deviation overrides for setpoint compliance.
+   Mirrors the exact pattern of emLoadEquipConfigFlags/emSaveEquipConfigFlags.
+
+   Storage: edits[rowId + '::spOverrides'] = { checkKey: true, ... }
+   inside en_eqmatrix_edits_<projId>.
+
+   emLoadSpOverrides(projId, rowId)
+     Returns the overrides object for this row (e.g. { occCool: true }).
+     Returns {} if none saved yet.
+
+   emSaveSpOverride(projId, rowId, checkKey, isIntentional)
+     Sets (isIntentional=true) or clears (isIntentional=false) a single key.
+     Reads existing overrides first so other keys are preserved.              */
+function emLoadSpOverrides(projId, rowId) {
+  var editKey = 'en_eqmatrix_edits_' + projId;
+  var edits = DB.get(editKey, {});
+  return edits[rowId + '::spOverrides'] || {};
+}
+
+function emSaveSpOverride(projId, rowId, checkKey, isIntentional) {
+  var editKey = 'en_eqmatrix_edits_' + projId;
+  var edits = DB.get(editKey, {});
+  var current = edits[rowId + '::spOverrides'] || {};
+  if (isIntentional) {
+    current[checkKey] = true;
+  } else {
+    delete current[checkKey];
+  }
+  edits[rowId + '::spOverrides'] = current;
   DB.set(editKey, edits);
 }
 

@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.466',
+    date: '2026-06-08',
+    title: 'Quarterly report fixes (6 bugs) and Equipment Matrix ASHRAE 36 setpoint value compliance',
+    items: [
+      { type: 'fix', text: 'Environmental Impact report page: duplicate pollutant entries and an unclosed div are fixed — the page now renders correctly.' },
+      { type: 'fix', text: 'Observations page: building status arrows now show the correct up/right/down direction instead of a question mark.' },
+      { type: 'fix', text: 'Propane report page: buildings are now filtered by whether they have propane monthly data, not by whether a baseline value is set. Buildings with propane deliveries but no set baseline will now appear correctly.' },
+      { type: 'fix', text: 'Financial Summary page: the Quarterly Savings vs Baseline sub-table header columns no longer clip — the last column (Actual Savings) now wraps and displays fully.' },
+      { type: 'fix', text: 'Observations & Recommendations page: content now paginates across multiple report pages when there are many buildings, instead of overflowing off the bottom.' },
+      { type: 'fix', text: 'Savings Performance page: the savings percentage now uses the same usage-based formula as Financial Summary (baseline usage minus actual usage, divided by baseline usage). The pages now agree.' },
+      { type: 'feature', text: 'Equipment Matrix Audit View: new Setpoint Values column checks actual zone setpoint values from your BAS export against ASHRAE Guideline 36 defaults (GL36 Section 3.1.1.1 / Table 3.1.1.3). Heating/cooling and CO2 setpoints flagged if they differ from GL36 defaults by more than 1 deg F or 50 ppm. Gray = no setpoint data; green = all match; orange/red = mismatches (hover for detail). Mark intentional overrides in the compliance detail panel.' },
+    ],
+  },
+
+  {
     v: 'v2026.06.08.465',
     date: '2026-06-08',
     title: 'ASHRAE 36 PDF export and Save now work for both Audit Report and Service Proposal',

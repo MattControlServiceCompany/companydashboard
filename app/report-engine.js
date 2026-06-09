@@ -1014,7 +1014,16 @@ function generateReportHTML(data, selectedSections) {
   if (s.euiBenchmarking !== false) pages.push(_tagSection(rptPageEUI(pageNum++, data), 'euiBenchmarking'));
   if (s.environmentalImpact !== false)
     pages.push(_tagSection(rptPageEnvironmentalImpact(pageNum++, data), 'environmentalImpact'));
-  if (s.observations !== false) pages.push(_tagSection(rptPageObservations(pageNum++, data), 'observations'));
+  if (s.observations !== false) {
+    var _obsResult = rptPageObservations(pageNum, data);
+    // Tag only the first page with the section key; continuations get -cont
+    var _obsTagged = _obsResult.html.replace(
+      '<div class="rpt-page"',
+      '<div class="rpt-page" data-section="observations"',
+    );
+    pages.push(_obsTagged);
+    pageNum += _obsResult.pageCount;
+  }
   if (s.approvedChanges !== false) pages.push(_tagSection(rptPageApprovedChanges(pageNum++, data), 'approvedChanges'));
   if (s.contractProjection !== false)
     pages.push(_tagSection(rptPageContractProjection(pageNum++, data), 'contractProjection'));
@@ -1825,17 +1834,29 @@ function rptPageFinancial(n, d) {
     '</tr>';
   const qtrTable =
     '<table class="rpt-table" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
-    '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
-    '<th style="width:8%">Quarter</th>' +
-    '<th class="rpt-n" style="width:10%">Baseline<br>kWh</th>' +
-    '<th class="rpt-n" style="width:10%">Actual<br>kWh</th>' +
-    '<th class="rpt-n" style="width:10%">Baseline<br>Therms</th>' +
-    '<th class="rpt-n" style="width:10%">Actual<br>Therms</th>' +
-    '<th class="rpt-n" style="width:10%">Baseline<br>Gal</th>' +
-    '<th class="rpt-n" style="width:10%">Actual<br>Gal</th>' +
-    '<th class="rpt-n" style="width:10%">Baseline<br>Cost</th>' +
-    '<th class="rpt-n" style="width:10%">Actual<br>Cost</th>' +
-    '<th class="rpt-n" style="width:12%">' +
+    '<colgroup>' +
+    '<col style="width:8%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:12%">' +
+    '</colgroup>' +
+    '<thead><tr style="text-align:center;line-height:1.2">' +
+    '<th style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Quarter</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Baseline<br>kWh</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Actual<br>kWh</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Baseline<br>Therms</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Actual<br>Therms</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Baseline<br>Gal</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Actual<br>Gal</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Baseline<br>Cost</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Actual<br>Cost</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">' +
     qLabel +
     '<br>Actual Savings</th>' +
     '</tr></thead>' +
@@ -2272,7 +2293,7 @@ function rptPageSavingsPerformance(n, d) {
     '<td class="rpt-n" contenteditable="true">—</td>' +
     '</tr>';
 
-  const savPct = d.totals.blCost > 0 ? ((d.totals.blCost - d.totals.curCost) / d.totals.blCost) * 100 : 0;
+  const savPct = d.totals.savingsPct || 0;
   const curYrLabel = d.period.year ? String(d.period.year) + ' Q' + (d.period.quarter || 1) : 'Current';
   const curRow =
     '<tr>' +
@@ -2312,19 +2333,22 @@ function rptPageSavingsPerformance(n, d) {
       monthly.forEach(function (mo) {
         if (!mo.month) return;
         var yr = mo.month.split('-')[0];
-        if (!_yoyByYear[yr]) _yoyByYear[yr] = { kwh: 0, kw: 0, therms: 0, gal: 0, cost: 0, kbtu: 0 };
+        if (!_yoyByYear[yr]) _yoyByYear[yr] = { kwh: 0, kw: 0, therms: 0, gal: 0, cost: 0, sav: 0, kbtu: 0 };
         if (com === 'electric') {
           _yoyByYear[yr].kwh += mo.cur || 0;
           _yoyByYear[yr].kw += mo.kwCur || 0;
           _yoyByYear[yr].cost += mo.curCost || 0;
+          _yoyByYear[yr].sav += mo.savings || 0;
           _yoyByYear[yr].kbtu += toKBtu(mo.cur || 0, 0, 0);
         } else if (com === 'gas') {
           _yoyByYear[yr].therms += mo.cur || 0;
           _yoyByYear[yr].cost += mo.curCost || 0;
+          _yoyByYear[yr].sav += mo.savings || 0;
           _yoyByYear[yr].kbtu += toKBtu(0, mo.cur || 0, 0);
         } else {
           _yoyByYear[yr].gal += mo.cur || 0;
           _yoyByYear[yr].cost += mo.curCost || 0;
+          _yoyByYear[yr].sav += mo.savings || 0;
           _yoyByYear[yr].kbtu += toKBtu(0, 0, mo.cur || 0);
         }
       });
@@ -2339,7 +2363,10 @@ function rptPageSavingsPerformance(n, d) {
   _yoyYears.forEach(function (yr) {
     var y = _yoyByYear[yr];
     var eui = _totalSqft > 0 ? (y.kbtu / _totalSqft).toFixed(1) : '—';
-    var vsBl = d.totals.blCost > 0 ? ((d.totals.blCost - y.cost) / d.totals.blCost) * 100 : 0;
+    // NOTE: denominator is current-period baseline cost, not full-year baseline. YoY rows covering
+    // calendar years outside the reporting period are directionally correct but not dimensionally
+    // comparable — this is a pre-existing limitation, not introduced here.
+    var vsBl = d.totals.blCost > 0 ? (y.sav / d.totals.blCost) * 100 : 0;
     _yoyRows +=
       '<tr><td contenteditable="true">' +
       yr +
@@ -2383,7 +2410,7 @@ function rptPageSavingsPerformance(n, d) {
   // -- Annual Summary by Building table (2 rows per building: BL + current) --
   const bldgRows = d.buildings
     .map(function (b, bIdx) {
-      const bSavPct = b.blCost > 0 ? ((b.blCost - b.curCost) / b.blCost) * 100 : 0;
+      const bSavPct = b.savingsPct || 0; // dead code: not rendered; fixed for correctness (was dollar-delta)
       const blEUI = b.eui.baseline > 0 ? b.eui.baseline.toFixed(1) : '—';
       const curEUI = b.eui.current > 0 ? b.eui.current.toFixed(1) : '—';
       const euiChange =
@@ -2567,8 +2594,21 @@ function rptPageEUI(n, d) {
     .join('');
 
   const rankTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
-    '<thead><tr>' +
+    '<table class="rpt-table" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<colgroup>' +
+    '<col style="width:4%">' +
+    '<col style="width:21%">' +
+    '<col style="width:8%">' +
+    '<col style="width:8%">' +
+    '<col style="width:9%">' +
+    '<col style="width:9%">' +
+    '<col style="width:6%">' +
+    '<col style="width:9%">' +
+    '<col style="width:8%">' +
+    '<col style="width:6%">' +
+    '<col style="width:12%">' +
+    '</colgroup>' +
+    '<thead><tr style="white-space:normal;word-wrap:break-word;line-height:1.2">' +
     '<th>#</th>' +
     '<th>Building</th>' +
     '<th>Type</th>' +
@@ -2576,7 +2616,7 @@ function rptPageEUI(n, d) {
     '<th class="rpt-n">Baseline Site EUI</th>' +
     '<th class="rpt-n">Current Site EUI</th>' +
     '<th class="rpt-n">CBECS</th>' +
-    '<th class="rpt-n">versus CBECS %</th>' +
+    '<th class="rpt-n">vs CBECS %</th>' +
     '<th>Percentile</th>' +
     '<th class="rpt-n">$/ft²</th>' +
     '<th>ENERGY STAR</th>' +
@@ -2735,7 +2775,6 @@ function rptPageEnvironmentalImpact(n, d) {
     if (!val || Math.round(Math.abs(val)) === 0) return '';
     return (
       '<div style="font-size:13px;color:var(--rpt-page-text);padding:2px 0;line-height:1.5;text-align:center">' +
-      '<div style="font-size:13px;color:var(--rpt-page-text);padding:2px 0;line-height:1.5;text-align:center">' +
       '<strong style="color:var(--rpt-blue);font-size:16px">' +
       $n(val) +
       '</strong>' +
@@ -2766,9 +2805,6 @@ function rptPageEnvironmentalImpact(n, d) {
     polLine(pol.co2, 'pounds', 'CO₂ (carbon dioxide)') +
     polLine(pol.ch4, 'pounds', 'CH₄ (methane)') +
     polLine(pol.n2o, 'pounds', 'N₂O (nitrous oxide)') +
-    polLine(pol.co2, 'pounds', 'CO2 (carbon dioxide)') +
-    polLine(pol.ch4, 'pounds', 'CH4 (methane)') +
-    polLine(pol.n2o, 'pounds', 'N2O (nitrous oxide)') +
     polLine(pol.so2, 'pounds', 'SO2 (sulfur dioxide)') +
     polLine(pol.nox, 'pounds', 'NOX (nitrogen oxide)') +
     polLine(pol.hg_oz, 'ounces', 'HG (mercury)') +
@@ -2877,119 +2913,117 @@ function rptPageObservations(n, d) {
     ' on track or ahead of target for the period.' +
     '</p>';
 
-  // -- Per-building narrative --
-  const bldgSections = (d.buildings || [])
-    .map(function (b) {
-      const statusColor =
-        b.status === 'on_track'
-          ? 'var(--rpt-green)'
-          : b.status === 'near_target'
-            ? 'var(--rpt-orange)'
-            : 'var(--rpt-red)';
-      const arrow = b.status === 'below_target' ? '?' : '?';
-      const statusLabel =
-        b.status === 'on_track' ? 'On Track' : b.status === 'near_target' ? 'Approaching Target' : 'Below Target';
+  // -- Per-building narrative (array — used for pagination below) --
+  const bldgSectionItems = (d.buildings || []).map(function (b) {
+    const statusColor =
+      b.status === 'on_track'
+        ? 'var(--rpt-green)'
+        : b.status === 'near_target'
+          ? 'var(--rpt-orange)'
+          : 'var(--rpt-red)';
+    const arrow = b.status === 'on_track' ? '&#9650;' : b.status === 'near_target' ? '&#9658;' : '&#9660;';
+    const statusLabel =
+      b.status === 'on_track' ? 'On Track' : b.status === 'near_target' ? 'Approaching Target' : 'Below Target';
 
-      // Determine the strongest commodity by savings
-      const comSavings = [
-        { name: 'Electric', sav: (b.electric && b.electric.costSaved) || 0 },
-        { name: 'Gas', sav: (b.gas && b.gas.costSaved) || 0 },
-        { name: 'Propane', sav: (b.propane && b.propane.costSaved) || 0 },
-      ].filter(function (c) {
-        return b.commodities && b.commodities.includes(c.name);
-      });
-      comSavings.sort(function (a, c) {
-        return c.sav - a.sav;
-      });
-      const topCom = comSavings.length ? comSavings[0] : null;
-      const weakCom = comSavings.length ? comSavings[comSavings.length - 1] : null;
+    // Determine the strongest commodity by savings
+    const comSavings = [
+      { name: 'Electric', sav: (b.electric && b.electric.costSaved) || 0 },
+      { name: 'Gas', sav: (b.gas && b.gas.costSaved) || 0 },
+      { name: 'Propane', sav: (b.propane && b.propane.costSaved) || 0 },
+    ].filter(function (c) {
+      return b.commodities && b.commodities.includes(c.name);
+    });
+    comSavings.sort(function (a, c) {
+      return c.sav - a.sav;
+    });
+    const topCom = comSavings.length ? comSavings[0] : null;
+    const weakCom = comSavings.length ? comSavings[comSavings.length - 1] : null;
 
-      // Build subtitle and narrative based on status
-      var subtitle, narrative, rec;
-      var strongWeak = '';
-      if (topCom && weakCom && topCom.name !== weakCom.name) {
-        strongWeak = topCom.name + ' is the strongest performer. ' + weakCom.name + ' is the weakest performer.';
-      } else if (topCom) {
-        strongWeak = topCom.name + ' is the primary commodity.';
-      }
+    // Build subtitle and narrative based on status
+    var subtitle, narrative, rec;
+    var strongWeak = '';
+    if (topCom && weakCom && topCom.name !== weakCom.name) {
+      strongWeak = topCom.name + ' is the strongest performer. ' + weakCom.name + ' is the weakest performer.';
+    } else if (topCom) {
+      strongWeak = topCom.name + ' is the primary commodity.';
+    }
 
-      var rawSav =
-        ((b.electric && b.electric.costSaved) || 0) +
-        ((b.gas && b.gas.costSaved) || 0) +
-        ((b.propane && b.propane.costSaved) || 0);
-      var blAtCurRate = b.blCost || 0;
-      var rawSavPct = blAtCurRate > 0 ? (rawSav / blAtCurRate) * 100 : 0;
+    var rawSav =
+      ((b.electric && b.electric.costSaved) || 0) +
+      ((b.gas && b.gas.costSaved) || 0) +
+      ((b.propane && b.propane.costSaved) || 0);
+    var blAtCurRate = b.blCost || 0;
+    var rawSavPct = blAtCurRate > 0 ? (rawSav / blAtCurRate) * 100 : 0;
 
-      if (b.status === 'on_track') {
-        subtitle = 'On Track';
-        narrative =
-          b.name +
-          ' is performing at ' +
-          $p(rawSavPct) +
-          ' savings (' +
-          $c(rawSav) +
-          ' saved) against a baseline cost of ' +
-          $c(b.blCost) +
-          ', with current costs at ' +
-          $c(b.curCost) +
-          '. ' +
-          strongWeak;
-        rec = 'Continue current operating strategy. Monitor for seasonal load shifts entering the next quarter.';
-      } else if (b.status === 'near_target') {
-        subtitle = 'Approaching Target';
-        narrative =
-          b.name +
-          ' is tracking at ' +
-          $p(rawSavPct) +
-          ' savings (' +
-          $c(rawSav) +
-          ' saved) against a baseline cost of ' +
-          $c(b.blCost) +
-          ', with current costs at ' +
-          $c(b.curCost) +
-          '. ' +
-          strongWeak;
-        rec =
-          'Review scheduling and setpoints for optimization opportunities. Confirm occupancy schedules are aligned with current use patterns.';
-      } else {
-        subtitle = 'Below Target';
-        narrative =
-          b.name +
-          ' is currently below the performance target at ' +
-          $p(rawSavPct) +
-          ' savings (' +
-          $c(rawSav) +
-          ' saved) against a baseline cost of ' +
-          $c(b.blCost) +
-          ', with current costs at ' +
-          $c(b.curCost) +
-          '. ' +
-          strongWeak;
-        rec =
-          'Review ' +
-          (weakCom ? weakCom.name.toLowerCase() : 'utility') +
-          ' meter data and trend logs for anomalies. Confirm BAS setpoints are active and not in override.';
-      }
+    if (b.status === 'on_track') {
+      subtitle = 'On Track';
+      narrative =
+        b.name +
+        ' is performing at ' +
+        $p(rawSavPct) +
+        ' savings (' +
+        $c(rawSav) +
+        ' saved) against a baseline cost of ' +
+        $c(b.blCost) +
+        ', with current costs at ' +
+        $c(b.curCost) +
+        '. ' +
+        strongWeak;
+      rec = 'Continue current operating strategy. Monitor for seasonal load shifts entering the next quarter.';
+    } else if (b.status === 'near_target') {
+      subtitle = 'Approaching Target';
+      narrative =
+        b.name +
+        ' is tracking at ' +
+        $p(rawSavPct) +
+        ' savings (' +
+        $c(rawSav) +
+        ' saved) against a baseline cost of ' +
+        $c(b.blCost) +
+        ', with current costs at ' +
+        $c(b.curCost) +
+        '. ' +
+        strongWeak;
+      rec =
+        'Review scheduling and setpoints for optimization opportunities. Confirm occupancy schedules are aligned with current use patterns.';
+    } else {
+      subtitle = 'Below Target';
+      narrative =
+        b.name +
+        ' is currently below the performance target at ' +
+        $p(rawSavPct) +
+        ' savings (' +
+        $c(rawSav) +
+        ' saved) against a baseline cost of ' +
+        $c(b.blCost) +
+        ', with current costs at ' +
+        $c(b.curCost) +
+        '. ' +
+        strongWeak;
+      rec =
+        'Review ' +
+        (weakCom ? weakCom.name.toLowerCase() : 'utility') +
+        ' meter data and trend logs for anomalies. Confirm BAS setpoints are active and not in override.';
+    }
 
-      return (
-        '<h3 contenteditable="true" style="font-size:14px;font-weight:700;color:' +
-        statusColor +
-        ';margin:10px 0 2px">' +
-        arrow +
-        ' ' +
-        (b.name || 'Building') +
-        ' — ' +
-        subtitle +
-        '</h3>' +
-        '<p contenteditable="true">' +
-        narrative +
-        '</p>' +
-        '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);margin-top:2px"><strong>Recommendation:</strong> ' +
-        rec +
-        '</p>'
-      );
-    })
-    .join('');
+    return (
+      '<h3 contenteditable="true" style="font-size:14px;font-weight:700;color:' +
+      statusColor +
+      ';margin:10px 0 2px">' +
+      arrow +
+      ' ' +
+      (b.name || 'Building') +
+      ' — ' +
+      subtitle +
+      '</h3>' +
+      '<p contenteditable="true">' +
+      narrative +
+      '</p>' +
+      '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);margin-top:2px"><strong>Recommendation:</strong> ' +
+      rec +
+      '</p>'
+    );
+  });
 
   // -- Weather section --
   const wt = d.weather && d.weather.totals ? d.weather.totals : { hddBl: 0, hddCur: 0, cddBl: 0, cddCur: 0 };
@@ -3036,23 +3070,81 @@ function rptPageObservations(n, d) {
     'Monthly monitoring calls will continue on schedule.' +
     '</p>';
 
-  const bodyHTML =
+  // -- Pagination: split buildings across pages (4 per page) --
+  // Page 1 carries the overall summary + first BLDGS_PER_FIRST_PAGE buildings.
+  // Continuation pages carry BLDGS_PER_PAGE buildings each.
+  // Weather + Next Quarter are appended to the last page.
+  var BLDGS_PER_FIRST_PAGE = 4;
+  var BLDGS_PER_PAGE = 4;
+
+  var resultPages = [];
+  var currentPageNum = n;
+
+  // Slice buildings into chunks
+  var firstChunk = bldgSectionItems.slice(0, BLDGS_PER_FIRST_PAGE);
+  var remaining = bldgSectionItems.slice(BLDGS_PER_FIRST_PAGE);
+
+  // Build continuation chunks
+  var contChunks = [];
+  for (var _ci = 0; _ci < remaining.length; _ci += BLDGS_PER_PAGE) {
+    contChunks.push(remaining.slice(_ci, _ci + BLDGS_PER_PAGE));
+  }
+
+  // Determine if weather+nextQ go on a separate page or share the last page
+  // Always append to the last building chunk (fits because remaining buildings
+  // on that page are fewer than BLDGS_PER_PAGE)
+  var totalChunks = 1 + contChunks.length; // page 1 + continuation pages
+
+  // Page 1: summary + first chunk
+  var page1Body =
     '<div class="rpt-body ob">' +
     '<h2 contenteditable="true">Building Performance</h2>' +
     '<div style="font-size:14px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
     summaryPara +
     '</div>' +
-    bldgSections +
-    '<h2 contenteditable="true">Weather</h2>' +
-    weatherPara +
-    '<h2 contenteditable="true">Next Quarter</h2>' +
-    nextQPara +
-    '</div>';
+    firstChunk.join('');
 
-  return rptPage(n, 'Observations & Recommendations', bodyHTML, {
-    data: d,
-    label: 'Page ' + n + ' — Observations',
+  if (contChunks.length === 0) {
+    // All buildings fit on page 1 — append weather + next quarter here too
+    page1Body +=
+      '<h2 contenteditable="true">Weather</h2>' +
+      weatherPara +
+      '<h2 contenteditable="true">Next Quarter</h2>' +
+      nextQPara;
+  }
+  page1Body += '</div>';
+
+  resultPages.push(
+    rptPage(currentPageNum, 'Observations & Recommendations', page1Body, {
+      data: d,
+      label: 'Page ' + currentPageNum + ' — Observations',
+    }),
+  );
+  currentPageNum++;
+
+  // Continuation pages
+  contChunks.forEach(function (chunk, chunkIdx) {
+    var isLast = chunkIdx === contChunks.length - 1;
+    var contBody = '<div class="rpt-body ob">' + chunk.join('');
+    if (isLast) {
+      // Append weather + next quarter to the final continuation page
+      contBody +=
+        '<h2 contenteditable="true">Weather</h2>' +
+        weatherPara +
+        '<h2 contenteditable="true">Next Quarter</h2>' +
+        nextQPara;
+    }
+    contBody += '</div>';
+    resultPages.push(
+      rptPage(currentPageNum, 'Observations & Recommendations (cont.)', contBody, {
+        data: d,
+        label: 'Page ' + currentPageNum + ' — Observations (cont.)',
+      }),
+    );
+    currentPageNum++;
   });
+
+  return { html: resultPages.join(''), pageCount: resultPages.length };
 }
 function rptPageApprovedChanges(n, d) {
   const changes = (d && d.approvedChanges) || [];
@@ -4971,8 +5063,20 @@ function rptPageElectric(n, d) {
   }
 
   var bldgTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
-    '<thead><tr>' +
+    '<table class="rpt-table" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<colgroup>' +
+    '<col style="width:20%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:7%">' +
+    '<col style="width:5%">' +
+    '<col style="width:11%">' +
+    '<col style="width:9%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:8%">' +
+    '</colgroup>' +
+    '<thead><tr style="white-space:normal;word-wrap:break-word;line-height:1.2">' +
     '<th>Building</th><th class="rpt-n">Baseline kWh</th><th class="rpt-n">Actual kWh</th>' +
     '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
     '<th class="rpt-n">Baseline Peak kW</th><th class="rpt-n">Actual kW</th>' +
@@ -5344,7 +5448,13 @@ function rptPagePropane(n, d) {
   }
 
   var propBldgs = (d.buildings || []).filter(function (b) {
-    return b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
+    return (
+      b.commodities &&
+      b.commodities.includes('Propane') &&
+      b.propane &&
+      b.propane.monthly &&
+      b.propane.monthly.length > 0
+    );
   });
 
   // Use full-year aggregation: fill baseline-only months using baselineMaps
@@ -5669,7 +5779,13 @@ function rptPageGasPropane(n, d) {
     return b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
   });
   var propBldgs = (d.buildings || []).filter(function (b) {
-    return b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
+    return (
+      b.commodities &&
+      b.commodities.includes('Propane') &&
+      b.propane &&
+      b.propane.monthly &&
+      b.propane.monthly.length > 0
+    );
   });
   var thermsByMonth = {};
   gasBldgs.forEach(function (b) {
@@ -10476,6 +10592,33 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     plain:
       'Combined with outdoor air temperature, allows the system to calculate wet-bulb temperature without a dedicated sensor, enabling condenser water reset based on actual conditions.',
   },
+  // ── Setpoint value compliance gap types (Phase 5) ────────────────────────────
+  // These describe deviations from GL36 §3.1.1.1 defaults, not missing hardware.
+  // Label: "Needs Review" per design decision (never "Fail" — overrides are legitimate).
+  spTempDeviation: {
+    short: 'Zone setpoint differs from GL36 §3.1.1.1 default',
+    impact: 'Zero-hardware quick win',
+    plain:
+      'One or more zone temperature setpoints differ from the ASHRAE Guideline 36 defaults. Designer overrides are permitted under §3.1.1.1 — these items should be confirmed intentional. If not, correcting them costs nothing and immediately improves occupant comfort and energy performance.',
+  },
+  spDeadbandTooNarrow: {
+    short: 'Heating/cooling deadband below GL36 §3.1.1.1 minimum (1°F)',
+    impact: 'Zero-hardware quick win',
+    plain:
+      'The gap between the occupied heating and cooling setpoints is narrower than the Guideline 36 minimum of 1°F. A narrow deadband causes the heating and cooling systems to compete against each other, wasting energy. Widening it to at least 2°F is a BAS programming change with no hardware cost.',
+  },
+  spCO2Deviation: {
+    short: 'CO₂ demand-control setpoint differs from GL36 Table 3.1.1.3 default',
+    impact: 'Zero-hardware quick win',
+    plain:
+      'The zone CO₂ setpoint differs from the GL36 Table 3.1.1.3 default for this occupancy type. An incorrect setpoint can cause the system to over-ventilate (wasting energy) or under-ventilate (reducing air quality). Confirming or correcting these values is a software-only change.',
+  },
+  spNotScheduled: {
+    short: 'Setpoint value not found in export — schedule status unknown',
+    impact: 'Data completeness',
+    plain:
+      'The BAS export did not include a numeric value for this setpoint. The point may exist in the controller but was not trended or exported. Verifying the programmed value requires a direct BAS lookup and costs no hardware.',
+  },
 };
 
 /**
@@ -10488,6 +10631,7 @@ var ASHRAE36_SECTIONS = {
     { key: 'executive', label: 'Executive Summary', group: 'Report', defaultOn: true },
     { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
     { key: 'recommendations', label: 'Recommendations', group: 'Report', defaultOn: true },
+    { key: 'setpointReview', label: 'Setpoint Programming Review', group: 'Report', defaultOn: true },
   ],
   proposal: [
     { key: 'proposalCover', label: 'Cover Page', group: 'Proposal', defaultOn: true },
@@ -10566,6 +10710,11 @@ function collectASHRAE36Data(projId, reportDate) {
     var totalSeqMatched = 0;
     var bldgGaps = {};
 
+    // Phase 5 — setpoint value compliance counts (additive, do not affect existing scores)
+    var spNeedsReviewCount = 0; // zone equipment with at least one DEVIATION not marked intentional
+    var spNotScheduledCount = 0; // zone equipment with at least one NOT_SCHEDULED setpoint
+    var spDeadbandIssueCount = 0; // zone equipment with a deadband DEVIATION
+
     var _reportMaps = typeof emLoadCustomMappings === 'function' ? emLoadCustomMappings(projId) : [];
     auditableRows.forEach(function (row) {
       if (typeof emComputeCompliance !== 'function') return;
@@ -10605,6 +10754,29 @@ function collectASHRAE36Data(projId, reportDate) {
       });
       totalMissingHardwarePoints += result.missingPoints.length; // scope-of-work: sensors to install
 
+      // Phase 5 — setpoint value compliance (additive; does not affect existing scores).
+      // Call emComputeSetpointCompliance with the same flags already loaded for this row,
+      // plus spOverrides from emLoadSpOverrides (mirrors the Audit View call pattern).
+      var _spResult = null;
+      if (typeof emComputeSetpointCompliance === 'function') {
+        var _spOvr = typeof emLoadSpOverrides === 'function' ? emLoadSpOverrides(projId, row.id) : {};
+        _spResult = emComputeSetpointCompliance(row, flags, _spOvr);
+        if (_spResult && _spResult.hasAnyData) {
+          // Count equipment with at least one unacknowledged DEVIATION
+          var _spHasUnackDeviation = _spResult.results.some(function (r) {
+            return r.status === 'DEVIATION' && !r.intentionalFlag;
+          });
+          if (_spHasUnackDeviation) spNeedsReviewCount++;
+
+          // Count equipment with a deadband DEVIATION
+          var _spDbEntry = _spResult.results.find(function (r) {
+            return r.checkKey === 'deadband' && r.status === 'DEVIATION';
+          });
+          if (_spDbEntry) spDeadbandIssueCount++;
+        }
+        if (_spResult && _spResult.hasAnyNotScheduled) spNotScheduledCount++;
+      }
+
       equipResults.push({
         id: row.id,
         name: row.equipName || row.name || 'Unknown',
@@ -10613,6 +10785,7 @@ function collectASHRAE36Data(projId, reportDate) {
         location: row.location || '',
         compliance: result,
         seqReadiness: _equipSeqReadiness,
+        spCompliance: _spResult, // Phase 5 — setpoint value compliance result (null if N/A)
       });
     });
 
@@ -10666,6 +10839,10 @@ function collectASHRAE36Data(projId, reportDate) {
       statusColor: statusColor,
       statusLabel: statusLabel,
       topGaps: topGaps,
+      // Phase 5 — setpoint compliance counts (additive, do not affect score)
+      spNeedsReviewCount: spNeedsReviewCount,
+      spNotScheduledCount: spNotScheduledCount,
+      spDeadbandIssueCount: spDeadbandIssueCount,
     });
   });
 
@@ -11484,6 +11661,297 @@ function rptPageASHRAE36Recommendations(n, d) {
   });
 }
 
+// ─── rptPageASHRAE36SetpointReview ───────────────────────────────────────────
+/**
+ * Setpoint Programming Review page: compares actual zone setpoints against GL36
+ * §3.1.1.1 defaults. Framed as a zero-hardware "quick win" for decision-makers.
+ * Uses table-layout:fixed + colgroup so the table never clips on 8.5×11 print.
+ * @param {number} n - Page number
+ * @param {object} d - Data from collectASHRAE36Data (equipResults must have spCompliance)
+ */
+function rptPageASHRAE36SetpointReview(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+
+  // ── Collect all zone equipment rows across all buildings ──────────────────
+  var ZONE_CATS = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+  var allZoneRows = [];
+  var anyFoundInExport = false; // tracks whether any zone row had setpoint data at all
+  var anyCO2InExport = false; // tracks whether any CO2 setpoint was found
+
+  d.buildings.forEach(function (b) {
+    (b.equipResults || []).forEach(function (eq) {
+      if (!ZONE_CATS[eq.category]) return;
+      var sp = eq.spCompliance;
+      if (!sp || !sp.hasAnyData) return; // skip if no setpoint values at all
+      anyFoundInExport = true;
+
+      // Determine row-level display status:
+      //   NEEDS_REVIEW — any unacknowledged DEVIATION
+      //   NOT_SCHEDULED — no deviations but at least one NOT_SCHEDULED
+      //   MATCHES — all checks PASS or NA or intentionally flagged
+      var hasUnackDeviation = sp.results.some(function (r) {
+        return r.status === 'DEVIATION' && !r.intentionalFlag;
+      });
+      var displayStatus = hasUnackDeviation ? 'NEEDS_REVIEW' : sp.hasAnyNotScheduled ? 'NOT_SCHEDULED' : 'MATCHES';
+
+      // Pull temperature values from the result entries
+      var occHeatEntry = sp.results.find(function (r) {
+        return r.checkKey === 'occHeat';
+      });
+      var occCoolEntry = sp.results.find(function (r) {
+        return r.checkKey === 'occCool';
+      });
+      var dbEntry = sp.results.find(function (r) {
+        return r.checkKey === 'deadband';
+      });
+      var co2Entry = sp.results.find(function (r) {
+        return r.checkKey === 'co2';
+      });
+
+      // Check if CO2 data was present in export (status is not NA)
+      if (co2Entry && co2Entry.status !== 'NA') anyCO2InExport = true;
+
+      allZoneRows.push({
+        building: b.name,
+        name: eq.name || 'Unknown',
+        category: eq.category,
+        displayStatus: displayStatus,
+        occHeat: occHeatEntry,
+        occCool: occCoolEntry,
+        deadband: dbEntry,
+        co2: co2Entry,
+      });
+    });
+  });
+
+  // If no zone rows have any setpoint data, show an empty-state message
+  if (!anyFoundInExport) {
+    var emptyBody =
+      '<div class="rpt-a36-callout" style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+      'No zone setpoint values were found in the equipment export for this project. ' +
+      'Setpoint data is present when zones trend their occupied heating and cooling setpoints. ' +
+      'Import an updated equipment matrix export to enable this analysis.' +
+      '</div>';
+    return rptPage(n, 'ASHRAE 36 Audit — Setpoint Programming Review', emptyBody, {
+      data: fakeData,
+      label: 'Page ' + n + ' — Setpoint Programming Review',
+    });
+  }
+
+  // Sort: Needs-Review rows first, then Not-Scheduled, then Matches.
+  // Within each group, sort by building then name.
+  var STATUS_ORDER = { NEEDS_REVIEW: 0, NOT_SCHEDULED: 1, MATCHES: 2 };
+  allZoneRows.sort(function (a, b2) {
+    var ao = STATUS_ORDER[a.displayStatus] || 99;
+    var bo = STATUS_ORDER[b2.displayStatus] || 99;
+    if (ao !== bo) return ao - bo;
+    if (a.building !== b2.building) return a.building.localeCompare(b2.building);
+    return (a.name || '').localeCompare(b2.name || '');
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function _fmtTemp(v) {
+    if (v === null || v === undefined) return '—';
+    return parseFloat(v).toFixed(1) + '°F';
+  }
+  function _fmtDefault(entry) {
+    if (!entry || entry.gl36Default === null || entry.gl36Default === undefined) return '—';
+    return parseFloat(entry.gl36Default).toFixed(0) + '°F';
+  }
+  function _fmtDeadband(dbEntry) {
+    if (!dbEntry || dbEntry.actualValue === null) return '—';
+    var v = parseFloat(dbEntry.actualValue).toFixed(1);
+    var note = '';
+    if (dbEntry.status === 'DEVIATION') {
+      note = ' <span style="color:var(--rpt-red);font-size:9px">below min</span>';
+    } else if (dbEntry.deviationNote) {
+      note = ' <span style="color:var(--rpt-orange);font-size:9px">narrow</span>';
+    }
+    return v + '°F' + note;
+  }
+
+  // ── Status cell ───────────────────────────────────────────────────────────
+  function _statusCell(displayStatus) {
+    if (displayStatus === 'NEEDS_REVIEW') {
+      return (
+        '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
+        'color:#92400e;background:#fef3c7;border:1px solid #f59e0b">Needs Review</span>'
+      );
+    } else if (displayStatus === 'NOT_SCHEDULED') {
+      return (
+        '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
+        'color:#6b7280;background:#f3f4f6;border:1px solid #d1d5db">Not Scheduled</span>'
+      );
+    }
+    return (
+      '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
+      'color:#166534;background:#f0fdf4;border:1px solid #4ade80">Matches</span>'
+    );
+  }
+
+  // ── Row-level background highlight for Needs-Review rows ─────────────────
+  function _rowBg(displayStatus) {
+    return displayStatus === 'NEEDS_REVIEW' ? 'background:#fffbeb' : '';
+  }
+
+  // ── Build table rows ──────────────────────────────────────────────────────
+  var thStyle =
+    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
+    'white-space:normal;word-wrap:break-word;line-height:1.3';
+  var thStyleC = thStyle + ';text-align:center';
+
+  var tableHead =
+    '<colgroup>' +
+    '<col style="width:28%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
+    '<col style="width:18%">' +
+    '<col style="width:11%">' +
+    '<col style="width:13%">' +
+    '<col style="width:10%">' +
+    '</colgroup>' +
+    '<thead><tr>' +
+    '<th style="' +
+    thStyle +
+    '">Zone Name</th>' +
+    '<th style="' +
+    thStyleC +
+    '">Occ Heat</th>' +
+    '<th style="' +
+    thStyleC +
+    '">Occ Cool</th>' +
+    '<th style="' +
+    thStyleC +
+    '">GL36 Default<br><span style="font-size:9px;font-weight:400;text-transform:none">Heat / Cool</span></th>' +
+    '<th style="' +
+    thStyleC +
+    '">Deadband</th>' +
+    '<th style="' +
+    thStyle +
+    '">Building</th>' +
+    '<th style="' +
+    thStyleC +
+    '">Status</th>' +
+    '</tr></thead>';
+
+  var tbodyRows = '';
+  var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-rule)';
+  var tdCenter = tdBase + ';text-align:center';
+
+  allZoneRows.forEach(function (row) {
+    var bg = _rowBg(row.displayStatus);
+    var bgStyle = bg ? ';' + bg : '';
+    tbodyRows +=
+      '<tr>' +
+      '<td style="' +
+      tdBase +
+      bgStyle +
+      ';font-weight:600;color:var(--rpt-page-text)">' +
+      (row.name || '—') +
+      '</td>' +
+      '<td style="' +
+      tdCenter +
+      bgStyle +
+      ';color:var(--rpt-page-text)">' +
+      (row.occHeat ? _fmtTemp(row.occHeat.actualValue) : '—') +
+      '</td>' +
+      '<td style="' +
+      tdCenter +
+      bgStyle +
+      ';color:var(--rpt-page-text)">' +
+      (row.occCool ? _fmtTemp(row.occCool.actualValue) : '—') +
+      '</td>' +
+      '<td style="' +
+      tdCenter +
+      bgStyle +
+      ';color:var(--rpt-page-text)">' +
+      _fmtDefault(row.occHeat) +
+      ' / ' +
+      _fmtDefault(row.occCool) +
+      '</td>' +
+      '<td style="' +
+      tdCenter +
+      bgStyle +
+      ';color:var(--rpt-page-text)">' +
+      _fmtDeadband(row.deadband) +
+      '</td>' +
+      '<td style="' +
+      tdBase +
+      bgStyle +
+      ';color:var(--rpt-page-text);font-size:9px">' +
+      (row.building || '—') +
+      '</td>' +
+      '<td style="' +
+      tdCenter +
+      bgStyle +
+      '">' +
+      _statusCell(row.displayStatus) +
+      '</td>' +
+      '</tr>';
+  });
+
+  var table =
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">' +
+    tableHead +
+    '<tbody>' +
+    tbodyRows +
+    '</tbody>' +
+    '</table>';
+
+  // ── Summary line ──────────────────────────────────────────────────────────
+  var needsReviewTotal = allZoneRows.filter(function (r) {
+    return r.displayStatus === 'NEEDS_REVIEW';
+  }).length;
+  var matchesTotal = allZoneRows.filter(function (r) {
+    return r.displayStatus === 'MATCHES';
+  }).length;
+  var summaryParts = [
+    allZoneRows.length + ' zone unit' + (allZoneRows.length !== 1 ? 's' : '') + ' with setpoint data',
+  ];
+  if (needsReviewTotal > 0) {
+    summaryParts.push(needsReviewTotal + ' Needs Review');
+  }
+  if (matchesTotal > 0) {
+    summaryParts.push(matchesTotal + ' match GL36 defaults');
+  }
+
+  // ── CO2 note ──────────────────────────────────────────────────────────────
+  var co2Note = '';
+  if (!anyCO2InExport) {
+    co2Note =
+      '<div class="rpt-a36-callout" style="margin-top:10px;border-top:1px solid var(--rpt-rule)">' +
+      '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">CO₂ Setpoint Data Not Found in Export</div>' +
+      '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
+      'DCV CO₂ setpoints (GL36 §3.1.1.3 / Table 3.1.1.3) were not present in the equipment matrix export for this project. ' +
+      'CO₂ setpoint values are programmed set-points in the BAS controller — separate from the live CO₂ sensor readings shown in the equipment matrix. ' +
+      'A direct BAS lookup or updated export with CO₂ setpoint points is needed to complete this check.' +
+      '</div>' +
+      '</div>';
+  }
+
+  // ── Preamble ──────────────────────────────────────────────────────────────
+  var preamble =
+    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
+    'ASHRAE Guideline 36 §3.1.1.1 and Table 3.1.1.1 define <strong>default</strong> occupied and unoccupied temperature setpoints for three zone types. ' +
+    'These are starting points — designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
+    '<strong>Items marked Needs Review should be confirmed with the design engineer or facility staff to determine whether the deviation is intentional.</strong> ' +
+    'Correcting an unintentional setpoint is a BAS programming change with no hardware cost — a zero-hardware quick win that can immediately improve occupant comfort and energy performance.' +
+    '</div>';
+
+  // ── Totals callout ────────────────────────────────────────────────────────
+  var totalsCallout =
+    '<div style="font-size:10px;color:var(--rpt-page-text);margin-bottom:8px">' +
+    summaryParts.join(' &nbsp;|&nbsp; ') +
+    '</div>';
+
+  var bodyHTML = preamble + totalsCallout + table + co2Note;
+  return rptPage(n, 'ASHRAE 36 Audit — Setpoint Programming Review', bodyHTML, {
+    data: fakeData,
+    label: 'Page ' + n + ' — Setpoint Programming Review',
+  });
+}
+
 // ─── rptPageASHRAE36ProposalCover ─────────────────────────────────────────
 /**
  * Proposal cover page with table of contents.
@@ -11795,6 +12263,10 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
 
   if (s.recommendations !== false)
     pages.push(_tagA36Section(rptPageASHRAE36Recommendations(pageNum++, data), 'recommendations'));
+
+  // Phase 5 — Setpoint Programming Review (appended after recommendations)
+  if (s.setpointReview !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36SetpointReview(pageNum++, data), 'setpointReview'));
 
   // Rule 2.4 (Plan B): bake page numbers at generation time.
   return _injectPageNumbers(pages.join('\n'));
