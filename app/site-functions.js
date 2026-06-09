@@ -1191,6 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.470',
+    date: '2026-06-09',
+    title: 'Energy Savings Measures: permanent delete, savings display, propane rate persistence',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Savings Measures: clicking the red X now permanently removes a measure — it no longer reappears after refreshing the page.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Savings Measures: savings values now display correctly for all buildings, including those that previously showed blank.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Savings Measures: propane $/gallon rate now saves correctly when you click Save Rates and persists on reload.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.08.469',
     date: '2026-06-08',
     title: 'Equipment Matrix FTU/VFD classification, Zone sensor mapping, project tab order fix',
