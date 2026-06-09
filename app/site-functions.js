@@ -1191,6 +1191,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.472',
+    date: '2026-06-09',
+    title: 'Light mode fix on energy pages + empty state positioning',
+    items: [
+      {
+        type: 'fix',
+        text: 'Light mode: stat cards, section headers, and data tables on the Baseline Data and Meter Data tabs now display correctly with proper background and text colors — they no longer stay dark when you switch to light mode.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Savings Measures: the "No measures yet" message now appears centered below the table header, where it is easy to read — it was previously mispositioned inside the table structure.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.08.471',
     date: '2026-06-09',
     title: 'Report EUI benchmark chart legend dedup',

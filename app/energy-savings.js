@@ -897,11 +897,15 @@ function _renderSavingsContent(wrap, projId) {
 
   // ── Measure rows ──
   const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+  const hasMeasures = sd.measures.length > 0;
+  const emptyStateHtml = hasMeasures
+    ? ''
+    : `<div style="text-align:center;color:var(--text2);padding:24px 16px;font-size:13px">
+          No measures yet — click "+ Add Measure" in the header to begin.
+        </div>`;
   let msrRows;
-  if (!sd.measures.length) {
-    msrRows = `<tr><td colspan="200" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
-            No measures yet — click "+ Add Measure" in the header to begin.
-          </td></tr>`;
+  if (!hasMeasures) {
+    msrRows = '';
   } else {
     msrRows = sd.measures
       .map((m) => {
@@ -1149,9 +1153,10 @@ function _renderSavingsContent(wrap, projId) {
                   </tr>
                 </thead>
                 <tbody>${msrRows}</tbody>
-                <tfoot>${footRow}</tfoot>
+                ${hasMeasures ? `<tfoot>${footRow}</tfoot>` : ''}
               </table>
             </div>
+            ${emptyStateHtml}
           </div>
 
           ${summaryHtml}

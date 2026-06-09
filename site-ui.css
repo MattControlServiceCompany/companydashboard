@@ -977,7 +977,7 @@ body {
   --border2: #bcc5da;
   --text: #1a2340;
   --text2: #4a5672;
-  --text3: #9aa5be;
+  --text3: #6b7a9e;
 }
 [data-theme='light'] body {
   background: var(--bg);

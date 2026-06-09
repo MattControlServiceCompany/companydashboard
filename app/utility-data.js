@@ -6127,6 +6127,37 @@ function renderBuildingStatsPane(pane, b) {
           .bbd-tbl tr.total-row td.mo{color:#ffffff;background:#0d1830}
           .bbd-tbl td.total-util{background:#150d2a;color:#c090ff;font-weight:700;border-left:2px solid rgba(180,120,255,0.3)}
           .bbd-tbl tr.total-row td.total-util{background:#1a0f35;color:#d8a8ff}
+
+          [data-theme='light'] .bbd-summary{background:var(--s2);border-color:var(--border)}
+          [data-theme='light'] .bbd-sum-cell{border-right-color:var(--border)}
+          [data-theme='light'] .bbd-sum-lbl{color:var(--text2)}
+          [data-theme='light'] .bbd-sum-val{color:var(--text)}
+          [data-theme='light'] .bbd-sum-val.c-blue{color:#1d6eaf}
+          [data-theme='light'] .bbd-sum-val.c-orange{color:#a05a00}
+          [data-theme='light'] .bbd-sum-val.c-green{color:#1a7a4a}
+          [data-theme='light'] .bbd-sum-val.c-teal{color:#0a6a6a}
+          [data-theme='light'] .bbd-sum-val.c-violet{color:#5a2fa0}
+          [data-theme='light'] .bbd-rate-season{color:var(--text3)}
+          [data-theme='light'] .bbd-rate-val{color:var(--text)}
+          [data-theme='light'] .bbd-title{color:var(--em)}
+          [data-theme='light'] .bbd-tbl-wrap{background:var(--s2);border-color:var(--border)}
+          [data-theme='light'] .bbd-tbl th{color:var(--text)}
+          [data-theme='light'] .bbd-tbl th.mo-hdr{background:var(--s1);color:var(--text2)}
+          [data-theme='light'] .bbd-tbl th.e-hdr{background:#c5d9f0;color:#1a4060;border-color:#a0c0e0}
+          [data-theme='light'] .bbd-tbl th.g-hdr{background:#f0e4cc;color:#7a4a00;border-color:#d0b070}
+          [data-theme='light'] .bbd-tbl th.w-hdr{background:#c5e8d5;color:#1a5c35;border-color:#80c5a0}
+          [data-theme='light'] .bbd-tbl th.u-hdr{background:#ddd0f0;color:#4a1a80;border-color:#b090d8}
+          [data-theme='light'] .bbd-tbl td{color:var(--text);border-color:var(--border)}
+          [data-theme='light'] .bbd-tbl td.mo{background:var(--s3);color:var(--text2)}
+          [data-theme='light'] .bbd-tbl tbody tr:hover td{background:rgba(0,0,0,0.03)}
+          [data-theme='light'] .bbd-tbl tbody tr:hover td.mo{background:var(--s3)}
+          [data-theme='light'] .bbd-tbl tr.total-row td{background:var(--s1);color:var(--text);border-top-color:var(--border2)}
+          [data-theme='light'] .bbd-tbl tr.total-row td.mo{background:var(--s1)}
+          [data-theme='light'] .bbd-tbl td.total-util{background:#e8dcf8;color:#4a1a80;border-left-color:#c090e0}
+          [data-theme='light'] .bbd-tbl tr.total-row td.total-util{background:#ddd0f0;color:#3a1068}
+          [data-theme='light'] .bbd-bl-tbl td,[data-theme='light'] .bbd-bl-tbl th{border-color:var(--border);color:var(--text)}
+          [data-theme='light'] .bbd-bl-tbl th{background:var(--s1);color:var(--text2)}
+          [data-theme='light'] .bbd-bl-tbl .bl-green{background:#c5ecd8;color:#1a5c35;border-color:#80c0a0}
         `;
 
   // ── Month row builder ──
@@ -6254,10 +6285,10 @@ function renderBuildingStatsPane(pane, b) {
             <div class="bbd-title">Baseline Data</div>
 
             <!-- Meta row: baseline years + providers + units -->
-            <div style="display:grid;grid-template-columns:auto 1fr auto;gap:12px 28px;margin-bottom:14px;align-items:start;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:14px 18px">
+            <div style="display:grid;grid-template-columns:auto 1fr auto;gap:12px 28px;margin-bottom:14px;align-items:start;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:14px 18px">
               <!-- Baseline Years -->
               <div>
-                <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Data Baseline Years</div>
+                <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Data Baseline Years</div>
                 <table class="bbd-bl-tbl">
                   <tr>
                     ${elecM ? '<th>Electricity</th>' : ''}
@@ -6273,17 +6304,17 @@ function renderBuildingStatsPane(pane, b) {
               </div>
               <!-- Providers -->
               <div>
-                <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Providers</div>
-                ${elecM ? `<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Electric Company: <span style="color:#e8f4ff;font-weight:700">${elecM.provider || elecM.name || '—'}</span></div>` : ''}
-                ${gasM ? `<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Heating Fuel Company: <span style="color:#e8f4ff;font-weight:700">${gasM.provider || gasM.name || '—'}</span></div>` : ''}
-                ${waterM ? `<div style="font-size:11.5px;color:#8ab0d0">Water Company: <span style="color:#e8f4ff;font-weight:700">${waterM.provider || waterM.name || '—'}</span></div>` : ''}
+                <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Providers</div>
+                ${elecM ? `<div style="font-size:11.5px;margin-bottom:3px;color:var(--text2)">Electric Company: <span style="color:var(--text);font-weight:700">${elecM.provider || elecM.name || '—'}</span></div>` : ''}
+                ${gasM ? `<div style="font-size:11.5px;margin-bottom:3px;color:var(--text2)">Heating Fuel Company: <span style="color:var(--text);font-weight:700">${gasM.provider || gasM.name || '—'}</span></div>` : ''}
+                ${waterM ? `<div style="font-size:11.5px;color:var(--text2)">Water Company: <span style="color:var(--text);font-weight:700">${waterM.provider || waterM.name || '—'}</span></div>` : ''}
               </div>
               <!-- Units -->
               <div>
-                <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
-                ${elecM ? `<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Electricity <span style="color:#7dd8ff;font-weight:800;margin-left:8px;font-size:12px">kWh</span></div>` : ''}
-                ${gasM ? `<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Heating Fuel <span style="color:#ffb040;font-weight:800;margin-left:8px;font-size:12px">Therm</span></div>` : ''}
-                ${waterM ? `<div style="font-size:11.5px;color:#8ab0d0">Water <span style="color:#40e8a0;font-weight:800;margin-left:8px;font-size:12px">kGal</span></div>` : ''}
+                <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
+                ${elecM ? `<div style="font-size:11.5px;margin-bottom:3px;color:var(--text2)">Electricity <span style="color:#7dd8ff;font-weight:800;margin-left:8px;font-size:12px">kWh</span></div>` : ''}
+                ${gasM ? `<div style="font-size:11.5px;margin-bottom:3px;color:var(--text2)">Heating Fuel <span style="color:#ffb040;font-weight:800;margin-left:8px;font-size:12px">Therm</span></div>` : ''}
+                ${waterM ? `<div style="font-size:11.5px;color:var(--text2)">Water <span style="color:#40e8a0;font-weight:800;margin-left:8px;font-size:12px">kGal</span></div>` : ''}
               </div>
             </div>
 
@@ -6387,8 +6418,8 @@ function renderBuildingStatsPane(pane, b) {
             </div>
 
             <!-- Monthly Cost Chart -->
-            <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:12px;text-align:center">Dollars Spent Monthly By Utility Type</div>
+            <div style="margin-top:18px;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:16px 18px">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:12px;text-align:center">Dollars Spent Monthly By Utility Type</div>
               <div style="position:relative;height:320px"><canvas id="bbdCostChart"></canvas></div>
             </div>
 
@@ -6786,6 +6817,33 @@ function renderMeterDataPane(pane, m, bills, incl) {
             .bbd-tbl tbody tr:hover td.mo{background:#0d1830}
             .bbd-tbl tr.total-row td{border-top:2px solid rgba(255,255,255,0.18);font-weight:800;background:#0d1830;color:#ffffff;font-size:11.5px}
             .bbd-tbl tr.total-row td.mo{color:#ffffff;background:#0d1830}
+
+            [data-theme='light'] .bbd-summary{background:var(--s2);border-color:var(--border)}
+            [data-theme='light'] .bbd-sum-cell{border-right-color:var(--border)}
+            [data-theme='light'] .bbd-sum-lbl{color:var(--text2)}
+            [data-theme='light'] .bbd-sum-val{color:var(--text)}
+            [data-theme='light'] .bbd-sum-val.c-blue{color:#1d6eaf}
+            [data-theme='light'] .bbd-sum-val.c-orange{color:#a05a00}
+            [data-theme='light'] .bbd-sum-val.c-green{color:#1a7a4a}
+            [data-theme='light'] .bbd-sum-val.c-violet{color:#5a2fa0}
+            [data-theme='light'] .bbd-rate-season{color:var(--text3)}
+            [data-theme='light'] .bbd-rate-val{color:var(--text)}
+            [data-theme='light'] .bbd-title{color:var(--em)}
+            [data-theme='light'] .bbd-tbl-wrap{background:var(--s2);border-color:var(--border)}
+            [data-theme='light'] .bbd-tbl th{color:var(--text)}
+            [data-theme='light'] .bbd-tbl th.mo-hdr{background:var(--s1);color:var(--text2)}
+            [data-theme='light'] .bbd-tbl th.e-hdr{background:#c5d9f0;color:#1a4060;border-color:#a0c0e0}
+            [data-theme='light'] .bbd-tbl th.g-hdr{background:#f0e4cc;color:#7a4a00;border-color:#d0b070}
+            [data-theme='light'] .bbd-tbl th.w-hdr{background:#c5e8d5;color:#1a5c35;border-color:#80c5a0}
+            [data-theme='light'] .bbd-tbl td{color:var(--text);border-color:var(--border)}
+            [data-theme='light'] .bbd-tbl td.mo{background:var(--s3);color:var(--text2)}
+            [data-theme='light'] .bbd-tbl tbody tr:hover td{background:rgba(0,0,0,0.03)}
+            [data-theme='light'] .bbd-tbl tbody tr:hover td.mo{background:var(--s3)}
+            [data-theme='light'] .bbd-tbl tr.total-row td{background:var(--s1);color:var(--text);border-top-color:var(--border2)}
+            [data-theme='light'] .bbd-tbl tr.total-row td.mo{background:var(--s1)}
+            [data-theme='light'] .bbd-bl-tbl td,[data-theme='light'] .bbd-bl-tbl th{border-color:var(--border);color:var(--text)}
+            [data-theme='light'] .bbd-bl-tbl th{background:var(--s1);color:var(--text2)}
+            [data-theme='light'] .bbd-bl-tbl .bl-green{background:#c5ecd8;color:#1a5c35;border-color:#80c0a0}
           </style>
           <div class="bbd-wrap" style="--mdd-lbl-color:${isElec ? '#6ab0e8' : isGas ? '#d08030' : isPropane ? '#d08030' : '#40c8a0'}">
             <div class="bbd-title">Meter Data</div>
@@ -6793,11 +6851,11 @@ function renderMeterDataPane(pane, m, bills, incl) {
             <!-- Data Quality Score Card -->
             ${
               _dqScore
-                ? `<div style="background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                ? `<div style="background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
               <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
                 <div>
                   <div style="font-size:18px;font-weight:800;color:${_dqBadgeData.textColor};background:${_dqBadgeData.bgColor};font-family:var(--mono);line-height:1.3;padding:2px 14px;border-radius:10px">${_dqBadgeData.label}</div>
-                  <div style="font-size:9.5px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-top:2px">Data Quality</div>
+                  <div style="font-size:9.5px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-top:2px">Data Quality</div>
                 </div>
               </div>
               <div style="display:flex;gap:12px;flex-wrap:wrap;flex:1">
@@ -6827,9 +6885,9 @@ function renderMeterDataPane(pane, m, bills, incl) {
                               : 'var(--danger,#ef4444)';
                       const r2Tooltip = `R² measures how well the baseline regression fits the data (0–1). Higher is better; 0.85+ is strong.`;
                       return `<div style="display:flex;flex-direction:column;gap:2px;min-width:56px" title="${r2Tooltip}">
-                  <div style="font-size:9px;color:#6a90b0;text-transform:uppercase;letter-spacing:.4px;font-weight:700">${labels[key]}</div>
+                  <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;font-weight:700">${labels[key]}</div>
                   <div style="font-size:13px;font-weight:800;color:${r2Color};font-family:var(--mono)">${r2Str}</div>
-                  <div style="font-size:9px;color:#6a90b0">${r2v != null ? (r2v >= 0.85 ? 'strong fit' : r2v >= 0.65 ? 'moderate fit' : 'weak fit') : 'no baseline'}</div>
+                  <div style="font-size:9px;color:var(--text3)">${r2v != null ? (r2v >= 0.85 ? 'strong fit' : r2v >= 0.65 ? 'moderate fit' : 'weak fit') : 'no baseline'}</div>
                 </div>`;
                     }
                     const rv = comp.rawValue;
@@ -6876,9 +6934,9 @@ function renderMeterDataPane(pane, m, bills, incl) {
                             ? 'Populated fields in the last 3 bills (start, end, cost, usage). Higher is better.'
                             : 'Active (non-dismissed) data flags on any bill. Zero is ideal.';
                     return `<div style="display:flex;flex-direction:column;gap:2px;min-width:56px" title="${tileTooltip}">
-                  <div style="font-size:9px;color:#6a90b0;text-transform:uppercase;letter-spacing:.4px;font-weight:700">${labels[key]}</div>
+                  <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;font-weight:700">${labels[key]}</div>
                   <div style="font-size:13px;font-weight:800;color:${tileColor};font-family:var(--mono)">${displayValue}</div>
-                  <div style="font-size:9px;color:#6a90b0">${hint}</div>
+                  <div style="font-size:9px;color:var(--text3)">${hint}</div>
                 </div>`;
                   })
                   .join('')}
@@ -6888,21 +6946,21 @@ function renderMeterDataPane(pane, m, bills, incl) {
             }
 
             <!-- Meta row -->
-            <div style="display:grid;grid-template-columns:auto 1fr auto;gap:12px 28px;margin-bottom:14px;align-items:start;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:14px 18px">
+            <div style="display:grid;grid-template-columns:auto 1fr auto;gap:12px 28px;margin-bottom:14px;align-items:start;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:14px 18px">
               <div>
-                <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Data Baseline Years</div>
+                <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Data Baseline Years</div>
                 <table class="bbd-bl-tbl">
                   <tr><th>${isElec ? 'Electricity' : isGas ? 'Heating Fuel' : isPropane ? 'Propane' : 'Water'}</th></tr>
                   <tr><td class="bl-green">${blSpan(blRows)}</td></tr>
                 </table>
               </div>
               <div>
-                <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Provider</div>
-                <div style="font-size:11.5px;color:#8ab0d0">${isElec ? 'Electric' : isGas ? 'Heating Fuel' : isPropane ? 'Propane' : 'Water'} Company <span style="color:#e8f4ff;font-weight:700">${m.provider || m.name || '—'}</span></div>
+                <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Provider</div>
+                <div style="font-size:11.5px;color:var(--text2)">${isElec ? 'Electric' : isGas ? 'Heating Fuel' : isPropane ? 'Propane' : 'Water'} Company <span style="color:var(--text);font-weight:700">${m.provider || m.name || '—'}</span></div>
               </div>
               <div>
-                <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
-                <div style="font-size:11.5px;color:#8ab0d0">${isElec ? 'Electricity' : ''}${isGas ? 'Heating Fuel' : ''}${isPropane ? 'Propane' : ''}${isWater ? 'Water' : ''} <span style="color:${isElec ? '#7dd8ff' : isGas ? '#ffb040' : isPropane ? '#ffb040' : '#40e8a0'};font-weight:800;margin-left:8px;font-size:12px">${getMeterDisplayUnit(m)}</span></div>
+                <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
+                <div style="font-size:11.5px;color:var(--text2)">${isElec ? 'Electricity' : ''}${isGas ? 'Heating Fuel' : ''}${isPropane ? 'Propane' : ''}${isWater ? 'Water' : ''} <span style="color:${isElec ? '#7dd8ff' : isGas ? '#ffb040' : isPropane ? '#ffb040' : '#40e8a0'};font-weight:800;margin-left:8px;font-size:12px">${getMeterDisplayUnit(m)}</span></div>
               </div>
             </div>
 
@@ -6997,8 +7055,8 @@ function renderMeterDataPane(pane, m, bills, incl) {
             </div>
 
             <!-- Monthly Cost Chart -->
-            <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:12px;text-align:center">Dollars Spent Monthly By Utility Type</div>
+            <div style="margin-top:18px;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:16px 18px">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:12px;text-align:center">Dollars Spent Monthly By Utility Type</div>
               <div style="position:relative;height:300px"><canvas id="mddCostChart"></canvas></div>
             </div>
 
@@ -7006,16 +7064,16 @@ function renderMeterDataPane(pane, m, bills, incl) {
               isElec
                 ? `
             <!-- Load Factor Trend Chart -->
-            <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:4px;text-align:center">Monthly Load Factor %</div>
-              <div style="font-size:10px;color:rgba(180,200,220,0.6);text-align:center;margin-bottom:12px">kWh ÷ (Actual kW × 24 × Norm Days)</div>
+            <div style="margin-top:18px;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:16px 18px">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:4px;text-align:center">Monthly Load Factor %</div>
+              <div style="font-size:10px;color:var(--text3);text-align:center;margin-bottom:12px">kWh ÷ (Actual kW × 24 × Norm Days)</div>
               <div style="position:relative;height:260px"><canvas id="mddLoadFactorChart"></canvas></div>
             </div>
 
             <!-- Minimum Hours Chart -->
-            <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:4px;text-align:center">Monthly Minimum Hours</div>
-              <div style="font-size:10px;color:rgba(180,200,220,0.6);text-align:center;margin-bottom:12px">kWh ÷ Actual kW — hours demand would need to run at peak to deliver actual kWh</div>
+            <div style="margin-top:18px;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:16px 18px">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:4px;text-align:center">Monthly Minimum Hours</div>
+              <div style="font-size:10px;color:var(--text3);text-align:center;margin-bottom:12px">kWh ÷ Actual kW — hours demand would need to run at peak to deliver actual kWh</div>
               <div style="position:relative;height:260px"><canvas id="mddMinHoursChart"></canvas></div>
             </div>
             `
