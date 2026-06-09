@@ -737,7 +737,9 @@ function aggBaseMoMapForBldgs(bldgs) {
       const incl = m.inclusive !== false;
       const bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
+      const savedReg = m._reg;
       const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+      m._reg = savedReg; // restore — aggBaseMoMapForBldgs must not clobber the report's regression
       const blRows = allRows.filter((r) => bl.months.includes(r.ym));
       if (!blRows.length) return;
       const { elecByMo: eM, gasByMo: gM, propaneByMo: pM, waterByMo: wM } = buildMoMap(m, blRows, bills, incl);

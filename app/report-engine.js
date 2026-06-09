@@ -1866,7 +1866,8 @@ function rptPageFinancial(n, d) {
     '</table>';
 
   // -- Cumulative vs Projection SVG chart (quarterly) --
-  const svgW = 700,
+  // svgW updated from 700 to 716 to use available body width (816 - 48px×2 padding = 720; 716 matches prior rptPageContractProjection value for consistent chart sizing)
+  const svgW = 716,
     svgH = 110;
   const yrs = d.contract.years || 5;
   const annTarget = d.contract.annualTarget || 1;
@@ -3451,7 +3452,8 @@ function rptPageContractProjection(n, d) {
     '</table>';
 
   // -- Cumulative vs Projected SVG chart (bars + green fill line) --
-  const svgW = 716,
+  // svgW updated from 716 to 720 to match new .rpt-body padding: 48px each side (816 - 96 = 720)
+  const svgW = 720,
     svgH = 120;
   const totalQtrs = contractYears * 4;
   var padL = 35,

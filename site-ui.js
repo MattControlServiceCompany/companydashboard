@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.09.473';
+  var CH_VERSION = 'v2026.06.09.474';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,21 +32,29 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.06.04.451',
-      date: '2026-06-04',
-      title: 'Report fixes — no stacking, no duplicate blocks, consistent margins/footers/page numbers',
+      v: 'v2026.06.09.474',
+      date: '2026-06-09',
+      title: 'Report print layout fixed on both report types; Appendix A/B regression values restored',
       items: [
         {
           type: 'fix',
-          text: 'Reports no longer stack on top of each other when opened multiple times in a session — each preview is fully cleared before generating a new one.',
+          text: 'Quarterly and ASHRAE reports: footers are now pinned to the bottom of each page instead of floating mid-page.',
         },
         {
           type: 'fix',
-          text: 'Report pages no longer show duplicate content blocks (affected 9 block types in the Objective Report). Each block now appears exactly once per page.',
+          text: 'Reports: page margins are now a consistent 0.5 inch (48px) on both sides — matching the intended layout.',
         },
         {
-          type: 'change',
-          text: 'Every report page now has consistent 0.5-inch margins, a CSC footer, and Page X of Y numbering including the Board Summary page. The CSC letterhead appears on the cover page only — not on interior pages.',
+          type: 'fix',
+          text: 'Reports: page content is no longer clipped — overflow is visible so nothing gets cut off.',
+        },
+        {
+          type: 'fix',
+          text: 'Quarterly Report Appendix A: R-squared values and regression type now appear for all meters instead of showing dashes.',
+        },
+        {
+          type: 'fix',
+          text: 'Quarterly Report Appendix B: regression equations now render for all meters with sufficient baseline data.',
         },
       ],
     },

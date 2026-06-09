@@ -1191,6 +1191,34 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.474',
+    date: '2026-06-09',
+    title: 'Report print layout fixed on both report types; Appendix A/B regression values restored',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly and ASHRAE reports: footers are now pinned to the bottom of each page instead of floating mid-page.',
+      },
+      {
+        type: 'fix',
+        text: 'Reports: page margins are now a consistent 0.5 inch (48px) on both sides — matching the intended layout.',
+      },
+      {
+        type: 'fix',
+        text: 'Reports: page content is no longer clipped — overflow is visible so nothing gets cut off.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report Appendix A: R-squared values and regression type now appear for all meters instead of showing dashes.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report Appendix B: regression equations now render for all meters with sufficient baseline data.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.473',
     date: '2026-06-09',
     title: 'Equipment Matrix fixes + Baker KGS multi-account parsing fix',

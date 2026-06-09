@@ -2009,12 +2009,17 @@
         background: var(--rpt-page-bg);
         box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
         position: relative;
-        overflow: hidden;
+        /* overflow:hidden removed — was clipping content taller than 1056px; long sections now
+           extend the page box rather than being cut off. Footer elements use position:absolute
+           so they remain at the bottom of the 1056px min-height box. */
+        overflow: visible;
         color: var(--rpt-page-text);
         font-family: var(--rpt-font);
         font-size: 13px;
         line-height: 1.5;
-        padding: 12px 16px; /* safety buffer — keeps content off the raw page edge before PDF outer margin applies */
+        /* Horizontal padding removed — body/header now carry their own 48px (0.5in) side padding
+           so letterhead and footer images remain full-width edge-to-edge. */
+        padding: 12px 0;
         box-sizing: border-box;
       }
       /* Page number now rendered by JS via .rpt-pg-footer-pagenum */
@@ -2034,14 +2039,19 @@
       .rpt-footer-text {
         font-size: 9px;
         color: var(--rpt-page-text);
-        padding: 4px 50px;
+        padding: 4px 48px;
         display: flex;
         justify-content: space-between;
+        /* Pin above the footer wave image (~74px tall) so it doesn't flow mid-page */
+        position: absolute;
+        bottom: 74px;
+        left: 0;
+        right: 0;
       }
 
       /* -- Interior Page Header -- */
       .rpt-int-hdr {
-        padding: 10px 50px 8px;
+        padding: 10px 48px 8px;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -2054,13 +2064,14 @@
       }
       .rpt-info {
         font-size: 10px;
-        opacity: 0.6;
+        /* opacity:0.6 removed — report-standard.md Rule 4.1 prohibits grey/faded text in report chrome */
         text-align: right;
       }
 
       /* -- Page Body -- */
       .rpt-body {
-        padding: 12px 50px 60px;
+        /* 48px sides = 0.5in, aligned with .rpt-int-hdr and .rpt-footer-text padding */
+        padding: 12px 48px 80px;
       }
 
       /* -- Section Headings -- */
@@ -14610,10 +14621,10 @@
     <script src="app/bill-analysis.js?v=461"></script>
     <script src="extraction/bill-validation.js?v=399"></script>
     <script src="app/district-calendar.js?v=452"></script>
-    <script src="app/utility-data.js?v=472"></script>
+    <script src="app/utility-data.js?v=474"></script>
     <script src="app/pipeline-diagram.js?v=461"></script>
     <script src="app/csv-import.js?v=452"></script>
-    <script src="app/report-engine.js?v=471"></script>
+    <script src="app/report-engine.js?v=474"></script>
     <script src="app/report-preview.js?v=451"></script>
     <script src="app/calculators.js?v=399"></script>
     <script src="app/ecm-calculators.js?v=441"></script>
