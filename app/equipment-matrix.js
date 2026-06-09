@@ -12609,7 +12609,7 @@ var EM_SEQUENCE_DEFS = [
   /* ── AHU sequences ─────────────────────────────────────────────────── */
   {
     key: 'ahu_sat_reset',
-    label: 'SAT Reset',
+    label: 'Supply Air Temperature Reset',
     ashrae36: '§5.16.2',
     equipTypes: ['ahu'],
     requiredCats: ['sat', 'oat', 'sfSpeed'],
@@ -12617,7 +12617,7 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'ahu_dsp_reset',
-    label: 'DSP Reset',
+    label: 'Duct Static Pressure Reset',
     ashrae36: '§5.16.1',
     equipTypes: ['ahu'],
     requiredCats: ['dsp', 'sfSpeed', 'sfSpeedCmd'],
@@ -12634,7 +12634,7 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'ahu_freeze_prot',
-    label: 'Freeze Prot.',
+    label: 'Freeze Protection',
     ashrae36: '§5.16.12',
     equipTypes: ['ahu'],
     requiredCats: ['freezeStat', 'mat'],
@@ -12642,7 +12642,7 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'ahu_min_oa',
-    label: 'Min OA',
+    label: 'Minimum Outside Air',
     ashrae36: '§5.16.6',
     equipTypes: ['ahu'],
     requiredCats: ['oaDampCmd', 'sfSpeedCmd'],
@@ -12650,7 +12650,7 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'ahu_rf_control',
-    label: 'RF Control',
+    label: 'Return Fan Control',
     ashrae36: '§5.16.5',
     equipTypes: ['ahu'],
     requiredCats: ['rfEnable', 'rfSpeedCmd'],
@@ -12661,7 +12661,7 @@ var EM_SEQUENCE_DEFS = [
   /* ── VAV sequences ──────────────────────────────────────────────────── */
   {
     key: 'vav_zone_temp',
-    label: 'Zone Temp',
+    label: 'Zone Temperature',
     ashrae36: '§5.6.1',
     equipTypes: ['vav', 'fpb', 'ddvav'],
     requiredCats: ['zoneTemp', 'dampCmd', 'coolSP', 'htgSP'],
@@ -12680,7 +12680,7 @@ var EM_SEQUENCE_DEFS = [
   /* ── HWP sequences ──────────────────────────────────────────────────── */
   {
     key: 'hwp_supply_reset',
-    label: 'Supply Temp Reset',
+    label: 'Supply Temperature Reset',
     ashrae36: '§5.19.1',
     equipTypes: ['hwp'],
     requiredCats: ['hwst', 'oat', 'hwSetpoint'],
@@ -12688,7 +12688,7 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'hwp_pump_dp_reset',
-    label: 'Pump DP Reset',
+    label: 'Pump Differential Pressure Reset',
     ashrae36: '§5.19.2',
     equipTypes: ['hwp'],
     requiredCats: ['hwdp', 'hwPumpSpeed'],
@@ -12706,7 +12706,7 @@ var EM_SEQUENCE_DEFS = [
   /* ── CHWP sequences ─────────────────────────────────────────────────── */
   {
     key: 'chwp_supply_reset',
-    label: 'Supply Temp Reset',
+    label: 'Supply Temperature Reset',
     ashrae36: '§5.20.1',
     equipTypes: ['chwp'],
     requiredCats: ['chwst', 'oat', 'chwSetpoint'],
@@ -12714,7 +12714,7 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'chwp_pump_dp_reset',
-    label: 'Pump DP Reset',
+    label: 'Pump Differential Pressure Reset',
     ashrae36: '§5.20.2',
     equipTypes: ['chwp'],
     requiredCats: ['chwdp', 'schwpSpeed'],
@@ -12732,7 +12732,7 @@ var EM_SEQUENCE_DEFS = [
   /* ── DCV sequences ──────────────────────────────────────────────────── */
   {
     key: 'demandCtrl',
-    label: 'DCV (AHU)',
+    label: 'Demand-Controlled Ventilation (AHU)',
     ashrae36: '§5.16',
     equipTypes: ['ahu'],
     requiredCats: ['co2', 'oaDampCmd'],
@@ -12741,7 +12741,7 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'vav_dcv',
-    label: 'DCV (VAV)',
+    label: 'Demand-Controlled Ventilation (VAV)',
     ashrae36: '§5.6',
     equipTypes: ['vav', 'fpb', 'ddvav'],
     requiredCats: ['co2', 'dampCmd'],

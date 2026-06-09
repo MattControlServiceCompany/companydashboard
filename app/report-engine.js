@@ -3095,7 +3095,6 @@ function rptPageObservations(n, d) {
 
   // Page 1: summary + first chunk
   var page1Body =
-    '<div class="rpt-body ob">' +
     '<h2 contenteditable="true">Building Performance</h2>' +
     '<div style="font-size:14px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
     summaryPara +
@@ -3110,7 +3109,6 @@ function rptPageObservations(n, d) {
       '<h2 contenteditable="true">Next Quarter</h2>' +
       nextQPara;
   }
-  page1Body += '</div>';
 
   resultPages.push(
     rptPage(currentPageNum, 'Observations & Recommendations', page1Body, {
@@ -3123,7 +3121,7 @@ function rptPageObservations(n, d) {
   // Continuation pages
   contChunks.forEach(function (chunk, chunkIdx) {
     var isLast = chunkIdx === contChunks.length - 1;
-    var contBody = '<div class="rpt-body ob">' + chunk.join('');
+    var contBody = chunk.join('');
     if (isLast) {
       // Append weather + next quarter to the final continuation page
       contBody +=
@@ -3132,7 +3130,6 @@ function rptPageObservations(n, d) {
         '<h2 contenteditable="true">Next Quarter</h2>' +
         nextQPara;
     }
-    contBody += '</div>';
     resultPages.push(
       rptPage(currentPageNum, 'Observations & Recommendations (cont.)', contBody, {
         data: d,
@@ -3341,7 +3338,7 @@ function rptPageContractProjection(n, d) {
     ' Savings</div>' +
     '</div>' +
     '<div class="rpt-vs-mid" style="font-size:34px">' +
-    (ahead ? '?' : '?') +
+    (ahead ? '&#9650;' : '&#9660;') +
     '</div>' +
     '<div class="rpt-vs-side">' +
     '<div class="rpt-vs-val" style="color:var(--rpt-page-text)">' +
@@ -3641,7 +3638,6 @@ function rptPageContractProjection(n, d) {
     '</svg></div>';
 
   const bodyHTML =
-    '<div class="rpt-body">' +
     '<h2 contenteditable="true">Quarterly Targets</h2>' +
     qtTable +
     '<h2 contenteditable="true">' +
@@ -3656,8 +3652,7 @@ function rptPageContractProjection(n, d) {
     svgChart +
     '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:8px">' +
     escalation +
-    '% annual utility rate escalation applied per contract terms.</p>' +
-    '</div>';
+    '% annual utility rate escalation applied per contract terms.</p>';
 
   return rptPage(n, 'Contract Projection', bodyHTML, {
     data: d,
@@ -3831,13 +3826,11 @@ function rptPageSetPoints(n, d) {
   const rptViewMode =
     setpoints.length && setpoints[0].viewMode === 'average' ? 'building averages' : 'individual zones';
   const bodyHTML =
-    '<div class="rpt-body">' +
     '<p style="font-size:12px;color:var(--rpt-page-text);margin:0 0 8px">Baseline setpoints and operating schedules per building — from uploaded BAS exports (' +
     rptViewMode +
     ')</p>' +
     bodyContent +
-    '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
-    '</div>';
+    '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>';
 
   return rptPage(n, 'BAS Set Points & Schedules' + vLabel, bodyHTML, {
     data: d,

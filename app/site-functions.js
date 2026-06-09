@@ -1191,6 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.475',
+    date: '2026-06-09',
+    title: 'Contract Projection chart direction glyphs fixed; report sequence labels now fully spelled out',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly Report Contract Projection page: the direction indicator next to the target comparison now shows ▲ (ahead of target) or ▼ (behind target) instead of a stray "?" symbol.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report Contract Projection, Observations, and Set Points pages: charts and content now use the full available width — a double-padding bug that squeezed content too narrow has been removed.',
+      },
+      {
+        type: 'change',
+        text: 'ASHRAE 36 Audit Report: sequence readiness labels in the "Sequences Not Ready" column are now fully spelled out — e.g. "Demand-Controlled Ventilation (AHU)" instead of "DCV (AHU)", "Supply Air Temperature Reset" instead of "SAT Reset".',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.474',
     date: '2026-06-09',
     title: 'Report print layout fixed on both report types; Appendix A/B regression values restored',
