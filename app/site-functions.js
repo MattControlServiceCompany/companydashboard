@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.08.471',
+    date: '2026-06-09',
+    title: 'Report EUI benchmark chart legend dedup',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy reports: the EUI benchmark chart legend no longer shows duplicate entries when viewing a report.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.08.470',
     date: '2026-06-09',
     title: 'Energy Savings Measures: permanent delete, savings display, propane rate persistence',

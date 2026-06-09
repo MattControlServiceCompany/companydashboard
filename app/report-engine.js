@@ -2674,9 +2674,6 @@ function rptPageEUI(n, d) {
     '<div class="rpt-chart-box">' +
     '<div class="rpt-chart-title">Current Site EUI by Building</div>' +
     '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:9px">' +
-    '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
-    '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
-    '<span><span style="display:inline-block;width:2px;height:10px;background:#c0392b;vertical-align:middle"></span> CBECS Median</span>' +
     '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-green);border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
     '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-orange);border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
     '<span><span style="display:inline-block;width:2px;height:10px;background:var(--rpt-red);vertical-align:middle"></span> CBECS Median</span>' +
