@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.10.482';
+  var CH_VERSION = 'v2026.06.10.483';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.10.483',
+      date: '2026-06-10',
+      title: 'ASHRAE-36 audit report now groups equipment into 3 tiers',
+      items: [
+        {
+          type: 'feature',
+          text: 'ASHRAE-36 Audit Report: equipment tables now use a 3-tier HVAC hierarchy — Tier 1 Plant & Central (chillers, boilers, cooling towers), Tier 2 Primary Air Systems (AHUs, DOAS, furnaces), Tier 3 Zone Terminals (VAVs, fan-powered boxes, FCUs, heaters, exhaust fans). Each building page also shows whether dedicated BAS power-monitoring and outdoor-air sensor programs were found in the export.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.10.482',
       date: '2026-06-10',

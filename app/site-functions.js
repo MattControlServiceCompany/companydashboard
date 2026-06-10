@@ -1191,13 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.483',
+    date: '2026-06-10',
+    title: 'ASHRAE-36 audit report now groups equipment into 3 tiers',
+    items: [
+      {
+        type: 'feature',
+        text: 'ASHRAE-36 Audit Report: equipment tables now use a 3-tier HVAC hierarchy — Tier 1 Plant & Central (chillers, boilers, cooling towers), Tier 2 Primary Air Systems (AHUs, DOAS, furnaces), Tier 3 Zone Terminals (VAVs, fan-powered boxes, FCUs, heaters, exhaust fans). Each building page also shows whether dedicated BAS power-monitoring and outdoor-air sensor programs were found in the export.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.10.482',
     date: '2026-06-10',
     title: 'Constellation multi-building bills: correct dates and no duplicate buildings',
     items: [
       {
         type: 'fix',
-        text: 'Constellation gas bills for Baker University (and any account with 10+ buildings on one PDF) now show correct billing dates and each building appears only once. Previously, all buildings were inheriting the invoice header address instead of their own address, causing the system to collapse 190 bills into one group and generate bogus labels like Dec 2038 counting down. The extractor now anchors each building\'s address to its own section of the PDF.',
+        text: "Constellation gas bills for Baker University (and any account with 10+ buildings on one PDF) now show correct billing dates and each building appears only once. Previously, all buildings were inheriting the invoice header address instead of their own address, causing the system to collapse 190 bills into one group and generate bogus labels like Dec 2038 counting down. The extractor now anchors each building's address to its own section of the PDF.",
       },
     ],
   },

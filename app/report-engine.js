@@ -10724,6 +10724,17 @@ function collectASHRAE36Data(projId, reportDate) {
 
   Object.keys(bldgMap).forEach(function (bName) {
     var rows = bldgMap[bName];
+
+    // Plan §5: Detect power metering and OA sensor programs BEFORE filtering to
+    // auditableRows. These categories are intentionally excluded from AUDITABLE
+    // but their presence is meaningful infrastructure metadata per building.
+    var hasPowerMonitoring = rows.some(function (r) {
+      return r.category === 'power';
+    });
+    var hasOAConditions = rows.some(function (r) {
+      return r.category === 'sensor';
+    });
+
     var auditableRows = rows.filter(function (r) {
       return AUDITABLE.indexOf(r.category) !== -1;
     });
@@ -10874,6 +10885,10 @@ function collectASHRAE36Data(projId, reportDate) {
       spNeedsReviewCount: spNeedsReviewCount,
       spNotScheduledCount: spNotScheduledCount,
       spDeadbandIssueCount: spDeadbandIssueCount,
+      // Plan §5: infrastructure metadata — presence of power-monitoring and OA-sensor
+      // programs in the BAS export for this building (not a compliance score).
+      hasPowerMonitoring: hasPowerMonitoring,
+      hasOAConditions: hasOAConditions,
     });
   });
 
@@ -11412,13 +11427,28 @@ function rptPageASHRAE36Building(n, d, building) {
     '</div>' +
     '</div>';
 
-  // ── Build equipment table, grouped by category (type) ──
-  // Sort equipResults so all units of the same category appear together.
-  // Within each category, sort alphabetically by name.
-  var CAT_ORDER = ['ahu', 'doas', 'fcu', 'hwp', 'chwp', 'ct', 'vav', 'fpb', 'ddvav', 'zone', 'furnace', 'heater', 'ef'];
+  // ── Build equipment table, grouped by 3-tier hierarchy then category ──
+  // Plan §6 / §10 item 2: Replace flat CAT_ORDER with TIER_GROUPS structure.
+  // Tier 1 = Plant & Central, Tier 2 = Primary Air Systems, Tier 3 = Zone Terminals.
+  // FCU = Tier 3 (locked decision: terminal units per user locked decision, overrides plan).
+  // EF = Tier 3 auxiliary (locked decision: exhaust fans are zone-level auxiliary, overrides plan).
+  var TIER_GROUPS = [
+    { label: 'Tier 1 — Plant & Central Equipment', cats: ['chwp', 'hwp', 'ct'] },
+    { label: 'Tier 2 — Primary Air Systems', cats: ['ahu', 'doas', 'furnace'] },
+    { label: 'Tier 3 — Zone Terminals', cats: ['vav', 'fpb', 'ddvav', 'zone', 'fcu', 'heater', 'ef'] },
+  ];
+
+  // Build a flat ordered list of categories for sorting (preserves tier+category order)
+  var _flatCatOrder = [];
+  TIER_GROUPS.forEach(function (tg) {
+    tg.cats.forEach(function (c) {
+      _flatCatOrder.push(c);
+    });
+  });
+
   var sortedEquip = b.equipResults.slice().sort(function (a, b2) {
-    var ai = CAT_ORDER.indexOf(a.category);
-    var bi2 = CAT_ORDER.indexOf(b2.category);
+    var ai = _flatCatOrder.indexOf(a.category);
+    var bi2 = _flatCatOrder.indexOf(b2.category);
     if (ai === -1) ai = 99;
     if (bi2 === -1) bi2 = 99;
     if (ai !== bi2) return ai - bi2;
@@ -11461,74 +11491,192 @@ function rptPageASHRAE36Building(n, d, building) {
     '">Sequences Not Ready</th>' +
     '</tr></thead>';
 
-  var tbodyRows = '';
-  var lastCat = null;
+  // Build a set for quick membership check: which categories actually have rows?
+  var _catsWithRows = {};
   sortedEquip.forEach(function (eq) {
-    var mp = eq.compliance.missingPoints || [];
-    var sr = eq.seqReadiness || {};
-    var presentCount = (eq.compliance.coveredPoints || []).length;
+    _catsWithRows[eq.category] = true;
+  });
 
-    // Sensors needed: count + human-readable comma list
-    var missingNames = mp.map(_missingPointName);
-    var sensorsNeededCell =
-      mp.length === 0
-        ? '<span style="color:var(--rpt-green)">None</span>'
-        : '<strong>' + mp.length + '</strong> &mdash; ' + missingNames.join(', ');
+  var tbodyRows = '';
 
-    // Sequences not ready: human-readable list (blocked or partial only)
-    var notReadySeqs = [];
-    for (var sk in sr) {
-      if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
-        notReadySeqs.push(_seqLabel(sk, sr[sk]));
+  // Render rows in tier order, emitting tier header + category sub-header as boundaries change.
+  TIER_GROUPS.forEach(function (tg, tierIdx) {
+    // Only emit tier header if at least one equipment row belongs to this tier
+    var tierHasRows = tg.cats.some(function (c) {
+      return _catsWithRows[c];
+    });
+    if (!tierHasRows) return;
+
+    var tierHeaderEmitted = false;
+
+    tg.cats.forEach(function (cat) {
+      // Collect rows for this category
+      var catRows = sortedEquip.filter(function (eq) {
+        return eq.category === cat;
+      });
+      if (!catRows.length) return;
+
+      // Emit tier header row once, before the first category of this tier
+      if (!tierHeaderEmitted) {
+        tierHeaderEmitted = true;
+        tbodyRows +=
+          '<tr>' +
+          '<td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
+          'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
+          'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">' +
+          tg.label +
+          '</td>' +
+          '</tr>';
       }
-    }
-    var seqsCell =
-      notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
 
-    // Type sub-header row when category changes
-    if (eq.category !== lastCat) {
-      lastCat = eq.category;
+      // Emit category sub-header row (existing style, indented under tier)
       tbodyRows +=
         '<tr>' +
-        '<td colspan="5" style="padding:4px 8px 2px;font-size:10px;font-weight:700;' +
+        '<td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
         'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
-        'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule)">' +
-        (eq.categoryLabel || eq.category) +
+        'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
+        'background:rgba(0,0,0,0.02)">' +
+        (CAT_LABELS_PLURAL[cat] || cat) +
         '</td>' +
         '</tr>';
-    }
 
-    var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
-    var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
+      // Emit equipment rows for this category
+      catRows.forEach(function (eq) {
+        var mp = eq.compliance.missingPoints || [];
+        var sr = eq.seqReadiness || {};
+        var presentCount = (eq.compliance.coveredPoints || []).length;
+
+        // Sensors needed: count + human-readable comma list
+        var missingNames = mp.map(_missingPointName);
+        var sensorsNeededCell =
+          mp.length === 0
+            ? '<span style="color:var(--rpt-green)">None</span>'
+            : '<strong>' + mp.length + '</strong> &mdash; ' + missingNames.join(', ');
+
+        // Sequences not ready: human-readable list (blocked or partial only)
+        var notReadySeqs = [];
+        for (var sk in sr) {
+          if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
+            notReadySeqs.push(_seqLabel(sk, sr[sk]));
+          }
+        }
+        var seqsCell =
+          notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
+
+        var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
+        var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
+        tbodyRows +=
+          '<tr>' +
+          '<td style="' +
+          tdBase +
+          ';font-weight:600;color:var(--rpt-page-text)">' +
+          (eq.name || '—') +
+          '</td>' +
+          '<td style="' +
+          tdBase +
+          ';color:var(--rpt-page-text)">' +
+          (eq.categoryLabel || eq.category) +
+          '</td>' +
+          '<td style="' +
+          tdBase +
+          ';text-align:center;color:var(--rpt-page-text)">' +
+          presentCount +
+          '</td>' +
+          '<td style="' +
+          tdBase +
+          ';color:var(--rpt-page-text);line-height:1.5">' +
+          sensorsNeededCell +
+          '</td>' +
+          '<td style="' +
+          tdBase +
+          ';color:var(--rpt-page-text);line-height:1.5">' +
+          seqsCell +
+          '</td>' +
+          '</tr>';
+      });
+    });
+  });
+
+  // Catch-through: any equipment whose category is not in any TIER_GROUPS tier
+  // (should not occur with current AUDITABLE list, but guard against future additions)
+  var _coveredCats = {};
+  TIER_GROUPS.forEach(function (tg) {
+    tg.cats.forEach(function (c) {
+      _coveredCats[c] = true;
+    });
+  });
+  var uncoveredRows = sortedEquip.filter(function (eq) {
+    return !_coveredCats[eq.category];
+  });
+  if (uncoveredRows.length) {
     tbodyRows +=
       '<tr>' +
-      '<td style="' +
-      tdBase +
-      ';font-weight:600;color:var(--rpt-page-text)">' +
-      (eq.name || '—') +
-      '</td>' +
-      '<td style="' +
-      tdBase +
-      ';color:var(--rpt-page-text)">' +
-      (eq.categoryLabel || eq.category) +
-      '</td>' +
-      '<td style="' +
-      tdBase +
-      ';text-align:center;color:var(--rpt-page-text)">' +
-      presentCount +
-      '</td>' +
-      '<td style="' +
-      tdBase +
-      ';color:var(--rpt-page-text);line-height:1.5">' +
-      sensorsNeededCell +
-      '</td>' +
-      '<td style="' +
-      tdBase +
-      ';color:var(--rpt-page-text);line-height:1.5">' +
-      seqsCell +
-      '</td>' +
+      '<td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
+      'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
+      'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">Other Equipment</td>' +
       '</tr>';
-  });
+    var lastUncovCat = null;
+    uncoveredRows.forEach(function (eq) {
+      if (eq.category !== lastUncovCat) {
+        lastUncovCat = eq.category;
+        tbodyRows +=
+          '<tr>' +
+          '<td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
+          'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
+          'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
+          'background:rgba(0,0,0,0.02)">' +
+          (eq.categoryLabel || eq.category) +
+          '</td>' +
+          '</tr>';
+      }
+      var mp = eq.compliance.missingPoints || [];
+      var sr = eq.seqReadiness || {};
+      var presentCount = (eq.compliance.coveredPoints || []).length;
+      var missingNames = mp.map(_missingPointName);
+      var sensorsNeededCell =
+        mp.length === 0
+          ? '<span style="color:var(--rpt-green)">None</span>'
+          : '<strong>' + mp.length + '</strong> &mdash; ' + missingNames.join(', ');
+      var notReadySeqs = [];
+      for (var sk in sr) {
+        if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
+          notReadySeqs.push(_seqLabel(sk, sr[sk]));
+        }
+      }
+      var seqsCell =
+        notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
+      var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
+      var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
+      tbodyRows +=
+        '<tr>' +
+        '<td style="' +
+        tdBase +
+        ';font-weight:600;color:var(--rpt-page-text)">' +
+        (eq.name || '—') +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';color:var(--rpt-page-text)">' +
+        (eq.categoryLabel || eq.category) +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';text-align:center;color:var(--rpt-page-text)">' +
+        presentCount +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';color:var(--rpt-page-text);line-height:1.5">' +
+        sensorsNeededCell +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';color:var(--rpt-page-text);line-height:1.5">' +
+        seqsCell +
+        '</td>' +
+        '</tr>';
+    });
+  }
 
   // Empty state
   if (!sortedEquip.length) {
@@ -11547,7 +11695,7 @@ function rptPageASHRAE36Building(n, d, building) {
   // ── Building-level summary line ──
   var summaryLine =
     '<div class="rpt-a36-callout" style="font-size:11px;color:var(--rpt-page-text);' +
-    'border-top:1px solid var(--rpt-rule);padding-top:8px;margin-bottom:0">' +
+    'border-top:1px solid var(--rpt-rule);padding-top:8px;margin-bottom:10px">' +
     '<strong>Total for ' +
     b.name +
     ':</strong> install ' +
@@ -11565,6 +11713,31 @@ function rptPageASHRAE36Building(n, d, building) {
     '.' +
     '</div>';
 
+  // ── Plan §6 item 4 / §10 item 3: Infrastructure callout ──
+  // Shows whether dedicated power-monitoring and outdoor-air-sensor programs were
+  // found in the BAS export for this building. "Not detected" does NOT mean the
+  // building lacks metering — it means no dedicated program appeared in the export.
+  var infraCallout =
+    '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px;' +
+    'background:rgba(0,0,0,0.02);border:1px solid var(--rpt-rule);border-radius:3px">' +
+    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (BAS Export)</div>' +
+    '<div style="display:flex;gap:24px">' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">' +
+    '<span style="font-weight:600">Dedicated BAS power monitoring:</span> ' +
+    (b.hasPowerMonitoring
+      ? '<span style="color:var(--rpt-green);font-weight:700">Detected</span>'
+      : '<span style="color:var(--rpt-page-text);opacity:0.6">Not detected in this export</span>') +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">' +
+    '<span style="font-weight:600">Dedicated outdoor-air sensor program:</span> ' +
+    (b.hasOAConditions
+      ? '<span style="color:var(--rpt-green);font-weight:700">Detected</span>'
+      : '<span style="color:var(--rpt-page-text);opacity:0.6">Not detected in this export</span>') +
+    '</div>' +
+    '</div>' +
+    '</div>';
+
   // ── Intro sentence ──
   var intro =
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px;line-height:1.6">' +
@@ -11572,7 +11745,7 @@ function rptPageASHRAE36Building(n, d, building) {
     'and which control sequences cannot run until those sensors are installed.' +
     '</div>';
 
-  var bodyHTML = gauges + intro + equipTable + summaryLine;
+  var bodyHTML = gauges + intro + equipTable + summaryLine + infraCallout;
   return rptPage(n, 'ASHRAE 36 Audit — ' + b.name, bodyHTML, { data: fakeData, label: 'Page ' + n + ' — ' + b.name });
 }
 
