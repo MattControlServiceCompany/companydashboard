@@ -1191,6 +1191,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.493',
+    date: '2026-06-10',
+    title: 'Equipment Matrix: HVAC equipment now sorts first by default',
+    items: [
+      { type: 'fix', text: 'The Equipment Matrix Raw and Audit views now show HVAC equipment (AHUs, VAVs, FCUs, etc.) at the top of the list by default, even for data imported before this fix. Previously, equipment appeared in alphabetical order, burying HVAC rows behind lighting and other equipment. Click any column header to sort manually — the default HVAC-first order restores when you clear the sort.' }
+    ]
+  },
+
+  {
     v: 'v2026.06.10.492',
     date: '2026-06-10',
     title: 'Audit Report cover page: clearer labels for non-technical readers',

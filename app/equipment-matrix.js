@@ -2512,33 +2512,7 @@ function emMergeIntoMatrix(existingData, newRows) {
     }
   }
   // ── Sort rows: building alphabetically, then HVAC types before non-HVAC, then equipment name ──
-  // M3: expanded priority map — new HVAC types slot in after their nearest equivalent
-  var _emTypePriority = {
-    ahu: 0,
-    doas: 1,
-    vav: 2,
-    fpb: 3,
-    ddvav: 4,
-    zone: 5,
-    furnace: 6,
-    fcu: 7,
-    heater: 8,
-    ef: 9,
-    hwp: 10,
-    chwp: 11,
-    ct: 12,
-    lighting: 13,
-    fire: 14,
-    power: 15,
-    plumbing: 16,
-    controls: 17,
-    sensor: 18,
-    // M4: new non-HVAC categories
-    elevator: 19,
-    monitoring: 20,
-    security: 21,
-    other: 22,
-  };
+  // M3: expanded priority map — extracted to module scope as _emTypePriority (shared with render functions)
   merged.sort(function (a, b) {
     var ab = (a.building || '').toLowerCase();
     var bb = (b.building || '').toLowerCase();
@@ -2572,6 +2546,33 @@ function emMergeIntoMatrix(existingData, newRows) {
 
 var _emPendingFiles = [];
 var _emImportMode = 'merge'; // 'merge' = add to existing data; 'replace' = clear and reimport
+// Module-level HVAC priority map — used at import time (emMergeIntoMatrix) and display time (emRenderTable, emRenderAuditTable)
+var _emTypePriority = {
+  ahu: 0,
+  doas: 1,
+  vav: 2,
+  fpb: 3,
+  ddvav: 4,
+  zone: 5,
+  furnace: 6,
+  fcu: 7,
+  heater: 8,
+  ef: 9,
+  hwp: 10,
+  chwp: 11,
+  ct: 12,
+  lighting: 13,
+  fire: 14,
+  power: 15,
+  plumbing: 16,
+  controls: 17,
+  sensor: 18,
+  // M4: new non-HVAC categories
+  elevator: 19,
+  monitoring: 20,
+  security: 21,
+  other: 22,
+};
 var _emSortCol = null;
 var _emSortDir = 1;
 var _emFilters = { building: '', type: '', search: '' };
@@ -4363,6 +4364,20 @@ function emRenderTable(data, filters) {
         return 0;
       });
     }
+  } else {
+    // Default sort: building alpha → HVAC type priority → equipment name alpha
+    filtered = filtered.slice().sort(function (a, b) {
+      var ab = (a.building || '').toLowerCase();
+      var bb = (b.building || '').toLowerCase();
+      if (ab < bb) return -1;
+      if (ab > bb) return 1;
+      var ap = _emTypePriority[a.category] !== undefined ? _emTypePriority[a.category] : 22;
+      var bp = _emTypePriority[b.category] !== undefined ? _emTypePriority[b.category] : 22;
+      if (ap !== bp) return ap - bp;
+      var ae = (a.equipName || '').toLowerCase();
+      var be = (b.equipName || '').toLowerCase();
+      return ae < be ? -1 : ae > be ? 1 : 0;
+    });
   }
 
   var countEl = document.getElementById('em-row-count');
@@ -5419,6 +5434,20 @@ function emRenderAuditTable(data, filters) {
         return 0;
       });
     }
+  } else {
+    // Default sort: building alpha → HVAC type priority → equipment name alpha
+    filtered = filtered.slice().sort(function (a, b) {
+      var ab = (a.building || '').toLowerCase();
+      var bb = (b.building || '').toLowerCase();
+      if (ab < bb) return -1;
+      if (ab > bb) return 1;
+      var ap = _emTypePriority[a.category] !== undefined ? _emTypePriority[a.category] : 22;
+      var bp = _emTypePriority[b.category] !== undefined ? _emTypePriority[b.category] : 22;
+      if (ap !== bp) return ap - bp;
+      var ae = (a.equipName || '').toLowerCase();
+      var be = (b.equipName || '').toLowerCase();
+      return ae < be ? -1 : ae > be ? 1 : 0;
+    });
   }
 
   var countEl = document.getElementById('em-row-count');
