@@ -1191,6 +1191,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.479',
+    date: '2026-06-09',
+    title: 'Project tabs fit equally across the bar; Annual Projected tile no longer clips',
+    items: [
+      {
+        type: 'fix',
+        text: 'Project tabs (Energy Department): all 14 tabs now share the full tab bar equally — no scrolling, no overflow. Icons are always visible at every screen width. Text is slightly smaller to fit comfortably.',
+      },
+      {
+        type: 'fix',
+        text: 'Dashboard Annual Projected tile: the tile no longer gets clipped or squeezed off-screen when the card is narrow. The dollar value now shows whole dollars (e.g. $39,000/yr) instead of cents, saving space.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.478',
     date: '2026-06-09',
     title: 'Constellation gas bill usage now imports correctly',

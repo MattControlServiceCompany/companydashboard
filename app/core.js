@@ -1790,7 +1790,7 @@ function initDashboardTab(projId) {
           <div class="card" style="margin-bottom:16px">
             <div style="padding:20px;display:flex;gap:24px;align-items:stretch;flex-wrap:wrap">
               <div style="flex:1;min-width:320px;background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:8px;padding:16px">
-                <div style="display:flex;align-items:flex-start;gap:16px">
+                <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
                   <div style="flex:1">
                     <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;font-weight:600">Projected Savings</div>
                     <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -1821,9 +1821,9 @@ function initDashboardTab(projId) {
                         .join('')}
                     </div>
                   </div>
-                  <div style="border-left:1px solid rgba(147,51,234,0.25);padding-left:16px;display:flex;flex-direction:column;justify-content:center;min-width:120px">
+                  <div style="border-left:1px solid rgba(147,51,234,0.25);padding-left:16px;display:flex;flex-direction:column;justify-content:center;min-width:160px;flex-shrink:0">
                     <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Annual Projected</div>
-                    <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:#c084fc">${$c2(projectedAnnual)}<span style="font-size:12px;color:#a78bfa">/yr</span></div>
+                    <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:#c084fc">${$c(projectedAnnual)}<span style="font-size:12px;color:#a78bfa">/yr</span></div>
                   </div>
                 </div>
               </div>

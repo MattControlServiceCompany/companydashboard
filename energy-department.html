@@ -3887,32 +3887,24 @@
         font-family: var(--mono);
         color: var(--text);
       }
-      /* ── Project tab bar — default (wide/full) look ── */
+      /* ── Project tab bar — equal-width tabs, always show icons ── */
+      /* Strategy: flex:1 on each tab makes all 14 tabs share the bar width equally.             */
+      /* Text + icons are sized small enough to fit without overflow at 1280px–2560px.           */
+      /* Icons (.pdt-ico) are NEVER hidden — container query only adjusts padding at <900px.     */
       .pd-tabs {
         display: flex;
-        gap: 2px;
-        padding: 12px 18px 0;
+        gap: 0;
+        padding: 8px 8px 0;
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
-        overflow-x: auto;
+        overflow-x: hidden;
         flex-wrap: nowrap;
-        -webkit-overflow-scrolling: touch;
-        /* thin scrollbar always present; only visible when content overflows */
-        scrollbar-width: thin;
-        scrollbar-color: var(--border2) transparent;
-      }
-      .pd-tabs::-webkit-scrollbar {
-        height: 3px;
-      }
-      .pd-tabs::-webkit-scrollbar-thumb {
-        background: var(--border2);
-        border-radius: 2px;
       }
       .pdt {
         font-family: var(--font);
-        font-size: 12px;
+        font-size: 10.5px;
         font-weight: 500;
-        padding: 6px 12px;
+        padding: 5px 4px;
         border-radius: 6px 6px 0 0;
         border: none;
         cursor: pointer;
@@ -3923,13 +3915,21 @@
         user-select: none;
         display: inline-flex;
         align-items: center;
-        gap: 4px;
+        justify-content: center;
+        gap: 3px;
         white-space: nowrap;
+        /* Equal-width: each tab takes an equal share of the bar */
+        flex: 1 1 0;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .pdt-ico {
         font-style: normal;
+        font-size: 13px;
         line-height: 1;
         flex-shrink: 0;
+        /* Icons always visible — never hidden by container query */
       }
       .pdt.active {
         color: var(--em);
@@ -3942,20 +3942,18 @@
       .pdt.dragging {
         opacity: 0.4;
       }
-      /* ── Compact tab bar: kicks in when proj-detail container < 1700px ── */
-      /* Breakpoint reasoning: 14 tabs × ~(emoji + label + 24px padding) ≈ 1650px total.        */
-      /* At 1700px container width the full row barely fits; below that, icons cause overflow.   */
-      /* The container is #projDetailContent (full viewport minus ~240px sidebar).               */
-      /* At 1440p (2560px viewport): container ≈ 2320px → wide. At ~1940px viewport: borderline.*/
-      @container proj-detail (max-width: 1700px) {
+      /* ── Fallback for very narrow windows (<900px container): tighten padding only ── */
+      /* Icons stay visible even here — only padding is reduced.                         */
+      @container proj-detail (max-width: 900px) {
         .pd-tabs {
-          padding: 8px 8px 0;
+          padding: 6px 4px 0;
         }
         .pdt {
-          padding: 6px 8px;
+          padding: 4px 2px;
+          font-size: 10px;
         }
         .pdt-ico {
-          display: none;
+          font-size: 11px;
         }
       }
       .ptab {
@@ -14616,7 +14614,7 @@
     <script src="computations/data-quality.js?v=461"></script>
     <script src="extraction/pdf-engine.js?v=399"></script>
     <script src="app/db.js?v=422"></script>
-    <script src="app/core.js?v=2026.06.08.469"></script>
+    <script src="app/core.js?v=2026.06.09.479"></script>
     <script src="app/energy-savings.js?v=478"></script>
     <script src="app/bill-analysis.js?v=476"></script>
     <script src="extraction/bill-validation.js?v=399"></script>
@@ -14636,7 +14634,7 @@
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=454"></script>
 
-    <script src="app/site-functions.js?v=477"></script>
+    <script src="app/site-functions.js?v=479"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
