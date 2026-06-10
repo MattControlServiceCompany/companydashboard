@@ -6912,6 +6912,7 @@ const UTILITY_RULES = [
       //   noise derived from garbled "BALDWIN" / "ALDWIN" text near the top
       //   of the right-hand column stub.
       let AccountNumber = null;
+      let _p5RawAcct = null; // set by P5 when OCR-garbled digits are normalized; read at flag-detection below
       // P1 — bottom stub (most reliable across all pages)
       AccountNumber = page.match(/ACCOUNT\s*#[:\s]+(\d{7,10})/i)?.[1] || null;
       // P2 — top label + number on same line
@@ -6927,6 +6928,31 @@ const UTILITY_RULES = [
           /(?:ALDWIN|DWIN|RALD|RWIN|FRALD|ERALD|ER\s*ALDWIN|FR\s*DWI)[\s\S]{0,40}?(?:^|\s)(\d{9})(?:\s|$)/im,
         );
         if (p4) AccountNumber = p4[1];
+      }
+
+      // P5 — OCR-garbled bottom stub: account number contains letters (OCR substitutes
+      // look-alike chars for digits). Match ACCOUNT #/H#/# with period/colon/space
+      // separator followed by 7-11 alphanumeric chars; normalize common OCR digit
+      // confusions. Auto-accepts result if all chars normalize to digits (7-10 long).
+      // Stamps _accountOCRNormalized:true on the bill so the user knows to verify.
+      if (!AccountNumber) {
+        const _p5m = page.match(/ACCOUNT\s*H?#[.:\s]+([A-Za-z0-9]{7,11})/i);
+        if (_p5m) {
+          const _rawAcct = _p5m[1];
+          const _normAcct = _rawAcct
+            .replace(/[aA]/g, '4')
+            .replace(/[oO]/g, '0')
+            .replace(/[iIlL]/g, '1')
+            .replace(/[sS]/g, '5')
+            .replace(/[zZ]/g, '2')
+            .replace(/[eE]/g, '6')
+            .replace(/[cC]/g, '0')
+            .replace(/[vV]/g, '0');
+          if (/^\d{7,10}$/.test(_normAcct)) {
+            AccountNumber = _normAcct;
+            _p5RawAcct = _rawAcct; // persist raw garbled string for flag-detection below (can't attach to primitive string)
+          }
+        }
       }
 
       // Skip pages that have no account number (email/receipt pages that
@@ -7188,7 +7214,10 @@ const UTILITY_RULES = [
         // EL - FUEL ADJUSTMENT (older format uses EL prefix instead of FA)
         if (/^EL[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ/i.test(ln)) {
           // Capture the signed charge amount
-          const raw = ln.replace(/^EL[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
+          const raw = ln
+            .replace(/^EL[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ(?:USTMENT)?\s*/i, '')
+            .trim()
+            .replace(/[–—−]/g, '-'); // normalize unicode dashes to ASCII minus
           // Find the last decimal-looking token (handles trailing minus)
           const m = raw.match(/(-?[\d,]+\.\d{2}-?|-\.[\d]+|\.\d{2})\s*$/);
           if (m) {
@@ -7203,7 +7232,10 @@ const UTILITY_RULES = [
 
         // FA - FUEL ADJUSTMENT (standard prefix for fuel adj)
         if (/^FA[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ/i.test(ln)) {
-          const raw = ln.replace(/^FA[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
+          const raw = ln
+            .replace(/^FA[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ(?:USTMENT)?\s*/i, '')
+            .trim()
+            .replace(/[–—−]/g, '-'); // normalize unicode dashes to ASCII minus
           const m = raw.match(/(-?[\d,]+\.\d{2}-?|-\.[\d]+|\.\d{2})\s*$/);
           if (m) {
             let v = m[1];
@@ -7335,21 +7367,24 @@ const UTILITY_RULES = [
         const _pfxStrippedLines = lines
           .map((l) => l.trim())
           .filter((l) =>
-            /^[-–~]\s*(ELECTRIC|SEWER|WATER|FRANCHISE\s+FEE|FUEL\s+ADJ(?:USTMENT)?|(?:METER\s+)?DEBT\s+PMT)/i.test(l),
+            /^[-–~—]\s*(ELECTRIC|SEWER|WATER|FRANCHISE\s+FEE|FUEL\s+ADJ(?:USTMENT)?|(?:METER\s+)?DEBT\s+PMT)/i.test(l),
           );
 
         if (_pfxStrippedLines.length > 0) {
           for (const sl of _pfxStrippedLines) {
             // Strip the leading dash/tilde separator
-            const rest = sl.replace(/^[-–~]\s*/, '').trim();
+            const rest = sl.replace(/^[-–~—]\s*/, '').trim();
 
             if (/^ELECTRIC/i.test(rest) && !/FRANCHISE/i.test(rest)) {
               const body = rest.replace(/^ELECTRIC\s*/i, '');
               const m = _parseMeteredLine(body);
               if (m.charge != null) elMeters.push(m);
             } else if (/^FUEL\s+ADJ/i.test(rest) && fuelAdjCharge === null) {
-              const body = rest.replace(/^FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
-              const mv = body.match(/(-?[\d,]+\.\d{2})/);
+              const body = rest
+                .replace(/^FUEL\s+ADJ(?:USTMENT)?\s*/i, '')
+                .trim()
+                .replace(/[–—−]/g, '-'); // normalize unicode dashes to ASCII minus
+              const mv = body.match(/(-?[\d,]+\.\d{2}-?)/);
               if (mv) {
                 let v = mv[1];
                 const trailingMinus = v.endsWith('-');
@@ -7583,6 +7618,10 @@ const UTILITY_RULES = [
       if (elMeters.length === 0 && swCharge === null && waCharge === null) return null;
 
       // ── Build shared account fields ──
+      // If P5 normalized a garbled OCR account number, stamp the flag so the
+      // UI can warn the user that the account number was guessed and may need
+      // verification. _p5RawAcct holds the original garbled string from OCR.
+      const _acctOCRNormalized = _p5RawAcct != null;
       const shared = {
         UtilityCompany: 'City of Baldwin City',
         CustomerName,
@@ -7594,6 +7633,7 @@ const UTILITY_RULES = [
         NumberOfDays: null,
         RateSchedule: null,
         MeterNumber: null,
+        ...(_acctOCRNormalized ? { _accountOCRNormalized: true, _accountOCRRaw: _p5RawAcct } : {}),
       };
 
       const bills = [];

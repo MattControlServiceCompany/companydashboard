@@ -1191,6 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.484',
+    date: '2026-06-10',
+    title: 'Baldwin Electric OCR: three extraction fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Baldwin Electric bills with a negative fuel adjustment (e.g., −$338.40) now calculate the correct total. Previously, the em-dash used as a minus sign was not recognized, silently inflating the bill total by the fuel-adjustment amount.',
+      },
+      {
+        type: 'fix',
+        text: 'Baldwin Electric pages that start with an em-dash prefix (—) are now included in extraction. Previously, page 23 and similar pages were invisible to the charge-line reader and returned no data.',
+      },
+      {
+        type: 'fix',
+        text: 'Baldwin Electric account numbers that were garbled by OCR (look-alike letters such as O→0, l→1, S→5) are now auto-corrected and accepted. Pages that previously required Manual Review solely due to a garbled account number will now extract successfully. The UI will flag any OCR-guessed account number for user verification.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.10.483',
     date: '2026-06-10',
     title: 'ASHRAE-36 audit report now groups equipment into 3 tiers',
