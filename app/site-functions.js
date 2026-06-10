@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.478',
+    date: '2026-06-09',
+    title: 'Constellation gas bill usage now imports correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Constellation gas bills: usage was being counted three times over — once per MMBtu line in the bill — causing totals like 1,950 or 14,670 therms instead of the correct 650. Bills now import the actual metered quantity once.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.477',
     date: '2026-06-09',
     title: 'Quarterly Report shows correct quarter, Equipment Matrix distinguishes blank points',

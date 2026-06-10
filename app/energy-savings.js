@@ -4983,14 +4983,30 @@ const UTILITY_RULES = [
 
       // ── NaturalGasTherms ──
       // Constellation invoices report usage in MMBtu. 1 MMBtu = 10 therms exactly.
-      // Sum all MMBtu values found in the block (multiple charge lines can each
-      // carry an MMBtu quantity, e.g. Incremental Costs and Base Supply).
-      const mmBtuMatches = [...t.matchAll(/([\d.]+)\s*MMBtu/gi)];
+      //
+      // BUG FIX (2026-06-09): The previous code did matchAll(/([\d.]+)\s*MMBtu/gi)
+      // and SUMMED every occurrence. On a Constellation bill, the same quantity
+      // appears on 3 lines (e.g. 65 MMBtu each):
+      //   - Incremental Costs     65.00 MMBtu  $4.08070  $265.25   ← actual usage
+      //   - Subtotal Gas Supply   65.00 MMBtu             $265.25   ← restatement
+      //   - CRM Charge            65.00 MMBtu  $0.00720    $0.47   ← restatement
+      // Summing gave 195 MMBtu = 1,950 therms instead of 650.
+      //
+      // Fix: read usage from ONE authoritative line using a priority cascade:
+      //   1. "Incremental Costs" line — carries a $/MMBtu rate; this is the actual
+      //      supply charge and is always present on real Constellation invoices.
+      //   2. "Subtotal Gas Supply Charges" line — fallback if OCR missed IC line.
+      // Never fall back to summing all MMBtu occurrences (that is the root-cause bug).
       let NaturalGasTherms = null;
-      if (mmBtuMatches.length > 0) {
-        const totalMMBtu = mmBtuMatches.reduce((sum, m) => sum + parseFloat(m[1]), 0);
-        // Round to 2 decimal places to avoid floating-point noise.
-        NaturalGasTherms = String(Math.round(totalMMBtu * 10 * 100) / 100);
+      const _icM = t.match(/Incremental\s+Costs[^\n]{0,60}?([\d,]+\.?\d*)\s*MMBtu/i);
+      const _subtotalM = t.match(/Subtotal\s+Gas\s+Supply\s+Charges[^\n]{0,60}?([\d,]+\.?\d*)\s*MMBtu/i);
+      const _mmBtuRaw = _icM ? _icM[1] : _subtotalM ? _subtotalM[1] : null;
+      if (_mmBtuRaw) {
+        const mmBtuVal = parseFloat(_mmBtuRaw.replace(/,/g, ''));
+        if (!isNaN(mmBtuVal) && mmBtuVal > 0) {
+          // Round to 2 decimal places to avoid floating-point noise.
+          NaturalGasTherms = String(Math.round(mmBtuVal * 10 * 100) / 100);
+        }
       }
 
       // ── TotalCurrentCharges ──
