@@ -4998,8 +4998,8 @@ const UTILITY_RULES = [
       //   2. "Subtotal Gas Supply Charges" line — fallback if OCR missed IC line.
       // Never fall back to summing all MMBtu occurrences (that is the root-cause bug).
       let NaturalGasTherms = null;
-      const _icM = t.match(/Incremental\s+Costs[^\n]{0,60}?([\d,]+\.?\d*)\s*MMBtu/i);
-      const _subtotalM = t.match(/Subtotal\s+Gas\s+Supply\s+Charges[^\n]{0,60}?([\d,]+\.?\d*)\s*MMBtu/i);
+      const _icM = t.match(/Incremental\s+Costs[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i);
+      const _subtotalM = t.match(/Subtotal\s+Gas\s+Supply\s+Charges[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i);
       const _mmBtuRaw = _icM ? _icM[1] : _subtotalM ? _subtotalM[1] : null;
       if (_mmBtuRaw) {
         const mmBtuVal = parseFloat(_mmBtuRaw.replace(/,/g, ''));

@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.480',
+    date: '2026-06-09',
+    title: 'Constellation gas import recovers more bills from difficult OCR scans',
+    items: [
+      {
+        type: 'fix',
+        text: 'Constellation gas bills: the import engine now handles wider spacing between the charge label and the usage number, and also catches the OCR artifact "MMBtY" that some scans produce instead of "MMBtu". This recovers bills that were previously skipped entirely — usage now imports correctly instead of showing blank.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.479',
     date: '2026-06-09',
     title: 'Project tabs fit equally across the bar; Annual Projected tile no longer clips',
