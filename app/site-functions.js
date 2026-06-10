@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.494',
+    date: '2026-06-10',
+    title: 'Equipment Matrix: PTAC and Unit Ventilator units now classify correctly',
+    items: [
+      { type: 'fix', text: 'PTAC (packaged terminal air conditioner/heat pump) units now classify as FCU in the Equipment Matrix instead of landing in the catch-all Other bucket. Covers labels like PTAC-1, PTH-2, and "Packaged Terminal".' },
+      { type: 'fix', text: 'Unit Ventilator units (UV-1, UV-12, "unit ventilator", "unit vent") now classify as FCU. The UV pattern requires a digit suffix so germicidal UV-C / UVGI labels are not accidentally caught.' },
+      { type: 'change', text: 'Removed a duplicate internal dictionary entry for Weather Station — no visible change; the sensor classification is unchanged.' }
+    ]
+  },
+
+  {
     v: 'v2026.06.10.493',
     date: '2026-06-10',
     title: 'Equipment Matrix: HVAC equipment now sorts first by default',

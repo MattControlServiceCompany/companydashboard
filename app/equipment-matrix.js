@@ -24,6 +24,16 @@ var EM_EQUIP_TYPES = {
   'heat pump': 'ahu',
   wshp: 'ahu',
   gshp: 'ahu',
+  // PTAC / packaged terminal units — zone-level, no central air logic → fcu bucket
+  ptac: 'fcu',
+  pth: 'fcu',
+  'packaged terminal': 'fcu',
+  'packaged terminal air conditioner': 'fcu',
+  'packaged terminal heat pump': 'fcu',
+  // Unit ventilators — zone-level terminal unit → fcu bucket
+  'unit ventilator': 'fcu',
+  'unit vent': 'fcu',
+  uv: 'fcu',
   'vav terminal w/ reheat': 'vav',
   'vav terminal with reheat': 'vav',
   'vav reheat': 'vav',
@@ -54,7 +64,6 @@ var EM_EQUIP_TYPES = {
   'cooling tower': 'ct',
   ct: 'ct',
   'weather station (no hvac)': 'other',
-  'weather station': 'other',
   'no gl36 equipment': 'other',
   'no bas equipment': 'other',
   // Exhaust fans — dedicated ef type
@@ -1596,6 +1605,13 @@ function emClassifyEquipType(equipTypeStr) {
   if (/\bwshp\b/i.test(key)) return 'ahu';
   if (/\bgshp\b/i.test(key)) return 'ahu';
   if (/split.?system/i.test(key)) return 'ahu';
+  // PTAC / packaged terminal units — fcu bucket (zone-level, no central air logic)
+  if (/\bptac\b/i.test(key)) return 'fcu';
+  if (/\bpth\b/i.test(key)) return 'fcu';
+  if (/packaged.?terminal/i.test(key)) return 'fcu';
+  // Unit ventilators (UV-1, UV-12, "unit ventilator", "unit vent")
+  if (/unit.?ventilator|unit.?vent\b/i.test(key)) return 'fcu';
+  if (/\buv[-\s]?\d/i.test(key)) return 'fcu'; // UV-1, UV-12, UV 3 — digit suffix required (avoids matching UV-C/UVGI)
   // VAV check must come before short-code patterns (EF/DD) to avoid
   // misclassifying combo names like "VAV-11/EF-3" as ahu/ddvav.
   if (/vav|variable.?air.?vol/i.test(key)) return 'vav';
