@@ -1191,6 +1191,38 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.485',
+    date: '2026-06-10',
+    title: 'Building Summary report: 6 chart and layout fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Chart labels and axis titles now display correctly — the Y-axis title appears vertically beside the chart, and a Month caption appears below the legend.',
+      },
+      {
+        type: 'fix',
+        text: 'December bars no longer get cut off — EUI monthly bars now shrink to fit narrow columns instead of overflowing.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly reports now show only the 3 months in the reporting period for both baseline and actual data. Annual reports are unaffected.',
+      },
+      {
+        type: 'fix',
+        text: 'EUI chart height and bar heights are now consistent — baseline and current bars align correctly on the same scale.',
+      },
+      {
+        type: 'fix',
+        text: 'Value labels now appear above both baseline and current bars. A dead hardcoded orange color was removed so the correct theme color is always used.',
+      },
+      {
+        type: 'fix',
+        text: 'The baseline data table at the bottom of building summary pages stays together and no longer splits across a page break when printing.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.10.484',
     date: '2026-06-10',
     title: 'Baldwin Electric OCR: three extraction fixes',

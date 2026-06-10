@@ -4006,12 +4006,24 @@ function rptPageBuildingSummary(n, d, b) {
       '</span>' +
       '</div>';
 
+    var yAxisLabel =
+      '<div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;color:var(--rpt-page-text);text-align:center;white-space:nowrap;padding-right:2px">' +
+      unit +
+      '</div>';
+    var axisCaption =
+      '<div style="font-size:9px;color:var(--rpt-page-text);text-align:center;margin-top:1px">← Month →</div>';
     return (
       titleHtml +
-      '<div style="display:flex;flex-wrap:nowrap;gap:2px;align-items:flex-end;padding:4px 0;overflow:hidden">' +
+      '<div style="display:flex;align-items:center">' +
+      yAxisLabel +
+      '<div style="flex:1">' +
+      '<div style="display:flex;flex-wrap:nowrap;gap:2px;align-items:flex-end;padding:4px 0;overflow:visible">' +
       bars +
       '</div>' +
-      legend
+      legend +
+      axisCaption +
+      '</div>' +
+      '</div>'
     );
   }
 
@@ -4097,15 +4109,14 @@ function rptPageBuildingSummary(n, d, b) {
             return Math.max(m.bl, m.cur);
           }),
         ) || 1;
-      var euiChartH = 140;
+      var euiChartH = 80;
       var euiMidLabel = (euiMax / 2).toFixed(1);
       var euiBars = euiMonthly
         .map(function (mo) {
           var blH = Math.max(1, Math.round((mo.bl / euiMax) * euiChartH));
           var curH = Math.max(1, Math.round((mo.cur / euiMax) * euiChartH));
           var moLbl = moLabel(mo.month);
-          // Value labels: rendered below month label
-          var blLabel = mo.bl > 0 ? '<span style="color:#e67e22">' + mo.bl.toFixed(1) + '</span>' : '';
+          // Value labels: rendered above bars (both baseline and current)
           var blLabel = mo.bl > 0 ? '<span style="color:var(--rpt-orange)">' + mo.bl.toFixed(1) + '</span>' : '';
           var curLabel = mo.cur > 0 ? '<span style="color:var(--rpt-green-dark)">' + mo.cur.toFixed(1) + '</span>' : '';
           var valLine =
@@ -4118,20 +4129,21 @@ function rptPageBuildingSummary(n, d, b) {
               : '';
           return (
             '<div style="display:flex;flex-direction:column;align-items:center;flex:1">' +
+            valLine +
             '<div style="display:flex;align-items:flex-end;gap:1px;height:' +
             euiChartH +
             'px">' +
             '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
             euiChartH +
             'px">' +
-            '<div style="width:15px;height:' +
+            '<div style="width:100%;max-width:15px;height:' +
             blH +
             'px;background:var(--rpt-orange);border-radius:1px 1px 0 0"></div>' +
             '</div>' +
             '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
             euiChartH +
             'px">' +
-            '<div style="width:15px;height:' +
+            '<div style="width:100%;max-width:15px;height:' +
             curH +
             'px;background:var(--rpt-green-dark);border-radius:1px 1px 0 0"></div>' +
             '</div>' +
@@ -4139,7 +4151,6 @@ function rptPageBuildingSummary(n, d, b) {
             '<div style="font-size:9px;color:var(--rpt-page-text);text-align:center">' +
             moLbl +
             '</div>' +
-            valLine +
             '</div>'
           );
         })
@@ -4148,7 +4159,9 @@ function rptPageBuildingSummary(n, d, b) {
       leftHTML +=
         '<div style="font-size:10px;font-weight:600;color:var(--rpt-page-text);margin:8px 0 3px">Monthly Site EUI (kBtu/ft²)</div>' +
         '<div style="position:relative;padding-left:36px">' +
-        '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:var(--rpt-page-text);text-align:right;width:30px">' +
+        '<div style="position:absolute;left:0;top:0;height:' +
+        euiChartH +
+        'px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:var(--rpt-page-text);text-align:right;width:30px">' +
         '<span>' +
         euiYMax +
         '</span>' +
@@ -4157,9 +4170,13 @@ function rptPageBuildingSummary(n, d, b) {
         '</span>' +
         '<span>0</span>' +
         '</div>' +
-        '<div style="position:relative">' +
+        '<div style="position:relative;height:' +
+        euiChartH +
+        'px">' +
         '<div style="position:absolute;left:0;right:0;bottom:50%;border-top:1px dashed var(--rpt-divider);pointer-events:none"></div>' +
-        '<div style="display:flex;align-items:flex-end;gap:1px">' +
+        '<div style="display:flex;align-items:flex-end;gap:1px;overflow:hidden;height:' +
+        euiChartH +
+        'px">' +
         euiBars +
         '</div>' +
         '</div>' +
@@ -4401,10 +4418,18 @@ function rptPageBuildingSummary(n, d, b) {
     });
   }
 
-  // Electricity Consumption chart — reporting period only
+  // Period months array — used to align baseline and actual to the same reporting window
+  var _periodYMs = (d.period && d.period.yearMonths) || [];
+
+  // Electricity Consumption chart — period months only (both baseline and actual)
   if (hasElec) {
     var elFullYear = buildFullYear(b.electric.monthly, _bm.elecByMo, 'kwh');
-    var elDataMonths = filterToDataMonths(elFullYear);
+    var elDataMonths =
+      _periodYMs.length > 0
+        ? elFullYear.filter(function (mo) {
+            return _periodYMs.includes(mo.month);
+          })
+        : filterToDataMonths(elFullYear);
     var elChart = buildBarChart(elDataMonths, 'var(--rpt-elec-bl)', 'var(--rpt-elec-cur)', 'kWh');
     rightHTML +=
       '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-blue);margin:6px 0 2px">' +
@@ -4415,10 +4440,15 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>';
   }
 
-  // Natural Gas Consumption chart — reporting period only
+  // Natural Gas Consumption chart — period months only (both baseline and actual)
   if (hasGas) {
     var gasFullYear = buildFullYear(b.gas.monthly, _bm.gasByMo, 'therms');
-    var gasDataMonths = filterToDataMonths(gasFullYear);
+    var gasDataMonths =
+      _periodYMs.length > 0
+        ? gasFullYear.filter(function (mo) {
+            return _periodYMs.includes(mo.month);
+          })
+        : filterToDataMonths(gasFullYear);
     var gasChart = buildBarChart(gasDataMonths, 'var(--rpt-gas-bl)', 'var(--rpt-gas-cur)', 'Therms');
     rightHTML +=
       '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-gas-head);margin:6px 0 2px">' +
@@ -4429,10 +4459,15 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>';
   }
 
-  // Propane Consumption chart — reporting period only
+  // Propane Consumption chart — period months only (both baseline and actual)
   if (hasPropane) {
     var propFullYear = buildFullYear(b.propane.monthly, _bm.propaneByMo, 'gallons');
-    var propDataMonths = filterToDataMonths(propFullYear);
+    var propDataMonths =
+      _periodYMs.length > 0
+        ? propFullYear.filter(function (mo) {
+            return _periodYMs.includes(mo.month);
+          })
+        : filterToDataMonths(propFullYear);
     var propChart = buildBarChart(propDataMonths, 'var(--rpt-prop-bl)', 'var(--rpt-prop-cur)', 'Gal');
     rightHTML +=
       '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-prop-head);margin:6px 0 2px">' +
@@ -4696,7 +4731,7 @@ function rptPageBuildingSummary(n, d, b) {
   }
 
   var blDataTable = blDataRows
-    ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text)">' +
+    ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text);page-break-inside:avoid;break-inside:avoid">' +
       blStats +
       '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
       '<table class="rpt-table rpt-table-bl" style="font-size:10px;width:100%">' +
