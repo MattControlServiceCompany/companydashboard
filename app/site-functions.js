@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.490',
+    date: '2026-06-10',
+    title: 'Equipment Matrix: Summary view now shows all buildings',
+    items: [
+      { type: 'fix', text: 'Summary view now lists every building in the matrix, including AHU-only and plant-only buildings that were previously missing when a type filter was active.' },
+      { type: 'fix', text: 'Zone temperature columns now correctly show 0 as a real reading, display N/A (gray italic) when a building has no zone equipment, and show a dash when a building has zone equipment but no readings in the import.' },
+      { type: 'fix', text: 'Selecting a single building in the building filter no longer collapses the Summary to one row — the filter is suppressed in Summary view so all buildings remain visible for comparison.' },
+      { type: 'feature', text: 'Zone Temp column now recognizes additional WebCTRL snapshot column-name variants (zone_air_temp, zone_temp, zone_temperature) so readings from recent imports map correctly without re-import.' }
+    ]
+  },
+
+  {
     v: 'v2026.06.10.489',
     date: '2026-06-10',
     title: 'Audit Report: Affected Units count now correct for all gaps',

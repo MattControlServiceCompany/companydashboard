@@ -485,6 +485,10 @@ var EM_POINT_MAP = [
     col: 'zoneAirTemp',
     label: 'Zone Air Temp',
     patterns: [/zone air temp/i, /room temp/i, /space temp/i, /zone temp/i],
+    // Fix 4c566756: labelAliases for WebCTRL snapshot column-name variants where the
+    // BACnet key appears in parens after the label (e.g. 'Zone Air Temp (zone_air_temp)').
+    // These follow the same pattern used by zoneCO2 and zoneRelativeHumidity labelAliases.
+    labelAliases: ['Zone Air Temp (zone_air_temp)', 'Zone Temp (zone_temp)', 'Zone Temperature (zone_temperature)'],
     // Negative guard: alarm/status/setpoint names must NOT map here even if the
     // pattern matches (e.g. "High Zone Temperature", "Low Zone Temperature").
     // Phase 2B: "virtual" removed — "Virtual Zone Temperature" should map here via
@@ -4693,14 +4697,19 @@ function emRenderTable(data, filters) {
    hot/ok/cold counts per building. Only processes VAV, FPB, and DD-VAV rows.
    Returns: { [buildingName]: { zoneTemp, htgSp, coolSp, hot, ok, cold, totalZones } }
    where zoneTemp/htgSp/coolSp are { sum, count, avg }.                  */
-function emComputeBuildingZoneStats(rows) {
+function emComputeBuildingZoneStats(rows, seedRows) {
+  // Fix 8c7dcc71 (A): seedRows is optional. When provided (from emRenderSummaryView),
+  // the first-pass building-seeding uses seedRows (ALL rows, unfiltered) so that
+  // AHU-only / plant-only buildings appear in the Summary even when a type filter
+  // has narrowed `rows` to only zone-category rows.
+  var _seed = seedRows || rows;
   var result = {};
   var zoneCategories = { vav: true, fpb: true, ddvav: true };
 
   // First pass: seed every building with a blank stat entry so that AHU-only /
   // plant-only buildings always appear in the Summary view (Fix 8c7dcc71).
-  for (var si = 0; si < rows.length; si++) {
-    var sbldg = rows[si].building || '(No Building)';
+  for (var si = 0; si < _seed.length; si++) {
+    var sbldg = _seed[si].building || '(No Building)';
     if (!result[sbldg]) {
       result[sbldg] = {
         zoneTemp: { sum: 0, count: 0, avg: 0 },
@@ -4785,7 +4794,13 @@ function emRenderSummaryView(data, filters) {
   if (!wrap) return;
 
   var rows = data.rows || [];
-  var filtered = emFilterRows(rows, filters);
+  // Fix 8c7dcc71 (B): Suppress the building filter in Summary mode.
+  // Summary purpose is cross-building comparison -- applying the building filter would
+  // collapse the table to a single building row, defeating the view's purpose.
+  // Use a LOCAL copy (summaryFilters) so the global `filters` object is never mutated
+  // and other views (Audit / Raw) continue to honor the building filter normally.
+  var summaryFilters = Object.assign({}, filters, { building: '' });
+  var filtered = emFilterRows(rows, summaryFilters);
 
   // Remove any existing pagination bar (used by table views)
   var tableWrap = document.getElementById('em-table-wrap');
@@ -4814,14 +4829,22 @@ function emRenderSummaryView(data, filters) {
   }
 
   // ── Build zone stats from filtered rows (VAV + FPB + DD-VAV only) ──
-  var zoneStats = emComputeBuildingZoneStats(filtered);
+  // Fix 8c7dcc71 (A): pass `rows` (ALL unfiltered rows) as seedRows so that
+  // AHU-only / plant-only buildings are always seeded into zoneStats even when
+  // the type filter has removed them from `filtered`.
+  var zoneStats = emComputeBuildingZoneStats(filtered, rows);
   var bldgNames = Object.keys(zoneStats); // already sorted alphabetically
 
-  // Also compute total-average stats from ALL rows (unfiltered)
+  // Also compute total-average stats from ALL rows (unfiltered) -- unchanged
   var totalZoneStats = emComputeBuildingZoneStats(rows);
 
-  // Helper: format a numeric avg to 1 decimal + unit, or "—" if no data
-  function fmtAvg(statObj, unit) {
+  // Helper: format a numeric avg to 1 decimal + unit.
+  // Fix 8c7dcc71 (C): 3-way distinction:
+  //   totalZones === 0  -> "N/A" (gray italic) -- building has no zone equipment at all
+  //   totalZones > 0 but count === 0 or NaN -> "--" -- has zones but no data in import
+  //   actual value (incl. 0) -> show the value; 0 is VALID data, never hidden
+  function fmtAvg(statObj, unit, totalZones) {
+    if (totalZones === 0) return '<span style="color:var(--text3);font-style:italic">N/A</span>';
     if (!statObj || statObj.count === 0 || isNaN(statObj.avg)) return '<span style="color:var(--text3)">&#8212;</span>';
     return (Math.round(statObj.avg * 10) / 10).toFixed(1) + (unit || '');
   }
@@ -4959,9 +4982,9 @@ function emRenderSummaryView(data, filters) {
       }
       html += '<tr style="min-height:48px">';
       html += '<td style="' + tdStyle + 'font-weight:600">' + bldgLink + '</td>';
-      html += '<td style="' + tdCenter + 'font-weight:600">' + fmtAvg(bs.zoneTemp, '°F') + '</td>';
-      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.htgSp, '°F') + '</td>';
-      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.coolSp, '°F') + '</td>';
+      html += '<td style="' + tdCenter + 'font-weight:600">' + fmtAvg(bs.zoneTemp, '°F', bs.totalZones) + '</td>';
+      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.htgSp, '°F', bs.totalZones) + '</td>';
+      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.coolSp, '°F', bs.totalZones) + '</td>';
       html += '<td style="' + tdCenter + '">' + vsCell + '</td>';
       html += '</tr>';
     }
