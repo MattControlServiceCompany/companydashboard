@@ -1191,6 +1191,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.496',
+    date: '2026-06-10',
+    title: 'Quarterly Report: building names no longer repeat in the savings table',
+    items: [
+      { type: 'fix', text: 'In the Quarterly Report Savings Performance / Annual Summary by Building table, each building name now appears once across both rows (baseline and current year) instead of repeating on each row.' }
+    ]
+  },
+  {
     v: 'v2026.06.10.495',
     date: '2026-06-10',
     title: 'Equipment Matrix: zone setpoints now display for FCU equipment',

@@ -2442,11 +2442,13 @@ function rptPageSavingsPerformance(n, d) {
       const euiChange =
         b.eui.baseline > 0 && b.eui.current > 0 ? ((b.eui.baseline - b.eui.current) / b.eui.baseline) * 100 : 0;
       var rowBg = bIdx % 2 === 1 ? 'background:var(--rpt-table-stripe);' : '';
+      /* rowspan="2" covers both rows per building (BL + current year);
+         update to rowspan="3" if a 3rd row per building is ever added */
       return (
         '<tr style="' +
         rowBg +
         '">' +
-        '<td style="font-weight:600;vertical-align:middle;font-size:9px;' +
+        '<td rowspan="2" style="font-weight:600;vertical-align:middle;font-size:9px;' +
         rowBg +
         '" contenteditable="true">' +
         (b.name || '—') +
@@ -2476,11 +2478,7 @@ function rptPageSavingsPerformance(n, d) {
         '<tr style="' +
         rowBg +
         '">' +
-        '<td style="font-weight:600;vertical-align:middle;font-size:9px;' +
-        rowBg +
-        '" contenteditable="true">' +
-        (b.name || '\u2014') +
-        '</td>' +
+        /* name <td> omitted -- rowspan="2" on row 1 covers column 1 for this building */
         '<td contenteditable="true" style="color:var(--rpt-blue);font-weight:600">' +
         curYrLabel +
         '</td>' +
