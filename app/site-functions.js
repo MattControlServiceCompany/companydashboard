@@ -1191,6 +1191,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.497',
+    date: '2026-06-10',
+    title: 'Report tables: headers and cells now wrap instead of clipping',
+    items: [
+      { type: 'fix', text: 'Financial Summary, EUI Benchmarking, and Electric Detail report tables no longer clip long column headers or building names. Text now wraps within each column so all content is visible.' }
+    ]
+  },
+  {
     v: 'v2026.06.10.496',
     date: '2026-06-10',
     title: 'Quarterly Report: building names no longer repeat in the savings table',

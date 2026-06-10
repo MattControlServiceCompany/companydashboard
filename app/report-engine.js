@@ -1745,7 +1745,7 @@ function rptPageFinancial(n, d) {
     '</tr>';
 
   const bldgTable =
-    '<table class="rpt-table" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<table class="rpt-table rpt-table-wrap" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
     '<th style="width:18%">Building</th>' +
     '<th class="rpt-n" style="width:10%">Sq Ft</th>' +
@@ -2618,7 +2618,7 @@ function rptPageEUI(n, d) {
     .join('');
 
   const rankTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<table class="rpt-table rpt-table-wrap" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<colgroup>' +
     '<col style="width:4%">' +
     '<col style="width:21%">' +
@@ -5114,7 +5114,7 @@ function rptPageElectric(n, d) {
   }
 
   var bldgTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<table class="rpt-table rpt-table-wrap" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<colgroup>' +
     '<col style="width:20%">' +
     '<col style="width:10%">' +
