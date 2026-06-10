@@ -11182,11 +11182,11 @@ function rptPageASHRAE36Cover(n, d) {
     _a36GaugeSVG(p.composite, color, 'Overall', 110) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.pointPct, 'var(--rpt-blue)', 'Points', 110) +
+    _a36GaugeSVG(p.pointPct, 'var(--rpt-blue)', 'Sensors', 110) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
     '<div style="text-align:center">' +
     _a36GaugeSVG(p.seqPct, '#7c3aed', 'Sequences', 110) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Coverage</div></div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
     '</div>';
 
   var bodyHTML =
@@ -11223,7 +11223,7 @@ function rptPageASHRAE36Cover(n, d) {
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
     p.totalEquip +
     '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text)">Equipment Units Audited</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">HVAC Systems Audited</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +

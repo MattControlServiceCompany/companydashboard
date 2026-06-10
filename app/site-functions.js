@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.492',
+    date: '2026-06-10',
+    title: 'Audit Report cover page: clearer labels for non-technical readers',
+    items: [
+      { type: 'change', text: 'The gauge inside the cover page ring now reads Sensors instead of Points — consistent with per-building pages and easier to understand at a glance.' },
+      { type: 'change', text: 'The gauge caption now reads Sequence Readiness instead of Sequence Coverage — matches the Executive Summary column header.' },
+      { type: 'change', text: 'The stat card now reads HVAC Systems Audited instead of Equipment Units Audited — removes BAS jargon for county decision-makers.' }
+    ]
+  },
+
+  {
     v: 'v2026.06.10.491',
     date: '2026-06-10',
     title: 'Equipment Matrix: Summary view now has CO2 and Humidity columns',
