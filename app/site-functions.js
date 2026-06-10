@@ -1191,6 +1191,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.495',
+    date: '2026-06-10',
+    title: 'Equipment Matrix: zone setpoints now display for FCU equipment',
+    items: [
+      { type: 'fix', text: 'Heating and cooling setpoints now appear for FCU equipment (fan coil units, PTACs, unit ventilators) in the Equipment Matrix Summary and Detail views. Two view filters were excluding all FCU rows from zone setpoint display. JOCO buildings are predominantly FCUs, so setpoint columns showed blanks even though the values were present in the imported data. No re-import needed.' }
+    ]
+  },
+
+  {
     v: 'v2026.06.10.494',
     date: '2026-06-10',
     title: 'Equipment Matrix: PTAC and Unit Ventilator units now classify correctly',

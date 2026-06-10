@@ -524,7 +524,7 @@ var EM_POINT_MAP = [
       /supply\s+air/i,
     ],
     types: ['SP'],
-    cats: ['vav', 'fpb', 'ddvav'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu'],
   },
   {
     col: 'zoneHtgSetpoint',
@@ -540,7 +540,7 @@ var EM_POINT_MAP = [
       /supply\s+air/i,
     ],
     types: ['SP'],
-    cats: ['vav', 'fpb', 'ddvav'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu'],
   },
   {
     col: 'dischargeAirTemp',
@@ -4737,7 +4737,7 @@ function emComputeBuildingZoneStats(rows, seedRows) {
   // has narrowed `rows` to only zone-category rows.
   var _seed = seedRows || rows;
   var result = {};
-  var zoneCategories = { vav: true, fpb: true, ddvav: true };
+  var zoneCategories = { vav: true, fpb: true, ddvav: true, fcu: true };
 
   // First pass: seed every building with a blank stat entry so that AHU-only /
   // plant-only buildings always appear in the Summary view (Fix 8c7dcc71).
@@ -5133,8 +5133,8 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
 
   var pid = window._emActivePid || '';
   var allRows = data.rows || [];
-  var zoneCategories = { vav: true, fpb: true, ddvav: true };
-  var catLabels = { vav: 'VAV', fpb: 'FPB', ddvav: 'DD-VAV' };
+  var zoneCategories = { vav: true, fpb: true, ddvav: true, fcu: true };
+  var catLabels = { vav: 'VAV', fpb: 'FPB', ddvav: 'DD-VAV', fcu: 'FCU' };
 
   // Filter: apply current filters first, then restrict to this building's zone equipment
   var baseFiltered = emFilterRows(allRows, filters);
