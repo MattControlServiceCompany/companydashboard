@@ -1191,6 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.487',
+    date: '2026-06-10',
+    title: 'Equipment Matrix: collision rule fix + collision warning in Raw View',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now correctly resolves collisions where two BAS points map to the same column — a numeric reading always wins over a text value, matching the import-time rule.',
+      },
+      {
+        type: 'feature',
+        text: 'Raw View "All BAS Points" drawer now shows an amber warning triangle on any point whose column is shared by more than one BAS point — collisions are no longer silent.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix no longer crashes when data is still loading — shows a Loading message instead.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.10.486',
     date: '2026-06-10',
     title: 'ASHRAE-36 report: fix gauge label overflow',

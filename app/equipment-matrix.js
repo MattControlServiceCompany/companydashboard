@@ -2730,6 +2730,10 @@ function emUpdateStickyOffsets() {
 
 function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
+  if (!data) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:#888">⏳ Loading equipment data…</div>';
+    return;
+  }
   if (!data.edits) data.edits = {};
 
   // ── Guard: if DB not ready, show loading state instead of empty state ──────
@@ -3893,8 +3897,19 @@ function emGetNormalizedPoints(row) {
           result[rColKey2] = rawVal2;
           _virtualFilledCols[rColKey2] = rIsVirtual2;
         } else if (!rIsVirtual2 && _virtualFilledCols[rColKey2]) {
+          // Real displaces virtual.
           result[rColKey2] = rawVal2;
           _virtualFilledCols[rColKey2] = false;
+        } else if (!rIsVirtual2 && !_virtualFilledCols[rColKey2]) {
+          // Real-vs-real: apply numeric-over-text preference (parity with import-time Path A).
+          var _existNum2 = parseFloat(result[rColKey2]);
+          var _newNum2 = parseFloat(rawVal2);
+          if (isNaN(_existNum2) && !isNaN(_newNum2)) {
+            // Existing is text, incoming is numeric — numeric wins (same rule as emExtractEquipmentGroups).
+            result[rColKey2] = rawVal2;
+            _virtualFilledCols[rColKey2] = false;
+          }
+          // else: same type — first-wins (keep existing). No change needed.
         }
       }
     }
@@ -4501,14 +4516,24 @@ function emRenderTable(data, filters) {
           '<th style="padding:3px 10px 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
           '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Mapped Column</th>' +
           '</tr></thead><tbody>';
+        // Build collision count map: how many points in this row share each mapped column.
+        var _drColCount = {};
+        for (var _dci = 0; _dci < _drRawKeys.length; _dci++) {
+          var _dcMapped = emMapPointToColumn(_drRawKeys[_dci], null, row.category);
+          if (_dcMapped) _drColCount[_dcMapped] = (_drColCount[_dcMapped] || 0) + 1;
+        }
         for (var _dri = 0; _dri < _drRawKeys.length; _dri++) {
           var _drKey = _drRawKeys[_dri];
           var _drVal = row.pointsRaw[_drKey];
           var _drMapped = emMapPointToColumn(_drKey, null, row.category);
+          var _drHasCollision = _drMapped && (_drColCount[_drMapped] || 0) > 1;
           var _drBadge = _drMapped
-            ? '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:10px">' +
+            ? '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:10px"' +
+              (_drHasCollision ? ' title="' + (_drColCount[_drMapped]) + ' points map to this column — only one value is shown in the Audit view"' : '') +
+              '>' +
               emHtmlEsc(_drMapped) +
-              '</span>'
+              '</span>' +
+              (_drHasCollision ? '<span style="color:#f59e0b;margin-left:4px;cursor:default" title="Collision: ' + (_drColCount[_drMapped]) + ' points map here">&#x26A0;</span>' : '')
             : '<span style="color:var(--text3)">—</span>';
           var _drValDisplay =
             _drVal === '' ? '<span style="color:var(--text3)">empty</span>' : emHtmlEsc(String(_drVal));
