@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.486',
+    date: '2026-06-10',
+    title: 'ASHRAE-36 report: fix gauge label overflow',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE-36 Compliance Report gauge labels (Sequences, Overall, Sensors) no longer clip inside the ring — the gauge canvas is now 11% taller so labels appear clearly below the ring arc.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.10.485',
     date: '2026-06-10',
     title: 'Building Summary report: 6 chart and layout fixes',

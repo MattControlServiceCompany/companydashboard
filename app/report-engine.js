@@ -11058,6 +11058,7 @@ function _a36GaugeSVG(pct, color, label, size) {
   var r = size * 0.38;
   var cx = size / 2;
   var cy = size / 2;
+  var svgH = size * 1.11;
   var circumference = 2 * Math.PI * r;
   var filled = (Math.min(100, Math.max(0, pct)) / 100) * circumference;
   var empty = circumference - filled;
@@ -11065,11 +11066,11 @@ function _a36GaugeSVG(pct, color, label, size) {
     '<svg width="' +
     size +
     '" height="' +
-    size +
+    svgH.toFixed(1) +
     '" viewBox="0 0 ' +
     size +
     ' ' +
-    size +
+    svgH.toFixed(1) +
     '" style="display:block">' +
     '<circle cx="' +
     cx +
@@ -11115,7 +11116,7 @@ function _a36GaugeSVG(pct, color, label, size) {
     '<text x="' +
     cx +
     '" y="' +
-    (cy + size * 0.22) +
+    (size * 0.985).toFixed(2) +
     '" text-anchor="middle" font-size="' +
     size * 0.115 +
     '" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">' +
@@ -11442,10 +11443,10 @@ function rptPageASHRAE36Building(n, d, building) {
     '<div style="text-align:center">' +
     (b.seqPct !== null
       ? _a36GaugeSVG(b.seqPct, '#7c3aed', 'Sequences', 70)
-      : '<svg width="70" height="70" viewBox="0 0 70 70" style="display:block">' +
+      : '<svg width="70" height="77.7" viewBox="0 0 70 77.7" style="display:block">' +
         '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
         '<text x="35" y="39" text-anchor="middle" font-size="13" font-weight="700" fill="#9ca3af" font-family="Arial,sans-serif">N/A</text>' +
-        '<text x="35" y="54" text-anchor="middle" font-size="8.05" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">Sequences</text>' +
+        '<text x="35" y="68.95" text-anchor="middle" font-size="8.05" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">Sequences</text>' +
         '</svg>') +
     '</div>' +
     '<div style="flex:1">' +
