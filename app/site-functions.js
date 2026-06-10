@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.488',
+    date: '2026-06-10',
+    title: 'Equipment Matrix: CSV upload panel now scrolls on large imports',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Equipment Matrix CSV upload panel no longer runs off the bottom of the screen after a large import — it now scrolls so the category summary, warnings, and Done button are always reachable.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.10.487',
     date: '2026-06-10',
     title: 'Equipment Matrix: collision rule fix + collision warning in Raw View',

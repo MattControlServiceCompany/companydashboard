@@ -2929,7 +2929,7 @@ function emShowUploadPanel(btn, mode, pid) {
   var panel = document.createElement('div');
   panel.id = 'em-upload-modal-panel';
   panel.style.cssText =
-    'background:var(--s1);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.28);width:600px;max-width:calc(100vw - 32px);z-index:9999;overflow:hidden';
+    'background:var(--s1);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.28);width:600px;max-width:calc(100vw - 32px);z-index:9999;overflow-y:auto;max-height:calc(100vh - 90px)';
 
   backdrop.appendChild(panel);
   document.body.appendChild(backdrop);
@@ -4529,11 +4529,19 @@ function emRenderTable(data, filters) {
           var _drHasCollision = _drMapped && (_drColCount[_drMapped] || 0) > 1;
           var _drBadge = _drMapped
             ? '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:10px"' +
-              (_drHasCollision ? ' title="' + (_drColCount[_drMapped]) + ' points map to this column — only one value is shown in the Audit view"' : '') +
+              (_drHasCollision
+                ? ' title="' +
+                  _drColCount[_drMapped] +
+                  ' points map to this column — only one value is shown in the Audit view"'
+                : '') +
               '>' +
               emHtmlEsc(_drMapped) +
               '</span>' +
-              (_drHasCollision ? '<span style="color:#f59e0b;margin-left:4px;cursor:default" title="Collision: ' + (_drColCount[_drMapped]) + ' points map here">&#x26A0;</span>' : '')
+              (_drHasCollision
+                ? '<span style="color:#f59e0b;margin-left:4px;cursor:default" title="Collision: ' +
+                  _drColCount[_drMapped] +
+                  ' points map here">&#x26A0;</span>'
+                : '')
             : '<span style="color:var(--text3)">—</span>';
           var _drValDisplay =
             _drVal === '' ? '<span style="color:var(--text3)">empty</span>' : emHtmlEsc(String(_drVal));
