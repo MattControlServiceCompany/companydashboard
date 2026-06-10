@@ -1191,6 +1191,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.491',
+    date: '2026-06-10',
+    title: 'Equipment Matrix: Summary view now has CO2 and Humidity columns',
+    items: [
+      { type: 'feature', text: 'Summary view now shows CO2 (ppm) and Humidity (%) columns to the right of the zone temperature columns. These columns are always visible and use the same N/A / dash / value logic as zone temperature — N/A when a building has no zone equipment, a dash when equipment exists but no readings were imported, and the average value otherwise.' }
+    ]
+  },
+
+  {
     v: 'v2026.06.10.490',
     date: '2026-06-10',
     title: 'Equipment Matrix: Summary view now shows all buildings',

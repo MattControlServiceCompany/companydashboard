@@ -4693,10 +4693,12 @@ function emRenderTable(data, filters) {
 }
 
 /* ── emComputeBuildingZoneStats ─────────────────────────────────────────────
-   Aggregates zone air temp, heating setpoint, cooling setpoint, and
-   hot/ok/cold counts per building. Only processes VAV, FPB, and DD-VAV rows.
-   Returns: { [buildingName]: { zoneTemp, htgSp, coolSp, hot, ok, cold, totalZones } }
-   where zoneTemp/htgSp/coolSp are { sum, count, avg }.                  */
+   Aggregates zone air temp, heating setpoint, cooling setpoint, CO2, and
+   relative humidity, plus hot/ok/cold counts per building.
+   Only processes VAV, FPB, and DD-VAV rows.
+   Returns: { [buildingName]: { zoneTemp, htgSp, coolSp, zoneCO2,
+             zoneRelativeHumidity, hot, ok, cold, totalZones } }
+   where each stat field is { sum, count, avg }.                          */
 function emComputeBuildingZoneStats(rows, seedRows) {
   // Fix 8c7dcc71 (A): seedRows is optional. When provided (from emRenderSummaryView),
   // the first-pass building-seeding uses seedRows (ALL rows, unfiltered) so that
@@ -4715,6 +4717,8 @@ function emComputeBuildingZoneStats(rows, seedRows) {
         zoneTemp: { sum: 0, count: 0, avg: 0 },
         htgSp: { sum: 0, count: 0, avg: 0 },
         coolSp: { sum: 0, count: 0, avg: 0 },
+        zoneCO2: { sum: 0, count: 0, avg: 0 },
+        zoneRelativeHumidity: { sum: 0, count: 0, avg: 0 },
         hot: 0,
         ok: 0,
         cold: 0,
@@ -4738,10 +4742,14 @@ function emComputeBuildingZoneStats(rows, seedRows) {
     var tempRaw = pts['zoneAirTemp'];
     var htgRaw = pts['zoneHtgSetpoint'];
     var coolRaw = pts['zoneCoolSetpoint'];
+    var co2Raw = pts['zoneCO2'];
+    var rhRaw = pts['zoneRelativeHumidity'];
 
     var tempVal = tempRaw !== undefined && tempRaw !== '' ? parseFloat(tempRaw) : NaN;
     var htgVal = htgRaw !== undefined && htgRaw !== '' ? parseFloat(htgRaw) : NaN;
     var coolVal = coolRaw !== undefined && coolRaw !== '' ? parseFloat(coolRaw) : NaN;
+    var co2Val = co2Raw !== undefined && co2Raw !== '' ? parseFloat(co2Raw) : NaN;
+    var rhVal = rhRaw !== undefined && rhRaw !== '' ? parseFloat(rhRaw) : NaN;
 
     if (!isNaN(tempVal)) {
       bldgStats.zoneTemp.sum += tempVal;
@@ -4754,6 +4762,14 @@ function emComputeBuildingZoneStats(rows, seedRows) {
     if (!isNaN(coolVal)) {
       bldgStats.coolSp.sum += coolVal;
       bldgStats.coolSp.count += 1;
+    }
+    if (!isNaN(co2Val)) {
+      bldgStats.zoneCO2.sum += co2Val;
+      bldgStats.zoneCO2.count += 1;
+    }
+    if (!isNaN(rhVal)) {
+      bldgStats.zoneRelativeHumidity.sum += rhVal;
+      bldgStats.zoneRelativeHumidity.count += 1;
     }
 
     // Compute hot/ok/cold for this zone (only when we have temp and at least one setpoint)
@@ -4777,6 +4793,9 @@ function emComputeBuildingZoneStats(rows, seedRows) {
     s.zoneTemp.avg = s.zoneTemp.count > 0 ? s.zoneTemp.sum / s.zoneTemp.count : NaN;
     s.htgSp.avg = s.htgSp.count > 0 ? s.htgSp.sum / s.htgSp.count : NaN;
     s.coolSp.avg = s.coolSp.count > 0 ? s.coolSp.sum / s.coolSp.count : NaN;
+    s.zoneCO2.avg = s.zoneCO2.count > 0 ? s.zoneCO2.sum / s.zoneCO2.count : NaN;
+    s.zoneRelativeHumidity.avg =
+      s.zoneRelativeHumidity.count > 0 ? s.zoneRelativeHumidity.sum / s.zoneRelativeHumidity.count : NaN;
     sorted[b] = s;
   }
   return sorted;
@@ -4855,6 +4874,8 @@ function emRenderSummaryView(data, filters) {
       zoneTemp: { sum: 0, count: 0, avg: 0 },
       htgSp: { sum: 0, count: 0, avg: 0 },
       coolSp: { sum: 0, count: 0, avg: 0 },
+      zoneCO2: { sum: 0, count: 0, avg: 0 },
+      zoneRelativeHumidity: { sum: 0, count: 0, avg: 0 },
       hot: 0,
       ok: 0,
       cold: 0,
@@ -4868,6 +4889,10 @@ function emRenderSummaryView(data, filters) {
       agg.htgSp.count += s.htgSp.count;
       agg.coolSp.sum += s.coolSp.sum;
       agg.coolSp.count += s.coolSp.count;
+      agg.zoneCO2.sum += s.zoneCO2.sum;
+      agg.zoneCO2.count += s.zoneCO2.count;
+      agg.zoneRelativeHumidity.sum += s.zoneRelativeHumidity.sum;
+      agg.zoneRelativeHumidity.count += s.zoneRelativeHumidity.count;
       agg.hot += s.hot;
       agg.ok += s.ok;
       agg.cold += s.cold;
@@ -4875,6 +4900,9 @@ function emRenderSummaryView(data, filters) {
     agg.zoneTemp.avg = agg.zoneTemp.count > 0 ? agg.zoneTemp.sum / agg.zoneTemp.count : NaN;
     agg.htgSp.avg = agg.htgSp.count > 0 ? agg.htgSp.sum / agg.htgSp.count : NaN;
     agg.coolSp.avg = agg.coolSp.count > 0 ? agg.coolSp.sum / agg.coolSp.count : NaN;
+    agg.zoneCO2.avg = agg.zoneCO2.count > 0 ? agg.zoneCO2.sum / agg.zoneCO2.count : NaN;
+    agg.zoneRelativeHumidity.avg =
+      agg.zoneRelativeHumidity.count > 0 ? agg.zoneRelativeHumidity.sum / agg.zoneRelativeHumidity.count : NaN;
     return agg;
   }
 
@@ -4939,12 +4967,14 @@ function emRenderSummaryView(data, filters) {
     thStyleCenter +
     '" title="Setpoints require a WebCTRL point-list export, not the enriched matrix snapshot.">Zone Clg Setpoint</th>';
   html += '<th style="' + thStyleCenter + '">Zones vs Setpoints</th>';
+  html += '<th style="' + thStyleCenter + '">CO2 (ppm)</th>';
+  html += '<th style="' + thStyleCenter + '">Humidity (%)</th>';
   html += '</tr></thead>';
   html += '<tbody>';
 
   if (bldgNames.length === 0) {
     html +=
-      '<tr><td colspan="5" style="padding:48px;text-align:center;font-size:14px;color:var(--text2)">' +
+      '<tr><td colspan="7" style="padding:48px;text-align:center;font-size:14px;color:var(--text2)">' +
       'No zone equipment (VAV/FPB/DD-VAV) found for the current filter selection.</td></tr>';
   } else {
     var tdStyle = 'padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle;';
@@ -4986,6 +5016,8 @@ function emRenderSummaryView(data, filters) {
       html += '<td style="' + tdCenter + '">' + fmtAvg(bs.htgSp, '°F', bs.totalZones) + '</td>';
       html += '<td style="' + tdCenter + '">' + fmtAvg(bs.coolSp, '°F', bs.totalZones) + '</td>';
       html += '<td style="' + tdCenter + '">' + vsCell + '</td>';
+      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.zoneCO2, ' ppm', bs.totalZones) + '</td>';
+      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.zoneRelativeHumidity, '%', bs.totalZones) + '</td>';
       html += '</tr>';
     }
   }
@@ -5022,6 +5054,8 @@ function emRenderSummaryView(data, filters) {
   html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.htgSp, '°F') + '</td>';
   html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.coolSp, '°F') + '</td>';
   html += '<td style="' + tfootTdCenter + '">' + pageVsCell + '</td>';
+  html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.zoneCO2, ' ppm') + '</td>';
+  html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.zoneRelativeHumidity, '%') + '</td>';
   html += '</tr>';
 
   // Total Average row (all rows in project)
@@ -5047,6 +5081,8 @@ function emRenderSummaryView(data, filters) {
   html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.htgSp, '°F') + '</td>';
   html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.coolSp, '°F') + '</td>';
   html += '<td style="' + tfootTdCenter + '">' + totalVsCell + '</td>';
+  html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.zoneCO2, ' ppm') + '</td>';
+  html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.zoneRelativeHumidity, '%') + '</td>';
   html += '</tr>';
   html += '</tfoot>';
 
