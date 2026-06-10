@@ -14,7 +14,7 @@ if (typeof toKBtu === 'undefined') {
 //
 // Adapted from the data-gathering portion of generatePerformanceReport().
 // -----------------------------------------------------------------------
-function collectReportData(projId, buildingIds, reportDateStr, reportType) {
+function collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return null;
 
@@ -79,29 +79,54 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
   if (reportType === 'quarterly') {
     const curQ = Math.ceil((now.getMonth() + 1) / 3);
     const curYr = now.getFullYear();
-    for (let attempt = 0; attempt < 8; attempt++) {
-      let qNum = curQ - attempt;
-      let yr = curYr;
-      while (qNum <= 0) {
-        qNum += 4;
-        yr--;
-      }
-      const startMo = (qNum - 1) * 3 + 1;
+
+    // If the caller explicitly selected a quarter (e.g. user picked Q2 2026 in the modal),
+    // use it directly — do NOT apply the !isCurrent guard. The guard is only for auto-selection.
+    const explicitQ = selectedPeriod && selectedPeriod.quarter ? parseInt(selectedPeriod.quarter) : null;
+    const explicitYr = selectedPeriod && selectedPeriod.year ? parseInt(selectedPeriod.year) : null;
+
+    if (explicitQ && explicitYr) {
+      // User explicitly selected a quarter — honour it even if it is the current in-progress quarter
+      const startMo = (explicitQ - 1) * 3 + 1;
       const qYMs = [
-        yr + '-' + String(startMo).padStart(2, '0'),
-        yr + '-' + String(startMo + 1).padStart(2, '0'),
-        yr + '-' + String(startMo + 2).padStart(2, '0'),
+        explicitYr + '-' + String(startMo).padStart(2, '0'),
+        explicitYr + '-' + String(startMo + 1).padStart(2, '0'),
+        explicitYr + '-' + String(startMo + 2).padStart(2, '0'),
       ];
-      const hasData = qYMs.some((ym) => allPostYMs.includes(ym));
-      const isCurrent = yr === curYr && qNum === curQ;
-      if (hasData && !isCurrent) {
-        reportYMs = qYMs.filter((ym) => allPostYMs.includes(ym));
-        if (reportYMs.length === 0) continue;
-        reportYMs._qLabel = 'Q' + qNum + ' ' + yr;
-        reportYMs._qStartMo = startMo;
-        reportYMs._qYear = yr;
-        reportYMs._qNum = qNum;
-        break;
+      // Include only months that have post-baseline data (bills may be partial for current quarter)
+      reportYMs = qYMs.filter((ym) => allPostYMs.includes(ym));
+      // If no data at all for the chosen quarter, fall back to full quarter YMs so period label is correct
+      if (!reportYMs.length) reportYMs = qYMs.slice();
+      reportYMs._qLabel = 'Q' + explicitQ + ' ' + explicitYr;
+      reportYMs._qStartMo = startMo;
+      reportYMs._qYear = explicitYr;
+      reportYMs._qNum = explicitQ;
+    } else {
+      // Auto-select: find the most recent COMPLETED quarter with data
+      for (let attempt = 0; attempt < 8; attempt++) {
+        let qNum = curQ - attempt;
+        let yr = curYr;
+        while (qNum <= 0) {
+          qNum += 4;
+          yr--;
+        }
+        const startMo = (qNum - 1) * 3 + 1;
+        const qYMs = [
+          yr + '-' + String(startMo).padStart(2, '0'),
+          yr + '-' + String(startMo + 1).padStart(2, '0'),
+          yr + '-' + String(startMo + 2).padStart(2, '0'),
+        ];
+        const hasData = qYMs.some((ym) => allPostYMs.includes(ym));
+        const isCurrent = yr === curYr && qNum === curQ;
+        if (hasData && !isCurrent) {
+          reportYMs = qYMs.filter((ym) => allPostYMs.includes(ym));
+          if (reportYMs.length === 0) continue;
+          reportYMs._qLabel = 'Q' + qNum + ' ' + yr;
+          reportYMs._qStartMo = startMo;
+          reportYMs._qYear = yr;
+          reportYMs._qNum = qNum;
+          break;
+        }
       }
     }
     if (!reportYMs.length) reportYMs = allPostYMs.slice(-3);
@@ -7019,26 +7044,36 @@ function rptPageBoardSummary(n, d) {
   var cars = Math.round(eq.carsRemoved || 0);
 
   // Monthly savings bar chart — aggregate across all buildings
+  // Uses mo.month (YYYY-MM) as the key — this is the field name used in the monthly arrays.
   var moNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var moMap = {};
   (d.buildings || []).forEach(function (b) {
     ((b.electric && b.electric.monthly) || []).forEach(function (mo) {
-      var k = mo.ym || '';
+      var k = mo.month || '';
       if (!k) return;
       moMap[k] = (moMap[k] || 0) + (mo.savings || 0);
     });
     ((b.gas && b.gas.monthly) || []).forEach(function (mo) {
-      var k = mo.ym || '';
+      var k = mo.month || '';
       if (!k) return;
       moMap[k] = (moMap[k] || 0) + (mo.savings || 0);
     });
     ((b.propane && b.propane.monthly) || []).forEach(function (mo) {
-      var k = mo.ym || '';
+      var k = mo.month || '';
       if (!k) return;
       moMap[k] = (moMap[k] || 0) + (mo.savings || 0);
     });
   });
-  var sortedYMs = Object.keys(moMap).sort().slice(-12);
+  // Filter to only the reporting-period months so the chart matches the selected quarter/period.
+  // Fall back to the last 12 months if no period months are in the map.
+  var periodYMs = (d.period && d.period.yearMonths) || [];
+  var allSortedYMs = Object.keys(moMap).sort();
+  var sortedYMs = periodYMs.length
+    ? allSortedYMs.filter(function (ym) {
+        return periodYMs.indexOf(ym) >= 0;
+      })
+    : allSortedYMs.slice(-12);
+  if (!sortedYMs.length) sortedYMs = allSortedYMs.slice(-12);
   var chartData = sortedYMs.map(function (ym) {
     var mo = parseInt(ym.split('-')[1]) - 1;
     return { label: moNames[mo] || ym, value: moMap[ym] };
@@ -10784,8 +10819,11 @@ function collectASHRAE36Data(projId, reportDate) {
 
     // Calculate point and sequence coverage percentages
     var pointPct = totalPointsRequired > 0 ? Math.round((totalPointsMatched / totalPointsRequired) * 100) : 0;
-    var seqPct = totalSeqRequired > 0 ? Math.round((totalSeqMatched / totalSeqRequired) * 100) : 0;
-    var composite = Math.round(pointPct * 0.4 + seqPct * 0.6);
+    // null means no applicable G36 sequences exist (e.g. FCU/heater-only building).
+    // 0 means sequences exist but none are implemented — a real gap.
+    var seqPct = totalSeqRequired > 0 ? Math.round((totalSeqMatched / totalSeqRequired) * 100) : null;
+    // When seqPct is null, base composite on sensor coverage only (no sequences to evaluate).
+    var composite = seqPct !== null ? Math.round(pointPct * 0.4 + seqPct * 0.6) : Math.round(pointPct);
 
     // Status band
     var status = composite >= 75 ? 'green' : composite >= 50 ? 'amber' : 'red';
@@ -10881,11 +10919,15 @@ function collectASHRAE36Data(projId, reportDate) {
         }, 0) / buildingsData.length,
       )
     : 0;
-  var portfolioSeqPct = buildingsData.length
+  // Exclude buildings with null seqPct (no applicable sequences) from the portfolio average.
+  var _seqBuildings = buildingsData.filter(function (b) {
+    return b.seqPct !== null;
+  });
+  var portfolioSeqPct = _seqBuildings.length
     ? Math.round(
-        buildingsData.reduce(function (s, b) {
+        _seqBuildings.reduce(function (s, b) {
           return s + b.seqPct;
-        }, 0) / buildingsData.length,
+        }, 0) / _seqBuildings.length,
       )
     : 0;
   var greenCount = buildingsData.filter(function (b) {
@@ -11181,8 +11223,8 @@ function rptPageASHRAE36Executive(n, d) {
       b.pointPct +
       '%</td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
-      b.seqPct +
-      '%</td>' +
+      (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
+      '</td>' +
       '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
       bar +
       '</td>' +
@@ -11192,9 +11234,12 @@ function rptPageASHRAE36Executive(n, d) {
       '</tr>';
   });
 
+  var tableTitle =
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building Compliance Status</div>';
   var thStyle =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
   var table =
+    tableTitle +
     '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
     '<thead><tr>' +
     '<th style="' +
@@ -11345,7 +11390,13 @@ function rptPageASHRAE36Building(n, d, building) {
     _a36GaugeSVG(b.pointPct, 'var(--rpt-blue)', 'Sensors', 70) +
     '</div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.seqPct, '#7c3aed', 'Sequences', 70) +
+    (b.seqPct !== null
+      ? _a36GaugeSVG(b.seqPct, '#7c3aed', 'Sequences', 70)
+      : '<svg width="70" height="70" viewBox="0 0 70 70" style="display:block">' +
+        '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
+        '<text x="35" y="39" text-anchor="middle" font-size="13" font-weight="700" fill="#9ca3af" font-family="Arial,sans-serif">N/A</text>' +
+        '<text x="35" y="54" text-anchor="middle" font-size="8.05" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">Sequences</text>' +
+        '</svg>') +
     '</div>' +
     '<div style="flex:1">' +
     '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:4px">' +

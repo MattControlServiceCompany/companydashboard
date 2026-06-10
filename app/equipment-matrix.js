@@ -5623,6 +5623,33 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         row.points && match.pointName ? (row.points[match.pointName] != null ? row.points[match.pointName] : '') : '';
       var displayVal = rawVal !== '' ? (String(rawVal).length > 8 ? String(rawVal).slice(0, 8) : String(rawVal)) : null;
       var tooltipBase = emHtmlEsc((match.pointName || '') + (rawVal !== '' ? ': ' + rawVal : ''));
+
+      // FIX 65030b9b: detect "present but blank at export time" state.
+      // A point is in this state when: (a) the compliance engine found it covered via
+      // row.pointsRaw (point name exists on the controller), (b) row.points has no entry
+      // for this point name (no live value was stored), AND (c) row.pointsRaw explicitly
+      // has the name with a blank-string value (confirmed blank at export, not a col-key match).
+      // Render as amber "--" so it is visually distinct from both green (live value present)
+      // and red (point genuinely absent). This state is NOT a missing point — do NOT count
+      // it as a gap in coverage percentage.
+      var isBlankAtExport =
+        rawVal === '' &&
+        match.pointName &&
+        row.pointsRaw &&
+        Object.prototype.hasOwnProperty.call(row.pointsRaw, match.pointName) &&
+        row.pointsRaw[match.pointName] === '';
+      if (isBlankAtExport) {
+        var blankTitle =
+          emHtmlEsc(match.pointName || '') + ': point exists on controller but had no live value at export time';
+        return (
+          '<td style="' +
+          baseStyle +
+          'background:rgba(243,156,18,0.15);color:#d4820a;font-weight:700" title="' +
+          blankTitle +
+          '">--</td>'
+        );
+      }
+
       if (tier <= 2) {
         // High confidence — green cell. Show snapshot value when present; color alone signals match.
         var greenTitle = tooltipBase || 'Matched';

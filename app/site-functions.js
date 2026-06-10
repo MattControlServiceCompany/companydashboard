@@ -1191,6 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.477',
+    date: '2026-06-09',
+    title: 'Quarterly Report shows correct quarter, Equipment Matrix distinguishes blank points',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly Report: when you select Q1, Q2, Q3, or Q4 in the report settings, the report now pulls data for that quarter only — previously it always showed Q4 regardless of your selection.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report Executive Summary: buildings with no applicable ASHRAE sequences now show "N/A" instead of a percentage that made no sense, and the section title reads "Building Compliance Status."',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: points that exist in the BAS but have no value (blank/null readings) now show a distinct amber "--" state, separate from points that are truly absent. This makes gap analysis more accurate.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.476',
     date: '2026-06-09',
     title: 'City of Baldwin bill import accuracy and speed improved',

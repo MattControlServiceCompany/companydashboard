@@ -32,8 +32,15 @@ function generateReportPreview() {
     reportDateStr = new Date().toISOString().slice(0, 10);
   }
 
+  // For quarterly reports, pass the user's explicit quarter/year selection so
+  // collectReportData honours it instead of auto-picking the last completed quarter.
+  var selectedPeriod = null;
+  if (reportType === 'quarterly' && config.quarter && config.year) {
+    selectedPeriod = { quarter: config.quarter, year: config.year };
+  }
+
   // Collect report data using existing engine
-  var data = collectReportData(config.projId, config.buildingIds, reportDateStr, reportType);
+  var data = collectReportData(config.projId, config.buildingIds, reportDateStr, reportType, selectedPeriod);
   if (!data) {
     showToast('Could not collect report data — check that buildings have utility data', 'error');
     return;
