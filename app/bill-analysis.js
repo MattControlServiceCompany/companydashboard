@@ -7555,7 +7555,7 @@ function renderMultiBillUI(bills, box) {
   const _monthLabelMap = {};
   const _commGroups = {};
   bills.forEach((b, i) => {
-    const c = (b.Commodity || 'Other') + '|' + (b.AccountNumber || '_');
+    const c = (b.Commodity || 'Other') + '|' + (b.AccountNumber || '_') + '|' + (b.ServiceAddress || '_');
     if (!_commGroups[c]) _commGroups[c] = [];
     _commGroups[c].push(i);
   });

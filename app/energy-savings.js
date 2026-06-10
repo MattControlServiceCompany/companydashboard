@@ -4938,13 +4938,24 @@ const UTILITY_RULES = [
       //   "Baker University - 03044T0906"
       //   "618 8th St, Baldwin City, KS 66006-6010"
       // Capture the street line that follows the "Name - SiteID" line.
-      // Pattern: a line starting with a digit (street number) followed by letters
-      // and containing ", Baldwin City" or more generically a city+state.
-      // Use multiline ^ so the match anchors to a line start, preventing
-      // the regex from spanning the site-ID line and the address line.
+      //
+      // C4 fix: siteText = invoiceHeader + prevTail + siteChunks[i]. The invoiceHeader
+      // contains the invoice-level billing address (e.g. "519 8th St") which appears
+      // before the current site's own address. Searching the full siteText with /im
+      // always matched the header's address, giving all 14 sites the same address.
+      // Fix: restrict the address search to the portion AFTER the LAST "Service for"
+      // line — which is where the current site's content begins. This mirrors how
+      // AccountNumber already uses the LAST Customer ID match (C2 fix above).
+      // Using the LAST match (not first) prevents prevTail from anchoring to a
+      // previous site's "Service for" line when siteChunks[i-1] is <= 600 chars.
+      const _svcForAll = [...t.matchAll(/Service\s+for\s+[A-Z][a-z]{2,}-\d{4}/gi)];
+      const _lastSvcFor = _svcForAll.length > 0 ? _svcForAll[_svcForAll.length - 1] : null;
+      const _addrSearchText = _lastSvcFor ? t.slice(_lastSvcFor.index) : t;
       const addrM =
-        t.match(/^(\d+\s+[A-Za-z0-9 #]+,\s*Baldwin\s*City[^\n]*)/im) ||
-        t.match(/^(\d+\s+[A-Za-z0-9 .#]+,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/m);
+        _addrSearchText.match(/^(\d+\s+[A-Za-z0-9 #]+,\s*Baldwin\s*City[^\n]*)/im) ||
+        _addrSearchText.match(
+          /^(\d+\s+[A-Za-z0-9 .#]+,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/m,
+        );
       const ServiceAddress = addrM ? addrM[1].trim() : null;
 
       // ── BillingPeriod ──

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.09.481';
+  var CH_VERSION = 'v2026.06.10.482';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.10.482',
+      date: '2026-06-10',
+      title: 'Constellation multi-building bills: correct dates and no duplicate buildings',
+      items: [
+        {
+          type: 'fix',
+          text: "Constellation gas bills for Baker University (and any account with 10+ buildings on one PDF) now show correct billing dates and each building appears only once. Previously, all buildings were inheriting the invoice header address instead of their own address, causing the system to collapse 190 bills into one group and generate bogus labels like Dec 2038 counting down. The extractor now anchors each building's address to its own section of the PDF.",
+        },
+      ],
+    },
     {
       v: 'v2026.06.09.474',
       date: '2026-06-09',
