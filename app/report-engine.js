@@ -10898,6 +10898,12 @@ function collectASHRAE36Data(projId, reportDate) {
         };
       });
 
+    // Uncapped list of gap keys for this building -- used for portfolio membership queries.
+    // topGaps is capped at 5 for per-building detail page display only.
+    var allGapKeys = Object.keys(bldgGaps).filter(function (key) {
+      return DCV_KEYS.indexOf(key) === -1;
+    });
+
     // Equipment type inventory
     var equipCounts = {};
     auditableRows.forEach(function (r) {
@@ -10916,6 +10922,7 @@ function collectASHRAE36Data(projId, reportDate) {
       statusColor: statusColor,
       statusLabel: statusLabel,
       topGaps: topGaps,
+      allGapKeys: allGapKeys,
       // Phase 5 — setpoint compliance counts (additive, do not affect score)
       spNeedsReviewCount: spNeedsReviewCount,
       spNotScheduledCount: spNotScheduledCount,
@@ -10946,9 +10953,7 @@ function collectASHRAE36Data(projId, reportDate) {
         key: key,
         count: portfolioGapCounts[key],
         buildingCount: buildingsData.filter(function (b) {
-          return b.topGaps.some(function (g) {
-            return g.key === key;
-          });
+          return b.allGapKeys.indexOf(key) !== -1;
         }).length,
         desc: ASHRAE36_GAP_DESCRIPTIONS[key] || { short: key, impact: '', plain: '' },
       };
@@ -11799,9 +11804,7 @@ function rptPageASHRAE36Recommendations(n, d) {
       var desc = gap.desc || {};
       var affectedList = d.buildings
         .filter(function (b) {
-          return b.topGaps.some(function (g) {
-            return g.key === gap.key;
-          });
+          return b.allGapKeys.indexOf(gap.key) !== -1;
         })
         .map(function (b) {
           return b.name;

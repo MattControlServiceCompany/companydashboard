@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.489',
+    date: '2026-06-10',
+    title: 'Audit Report: Affected Units count now correct for all gaps',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Recommendations page in the ASHRAE-36 Audit Report now correctly counts affected buildings for every gap — gaps that ranked 6th or lower per building were previously missed in the Affected Units tally. The top-5 display cap is unchanged.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.10.488',
     date: '2026-06-10',
     title: 'Equipment Matrix: CSV upload panel now scrolls on large imports',
