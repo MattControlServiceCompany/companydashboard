@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.09.481',
+    date: '2026-06-09',
+    title: 'Bill extraction no longer leaks browser memory',
+    items: [
+      {
+        type: 'fix',
+        text: 'PDF bill imports now release all browser memory after each extraction — PDF documents, page canvases, OCR workers, and queued file bytes are all freed when done or when you clear the import. Previously, extracting many bills in a row could cause the page to slow down or run out of memory.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.06.09.480',
     date: '2026-06-09',
     title: 'Constellation gas import recovers more bills from difficult OCR scans',

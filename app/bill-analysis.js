@@ -4026,6 +4026,9 @@ function clearPDFOCR() {
   window._pdfQueue = null;
   window._pdfBillsSaved = false;
   window._pdfQueueRows = null;
+  // F3 (clearPDFOCR path): release multi-pass OCR buffers when the user clicks Clear
+  window._pdfOcrPasses = null;
+  window._pdfPassScores = null;
   _clearExtractionState();
   document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
   document.getElementById('pdfInput').value = '';
@@ -5097,6 +5100,18 @@ async function saveQueuedBills() {
       failed++;
       summaryEntries.push({ period, status: 'failed', destination: err.message || 'error', method: '' });
     }
+  }
+
+  // F4: release large per-result buffers now that all rows are saved.
+  // This runs only after the entire save loop — after every prevB64 restore (line ~5096)
+  // and every _saveSinglePDFBill / _applyDupUpdate call has completed.  Multiple rows can
+  // share the same result object (one PDF → many bills), so we null on the result, not
+  // per-row, to avoid use-after-free on the prevB64 swap at line ~5082.
+  if (q && q.results) {
+    q.results.forEach(function (r) {
+      r.pdfB64 = null;
+      r.rawText = null;
+    });
   }
 
   renderQueueResults();
@@ -6264,10 +6279,11 @@ function _countOcrSignals(txt) {
 }
 // ── end OCR helpers ───────────────────────────────────────────────────────────
 async function extractPDFText(ab, statusCb) {
+  let pdf = null;
   try {
     if (typeof pdfjsLib === 'undefined') return null;
     pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-    const pdf = await pdfjsLib.getDocument({
+    pdf = await pdfjsLib.getDocument({
       data: ab,
       useWorkerFetch: false,
       isEvalSupported: false,
@@ -6322,7 +6338,7 @@ async function extractPDFText(ab, statusCb) {
             (ocrNeeded.length > 1 ? 's' : '') +
             ' — loading OCR engine...',
         );
-      let worker;
+      let worker = null;
       try {
         // Dictionary params (load_system_dawg/load_freq_dawg) are init-only and MUST be passed
         // in createWorker's 4th arg. Setting them via setParameters is silently ignored by Tesseract.
@@ -6351,311 +6367,220 @@ async function extractPDFText(ab, statusCb) {
         // Return whatever native text we got
         return pageTexts.join('\n').trim().length > 50 ? pageTexts.join('\n') : null;
       }
-      // Provider-aware scoring: per-provider signal sets + generic bonuses.
-      // Evergy signals are the original BILL_SIGNALS verbatim — behavior unchanged.
-      // Unknown providers fall through to generic-only scoring (never worse than before).
-      const PROVIDER_SIGNALS = {
-        evergy: [
-          { rx: /service\s+from[:\s]\s*\d{2}\/\d{2}/i, w: 1 },
-          { rx: /Current\s+Charges/i, w: 1 },
-          { rx: /kWh/i, w: 1 },
-          { rx: /Demand\s+Ch/i, w: 1 },
-          { rx: /Customer\s+Ch/i, w: 1 },
+      // F5: ensure the worker WASM heap is freed even if the OCR loop throws
+      try {
+        // Provider-aware scoring: per-provider signal sets + generic bonuses.
+        // Evergy signals are the original BILL_SIGNALS verbatim — behavior unchanged.
+        // Unknown providers fall through to generic-only scoring (never worse than before).
+        const PROVIDER_SIGNALS = {
+          evergy: [
+            { rx: /service\s+from[:\s]\s*\d{2}\/\d{2}/i, w: 1 },
+            { rx: /Current\s+Charges/i, w: 1 },
+            { rx: /kWh/i, w: 1 },
+            { rx: /Demand\s+Ch/i, w: 1 },
+            { rx: /Customer\s+Ch/i, w: 1 },
+            { rx: /Account\s+Number/i, w: 1 },
+            { rx: /Billing\s+Date/i, w: 1 },
+          ],
+          constellation: [
+            { rx: /constellation/i, w: 1 },
+            { rx: /account\s*id:\s*bg-\d+/i, w: 2 },
+            { rx: /Invoice\s+Number:\s*\d+/i, w: 1 },
+            { rx: /Service\s+for\s+[A-Za-z]+-\d{4}/i, w: 2 },
+            { rx: /Total\s+Current\s+Site\s+Charges/i, w: 2 },
+            { rx: /MMBtu/i, w: 1 },
+            { rx: /Invoice\s+Date:/i, w: 1 },
+          ],
+          kgs: [
+            { rx: /kansas\s+gas\s+service/i, w: 2 },
+            { rx: /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i, w: 2 },
+            { rx: /\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/, w: 2 },
+            { rx: /Account\s+Number/i, w: 1 },
+            { rx: /\bMcf\b/i, w: 1 },
+            { rx: /Total\s+Current\s+Charges/i, w: 1 },
+            { rx: /Service\s+Charge/i, w: 1 },
+          ],
+          louisburg: [
+            { rx: /louisburgkansas\.gov|City\s*of\s*Louisburg/i, w: 2 },
+            { rx: /ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information/i, w: 2 },
+            { rx: /DETACH\s*AND\s*RETURN/i, w: 1 },
+            { rx: /Amount\s*Due\s*After/i, w: 1 },
+          ],
+          baldwin: [
+            { rx: /baldwin\s*city|baldwincitygov?/i, w: 2 },
+            { rx: /FRANCHISE\s+FEE/i, w: 1 },
+            { rx: /EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i, w: 2 },
+            { rx: /ACCOUNT\s+NUMBER/i, w: 1 },
+          ],
+          propane: [
+            { rx: /\bpropane\b|\blp\s*gas\b|\bfuel\s*oil\b|\bmfa\s*oil\b/i, w: 2 },
+            { rx: /net\s*(?:due|delivery)|invoice/i, w: 1 },
+            { rx: /Invoice\s*#/i, w: 1 },
+          ],
+        };
+        // Auto-detect provider from OCR text (same regexes as UTILITY_RULES.detect() in energy-savings.js)
+        const _detectProvider = (txt) => {
+          if (/service\s+from[:\s]\s*\d{2}\/\d{2}/i.test(txt) || (/Customer\s+Ch/i.test(txt) && /ECA\s+Ch/i.test(txt)))
+            return 'evergy';
+          if (/constellation/i.test(txt) || /account\s*id:\s*bg-\d+/i.test(txt) || /MMBtu/i.test(txt))
+            return 'constellation';
+          if (/kansas\s+gas\s+service/i.test(txt) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(txt)) return 'kgs';
+          if (/louisburgkansas\.gov|City\s*of\s*Louisburg/i.test(txt)) return 'louisburg';
+          if (/baldwin\s*city|baldwincitygov/i.test(txt) || /FRANCHISE\s+FEE/i.test(txt)) return 'baldwin';
+          if (/\bpropane\b|\blp\s*gas\b|\bmfa\s*oil\b/i.test(txt)) return 'propane';
+          return 'generic';
+        };
+        // Generic signals — always score regardless of provider (floor for unknown formats)
+        const GENERIC_SIGNALS = [
           { rx: /Account\s+Number/i, w: 1 },
           { rx: /Billing\s+Date/i, w: 1 },
-        ],
-        constellation: [
-          { rx: /constellation/i, w: 1 },
-          { rx: /account\s*id:\s*bg-\d+/i, w: 2 },
-          { rx: /Invoice\s+Number:\s*\d+/i, w: 1 },
-          { rx: /Service\s+for\s+[A-Za-z]+-\d{4}/i, w: 2 },
-          { rx: /Total\s+Current\s+Site\s+Charges/i, w: 2 },
-          { rx: /MMBtu/i, w: 1 },
-          { rx: /Invoice\s+Date:/i, w: 1 },
-        ],
-        kgs: [
-          { rx: /kansas\s+gas\s+service/i, w: 2 },
-          { rx: /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i, w: 2 },
-          { rx: /\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/, w: 2 },
-          { rx: /Account\s+Number/i, w: 1 },
-          { rx: /\bMcf\b/i, w: 1 },
-          { rx: /Total\s+Current\s+Charges/i, w: 1 },
-          { rx: /Service\s+Charge/i, w: 1 },
-        ],
-        louisburg: [
-          { rx: /louisburgkansas\.gov|City\s*of\s*Louisburg/i, w: 2 },
-          { rx: /ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information/i, w: 2 },
-          { rx: /DETACH\s*AND\s*RETURN/i, w: 1 },
-          { rx: /Amount\s*Due\s*After/i, w: 1 },
-        ],
-        baldwin: [
-          { rx: /baldwin\s*city|baldwincitygov?/i, w: 2 },
-          { rx: /FRANCHISE\s+FEE/i, w: 1 },
-          { rx: /EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i, w: 2 },
-          { rx: /ACCOUNT\s+NUMBER/i, w: 1 },
-        ],
-        propane: [
-          { rx: /\bpropane\b|\blp\s*gas\b|\bfuel\s*oil\b|\bmfa\s*oil\b/i, w: 2 },
-          { rx: /net\s*(?:due|delivery)|invoice/i, w: 1 },
-          { rx: /Invoice\s*#/i, w: 1 },
-        ],
-      };
-      // Auto-detect provider from OCR text (same regexes as UTILITY_RULES.detect() in energy-savings.js)
-      const _detectProvider = (txt) => {
-        if (/service\s+from[:\s]\s*\d{2}\/\d{2}/i.test(txt) || (/Customer\s+Ch/i.test(txt) && /ECA\s+Ch/i.test(txt)))
-          return 'evergy';
-        if (/constellation/i.test(txt) || /account\s*id:\s*bg-\d+/i.test(txt) || /MMBtu/i.test(txt))
-          return 'constellation';
-        if (/kansas\s+gas\s+service/i.test(txt) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(txt)) return 'kgs';
-        if (/louisburgkansas\.gov|City\s*of\s*Louisburg/i.test(txt)) return 'louisburg';
-        if (/baldwin\s*city|baldwincitygov/i.test(txt) || /FRANCHISE\s+FEE/i.test(txt)) return 'baldwin';
-        if (/\bpropane\b|\blp\s*gas\b|\bmfa\s*oil\b/i.test(txt)) return 'propane';
-        return 'generic';
-      };
-      // Generic signals — always score regardless of provider (floor for unknown formats)
-      const GENERIC_SIGNALS = [
-        { rx: /Account\s+Number/i, w: 1 },
-        { rx: /Billing\s+Date/i, w: 1 },
-      ];
-      // Generic bonuses — dollar amounts, kWh values, date patterns (preserved from original scorePage)
-      const _genericBonuses = (txt) => {
-        let s = 0;
-        const dollarAmts = (txt.match(/\$[\d,]+\.\d{2}/g) || []).length;
-        s += Math.min(dollarAmts / 5, 2); // up to 2 bonus points (same as original)
-        const kwhVals = (txt.match(/[\d,]+\.\d{4}\s*kWh/gi) || []).length;
-        s += Math.min(kwhVals / 3, 1); // up to 1 bonus point (same as original)
-        const datePatterns = (txt.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g) || []).length;
-        s += Math.min(datePatterns / 4, 1); // up to 1 bonus for generic date signals
-        return s;
-      };
-      // makeScorePage() — factory that returns a scorePage function.
-      // Provider is auto-detected from the first non-trivial pass (>100 chars) and locked
-      // for all subsequent passes of the same page, so pass-0 text drives scoring for passes 1–6.
-      // Evergy: max keyword score = 7 + up to 3 bonuses = 10+, early-exit threshold >=10 unchanged.
-      const makeScorePage = () => {
-        let detectedProvider = null;
-        return (txt) => {
-          if (!detectedProvider && txt.length > 100) {
-            detectedProvider = _detectProvider(txt);
-          }
-          const signals = PROVIDER_SIGNALS[detectedProvider] || [];
+        ];
+        // Generic bonuses — dollar amounts, kWh values, date patterns (preserved from original scorePage)
+        const _genericBonuses = (txt) => {
           let s = 0;
-          for (const sig of signals) {
-            if (sig.rx.test(txt)) s += sig.w;
-          }
-          for (const sig of GENERIC_SIGNALS) {
-            if (sig.rx.test(txt)) s += sig.w;
-          }
-          s += _genericBonuses(txt);
+          const dollarAmts = (txt.match(/\$[\d,]+\.\d{2}/g) || []).length;
+          s += Math.min(dollarAmts / 5, 2); // up to 2 bonus points (same as original)
+          const kwhVals = (txt.match(/[\d,]+\.\d{4}\s*kWh/gi) || []).length;
+          s += Math.min(kwhVals / 3, 1); // up to 1 bonus point (same as original)
+          const datePatterns = (txt.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g) || []).length;
+          s += Math.min(datePatterns / 4, 1); // up to 1 bonus for generic date signals
           return s;
         };
-      };
-      const scorePage = makeScorePage();
-      // Detect Evergy bill cover page by unique layout signals. Cover pages only
-      // need the 2.5x pass — they contain no meter/charge data worth reprocessing.
-      const isCoverPage = (txt) => {
-        let hits = 0;
-        if (/MESSAGE\s+BOARD/i.test(txt)) hits++;
-        if (/Account\s+Summary/i.test(txt)) hits++;
-        if (/Due\s+Upon\s+Receipt/i.test(txt)) hits++;
-        if (/Page\s+1\s+of\s+\d/i.test(txt)) hits++;
-        if (/\d{37}/.test(txt)) hits++;
-        return hits >= 3;
-      };
-      // OCR settings: dictionary disabled at worker init (load_system_dawg/load_freq_dawg=0)
-      // and preserve_interword_spaces set via setParameters above.
-      // Primary passes — 2.5x and 3.5x run first (historically best scores); 2x and 3x
-      // only run if the first two don't reach a good score.
-      // PSM-4 (SINGLE_COLUMN) variants are appended after the default passes; scorePage
-      // picks the winner, so this is self-selecting and cannot regress bills that already parse.
-      const OCR_PASSES = [
-        { scale: 2.5, psm: null, label: '2.5x' },
-        { scale: 3.5, psm: null, label: '3.5x' },
-        { scale: 2.0, psm: null, label: '2x' },
-        { scale: 3.0, psm: null, label: '3x' },
-        { scale: 2.5, psm: '4', label: '2.5x-psm4' },
-        { scale: 3.5, psm: '4', label: '3.5x-psm4' },
-      ];
-      // Retry passes — only run if primary passes have issues (low score or missing values)
-      const OCR_RETRY_PASSES = [
-        { scale: 1.0, psm: null, label: '1x retry' },
-        { scale: 1.5, psm: null, label: '1.5x retry' },
-        { scale: 4.0, psm: null, label: '4x retry' },
-      ];
-      // Timeout for individual recognize() calls (90 seconds) — prevents Tesseract hangs
-      const OCR_TIMEOUT_MS = 90000;
-      // Helper to create a fresh worker with correct params.
-      // Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
-      const _createOCRWorker = async (loggerCb) => {
-        const w = await Tesseract.createWorker(
-          'eng',
-          1,
-          { logger: loggerCb || (() => {}) },
-          { load_system_dawg: '0', load_freq_dawg: '0' },
-        );
-        await w.setParameters({ preserve_interword_spaces: '1', user_defined_dpi: '300' });
-        return w;
-      };
-      // On timeout: terminate the hung worker and create a fresh one.
-      // Returns { result, newWorker } — newWorker is set only if the worker was replaced.
-      const recognizeWithTimeout = async (w, canvas, params) => {
-        let timedOut = false;
-        const timer = setTimeout(() => {
-          timedOut = true;
-        }, OCR_TIMEOUT_MS);
-        try {
-          const result = await Promise.race([
-            w.recognize(canvas, params),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout after 90s')), OCR_TIMEOUT_MS)),
-          ]);
-          clearTimeout(timer);
-          return { result, newWorker: null };
-        } catch (err) {
-          clearTimeout(timer);
-          if (timedOut) {
-            // Kill the hung worker — its queued recognize() call will never finish
-            try {
-              await w.terminate();
-            } catch (_) {}
-            // Create a fresh worker so the next call starts clean
-            const fresh = await _createOCRWorker();
-            throw Object.assign(err, { _replacementWorker: fresh });
-          }
-          throw err;
-        }
-      };
-      // Track pass scores for debug output
-      const passScoreLog = [];
-
-      // Store all OCR pass texts for consensus re-extraction on mismatched values
-      const allPassTexts = {};
-      for (let idx = 0; idx < ocrNeeded.length; idx++) {
-        if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
-        const pgNum = ocrNeeded[idx];
-        let bestText = '',
-          bestScore = 0;
-        allPassTexts[pgNum] = [];
-
-        for (let pass = 0; pass < OCR_PASSES.length; pass++) {
-          if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR pass loop
-          const cfg = OCR_PASSES[pass];
-          if (statusCb)
-            statusCb(
-              'OCR page ' +
-                pgNum +
-                '/' +
-                maxPages +
-                ' (' +
-                (idx + 1) +
-                '/' +
-                ocrNeeded.length +
-                ') — pass ' +
-                (pass + 1) +
-                '/' +
-                OCR_PASSES.length +
-                ' (' +
-                cfg.label +
-                ')...',
-            );
-          const pg = await pdf.getPage(pgNum);
-          const vp = pg.getViewport({ scale: cfg.scale });
-          const canvas = document.createElement('canvas');
-          canvas.width = vp.width;
-          canvas.height = vp.height;
-          const ctx = canvas.getContext('2d');
-          await pg.render({ canvasContext: ctx, viewport: vp }).promise;
-          try {
-            const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
-            const t0 = performance.now();
-            const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
-            const text = ocrResult.data.text;
-            const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-            const score = scorePage(text);
-            allPassTexts[pgNum].push({ scale: cfg.scale, label: cfg.label, text, score });
-            passScoreLog.push({
-              page: pgNum,
-              pass: cfg.label,
-              score: score.toFixed(1),
-              time: elapsed + 's',
-              chars: text.length,
-            });
-            if (score > bestScore || (score === bestScore && text.length > bestText.length)) {
-              bestText = text;
-              bestScore = score;
+        // makeScorePage() — factory that returns a scorePage function.
+        // Provider is auto-detected from the first non-trivial pass (>100 chars) and locked
+        // for all subsequent passes of the same page, so pass-0 text drives scoring for passes 1–6.
+        // Evergy: max keyword score = 7 + up to 3 bonuses = 10+, early-exit threshold >=10 unchanged.
+        const makeScorePage = () => {
+          let detectedProvider = null;
+          return (txt) => {
+            if (!detectedProvider && txt.length > 100) {
+              detectedProvider = _detectProvider(txt);
             }
-          } catch (pageErr) {
-            // If timeout killed the worker, swap in the fresh replacement
-            if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
-            passScoreLog.push({
-              page: pgNum,
-              pass: cfg.label,
-              score: 'FAIL',
-              time: '—',
-              chars: 0,
-              error: pageErr.message,
-            });
-            if (statusCb) statusCb('OCR failed on page ' + pgNum + ' pass ' + (pass + 1) + ': ' + pageErr.message);
+            const signals = PROVIDER_SIGNALS[detectedProvider] || [];
+            let s = 0;
+            for (const sig of signals) {
+              if (sig.rx.test(txt)) s += sig.w;
+            }
+            for (const sig of GENERIC_SIGNALS) {
+              if (sig.rx.test(txt)) s += sig.w;
+            }
+            s += _genericBonuses(txt);
+            return s;
+          };
+        };
+        const scorePage = makeScorePage();
+        // Detect Evergy bill cover page by unique layout signals. Cover pages only
+        // need the 2.5x pass — they contain no meter/charge data worth reprocessing.
+        const isCoverPage = (txt) => {
+          let hits = 0;
+          if (/MESSAGE\s+BOARD/i.test(txt)) hits++;
+          if (/Account\s+Summary/i.test(txt)) hits++;
+          if (/Due\s+Upon\s+Receipt/i.test(txt)) hits++;
+          if (/Page\s+1\s+of\s+\d/i.test(txt)) hits++;
+          if (/\d{37}/.test(txt)) hits++;
+          return hits >= 3;
+        };
+        // OCR settings: dictionary disabled at worker init (load_system_dawg/load_freq_dawg=0)
+        // and preserve_interword_spaces set via setParameters above.
+        // Primary passes — 2.5x and 3.5x run first (historically best scores); 2x and 3x
+        // only run if the first two don't reach a good score.
+        // PSM-4 (SINGLE_COLUMN) variants are appended after the default passes; scorePage
+        // picks the winner, so this is self-selecting and cannot regress bills that already parse.
+        const OCR_PASSES = [
+          { scale: 2.5, psm: null, label: '2.5x' },
+          { scale: 3.5, psm: null, label: '3.5x' },
+          { scale: 2.0, psm: null, label: '2x' },
+          { scale: 3.0, psm: null, label: '3x' },
+          { scale: 2.5, psm: '4', label: '2.5x-psm4' },
+          { scale: 3.5, psm: '4', label: '3.5x-psm4' },
+        ];
+        // Retry passes — only run if primary passes have issues (low score or missing values)
+        const OCR_RETRY_PASSES = [
+          { scale: 1.0, psm: null, label: '1x retry' },
+          { scale: 1.5, psm: null, label: '1.5x retry' },
+          { scale: 4.0, psm: null, label: '4x retry' },
+        ];
+        // Timeout for individual recognize() calls (90 seconds) — prevents Tesseract hangs
+        const OCR_TIMEOUT_MS = 90000;
+        // Helper to create a fresh worker with correct params.
+        // Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
+        const _createOCRWorker = async (loggerCb) => {
+          const w = await Tesseract.createWorker(
+            'eng',
+            1,
+            { logger: loggerCb || (() => {}) },
+            { load_system_dawg: '0', load_freq_dawg: '0' },
+          );
+          await w.setParameters({ preserve_interword_spaces: '1', user_defined_dpi: '300' });
+          return w;
+        };
+        // On timeout: terminate the hung worker and create a fresh one.
+        // Returns { result, newWorker } — newWorker is set only if the worker was replaced.
+        const recognizeWithTimeout = async (w, canvas, params) => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+          }, OCR_TIMEOUT_MS);
+          try {
+            const result = await Promise.race([
+              w.recognize(canvas, params),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout after 90s')), OCR_TIMEOUT_MS)),
+            ]);
+            clearTimeout(timer);
+            return { result, newWorker: null };
+          } catch (err) {
+            clearTimeout(timer);
+            if (timedOut) {
+              // Kill the hung worker — its queued recognize() call will never finish
+              try {
+                await w.terminate();
+              } catch (_) {}
+              // Create a fresh worker so the next call starts clean
+              const fresh = await _createOCRWorker();
+              throw Object.assign(err, { _replacementWorker: fresh });
+            }
+            throw err;
           }
-          // Early exit after pass 0 (2.5x) if this is a cover page — no meter data to gain from more passes
-          if (pass === 0 && isCoverPage(bestText)) break;
-          // Early exit after pass 1 (3.5x) if 2.5x + 3.5x already hit a strong score
-          if (pass === 1 && bestScore >= 10) break;
-          // Baldwin early exit at pass 1: scanned Baldwin pages have a lower max score ceiling than Evergy;
-          // score >= 7 after 2 passes means account number + charge codes + dollar amounts are all present —
-          // no benefit from running 4 more primary passes on a well-scanned page
-          if (
-            pass === 1 &&
-            bestScore >= 7 &&
-            (/baldwin\s*city|baldwincitygov/i.test(bestText) || /FRANCHISE\s+FEE/i.test(bestText))
-          )
-            break;
-        }
-        // Run retry passes if primary results have issues (low score or missing key patterns)
-        // KGS bills never have a "service from" pattern — don't require it for retry decision
-        const isKGSText =
-          /kansas\s+gas\s+service/i.test(bestText) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(bestText);
-        const kgsScore = isKGSText
-          ? (/Account\s+Number/i.test(bestText) ? 2 : 0) +
-            (/\$\d+\.\d{2}/.test(bestText) ? 2 : 0) +
-            (/\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/.test(bestText) ? 2 : 0)
-          : 0;
-        // Baldwin bills never have a "service from MM/DD" pattern — don't require it for retry decision
-        // Use a content-quality score instead: account number + dollar amounts + charge-line codes
-        const isBaldwinText = /baldwin\s*city|baldwincitygov/i.test(bestText) || /FRANCHISE\s+FEE/i.test(bestText);
-        const baldwinScore = isBaldwinText
-          ? (/ACCOUNT\s+NUMBER/i.test(bestText) ? 2 : 0) +
-            ((bestText.match(/\$[\d,]+\.\d{2}/g) || []).length >= 3 ? 2 : 0) +
-            (/EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i.test(bestText) ? 2 : 0)
-          : 0;
-        const needsRetry = isKGSText
-          ? kgsScore < 4 // KGS: retry only if account+dollar+meter dates all missing
-          : isBaldwinText
-            ? baldwinScore < 4 // Baldwin: retry only if account+dollar amounts+charge codes all missing
-            : bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
-        if (needsRetry) {
-          for (let pass = 0; pass < OCR_RETRY_PASSES.length; pass++) {
-            if (window._pdfAbort) break; // Bug #134: honour cancel inside retry pass loop
-            const cfg = OCR_RETRY_PASSES[pass];
+        };
+        // Track pass scores for debug output
+        const passScoreLog = [];
+
+        // Store all OCR pass texts for consensus re-extraction on mismatched values
+        const allPassTexts = {};
+        for (let idx = 0; idx < ocrNeeded.length; idx++) {
+          if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
+          const pgNum = ocrNeeded[idx];
+          let bestText = '',
+            bestScore = 0;
+          allPassTexts[pgNum] = [];
+
+          for (let pass = 0; pass < OCR_PASSES.length; pass++) {
+            if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR pass loop
+            const cfg = OCR_PASSES[pass];
             if (statusCb)
               statusCb(
                 'OCR page ' +
                   pgNum +
                   '/' +
                   maxPages +
-                  ' retry ' +
+                  ' (' +
+                  (idx + 1) +
+                  '/' +
+                  ocrNeeded.length +
+                  ') — pass ' +
                   (pass + 1) +
                   '/' +
-                  OCR_RETRY_PASSES.length +
+                  OCR_PASSES.length +
                   ' (' +
                   cfg.label +
                   ')...',
               );
             const pg = await pdf.getPage(pgNum);
             const vp = pg.getViewport({ scale: cfg.scale });
-            const canvas = document.createElement('canvas');
+            let canvas = document.createElement('canvas');
             canvas.width = vp.width;
             canvas.height = vp.height;
-            const ctx = canvas.getContext('2d');
+            let ctx = canvas.getContext('2d');
             await pg.render({ canvasContext: ctx, viewport: vp }).promise;
             try {
               const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
@@ -6677,6 +6602,7 @@ async function extractPDFText(ab, statusCb) {
                 bestScore = score;
               }
             } catch (pageErr) {
+              // If timeout killed the worker, swap in the fresh replacement
               if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
               passScoreLog.push({
                 page: pgNum,
@@ -6686,108 +6612,233 @@ async function extractPDFText(ab, statusCb) {
                 chars: 0,
                 error: pageErr.message,
               });
-              if (statusCb) statusCb('OCR retry failed on page ' + pgNum + ' (' + cfg.label + '): ' + pageErr.message);
+              if (statusCb) statusCb('OCR failed on page ' + pgNum + ' pass ' + (pass + 1) + ': ' + pageErr.message);
+            }
+            // F2: release canvas backing store and PDF page operator list after each pass
+            canvas.width = 0;
+            canvas.height = 0;
+            canvas = null;
+            ctx = null;
+            if (pg.cleanup) pg.cleanup();
+            // Early exit after pass 0 (2.5x) if this is a cover page — no meter data to gain from more passes
+            if (pass === 0 && isCoverPage(bestText)) break;
+            // Early exit after pass 1 (3.5x) if 2.5x + 3.5x already hit a strong score
+            if (pass === 1 && bestScore >= 10) break;
+            // Baldwin early exit at pass 1: scanned Baldwin pages have a lower max score ceiling than Evergy;
+            // score >= 7 after 2 passes means account number + charge codes + dollar amounts are all present —
+            // no benefit from running 4 more primary passes on a well-scanned page
+            if (
+              pass === 1 &&
+              bestScore >= 7 &&
+              (/baldwin\s*city|baldwincitygov/i.test(bestText) || /FRANCHISE\s+FEE/i.test(bestText))
+            )
+              break;
+          }
+          // Run retry passes if primary results have issues (low score or missing key patterns)
+          // KGS bills never have a "service from" pattern — don't require it for retry decision
+          const isKGSText =
+            /kansas\s+gas\s+service/i.test(bestText) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(bestText);
+          const kgsScore = isKGSText
+            ? (/Account\s+Number/i.test(bestText) ? 2 : 0) +
+              (/\$\d+\.\d{2}/.test(bestText) ? 2 : 0) +
+              (/\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/.test(bestText) ? 2 : 0)
+            : 0;
+          // Baldwin bills never have a "service from MM/DD" pattern — don't require it for retry decision
+          // Use a content-quality score instead: account number + dollar amounts + charge-line codes
+          const isBaldwinText = /baldwin\s*city|baldwincitygov/i.test(bestText) || /FRANCHISE\s+FEE/i.test(bestText);
+          const baldwinScore = isBaldwinText
+            ? (/ACCOUNT\s+NUMBER/i.test(bestText) ? 2 : 0) +
+              ((bestText.match(/\$[\d,]+\.\d{2}/g) || []).length >= 3 ? 2 : 0) +
+              (/EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i.test(bestText) ? 2 : 0)
+            : 0;
+          const needsRetry = isKGSText
+            ? kgsScore < 4 // KGS: retry only if account+dollar+meter dates all missing
+            : isBaldwinText
+              ? baldwinScore < 4 // Baldwin: retry only if account+dollar amounts+charge codes all missing
+              : bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
+          if (needsRetry) {
+            for (let pass = 0; pass < OCR_RETRY_PASSES.length; pass++) {
+              if (window._pdfAbort) break; // Bug #134: honour cancel inside retry pass loop
+              const cfg = OCR_RETRY_PASSES[pass];
+              if (statusCb)
+                statusCb(
+                  'OCR page ' +
+                    pgNum +
+                    '/' +
+                    maxPages +
+                    ' retry ' +
+                    (pass + 1) +
+                    '/' +
+                    OCR_RETRY_PASSES.length +
+                    ' (' +
+                    cfg.label +
+                    ')...',
+                );
+              const pg = await pdf.getPage(pgNum);
+              const vp = pg.getViewport({ scale: cfg.scale });
+              let canvas = document.createElement('canvas');
+              canvas.width = vp.width;
+              canvas.height = vp.height;
+              let ctx = canvas.getContext('2d');
+              await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+              try {
+                const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
+                const t0 = performance.now();
+                const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
+                const text = ocrResult.data.text;
+                const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+                const score = scorePage(text);
+                allPassTexts[pgNum].push({ scale: cfg.scale, label: cfg.label, text, score });
+                passScoreLog.push({
+                  page: pgNum,
+                  pass: cfg.label,
+                  score: score.toFixed(1),
+                  time: elapsed + 's',
+                  chars: text.length,
+                });
+                if (score > bestScore || (score === bestScore && text.length > bestText.length)) {
+                  bestText = text;
+                  bestScore = score;
+                }
+              } catch (pageErr) {
+                if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
+                passScoreLog.push({
+                  page: pgNum,
+                  pass: cfg.label,
+                  score: 'FAIL',
+                  time: '—',
+                  chars: 0,
+                  error: pageErr.message,
+                });
+                if (statusCb)
+                  statusCb('OCR retry failed on page ' + pgNum + ' (' + cfg.label + '): ' + pageErr.message);
+              }
+              // F2: release canvas backing store and PDF page operator list after each retry pass
+              canvas.width = 0;
+              canvas.height = 0;
+              canvas = null;
+              ctx = null;
+              if (pg.cleanup) pg.cleanup();
             }
           }
-        }
-        // ── CHANGE 4: 180° upside-down heuristic ──────────────────────────────
-        // Only fires when primary+retry passes all scored very low (<3).
-        // Renders the page at 2.5x, crops a small strip from the top, and
-        // runs a quick recognize at 0° vs 180°.  If the rotated crop yields
-        // significantly more digits/dollar-signs, we rotate the full canvas
-        // 180° and run a full OCR pass to replace the best result.
-        const ORIENT_SCORE_THRESHOLD = 3;
-        if (bestScore < ORIENT_SCORE_THRESHOLD) {
-          try {
-            if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
-            const pgO = await pdf.getPage(pgNum);
-            const vpO = pgO.getViewport({ scale: 2.5 });
-            const canvasO = document.createElement('canvas');
-            canvasO.width = vpO.width;
-            canvasO.height = vpO.height;
-            const ctxO = canvasO.getContext('2d');
-            await pgO.render({ canvasContext: ctxO, viewport: vpO }).promise;
-            // Crop top 20% strip for a fast orientation probe
-            const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
-            const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
-            const canvas180 = rotateCanvas180(canvasO);
-            // Quick probe: recognize top strip at both orientations
-            const [probe0, probe180] = await Promise.all([
-              recognizeWithTimeout(worker, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
-                result: { data: { text: '' } },
-              })),
-              recognizeWithTimeout(worker, canvas180, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
-                result: { data: { text: '' } },
-              })),
-            ]);
-            const sig0 = _countOcrSignals(probe0.result.data.text);
-            const sig180 = _countOcrSignals(probe180.result.data.text);
-            if (sig180 > sig0 * 1.5 + 3) {
-              // 180° clearly wins — run full OCR on the rotated canvas
-              if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — rotating 180° and re-OCR...');
-              const { result: rotResult } = await recognizeWithTimeout(worker, canvas180, { rotateAuto: true });
-              const rotText = rotResult.data.text;
-              const rotScore = scorePage(rotText);
-              allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-rot180', text: rotText, score: rotScore });
+          // ── CHANGE 4: 180° upside-down heuristic ──────────────────────────────
+          // Only fires when primary+retry passes all scored very low (<3).
+          // Renders the page at 2.5x, crops a small strip from the top, and
+          // runs a quick recognize at 0° vs 180°.  If the rotated crop yields
+          // significantly more digits/dollar-signs, we rotate the full canvas
+          // 180° and run a full OCR pass to replace the best result.
+          const ORIENT_SCORE_THRESHOLD = 3;
+          if (bestScore < ORIENT_SCORE_THRESHOLD) {
+            try {
+              if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
+              const pgO = await pdf.getPage(pgNum);
+              const vpO = pgO.getViewport({ scale: 2.5 });
+              const canvasO = document.createElement('canvas');
+              canvasO.width = vpO.width;
+              canvasO.height = vpO.height;
+              const ctxO = canvasO.getContext('2d');
+              await pgO.render({ canvasContext: ctxO, viewport: vpO }).promise;
+              // Crop top 20% strip for a fast orientation probe
+              const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
+              const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
+              const canvas180 = rotateCanvas180(canvasO);
+              // Quick probe: recognize top strip at both orientations
+              const [probe0, probe180] = await Promise.all([
+                recognizeWithTimeout(worker, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
+                  result: { data: { text: '' } },
+                })),
+                recognizeWithTimeout(worker, canvas180, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
+                  result: { data: { text: '' } },
+                })),
+              ]);
+              const sig0 = _countOcrSignals(probe0.result.data.text);
+              const sig180 = _countOcrSignals(probe180.result.data.text);
+              if (sig180 > sig0 * 1.5 + 3) {
+                // 180° clearly wins — run full OCR on the rotated canvas
+                if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — rotating 180° and re-OCR...');
+                const { result: rotResult } = await recognizeWithTimeout(worker, canvas180, { rotateAuto: true });
+                const rotText = rotResult.data.text;
+                const rotScore = scorePage(rotText);
+                allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-rot180', text: rotText, score: rotScore });
+                passScoreLog.push({
+                  page: pgNum,
+                  pass: '2.5x-rot180',
+                  score: rotScore.toFixed(1),
+                  time: '—',
+                  chars: rotText.length,
+                });
+                if (rotScore > bestScore || (rotScore === bestScore && rotText.length > bestText.length)) {
+                  bestText = rotText;
+                  bestScore = rotScore;
+                }
+              }
+              // F2: release orientation canvases and PDF page after all orient OCR is done
+              canvasO.width = 0;
+              canvasO.height = 0;
+              canvas180.width = 0;
+              canvas180.height = 0;
+              if (pgO.cleanup) pgO.cleanup();
+            } catch (_orientErr) {
+              /* orientation probe failed — continue with existing best */
+            }
+          }
+          // ── CHANGE 5: Otsu binarization triggered pass ────────────────────────
+          // Only fires when bestScore is still low after all passes including the
+          // orientation check.  Re-renders at 2.5x, binarizes via Otsu threshold,
+          // and OCRs the B/W image.  Kept only if it scores higher than current best.
+          const BINARIZE_SCORE_THRESHOLD = 5;
+          if (bestScore < BINARIZE_SCORE_THRESHOLD) {
+            try {
+              if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
+              const pgB = await pdf.getPage(pgNum);
+              const vpB = pgB.getViewport({ scale: 2.5 });
+              const canvasB = document.createElement('canvas');
+              canvasB.width = vpB.width;
+              canvasB.height = vpB.height;
+              const ctxB = canvasB.getContext('2d');
+              await pgB.render({ canvasContext: ctxB, viewport: vpB }).promise;
+              const binCanvas = binarizeCanvas(canvasB);
+              const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
+              const binText = binResult.data.text;
+              const binScore = scorePage(binText);
+              allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-otsu', text: binText, score: binScore });
               passScoreLog.push({
                 page: pgNum,
-                pass: '2.5x-rot180',
-                score: rotScore.toFixed(1),
+                pass: '2.5x-otsu',
+                score: binScore.toFixed(1),
                 time: '—',
-                chars: rotText.length,
+                chars: binText.length,
               });
-              if (rotScore > bestScore || (rotScore === bestScore && rotText.length > bestText.length)) {
-                bestText = rotText;
-                bestScore = rotScore;
+              if (binScore > bestScore || (binScore === bestScore && binText.length > bestText.length)) {
+                bestText = binText;
+                bestScore = binScore;
               }
+              // F2: release binarize canvases and PDF page after OCR is done
+              canvasB.width = 0;
+              canvasB.height = 0;
+              binCanvas.width = 0;
+              binCanvas.height = 0;
+              if (pgB.cleanup) pgB.cleanup();
+            } catch (_binErr) {
+              /* binarize pass failed — continue with existing best */
             }
-          } catch (_orientErr) {
-            /* orientation probe failed — continue with existing best */
           }
+          // ── end triggered passes ───────────────────────────────────────────────
+          pageTexts[pgNum - 1] = bestText;
         }
-        // ── CHANGE 5: Otsu binarization triggered pass ────────────────────────
-        // Only fires when bestScore is still low after all passes including the
-        // orientation check.  Re-renders at 2.5x, binarizes via Otsu threshold,
-        // and OCRs the B/W image.  Kept only if it scores higher than current best.
-        const BINARIZE_SCORE_THRESHOLD = 5;
-        if (bestScore < BINARIZE_SCORE_THRESHOLD) {
+        // Save all pass texts for consensus re-extraction
+        window._pdfOcrPasses = allPassTexts;
+        // Save pass score log for debug output
+        window._pdfPassScores = passScoreLog;
+      } finally {
+        // F5: terminate worker even if an error was thrown mid-loop
+        if (worker) {
           try {
-            if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
-            const pgB = await pdf.getPage(pgNum);
-            const vpB = pgB.getViewport({ scale: 2.5 });
-            const canvasB = document.createElement('canvas');
-            canvasB.width = vpB.width;
-            canvasB.height = vpB.height;
-            const ctxB = canvasB.getContext('2d');
-            await pgB.render({ canvasContext: ctxB, viewport: vpB }).promise;
-            const binCanvas = binarizeCanvas(canvasB);
-            const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
-            const binText = binResult.data.text;
-            const binScore = scorePage(binText);
-            allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-otsu', text: binText, score: binScore });
-            passScoreLog.push({
-              page: pgNum,
-              pass: '2.5x-otsu',
-              score: binScore.toFixed(1),
-              time: '—',
-              chars: binText.length,
-            });
-            if (binScore > bestScore || (binScore === bestScore && binText.length > bestText.length)) {
-              bestText = binText;
-              bestScore = binScore;
-            }
-          } catch (_binErr) {
-            /* binarize pass failed — continue with existing best */
-          }
+            await worker.terminate();
+          } catch (_) {}
+          worker = null;
         }
-        // ── end triggered passes ───────────────────────────────────────────────
-        pageTexts[pgNum - 1] = bestText;
       }
-      await worker.terminate();
-      // Save all pass texts for consensus re-extraction
-      window._pdfOcrPasses = allPassTexts;
-      // Save pass score log for debug output
-      window._pdfPassScores = passScoreLog;
     }
 
     // Insert page markers so extractAll can track page ranges per bill
@@ -6797,6 +6848,14 @@ async function extractPDFText(ab, statusCb) {
     if (statusCb) statusCb('PDF read error: ' + e.message);
     console.error('PDF extract error:', e);
     return null;
+  } finally {
+    // F1: always destroy the PDF document to release PDF.js page bitmaps and font data
+    if (pdf && pdf.destroy) {
+      try {
+        await pdf.destroy();
+      } catch (_) {}
+    }
+    pdf = null;
   }
 }
 function showExtractionBadge(method, detail) {
@@ -7014,120 +7073,143 @@ async function processPDF(file) {
               retryWorker = null;
             }
             if (retryWorker) {
-              const pdf2 = await pdfjsLib.getDocument({
-                data: freshBytes(),
-                useWorkerFetch: false,
-                isEvalSupported: false,
-                useSystemFonts: true,
-              }).promise;
-              const maxPg = Math.min(pdf2.numPages, 200);
-              // Rebuild pageTexts from the fullText returned by extractPDFText
-              // so the retry loop can reuse non-retried pages without pulling
-              // from extractPDFText's local scope (which would throw
-              // "pageTexts is not defined"). fullText has %%PAGE_N%% markers;
-              // split on them to recover per-page text.
-              const pageTexts = new Array(maxPg).fill('');
-              const _pgRe = /%%PAGE_(\d+)%%\n([\s\S]*?)(?=%%PAGE_\d+%%|$)/g;
-              let _pgm;
-              while ((_pgm = _pgRe.exec(text)) !== null) {
-                const pgNum = parseInt(_pgm[1]);
-                if (pgNum >= 1 && pgNum <= maxPg) pageTexts[pgNum - 1] = _pgm[2];
-              }
-              // Only retry pages belonging to bills with missing critical fields
-              const retryPages = new Set();
-              for (const b of retryBills) {
-                if (countCriticalMissing(b, rule.name) > 0) {
-                  const ps = b._pageStart || 1;
-                  const pe = b._pageEnd || maxPg;
-                  for (let p = ps; p <= pe; p++) retryPages.add(p);
+              let pdf2 = null;
+              try {
+                pdf2 = await pdfjsLib.getDocument({
+                  data: freshBytes(),
+                  useWorkerFetch: false,
+                  isEvalSupported: false,
+                  useSystemFonts: true,
+                }).promise;
+                const maxPg = Math.min(pdf2.numPages, 200);
+                // Rebuild pageTexts from the fullText returned by extractPDFText
+                // so the retry loop can reuse non-retried pages without pulling
+                // from extractPDFText's local scope (which would throw
+                // "pageTexts is not defined"). fullText has %%PAGE_N%% markers;
+                // split on them to recover per-page text.
+                const pageTexts = new Array(maxPg).fill('');
+                const _pgRe = /%%PAGE_(\d+)%%\n([\s\S]*?)(?=%%PAGE_\d+%%|$)/g;
+                let _pgm;
+                while ((_pgm = _pgRe.exec(text)) !== null) {
+                  const pgNum = parseInt(_pgm[1]);
+                  if (pgNum >= 1 && pgNum <= maxPg) pageTexts[pgNum - 1] = _pgm[2];
                 }
-              }
-              for (const scale of RETRY_SCALES) {
-                if (bestMissing === 0) break;
-                statusMsg(
-                  'OCR retry at ' +
-                    scale +
-                    'x scale — ' +
-                    retryPages.size +
-                    ' page' +
-                    (retryPages.size !== 1 ? 's' : '') +
-                    ' (' +
-                    bestMissing +
-                    ' missing field' +
-                    (bestMissing > 1 ? 's' : '') +
-                    ')...',
-                );
-                const retryTexts = [];
-                for (let i = 1; i <= maxPg; i++) {
-                  if (!retryPages.has(i)) {
-                    // Reuse existing text for pages that don't need retry
-                    retryTexts.push(pageTexts[i - 1] || '');
-                    continue;
-                  }
-                  const pg = await pdf2.getPage(i);
-                  const vp = pg.getViewport({ scale });
-                  const canvas = document.createElement('canvas');
-                  canvas.width = vp.width;
-                  canvas.height = vp.height;
-                  const ctx = canvas.getContext('2d');
-                  await pg.render({ canvasContext: ctx, viewport: vp }).promise;
-                  try {
-                    const { result: retryResult } = await recognizeWithTimeout(retryWorker, canvas, {
-                      rotateAuto: true,
-                    });
-                    retryTexts.push(retryResult.data.text);
-                  } catch (e) {
-                    if (e._replacementWorker) retryWorker = e._replacementWorker;
-                    retryTexts.push('');
+                // Only retry pages belonging to bills with missing critical fields
+                const retryPages = new Set();
+                for (const b of retryBills) {
+                  if (countCriticalMissing(b, rule.name) > 0) {
+                    const ps = b._pageStart || 1;
+                    const pe = b._pageEnd || maxPg;
+                    for (let p = ps; p <= pe; p++) retryPages.add(p);
                   }
                 }
-                const retryFull = retryTexts.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
-                if (retryFull.trim().length > 100) {
-                  const retryRule = UTILITY_RULES.find((r) => r.detect(retryFull));
-                  if (retryRule) {
-                    const retryBills2 = retryRule.extractAll
-                      ? retryRule.extractAll(retryFull)
-                      : [retryRule.extract(retryFull)];
-                    const retryValid = retryBills2.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
-                    const retryCheck = retryValid.length ? retryValid : retryBills2;
-                    const retryMissing = Math.max(...retryCheck.map((b) => countCriticalMissing(b, retryRule.name)));
-                    if (retryMissing < bestMissing) {
-                      bestText = retryFull;
-                      bestMissing = retryMissing;
-                      bills = retryBills2;
-                      validBills = retryValid;
-                      window._pdfRawText = retryFull;
+                for (const scale of RETRY_SCALES) {
+                  if (bestMissing === 0) break;
+                  statusMsg(
+                    'OCR retry at ' +
+                      scale +
+                      'x scale — ' +
+                      retryPages.size +
+                      ' page' +
+                      (retryPages.size !== 1 ? 's' : '') +
+                      ' (' +
+                      bestMissing +
+                      ' missing field' +
+                      (bestMissing > 1 ? 's' : '') +
+                      ')...',
+                  );
+                  const retryTexts = [];
+                  for (let i = 1; i <= maxPg; i++) {
+                    if (!retryPages.has(i)) {
+                      // Reuse existing text for pages that don't need retry
+                      retryTexts.push(pageTexts[i - 1] || '');
+                      continue;
                     }
-                    // Also merge: fill in any null fields from retry into original
-                    if (retryCheck.length === retryBills.length) {
-                      for (let bi = 0; bi < retryBills.length; bi++) {
-                        const orig = retryBills[bi],
-                          retry = retryCheck[bi];
-                        if (!orig || !retry) continue;
-                        for (const [k, v] of Object.entries(retry)) {
-                          if (
-                            (orig[k] === null || orig[k] === undefined || orig[k] === '') &&
-                            v !== null &&
-                            v !== undefined &&
-                            v !== ''
-                          ) {
-                            orig[k] = v; // fill gap from retry
+                    const pg = await pdf2.getPage(i);
+                    const vp = pg.getViewport({ scale });
+                    let canvas = document.createElement('canvas');
+                    canvas.width = vp.width;
+                    canvas.height = vp.height;
+                    let ctx = canvas.getContext('2d');
+                    await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+                    try {
+                      const { result: retryResult } = await recognizeWithTimeout(retryWorker, canvas, {
+                        rotateAuto: true,
+                      });
+                      retryTexts.push(retryResult.data.text);
+                    } catch (e) {
+                      if (e._replacementWorker) retryWorker = e._replacementWorker;
+                      retryTexts.push('');
+                    }
+                    // F2: release canvas backing store and PDF page after each retry-path page
+                    canvas.width = 0;
+                    canvas.height = 0;
+                    canvas = null;
+                    ctx = null;
+                    if (pg.cleanup) pg.cleanup();
+                  }
+                  const retryFull = retryTexts.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
+                  if (retryFull.trim().length > 100) {
+                    const retryRule = UTILITY_RULES.find((r) => r.detect(retryFull));
+                    if (retryRule) {
+                      const retryBills2 = retryRule.extractAll
+                        ? retryRule.extractAll(retryFull)
+                        : [retryRule.extract(retryFull)];
+                      const retryValid = retryBills2.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
+                      const retryCheck = retryValid.length ? retryValid : retryBills2;
+                      const retryMissing = Math.max(...retryCheck.map((b) => countCriticalMissing(b, retryRule.name)));
+                      if (retryMissing < bestMissing) {
+                        bestText = retryFull;
+                        bestMissing = retryMissing;
+                        bills = retryBills2;
+                        validBills = retryValid;
+                        window._pdfRawText = retryFull;
+                      }
+                      // Also merge: fill in any null fields from retry into original
+                      if (retryCheck.length === retryBills.length) {
+                        for (let bi = 0; bi < retryBills.length; bi++) {
+                          const orig = retryBills[bi],
+                            retry = retryCheck[bi];
+                          if (!orig || !retry) continue;
+                          for (const [k, v] of Object.entries(retry)) {
+                            if (
+                              (orig[k] === null || orig[k] === undefined || orig[k] === '') &&
+                              v !== null &&
+                              v !== undefined &&
+                              v !== ''
+                            ) {
+                              orig[k] = v; // fill gap from retry
+                            }
                           }
                         }
+                        // Recount after merge
+                        const mergedMissing = Math.max(...retryBills.map((b) => countCriticalMissing(b, rule.name)));
+                        if (mergedMissing < bestMissing) {
+                          bestMissing = mergedMissing;
+                          bills = retryBills.slice();
+                          validBills = bills.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
+                        }
                       }
-                      // Recount after merge
-                      const mergedMissing = Math.max(...retryBills.map((b) => countCriticalMissing(b, rule.name)));
-                      if (mergedMissing < bestMissing) {
-                        bestMissing = mergedMissing;
-                        bills = retryBills.slice();
-                        validBills = bills.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
-                      }
+                      if (bestMissing === 0) break;
                     }
-                    if (bestMissing === 0) break;
                   }
                 }
+              } finally {
+                // F1b: destroy the second PDF doc so its bitmaps are freed
+                if (pdf2 && pdf2.destroy) {
+                  try {
+                    await pdf2.destroy();
+                  } catch (_) {}
+                }
+                pdf2 = null;
+                // F5b: terminate retryWorker even if an error was thrown mid-loop
+                if (retryWorker) {
+                  try {
+                    await retryWorker.terminate();
+                  } catch (_) {}
+                  retryWorker = null;
+                }
               }
-              await retryWorker.terminate();
             }
           }
 
@@ -7231,6 +7313,9 @@ async function processPDF(file) {
               }
             }
           }
+          // F3: pass texts only needed during consensus — free them now
+          window._pdfOcrPasses = null;
+          window._pdfPassScores = null;
 
           // Convert _pageIndex to _pageStart/_pageEnd for extractors that
           // set per-page indices instead of page ranges
