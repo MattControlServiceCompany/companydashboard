@@ -1858,7 +1858,7 @@ function rptPageFinancial(n, d) {
     '</td>' +
     '</tr>';
   const qtrTable =
-    '<table class="rpt-table" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<table class="rpt-table rpt-table-wrap" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<colgroup>' +
     '<col style="width:8%">' +
     '<col style="width:10%">' +
@@ -6046,7 +6046,6 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
   var regressionExplainer =
     '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:var(--rpt-page-text);margin-bottom:12px">' +
-    '<strong style="font-size:12px;color:var(--rpt-blue)">Regression Model Overview</strong><br>' +
     'Weather-normalized savings use an OLS regression model: <span style="font-family:var(--rpt-mono);background:var(--rpt-page-bg);border:1px solid var(--rpt-divider);padding:1px 4px;border-radius:2px">Usage = c0 — Days + —1 — HDD + —2 — CDD</span><br>' +
     'Where β0 = base load per day, β1 = heating coefficient, β2 = cooling coefficient. ' +
     'The model is fit to baseline period data and applied to current weather to predict what consumption <em>would have been</em> without efficiency improvements. ' +
@@ -11250,7 +11249,7 @@ function rptPageASHRAE36Executive(n, d) {
   // Chunks d.buildings at BLDGS_PER_PAGE buildings per page.
   // callout boxes (topGap, dcv) only on first page.
   // Continuation pages get a minimal header + remaining rows + footnote.
-  var BLDGS_PER_PAGE_FIRST = 20;
+  var BLDGS_PER_PAGE_FIRST = 15;
   var BLDGS_PER_PAGE_CONT = 20;
 
   var p = d.portfolio;

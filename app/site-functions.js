@@ -1191,6 +1191,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.512',
+    date: '2026-06-11',
+    title: 'Report layout fixes: duplicate heading, clipped column header, and first-page overflow',
+    items: [
+      { type: 'fix', text: 'Appendix B no longer shows a duplicate heading at the top of the section.' },
+      {
+        type: 'fix',
+        text: 'The Financial Summary "Savings" column header no longer gets clipped — text now wraps correctly.',
+      },
+      {
+        type: 'fix',
+        text: 'Executive Summary first page now fits more comfortably — reduced rows per page prevents the table from overflowing or being cut off.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.511',
     date: '2026-06-11',
     title: 'Equipment Matrix point-mapping Phase 1: category fix + expanded patterns + false-positive guards',
