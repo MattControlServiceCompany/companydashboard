@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.515',
+    date: '2026-06-11',
+    title: 'Equipment Matrix: mapping fixes and new sensor columns',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix no longer false-matches Heat Source Supply and Low Outdoor Airflow points — those readings now appear only in the correct columns.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix gains six new columns: Outside Air CFM, Return Air CFM, Coil Leaving Air Temp, Valve Signal (Heating and Cooling), Building Static Pressure, Heat Source Supply, and Cool Source Supply — giving a more complete picture of each unit\'s airflow and hydronic status.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.514',
     date: '2026-06-11',
     title: 'Report: Building Baseline Data table on its own page',

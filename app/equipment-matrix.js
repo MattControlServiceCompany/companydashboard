@@ -451,6 +451,20 @@ var EM_POINT_MAP = [
     types: ['AI'],
     cats: ['ahu'],
   },
+  // Building Static Pressure — space/building differential pressure vs outdoors (DOAS, large AHUs)
+  {
+    col: 'buildingStaticPressure',
+    label: 'Building Static Pressure',
+    patterns: [
+      /building\s+static\s+pressure/i,
+      /building\s+(?:static\s+)?dp\b/i,
+      /bldg\s+static/i,
+      /doas\s+building\s+static/i,
+    ],
+    negativePatterns: [/\b(alarm|setpoint|set\s?point|control\s+selection|smoothed)\b/i],
+    types: ['AI', 'BAI', 'BAV', 'ANI'],
+    cats: ['ahu', 'doas', 'other'],
+  },
   {
     col: 'oaDamperPosition',
     label: 'OA Damper Position',
@@ -464,7 +478,7 @@ var EM_POINT_MAP = [
   {
     col: 'coolingValve',
     label: 'Cooling Valve Position',
-    patterns: [/cooling valve/i, /chw valve/i, /clg valve/i],
+    patterns: [/cooling valve/i, /chw valve/i, /clg valve/i, /chilled\s+water\s+valve/i],
     // Phase 2A: guard against "Cooling Valve Capacity GPM" (sizing config), "Cooling Valve Low Limit"
     // (valve minimum position config), "Cooling Valve Cutoff Temp" (freeze protection limit).
     negativePatterns: [/\b(limit|capacity|cutoff|gpm|alarm|fault|maximum|minimum)\b/i],
@@ -478,7 +492,7 @@ var EM_POINT_MAP = [
     // not to the AHU heating-coil valve. Shadow was preventing zone reheat valve from auto-assigning.
     // M1A: added /preheat\s+valve/i — preheat coil valve belongs with AHU heating valves (taxonomy
     // confirms), blocked from reheatValveLive by M1A preheat negative added there.
-    patterns: [/heating valve/i, /hw valve/i, /htg valve/i, /preheat\s+valve/i],
+    patterns: [/heating valve/i, /hw valve/i, /htg valve/i, /preheat\s+valve/i, /hot\s+water\s+valve/i],
     // Phase 2A: guard against "Heating Valve Capacity GPM", "Heating Valve Low Limit",
     // "Heating Valve Cutoff", "Heating Valve Maximum/Minimum".
     // M1A: added PID/float-subobject/enable/adjust exclusions.
@@ -497,9 +511,22 @@ var EM_POINT_MAP = [
     // "Outside Airflow" route here instead of falling through to discFlowLive.
     // These must be positioned BEFORE discFlowLive in the array (oaFlowLive is currently before
     // discFlowLive at lines ~429 vs ~489) — confirmed safe.
-    patterns: [/oa airflow/i, /outdoor air flow/i, /oa cfm/i, /outdoor\s+airflow/i, /outside\s+airflow/i],
-    types: ['AI'],
-    cats: ['ahu'],
+    // M5: added /outside\s+air\s+cfm\b/i, /outside\s+air\s+total\s+cfm\b/i,
+    // /economizer\s+outside\s+air\s+cfm/i for additional OA CFM name variants.
+    // negativePatterns blocks "Low Outdoor Airflow" alarm and "(Calculated)" derived values.
+    patterns: [
+      /oa airflow/i,
+      /outdoor air flow/i,
+      /oa cfm/i,
+      /outdoor\s+airflow/i,
+      /outside\s+airflow/i,
+      /outside\s+air\s+cfm\b/i,
+      /outside\s+air\s+total\s+cfm\b/i,
+      /economizer\s+outside\s+air\s+cfm/i,
+    ],
+    negativePatterns: [/\b(low|high|alarm|normal|fault|status|reset|minimum|maximum)\b/i, /\bcalculated\b/i],
+    types: ['AI', 'BAI', 'BAV'],
+    cats: ['ahu', 'doas'],
   },
   {
     col: 'zoneAirTemp',
@@ -898,10 +925,28 @@ var EM_POINT_MAP = [
   {
     col: 'airSourceSupplyTemp',
     label: 'Air Source Supply Temp',
-    patterns: [/air source supply temp/i, /primary air.*supply temp/i, /air source duct/i, /heat source supply/i],
-    negativePatterns: [/setpoint|set\s?point|request|min|max/i],
+    patterns: [/air source supply\b/i, /primary air.*supply temp/i, /air source duct/i],
+    negativePatterns: [/setpoint|set\s?point|request|min|max/i, /\b(heat|cool|hot|chilled|static)\b/i],
     types: ['AI'],
     cats: ['zone', 'vav', 'fpb', 'ahu', 'ddvav'],
+  },
+  // Heat Source Supply Temp — hot-water / hydronic primary supply temperature at VVT/VAV terminal
+  {
+    col: 'heatSourceSupplyTemp',
+    label: 'Heat Source Supply Temp',
+    patterns: [/heat source supply\b/i],
+    negativePatterns: [/setpoint|set\s?point|request|static|alarm|mode|status/i],
+    types: ['AI', 'ANI'],
+    cats: ['vav', 'fpb', 'ddvav', 'ahu'],
+  },
+  // Cool Source Supply Temp — chilled-water primary supply temperature at VVT/VAV terminal
+  {
+    col: 'coolSourceSupplyTemp',
+    label: 'Cool Source Supply Temp',
+    patterns: [/cool source supply\b/i],
+    negativePatterns: [/setpoint|set\s?point|request|static|alarm|mode|status/i],
+    types: ['AI', 'ANI'],
+    cats: ['vav', 'fpb', 'ddvav', 'ahu'],
   },
   // Effective cooling setpoint (post-adjustment value, computed by BAS)
   {
@@ -1079,7 +1124,12 @@ var EM_POINT_MAP = [
   {
     col: 'coolingCoilLeavingTemp',
     label: 'Cooling Coil Leaving Temp',
-    patterns: [/cooling\s+coil\s+leaving\s+air/i, /clg\s+coil\s+lvg/i, /cooling\s+coil\s+leaving\s+temp/i],
+    patterns: [
+      /cooling\s+coil\s+leaving\s+air/i,
+      /clg\s+coil\s+lvg/i,
+      /cooling\s+coil\s+leaving\s+temp/i,
+      /chilled\s+water\s+coil\s+leaving/i,
+    ],
     negativePatterns: [/alarm|limit|setpoint|set\s?point|fault/i],
     types: ['AI'],
     cats: ['ahu'],
@@ -1090,7 +1140,12 @@ var EM_POINT_MAP = [
   {
     col: 'heatingCoilLeavingTemp',
     label: 'Heating Coil Leaving Temp',
-    patterns: [/heating\s+coil\s+leaving\s+air/i, /htg\s+coil\s+lvg/i, /heating\s+coil\s+leaving\s+temp/i],
+    patterns: [
+      /heating\s+coil\s+leaving\s+air/i,
+      /htg\s+coil\s+lvg/i,
+      /heating\s+coil\s+leaving\s+temp/i,
+      /hot\s+water\s+coil\s+leaving/i,
+    ],
     negativePatterns: [/alarm|limit|setpoint|set\s?point|fault/i],
     types: ['AI'],
     cats: ['ahu'],
@@ -1204,6 +1259,16 @@ var EM_POINT_MAP = [
     cats: ['ahu'],
   },
 
+  // Return Air CFM — total return air volume (duct measurement, not fan speed-derived)
+  {
+    col: 'returnAirCFM',
+    label: 'Return Air CFM',
+    patterns: [/return\s+air\s+(?:total\s+)?cfm/i],
+    negativePatterns: [/set\s?point|alarm|\(calculated\)/i],
+    types: ['AI', 'BAI', 'BAV'],
+    cats: ['ahu'],
+  },
+
   // F6: Return Fan CFM
   // Taxonomy: "Return Fan CFM".
   {
@@ -1220,8 +1285,8 @@ var EM_POINT_MAP = [
   {
     col: 'supplyFanCFM',
     label: 'Supply Fan CFM',
-    patterns: [/supply\s+fan\s+(?:total\s+)?cfm/i],
-    negativePatterns: [/set\s?point/i],
+    patterns: [/supply\s+fan\s+(?:total\s+)?cfm/i, /supply\s+fan\s+\d+\s+cfm/i],
+    negativePatterns: [/set\s?point/i, /\(calculated\)/i, /\(vav\s+total\)/i],
     types: ['AI', 'AV'],
     cats: ['ahu'],
   },
