@@ -6868,22 +6868,96 @@ async function exportReportToPDF() {
     const contentW = pageW - margin.left - margin.right;
     const contentH = pageH - margin.top - margin.bottom;
 
+    // Track whether we have consumed the first blank PDF page jsPDF creates on init.
+    // We must NOT call doc.addPage() before the very first image strip.
+    let firstPdfPageUsed = false;
+
     for (let i = 0; i < pages.length; i++) {
-      if (i > 0) doc.addPage();
+      // Update progress toast for each report page (non-blocking — auto-dismisses)
+      showToast('Exporting PDF — page ' + (i + 1) + ' of ' + pages.length + '…');
 
       try {
-        const canvas = await html2canvas(pages[i], {
-          scale: 2,
+        const el = pages[i];
+        const elHeight = el.scrollHeight; // full rendered height, may be >> 1056 px
+
+        // ── ADAPTIVE SCALE (memory guard) ─────────────────────────────────────
+        // Target: keep total raw pixels (width × height × scale²) ≤ ~50 M px.
+        // At scale 2: 816 × h × 4 ≤ 50 000 000  →  h ≤ ~15 300 px.
+        // Threshold 10 000 px (conservative) keeps a 10 K-px page at ~32 M px.
+        // For very tall pages (e.g. Courthouse 29 K px) scale 1 yields ~24 M px.
+        const scale = elHeight > 10000 ? 1 : 2;
+
+        // ── CAPTURE FULL HEIGHT ────────────────────────────────────────────────
+        let canvas = await html2canvas(el, {
+          scale: scale,
           useCORS: true,
           backgroundColor: '#ffffff',
           logging: false,
           width: 816,
-          height: 1056,
+          height: elHeight, // capture entire element, not just 1056 px
+          windowHeight: elHeight, // prevent html2canvas capping at viewport height
         });
-        const imgData = canvas.toDataURL('image/jpeg', 0.92);
-        doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, contentH);
+
+        // ── SLICE TALL CANVAS INTO PDF PAGES ──────────────────────────────────
+        // Each PDF page holds 1056 CSS-px of content (letter page minus margins).
+        // In canvas pixels that is 1056 * scale.
+        const cssPageH = 1056; // CSS px per PDF page (matches letter paper at 96 dpi)
+        const stripH = cssPageH * scale; // canvas pixels per strip
+        const numStrips = Math.ceil(canvas.height / stripH);
+
+        for (let s = 0; s < numStrips; s++) {
+          // Add a PDF page before every strip except the very first one overall.
+          if (firstPdfPageUsed) {
+            doc.addPage();
+          } else {
+            firstPdfPageUsed = true;
+          }
+
+          // Height of this strip in canvas pixels (last strip may be shorter).
+          const thisStripH = Math.min(stripH, canvas.height - s * stripH);
+
+          // Draw just this vertical strip onto a temporary canvas.
+          const tmp = document.createElement('canvas');
+          tmp.width = canvas.width;
+          tmp.height = thisStripH;
+          const ctx = tmp.getContext('2d');
+          ctx.drawImage(
+            canvas,
+            0,
+            s * stripH, // source x, y
+            canvas.width,
+            thisStripH, // source w, h
+            0,
+            0, // dest x, y
+            canvas.width,
+            thisStripH, // dest w, h
+          );
+
+          const imgData = tmp.toDataURL('image/jpeg', 0.92);
+
+          // Scale the strip to fill the PDF content area proportionally.
+          // Full strips fill the whole contentH; a short last strip is scaled down.
+          const stripFraction = thisStripH / stripH;
+          const imgH = contentH * stripFraction;
+
+          doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, imgH);
+
+          // ── MEMORY CLEANUP (critical on tall pages — prevents browser freeze) ──
+          tmp.width = 0;
+          tmp.height = 0;
+        }
+
+        // Release source canvas after all strips are done.
+        canvas.width = 0;
+        canvas.height = 0;
+        canvas = null;
       } catch (e) {
         console.error('Failed to render page ' + (i + 1), e);
+        if (!firstPdfPageUsed) {
+          firstPdfPageUsed = true;
+        } else {
+          doc.addPage();
+        }
         doc.setFontSize(12);
         doc.text('Page ' + (i + 1) + ' failed to render', margin.left, margin.top + 20);
       }

@@ -1191,6 +1191,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.498',
+    date: '2026-06-10',
+    title: 'PDF export: full multi-page reports now captured completely',
+    items: [
+      { type: 'fix', text: 'Report PDFs no longer clip content past the first page. All 4 report types (Quarterly, Annual, ASHRAE Audit, Proposal) now capture the full page height, slice it into correct PDF pages, and show per-page progress while exporting. Very tall pages use a lower capture scale to avoid browser memory limits.' }
+    ]
+  },
+  {
     v: 'v2026.06.10.497',
     date: '2026-06-10',
     title: 'Report tables: headers and cells now wrap instead of clipping',
