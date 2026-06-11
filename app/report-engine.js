@@ -4820,13 +4820,23 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="flex:1;min-width:0">' +
     rightHTML +
     '</div>' +
-    '</div>' +
-    blDataTable;
+    '</div>';
 
   var result = rptPage(n, (b.name || 'Building') + ' — Building Summary', bodyHTML, {
     data: d,
     label: 'Page ' + n + ' — ' + (b.name || 'Building'),
   });
+
+  // If there is baseline data, render it on its own separate page to prevent
+  // overflow clipping in the html2canvas PDF export (bug 9ff83f06).
+  if (blDataTable) {
+    var blPageNum = n + 1;
+    var blPageResult = rptPage(blPageNum, (b.name || 'Building') + ' — Baseline Data', blDataTable, {
+      data: d,
+      label: 'Page ' + blPageNum + ' — ' + (b.name || 'Building') + ' Baseline Data',
+    });
+    return { html: result + blPageResult, summaryPageCount: 2, meterPerfHTML: meterPerfHTML || '' };
+  }
 
   return { html: result, summaryPageCount: 1, meterPerfHTML: meterPerfHTML || '' };
 }

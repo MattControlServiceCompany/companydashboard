@@ -1191,12 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.514',
+    date: '2026-06-11',
+    title: 'Report: Building Baseline Data table on its own page',
+    items: [
+      {
+        type: 'fix',
+        text: 'Building Baseline Data table now prints on its own page so it is no longer clipped by the page footer.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.513',
     date: '2026-06-11',
     title: 'Equipment Matrix: Setpoint Adjust columns repositioned',
     items: [
-      { type: 'change', text: 'Equipment Matrix now shows the Cooling Setpoint Adjust column immediately right of Cooling Setpoint, and Heating Setpoint Adjust immediately right of Heating Setpoint — making it easier to compare setpoints and their adjustments side by side.' }
-    ]
+      {
+        type: 'change',
+        text: 'Equipment Matrix now shows the Cooling Setpoint Adjust column immediately right of Cooling Setpoint, and Heating Setpoint Adjust immediately right of Heating Setpoint — making it easier to compare setpoints and their adjustments side by side.',
+      },
+    ],
   },
   {
     v: 'v2026.06.11.512',
