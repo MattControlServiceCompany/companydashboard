@@ -1048,15 +1048,17 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // that should be consistent across bills from the same account, find the
     // most common value and correct outliers. Groups bills by normalized
     // ServiceAddress to handle multi-building PDFs.
+    //
+    // FIX(2026-06-11): AccountNumber is intentionally EXCLUDED from consensus.
+    // In multi-account PDFs (e.g. City of Baldwin City), each page is a distinct
+    // building with its own account number.  Pages with garbled OCR account numbers
+    // all cluster into the same "unknown" address group and the consensus logic was
+    // overwriting their individual account numbers with the most-common one
+    // (407070400), merging ~16 different buildings under one identity.
+    // Account numbers must never be borrowed from other pages — use the page's own
+    // value (P1-P5) or fall back to ServiceAddress as the identity key.
     if (bills.length > 1) {
-      const _CONSENSUS_FIELDS = [
-        'AccountNumber',
-        'MeterNumber',
-        'ServiceAddress',
-        'CustomerName',
-        'UtilityCompany',
-        'RateSchedule',
-      ];
+      const _CONSENSUS_FIELDS = ['MeterNumber', 'ServiceAddress', 'CustomerName', 'UtilityCompany', 'RateSchedule'];
       const _addrNorm = (s) => {
         let n = (s || 'unknown')
           .toLowerCase()

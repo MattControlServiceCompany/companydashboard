@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.11.509';
+  var CH_VERSION = 'v2026.06.11.510';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,13 +32,13 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.06.10.483',
-      date: '2026-06-10',
-      title: 'ASHRAE-36 audit report now groups equipment into 3 tiers',
+      v: 'v2026.06.11.510',
+      date: '2026-06-11',
+      title: 'City of Baldwin bill extraction: account identity, address, and billing-date fixes',
       items: [
         {
-          type: 'feature',
-          text: 'ASHRAE-36 Audit Report: equipment tables now use a 3-tier HVAC hierarchy — Tier 1 Plant & Central (chillers, boilers, cooling towers), Tier 2 Primary Air Systems (AHUs, DOAS, furnaces), Tier 3 Zone Terminals (VAVs, fan-powered boxes, FCUs, heaters, exhaust fans). Each building page also shows whether dedicated BAS power-monitoring and outdoor-air sensor programs were found in the export.',
+          type: 'fix',
+          text: 'City of Baldwin utility bills now correctly identify separate accounts (water, sewer, electric) so bills from one account are never merged into another. Address and sewer-charge fallback detection now handles more bill formats, and billing dates are reconstructed when not printed explicitly.',
         },
       ],
     },

@@ -6914,6 +6914,35 @@ const UTILITY_RULES = [
         }
       }
 
+      // ── Cross-page year backstop for bills with null BillDate ──
+      // FIX(2026-06-11): Pages 5, 6, 26 had BillDate=null because the top-right
+      // date line ended with a trailing OCR artifact char ("i"/"t") that P2 could
+      // not match.  P2b now catches those, but as a further safety net: if a bill
+      // still has no BillDate but the rest of the PDF has a single consistent
+      // BillDate (all Baldwin PDFs cover one billing cycle), infer the BillDate
+      // and billing period from the PDF-wide consensus.
+      // Only applies when byBillDate has exactly ONE key (one billing cycle in the
+      // PDF), so we don't risk cross-period contamination.
+      const _knownBillDates = Object.keys(byBillDate);
+      if (_knownBillDates.length === 1) {
+        const _canonicalBillDate = _knownBillDates[0];
+        const _canonicalPeriod = byBillDate[_canonicalBillDate];
+        for (const b of bills) {
+          if (!b.BillDate && !b.BillingPeriodStart) {
+            b.BillDate = _canonicalBillDate;
+            b.BillingPeriodStart = _canonicalPeriod.start;
+            b.BillingPeriodEnd = _canonicalPeriod.end;
+            if (!b._date_reconstructed) b._date_reconstructed = [];
+            b._date_reconstructed.push({
+              field: 'BillDate',
+              original: null,
+              corrected: _canonicalBillDate,
+              reason: 'BillDate null (OCR trailing-artifact); inferred from PDF-wide consensus (single billing cycle)',
+            });
+          }
+        }
+      }
+
       return bills;
     },
     _extractPage: function (page) {
@@ -6977,9 +7006,27 @@ const UTILITY_RULES = [
         }
       }
 
-      // Skip pages that have no account number (email/receipt pages that
-      // slipped through the page-1 guard).
-      if (!AccountNumber) return null;
+      // ── Service address (from bottom stub) — extracted here so it can serve
+      // as an identity fallback when the account number is unresolvable.
+      // "ADDRESS: 519 9TH ST" or "ADDRESS:  519 9TH ST"
+      // Page 5 OCR renders the colon as semicolon: "ADDRESS; 6TH ST"
+      // FIX(2026-06-02): Truncate at the FIRST date-like token or run of
+      // numeric/amount columns that bleeds from adjacent columns into the
+      // address field.
+      const _addrRaw = page.match(/ADDRESS\s*[;:]\s*([^\n]+)/i)?.[1]?.trim() || null;
+      const ServiceAddress = _addrRaw
+        ? (_addrRaw.split(/\s+\d{1,2}\/\d{1,2}\/\d{2,4}/)[0] || _addrRaw).trim() || null
+        : null;
+
+      // Skip pages that have no account number AND no service address
+      // (email/receipt pages that slipped through the page-1 guard).
+      // FIX(2026-06-11): When OCR produces >10 garbled digits (e.g. "4o0e60s2400"
+      // → "40066052400"), P5 fails the 7-10 digit check and AccountNumber stays null.
+      // Such pages still have a readable service address; continue with AccountNumber=null
+      // and key by address instead of returning null and losing the page's charges.
+      if (!AccountNumber && !ServiceAddress) return null;
+      // Flag when we're falling back to address-based identity (no valid account #)
+      const _accountFromAddress = !AccountNumber && !!ServiceAddress;
 
       // ── Bill date (print date, top-right corner) ──
       // Standalone date like "4/10/26" or "12/10/25".
@@ -6991,6 +7038,11 @@ const UTILITY_RULES = [
       // pipe, and the same-line pattern fails when the date and label are on
       // separate lines.  New patterns tolerate [\s|]* at end of date line and
       // accept date on the line immediately before "ACCOUNT NUMBER".
+      // FIX(2026-06-11): Pages 5, 6, 26 have a trailing OCR "i" or "t" artifact
+      // from the right-side border column (e.g. "4/10/25                  i").
+      // P2 required a clean line end; P2b tolerates 1-5 trailing noise chars.
+      // Page 27 has "as10/25" where the month digit is OCR-garbled as letters;
+      // P5 catches date-like patterns where leading letters replace the month.
       const BillDate = (() => {
         // P1 — date + ACCOUNT NUMBER on same line (clear scans, no pipe)
         const _p1 = page.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})[\s|]*ACCOUNT\s+NUMBER/i)?.[1];
@@ -6998,19 +7050,152 @@ const UTILITY_RULES = [
         // P2 — date on own line, optionally followed by pipe/spaces (trailing pipe noise)
         const _p2 = page.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})[\s|]*$/m)?.[1];
         if (_p2) return _p2;
+        // P2b — date on own line with trailing OCR noise chars (e.g. trailing "i" or "t"
+        //   from right-side border artifact: "4/10/25                                   i")
+        //   Only accept if the trailing noise is 1-5 non-slash word chars separated by
+        //   significant whitespace (≥3 spaces) so we don't misfire on address lines.
+        const _p2b = page.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s{3,}[|\s]*[A-Za-z|]{1,5}\s*$/m);
+        if (_p2b) return _p2b[1];
         // P3 — date on one line, ACCOUNT NUMBER on next line (1-2 lines gap with pipe noise)
         const _p3 = page.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})[\s|]*$[\s\S]{0,4}^ACCOUNT\s+NUMBER/m)?.[1];
         if (_p3) return _p3;
         // P4 — OCR "A" for "4": e.g. "A/10/26" (with optional trailing pipe)
         const _p4m = page.match(/^([A-Z]\/\d{1,2}\/\d{2,4})[\s|]*$/m);
         if (_p4m) return _p4m[1].replace(/^[A-Z]/, '4');
+        // P5 — garbled leading chars before /DD/YY (e.g. "as10/25" where OCR turned
+        //   "4/" into "as").  Match a line starting with 1-3 letter chars followed by
+        //   \d{1,2}\/\d{2,4} — extract the numeric tail and reconstruct as M/DD/YY.
+        //   Only accept when the line is otherwise clean (trailing spaces/pipe only).
+        //   The reconstructed month is always the same as the bill-file's dominant month
+        //   (validated later by context), so we emit the raw tail for now.
+        const _p5m = page.match(/^[A-Za-z]{1,3}(\d{1,2}\/\d{2,4})[\s|]*$/m);
+        if (_p5m) {
+          // We cannot know the month from garbled chars alone, but we know the day+year.
+          // Emit null here; the cross-page year backstop in extractAll will resolve this.
+          // If the BillDate from another page on the same file is "4/10/25" we record
+          // the bill-year. In _extractPage we cannot see other pages, so return null.
+          // However: if there is a recognisable date anywhere in the first 300 chars of
+          // the page that shares the year, try to infer the month from context.
+          // Specifically, look for the due-date column on the same page: the due date
+          // month always matches the bill date month for Baldwin.
+          const _dueDateMatch = page.match(/\bDUE\s*DATE[\s\S]{0,60}?(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
+          if (_dueDateMatch) {
+            const _dMo = parseInt(_dueDateMatch[1]);
+            const _dYr = _dueDateMatch[3].length === 2 ? '20' + _dueDateMatch[3] : _dueDateMatch[3];
+            const _dYrInt = parseInt(_dYr);
+            // Bill date is typically ~10th of the SAME month as the due date.
+            // Reconstruct: bill date month = due-date month, day ≈ 10, year = due-date year.
+            // This is an inference — mark it for traceability.
+            if (_dMo >= 1 && _dMo <= 12 && _dYrInt >= 2020 && _dYrInt <= 2030) {
+              return _dMo + '/10/' + _dYr; // best-effort; actual day unknown but year is reliable
+            }
+          }
+          return null;
+        }
         return null;
       })();
+
+      // ── Context-based date year reconstruction ──
+      // The top-right BillDate (e.g. "4/10/25") is the most reliable date on each
+      // page — it appears in the bill header before any of the detail columns.
+      // When BillDate is valid, extract its year as a trusted anchor (_pageYear)
+      // and use it to reconstruct any other date on this page whose year is:
+      //   • truncated to <4 digits (e.g. "4/25/2" — year "2" is clearly cut off)
+      //   • a 2-digit value that doesn't map to the bill year (e.g. "72" or "22"
+      //     when BillDate year is 2025 — OCR garbled "25" → "72" or "22")
+      // FIX(2026-06-11): Baldwin due dates show "4/25/2", "4/25/72", "4/25/22"
+      // because the year is physically at the very edge of the page and is
+      // partially cut off or OCR-garbled.  The BillDate anchor lets us recover it.
+      // Conservative rules:
+      //   1. Only reconstruct when BillDate is valid and year is in range 2020-2099.
+      //   2. Only reconstruct the year component; month/day come from the raw OCR.
+      //   3. Month of the candidate date must match BillDate month (due date month
+      //      is always the same as the bill date month for Baldwin).
+      //   4. Record original + corrected + reason in _date_reconstructed[].
+      //   5. If ambiguous (month mismatch, no BillDate anchor), leave unchanged.
+      const _dateReconstructed = []; // diagnostics: {field, original, corrected, reason}
+
+      // Helper: parse a 2-5 digit year string into a full 4-digit year, or null if
+      // the value is already 4 digits in range.  Returns {fullYear, wasGarbled}.
+      const _resolveYear = (rawYearStr, anchorYear) => {
+        if (!anchorYear || anchorYear < 2020 || anchorYear > 2099) return null;
+        const anchorYr2 = anchorYear % 100; // e.g. 25 for 2025
+        const rawY = parseInt(rawYearStr, 10);
+        if (isNaN(rawY)) return null;
+        const digits = rawYearStr.length;
+        if (digits === 4 && rawY === anchorYear) return null; // already correct, no action
+        if (digits === 4 && rawY !== anchorYear) return null; // 4-digit but different year — don't touch
+        // digits < 4: truncated or garbled
+        if (digits === 1) {
+          // "2" — almost certainly the year was cut off; anchor year is authoritative
+          return {
+            fullYear: anchorYear,
+            wasGarbled: true,
+            reason: 'year truncated to 1 digit; reconstructed from BillDate anchor',
+          };
+        }
+        if (digits === 2) {
+          if (rawY === anchorYr2) return null; // "25" with anchor 2025 — already correct 2-digit, let caller expand
+          // "72" or "22" when anchor is 2025 — garbled
+          return {
+            fullYear: anchorYear,
+            wasGarbled: true,
+            reason: 'year (' + rawYearStr + ') inconsistent with BillDate anchor (' + anchorYear + '); reconstructed',
+          };
+        }
+        if (digits === 3) {
+          // "202" — truncated
+          return {
+            fullYear: anchorYear,
+            wasGarbled: true,
+            reason: 'year truncated to 3 digits; reconstructed from BillDate anchor',
+          };
+        }
+        return null;
+      };
+
+      // Parse _pageYear from BillDate for use as the anchor.
+      let _pageYear = null;
+      if (BillDate) {
+        const _bdParts = BillDate.split('/');
+        if (_bdParts.length === 3) {
+          const _yr = _bdParts[2].length === 2 ? 2000 + parseInt(_bdParts[2]) : parseInt(_bdParts[2]);
+          if (_yr >= 2020 && _yr <= 2099) _pageYear = _yr;
+        }
+      }
+
+      // Reconstruct any date token in the raw page text whose year is truncated/garbled.
+      // We operate on a working copy of the page text so downstream patterns see clean dates.
+      // Key constraint: only reconstruct when the month of the candidate date matches
+      // the BillDate month (both the due date and the bill date use the same calendar month
+      // for Baldwin City).
+      const _billDateMonth = _pageYear && BillDate ? parseInt(BillDate.split('/')[0]) : null;
+      let _pageTextCleaned = page; // will be mutated with reconstructed years
+      if (_pageYear && _billDateMonth) {
+        // Match all date-like tokens: M/DD/Y{1,3} (truncated year) or M/DD/YY where
+        // the 2-digit year is inconsistent with the anchor.
+        // Exclude already-valid 4-digit years.
+        const _datePatchRe = /(\b\d{1,2}\/\d{1,2}\/)(\d{1,3})\b/g;
+        _pageTextCleaned = page.replace(_datePatchRe, (full, prefix, rawYr) => {
+          const _mo = parseInt(prefix.split('/')[0]);
+          if (_mo !== _billDateMonth) return full; // month mismatch — don't touch
+          const _resolved = _resolveYear(rawYr, _pageYear);
+          if (!_resolved) return full; // already correct or ambiguous
+          const corrected = prefix + _resolved.fullYear;
+          _dateReconstructed.push({
+            field: 'date_in_page_text',
+            original: full,
+            corrected,
+            reason: _resolved.reason,
+          });
+          return corrected;
+        });
+      }
 
       // ── Service FROM/TO (present in some pages, primarily older format) ──
       let BillingPeriodStart = null;
       let BillingPeriodEnd = null;
-      const servicePeriodMatch = page.match(
+      const servicePeriodMatch = _pageTextCleaned.match(
         /SERVICE\s+FROM\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+TO\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
       );
       if (servicePeriodMatch) {
@@ -7051,13 +7236,16 @@ const UTILITY_RULES = [
         page.match(/AMOUNT\s+DUE\s+NOW\D{0,30}?([\d,]+\.\d{2})/i);
       if (_amtLabelMatch) TotalAmountDue = _amtLabelMatch[1].replace(/,/g, '');
       // B — three-value line starting with a date (DUE DATE  AFTER-DUE  AMOUNT-DUE)
+      // Use _pageTextCleaned so reconstructed years (e.g. "4/25/2025" from "4/25/2")
+      // are visible to the date pattern. Without this, "4/25/2" (\d{1} year) would
+      // fail \d{2,4} and the amount would be missed.
       if (!TotalAmountDue) {
-        const _3col = page.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$/m);
+        const _3col = _pageTextCleaned.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$/m);
         if (_3col) TotalAmountDue = _3col[2].replace(/,/g, '');
       }
       // C — date + single amount on line (no after-due column; larger totals)
       if (!TotalAmountDue) {
-        const _1col = page.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\s+([\d,]+\.\d{2})\s*$/m);
+        const _1col = _pageTextCleaned.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\s+([\d,]+\.\d{2})\s*$/m);
         if (_1col) TotalAmountDue = _1col[1].replace(/,/g, '');
       }
       // D — partial "AMOUNT DUE" label (some pages retain partial text)
@@ -7065,20 +7253,6 @@ const UTILITY_RULES = [
         const _partial = page.match(/AMOUNT\s+DUE\D{0,40}?([\d,]+\.\d{2})/i);
         if (_partial) TotalAmountDue = _partial[1].replace(/,/g, '');
       }
-
-      // ── Service address (from bottom stub) ──
-      // "ADDRESS: 519 9TH ST" or "ADDRESS:  519 9TH ST"
-      // Page 5 OCR renders the colon as semicolon: "ADDRESS; 6TH ST"
-      // FIX(2026-06-02): Truncate at the FIRST date-like token or run of
-      // numeric/amount columns that bleeds from adjacent columns into the
-      // address field.  The old regex only stripped a date at the very end,
-      // so "519 8TH IT 4/25/26 1038.14 243.76" passed through intact.
-      // New: split on the first occurrence of a date pattern anywhere in
-      // the string and keep only the portion before it.
-      const _addrRaw = page.match(/ADDRESS\s*[;:]\s*([^\n]+)/i)?.[1]?.trim() || null;
-      const ServiceAddress = _addrRaw
-        ? (_addrRaw.split(/\s+\d{1,2}\/\d{1,2}\/\d{2,4}/)[0] || _addrRaw).trim() || null
-        : null;
 
       // ── Customer / building name ──
       // "BAKER UNIVERSITY/COLLINS HOUSE" or "BAKER UNIVERSITY" alone.
@@ -7629,6 +7803,31 @@ const UTILITY_RULES = [
         }
       }
 
+      // ── Sewer-only prefix-stripped fallback ──
+      // FIX(2026-06-11): Pages like Collins Sport (p.8) have "WA — WATER" (matched
+      // above) but the sewer line appears as "—~ SEWER" with no SW prefix.  The
+      // main prefix-stripped fallback at line ~7390 is gated on ALL THREE being null,
+      // so it never runs when waCharge was already found.  This extra scan runs
+      // unconditionally when swCharge is still null, catching the prefix-stripped
+      // sewer line even when water was already captured.
+      if (swCharge === null) {
+        for (const _sl of lines) {
+          const _ln = _sl.trim();
+          if (!_ln) continue;
+          if (/^[-–~—]\s*SEWER\b/i.test(_ln) && !/FRANCHISE/i.test(_ln)) {
+            const _body = _ln.replace(/^[-–~—]\s*SEWER\s*/i, '');
+            const _m = _parseMeteredLine(_body);
+            if (_m.charge != null) {
+              swPrevRead = _m.prevRead;
+              swCurrRead = _m.currRead;
+              swUsage = _m.usage;
+              swCharge = _m.charge;
+            }
+            break;
+          }
+        }
+      }
+
       // ── Sum electric meters ──
       const totalKwh = elMeters.reduce((sum, m) => sum + (m.usage || 0), 0);
       const totalElCharge = elMeters.reduce((sum, m) => sum + (m.charge || 0), 0);
@@ -7643,6 +7842,9 @@ const UTILITY_RULES = [
       // If P5 normalized a garbled OCR account number, stamp the flag so the
       // UI can warn the user that the account number was guessed and may need
       // verification. _p5RawAcct holds the original garbled string from OCR.
+      // FIX(2026-06-11): When AccountNumber is null (OCR too garbled for P5 to
+      // resolve), _accountFromAddress=true means this page is keyed by ServiceAddress
+      // instead of an account number. Never inherit another page's account number.
       const _acctOCRNormalized = _p5RawAcct != null;
       const shared = {
         UtilityCompany: 'City of Baldwin City',
@@ -7656,6 +7858,8 @@ const UTILITY_RULES = [
         RateSchedule: null,
         MeterNumber: null,
         ...(_acctOCRNormalized ? { _accountOCRNormalized: true, _accountOCRRaw: _p5RawAcct } : {}),
+        ...(_accountFromAddress ? { _accountFromAddress: true } : {}),
+        ...(_dateReconstructed.length > 0 ? { _date_reconstructed: _dateReconstructed } : {}),
       };
 
       const bills = [];

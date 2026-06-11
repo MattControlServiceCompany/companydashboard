@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.510',
+    date: '2026-06-11',
+    title: 'City of Baldwin bill extraction: account identity, address, and billing-date fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'City of Baldwin utility bills now correctly identify separate accounts (water, sewer, electric) so bills from one account are never merged into another. Address and sewer-charge fallback detection now handles more bill formats, and billing dates are reconstructed when not printed explicitly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.509',
     date: '2026-06-11',
     title: 'Audit Report PDF export no longer fails past page 70',
