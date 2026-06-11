@@ -171,7 +171,8 @@ function validateBillData(extracted, utilityName) {
             (pf(extracted.GasSystemReliability) || 0) +
             (pf(extracted.WeatherNormalization) || 0) +
             (pf(extracted.WinterEventCost) || 0) +
-            (pf(extracted.FranchiseFee) || 0)) *
+            (pf(extracted.FranchiseFee) || 0) +
+            (pf(extracted.DelayedPaymentCharge) || 0)) *
             100,
         ) / 100;
       if (gasCompSum > 0) {

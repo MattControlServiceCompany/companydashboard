@@ -162,6 +162,38 @@ var BT_POINT_PATTERNS = {
   override: ['override', 'manual override', 'hand override', 'forced'],
 };
 
+/* ── POINT TYPE HUMAN LABELS ───────────────────────────────────────────────── */
+
+var BT_POINT_LABELS = {
+  oat: 'Outside Air Temp',
+  sat: 'Supply Air Temp',
+  satsp: 'Supply Air Temp Setpoint',
+  rat: 'Return Air Temp',
+  mat: 'Mixed Air Temp',
+  oadamper: 'OA Damper %',
+  coolvalve: 'Cooling Valve %',
+  heatvalve: 'Heating Valve %',
+  fanstatus: 'Fan Status',
+  fanspeed: 'Fan Speed / VFD %',
+  staticp: 'Duct Static Pressure',
+  staticpsp: 'Duct Static SP',
+  zonetemp: 'Zone Temp',
+  zonesp_cool: 'Cooling Setpoint',
+  zonesp_heat: 'Heating Setpoint',
+  occupied: 'Occupied Signal',
+  hwstemp: 'HW Supply Temp',
+  hwrtemp: 'HW Return Temp',
+  kwh: 'kWh / Power',
+  co2: 'CO2 (ppm)',
+  humidity: 'Relative Humidity %',
+  override: 'Manual Override',
+};
+
+/** Return a human-readable label for a detection key */
+function btPointLabel(key) {
+  return BT_POINT_LABELS[key] || key || '(not used)';
+}
+
 /* ── UTILITY HELPERS ────────────────────────────────────────────────────────── */
 
 /** Normalize a point/column name for matching */
@@ -1732,7 +1764,7 @@ function btOpenImportModal() {
     // Step 2: Building
     '<div class="bt-form-row" style="margin-bottom:14px;">',
     '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 2 — Building</label>',
-    '<select id="bt-bldg-sel" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" disabled>',
+    '<select id="bt-bldg-sel" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" disabled onchange="btPopulateEquipDatalist();btCheckImportReady();">',
     '<option value="">Select project first...</option>',
     '</select>',
     '</div>',
@@ -1742,45 +1774,14 @@ function btOpenImportModal() {
     '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;" title="Short identifier for this piece of equipment. Examples: AHU-1, RTU-3, Building">',
     'Step 3 — Equipment / System Tag <span style="color:var(--text3);font-size:11px;">(e.g. AHU-1, RTU-3)</span>',
     '</label>',
-    '<input id="bt-equip-tag" type="text" placeholder="AHU-1" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" />',
+    '<input id="bt-equip-tag" type="text" placeholder="AHU-1" list="bt-equip-datalist" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" />',
+    '<datalist id="bt-equip-datalist"></datalist>',
+    '<div id="bt-equip-tag-warn" style="font-size:11px;color:var(--amber);margin-top:4px;display:none;"></div>',
     '</div>',
 
-    // Step 4: Occupied schedule
+    // Step 4: CSV drop zone
     '<div class="bt-form-row" style="margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;" title="Hours when the building is scheduled to be occupied. Used for after-hours fault detection.">',
-    'Step 4 — Occupied Schedule',
-    '</label>',
-    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">',
-    '<span style="font-size:12px;color:var(--text2);">Days:</span>',
-    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-      .map(function (day, idx) {
-        var checked = idx < 5 ? 'checked' : '';
-        var dayNum = idx + 1 === 7 ? 0 : idx + 1; // Sun=0, Mon=1...Sat=6
-        return (
-          '<label style="font-size:12px;color:var(--text2);"><input type="checkbox" class="bt-occ-day" value="' +
-          dayNum +
-          '" ' +
-          checked +
-          ' style="margin-right:3px;">' +
-          day +
-          '</label>'
-        );
-      })
-      .join(''),
-    '</div>',
-    '<div style="display:flex;gap:12px;margin-top:8px;align-items:center;">',
-    '<label style="font-size:12px;color:var(--text2);">Start:</label>',
-    '<input id="bt-occ-start" type="number" value="6" min="0" max="23" style="width:60px;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:13px;" />',
-    '<span style="font-size:12px;color:var(--text3);">:00</span>',
-    '<label style="font-size:12px;color:var(--text2);">End:</label>',
-    '<input id="bt-occ-end" type="number" value="18" min="0" max="24" style="width:60px;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:13px;" />',
-    '<span style="font-size:12px;color:var(--text3);">:00</span>',
-    '</div>',
-    '</div>',
-
-    // Step 5: CSV drop zone
-    '<div class="bt-form-row" style="margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 5 — CSV File</label>',
+    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 4 — CSV File</label>',
     '<div id="bt-drop-zone" ',
     'style="border:2px dashed var(--border);border-radius:8px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color 0.2s;" ',
     'onclick="document.getElementById(\'bt-file-input\').click()" ',
@@ -1797,7 +1798,7 @@ function btOpenImportModal() {
 
     // Column mapping preview (hidden until file parsed)
     '<div id="bt-col-preview" style="display:none;margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:8px;">Step 6 — Column Mapping Preview</label>',
+    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:8px;">Step 5 — Column Mapping Preview</label>',
     '<div id="bt-col-table-wrap" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">',
     '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
     '<thead style="background:var(--s1);position:sticky;top:0;">',
@@ -1878,6 +1879,36 @@ function btUpdateBuildingList() {
     sel.appendChild(opt);
   });
   sel.disabled = false;
+
+  // Populate equipment tag datalist from existing BAS data for this project
+  btPopulateEquipDatalist(projId);
+}
+
+/** Populate the equipment tag datalist with existing tags from BAS data */
+function btPopulateEquipDatalist(projId) {
+  var dl = document.getElementById('bt-equip-datalist');
+  if (!dl) return;
+  var pid = projId || (document.getElementById('bt-proj-sel') || {}).value;
+  if (!pid) {
+    dl.innerHTML = '';
+    return;
+  }
+  var bldgId = (document.getElementById('bt-bldg-sel') || {}).value;
+  var basData = btGetData(pid);
+  var bldgMap = (basData && basData.buildings) || {};
+  var tags = {};
+  // If a building is selected, show tags from that building; else show all
+  var bldgsToScan = bldgId && bldgMap[bldgId] ? [bldgMap[bldgId]] : Object.values(bldgMap);
+  bldgsToScan.forEach(function (b) {
+    Object.keys(b.equipment || {}).forEach(function (tag) {
+      tags[tag] = true;
+    });
+  });
+  dl.innerHTML = Object.keys(tags)
+    .map(function (t) {
+      return '<option value="' + t + '">';
+    })
+    .join('');
 }
 
 function btHandleDrop(event) {
@@ -1956,11 +1987,12 @@ function btPreviewColumns(csvText) {
     var optHtml = pointTypeOptions
       .map(function (o) {
         var sel2 = o === col.detected || (o === '(not used)' && !col.detected) ? 'selected' : '';
-        return '<option value="' + o + '" ' + sel2 + '>' + o + '</option>';
+        var label = o === '(not used)' ? '(not used)' : btPointLabel(o);
+        return '<option value="' + o + '" ' + sel2 + '>' + label + '</option>';
       })
       .join('');
 
-    var detected = col.detected || '(not used)';
+    var detected = btPointLabel(col.detected);
     var detColor = col.detected ? 'var(--green)' : 'var(--text3)';
 
     rows.push(
@@ -1998,6 +2030,35 @@ function btCheckImportReady() {
   var ready = projId && bldgId && equipTag && hasFile;
   btn.disabled = !ready;
   btn.style.opacity = ready ? '1' : '0.5';
+
+  // Near-duplicate tag warning (normalize the same way btRunImport does)
+  var warnEl = document.getElementById('bt-equip-tag-warn');
+  if (warnEl) {
+    warnEl.style.display = 'none';
+    warnEl.textContent = '';
+    if (equipTag && projId) {
+      var normalizedTyped = equipTag.toUpperCase().replace(/\s+/g, '-');
+      var basData = btGetData(projId);
+      var bldgMap = (basData && basData.buildings) || {};
+      var bldgsToCheck = bldgId && bldgMap[bldgId] ? [bldgMap[bldgId]] : Object.values(bldgMap);
+      var existingTags = [];
+      bldgsToCheck.forEach(function (b) {
+        Object.keys(b.equipment || {}).forEach(function (t) {
+          existingTags.push(t);
+        });
+      });
+      var matches = existingTags.filter(function (t) {
+        return (
+          t.toUpperCase() !== normalizedTyped &&
+          (t.toUpperCase().indexOf(normalizedTyped) !== -1 || normalizedTyped.indexOf(t.toUpperCase()) !== -1)
+        );
+      });
+      if (matches.length > 0) {
+        warnEl.textContent = 'Warning: similar tag already exists — ' + matches.join(', ');
+        warnEl.style.display = '';
+      }
+    }
+  }
 }
 
 function btRunImport() {
@@ -2010,7 +2071,7 @@ function btRunImport() {
   var bldgSel = document.getElementById('bt-bldg-sel');
   var bldgId = bldgSel.value;
   var bldgName = bldgSel.options[bldgSel.selectedIndex] ? bldgSel.options[bldgSel.selectedIndex].text : bldgId;
-  var equipTag = document.getElementById('bt-equip-tag').value.trim();
+  var equipTag = document.getElementById('bt-equip-tag').value.trim().toUpperCase().replace(/\s+/g, '-');
 
   if (!projId || !bldgId || !equipTag) {
     showToast('Please fill in project, building, and equipment tag.', 'error');
@@ -2025,16 +2086,8 @@ function btRunImport() {
     overrides[idx] = val === '(not used)' ? null : val;
   });
 
-  // Collect occupied schedule
-  var occDays = [];
-  document.querySelectorAll('.bt-occ-day:checked').forEach(function (cb) {
-    occDays.push(parseInt(cb.value));
-  });
-  var schedule = {
-    startHour: parseInt(document.getElementById('bt-occ-start').value) || 6,
-    endHour: parseInt(document.getElementById('bt-occ-end').value) || 18,
-    days: occDays.length > 0 ? occDays : [1, 2, 3, 4, 5],
-  };
+  // Use default occupied schedule (Mon–Fri 06:00–18:00)
+  var schedule = BT_DEFAULT_SCHEDULE;
 
   // Disable controls during import
   document.getElementById('bt-import-btn').disabled = true;
@@ -2139,14 +2192,15 @@ function btSwitchSubtab(tab) {
 
 /** Render the BAS Trends main view */
 function btRenderView(projId) {
+  // Resolve projId before any DOM lookup that depends on it
+  projId = projId || window._activeProjId || null;
+
   var container = document.getElementById('ptab-bas-trends');
   if (!container) return;
 
   var body = document.getElementById('ptab-bas-trends-body-' + projId);
   if (!body) return;
 
-  // Get active project from URL/session (use passed projId, fall back to window._activeProjId)
-  projId = projId || window._activeProjId || null;
   if (!projId) {
     body.innerHTML =
       '<div style="padding:32px;text-align:center;color:var(--text3);">Select a project from the sidebar to view BAS trend data.</div>';
@@ -2257,7 +2311,7 @@ function btRenderView(projId) {
 function btChangeBldg(bldgId) {
   _btSelBldg = bldgId;
   _btSelEquip = null; // reset equipment — btRenderView will pick first
-  btRenderView();
+  btRenderView(window._activeProjId);
 }
 
 /** Change selected equipment */

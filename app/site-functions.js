@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.517',
+    date: '2026-06-11',
+    title: 'BAS Trends import improvements + KGS gas sum fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'BAS Trends tab no longer shows a blank panel when opening a project — the correct project data now loads immediately.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Trends import: column mapping now shows plain-English names (Outside Air Temp, Cooling Valve %, etc.) instead of internal codes.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Trends import: Equipment Tag field now auto-suggests existing tags for the selected project/building. A warning appears if you type a name similar to an existing tag.',
+      },
+      {
+        type: 'change',
+        text: 'BAS Trends import: the Occupied Schedule step has been removed — import always uses Mon–Fri 06:00–18:00 as the default schedule.',
+      },
+      {
+        type: 'fix',
+        text: 'KGS gas early-warning check now includes Delayed Payment Charge in its sum, matching the reconciliation and bill-detail calculations.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.516',
     date: '2026-06-11',
     title: 'KGS gas bill fixes and smarter outlier detection',
