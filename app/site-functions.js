@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.501',
+    date: '2026-06-10',
+    title: 'Kansas Gas Service bills now split by page so billing periods read correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Kansas Gas Service bills now split on PDF page boundaries instead of the mid-page Statement Date line. Previously, 10 of 11 bills in a multi-page KGS PDF showed a billing period unreadable error. Re-import any KGS bill PDFs to pick up corrected billing periods.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.10.500',
     date: '2026-06-10',
     title: 'PDF export reverted to stable version; audit cover gauge labels fixed',

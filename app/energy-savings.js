@@ -5111,19 +5111,25 @@ const UTILITY_RULES = [
     },
     extractAll: function (t) {
       // KGS bills: each page = one monthly bill, no "Service from" header.
-      // Split on "Statement Date MM-DD-YY" which appears at the top of each KGS bill page,
-      // OR fall back to page markers if KGS text is present but Statement Date not found.
+      // Split on PDF page markers (%%PAGE_N%%) when present — these align with physical bill pages.
+      // Statement Date appears mid-page in the address block, so splitting on it creates
+      // phase-shifted sections where the Account Number anchor (top of page) and the meter row
+      // holding BillingPeriodStart/End (bottom of same page) land in different sections.
+      // Fall back to Statement Date split only for single-page or legacy PDFs without page markers.
       const isKGS = /kansas\s+gas\s+service/i.test(t);
       let splitRe;
       if (isKGS) {
-        splitRe = /(?=Statement\s+Date\s+\d{2}-\d{2}-\d{2})/i;
-        // Fall back to %%PAGE_ markers if Statement Date split finds fewer than 80% of pages.
-        // OCR garbles "Statement Date" on roughly half of pages in some KGS PDFs — when that
-        // happens the Statement Date split bundles multiple billing periods into one section.
-        const _stmtCount = t.split(splitRe).length - 1;
         const _pageCount = t.split(/(?=%%PAGE_\d+%%)/).length - 1;
-        if (_stmtCount === 0 || (_pageCount > 2 && _stmtCount < _pageCount * 0.8)) {
+        if (_pageCount > 1) {
+          // Always split KGS bills on PDF page markers. "Statement Date" sits mid-page
+          // in the address block, so splitting on it phase-shifts sections — the meter row
+          // (billing period From/To at the bottom of the page) lands in a different section
+          // than its Account Number anchor (top of page), making the period unreadable.
+          // Page markers align with physical bill boundaries.
           splitRe = /(?=%%PAGE_\d+%%)/;
+        } else {
+          // No page markers (legacy/single-chunk path) — fall back to Statement Date split.
+          splitRe = /(?=Statement\s+Date\s+\d{2}-\d{2}-\d{2})/i;
         }
       } else {
         // Non-KGS gas bills: split on "Service from" headers
