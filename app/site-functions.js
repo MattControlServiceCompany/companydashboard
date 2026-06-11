@@ -1191,7 +1191,7 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.06.11.506',
+    v: 'v2026.06.11.507',
     date: '2026-06-11',
     title: 'KGS gas bill extraction and display overhauled',
     items: [
