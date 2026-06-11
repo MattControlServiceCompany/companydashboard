@@ -3499,8 +3499,9 @@ function rptPageContractProjection(n, d) {
   }
 
   // Projected bars
-  var _barGap = 2;
-  var _barW = Math.max(3, cW / totalQtrs - _barGap);
+  var _slotW = cW / totalQtrs;
+  var _barGap = Math.max(2, Math.floor(_slotW * 0.15)); // gap = 15% of slot
+  var _barW = Math.max(3, Math.min(28, _slotW - _barGap)); // cap bars at 28px wide
   var _barsHTML = _qtrVals
     .map(function (val, i) {
       var x = padL + (i / totalQtrs) * cW + _barGap / 2;

@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.503',
+    date: '2026-06-10',
+    title: 'Contract Projection chart bars no longer too wide',
+    items: [
+      {
+        type: 'fix',
+        text: 'Contract Projection chart bars are now capped at 28px wide with a proportional gap, so bars no longer overflow into adjacent slots. Bar positions remain evenly distributed across the chart.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.10.502',
     date: '2026-06-10',
     title: 'Report appendix pages no longer print their title twice',
