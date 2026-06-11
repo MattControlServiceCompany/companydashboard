@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.511',
+    date: '2026-06-11',
+    title: 'Equipment Matrix point-mapping Phase 1: category fix + expanded patterns + false-positive guards',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix no longer misfiles points into the wrong category when a point name matches more than one pattern — the most specific category now wins.',
+      },
+      {
+        type: 'feature',
+        text: 'Outdoor air temperature, heating hot-water supply/return, and chilled-water differential pressure points are now recognized and mapped automatically across more naming conventions.',
+      },
+      {
+        type: 'fix',
+        text: 'Hot-water supply/return and chilled-water differential pressure points that are actually setpoints, valve positions, or alarms are no longer misclassified as sensor readings.',
+      },
+      {
+        type: 'fix',
+        text: 'Return air humidity points used for diagnostics (e.g., chart or trend names) are no longer pulled in as equipment sensors.',
+      },
+      {
+        type: 'change',
+        text: 'Mapping improvements apply automatically at read time — no need to re-import existing equipment data.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.510',
     date: '2026-06-11',
     title: 'City of Baldwin bill extraction: account identity, address, and billing-date fixes',

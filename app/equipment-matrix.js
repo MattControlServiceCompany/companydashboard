@@ -364,7 +364,7 @@ var EM_POINT_MAP = [
       /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output|bno)\b/i,
     ],
     types: ['AI', 'SP'],
-    cats: ['ahu', 'vav', 'fpb'],
+    cats: ['ahu', 'vav', 'fpb', 'other'],
   },
   {
     col: 'returnAirTemp',
@@ -377,7 +377,7 @@ var EM_POINT_MAP = [
       /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output)\b/i,
     ],
     types: ['AI'],
-    cats: ['ahu'],
+    cats: ['ahu', 'other'],
   },
   {
     col: 'mixedAirTemp',
@@ -399,13 +399,24 @@ var EM_POINT_MAP = [
     col: 'outdoorAirTemp',
     label: 'OAT (Live)',
     // FIX 4d: Added dry bulb patterns to match CSV 'Outside Air Dry Bulb'
-    patterns: [/outside air dry bulb/i, /outdoor air dry bulb/i, /outdoor air temp/i, /\boat\b/i, /oat \(live\)/i],
+    // Phase 1: Added /outside air temperature/i and /outside\s+air\s+temp\b/i for JOCO naming ("Outside Air Temperature").
+    patterns: [
+      /outside air temperature/i,
+      /outside\s+air\s+temp\b/i,
+      /outside air dry bulb/i,
+      /outdoor air dry bulb/i,
+      /outdoor air temp/i,
+      /\boat\b/i,
+      /oat \(live\)/i,
+    ],
     // M1A: added negativePatterns — oatLive previously had none. Blocks lockout setpoints (ANO),
     // diagnostic fault flags, and sensor-alarm objects from occupying the live OAT column.
     negativePatterns: [/\b(alarm|lockout|diagnostic|sensor\s+fail(ed|ure)?|enable|output)\b/i],
     types: ['AI'],
     // M5+: added 'sensor' so dedicated outdoor-air sensor programs can map live OAT.
-    cats: ['ahu', 'hwp', 'chwp', 'sensor'],
+    // Phase 1: added 'other' + global:true so 'other'-category equipment get OAT; global bypasses cat-gate entirely.
+    cats: ['ahu', 'hwp', 'chwp', 'sensor', 'other'],
+    global: true,
   },
   {
     col: 'supplyFanSpeed',
@@ -611,32 +622,67 @@ var EM_POINT_MAP = [
   {
     col: 'hwSupplyTemp',
     label: 'HW Supply Temp',
-    patterns: [/hw supply temp/i, /hot water supply/i, /hwst\b/i],
+    // Phase 1: added JOCO naming patterns (heating water supply / boiler supply water temp).
+    patterns: [
+      /hw supply temp/i,
+      /hot water supply/i,
+      /hwst\b/i,
+      /heating water supply/i,
+      /heating\s+water\s+supply\s+temp/i,
+      /boiler\s+\w+\s+supply\s+water\s+temp/i,
+      /boiler\s+supply\s+water\s+temp/i,
+    ],
     // M2: added negativePatterns. CHW/CHWST names contain "HW" as substring causing false matches.
     // Domestic/DHW points are plumbing (excluded per plan decision A). High/low block alarm limits.
-    negativePatterns: [/\b(chw|chwst|domestic|dhw|high|low|alarm)\b/i],
+    negativePatterns: [
+      /\b(chw|chwst|domestic|dhw|high|low|alarm)\b/i,
+      /setpoint|set\s?point/i,
+      /\b(valve|position|percent|cmd|command|output)\b/i,
+    ],
     types: ['AI'],
-    cats: ['hwp'],
+    // Phase 1: added 'other' so boiler/plant equipment classified 'other' are not gated out.
+    cats: ['hwp', 'other'],
   },
   {
     col: 'hwReturnTemp',
     label: 'HW Return Temp',
-    patterns: [/hw return temp/i, /hot water return/i, /hwrt\b/i],
+    // Phase 1: added JOCO naming patterns (heating water return / boiler return water temp).
+    patterns: [
+      /hw return temp/i,
+      /hot water return/i,
+      /hwrt\b/i,
+      /heating water return/i,
+      /heating\s+water\s+return\s+temp/i,
+      /boiler\s+\w+\s+return\s+water\s+temp/i,
+      /boiler\s+return\s+water\s+temp/i,
+    ],
     // M2: added negativePatterns. CHWRT contains "HWRT" as substring; "DHW" contains "HW".
     // Domestic/DHW excluded (plumbing). Flow blocks "Hot Water Return Flow" (not temperature).
     // High/low block alarm limit names.
-    negativePatterns: [/\b(chw|chwrt|domestic|dhw|high|low|alarm|flow)\b/i],
+    negativePatterns: [
+      /\b(chw|chwrt|domestic|dhw|high|low|alarm|flow)\b/i,
+      /setpoint|set\s?point/i,
+      /\b(valve|position|percent|cmd|command|output)\b/i,
+    ],
     types: ['AI'],
-    cats: ['hwp'],
+    // Phase 1: added 'other' so boiler/plant equipment classified 'other' are not gated out.
+    cats: ['hwp', 'other'],
   },
   {
     col: 'hwDiffPressure',
     label: 'HW Diff Pressure',
-    patterns: [/hw diff pressure/i, /hw differential/i],
+    // Phase 1: added JOCO naming patterns for heating water differential pressure.
+    patterns: [
+      /hw diff pressure/i,
+      /hw differential/i,
+      /heating\s+water\s+differential\s+pressure/i,
+      /hot\s+water\s+differential\s+pressure/i,
+    ],
     // M2: "CHW" contains "HW" so /hw differential/i fires on "CHW Differential Pressure".
     negativePatterns: [/\bchw\b/i],
     types: ['AI'],
-    cats: ['hwp'],
+    // Phase 1: added 'other' so plant equipment classified 'other' are not gated out.
+    cats: ['hwp', 'other'],
   },
   {
     col: 'hwSupplySetpoint',
@@ -653,7 +699,8 @@ var EM_POINT_MAP = [
     // (flow measurement, not temperature — routes to chwFlowLive).
     negativePatterns: [/\b(high|low|alarm|flow)\b/i],
     types: ['AI'],
-    cats: ['chwp'],
+    // Phase 1: added 'other' so plant equipment classified 'other' are not gated out.
+    cats: ['chwp', 'other'],
   },
   {
     col: 'chwReturnTemp',
@@ -662,7 +709,8 @@ var EM_POINT_MAP = [
     // M2: high/low block alarm limit names (High/Low Chilled Water ReturnTemperature).
     negativePatterns: [/\b(high|low|alarm)\b/i],
     types: ['AI'],
-    cats: ['chwp'],
+    // Phase 1: added 'other' so plant equipment classified 'other' are not gated out.
+    cats: ['chwp', 'other'],
   },
   {
     col: 'chwSupplySetpoint',
@@ -674,9 +722,12 @@ var EM_POINT_MAP = [
   {
     col: 'chwDiffPressure',
     label: 'CHW Diff Pressure',
-    patterns: [/chw diff pressure/i, /chw differential/i],
+    // Phase 1: added JOCO naming pattern for chilled water differential pressure.
+    patterns: [/chw diff pressure/i, /chw differential/i, /chilled\s+water\s+differential\s+pressure/i],
+    negativePatterns: [/setpoint|set\s?point/i, /\b(alarm|high|low)\b/i],
     types: ['AI'],
-    cats: ['chwp'],
+    // Phase 1: added 'other' so plant equipment classified 'other' are not gated out.
+    cats: ['chwp', 'other'],
   },
   {
     col: 'chwFlow',
@@ -797,6 +848,7 @@ var EM_POINT_MAP = [
     negativePatterns: [/\bhuwb\b/i],
     types: ['AI'],
     cats: ['ct', 'ahu', 'dhu', 'sensor'],
+    global: true,
   },
   {
     col: 'ctFanSpeed',
@@ -901,6 +953,7 @@ var EM_POINT_MAP = [
     negativePatterns: [/setpoint|set\s?point/i, /\b(invalid|sensor\s+invalid|heat\s+trace|is\s+off|is\s+on)\b/i],
     types: ['AI'],
     cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'sensor'],
+    global: true,
   },
   // Zone Temperature (short alias used by some controllers — "Zone Temp")
   {
@@ -941,6 +994,7 @@ var EM_POINT_MAP = [
     negativePatterns: [/invalid|sensor\s+fail|fault|set\s?point/i],
     types: ['AI'],
     cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace', 'sensor'],
+    global: true,
   },
 
   // C2: Outside Air Dewpoint — DISTINCT from wet bulb (was mis-aliased in oaWetBulb)
@@ -958,6 +1012,7 @@ var EM_POINT_MAP = [
     negativePatterns: [/return|set\s?point|invalid|fault/i],
     types: ['AI'],
     cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace', 'sensor'],
+    global: true,
   },
 
   // C3: Outside Air Enthalpy — broadcast OA enthalpy used for economizer control
@@ -972,6 +1027,7 @@ var EM_POINT_MAP = [
     negativePatterns: [/return|economizer\s+control\s+selection|set\s?point|fault/i],
     types: ['AI'],
     cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace', 'sensor'],
+    global: true,
   },
 
   // GROUP 10 — Demand/Mode/Occupancy (user-reported missing; was blocked by EM_EXCLUSION_PATTERNS
@@ -989,6 +1045,7 @@ var EM_POINT_MAP = [
     negativePatterns: [/meter|kwh|billing|peak|interval|set\s?point|limit/i],
     types: ['AI', 'AV', 'BAV'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct', 'fcu', 'heater', 'ef', 'zone', 'furnace'],
+    global: true,
   },
 
   // K4: Schedule / Scheduled Occupied
@@ -1001,6 +1058,7 @@ var EM_POINT_MAP = [
     negativePatterns: [/bacnet\s+schedule|override/i],
     types: ['AV', 'BAV', 'BI'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'heater', 'ef', 'zone', 'furnace'],
+    global: true,
   },
 
   // GROUP 1 — Missing Air Temperature columns (A7/A8/A9)
@@ -1043,11 +1101,13 @@ var EM_POINT_MAP = [
   // D2: Return Air Humidity — at AHU or DHU level (distinct from zone RH)
   // Taxonomy: "Return Air Humidity" (DHU pool unit), "RA Hum", "AHU-1 - Return Air Humidity".
   // negativePatterns: set point excluded (that's D3 below).
+  // Phase 1: added diagnostic/control-selection/sensor-fail/alarm guard to block JOCO false-positives:
+  //   "Diagnostic: Return Air Humidity Sensor Failed", "Air Source Return Air Humidity Control Selection".
   {
     col: 'returnAirHumidity',
     label: 'Return Air Humidity',
     patterns: [/return\s+air\s+hum/i, /\bra\s+hum\b/i],
-    negativePatterns: [/setpoint|set\s?point/i],
+    negativePatterns: [/setpoint|set\s?point/i, /\b(diagnostic|control\s+selection|sensor\s+fail(ed|ure)?|alarm)\b/i],
     types: ['AI'],
     cats: ['ahu', 'dhu'],
   },
@@ -2018,7 +2078,7 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
   var _mapResult = null;
   for (var i = 0; i < EM_POINT_MAP.length; i++) {
     var mapping = EM_POINT_MAP[i];
-    if (equipCategory && mapping.cats && mapping.cats.indexOf(equipCategory) === -1) continue;
+    if (equipCategory && mapping.cats && !mapping.global && mapping.cats.indexOf(equipCategory) === -1) continue;
     for (var p = 0; p < mapping.patterns.length; p++) {
       if (mapping.patterns[p].test(matchName)) {
         // If this column has negative guards, reject names that match any of them.
