@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.504',
+    date: '2026-06-10',
+    title: 'Appendix B regression formula text now wraps',
+    items: [
+      {
+        type: 'fix',
+        text: 'Appendix B regression-detail table: formula cells in the Calculation column now wrap instead of overflowing the page width.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.10.503',
     date: '2026-06-10',
     title: 'Contract Projection chart bars no longer too wide',

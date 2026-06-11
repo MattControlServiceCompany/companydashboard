@@ -6199,7 +6199,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
             Math.round(cdd).toLocaleString() +
             '</td>' +
-            '<td style="font-family:monospace;font-size:9px;color:var(--rpt-page-text);white-space:nowrap">' +
+            '<td style="font-family:monospace;font-size:9px;color:var(--rpt-page-text);overflow-wrap:break-word;word-break:break-all">' +
             formulaParts +
             '</td>' +
             '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
@@ -6228,7 +6228,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '<td class="rpt-n">' +
             Math.round(cdd).toLocaleString() +
             '</td>' +
-            '<td style="font-family:monospace;font-size:9px;color:var(--rpt-page-text);white-space:nowrap">' +
+            '<td style="font-family:monospace;font-size:9px;color:var(--rpt-page-text);overflow-wrap:break-word;word-break:break-all">' +
             formulaParts +
             '</td>' +
             '<td class="rpt-n" style="font-weight:600">' +
@@ -6263,10 +6263,10 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         '</tr>';
 
       calcHTML +=
-        '<table class="rpt-table" style="font-size:9px;margin-bottom:10px">' +
+        '<table class="rpt-table rpt-table-wrap" style="font-size:9px;margin-bottom:10px;table-layout:fixed;width:100%">' +
         '<thead><tr>' +
         '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
-        '<th>Calculation</th>' +
+        '<th style="width:180px">Calculation</th>' +
         '<th class="rpt-n">Predicted<br>Baseline ' +
         unit +
         '</th><th class="rpt-n">Actual<br>' +
