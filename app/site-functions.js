@@ -1191,36 +1191,59 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.499',
+    date: '2026-06-10',
+    title: 'EMS Leads: arrow and lightning glyphs now display correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'The EMS Leads page no longer shows garbled characters (mojibake) in place of the left-arrow, lightning bolt, and up/down-arrow icons. All four glyphs now render correctly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.10.498',
     date: '2026-06-10',
     title: 'PDF export: full multi-page reports now captured completely',
     items: [
-      { type: 'fix', text: 'Report PDFs no longer clip content past the first page. All 4 report types (Quarterly, Annual, ASHRAE Audit, Proposal) now capture the full page height, slice it into correct PDF pages, and show per-page progress while exporting. Very tall pages use a lower capture scale to avoid browser memory limits.' }
-    ]
+      {
+        type: 'fix',
+        text: 'Report PDFs no longer clip content past the first page. All 4 report types (Quarterly, Annual, ASHRAE Audit, Proposal) now capture the full page height, slice it into correct PDF pages, and show per-page progress while exporting. Very tall pages use a lower capture scale to avoid browser memory limits.',
+      },
+    ],
   },
   {
     v: 'v2026.06.10.497',
     date: '2026-06-10',
     title: 'Report tables: headers and cells now wrap instead of clipping',
     items: [
-      { type: 'fix', text: 'Financial Summary, EUI Benchmarking, and Electric Detail report tables no longer clip long column headers or building names. Text now wraps within each column so all content is visible.' }
-    ]
+      {
+        type: 'fix',
+        text: 'Financial Summary, EUI Benchmarking, and Electric Detail report tables no longer clip long column headers or building names. Text now wraps within each column so all content is visible.',
+      },
+    ],
   },
   {
     v: 'v2026.06.10.496',
     date: '2026-06-10',
     title: 'Quarterly Report: building names no longer repeat in the savings table',
     items: [
-      { type: 'fix', text: 'In the Quarterly Report Savings Performance / Annual Summary by Building table, each building name now appears once across both rows (baseline and current year) instead of repeating on each row.' }
-    ]
+      {
+        type: 'fix',
+        text: 'In the Quarterly Report Savings Performance / Annual Summary by Building table, each building name now appears once across both rows (baseline and current year) instead of repeating on each row.',
+      },
+    ],
   },
   {
     v: 'v2026.06.10.495',
     date: '2026-06-10',
     title: 'Equipment Matrix: zone setpoints now display for FCU equipment',
     items: [
-      { type: 'fix', text: 'Heating and cooling setpoints now appear for FCU equipment (fan coil units, PTACs, unit ventilators) in the Equipment Matrix Summary and Detail views. Two view filters were excluding all FCU rows from zone setpoint display. JOCO buildings are predominantly FCUs, so setpoint columns showed blanks even though the values were present in the imported data. No re-import needed.' }
-    ]
+      {
+        type: 'fix',
+        text: 'Heating and cooling setpoints now appear for FCU equipment (fan coil units, PTACs, unit ventilators) in the Equipment Matrix Summary and Detail views. Two view filters were excluding all FCU rows from zone setpoint display. JOCO buildings are predominantly FCUs, so setpoint columns showed blanks even though the values were present in the imported data. No re-import needed.',
+      },
+    ],
   },
 
   {
@@ -1228,10 +1251,19 @@ var RELEASE_NOTES = [
     date: '2026-06-10',
     title: 'Equipment Matrix: PTAC and Unit Ventilator units now classify correctly',
     items: [
-      { type: 'fix', text: 'PTAC (packaged terminal air conditioner/heat pump) units now classify as FCU in the Equipment Matrix instead of landing in the catch-all Other bucket. Covers labels like PTAC-1, PTH-2, and "Packaged Terminal".' },
-      { type: 'fix', text: 'Unit Ventilator units (UV-1, UV-12, "unit ventilator", "unit vent") now classify as FCU. The UV pattern requires a digit suffix so germicidal UV-C / UVGI labels are not accidentally caught.' },
-      { type: 'change', text: 'Removed a duplicate internal dictionary entry for Weather Station — no visible change; the sensor classification is unchanged.' }
-    ]
+      {
+        type: 'fix',
+        text: 'PTAC (packaged terminal air conditioner/heat pump) units now classify as FCU in the Equipment Matrix instead of landing in the catch-all Other bucket. Covers labels like PTAC-1, PTH-2, and "Packaged Terminal".',
+      },
+      {
+        type: 'fix',
+        text: 'Unit Ventilator units (UV-1, UV-12, "unit ventilator", "unit vent") now classify as FCU. The UV pattern requires a digit suffix so germicidal UV-C / UVGI labels are not accidentally caught.',
+      },
+      {
+        type: 'change',
+        text: 'Removed a duplicate internal dictionary entry for Weather Station — no visible change; the sensor classification is unchanged.',
+      },
+    ],
   },
 
   {
@@ -1239,8 +1271,11 @@ var RELEASE_NOTES = [
     date: '2026-06-10',
     title: 'Equipment Matrix: HVAC equipment now sorts first by default',
     items: [
-      { type: 'fix', text: 'The Equipment Matrix Raw and Audit views now show HVAC equipment (AHUs, VAVs, FCUs, etc.) at the top of the list by default, even for data imported before this fix. Previously, equipment appeared in alphabetical order, burying HVAC rows behind lighting and other equipment. Click any column header to sort manually — the default HVAC-first order restores when you clear the sort.' }
-    ]
+      {
+        type: 'fix',
+        text: 'The Equipment Matrix Raw and Audit views now show HVAC equipment (AHUs, VAVs, FCUs, etc.) at the top of the list by default, even for data imported before this fix. Previously, equipment appeared in alphabetical order, burying HVAC rows behind lighting and other equipment. Click any column header to sort manually — the default HVAC-first order restores when you clear the sort.',
+      },
+    ],
   },
 
   {
@@ -1248,10 +1283,19 @@ var RELEASE_NOTES = [
     date: '2026-06-10',
     title: 'Audit Report cover page: clearer labels for non-technical readers',
     items: [
-      { type: 'change', text: 'The gauge inside the cover page ring now reads Sensors instead of Points — consistent with per-building pages and easier to understand at a glance.' },
-      { type: 'change', text: 'The gauge caption now reads Sequence Readiness instead of Sequence Coverage — matches the Executive Summary column header.' },
-      { type: 'change', text: 'The stat card now reads HVAC Systems Audited instead of Equipment Units Audited — removes BAS jargon for county decision-makers.' }
-    ]
+      {
+        type: 'change',
+        text: 'The gauge inside the cover page ring now reads Sensors instead of Points — consistent with per-building pages and easier to understand at a glance.',
+      },
+      {
+        type: 'change',
+        text: 'The gauge caption now reads Sequence Readiness instead of Sequence Coverage — matches the Executive Summary column header.',
+      },
+      {
+        type: 'change',
+        text: 'The stat card now reads HVAC Systems Audited instead of Equipment Units Audited — removes BAS jargon for county decision-makers.',
+      },
+    ],
   },
 
   {
@@ -1259,8 +1303,11 @@ var RELEASE_NOTES = [
     date: '2026-06-10',
     title: 'Equipment Matrix: Summary view now has CO2 and Humidity columns',
     items: [
-      { type: 'feature', text: 'Summary view now shows CO2 (ppm) and Humidity (%) columns to the right of the zone temperature columns. These columns are always visible and use the same N/A / dash / value logic as zone temperature — N/A when a building has no zone equipment, a dash when equipment exists but no readings were imported, and the average value otherwise.' }
-    ]
+      {
+        type: 'feature',
+        text: 'Summary view now shows CO2 (ppm) and Humidity (%) columns to the right of the zone temperature columns. These columns are always visible and use the same N/A / dash / value logic as zone temperature — N/A when a building has no zone equipment, a dash when equipment exists but no readings were imported, and the average value otherwise.',
+      },
+    ],
   },
 
   {
@@ -1268,11 +1315,23 @@ var RELEASE_NOTES = [
     date: '2026-06-10',
     title: 'Equipment Matrix: Summary view now shows all buildings',
     items: [
-      { type: 'fix', text: 'Summary view now lists every building in the matrix, including AHU-only and plant-only buildings that were previously missing when a type filter was active.' },
-      { type: 'fix', text: 'Zone temperature columns now correctly show 0 as a real reading, display N/A (gray italic) when a building has no zone equipment, and show a dash when a building has zone equipment but no readings in the import.' },
-      { type: 'fix', text: 'Selecting a single building in the building filter no longer collapses the Summary to one row — the filter is suppressed in Summary view so all buildings remain visible for comparison.' },
-      { type: 'feature', text: 'Zone Temp column now recognizes additional WebCTRL snapshot column-name variants (zone_air_temp, zone_temp, zone_temperature) so readings from recent imports map correctly without re-import.' }
-    ]
+      {
+        type: 'fix',
+        text: 'Summary view now lists every building in the matrix, including AHU-only and plant-only buildings that were previously missing when a type filter was active.',
+      },
+      {
+        type: 'fix',
+        text: 'Zone temperature columns now correctly show 0 as a real reading, display N/A (gray italic) when a building has no zone equipment, and show a dash when a building has zone equipment but no readings in the import.',
+      },
+      {
+        type: 'fix',
+        text: 'Selecting a single building in the building filter no longer collapses the Summary to one row — the filter is suppressed in Summary view so all buildings remain visible for comparison.',
+      },
+      {
+        type: 'feature',
+        text: 'Zone Temp column now recognizes additional WebCTRL snapshot column-name variants (zone_air_temp, zone_temp, zone_temperature) so readings from recent imports map correctly without re-import.',
+      },
+    ],
   },
 
   {
