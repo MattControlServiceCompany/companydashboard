@@ -553,6 +553,22 @@ var EM_POINT_MAP = [
     types: ['SP'],
     cats: ['vav', 'fpb', 'ddvav', 'fcu'],
   },
+  // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSetpoint)
+  {
+    col: 'zoneCoolAdjust',
+    label: 'Cooling Setpoint Adjust',
+    patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i],
+    types: ['SP', 'AV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+  // Zone heating setpoint ADJUST
+  {
+    col: 'zoneHtgAdjust',
+    label: 'Heating Setpoint Adjust',
+    patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i],
+    types: ['SP', 'AV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
   {
     col: 'dischargeAirTemp',
     label: 'Discharge Air Temp',
@@ -886,22 +902,6 @@ var EM_POINT_MAP = [
     negativePatterns: [/setpoint|set\s?point|request|min|max/i],
     types: ['AI'],
     cats: ['zone', 'vav', 'fpb', 'ahu', 'ddvav'],
-  },
-  // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSetpoint)
-  {
-    col: 'zoneCoolAdjust',
-    label: 'Cooling Setpoint Adjust',
-    patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i],
-    types: ['SP', 'AV'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
-  },
-  // Zone heating setpoint ADJUST
-  {
-    col: 'zoneHtgAdjust',
-    label: 'Heating Setpoint Adjust',
-    patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i],
-    types: ['SP', 'AV'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
   },
   // Effective cooling setpoint (post-adjustment value, computed by BAS)
   {

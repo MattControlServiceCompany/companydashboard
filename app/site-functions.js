@@ -1191,6 +1191,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.513',
+    date: '2026-06-11',
+    title: 'Equipment Matrix: Setpoint Adjust columns repositioned',
+    items: [
+      { type: 'change', text: 'Equipment Matrix now shows the Cooling Setpoint Adjust column immediately right of Cooling Setpoint, and Heating Setpoint Adjust immediately right of Heating Setpoint — making it easier to compare setpoints and their adjustments side by side.' }
+    ]
+  },
+  {
     v: 'v2026.06.11.512',
     date: '2026-06-11',
     title: 'Report layout fixes: duplicate heading, clipped column header, and first-page overflow',
