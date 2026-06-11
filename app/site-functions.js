@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.509',
+    date: '2026-06-11',
+    title: 'Audit Report PDF export no longer fails past page 70',
+    items: [
+      {
+        type: 'fix',
+        text: 'Exporting a long Audit Report (90+ pages, such as JOCO) no longer produces blank or failed-to-render pages in the second half of the PDF. Each page canvas is now disposed after it is written to the PDF, preventing GPU memory from accumulating across pages.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.508',
     date: '2026-06-11',
     title: 'Equipment Matrix Summary View no longer shows weather stations',

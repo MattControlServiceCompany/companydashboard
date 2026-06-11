@@ -6869,8 +6869,15 @@ async function exportReportToPDF() {
           width: 816,
           height: 1056,
         });
-        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        let imgData = canvas.toDataURL('image/jpeg', 0.92);
         doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, contentH);
+        // Dispose canvas and dataURL to release GPU memory between pages (prevents OOM on 70+ page exports)
+        canvas.width = 0;
+        canvas.height = 0;
+        imgData = null;
+        await new Promise(function (r) {
+          setTimeout(r, 0);
+        }); // yield one tick for GC/GPU reclaim
       } catch (e) {
         console.error('Failed to render page ' + (i + 1), e);
         doc.setFontSize(12);
@@ -11244,7 +11251,7 @@ function rptPageASHRAE36Executive(n, d) {
   // callout boxes (topGap, dcv) only on first page.
   // Continuation pages get a minimal header + remaining rows + footnote.
   var BLDGS_PER_PAGE_FIRST = 20;
-  var BLDGS_PER_PAGE_CONT  = 20;
+  var BLDGS_PER_PAGE_CONT = 20;
 
   var p = d.portfolio;
   // Rule 2.3: reportDate drives footer date; label empty.
@@ -11299,12 +11306,24 @@ function rptPageASHRAE36Executive(n, d) {
   var tableHeader =
     '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
     '<thead><tr>' +
-    '<th style="' + thStyle + '">Building</th>' +
-    '<th style="' + thStyle + ';text-align:center">Equipment</th>' +
-    '<th style="' + thStyle + ';text-align:center">Sensor Coverage</th>' +
-    '<th style="' + thStyle + ';text-align:center">Sequence Readiness</th>' +
-    '<th style="' + thStyle + '">Score</th>' +
-    '<th style="' + thStyle + '">Status</th>' +
+    '<th style="' +
+    thStyle +
+    '">Building</th>' +
+    '<th style="' +
+    thStyle +
+    ';text-align:center">Equipment</th>' +
+    '<th style="' +
+    thStyle +
+    ';text-align:center">Sensor Coverage</th>' +
+    '<th style="' +
+    thStyle +
+    ';text-align:center">Sequence Readiness</th>' +
+    '<th style="' +
+    thStyle +
+    '">Score</th>' +
+    '<th style="' +
+    thStyle +
+    '">Status</th>' +
     '</tr></thead>';
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
@@ -11315,20 +11334,35 @@ function rptPageASHRAE36Executive(n, d) {
   function _buildRow(b) {
     var bar =
       '<div style="display:flex;align-items:center;gap:4px">' +
-      '<div style="width:' + b.composite + 'px;max-width:120px;height:8px;background:' + b.statusColor +
+      '<div style="width:' +
+      b.composite +
+      'px;max-width:120px;height:8px;background:' +
+      b.statusColor +
       ';border-radius:2px;min-width:2px"></div>' +
-      '<span style="font-size:10px;color:var(--rpt-page-text)">' + b.composite + '%</span>' +
+      '<span style="font-size:10px;color:var(--rpt-page-text)">' +
+      b.composite +
+      '%</span>' +
       '</div>';
     return (
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' + b.name + '</td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' + b.equipCount + '</td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' + b.pointPct + '%</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      b.name +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      b.equipCount +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      b.pointPct +
+      '%</td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
       (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
       '</td>' +
-      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' + bar + '</td>' +
-      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' + _a36StatusChip(b.status) + '</td>' +
+      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
+      bar +
+      '</td>' +
+      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
+      _a36StatusChip(b.status) +
+      '</td>' +
       '</tr>'
     );
   }
@@ -11338,11 +11372,13 @@ function rptPageASHRAE36Executive(n, d) {
   var chunks = [];
   var i = 0;
   while (i < allBuildings.length) {
-    var budget = (chunks.length === 0) ? BLDGS_PER_PAGE_FIRST : BLDGS_PER_PAGE_CONT;
+    var budget = chunks.length === 0 ? BLDGS_PER_PAGE_FIRST : BLDGS_PER_PAGE_CONT;
     chunks.push(allBuildings.slice(i, i + budget));
     i += budget;
   }
-  if (chunks.length === 0) { chunks.push([]); } // edge case: no buildings
+  if (chunks.length === 0) {
+    chunks.push([]);
+  } // edge case: no buildings
 
   var numChunks = chunks.length;
   var resultPages = [];
@@ -11351,7 +11387,7 @@ function rptPageASHRAE36Executive(n, d) {
     var tableRows = bldgSlice.map(_buildRow).join('');
     var table = tableHeader + '<tbody>' + tableRows + '</tbody></table>';
 
-    var isLastChunk = (chunkIndex === numChunks - 1);
+    var isLastChunk = chunkIndex === numChunks - 1;
     var pageN = n + chunkIndex;
 
     var bodyHTML;
@@ -11363,16 +11399,25 @@ function rptPageASHRAE36Executive(n, d) {
       var contHdr =
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Building Compliance Status — continued (' + (chunkIndex + 1) + ' of ' + numChunks + ')' +
+        'Building Compliance Status — continued (' +
+        (chunkIndex + 1) +
+        ' of ' +
+        numChunks +
+        ')' +
         '</div>';
       bodyHTML = contHdr + tableTitle + table + tableFootnote;
     }
 
-    resultPages.push(rptPage(pageN, 'ASHRAE 36 Audit — Executive Summary', bodyHTML, {
-      data: fakeData,
-      label: 'Page ' + pageN + ' — Executive Summary' +
-             (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
-    }));
+    resultPages.push(
+      rptPage(pageN, 'ASHRAE 36 Audit — Executive Summary', bodyHTML, {
+        data: fakeData,
+        label:
+          'Page ' +
+          pageN +
+          ' — Executive Summary' +
+          (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
+      }),
+    );
   });
 
   return resultPages; // always an Array, even for short portfolios (length === 1)
@@ -11392,8 +11437,8 @@ function rptPageASHRAE36Building(n, d, building) {
   // Returns an ARRAY of rptPage() HTML strings -- one element per printed page.
   // Short buildings (<=ROWS_PER_PAGE_FIRST rows) return a single-element array.
   // Caller (generateASHRAE36AuditHTML) must spread the array into pages[].
-  var ROWS_PER_PAGE_FIRST = 22;  // first page: gauges+intro ~180px, ~22 data rows fit
-  var ROWS_PER_PAGE_CONT  = 28;  // continuation pages: lightweight header, ~28 rows fit
+  var ROWS_PER_PAGE_FIRST = 22; // first page: gauges+intro ~180px, ~22 data rows fit
+  var ROWS_PER_PAGE_CONT = 28; // continuation pages: lightweight header, ~28 rows fit
 
   var b = building;
   // Rule 2.3: reportDate drives footer date; label empty (no period range for ASHRAE reports).
@@ -11435,7 +11480,9 @@ function rptPageASHRAE36Building(n, d, building) {
     .map(function (cat) {
       return (
         '<span style="font-size:10px;color:var(--rpt-page-text);margin-right:8px">' +
-        b.equipCounts[cat] + ' ' + (CAT_LABELS_PLURAL[cat] || cat) +
+        b.equipCounts[cat] +
+        ' ' +
+        (CAT_LABELS_PLURAL[cat] || cat) +
         '</span>'
       );
     })
@@ -11463,8 +11510,11 @@ function rptPageASHRAE36Building(n, d, building) {
     b.name +
     '</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">' +
-    b.equipCount + ' equipment units audited</div>' +
-    '<div style="margin-bottom:4px">' + equipBreakdown + '</div>' +
+    b.equipCount +
+    ' equipment units audited</div>' +
+    '<div style="margin-bottom:4px">' +
+    equipBreakdown +
+    '</div>' +
     _a36StatusChip(b.status) +
     '</div>' +
     '</div>';
@@ -11480,7 +11530,9 @@ function rptPageASHRAE36Building(n, d, building) {
 
   var _flatCatOrder = [];
   TIER_GROUPS.forEach(function (tg) {
-    tg.cats.forEach(function (c) { _flatCatOrder.push(c); });
+    tg.cats.forEach(function (c) {
+      _flatCatOrder.push(c);
+    });
   });
 
   var sortedEquip = b.equipResults.slice().sort(function (a, b2) {
@@ -11512,22 +11564,36 @@ function rptPageASHRAE36Building(n, d, building) {
     'border-bottom:2px solid var(--rpt-blue)';
   var tableHead =
     '<thead><tr>' +
-    '<th style="' + thStyle + ';width:22%">Equipment</th>' +
-    '<th style="' + thStyle + ';width:16%">Type</th>' +
-    '<th style="' + thStyle + ';width:8%;text-align:center">Sensors Present</th>' +
-    '<th style="' + thStyle + ';width:30%">Sensors Needed</th>' +
-    '<th style="' + thStyle + '">Sequences Not Ready</th>' +
+    '<th style="' +
+    thStyle +
+    ';width:22%">Equipment</th>' +
+    '<th style="' +
+    thStyle +
+    ';width:16%">Type</th>' +
+    '<th style="' +
+    thStyle +
+    ';width:8%;text-align:center">Sensors Present</th>' +
+    '<th style="' +
+    thStyle +
+    ';width:30%">Sensors Needed</th>' +
+    '<th style="' +
+    thStyle +
+    '">Sequences Not Ready</th>' +
     '</tr></thead>';
 
   // Build flat token list.
   // Each token: { type: 'tier'|'cat'|'row', html: string }
   // Every token (header or data row) counts as 1 slot against the page budget.
   var _catsWithRows = {};
-  sortedEquip.forEach(function (eq) { _catsWithRows[eq.category] = true; });
+  sortedEquip.forEach(function (eq) {
+    _catsWithRows[eq.category] = true;
+  });
 
   var _coveredCats = {};
   TIER_GROUPS.forEach(function (tg) {
-    tg.cats.forEach(function (c) { _coveredCats[c] = true; });
+    tg.cats.forEach(function (c) {
+      _coveredCats[c] = true;
+    });
   });
 
   var tokens = [];
@@ -11551,62 +11617,101 @@ function rptPageASHRAE36Building(n, d, building) {
       notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
     var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
     var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
-    tokens.push({ type: 'row', html:
-      '<tr>' +
-      '<td style="' + tdBase + ';font-weight:600;color:var(--rpt-page-text)">' + (eq.name || '—') + '</td>' +
-      '<td style="' + tdBase + ';color:var(--rpt-page-text)">' + (eq.categoryLabel || eq.category) + '</td>' +
-      '<td style="' + tdBase + ';text-align:center;color:var(--rpt-page-text)">' + presentCount + '</td>' +
-      '<td style="' + tdBase + ';color:var(--rpt-page-text);line-height:1.5">' + sensorsNeededCell + '</td>' +
-      '<td style="' + tdBase + ';color:var(--rpt-page-text);line-height:1.5">' + seqsCell + '</td>' +
-      '</tr>'
+    tokens.push({
+      type: 'row',
+      html:
+        '<tr>' +
+        '<td style="' +
+        tdBase +
+        ';font-weight:600;color:var(--rpt-page-text)">' +
+        (eq.name || '—') +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';color:var(--rpt-page-text)">' +
+        (eq.categoryLabel || eq.category) +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';text-align:center;color:var(--rpt-page-text)">' +
+        presentCount +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';color:var(--rpt-page-text);line-height:1.5">' +
+        sensorsNeededCell +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';color:var(--rpt-page-text);line-height:1.5">' +
+        seqsCell +
+        '</td>' +
+        '</tr>',
     });
   }
 
   TIER_GROUPS.forEach(function (tg) {
-    var tierHasRows = tg.cats.some(function (c) { return _catsWithRows[c]; });
+    var tierHasRows = tg.cats.some(function (c) {
+      return _catsWithRows[c];
+    });
     if (!tierHasRows) return;
     var tierHeaderEmitted = false;
     tg.cats.forEach(function (cat) {
-      var catRows = sortedEquip.filter(function (eq) { return eq.category === cat; });
+      var catRows = sortedEquip.filter(function (eq) {
+        return eq.category === cat;
+      });
       if (!catRows.length) return;
       if (!tierHeaderEmitted) {
         tierHeaderEmitted = true;
-        tokens.push({ type: 'tier', html:
-          '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
-          'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
-          'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">' +
-          tg.label + '</td></tr>'
+        tokens.push({
+          type: 'tier',
+          html:
+            '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
+            'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
+            'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">' +
+            tg.label +
+            '</td></tr>',
         });
       }
-      tokens.push({ type: 'cat', html:
-        '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
-        'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
-        'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
-        'background:rgba(0,0,0,0.02)">' +
-        (CAT_LABELS_PLURAL[cat] || cat) + '</td></tr>'
+      tokens.push({
+        type: 'cat',
+        html:
+          '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
+          'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
+          'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
+          'background:rgba(0,0,0,0.02)">' +
+          (CAT_LABELS_PLURAL[cat] || cat) +
+          '</td></tr>',
       });
       catRows.forEach(_pushEquipRow);
     });
   });
 
   // Catch-through: uncovered categories
-  var uncoveredRows = sortedEquip.filter(function (eq) { return !_coveredCats[eq.category]; });
+  var uncoveredRows = sortedEquip.filter(function (eq) {
+    return !_coveredCats[eq.category];
+  });
   if (uncoveredRows.length) {
-    tokens.push({ type: 'tier', html:
-      '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
-      'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
-      'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">Other Equipment</td></tr>'
+    tokens.push({
+      type: 'tier',
+      html:
+        '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
+        'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
+        'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">Other Equipment</td></tr>',
     });
     var lastUncovCat = null;
     uncoveredRows.forEach(function (eq) {
       if (eq.category !== lastUncovCat) {
         lastUncovCat = eq.category;
-        tokens.push({ type: 'cat', html:
-          '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
-          'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
-          'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
-          'background:rgba(0,0,0,0.02)">' +
-          (eq.categoryLabel || eq.category) + '</td></tr>'
+        tokens.push({
+          type: 'cat',
+          html:
+            '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
+            'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
+            'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
+            'background:rgba(0,0,0,0.02)">' +
+            (eq.categoryLabel || eq.category) +
+            '</td></tr>',
         });
       }
       _pushEquipRow(eq);
@@ -11615,8 +11720,9 @@ function rptPageASHRAE36Building(n, d, building) {
 
   // Empty state
   if (!tokens.length) {
-    tokens.push({ type: 'row', html:
-      '<tr><td colspan="5" style="padding:8px;font-size:10px;color:var(--rpt-page-text)">No auditable equipment found for this building.</td></tr>'
+    tokens.push({
+      type: 'row',
+      html: '<tr><td colspan="5" style="padding:8px;font-size:10px;color:var(--rpt-page-text)">No auditable equipment found for this building.</td></tr>',
     });
   }
 
@@ -11624,10 +11730,21 @@ function rptPageASHRAE36Building(n, d, building) {
   var summaryLine =
     '<div class="rpt-a36-callout" style="font-size:11px;color:var(--rpt-page-text);' +
     'border-top:1px solid var(--rpt-rule);padding-top:8px;margin-bottom:10px">' +
-    '<strong>Total for ' + b.name + ':</strong> install ' +
-    totalSensorsNeeded + ' sensor' + (totalSensorsNeeded !== 1 ? 's' : '') +
-    ', program ' + totalSeqsNotReady + ' sequence' + (totalSeqsNotReady !== 1 ? 's' : '') +
-    ' across ' + b.equipCount + ' equipment unit' + (b.equipCount !== 1 ? 's' : '') + '.' +
+    '<strong>Total for ' +
+    b.name +
+    ':</strong> install ' +
+    totalSensorsNeeded +
+    ' sensor' +
+    (totalSensorsNeeded !== 1 ? 's' : '') +
+    ', program ' +
+    totalSeqsNotReady +
+    ' sequence' +
+    (totalSeqsNotReady !== 1 ? 's' : '') +
+    ' across ' +
+    b.equipCount +
+    ' equipment unit' +
+    (b.equipCount !== 1 ? 's' : '') +
+    '.' +
     '</div>';
 
   // Plan sec 6 item 4 / sec 10 item 3: Infrastructure callout
@@ -11665,7 +11782,7 @@ function rptPageASHRAE36Building(n, d, building) {
   var remaining = tokens.slice();
 
   while (remaining.length > 0) {
-    var isFirst = (chunks.length === 0);
+    var isFirst = chunks.length === 0;
     var budget = isFirst ? ROWS_PER_PAGE_FIRST : ROWS_PER_PAGE_CONT;
     var chunk = [];
     var slotCount = 0;
@@ -11693,35 +11810,52 @@ function rptPageASHRAE36Building(n, d, building) {
   var resultPages = [];
 
   chunks.forEach(function (chunk, chunkIndex) {
-    var tbodyRows = chunk.map(function (tok) { return tok.html; }).join('');
+    var tbodyRows = chunk
+      .map(function (tok) {
+        return tok.html;
+      })
+      .join('');
     var equipTable =
       '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
       tableHead +
-      '<tbody>' + tbodyRows + '</tbody>' +
+      '<tbody>' +
+      tbodyRows +
+      '</tbody>' +
       '</table>';
 
-    var isLastChunk = (chunkIndex === numChunks - 1);
+    var isLastChunk = chunkIndex === numChunks - 1;
     var pageN = n + chunkIndex;
 
     var bodyHTML;
     if (chunkIndex === 0) {
       bodyHTML = gauges + intro + equipTable;
-      if (isLastChunk) { bodyHTML += summaryLine + infraCallout; }
+      if (isLastChunk) {
+        bodyHTML += summaryLine + infraCallout;
+      }
     } else {
       var contHdr =
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        b.name + ' — continued (' + (chunkIndex + 1) + ' of ' + numChunks + ')' +
+        b.name +
+        ' — continued (' +
+        (chunkIndex + 1) +
+        ' of ' +
+        numChunks +
+        ')' +
         '</div>';
       bodyHTML = contHdr + equipTable;
-      if (isLastChunk) { bodyHTML += summaryLine + infraCallout; }
+      if (isLastChunk) {
+        bodyHTML += summaryLine + infraCallout;
+      }
     }
 
-    resultPages.push(rptPage(pageN, 'ASHRAE 36 Audit — ' + b.name, bodyHTML, {
-      data: fakeData,
-      label: 'Page ' + pageN + ' — ' + b.name +
-             (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
-    }));
+    resultPages.push(
+      rptPage(pageN, 'ASHRAE 36 Audit — ' + b.name, bodyHTML, {
+        data: fakeData,
+        label:
+          'Page ' + pageN + ' — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
+      }),
+    );
   });
 
   return resultPages; // always an Array, even for short buildings (length === 1)
