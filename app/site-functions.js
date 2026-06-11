@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.500',
+    date: '2026-06-10',
+    title: 'PDF export reverted to stable version; audit cover gauge labels fixed',
+    items: [
+      {
+        type: 'fix',
+        text: 'PDF export reverted to the stable pre-v498 version — the experimental multi-page slicer dropped the footer, made page-1 margins inconsistent, and bloated the ASHRAE Audit from 31 to 124 pages (37 MB). The stable single-capture approach is restored; the old clipping-on-very-tall-pages limitation is back and will be redone properly later.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE-36 Audit cover gauges (Sensor Coverage, Sequence Coverage, Setpoint Coverage) no longer show a redundant double label. The inner SVG label is now suppressed on the cover page; per-building gauges are unchanged.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.10.499',
     date: '2026-06-10',
     title: 'EMS Leads: arrow and lightning glyphs now display correctly',
