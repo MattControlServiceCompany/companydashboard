@@ -330,10 +330,12 @@ function validateBillData(extracted, utilityName) {
     const fuelAdj = pf(extracted.FuelAdjustment);
     const recovered = total - custCharge - fuelAdj;
     if (recovered > 0) {
-      extracted.GasCharge = recovered;
+      // Round to 2 decimal places to prevent floating-point accumulation
+      // (e.g. 104.48 - 54.00 = 50.480000000000004 without rounding)
+      extracted.GasCharge = Number(recovered).toFixed(2);
       extracted['_auto_corrected_GasCharge'] = {
         original: gasCharge || 0,
-        corrected: recovered,
+        corrected: Number(recovered).toFixed(2),
         reason:
           'Derived from Total ($' +
           total.toFixed(2) +
@@ -2299,7 +2301,13 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             };
           }
           // ReadDifference × MeterMultiplier = kWhConsumed
-          if (dR > 0 && mM > 0 && !kC) {
+          // Gas and propane bills use NaturalGasTherms/GallonsDelivered for usage;
+          // injecting kWhConsumed on these bills causes usageQty to resolve to the
+          // wrong field (kWh instead of therms). Skip both inject and differs arms
+          // for gas/propane — leave the reverse arms below as-is (they only fire
+          // when kC>0, which gas/propane won't have after this guard).
+          const _isGasOrPropane = /gas|propane/i.test(b.Commodity || b.commodity || '');
+          if (!_isGasOrPropane && dR > 0 && mM > 0 && !kC) {
             const v = dR * mM;
             if (v > 0 && v < 2000000) {
               b.kWhConsumed = v.toFixed(4);
@@ -2309,7 +2317,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
               };
             }
-          } else if (dR > 0 && mM > 0 && kC > 0) {
+          } else if (!_isGasOrPropane && dR > 0 && mM > 0 && kC > 0) {
             const expected = dR * mM;
             const mismatch = Math.abs(kC - expected);
             const _expectedSane = expected > 0 && expected < 2000000;
@@ -2783,6 +2791,265 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         } else if (_kwhNow > 0 && v > _kwhNow) {
           b['_likely_missing_' + kwField] = true;
           b[kwField] = null;
+        }
+      }
+    }
+
+    // ── KGS PER-MCF VALIDATION & RECOVERY PASS ──────────────────────────────
+    // Runs over ALL gas bills together (cross-bill statistics).
+    // Three passes:
+    //   Pass A — printed-rate cross-check for WeatherNormalization and GasCharge.
+    //            Uses WNAPerMcf / CostOfGasPerMcf from the meter table row.
+    //            If actual/McfBilled is >5% off the printed rate, recover = printed_rate × McfBilled.
+    //   Pass B — statistical per-Mcf median for DeliveryCharge, GasSystemReliability, FuelAdjustment.
+    //            OOM band (ratio >10× or <0.1×): decimal-shift recovery when EXACTLY ONE candidate
+    //            lands in band; else _decimal_recovery_ambiguous (no mutate).
+    //            Digit-loss band (ratio <0.75× or >1.33× but not OOM): flag-only, no mutate.
+    //   Pass C — CustomerCharge cross-bill stability: flag >20% off cross-bill median.
+    // Rules: validate-before-mutate; always store raw original in diagnostic; surface ambiguity
+    // (no silent mutate); digit-loss = flag+suggest only; Sum Mismatch warning stays as backstop.
+    {
+      const PRINTED_RATE_TOL = 0.05;
+      const OOM_FACTOR = 10;
+      const DIGIT_LO = 0.75;
+      const DIGIT_HI = 1.33;
+      const CUST_TOL = 0.2;
+
+      // Helper: generate decimal-insertion candidates from a whole-number string.
+      // Returns values that are >0 and plausible (< total current charges × 2 as upper cap).
+      function _decimalCandidates(digits, cap) {
+        const candidates = [];
+        for (let i = 1; i < digits.length; i++) {
+          const c = parseFloat(digits.slice(0, i) + '.' + digits.slice(i));
+          if (c > 0 && c < cap) candidates.push(c);
+        }
+        return candidates;
+      }
+
+      // Helper: cross-bill median of per-Mcf rates from "clean" samples.
+      // A sample is clean if: value has a decimal point, value > 0, value < TotalCurrentCharges.
+      function _perMcfMedian(bills, field) {
+        const rates = [];
+        for (const b of bills) {
+          const comm = (b.Commodity || b.commodity || '').toLowerCase();
+          if (comm !== 'gas') continue;
+          const v = b[field];
+          if (v == null) continue;
+          const vStr = String(v).replace(/[$,\s]/g, '');
+          if (!vStr.includes('.')) continue; // not clean (no decimal)
+          const vNum = parseFloat(vStr);
+          if (!(vNum > 0)) continue;
+          const total = pf(b.TotalCurrentCharges);
+          if (vNum >= total) continue; // not clean (exceeds total)
+          const mcf = pf(b.McfBilled);
+          if (!(mcf > 0)) continue;
+          rates.push(vNum / mcf);
+        }
+        if (rates.length === 0) return null;
+        rates.sort((a, b) => a - b);
+        const mid = Math.floor(rates.length / 2);
+        return rates.length % 2 === 0 ? (rates[mid - 1] + rates[mid]) / 2 : rates[mid];
+      }
+
+      // ── PASS A: Printed-rate cross-check for WeatherNormalization and GasCharge ──
+      const PASS_A_FIELDS = [
+        { field: 'WeatherNormalization', rateField: 'WNAPerMcf' },
+        { field: 'GasCharge', rateField: 'CostOfGasPerMcf' },
+      ];
+      for (const b of bills) {
+        const comm = (b.Commodity || b.commodity || '').toLowerCase();
+        if (comm !== 'gas') continue;
+        const mcf = pf(b.McfBilled);
+        if (!(mcf > 0)) continue;
+        for (const { field, rateField } of PASS_A_FIELDS) {
+          const printedRate = pf(b[rateField]);
+          if (!(printedRate > 0)) continue; // no printed rate captured — skip
+          const v = b[field];
+          if (v == null) continue;
+          const vNum = pf(v);
+          const expected = printedRate * mcf;
+          if (!(expected > 0)) continue;
+          const relErr = Math.abs(vNum - expected) / expected;
+          if (relErr > PRINTED_RATE_TOL) {
+            // Recover: printed_rate × McfBilled
+            const corrected = Number(expected).toFixed(2);
+            b['_auto_recovered_' + field] = {
+              original: v,
+              corrected,
+              reason:
+                'Pass A printed-rate cross-check: actual ' +
+                vNum.toFixed(4) +
+                ' vs printed_rate(' +
+                printedRate +
+                ') × McfBilled(' +
+                mcf +
+                ') = ' +
+                expected.toFixed(4) +
+                '; rel error ' +
+                (relErr * 100).toFixed(1) +
+                '% > ' +
+                PRINTED_RATE_TOL * 100 +
+                '% threshold. Recovered = ' +
+                corrected +
+                '.',
+            };
+            b[field] = corrected;
+          }
+        }
+      }
+
+      // ── PASS B: Statistical per-Mcf median for delivery/surcharge/adjustment fields ──
+      const PASS_B_FIELDS = ['DeliveryCharge', 'GasSystemReliability', 'FuelAdjustment'];
+      for (const field of PASS_B_FIELDS) {
+        const medianPerMcf = _perMcfMedian(bills, field);
+        if (medianPerMcf === null) continue; // no clean samples — skip
+
+        for (const b of bills) {
+          const comm = (b.Commodity || b.commodity || '').toLowerCase();
+          if (comm !== 'gas') continue;
+          const mcf = pf(b.McfBilled);
+          if (!(mcf > 0)) continue;
+          const v = b[field];
+          if (v == null) continue;
+          const vStr = String(v).replace(/[$,\s]/g, '');
+          const vNum = parseFloat(vStr);
+          if (!(vNum > 0)) continue;
+          const total = pf(b.TotalCurrentCharges);
+
+          const actualPerMcf = vNum / mcf;
+          const ratio = actualPerMcf / medianPerMcf;
+
+          if (ratio > OOM_FACTOR || ratio < 1 / OOM_FACTOR) {
+            // OOM band — attempt decimal-shift recovery
+            const digits = vStr.replace(/\D/g, '');
+            const cap = total > 0 ? total : 9999;
+            const candidates = _decimalCandidates(digits, cap);
+            // Filter candidates whose per-Mcf rate looks "normal" — within the
+            // digit-loss band of the cross-bill median (DIGIT_LO to DIGIT_HI).
+            // Using the full non-OOM range would allow ambiguous candidates like
+            // 23.7 (ratio 9.4×) that are clearly not the right value.
+            const inBand = candidates.filter((c) => {
+              const r = c / mcf / medianPerMcf;
+              return r >= DIGIT_LO && r <= DIGIT_HI;
+            });
+            if (inBand.length === 1) {
+              const corrected = inBand[0].toFixed(2);
+              b['_auto_recovered_' + field] = {
+                original: v,
+                corrected,
+                originalPerMcf: actualPerMcf.toFixed(4),
+                medianPerMcf: medianPerMcf.toFixed(4),
+                reason:
+                  'Pass B OOM decimal recovery: raw ' +
+                  vStr +
+                  ' (' +
+                  actualPerMcf.toFixed(2) +
+                  '/Mcf) is >' +
+                  OOM_FACTOR +
+                  '× or <1/' +
+                  OOM_FACTOR +
+                  '× of cross-bill median ' +
+                  medianPerMcf.toFixed(4) +
+                  '/Mcf. Single in-band candidate: ' +
+                  corrected +
+                  '.',
+              };
+              b[field] = corrected;
+            } else {
+              b['_decimal_recovery_ambiguous'] = b['_decimal_recovery_ambiguous'] || [];
+              b['_decimal_recovery_ambiguous'].push({
+                field,
+                rawValue: vStr,
+                candidates: candidates.map((c) => c.toFixed(2)),
+                inBandCandidates: inBand.map((c) => c.toFixed(2)),
+                originalPerMcf: actualPerMcf.toFixed(4),
+                medianPerMcf: medianPerMcf.toFixed(4),
+                reason:
+                  (inBand.length === 0 ? 'No in-band candidate' : inBand.length + ' in-band candidates') +
+                  ' for OOM field ' +
+                  field +
+                  ' (raw ' +
+                  vStr +
+                  ', ' +
+                  actualPerMcf.toFixed(2) +
+                  '/Mcf vs median ' +
+                  medianPerMcf.toFixed(4) +
+                  '/Mcf). Cannot safely auto-correct. Sum Mismatch warning retained.',
+              });
+            }
+          } else if (ratio < DIGIT_LO || ratio > DIGIT_HI) {
+            // Digit-loss band — flag and suggest, never mutate
+            const suggestedValue = Number(medianPerMcf * mcf).toFixed(2);
+            b['_digit_loss_suspected_' + field] = {
+              original: v,
+              originalPerMcf: actualPerMcf.toFixed(4),
+              medianPerMcf: medianPerMcf.toFixed(4),
+              ratio: ratio.toFixed(4),
+              suggestedValue,
+              confidence: 'low',
+              reason:
+                'Pass B digit-loss band: ' +
+                field +
+                ' = ' +
+                vStr +
+                ' (' +
+                actualPerMcf.toFixed(4) +
+                '/Mcf) is ' +
+                (ratio < DIGIT_LO ? 'below DIGIT_LO (' + DIGIT_LO + ')' : 'above DIGIT_HI (' + DIGIT_HI + ')') +
+                ' vs cross-bill median ' +
+                medianPerMcf.toFixed(4) +
+                '/Mcf. Suggested = median × McfBilled = ' +
+                suggestedValue +
+                '. NOT mutated — digit loss cannot be safely recovered without the missing digit.',
+            };
+            // Do NOT mutate b[field]
+          }
+          // else: ratio within band — no flag
+        }
+      }
+
+      // ── PASS C: CustomerCharge cross-bill stability ──
+      // Compute cross-bill median CustomerCharge from bills that have a decimal
+      const custValues = [];
+      for (const b of bills) {
+        const comm = (b.Commodity || b.commodity || '').toLowerCase();
+        if (comm !== 'gas') continue;
+        const v = b.CustomerCharge;
+        if (v == null) continue;
+        const vStr = String(v).replace(/[$,\s]/g, '');
+        if (!vStr.includes('.')) continue;
+        const vNum = parseFloat(vStr);
+        if (vNum > 0) custValues.push(vNum);
+      }
+      if (custValues.length > 0) {
+        custValues.sort((a, b) => a - b);
+        const mid = Math.floor(custValues.length / 2);
+        const custMedian = custValues.length % 2 === 0 ? (custValues[mid - 1] + custValues[mid]) / 2 : custValues[mid];
+        for (const b of bills) {
+          const comm = (b.Commodity || b.commodity || '').toLowerCase();
+          if (comm !== 'gas') continue;
+          const v = b.CustomerCharge;
+          if (v == null) continue;
+          const vNum = pf(v);
+          if (!(vNum > 0)) continue;
+          const relDev = Math.abs(vNum - custMedian) / custMedian;
+          if (relDev > CUST_TOL) {
+            b._customer_charge_unstable = {
+              value: v,
+              crossBillMedian: custMedian.toFixed(2),
+              relativeDeviation: (relDev * 100).toFixed(1) + '%',
+              reason:
+                'Pass C: CustomerCharge ' +
+                vNum.toFixed(2) +
+                ' deviates ' +
+                (relDev * 100).toFixed(1) +
+                '% from cross-bill median ' +
+                custMedian.toFixed(2) +
+                ' (threshold ' +
+                CUST_TOL * 100 +
+                '%). NOT mutated.',
+            };
+          }
         }
       }
     }
@@ -3312,6 +3579,11 @@ async function confirmAutoAssign() {
       rkvaCharge: bill.RkVACharge || '',
       renewableCharge: bill.RenewableCharge || '',
       franchiseFee: bill.FranchiseFee || '',
+      // KGS has two separate Franchise Fee lines; store individually so _LAYOUT_KGS
+      // can display FranchiseFee1 and FranchiseFee2 on saved (re-rendered) bills.
+      // (single-bill save path _saveSinglePDFBill already persists these — keep in sync)
+      franchiseFee1: bill.FranchiseFee1 || '',
+      franchiseFee2: bill.FranchiseFee2 || '',
       solarCredit: bill.SolarCredit || '',
       Meter1_ReadStart: bill.Meter1_ReadStart || '',
       Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
@@ -3714,6 +3986,8 @@ function _saveBillToMatchedMeter(extracted, match) {
     billOffset: extracted.BillOffset || '',
     renewableCharge: extracted.RenewableCharge || '',
     franchiseFee: extracted.FranchiseFee || '',
+    franchiseFee1: extracted.FranchiseFee1 || '',
+    franchiseFee2: extracted.FranchiseFee2 || '',
     solarCredit: extracted.SolarCredit || '',
     totalKwhRate: (() => {
       const _kwh = pf(extracted.kWhConsumed);
@@ -8481,6 +8755,8 @@ function renderPDFFields(parsed, warnings) {
     TaxExemptDelivery: 'Tax Exempt Delivery',
     BillOffset: 'Bill Offset',
     FranchiseFee: 'Franchise Fee',
+    FranchiseFee1: 'Franchise Fee (1)',
+    FranchiseFee2: 'Franchise Fee (2)',
     TotalCurrentCharges: 'Total Current Charges',
     TotalKWhRate: 'Total $/kWh Rate',
     TotalKWRate: 'Total $/kW Rate',
@@ -8574,6 +8850,8 @@ function renderPDFFields(parsed, warnings) {
     'WinterEventCost',
     'PreviousBalance',
     'PaymentsReceived',
+    'FranchiseFee1',
+    'FranchiseFee2',
   ]);
   // Fields that MUST display with 4 decimal places (kW, kWh, meter reads per Evergy Billing Details rules)
   const FOURDP_FIELDS = new Set([
@@ -8795,8 +9073,16 @@ function renderPDFFields(parsed, warnings) {
     { type: 'charge-line', label: 'Tax', chargeField: 'Tax', rateKey: null },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
   ];
-  // KGS-specific layout: correct field order matching the bill structure
-  // (balance-forward items → line-item charges → total → amount due)
+  // KGS-specific layout (Fix 3 + Fix 4, Batch B):
+  //   • Account Info → Billing Period & Meter → CHARGES section (runningTotal starts here)
+  //     → {type:'total'} closes Charges → AMOUNT DUE section below (no runningTotal feed).
+  //   • PreviousBalance/PaymentsReceived moved BELOW the total into Amount Due — they are
+  //     balance-forward items, not current charges, and must NOT inflate the running sum.
+  //   • Delivery/GSRS/WeatherNorm/CostOfGas get qtyField:'McfBilled',unit:'Mcf' so the
+  //     renderer shows computed $/Mcf. Customer Charge stays fixed (no qtyField).
+  //   • printedRateField on WeatherNorm and CostOfGas cross-references the printed per-Mcf
+  //     rates captured by the extractor (WNAPerMcf / CostOfGasPerMcf) — renderer shows
+  //     a mismatch indicator when computed vs printed rates differ by >5%.
   const _LAYOUT_KGS = [
     { section: 'Account Info' },
     { type: 'wide', fields: ['UtilityCompany'] },
@@ -8809,30 +9095,63 @@ function renderPDFFields(parsed, warnings) {
     { type: 'pair', fields: ['NumberOfDays', 'MeterMultiplier'] },
     { type: 'pair', fields: ['MeterReadPrevious', 'MeterReadCurrent'] },
     { type: 'pair', fields: ['McfBilled', 'NaturalGasTherms'] },
-    { section: 'Balance Forward' },
-    { type: 'charge-line', label: 'Previous Balance', chargeField: 'PreviousBalance', rateKey: null },
-    { type: 'charge-line', label: 'Payments Received', chargeField: 'PaymentsReceived', rateKey: null },
     { section: 'Charges' },
+    // Service/Customer Charge: fixed fee, no per-unit qty
     { type: 'charge-line', label: 'Service Charge', chargeField: 'CustomerCharge', rateKey: null },
-    { type: 'charge-line', label: 'Delivery Charge', chargeField: 'DeliveryCharge', rateKey: null },
+    // Delivery, GSRS, WeatherNorm, CostOfGas: per-Mcf charges — qtyField drives $/Mcf display
+    {
+      type: 'charge-line',
+      label: 'Delivery Charge',
+      chargeField: 'DeliveryCharge',
+      qtyField: 'McfBilled',
+      unit: 'Mcf',
+      rateKey: null,
+    },
     {
       type: 'charge-line',
       label: 'Gas System Reliability Surcharge',
       chargeField: 'GasSystemReliability',
+      qtyField: 'McfBilled',
+      unit: 'Mcf',
       rateKey: null,
     },
-    { type: 'charge-line', label: 'Weather Normalization', chargeField: 'WeatherNormalization', rateKey: null },
+    {
+      type: 'charge-line',
+      label: 'Weather Normalization',
+      chargeField: 'WeatherNormalization',
+      qtyField: 'McfBilled',
+      unit: 'Mcf',
+      printedRateField: 'WNAPerMcf',
+      rateKey: null,
+    },
     {
       type: 'charge-line',
       label: 'Cost of Gas',
       chargeField: 'GasCharge',
-      qtyField: 'NaturalGasTherms',
-      unit: 'Therms',
+      qtyField: 'McfBilled',
+      unit: 'Mcf',
+      printedRateField: 'CostOfGasPerMcf',
       rateKey: null,
     },
-    { type: 'charge-line', label: 'Winter Event Securitized Cost', chargeField: 'WinterEventCost', rateKey: null },
-    { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
+    // Winter Event: hideIfNull — invisible on bills without this charge
+    {
+      type: 'charge-line',
+      label: 'Winter Event Securitized Cost',
+      chargeField: 'WinterEventCost',
+      rateKey: null,
+      hideIfNull: true,
+    },
+    // KGS often has two Franchise Fee lines (state + local).
+    // FranchiseFee1/2 hold individual values; FranchiseFee holds the sum used by
+    // the gas sanity sum and taxCost — do NOT swap those downstream references.
+    // Row (2) uses hideIfNull so it is invisible on single-FF bills.
+    { type: 'charge-line', label: 'Franchise Fee (1)', chargeField: 'FranchiseFee1', rateKey: null },
+    { type: 'charge-line', label: 'Franchise Fee (2)', chargeField: 'FranchiseFee2', rateKey: null, hideIfNull: true },
+    // Total Current Charges closes the runningTotal accumulation
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+    // Amount Due section — balance-forward items below the total, NOT fed into runningTotal
+    { section: 'Amount Due' },
+    { type: 'pair', fields: ['PreviousBalance', 'PaymentsReceived'] },
     { type: 'pair', fields: ['TotalAmountDue'] },
   ];
   // Detect the commodity for this bill and pick a layout. Priority:
@@ -8891,9 +9210,22 @@ function renderPDFFields(parsed, warnings) {
     'TotalKWRate',
     'TotalKWhRate',
     'RkVARate',
+    // KGS fields that appear inside layout rows or are diagnostic-only — must not
+    // appear as stray extras below Total Current Charges:
+    'FranchiseFee', // sum field; individual FF1/FF2 rows are in _LAYOUT_KGS
+    'FranchiseFeeItems', // internal array used to build FF1/FF2
+    'commodity', // lowercase alias sometimes stored alongside Commodity
+    'StartRead', // in _LAYOUT_GAS pair; implicit for KGS (MeterReadPrevious used instead)
+    'EndRead', // same
+    'ReadDifference', // in _LAYOUT_GAS; not in KGS layout (computed from prev/curr reads)
+    'WNAPerMcf', // printed rate — used by per-Mcf validation, shown via printedRateField
+    'CostOfGasPerMcf', // same
   ]);
+  // Also exclude null/undefined/'' values so empty diagnostic fields (NaturalGasCCF,
+  // kWhConsumed on gas bills) don't render as blank cells below Total Current Charges.
   const extraKeys = Object.keys(parsed).filter(
-    (k) => !layoutKeys.has(k) && !IMPLICITLY_RENDERED.has(k) && !k.startsWith('_'),
+    (k) =>
+      !layoutKeys.has(k) && !IMPLICITLY_RENDERED.has(k) && !k.startsWith('_') && parsed[k] != null && parsed[k] !== '',
   );
   // Build warning lookup by field name
   const warnMap = {};
@@ -9108,6 +9440,9 @@ function renderPDFFields(parsed, warnings) {
       // For tiered energy, hide Off-Peak row and relabel On-Peak parts as Tier 1/2/3
       const isTiered = parsed._energyFormat === 'tiered';
       if (isTiered && row.chargeField === 'EnergyOffPeakCharge') return '';
+      // hideIfNull: hide this row entirely when the field is absent/null on this bill
+      // (used for Franchise Fee (2) on KGS bills that have only one FF line)
+      if (row.hideIfNull && !parsed[row.chargeField]) return '';
       const base = isTiered && row.chargeField === 'EnergyOnPeakCharge' ? 'Energy' : row.label;
 
       // Determine the unit label for this charge (kW or kWh)
@@ -9139,7 +9474,24 @@ function renderPDFFields(parsed, warnings) {
         const qtyVal = row.qtyField ? parseFloat(parsed[row.qtyField]) || 0 : 0;
         const computedRate = qtyVal > 0 && chargeVal > 0 ? chargeVal / qtyVal : 0;
         const rateUnit = row.unit || '';
-        const rateStr = computedRate > 0 ? '$' + computedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '') : '';
+        let rateStr = computedRate > 0 ? '$' + computedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '') : '';
+        // printedRateField cross-check: when the row declares a printed rate field
+        // (e.g. WNAPerMcf / CostOfGasPerMcf on KGS rows) and the extractor captured
+        // a valid value, show it alongside the computed rate and flag >5% mismatch.
+        // Guard: skip entirely when printedRateField is absent, null, or NaN.
+        if (row.printedRateField) {
+          const _printedRaw = parsed[row.printedRateField];
+          const _printedRate = _printedRaw != null ? parseFloat(String(_printedRaw).replace(/[$,\s]/g, '')) : NaN;
+          if (_printedRate > 0 && computedRate > 0) {
+            const _relDiff = Math.abs(computedRate - _printedRate) / _printedRate;
+            const _mismatch = _relDiff > 0.05;
+            const _printedFmt = '$' + _printedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '');
+            const _warnGlyph = _mismatch
+              ? ` <span title="Computed rate ($${computedRate.toFixed(5)}) differs from printed rate ($${_printedRate.toFixed(5)}) by ${(_relDiff * 100).toFixed(1)}%" style="color:#ef4444;font-weight:700;cursor:help">&#9888;</span>`
+              : '';
+            rateStr = (rateStr || _printedFmt) + ` (${_printedFmt} printed)${_warnGlyph}`;
+          }
+        }
         const rateHtml = buildRateBox(noRateLabel + ' Rate', rateStr);
         return `<div class="ef-charge-row">${qtyHtml}${rateHtml}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
       }
@@ -10499,6 +10851,8 @@ function confirmManualAssign() {
     ptsCharge: extracted.PTSCharge || '',
     tdcCharge: extracted.TDCCharge || '',
     franchiseFee: extracted.FranchiseFee || '',
+    franchiseFee1: extracted.FranchiseFee1 || '',
+    franchiseFee2: extracted.FranchiseFee2 || '',
     fromPDF: true,
     _manuallyAssigned: true,
     // Gas fields
@@ -10830,6 +11184,8 @@ async function _saveSinglePDFBill(extracted, projId) {
     billOffset: extracted.BillOffset || '',
     renewableCharge: extracted.RenewableCharge || '',
     franchiseFee: extracted.FranchiseFee || '',
+    franchiseFee1: extracted.FranchiseFee1 || '',
+    franchiseFee2: extracted.FranchiseFee2 || '',
     solarCredit: extracted.SolarCredit || '',
     totalKwhRate: (() => {
       const _kwh = pf(extracted.kWhConsumed);

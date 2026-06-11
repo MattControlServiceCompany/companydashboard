@@ -1476,12 +1476,21 @@ function openBillModal(mid, editRowId) {
   const commKey = (m.commodity || 'Electric').toLowerCase();
   let layout = BILL_MODAL_LAYOUTS[commKey] || BILL_MODAL_LAYOUTS.electric;
   if (commKey === 'gas') {
-    const meterUnit = getMeterBillUnit(m);
-    const useTherms =
-      meterUnit === 'Therms' || (meterUnit !== 'CCF' && row && (row.naturalGasTherms || row.NaturalGasTherms));
-    layout = layout.map((r) =>
-      r.qtyField === 'NaturalGasCCF' && useTherms ? { ...r, qtyField: 'NaturalGasTherms', unit: 'Therms' } : r,
-    );
+    // KGS bills use Mcf (not CCF) — detect by meter's utility company name.
+    // Falls through to generic gas layout but swaps qty unit CCF→Mcf, consistent
+    // with the useTherms swap below.
+    const isKGS = /kansas\s*gas/i.test(m.utilityCompany || '');
+    if (isKGS) {
+      // KGS Edit modal: replace CCF qty with McfBilled at Mcf unit so rate shows $/Mcf
+      layout = layout.map((r) => (r.qtyField === 'NaturalGasCCF' ? { ...r, qtyField: 'McfBilled', unit: 'Mcf' } : r));
+    } else {
+      const meterUnit = getMeterBillUnit(m);
+      const useTherms =
+        meterUnit === 'Therms' || (meterUnit !== 'CCF' && row && (row.naturalGasTherms || row.NaturalGasTherms));
+      layout = layout.map((r) =>
+        r.qtyField === 'NaturalGasCCF' && useTherms ? { ...r, qtyField: 'NaturalGasTherms', unit: 'Therms' } : r,
+      );
+    }
   }
   const schemaEntry = (pdfKey) => {
     const schema = _billSchemaFor(m.commodity);

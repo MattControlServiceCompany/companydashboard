@@ -1191,6 +1191,34 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.506',
+    date: '2026-06-11',
+    title: 'KGS gas bill extraction and display overhauled',
+    items: [
+      {
+        type: 'feature',
+        text: 'KGS gas bills now capture the per-Mcf rate breakdown — WNA/Mcf and Cost of Gas/Mcf are extracted and shown in the bill detail panel so you can see exactly how the commodity rate is built up.',
+      },
+      {
+        type: 'feature',
+        text: 'KGS Franchise Fee is now split into two separate line items (Franchise Fee 1 and Franchise Fee 2) matching the actual bill, and both are saved and displayed correctly.',
+      },
+      { type: 'fix', text: 'KGS bill totals no longer have floating-point rounding errors on the Gas Charge line.' },
+      {
+        type: 'fix',
+        text: 'KGS extraction now runs a per-Mcf validation pass — if the main charge line is missing or misread, the extractor recovers the value from the per-Mcf rate fields instead of leaving it blank.',
+      },
+      {
+        type: 'change',
+        text: 'KGS bill detail panel is restructured: Charges group shows individual lines, then the total, then Amount Due below — matching the layout of the actual bill. Balance-forward items no longer feed into the running total.',
+      },
+      {
+        type: 'change',
+        text: 'Edit modal for KGS bills in the Import CSV screen now shows Mcf (not CCF) in the usage field label, matching the utility.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.505',
     date: '2026-06-11',
     title: 'ASHRAE 36 Audit PDF export no longer clips content past page 1',

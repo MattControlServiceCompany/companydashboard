@@ -5320,11 +5320,13 @@ const UTILITY_RULES = [
         const ServiceAddress = addrM ? addrM[1].trim() : null;
 
         // === METER READING TABLE ===
-        // Pattern: MeterNum   MM-DD-YY   MM-DD-YY   Days   Prev   Curr   Const   Mcf   WNA   CostGas
-        // OCR sometimes inserts "~~" between dates
+        // Pattern: MeterNum   MM-DD-YY   MM-DD-YY   Days   Prev   Curr   Const   Mcf   WNA/Mcf   CostGas/Mcf
+        // OCR sometimes inserts "~~" between dates.
+        // Groups 9 and 10 capture the printed per-Mcf rates: WNA/Mcf (strip leading $) and Cost of Gas/Mcf.
+        // These are used by Pass A of the per-Mcf validation & recovery pass in _postExtractionVerify.
         // Uses activeT so only this account's meter row is matched.
         const meterRowM = activeT.match(
-          /([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s*(?:~~\s*)?(\d{2}-\d{2}-\d{2})\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)/,
+          /([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s*(?:~~\s*)?(\d{2}-\d{2}-\d{2})\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)(?:\s+\$?([\d.]+)\s+([\d.]+))?/,
         );
 
         const MeterNumber = meterRowM ? meterRowM[1] : null;
@@ -5335,6 +5337,11 @@ const UTILITY_RULES = [
         const MeterReadCurrent = meterRowM ? meterRowM[6] : null;
         const MeterMultiplier = meterRowM ? meterRowM[7] : null;
         const McfBilled = meterRowM ? meterRowM[8] : null;
+        // Printed per-Mcf rates from the meter table header columns "WNA/Mcf" and "Cost of Gas/Mcf"
+        // Both wrapped in fixNum() so OCR colon-for-period artifacts (e.g. "5:48" → "5.48") are normalised.
+        // Both are null when the bill format lacks those columns (optional capture groups 9 and 10).
+        const WNAPerMcf = meterRowM ? fixNum(meterRowM[9]) : null;
+        const CostOfGasPerMcf = meterRowM ? fixNum(meterRowM[10]) : null;
 
         // Therms = Mcf × Multiplier × 10 (KGS reports in Mcf; 1 Mcf ≈ 10 therms)
         const _multiplier = parseFloat(MeterMultiplier) || 1.0;
@@ -5380,13 +5387,17 @@ const UTILITY_RULES = [
 
         // Sum all Franchise Fee line items (KGS often has two: state + local)
         // Uses activeT so only this account's franchise fee lines are summed.
+        // FranchiseFee = numeric SUM (kept as-is — downstream gas sanity sum and
+        // taxCost both use this total).  FranchiseFee1/2 = individual line values
+        // for the two-row display in _LAYOUT_KGS.
         const franchiseMs = [...activeT.matchAll(/Franchise\s+Fee\s+\$?([\d,.:]+)/gi)];
+        const FranchiseFeeItems = franchiseMs.length > 0 ? franchiseMs.map((m) => fixNum(m[1])) : null;
         const FranchiseFee =
-          franchiseMs.length > 0
-            ? String(
-                franchiseMs.reduce((sum, m) => sum + parseFloat((fixNum(m[1]) || '0').replace(/,/g, '')), 0).toFixed(2),
-              )
+          FranchiseFeeItems !== null
+            ? String(FranchiseFeeItems.reduce((sum, v) => sum + parseFloat((v || '0').replace(/,/g, '')), 0).toFixed(2))
             : null;
+        const FranchiseFee1 = FranchiseFeeItems ? FranchiseFeeItems[0] || null : null;
+        const FranchiseFee2 = FranchiseFeeItems ? FranchiseFeeItems[1] || null : null;
 
         // "Total Current Charges" — OCR sometimes inserts "___ $" before the dollar amount.
         // Old pattern: "Total\s+Current\s+Charges\s+\$?(\d+)" — fails when "___" appears.
@@ -5430,6 +5441,11 @@ const UTILITY_RULES = [
           WeatherNormalization,
           WinterEventCost,
           FranchiseFee,
+          FranchiseFee1,
+          FranchiseFee2,
+          FranchiseFeeItems,
+          WNAPerMcf,
+          CostOfGasPerMcf,
           FuelAdjustment: null,
           TotalCurrentCharges,
           TotalAmountDue,
