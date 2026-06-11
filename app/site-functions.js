@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.508',
+    date: '2026-06-11',
+    title: 'Equipment Matrix Summary View no longer shows weather stations',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Equipment Matrix Summary View building list no longer includes campus-wide weather stations (AccuWeather, NWS, and similar) as pseudo-buildings — only real buildings with actual equipment appear in the list.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.507',
     date: '2026-06-11',
     title: 'KGS gas bill extraction and display overhauled',

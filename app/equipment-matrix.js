@@ -4741,6 +4741,9 @@ function emComputeBuildingZoneStats(rows, seedRows) {
 
   // First pass: seed every building with a blank stat entry so that AHU-only /
   // plant-only buildings always appear in the Summary view (Fix 8c7dcc71).
+  // Also accumulate _seedByBuilding so the campus-wide filter below can inspect
+  // every row that belongs to each building key.
+  var _seedByBuilding = {};
   for (var si = 0; si < _seed.length; si++) {
     var sbldg = _seed[si].building || '(No Building)';
     if (!result[sbldg]) {
@@ -4755,6 +4758,45 @@ function emComputeBuildingZoneStats(rows, seedRows) {
         cold: 0,
         totalZones: 0,
       };
+    }
+    if (!_seedByBuilding[sbldg]) _seedByBuilding[sbldg] = [];
+    _seedByBuilding[sbldg].push(_seed[si]);
+  }
+
+  // Campus-wide exclusion (Fix da562f20): remove any seeded building whose ENTIRE
+  // equipment set consists of campus-wide informational points (weather sensors,
+  // AccuWeather/NWS virtual points, or bare 'sensor'-category rows).
+  // These are not real buildings — they are site-level data feeds with no
+  // addressable zone or mechanical equipment.
+  //
+  // SAFEGUARD (preserves Fix 8c7dcc71): a building is only removed when EVERY one
+  // of its seed rows is campus-wide. A single non-campus-wide row (AHU, VAV, plant,
+  // FCU, DDV, etc.) is enough to keep the building in the Summary list.
+  //
+  // isCampusWide predicate:
+  //   category === 'sensor'                             → bare sensor/weather point
+  //   category === 'other' AND equipName starts with
+  //     "weather", "accuweather", or "nws" (case-insensitive) → named weather feed
+  var _weatherEquipRe = /^(weather|accuweather|nws)/i;
+  function _isCampusWide(row) {
+    if (row.category === 'sensor') return true;
+    if (row.category === 'other' && _weatherEquipRe.test(row.equipName || '')) return true;
+    return false;
+  }
+  var _seedBldgKeys = Object.keys(_seedByBuilding);
+  for (var ci = 0; ci < _seedBldgKeys.length; ci++) {
+    var _ck = _seedBldgKeys[ci];
+    var _crows = _seedByBuilding[_ck];
+    if (_crows.length === 0) continue; // no rows at all → leave as-is
+    var _allCampusWide = true;
+    for (var cj = 0; cj < _crows.length; cj++) {
+      if (!_isCampusWide(_crows[cj])) {
+        _allCampusWide = false;
+        break;
+      }
+    }
+    if (_allCampusWide) {
+      delete result[_ck];
     }
   }
 
