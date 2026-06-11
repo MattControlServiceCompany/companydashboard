@@ -11238,84 +11238,19 @@ function rptPageASHRAE36Cover(n, d) {
  * Executive summary: portfolio stats, building status table, key finding callout.
  */
 function rptPageASHRAE36Executive(n, d) {
+  // PRE-SPLIT PAGINATION (Stage 2 fix, 2026-06-11):
+  // Returns an ARRAY of rptPage() HTML strings.
+  // Chunks d.buildings at BLDGS_PER_PAGE buildings per page.
+  // callout boxes (topGap, dcv) only on first page.
+  // Continuation pages get a minimal header + remaining rows + footnote.
+  var BLDGS_PER_PAGE_FIRST = 20;
+  var BLDGS_PER_PAGE_CONT  = 20;
+
   var p = d.portfolio;
-  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  // Rule 2.3: reportDate drives footer date; label empty.
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
-  // Building status table
-  var tableRows = '';
-  d.buildings.forEach(function (b) {
-    var bar =
-      '<div style="display:flex;align-items:center;gap:4px">' +
-      '<div style="width:' +
-      b.composite +
-      'px;max-width:120px;height:8px;background:' +
-      b.statusColor +
-      ';border-radius:2px;min-width:2px"></div>' +
-      '<span style="font-size:10px;color:var(--rpt-page-text)">' +
-      b.composite +
-      '%</span>' +
-      '</div>';
-    tableRows +=
-      '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
-      b.name +
-      '</td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
-      b.equipCount +
-      '</td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
-      b.pointPct +
-      '%</td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
-      (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
-      '</td>' +
-      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
-      bar +
-      '</td>' +
-      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
-      _a36StatusChip(b.status) +
-      '</td>' +
-      '</tr>';
-  });
-
-  var tableTitle =
-    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building Compliance Status</div>';
-  var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
-  var table =
-    tableTitle +
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
-    '<thead><tr>' +
-    '<th style="' +
-    thStyle +
-    '">Building</th>' +
-    '<th style="' +
-    thStyle +
-    ';text-align:center">Equipment</th>' +
-    '<th style="' +
-    thStyle +
-    ';text-align:center">Sensor Coverage</th>' +
-    '<th style="' +
-    thStyle +
-    ';text-align:center">Sequence Readiness</th>' +
-    '<th style="' +
-    thStyle +
-    '">Score</th>' +
-    '<th style="' +
-    thStyle +
-    '">Status</th>' +
-    '</tr></thead>' +
-    '<tbody>' +
-    tableRows +
-    '</tbody>' +
-    '</table>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
-    '<strong>Score</strong> = weighted composite (40% Sensor Coverage + 60% Sequence Readiness). ' +
-    '<strong>Status thresholds:</strong> Good ≥ 75%, Needs Attention 50–74%, Significant Gaps &lt;50%.' +
-    '</div>';
-
-  // Key finding callout
+  // Key finding callout (first page only)
   var topGap = p.topGaps[0];
   var callout = '';
   if (topGap) {
@@ -11331,7 +11266,7 @@ function rptPageASHRAE36Executive(n, d) {
       '</div>';
   }
 
-  // DCV readiness callout — only shown when at least one AHU or zone is missing a CO2 sensor
+  // DCV readiness callout (first page only)
   var dcvCallout = '';
   var dcv = p.dcv || {};
   var _dcvAhuMissing = dcv.ahuMissingCO2 || 0;
@@ -11356,11 +11291,91 @@ function rptPageASHRAE36Executive(n, d) {
       '</div>';
   }
 
-  var bodyHTML = dcvCallout + callout + table;
-  return rptPage(n, 'ASHRAE 36 Audit — Executive Summary', bodyHTML, {
-    data: fakeData,
-    label: 'Page ' + n + ' — Executive Summary',
+  // Shared table styles
+  var tableTitle =
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building Compliance Status</div>';
+  var thStyle =
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+  var tableHeader =
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
+    '<thead><tr>' +
+    '<th style="' + thStyle + '">Building</th>' +
+    '<th style="' + thStyle + ';text-align:center">Equipment</th>' +
+    '<th style="' + thStyle + ';text-align:center">Sensor Coverage</th>' +
+    '<th style="' + thStyle + ';text-align:center">Sequence Readiness</th>' +
+    '<th style="' + thStyle + '">Score</th>' +
+    '<th style="' + thStyle + '">Status</th>' +
+    '</tr></thead>';
+  var tableFootnote =
+    '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
+    '<strong>Score</strong> = weighted composite (40% Sensor Coverage + 60% Sequence Readiness). ' +
+    '<strong>Status thresholds:</strong> Good ≥75%, Needs Attention 50–74%, Significant Gaps <50%.' +
+    '</div>';
+
+  function _buildRow(b) {
+    var bar =
+      '<div style="display:flex;align-items:center;gap:4px">' +
+      '<div style="width:' + b.composite + 'px;max-width:120px;height:8px;background:' + b.statusColor +
+      ';border-radius:2px;min-width:2px"></div>' +
+      '<span style="font-size:10px;color:var(--rpt-page-text)">' + b.composite + '%</span>' +
+      '</div>';
+    return (
+      '<tr>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' + b.name + '</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' + b.equipCount + '</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' + b.pointPct + '%</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
+      '</td>' +
+      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' + bar + '</td>' +
+      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' + _a36StatusChip(b.status) + '</td>' +
+      '</tr>'
+    );
+  }
+
+  // Chunk buildings
+  var allBuildings = d.buildings;
+  var chunks = [];
+  var i = 0;
+  while (i < allBuildings.length) {
+    var budget = (chunks.length === 0) ? BLDGS_PER_PAGE_FIRST : BLDGS_PER_PAGE_CONT;
+    chunks.push(allBuildings.slice(i, i + budget));
+    i += budget;
+  }
+  if (chunks.length === 0) { chunks.push([]); } // edge case: no buildings
+
+  var numChunks = chunks.length;
+  var resultPages = [];
+
+  chunks.forEach(function (bldgSlice, chunkIndex) {
+    var tableRows = bldgSlice.map(_buildRow).join('');
+    var table = tableHeader + '<tbody>' + tableRows + '</tbody></table>';
+
+    var isLastChunk = (chunkIndex === numChunks - 1);
+    var pageN = n + chunkIndex;
+
+    var bodyHTML;
+    if (chunkIndex === 0) {
+      // First page: callouts + titled table + footnote
+      bodyHTML = dcvCallout + callout + tableTitle + table + tableFootnote;
+    } else {
+      // Continuation page: minimal header + table + footnote
+      var contHdr =
+        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
+        'Building Compliance Status — continued (' + (chunkIndex + 1) + ' of ' + numChunks + ')' +
+        '</div>';
+      bodyHTML = contHdr + tableTitle + table + tableFootnote;
+    }
+
+    resultPages.push(rptPage(pageN, 'ASHRAE 36 Audit — Executive Summary', bodyHTML, {
+      data: fakeData,
+      label: 'Page ' + pageN + ' — Executive Summary' +
+             (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
+    }));
   });
+
+  return resultPages; // always an Array, even for short portfolios (length === 1)
 }
 
 // ─── rptPageASHRAE36Building ──────────────────────────────────────────────
@@ -11373,32 +11388,34 @@ function rptPageASHRAE36Executive(n, d) {
  * @param {object} building - Single building entry from d.buildings
  */
 function rptPageASHRAE36Building(n, d, building) {
+  // PRE-SPLIT PAGINATION (Stage 2 fix, 2026-06-11):
+  // Returns an ARRAY of rptPage() HTML strings -- one element per printed page.
+  // Short buildings (<=ROWS_PER_PAGE_FIRST rows) return a single-element array.
+  // Caller (generateASHRAE36AuditHTML) must spread the array into pages[].
+  var ROWS_PER_PAGE_FIRST = 22;  // first page: gauges+intro ~180px, ~22 data rows fit
+  var ROWS_PER_PAGE_CONT  = 28;  // continuation pages: lightweight header, ~28 rows fit
+
   var b = building;
-  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
+  // Rule 2.3: reportDate drives footer date; label empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
-  // ── Helper: resolve human-readable name for a missing point category key ──
-  // Priority: ASHRAE36_GAP_DESCRIPTIONS[key].short → categoryLabel from compliance
-  // result → key itself (raw key is last resort, never primary).
+  // Helper: resolve human-readable name for a missing point category key
   function _missingPointName(mp) {
     var desc = ASHRAE36_GAP_DESCRIPTIONS[mp.categoryKey];
     if (desc && desc.short) return desc.short;
     if (mp.categoryLabel) return mp.categoryLabel;
-    return mp.categoryKey; // fallback only — raw key should be rare
+    return mp.categoryKey;
   }
 
-  // ── Helper: resolve human-readable label for a sequence key ──
-  // Uses EM_SEQUENCE_DEFS array if available, otherwise ASHRAE36_GAP_DESCRIPTIONS,
-  // then falls back to the key itself.
+  // Helper: resolve human-readable label for a sequence key
   function _seqLabel(seqKey, seqEntry) {
-    // seqEntry.label is populated by emComputeSequenceReadiness from EM_SEQUENCE_DEFS
     if (seqEntry && seqEntry.label) return seqEntry.label;
     var desc = ASHRAE36_GAP_DESCRIPTIONS[seqKey];
     if (desc && desc.short) return desc.short;
-    return seqKey; // fallback only
+    return seqKey;
   }
 
-  // ── Coverage gauges (retained from original — useful header summary) ──
+  // Coverage gauges (first page only)
   var CAT_LABELS_PLURAL = {
     ahu: 'Air Handlers',
     vav: 'VAV Terminals',
@@ -11418,9 +11435,7 @@ function rptPageASHRAE36Building(n, d, building) {
     .map(function (cat) {
       return (
         '<span style="font-size:10px;color:var(--rpt-page-text);margin-right:8px">' +
-        b.equipCounts[cat] +
-        ' ' +
-        (CAT_LABELS_PLURAL[cat] || cat) +
+        b.equipCounts[cat] + ' ' + (CAT_LABELS_PLURAL[cat] || cat) +
         '</span>'
       );
     })
@@ -11448,32 +11463,24 @@ function rptPageASHRAE36Building(n, d, building) {
     b.name +
     '</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">' +
-    b.equipCount +
-    ' equipment units audited</div>' +
-    '<div style="margin-bottom:4px">' +
-    equipBreakdown +
-    '</div>' +
+    b.equipCount + ' equipment units audited</div>' +
+    '<div style="margin-bottom:4px">' + equipBreakdown + '</div>' +
     _a36StatusChip(b.status) +
     '</div>' +
     '</div>';
 
-  // ── Build equipment table, grouped by 3-tier hierarchy then category ──
-  // Plan §6 / §10 item 2: Replace flat CAT_ORDER with TIER_GROUPS structure.
-  // Tier 1 = Plant & Central, Tier 2 = Primary Air Systems, Tier 3 = Zone Terminals.
-  // FCU = Tier 3 (locked decision: terminal units per user locked decision, overrides plan).
-  // EF = Tier 3 auxiliary (locked decision: exhaust fans are zone-level auxiliary, overrides plan).
+  // Tier/category grouping setup
+  // Plan sec 6 / sec 10 item 2: Tier 1 = Plant & Central, Tier 2 = Primary Air, Tier 3 = Zone.
+  // FCU = Tier 3 (locked decision). EF = Tier 3 auxiliary (locked decision).
   var TIER_GROUPS = [
     { label: 'Tier 1 — Plant & Central Equipment', cats: ['chwp', 'hwp', 'ct'] },
     { label: 'Tier 2 — Primary Air Systems', cats: ['ahu', 'doas', 'furnace'] },
     { label: 'Tier 3 — Zone Terminals', cats: ['vav', 'fpb', 'ddvav', 'zone', 'fcu', 'heater', 'ef'] },
   ];
 
-  // Build a flat ordered list of categories for sorting (preserves tier+category order)
   var _flatCatOrder = [];
   TIER_GROUPS.forEach(function (tg) {
-    tg.cats.forEach(function (c) {
-      _flatCatOrder.push(c);
-    });
+    tg.cats.forEach(function (c) { _flatCatOrder.push(c); });
   });
 
   var sortedEquip = b.equipResults.slice().sort(function (a, b2) {
@@ -11485,7 +11492,7 @@ function rptPageASHRAE36Building(n, d, building) {
     return (a.name || '').localeCompare(b2.name || '');
   });
 
-  // Compute building-level totals for summary line
+  // Compute building-level totals for summary line (last chunk only)
   var totalSensorsNeeded = 0;
   var totalSeqsNotReady = 0;
   sortedEquip.forEach(function (eq) {
@@ -11498,255 +11505,132 @@ function rptPageASHRAE36Building(n, d, building) {
     }
   });
 
+  // Table header HTML (reused on every chunk)
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
     'border-bottom:2px solid var(--rpt-blue)';
   var tableHead =
     '<thead><tr>' +
-    '<th style="' +
-    thStyle +
-    ';width:22%">Equipment</th>' +
-    '<th style="' +
-    thStyle +
-    ';width:16%">Type</th>' +
-    '<th style="' +
-    thStyle +
-    ';width:8%;text-align:center">Sensors Present</th>' +
-    '<th style="' +
-    thStyle +
-    ';width:30%">Sensors Needed</th>' +
-    '<th style="' +
-    thStyle +
-    '">Sequences Not Ready</th>' +
+    '<th style="' + thStyle + ';width:22%">Equipment</th>' +
+    '<th style="' + thStyle + ';width:16%">Type</th>' +
+    '<th style="' + thStyle + ';width:8%;text-align:center">Sensors Present</th>' +
+    '<th style="' + thStyle + ';width:30%">Sensors Needed</th>' +
+    '<th style="' + thStyle + '">Sequences Not Ready</th>' +
     '</tr></thead>';
 
-  // Build a set for quick membership check: which categories actually have rows?
+  // Build flat token list.
+  // Each token: { type: 'tier'|'cat'|'row', html: string }
+  // Every token (header or data row) counts as 1 slot against the page budget.
   var _catsWithRows = {};
-  sortedEquip.forEach(function (eq) {
-    _catsWithRows[eq.category] = true;
+  sortedEquip.forEach(function (eq) { _catsWithRows[eq.category] = true; });
+
+  var _coveredCats = {};
+  TIER_GROUPS.forEach(function (tg) {
+    tg.cats.forEach(function (c) { _coveredCats[c] = true; });
   });
 
-  var tbodyRows = '';
+  var tokens = [];
 
-  // Render rows in tier order, emitting tier header + category sub-header as boundaries change.
-  TIER_GROUPS.forEach(function (tg, tierIdx) {
-    // Only emit tier header if at least one equipment row belongs to this tier
-    var tierHasRows = tg.cats.some(function (c) {
-      return _catsWithRows[c];
+  function _pushEquipRow(eq) {
+    var mp = eq.compliance.missingPoints || [];
+    var sr = eq.seqReadiness || {};
+    var presentCount = (eq.compliance.coveredPoints || []).length;
+    var missingNames = mp.map(_missingPointName);
+    var sensorsNeededCell =
+      mp.length === 0
+        ? '<span style="color:var(--rpt-green)">None</span>'
+        : '<strong>' + mp.length + '</strong> &mdash; ' + missingNames.join(', ');
+    var notReadySeqs = [];
+    for (var sk in sr) {
+      if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
+        notReadySeqs.push(_seqLabel(sk, sr[sk]));
+      }
+    }
+    var seqsCell =
+      notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
+    var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
+    var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
+    tokens.push({ type: 'row', html:
+      '<tr>' +
+      '<td style="' + tdBase + ';font-weight:600;color:var(--rpt-page-text)">' + (eq.name || '—') + '</td>' +
+      '<td style="' + tdBase + ';color:var(--rpt-page-text)">' + (eq.categoryLabel || eq.category) + '</td>' +
+      '<td style="' + tdBase + ';text-align:center;color:var(--rpt-page-text)">' + presentCount + '</td>' +
+      '<td style="' + tdBase + ';color:var(--rpt-page-text);line-height:1.5">' + sensorsNeededCell + '</td>' +
+      '<td style="' + tdBase + ';color:var(--rpt-page-text);line-height:1.5">' + seqsCell + '</td>' +
+      '</tr>'
     });
+  }
+
+  TIER_GROUPS.forEach(function (tg) {
+    var tierHasRows = tg.cats.some(function (c) { return _catsWithRows[c]; });
     if (!tierHasRows) return;
-
     var tierHeaderEmitted = false;
-
     tg.cats.forEach(function (cat) {
-      // Collect rows for this category
-      var catRows = sortedEquip.filter(function (eq) {
-        return eq.category === cat;
-      });
+      var catRows = sortedEquip.filter(function (eq) { return eq.category === cat; });
       if (!catRows.length) return;
-
-      // Emit tier header row once, before the first category of this tier
       if (!tierHeaderEmitted) {
         tierHeaderEmitted = true;
-        tbodyRows +=
-          '<tr>' +
-          '<td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
+        tokens.push({ type: 'tier', html:
+          '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
           'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
           'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">' +
-          tg.label +
-          '</td>' +
-          '</tr>';
+          tg.label + '</td></tr>'
+        });
       }
-
-      // Emit category sub-header row (existing style, indented under tier)
-      tbodyRows +=
-        '<tr>' +
-        '<td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
+      tokens.push({ type: 'cat', html:
+        '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
         'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
         'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
         'background:rgba(0,0,0,0.02)">' +
-        (CAT_LABELS_PLURAL[cat] || cat) +
-        '</td>' +
-        '</tr>';
-
-      // Emit equipment rows for this category
-      catRows.forEach(function (eq) {
-        var mp = eq.compliance.missingPoints || [];
-        var sr = eq.seqReadiness || {};
-        var presentCount = (eq.compliance.coveredPoints || []).length;
-
-        // Sensors needed: count + human-readable comma list
-        var missingNames = mp.map(_missingPointName);
-        var sensorsNeededCell =
-          mp.length === 0
-            ? '<span style="color:var(--rpt-green)">None</span>'
-            : '<strong>' + mp.length + '</strong> &mdash; ' + missingNames.join(', ');
-
-        // Sequences not ready: human-readable list (blocked or partial only)
-        var notReadySeqs = [];
-        for (var sk in sr) {
-          if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
-            notReadySeqs.push(_seqLabel(sk, sr[sk]));
-          }
-        }
-        var seqsCell =
-          notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
-
-        var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
-        var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
-        tbodyRows +=
-          '<tr>' +
-          '<td style="' +
-          tdBase +
-          ';font-weight:600;color:var(--rpt-page-text)">' +
-          (eq.name || '—') +
-          '</td>' +
-          '<td style="' +
-          tdBase +
-          ';color:var(--rpt-page-text)">' +
-          (eq.categoryLabel || eq.category) +
-          '</td>' +
-          '<td style="' +
-          tdBase +
-          ';text-align:center;color:var(--rpt-page-text)">' +
-          presentCount +
-          '</td>' +
-          '<td style="' +
-          tdBase +
-          ';color:var(--rpt-page-text);line-height:1.5">' +
-          sensorsNeededCell +
-          '</td>' +
-          '<td style="' +
-          tdBase +
-          ';color:var(--rpt-page-text);line-height:1.5">' +
-          seqsCell +
-          '</td>' +
-          '</tr>';
+        (CAT_LABELS_PLURAL[cat] || cat) + '</td></tr>'
       });
+      catRows.forEach(_pushEquipRow);
     });
   });
 
-  // Catch-through: any equipment whose category is not in any TIER_GROUPS tier
-  // (should not occur with current AUDITABLE list, but guard against future additions)
-  var _coveredCats = {};
-  TIER_GROUPS.forEach(function (tg) {
-    tg.cats.forEach(function (c) {
-      _coveredCats[c] = true;
-    });
-  });
-  var uncoveredRows = sortedEquip.filter(function (eq) {
-    return !_coveredCats[eq.category];
-  });
+  // Catch-through: uncovered categories
+  var uncoveredRows = sortedEquip.filter(function (eq) { return !_coveredCats[eq.category]; });
   if (uncoveredRows.length) {
-    tbodyRows +=
-      '<tr>' +
-      '<td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
+    tokens.push({ type: 'tier', html:
+      '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
       'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
-      'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">Other Equipment</td>' +
-      '</tr>';
+      'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">Other Equipment</td></tr>'
+    });
     var lastUncovCat = null;
     uncoveredRows.forEach(function (eq) {
       if (eq.category !== lastUncovCat) {
         lastUncovCat = eq.category;
-        tbodyRows +=
-          '<tr>' +
-          '<td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
+        tokens.push({ type: 'cat', html:
+          '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
           'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
           'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
           'background:rgba(0,0,0,0.02)">' +
-          (eq.categoryLabel || eq.category) +
-          '</td>' +
-          '</tr>';
+          (eq.categoryLabel || eq.category) + '</td></tr>'
+        });
       }
-      var mp = eq.compliance.missingPoints || [];
-      var sr = eq.seqReadiness || {};
-      var presentCount = (eq.compliance.coveredPoints || []).length;
-      var missingNames = mp.map(_missingPointName);
-      var sensorsNeededCell =
-        mp.length === 0
-          ? '<span style="color:var(--rpt-green)">None</span>'
-          : '<strong>' + mp.length + '</strong> &mdash; ' + missingNames.join(', ');
-      var notReadySeqs = [];
-      for (var sk in sr) {
-        if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
-          notReadySeqs.push(_seqLabel(sk, sr[sk]));
-        }
-      }
-      var seqsCell =
-        notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
-      var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
-      var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
-      tbodyRows +=
-        '<tr>' +
-        '<td style="' +
-        tdBase +
-        ';font-weight:600;color:var(--rpt-page-text)">' +
-        (eq.name || '—') +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';color:var(--rpt-page-text)">' +
-        (eq.categoryLabel || eq.category) +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';text-align:center;color:var(--rpt-page-text)">' +
-        presentCount +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';color:var(--rpt-page-text);line-height:1.5">' +
-        sensorsNeededCell +
-        '</td>' +
-        '<td style="' +
-        tdBase +
-        ';color:var(--rpt-page-text);line-height:1.5">' +
-        seqsCell +
-        '</td>' +
-        '</tr>';
+      _pushEquipRow(eq);
     });
   }
 
   // Empty state
-  if (!sortedEquip.length) {
-    tbodyRows =
-      '<tr><td colspan="5" style="padding:8px;font-size:10px;color:var(--rpt-page-text)">No auditable equipment found for this building.</td></tr>';
+  if (!tokens.length) {
+    tokens.push({ type: 'row', html:
+      '<tr><td colspan="5" style="padding:8px;font-size:10px;color:var(--rpt-page-text)">No auditable equipment found for this building.</td></tr>'
+    });
   }
 
-  var equipTable =
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
-    tableHead +
-    '<tbody>' +
-    tbodyRows +
-    '</tbody>' +
-    '</table>';
-
-  // ── Building-level summary line ──
+  // Summary and infra callout (last chunk only)
   var summaryLine =
     '<div class="rpt-a36-callout" style="font-size:11px;color:var(--rpt-page-text);' +
     'border-top:1px solid var(--rpt-rule);padding-top:8px;margin-bottom:10px">' +
-    '<strong>Total for ' +
-    b.name +
-    ':</strong> install ' +
-    totalSensorsNeeded +
-    ' sensor' +
-    (totalSensorsNeeded !== 1 ? 's' : '') +
-    ', program ' +
-    totalSeqsNotReady +
-    ' sequence' +
-    (totalSeqsNotReady !== 1 ? 's' : '') +
-    ' across ' +
-    b.equipCount +
-    ' equipment unit' +
-    (b.equipCount !== 1 ? 's' : '') +
-    '.' +
+    '<strong>Total for ' + b.name + ':</strong> install ' +
+    totalSensorsNeeded + ' sensor' + (totalSensorsNeeded !== 1 ? 's' : '') +
+    ', program ' + totalSeqsNotReady + ' sequence' + (totalSeqsNotReady !== 1 ? 's' : '') +
+    ' across ' + b.equipCount + ' equipment unit' + (b.equipCount !== 1 ? 's' : '') + '.' +
     '</div>';
 
-  // ── Plan §6 item 4 / §10 item 3: Infrastructure callout ──
-  // Shows whether dedicated power-monitoring and outdoor-air-sensor programs were
-  // found in the BAS export for this building. "Not detected" does NOT mean the
-  // building lacks metering — it means no dedicated program appeared in the export.
+  // Plan sec 6 item 4 / sec 10 item 3: Infrastructure callout
   var infraCallout =
     '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px;' +
     'background:rgba(0,0,0,0.02);border:1px solid var(--rpt-rule);border-radius:3px">' +
@@ -11768,15 +11652,79 @@ function rptPageASHRAE36Building(n, d, building) {
     '</div>' +
     '</div>';
 
-  // ── Intro sentence ──
   var intro =
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px;line-height:1.6">' +
     'The table below lists every audited unit, the sensors currently in place, sensors that must be added, ' +
     'and which control sequences cannot run until those sensors are installed.' +
     '</div>';
 
-  var bodyHTML = gauges + intro + equipTable + summaryLine + infraCallout;
-  return rptPage(n, 'ASHRAE 36 Audit — ' + b.name, bodyHTML, { data: fakeData, label: 'Page ' + n + ' — ' + b.name });
+  // Chunk tokens into pages.
+  // Anti-orphan rule: tier/cat header tokens at chunk-end with no following data row
+  // in that chunk are deferred to the next chunk (no dangling headers at page bottom).
+  var chunks = [];
+  var remaining = tokens.slice();
+
+  while (remaining.length > 0) {
+    var isFirst = (chunks.length === 0);
+    var budget = isFirst ? ROWS_PER_PAGE_FIRST : ROWS_PER_PAGE_CONT;
+    var chunk = [];
+    var slotCount = 0;
+
+    while (remaining.length > 0 && slotCount < budget) {
+      chunk.push(remaining.shift());
+      slotCount++;
+    }
+
+    // Anti-orphan: trim trailing header tokens back to remaining
+    while (chunk.length > 0 && chunk[chunk.length - 1].type !== 'row') {
+      remaining.unshift(chunk.pop());
+    }
+
+    // Safety guard: avoid infinite loop (budget >= 2 so this should never trigger)
+    if (chunk.length === 0 && remaining.length > 0) {
+      chunk.push(remaining.shift());
+    }
+
+    chunks.push(chunk);
+  }
+
+  // Build one rptPage() string per chunk
+  var numChunks = chunks.length;
+  var resultPages = [];
+
+  chunks.forEach(function (chunk, chunkIndex) {
+    var tbodyRows = chunk.map(function (tok) { return tok.html; }).join('');
+    var equipTable =
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
+      tableHead +
+      '<tbody>' + tbodyRows + '</tbody>' +
+      '</table>';
+
+    var isLastChunk = (chunkIndex === numChunks - 1);
+    var pageN = n + chunkIndex;
+
+    var bodyHTML;
+    if (chunkIndex === 0) {
+      bodyHTML = gauges + intro + equipTable;
+      if (isLastChunk) { bodyHTML += summaryLine + infraCallout; }
+    } else {
+      var contHdr =
+        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
+        b.name + ' — continued (' + (chunkIndex + 1) + ' of ' + numChunks + ')' +
+        '</div>';
+      bodyHTML = contHdr + equipTable;
+      if (isLastChunk) { bodyHTML += summaryLine + infraCallout; }
+    }
+
+    resultPages.push(rptPage(pageN, 'ASHRAE 36 Audit — ' + b.name, bodyHTML, {
+      data: fakeData,
+      label: 'Page ' + pageN + ' — ' + b.name +
+             (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
+    }));
+  });
+
+  return resultPages; // always an Array, even for short buildings (length === 1)
 }
 
 // ─── rptPageASHRAE36Recommendations ──────────────────────────────────────
@@ -12796,11 +12744,21 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   }
 
   if (s.cover !== false) pages.push(_tagA36Section(rptPageASHRAE36Cover(pageNum++, data), 'cover'));
-  if (s.executive !== false) pages.push(_tagA36Section(rptPageASHRAE36Executive(pageNum++, data), 'executive'));
+  if (s.executive !== false) {
+    var execPages = rptPageASHRAE36Executive(pageNum, data);
+    execPages.forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'executive'));
+      pageNum++;
+    });
+  }
 
   if (s.building !== false) {
     data.buildings.forEach(function (b) {
-      pages.push(_tagA36Section(rptPageASHRAE36Building(pageNum++, data, b), 'building'));
+      var bPages = rptPageASHRAE36Building(pageNum, data, b);
+      bPages.forEach(function (pg) {
+        pages.push(_tagA36Section(pg, 'building'));
+        pageNum++;
+      });
     });
   }
 

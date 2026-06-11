@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.505',
+    date: '2026-06-11',
+    title: 'ASHRAE 36 Audit PDF export no longer clips content past page 1',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit report PDF export now spans as many pages as needed — buildings with many equipment points (such as a large courthouse) generate 20+ pages with clean row breaks instead of clipping everything past the first page.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.10.504',
     date: '2026-06-10',
     title: 'Appendix B regression formula text now wraps',
