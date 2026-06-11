@@ -530,12 +530,16 @@ function meterLabel(m) {
   const mtr = m.meter ? m.meter : '—';
   return `${m.commodity} · Acct ${acct} · Meter ${mtr}`;
 }
-// Normalize ISO date strings: "24-03-15" → "2024-03-15".
-// Any YYYY-MM-DD where the year part is only 2 digits is treated as 20XX.
+// Normalize date strings to ISO YYYY-MM-DD.
+// KGS bills give dates as MM-DD-YY (e.g. "01-19-26" = Jan 19 2026).
+// The old code treated the first pair as YY (year), producing invalid dates like "2001-19-26".
+// Fix: if already YYYY-MM-DD pass through; otherwise treat as MM-DD-YY → YYYY-MM-DD.
 function _fixISO(d) {
   if (!d || typeof d !== 'string') return d;
-  const m = d.match(/^(\d{2})-(\d{2})-(\d{2})$/);
-  return m ? '20' + m[1] + '-' + m[2] + '-' + m[3] : d;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d; // already ISO
+  const m = d.match(/^(\d{2})-(\d{2})-(\d{2})$/); // MM-DD-YY
+  if (m) return '20' + m[3] + '-' + m[1] + '-' + m[2];
+  return d;
 }
 function _parseISO(d) {
   return new Date(_fixISO(d) + 'T12:00:00');

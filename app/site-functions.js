@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.516',
+    date: '2026-06-11',
+    title: 'KGS gas bill fixes and smarter outlier detection',
+    items: [
+      {
+        type: 'fix',
+        text: 'KGS gas bills now correctly extract Customer Name, Service Address, GSRS and Weather Normalization credits (signed negative), Delayed Payment Charge, GasCharge line items, and Normalized Month — previously these fields were blank or wrong.',
+      },
+      {
+        type: 'fix',
+        text: 'Utility bill outlier detection now flags only order-of-magnitude errors (using a ratio band and per-day normalization), so valid seasonal swings no longer trigger false warnings.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.515',
     date: '2026-06-11',
     title: 'Equipment Matrix: mapping fixes and new sensor columns',
@@ -1201,7 +1216,7 @@ var RELEASE_NOTES = [
       },
       {
         type: 'feature',
-        text: 'Equipment Matrix gains six new columns: Outside Air CFM, Return Air CFM, Coil Leaving Air Temp, Valve Signal (Heating and Cooling), Building Static Pressure, Heat Source Supply, and Cool Source Supply — giving a more complete picture of each unit\'s airflow and hydronic status.',
+        text: "Equipment Matrix gains six new columns: Outside Air CFM, Return Air CFM, Coil Leaving Air Temp, Valve Signal (Heating and Cooling), Building Static Pressure, Heat Source Supply, and Cool Source Supply — giving a more complete picture of each unit's airflow and hydronic status.",
       },
     ],
   },

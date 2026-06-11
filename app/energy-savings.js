@@ -5252,8 +5252,13 @@ const UTILITY_RULES = [
           // garbled OCR. Mark low-confidence and use the full text; fields will mostly be null.
           activeT = t;
         } else if (_acctMatches.length === 1) {
-          // Single account — anchor from the Account Number start to end of block.
-          activeT = t.slice(_acctMatches[0].index);
+          // Single account — anchor from the start of the line containing "Account Number"
+          // to end of block. Walking back to lineStart ensures that any text appearing to
+          // the LEFT of "Account Number" on the same line (e.g. "BAKER UNIVERSITY") is
+          // included in activeT so the CustomerName regex can capture it.
+          const acctIdx = _acctMatches[0].index;
+          const lineStart = t.lastIndexOf('\n', acctIdx - 1) + 1;
+          activeT = t.slice(lineStart);
         } else {
           // Multiple Account Numbers survived into extract() — anchor to only the FIRST one.
           // (extractAll should have prevented this via _splitAccountBlocks, but defence in depth.)
@@ -5317,7 +5322,15 @@ const UTILITY_RULES = [
         // Example: "305 6TH ST # 306          Active Deposit    NONE | Statement Date   11-18-25"
         // Uses activeT to avoid capturing another account's address.
         const addrM = activeT.match(/([A-Z0-9#][A-Z0-9# ]{4,49?})\s{2,}Active\s+D/i);
-        const ServiceAddress = addrM ? addrM[1].trim() : null;
+        // Fallback: if the primary pattern fails (OCR collision zone garbles "Active D"),
+        // look for the street address in the mailing stub above "BALDWIN CITY, KS" in the
+        // full text (t). The stub is outside activeT when "Account Number" is mid-page.
+        // Pattern: a line of all-caps street text followed by 3+ spaces then BALDWIN CITY, KS.
+        let ServiceAddress = addrM ? addrM[1].trim() : null;
+        if (!ServiceAddress) {
+          const _stub = t.match(/([A-Z0-9][A-Z0-9 #]{4,49}?)\s{3,}[^\n]{0,20}\n\s*BALDWIN\s+CITY,?\s+KS/i);
+          if (_stub) ServiceAddress = _stub[1].trim();
+        }
 
         // === METER READING TABLE ===
         // Pattern: MeterNum   MM-DD-YY   MM-DD-YY   Days   Prev   Curr   Const   Mcf   WNA/Mcf   CostGas/Mcf
@@ -5372,12 +5385,18 @@ const UTILITY_RULES = [
         const DeliveryCharge = fixNum(deliveryM ? deliveryM[1] : null);
 
         // GSRS is absent on some summer bills — null is correct when line doesn't appear.
-        // Allow optional "CR" suffix (credit months, e.g. page 7 shows "0.37CR").
-        const gsrsM = activeT.match(/Gas\s+System\s+Reliability\s+Surcharge\s+\$?([\d,.:]+)(?:CR)?/i);
-        const GasSystemReliability = fixNum(gsrsM ? gsrsM[1] : null);
+        // Capture the optional "CR" suffix so credit months (e.g. "1.24CR") are stored as
+        // negative values. Previously the (CR)? group was non-capturing and the sign was lost.
+        const gsrsM = activeT.match(/Gas\s+System\s+Reliability\s+Surcharge\s+\$?([\d,.:]+)(CR)?/i);
+        const GasSystemReliability = gsrsM
+          ? String((parseFloat(fixNum(gsrsM[1]).replace(/,/g, '')) * (gsrsM[2] ? -1 : 1)).toFixed(2))
+          : null;
 
-        const wnaM = activeT.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.:]+)/i);
-        const WeatherNormalization = fixNum(wnaM ? wnaM[1] : null);
+        // WeatherNormalization can also appear as a credit — capture optional CR and negate.
+        const wnaM = activeT.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.:]+)(CR)?/i);
+        const WeatherNormalization = wnaM
+          ? String((parseFloat(fixNum(wnaM[1]).replace(/,/g, '')) * (wnaM[2] ? -1 : 1)).toFixed(2))
+          : null;
 
         const costGasM = activeT.match(/Cost\s+of\s+Gas\s+\$?([\d,.:]+)/i);
         const GasCharge = fixNum(costGasM ? costGasM[1] : null);
@@ -5398,6 +5417,11 @@ const UTILITY_RULES = [
             : null;
         const FranchiseFee1 = FranchiseFeeItems ? FranchiseFeeItems[0] || null : null;
         const FranchiseFee2 = FranchiseFeeItems ? FranchiseFeeItems[1] || null : null;
+
+        // Delayed Payment Charge — late-fee line that appears on some KGS bills.
+        // Stored as a positive value (it adds to the total, like all other charges).
+        const delayedPayM = activeT.match(/Delayed\s+Payment\s+Charge\s+\$?([\d,.]+)/i);
+        const DelayedPaymentCharge = delayedPayM ? fixNum(delayedPayM[1]) : null;
 
         // "Total Current Charges" — OCR sometimes inserts "___ $" before the dollar amount.
         // Old pattern: "Total\s+Current\s+Charges\s+\$?(\d+)" — fails when "___" appears.
@@ -5446,6 +5470,7 @@ const UTILITY_RULES = [
           FranchiseFeeItems,
           WNAPerMcf,
           CostOfGasPerMcf,
+          DelayedPaymentCharge,
           FuelAdjustment: null,
           TotalCurrentCharges,
           TotalAmountDue,

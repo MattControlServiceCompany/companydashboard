@@ -328,7 +328,35 @@ function validateBillData(extracted, utilityName) {
     const total = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
     const custCharge = pf(extracted.CustomerCharge);
     const fuelAdj = pf(extracted.FuelAdjustment);
-    const recovered = total - custCharge - fuelAdj;
+    // For KGS bills (identified by the presence of DeliveryCharge or GasSystemReliability),
+    // subtract all KGS-specific line items so the recovery doesn't absorb them into GasCharge.
+    // On non-KGS bills those fields are null/undefined so pf() returns 0 — this is safe.
+    const isKGSGas =
+      pf(extracted.DeliveryCharge) > 0 ||
+      (extracted.GasSystemReliability !== null && extracted.GasSystemReliability !== undefined);
+    let recovered;
+    if (isKGSGas) {
+      // Signed subtraction is intentional. Credit line items (e.g. GasSystemReliability /
+      // WeatherNormalization "CR" credits) are stored as NEGATIVE numbers by the extractor.
+      // The bill total already reflects those signed credits, so isolating GasCharge requires
+      // subtracting the signed value. Using Math.abs() on a credit would REMOVE the credit
+      // from the total twice and undercount GasCharge by 2× the credit amount.
+      // Example: Total=105.34, CustChg=54.00, Delivery=2.58, GSRS=-1.24 (credit)
+      //   Signed: 105.34 - 54.00 - 2.58 - (-1.24) = 50.00  ← correct
+      //   Abs:    105.34 - 54.00 - 2.58 - 1.24    = 48.52  ← wrong (off by 2 × credit)
+      recovered =
+        total -
+        custCharge -
+        fuelAdj -
+        pf(extracted.DeliveryCharge) -
+        pf(extracted.GasSystemReliability) -
+        pf(extracted.WeatherNormalization) -
+        pf(extracted.WinterEventCost) -
+        pf(extracted.FranchiseFee) -
+        pf(extracted.DelayedPaymentCharge);
+    } else {
+      recovered = total - custCharge - fuelAdj;
+    }
     if (recovered > 0) {
       // Round to 2 decimal places to prevent floating-point accumulation
       // (e.g. 104.48 - 54.00 = 50.480000000000004 without rounding)
@@ -342,7 +370,8 @@ function validateBillData(extracted, utilityName) {
           ') - Base ($' +
           custCharge.toFixed(2) +
           ')' +
-          (fuelAdj ? ' - Fuel Adj ($' + fuelAdj.toFixed(2) + ')' : ''),
+          (fuelAdj ? ' - Fuel Adj ($' + fuelAdj.toFixed(2) + ')' : '') +
+          (isKGSGas ? ' - KGS line items' : ''),
       };
     } else {
       warnings.push({
@@ -649,10 +678,13 @@ function _analyzeMeterBills(bills, m) {
     const stddev = Math.sqrt(clean.reduce((a, b) => a + (b - mean) ** 2, 0) / clean.length);
     return { mean, stddev, count: clean.length };
   }
-  function zThreshold(count) {
-    if (count >= 10) return 2.5;
-    if (count >= 5) return 3.0;
-    return 3.5;
+  function medianOf(arr) {
+    // Compute median of a numeric array, ignoring null/undefined/NaN.
+    const clean = arr.filter((v) => v !== null && v !== undefined && !isNaN(v) && typeof v === 'number' && v > 0);
+    if (clean.length === 0) return null;
+    const sorted = clean.slice().sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
   }
 
   // rawFn: null-preserving variant used only for stats() so the null-aware filter
@@ -772,24 +804,37 @@ function _analyzeMeterBills(bills, m) {
       let s = null;
       let compLabel = 'avg';
 
+      // sameMonthPeers: array of { val, days } for same-month leave-one-out peers.
+      // Used for per-day normalization in the ratio check below.
+      let sameMonthPeers = null;
+      const sameMonthVals = [];
       if (c.seasonal && nm >= 0) {
         // Leave-one-out: build same-month stats excluding the current bill (idx)
         // so an outlier cannot inflate its own peer group and escape detection.
         // rawFn is used (null-preserving) to match how monthStats was built.
-        const sameMonthVals = [];
+        sameMonthPeers = [];
         for (let i = 0; i < bills.length; i++) {
           if (i === idx) continue; // exclude self
-          if (normMonths[i] === nm) sameMonthVals.push(c.rawFn(bills[i]));
+          if (normMonths[i] === nm) {
+            const v = c.rawFn(bills[i]);
+            sameMonthVals.push(v);
+            // Collect per-peer day count for per-day normalization
+            const peerDays =
+              bills[i].start && bills[i].end
+                ? Math.round((_parseISO(bills[i].end) - _parseISO(bills[i].start)) / 86400000) + 1
+                : null;
+            sameMonthPeers.push({ val: v, days: peerDays });
+          }
         }
         const ms = stats(sameMonthVals);
-        if (ms && ms.stddev > 0 && ms.count >= 2) {
+        if (ms && ms.count >= 2) {
           s = ms;
           compLabel = _MONTH_LABELS[nm] + ' avg';
         }
       }
       if (!s && c.seasonal && sn) {
         const ss = seasonStats[c.field] && seasonStats[c.field][sn];
-        if (ss && ss.stddev > 0 && ss.count >= 3) {
+        if (ss && ss.count >= 3) {
           s = ss;
           compLabel = sn + ' avg';
         }
@@ -799,10 +844,62 @@ function _analyzeMeterBills(bills, m) {
         compLabel = 'avg';
       }
 
-      if (!s || s.stddev === 0) continue;
-      const z = Math.abs(val - s.mean) / s.stddev;
-      const thresh = c.seasonal ? zThreshold(s.count) : 2.5;
-      if (z > thresh) {
+      if (!s || s.count < 2) continue;
+
+      // ── Order-of-magnitude ratio-to-median band check ──
+      // Purpose: catch only decimal-shift / digit-loss errors (e.g. 11,000 or
+      // 1,110,000 vs a ~110,000 norm). Normal weather/occupancy variation (±13%)
+      // must never flag. Bands:
+      //   usage/cost/demand: flag if ratio < 0.2 or > 5.0
+      //   days (billing period length): flag if ratio < 0.5 or > 2.0
+      // For usage/cost/demand fields, compare on a per-day basis so different-
+      // length billing periods don't create false positives.
+
+      const isDaysField = c.field === 'days';
+      const loBand = isDaysField ? 0.5 : 0.2;
+      const hiBand = isDaysField ? 2.0 : 5.0;
+
+      // Determine the this-bill's day count for per-day normalization.
+      const thisDays =
+        !isDaysField && b.start && b.end ? Math.round((_parseISO(b.end) - _parseISO(b.start)) / 86400000) + 1 : null;
+
+      // Compute the median peer value.
+      // Same-month path: compute from the raw sameMonthVals list directly.
+      // Season/all-bills path: only s.mean is available — use it as median proxy.
+      let medianPeer;
+      let medianPeerLabel;
+      if (sameMonthPeers !== null && sameMonthVals.length >= 2) {
+        if (!isDaysField && thisDays > 0) {
+          // Per-day median: divide each peer value by its own day count.
+          const perDayPeerVals = sameMonthPeers
+            .filter((p) => p.val !== null && !isNaN(p.val) && p.val > 0 && p.days > 0)
+            .map((p) => p.val / p.days);
+          medianPeer = medianOf(perDayPeerVals);
+          medianPeerLabel = compLabel + ' median/day';
+        } else {
+          medianPeer = medianOf(sameMonthVals);
+          medianPeerLabel = compLabel + ' median';
+        }
+      } else {
+        // Season or all-bills fallback: use mean as proxy for median.
+        // Per-day normalization not possible (no per-peer day counts stored).
+        medianPeer = s.mean > 0 ? s.mean : null;
+        medianPeerLabel = compLabel + ' median';
+      }
+
+      if (!medianPeer || medianPeer <= 0) continue;
+
+      // Compute the ratio to flag.
+      let compareVal = val;
+      let compareMedian = medianPeer;
+      if (!isDaysField && thisDays > 0 && sameMonthPeers !== null && sameMonthVals.length >= 2) {
+        // Use per-day ratio for same-month path when day counts available.
+        compareVal = val / thisDays;
+        compareMedian = medianPeer; // already per-day from the block above
+      }
+
+      const ratio = compareVal / compareMedian;
+      if (ratio < loBand || ratio > hiBand) {
         rowFlags.push({
           field: c.field,
           msg:
@@ -810,11 +907,16 @@ function _analyzeMeterBills(bills, m) {
             ' (' +
             val.toLocaleString(undefined, { maximumFractionDigits: 1 }) +
             ') is ' +
-            z.toFixed(1) +
-            'σ from ' +
-            compLabel +
+            ratio.toFixed(2) +
+            '× of ' +
+            medianPeerLabel +
             ' ' +
-            s.mean.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+            (isDaysField
+              ? medianPeer.toLocaleString(undefined, { maximumFractionDigits: 1 })
+              : (
+                  medianPeer *
+                  (!isDaysField && thisDays > 0 && sameMonthPeers !== null && sameMonthVals.length >= 2 ? thisDays : 1)
+                ).toLocaleString(undefined, { maximumFractionDigits: 1 })),
           level: 'warn',
         });
       }
@@ -854,15 +956,17 @@ function _analyzeMeterBills(bills, m) {
     }
 
     // ── Year-over-year spike ──
-    // Flag usage that deviates >40% vs the same normalized month in the prior year.
+    // Flag usage that deviates >150% vs the same normalized month in the prior year.
+    // Threshold is intentionally high (150%) so only order-of-magnitude errors flag —
+    // normal weather-driven YoY variation (even ±50–80%) must not trigger this check.
     // "Normalized month" = the calendar month the billing period represents by majority
-    // billing days — computed via _billNormMonth(), the same function used by the z-score
-    // path above (line 728). This replaces the former month*30+day linearization that
+    // billing days — computed via _billNormMonth(), the same function used by the ratio
+    // path above. This replaces the former month*30+day linearization that
     // selected the wrong prior-year bill for meters billed mid-month (e.g. Evergy Kansas).
-    // When ≥2 prior same-month bills exist the z-score path already handles the comparison;
+    // When ≥2 prior same-month bills exist the ratio path already handles the comparison;
     // this YoY check is the fallback for when exactly 1 prior same-month bill is available.
     // P2: use full multi-year history — skip YoY check when monthStats has ≥2 same-month
-    // bills so the z-score path (which uses all years) is the sole decision-maker.
+    // bills so the ratio path (which uses all years) is the sole decision-maker.
     const _usageField = isElec ? 'kwh' : isGas ? 'therms' : 'usage';
     const _usageFn = checks.find((c) => c.field === _usageField);
     if (_usageFn && b.start && b.end) {
@@ -871,10 +975,9 @@ function _analyzeMeterBills(bills, m) {
       if (thisUsage > 0 && thisNormMonth >= 0) {
         // Skip YoY check when ≥2 PRIOR same-normalized-month bills exist (i.e. total
         // count in monthStats ≥ 3, since monthStats includes the current bill itself).
-        // When count ≥ 3, the z-score path above already ran a multi-year comparison
-        // using a statistically appropriate threshold. When count = 2 (exactly 1 prior
-        // same-month bill + current), the z-score 3.5σ threshold is too lenient for
-        // a 2-point sample, so we keep the 40% raw fallback.
+        // When count ≥ 3, the ratio-band path above already ran a multi-year comparison.
+        // When count = 2 (exactly 1 prior same-month bill + current), the ratio band
+        // can be ambiguous with only one peer, so we keep this 150% raw YoY fallback.
         const sameMonthCount =
           (_usageFn.seasonal !== false &&
             monthStats[_usageField] &&
@@ -896,7 +999,7 @@ function _analyzeMeterBills(bills, m) {
             const priorUsage = _usageFn.fn(priorYearBill);
             if (priorUsage > 0) {
               const deviation = Math.abs(thisUsage - priorUsage) / priorUsage;
-              if (deviation > 0.4) {
+              if (deviation > 1.5) {
                 const pct = Math.round(deviation * 100);
                 rowFlags.push({
                   field: _usageField,
@@ -3139,9 +3242,19 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // the total from charge components when possible; only warn when data is
     // genuinely missing and can't be computed.
     const COMMODITY_CHARGE_FIELDS = {
-      Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
-      Water: ['WaterCharge', 'WaterProtectionFee'],
-      Sewer: ['SewerCharge'],
+      Gas: [
+        'CustomerCharge',
+        'GasCharge',
+        'FuelAdjustment',
+        'DeliveryCharge',
+        'GasSystemReliability',
+        'WeatherNormalization',
+        'WinterEventCost',
+        'FranchiseFee',
+        'DelayedPaymentCharge',
+      ],
+      Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
+      Sewer: ['SewerCharge', 'SewerFranchiseFee'],
       Stormwater: ['StormWaterCharge'],
       Propane: ['PropaneCharge'],
       Electric: [
@@ -7993,17 +8106,33 @@ function renderMultiBillUI(bills, box) {
         'BillOffset',
         'FranchiseFee',
       ],
-      Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
-      Water: ['WaterCharge', 'WaterProtectionFee'],
-      Sewer: ['SewerCharge'],
+      Gas: [
+        'CustomerCharge',
+        'GasCharge',
+        'FuelAdjustment',
+        'DeliveryCharge',
+        'GasSystemReliability',
+        'WeatherNormalization',
+        'WinterEventCost',
+        'FranchiseFee',
+        'DelayedPaymentCharge',
+      ],
+      Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
+      Sewer: ['SewerCharge', 'SewerFranchiseFee'],
       Stormwater: ['StormWaterCharge'],
       Propane: ['Subtotal', 'Tax'],
     };
-    const _chargeSum = (_pillChargeKeys[_pillComm] || _pillChargeKeys.Electric).reduce((s, f) => s + _pf2(bill[f]), 0);
+    const _pillKeys = _pillChargeKeys[_pillComm] || _pillChargeKeys.Electric;
+    // Round each component to 2 decimal places before summing to prevent
+    // floating-point accumulation across many addends (e.g. 9 KGS line items).
+    const _chargeSum = Math.round(_pillKeys.reduce((s, f) => s + Math.round(_pf2(bill[f]) * 100) / 100, 0) * 100) / 100;
     const _totalVal = _pf2(bill.TotalCurrentCharges);
+    // Allow 1¢ per component of accumulated rounding before flagging a mismatch.
+    // Flat 0.02 was too tight for multi-line KGS bills where rounding adds up across 9 fields.
+    const _pillTol = Math.max(0.02, 0.01 * _pillKeys.length);
     const hasSumMismatch =
       bw.some((w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message)) ||
-      (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= 0.02);
+      (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= _pillTol);
     const hasAnyIssue = hasIssues || hasSumMismatch;
     const issueColor = hasSumMismatch ? '--red' : '--amber';
     const pillColor = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--text2)';
@@ -8197,9 +8326,19 @@ function renderMultiBillUI(bills, box) {
         'BillOffset',
         'FranchiseFee',
       ],
-      Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
-      Water: ['WaterCharge', 'WaterProtectionFee'],
-      Sewer: ['SewerCharge'],
+      Gas: [
+        'CustomerCharge',
+        'GasCharge',
+        'FuelAdjustment',
+        'DeliveryCharge',
+        'GasSystemReliability',
+        'WeatherNormalization',
+        'WinterEventCost',
+        'FranchiseFee',
+        'DelayedPaymentCharge',
+      ],
+      Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
+      Sewer: ['SewerCharge', 'SewerFranchiseFee'],
       Stormwater: ['StormWaterCharge'],
       Propane: ['Subtotal', 'Tax'],
     };
@@ -8217,7 +8356,9 @@ function renderMultiBillUI(bills, box) {
             const hasW = bw.some((w) => w.level === 'error' || w.level === 'warn');
             const cSum = chgKeys.reduce((s, f) => s + _pf3(b[f]), 0);
             const tVal = _pf3(b.TotalCurrentCharges);
-            const hasMM = tVal > 0 && cSum > 0 && Math.abs(cSum - tVal) >= 0.02;
+            // Use the same scaled tolerance as the pill and detail banner: 1¢ per charge field,
+            // minimum 2¢. Flat 0.02 caused false red issue-counts on multi-line KGS gas bills.
+            const hasMM = tVal > 0 && cSum > 0 && Math.abs(cSum - tVal) >= Math.max(0.02, 0.01 * chgKeys.length);
             const hasGap = !!b._billing_gap;
             if (hasW || hasMM || hasGap) issueCount++;
           });
@@ -9666,6 +9807,7 @@ function renderPDFFields(parsed, warnings) {
       'WeatherNormalization',
       'WinterEventCost',
       'FranchiseFee',
+      'DelayedPaymentCharge',
     ],
     Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
     Sewer: ['SewerCharge', 'SewerFranchiseFee'],
@@ -9680,7 +9822,10 @@ function renderPDFFields(parsed, warnings) {
         ? 'Gas'
         : 'Electric');
   const _CHARGE_SUM_KEYS_RPF = _CHARGE_SUM_KEYS_BY_COMMODITY[_billCommodity] || _CHARGE_SUM_KEYS_BY_COMMODITY.Electric;
-  const _currentChargeSum = Math.round(_CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + _pf(parsed[f]), 0) * 100) / 100;
+  // Round each component to 2 decimal places before summing to prevent floating-point
+  // accumulation across many addends (e.g. 9 KGS line items each rounded to the cent).
+  const _currentChargeSum =
+    Math.round(_CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + Math.round(_pf(parsed[f]) * 100) / 100, 0) * 100) / 100;
   // Identify which charge fields are blank — the sum mismatch is usually caused by
   // one of these not being extracted, so we surface them in the banner.
   const _missingChargeFields = _CHARGE_SUM_KEYS_RPF.filter((f) => {
@@ -9693,7 +9838,10 @@ function renderPDFFields(parsed, warnings) {
   // red pill. Previously, _currentChargeSum === 0 made _currentSumDiff = 0 so
   // hasCurrentSumMismatch was false even though the pill was already red.
   const _currentSumDiff = totalVal !== 0 ? _currentChargeSum - totalVal : 0;
-  const hasCurrentSumMismatch = Math.abs(_currentSumDiff) >= 0.02;
+  // Allow 1¢ per component of accumulated rounding before flagging a mismatch.
+  // Flat 0.02 was too tight for multi-line KGS bills where rounding adds up across 9 fields.
+  const _detailTol = Math.max(0.02, 0.01 * _CHARGE_SUM_KEYS_RPF.length);
+  const hasCurrentSumMismatch = Math.abs(_currentSumDiff) >= _detailTol;
   const sumMismatch = parsed['_sum_mismatch'];
   // Big, loud banner for sum mismatch — this is a high-severity issue that must never be
   // lost in a sea of other notifications. Renders at the very top of the extracted fields.
