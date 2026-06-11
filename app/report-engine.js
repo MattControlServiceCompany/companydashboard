@@ -6005,9 +6005,6 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   }
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:var(--rpt-page-text);margin:0 0 8px">Appendix ' +
-    appLetter +
-    ': Normalization &amp; Meter Baseline</h2>' +
     methodBox +
     '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
     meterTables;
@@ -6349,9 +6346,6 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   }
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Appendix ' +
-    appLetter +
-    ': Regression Model Methodology</h2>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
     regressionExplainer +
     '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
@@ -6563,9 +6557,6 @@ function rptPageAppendixWeather(n, d, appLetter) {
       '</div>';
   }
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Appendix ' +
-    appLetter +
-    ': Weather Data</h2>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
     weatherTable +
     '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
@@ -6723,9 +6714,6 @@ function rptPageAppendixBills(n, d, appLetter) {
     '</div>';
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Appendix ' +
-    appLetter +
-    ': Utility Bills</h2>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
     sections +
     billImagesSection +

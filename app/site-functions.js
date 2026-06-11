@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.10.502',
+    date: '2026-06-10',
+    title: 'Report appendix pages no longer print their title twice',
+    items: [
+      {
+        type: 'fix',
+        text: 'All four report appendix pages (A: Normalization, B: Regression, C: Weather, D: Bills) no longer show the appendix title twice. The duplicate heading that appeared below the page header is removed; sub-section headings and all other content are unchanged.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.10.501',
     date: '2026-06-10',
     title: 'Kansas Gas Service bills now split by page so billing periods read correctly',
