@@ -101,6 +101,97 @@ function loadUtilityData() {
     }
     DB.set(_ratesMigratedKey, '1');
   }
+  // One-time migration: backfill sewerUsage from matching water bills
+  // where sewerUsage was empty/missing because bills were saved before the
+  // May 14-15 2026 extraction fix that added sewer cross-fill logic.
+  const _sewerUsageMigratedKey = 'en_utility_sewer_usage_backfilled_v1';
+  if (!DB.get(_sewerUsageMigratedKey)) {
+    const _backfillReport = { filled: [], skipped: [] };
+    for (const pid of Object.keys(utilityData)) {
+      const ud = utilityData[pid];
+      for (const bldg of ud.buildings || []) {
+        const bname = bldg.name || bldg.id || pid;
+        // Index all bills by account+end so we can look up water matches
+        const byAcctEnd = {};
+        for (const mt of bldg.meters || []) {
+          for (const bill of mt.bills || []) {
+            const acct = bill.account || bill.AccountNumber || '';
+            const key = acct + '|' + (bill.end || '');
+            if (!byAcctEnd[key]) byAcctEnd[key] = [];
+            byAcctEnd[key].push({ bill, commodity: mt.commodity, meterName: mt.name || mt.id || mt.commodity });
+          }
+        }
+        // For each sewer bill missing usage, find the matching water bill
+        for (const mt of bldg.meters || []) {
+          if (mt.commodity !== 'Sewer') continue;
+          const mname = mt.name || mt.id || 'Sewer';
+          for (const bill of mt.bills || []) {
+            // Guard 1: skip if already has a non-zero sewerUsage
+            const su = parseFloat(bill.sewerUsage);
+            if (!isNaN(su) && su > 0) continue;
+            const acct = bill.account || bill.AccountNumber || '';
+            const key = acct + '|' + (bill.end || '');
+            const candidates = (byAcctEnd[key] || []).filter(
+              (e) => e.commodity === 'Water' && parseFloat(e.bill.waterUsage) > 0,
+            );
+            // Guard 2: require exactly one match
+            if (candidates.length === 0) {
+              _backfillReport.skipped.push({
+                pid,
+                building: bname,
+                meter: mname,
+                account: acct,
+                billingEnd: bill.end,
+                reason: 'no matching water bill',
+              });
+              continue;
+            }
+            if (candidates.length > 1) {
+              _backfillReport.skipped.push({
+                pid,
+                building: bname,
+                meter: mname,
+                account: acct,
+                billingEnd: bill.end,
+                reason: 'ambiguous: ' + candidates.length + ' candidates',
+              });
+              continue;
+            }
+            // Guard 1 confirmed: exactly one match, safe to fill
+            const src = candidates[0].bill;
+            bill.sewerUsage = src.waterUsage;
+            _backfillReport.filled.push({
+              pid,
+              building: bname,
+              meter: mname,
+              account: acct,
+              billingEnd: bill.end,
+              valueCopied: src.waterUsage,
+              sourceBillId: src.id || acct + '|' + src.end,
+            });
+          }
+        }
+      }
+    }
+    // Guard 3: always emit audit trail
+    console.log(
+      '[sewer usage backfill v1] filled=' +
+        _backfillReport.filled.length +
+        ' skipped=' +
+        _backfillReport.skipped.length,
+    );
+    if (_backfillReport.filled.length) console.table(_backfillReport.filled);
+    if (_backfillReport.skipped.length) console.table(_backfillReport.skipped);
+    DB.set('en_sewer_backfill_report_v1', JSON.stringify(_backfillReport));
+    // Guard 5: write only if changes were made
+    if (_backfillReport.filled.length > 0) {
+      saveUtilityData();
+      // Guard 3: one-time user-visible notice
+      showToast(_backfillReport.filled.length + ' sewer bills backfilled from water usage — see console for details.');
+    }
+    // Guard 4: set key only after save completes
+    DB.set(_sewerUsageMigratedKey, '1');
+  }
   // Auto-inherit baselines: any meter with bills but no baseline gets
   // the majority baseline from same-commodity meters in the same project
   for (const pid of Object.keys(utilityData)) {

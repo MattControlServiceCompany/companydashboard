@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.518',
+    date: '2026-06-11',
+    title: 'BAS Alarm Log tab, sewer usage backfill, and faster bill duplicate check',
+    items: [
+      {
+        type: 'feature',
+        text: 'New Alarm Log tab in every project — import a BAS alarm CSV to see a pivot table by alarm name, a trend chart over time, and a frequency histogram. Use it to identify the top recurring alarms across your buildings.',
+      },
+      {
+        type: 'change',
+        text: 'Utility Data: on first load after this update, sewer usage may automatically backfill from water usage for months where only water was recorded. A summary toast appears and a full audit report (en_sewer_backfill_report_v1) is saved to browser storage for review in DevTools.',
+      },
+      {
+        type: 'fix',
+        text: 'Bill extraction no longer freezes the browser tab when checking a large batch of bills for duplicates — the check now yields every 5 bills and shows a progress message. Cancel is also responsive during the check.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.517',
     date: '2026-06-11',
     title: 'BAS Trends import improvements + KGS gas sum fix',

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.11.517';
+  var CH_VERSION = 'v2026.06.11.518';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,13 +32,21 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.06.11.510',
+      v: 'v2026.06.11.518',
       date: '2026-06-11',
-      title: 'City of Baldwin bill extraction: account identity, address, and billing-date fixes',
+      title: 'BAS Alarm Log tab, sewer usage backfill, and faster bill duplicate check',
       items: [
         {
+          type: 'feature',
+          text: 'New Alarm Log tab in every project — import a BAS alarm CSV to see a pivot table by alarm name, a trend chart over time, and a frequency histogram.',
+        },
+        {
+          type: 'change',
+          text: 'Utility Data: on first load after this update, sewer usage may automatically backfill from water usage for months where only water was recorded.',
+        },
+        {
           type: 'fix',
-          text: 'City of Baldwin utility bills now correctly identify separate accounts (water, sewer, electric) so bills from one account are never merged into another. Address and sewer-charge fallback detection now handles more bill formats, and billing dates are reconstructed when not printed explicitly.',
+          text: 'Bill extraction no longer freezes the browser tab when checking a large batch of bills for duplicates — the check now yields every 5 bills and shows a progress message.',
         },
       ],
     },

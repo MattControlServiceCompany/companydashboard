@@ -1,0 +1,1075 @@
+/* ── BAS ALARMS — Import + Analytics ──────────────────────────────────────────
+   Storage key:  en_alarms_<projId>  — { importedAt: ISO, rows: AlarmRecord[] }
+   AlarmRecord shape defined in baParseCSV().
+   Views: Alarm Log (pivot), By Type (category bar), By Building (building bar),
+          Timeline (hour-of-day histogram / date histogram with toggle).
+   ──────────────────────────────────────────────────────────────────────────── */
+
+'use strict';
+
+var _baModalOpen = false;
+var _baParsedPreview = null; // { rows: [], fileName: '' } while modal open
+var _baSubtab = 'log'; // 'log' | 'bytype' | 'bybuilding' | 'timeline'
+var _baPage = 0; // current page in pivot table (0-indexed)
+var BA_PAGE_SIZE = 50;
+var _baFilters = { building: '', category: '', state: '', ackd: '' };
+var _baShowRTN = false; // DP-2: RTN rows excluded from charts by default
+var _baShowSystem = true; // DP-3: (System) alarms shown in building chart by default
+var _baTimelineMode = 'hour'; // 'hour' | 'date'
+var _baCharts = {}; // { bytype: ChartInstance, bybuilding: ChartInstance, timeline: ChartInstance }
+
+// ── Sort state for Alarm Log ──
+var _baSortCol = 'ts';
+var _baSortDir = 1; // 1=asc, -1=desc
+
+// ── RFC 4180 CSV parser ──────────────────────────────────────────────────────
+
+/**
+ * RFC 4180-compliant CSV parser.
+ * Handles quoted fields with embedded commas, quotes, and newlines.
+ * Returns array of rows, each row is an array of string values.
+ * Leading/trailing whitespace is NOT trimmed from field values (preserves
+ * raw values per "never hide file values" rule).
+ */
+function baSplitCSV(text) {
+  var rows = [];
+  var row = [];
+  var field = '';
+  var inQ = false;
+  var i = 0;
+  var len = text.length;
+
+  // Normalize line endings
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  len = text.length;
+
+  while (i < len) {
+    var ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        // Peek ahead: double-quote = escaped quote inside field
+        if (i + 1 < len && text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+        } else {
+          // Closing quote
+          inQ = false;
+          i++;
+        }
+      } else {
+        field += ch;
+        i++;
+      }
+    } else {
+      if (ch === '"') {
+        inQ = true;
+        i++;
+      } else if (ch === ',') {
+        row.push(field);
+        field = '';
+        i++;
+      } else if (ch === '\n') {
+        row.push(field);
+        field = '';
+        rows.push(row);
+        row = [];
+        i++;
+      } else {
+        field += ch;
+        i++;
+      }
+    }
+  }
+  // Flush final field and row
+  if (field !== '' || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  // Drop trailing empty row if file ends with newline
+  if (rows.length > 0) {
+    var last = rows[rows.length - 1];
+    if (last.length === 1 && last[0] === '') rows.pop();
+  }
+  return rows;
+}
+
+// ── Building derivation helper ───────────────────────────────────────────────
+
+function baBuildingFromLocation(loc) {
+  var parts = (loc || '').split('/').filter(Boolean);
+  // parts[0] = project root ("Louisburg School District")
+  // parts[1] = building name (if present)
+  return parts.length >= 2 ? parts[1] : '(System)';
+}
+
+// ── Acknowledged field parser ────────────────────────────────────────────────
+
+/**
+ * Parse the Acknowledged column.
+ * Returns { acknowledged: bool, acknowledgedAt: Date|null, acknowledgedBy: string|null }
+ * Format when present: "M/D/YYYY h:mm:ss AM/PM Name (username)"
+ */
+function baParseAcknowledged(val) {
+  val = (val || '').trim();
+  if (!val || val === 'Unacknowledged') {
+    return { acknowledged: false, acknowledgedAt: null, acknowledgedBy: null };
+  }
+  // Extract date portion: leading date stamp M/D/YYYY H:MM:SS AM/PM
+  var m = val.match(/^(\d+\/\d+\/\d{4}\s+\d+:\d+:\d+\s+(?:AM|PM))\s+(.*)/i);
+  var acknowledgedAt = null;
+  var acknowledgedBy = null;
+  if (m) {
+    acknowledgedAt = new Date(m[1]);
+    if (isNaN(acknowledgedAt.getTime())) acknowledgedAt = null;
+    // Remainder: "Name (username)" — extract name before the parenthesis
+    var namePart = m[2].replace(/\s*\([^)]*\)\s*$/, '').trim();
+    acknowledgedBy = namePart || null;
+  }
+  return { acknowledged: true, acknowledgedAt: acknowledgedAt, acknowledgedBy: acknowledgedBy };
+}
+
+// ── Main CSV parser ──────────────────────────────────────────────────────────
+
+/**
+ * Parse a WebCTRL alarm export CSV.
+ * Returns { rows: AlarmRecord[], warnings: string[] }
+ * Columns (0-indexed): S No, Date, Acknowledged, Category, Location,
+ *   Source, Current State, To Do, Duration, Description, Acknowledge Comments
+ */
+function baParseCSV(text) {
+  var allRows = baSplitCSV(text);
+  if (!allRows.length) return { rows: [], warnings: ['File appears empty'] };
+
+  // Validate header
+  var headers = allRows[0].map(function (h) {
+    return h.trim();
+  });
+  var expectedHeaders = [
+    'S No',
+    'Date',
+    'Acknowledged',
+    'Category',
+    'Location',
+    'Source',
+    'Current State',
+    'To Do',
+    'Duration',
+    'Description',
+    'Acknowledge Comments',
+  ];
+  var warnings = [];
+  for (var hi = 0; hi < expectedHeaders.length; hi++) {
+    if (headers[hi] !== expectedHeaders[hi]) {
+      warnings.push('Column ' + hi + ': expected "' + expectedHeaders[hi] + '", got "' + headers[hi] + '"');
+    }
+  }
+  if (headers.length !== 11) {
+    warnings.push('Expected 11 columns, found ' + headers.length);
+  }
+
+  var rows = [];
+  for (var i = 1; i < allRows.length; i++) {
+    var r = allRows[i];
+    if (!r || r.length < 7) continue; // skip blank/truncated rows
+
+    var ackParsed = baParseAcknowledged(r[2]);
+    var ts = new Date(r[1]);
+    if (isNaN(ts.getTime())) ts = null;
+
+    rows.push({
+      sNo: parseInt(r[0]) || i,
+      ts: ts,
+      acknowledged: ackParsed.acknowledged,
+      acknowledgedAt: ackParsed.acknowledgedAt,
+      acknowledgedBy: ackParsed.acknowledgedBy,
+      category: (r[3] || '').trim(),
+      location: (r[4] || '').trim(),
+      building: baBuildingFromLocation((r[4] || '').trim()),
+      source: (r[5] || '').trim(),
+      state: (r[6] || '').trim(), // 'Offnormal' | 'Normal' | 'Fault'
+      duration: (r[8] || '').trim(),
+      description: (r[9] || '').trim(),
+      comment: (r[10] || '').trim(),
+    });
+  }
+
+  return { rows: rows, warnings: warnings };
+}
+
+// ── Storage helpers (mirrors btGetData/btSaveData exactly) ───────────────────
+
+function baGetData(projId) {
+  var data = sget('en_alarms_' + projId, null);
+  if (data && Array.isArray(data.rows)) {
+    // JSON round-trip converts Date objects to ISO strings; rehydrate on load
+    data.rows.forEach(function (r) {
+      if (r.ts && typeof r.ts === 'string') r.ts = new Date(r.ts);
+      if (r.acknowledgedAt && typeof r.acknowledgedAt === 'string') r.acknowledgedAt = new Date(r.acknowledgedAt);
+    });
+  }
+  return data;
+}
+
+function baSaveData(projId, data) {
+  return sset('en_alarms_' + projId, data);
+}
+
+// ── Import modal ─────────────────────────────────────────────────────────────
+
+function baOpenImportModal() {
+  if (_baModalOpen) return;
+  _baModalOpen = true;
+
+  var projects = sget('en_projects', []);
+  var projOptions = projects
+    .map(function (p) {
+      return '<option value="' + baEsc(p.id) + '">' + baEsc(p.name || p.id) + '</option>';
+    })
+    .join('');
+
+  var html = [
+    '<div id="ba-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;" onclick="baCloseImportModal(event)">',
+    '<div id="ba-modal" style="background:var(--s2);border:1px solid var(--border);border-radius:12px;width:600px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:24px;" onclick="event.stopPropagation()">',
+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">',
+    '<h2 style="font-size:17px;font-weight:600;color:var(--text);">Import BAS Alarm Data</h2>',
+    '<button onclick="baCloseImportModal()" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1;">&#x2715;</button>',
+    '</div>',
+
+    // Step 1: Project
+    '<div style="margin-bottom:14px;">',
+    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 1 — Project</label>',
+    '<select id="ba-proj-sel" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" onchange="baCheckImportReady()">',
+    '<option value="">Select project...</option>',
+    projOptions,
+    '</select>',
+    '</div>',
+
+    // Step 2: Drop zone
+    '<div style="margin-bottom:14px;">',
+    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 2 — WebCTRL Alarm CSV</label>',
+    '<div id="ba-drop-zone" ',
+    'style="border:2px dashed var(--border);border-radius:8px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color 0.2s;" ',
+    'onclick="document.getElementById(\'ba-file-input\').click()" ',
+    'ondragover="event.preventDefault();this.style.borderColor=\'var(--accent)\'" ',
+    'ondragleave="this.style.borderColor=\'var(--border)\'" ',
+    'ondrop="baHandleDrop(event)">',
+    '<div style="font-size:28px;margin-bottom:8px;">&#128196;</div>',
+    '<div style="font-size:13px;color:var(--text2);">Drop WebCTRL alarm CSV here or click to browse</div>',
+    '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Standard WebCTRL alarm report export (11-column format)</div>',
+    '<input id="ba-file-input" type="file" accept=".csv,.txt" style="display:none;" onchange="baHandleFileSelect(this)" />',
+    '</div>',
+    '<div id="ba-file-name" style="font-size:12px;color:var(--text3);margin-top:6px;"></div>',
+    '</div>',
+
+    // Progress
+    '<div id="ba-progress-wrap" style="display:none;margin-bottom:14px;">',
+    '<div style="font-size:12px;color:var(--text3);" id="ba-progress-msg">Parsing...</div>',
+    '</div>',
+
+    // Result
+    '<div id="ba-import-result" style="display:none;"></div>',
+
+    // Footer
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;border-top:1px solid var(--border);padding-top:16px;">',
+    '<button onclick="baCloseImportModal()" style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>',
+    '<button id="ba-import-btn" onclick="baRunImport()" disabled style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;opacity:0.5;">Import</button>',
+    '</div>',
+
+    '</div></div>',
+  ].join('');
+
+  var overlay = document.createElement('div');
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay.firstElementChild);
+}
+
+function baCloseImportModal(event) {
+  if (event && event.target && event.target.id !== 'ba-modal-overlay') return;
+  var el = document.getElementById('ba-modal-overlay');
+  if (el) el.parentNode.removeChild(el);
+  _baModalOpen = false;
+  _baParsedPreview = null;
+}
+
+function baCheckImportReady() {
+  var btn = document.getElementById('ba-import-btn');
+  if (!btn) return;
+  var proj = document.getElementById('ba-proj-sel');
+  var ok = _baParsedPreview && proj && proj.value;
+  btn.disabled = !ok;
+  btn.style.opacity = ok ? '1' : '0.5';
+}
+
+function baHandleDrop(event) {
+  event.preventDefault();
+  var file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+  if (file) baReadFile(file);
+}
+
+function baHandleFileSelect(input) {
+  var file = input && input.files && input.files[0];
+  if (file) baReadFile(file);
+}
+
+function baReadFile(file) {
+  var nameEl = document.getElementById('ba-file-name');
+  if (nameEl) nameEl.textContent = file.name;
+  var reader = new FileReader();
+  reader.onload = function (e) {
+    var text = e.target.result;
+    var progressEl = document.getElementById('ba-progress-wrap');
+    if (progressEl) progressEl.style.display = '';
+    var msgEl = document.getElementById('ba-progress-msg');
+    if (msgEl) msgEl.textContent = 'Parsing CSV...';
+    setTimeout(function () {
+      var result = baParseCSV(text);
+      _baParsedPreview = { rows: result.rows, warnings: result.warnings, fileName: file.name };
+      if (msgEl) {
+        msgEl.textContent = 'Found ' + result.rows.length + ' alarm records.';
+        if (result.warnings.length) {
+          msgEl.textContent += ' (' + result.warnings.length + ' format warnings)';
+        }
+      }
+      baCheckImportReady();
+    }, 10);
+  };
+  reader.readAsText(file);
+}
+
+function baRunImport() {
+  if (!_baParsedPreview) return;
+  var projId = document.getElementById('ba-proj-sel').value;
+  if (!projId) return;
+
+  var data = {
+    importedAt: new Date().toISOString(),
+    fileName: _baParsedPreview.fileName,
+    rows: _baParsedPreview.rows,
+  };
+  baSaveData(projId, data).catch(function (e) {
+    if (typeof showToast === 'function')
+      showToast('Alarm data could not be saved: ' + ((e && e.message) || e), 'error');
+  });
+
+  var resultEl = document.getElementById('ba-import-result');
+  if (resultEl) {
+    var buildings = {};
+    _baParsedPreview.rows.forEach(function (r) {
+      buildings[r.building] = true;
+    });
+    var bCount = Object.keys(buildings).length;
+    resultEl.style.display = '';
+    resultEl.innerHTML =
+      '<div style="background:var(--s3);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--text);">' +
+      '&#10003; Imported <strong>' +
+      _baParsedPreview.rows.length +
+      '</strong> alarm records from <strong>' +
+      bCount +
+      '</strong> buildings/systems.' +
+      '</div>';
+  }
+
+  // Refresh the view if the alarm tab is currently open for this project
+  if (window._activeProjId === projId && window._activeProjTab === 'bas-alarms') {
+    baRenderView(projId);
+  }
+
+  setTimeout(function () {
+    baCloseImportModal();
+  }, 1500);
+}
+
+// ── View entry points ────────────────────────────────────────────────────────
+
+function baInitView(projId) {
+  baRenderView(projId);
+}
+
+function baRenderView(projId) {
+  projId = projId || window._activeProjId || null;
+  var body = document.getElementById('ptab-bas-alarms-body-' + projId);
+  if (!body) return;
+
+  if (!projId) {
+    body.innerHTML =
+      '<div style="padding:32px;text-align:center;color:var(--text3);">Select a project to view BAS alarm data.</div>';
+    return;
+  }
+
+  var data = baGetData(projId);
+  if (!data || !data.rows || !data.rows.length) {
+    body.innerHTML = [
+      '<div style="padding:48px;text-align:center;">',
+      '<div style="font-size:32px;margin-bottom:12px;">&#128680;</div>',
+      '<div style="font-size:15px;color:var(--text2);margin-bottom:8px;">No alarm data imported yet</div>',
+      '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;">Import a WebCTRL alarm report CSV to begin analyzing alarm patterns.</div>',
+      '<button onclick="baOpenImportModal()" style="background:var(--accent);color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:13px;">Import Alarm Data</button>',
+      '</div>',
+    ].join('');
+    return;
+  }
+
+  // Tab bar
+  var tabs = [
+    { id: 'log', label: 'Alarm Log' },
+    { id: 'bytype', label: 'By Type' },
+    { id: 'bybuilding', label: 'By Building' },
+    { id: 'timeline', label: 'Timeline' },
+  ];
+  var tabHtml = tabs
+    .map(function (t) {
+      var active = _baSubtab === t.id;
+      return (
+        '<button class="ba-stab' +
+        (active ? ' ba-stab-active' : '') +
+        '" data-tab="' +
+        t.id +
+        '" onclick="baSwitchSubtab(\'' +
+        t.id +
+        '\')">' +
+        t.label +
+        '</button>'
+      );
+    })
+    .join('');
+
+  var importedLabel = data.importedAt
+    ? '<span style="font-size:11px;color:var(--text3);">Imported ' +
+      data.rows.length +
+      ' rows &bull; ' +
+      new Date(data.importedAt).toLocaleDateString() +
+      '</span>'
+    : '';
+
+  body.innerHTML = [
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--border);flex-shrink:0;">',
+    '<div style="display:flex;gap:2px;padding:10px 0 0;">' + tabHtml + '</div>',
+    '<div style="display:flex;gap:8px;align-items:center;padding-bottom:6px;">',
+    importedLabel,
+    '<button onclick="baOpenImportModal()" style="font-size:11px;background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:5px;cursor:pointer;">Re-import</button>',
+    '</div>',
+    '</div>',
+    '<style>',
+    '.ba-stab{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 14px;border-radius:6px 6px 0 0;border:none;cursor:pointer;color:var(--text2);background:transparent;border-bottom:2px solid transparent;transition:all 0.13s;}',
+    '.ba-stab.ba-stab-active{color:var(--em);border-bottom-color:var(--em);font-weight:600;}',
+    '.ba-stab:hover:not(.ba-stab-active){color:var(--text);}',
+    '</style>',
+    '<div id="ba-subtab-body" style="flex:1;overflow-y:auto;min-height:0;padding:16px;"></div>',
+  ].join('');
+
+  baRenderSubtab(_baSubtab, data.rows);
+}
+
+function baSwitchSubtab(tab) {
+  _baSubtab = tab;
+  var btns = document.querySelectorAll('.ba-stab');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('ba-stab-active', btns[i].getAttribute('data-tab') === tab);
+  }
+  var projId = window._activeProjId || null;
+  if (!projId) return;
+  var data = baGetData(projId);
+  if (data && data.rows) baRenderSubtab(tab, data.rows);
+}
+
+function baRenderSubtab(tab, rows) {
+  var body = document.getElementById('ba-subtab-body');
+  if (!body) return;
+  // Destroy any existing Chart.js instances to prevent canvas reuse errors
+  ['bytype', 'bybuilding', 'timeline'].forEach(function (k) {
+    if (_baCharts[k]) {
+      try {
+        _baCharts[k].destroy();
+      } catch (e) {}
+      delete _baCharts[k];
+    }
+  });
+  if (tab === 'log') baRenderLog(body, rows);
+  else if (tab === 'bytype') baRenderByType(body, rows);
+  else if (tab === 'bybuilding') baRenderByBuilding(body, rows);
+  else if (tab === 'timeline') baRenderTimeline(body, rows);
+}
+
+// ── Component 1 — Alarm Log (pivot table) ───────────────────────────────────
+
+function baRenderLog(body, rows) {
+  // Build filter dropdowns from data
+  var buildings = ['']
+    .concat(
+      baUnique(
+        rows.map(function (r) {
+          return r.building;
+        }),
+      ),
+    )
+    .sort();
+  var categories = ['']
+    .concat(
+      baUnique(
+        rows.map(function (r) {
+          return r.category;
+        }),
+      ),
+    )
+    .sort();
+  var states = ['', 'Offnormal', 'Fault', 'Normal'];
+  var ackds = ['', 'Acknowledged', 'Unacknowledged'];
+
+  var filterHtml =
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">' +
+    baSelect('ba-flt-building', buildings, _baFilters.building, 'Building', 'baApplyFilters()') +
+    baSelect('ba-flt-category', categories, _baFilters.category, 'Category', 'baApplyFilters()') +
+    baSelect('ba-flt-state', states, _baFilters.state, 'State', 'baApplyFilters()') +
+    baSelect('ba-flt-ackd', ackds, _baFilters.ackd, 'Acknowledged', 'baApplyFilters()') +
+    '<button onclick="baClearFilters()" style="font-size:11px;background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:5px;cursor:pointer;">Clear</button>' +
+    '<button onclick="baDownloadFilteredCSV()" style="font-size:11px;background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:5px;cursor:pointer;margin-left:auto;">&#11015; CSV</button>' +
+    '</div>';
+
+  // Apply filters
+  var filtered = baFilterRows(rows);
+
+  // Sort
+  filtered = baSortRows(filtered, _baSortCol, _baSortDir);
+
+  // Paginate
+  var totalPages = Math.max(1, Math.ceil(filtered.length / BA_PAGE_SIZE));
+  if (_baPage >= totalPages) _baPage = totalPages - 1;
+  var pageRows = filtered.slice(_baPage * BA_PAGE_SIZE, (_baPage + 1) * BA_PAGE_SIZE);
+
+  var stateColor = {
+    Offnormal: 'rgba(245,158,11,0.12)',
+    Fault: 'rgba(239,68,68,0.12)',
+    Normal: 'rgba(34,197,94,0.07)',
+  };
+
+  var thStyle =
+    'padding:8px 10px;text-align:left;background:var(--s1);color:var(--text3);font-weight:500;font-size:11px;position:sticky;top:0;cursor:pointer;user-select:none;white-space:nowrap;';
+  var cols = [
+    { key: 'ts', label: 'Date' },
+    { key: 'building', label: 'Building' },
+    { key: 'category', label: 'Category' },
+    { key: 'source', label: 'Source' },
+    { key: 'state', label: 'State' },
+    { key: 'duration', label: 'Duration' },
+    { key: 'acknowledged', label: 'Acknowledged' },
+  ];
+
+  var theadHtml =
+    '<thead><tr>' +
+    cols
+      .map(function (c) {
+        var arrow = c.key === _baSortCol ? (_baSortDir === 1 ? ' &#9650;' : ' &#9660;') : '';
+        return (
+          '<th style="' +
+          thStyle +
+          '" onclick="baSortBy(\'' +
+          c.key +
+          '\')" title="Sort by ' +
+          c.label +
+          '">' +
+          c.label +
+          arrow +
+          '</th>'
+        );
+      })
+      .join('') +
+    '</tr></thead>';
+
+  var tbodyHtml =
+    '<tbody>' +
+    pageRows
+      .map(function (r) {
+        var bg = stateColor[r.state] || '';
+        var bgStyle = bg ? 'background:' + bg + ';' : '';
+        var ackText = r.acknowledged
+          ? '&#10003; ' + baEsc(r.acknowledgedBy || 'Acknowledged')
+          : '<span style="color:var(--amber);">Unacknowledged</span>';
+        var dateText = r.ts ? r.ts.toLocaleString() : '';
+        return (
+          '<tr style="' +
+          bgStyle +
+          '">' +
+          '<td style="padding:7px 10px;font-size:12px;white-space:nowrap;color:var(--text2);">' +
+          dateText +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
+          baEsc(r.building) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
+          baEsc(r.category) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text);" title="' +
+          baEsc(r.description) +
+          '">' +
+          baEsc(r.source) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;font-weight:600;color:' +
+          (r.state === 'Fault' ? 'var(--red)' : r.state === 'Offnormal' ? 'var(--amber)' : 'var(--green)') +
+          ';">' +
+          baEsc(r.state) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text3);">' +
+          baEsc(r.duration) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;">' +
+          ackText +
+          '</td>' +
+          '</tr>'
+        );
+      })
+      .join('') +
+    '</tbody>';
+
+  var countLabel =
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">' +
+    filtered.length +
+    ' of ' +
+    rows.length +
+    ' records' +
+    (filtered.length !== rows.length ? ' (filtered)' : '') +
+    '</div>';
+
+  var pagerHtml =
+    totalPages > 1
+      ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12px;">' +
+        '<button onclick="_baPage=Math.max(0,_baPage-1);baSwitchSubtab(\'log\')" ' +
+        (_baPage === 0 ? 'disabled' : '') +
+        ' style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:4px;cursor:pointer;">&#8249; Prev</button>' +
+        '<span style="color:var(--text3);">Page ' +
+        (_baPage + 1) +
+        ' of ' +
+        totalPages +
+        '</span>' +
+        '<button onclick="_baPage=Math.min(' +
+        (totalPages - 1) +
+        ",_baPage+1);baSwitchSubtab('log')\" " +
+        (_baPage === totalPages - 1 ? 'disabled' : '') +
+        ' style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:4px;cursor:pointer;">Next &#8250;</button>' +
+        '</div>'
+      : '';
+
+  body.innerHTML =
+    filterHtml +
+    countLabel +
+    '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px;">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+    theadHtml +
+    tbodyHtml +
+    '</table>' +
+    '</div>' +
+    pagerHtml;
+}
+
+function baApplyFilters() {
+  var b = document.getElementById('ba-flt-building');
+  var c = document.getElementById('ba-flt-category');
+  var s = document.getElementById('ba-flt-state');
+  var a = document.getElementById('ba-flt-ackd');
+  _baFilters.building = b ? b.value : '';
+  _baFilters.category = c ? c.value : '';
+  _baFilters.state = s ? s.value : '';
+  _baFilters.ackd = a ? a.value : '';
+  _baPage = 0;
+  baSwitchSubtab('log');
+}
+
+function baClearFilters() {
+  _baFilters = { building: '', category: '', state: '', ackd: '' };
+  _baPage = 0;
+  baSwitchSubtab('log');
+}
+
+function baFilterRows(rows) {
+  return rows.filter(function (r) {
+    if (_baFilters.building && r.building !== _baFilters.building) return false;
+    if (_baFilters.category && r.category !== _baFilters.category) return false;
+    if (_baFilters.state && r.state !== _baFilters.state) return false;
+    if (_baFilters.ackd === 'Acknowledged' && !r.acknowledged) return false;
+    if (_baFilters.ackd === 'Unacknowledged' && r.acknowledged) return false;
+    return true;
+  });
+}
+
+function baSortBy(col) {
+  if (_baSortCol === col) {
+    _baSortDir *= -1;
+  } else {
+    _baSortCol = col;
+    _baSortDir = 1;
+  }
+  _baPage = 0;
+  baSwitchSubtab('log');
+}
+
+function baSortRows(rows, col, dir) {
+  return rows.slice().sort(function (a, b) {
+    var av = col === 'ts' ? (a.ts ? a.ts.getTime() : 0) : a[col] || '';
+    var bv = col === 'ts' ? (b.ts ? b.ts.getTime() : 0) : b[col] || '';
+    if (av < bv) return -dir;
+    if (av > bv) return dir;
+    return 0;
+  });
+}
+
+// ── Component 2 — By Type (horizontal bar chart) ─────────────────────────────
+
+function baRenderByType(body, rows) {
+  // DP-2: Exclude RTN (Normal state) from charts by default — toggle available
+  var chartRows = _baShowRTN
+    ? rows
+    : rows.filter(function (r) {
+        return r.state !== 'Normal';
+      });
+
+  var counts = {};
+  chartRows.forEach(function (r) {
+    counts[r.category] = (counts[r.category] || 0) + 1;
+  });
+  var sorted = Object.keys(counts).sort(function (a, b) {
+    return counts[b] - counts[a];
+  });
+
+  var toggleHtml =
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">' +
+    '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;" title="Return-to-Normal events are State=Normal rows — the alarm cleared. Include them to see total event volume.">' +
+    '<input type="checkbox" ' +
+    (_baShowRTN ? 'checked' : '') +
+    ' onchange="_baShowRTN=this.checked;baRenderSubtab(\'bytype\',window._baAllRows)" style="cursor:pointer;"> Include Return-to-Normal events' +
+    '</label>' +
+    '<span style="font-size:11px;color:var(--text3);">' +
+    chartRows.length +
+    ' events shown</span>' +
+    '</div>';
+
+  body.innerHTML =
+    toggleHtml + '<div style="position:relative;height:400px;"><canvas id="ba-chart-bytype"></canvas></div>';
+
+  // Store reference for toggle re-render
+  window._baAllRows = rows;
+
+  var ctx = document.getElementById('ba-chart-bytype');
+  if (!ctx || typeof Chart === 'undefined') return;
+  _baCharts.bytype = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: sorted,
+      datasets: [
+        {
+          label: 'Alarm Count',
+          data: sorted.map(function (k) {
+            return counts[k];
+          }),
+          backgroundColor: 'rgba(99,179,237,0.8)',
+          borderColor: 'rgba(99,179,237,1)',
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: function (items) {
+              return items[0].label;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Count', color: 'var(--text3)', font: { size: 11 } },
+          grid: { color: 'rgba(255,255,255,0.10)' },
+          ticks: { color: 'var(--text2)', font: { size: 11 } },
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          ticks: { color: 'var(--text)', font: { size: 11 } },
+        },
+      },
+    },
+  });
+}
+
+// ── Component 3 — By Building (vertical bar chart) ───────────────────────────
+
+function baRenderByBuilding(body, rows) {
+  // DP-2: Exclude RTN by default
+  var chartRows = _baShowRTN
+    ? rows
+    : rows.filter(function (r) {
+        return r.state !== 'Normal';
+      });
+  // DP-3: (System) toggle
+  if (!_baShowSystem)
+    chartRows = chartRows.filter(function (r) {
+      return r.building !== '(System)';
+    });
+
+  var counts = {};
+  chartRows.forEach(function (r) {
+    counts[r.building] = (counts[r.building] || 0) + 1;
+  });
+  var sorted = Object.keys(counts).sort(function (a, b) {
+    return counts[b] - counts[a];
+  });
+
+  var toggleHtml =
+    '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">' +
+    '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;" title="Return-to-Normal events are State=Normal rows where the alarm cleared.">' +
+    '<input type="checkbox" ' +
+    (_baShowRTN ? 'checked' : '') +
+    ' onchange="_baShowRTN=this.checked;baRenderSubtab(\'bybuilding\',window._baAllRows)"> Include RTN events' +
+    '</label>' +
+    '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;" title="System alarms are BAS-level errors with no specific building (e.g. email failures, trend manager errors).">' +
+    '<input type="checkbox" ' +
+    (_baShowSystem ? 'checked' : '') +
+    ' onchange="_baShowSystem=this.checked;baRenderSubtab(\'bybuilding\',window._baAllRows)"> Show (System) alarms' +
+    '</label>' +
+    '</div>';
+
+  body.innerHTML =
+    toggleHtml + '<div style="position:relative;height:380px;"><canvas id="ba-chart-bybuilding"></canvas></div>';
+  window._baAllRows = rows;
+
+  var ctx = document.getElementById('ba-chart-bybuilding');
+  if (!ctx || typeof Chart === 'undefined') return;
+  _baCharts.bybuilding = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: sorted,
+      datasets: [
+        {
+          label: 'Alarm Count',
+          data: sorted.map(function (k) {
+            return counts[k];
+          }),
+          backgroundColor: sorted.map(function (k) {
+            return k === '(System)' ? 'rgba(156,163,175,0.7)' : 'rgba(16,185,129,0.8)';
+          }),
+          borderColor: sorted.map(function (k) {
+            return k === '(System)' ? 'rgba(156,163,175,1)' : 'rgba(16,185,129,1)';
+          }),
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: 'var(--text)', font: { size: 11 }, maxRotation: 30 },
+          grid: { color: 'rgba(255,255,255,0.05)' },
+        },
+        y: {
+          title: { display: true, text: 'Count', color: 'var(--text3)', font: { size: 11 } },
+          grid: { color: 'rgba(255,255,255,0.10)' },
+          ticks: { color: 'var(--text2)', font: { size: 11 } },
+        },
+      },
+    },
+  });
+}
+
+// ── Component 4 — Timeline (histogram) ──────────────────────────────────────
+
+function baRenderTimeline(body, rows) {
+  var chartRows = _baShowRTN
+    ? rows
+    : rows.filter(function (r) {
+        return r.state !== 'Normal';
+      });
+
+  var modeToggle =
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">' +
+    "<button onclick=\"_baTimelineMode='hour';_baCharts.timeline&&(_baCharts.timeline.destroy(),delete _baCharts.timeline);baRenderSubtab('timeline',window._baAllRows)\" " +
+    'style="font-size:12px;padding:4px 12px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:' +
+    (_baTimelineMode === 'hour' ? 'var(--em)' : 'var(--s3)') +
+    ';color:' +
+    (_baTimelineMode === 'hour' ? '#fff' : 'var(--text2)') +
+    ';">Hour of Day</button>' +
+    "<button onclick=\"_baTimelineMode='date';_baCharts.timeline&&(_baCharts.timeline.destroy(),delete _baCharts.timeline);baRenderSubtab('timeline',window._baAllRows)\" " +
+    'style="font-size:12px;padding:4px 12px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:' +
+    (_baTimelineMode === 'date' ? 'var(--em)' : 'var(--s3)') +
+    ';color:' +
+    (_baTimelineMode === 'date' ? '#fff' : 'var(--text2)') +
+    ';">Date Timeline</button>' +
+    '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:12px;">' +
+    '<input type="checkbox" ' +
+    (_baShowRTN ? 'checked' : '') +
+    ' onchange="_baShowRTN=this.checked;baRenderSubtab(\'timeline\',window._baAllRows)"> Include RTN</label>' +
+    '</div>';
+
+  var labels, data;
+  if (_baTimelineMode === 'hour') {
+    labels = Array.from({ length: 24 }, function (_, i) {
+      return i + ':00';
+    });
+    var hourCounts = new Array(24).fill(0);
+    chartRows.forEach(function (r) {
+      if (r.ts) hourCounts[r.ts.getHours()]++;
+    });
+    data = hourCounts;
+  } else {
+    // Date timeline — aggregate by day
+    var dayMap = {};
+    chartRows.forEach(function (r) {
+      if (!r.ts) return;
+      var dk =
+        r.ts.getFullYear() +
+        '-' +
+        String(r.ts.getMonth() + 1).padStart(2, '0') +
+        '-' +
+        String(r.ts.getDate()).padStart(2, '0');
+      dayMap[dk] = (dayMap[dk] || 0) + 1;
+    });
+    labels = Object.keys(dayMap).sort();
+    data = labels.map(function (k) {
+      return dayMap[k];
+    });
+  }
+
+  var xTitle = _baTimelineMode === 'hour' ? 'Hour of Day' : 'Date';
+  body.innerHTML =
+    modeToggle + '<div style="position:relative;height:380px;"><canvas id="ba-chart-timeline"></canvas></div>';
+  window._baAllRows = rows;
+
+  var ctx = document.getElementById('ba-chart-timeline');
+  if (!ctx || typeof Chart === 'undefined') return;
+  _baCharts.timeline = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Alarm Count',
+          data: data,
+          backgroundColor: 'rgba(167,139,250,0.8)',
+          borderColor: 'rgba(167,139,250,1)',
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          title: { display: true, text: xTitle, color: 'var(--text3)', font: { size: 11 } },
+          ticks: {
+            color: 'var(--text2)',
+            font: { size: _baTimelineMode === 'date' ? 9 : 11 },
+            maxRotation: _baTimelineMode === 'date' ? 45 : 0,
+            maxTicksLimit: _baTimelineMode === 'date' ? 30 : 24,
+          },
+          grid: { color: 'rgba(255,255,255,0.05)' },
+        },
+        y: {
+          title: { display: true, text: 'Count', color: 'var(--text3)', font: { size: 11 } },
+          grid: { color: 'rgba(255,255,255,0.10)' },
+          ticks: { color: 'var(--text2)', font: { size: 11 } },
+        },
+      },
+    },
+  });
+}
+
+// ── Utility helpers ──────────────────────────────────────────────────────────
+
+/** Escape HTML entities */
+function baEsc(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Unique values from an array */
+function baUnique(arr) {
+  var seen = {};
+  return arr.filter(function (v) {
+    if (seen[v]) return false;
+    seen[v] = true;
+    return true;
+  });
+}
+
+/** Build a <select> element */
+function baSelect(id, options, selected, placeholder, onchange) {
+  return (
+    '<select id="' +
+    id +
+    '" onchange="' +
+    onchange +
+    '" ' +
+    'style="background:var(--s3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 8px;font-size:12px;">' +
+    options
+      .map(function (o) {
+        return (
+          '<option value="' +
+          baEsc(o) +
+          '"' +
+          (o === selected ? ' selected' : '') +
+          '>' +
+          (o || placeholder) +
+          '</option>'
+        );
+      })
+      .join('') +
+    '</select>'
+  );
+}
+
+/** Download filtered rows as CSV */
+function baDownloadFilteredCSV() {
+  var projId = window._activeProjId || null;
+  if (!projId) return;
+  var data = baGetData(projId);
+  if (!data || !data.rows) return;
+  var filtered = baFilterRows(data.rows);
+  var header = [
+    'S No',
+    'Date',
+    'Acknowledged',
+    'AcknowledgedAt',
+    'AcknowledgedBy',
+    'Category',
+    'Location',
+    'Building',
+    'Source',
+    'State',
+    'Duration',
+    'Description',
+    'Comment',
+  ];
+  var lines = [header.join(',')];
+  filtered.forEach(function (r) {
+    var fields = [
+      r.sNo,
+      r.ts ? '"' + r.ts.toLocaleString() + '"' : '',
+      r.acknowledged,
+      r.acknowledgedAt ? '"' + r.acknowledgedAt.toLocaleString() + '"' : '',
+      '"' + baEsc(r.acknowledgedBy || '') + '"',
+      '"' + (r.category || '').replace(/"/g, '""') + '"',
+      '"' + (r.location || '').replace(/"/g, '""') + '"',
+      '"' + (r.building || '').replace(/"/g, '""') + '"',
+      '"' + (r.source || '').replace(/"/g, '""') + '"',
+      r.state,
+      r.duration,
+      '"' + (r.description || '').replace(/"/g, '""') + '"',
+      '"' + (r.comment || '').replace(/"/g, '""') + '"',
+    ];
+    lines.push(fields.join(','));
+  });
+  var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'bas-alarms-filtered.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}

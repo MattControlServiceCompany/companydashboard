@@ -1129,7 +1129,7 @@ function _analyzeMeterBills(bills, m) {
 // Uses historical meter data + logical rules to fix extraction errors
 async function _postExtractionVerify(bills, utilityName, rawText) {
   try {
-    if (!bills.length) return bills;
+    if (!bills.length) return { bills, historicalCache: {} };
     const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
 
     // Calculate NumberOfDays from billing period dates when not extracted
@@ -3359,20 +3359,20 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       }
     }
 
-    return bills;
+    return { bills, historicalCache: _historicalCache };
   } catch (e) {
     console.warn('[PDF] _postExtractionVerify failed:', e.message);
-    return bills; // Return bills unchanged if verification crashes
+    return { bills, historicalCache: {} }; // Return bills unchanged if verification crashes
   }
 }
 
 // Run full validation + stats on extracted bill(s), return combined warnings per bill index
-function analyzeBillExtraction(bills, utilityName) {
+function analyzeBillExtraction(bills, utilityName, historicalCache) {
   const results = [];
   for (let i = 0; i < bills.length; i++) {
     const b = bills[i];
     const vWarnings = validateBillData(b, utilityName || b.UtilityCompany || '_default');
-    const sWarnings = detectStatisticalOutliers(b);
+    const sWarnings = detectStatisticalOutliers(b, historicalCache);
     results.push({ billIndex: i, warnings: [...vWarnings, ...sWarnings] });
   }
   return results;
@@ -5770,21 +5770,30 @@ function _buildDiffFields(extracted, existing) {
   return diffs;
 }
 
-async function _checkDuplicates(bills) {
+async function _checkDuplicates(bills, statusCb) {
   const dupMap = {};
   // Load all saved (unassigned) bills — filter to match what the Saved Bills modal shows.
   // Bills with projId are orphans from an older double-storage era; they're hidden in the modal
   // but were previously triggering false "already in Saved Bills" matches.
   const pdfBills = ((await sget('en_pdf_bills', [])) || []).filter((b) => !b.projId);
-  // Build a list of all assigned bills across all projects/buildings/meters
-  const assignedBills = [];
+  // Build account-keyed index for O(K) lookup per extracted bill.
+  // normAcct matches _acctFuzzyMatch's internal normalization (leading zeros stripped)
+  // so index keys align with what _acctFuzzyMatch treats as identical.
+  const normAcct = (v) =>
+    (v || '')
+      .replace(/[\s\-]/g, '')
+      .replace(/^0+/, '')
+      .toLowerCase();
+  const assignedByAcct = Object.create(null); // { normalizedAccount -> entry[] }
+  const assignedBills = []; // kept for fallback scan (see below)
   for (const p of projects) {
     const ud = utilityData[p.id];
     if (!ud) continue;
     for (const b of ud.buildings || []) {
       for (const m of b.meters || []) {
+        const acctKey = normAcct(m.account || '');
         for (const bill of m.bills || []) {
-          assignedBills.push({
+          const entry = {
             bill,
             projId: p.id,
             projName: p.name,
@@ -5793,7 +5802,12 @@ async function _checkDuplicates(bills) {
             meter: m,
             hasPDF: !!bill.hasPDF,
             pdfKey: bill.pdfKey || null,
-          });
+          };
+          assignedBills.push(entry);
+          if (acctKey) {
+            if (!assignedByAcct[acctKey]) assignedByAcct[acctKey] = [];
+            assignedByAcct[acctKey].push(entry);
+          }
         }
       }
     }
@@ -5826,6 +5840,10 @@ async function _checkDuplicates(bills) {
   };
 
   for (let i = 0; i < bills.length; i++) {
+    if (i > 0 && i % 5 === 0) {
+      if (typeof statusCb === 'function') statusCb('Checking for duplicates (' + i + '/' + bills.length + ')...');
+      await new Promise((r) => setTimeout(r, 0));
+    }
     const ext = bills[i];
     const extAcct = norm(ext.AccountNumber);
     const extStart = toISO(ext.BillingPeriodStart || ext.DeliveryDate);
@@ -5834,8 +5852,13 @@ async function _checkDuplicates(bills) {
     const extComm = (ext.Commodity || '').toLowerCase();
     if (!extAcct && !extStart) continue; // Can't match without identity
 
-    // Search assigned bills
-    for (const ab of assignedBills) {
+    // Fast path: look up only bills whose account key exactly matches (after leading-zero strip).
+    // Fallback: if no exact match found and the extracted account is non-empty, scan all
+    // assigned bills — this preserves _acctFuzzyMatch substring tolerance for OCR-garbled
+    // accounts (e.g. "123" extracted against "1234567" stored).
+    const extAcctKey = normAcct(ext.AccountNumber);
+    const acctCandidates = extAcctKey && assignedByAcct[extAcctKey] ? assignedByAcct[extAcctKey] : assignedBills; // fallback: full scan (worst case = original O(N), only when no key match)
+    for (const ab of acctCandidates) {
       const existAcct = norm(ab.meter.account);
       const existMeter = norm(ab.meter.meter);
       const acctMatch = _acctFuzzyMatch(extAcct, existAcct);
@@ -7607,8 +7630,11 @@ async function processPDF(file) {
           // Bug b5951068: append parse-error rows (flagged above) so they're never lost.
           let finalBills = validBills.length > 0 ? validBills.concat(_singleDroppedBills || []) : bills;
           statusMsg('Verifying extraction against historical data...');
+          let _pevCache = {};
           try {
-            finalBills = await _postExtractionVerify(finalBills, rule.name, text);
+            const _pevResult = await _postExtractionVerify(finalBills, rule.name, text);
+            finalBills = _pevResult.bills;
+            _pevCache = _pevResult.historicalCache || {};
           } catch (pev_err) {
             console.warn('[processPDF] _postExtractionVerify failed, continuing without verification:', pev_err);
           }
@@ -7723,7 +7749,7 @@ async function processPDF(file) {
             finalBills = finalBills.concat(_syntheticReviewBills);
           }
 
-          const analysisResults = analyzeBillExtraction(finalBills, rule.name);
+          const analysisResults = analyzeBillExtraction(finalBills, rule.name, _pevCache);
           window._pdfBillWarnings = analysisResults;
           window._pdfUnmatchedPages = _extractUnmatchedPages;
           if (_extractUnmatchedPages.length > 0) {
@@ -7739,7 +7765,8 @@ async function processPDF(file) {
             // Multi-bill: store all, start on newest bill
             window._pdfMultiBills = finalBills;
             // Check for duplicates before rendering
-            await _checkDuplicates(finalBills);
+            statusMsg('Checking for duplicates (' + finalBills.length + ' bills)...');
+            await _checkDuplicates(finalBills, statusMsg);
             // Find the newest bill by BillingPeriodEnd date
             let newestIdx = 0;
             let newestDate = 0;
@@ -7798,7 +7825,7 @@ async function processPDF(file) {
             const extracted = finalBills[0] || bills[0];
             window._pdfMultiBills = [extracted]; // always store as array for consistency
             window._pdfMultiIdx = 0;
-            await _checkDuplicates([extracted]);
+            await _checkDuplicates([extracted], statusMsg);
             const billWarnings = analysisResults[0]?.warnings || [];
             renderPDFFields(extracted, billWarnings);
             box.textContent = JSON.stringify(extracted, null, 2);

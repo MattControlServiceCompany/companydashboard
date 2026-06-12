@@ -1084,6 +1084,9 @@ function renderDetail(p) {
             <div id="ptab-bas-trends" class="ptab" style="padding:0;overflow-y:auto">
               <div id="ptab-bas-trends-body-${p.id}"></div>
             </div>
+            <div id="ptab-bas-alarms" class="ptab" style="padding:0;overflow-y:auto;display:flex;flex-direction:column;height:100%;min-height:0;">
+              <div id="ptab-bas-alarms-body-${p.id}" style="flex:1;overflow-y:auto;min-height:0;"></div>
+            </div>
             <div id="ptab-hvacload" class="ptab" style="padding:0;overflow-y:auto">
               <div id="hvl-container-${p.id}" style="display:flex;flex-direction:column;height:100%;min-height:0">
                 <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading HVAC load data...</div>
@@ -2395,6 +2398,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'savedbills', label: 'Saved Bills', icon: '🗄️' },
   { id: 'eq-matrix', label: 'Equipment Matrix', icon: '⚙️' },
   { id: 'bas-trends', label: 'BAS Trends', icon: '📉' },
+  { id: 'bas-alarms', label: 'BAS Alarms', icon: '🚨' },
   { id: 'hvacload', label: 'HVAC Load Est', icon: '🌡️' },
   { id: 'savings', label: 'Energy Savings', icon: '💡' },
   { id: 'energygfx', label: 'Energy Graphics', icon: '📈' },
@@ -2557,6 +2561,7 @@ function sPTab(tab, el) {
   if (tab === 'setpoints') renderSetpointsTab(p.id);
   if (tab === 'eq-matrix' && typeof initEquipMatrix === 'function') initEquipMatrix(p.id);
   if (tab === 'bas-trends' && typeof btInitView === 'function') btInitView(p.id);
+  if (tab === 'bas-alarms' && typeof baInitView === 'function') baInitView(p.id);
   window._activeProjTab = tab;
   saveProjSession();
 }
