@@ -1753,27 +1753,23 @@ function btOpenImportModal() {
     })
     .join('');
 
-  // Step numbering offsets when project is locked (Step 1 hidden → steps renumber)
+  // Step numbering: when project is locked, no visible project step → steps shift down by 1
   var s2 = activeProjId ? 'Step 1' : 'Step 2';
   var s3 = activeProjId ? 'Step 2' : 'Step 3';
   var s4 = activeProjId ? 'Step 3' : 'Step 4';
   var s5 = activeProjId ? 'Step 4' : 'Step 5';
 
-  // Step 1 block: read-only label when project is locked; full picker as fallback
+  // When _activeProjId is known: render NO visible project element at all —
+  // only the hidden pre-selected <select> so btUpdateBuildingList()/btCheckImportReady()/btRunImport() work unchanged.
+  // Defensive fallback: show the full picker if _activeProjId is null.
   var step1Html;
   if (activeProjId) {
     step1Html = [
-      '<div class="bt-form-row" style="margin-bottom:14px;">',
-      '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Project</label>',
-      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;">',
-      activeProjName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
-      '</div>',
-      // Hidden select keeps value so btUpdateBuildingList(), btCheckImportReady(), btRunImport() work unchanged
+      // Hidden select only — no visible project label or display box
       '<select id="bt-proj-sel" style="display:none;" onchange="btUpdateBuildingList()">',
       '<option value="">Select project...</option>',
       projOptions,
       '</select>',
-      '</div>',
     ].join('');
   } else {
     step1Html = [

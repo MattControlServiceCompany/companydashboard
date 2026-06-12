@@ -237,23 +237,17 @@ function baOpenImportModal() {
     })
     .join('');
 
-  // Step 1 renders as a read-only label (project locked) when _activeProjId is known.
-  // Defensive fallback: show the full picker if _activeProjId is null (unreachable in
-  // current call sites, but keeps the modal non-broken if entry points change).
+  // When _activeProjId is known: render NO visible project element at all —
+  // only the hidden pre-selected <select> so baCheckImportReady()/baRunImport() work unchanged.
+  // Defensive fallback: show the full picker if _activeProjId is null.
   var step1Html;
   if (activeProjId) {
     step1Html = [
-      '<div style="margin-bottom:14px;">',
-      '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Project</label>',
-      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;">',
-      baEsc(activeProjName),
-      '</div>',
-      // Hidden select keeps its value so baCheckImportReady() and baRunImport() work unchanged
+      // Hidden select only — no visible project label or display box
       '<select id="ba-proj-sel" style="display:none;" onchange="baCheckImportReady()">',
       '<option value="">Select project...</option>',
       projOptions,
       '</select>',
-      '</div>',
     ].join('');
   } else {
     step1Html = [
@@ -278,7 +272,7 @@ function baOpenImportModal() {
 
     step1Html,
 
-    // Step 2 (or Step 1 when project locked): Drop zone
+    // Drop zone (Step 1 when project locked — no visible project step; Step 2 when picker shown)
     '<div style="margin-bottom:14px;">',
     '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">' +
       (activeProjId ? 'Step 1' : 'Step 2') +

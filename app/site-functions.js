@@ -1191,6 +1191,31 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.12.523',
+    date: '2026-06-12',
+    title: 'BAS import modals: project field no longer shown',
+    items: [
+      { type: 'fix', text: 'The Import BAS Alarm Data and Import BAS Trend Data modals no longer show a project field at all when opened from inside a project. The modal now goes straight to the CSV drop zone (Alarms) or Building/Equipment/CSV steps (Trends) with no redundant project context visible.' },
+    ],
+  },
+  {
+    v: 'v2026.06.12.522',
+    date: '2026-06-12',
+    title: 'BAS import modals: project auto-selected from active project',
+    items: [
+      { type: 'fix', text: 'Opening the Import BAS Alarm Data or Import BAS Trend Data modal from inside a project no longer asks you to pick the project again -- it was the only way to reach those modals anyway. The project is pre-selected automatically and the Building dropdown in the Trends modal is pre-populated.' },
+    ],
+  },
+  {
+    v: 'v2026.06.11.521',
+    date: '2026-06-11',
+    title: "Quill CSS self-hosted; What's New changelog catches up to v520",
+    items: [
+      { type: "fix", text: "Quill rich-text styles are now served from this site instead of a CDN -- eliminates the repeated Edge Tracking Prevention console warning on every page load." },
+      { type: "fix", text: "The What's New popup now correctly shows changelog entries back to v518. A stale cache-bust tag had prevented browsers from loading the updated list." },
+    ],
+  },
+  {
     v: 'v2026.06.11.520',
     date: '2026-06-11',
     title: 'Fix: project tab content visible again',
