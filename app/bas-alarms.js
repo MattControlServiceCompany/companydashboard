@@ -17,10 +17,11 @@ var _baShowRTN = false; // DP-2: RTN rows excluded from charts by default
 var _baShowSystem = true; // DP-3: (System) alarms shown in building chart by default
 var _baTimelineMode = 'hour'; // 'hour' | 'date'
 var _baCharts = {}; // { bytype: ChartInstance, bybuilding: ChartInstance, timeline: ChartInstance }
+var _baDrillFilter = { dim: '', value: '' }; // dim: 'category'|'building'|'hour'|'date', value: string
 
 // ── Sort state for Alarm Log ──
 var _baSortCol = 'ts';
-var _baSortDir = 1; // 1=asc, -1=desc
+var _baSortDir = -1; // 1=asc, -1=desc — default: newest first
 
 // ── RFC 4180 CSV parser ──────────────────────────────────────────────────────
 
@@ -587,7 +588,25 @@ function baRenderLog(body, rows) {
   var states = ['', 'Offnormal', 'Fault', 'Normal'];
   var ackds = ['', 'Acknowledged', 'Unacknowledged'];
 
+  var drillLabel = '';
+  if (_baDrillFilter.dim && _baDrillFilter.value !== '') {
+    var drillDimName =
+      { category: 'Type', building: 'Building', hour: 'Hour', date: 'Date' }[_baDrillFilter.dim] || _baDrillFilter.dim;
+    var drillDisplayValue = _baDrillFilter.dim === 'hour' ? _baDrillFilter.value + ':00' : _baDrillFilter.value;
+    drillLabel =
+      '<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(0,212,170,0.12);border:1px solid rgba(0,212,170,0.35);border-radius:6px;margin-bottom:10px;font-size:12px;">' +
+      '<span style="color:var(--em);">&#9654;</span>' +
+      '<span style="color:var(--text);">Showing alarms for <strong>' +
+      drillDimName +
+      '</strong>: <strong>' +
+      baEsc(drillDisplayValue) +
+      '</strong></span>' +
+      '<button onclick="baClearDrillFilter()" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text2);border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;" title="Clear chart filter">&times; Clear</button>' +
+      '</div>';
+  }
+
   var filterHtml =
+    drillLabel +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">' +
     baSelect('ba-flt-building', buildings, _baFilters.building, 'Building', 'baApplyFilters()', 'All Buildings') +
     baSelect('ba-flt-category', categories, _baFilters.category, 'Category', 'baApplyFilters()', 'All Categories') +
@@ -611,25 +630,27 @@ function baRenderLog(body, rows) {
   // Row background tints removed — State column text color (var(--red/amber/green)) is sufficient.
 
   var thStyle =
-    'padding:8px 10px;text-align:left;background:var(--s3);color:var(--text3);font-weight:500;font-size:11px;position:sticky;top:0;cursor:pointer;user-select:none;white-space:nowrap;';
+    'padding:8px 10px;text-align:left;background:var(--s3);color:var(--text3);font-weight:500;font-size:11px;position:sticky;top:0;cursor:pointer;user-select:none;white-space:nowrap;position:relative;overflow:hidden;';
   var cols = [
-    { key: 'ts', label: 'Date' },
-    { key: 'building', label: 'Building' },
-    { key: 'category', label: 'Category' },
-    { key: 'source', label: 'Source' },
-    { key: 'description', label: 'Description' },
-    { key: 'state', label: 'State' },
-    { key: 'duration', label: 'Duration' },
-    { key: 'acknowledged', label: 'Acknowledged' },
+    { key: 'ts', label: 'Date', minW: 140 },
+    { key: 'building', label: 'Building', minW: 80 },
+    { key: 'category', label: 'Category', minW: 80 },
+    { key: 'source', label: 'Source', minW: 80 },
+    { key: 'description', label: 'Description', minW: 120 },
+    { key: 'state', label: 'State', minW: 70 },
+    { key: 'duration', label: 'Duration', minW: 70 },
+    { key: 'acknowledged', label: 'Acknowledged', minW: 100 },
   ];
 
   var theadHtml =
     '<thead><tr>' +
     cols
-      .map(function (c) {
+      .map(function (c, i) {
         var arrow = c.key === _baSortCol ? (_baSortDir === 1 ? ' &#9650;' : ' &#9660;') : '';
         return (
-          '<th style="' +
+          '<th data-col="' +
+          i +
+          '" style="' +
           thStyle +
           '" onclick="baSortBy(\'' +
           c.key +
@@ -638,6 +659,9 @@ function baRenderLog(body, rows) {
           '">' +
           c.label +
           arrow +
+          '<div class="col-resize-handle" data-col="' +
+          i +
+          '"></div>' +
           '</th>'
         );
       })
@@ -654,7 +678,7 @@ function baRenderLog(body, rows) {
           : '<span style="color:var(--amber);">Unacknowledged</span>';
         var dateText = r.ts ? r.ts.toLocaleString() : '';
         return (
-          '<tr style="border-bottom:1px solid var(--border);">' +
+          '<tr style="border-bottom:1px solid rgba(255,255,255,0.08);">' +
           '<td style="padding:7px 10px;font-size:12px;white-space:nowrap;color:var(--text2);">' +
           dateText +
           '</td>' +
@@ -667,9 +691,11 @@ function baRenderLog(body, rows) {
           '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
           baEsc(r.source) +
           '</td>' +
-          '<td style="padding:7px 10px;font-size:12px;color:var(--text2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;"' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text2);white-space:normal;word-break:break-word;cursor:default;"' +
           (r.description
-            ? ' onmouseenter="baTip(this,' + JSON.stringify(r.description) + ')" onmouseleave="baTipHide()"'
+            ? ' data-desc="' +
+              baEsc(r.description) +
+              '" onmouseenter="baTip(this,this.dataset.desc)" onmouseleave="baTipHide()"'
             : '') +
           '>' +
           baEsc(r.description) +
@@ -723,12 +749,114 @@ function baRenderLog(body, rows) {
     filterHtml +
     countLabel +
     '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px;">' +
-    '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+    '<table id="ba-log-table" style="width:100%;border-collapse:collapse;font-size:12px;">' +
     theadHtml +
     tbodyHtml +
     '</table>' +
     '</div>' +
     pagerHtml;
+
+  // ── Resizable columns for Alarm Log ─────────────────────────────────────────
+  // Self-contained; does NOT touch the Bills table in utility-data.js.
+  (function () {
+    var BA_COL_KEY = 'ba_alarm_log_col_widths';
+    requestAnimationFrame(function () {
+      var tbl = document.getElementById('ba-log-table');
+      if (!tbl) return;
+
+      // Measure natural widths from first body row (or header if no rows)
+      var firstRow = tbl.querySelector('tbody tr:first-child');
+      var rawWidths;
+      if (firstRow) {
+        rawWidths = Array.from(firstRow.querySelectorAll('td')).map(function (td) {
+          return td.getBoundingClientRect().width;
+        });
+      } else {
+        rawWidths = Array.from(tbl.querySelectorAll('thead th')).map(function (th) {
+          return th.getBoundingClientRect().width;
+        });
+      }
+      if (!rawWidths.length) return;
+
+      // Also measure header widths so header text sets a minimum
+      var hdrWidths = Array.from(tbl.querySelectorAll('thead th')).map(function (th) {
+        return th.getBoundingClientRect().width;
+      });
+
+      // Load saved widths from DB
+      var savedWidths = null;
+      try {
+        var s = DB.get(BA_COL_KEY);
+        if (s) savedWidths = s;
+      } catch (e) {}
+
+      var widths = rawWidths.map(function (w, i) {
+        var floor = Math.max(40, cols[i] ? cols[i].minW || 0 : 0);
+        if (savedWidths && savedWidths[i]) return Math.max(floor, savedWidths[i]);
+        var hw = hdrWidths[i] || 0;
+        return Math.max(Math.ceil(w), Math.ceil(hw), floor);
+      });
+
+      function applyWidths(ws) {
+        // Remove old colgroup
+        var old = tbl.querySelector('colgroup');
+        if (old) old.remove();
+        var cg = document.createElement('colgroup');
+        ws.forEach(function (w) {
+          var col = document.createElement('col');
+          col.style.width = w + 'px';
+          cg.appendChild(col);
+        });
+        tbl.insertBefore(cg, tbl.firstChild);
+        tbl.style.tableLayout = 'fixed';
+        tbl.style.width =
+          ws.reduce(function (s, w) {
+            return s + w;
+          }, 0) + 'px';
+      }
+
+      applyWidths(widths);
+
+      // Wire resize drag — delegated on body element
+      var _resizing = null;
+      var _bodyEl = body; // captured from outer scope
+      _bodyEl.addEventListener('mousedown', function (e) {
+        var handle = e.target.closest ? e.target.closest('.col-resize-handle') : null;
+        if (!handle || !handle.dataset.col) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var colIdx = parseInt(handle.dataset.col, 10);
+        var th = tbl.querySelector('th[data-col="' + colIdx + '"]');
+        if (!th) return;
+        handle.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        _resizing = { colIdx: colIdx, startX: e.clientX, startW: th.getBoundingClientRect().width, handle: handle };
+      });
+      document.addEventListener('mousemove', function (e) {
+        if (!_resizing) return;
+        var newW = Math.max(40, _resizing.startW + (e.clientX - _resizing.startX));
+        var col = tbl.querySelector('colgroup col:nth-child(' + (_resizing.colIdx + 1) + ')');
+        if (col) col.style.width = newW + 'px';
+        var allCols = Array.from(tbl.querySelectorAll('colgroup col'));
+        tbl.style.width =
+          allCols.reduce(function (s, c) {
+            return s + parseInt(c.style.width || 0, 10);
+          }, 0) + 'px';
+      });
+      document.addEventListener('mouseup', function () {
+        if (!_resizing) return;
+        _resizing.handle.classList.remove('dragging');
+        document.body.style.cursor = '';
+        var currentWidths = Array.from(tbl.querySelectorAll('colgroup col')).map(function (c) {
+          return parseInt(c.style.width || 0, 10);
+        });
+        try {
+          DB.set(BA_COL_KEY, currentWidths);
+        } catch (e) {}
+        _resizing = null;
+      });
+    });
+  })();
 }
 
 function baApplyFilters() {
@@ -752,11 +880,27 @@ function baClearFilters() {
 
 function baFilterRows(rows) {
   return rows.filter(function (r) {
+    // Manual dropdown filters
     if (_baFilters.building && r.building !== _baFilters.building) return false;
     if (_baFilters.category && r.category !== _baFilters.category) return false;
     if (_baFilters.state && r.state !== _baFilters.state) return false;
     if (_baFilters.ackd === 'Acknowledged' && !r.acknowledged) return false;
     if (_baFilters.ackd === 'Unacknowledged' && r.acknowledged) return false;
+    // Chart drill-down filter
+    if (_baDrillFilter.dim === 'category' && r.category !== _baDrillFilter.value) return false;
+    if (_baDrillFilter.dim === 'building' && r.building !== _baDrillFilter.value) return false;
+    if (_baDrillFilter.dim === 'hour' && r.ts) {
+      if (r.ts.getHours() !== parseInt(_baDrillFilter.value, 10)) return false;
+    }
+    if (_baDrillFilter.dim === 'date' && r.ts) {
+      var dk =
+        r.ts.getFullYear() +
+        '-' +
+        String(r.ts.getMonth() + 1).padStart(2, '0') +
+        '-' +
+        String(r.ts.getDate()).padStart(2, '0');
+      if (dk !== _baDrillFilter.value) return false;
+    }
     return true;
   });
 }
@@ -780,6 +924,18 @@ function baSortRows(rows, col, dir) {
     if (av > bv) return dir;
     return 0;
   });
+}
+
+function baApplyDrillFilter(dim, value) {
+  _baDrillFilter = { dim: dim, value: value };
+  _baPage = 0;
+  baSwitchSubtab('log');
+}
+
+function baClearDrillFilter() {
+  _baDrillFilter = { dim: '', value: '' };
+  _baPage = 0;
+  baSwitchSubtab('log');
 }
 
 // ── Component 2 — By Type (horizontal bar chart) ─────────────────────────────
@@ -844,12 +1000,21 @@ function baRenderByType(body, rows) {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      onClick: function (evt, elements) {
+        if (!elements || !elements.length) return;
+        var idx = elements[0].index;
+        var label = sorted[idx];
+        if (label != null) baApplyDrillFilter('category', label);
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
           callbacks: {
             title: function (items) {
               return items[0].label;
+            },
+            footer: function () {
+              return 'Click to filter log';
             },
           },
         },
@@ -939,7 +1104,22 @@ function baRenderByBuilding(body, rows) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      onClick: function (evt, elements) {
+        if (!elements || !elements.length) return;
+        var idx = elements[0].index;
+        var label = sorted[idx];
+        if (label != null) baApplyDrillFilter('building', label);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            footer: function () {
+              return 'Click to filter log';
+            },
+          },
+        },
+      },
       scales: {
         x: {
           ticks: { color: c_text, font: { size: 11 }, maxRotation: 30 },
@@ -1041,7 +1221,27 @@ function baRenderTimeline(body, rows) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      onClick: function (evt, elements) {
+        if (!elements || !elements.length) return;
+        var idx = elements[0].index;
+        var label = labels[idx];
+        if (label == null) return;
+        if (_baTimelineMode === 'hour') {
+          baApplyDrillFilter('hour', String(parseInt(label, 10)));
+        } else {
+          baApplyDrillFilter('date', label);
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            footer: function () {
+              return 'Click to filter log';
+            },
+          },
+        },
+      },
       scales: {
         x: {
           title: { display: true, text: xTitle, color: c_text3, font: { size: 11 } },

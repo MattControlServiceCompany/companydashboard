@@ -1191,16 +1191,65 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.12.525',
+    date: '2026-06-12',
+    title: 'Wood River gas bills + BAS Alarms interactive table',
+    items: [
+      {
+        type: 'feature',
+        text: 'Wood River Energy gas bills now import correctly — each consolidated invoice splits into 10 per-building records with correct MMbtu totals and dollar charges. Go to any Spring Hill project, open Utility Bills, and drag in a Wood River PDF.',
+      },
+      {
+        type: 'fix',
+        text: 'BAS Alarms: grid lines are now visible between rows in the Alarm Log so the table is easy to scan.',
+      },
+      {
+        type: 'fix',
+        text: 'BAS Alarms: hovering over a Description cell in the Alarm Log shows the full text in a popup tooltip. Long descriptions are no longer hidden.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Alarms: drag the edge of any column header to resize the column. Your widths are saved and restored when you come back.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Alarms: click any bar in the By Type, By Building, or Timeline charts to filter the Alarm Log to just those alarms. A label appears showing what is filtered with an X to clear it.',
+      },
+      {
+        type: 'fix',
+        text: 'BAS Alarms: the Alarm Log now opens with the newest alarm at the top instead of the oldest.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.12.524',
     date: '2026-06-12',
     title: 'BAS Alarms: cleaner table, consistent colors, better labels',
     items: [
-      { type: 'fix', text: 'Alarm Log rows no longer have a red (or any colored) background. Each row now has a subtle grid line at the bottom so the table is easy to scan.' },
-      { type: 'feature', text: 'A Description column now appears in the Alarm Log between Source and State. Long descriptions are truncated with "..." and you can hover any cell to read the full text in a popup.' },
-      { type: 'fix', text: 'District-level alarms (BAS email failures, trend manager errors) that had no building now show as "System Wide" everywhere -- in the table, the By Building chart, and the filter dropdown -- instead of the cryptic "(System)" label.' },
-      { type: 'fix', text: 'All three BAS Alarms charts (By Type, By Building, Timeline) now use the site teal color consistently instead of a mix of colors.' },
-      { type: 'fix', text: 'Filter dropdowns now read "All Buildings", "All Categories", "All States", and "All" instead of showing the field name as the blank option. The Acknowledged dropdown no longer has a duplicate entry.' },
-      { type: 'fix', text: 'The Return-to-Normal checkbox labels now read "Include Return-to-Normal events" in full instead of an abbreviated form.' },
+      {
+        type: 'fix',
+        text: 'Alarm Log rows no longer have a red (or any colored) background. Each row now has a subtle grid line at the bottom so the table is easy to scan.',
+      },
+      {
+        type: 'feature',
+        text: 'A Description column now appears in the Alarm Log between Source and State. Long descriptions are truncated with "..." and you can hover any cell to read the full text in a popup.',
+      },
+      {
+        type: 'fix',
+        text: 'District-level alarms (BAS email failures, trend manager errors) that had no building now show as "System Wide" everywhere -- in the table, the By Building chart, and the filter dropdown -- instead of the cryptic "(System)" label.',
+      },
+      {
+        type: 'fix',
+        text: 'All three BAS Alarms charts (By Type, By Building, Timeline) now use the site teal color consistently instead of a mix of colors.',
+      },
+      {
+        type: 'fix',
+        text: 'Filter dropdowns now read "All Buildings", "All Categories", "All States", and "All" instead of showing the field name as the blank option. The Acknowledged dropdown no longer has a duplicate entry.',
+      },
+      {
+        type: 'fix',
+        text: 'The Return-to-Normal checkbox labels now read "Include Return-to-Normal events" in full instead of an abbreviated form.',
+      },
     ],
   },
   {
@@ -1208,7 +1257,10 @@ var RELEASE_NOTES = [
     date: '2026-06-12',
     title: 'BAS import modals: project field no longer shown',
     items: [
-      { type: 'fix', text: 'The Import BAS Alarm Data and Import BAS Trend Data modals no longer show a project field at all when opened from inside a project. The modal now goes straight to the CSV drop zone (Alarms) or Building/Equipment/CSV steps (Trends) with no redundant project context visible.' },
+      {
+        type: 'fix',
+        text: 'The Import BAS Alarm Data and Import BAS Trend Data modals no longer show a project field at all when opened from inside a project. The modal now goes straight to the CSV drop zone (Alarms) or Building/Equipment/CSV steps (Trends) with no redundant project context visible.',
+      },
     ],
   },
   {
@@ -1216,7 +1268,10 @@ var RELEASE_NOTES = [
     date: '2026-06-12',
     title: 'BAS import modals: project auto-selected from active project',
     items: [
-      { type: 'fix', text: 'Opening the Import BAS Alarm Data or Import BAS Trend Data modal from inside a project no longer asks you to pick the project again -- it was the only way to reach those modals anyway. The project is pre-selected automatically and the Building dropdown in the Trends modal is pre-populated.' },
+      {
+        type: 'fix',
+        text: 'Opening the Import BAS Alarm Data or Import BAS Trend Data modal from inside a project no longer asks you to pick the project again -- it was the only way to reach those modals anyway. The project is pre-selected automatically and the Building dropdown in the Trends modal is pre-populated.',
+      },
     ],
   },
   {
@@ -1224,8 +1279,14 @@ var RELEASE_NOTES = [
     date: '2026-06-11',
     title: "Quill CSS self-hosted; What's New changelog catches up to v520",
     items: [
-      { type: "fix", text: "Quill rich-text styles are now served from this site instead of a CDN -- eliminates the repeated Edge Tracking Prevention console warning on every page load." },
-      { type: "fix", text: "The What's New popup now correctly shows changelog entries back to v518. A stale cache-bust tag had prevented browsers from loading the updated list." },
+      {
+        type: 'fix',
+        text: 'Quill rich-text styles are now served from this site instead of a CDN -- eliminates the repeated Edge Tracking Prevention console warning on every page load.',
+      },
+      {
+        type: 'fix',
+        text: "The What's New popup now correctly shows changelog entries back to v518. A stale cache-bust tag had prevented browsers from loading the updated list.",
+      },
     ],
   },
   {
