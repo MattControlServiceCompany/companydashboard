@@ -1191,6 +1191,19 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.12.524',
+    date: '2026-06-12',
+    title: 'BAS Alarms: cleaner table, consistent colors, better labels',
+    items: [
+      { type: 'fix', text: 'Alarm Log rows no longer have a red (or any colored) background. Each row now has a subtle grid line at the bottom so the table is easy to scan.' },
+      { type: 'feature', text: 'A Description column now appears in the Alarm Log between Source and State. Long descriptions are truncated with "..." and you can hover any cell to read the full text in a popup.' },
+      { type: 'fix', text: 'District-level alarms (BAS email failures, trend manager errors) that had no building now show as "System Wide" everywhere -- in the table, the By Building chart, and the filter dropdown -- instead of the cryptic "(System)" label.' },
+      { type: 'fix', text: 'All three BAS Alarms charts (By Type, By Building, Timeline) now use the site teal color consistently instead of a mix of colors.' },
+      { type: 'fix', text: 'Filter dropdowns now read "All Buildings", "All Categories", "All States", and "All" instead of showing the field name as the blank option. The Acknowledged dropdown no longer has a duplicate entry.' },
+      { type: 'fix', text: 'The Return-to-Normal checkbox labels now read "Include Return-to-Normal events" in full instead of an abbreviated form.' },
+    ],
+  },
+  {
     v: 'v2026.06.12.523',
     date: '2026-06-12',
     title: 'BAS import modals: project field no longer shown',
