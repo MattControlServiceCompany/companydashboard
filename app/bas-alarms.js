@@ -97,9 +97,13 @@ function baSplitCSV(text) {
 
 function baBuildingFromLocation(loc) {
   var parts = (loc || '').split('/').filter(Boolean);
-  // parts[0] = project root ("Louisburg School District")
-  // parts[1] = building name (if present)
-  return parts.length >= 2 ? parts[1] : '(System)';
+  // parts[0] = district/site root (e.g. "Louisburg School District")
+  // parts[1] = building name when a specific building is targeted
+  // If only the root segment is present (no building path) the alarm is
+  // site-wide / BAS-level with no specific building. Both that case and the
+  // legacy '(System)' fallback are unified under "System Wide".
+  if (parts.length < 2) return 'System Wide';
+  return parts[1];
 }
 
 // ── Acknowledged field parser ────────────────────────────────────────────────
@@ -205,6 +209,8 @@ function baGetData(projId) {
     data.rows.forEach(function (r) {
       if (r.ts && typeof r.ts === 'string') r.ts = new Date(r.ts);
       if (r.acknowledgedAt && typeof r.acknowledgedAt === 'string') r.acknowledgedAt = new Date(r.acknowledgedAt);
+      // Migrate legacy '(System)' label to 'System Wide' without re-import
+      if (r.building === '(System)') r.building = 'System Wide';
     });
   }
   return data;
@@ -525,6 +531,37 @@ function baRenderSubtab(tab, rows) {
   else if (tab === 'timeline') baRenderTimeline(body, rows);
 }
 
+// ── Inline hover tooltip helper ──────────────────────────────────────────────
+// Used by Description cells in the alarm log. Shows a styled floating div that
+// preserves line breaks (white-space:pre-wrap) — native title strips newlines.
+
+function baTip(el, text) {
+  var tip = document.getElementById('ba-tip-box');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'ba-tip-box';
+    tip.style.cssText =
+      'position:fixed;z-index:9999;max-width:360px;padding:8px 12px;' +
+      'background:var(--s4);border:1px solid var(--border);border-radius:6px;' +
+      'color:var(--text);font-size:12px;line-height:1.5;white-space:pre-wrap;' +
+      'pointer-events:none;display:none;box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+    document.body.appendChild(tip);
+  }
+  tip.textContent = text;
+  tip.style.display = 'block';
+  var rect = el.getBoundingClientRect();
+  var tipLeft = Math.min(rect.left, window.innerWidth - 380);
+  var tipTop = rect.bottom + 4;
+  if (tipTop + 200 > window.innerHeight) tipTop = rect.top - 8 - tip.offsetHeight;
+  tip.style.left = tipLeft + 'px';
+  tip.style.top = tipTop + 'px';
+}
+
+function baTipHide() {
+  var tip = document.getElementById('ba-tip-box');
+  if (tip) tip.style.display = 'none';
+}
+
 // ── Component 1 — Alarm Log (pivot table) ───────────────────────────────────
 
 function baRenderLog(body, rows) {
@@ -580,6 +617,7 @@ function baRenderLog(body, rows) {
     { key: 'building', label: 'Building' },
     { key: 'category', label: 'Category' },
     { key: 'source', label: 'Source' },
+    { key: 'description', label: 'Description' },
     { key: 'state', label: 'State' },
     { key: 'duration', label: 'Duration' },
     { key: 'acknowledged', label: 'Acknowledged' },
@@ -626,10 +664,15 @@ function baRenderLog(body, rows) {
           '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
           baEsc(r.category) +
           '</td>' +
-          '<td style="padding:7px 10px;font-size:12px;color:var(--text);" title="' +
-          baEsc(r.description) +
-          '">' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
           baEsc(r.source) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;"' +
+          (r.description
+            ? ' onmouseenter="baTip(this,' + JSON.stringify(r.description) + ')" onmouseleave="baTipHide()"'
+            : '') +
+          '>' +
+          baEsc(r.description) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;font-weight:600;color:' +
           (r.state === 'Fault' ? 'var(--red)' : r.state === 'Offnormal' ? 'var(--amber)' : 'var(--green)') +
@@ -838,7 +881,7 @@ function baRenderByBuilding(body, rows) {
   // DP-3: (System) toggle
   if (!_baShowSystem)
     chartRows = chartRows.filter(function (r) {
-      return r.building !== '(System)';
+      return r.building !== 'System Wide';
     });
 
   var counts = {};
@@ -859,7 +902,7 @@ function baRenderByBuilding(body, rows) {
     '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;" title="System alarms are BAS-level errors with no specific building (e.g. email failures, trend manager errors).">' +
     '<input type="checkbox" ' +
     (_baShowSystem ? 'checked' : '') +
-    ' onchange="_baShowSystem=this.checked;baRenderSubtab(\'bybuilding\',window._baAllRows)"> Show (System) alarms' +
+    ' onchange="_baShowSystem=this.checked;baRenderSubtab(\'bybuilding\',window._baAllRows)"> Show System Wide alarms' +
     '</label>' +
     '</div>';
 
