@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.520',
+    date: '2026-06-11',
+    title: 'Fix: project tab content visible again',
+    items: [
+      {
+        type: 'fix',
+        text: 'Project tab content is visible again — a hidden panel was always consuming the full page height, leaving every other tab with no room to render. All 15 project tabs are verified working.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.519',
     date: '2026-06-11',
     title: 'Hotfix: project tabs render again, Import Alarm Data works, alarm view refreshes after import',

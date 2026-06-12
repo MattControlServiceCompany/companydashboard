@@ -4006,6 +4006,15 @@
         overflow-y: auto;
         padding: 0;
       }
+      /* BAS Alarms tab needs flex column layout when active so its internal
+         table container can flex:1 and scroll 6,000+ rows. The flex styles
+         are scoped here (not inline) so the hidden .ptab state (display:none)
+         is not overridden when the tab is inactive. */
+      #ptab-bas-alarms.active {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
       .dash-grid {
         display: grid;
         grid-template-columns: 1fr 360px;
@@ -14620,7 +14629,7 @@
     <script src="computations/data-quality.js?v=461"></script>
     <script src="extraction/pdf-engine.js?v=399"></script>
     <script src="app/db.js?v=422"></script>
-    <script src="app/core.js?v=2026.06.11.518"></script>
+    <script src="app/core.js?v=2026.06.11.520"></script>
     <script src="app/energy-savings.js?v=516"></script>
     <script src="app/bill-analysis.js?v=518"></script>
     <script src="extraction/bill-validation.js?v=399"></script>

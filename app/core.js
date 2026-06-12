@@ -1084,7 +1084,7 @@ function renderDetail(p) {
             <div id="ptab-bas-trends" class="ptab" style="padding:0;overflow-y:auto">
               <div id="ptab-bas-trends-body-${p.id}"></div>
             </div>
-            <div id="ptab-bas-alarms" class="ptab" style="padding:0;overflow-y:auto;display:flex;flex-direction:column;height:100%;min-height:0;">
+            <div id="ptab-bas-alarms" class="ptab" style="padding:0;overflow-y:auto">
               <div id="ptab-bas-alarms-body-${p.id}" style="flex:1;overflow-y:auto;min-height:0;"></div>
             </div>
             <div id="ptab-hvacload" class="ptab" style="padding:0;overflow-y:auto">

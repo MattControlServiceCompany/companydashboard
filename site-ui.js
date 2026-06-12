@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.11.519';
+  var CH_VERSION = 'v2026.06.11.520';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.11.520',
+      date: '2026-06-11',
+      title: 'Fix: project tab content visible again',
+      items: [
+        {
+          type: 'fix',
+          text: 'Project tab content is visible again — a hidden panel was always consuming the full page height, leaving every other tab with no room to render. All 15 project tabs are verified working.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.11.518',
       date: '2026-06-11',
