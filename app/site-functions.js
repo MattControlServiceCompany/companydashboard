@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.11.519',
+    date: '2026-06-11',
+    title: 'Hotfix: project tabs render again, Import Alarm Data works, alarm view refreshes after import',
+    items: [
+      {
+        type: 'fix',
+        text: 'Project tabs no longer go blank after loading — a type error in the alarm module was silently crashing the tab renderer. All 8 project tabs now display correctly.',
+      },
+      {
+        type: 'fix',
+        text: 'Import Alarm Data button in BAS Alarms is active again — the same type error was preventing the Import modal from opening.',
+      },
+      {
+        type: 'fix',
+        text: 'After importing a BAS alarm CSV, the Alarm Log view now refreshes immediately to show the imported rows without requiring a manual tab switch.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.11.518',
     date: '2026-06-11',
     title: 'BAS Alarm Log tab, sewer usage backfill, and faster bill duplicate check',

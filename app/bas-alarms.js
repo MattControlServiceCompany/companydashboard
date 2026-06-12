@@ -371,7 +371,7 @@ function baRunImport() {
   }
 
   // Refresh the view if the alarm tab is currently open for this project
-  if (window._activeProjId === projId && window._activeProjTab === 'bas-alarms') {
+  if (String(window._activeProjId) === String(projId) && window._activeProjTab === 'bas-alarms') {
     baRenderView(projId);
   }
 
@@ -985,7 +985,8 @@ function baRenderTimeline(body, rows) {
 
 /** Escape HTML entities */
 function baEsc(s) {
-  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  s = s == null ? '' : String(s);
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /** Unique values from an array */
