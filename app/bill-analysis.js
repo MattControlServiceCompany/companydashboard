@@ -50,6 +50,11 @@ const EXPECTED_FIELDS = {
     important: ['DeliveryDate', 'UnitPrice'],
     chargeFields: [],
   },
+  'Wood River Energy': {
+    critical: ['BillingPeriodStart', 'BillingPeriodEnd', 'NaturalGasMMbtu', 'TotalCurrentCharges'],
+    important: ['InvoiceNumber', 'AccountNumber', 'ProductionMonth'],
+    chargeFields: [],
+  },
   _default: {
     critical: ['BillingPeriodStart', 'BillingPeriodEnd', 'TotalAmountDue'],
     important: ['AccountNumber'],
@@ -211,6 +216,20 @@ function validateBillData(extracted, utilityName) {
         });
       }
     }
+    // Wood River Energy: validate $/MMbtu rate (expected ~$3–$9/MMbtu)
+    const _vMMbtu = pf(extracted.NaturalGasMMbtu);
+    const _vTotal = pf(extracted.TotalCurrentCharges);
+    if (_vMMbtu > 0 && _vTotal > 0 && /wood\s*river/i.test(_vUtilName)) {
+      const impliedRate = _vTotal / _vMMbtu;
+      if (impliedRate < 1.0 || impliedRate > 20.0) {
+        warnings.push({
+          level: 'warn',
+          field: 'NaturalGasMMbtu',
+          message:
+            'Implied Wood River rate $' + impliedRate.toFixed(4) + '/MMbtu is outside expected range ($1–$20/MMbtu)',
+        });
+      }
+    }
   } else if (_vComm === 'propane') {
     const _vUsage = pf(extracted.PropaneGallons || extracted.Quantity);
     const _vCharge = pf(extracted.Subtotal || extracted.PropaneCharge);
@@ -323,7 +342,7 @@ function validateBillData(extracted, utilityName) {
   }
 
   // Gas: usage > 0 should have charge > 0 — attempt recovery from total
-  const gasUsage = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF);
+  const gasUsage = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu);
   const gasCharge = pf(extracted.GasCharge);
   if (gasUsage > 0 && gasCharge <= 0) {
     const total = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
@@ -597,6 +616,20 @@ function detectStatisticalOutliers(extracted, historicalCache) {
         usage: gasUsage,
         charge: gasCharge,
         label: '$/Therm',
+        comm: 'Gas',
+        utilName,
+      });
+    }
+    // Wood River: $/MMbtu rate check
+    const mmbtuUsage = pf(extracted.NaturalGasMMbtu);
+    const mmbtuCharge = pf(extracted.TotalCurrentCharges);
+    if (mmbtuUsage > 0 && mmbtuCharge > 0) {
+      const utilName = extracted._utilityName || extracted.UtilityCompany || '';
+      _rateChecks.push({
+        field: 'NaturalGasMMbtu',
+        usage: mmbtuUsage,
+        charge: mmbtuCharge,
+        label: '$/MMbtu',
         comm: 'Gas',
         utilName,
       });
@@ -3739,13 +3772,15 @@ async function confirmAutoAssign() {
       billOffset: bill.BillOffset || '',
       naturalGasCCF: bill.NaturalGasCCF || '',
       naturalGasTherms: bill.NaturalGasTherms || '',
-      therms: pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || '',
+      naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+      therms:
+        pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu) || '',
       // Bug d4c78f06: thermCost must be the gas commodity cost (GasCharge),
       // not TotalCurrentCharges (which includes base/customer/tax charges).
       // The $/therm rate in Meter Data + Baseline Data tables divides by this field.
       // Fall back to TotalCurrentCharges only when GasCharge is unavailable.
       thermCost:
-        bill.NaturalGasTherms || bill.NaturalGasCCF
+        bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
           ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
           : '',
       gasCharge: bill.GasCharge || '',
@@ -3785,7 +3820,8 @@ async function confirmAutoAssign() {
       rkvaRate: bill.RkVARate || '',
       // Non-electric commodity rates — computed from usage + charge at save time
       totalGasRate: (() => {
-        const t = pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF);
+        const t =
+          pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
         const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
         return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
       })(),
@@ -4043,7 +4079,12 @@ function _saveBillToMatchedMeter(extracted, match) {
   ).toFixed(2);
   const taxCost = pf(extracted.FranchiseFee).toFixed(2);
   const usageQty =
-    extracted.kWhConsumed || extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GallonsDelivered || '';
+    extracted.kWhConsumed ||
+    extracted.NaturalGasTherms ||
+    extracted.NaturalGasCCF ||
+    extracted.NaturalGasMMbtu ||
+    extracted.GallonsDelivered ||
+    '';
   const billRow = {
     id: 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     start: toISO(extracted.BillingPeriodStart || extracted.DeliveryDate),
@@ -4128,11 +4169,12 @@ function _saveBillToMatchedMeter(extracted, match) {
     // empty string otherwise so the Edit modal's per-commodity layout renders cleanly.
     naturalGasCCF: extracted.NaturalGasCCF || '',
     naturalGasTherms: extracted.NaturalGasTherms || '',
-    therms: pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || '',
+    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    therms: pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu) || '',
     // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
     // in tables uses energy-only cost, not total bill cost.
     thermCost:
-      extracted.NaturalGasTherms || extracted.NaturalGasCCF
+      extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu
         ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
         : '',
     gasCharge: extracted.GasCharge || '',
@@ -4153,7 +4195,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     tax: extracted.Tax || '',
     // Non-electric commodity rates — computed from usage + charge at save time
     totalGasRate: (() => {
-      const t = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF);
+      const t = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu);
       const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
       return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
     })(),
@@ -8647,6 +8689,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       // Gas
       NaturalGasCCF: 'naturalGasCCF',
       NaturalGasTherms: 'naturalGasTherms',
+      NaturalGasMMbtu: 'naturalGasMMbtu',
       GasCharge: 'gasCharge',
       FuelAdjustment: 'fuelAdjustment',
       // Water / Sewer / Stormwater
@@ -8942,6 +8985,8 @@ function renderPDFFields(parsed, warnings) {
     PTSRate: 'PTS Rate',
     NaturalGasTherms: 'Natural Gas Therms',
     NaturalGasCCF: 'Natural Gas (CCF)',
+    NaturalGasMMbtu: 'Natural Gas (MMbtu)',
+    ProductionMonth: 'Production Month',
     McfBilled: 'Usage (Mcf)',
     GasCharge: 'Gas Charge',
     FuelAdjustment: 'Fuel Adjustment',
@@ -9157,6 +9202,7 @@ function renderPDFFields(parsed, warnings) {
     { type: 'pair', fields: ['MeterNumber', 'ReadDifference'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
     { type: 'pair', fields: ['NaturalGasTherms', 'NaturalGasCCF'] },
+    { type: 'pair', fields: ['NaturalGasMMbtu', 'ProductionMonth'] },
     { section: 'Charges' },
     { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge', rateKey: null },
     {
@@ -9165,6 +9211,14 @@ function renderPDFFields(parsed, warnings) {
       chargeField: 'GasCharge',
       qtyField: 'NaturalGasTherms',
       unit: 'Therms',
+      rateKey: null,
+    },
+    {
+      type: 'charge-line',
+      label: 'Gas (MMbtu)',
+      chargeField: 'TotalCurrentCharges',
+      qtyField: 'NaturalGasMMbtu',
+      unit: 'MMbtu',
       rateKey: null,
     },
     { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment', rateKey: null },
@@ -10697,8 +10751,13 @@ function confirmAssignBill() {
     commodity: bill.Commodity || '',
     naturalGasCCF: bill.NaturalGasCCF || '',
     naturalGasTherms: bill.NaturalGasTherms || '',
-    therms: pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || '',
-    thermCost: bill.NaturalGasTherms || bill.NaturalGasCCF ? bill.GasCharge || bill.TotalCurrentCharges || '' : '',
+    naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+    therms:
+      pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu) || '',
+    thermCost:
+      bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
+        ? bill.GasCharge || bill.TotalCurrentCharges || ''
+        : '',
     gasCharge: bill.GasCharge || '',
     fuelAdjustment: bill.FuelAdjustment || '',
     waterUsage: bill.WaterUsage || '',
@@ -10986,7 +11045,12 @@ function confirmManualAssign() {
   }
 
   const usageQty =
-    extracted.kWhConsumed || extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GallonsDelivered || '';
+    extracted.kWhConsumed ||
+    extracted.NaturalGasTherms ||
+    extracted.NaturalGasCCF ||
+    extracted.NaturalGasMMbtu ||
+    extracted.GallonsDelivered ||
+    '';
 
   const newBillRow = {
     id: 'r' + Date.now(),
@@ -11034,9 +11098,10 @@ function confirmManualAssign() {
     fromPDF: true,
     _manuallyAssigned: true,
     // Gas fields
-    therms: extracted.NaturalGasTherms || '',
+    therms: extracted.NaturalGasTherms || extracted.NaturalGasMMbtu || '',
     ccf: extracted.NaturalGasCCF || '',
-    gasCost: extracted.GasCharge || '',
+    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    gasCost: extracted.GasCharge || extracted.TotalCurrentCharges || '',
     fuelAdj: extracted.FuelAdjustment || '',
     // Water/sewer fields
     waterUsage: extracted.WaterUsage || '',
@@ -11283,7 +11348,12 @@ async function _saveSinglePDFBill(extracted, projId) {
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
   }
   // Detect bill commodity type for correct field mapping
-  const isGas = !!(extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge);
+  const isGas = !!(
+    extracted.NaturalGasTherms ||
+    extracted.NaturalGasCCF ||
+    extracted.GasCharge ||
+    extracted.NaturalGasMMbtu
+  );
   const isPropane = !!(extracted.GallonsDelivered || extracted.FuelType);
   // Electric cost breakdown
   const kwhCost = (
@@ -11310,7 +11380,12 @@ async function _saveSinglePDFBill(extracted, projId) {
   const diff = Math.abs(componentSum - totalCost);
   // Usage quantity: kWh for electric, CCF/therms for gas, gallons for propane
   const usageQty =
-    extracted.kWhConsumed || extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GallonsDelivered || '';
+    extracted.kWhConsumed ||
+    extracted.NaturalGasTherms ||
+    extracted.NaturalGasCCF ||
+    extracted.NaturalGasMMbtu ||
+    extracted.GallonsDelivered ||
+    '';
   const billRow = {
     id: 'r' + Date.now(),
     start: toISO(extracted.BillingPeriodStart || extracted.DeliveryDate),
@@ -11386,10 +11461,17 @@ async function _saveSinglePDFBill(extracted, projId) {
     rkvaRate: extracted.RkVARate || '',
     naturalGasCCF: extracted.NaturalGasCCF || '',
     naturalGasTherms: extracted.NaturalGasTherms || '',
-    therms: isGas ? pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || '' : '',
+    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    therms: isGas
+      ? pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu) || ''
+      : '',
     // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
     // in tables uses energy-only cost, not total bill cost.
-    thermCost: isGas ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || '' : '',
+    thermCost: isGas
+      ? extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu
+        ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
+        : ''
+      : '',
     gasCharge: extracted.GasCharge || '',
     fuelAdjustment: extracted.FuelAdjustment || '',
     waterUsage: extracted.WaterUsage || '',
@@ -11408,7 +11490,7 @@ async function _saveSinglePDFBill(extracted, projId) {
     tax: extracted.Tax || '',
     // Non-electric commodity rates — computed from usage + charge at save time
     totalGasRate: (() => {
-      const t = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF);
+      const t = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu);
       const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
       return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
     })(),

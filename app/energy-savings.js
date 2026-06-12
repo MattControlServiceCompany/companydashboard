@@ -5090,6 +5090,422 @@ const UTILITY_RULES = [
     },
   },
   // ── End Constellation NewEnergy ─────────────────────────────────────────
+  // ── Wood River Energy (Gas Supplier — Spring Hill USD 230) ───────────────
+  // One consolidated invoice covers 10 service addresses.
+  // extractAll() splits into per-building records; aggregate totals are
+  // cross-checked but not saved as a separate record.
+  // Usage unit: MMbtu (NOT Therms). Rate: $/MMbtu.
+  // Billing period: derived from "Production Month" (calendar month).
+  // Must appear BEFORE the Gas Utility (Spire/KGS/Atmos) rule because
+  // that rule's broadened detector matches "Natural Gas Invoice" + "invoice".
+  {
+    name: 'Wood River Energy',
+    detect: (t) =>
+      /woodriverenergy\.com/i.test(t) ||
+      /ar@woodriverenergy/i.test(t) ||
+      (/WoodRiver\s*Energy/i.test(t) && /Natural\s+Gas\s+Invoice/i.test(t)) ||
+      (/Production\s+Month/i.test(t) &&
+        /Acct\/Meter/i.test(t) &&
+        /Sub-?Total/i.test(t) &&
+        /Total\s+Current\s+Charges/i.test(t)),
+    extractAll: function (t) {
+      // ── Invoice-level header fields ──
+      const invNumM = t.match(/Invoice\s*#[\s:]*(\d{5,7})/i);
+      const InvoiceNumber = invNumM ? invNumM[1] : null;
+      const custNumM = t.match(/Customer\s*#[\s:]*(\d+)/i);
+      const CustomerNumber = custNumM ? custNumM[1] : null;
+      const billDateM = t.match(/Bill\s*Date[\s:]*(\d{2}\/\d{2}\/\d{4})/i);
+      const BillDate = billDateM ? billDateM[1] : null;
+
+      // ProductionMonth: the label and value appear on SEPARATE lines in pdftotext.
+      // Label line: "Customer #: Invoice #: Production Month: Acct Rep: Bill Date: Pmt Due Date:"
+      // Value line: "13027 478203 November 2025 Alan Pederson 12/10/2025 12/25/2025"
+      // Strategy: look for the data line that contains a month name + 4-digit year,
+      // which appears on the line immediately after the label line (or within 3 lines).
+      let ProductionMonth = null;
+      {
+        const _lines = t.split(/\r?\n/);
+        // First try: inline match (some OCR may join them)
+        const pmInlineM = t.match(/Production\s+Month[\s:]*([A-Za-z]+\s+\d{4})/i);
+        if (pmInlineM) {
+          ProductionMonth = pmInlineM[1];
+        } else {
+          // Two-line match: find the label line, then scan the next few lines
+          // for a month name followed by a 4-digit year
+          const monthRe =
+            /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i;
+          for (let _i = 0; _i < _lines.length; _i++) {
+            if (/Production\s+Month/i.test(_lines[_i])) {
+              for (let _j = _i + 1; _j < Math.min(_i + 5, _lines.length); _j++) {
+                const _mM = _lines[_j].match(monthRe);
+                if (_mM) {
+                  ProductionMonth = _mM[1] + ' ' + _mM[2];
+                  break;
+                }
+              }
+              if (ProductionMonth) break;
+            }
+          }
+        }
+      }
+
+      // ── Billing period from Production Month ──
+      // "November 2025" → BillingPeriodStart = 11/01/2025, BillingPeriodEnd = 11/30/2025
+      let BillingPeriodStart = null;
+      let BillingPeriodEnd = null;
+      if (ProductionMonth) {
+        const WRE_MONTH_MAP = {
+          january: 0,
+          february: 1,
+          march: 2,
+          april: 3,
+          may: 4,
+          june: 5,
+          july: 6,
+          august: 7,
+          september: 8,
+          october: 9,
+          november: 10,
+          december: 11,
+          jan: 0,
+          feb: 1,
+          mar: 2,
+          apr: 3,
+          jun: 5,
+          jul: 6,
+          aug: 7,
+          sep: 8,
+          oct: 9,
+          nov: 10,
+          dec: 11,
+        };
+        const parts = ProductionMonth.trim().split(/\s+/);
+        const monthKey = (parts[0] || '').toLowerCase();
+        const year = parseInt(parts[1], 10);
+        const mo = WRE_MONTH_MAP[monthKey];
+        if (mo !== undefined && !isNaN(year)) {
+          const pad = (n) => String(n).padStart(2, '0');
+          const startD = new Date(year, mo, 1);
+          const endD = new Date(year, mo + 1, 0); // day 0 = last day of month
+          BillingPeriodStart = pad(startD.getMonth() + 1) + '/' + pad(startD.getDate()) + '/' + startD.getFullYear();
+          BillingPeriodEnd = pad(endD.getMonth() + 1) + '/' + pad(endD.getDate()) + '/' + endD.getFullYear();
+        }
+      }
+
+      // ── OCR dollar restoration helper ──
+      // Tesseract reads "$6,474.51" as "$6.474.51" (comma→period corruption).
+      // Detect the double-period thousands pattern (\d{1,3}.\d{3}.\d{2}) and
+      // restore the first period to a comma.  Apply ONLY to dollar strings, never MMbtu.
+      function _wreFixOcrDollar(raw) {
+        if (!raw) return raw;
+        return raw.replace(/^(\d{1,3})\.(\d{3})\.(\d{2})$/, '$1,$2.$3');
+      }
+
+      // ── Invoice-level summary totals (page 2) ──
+      // In pdftotext output the label line and value lines are SEPARATE:
+      //   Label: "Total Natural Gas: Total Fees: Total Tax: Total Current Charges:"
+      //   MMbtu value line: "Mmbtu 1,308.52"
+      //   Summary $ line: "$5,475.06 $0.00 $0.00"   followed by "$5,475.06"
+      // Strategy: find the label line, then scan the next few lines for values.
+      // Fallback: try inline match (works for OCR that may join label+value).
+      // Fix 3: OCR invoices produce "$25.410.37" for "$25,410.37" — restore via
+      // _wreFixOcrDollar before storing summaryTotalCC.
+      let summaryMMbtu = null;
+      let summaryTotalCC = null;
+      {
+        const _sumLines = t.split(/\r?\n/);
+        // Inline fallback first — match the longest plausible dollar string
+        // (allow up to 2 periods so we can capture the OCR-corrupted form too)
+        const inlineMMbtu = t.match(/Total\s+Natural\s+Gas[\s:]*([\d,]+\.?\d*)/i);
+        if (inlineMMbtu && /\d/.test(inlineMMbtu[1])) {
+          summaryMMbtu = parseFloat(inlineMMbtu[1].replace(/,/g, ''));
+        }
+        // Capture up to "D.DDD.DD" (OCR-corrupted) or "D,DDD.DD" (clean)
+        const inlineCC = t.match(/Total\s+Current\s+Charges[\s:$]*([\d,]+\.[\d.]{4,7})/i);
+        if (inlineCC)
+          summaryTotalCC = _wreFixOcrDollar(
+            inlineCC[1].replace(/,/g, '').replace(/^(\d+)\.(\d{3})\.(\d{2})$/, '$1,$2.$3'),
+          );
+
+        // Two-line extraction: find the totals label line and look ahead
+        for (let _i = 0; _i < _sumLines.length; _i++) {
+          if (/Total\s+Natural\s+Gas/i.test(_sumLines[_i])) {
+            for (let _j = _i + 1; _j < Math.min(_i + 8, _sumLines.length); _j++) {
+              const _ln = _sumLines[_j].trim();
+              // "Mmbtu 1,308.52" or "1,308.52" pattern
+              if (!summaryMMbtu) {
+                const _mM = _ln.match(/(?:Mmbtu\s+)?([\d,]+\.\d+)/i);
+                if (_mM && !/^\s*Fuel/i.test(_ln) && !/^\s*\$/.test(_ln)) {
+                  const _v = parseFloat(_mM[1].replace(/,/g, ''));
+                  if (_v > 100) {
+                    summaryMMbtu = _v;
+                  } // sanity: total MMbtu > 100
+                }
+              }
+              // "$5,475.06 $0.00 $0.00" — first dollar value is total CC
+              if (!summaryTotalCC) {
+                const _dM = _ln.match(/^\s*\$([\d,.]+\.\d{2})\s+\$0\.00/);
+                if (_dM) {
+                  summaryTotalCC = _wreFixOcrDollar(_dM[1].replace(/,/g, ''));
+                }
+              }
+              // Standalone "$5,475.06" line (repeated total line)
+              if (!summaryTotalCC) {
+                const _sM = _ln.match(/^\s*\$([\d,.]+\.\d{2})\s*$/);
+                if (_sM) {
+                  summaryTotalCC = _wreFixOcrDollar(_sM[1].replace(/,/g, ''));
+                }
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // ── Block-based per-site extraction ──
+      // Both embedded-text and OCR invoices place the Service Address label,
+      // building name, and Acct/Meter value on the SAME line:
+      //   "Service Address: BofE - 101 E South St Acct/Meter: 560189/T920419C"
+      // Each site ends with a Sub-Total line:
+      //   "Sub-Total:   13.49   0.13   $56.45"
+      // The first number after "Sub-Total:" is the MMbtu; the last dollar value
+      // is the site charge.  OCR invoices may corrupt thousands commas to periods
+      // in dollar amounts (e.g. $1.058.61 → should be $1,058.61) — restored below.
+      //
+      // The Timber Sage site straddles a page break: its "Service Address:" line
+      // is the last line of page 1, and the city line + item rows + Sub-Total all
+      // appear on page 2.  Because we key off "Service Address:" to OPEN a block
+      // and off "Sub-Total:" to CLOSE it, the page break is transparent.
+      //
+      // Stop at "Total Natural Gas:" to avoid collecting the summary sub-total.
+
+      // ── 5. Special Weather Event detection ──
+      const hasSWEGlobal = /Special\s+Weather\s+Event/i.test(t);
+
+      // ── Block parser ──
+      const _lines = t.split(/\r?\n/);
+      const siteBlocks = []; // [{ServiceAddress, AccountNumber, MeterNumber, mmbtu, dollar}]
+      let _curAddr = null;
+      let _curAcct = null;
+      let _curMeter = null;
+      let _inSites = false; // true once we pass the header section
+
+      for (let i = 0; i < _lines.length; i++) {
+        const ln = _lines[i];
+
+        // Stop at invoice summary line
+        if (/Total\s+Natural\s+Gas/i.test(ln)) break;
+
+        // Detect "Service Address:" line — opens a new site block.
+        // The building name and Acct/Meter appear on the SAME line in all formats.
+        if (/Service\s+Address\s*:/i.test(ln)) {
+          _inSites = true;
+          // Extract building name (text between "Service Address:" and "Acct/Meter:")
+          const _saM = ln.match(
+            /Service\s+Address\s*:\s*(.+?)\s+Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
+          );
+          if (_saM) {
+            _curAddr = _saM[1].trim();
+            _curAcct = _saM[2].trim();
+            _curMeter = _saM[3].trim();
+          } else {
+            // Fallback: no Acct/Meter on same line (shouldn't happen but be safe)
+            const _saOnly = ln.match(/Service\s+Address\s*:\s*(.+)/i);
+            _curAddr = _saOnly ? _saOnly[1].trim() : null;
+            _curAcct = null;
+            _curMeter = null;
+          }
+          continue;
+        }
+
+        // Inline Acct/Meter on a line after Service Address (safety fallback)
+        if (_inSites && _curAddr && !_curAcct && /Acct\/Meter\s*:/i.test(ln)) {
+          const _amM = ln.match(/Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i);
+          if (_amM) {
+            _curAcct = _amM[1].trim();
+            _curMeter = _amM[2].trim();
+          }
+          continue;
+        }
+
+        // Sub-Total line — closes the current site block.
+        // Format: "Sub-Total:   13.49   0.13   $56.45"  (embedded)
+        //         "Sub-Total:                                   9.58   0.11   $50.31" (OCR with wide spaces)
+        // Fix 3: dollar value may have OCR comma→period corruption.
+        if (/^\s*Sub-?Total\s*:/i.test(ln)) {
+          // First number after the colon = MMbtu
+          const _mmbtuM = ln.match(/Sub-?Total\s*:\s*([\d,]+\.?\d*)/i);
+          // Last dollar value on the line = site charge.
+          // Accept both clean form ($1,425.42) and OCR-corrupted form ($1.425.42).
+          const _dollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+          if (_mmbtuM && _dollarM) {
+            const _rawDollar = _dollarM[1];
+            const _fixedDollar = _wreFixOcrDollar(_rawDollar);
+            siteBlocks.push({
+              ServiceAddress: _curAddr,
+              AccountNumber: _curAcct,
+              MeterNumber: _curMeter,
+              mmbtu: parseFloat(_mmbtuM[1].replace(/,/g, '')),
+              dollar: _fixedDollar,
+            });
+          }
+          // Do NOT reset _curAddr/_curAcct here — next "Service Address:" line will overwrite.
+          continue;
+        }
+      }
+
+      console.log('[WRE] Block parser: siteBlocks=' + siteBlocks.length);
+
+      const results = [];
+      for (let i = 0; i < siteBlocks.length; i++) {
+        const blk = siteBlocks[i];
+        if (!blk.AccountNumber && blk.mmbtu == null) continue;
+
+        results.push({
+          UtilityCompany: 'Wood River Energy',
+          Commodity: 'Gas',
+          _utilityName: 'Wood River Energy',
+          InvoiceNumber,
+          CustomerNumber,
+          AccountNumber: blk.AccountNumber,
+          MeterNumber: blk.MeterNumber,
+          ServiceAddress: blk.ServiceAddress,
+          BillingPeriodStart,
+          BillingPeriodEnd,
+          BillDate,
+          ProductionMonth,
+          NaturalGasMMbtu: blk.mmbtu != null ? String(blk.mmbtu) : null,
+          NaturalGasTherms: null,
+          NaturalGasCCF: null,
+          GasCharge: null,
+          CustomerCharge: null,
+          TotalCurrentCharges: blk.dollar || null,
+          TotalAmountDue: blk.dollar || null,
+          _wreHasSWE: hasSWEGlobal,
+          _wreSummaryMMbtu: summaryMMbtu,
+          _wreSummaryTotal: summaryTotalCC,
+          _wreInvoiceMMbtu: summaryMMbtu,
+        });
+      }
+
+      // Aggregate fallback: if block extraction yielded nothing, fall back to
+      // one aggregate record using invoice-level totals.
+      if (results.length === 0 && summaryTotalCC) {
+        console.log('[WRE] No per-site records — falling back to aggregate record');
+        results.push({
+          UtilityCompany: 'Wood River Energy',
+          Commodity: 'Gas',
+          _utilityName: 'Wood River Energy',
+          InvoiceNumber,
+          CustomerNumber,
+          AccountNumber: CustomerNumber,
+          ServiceAddress: 'Spring Hill USD 230 (aggregate)',
+          BillingPeriodStart,
+          BillingPeriodEnd,
+          BillDate,
+          ProductionMonth,
+          NaturalGasMMbtu: summaryMMbtu ? String(summaryMMbtu) : null,
+          NaturalGasTherms: null,
+          NaturalGasCCF: null,
+          GasCharge: null,
+          TotalCurrentCharges: summaryTotalCC,
+          TotalAmountDue: summaryTotalCC,
+          _wreAggregateFallback: true,
+        });
+      }
+
+      // ── Cross-check: sum of per-site SubTotals vs invoice summary ──
+      if (results.length > 0 && summaryTotalCC) {
+        const siteSum = results.reduce(
+          (acc, r) => acc + (parseFloat((r.TotalCurrentCharges || '').replace(/,/g, '')) || 0),
+          0,
+        );
+        const invTotal = parseFloat((summaryTotalCC || '').replace(/,/g, ''));
+        const diff = Math.abs(siteSum - invTotal);
+        if (diff > 0.5) {
+          console.warn(
+            '[WRE] Per-site sum $' +
+              siteSum.toFixed(2) +
+              ' ≠ invoice total $' +
+              invTotal.toFixed(2) +
+              ' (diff $' +
+              diff.toFixed(2) +
+              ')',
+          );
+        }
+      }
+
+      return results;
+    },
+    extract: function (t) {
+      // Single-bill fallback: extract invoice-level aggregate (used only if extractAll fails)
+      const invNumM = t.match(/Invoice\s*#[\s:]*(\d{5,7})/i);
+      const pmM = t.match(/Production\s+Month[\s:]*([A-Za-z]+\s+\d{4})/i);
+      const ProductionMonth = pmM ? pmM[1] : null;
+      let BillingPeriodStart = null,
+        BillingPeriodEnd = null;
+      if (ProductionMonth) {
+        const WRE_MONTH_MAP = {
+          january: 0,
+          february: 1,
+          march: 2,
+          april: 3,
+          may: 4,
+          june: 5,
+          july: 6,
+          august: 7,
+          september: 8,
+          october: 9,
+          november: 10,
+          december: 11,
+          jan: 0,
+          feb: 1,
+          mar: 2,
+          apr: 3,
+          jun: 5,
+          jul: 6,
+          aug: 7,
+          sep: 8,
+          oct: 9,
+          nov: 10,
+          dec: 11,
+        };
+        const parts = ProductionMonth.trim().split(/\s+/);
+        const mo = WRE_MONTH_MAP[(parts[0] || '').toLowerCase()];
+        const year = parseInt(parts[1], 10);
+        if (mo !== undefined && !isNaN(year)) {
+          const pad = (n) => String(n).padStart(2, '0');
+          const endD = new Date(year, mo + 1, 0);
+          BillingPeriodStart = pad(mo + 1) + '/01/' + year;
+          BillingPeriodEnd = pad(endD.getMonth() + 1) + '/' + pad(endD.getDate()) + '/' + endD.getFullYear();
+        }
+      }
+      const totalMMbtuM = t.match(/Total\s+Natural\s+Gas[\s:]*([\d,]+\.?\d*)/i);
+      const totalCCM = t.match(/Total\s+Current\s+Charges[\s:$]*([\d,]+\.\d{2})/i);
+      return {
+        UtilityCompany: 'Wood River Energy',
+        Commodity: 'Gas',
+        _utilityName: 'Wood River Energy',
+        InvoiceNumber: invNumM ? invNumM[1] : null,
+        ProductionMonth,
+        BillingPeriodStart,
+        BillingPeriodEnd,
+        NaturalGasMMbtu: totalMMbtuM ? String(parseFloat(totalMMbtuM[1].replace(/,/g, ''))) : null,
+        NaturalGasTherms: null,
+        NaturalGasCCF: null,
+        TotalCurrentCharges: totalCCM ? totalCCM[1] : null,
+        TotalAmountDue: totalCCM ? totalCCM[1] : null,
+      };
+    },
+    _hasKeyField: function (extracted) {
+      return !!(
+        (extracted.AccountNumber || extracted.InvoiceNumber) &&
+        (extracted.BillingPeriodStart || extracted.BillingPeriodEnd) &&
+        extracted.TotalCurrentCharges
+      );
+    },
+  },
+  // ── End Wood River Energy ─────────────────────────────────────────────────
   {
     name: 'Gas Utility (Spire / Kansas Gas Service / Atmos / Laclede / Black Hills)',
     // Broadened detector — accepts any common gas-bill signature so multi-bill PDFs
