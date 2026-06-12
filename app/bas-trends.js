@@ -1736,12 +1736,56 @@ function btOpenImportModal() {
   if (_btModalOpen) return;
   _btModalOpen = true;
 
+  var activeProjId = window._activeProjId || null;
   var projects = sget('en_projects', []);
+  var activeProj = activeProjId
+    ? projects.filter(function (p) {
+        return p.id === activeProjId;
+      })[0] || null
+    : null;
+  var activeProjName = activeProj ? activeProj.name || activeProj.id : activeProjId || '';
+
+  // Build project options; pre-select active project when known
   var projOptions = projects
     .map(function (p) {
-      return '<option value="' + p.id + '">' + (p.name || p.id) + '</option>';
+      var sel = activeProjId && p.id === activeProjId ? ' selected' : '';
+      return '<option value="' + p.id + '"' + sel + '>' + (p.name || p.id) + '</option>';
     })
     .join('');
+
+  // Step numbering offsets when project is locked (Step 1 hidden → steps renumber)
+  var s2 = activeProjId ? 'Step 1' : 'Step 2';
+  var s3 = activeProjId ? 'Step 2' : 'Step 3';
+  var s4 = activeProjId ? 'Step 3' : 'Step 4';
+  var s5 = activeProjId ? 'Step 4' : 'Step 5';
+
+  // Step 1 block: read-only label when project is locked; full picker as fallback
+  var step1Html;
+  if (activeProjId) {
+    step1Html = [
+      '<div class="bt-form-row" style="margin-bottom:14px;">',
+      '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Project</label>',
+      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;">',
+      activeProjName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+      '</div>',
+      // Hidden select keeps value so btUpdateBuildingList(), btCheckImportReady(), btRunImport() work unchanged
+      '<select id="bt-proj-sel" style="display:none;" onchange="btUpdateBuildingList()">',
+      '<option value="">Select project...</option>',
+      projOptions,
+      '</select>',
+      '</div>',
+    ].join('');
+  } else {
+    step1Html = [
+      '<div class="bt-form-row" style="margin-bottom:14px;">',
+      '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 1 — Project</label>',
+      '<select id="bt-proj-sel" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" onchange="btUpdateBuildingList()">',
+      '<option value="">Select project...</option>',
+      projOptions,
+      '</select>',
+      '</div>',
+    ].join('');
+  }
 
   var html = [
     '<div id="bt-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;" onclick="btCloseImportModal(event)">',
@@ -1752,36 +1796,29 @@ function btOpenImportModal() {
     '<button onclick="btCloseImportModal()" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1;">&#x2715;</button>',
     '</div>',
 
-    // Step 1: Project
-    '<div class="bt-form-row" style="margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 1 — Project</label>',
-    '<select id="bt-proj-sel" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" onchange="btUpdateBuildingList()">',
-    '<option value="">Select project...</option>',
-    projOptions,
-    '</select>',
-    '</div>',
+    step1Html,
 
-    // Step 2: Building
+    // Building (Step 2 or Step 1 when locked)
     '<div class="bt-form-row" style="margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 2 — Building</label>',
+    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">' + s2 + ' — Building</label>',
     '<select id="bt-bldg-sel" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" disabled onchange="btPopulateEquipDatalist();btCheckImportReady();">',
-    '<option value="">Select project first...</option>',
+    '<option value="">' + (activeProjId ? 'Loading...' : 'Select project first...') + '</option>',
     '</select>',
     '</div>',
 
-    // Step 3: Equipment tag
+    // Equipment tag
     '<div class="bt-form-row" style="margin-bottom:14px;">',
     '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;" title="Short identifier for this piece of equipment. Examples: AHU-1, RTU-3, Building">',
-    'Step 3 — Equipment / System Tag <span style="color:var(--text3);font-size:11px;">(e.g. AHU-1, RTU-3)</span>',
+    s3 + ' — Equipment / System Tag <span style="color:var(--text3);font-size:11px;">(e.g. AHU-1, RTU-3)</span>',
     '</label>',
     '<input id="bt-equip-tag" type="text" placeholder="AHU-1" list="bt-equip-datalist" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" />',
     '<datalist id="bt-equip-datalist"></datalist>',
     '<div id="bt-equip-tag-warn" style="font-size:11px;color:var(--amber);margin-top:4px;display:none;"></div>',
     '</div>',
 
-    // Step 4: CSV drop zone
+    // CSV drop zone
     '<div class="bt-form-row" style="margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 4 — CSV File</label>',
+    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">' + s4 + ' — CSV File</label>',
     '<div id="bt-drop-zone" ',
     'style="border:2px dashed var(--border);border-radius:8px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color 0.2s;" ',
     'onclick="document.getElementById(\'bt-file-input\').click()" ',
@@ -1798,7 +1835,9 @@ function btOpenImportModal() {
 
     // Column mapping preview (hidden until file parsed)
     '<div id="bt-col-preview" style="display:none;margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:8px;">Step 5 — Column Mapping Preview</label>',
+    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:8px;">' +
+      s5 +
+      ' — Column Mapping Preview</label>',
     '<div id="bt-col-table-wrap" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">',
     '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
     '<thead style="background:var(--s1);position:sticky;top:0;">',
@@ -1836,6 +1875,11 @@ function btOpenImportModal() {
   var overlay = document.createElement('div');
   overlay.innerHTML = html;
   document.body.appendChild(overlay.firstElementChild);
+
+  // Project is pre-selected; trigger building list population immediately
+  if (activeProjId) {
+    btUpdateBuildingList();
+  }
 }
 
 function btCloseImportModal(event) {

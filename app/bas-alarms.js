@@ -220,12 +220,52 @@ function baOpenImportModal() {
   if (_baModalOpen) return;
   _baModalOpen = true;
 
+  var activeProjId = window._activeProjId || null;
   var projects = sget('en_projects', []);
+  var activeProj = activeProjId
+    ? projects.filter(function (p) {
+        return p.id === activeProjId;
+      })[0] || null
+    : null;
+  var activeProjName = activeProj ? activeProj.name || activeProj.id : activeProjId || '';
+
+  // Build project options; pre-select active project when known
   var projOptions = projects
     .map(function (p) {
-      return '<option value="' + baEsc(p.id) + '">' + baEsc(p.name || p.id) + '</option>';
+      var sel = activeProjId && p.id === activeProjId ? ' selected' : '';
+      return '<option value="' + baEsc(p.id) + '"' + sel + '>' + baEsc(p.name || p.id) + '</option>';
     })
     .join('');
+
+  // Step 1 renders as a read-only label (project locked) when _activeProjId is known.
+  // Defensive fallback: show the full picker if _activeProjId is null (unreachable in
+  // current call sites, but keeps the modal non-broken if entry points change).
+  var step1Html;
+  if (activeProjId) {
+    step1Html = [
+      '<div style="margin-bottom:14px;">',
+      '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Project</label>',
+      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;">',
+      baEsc(activeProjName),
+      '</div>',
+      // Hidden select keeps its value so baCheckImportReady() and baRunImport() work unchanged
+      '<select id="ba-proj-sel" style="display:none;" onchange="baCheckImportReady()">',
+      '<option value="">Select project...</option>',
+      projOptions,
+      '</select>',
+      '</div>',
+    ].join('');
+  } else {
+    step1Html = [
+      '<div style="margin-bottom:14px;">',
+      '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 1 — Project</label>',
+      '<select id="ba-proj-sel" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" onchange="baCheckImportReady()">',
+      '<option value="">Select project...</option>',
+      projOptions,
+      '</select>',
+      '</div>',
+    ].join('');
+  }
 
   var html = [
     '<div id="ba-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;" onclick="baCloseImportModal(event)">',
@@ -236,18 +276,13 @@ function baOpenImportModal() {
     '<button onclick="baCloseImportModal()" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1;">&#x2715;</button>',
     '</div>',
 
-    // Step 1: Project
-    '<div style="margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 1 — Project</label>',
-    '<select id="ba-proj-sel" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" onchange="baCheckImportReady()">',
-    '<option value="">Select project...</option>',
-    projOptions,
-    '</select>',
-    '</div>',
+    step1Html,
 
-    // Step 2: Drop zone
+    // Step 2 (or Step 1 when project locked): Drop zone
     '<div style="margin-bottom:14px;">',
-    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">Step 2 — WebCTRL Alarm CSV</label>',
+    '<label style="display:block;font-size:12px;color:var(--text3);margin-bottom:6px;">' +
+      (activeProjId ? 'Step 1' : 'Step 2') +
+      ' — WebCTRL Alarm CSV</label>',
     '<div id="ba-drop-zone" ',
     'style="border:2px dashed var(--border);border-radius:8px;padding:32px 20px;text-align:center;cursor:pointer;transition:border-color 0.2s;" ',
     'onclick="document.getElementById(\'ba-file-input\').click()" ',
@@ -282,6 +317,11 @@ function baOpenImportModal() {
   var overlay = document.createElement('div');
   overlay.innerHTML = html;
   document.body.appendChild(overlay.firstElementChild);
+
+  // Project is pre-selected; run readiness check now so Import enables as soon as CSV is dropped
+  if (activeProjId) {
+    baCheckImportReady();
+  }
 }
 
 function baCloseImportModal(event) {
