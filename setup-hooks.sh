@@ -150,6 +150,10 @@ if [ $FOUND -ne 0 ]; then
     exit 1
 fi
 
+# --- (CHECK 6 removed 2026-06-12) Version stamping is now handled by scripts/stamp-version.py ---
+# The stamp script runs once per deploy before git staging and updates all ?v= tags atomically.
+# Per-commit version bumping is no longer required.
+
 echo -e "PII & Secrets scan: ${BOLD}PASSED${NC}"
 exit 0
 HOOKEOF
