@@ -589,10 +589,10 @@ function baRenderLog(body, rows) {
 
   var filterHtml =
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">' +
-    baSelect('ba-flt-building', buildings, _baFilters.building, 'Building', 'baApplyFilters()') +
-    baSelect('ba-flt-category', categories, _baFilters.category, 'Category', 'baApplyFilters()') +
-    baSelect('ba-flt-state', states, _baFilters.state, 'State', 'baApplyFilters()') +
-    baSelect('ba-flt-ackd', ackds, _baFilters.ackd, 'Acknowledged', 'baApplyFilters()') +
+    baSelect('ba-flt-building', buildings, _baFilters.building, 'Building', 'baApplyFilters()', 'All Buildings') +
+    baSelect('ba-flt-category', categories, _baFilters.category, 'Category', 'baApplyFilters()', 'All Categories') +
+    baSelect('ba-flt-state', states, _baFilters.state, 'State', 'baApplyFilters()', 'All States') +
+    baSelect('ba-flt-ackd', ackds, _baFilters.ackd, 'Acknowledged', 'baApplyFilters()', 'All') +
     '<button onclick="baClearFilters()" style="font-size:11px;background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:5px;cursor:pointer;">Clear</button>' +
     '<button onclick="baDownloadFilteredCSV()" style="font-size:11px;background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:5px;cursor:pointer;margin-left:auto;">&#11015; CSV</button>' +
     '</div>';
@@ -1082,7 +1082,8 @@ function baUnique(arr) {
 }
 
 /** Build a <select> element */
-function baSelect(id, options, selected, placeholder, onchange) {
+function baSelect(id, options, selected, placeholder, onchange, allLabel) {
+  var showAllLabel = allLabel || placeholder;
   return (
     '<select id="' +
     id +
@@ -1098,7 +1099,7 @@ function baSelect(id, options, selected, placeholder, onchange) {
           '"' +
           (o === selected ? ' selected' : '') +
           '>' +
-          (o || placeholder) +
+          (o || showAllLabel) +
           '</option>'
         );
       })
