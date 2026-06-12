@@ -571,14 +571,10 @@ function baRenderLog(body, rows) {
   if (_baPage >= totalPages) _baPage = totalPages - 1;
   var pageRows = filtered.slice(_baPage * BA_PAGE_SIZE, (_baPage + 1) * BA_PAGE_SIZE);
 
-  var stateColor = {
-    Offnormal: 'rgba(245,158,11,0.12)',
-    Fault: 'rgba(239,68,68,0.12)',
-    Normal: 'rgba(34,197,94,0.07)',
-  };
+  // Row background tints removed — State column text color (var(--red/amber/green)) is sufficient.
 
   var thStyle =
-    'padding:8px 10px;text-align:left;background:var(--s1);color:var(--text3);font-weight:500;font-size:11px;position:sticky;top:0;cursor:pointer;user-select:none;white-space:nowrap;';
+    'padding:8px 10px;text-align:left;background:var(--s3);color:var(--text3);font-weight:500;font-size:11px;position:sticky;top:0;cursor:pointer;user-select:none;white-space:nowrap;';
   var cols = [
     { key: 'ts', label: 'Date' },
     { key: 'building', label: 'Building' },
@@ -614,16 +610,13 @@ function baRenderLog(body, rows) {
     '<tbody>' +
     pageRows
       .map(function (r) {
-        var bg = stateColor[r.state] || '';
-        var bgStyle = bg ? 'background:' + bg + ';' : '';
+        // bgStyle removed — no row background tinting
         var ackText = r.acknowledged
           ? '&#10003; ' + baEsc(r.acknowledgedBy || 'Acknowledged')
           : '<span style="color:var(--amber);">Unacknowledged</span>';
         var dateText = r.ts ? r.ts.toLocaleString() : '';
         return (
-          '<tr style="' +
-          bgStyle +
-          '">' +
+          '<tr style="border-bottom:1px solid var(--border);">' +
           '<td style="padding:7px 10px;font-size:12px;white-space:nowrap;color:var(--text2);">' +
           dateText +
           '</td>' +
@@ -784,6 +777,10 @@ function baRenderByType(body, rows) {
 
   var ctx = document.getElementById('ba-chart-bytype');
   if (!ctx || typeof Chart === 'undefined') return;
+  var cs = getComputedStyle(document.documentElement);
+  var c_text = cs.getPropertyValue('--text').trim() || '#e2e8f0';
+  var c_text2 = cs.getPropertyValue('--text2').trim() || '#94a3b8';
+  var c_text3 = cs.getPropertyValue('--text3').trim() || '#64748b';
   _baCharts.bytype = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -794,8 +791,8 @@ function baRenderByType(body, rows) {
           data: sorted.map(function (k) {
             return counts[k];
           }),
-          backgroundColor: 'rgba(99,179,237,0.8)',
-          borderColor: 'rgba(99,179,237,1)',
+          backgroundColor: 'rgba(0,212,170,0.75)',
+          borderColor: 'rgba(0,212,170,1)',
           borderWidth: 1,
         },
       ],
@@ -816,13 +813,13 @@ function baRenderByType(body, rows) {
       },
       scales: {
         x: {
-          title: { display: true, text: 'Count', color: 'var(--text3)', font: { size: 11 } },
+          title: { display: true, text: 'Count', color: c_text3, font: { size: 11 } },
           grid: { color: 'rgba(255,255,255,0.10)' },
-          ticks: { color: 'var(--text2)', font: { size: 11 } },
+          ticks: { color: c_text2, font: { size: 11 } },
         },
         y: {
           grid: { color: 'rgba(255,255,255,0.05)' },
-          ticks: { color: 'var(--text)', font: { size: 11 } },
+          ticks: { color: c_text, font: { size: 11 } },
         },
       },
     },
@@ -857,7 +854,7 @@ function baRenderByBuilding(body, rows) {
     '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;" title="Return-to-Normal events are State=Normal rows where the alarm cleared.">' +
     '<input type="checkbox" ' +
     (_baShowRTN ? 'checked' : '') +
-    ' onchange="_baShowRTN=this.checked;baRenderSubtab(\'bybuilding\',window._baAllRows)"> Include RTN events' +
+    ' onchange="_baShowRTN=this.checked;baRenderSubtab(\'bybuilding\',window._baAllRows)"> Include Return-to-Normal events' +
     '</label>' +
     '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;" title="System alarms are BAS-level errors with no specific building (e.g. email failures, trend manager errors).">' +
     '<input type="checkbox" ' +
@@ -872,6 +869,10 @@ function baRenderByBuilding(body, rows) {
 
   var ctx = document.getElementById('ba-chart-bybuilding');
   if (!ctx || typeof Chart === 'undefined') return;
+  var cs = getComputedStyle(document.documentElement);
+  var c_text = cs.getPropertyValue('--text').trim() || '#e2e8f0';
+  var c_text2 = cs.getPropertyValue('--text2').trim() || '#94a3b8';
+  var c_text3 = cs.getPropertyValue('--text3').trim() || '#64748b';
   _baCharts.bybuilding = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -882,11 +883,11 @@ function baRenderByBuilding(body, rows) {
           data: sorted.map(function (k) {
             return counts[k];
           }),
-          backgroundColor: sorted.map(function (k) {
-            return k === '(System)' ? 'rgba(156,163,175,0.7)' : 'rgba(16,185,129,0.8)';
+          backgroundColor: sorted.map(function () {
+            return 'rgba(0,212,170,0.75)';
           }),
-          borderColor: sorted.map(function (k) {
-            return k === '(System)' ? 'rgba(156,163,175,1)' : 'rgba(16,185,129,1)';
+          borderColor: sorted.map(function () {
+            return 'rgba(0,212,170,1)';
           }),
           borderWidth: 1,
         },
@@ -898,13 +899,13 @@ function baRenderByBuilding(body, rows) {
       plugins: { legend: { display: false } },
       scales: {
         x: {
-          ticks: { color: 'var(--text)', font: { size: 11 }, maxRotation: 30 },
+          ticks: { color: c_text, font: { size: 11 }, maxRotation: 30 },
           grid: { color: 'rgba(255,255,255,0.05)' },
         },
         y: {
-          title: { display: true, text: 'Count', color: 'var(--text3)', font: { size: 11 } },
+          title: { display: true, text: 'Count', color: c_text3, font: { size: 11 } },
           grid: { color: 'rgba(255,255,255,0.10)' },
-          ticks: { color: 'var(--text2)', font: { size: 11 } },
+          ticks: { color: c_text2, font: { size: 11 } },
         },
       },
     },
@@ -934,10 +935,10 @@ function baRenderTimeline(body, rows) {
     ';color:' +
     (_baTimelineMode === 'date' ? '#fff' : 'var(--text2)') +
     ';">Date Timeline</button>' +
-    '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:12px;">' +
+    '<label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:12px;" title="the event logged when an alarm condition clears and the point returns to normal">' +
     '<input type="checkbox" ' +
     (_baShowRTN ? 'checked' : '') +
-    ' onchange="_baShowRTN=this.checked;baRenderSubtab(\'timeline\',window._baAllRows)"> Include RTN</label>' +
+    ' onchange="_baShowRTN=this.checked;baRenderSubtab(\'timeline\',window._baAllRows)"> Include Return-to-Normal events</label>' +
     '</div>';
 
   var labels, data;
@@ -976,6 +977,10 @@ function baRenderTimeline(body, rows) {
 
   var ctx = document.getElementById('ba-chart-timeline');
   if (!ctx || typeof Chart === 'undefined') return;
+  var cs = getComputedStyle(document.documentElement);
+  var c_text = cs.getPropertyValue('--text').trim() || '#e2e8f0';
+  var c_text2 = cs.getPropertyValue('--text2').trim() || '#94a3b8';
+  var c_text3 = cs.getPropertyValue('--text3').trim() || '#64748b';
   _baCharts.timeline = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -984,8 +989,8 @@ function baRenderTimeline(body, rows) {
         {
           label: 'Alarm Count',
           data: data,
-          backgroundColor: 'rgba(167,139,250,0.8)',
-          borderColor: 'rgba(167,139,250,1)',
+          backgroundColor: 'rgba(0,212,170,0.75)',
+          borderColor: 'rgba(0,212,170,1)',
           borderWidth: 1,
         },
       ],
@@ -996,9 +1001,9 @@ function baRenderTimeline(body, rows) {
       plugins: { legend: { display: false } },
       scales: {
         x: {
-          title: { display: true, text: xTitle, color: 'var(--text3)', font: { size: 11 } },
+          title: { display: true, text: xTitle, color: c_text3, font: { size: 11 } },
           ticks: {
-            color: 'var(--text2)',
+            color: c_text2,
             font: { size: _baTimelineMode === 'date' ? 9 : 11 },
             maxRotation: _baTimelineMode === 'date' ? 45 : 0,
             maxTicksLimit: _baTimelineMode === 'date' ? 30 : 24,
@@ -1006,9 +1011,9 @@ function baRenderTimeline(body, rows) {
           grid: { color: 'rgba(255,255,255,0.05)' },
         },
         y: {
-          title: { display: true, text: 'Count', color: 'var(--text3)', font: { size: 11 } },
+          title: { display: true, text: 'Count', color: c_text3, font: { size: 11 } },
           grid: { color: 'rgba(255,255,255,0.10)' },
-          ticks: { color: 'var(--text2)', font: { size: 11 } },
+          ticks: { color: c_text2, font: { size: 11 } },
         },
       },
     },
