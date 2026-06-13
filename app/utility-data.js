@@ -4994,6 +4994,7 @@ function renderBaselinePane(pane, m, bills, incl) {
       '<div class="ud-empty"><div class="ud-empty-ico">📊</div><div>Add at least 3 months of bill data to set a baseline</div></div>';
     return;
   }
+  const isElec = m.commodity === 'Electric';
   const unit = getMeterDisplayUnit(m);
   const { byYm: weatherByYm } = getWeatherForBuilding();
   const rows = getNormRows(m, bills, incl, weatherByYm);
@@ -5015,8 +5016,10 @@ function renderBaselinePane(pane, m, bills, incl) {
     const avgMo = blRows.reduce((s, r) => s + r.usage, 0) / blRows.length;
     const total = blRows.reduce((s, r) => s + r.usage, 0);
     const cost = blRows.reduce((s, r) => s + r.cost, 0);
-    const hddBlRows = blRows.filter((r) => r.hdd != null && r.hdd > 0);
-    const avgHDD = hddBlRows.length ? hddBlRows.reduce((s, r) => s + r.hdd, 0) / hddBlRows.length : null;
+    const hddBlRows = blRows.filter((r) => (isElec ? r.cdd : r.hdd) != null && (isElec ? r.cdd : r.hdd) > 0);
+    const avgHDD = hddBlRows.length
+      ? hddBlRows.reduce((s, r) => s + (isElec ? r.cdd : r.hdd), 0) / hddBlRows.length
+      : null;
     const blEUI = hasEUI_bl ? (toKBtu(total / blRows.length, 0, 0) * 12) / sqftBl : null;
     const regrBlRows = blRows.filter((r) => r.regrBaseline != null);
     const avgRegrBl = regrBlRows.length ? regrBlRows.reduce((s, r) => s + r.regrBaseline, 0) / regrBlRows.length : null;
@@ -5090,7 +5093,9 @@ function renderBaselinePane(pane, m, bills, incl) {
           }
         : null,
       cost > 0 ? { v: '$' + cost.toLocaleString(undefined, { maximumFractionDigits: 0 }), lbl: 'Total Cost' } : null,
-      avgHDD != null ? { v: avgHDD.toFixed(0) + ' HDD', lbl: 'Avg HDD' } : null,
+      avgHDD != null
+        ? { v: avgHDD.toFixed(0) + (isElec ? ' CDD' : ' HDD'), lbl: 'Avg ' + (isElec ? 'CDD' : 'HDD') }
+        : null,
       blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site EUI' } : null,
       avgRatePerUnit != null
         ? { v: fmtRate(avgRatePerUnit) + '/' + unit, lbl: 'Blended Rate', color: 'var(--em2)' }
@@ -5148,7 +5153,8 @@ function renderBaselinePane(pane, m, bills, incl) {
   const rowChecks = rows
     .map((r) => {
       const checked = blMonths.includes(r.ym);
-      const hddNote = r.hdd != null ? ' · ' + r.hdd + ' HDD' : '';
+      const hddNote =
+        (isElec ? r.cdd : r.hdd) != null ? ' · ' + (isElec ? r.cdd : r.hdd) + (isElec ? ' CDD' : ' HDD') : '';
       const dispUsage = r.regrBaseline != null ? r.regrBaseline : r.usage;
       const dispPerDay = r.regrBaseline != null && r.normDays > 0 ? r.regrBaseline / r.normDays : r.usagePerDay;
       const normTag =
@@ -5520,6 +5526,7 @@ function refreshBaselineStats(mid) {
   if (!m) return;
   const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
   const incl = m.inclusive !== false;
+  const isElec = m.commodity === 'Electric';
   const unit = getMeterDisplayUnit(m);
   const { byYm: weatherByYm } = getWeatherForBuilding();
   const rows = getNormRows(m, bills, incl, weatherByYm);
@@ -5556,8 +5563,8 @@ function refreshBaselineStats(mid) {
     const avgMo = blRows.reduce((s, r) => s + r.usage, 0) / blRows.length;
     const total = blRows.reduce((s, r) => s + r.usage, 0);
     const cost = blRows.reduce((s, r) => s + r.cost, 0);
-    const hddBlR = blRows.filter((r) => r.hdd != null && r.hdd > 0);
-    const avgHDD = hddBlR.length ? hddBlR.reduce((s, r) => s + r.hdd, 0) / hddBlR.length : null;
+    const hddBlR = blRows.filter((r) => (isElec ? r.cdd : r.hdd) != null && (isElec ? r.cdd : r.hdd) > 0);
+    const avgHDD = hddBlR.length ? hddBlR.reduce((s, r) => s + (isElec ? r.cdd : r.hdd), 0) / hddBlR.length : null;
     const blEUI = hasEUI_r ? (toKBtu(total / blRows.length, 0, 0) * 12) / sqftR : null;
     const regrBlR = blRows.filter((r) => r.regrBaseline != null);
     const avgRegrBl = regrBlR.length ? regrBlR.reduce((s, r) => s + r.regrBaseline, 0) / regrBlR.length : null;
@@ -5617,7 +5624,9 @@ function refreshBaselineStats(mid) {
           }
         : null,
       cost > 0 ? { v: '$' + cost.toLocaleString(undefined, { maximumFractionDigits: 0 }), lbl: 'Total Cost' } : null,
-      avgHDD != null ? { v: avgHDD.toFixed(0) + ' HDD', lbl: 'Avg HDD' } : null,
+      avgHDD != null
+        ? { v: avgHDD.toFixed(0) + (isElec ? ' CDD' : ' HDD'), lbl: 'Avg ' + (isElec ? 'CDD' : 'HDD') }
+        : null,
       blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site EUI' } : null,
       avgRatePerUnit != null
         ? { v: fmtRate(avgRatePerUnit) + '/' + unit2, lbl: 'Blended Rate', color: 'var(--em2)' }

@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.13.526',
+    date: '2026-06-13',
+    title: 'Baseline pane now shows correct CDD or HDD by meter type',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Baseline tab in Utility Bills now shows Avg CDD (Cooling Degree Days) for Electric meters and Avg HDD (Heating Degree Days) for gas and propane meters. Previously it always showed HDD regardless of meter type.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.12.525',
     date: '2026-06-12',
     title: 'Wood River gas bills + BAS Alarms interactive table',
