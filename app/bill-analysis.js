@@ -3147,6 +3147,215 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         }
       }
 
+      // ── PASS B2: KGS TotalCurrentCharges residual recovery (Mode 3 — period-as-digit) ──
+      // Runs only for Kansas Gas Service bills, immediately after Pass B.
+      // Purpose: Pass B's _decimalCandidates cannot recover a value like 2.52→2152 (Tesseract
+      // reads the decimal point as the digit '1'). Pass B selects 2.152→2.15 (wrong by $0.37)
+      // with no warning. Pass B2 computes the KGS component sum, detects the residual against
+      // TotalCurrentCharges, and attempts a residual-based correction gated by the same
+      // DIGIT_LO/DIGIT_HI per-Mcf band. If unambiguous and in-band: applies correction and sets
+      // _auto_recovered_B2_* flag. If ambiguous or out-of-band: sets _sum_mismatch_kgs backstop.
+      // Never guesses. Never mutates on ambiguity.
+      // Scoped strictly to KGS — no other provider is affected.
+      if (utilityName === 'Kansas Gas Service') {
+        const B2_TOLERANCE = 0.02; // $0.02 — allows for floating-point rounding across addends
+
+        for (const b of bills) {
+          const comm = (b.Commodity || b.commodity || '').toLowerCase();
+          if (comm !== 'gas') continue;
+
+          const total = pf(b.TotalCurrentCharges);
+          if (!(total > 0)) continue; // no reconciliation target — skip
+
+          const mcf = pf(b.McfBilled);
+          if (!(mcf > 0)) continue; // no usage — per-Mcf gate cannot run
+
+          // Component sum — EXCLUDES PreviousBalance, PaymentsReceived, BalanceForward.
+          // TotalCurrentCharges is the correct reconciliation target (not TotalAmountDue).
+          const kgsSum =
+            Math.round(
+              (pf(b.CustomerCharge) +
+                pf(b.DeliveryCharge) +
+                pf(b.GasSystemReliability) +
+                pf(b.WeatherNormalization) +
+                pf(b.GasCharge) +
+                pf(b.FranchiseFee) +
+                pf(b.WinterEventCost) +
+                pf(b.DelayedPaymentCharge)) *
+                100,
+            ) / 100;
+
+          const residual = Math.round((total - kgsSum) * 100) / 100;
+
+          if (Math.abs(residual) < B2_TOLERANCE) {
+            // Sum already reconciles within tolerance — Pass B was correct; no action.
+            continue;
+          }
+
+          // Guard: if ANY field on this bill has a _digit_loss_suspected_* flag, the sum
+          // residual may be wholly or partially caused by that under-read field. We cannot
+          // safely attribute the residual to a different Pass-B-corrected field without
+          // risking a wrong correction. Back off entirely and set _sum_mismatch_kgs so the
+          // UI shows a red banner naming the digit-loss field(s).
+          const digitLossFields = Object.keys(b).filter((k) => k.startsWith('_digit_loss_suspected_'));
+          if (digitLossFields.length > 0) {
+            const fieldNames = digitLossFields.map((k) => k.replace('_digit_loss_suspected_', '')).join(', ');
+            b._sum_mismatch_kgs = {
+              kgsSum,
+              totalCurrentCharges: total,
+              residual,
+              reason:
+                'KGS component sum $' +
+                kgsSum.toFixed(2) +
+                ' does not match TotalCurrentCharges $' +
+                total.toFixed(2) +
+                ' (residual $' +
+                residual.toFixed(2) +
+                '). Digit-loss detected on field(s): ' +
+                fieldNames +
+                ' — residual may be caused by the under-read digit-loss field. No B2 correction applied.',
+            };
+            continue;
+          }
+
+          // Identify which Pass-B-corrected fields are candidates for residual correction.
+          // A field is a candidate if Pass B set _auto_recovered_* on it (OOM decimal recovery).
+          // Fields with _digit_loss_suspected_* are EXCLUDED — digit-loss cannot be recovered
+          // by arithmetic and must not be mutated.
+          const candidates = [];
+          for (const field of PASS_B_FIELDS) {
+            if (b['_digit_loss_suspected_' + field]) continue; // digit-loss — skip
+            if (!b['_auto_recovered_' + field]) continue; // not corrected by Pass B — skip
+            candidates.push(field);
+          }
+
+          if (candidates.length === 0) {
+            // Sum mismatch exists but no Pass-B-corrected field to attribute it to.
+            // Could be a missed extraction line or an uncorrectable corruption.
+            b._sum_mismatch_kgs = {
+              kgsSum,
+              totalCurrentCharges: total,
+              residual,
+              reason:
+                'KGS component sum $' +
+                kgsSum.toFixed(2) +
+                ' does not match TotalCurrentCharges $' +
+                total.toFixed(2) +
+                ' (residual $' +
+                residual.toFixed(2) +
+                '). No Pass-B-corrected field to attribute — possible missed extraction line.',
+            };
+            continue;
+          }
+
+          // For each Pass-B-corrected candidate field, compute what the residual-based
+          // correction would be: residual_F = TotalCurrentCharges - (kgsSum - correctedValue_F).
+          // Then gate by: positive, < TotalCurrentCharges, per-Mcf ratio in [DIGIT_LO, DIGIT_HI].
+          const validCandidates = [];
+          for (const field of candidates) {
+            const correctedByPassB = pf(b[field]);
+            const sumWithoutF = Math.round((kgsSum - correctedByPassB) * 100) / 100;
+            const residualF = Math.round((total - sumWithoutF) * 100) / 100;
+
+            // Gate 1: must be a positive charge
+            if (!(residualF > 0)) continue;
+            // Gate 2: must be less than total (sanity)
+            if (residualF >= total) continue;
+            // Gate 3: per-Mcf rate must be in the digit-loss band relative to cross-bill median
+            const medianF = _perMcfMedian(bills, field);
+            if (medianF === null || !(medianF > 0)) continue;
+            const perMcfF = residualF / mcf;
+            const bandRatioF = perMcfF / medianF;
+            if (bandRatioF < DIGIT_LO || bandRatioF > DIGIT_HI) continue;
+
+            validCandidates.push({ field, correctedByPassB, residualF, medianF, perMcfF, bandRatioF });
+          }
+
+          if (validCandidates.length === 1) {
+            // Exactly one unambiguous candidate — apply residual correction.
+            const { field, correctedByPassB, residualF, medianF, perMcfF, bandRatioF } = validCandidates[0];
+            const originalOcr =
+              (b['_auto_recovered_' + field] && b['_auto_recovered_' + field].original) || '(unknown)';
+            const correctedStr = residualF.toFixed(2);
+
+            b['_auto_recovered_B2_' + field] = {
+              passB_value: correctedByPassB,
+              corrected_to: parseFloat(correctedStr),
+              original_ocr: String(originalOcr),
+              medianPerMcf: medianF.toFixed(4),
+              perMcf_corrected: perMcfF.toFixed(4),
+              bandRatio: bandRatioF.toFixed(4),
+              reason:
+                'Pass B2 TotalCurrentCharges residual: $' +
+                total.toFixed(2) +
+                ' - sum_without(' +
+                field +
+                ')=$' +
+                (kgsSum - correctedByPassB).toFixed(2) +
+                ' = $' +
+                residualF.toFixed(2) +
+                '; per-Mcf $' +
+                perMcfF.toFixed(4) +
+                '/Mcf; band ratio ' +
+                bandRatioF.toFixed(4) +
+                ' in [' +
+                DIGIT_LO +
+                ', ' +
+                DIGIT_HI +
+                ']. Replaced Pass B value $' +
+                correctedByPassB.toFixed(2) +
+                ' with residual-derived $' +
+                correctedStr +
+                '.',
+            };
+            b[field] = correctedStr;
+          } else if (validCandidates.length === 0) {
+            // Residual exists but no candidate passes the per-Mcf gate — ambiguous or out-of-band.
+            b._sum_mismatch_kgs = {
+              kgsSum,
+              totalCurrentCharges: total,
+              residual,
+              candidates: candidates,
+              reason:
+                'KGS component sum $' +
+                kgsSum.toFixed(2) +
+                ' does not match TotalCurrentCharges $' +
+                total.toFixed(2) +
+                ' (residual $' +
+                residual.toFixed(2) +
+                '). ' +
+                (candidates.length === 0
+                  ? 'No Pass-B-corrected field available.'
+                  : 'Pass-B-corrected field(s) [' +
+                    candidates.join(', ') +
+                    '] did not pass per-Mcf gate (out-of-band or gate conditions failed). Cannot safely auto-correct.'),
+            };
+          } else {
+            // Multiple candidates all pass the gate — ambiguous, cannot safely pick one.
+            b._sum_mismatch_kgs = {
+              kgsSum,
+              totalCurrentCharges: total,
+              residual,
+              ambiguousCandidates: validCandidates.map((c) => ({
+                field: c.field,
+                residualF: c.residualF,
+                bandRatio: c.bandRatioF,
+              })),
+              reason:
+                'KGS component sum $' +
+                kgsSum.toFixed(2) +
+                ' does not match TotalCurrentCharges $' +
+                total.toFixed(2) +
+                ' (residual $' +
+                residual.toFixed(2) +
+                '). ' +
+                validCandidates.length +
+                ' Pass-B-corrected fields all pass per-Mcf gate — ambiguous. Cannot safely auto-correct without guessing.',
+            };
+          }
+        }
+      }
+
       // ── PASS C: CustomerCharge cross-bill stability ──
       // Compute cross-bill median CustomerCharge from bills that have a decimal
       const custValues = [];
@@ -9925,6 +10134,20 @@ function renderPDFFields(parsed, warnings) {
   const _detailTol = Math.max(0.02, 0.01 * _CHARGE_SUM_KEYS_RPF.length);
   const hasCurrentSumMismatch = Math.abs(_currentSumDiff) >= _detailTol;
   const sumMismatch = parsed['_sum_mismatch'];
+  // KGS-specific sum mismatch banner — mirrors the Evergy sumMismatchHtml handler below.
+  // Fires when Pass B2 could not safely reconcile the KGS component sum against
+  // TotalCurrentCharges (out-of-band residual, ambiguous candidates, or missed charge line).
+  const _sumMismatchKgs = parsed['_sum_mismatch_kgs'];
+  const sumMismatchKgsHtml = _sumMismatchKgs
+    ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
+        <span style="font-size:26px;line-height:1">&#9940;</span>
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">KGS SUM MISMATCH &mdash; $${Math.abs(_sumMismatchKgs.residual).toFixed(2)} ${_sumMismatchKgs.residual > 0 ? 'UNDER' : 'OVER'} Total Current Charges</div>
+          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">KGS component sum is $${(_sumMismatchKgs.kgsSum || 0).toFixed(2)} but the bill total is $${(_sumMismatchKgs.totalCurrentCharges || 0).toFixed(2)}. Pass B2 could not safely auto-correct. Check the highlighted fields against the source PDF.</div>
+          <div style="font-size:11px;font-family:var(--mono);margin-top:6px;line-height:1.6;color:#fca5a5">${_sumMismatchKgs.reason || ''}</div>
+        </div>
+      </div>`
+    : '';
   // Big, loud banner for sum mismatch — this is a high-severity issue that must never be
   // lost in a sea of other notifications. Renders at the very top of the extracted fields.
   const _labelsMissing = _missingChargeFields
@@ -9979,7 +10202,13 @@ function renderPDFFields(parsed, warnings) {
   const consensusFields = Object.keys(parsed)
     .filter((k) => k.startsWith('_ocr_consensus_'))
     .map((k) => ({ field: k.replace('_ocr_consensus_', ''), info: parsed[k], type: 'consensus' }));
-  const allCorrected = [...correctedFields, ...consensusFields];
+  // KGS Pass B2 residual corrections — _auto_recovered_B2_<field> flags set when Pass B2
+  // successfully recovered a period-as-digit OCR error via TotalCurrentCharges residual.
+  // These use passB_value/corrected_to rather than original/corrected (different flag shape).
+  const b2Fields = Object.keys(parsed)
+    .filter((k) => k.startsWith('_auto_recovered_B2_'))
+    .map((k) => ({ field: k.replace('_auto_recovered_B2_', ''), info: parsed[k], type: 'b2' }));
+  const allCorrected = [...correctedFields, ...consensusFields, ...b2Fields];
   let correctionHtml = '';
   if (allCorrected.length) {
     const parts = allCorrected.map((c) => {
@@ -9987,9 +10216,19 @@ function renderPDFFields(parsed, warnings) {
       const _isChg = CHARGE_FIELDS.has(c.field);
       const _pfx = _isChg ? '$' : '';
       const _dp = _isChg ? 2 : 4;
-      const origVal = _pfx + parseFloat(c.info.original).toFixed(_dp);
-      const newVal = _pfx + parseFloat(c.type === 'rate' ? c.info.corrected : c.info.consensus).toFixed(_dp);
-      const method = c.type === 'rate' ? c.info.reason : 'alternate OCR pass';
+      // b2 flags carry passB_value/corrected_to; rate flags carry original/corrected; consensus carries consensus
+      const origVal = _pfx + parseFloat(c.type === 'b2' ? c.info.passB_value : c.info.original).toFixed(_dp);
+      const newVal =
+        _pfx +
+        parseFloat(
+          c.type === 'rate' ? c.info.corrected : c.type === 'b2' ? c.info.corrected_to : c.info.consensus,
+        ).toFixed(_dp);
+      const method =
+        c.type === 'rate'
+          ? c.info.reason
+          : c.type === 'b2'
+            ? 'KGS Pass B2 residual recovery' + (c.info.original_ocr ? ' (OCR read: ' + c.info.original_ocr + ')' : '')
+            : 'alternate OCR pass';
       return (
         '<div style="margin:2px 0"><strong>' +
         label +
@@ -10163,7 +10402,7 @@ function renderPDFFields(parsed, warnings) {
               </button>
             </div>`
     : '';
-  elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${chargeExceedsTotalHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${manualAssignHtml}`;
+  elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${sumMismatchKgsHtml}${chargeExceedsTotalHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${manualAssignHtml}`;
   el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
   // ── Wire up change handlers: update data + recalculate total when user edits ──

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.13.527'; // deployed 2026-06-12 (BAS Alarms + Wood River)
+  var CH_VERSION = 'v2026.06.13.528'; // deployed 2026-06-12 (BAS Alarms + Wood River)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

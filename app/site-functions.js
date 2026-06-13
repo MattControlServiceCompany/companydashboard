@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.13.528',
+    date: '2026-06-13',
+    title: 'KGS bill review: auto-corrects OCR charge errors with mismatch warning',
+    items: [
+      {
+        type: 'fix',
+        text: 'Kansas Gas Service bills: when OCR mis-reads a decimal point as a digit (e.g. $2.52 scanned as $2152, then partially corrected to $2.15), the bill review panel now detects the residual and repairs the charge to the correct value. A green correction banner shows the field name, the OCR value, and what it was corrected to.',
+      },
+      {
+        type: 'feature',
+        text: 'Kansas Gas Service bills: if a charge error cannot be safely auto-corrected (ambiguous or affects a digit-loss field), a red mismatch banner now appears showing the computed sum vs. the bill total and the reason — so the discrepancy is never silently ignored.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.13.527',
     date: '2026-06-13',
     title: 'BAS Alarms: inline drill-down and Timeline time range filter',
