@@ -16,8 +16,10 @@ var _baFilters = { building: '', category: '', state: '', ackd: '' };
 var _baShowRTN = false; // DP-2: RTN rows excluded from charts by default
 var _baShowSystem = true; // DP-3: (System) alarms shown in building chart by default
 var _baTimelineMode = 'hour'; // 'hour' | 'date'
+var _baTimelineRange = 'all'; // 'all' | '24h' | '5d' | '7d' | '30d' | '60d' | '90d' | '120d' | '365d'
 var _baCharts = {}; // { bytype: ChartInstance, bybuilding: ChartInstance, timeline: ChartInstance }
 var _baDrillFilter = { dim: '', value: '' }; // dim: 'category'|'building'|'hour'|'date', value: string
+var _baInlinePage = 0; // current page for the inline drill log panel (chart subtabs only)
 
 // ── Sort state for Alarm Log ──
 var _baSortCol = 'ts';
@@ -517,6 +519,9 @@ function baSwitchSubtab(tab) {
 function baRenderSubtab(tab, rows) {
   var body = document.getElementById('ba-subtab-body');
   if (!body) return;
+  // Remove any stale inline drill log panel from a previous chart-bar click
+  var staleInline = document.getElementById('ba-inline-drill-log');
+  if (staleInline) staleInline.remove();
   // Destroy any existing Chart.js instances to prevent canvas reuse errors
   ['bytype', 'bybuilding', 'timeline'].forEach(function (k) {
     if (_baCharts[k]) {
@@ -926,16 +931,220 @@ function baSortRows(rows, col, dir) {
   });
 }
 
+/**
+ * Sets the timeline range filter and re-renders the timeline.
+ * Clears any active drill filter (changing range = new context).
+ * @param {string} val - 'all' | '24h' | '5d' | '7d' | '30d' | '60d' | '90d' | '120d' | '365d'
+ */
+function baSetTimelineRange(val) {
+  _baTimelineRange = val;
+  _baDrillFilter = { dim: '', value: '' };
+  _baInlinePage = 0;
+  // Remove stale inline drill panel if present
+  var old = document.getElementById('ba-inline-drill-log');
+  if (old) old.remove();
+  baRenderSubtab('timeline', window._baAllRows);
+}
+
 function baApplyDrillFilter(dim, value) {
   _baDrillFilter = { dim: dim, value: value };
-  _baPage = 0;
-  baSwitchSubtab('log');
+  _baInlinePage = 0;
+  if (_baSubtab === 'log') {
+    // Already on the log tab — just re-render it in place
+    _baPage = 0;
+    baSwitchSubtab('log');
+  } else {
+    // On a chart tab — render the filtered log inline below the chart
+    baRenderInlineDrillLog();
+  }
 }
 
 function baClearDrillFilter() {
   _baDrillFilter = { dim: '', value: '' };
-  _baPage = 0;
-  baSwitchSubtab('log');
+  _baInlinePage = 0;
+  if (_baSubtab === 'log') {
+    // Already on the log tab — re-render it in place
+    _baPage = 0;
+    baSwitchSubtab('log');
+  } else {
+    // On a chart tab — remove the inline panel and leave the chart as-is
+    var inline = document.getElementById('ba-inline-drill-log');
+    if (inline) inline.remove();
+  }
+}
+
+// ── Inline drill log (shown below chart when user clicks a chart bar) ────────
+
+/**
+ * Appends a #ba-inline-drill-log panel below the chart in the current chart
+ * subtab. Shows only the drill banner, count label, table, and a pager whose
+ * buttons call baRefreshInlineDrillLog() — no sort/filter dropdowns, no calls
+ * to baSwitchSubtab. Safe to call from any chart subtab.
+ */
+function baRenderInlineDrillLog() {
+  var body = document.getElementById('ba-subtab-body');
+  if (!body) return;
+  var projId = window._activeProjId || null;
+  if (!projId) return;
+  var data = baGetData(projId);
+  if (!data || !data.rows) return;
+
+  // Remove any existing inline panel before (re-)creating it
+  var old = document.getElementById('ba-inline-drill-log');
+  if (old) old.remove();
+
+  var container = document.createElement('div');
+  container.id = 'ba-inline-drill-log';
+  container.style.cssText = 'margin-top:20px;padding-top:16px;border-top:2px solid rgba(0,212,170,0.35);';
+  body.appendChild(container);
+
+  _baInlineDrillRender(container, data.rows);
+}
+
+/**
+ * Re-renders only the inline drill log panel (called by its own pager buttons).
+ * Never calls baSwitchSubtab.
+ */
+function baRefreshInlineDrillLog() {
+  var container = document.getElementById('ba-inline-drill-log');
+  if (!container) return;
+  var projId = window._activeProjId || null;
+  if (!projId) return;
+  var data = baGetData(projId);
+  if (!data || !data.rows) return;
+  _baInlineDrillRender(container, data.rows);
+}
+
+/**
+ * Internal: renders the drill banner + read-only table + pager into `container`.
+ * No sort or filter controls. Pager buttons call baRefreshInlineDrillLog().
+ */
+function _baInlineDrillRender(container, rows) {
+  // Drill banner (always shown — this panel only appears when a drill is active)
+  var drillDimName =
+    { category: 'Type', building: 'Building', hour: 'Hour', date: 'Date' }[_baDrillFilter.dim] || _baDrillFilter.dim;
+  var drillDisplayValue = _baDrillFilter.dim === 'hour' ? _baDrillFilter.value + ':00' : _baDrillFilter.value;
+  var bannerHtml =
+    '<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(0,212,170,0.12);border:1px solid rgba(0,212,170,0.35);border-radius:6px;margin-bottom:10px;font-size:12px;">' +
+    '<span style="color:var(--em);">&#9654;</span>' +
+    '<span style="color:var(--text);">Showing alarms for <strong>' +
+    drillDimName +
+    '</strong>: <strong>' +
+    baEsc(drillDisplayValue) +
+    '</strong></span>' +
+    '<button onclick="baClearDrillFilter()" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text2);border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;" title="Clear chart filter">&times; Clear</button>' +
+    '</div>';
+
+  // Apply drill filter (respects _baDrillFilter; does not apply _baFilters dropdowns)
+  var filtered = baFilterRows(rows);
+  // Sort newest-first (fixed for inline panel — no sort controls)
+  filtered = baSortRows(filtered, 'ts', -1);
+
+  var totalPages = Math.max(1, Math.ceil(filtered.length / BA_PAGE_SIZE));
+  if (_baInlinePage >= totalPages) _baInlinePage = totalPages - 1;
+  var pageRows = filtered.slice(_baInlinePage * BA_PAGE_SIZE, (_baInlinePage + 1) * BA_PAGE_SIZE);
+
+  var countLabel =
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">' + filtered.length + ' matching records</div>';
+
+  var thStyle =
+    'padding:8px 10px;text-align:left;background:var(--s1);color:var(--text3);font-weight:500;font-size:11px;white-space:nowrap;';
+  var colDefs = [
+    { label: 'Date' },
+    { label: 'Building' },
+    { label: 'Category' },
+    { label: 'Source' },
+    { label: 'Description' },
+    { label: 'State' },
+    { label: 'Duration' },
+    { label: 'Acknowledged' },
+  ];
+  var theadHtml =
+    '<thead><tr>' +
+    colDefs
+      .map(function (c) {
+        return '<th style="' + thStyle + '">' + c.label + '</th>';
+      })
+      .join('') +
+    '</tr></thead>';
+
+  var tbodyHtml =
+    '<tbody>' +
+    pageRows
+      .map(function (r) {
+        var ackText = r.acknowledged
+          ? '&#10003; ' + baEsc(r.acknowledgedBy || 'Acknowledged')
+          : '<span style="color:var(--amber);">Unacknowledged</span>';
+        var dateText = r.ts ? r.ts.toLocaleString() : '';
+        return (
+          '<tr style="border-bottom:1px solid rgba(255,255,255,0.08);">' +
+          '<td style="padding:7px 10px;font-size:12px;white-space:nowrap;color:var(--text2);">' +
+          dateText +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
+          baEsc(r.building) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
+          baEsc(r.category) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
+          baEsc(r.source) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text2);white-space:normal;word-break:break-word;cursor:default;"' +
+          (r.description
+            ? ' data-desc="' +
+              baEsc(r.description) +
+              '" onmouseenter="baTip(this,this.dataset.desc)" onmouseleave="baTipHide()"'
+            : '') +
+          '>' +
+          baEsc(r.description) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;font-weight:600;color:' +
+          (r.state === 'Fault' ? 'var(--red)' : r.state === 'Offnormal' ? 'var(--amber)' : 'var(--green)') +
+          ';">' +
+          baEsc(r.state) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;color:var(--text3);">' +
+          baEsc(r.duration) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:12px;">' +
+          ackText +
+          '</td>' +
+          '</tr>'
+        );
+      })
+      .join('') +
+    '</tbody>';
+
+  var pagerHtml =
+    totalPages > 1
+      ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12px;">' +
+        '<button onclick="_baInlinePage=Math.max(0,_baInlinePage-1);baRefreshInlineDrillLog()" ' +
+        (_baInlinePage === 0 ? 'disabled' : '') +
+        ' style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:4px;cursor:pointer;">&#8249; Prev</button>' +
+        '<span style="color:var(--text3);">Page ' +
+        (_baInlinePage + 1) +
+        ' of ' +
+        totalPages +
+        '</span>' +
+        '<button onclick="_baInlinePage=Math.min(' +
+        (totalPages - 1) +
+        ',_baInlinePage+1);baRefreshInlineDrillLog()" ' +
+        (_baInlinePage === totalPages - 1 ? 'disabled' : '') +
+        ' style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:4px;cursor:pointer;">Next &#8250;</button>' +
+        '</div>'
+      : '';
+
+  container.innerHTML =
+    bannerHtml +
+    countLabel +
+    '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px;">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+    theadHtml +
+    tbodyHtml +
+    '</table>' +
+    '</div>' +
+    pagerHtml;
 }
 
 // ── Component 2 — By Type (horizontal bar chart) ─────────────────────────────
@@ -1138,14 +1347,86 @@ function baRenderByBuilding(body, rows) {
 // ── Component 4 — Timeline (histogram) ──────────────────────────────────────
 
 function baRenderTimeline(body, rows) {
+  // Keep the full import set on window so other re-renders can access it
+  window._baAllRows = rows;
+
+  // ── Range filter (applied before RTN filter) ─────────────────────────────
+  var rangeRows = rows;
+  if (_baTimelineRange !== 'all') {
+    var now = Date.now();
+    var msPerDay = 86400000;
+    var windowMs;
+    if (_baTimelineRange === '24h') {
+      windowMs = msPerDay;
+    } else {
+      var days = parseInt(_baTimelineRange, 10); // '5d' → 5, '365d' → 365
+      windowMs = days * msPerDay;
+    }
+    var cutoff = now - windowMs;
+    rangeRows = rows.filter(function (r) {
+      if (!r.ts) return false;
+      return r.ts.getTime() >= cutoff;
+    });
+  }
+
+  // ── RTN filter (applied after range filter) ───────────────────────────────
   var chartRows = _baShowRTN
-    ? rows
-    : rows.filter(function (r) {
+    ? rangeRows
+    : rangeRows.filter(function (r) {
         return r.state !== 'Normal';
       });
 
+  // ── Compute data span from full import set (rows with valid ts) ───────────
+  var tsNums = rows.reduce(function (acc, r) {
+    if (r.ts) acc.push(r.ts.getTime());
+    return acc;
+  }, []);
+  var spanLabel = '';
+  if (tsNums.length > 0) {
+    var fmtDate = function (ms) {
+      var d = new Date(ms);
+      return d.getMonth() + 1 + '/' + d.getDate() + '/' + d.getFullYear();
+    };
+    spanLabel =
+      '<span style="font-size:11px;color:var(--text3);margin-left:auto;white-space:nowrap;" ' +
+      'title="Earliest and latest alarm timestamps in the imported data">' +
+      'Data: ' +
+      fmtDate(Math.min.apply(null, tsNums)) +
+      ' → ' +
+      fmtDate(Math.max.apply(null, tsNums)) +
+      '</span>';
+  }
+
+  // ── Range pill buttons ────────────────────────────────────────────────────
+  var rangePills = [
+    { val: 'all', label: 'All' },
+    { val: '24h', label: '24h' },
+    { val: '5d', label: '5d' },
+    { val: '7d', label: '7d' },
+    { val: '30d', label: '30d' },
+    { val: '60d', label: '60d' },
+    { val: '90d', label: '90d' },
+    { val: '120d', label: '120d' },
+    { val: '365d', label: '365d' },
+  ];
+  var rangePillsHtml = rangePills
+    .map(function (p) {
+      var isSel = _baTimelineRange === p.val;
+      return (
+        '<button class="perf-year-pill' +
+        (isSel ? ' sel' : '') +
+        '" ' +
+        'onclick="baSetTimelineRange(\'' +
+        p.val +
+        '\')">' +
+        p.label +
+        '</button>'
+      );
+    })
+    .join('');
+
   var modeToggle =
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">' +
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">' +
     "<button onclick=\"_baTimelineMode='hour';_baCharts.timeline&&(_baCharts.timeline.destroy(),delete _baCharts.timeline);baRenderSubtab('timeline',window._baAllRows)\" " +
     'style="font-size:12px;padding:4px 12px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:' +
     (_baTimelineMode === 'hour' ? 'var(--em)' : 'var(--s3)') +
@@ -1162,6 +1443,10 @@ function baRenderTimeline(body, rows) {
     '<input type="checkbox" ' +
     (_baShowRTN ? 'checked' : '') +
     ' onchange="_baShowRTN=this.checked;baRenderSubtab(\'timeline\',window._baAllRows)"> Include Return-to-Normal events</label>' +
+    spanLabel +
+    '</div>' +
+    '<div class="perf-year-pills" style="margin-bottom:12px;">' +
+    rangePillsHtml +
     '</div>';
 
   var labels, data;
@@ -1196,7 +1481,6 @@ function baRenderTimeline(body, rows) {
   var xTitle = _baTimelineMode === 'hour' ? 'Hour of Day' : 'Date';
   body.innerHTML =
     modeToggle + '<div style="position:relative;height:380px;"><canvas id="ba-chart-timeline"></canvas></div>';
-  window._baAllRows = rows;
 
   var ctx = document.getElementById('ba-chart-timeline');
   if (!ctx || typeof Chart === 'undefined') return;

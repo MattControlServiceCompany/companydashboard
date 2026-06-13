@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.13.527',
+    date: '2026-06-13',
+    title: 'BAS Alarms: inline drill-down and Timeline time range filter',
+    items: [
+      {
+        type: 'feature',
+        text: 'BAS Alarms: clicking a bar in the By Type, By Building, or Timeline charts now shows the matching alarms in a panel directly below the chart — no tab switch needed. A filter label shows what you are viewing; click the X to clear it and return to the full chart.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Alarms: the Timeline view now has a time range selector (All / 24 hr / 5 d / 7 d / 30 d / 60 d / 90 d / 120 d / 365 d). A data-span label shows the earliest and latest dates in the imported set. Selecting a range narrows the chart without re-importing.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.13.526',
     date: '2026-06-13',
     title: 'Baseline pane now shows correct CDD or HDD by meter type',
