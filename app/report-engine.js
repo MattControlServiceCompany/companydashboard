@@ -881,6 +881,59 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
 // -----------------------------------------------------------------------
 
 /**
+ * _rptPaginateTokens — shared pixel-height paginator used by ALL multi-page report sections.
+ *
+ * Splits an array of token objects into page-sized chunks using pixel-height estimates rather
+ * than row counts.  Tokens must have:
+ *   - token.html {string}  — the HTML fragment for this token
+ *   - token.estH {number}  — estimated rendered height in pixels
+ *   - token.type {string}  — 'row' | 'tier' | 'cat' | 'block' (for anti-orphan rule)
+ *
+ * Anti-orphan rule: if the last token(s) in a chunk are header-type ('tier' or 'cat') with no
+ * following 'row' or 'block' in that chunk, those trailing headers are pushed to the next chunk.
+ *
+ * @param {Array}  tokens           — token objects (see above)
+ * @param {number} firstPageBudget  — available pixel height on the first page (after fixed chrome)
+ * @param {number} contPageBudget   — available pixel height on continuation pages
+ * @returns {Array<Array>}          — array of chunks; each chunk is an array of tokens
+ */
+function _rptPaginateTokens(tokens, firstPageBudget, contPageBudget) {
+  var chunks = [];
+  var remaining = tokens.slice();
+
+  while (remaining.length > 0) {
+    var isFirst = chunks.length === 0;
+    var budget = isFirst ? firstPageBudget : contPageBudget;
+    var chunk = [];
+    var usedPx = 0;
+
+    while (remaining.length > 0) {
+      var next = remaining[0];
+      var h = next && next.estH ? next.estH : 20; // fallback 20px if no estimate
+      // Always include at least one token per chunk to prevent infinite loop
+      if (chunk.length > 0 && usedPx + h > budget) break;
+      chunk.push(remaining.shift());
+      usedPx += h;
+    }
+
+    // Anti-orphan: trim trailing header tokens (tier/cat) back to remaining
+    while (chunk.length > 0 && chunk[chunk.length - 1].type !== 'row' && chunk[chunk.length - 1].type !== 'block') {
+      remaining.unshift(chunk.pop());
+    }
+
+    // Safety: if anti-orphan left chunk empty (e.g. first token is a header with nothing after it
+    // that fits), force-include at least one token to avoid infinite loop
+    if (chunk.length === 0 && remaining.length > 0) {
+      chunk.push(remaining.shift());
+    }
+
+    chunks.push(chunk);
+  }
+
+  return chunks;
+}
+
+/**
  * rptPage — wraps a single report page with header, body, and footer.
  * @param {number} pageNum - Page number for the data-page attribute
  * @param {string} title - Title shown in the interior page header
@@ -3091,73 +3144,85 @@ function rptPageObservations(n, d) {
     'Monthly monitoring calls will continue on schedule.' +
     '</p>';
 
-  // -- Pagination: split buildings across pages (4 per page) --
-  // Page 1 carries the overall summary + first BLDGS_PER_FIRST_PAGE buildings.
-  // Continuation pages carry BLDGS_PER_PAGE buildings each.
-  // Weather + Next Quarter are appended to the last page.
-  var BLDGS_PER_FIRST_PAGE = 4;
-  var BLDGS_PER_PAGE = 4;
+  // -- Pagination: split building sections across pages using shared pixel-height paginator --
+  // Wraps each building HTML block as a token (type:'block', estH:150px) and calls
+  // _rptPaginateTokens so both the Quarterly Report and the ASHRAE Audit share the same
+  // pagination mechanism (architectural mandate: one source of truth).
+  //
+  // Page body budget: 895px actual (1056px page - 12px top pad - 45px int-hdr - 12px body-top-pad
+  //   - 80px body-bottom-pad - 12px page-bottom-pad = 895px)
+  // Page 1: subtract heading (~30px) + summary para (~60px) = 805px for building sections
+  // Continuation pages: subtract cont heading (~30px) = 865px for building sections
+  // At ~150px per building section, budget accommodates 5 on page 1 and 5 on cont pages.
+  var _obsTokens = bldgSectionItems.map(function (html) {
+    return { type: 'block', html: html, estH: 150 };
+  });
+  var _obsChunks = _rptPaginateTokens(_obsTokens, 805, 865);
 
   var resultPages = [];
   var currentPageNum = n;
 
-  // Slice buildings into chunks
-  var firstChunk = bldgSectionItems.slice(0, BLDGS_PER_FIRST_PAGE);
-  var remaining = bldgSectionItems.slice(BLDGS_PER_FIRST_PAGE);
-
-  // Build continuation chunks
-  var contChunks = [];
-  for (var _ci = 0; _ci < remaining.length; _ci += BLDGS_PER_PAGE) {
-    contChunks.push(remaining.slice(_ci, _ci + BLDGS_PER_PAGE));
-  }
-
-  // Determine if weather+nextQ go on a separate page or share the last page
-  // Always append to the last building chunk (fits because remaining buildings
-  // on that page are fewer than BLDGS_PER_PAGE)
-  var totalChunks = 1 + contChunks.length; // page 1 + continuation pages
-
-  // Page 1: summary + first chunk
-  var page1Body =
-    '<h2 contenteditable="true">Building Performance</h2>' +
-    '<div style="font-size:14px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
-    summaryPara +
-    '</div>' +
-    firstChunk.join('');
-
-  if (contChunks.length === 0) {
-    // All buildings fit on page 1 — append weather + next quarter here too
-    page1Body +=
+  // Guard: if no buildings, still emit one page with heading + summary + Weather + Next Quarter
+  // (mirrors old behavior where at least one page was always produced).
+  if (_obsChunks.length === 0) {
+    var emptyPageBody =
+      '<h2 contenteditable="true">Building Performance</h2>' +
+      '<div style="font-size:14px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
+      summaryPara +
+      '</div>' +
       '<h2 contenteditable="true">Weather</h2>' +
       weatherPara +
       '<h2 contenteditable="true">Next Quarter</h2>' +
       nextQPara;
+    resultPages.push(
+      rptPage(currentPageNum, 'Observations & Recommendations', emptyPageBody, {
+        data: d,
+        label: 'Page ' + currentPageNum + ' — Observations',
+      }),
+    );
+    return { html: resultPages.join(''), pageCount: resultPages.length };
   }
 
-  resultPages.push(
-    rptPage(currentPageNum, 'Observations & Recommendations', page1Body, {
-      data: d,
-      label: 'Page ' + currentPageNum + ' — Observations',
-    }),
-  );
-  currentPageNum++;
+  _obsChunks.forEach(function (chunk, chunkIdx) {
+    var isFirst = chunkIdx === 0;
+    var isLast = chunkIdx === _obsChunks.length - 1;
+    var chunkHTML = chunk
+      .map(function (tok) {
+        return tok.html;
+      })
+      .join('');
 
-  // Continuation pages
-  contChunks.forEach(function (chunk, chunkIdx) {
-    var isLast = chunkIdx === contChunks.length - 1;
-    var contBody = chunk.join('');
+    var pageBody;
+    if (isFirst) {
+      pageBody =
+        '<h2 contenteditable="true">Building Performance</h2>' +
+        '<div style="font-size:14px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
+        summaryPara +
+        '</div>' +
+        chunkHTML;
+    } else {
+      pageBody = chunkHTML;
+    }
+
     if (isLast) {
-      // Append weather + next quarter to the final continuation page
-      contBody +=
+      // Append weather + next quarter to the final page
+      pageBody +=
         '<h2 contenteditable="true">Weather</h2>' +
         weatherPara +
         '<h2 contenteditable="true">Next Quarter</h2>' +
         nextQPara;
     }
+
     resultPages.push(
-      rptPage(currentPageNum, 'Observations & Recommendations (cont.)', contBody, {
-        data: d,
-        label: 'Page ' + currentPageNum + ' — Observations (cont.)',
-      }),
+      rptPage(
+        currentPageNum,
+        isFirst ? 'Observations & Recommendations' : 'Observations & Recommendations (cont.)',
+        pageBody,
+        {
+          data: d,
+          label: 'Page ' + currentPageNum + ' — Observations' + (isFirst ? '' : ' (cont.)'),
+        },
+      ),
     );
     currentPageNum++;
   });
@@ -6866,29 +6931,82 @@ async function exportReportToPDF() {
     const contentW = pageW - margin.left - margin.right;
     const contentH = pageH - margin.top - margin.bottom;
 
+    // Track whether we've started the PDF (first page is pre-created by jsPDF constructor).
+    let pdfStarted = false;
+
     for (let i = 0; i < pages.length; i++) {
-      if (i > 0) doc.addPage();
+      const pageEl = pages[i];
 
       try {
-        const canvas = await html2canvas(pages[i], {
+        // WYSIWYG fix: capture the ACTUAL rendered height so on-screen and PDF match.
+        // Previously hardcoded to 1056px which clipped overflowing content silently.
+        const actualH = pageEl.scrollHeight;
+        const captureH = Math.max(actualH, 1056); // never smaller than a letter page
+
+        const canvas = await html2canvas(pageEl, {
           scale: 2,
           useCORS: true,
           backgroundColor: '#ffffff',
           logging: false,
           width: 816,
-          height: 1056,
+          height: captureH,
         });
-        let imgData = canvas.toDataURL('image/jpeg', 0.92);
-        doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, contentH);
-        // Dispose canvas and dataURL to release GPU memory between pages (prevents OOM on 70+ page exports)
+
+        // Scale factor: canvas pixels → PDF points
+        // canvas.width = 816 * 2 = 1632 px maps to contentW points
+        const pxToPt = contentW / canvas.width;
+
+        // Slice the canvas vertically across PDF pages so no content is clipped.
+        // Each slice fills one PDF page from margin.top to (pageH - margin.bottom).
+        let srcY_px = 0;
+
+        while (srcY_px < canvas.height) {
+          // Add a PDF page for every logical segment (the first page of the doc is
+          // pre-created; after that, every new slice — whether a new rpt-page or
+          // an overflow continuation — needs doc.addPage()).
+          if (pdfStarted) {
+            doc.addPage();
+          } else {
+            pdfStarted = true;
+          }
+
+          // How many PDF points fit on this PDF page (top to bottom margin)
+          const availableH_pt = contentH; // pageH - margin.top - margin.bottom
+          // Corresponding canvas pixels
+          const sliceH_px = Math.min(Math.round(availableH_pt / pxToPt), canvas.height - srcY_px);
+
+          // Draw the slice into an offscreen canvas
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = sliceH_px;
+          const ctx = sliceCanvas.getContext('2d');
+          ctx.drawImage(canvas, 0, -srcY_px);
+
+          const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
+          // Height of this slice in PDF points
+          const sliceH_pt = sliceH_px * pxToPt;
+          doc.addImage(sliceData, 'JPEG', margin.left, margin.top, contentW, sliceH_pt);
+
+          // Release slice memory
+          sliceCanvas.width = 0;
+          sliceCanvas.height = 0;
+
+          srcY_px += sliceH_px;
+        }
+
+        // Dispose full canvas to release GPU memory between pages (prevents OOM on 70+ page exports)
         canvas.width = 0;
         canvas.height = 0;
-        imgData = null;
         await new Promise(function (r) {
           setTimeout(r, 0);
         }); // yield one tick for GC/GPU reclaim
       } catch (e) {
         console.error('Failed to render page ' + (i + 1), e);
+        if (pdfStarted) {
+          doc.addPage();
+        } else {
+          pdfStarted = true;
+        }
         doc.setFontSize(12);
         doc.text('Page ' + (i + 1) + ' failed to render', margin.left, margin.top + 20);
       }
@@ -11444,10 +11562,15 @@ function rptPageASHRAE36Executive(n, d) {
 function rptPageASHRAE36Building(n, d, building) {
   // PRE-SPLIT PAGINATION (Stage 2 fix, 2026-06-11):
   // Returns an ARRAY of rptPage() HTML strings -- one element per printed page.
-  // Short buildings (<=ROWS_PER_PAGE_FIRST rows) return a single-element array.
+  // Short buildings (low total estH) return a single-element array.
   // Caller (generateASHRAE36AuditHTML) must spread the array into pages[].
-  var ROWS_PER_PAGE_FIRST = 22; // first page: gauges+intro ~180px, ~22 data rows fit
-  var ROWS_PER_PAGE_CONT = 28; // continuation pages: lightweight header, ~28 rows fit
+  // Pixel budgets for _rptPaginateTokens (shared paginator):
+  //   Page body height available = 1056px page - 12px top pad - ~45px int-hdr - 12px body-top-pad
+  //     - 80px body-bottom-pad - 12px page-bottom-pad = ~895px actual
+  //   First page: subtract gauges (~100px) + intro (~35px) + table thead (~30px) = 730px for rows
+  //   Cont pages: subtract cont-header (~35px) + table thead (~30px) = 830px for rows
+  var ROWS_BUDGET_FIRST = 730; // px available for equipment rows on page 1
+  var ROWS_BUDGET_CONT = 830; // px available for equipment rows on continuation pages
 
   var b = building;
   // Rule 2.3: reportDate drives footer date; label empty (no period range for ASHRAE reports).
@@ -11626,8 +11749,20 @@ function rptPageASHRAE36Building(n, d, building) {
       notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
     var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
     var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
+
+    // Pixel-height estimate for this row (used by chunk pagination below).
+    // "Sensors Needed" column is ~200px wide at 10px font ≈ 30 chars/line.
+    // "Sequences" column is ~180px wide ≈ 28 chars/line.
+    // Each line is ~15px tall; base row padding (top+bottom 4px each) = 8px overhead.
+    var sensorsText = mp.length === 0 ? '' : missingNames.join(', ');
+    var seqsText = notReadySeqs.join(', ');
+    var sensorLines = mp.length === 0 ? 1 : Math.max(1, Math.ceil(sensorsText.length / 30));
+    var seqLines = notReadySeqs.length === 0 ? 1 : Math.max(1, Math.ceil(seqsText.length / 28));
+    var rowEstH = 8 + Math.max(sensorLines, seqLines) * 15;
+
     tokens.push({
       type: 'row',
+      estH: rowEstH,
       html:
         '<tr>' +
         '<td style="' +
@@ -11674,6 +11809,7 @@ function rptPageASHRAE36Building(n, d, building) {
         tierHeaderEmitted = true;
         tokens.push({
           type: 'tier',
+          estH: 28, // tier header row height estimate
           html:
             '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
             'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
@@ -11684,6 +11820,7 @@ function rptPageASHRAE36Building(n, d, building) {
       }
       tokens.push({
         type: 'cat',
+        estH: 22, // category header row height estimate
         html:
           '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
           'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
@@ -11703,6 +11840,7 @@ function rptPageASHRAE36Building(n, d, building) {
   if (uncoveredRows.length) {
     tokens.push({
       type: 'tier',
+      estH: 28,
       html:
         '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
         'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
@@ -11714,6 +11852,7 @@ function rptPageASHRAE36Building(n, d, building) {
         lastUncovCat = eq.category;
         tokens.push({
           type: 'cat',
+          estH: 22,
           html:
             '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
             'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
@@ -11784,35 +11923,10 @@ function rptPageASHRAE36Building(n, d, building) {
     'and which control sequences cannot run until those sensors are installed.' +
     '</div>';
 
-  // Chunk tokens into pages.
-  // Anti-orphan rule: tier/cat header tokens at chunk-end with no following data row
-  // in that chunk are deferred to the next chunk (no dangling headers at page bottom).
-  var chunks = [];
-  var remaining = tokens.slice();
-
-  while (remaining.length > 0) {
-    var isFirst = chunks.length === 0;
-    var budget = isFirst ? ROWS_PER_PAGE_FIRST : ROWS_PER_PAGE_CONT;
-    var chunk = [];
-    var slotCount = 0;
-
-    while (remaining.length > 0 && slotCount < budget) {
-      chunk.push(remaining.shift());
-      slotCount++;
-    }
-
-    // Anti-orphan: trim trailing header tokens back to remaining
-    while (chunk.length > 0 && chunk[chunk.length - 1].type !== 'row') {
-      remaining.unshift(chunk.pop());
-    }
-
-    // Safety guard: avoid infinite loop (budget >= 2 so this should never trigger)
-    if (chunk.length === 0 && remaining.length > 0) {
-      chunk.push(remaining.shift());
-    }
-
-    chunks.push(chunk);
-  }
+  // Chunk tokens into pages using the shared pixel-height paginator.
+  // Replaces the old row-count loop (ROWS_PER_PAGE_FIRST/CONT) which caused overflow
+  // when rows contained multi-line sensor/sequence lists.
+  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
 
   // Build one rptPage() string per chunk
   var numChunks = chunks.length;

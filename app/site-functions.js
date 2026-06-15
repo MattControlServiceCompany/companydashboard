@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.15.529',
+    date: '2026-06-15',
+    title: 'Audit and Quarterly reports: pages no longer overflow, PDF matches screen',
+    items: [
+      {
+        type: 'fix',
+        text: "ASHRAE Audit report pages no longer overflow on dense buildings (e.g. 40 VAV units each missing multiple sensors). A new shared page-height calculator measures each row's actual size before splitting pages, so every page fits within its boundary.",
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly report Observations pages use the same height-aware paginator — buildings no longer bleed across page boundaries on dense projects.',
+      },
+      {
+        type: 'fix',
+        text: "Exported PDFs now match what you see on screen. Previously, tall report pages were clipped at a fixed 1056 px. The PDF export now captures each page's full height and slices it into correctly-sized strips.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.13.528',
     date: '2026-06-13',
     title: 'KGS bill review: auto-corrects OCR charge errors with mismatch warning',
