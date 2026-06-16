@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.16.532',
+    date: '2026-06-16',
+    title: 'Equipment Matrix: smarter classification for 1,300+ rows',
+    items: [
+      {
+        type: 'fix',
+        text: 'About 1,227 rows that showed as "Other" in the Equipment Matrix are now classified correctly — air handlers, fans, and similar equipment appear in their proper categories instead of a catch-all bucket.',
+      },
+      {
+        type: 'fix',
+        text: 'Roughly 97 rows that were filed under Hot-Water Plant are now correctly placed: furnaces go under Furnaces, unit heaters go under Heaters, and plumbing pumps (fire pumps, sump pumps, domestic water) go under Plumbing — only true hot-water circulation pumps stay in Hot-Water Plant.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.16.531',
     date: '2026-06-16',
     title: 'ASHRAE Audit Report: equipment model overhaul',

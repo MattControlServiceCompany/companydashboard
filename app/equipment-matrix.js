@@ -2592,16 +2592,77 @@ function emLoadMatrix(projId) {
       if (_bcrow && (!_bcrow.category || _bcrow.category === '') && _bcrow.equipType) {
         _bcrow.category = _bcrow.equipType;
       }
-      // Step 4 — Reclassify shim: re-run emClassifyEquipType in-memory for rows still tagged
-      // 'other' after the M2 shim above.  Source field is row.equipType (set at import time from
-      // CSV "Equipment Type" column — see emGroupToMatrixRow: `equipType: group.equipTypeStr`).
-      // In-memory only; emLoadMatrix never writes back to storage.
-      // Safe: any reclassification from 'other' is an improvement; non-'other' rows are untouched.
+      // Step 4 — Reclassify shim: in-memory only; emLoadMatrix never writes back to storage.
+      // Pass A: name-based — re-run emClassifyEquipType for rows stored as 'other'.
+      // Pass B: point-based — run emVerifyTypeByPoints on originally-'other' rows (even if Pass A
+      //   moved them to a provisional non-'other' like 'ef' or 'fpb') so that point signatures
+      //   can override an incorrect name-derived guess.  This catches F-2/F-4 (stored 'other',
+      //   name pass → 'ef', point pass → 'ahu' via rule 12) and FTC/RHC fan-coil rows.
       if (_bcrow && _bcrow.category === 'other' && _bcrow.equipType) {
+        // Pass A: name-based reclassify
         var _recat = emClassifyEquipType(_bcrow.equipType);
         if (_recat && _recat !== 'other') {
           _bcrow.category = _recat;
         }
+        // Pass B: point-based — always run on originally-'other' rows (they may now be
+        //   provisional 'ef', 'fpb', 'vav', etc. from Pass A; points take precedence).
+        //   emVerifyTypeByPoints expects group.pointValues (object keyed by point name).
+        //   Stored rows carry row.points; expose it as group.pointValues for the function.
+        if (_bcrow.points && Object.keys(_bcrow.points).length > 0) {
+          var _ptGroup = { category: _bcrow.category, pointValues: _bcrow.points };
+          var _ptRecat = emVerifyTypeByPoints(_ptGroup);
+          if (_ptRecat && _ptRecat !== 'other' && _ptRecat !== _bcrow.category) {
+            _bcrow.category = _ptRecat;
+          }
+        }
+      }
+    }
+    // Step 4B — hwp stale-row shim: reclassify stored 'hwp' rows that are actually
+    //   furnaces, unit heaters, or plumbing pumps.  The generic /pump/i keyword in
+    //   emClassifyEquipType's fuzzy map routed these into 'hwp' at import time.
+    //   In-memory only; no storage mutation.
+    for (var _hwpi = 0; _hwpi < _emData.rows.length; _hwpi++) {
+      var _hwprow = _emData.rows[_hwpi];
+      if (!_hwprow || _hwprow.category !== 'hwp' || !_hwprow.equipType) continue;
+      // Furnaces: name contains 'furnace', or VVT air-source point signature
+      if (/\bfurnace\b/i.test(_hwprow.equipType)) {
+        _hwprow.category = 'furnace';
+        continue;
+      }
+      // Unit heaters: UH/CUH/GUH/TUH names, or name contains 'unit heater' / 'unit heaters'
+      if (
+        /\buh[-\s]?[\da-z]/i.test(_hwprow.equipType) ||
+        /\bcuh[-\s]?[\da-z]/i.test(_hwprow.equipType) ||
+        /\bguh[-\s]?[\da-z]/i.test(_hwprow.equipType) ||
+        /unit.?heater/i.test(_hwprow.equipType)
+      ) {
+        _hwprow.category = 'heater';
+        continue;
+      }
+      // Unit heaters detected by point signature (Unit Heater Enable/Status/Amperage points)
+      if (_hwprow.points && Object.keys(_hwprow.points).length > 0) {
+        var _hwpPtGroup = { category: 'hwp', pointValues: _hwprow.points };
+        var _hwpPtRecat = emVerifyTypeByPoints(_hwpPtGroup);
+        if (_hwpPtRecat === 'heater' || _hwpPtRecat === 'furnace') {
+          _hwprow.category = _hwpPtRecat;
+          continue;
+        }
+      }
+      // Plumbing pumps: clearly non-HVAC pump names → 'plumbing'.
+      // Conservative: only fire/sewage/sump/grinder/domestic-water pumps; real HW
+      // circulation pumps (Hot Water Pump, Primary/Sec HW Pump) stay 'hwp'.
+      if (
+        /fire.?pump/i.test(_hwprow.equipType) ||
+        /sump.?pump/i.test(_hwprow.equipType) ||
+        /grinder.?pump/i.test(_hwprow.equipType) ||
+        /sewage.?pump/i.test(_hwprow.equipType) ||
+        /domestic.?(hot.?water|water).?pump/i.test(_hwprow.equipType) ||
+        /domestic.?hot.?water.?pump/i.test(_hwprow.equipType) ||
+        /water.?&.?fire.?pump/i.test(_hwprow.equipType) ||
+        /domestic.?water.?booster.?pump/i.test(_hwprow.equipType)
+      ) {
+        _hwprow.category = 'plumbing';
+        continue;
       }
     }
   }
