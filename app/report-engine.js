@@ -10914,20 +10914,226 @@ function collectASHRAE36Data(projId, reportDate) {
     // Does NOT exclude real plant controllers:
     //   "Chiller Plant Manager - Courthouse" — no floor prefix, no Integration path
     //   "Hot Water System - Courthouse" — neither pattern matches
+    // Does NOT exclude VFD Integration rows (e.g. "Chilled Water Pump 1 VFD Integration") —
+    //   those classify as category 'other' and are excluded from AUDITABLE before this
+    //   filter runs, so the third layer below never sees them.
     var _EM_INTEGRATION_STUB_PATH_RE = /\/Integration\/Data\s+Transfer\b/i;
     var _EM_INTEGRATION_STUB_NAME_RE =
       /^(?:basement|\d+(?:st|nd|rd|th)\s+floor)\s*[-–]\s*(?:chiller|boiler|hot\s*water)\s*plant\b/i;
+    // Third layer: JOCO-style stubs stored without bacnetLocation, named
+    //   "Chiller 1 Integration".."Chiller 4 Integration" and
+    //   "Boiler 1 Integration".."Boiler 4 Integration" (equipName === equipType).
+    //   Also catches typo variants like "VFD Integration5" (stray digit suffix).
+    // Matches any name ending with "Integration" followed by optional digits.
+    var _EM_INTEGRATION_STUB_SUFFIX_RE = /\bIntegration\d*$/i;
+    // Fourth layer: floor-based data-relay stubs for plant equipment.
+    //   These are WebCTRL "Data Transfer - Requesting" programs installed on each floor
+    //   to relay chilled-water or hot-water demand/request signals from floor-level VAV/AHU
+    //   controllers back to the central plant manager. They share the plant equipName
+    //   (e.g. "Chiller Plant", "Boiler Plant") but are scoped to a single floor via their
+    //   location field (e.g. "1st Floor", "Basement").
+    //   Catches: equipName exactly "Chiller Plant" OR "Boiler Plant" (extra spaces tolerated)
+    //            AND location matches a floor designator pattern.
+    var _EM_FLOOR_STUB_EQUIP_RE = /^(?:chiller|boiler)\s+plant\s*$/i;
+    var _EM_FLOOR_STUB_LOC_RE = /^(?:basement|penthouse|\d+(?:st|nd|rd|th)\s+floor)$/i;
     function _emIsIntegrationStub(r) {
       if (r.bacnetLocation && _EM_INTEGRATION_STUB_PATH_RE.test(r.bacnetLocation)) return true;
       if (_EM_INTEGRATION_STUB_NAME_RE.test(r.equipName || '')) return true;
+      if (_EM_INTEGRATION_STUB_SUFFIX_RE.test((r.equipName || '').trim())) return true;
+      // Fourth layer: floor-scoped plant relay stubs
+      if (
+        _EM_FLOOR_STUB_EQUIP_RE.test((r.equipName || '').trim()) &&
+        _EM_FLOOR_STUB_LOC_RE.test((r.location || '').trim())
+      )
+        return true;
       return false;
     }
 
-    var auditableRows = rows.filter(function (r) {
-      return AUDITABLE.indexOf(r.category) !== -1 && !_emIsIntegrationStub(r);
+    // Non-equipment exclusion filter (backlog b7625800).
+    // These items appear in auditable equipment categories due to BAS naming conventions
+    // but represent monitoring programs, utility systems, or sub-objects — NOT physical
+    // HVAC equipment subject to ASHRAE 36 compliance.
+    //
+    // Patterns excluded:
+    //   - "Weather" / "Environmental Index" (monitoring programs) — normally category 'other'
+    //     but included here as belt-and-suspenders for future imports
+    //   - "Generator Monitoring" (power systems)
+    //   - "Fire Pump" items (fire suppression, not HVAC)
+    //   - "Domestic Water Booster Pumps" (plumbing, not HVAC)
+    //   - "Electric Meter*" (power monitoring programs)
+    //   - Exterior lighting programs (soffit uplights etc.)
+    //   - "Sewage Ejector Pump" (plumbing, not HVAC)
+    //
+    // NOTE: Return Duct / Supply Duct sub-patterns were removed from this regex.
+    //   In JOCO data, duct rows share equipName with their parent AHU and differ only
+    //   in location field — they are handled by Rule 1 same-name consolidation below.
+    //   The old duct patterns matched against equipName and were inert (never fired).
+    //
+    // NOTE: UH-N / CUH-N names stored as 'hwp' are now RECLASSIFIED to 'heater' before
+    //   this filter runs (see _emReclassifyRow below) rather than excluded, so that they
+    //   appear under the Heater category in compliance output.
+    var _NON_EQUIP_NAME_RE =
+      /^Weather\s*$|Environmental Index|Generator Monitoring|^Fire Pump\b|Domestic Water Booster|\bElectric Meter\b|Exterior.*(?:Light|Uplight)|Soffit.*(?:Light|Uplight)|Sewage Ejector/i;
+    function _emIsNonEquipment(r) {
+      var name = (r.equipName || '').trim();
+      if (_NON_EQUIP_NAME_RE.test(name)) return true;
+      return false;
+    }
+
+    // CHANGE 1 — Unit-heater reclassification.
+    // UH-N / CUH-N / GUH-N / TUH-N / IGH-N / TTH-N names are often stored under category
+    // 'hwp' due to import misclassification (~82 rows project-wide in JOCO).
+    // Reclassify them to 'heater' on a row copy BEFORE the auditable filter so they:
+    //   a) pass through as auditable (heater is in AUDITABLE list),
+    //   b) do NOT inflate hwp counts, and
+    //   c) appear under "Heater" in the equipment summary and compliance table.
+    // Uses \b word-boundary (not ^ start-anchor) to catch both "UH-1" and
+    // "100 Vestibule | CUH-1" style names where the room name is the equipName prefix.
+    var _UH_ABBREV_RE = /\b(?:uh|cuh|guh|tuh|igh|tth)[-\s]?[\da-z]/i;
+    function _emReclassifyRow(r) {
+      if (r.category === 'hwp' && _UH_ABBREV_RE.test((r.equipName || '').trim())) {
+        return Object.assign({}, r, { category: 'heater' });
+      }
+      return r;
+    }
+    var reclassifiedRows = rows.map(_emReclassifyRow);
+
+    var auditableRows = reclassifiedRows.filter(function (r) {
+      return AUDITABLE.indexOf(r.category) !== -1 && !_emIsIntegrationStub(r) && !_emIsNonEquipment(r);
     });
 
     if (!auditableRows.length) return;
+
+    // ── CHANGE 2: Rule 1 — Same-name consolidation ───────────────────────────
+    // Group auditable rows by (equipName + category). When the same equipment
+    // program has multiple rows (e.g. an AHU's "Supply Duct" and "Return Duct"
+    // sub-programs share the AHU equipName with different location values), merge
+    // them into one consolidated row so compliance is scored over the full point set.
+    //
+    // Canonical row selection: location==='' (main program) is preferred; if none,
+    // the row with the most points is used. All other rows' points are unioned into
+    // the canonical (canonical's values win on key collision). Returns copies — the
+    // stored rows in localStorage are never mutated.
+    (function () {
+      var nameGroups = {};
+      auditableRows.forEach(function (r) {
+        var key = r.equipName + '\x00' + r.category;
+        if (!nameGroups[key]) nameGroups[key] = [];
+        nameGroups[key].push(r);
+      });
+      var consolidated = [];
+      Object.keys(nameGroups).forEach(function (key) {
+        var grp = nameGroups[key];
+        if (grp.length === 1) {
+          consolidated.push(grp[0]);
+          return;
+        }
+        // Pick canonical: prefer location==='' (main), else highest point count
+        var main = null;
+        for (var gi = 0; gi < grp.length; gi++) {
+          if ((grp[gi].location || '') === '') {
+            main = grp[gi];
+            break;
+          }
+        }
+        if (!main) {
+          main = grp.reduce(function (best, r) {
+            return Object.keys(r.points || {}).length > Object.keys(best.points || {}).length ? r : best;
+          }, grp[0]);
+        }
+        // Union points/pointsRaw; main row wins on collision
+        var mergedPoints = {};
+        var mergedPointsRaw = {};
+        grp.forEach(function (r) {
+          Object.assign(mergedPoints, r.points || {});
+          Object.assign(mergedPointsRaw, r.pointsRaw || {});
+        });
+        Object.assign(mergedPoints, main.points || {});
+        Object.assign(mergedPointsRaw, main.pointsRaw || {});
+        consolidated.push(Object.assign({}, main, { points: mergedPoints, pointsRaw: mergedPointsRaw }));
+      });
+      auditableRows = consolidated;
+    })();
+
+    // ── CHANGE 3: Rule 2 — Plant folding (one plant per building per category) ──
+    // For chwp and hwp categories: when a building has multiple rows that are all
+    // components of the SAME physical plant (stacks, loop bypass valves, sequence
+    // programs, pump VFDs), fold them into one canonical row so that:
+    //   a) the plant appears as ONE auditable unit (not 5–10 inflated rows), and
+    //   b) compliance is scored over the full combined point set.
+    //
+    // Canonical detection is tiered to avoid merging genuinely separate plants:
+    //   Tier 1 (strongest): row whose equipName matches /Plant Manager|Plant Coordinator/i
+    //     — the explicit primary controller program.
+    //   Tier 2: row matching /\bWater System\b|\bBoiler System\b|\bSequence Logic\b/i
+    //     — named system or sequence program, used when no T1 exists.
+    //   If exactly one T1 row → it is canonical; all other same-category rows fold into it.
+    //   If multiple T1 rows  → likely separate plants (e.g. Manager-North / Manager-South);
+    //     leave separate.
+    //   If zero T1, one T2  → T2 row is canonical; fold all others into it.
+    //   If zero T1, zero/multiple T2 → ambiguous; leave all rows separate (conservative).
+    //     This preserves "Hot Water Plant A" vs "Hot Water Plant B" at JDC as two distinct
+    //     units even though neither has a named manager controller.
+    (function () {
+      var _T1_RE = /Plant Manager|Plant Coordinator/i;
+      var _T2_RE = /\bWater System\b|\bBoiler System\b|\bSequence Logic\b/i;
+      var plantCats = ['chwp', 'hwp'];
+      var nonPlant = auditableRows.filter(function (r) {
+        return plantCats.indexOf(r.category) === -1;
+      });
+      var result = nonPlant.slice();
+
+      plantCats.forEach(function (cat) {
+        // Group same-category rows by building (auditableRows are already within one bldg loop)
+        var catRows = auditableRows.filter(function (r) {
+          return r.category === cat;
+        });
+        if (catRows.length <= 1) {
+          catRows.forEach(function (r) {
+            result.push(r);
+          });
+          return;
+        }
+
+        var t1 = catRows.filter(function (r) {
+          return _T1_RE.test(r.equipName || '');
+        });
+        var t2 = catRows.filter(function (r) {
+          return _T2_RE.test(r.equipName || '');
+        });
+        var canonical = null;
+
+        if (t1.length === 1) {
+          canonical = t1[0];
+        } else if (t1.length > 1) {
+          // Multiple Tier-1 rows → separate plants; do not fold
+          catRows.forEach(function (r) {
+            result.push(r);
+          });
+          return;
+        } else if (t2.length === 1) {
+          canonical = t2[0];
+        } else {
+          // Zero or multiple Tier-2 → ambiguous; leave separate (conservative)
+          catRows.forEach(function (r) {
+            result.push(r);
+          });
+          return;
+        }
+
+        // Fold all rows into canonical (union points; canonical wins on collision)
+        var mergedPoints = {};
+        var mergedPointsRaw = {};
+        catRows.forEach(function (r) {
+          Object.assign(mergedPoints, r.points || {});
+          Object.assign(mergedPointsRaw, r.pointsRaw || {});
+        });
+        Object.assign(mergedPoints, canonical.points || {});
+        Object.assign(mergedPointsRaw, canonical.pointsRaw || {});
+        result.push(Object.assign({}, canonical, { points: mergedPoints, pointsRaw: mergedPointsRaw }));
+      });
+      auditableRows = result;
+    })();
 
     // Per-equipment compliance via emComputeCompliance
     var equipResults = [];
@@ -11722,6 +11928,7 @@ function rptPageASHRAE36Building(n, d, building) {
   });
 
   // Table header HTML (reused on every chunk)
+  // Change 2 (2026-06-16): 4-column summary table — one row per equipment type.
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
@@ -11730,19 +11937,16 @@ function rptPageASHRAE36Building(n, d, building) {
     '<thead><tr>' +
     '<th style="' +
     thStyle +
-    ';width:22%">Equipment</th>' +
+    ';width:36%">Equipment Type</th>' +
     '<th style="' +
     thStyle +
-    ';width:16%">Type</th>' +
+    ';width:10%;text-align:center">Units</th>' +
     '<th style="' +
     thStyle +
-    ';width:8%;text-align:center">Sensors Present</th>' +
+    ';width:27%;text-align:center">Sensors to Install</th>' +
     '<th style="' +
     thStyle +
-    ';width:30%">Sensors Needed</th>' +
-    '<th style="' +
-    thStyle +
-    '">Sequences Not Ready</th>' +
+    ';text-align:center">Sequences to Program</th>' +
     '</tr></thead>';
 
   // Build flat token list.
@@ -11826,75 +12030,88 @@ function rptPageASHRAE36Building(n, d, building) {
     });
   }
 
-  TIER_GROUPS.forEach(function (tg) {
-    var tierHasRows = tg.cats.some(function (c) {
-      return _catsWithRows[c];
+  // Change 2 (2026-06-16): helper — push ONE summary row per category (replaces per-unit rows).
+  // Counts use the same underlying data as the cover-page totals
+  // (missingPoints.length for sensors; blocked/partial seqReadiness entries for sequences).
+  function _pushCatSummaryRow(cat, catRows) {
+    var unitCount = catRows.length;
+    var sensorsSum = 0;
+    var seqsSum = 0;
+    catRows.forEach(function (eq) {
+      sensorsSum += (eq.compliance.missingPoints || []).length;
+      var sr = eq.seqReadiness || {};
+      for (var sk in sr) {
+        if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
+          seqsSum++;
+        }
+      }
     });
-    if (!tierHasRows) return;
-    var tierHeaderEmitted = false;
+    var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-rule)';
+    tokens.push({
+      type: 'row',
+      estH: 26,
+      html:
+        '<tr>' +
+        '<td style="' +
+        tdBase +
+        ';font-weight:600;color:var(--rpt-page-text)">' +
+        (CAT_LABELS_PLURAL[cat] || cat) +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';text-align:center;color:var(--rpt-page-text)">' +
+        unitCount +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';text-align:center;color:' +
+        (sensorsSum === 0 ? 'var(--rpt-green)' : 'var(--rpt-page-text)') +
+        ';font-weight:' +
+        (sensorsSum === 0 ? '400' : '700') +
+        '">' +
+        (sensorsSum === 0 ? '0 — Complete' : sensorsSum) +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';text-align:center;color:' +
+        (seqsSum === 0 ? 'var(--rpt-green)' : 'var(--rpt-page-text)') +
+        ';font-weight:' +
+        (seqsSum === 0 ? '400' : '700') +
+        '">' +
+        (seqsSum === 0 ? '0 — Ready' : seqsSum) +
+        '</td>' +
+        '</tr>',
+    });
+  }
+
+  // Flat table: iterate tier order for stable sort, push summary rows without tier headers.
+  // Tier labels are intentionally omitted — the user wants a plain flat list sorted
+  // plant-first then zone-terminals last, with no Tier 1/2/3 section banners.
+  TIER_GROUPS.forEach(function (tg) {
     tg.cats.forEach(function (cat) {
       var catRows = sortedEquip.filter(function (eq) {
         return eq.category === cat;
       });
       if (!catRows.length) return;
-      if (!tierHeaderEmitted) {
-        tierHeaderEmitted = true;
-        tokens.push({
-          type: 'tier',
-          estH: 28, // tier header row height estimate
-          html:
-            '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
-            'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
-            'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">' +
-            tg.label +
-            '</td></tr>',
-        });
-      }
-      tokens.push({
-        type: 'cat',
-        estH: 22, // category header row height estimate
-        html:
-          '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
-          'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
-          'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
-          'background:rgba(0,0,0,0.02)">' +
-          (CAT_LABELS_PLURAL[cat] || cat) +
-          '</td></tr>',
-      });
-      catRows.forEach(_pushEquipRow);
+      _pushCatSummaryRow(cat, catRows);
     });
   });
 
-  // Catch-through: uncovered categories
+  // Catch-through: uncovered categories (no tier header — flat list continues)
   var uncoveredRows = sortedEquip.filter(function (eq) {
     return !_coveredCats[eq.category];
   });
   if (uncoveredRows.length) {
-    tokens.push({
-      type: 'tier',
-      estH: 28,
-      html:
-        '<tr><td colspan="5" style="padding:5px 8px 4px;font-size:10px;font-weight:700;' +
-        'text-transform:uppercase;letter-spacing:0.06em;color:#fff;' +
-        'background:var(--rpt-blue);border-top:2px solid var(--rpt-blue)">Other Equipment</td></tr>',
-    });
-    var lastUncovCat = null;
+    var _lastUncovCat = null;
     uncoveredRows.forEach(function (eq) {
-      if (eq.category !== lastUncovCat) {
-        lastUncovCat = eq.category;
-        tokens.push({
-          type: 'cat',
-          estH: 22,
-          html:
-            '<tr><td colspan="5" style="padding:3px 8px 2px 16px;font-size:10px;font-weight:700;' +
-            'text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-blue);' +
-            'border-top:1px solid var(--rpt-rule);border-bottom:1px solid var(--rpt-rule);' +
-            'background:rgba(0,0,0,0.02)">' +
-            (eq.categoryLabel || eq.category) +
-            '</td></tr>',
+      if (eq.category !== _lastUncovCat) {
+        _lastUncovCat = eq.category;
+        // Push a summary row for this uncovered category
+        var _uncovCatRows = uncoveredRows.filter(function (u) {
+          return u.category === eq.category;
         });
+        _pushCatSummaryRow(eq.category, _uncovCatRows);
       }
-      _pushEquipRow(eq);
     });
   }
 
@@ -11902,7 +12119,7 @@ function rptPageASHRAE36Building(n, d, building) {
   if (!tokens.length) {
     tokens.push({
       type: 'row',
-      html: '<tr><td colspan="5" style="padding:8px;font-size:10px;color:var(--rpt-page-text)">No auditable equipment found for this building.</td></tr>',
+      html: '<tr><td colspan="4" style="padding:8px;font-size:10px;color:var(--rpt-page-text)">No auditable equipment found for this building.</td></tr>',
     });
   }
 
@@ -11951,8 +12168,8 @@ function rptPageASHRAE36Building(n, d, building) {
 
   var intro =
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px;line-height:1.6">' +
-    'The table below lists every audited unit, the sensors currently in place, sensors that must be added, ' +
-    'and which control sequences cannot run until those sensors are installed.' +
+    'The table below summarizes each equipment type — the number of units audited, sensors that must be added, ' +
+    'and sequences that cannot run until those sensors are installed.' +
     '</div>';
 
   // Chunk tokens into pages using the shared pixel-height paginator.

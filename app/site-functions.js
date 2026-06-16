@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.16.531',
+    date: '2026-06-16',
+    title: 'ASHRAE Audit Report: equipment model overhaul',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment counts in the ASHRAE Audit Report are now accurate. Sub-parts of the same unit (supply duct, return duct, zone sensors) are consolidated into one row per physical piece of equipment, so a single air handler no longer inflates counts.',
+      },
+      {
+        type: 'fix',
+        text: 'Chiller and boiler plant programs are folded into a single plant controller row per system. Previously each pump and sequence program counted as a separate unit.',
+      },
+      {
+        type: 'fix',
+        text: 'Unit heaters that were misfiled under chilled-water plant are now correctly classified as heaters and appear under the Heaters category.',
+      },
+      {
+        type: 'change',
+        text: 'Non-HVAC equipment (lighting, electrical panels, utility meters, fire/security) is excluded from the audit equipment list and compliance scoring.',
+      },
+      {
+        type: 'change',
+        text: 'The Equipment Summary table is now a flat list by type (AHUs, VAVs, Heaters, etc.) with no tier headers, making it easier to scan totals at a glance.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.15.530',
     date: '2026-06-15',
     title: 'ASHRAE Audit: integration stubs excluded, damper write-back tracked separately',
