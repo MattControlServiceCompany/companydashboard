@@ -4670,6 +4670,7 @@ function clearPDFOCR() {
   // F3 (clearPDFOCR path): release multi-pass OCR buffers when the user clicks Clear
   window._pdfOcrPasses = null;
   window._pdfPassScores = null;
+  window._pdfOcrEmptyPages = null;
   _clearExtractionState();
   document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
   document.getElementById('pdfInput').value = '';
@@ -7489,6 +7490,15 @@ async function extractPDFText(ab, statusCb) {
           }
           // ── end triggered passes ───────────────────────────────────────────────
           pageTexts[pgNum - 1] = bestText;
+          // ── Empty-page detection: if ALL passes returned near-empty text, flag it ──
+          // A silent empty page causes the billing period on that page to be silently
+          // dropped (extractAll finds no dates → no bill record emitted). We track
+          // empty pages so processPDF can surface an explicit warning to the user.
+          const EMPTY_PAGE_MAX_CHARS = 30; // Tesseract returns at minimum whitespace/newlines
+          if (bestText.trim().length <= EMPTY_PAGE_MAX_CHARS) {
+            if (!window._pdfOcrEmptyPages) window._pdfOcrEmptyPages = [];
+            window._pdfOcrEmptyPages.push(pgNum);
+          }
         }
         // Save all pass texts for consensus re-extraction
         window._pdfOcrPasses = allPassTexts;
@@ -7663,6 +7673,21 @@ async function processPDF(file) {
         globalTaskDone();
         return;
       } // Bug #134: honour cancel after extraction
+      // ── Empty-page warning: surface any pages that returned no OCR text ──
+      // An empty page means the billing period on that page was silently dropped.
+      // We flag it here so the user knows to re-run extraction or check the PDF.
+      const _emptyOcrPages = window._pdfOcrEmptyPages;
+      window._pdfOcrEmptyPages = null; // consume once
+      if (_emptyOcrPages && _emptyOcrPages.length > 0) {
+        const pgList = _emptyOcrPages.join(', ');
+        showToast(
+          'Warning: page' +
+            (_emptyOcrPages.length > 1 ? 's' : '') +
+            ' ' +
+            pgList +
+            ' could not be read — a billing period may be missing. Re-run extraction if a period is absent.',
+        );
+      }
       if (text && text.trim().length > 100) {
         window._pdfRawText = text;
         document.getElementById('pdfDebugBtn').style.display = 'inline-block';

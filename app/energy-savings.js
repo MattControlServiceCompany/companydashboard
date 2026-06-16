@@ -5825,7 +5825,7 @@ const UTILITY_RULES = [
         // FranchiseFee = numeric SUM (kept as-is — downstream gas sanity sum and
         // taxCost both use this total).  FranchiseFee1/2 = individual line values
         // for the two-row display in _LAYOUT_KGS.
-        const franchiseMs = [...activeT.matchAll(/Franchise\s+Fee\s+\$?([\d,.:]+)/gi)];
+        const franchiseMs = [...activeT.matchAll(/Franchise\s+Fee\s+\$?_*?([\d,.:]+)/gi)];
         const FranchiseFeeItems = franchiseMs.length > 0 ? franchiseMs.map((m) => fixNum(m[1])) : null;
         const FranchiseFee =
           FranchiseFeeItems !== null

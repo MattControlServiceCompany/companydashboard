@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.16.535',
+    date: '2026-06-16',
+    title: 'Baker/KGS gas bills: franchise fee fix and empty-page warning',
+    items: [
+      {
+        type: 'fix',
+        text: 'KGS gas bills with two Franchise Fee lines now capture both correctly — a Tesseract OCR artifact (leading underscore) on the second line was causing it to be silently skipped, leaving the bill total slightly off.',
+      },
+      {
+        type: 'fix',
+        text: 'If a PDF page cannot be read during OCR extraction, a warning toast now appears immediately — telling you which page failed and that a billing period may be missing. Previously, a blank page would cause one period to vanish with no indication.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.16.534',
     date: '2026-06-16',
     title: 'Equipment Matrix: single-zone RTUs now show zone temps and setpoints',
