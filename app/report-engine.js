@@ -10706,6 +10706,12 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     plain:
       'The foundational zone control sequence — modulates airflow to hold each space between heating and cooling setpoints; without it, temperatures float and simultaneous heating and cooling is common.',
   },
+  vav_damper_writeback: {
+    short: 'Damper position write-back sequence (VAV)',
+    impact: 'Required for position verification and diagnostics',
+    plain:
+      'Surfaces the damper command position as a BACnet read-back point, enabling fault detection and diagnostics to verify the actuator is responding as commanded. Applicable only to units that expose a damper command point in the BAS export.',
+  },
   vav_reheat: {
     short: 'Zone reheat sequence (VAV)',
     impact: 'Required for zone heating at minimum airflow',
@@ -10891,8 +10897,34 @@ function collectASHRAE36Data(projId, reportDate) {
       return r.category === 'sensor';
     });
 
+    // 2224d15d: Integration-stub filter — exclude WebCTRL "Data Transfer - Requesting"
+    // programs. These are signal fanout stubs (one per served floor) that broadcast plant
+    // demand/request signals to floor AHU/VAV controllers. They are NOT the physical plant
+    // controller and must not appear as separate plant audit rows (would inflate chwp/hwp
+    // counts and produce meaningless compliance scores).
+    //
+    // Detection (two-layer for forward + backward compat):
+    //   Primary: row.bacnetLocation contains "/Integration/Data Transfer" — set on rows
+    //     imported AFTER this fix. Matches exactly the WebCTRL pattern for these stubs.
+    //   Legacy fallback: row.equipName matches a floor-prefixed plant name — covers rows
+    //     stored before bacnetLocation was persisted. Pattern is specific: "Basement -"
+    //     or ordinal-floor prefix ("1st Floor -", "2nd Floor -", etc.) followed by
+    //     "Chiller Plant", "Boiler Plant", or "Hot Water Plant".
+    //
+    // Does NOT exclude real plant controllers:
+    //   "Chiller Plant Manager - Courthouse" — no floor prefix, no Integration path
+    //   "Hot Water System - Courthouse" — neither pattern matches
+    var _EM_INTEGRATION_STUB_PATH_RE = /\/Integration\/Data\s+Transfer\b/i;
+    var _EM_INTEGRATION_STUB_NAME_RE =
+      /^(?:basement|\d+(?:st|nd|rd|th)\s+floor)\s*[-–]\s*(?:chiller|boiler|hot\s*water)\s*plant\b/i;
+    function _emIsIntegrationStub(r) {
+      if (r.bacnetLocation && _EM_INTEGRATION_STUB_PATH_RE.test(r.bacnetLocation)) return true;
+      if (_EM_INTEGRATION_STUB_NAME_RE.test(r.equipName || '')) return true;
+      return false;
+    }
+
     var auditableRows = rows.filter(function (r) {
-      return AUDITABLE.indexOf(r.category) !== -1;
+      return AUDITABLE.indexOf(r.category) !== -1 && !_emIsIntegrationStub(r);
     });
 
     if (!auditableRows.length) return;

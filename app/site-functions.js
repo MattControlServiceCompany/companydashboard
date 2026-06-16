@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.15.530',
+    date: '2026-06-15',
+    title: 'ASHRAE Audit: integration stubs excluded, damper write-back tracked separately',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE Audit report no longer counts WebCTRL "Data Transfer - Requesting" programs as equipment. These are signal-fanout stubs (one per served floor) that were being classified as chiller/boiler plant controllers, inflating counts and producing meaningless compliance scores.',
+      },
+      {
+        type: 'feature',
+        text: 'Damper Position Write-back is now tracked as its own sequence in the audit (ASHRAE 36 §5.6.2). Units that do not expose a damper command point in the BAS export are automatically marked N/A so they do not drag down the compliance score.',
+      },
+      {
+        type: 'change',
+        text: 'Zone Temperature Control sequence no longer requires a damper command point — that requirement moved to the new Damper Write-back sequence.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.15.529',
     date: '2026-06-15',
     title: 'Audit and Quarterly reports: pages no longer overflow, PDF matches screen',

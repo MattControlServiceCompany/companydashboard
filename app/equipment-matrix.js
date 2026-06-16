@@ -2252,6 +2252,7 @@ function emExtractEquipmentGroups(rows, colMap) {
             equipTypeStr: equipName,
             category: category,
             bacnetPathRoot: _thisPathRoot,
+            bacnetLocation: bacnetPath, // 2224d15d: full BACnet path for integration-stub detection at audit time
             checkValues: {},
             pointValues: {},
             rawPointMap: {}, // M4: all raw BAS point names captured at import
@@ -2269,6 +2270,7 @@ function emExtractEquipmentGroups(rows, colMap) {
           equipTypeStr: equipName,
           category: category,
           bacnetPathRoot: _thisPathRoot2,
+          bacnetLocation: bacnetPath, // 2224d15d: full BACnet path for integration-stub detection at audit time
           checkValues: {},
           pointValues: {},
           rawPointMap: {}, // M4: all raw BAS point names captured at import
@@ -2510,6 +2512,7 @@ function emGroupToMatrixRow(groupKey, group) {
     equipName: group.equipName,
     equipType: group.equipTypeStr,
     category: group.category,
+    bacnetLocation: group.bacnetLocation || '', // 2224d15d: full BACnet path; used by integration-stub filter
     checks: checks,
     points: group.pointValues,
     pointsRaw: group.rawPointMap || {}, // M4: complete raw point name→value map
@@ -4239,8 +4242,11 @@ function emComputeAuditFooterTotals(rows, defs) {
         var seqKey = sd.seqKey;
         // N/A if equip type doesn't match this sequence
         if (!r.category || sd.seqEquipTypes.indexOf(r.category) === -1) continue;
-        seqCounts[sColKey].applicable++;
         var seqEntry = seqReadiness && seqReadiness[seqKey];
+        // Skip sequences resolved to 'na' (e.g. applicableIfCovered not met, configFlag false)
+        // so they don't inflate the applicable denominator in the footer row.
+        if (seqEntry && seqEntry.status === 'na') continue;
+        seqCounts[sColKey].applicable++;
         if (seqEntry && (seqEntry.status === 'ready' || seqEntry.status === 'partial')) {
           seqCounts[sColKey].present++;
         }
@@ -12992,11 +12998,34 @@ var EM_SEQUENCE_DEFS = [
   /* ── VAV sequences ──────────────────────────────────────────────────── */
   {
     key: 'vav_zone_temp',
-    label: 'Zone Temperature',
+    label: 'Zone Temperature Control',
     ashrae36: '§5.6.1',
     equipTypes: ['vav', 'fpb', 'ddvav'],
-    requiredCats: ['zoneTemp', 'dampCmd', 'coolSP', 'htgSP'],
-    keyCats: ['zoneTemp', 'dampCmd'],
+    requiredCats: ['zoneTemp', 'coolSP', 'htgSP'],
+    keyCats: ['zoneTemp'],
+  },
+  {
+    // Only shown/counted when the unit actually exposes a damper command point
+    // in the WebCTRL export. VVT-style zone terminals command the damper
+    // internally over the VVT network and never surface a dampCmd BACnet point,
+    // so this sequence is N/A for them (not a false "Not Ready").
+    //
+    // ddvav units use coldDampCmd / hotDampCmd instead of dampCmd. The sequence
+    // is applicable for a ddvav if EITHER deck damper is present. Required cats
+    // for ddvav default to both (ready only if both present); coldDampCmd is the
+    // key cat so a unit missing only hotDampCmd is partial rather than blocked.
+    // vav and fpb continue to use dampCmd for both applicability and evaluation.
+    key: 'vav_damper_writeback',
+    label: 'Damper Position Write-back',
+    ashrae36: '§5.6.2',
+    equipTypes: ['vav', 'fpb', 'ddvav'],
+    requiredCats: ['dampCmd'],
+    keyCats: ['dampCmd'],
+    applicableIfCovered: 'dampCmd',
+    // Per-type overrides for ddvav (dual-duct VAV) — uses separate category keys
+    applicableIfCoveredByType: { ddvav: ['coldDampCmd', 'hotDampCmd'] },
+    requiredCatsByType: { ddvav: ['coldDampCmd', 'hotDampCmd'] },
+    keyCatsByType: { ddvav: ['coldDampCmd'] },
   },
   {
     key: 'vav_reheat',
@@ -13161,10 +13190,54 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
       }
     }
 
+    // Check applicableIfCovered — if defined, the sequence is N/A unless
+    // the specified category key is actually present in the covered set.
+    // Used for sequences like damper write-back that are meaningless for
+    // units that don't expose that point (e.g. VVT-style zone terminals).
+    // applicableIfCovered may be a string (single key) or an array (OR — any match passes).
+    // applicableIfCoveredByType may provide per-type overrides (object mapping equip type to
+    // a string or array); when present, it takes precedence over applicableIfCovered for the
+    // matched type.
+    var applicableCheck = null;
+    if (seq.applicableIfCoveredByType && seq.applicableIfCoveredByType[category] !== undefined) {
+      applicableCheck = seq.applicableIfCoveredByType[category];
+    } else if (seq.applicableIfCovered) {
+      applicableCheck = seq.applicableIfCovered;
+    }
+    if (applicableCheck !== null) {
+      // Resolve to array for uniform OR check
+      var checkKeys = Array.isArray(applicableCheck) ? applicableCheck : [applicableCheck];
+      var anyPresent = false;
+      for (var aki = 0; aki < checkKeys.length; aki++) {
+        if (coveredSet[checkKeys[aki]]) {
+          anyPresent = true;
+          break;
+        }
+      }
+      if (!anyPresent) {
+        result[seq.key] = {
+          status: 'na',
+          label: seq.label,
+          ashrae36: seq.ashrae36,
+          presentCats: [],
+          missingCats: seq.requiredCats.slice(),
+          keyCatsMissing: false,
+        };
+        continue;
+      }
+    }
+
+    // Resolve per-type required/key cat overrides (e.g. ddvav uses different point keys)
+    var requiredCats =
+      seq.requiredCatsByType && seq.requiredCatsByType[category]
+        ? seq.requiredCatsByType[category]
+        : seq.requiredCats || [];
+    var keyCatsResolved =
+      seq.keyCatsByType && seq.keyCatsByType[category] ? seq.keyCatsByType[category] : seq.keyCats || [];
+
     // Evaluate which required categories are present and which are missing
     var presentCats = [];
     var missingCats = [];
-    var requiredCats = seq.requiredCats || [];
     for (var ri = 0; ri < requiredCats.length; ri++) {
       var catKey = requiredCats[ri];
       if (coveredSet[catKey]) {
@@ -13175,7 +13248,7 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
     }
 
     // Check if any key categories are missing
-    var keyCats = seq.keyCats || [];
+    var keyCats = keyCatsResolved;
     var keyCatsMissing = false;
     for (var ki = 0; ki < keyCats.length; ki++) {
       if (!coveredSet[keyCats[ki]]) {
