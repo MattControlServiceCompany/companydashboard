@@ -11233,7 +11233,10 @@ function collectASHRAE36Data(projId, reportDate) {
     // Status band
     var status = composite >= 75 ? 'green' : composite >= 50 ? 'amber' : 'red';
     var statusColor = composite >= 75 ? 'var(--rpt-green)' : composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
-    var statusLabel = composite >= 75 ? 'Good' : composite >= 50 ? 'Needs Attention' : 'Significant Gaps';
+    var statusLabel = composite >= 75 ? 'Ready' : composite >= 50 ? 'Partial' : 'Critical';
+    // Sensor counts for status chip display
+    var totalSensorsInPlace = totalPointsMatched;
+    var totalSensorsRequired = totalPointsRequired;
 
     // Top gaps for this building.
     // co2, vav_dcv, and demandCtrl are excluded here because the dedicated DCV
@@ -11280,6 +11283,8 @@ function collectASHRAE36Data(projId, reportDate) {
       status: status,
       statusColor: statusColor,
       statusLabel: statusLabel,
+      totalSensorsInPlace: totalSensorsInPlace,
+      totalSensorsRequired: totalSensorsRequired,
       topGaps: topGaps,
       allGapKeys: allGapKeys,
       // Phase 5 — setpoint compliance counts (additive, do not affect score)
@@ -11422,7 +11427,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
   var r = size * 0.38;
   var cx = size / 2;
   var cy = size / 2;
-  var svgH = size * 1.11;
+  var svgH = size * 1.16;
   var circumference = 2 * Math.PI * r;
   var filled = (Math.min(100, Math.max(0, pct)) / 100) * circumference;
   var empty = circumference - filled;
@@ -11461,7 +11466,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
     ' ' +
     empty.toFixed(2) +
     '"' +
-    ' stroke-linecap="round" transform="rotate(-90 ' +
+    ' stroke-linecap="round" transform="rotate(90 ' +
     cx +
     ' ' +
     cy +
@@ -11482,7 +11487,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
       : '<text x="' +
         cx +
         '" y="' +
-        (size * 0.985).toFixed(2) +
+        (size * 1.08).toFixed(2) +
         '" text-anchor="middle" font-size="' +
         size * 0.115 +
         '" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">' +
@@ -11493,9 +11498,13 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
 }
 
 // ─── Status chip helper ────────────────────────────────────────────────────
-function _a36StatusChip(status) {
+// status: 'green'|'amber'|'red'; inPlace/required: sensor counts (optional).
+// Renders "Ready · 3/3 sensors" style label when counts are provided.
+function _a36StatusChip(status, inPlace, required) {
   var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
-  var label = status === 'green' ? 'Good' : status === 'amber' ? 'Needs Attention' : 'Significant Gaps';
+  var word = status === 'green' ? 'Ready' : status === 'amber' ? 'Partial' : 'Critical';
+  var label =
+    inPlace !== undefined && required !== undefined ? word + ' · ' + inPlace + '/' + required + ' sensors' : word;
   return (
     '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;color:' +
     color +
@@ -11610,13 +11619,20 @@ function rptPageASHRAE36Cover(n, d) {
  * Executive summary: portfolio stats, building status table, key finding callout.
  */
 function rptPageASHRAE36Executive(n, d) {
-  // PRE-SPLIT PAGINATION (Stage 2 fix, 2026-06-11):
-  // Returns an ARRAY of rptPage() HTML strings.
-  // Chunks d.buildings at BLDGS_PER_PAGE buildings per page.
-  // callout boxes (topGap, dcv) only on first page.
-  // Continuation pages get a minimal header + remaining rows + footnote.
-  var BLDGS_PER_PAGE_FIRST = 15;
-  var BLDGS_PER_PAGE_CONT = 20;
+  // PIXEL-HEIGHT PAGINATION (2026-06-16 fix for item 346e8add):
+  // Uses _rptPaginateTokens (same shared paginator as rptPageASHRAE36Building) to split
+  // buildings across pages based on actual pixel-height estimates instead of flat counts.
+  //
+  // Budget math (body available ~895px):
+  //   First page fixed chrome:
+  //     dcvCallout ~80px + callout(topGap) ~50px + tableTitle ~22px + thead ~32px + tableFootnote ~30px
+  //     = ~214px consumed → row budget = 895 - 214 = 681px
+  //   Continuation page fixed chrome:
+  //     contHdr ~20px + tableTitle ~22px + thead ~32px + tableFootnote ~30px
+  //     = ~104px consumed → row budget = 895 - 84 = 811px
+  //   Each building row estH = 28px (5px top pad + 11px text + 5px bottom pad + 7px border/gap)
+  var ROWS_BUDGET_FIRST = 681; // px available for building rows on first page
+  var ROWS_BUDGET_CONT = 811; // px available for building rows on continuation pages
 
   var p = d.portfolio;
   // Rule 2.3: reportDate drives footer date; label empty.
@@ -11668,7 +11684,7 @@ function rptPageASHRAE36Executive(n, d) {
     '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building Compliance Status</div>';
   var thStyle =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
-  var tableHeader =
+  var tableOpenHead =
     '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
     '<thead><tr>' +
     '<th style="' +
@@ -11696,7 +11712,8 @@ function rptPageASHRAE36Executive(n, d) {
     '<strong>Status thresholds:</strong> Good ≥75%, Needs Attention 50–74%, Significant Gaps <50%.' +
     '</div>';
 
-  function _buildRow(b) {
+  // Build a token per building row — type:'row', estH:28px
+  function _buildRowHTML(b) {
     var bar =
       '<div style="display:flex;align-items:center;gap:4px">' +
       '<div style="width:' +
@@ -11726,33 +11743,40 @@ function rptPageASHRAE36Executive(n, d) {
       bar +
       '</td>' +
       '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
-      _a36StatusChip(b.status) +
+      _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired) +
       '</td>' +
       '</tr>'
     );
   }
 
-  // Chunk buildings
+  // Build flat token list — one token per building row
   var allBuildings = d.buildings;
-  var chunks = [];
-  var i = 0;
-  while (i < allBuildings.length) {
-    var budget = chunks.length === 0 ? BLDGS_PER_PAGE_FIRST : BLDGS_PER_PAGE_CONT;
-    chunks.push(allBuildings.slice(i, i + budget));
-    i += budget;
+  var tokens = allBuildings.map(function (b) {
+    return { type: 'row', estH: 28, html: _buildRowHTML(b) };
+  });
+  // Edge case: no buildings
+  if (tokens.length === 0) {
+    tokens.push({
+      type: 'row',
+      estH: 28,
+      html: '<tr><td colspan="6" style="padding:8px;font-size:11px;color:var(--rpt-page-text)">No buildings in portfolio.</td></tr>',
+    });
   }
-  if (chunks.length === 0) {
-    chunks.push([]);
-  } // edge case: no buildings
+
+  // Paginate using shared pixel-height paginator
+  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
 
   var numChunks = chunks.length;
   var resultPages = [];
 
-  chunks.forEach(function (bldgSlice, chunkIndex) {
-    var tableRows = bldgSlice.map(_buildRow).join('');
-    var table = tableHeader + '<tbody>' + tableRows + '</tbody></table>';
+  chunks.forEach(function (chunk, chunkIndex) {
+    var tableRows = chunk
+      .map(function (tok) {
+        return tok.html;
+      })
+      .join('');
+    var table = tableOpenHead + '<tbody>' + tableRows + '</tbody></table>';
 
-    var isLastChunk = chunkIndex === numChunks - 1;
     var pageN = n + chunkIndex;
 
     var bodyHTML;
@@ -11885,7 +11909,7 @@ function rptPageASHRAE36Building(n, d, building) {
     '<div style="margin-bottom:4px">' +
     equipBreakdown +
     '</div>' +
-    _a36StatusChip(b.status) +
+    _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired) +
     '</div>' +
     '</div>';
 
@@ -12037,19 +12061,54 @@ function rptPageASHRAE36Building(n, d, building) {
     var unitCount = catRows.length;
     var sensorsSum = 0;
     var seqsSum = 0;
+    // Frequency maps for top-type breakdown (Change B 2026-06-16)
+    var mpFreq = {};
+    var sqFreq = {};
     catRows.forEach(function (eq) {
-      sensorsSum += (eq.compliance.missingPoints || []).length;
+      (eq.compliance.missingPoints || []).forEach(function (mp) {
+        sensorsSum++;
+        var lbl = _missingPointName(mp);
+        mpFreq[lbl] = (mpFreq[lbl] || 0) + 1;
+      });
       var sr = eq.seqReadiness || {};
       for (var sk in sr) {
         if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
           seqsSum++;
+          var slbl = _seqLabel(sk, sr[sk]);
+          sqFreq[slbl] = (sqFreq[slbl] || 0) + 1;
         }
       }
     });
+
+    // Build top-3 breakdown string for a frequency map
+    function _topBreakdown(freq, total) {
+      if (total === 0) return '';
+      var pairs = Object.keys(freq).map(function (k) {
+        return { label: k, count: freq[k] };
+      });
+      pairs.sort(function (a, b2) {
+        return b2.count - a.count;
+      });
+      var top = pairs.slice(0, 3);
+      var rest = pairs.length - top.length;
+      var parts = top.map(function (p) {
+        return p.count + ' - ' + p.label;
+      });
+      if (rest > 0) parts.push('+' + rest + ' more');
+      return parts.join(', ');
+    }
+
+    var sensorsBreakdown = _topBreakdown(mpFreq, sensorsSum);
+    var seqsBreakdown = _topBreakdown(sqFreq, seqsSum);
+
+    var sensorsCell =
+      sensorsSum === 0 ? '0 — Complete' : sensorsBreakdown ? sensorsSum + ' — ' + sensorsBreakdown : String(sensorsSum);
+    var seqsCell = seqsSum === 0 ? '0 — Ready' : seqsBreakdown ? seqsSum + ' — ' + seqsBreakdown : String(seqsSum);
+
     var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-rule)';
     tokens.push({
       type: 'row',
-      estH: 26,
+      estH: sensorsSum > 0 || seqsSum > 0 ? 34 : 26,
       html:
         '<tr>' +
         '<td style="' +
@@ -12064,21 +12123,21 @@ function rptPageASHRAE36Building(n, d, building) {
         '</td>' +
         '<td style="' +
         tdBase +
-        ';text-align:center;color:' +
+        ';color:' +
         (sensorsSum === 0 ? 'var(--rpt-green)' : 'var(--rpt-page-text)') +
         ';font-weight:' +
         (sensorsSum === 0 ? '400' : '700') +
         '">' +
-        (sensorsSum === 0 ? '0 — Complete' : sensorsSum) +
+        sensorsCell +
         '</td>' +
         '<td style="' +
         tdBase +
-        ';text-align:center;color:' +
+        ';color:' +
         (seqsSum === 0 ? 'var(--rpt-green)' : 'var(--rpt-page-text)') +
         ';font-weight:' +
         (seqsSum === 0 ? '400' : '700') +
         '">' +
-        (seqsSum === 0 ? '0 — Ready' : seqsSum) +
+        seqsCell +
         '</td>' +
         '</tr>',
     });
@@ -12366,31 +12425,28 @@ function rptPageASHRAE36Recommendations(n, d) {
  * @param {object} d - Data from collectASHRAE36Data (equipResults must have spCompliance)
  */
 function rptPageASHRAE36SetpointReview(n, d) {
+  // ISSUE 7 (2026-06-16): Rebuilt to show ONE row per building with AVERAGE setpoints.
+  // ISSUE 6 (2026-06-16): Added _rptPaginateTokens pagination; returns Array of page strings.
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
-  // ── Collect all zone equipment rows across all buildings ──────────────────
+  // ── Collect all zone equipment setpoint entries grouped by building ────────
   var ZONE_CATS = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
-  var allZoneRows = [];
-  var anyFoundInExport = false; // tracks whether any zone row had setpoint data at all
-  var anyCO2InExport = false; // tracks whether any CO2 setpoint was found
+  var anyCO2InExport = false;
+  // Map: buildingName → { name, zones: [{occHeat, occCool, deadband, co2, displayStatus}] }
+  var bldgMap = {};
+  var bldgOrder = [];
 
   d.buildings.forEach(function (b) {
     (b.equipResults || []).forEach(function (eq) {
       if (!ZONE_CATS[eq.category]) return;
       var sp = eq.spCompliance;
-      if (!sp || (!sp.hasAnyData && !sp.hasAnyNotScheduled)) return; // skip if no setpoint points at all
-      if (sp.hasAnyData) anyFoundInExport = true;
+      if (!sp || (!sp.hasAnyData && !sp.hasAnyNotScheduled)) return;
 
-      // Determine row-level display status:
-      //   NEEDS_REVIEW — any unacknowledged DEVIATION
-      //   NOT_SCHEDULED — no deviations but at least one NOT_SCHEDULED
-      //   MATCHES — all checks PASS or NA or intentionally flagged
       var hasUnackDeviation = sp.results.some(function (r) {
         return r.status === 'DEVIATION' && !r.intentionalFlag;
       });
       var displayStatus = hasUnackDeviation ? 'NEEDS_REVIEW' : sp.hasAnyNotScheduled ? 'NOT_SCHEDULED' : 'MATCHES';
 
-      // Pull temperature values from the result entries
       var occHeatEntry = sp.results.find(function (r) {
         return r.checkKey === 'occHeat';
       });
@@ -12404,13 +12460,13 @@ function rptPageASHRAE36SetpointReview(n, d) {
         return r.checkKey === 'co2';
       });
 
-      // Check if CO2 data was present in export (status is not NA)
       if (co2Entry && co2Entry.status !== 'NA') anyCO2InExport = true;
 
-      allZoneRows.push({
-        building: b.name,
-        name: eq.name || 'Unknown',
-        category: eq.category,
+      if (!bldgMap[b.name]) {
+        bldgOrder.push(b.name);
+        bldgMap[b.name] = { name: b.name, zones: [] };
+      }
+      bldgMap[b.name].zones.push({
         displayStatus: displayStatus,
         occHeat: occHeatEntry,
         occCool: occCoolEntry,
@@ -12420,62 +12476,130 @@ function rptPageASHRAE36SetpointReview(n, d) {
     });
   });
 
-  // If no zone rows have any setpoint point data at all (including NOT_SCHEDULED),
-  // show empty-state. allZoneRows.length > 0 means at least some zone setpoint
-  // points were found (even if all are NOT_SCHEDULED).
-  if (allZoneRows.length === 0) {
+  // ── Empty-state guard ─────────────────────────────────────────────────────
+  if (bldgOrder.length === 0) {
     var emptyBody =
       '<div class="rpt-a36-callout" style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
       'No zone setpoint values were found in the equipment export for this project. ' +
       'Setpoint data is present when zones trend their occupied heating and cooling setpoints. ' +
       'Import an updated equipment matrix export to enable this analysis.' +
       '</div>';
-    return rptPage(n, 'ASHRAE 36 Audit — Setpoint Programming Review', emptyBody, {
-      data: fakeData,
-      label: 'Page ' + n + ' — Setpoint Programming Review',
-    });
+    return [
+      rptPage(n, 'ASHRAE 36 Audit — Setpoint Programming Review', emptyBody, {
+        data: fakeData,
+        label: 'Page ' + n + ' — Setpoint Programming Review',
+      }),
+    ];
   }
 
-  // Sort: Needs-Review rows first, then Not-Scheduled, then Matches.
-  // Within each group, sort by building then name.
-  var STATUS_ORDER = { NEEDS_REVIEW: 0, NOT_SCHEDULED: 1, MATCHES: 2 };
-  allZoneRows.sort(function (a, b2) {
-    var ao = STATUS_ORDER[a.displayStatus] || 99;
-    var bo = STATUS_ORDER[b2.displayStatus] || 99;
+  // ── Compute per-building averages ─────────────────────────────────────────
+  // For each building, average actualValue across zones that have the field.
+  // GL36 defaults are the same for all zones of the same category so grab the
+  // first non-null value. Deviator count = zones with NEEDS_REVIEW status.
+  function _mean(values) {
+    if (!values.length) return null;
+    var sum = 0;
+    for (var i = 0; i < values.length; i++) sum += values[i];
+    return sum / values.length;
+  }
+
+  var buildingRows = bldgOrder.map(function (bName) {
+    var bldg = bldgMap[bName];
+    var zones = bldg.zones;
+    var heatVals = [],
+      coolVals = [],
+      dbVals = [];
+    var heatDefault = null,
+      coolDefault = null;
+    var deviatorCount = 0;
+    var hasAnyData = false;
+
+    zones.forEach(function (z) {
+      if (z.displayStatus === 'NEEDS_REVIEW') deviatorCount++;
+      if (z.occHeat && z.occHeat.actualValue !== null && z.occHeat.actualValue !== undefined) {
+        heatVals.push(parseFloat(z.occHeat.actualValue));
+        hasAnyData = true;
+        if (heatDefault === null && z.occHeat.gl36Default !== null && z.occHeat.gl36Default !== undefined)
+          heatDefault = z.occHeat.gl36Default;
+      }
+      if (z.occCool && z.occCool.actualValue !== null && z.occCool.actualValue !== undefined) {
+        coolVals.push(parseFloat(z.occCool.actualValue));
+        hasAnyData = true;
+        if (coolDefault === null && z.occCool.gl36Default !== null && z.occCool.gl36Default !== undefined)
+          coolDefault = z.occCool.gl36Default;
+      }
+      if (z.deadband && z.deadband.actualValue !== null && z.deadband.actualValue !== undefined) {
+        dbVals.push(parseFloat(z.deadband.actualValue));
+      }
+    });
+
+    var avgHeat = _mean(heatVals);
+    var avgCool = _mean(coolVals);
+    var avgDb = _mean(dbVals);
+
+    // Building status: NEEDS_REVIEW if any zones deviate; NOT_SCHEDULED if no
+    // actual data at all; MATCHES otherwise.
+    var bStatus;
+    if (deviatorCount > 0) {
+      bStatus = 'NEEDS_REVIEW';
+    } else if (!hasAnyData) {
+      bStatus = 'NOT_SCHEDULED';
+    } else {
+      bStatus = 'MATCHES';
+    }
+
+    var deviatorLabel;
+    if (deviatorCount > 0) {
+      deviatorLabel = deviatorCount + ' of ' + zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' deviate';
+    } else if (!hasAnyData) {
+      deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' — no setpoint data';
+    } else {
+      deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' match';
+    }
+
+    return {
+      name: bName,
+      avgHeat: avgHeat,
+      avgCool: avgCool,
+      avgDb: avgDb,
+      heatDefault: heatDefault,
+      coolDefault: coolDefault,
+      bStatus: bStatus,
+      deviatorCount: deviatorCount,
+      totalZones: zones.length,
+      deviatorLabel: deviatorLabel,
+    };
+  });
+
+  // Sort: Needs-Review first, then Not-Scheduled, then Matches; alpha within group.
+  var STATUS_ORDER_B = { NEEDS_REVIEW: 0, NOT_SCHEDULED: 1, MATCHES: 2 };
+  buildingRows.sort(function (a, b2) {
+    var ao = STATUS_ORDER_B[a.bStatus] !== undefined ? STATUS_ORDER_B[a.bStatus] : 99;
+    var bo = STATUS_ORDER_B[b2.bStatus] !== undefined ? STATUS_ORDER_B[b2.bStatus] : 99;
     if (ao !== bo) return ao - bo;
-    if (a.building !== b2.building) return a.building.localeCompare(b2.building);
-    return (a.name || '').localeCompare(b2.name || '');
+    if (a.name < b2.name) return -1;
+    if (a.name > b2.name) return 1;
+    return 0;
   });
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  function _fmtTemp(v) {
+  function _fmtAvg(v) {
     if (v === null || v === undefined) return '—';
     return parseFloat(v).toFixed(1) + '°F';
   }
-  function _fmtDefault(entry) {
-    if (!entry || entry.gl36Default === null || entry.gl36Default === undefined) return '—';
-    return parseFloat(entry.gl36Default).toFixed(0) + '°F';
-  }
-  function _fmtDeadband(dbEntry) {
-    if (!dbEntry || dbEntry.actualValue === null) return '—';
-    var v = parseFloat(dbEntry.actualValue).toFixed(1);
-    var note = '';
-    if (dbEntry.status === 'DEVIATION') {
-      note = ' <span style="color:var(--rpt-red);font-size:9px">below min</span>';
-    } else if (dbEntry.deviationNote) {
-      note = ' <span style="color:var(--rpt-orange);font-size:9px">narrow</span>';
-    }
-    return v + '°F' + note;
+  function _fmtDefaultVal(v) {
+    if (v === null || v === undefined) return '—';
+    return parseFloat(v).toFixed(0) + '°F';
   }
 
-  // ── Status cell ───────────────────────────────────────────────────────────
-  function _statusCell(displayStatus) {
-    if (displayStatus === 'NEEDS_REVIEW') {
+  // ── Status badge ─────────────────────────────────────────────────────────
+  function _statusCell(status) {
+    if (status === 'NEEDS_REVIEW') {
       return (
         '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
         'color:#92400e;background:transparent;border:1px solid #f59e0b">Needs Review</span>'
       );
-    } else if (displayStatus === 'NOT_SCHEDULED') {
+    } else if (status === 'NOT_SCHEDULED') {
       return (
         '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
         'color:#6b7280;background:transparent;border:1px solid #d1d5db">Not Scheduled</span>'
@@ -12487,100 +12611,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     );
   }
 
-  // ── Row-level background highlight for Needs-Review rows ─────────────────
-  function _rowBg(displayStatus) {
-    return '';
-  }
-
-  // ── Building roll-up ──────────────────────────────────────────────────────
-  // Group allZoneRows by building (order preserved from the sort above).
-  // For each building that has Needs-Review zones, detect a "dominant deviation
-  // pattern": if >=80% of those zones share the same rounded actual setpoint for
-  // a given check (occHeat or occCool), that is the building-wide pattern.
-  // Emit ONE building-level summary row for the uniform deviation and list only
-  // the outlier zones individually beneath it.
-  // For buildings where all zones Match or are Not-Scheduled, emit a single
-  // summary row (no need to enumerate every zone).
-  var ROLLUP_THRESHOLD = 0.8; // 80% of zones must share a value to be "uniform"
-
-  // Build ordered list of unique buildings (in sort order already established)
-  var bldgOrder = [];
-  var bldgRowsMap = {};
-  allZoneRows.forEach(function (row) {
-    var b = row.building;
-    if (!bldgRowsMap[b]) {
-      bldgOrder.push(b);
-      bldgRowsMap[b] = [];
-    }
-    bldgRowsMap[b].push(row);
-  });
-
-  // Helper: for an array of zone rows in one building, find the dominant actual
-  // value for a given entry key (occHeat / occCool) among NEEDS_REVIEW rows.
-  // Returns {dominant: <rounded-string-or-null>, count: N, total: M, gl36Default: V}
-  function _dominantValue(bRows, entryKey) {
-    var nrRows = bRows.filter(function (r) {
-      return r.displayStatus === 'NEEDS_REVIEW';
-    });
-    if (!nrRows.length) return null;
-    var freq = {};
-    var gl36Default = null;
-    var validCount = 0;
-    nrRows.forEach(function (r) {
-      var entry = r[entryKey]; // occHeat or occCool
-      if (!entry || entry.actualValue === null || entry.actualValue === undefined) return;
-      validCount++;
-      // Round to 1 decimal for grouping
-      var key = parseFloat(entry.actualValue).toFixed(1);
-      freq[key] = (freq[key] || 0) + 1;
-      if (gl36Default === null && entry.gl36Default !== null && entry.gl36Default !== undefined) {
-        gl36Default = entry.gl36Default;
-      }
-    });
-    if (!validCount) return null;
-    // Find most common value
-    var best = null,
-      bestCount = 0;
-    Object.keys(freq).forEach(function (k) {
-      if (freq[k] > bestCount) {
-        best = k;
-        bestCount = freq[k];
-      }
-    });
-    if (!best) return null;
-    var ratio = bestCount / nrRows.length;
-    if (ratio < ROLLUP_THRESHOLD) return null; // not uniform enough
-    var delta = gl36Default !== null ? parseFloat(best) - gl36Default : null;
-    return {
-      dominant: best,
-      count: bestCount,
-      total: nrRows.length,
-      gl36Default: gl36Default,
-      delta: delta,
-    };
-  }
-
-  // Helper: build a human-readable deviation description for the building header.
-  // Returns null if the dominant value matches the GL36 default (no real deviation).
-  function _deviationDesc(entryKey, info) {
-    if (!info) return null;
-    // Skip: delta is 0 or within tolerance — not actually a deviation worth describing
-    if (info.delta !== null && Math.round(info.delta) === 0) return null;
-    var label = entryKey === 'occHeat' ? 'Occupied Heating' : 'Occupied Cooling';
-    var val = parseFloat(info.dominant).toFixed(0) + '°F';
-    var def = info.gl36Default !== null ? parseFloat(info.gl36Default).toFixed(0) + '°F' : null;
-    var deltaStr = '';
-    if (info.delta !== null) {
-      var sign = info.delta > 0 ? '+' : '';
-      deltaStr = sign + Math.round(info.delta) + '°F';
-    }
-    if (def) {
-      return label + ' ' + val + ' vs GL36 default ' + def + (deltaStr ? ' (' + deltaStr + ')' : '');
-    }
-    return label + ' ' + val + (deltaStr ? ' (' + deltaStr + ')' : '');
-  }
-
-  // ── Build table rows ──────────────────────────────────────────────────────
+  // ── Table chrome ─────────────────────────────────────────────────────────
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
@@ -12589,329 +12620,101 @@ function rptPageASHRAE36SetpointReview(n, d) {
 
   var tableHead =
     '<colgroup>' +
-    '<col style="width:34%">' +
-    '<col style="width:10%">' +
-    '<col style="width:10%">' +
-    '<col style="width:18%">' +
+    '<col style="width:32%">' +
     '<col style="width:11%">' +
-    '<col style="width:17%">' +
+    '<col style="width:11%">' +
+    '<col style="width:16%">' +
+    '<col style="width:11%">' +
+    '<col style="width:19%">' +
     '</colgroup>' +
     '<thead><tr>' +
     '<th style="' +
     thStyle +
-    '">Zone / Building</th>' +
+    '">Building</th>' +
     '<th style="' +
     thStyleC +
-    '">Occ Heat</th>' +
+    '">Avg Occ Heat</th>' +
     '<th style="' +
     thStyleC +
-    '">Occ Cool</th>' +
+    '">Avg Occ Cool</th>' +
     '<th style="' +
     thStyleC +
     '">GL36 Default<br><span style="font-size:9px;font-weight:400;text-transform:none">Heat / Cool</span></th>' +
     '<th style="' +
     thStyleC +
-    '">Deadband</th>' +
+    '">Avg Deadband</th>' +
     '<th style="' +
     thStyleC +
     '">Status</th>' +
     '</tr></thead>';
 
-  var tbodyRows = '';
   var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-rule)';
   var tdCenter = tdBase + ';text-align:center';
 
-  // Style constants for building-header rows
-  var thdrStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;vertical-align:middle;border-bottom:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)';
-  var thdrStyleC = thdrStyle + ';text-align:center';
-
-  // Helper: render a single zone row (indented under a building header)
-  function _zoneRow(row, indented) {
-    var bg = _rowBg(row.displayStatus);
-    var bgStyle = bg ? ';' + bg : '';
-    var namePrefix = indented ? '&nbsp;&nbsp;&nbsp;&nbsp;' : '';
+  // ── Build one HTML row per building ──────────────────────────────────────
+  function _buildBldgRowHTML(row) {
+    var gl36Heat = _fmtDefaultVal(row.heatDefault);
+    var gl36Cool = _fmtDefaultVal(row.coolDefault);
     return (
       '<tr>' +
       '<td style="' +
       tdBase +
-      bgStyle +
       ';font-weight:600;color:var(--rpt-page-text)">' +
-      namePrefix +
-      (row.name || '—') +
+      row.name +
       '</td>' +
       '<td style="' +
       tdCenter +
-      bgStyle +
       ';color:var(--rpt-page-text)">' +
-      (row.occHeat ? _fmtTemp(row.occHeat.actualValue) : '—') +
+      _fmtAvg(row.avgHeat) +
       '</td>' +
       '<td style="' +
       tdCenter +
-      bgStyle +
       ';color:var(--rpt-page-text)">' +
-      (row.occCool ? _fmtTemp(row.occCool.actualValue) : '—') +
+      _fmtAvg(row.avgCool) +
       '</td>' +
       '<td style="' +
       tdCenter +
-      bgStyle +
       ';color:var(--rpt-page-text)">' +
-      _fmtDefault(row.occHeat) +
+      gl36Heat +
       ' / ' +
-      _fmtDefault(row.occCool) +
+      gl36Cool +
       '</td>' +
       '<td style="' +
       tdCenter +
-      bgStyle +
       ';color:var(--rpt-page-text)">' +
-      _fmtDeadband(row.deadband) +
+      _fmtAvg(row.avgDb) +
       '</td>' +
       '<td style="' +
       tdCenter +
-      bgStyle +
       '">' +
-      _statusCell(row.displayStatus) +
+      _statusCell(row.bStatus) +
+      ' <span style="font-size:9px;color:var(--rpt-page-text)">' +
+      row.deviatorLabel +
+      '</span>' +
       '</td>' +
       '</tr>'
     );
   }
 
-  bldgOrder.forEach(function (bldgName) {
-    var bRows = bldgRowsMap[bldgName];
-    var nrRows = bRows.filter(function (r) {
-      return r.displayStatus === 'NEEDS_REVIEW';
-    });
-    var nsRows = bRows.filter(function (r) {
-      return r.displayStatus === 'NOT_SCHEDULED';
-    });
-    var mRows = bRows.filter(function (r) {
-      return r.displayStatus === 'MATCHES';
-    });
-
-    if (nrRows.length > 0) {
-      // ── Building has Needs-Review zones → check for uniform deviation ──────
-      var heatInfo = _dominantValue(bRows, 'occHeat');
-      var coolInfo = _dominantValue(bRows, 'occCool');
-      var heatDesc = _deviationDesc('occHeat', heatInfo);
-      var coolDesc = _deviationDesc('occCool', coolInfo);
-
-      // Determine which NR zones are "outliers" (deviate from building norm)
-      // An outlier is a zone whose actual heat/cool value differs from dominant.
-      var outlierRows = nrRows.filter(function (r) {
-        var heatMatch =
-          !heatInfo ||
-          !r.occHeat ||
-          r.occHeat.actualValue === null ||
-          parseFloat(r.occHeat.actualValue).toFixed(1) === heatInfo.dominant;
-        var coolMatch =
-          !coolInfo ||
-          !r.occCool ||
-          r.occCool.actualValue === null ||
-          parseFloat(r.occCool.actualValue).toFixed(1) === coolInfo.dominant;
-        return !heatMatch || !coolMatch;
-      });
-
-      // Determine if roll-up applies: at least one uniform deviation found AND
-      // the building has enough NR zones to make a roll-up worthwhile (>1)
-      var hasRollup = nrRows.length > 1 && (heatInfo || coolInfo);
-
-      if (hasRollup) {
-        // ── Building-level header row ─────────────────────────────────────
-        var deviationParts = [];
-        if (heatDesc) deviationParts.push(heatDesc);
-        if (coolDesc) deviationParts.push(coolDesc);
-        var deviationText = deviationParts.length ? deviationParts.join('; ') : 'uniform setpoint deviation';
-        var uniformCount = heatInfo ? heatInfo.count : coolInfo ? coolInfo.count : nrRows.length;
-
-        var headerNote =
-          nrRows.length +
-          ' zone' +
-          (nrRows.length !== 1 ? 's' : '') +
-          ' — ' +
-          uniformCount +
-          ' uniform: ' +
-          deviationText +
-          '. Confirm intentional.';
-
-        tbodyRows +=
-          '<tr>' +
-          '<td colspan="6" style="' +
-          thdrStyle +
-          ';color:var(--rpt-blue)">' +
-          bldgName +
-          ' <span style="font-weight:400;color:var(--rpt-page-text);font-size:9px">' +
-          headerNote +
-          '</span>' +
-          '</td>' +
-          '</tr>';
-
-        // Render only outlier rows (zones that differ from building norm)
-        if (outlierRows.length > 0) {
-          outlierRows.forEach(function (r) {
-            tbodyRows += _zoneRow(r, true);
-          });
-        }
-      } else {
-        // Small building or no uniform pattern — list individually with header
-        tbodyRows +=
-          '<tr>' +
-          '<td colspan="6" style="' +
-          thdrStyle +
-          ';color:var(--rpt-blue)">' +
-          bldgName +
-          ' <span style="font-weight:400;color:var(--rpt-page-text);font-size:9px">' +
-          nrRows.length +
-          ' zone' +
-          (nrRows.length !== 1 ? 's' : '') +
-          ' — Needs Review</span>' +
-          '</td>' +
-          '</tr>';
-        nrRows.forEach(function (r) {
-          tbodyRows += _zoneRow(r, true);
-        });
-      }
-
-      // Append any Not-Scheduled / Matches rows for this building as a brief note
-      if (nsRows.length > 0 || mRows.length > 0) {
-        var otherParts = [];
-        if (nsRows.length > 0) otherParts.push(nsRows.length + ' Not Scheduled');
-        if (mRows.length > 0) otherParts.push(mRows.length + ' Match');
-        tbodyRows +=
-          '<tr>' +
-          '<td colspan="6" style="' +
-          tdBase +
-          ';color:var(--rpt-page-text);font-size:9px;font-style:italic">' +
-          '&nbsp;&nbsp;&nbsp;&nbsp;' +
-          bldgName +
-          ': ' +
-          otherParts.join(', ') +
-          ' GL36 defaults' +
-          '</td>' +
-          '</tr>';
-      }
-    } else if (nsRows.length > 0 && mRows.length === 0) {
-      // ── Building: all zones Not-Scheduled, no Needs-Review ───────────────
-      tbodyRows +=
-        '<tr>' +
-        '<td style="' +
-        tdBase +
-        ';font-weight:600;color:var(--rpt-page-text)">' +
-        bldgName +
-        '</td>' +
-        '<td colspan="4" style="' +
-        tdBase +
-        ';color:var(--rpt-page-text);font-size:9px">' +
-        nsRows.length +
-        ' zone' +
-        (nsRows.length !== 1 ? 's' : '') +
-        ' — setpoints not found in BAS export' +
-        '</td>' +
-        '<td style="' +
-        tdCenter +
-        '">' +
-        _statusCell('NOT_SCHEDULED') +
-        '</td>' +
-        '</tr>';
-    } else if (mRows.length > 0 && nsRows.length === 0 && nrRows.length === 0) {
-      // ── Building: all zones Match GL36 ───────────────────────────────────
-      // Get a representative heat/cool default
-      var repHeat = mRows[0].occHeat ? _fmtDefault(mRows[0].occHeat) : '—';
-      var repCool = mRows[0].occCool ? _fmtDefault(mRows[0].occCool) : '—';
-      tbodyRows +=
-        '<tr>' +
-        '<td style="' +
-        tdBase +
-        ';font-weight:600;color:var(--rpt-page-text)">' +
-        bldgName +
-        '</td>' +
-        '<td style="' +
-        tdCenter +
-        ';color:var(--rpt-page-text)">' +
-        (mRows[0].occHeat ? _fmtTemp(mRows[0].occHeat.actualValue) : '—') +
-        '</td>' +
-        '<td style="' +
-        tdCenter +
-        ';color:var(--rpt-page-text)">' +
-        (mRows[0].occCool ? _fmtTemp(mRows[0].occCool.actualValue) : '—') +
-        '</td>' +
-        '<td style="' +
-        tdCenter +
-        ';color:var(--rpt-page-text)">' +
-        repHeat +
-        ' / ' +
-        repCool +
-        '</td>' +
-        '<td style="' +
-        tdCenter +
-        ';color:var(--rpt-page-text)">' +
-        _fmtDeadband(mRows[0].deadband) +
-        '</td>' +
-        '<td style="' +
-        tdCenter +
-        '">' +
-        _statusCell('MATCHES') +
-        ' <span style="font-size:9px;color:var(--rpt-page-text)">' +
-        mRows.length +
-        ' zones</span>' +
-        '</td>' +
-        '</tr>';
-    } else {
-      // ── Mixed (some Match + some Not-Scheduled) — brief building summary ──
-      tbodyRows +=
-        '<tr>' +
-        '<td style="' +
-        tdBase +
-        ';font-weight:600;color:var(--rpt-page-text)">' +
-        bldgName +
-        '</td>' +
-        '<td colspan="4" style="' +
-        tdBase +
-        ';color:var(--rpt-page-text);font-size:9px">' +
-        bRows.length +
-        ' zone' +
-        (bRows.length !== 1 ? 's' : '') +
-        (mRows.length > 0 ? ' — ' + mRows.length + ' Match' : '') +
-        (nsRows.length > 0 ? ', ' + nsRows.length + ' Not Scheduled' : '') +
-        '</td>' +
-        '<td style="' +
-        tdCenter +
-        '">' +
-        (mRows.length > 0 ? _statusCell('MATCHES') : _statusCell('NOT_SCHEDULED')) +
-        '</td>' +
-        '</tr>';
-    }
-  });
-
-  var table =
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">' +
-    tableHead +
-    '<tbody>' +
-    tbodyRows +
-    '</tbody>' +
-    '</table>';
-
-  // ── Summary line ──────────────────────────────────────────────────────────
-  var needsReviewTotal = allZoneRows.filter(function (r) {
-    return r.displayStatus === 'NEEDS_REVIEW';
+  // ── Totals callout ────────────────────────────────────────────────────────
+  var needsReviewTotal = buildingRows.filter(function (r) {
+    return r.bStatus === 'NEEDS_REVIEW';
   }).length;
-  var matchesTotal = allZoneRows.filter(function (r) {
-    return r.displayStatus === 'MATCHES';
+  var matchesTotal = buildingRows.filter(function (r) {
+    return r.bStatus === 'MATCHES';
   }).length;
-  var notScheduledTotal = allZoneRows.filter(function (r) {
-    return r.displayStatus === 'NOT_SCHEDULED';
+  var notScheduledTotal = buildingRows.filter(function (r) {
+    return r.bStatus === 'NOT_SCHEDULED';
   }).length;
-  var summaryParts = [
-    allZoneRows.length + ' zone unit' + (allZoneRows.length !== 1 ? 's' : '') + ' with setpoint data',
-  ];
-  if (needsReviewTotal > 0) {
-    summaryParts.push(needsReviewTotal + ' Needs Review');
-  }
-  if (notScheduledTotal > 0) {
-    summaryParts.push(notScheduledTotal + ' Not Scheduled');
-  }
-  if (matchesTotal > 0) {
-    summaryParts.push(matchesTotal + ' match GL36 defaults');
-  }
+  var summaryParts = [buildingRows.length + ' building' + (buildingRows.length !== 1 ? 's' : '')];
+  if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' Needs Review');
+  if (notScheduledTotal > 0) summaryParts.push(notScheduledTotal + ' Not Scheduled');
+  if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match GL36 defaults');
+
+  var totalsCallout =
+    '<div style="font-size:10px;color:var(--rpt-page-text);margin-bottom:8px">' +
+    summaryParts.join(' &nbsp;|&nbsp; ') +
+    '</div>';
 
   // ── CO2 note ──────────────────────────────────────────────────────────────
   var co2Note = '';
@@ -12933,20 +12736,73 @@ function rptPageASHRAE36SetpointReview(n, d) {
     'ASHRAE Guideline 36 §3.1.1.1 and Table 3.1.1.1 define <strong>default</strong> occupied and unoccupied temperature setpoints for three zone types. ' +
     'These are starting points — designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
     '<strong>Items marked Needs Review should be confirmed with the design engineer or facility staff to determine whether the deviation is intentional.</strong> ' +
-    'Correcting an unintentional setpoint is a BAS programming change with no hardware cost — a zero-hardware quick win that can immediately improve occupant comfort and energy performance.' +
+    'Values shown are building averages across all zone equipment in the BAS export.' +
     '</div>';
 
-  // ── Totals callout ────────────────────────────────────────────────────────
-  var totalsCallout =
-    '<div style="font-size:10px;color:var(--rpt-page-text);margin-bottom:8px">' +
-    summaryParts.join(' &nbsp;|&nbsp; ') +
-    '</div>';
+  // ── Pagination (Issue 6) ──────────────────────────────────────────────────
+  // Budget math (body available ~895px):
+  //   First page fixed chrome:
+  //     preamble ~60px + totalsCallout ~20px + thead ~32px = ~112px consumed
+  //     row budget = 895 - 112 = 783px
+  //   Continuation page fixed chrome:
+  //     contHdr ~20px + thead ~32px = ~52px consumed
+  //     row budget = 895 - 52 = 843px
+  //   Each building row estH = 28px
+  var ROWS_BUDGET_FIRST = 783;
+  var ROWS_BUDGET_CONT = 843;
 
-  var bodyHTML = preamble + totalsCallout + table + co2Note;
-  return rptPage(n, 'ASHRAE 36 Audit — Setpoint Programming Review', bodyHTML, {
-    data: fakeData,
-    label: 'Page ' + n + ' — Setpoint Programming Review',
+  var tokens = buildingRows.map(function (row) {
+    return { type: 'row', estH: 28, html: _buildBldgRowHTML(row) };
   });
+
+  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
+  var numChunks = chunks.length;
+  var resultPages = [];
+
+  chunks.forEach(function (chunk, chunkIndex) {
+    var tbodyRows = chunk
+      .map(function (tok) {
+        return tok.html;
+      })
+      .join('');
+    var table =
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">' +
+      tableHead +
+      '<tbody>' +
+      tbodyRows +
+      '</tbody>' +
+      '</table>';
+
+    var pageN = n + chunkIndex;
+    var bodyHTML;
+    if (chunkIndex === 0) {
+      bodyHTML = preamble + totalsCallout + table + (chunkIndex === numChunks - 1 ? co2Note : '');
+    } else {
+      var contHdr =
+        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
+        'Setpoint Programming Review — continued (' +
+        (chunkIndex + 1) +
+        ' of ' +
+        numChunks +
+        ')' +
+        '</div>';
+      bodyHTML = contHdr + table + (chunkIndex === numChunks - 1 ? co2Note : '');
+    }
+
+    resultPages.push(
+      rptPage(pageN, 'ASHRAE 36 Audit — Setpoint Programming Review', bodyHTML, {
+        data: fakeData,
+        label:
+          'Page ' +
+          pageN +
+          ' — Setpoint Programming Review' +
+          (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
+      }),
+    );
+  });
+
+  return resultPages; // always an Array (length >= 1)
 }
 
 // ─── rptPageASHRAE36ProposalCover ─────────────────────────────────────────
@@ -13272,8 +13128,14 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     pages.push(_tagA36Section(rptPageASHRAE36Recommendations(pageNum++, data), 'recommendations'));
 
   // Phase 5 — Setpoint Programming Review (appended after recommendations)
-  if (s.setpointReview !== false)
-    pages.push(_tagA36Section(rptPageASHRAE36SetpointReview(pageNum++, data), 'setpointReview'));
+  // Returns an Array (like executive section) — spread each page individually.
+  if (s.setpointReview !== false) {
+    var spPages = rptPageASHRAE36SetpointReview(pageNum, data);
+    spPages.forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'setpointReview'));
+      pageNum++;
+    });
+  }
 
   // Rule 2.4 (Plan B): bake page numbers at generation time.
   return _injectPageNumbers(pages.join('\n'));

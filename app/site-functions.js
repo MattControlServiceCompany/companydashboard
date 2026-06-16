@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.16.533',
+    date: '2026-06-16',
+    title: 'Audit Report polish: gauges, status chips, and overflow fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Building Compliance Status and Setpoint Programming Review tables now paginate correctly across pages — long portfolio reports no longer overflow into the footer.',
+      },
+      {
+        type: 'fix',
+        text: "Gauge sweeps on the audit report now start at the bottom (6 o'clock) and sweep clockwise, matching the visual expectation for a progress-style gauge. Each gauge now shows a clear caption below it.",
+      },
+      {
+        type: 'change',
+        text: 'Building status is now labeled Ready, Partial, or Critical (was Good / Needs Attention / Significant Gaps), with sensor counts shown directly in the chip — for example "Partial · 349/546 sensors".',
+      },
+      {
+        type: 'feature',
+        text: 'Setpoint Programming Review now shows one averaged row per building (heating and cooling averages across all equipment), making it easier to spot buildings that are off from the ASHRAE 36 defaults.',
+      },
+      {
+        type: 'feature',
+        text: 'The needed-sensors and needed-sequences breakdown in the audit report now lists the top missing sensor types and sequences per equipment category — so you can see at a glance what to install first.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.16.532',
     date: '2026-06-16',
     title: 'Equipment Matrix: smarter classification for 1,300+ rows',
