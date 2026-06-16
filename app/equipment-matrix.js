@@ -546,7 +546,10 @@ var EM_POINT_MAP = [
       /\b(ano\b|controlling)\b/i,
     ],
     types: ['AI'],
-    cats: ['vav', 'fpb', 'ddvav'],
+    // Single-zone-AHU (Quick Win 2): 'ahu' added so import-time mapping routes "Zone Temp"
+    // on single-zone RTUs/AHUs to zoneAirTemp. Gate in emComputeBuildingZoneStats prevents
+    // true multizone AHUs from being counted as zone equipment at runtime.
+    cats: ['vav', 'fpb', 'ddvav', 'ahu'],
   },
   {
     col: 'zoneCoolSetpoint',
@@ -562,7 +565,9 @@ var EM_POINT_MAP = [
       /supply\s+air/i,
     ],
     types: ['SP'],
-    cats: ['vav', 'fpb', 'ddvav', 'fcu'],
+    // Single-zone-AHU (Quick Win 2): 'ahu' added so import-time mapping routes occupied
+    // cooling setpoints on single-zone RTUs/AHUs to zoneCoolSetpoint.
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu'],
   },
   {
     col: 'zoneHtgSetpoint',
@@ -578,7 +583,9 @@ var EM_POINT_MAP = [
       /supply\s+air/i,
     ],
     types: ['SP'],
-    cats: ['vav', 'fpb', 'ddvav', 'fcu'],
+    // Single-zone-AHU (Quick Win 2): 'ahu' added so import-time mapping routes occupied
+    // heating setpoints on single-zone RTUs/AHUs to zoneHtgSetpoint.
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu'],
   },
   // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSetpoint)
   {
@@ -4992,15 +4999,69 @@ function emComputeBuildingZoneStats(rows, seedRows) {
     }
   }
 
+  // Single-zone AHU gate (Quick Win 2): an 'ahu' row qualifies as a single-zone unit
+  // (and therefore contributes to zone stats) if its normalized points include zone-level
+  // setpoints (cooling OR heating occupied setpoint) OR a zone air temperature sensor.
+  // True multizone AHUs have neither — they only have supply air temp + duct static —
+  // and must be excluded so their blended return-air is not mistaken for a single space.
+  // This function is only called for rows with category === 'ahu'.
+  function _isSingleZoneAhu(ahuRow) {
+    var _p = emGetNormalizedPoints(ahuRow);
+    return (
+      (_p['zoneCoolSetpoint'] !== undefined && _p['zoneCoolSetpoint'] !== '') ||
+      (_p['zoneHtgSetpoint'] !== undefined && _p['zoneHtgSetpoint'] !== '') ||
+      (_p['zoneAirTemp'] !== undefined && _p['zoneAirTemp'] !== '')
+    );
+  }
+
   // Second pass: fill in zone stats for rows that belong to zone-category equipment.
+  // Also includes single-zone AHUs (RTUs, split systems, FCU-style AHUs) per the gate above.
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
-    if (!zoneCategories[row.category]) continue;
+    var _rowIsSingleZoneAhu = false;
+    if (!zoneCategories[row.category]) {
+      // Not a traditional zone category — check if it is a single-zone AHU.
+      if (row.category !== 'ahu') continue;
+      _rowIsSingleZoneAhu = _isSingleZoneAhu(row);
+      if (!_rowIsSingleZoneAhu) continue; // true multizone AHU — skip
+    }
 
     var bldg = row.building || '(No Building)';
     // Entry already exists from first pass; no need to create.
     // Fix 58cf0031: route through normalized-point engine so raw BAS names are resolved.
     var pts = emGetNormalizedPoints(row);
+
+    // Return-air fallback (Quick Win 2): on a single-zone unit the return air IS the space air.
+    // When a dedicated zone sensor is absent, promote return-air values to zone columns so the
+    // unit contributes to zone stats.  GUARDRAIL: only applied to single-zone AHUs — never to
+    // traditional zone categories (VAV, FPB, etc.) or true multizone AHUs.
+    if (_rowIsSingleZoneAhu) {
+      if (
+        (pts['zoneAirTemp'] === undefined || pts['zoneAirTemp'] === '') &&
+        pts['returnAirTemp'] !== undefined &&
+        pts['returnAirTemp'] !== ''
+      ) {
+        pts = Object.assign({}, pts);
+        pts['zoneAirTemp'] = pts['returnAirTemp'];
+      }
+      if (
+        (pts['zoneCO2'] === undefined || pts['zoneCO2'] === '') &&
+        pts['returnAirCO2'] !== undefined &&
+        pts['returnAirCO2'] !== ''
+      ) {
+        pts = Object.assign({}, pts);
+        pts['zoneCO2'] = pts['returnAirCO2'];
+      }
+      if (
+        (pts['zoneRelativeHumidity'] === undefined || pts['zoneRelativeHumidity'] === '') &&
+        pts['returnAirHumidity'] !== undefined &&
+        pts['returnAirHumidity'] !== ''
+      ) {
+        pts = Object.assign({}, pts);
+        pts['zoneRelativeHumidity'] = pts['returnAirHumidity'];
+      }
+    }
+
     var bldgStats = result[bldg];
     bldgStats.totalZones++;
 
@@ -5368,12 +5429,27 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   var pid = window._emActivePid || '';
   var allRows = data.rows || [];
   var zoneCategories = { vav: true, fpb: true, ddvav: true, fcu: true };
-  var catLabels = { vav: 'VAV', fpb: 'FPB', ddvav: 'DD-VAV', fcu: 'FCU' };
+  var catLabels = { vav: 'VAV', fpb: 'FPB', ddvav: 'DD-VAV', fcu: 'FCU', ahu: 'AHU/RTU' };
 
-  // Filter: apply current filters first, then restrict to this building's zone equipment
+  // Single-zone AHU gate for detail view (mirrors emComputeBuildingZoneStats):
+  // include an 'ahu' row only if it has zone setpoints or a zone temp (i.e. single-zone unit).
+  function _detailIsSingleZoneAhu(r) {
+    var _p = emGetNormalizedPoints(r);
+    return (
+      (_p['zoneCoolSetpoint'] !== undefined && _p['zoneCoolSetpoint'] !== '') ||
+      (_p['zoneHtgSetpoint'] !== undefined && _p['zoneHtgSetpoint'] !== '') ||
+      (_p['zoneAirTemp'] !== undefined && _p['zoneAirTemp'] !== '')
+    );
+  }
+
+  // Filter: apply current filters first, then restrict to this building's zone equipment.
+  // Includes single-zone AHUs (RTUs, split systems) via the gate above.
   var baseFiltered = emFilterRows(allRows, filters);
   var bldgRows = baseFiltered.filter(function (r) {
-    return r.building === buildingName && zoneCategories[r.category];
+    if (r.building !== buildingName) return false;
+    if (zoneCategories[r.category]) return true;
+    if (r.category === 'ahu') return _detailIsSingleZoneAhu(r);
+    return false;
   });
 
   // Pagination

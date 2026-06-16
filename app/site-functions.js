@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.16.534',
+    date: '2026-06-16',
+    title: 'Equipment Matrix: single-zone RTUs now show zone temps and setpoints',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Equipment Matrix Summary view now includes single-zone rooftop units and air handlers in the zone temperature, heating setpoint, and cooling setpoint columns — buildings with only RTUs (like an 8-RTU office) no longer show N/A for all comfort data.',
+      },
+      {
+        type: 'fix',
+        text: 'When a single-zone unit has no dedicated zone temperature sensor, its return-air temperature is used as a proxy (single-zone return air equals space air). CO2 and humidity fallbacks work the same way.',
+      },
+      {
+        type: 'fix',
+        text: 'True multizone air handlers (supply-air only, no zone setpoints) are correctly excluded so they do not skew building averages.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.16.533',
     date: '2026-06-16',
     title: 'Audit Report polish: gauges, status chips, and overflow fixes',
