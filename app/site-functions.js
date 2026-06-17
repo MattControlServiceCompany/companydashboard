@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.17.541',
+    date: '2026-06-17',
+    title: 'Propane: cost now distributes correctly across months when delivery total is blank',
+    items: [
+      {
+        type: 'fix',
+        text: 'Propane deliveries where the total cost field is blank no longer show $0 cost. The system now falls back to the subtotal, or calculates cost from unit price times gallons, so propane spending distributes correctly across all months in the baseline and savings calculations.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.17.540',
     date: '2026-06-17',
     title: 'Building List import: Kansas Gas Service buildings with two accounts now import correctly',

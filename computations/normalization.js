@@ -252,7 +252,11 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
     const thisDelivery = sorted[i];
     // The gallons from thisDelivery were consumed between prevDelivery date and thisDelivery date
     const gallons = parseFloat(thisDelivery.gallonsDelivered || thisDelivery.kwh) || 0;
-    const cost = parseFloat(thisDelivery.totalCost) || 0;
+    const cost =
+      parseFloat(thisDelivery.totalCost) ||
+      parseFloat(thisDelivery.subtotal) ||
+      (parseFloat(thisDelivery.unitPrice) || 0) * gallons ||
+      0;
     if (gallons <= 0) continue;
 
     const spanStart = _parseISO(prevDelivery.start);
@@ -300,7 +304,7 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
   if (sorted.length >= 1) {
     const d = sorted[0];
     const gal = parseFloat(d.gallonsDelivered || d.kwh) || 0;
-    const cost = parseFloat(d.totalCost) || 0;
+    const cost = parseFloat(d.totalCost) || parseFloat(d.subtotal) || (parseFloat(d.unitPrice) || 0) * gal || 0;
     if (gal > 0) {
       if (sorted.length === 1) {
         const ym = d.start.slice(0, 7);
@@ -364,7 +368,9 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
     const dLast = sorted[sorted.length - 1];
     const dPrev = sorted[sorted.length - 2];
     const galLast = parseFloat(dLast.gallonsDelivered || dLast.kwh) || 0;
-    const costPerGal = galLast > 0 ? (parseFloat(dLast.totalCost) || 0) / galLast : 0;
+    const lastCost =
+      parseFloat(dLast.totalCost) || parseFloat(dLast.subtotal) || (parseFloat(dLast.unitPrice) || 0) * galLast || 0;
+    const costPerGal = galLast > 0 ? lastCost / galLast : 0;
     if (galLast > 0) {
       // Derive gal/HDD rate from the last measured inter-delivery period
       const galSecondLast = parseFloat(dPrev.gallonsDelivered || dPrev.kwh) || 0;
