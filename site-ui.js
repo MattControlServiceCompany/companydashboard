@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.16.536'; // deployed 2026-06-15 (Audit/Quarterly pagination + WYSIWYG PDF fix)
+  var CH_VERSION = 'v2026.06.16.537'; // deployed 2026-06-15 (Audit/Quarterly pagination + WYSIWYG PDF fix)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,29 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+  {
+    v: 'v2026.06.16.537',
+    date: '2026-06-16',
+    title: 'Evergy net-metering bills: generation kWh now captured separately',
+    items: [
+      {
+        type: 'fix',
+        text: 'Evergy parallel-generation (net-metering) bills are now extracted correctly. Consumption is read from the delivery meter only (e.g. 112,252 kWh), not summed with the generation meter — fixing an over-count of ~21,000 kWh per bill.',
+      },
+      {
+        type: 'fix',
+        text: 'The Parallel Generation Credit (the credit on your bill for power sent to the grid, e.g. −10,848) is now captured in the Solar Credit field instead of being misidentified as a Bill Offset.',
+      },
+      {
+        type: 'feature',
+        text: 'A new Generation kWh field records how many kWh were generated and sent back to the grid each billing period — visible in the bill detail for facilities with on-site solar.',
+      },
+      {
+        type: 'fix',
+        text: 'Tax-Exempt Delivery is no longer falsely set on parallel-generation bills where no Tax-Exempt charge appears.',
+      },
+    ],
+  },
     {
       v: 'v2026.06.15.529',
       date: '2026-06-15',

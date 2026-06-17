@@ -2298,26 +2298,43 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
   // Check for Delivered/Received labels near meter table (solar net metering indicator)
-  const _hasSolarLabels =
-    /\bDeliver/i.test(t) &&
-    /\bRece[iv]/i.test(t) &&
-    (() => {
-      // Only flag solar if the labels appear within ~200 chars of the meter table
-      const tableIdx = _meterRows.length ? _meterRows[0].index : t.length;
-      const region = t.slice(Math.max(0, tableIdx - 300), tableIdx + 500);
-      return /\bDeliver/i.test(region) && /\bRece[iv]/i.test(region);
-    })();
+  // Also accept "Net Meter" label (used by Evergy parallel-generation 2LGAEP bills).
+  // "Net Meter" appears on the page continuation note after the table — use a wider
+  // forward window (1200 chars) than the Delivered/Received check (600 chars).
+  const _hasSolarLabels = (() => {
+    const tableIdx = _meterRows.length ? _meterRows[0].index : t.length;
+    const region = t.slice(Math.max(0, tableIdx - 300), tableIdx + 600);
+    const regionWide = t.slice(Math.max(0, tableIdx - 300), tableIdx + 1200);
+    // Classic Delivered/Received format (labels appear in column headers near the table)
+    if (/\bDeliver/i.test(t) && /\bRece[iv]/i.test(t) && /\bDeliver/i.test(region) && /\bRece[iv]/i.test(region))
+      return true;
+    // Evergy parallel-generation: "Net Meter" label on the page following the meter table.
+    // Use (?!ing) to avoid false match on "Net Metering program" (marketing text in standard bills).
+    if (/Net\s+Meter(?!ing)/i.test(regionWide)) return true;
+    return false;
+  })();
   // Combine meter rows into a single effective meter reading
   const meterRow = _meterRows.length ? _meterRows[0] : null;
   const _meterCombined = (() => {
     if (_meterRows.length <= 1) return null; // single row handled by meterRow directly
     const pn = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
     if (_hasSolarLabels) {
-      // Solar net metering: find the Delivered row (typically the larger kWh value)
-      // For now, use the row with more kWh — Delivered consumption > Received generation for most commercial
-      // TODO: when we see real solar bills, refine this with actual Delivered/Received label matching
-      const sorted = [..._meterRows].sort((a, b) => pn(b[8]) - pn(a[8]));
-      return { type: 'solar', rows: _meterRows.length, delivered: sorted[0], received: sorted[1] };
+      // Solar net metering: identify consumption vs generation by KW Used.
+      // The generation meter has KW Used = 0 (no demand charge); consumption meter has KW > 0.
+      // Fall back to sorting by kWh descending if all rows have KW=0.
+      const byKw = _meterRows.filter((r) => pn(r[9]) > 0);
+      const byKwZero = _meterRows.filter((r) => pn(r[9]) === 0);
+      let consumptionRow, generationRow;
+      if (byKw.length >= 1 && byKwZero.length >= 1) {
+        consumptionRow = byKw[0];
+        generationRow = byKwZero[0];
+      } else {
+        // Fallback: larger kWh = consumption
+        const sorted = [..._meterRows].sort((a, b) => pn(b[8]) - pn(a[8]));
+        consumptionRow = sorted[0];
+        generationRow = sorted[1];
+      }
+      return { type: 'solar', rows: _meterRows.length, delivered: consumptionRow, received: generationRow };
     }
     // Meter change: sum kWh and RKVA, take max KW, use overall start/end dates
     const first = _meterRows[0],
@@ -2591,18 +2608,29 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (!_taxExemptParts.length) return null;
     return _taxExemptParts.reduce((a, b) => a + b, 0).toFixed(2);
   })();
+  // Parallel Generation Credit (Evergy 2LGAEP solar bills) — must extract BEFORE billOffset
+  // so the fallback scan does not misidentify this credit as a Bill Offset.
+  const parallelGenCredit = (() => {
+    // Label and negative amount may be on the same line or split across two lines
+    const m1 = t.match(/Parallel\s+Generation\s+Credit[^\n]*?-\$?([\d,]+\.\d{2})/i);
+    if (m1) return '-' + m1[1].replace(/,/g, '');
+    const m2 = t.match(/Parallel\s+Generation\s+Credit[^\n]*\n\s*-?\$?([\d,]+\.\d{2})/i);
+    if (m2) return '-' + m2[1].replace(/,/g, '');
+    return null;
+  })();
   // Bill offset / credit: match "Bill offset" or any line with a negative dollar amount before Subtotal
   const billOffset = (() => {
     const m1 = t.match(/Bill\s+[0O]ff\w*[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im);
     if (m1) return m1[1].replace(/\$/g, '');
     // OCR fallback: find negative dollar amount on a standalone line near Subtotal
+    // Guard: skip lines that contain "Parallel" — those are captured as parallelGenCredit above
     const lines = t.split('\n');
     for (let i = 0; i < lines.length; i++) {
       if (/Subtotal/i.test(lines[i])) {
         // Check up to 3 lines before Subtotal for a negative amount
         for (let j = Math.max(0, i - 3); j < i; j++) {
           const neg = lines[j].match(/-\$?([\d,]+\.\d{2})/);
-          if (neg && !/Payment|Previously|Late/i.test(lines[j])) return '-' + neg[1].replace(/,/g, '');
+          if (neg && !/Payment|Previously|Late|Parallel/i.test(lines[j])) return '-' + neg[1].replace(/,/g, '');
         }
         break;
       }
@@ -2857,6 +2885,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     RkVACharge: rkvaChg,
     TaxExemptDelivery: taxExempt,
     BillOffset: billOffset,
+    SolarCredit: parallelGenCredit,
     FranchiseFee: franchise,
     TotalCurrentCharges: totalDue,
     MeterNumber: null,
@@ -2893,6 +2922,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     } else if (_meterCombined.type === 'solar') {
       result._meterInfo.note = 'Solar net meter: using Delivered row only for consumption';
+      // Capture generation kWh from the generation (KW=0) meter row
+      const _genRow = _meterCombined.received;
+      if (_genRow) {
+        const _genKwh = parseFloat((_genRow[8] || '').replace(/,/g, ''));
+        if (_genKwh > 0) result.GenerationKwh = _genKwh.toFixed(4);
+      }
     }
   }
 
@@ -3077,10 +3112,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // bill where the TaxExempt line was OCR-garbled (e.g. Louis Elementary
   // Oct 2025 where "Tax ‘exempt" broke the regex) lost the $790.51
   // value even though BillOffset captured "-$790.51".
+  // Guard: do NOT apply mirror rule on parallel-generation bills (SolarCredit present).
+  // On those bills the credit is a Parallel Generation Credit, NOT a TaxExemptDelivery mirror.
   const _pfTE = (v) => (v ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
   const _teVal = _pfTE(result.TaxExemptDelivery);
   const _boVal = _pfTE(result.BillOffset);
-  if (_teVal && !_boVal) {
+  if (result.SolarCredit) {
+    // Parallel-gen bill: suppress mirror derivation entirely
+  } else if (_teVal && !_boVal) {
     result.BillOffset = '-' + Math.abs(_teVal).toFixed(2);
   } else if (_boVal && !_teVal) {
     // BillOffset is negative; TaxExemptDelivery is the positive mirror.

@@ -3943,6 +3943,7 @@ async function confirmAutoAssign() {
       franchiseFee1: bill.FranchiseFee1 || '',
       franchiseFee2: bill.FranchiseFee2 || '',
       solarCredit: bill.SolarCredit || '',
+      generationKwh: bill.GenerationKwh || '',
       Meter1_ReadStart: bill.Meter1_ReadStart || '',
       Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
       Meter1_StartRead: bill.Meter1_StartRead || '',
@@ -4355,6 +4356,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     franchiseFee1: extracted.FranchiseFee1 || '',
     franchiseFee2: extracted.FranchiseFee2 || '',
     solarCredit: extracted.SolarCredit || '',
+    generationKwh: extracted.GenerationKwh || '',
     totalKwhRate: (() => {
       const _kwh = pf(extracted.kWhConsumed);
       const _chg = pf(kwhCost);
@@ -10993,6 +10995,7 @@ function confirmAssignBill() {
     renewableCharge: bill.RenewableCharge || '',
     franchiseFee: bill.FranchiseFee || '',
     solarCredit: bill.SolarCredit || '',
+    generationKwh: bill.GenerationKwh || '',
     Meter1_ReadStart: bill.Meter1_ReadStart || '',
     Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
     Meter1_StartRead: bill.Meter1_StartRead || '',
@@ -11704,6 +11707,7 @@ async function _saveSinglePDFBill(extracted, projId) {
     franchiseFee1: extracted.FranchiseFee1 || '',
     franchiseFee2: extracted.FranchiseFee2 || '',
     solarCredit: extracted.SolarCredit || '',
+    generationKwh: extracted.GenerationKwh || '',
     totalKwhRate: (() => {
       const _kwh = pf(extracted.kWhConsumed);
       const _chg = pf(kwhCost);
