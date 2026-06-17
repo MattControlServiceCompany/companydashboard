@@ -364,7 +364,11 @@ var EM_POINT_MAP = [
       /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output|bno)\b/i,
     ],
     types: ['AI', 'SP'],
-    cats: ['ahu', 'vav', 'fpb', 'other'],
+    // Phase 1 (item 21eb08f8): added 'heater', 'furnace', 'doas' — v532 reclassified ~1,227 rows
+    // from 'other' into these categories; without them in cats the category gate drops legitimate
+    // supply-air-temp readings (e.g. a furnace's "Supply Air Temperature"). negativePatterns
+    // already guard alarm/setpoint/limit variants so no new false matches are introduced.
+    cats: ['ahu', 'vav', 'fpb', 'other', 'heater', 'furnace', 'doas'],
   },
   {
     col: 'returnAirTemp',
@@ -377,7 +381,8 @@ var EM_POINT_MAP = [
       /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output)\b/i,
     ],
     types: ['AI'],
-    cats: ['ahu', 'other'],
+    // Phase 1 (item 21eb08f8): added 'heater', 'furnace', 'doas' — same rationale as supplyAirTemp.
+    cats: ['ahu', 'other', 'heater', 'furnace', 'doas'],
   },
   {
     col: 'mixedAirTemp',
@@ -393,7 +398,9 @@ var EM_POINT_MAP = [
       /\b(pid|bacnet\s*pid|control\s+selection|diagnostic|sensor\s+fail(ure)?|enable|lockout|output)\b/i,
     ],
     types: ['AI'],
-    cats: ['ahu'],
+    // Phase 1 (item 21eb08f8): added 'furnace', 'doas' — mixed air is an AHU/furnace/DOAS concept.
+    // heater intentionally excluded: a standalone heater does not have a mixed-air plenum.
+    cats: ['ahu', 'furnace', 'doas'],
   },
   {
     col: 'outdoorAirTemp',

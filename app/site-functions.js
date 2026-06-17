@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.17.543',
+    date: '2026-06-17',
+    title: 'Equipment Matrix: furnace, heater, and DOAS air-temperature points now appear in the matrix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Supply air temperature, return air temperature, and mixed air temperature readings from furnace, heater, and DOAS units were silently dropped from the Equipment Matrix after those equipment types were reclassified in a recent update. They now map correctly -- open any project in the Equipment Matrix tab and look for the Supply Air Temp, Return Air Temp, and Mixed Air Temp columns on furnace and DOAS rows.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.17.542',
     date: '2026-06-17',
     title: 'Utility bills: water vs. sewer usage mismatches now flagged as warnings',
