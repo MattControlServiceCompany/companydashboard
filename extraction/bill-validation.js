@@ -90,9 +90,23 @@ function dismissBillFlag(projId, bldgId, meterId, billId, flagId, note) {
   const meter = (bldg.meters || []).find((m) => m.id === meterId);
   if (!meter) return;
   const bill = (meter.bills || []).find((b) => b.id === billId);
-  if (!bill || !Array.isArray(bill._flags)) return;
-  const flag = bill._flags.find((f) => f.id === flagId);
-  if (!flag) return;
+  if (!bill) return;
+  // Update 94abf6d6: live-computed flags are no longer pre-written to _flags, so the
+  // entry may not exist yet when the user first dismisses a flag. Create it if absent.
+  if (!Array.isArray(bill._flags)) bill._flags = [];
+  let flag = bill._flags.find((f) => f.id === flagId);
+  if (!flag) {
+    // First-time dismiss: create a minimal persistent record just to store the dismissal.
+    flag = {
+      id: flagId,
+      label: '',
+      severity: 'warning',
+      firedAt: new Date().toISOString().slice(0, 10),
+      dismissed: false,
+      dismissNote: '',
+    };
+    bill._flags.push(flag);
+  }
   flag.dismissed = true;
   flag.dismissNote = note || '';
   if (typeof saveUtilityData === 'function') saveUtilityData();

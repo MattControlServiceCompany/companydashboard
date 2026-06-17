@@ -3172,6 +3172,7 @@ function renderProjSavedBills(projId) {
         ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" onclick="autoAssignAllSavedBills(${JSON.stringify(projId)})">Auto-Assign All (${unassignedCount})</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="sv('view-pdf');showToast('Go to PDF/OCR page to extract new bills')">+ Extract PDF Bill</button>
         ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteAllSavedBills(${JSON.stringify(projId)})">Delete All (${unassignedCount})</button>` : ''}
+        <button class="btn btn-ghost btn-sm" style="color:var(--text2);border-color:var(--border)" onclick="cleanupOrphanedBills(${JSON.stringify(projId)})" title="Find saved bills assigned to deleted projects and unassign them">Clean up orphaned</button>
       </div>
     </div>
     ${contentHtml}`;
@@ -3215,6 +3216,28 @@ function deleteAllSavedBills(projId) {
   bills = bills.filter((b) => !unassignedIds.has(b.id));
   sset('en_pdf_bills', bills);
   showToast(unassigned.length + ' bills deleted ✓');
+  renderProjSavedBills(projId);
+}
+
+// Scan en_pdf_bills for records whose projId references a project that no longer exists.
+// Unassigns (sets projId = null) those records — NEVER deletes them.
+// This is a manual recovery tool for orphans that slipped through before the prevention fix.
+function cleanupOrphanedBills(projId) {
+  const bills = sget('en_pdf_bills', []) || [];
+  const existingProjIds = new Set((sget('en_projects', []) || []).map((p) => p.id));
+  let count = 0;
+  bills.forEach((b) => {
+    if (b.projId != null && !existingProjIds.has(b.projId)) {
+      b.projId = null;
+      count++;
+    }
+  });
+  if (count > 0) {
+    sset('en_pdf_bills', bills);
+    showToast('Unassigned ' + count + ' orphaned bill' + (count !== 1 ? 's' : ''));
+  } else {
+    showToast('No orphaned bills found');
+  }
   renderProjSavedBills(projId);
 }
 

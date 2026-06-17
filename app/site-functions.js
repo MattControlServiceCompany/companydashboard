@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.17.544',
+    date: '2026-06-17',
+    title: 'Utility bills: orphaned-bill cleanup and live-recompute warnings',
+    items: [
+      {
+        type: 'feature',
+        text: 'A new "Clean up orphaned" button appears in the Saved Bills header bar. Clicking it finds any saved bills whose assigned project no longer exists and unassigns them — no data is deleted, bills are just returned to the unassigned pool so they can be re-imported or re-assigned.',
+      },
+      {
+        type: 'fix',
+        text: 'Bill warning flags (amber dots) in the Utility Data tab now reflect the current data every time the tab renders, not the state when the bill was last saved. Stale warnings that no longer apply disappear automatically; new warnings appear without requiring a re-save.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.17.543',
     date: '2026-06-17',
     title: 'Equipment Matrix: furnace, heater, and DOAS air-temperature points now appear in the matrix',

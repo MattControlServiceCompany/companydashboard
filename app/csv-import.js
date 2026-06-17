@@ -765,6 +765,16 @@ async function deleteBillRow(mid, rowId) {
   }
   m.bills = m.bills.filter((r) => r.id !== rowId);
   saveUtilityData();
+  // If the deleted meter-bill was linked to a saved-bill source record, clear its projId
+  // so it doesn't become an orphan (invisible to all UI filters and unreachable by any delete path).
+  if (_delRow && _delRow.pdfBillId) {
+    const _pdfBills = sget('en_pdf_bills', []) || [];
+    const _srcRec = _pdfBills.find((b) => b.id === _delRow.pdfBillId);
+    if (_srcRec && _srcRec.projId != null) {
+      _srcRec.projId = null;
+      sset('en_pdf_bills', _pdfBills);
+    }
+  }
   // Immediately remove the row from the visible table so the UI updates instantly
   const tbody = document.getElementById('billsBodyTbl');
   if (tbody) {

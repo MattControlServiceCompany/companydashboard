@@ -693,13 +693,32 @@ function renderUDProjList() {
                   ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} baseline meters have baselines set">⚠ ${mWithBl}/${mCount} BL</span>`
                   : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
               : '';
-          // Count active (non-dismissed) flags across all meters → bills in this building
+          // Count active (non-dismissed) flags across all meters → bills in this building.
+          // Update 94abf6d6: use live _analyzeMeterBills result; consult _flags only for
+          // dismissed IDs and cross-meter flags so stale stored flags never inflate the count.
           const _bFlagCount = _allMeters.reduce((sum, meter) => {
+            const _mBills = meter.bills || [];
+            const _liveMeterFlags =
+              typeof _analyzeMeterBills === 'function' && _mBills.length >= 4
+                ? _analyzeMeterBills(
+                    _mBills.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start)),
+                    meter,
+                  )
+                : {};
             return (
               sum +
-              (meter.bills || []).reduce((s, bill) => {
-                if (!Array.isArray(bill._flags)) return s;
-                return s + bill._flags.filter((f) => !f.dismissed).length;
+              _mBills.reduce((s, bill) => {
+                const _dismissed = new Set(
+                  Array.isArray(bill._flags) ? bill._flags.filter((f) => f.dismissed).map((f) => f.id) : [],
+                );
+                const liveCount = (_liveMeterFlags[bill.id] || []).filter((f) => {
+                  const fId = (f.field || 'unknown') + '_' + (f.level || 'warn');
+                  return !_dismissed.has(fId);
+                }).length;
+                const crossMeterCount = Array.isArray(bill._flags)
+                  ? bill._flags.filter((f) => f.id === 'waterSewerParity_warn' && !f.dismissed).length
+                  : 0;
+                return s + liveCount + crossMeterCount;
               }, 0)
             );
           }, 0);
@@ -1782,10 +1801,29 @@ function renderUDDetail(targetWrap) {
       .map((m) => {
         const active = m.id === _curMid;
         const bcount = (m.bills || []).length;
-        // Count active (non-dismissed) flags across all bills on this meter
-        const _mFlagCount = (m.bills || []).reduce((sum, bill) => {
-          if (!Array.isArray(bill._flags)) return sum;
-          return sum + bill._flags.filter((f) => !f.dismissed).length;
+        // Count active (non-dismissed) flags across all bills on this meter.
+        // Update 94abf6d6: live _analyzeMeterBills result; _flags only for dismissed IDs
+        // and cross-meter flags (waterSewerParity_warn).
+        const _mBillsList = m.bills || [];
+        const _mLiveFlags =
+          typeof _analyzeMeterBills === 'function' && _mBillsList.length >= 4
+            ? _analyzeMeterBills(
+                _mBillsList.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start)),
+                m,
+              )
+            : {};
+        const _mFlagCount = _mBillsList.reduce((sum, bill) => {
+          const _dismissed = new Set(
+            Array.isArray(bill._flags) ? bill._flags.filter((f) => f.dismissed).map((f) => f.id) : [],
+          );
+          const liveCount = (_mLiveFlags[bill.id] || []).filter((f) => {
+            const fId = (f.field || 'unknown') + '_' + (f.level || 'warn');
+            return !_dismissed.has(fId);
+          }).length;
+          const crossMeterCount = Array.isArray(bill._flags)
+            ? bill._flags.filter((f) => f.id === 'waterSewerParity_warn' && !f.dismissed).length
+            : 0;
+          return sum + liveCount + crossMeterCount;
         }, 0);
         const _pClsMap = {
           Electric: ' elec-pill',
@@ -2673,20 +2711,40 @@ function renderBillsPane(pane, m, bills, incl) {
         tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapMonths > 1 ? '~' + gapMonths + ' months (' : ''}${gapDays} day${gapDays !== 1 ? 's' : ''}${gapMonths > 1 ? ')' : ''} missing between ${fmtDate(gapEarlier)} and ${fmtDate(gapLater)}${_emptyRowNote}</div></td></tr>`;
       }
     }
-    // Prefer persisted _flags on the bill over transient re-computed flags.
-    // Persisted _flags come from runBillValidation() called at save time.
-    // Fall back to transient billFlags (from _analyzeMeterBills) for bills
-    // saved before this feature was added.
-    const _persistedFlags = Array.isArray(row._flags) ? row._flags.filter((f) => !f.dismissed) : null;
-    const flags =
-      _persistedFlags !== null
-        ? _persistedFlags.map((f) => ({
-            field: (f.id || '').split('_').slice(0, -1).join('_') || f.id,
-            msg: f.label,
-            level: f.severity === 'error' ? 'error' : 'warn',
-            _persistFlag: f,
-          }))
-        : billFlags[row.id] || [];
+    // Live-compute wins (Update 94abf6d6): always use freshly-computed billFlags
+    // from _analyzeMeterBills as the display source of truth.
+    // bill._flags is consulted ONLY to read dismissed flag IDs so user dismissals
+    // survive dataset changes without showing stale flags.
+    // Cross-meter flags (waterSewerParity_warn) are written to bill._flags by
+    // _analyzeWaterSewerParity / runBuildingValidation and are appended separately
+    // since _analyzeMeterBills does not produce them.
+    const liveFlagsRaw = billFlags[row.id] || [];
+    const _dismissedIds = new Set(
+      Array.isArray(row._flags) ? row._flags.filter((f) => f.dismissed).map((f) => f.id) : [],
+    );
+    const CROSS_METER_FLAG_IDS = ['waterSewerParity_warn'];
+    const _crossMeterFlags = Array.isArray(row._flags)
+      ? row._flags.filter((f) => CROSS_METER_FLAG_IDS.includes(f.id) && !f.dismissed)
+      : [];
+    const flags = [
+      ...liveFlagsRaw
+        .filter((f) => {
+          const fId = (f.field || 'unknown') + '_' + (f.level || 'warn');
+          return !_dismissedIds.has(fId);
+        })
+        .map((f) => ({
+          field: f.field,
+          msg: f.msg,
+          level: f.level,
+          _persistFlag: { id: (f.field || 'unknown') + '_' + (f.level || 'warn') },
+        })),
+      ..._crossMeterFlags.map((f) => ({
+        field: (f.id || '').split('_').slice(0, -1).join('_') || f.id,
+        msg: f.label,
+        level: f.severity === 'error' ? 'error' : 'warn',
+        _persistFlag: f,
+      })),
+    ];
     if (flags.length) flagCount++;
     let rowHtml = renderBillRow(row, m, incl, bills, cols, idx + 1);
     // Meter change and charge part indicators (icons only — onclick stays as showBillSplitPanel from renderBillRow)

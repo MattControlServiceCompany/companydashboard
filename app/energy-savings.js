@@ -1388,6 +1388,18 @@ function autoSaveNotes(id, valOverride) {
 }
 async function deleteProj(id) {
   if (!(await confirmAsync('Delete this project?'))) return;
+  // Before removing the project, unassign any saved bills that reference it.
+  // This prevents orphaned source records (projId set to a non-existent project)
+  // that become invisible to all UI filters and unreachable by any delete path.
+  const _projBills = sget('en_pdf_bills', []) || [];
+  let _billsChanged = false;
+  _projBills.forEach((b) => {
+    if (b.projId === id) {
+      b.projId = null;
+      _billsChanged = true;
+    }
+  });
+  if (_billsChanged) sset('en_pdf_bills', _projBills);
   projects = projects.filter((p) => p.id !== id);
   sset('en_projects', projects);
   renderProjTable();
