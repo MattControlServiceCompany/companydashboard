@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.17.540',
+    date: '2026-06-17',
+    title: 'Building List import: Kansas Gas Service buildings with two accounts now import correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Buildings with two KGS gas accounts (such as Collins House at Baker University, which has accounts at two service addresses) now import as two separate meters instead of being skipped or merged — the slash-separated account and meter numbers in the Building List are split automatically.',
+      },
+      {
+        type: 'feature',
+        text: 'The Building List import now reads KGS Service Address, Account #, and Meter # columns from the spreadsheet and creates a gas meter for each account found, with the service address stored as an address alias so future bill imports route to the right meter.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.16.539',
     date: '2026-06-16',
     title: 'Saved Bills: grouped by account/meter with deduped, date-sorted timelines',

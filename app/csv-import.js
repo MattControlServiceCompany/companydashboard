@@ -3932,7 +3932,14 @@ function handleBldgImportFile(input) {
         // Skip the header row (index 0)
         for (var i = 1; i < lines.length; i++) {
           var cols = splitCsvLine(lines[i]);
-          rows.push([cols[0] || '', cols[1] || '', cols[2] || '']);
+          rows.push([
+            cols[0] || '',
+            cols[1] || '',
+            cols[2] || '',
+            cols[5] !== undefined ? cols[5] : '', // F: KGS Service Address
+            cols[6] !== undefined ? cols[6] : '', // G: KGS Account #
+            cols[7] !== undefined ? cols[7] : '', // H: KGS Meter #
+          ]);
         }
       } else {
         // Excel path — use SheetJS
@@ -3954,7 +3961,14 @@ function handleBldgImportFile(input) {
           var r = arr[j];
           // Skip fully blank rows
           if (!r[0] && !r[1] && !r[2]) continue;
-          rows.push([r[0] || '', r[1] || '', r[2] || '']);
+          rows.push([
+            r[0] || '',
+            r[1] || '',
+            r[2] || '',
+            r[5] !== undefined ? String(r[5]) : '', // F: KGS Service Address
+            r[6] !== undefined ? String(r[6]) : '', // G: KGS Account #
+            r[7] !== undefined ? String(r[7]) : '', // H: KGS Meter #
+          ]);
         }
       }
 
@@ -3974,7 +3988,14 @@ function handleBldgImportFile(input) {
           // Extract ZIP from end of address
           var zipMatch = rawAddr.match(/\d{5}(?:-\d{4})?$/);
           var zip = zipMatch ? zipMatch[0] : '';
-          return { name: rawName, sqft: sqft, addr: rawAddr, zip: zip, _checked: true };
+          var kgsSvcAddr = String(r[3] || '').trim();
+          var kgsAcct = String(r[4] || '').trim();
+          var kgsMeter = String(r[5] || '').trim();
+          var obj = { name: rawName, sqft: sqft, addr: rawAddr, zip: zip, _checked: true };
+          if (kgsAcct) obj.kgsAcct = kgsAcct;
+          if (kgsMeter) obj.kgsMeter = kgsMeter;
+          if (kgsSvcAddr) obj.kgsSvcAddr = kgsSvcAddr;
+          return obj;
         })
         .filter(function (r) {
           return r.name.length > 0;
@@ -4088,7 +4109,7 @@ function importBuildingList() {
   var now = Date.now();
   selected.forEach(function (r, i) {
     proj.buildings = proj.buildings || [];
-    proj.buildings.push({
+    var bldg = {
       id: 'b' + (now + i),
       name: r.name,
       addr: r.addr,
@@ -4096,7 +4117,38 @@ function importBuildingList() {
       zip: r.zip || '',
       addrAliases: [],
       meters: [],
-    });
+    };
+
+    // KGS meter creation: split slash-separated account/meter pairs into separate meters
+    if (r.kgsAcct) {
+      var accts = r.kgsAcct
+        .split('/')
+        .map(function (s) {
+          return s.trim();
+        })
+        .filter(Boolean);
+      var meterNums = r.kgsMeter
+        ? r.kgsMeter.split('/').map(function (s) {
+            return s.trim();
+          })
+        : [];
+      accts.forEach(function (acct, mi) {
+        bldg.meters.push({
+          id: 'm' + (now + i) + '_' + mi,
+          commodity: 'Gas',
+          provider: 'Kansas Gas Service',
+          account: acct,
+          meter: meterNums[mi] ? meterNums[mi].trim() : '',
+          bills: [],
+        });
+      });
+      // Push KGS service address as alias so address-based bill routing works
+      if (r.kgsSvcAddr && r.kgsSvcAddr !== r.addr) {
+        bldg.addrAliases.push(r.kgsSvcAddr);
+      }
+    }
+
+    proj.buildings.push(bldg);
   });
 
   saveUtilityData();
