@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.17.544'; // deployed 2026-06-17 (orphan saved-bill cleanup + live-recompute bill warnings)
+  var CH_VERSION = 'v2026.06.17.545'; // deployed 2026-06-17 (Equipment Matrix column resize: correct column, no sort-trigger, persists, visible handle; Raw + Audit View)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.17.545',
+      date: '2026-06-17',
+      title: 'Equipment Matrix: column resizing fixed',
+      items: [
+        {
+          type: 'fix',
+          text: 'Dragging the resize handle on any Equipment Matrix column now resizes the correct column, does not accidentally trigger a sort, persists your column widths when you return to the page, and shows a visible grab handle at the right edge of each column header — works in both Raw View and Audit View.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.17.544',
       date: '2026-06-17',

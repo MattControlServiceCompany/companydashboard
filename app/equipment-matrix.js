@@ -2895,8 +2895,10 @@ function emInjectMatrixCSS() {
     '.em-table-wrap thead th.em-frozen { z-index: 12; }',
     // Non-frozen headers stay at z-index 11 (above body, horizontally scrollable)
     '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 11; }',
-    // Resize cursor hint — applied to th when hovering near right edge (set via JS)
-    '.em-table-wrap th.em-col-resizing { cursor: col-resize; user-select: none; }',
+    // Handle-div resize pattern — th must be relative so the handle can position absolutely
+    '.em-table-wrap th { position: relative; }',
+    '.em-col-resize-handle { position:absolute; right:0; top:0; width:6px; height:100%; cursor:col-resize; z-index:1; }',
+    '.em-col-resize-handle:hover, .em-col-resize-handle.dragging { background: var(--accent); opacity:0.4; }',
     // Footer frozen cells keep the table-body background, not the header background
     '.em-table-wrap tfoot td.em-frozen { background: var(--s1) !important; }',
   ].join('\n');
@@ -4653,21 +4655,29 @@ function emRenderTable(data, filters) {
       color !== 'transparent' ? 'border-top:3px solid ' + color + ';' : 'border-top:3px solid transparent;';
     var isSorted = _emSortCol === ci;
     var sortInd = isSorted ? (_emSortDir === 1 ? ' (asc)' : ' (desc)') : '';
+    var colW = _emColWidths[ci] !== undefined ? _emColWidths[ci] : d.width;
     theadCells +=
       '<th data-ci="' +
       ci +
-      '" onclick="emHandleSort(' +
-      ci +
-      ')" ' +
+      '" ' +
       'style="position:sticky;top:0;background:var(--s2);' +
       borderTop +
-      'font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
+      'font-weight:600;color:var(--text2);white-space:nowrap;' +
       'min-width:' +
-      d.width +
+      colW +
+      'px;width:' +
+      colW +
       'px;text-align:left;' +
       'border-bottom:1px solid var(--border);border-right:1px solid var(--border)">' +
+      '<span style="cursor:pointer;" onclick="emHandleSort(' +
+      ci +
+      ')">' +
       d.label +
       sortInd +
+      '</span>' +
+      '<div class="em-col-resize-handle" data-ci="' +
+      ci +
+      '"></div>' +
       '</th>';
   }
 
@@ -5965,22 +5975,30 @@ function emRenderAuditTable(data, filters) {
       color !== 'transparent' ? 'border-top:3px solid ' + color + ';' : 'border-top:3px solid transparent;';
     var isSorted = _emSortCol === ci;
     var sortInd = isSorted ? (_emSortDir === 1 ? ' (asc)' : ' (desc)') : '';
+    var colW = _emColWidths[ci] !== undefined ? _emColWidths[ci] : d.width;
     theadCells +=
       '<th data-ci="' +
       ci +
-      '" onclick="emHandleSort(' +
-      ci +
-      ')" ' +
+      '" ' +
       (d.title ? 'title="' + emHtmlEsc(d.title) + '" ' : '') +
       'style="position:sticky;top:0;background:var(--s2);' +
       borderTop +
-      'font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
+      'font-weight:600;color:var(--text2);white-space:nowrap;' +
       'min-width:' +
-      d.width +
+      colW +
+      'px;width:' +
+      colW +
       'px;text-align:left;' +
       'border-bottom:1px solid var(--border);border-right:1px solid var(--border)">' +
+      '<span style="cursor:pointer;" onclick="emHandleSort(' +
+      ci +
+      ')">' +
       d.label +
       sortInd +
+      '</span>' +
+      '<div class="em-col-resize-handle" data-ci="' +
+      ci +
+      '"></div>' +
       '</th>';
   }
 
@@ -6860,84 +6878,59 @@ function emMarkSpOverrideIntentional(pid, rowId, checkKey) {
 }
 
 /**
- * emAttachColResizeHandler — Enables drag-to-resize on column header right edges.
- * Detects mousedown within 5px of a th right border, then updates column width on drag.
- * After resize, calls emUpdateStickyOffsets() to recompute frozen column positions.
- * Detects mousedown within 5px of a th right border, then updates column width on drag.
- * After resize, calls emUpdateStickyOffsets() to recompute frozen column positions.
+ * emAttachColResizeHandler — Handle-div resize pattern (mirrors bas-alarms.js / utility-data.js).
+ * Each TH contains a .em-col-resize-handle div. mousedown on that div starts a drag;
+ * mousemove/mouseup on document finishes it. Widths are written to _emColWidths so they
+ * survive re-renders within the session. sort onclick lives on a <span> inside the TH,
+ * so handle clicks never reach the sort handler.
  */
 function emAttachColResizeHandler(wrap) {
   if (!wrap) return;
-  var thead = wrap.querySelector('thead');
-  if (!thead) return;
 
-  var _resizing = false;
-  var _resizeTh = null;
-  var _resizeStartX = 0;
-  var _resizeStartW = 0;
-
-  function onMouseMove(e) {
-    if (!_resizing) {
-      // Change cursor when near right edge of a th
-      var th = e.target.closest ? e.target.closest('th') : null;
-      if (th && th.closest('thead')) {
-        var rect = th.getBoundingClientRect();
-        if (rect.right - e.clientX <= 5) {
-          th.classList.add('em-col-resizing');
-        } else {
-          th.classList.remove('em-col-resizing');
-        }
-      }
-      return;
-    }
-    // Actively resizing
-    var dx = e.clientX - _resizeStartX;
-    var newW = Math.max(40, _resizeStartW + dx);
-    _resizeTh.style.minWidth = newW + 'px';
-    _resizeTh.style.width = newW + 'px';
-  }
-
-  function onMouseDown(e) {
-    var th = e.target.closest ? e.target.closest('th') : null;
-    if (!th || !th.closest('thead')) return;
-    var rect = th.getBoundingClientRect();
-    if (rect.right - e.clientX > 5) return; // not near right edge
-    e.preventDefault();
-    _resizing = true;
-    _resizeTh = th;
-    _resizeStartX = e.clientX;
-    _resizeStartW = th.offsetWidth;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }
-
-  function onMouseUp() {
-    if (_resizing) {
-      _resizing = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      // Recalculate frozen column offsets after resize
-      emUpdateStickyOffsets();
-    }
-  }
-
-  // Clean up any document-level handlers from a previous render to prevent accumulation
+  // Clean up document-level handlers from a previous render
   if (wrap._emDocMoveHandler) document.removeEventListener('mousemove', wrap._emDocMoveHandler);
   if (wrap._emDocUpHandler) document.removeEventListener('mouseup', wrap._emDocUpHandler);
 
-  // Remove any previous thead-level handlers by cloning (safe — no inline events on thead itself)
-  var newThead = thead.cloneNode(true);
-  thead.parentNode.replaceChild(newThead, thead);
+  var _resizing = null; // { handle, targetTh, startX, startW }
 
-  // Re-query wrap since we replaced thead
-  var activeThead = wrap.querySelector('thead');
-  activeThead.addEventListener('mousemove', onMouseMove);
-  activeThead.addEventListener('mousedown', onMouseDown);
+  function onMouseDown(e) {
+    var h = e.target.closest ? e.target.closest('.em-col-resize-handle') : null;
+    if (!h) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var targetTh = h.closest('th');
+    if (!targetTh) return;
+    h.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    _resizing = { handle: h, targetTh: targetTh, startX: e.clientX, startW: targetTh.offsetWidth };
+  }
+
+  function onMouseMove(e) {
+    if (!_resizing) return;
+    var newW = Math.max(40, _resizing.startW + (e.clientX - _resizing.startX));
+    _resizing.targetTh.style.minWidth = newW + 'px';
+    _resizing.targetTh.style.width = newW + 'px';
+  }
+
+  function onMouseUp() {
+    if (!_resizing) return;
+    _resizing.handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    // Write width back to module-level store so re-renders preserve it
+    var ci = parseInt(_resizing.targetTh.dataset.ci, 10);
+    if (!isNaN(ci)) {
+      _emColWidths[ci] = _resizing.targetTh.offsetWidth;
+    }
+    emUpdateStickyOffsets();
+    _resizing = null;
+  }
+
+  wrap.addEventListener('mousedown', onMouseDown);
 
   // Store named references so we can remove them on next render
-  wrap._emDocMoveHandler = function (e) {
-    if (_resizing) onMouseMove(e);
-  };
+  wrap._emDocMoveHandler = onMouseMove;
   wrap._emDocUpHandler = onMouseUp;
   document.addEventListener('mousemove', wrap._emDocMoveHandler);
   document.addEventListener('mouseup', wrap._emDocUpHandler);
