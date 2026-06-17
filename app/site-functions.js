@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.16.536',
+    date: '2026-06-16',
+    title: 'Equipment Matrix Raw View: all columns load without freezing',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Raw View tab now loads all dynamic-point columns without hitting any cap — previously, large datasets could silently truncate columns to stay under a cell budget. Every point in your import now appears.',
+      },
+      {
+        type: 'fix',
+        text: 'Opening the Raw View on a large dataset (hundreds of rows, many dynamic columns) no longer freezes the page. Rows are rendered in small batches so the browser stays responsive, with a loading indicator visible while the table fills in.',
+      },
+      {
+        type: 'fix',
+        text: 'Switching filters or tabs rapidly while the Raw View is still rendering no longer causes stale data to overwrite the current view — each render cancels any prior in-progress render automatically.',
+      },
+      {
+        type: 'change',
+        text: 'Dynamic-column frequency scan (which columns exist across all equipment) is now cached after the first render — repeated Raw View loads are noticeably faster.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.16.535',
     date: '2026-06-16',
     title: 'Baker/KGS gas bills: franchise fee fix and empty-page warning',

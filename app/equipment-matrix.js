@@ -2687,6 +2687,9 @@ function emSaveMatrix(projId, data) {
   // the row object is never served stale from the WeakMap.
   _emPointNameCache = new Map();
   _emPointsComputedCache = new WeakMap();
+  // Invalidate the dynPoint frequency cache — data rows have changed.
+  _emDynPointFreqCache = null;
+  _emDynPointFreqCacheKey = null;
   // sset() returns a Promise that resolves on IDB tx.oncomplete (real commit).
   // Callers that need write durability (e.g. emHandleImport) should await this.
   return sset('en_eqmatrix_' + projId, data);
@@ -2804,6 +2807,14 @@ var _emPointsComputedCache = new WeakMap(); // Milestone 1: keyed on row object;
 var _emPointNameCache = new Map(); // Milestone 1: rawName -> colKey, page-lifetime memoization for emMapPointToColumn
 var _emSearchTimer = null; // Performance: debounce timer for search input
 var _emOpenDrawers = new Set(); // M4: per-equipment "All Points" drawer state, keyed by row.id
+// Performance (Quick Win 3): Dynamic-column frequency scan cache.
+// Keyed by "<pid>|<building>|<type>|<rowCount>" so it auto-invalidates when
+// the filter or dataset changes. Stores { freq: {ptKey: count}, keys: [...sorted] }.
+var _emDynPointFreqCache = null;
+var _emDynPointFreqCacheKey = null;
+// Render-generation counter — incremented on every emRenderTable call so async
+// chunked render batches can detect a stale render and self-cancel.
+var _emRenderGen = 0;
 function emDebouncedSearch() {
   clearTimeout(_emSearchTimer);
   _emSearchTimer = setTimeout(emApplyFilters, 200);
@@ -4210,6 +4221,10 @@ function emComputeFooterAvg(rows, defs) {
   var result = {};
   for (var di = 0; di < defs.length; di++) {
     var def = defs[di];
+    // Skip dynamic BAS point columns — averaging ~500 dyn cols × 2700 rows = ~1.35M
+    // lookups before any DOM write. Dyn-point values are volatile raw BAS values and a
+    // cross-equipment average is not meaningful. Footer shows '—' for these columns.
+    if (def.isDynPoint) continue;
     if (def.type !== 'num' && !def.isLive && !def.isDynPoint) continue;
     var sum = 0,
       count = 0;
@@ -4488,53 +4503,47 @@ function emRenderTable(data, filters) {
   // M4 Part 3: Count frequency of each raw point name across FILTERED rows only.
   // When a building filter is active, only columns present in that building appear.
   // (Audit view emGetAuditColDefs already scopes to filtered rows — mirrors that behavior here.)
-  var dynPointFreq = {};
-  for (var rr = 0; rr < filtered.length; rr++) {
-    var pts = filtered[rr].points || {};
-    for (var ptKey in pts) {
-      if (!existingDefKeys[ptKey]) {
-        dynPointFreq[ptKey] = (dynPointFreq[ptKey] || 0) + 1;
+  //
+  // Quick Win 3: Cache the frequency scan so re-renders with the same filter/row-count
+  // reuse the result instead of re-scanning ~162k iterations every time.
+  // Cache key encodes pid + building filter + type filter + row count so it auto-invalidates
+  // when any of those change. emSaveMatrix() also explicitly clears it on data write.
+  var _dynCacheKey =
+    (window._emActivePid || '') + '|' + (filters.building || '') + '|' + (filters.type || '') + '|' + filtered.length;
+  var dynPointFreq;
+  var allDynKeys;
+  if (_emDynPointFreqCacheKey === _dynCacheKey && _emDynPointFreqCache) {
+    // Cache hit — reuse previous scan result
+    dynPointFreq = _emDynPointFreqCache.freq;
+    allDynKeys = _emDynPointFreqCache.keys.slice(); // shallow copy so sort doesn't mutate cache
+  } else {
+    // Cache miss — run the scan and store
+    dynPointFreq = {};
+    for (var rr = 0; rr < filtered.length; rr++) {
+      var pts = filtered[rr].points || {};
+      for (var ptKey in pts) {
+        if (!existingDefKeys[ptKey]) {
+          dynPointFreq[ptKey] = (dynPointFreq[ptKey] || 0) + 1;
+        }
       }
     }
+    allDynKeys = Object.keys(dynPointFreq);
+    // Sort by frequency descending, then alphabetically for ties
+    allDynKeys.sort(function (a, b) {
+      var diff = dynPointFreq[b] - dynPointFreq[a];
+      if (diff !== 0) return diff;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+    _emDynPointFreqCache = { freq: dynPointFreq, keys: allDynKeys.slice() };
+    _emDynPointFreqCacheKey = _dynCacheKey;
   }
-  var allDynKeys = Object.keys(dynPointFreq);
+
   var totalUniqueDynCols = allDynKeys.length;
 
-  // Sort by frequency descending, then alphabetically for ties
-  allDynKeys.sort(function (a, b) {
-    var diff = dynPointFreq[b] - dynPointFreq[a];
-    if (diff !== 0) return diff;
-    return a < b ? -1 : a > b ? 1 : 0;
-  });
-
-  // Apply column limit unless user toggled "Show All"
+  // Apply column limit unless user toggled "Show All".
+  // NOTE: No hard cell-budget cap here — user requirement is to show ALL columns.
+  // Responsiveness is achieved via chunked async render below, not by hiding columns.
   var dynColsToShow = _emShowAllDynCols ? allDynKeys : allDynKeys.slice(0, EM_DYN_COL_LIMIT);
-
-  // Safety check: if projected cell count per page is still too large, reduce further.
-  // Cap _estRowsPerPage at EM_PAGE_SIZE for budget calculation — the budget was designed around
-  // page size, not total row count. When "All" rows mode is active with a large dataset,
-  // using filtered.length would make cellBudget go negative and zero out all dynamic columns.
-  var _estRowsPerPage = Math.min(_emPageSize === 0 ? EM_PAGE_SIZE : _emPageSize, filtered.length);
-  var projectedCells = _estRowsPerPage * (defs.length + dynColsToShow.length);
-  if (projectedCells > 10000 && !_emShowAllDynCols) {
-    // Calculate how many dyn cols fit within the 10,000-cell budget
-    var cellBudget = Math.max(0, 10000 - _estRowsPerPage * defs.length);
-    var safeDynCount = _estRowsPerPage > 0 ? Math.floor(cellBudget / _estRowsPerPage) : 0;
-    safeDynCount = Math.max(0, Math.min(safeDynCount, dynColsToShow.length));
-    dynColsToShow = dynColsToShow.slice(0, safeDynCount);
-  }
-  // Guard: "Show All Columns" + "All Rows" with a very large dataset can freeze the browser.
-  // If the true projected cell count (using actual row count) would be extreme, ignore _emShowAllDynCols.
-  if (_emShowAllDynCols && _emPageSize === 0 && filtered.length * (defs.length + dynColsToShow.length) > 100000) {
-    dynColsToShow = dynColsToShow.slice(0, EM_DYN_COL_LIMIT);
-  }
-
-  // Sort final dynamic column list by point count descending so most common columns appear leftmost
-  dynColsToShow.sort(function (a, b) {
-    var diff = (dynPointFreq[b] || 0) - (dynPointFreq[a] || 0);
-    if (diff !== 0) return diff;
-    return a < b ? -1 : a > b ? 1 : 0;
-  });
 
   if (!_emHiddenGroups['dynpoint']) {
     for (var dp = 0; dp < dynColsToShow.length; dp++) {
@@ -4659,9 +4668,65 @@ function emRenderTable(data, filters) {
   // = expand col (1) + edit col (0 or 1) + defs.length
   var _emTotalColCount = 1 + (_emEditMode ? 1 : 0) + defs.length;
 
-  var tbodyRows = '';
-  for (var ri = 0; ri < pageRows.length; ri++) {
-    var row = pageRows[ri];
+  // ── Pagination bar ──
+  var pid = window._emActivePid || '';
+  var pageSizeOptions = [50, 100, 250, 0];
+  var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
+  var sizeSelectHtml =
+    '<select onchange="emSetPageSize(' +
+    JSON.stringify(pid) +
+    ', this.value)" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
+  for (var si = 0; si < pageSizeOptions.length; si++) {
+    var opt = pageSizeOptions[si];
+    var lbl = pageSizeLabels[opt];
+    var isCurrent = _emPageSize === opt;
+    sizeSelectHtml += '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + lbl + '</option>';
+  }
+  sizeSelectHtml += '</select>';
+
+  var prevDisabled = _emCurrentPage <= 0 || useAll;
+  var nextDisabled = _emCurrentPage >= totalPages - 1 || useAll;
+  var pageLabel = useAll
+    ? 'All ' + filtered.length + ' rows'
+    : totalPages === 1
+      ? 'All rows visible (' + filtered.length + ' rows)'
+      : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
+
+  var paginationHtml =
+    '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
+    '<button onclick="emPrevPage(' +
+    JSON.stringify(pid) +
+    ')" ' +
+    (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
+    '<span style="flex:1;text-align:center">' +
+    pageLabel +
+    '</span>' +
+    '<button onclick="emNextPage(' +
+    JSON.stringify(pid) +
+    ')" ' +
+    (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
+    '<span style="color:var(--text3)">Rows per page:</span>' +
+    sizeSelectHtml +
+    '</div>';
+
+  // Update stats bar for raw view
+  emUpdateStatsPillsForRaw(rows, data.totalBASPoints);
+
+  // ── Quick Win 3: Chunked async render ────────────────────────────────────
+  // Determine if the table is "large" (many cols × rows likely to block the main
+  // thread for >100 ms). Threshold: more than 5,000 projected cells.
+  var _projectedCells = pageRows.length * defs.length;
+  var _useChunked = _projectedCells > 5000;
+
+  // Increment render generation so any in-flight async render from a previous call
+  // can self-cancel when it wakes up and sees a stale generation number.
+  _emRenderGen++;
+  var _thisGen = _emRenderGen;
+
+  // Helper: build HTML string for one table row (closes over outer-scope state).
+  function _buildOneRowHtml(row) {
     var rowId = row.id;
     var isDrawerOpen = _emOpenDrawers.has(rowId);
     var cells = '';
@@ -4725,32 +4790,28 @@ function emRenderTable(data, filters) {
         cells += '<td style="' + cellStyle + '">' + displayVal + '</td>';
       }
     }
-    tbodyRows += '<tr>' + cells + '</tr>';
+    var rowHtml = '<tr>' + cells + '</tr>';
     // M4 Part 2: inline "All Points" drawer row (inserted right after equipment row)
     if (isDrawerOpen) {
-      tbodyRows +=
-        '<tr><td colspan="' + _emTotalColCount + '" style="padding:0;border-bottom:2px solid var(--accent)">';
-      tbodyRows += '<div style="padding:10px 16px;background:var(--s1);font-size:12px">';
+      rowHtml += '<tr><td colspan="' + _emTotalColCount + '" style="padding:0;border-bottom:2px solid var(--accent)">';
+      rowHtml += '<div style="padding:10px 16px;background:var(--s1);font-size:12px">';
       if (row.schema >= 2 && row.pointsRaw && Object.keys(row.pointsRaw).length > 0) {
-        // Build sorted point list from pointsRaw
         var _drRawKeys = Object.keys(row.pointsRaw)
           .slice()
           .sort(function (a, b) {
             return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
           });
-        tbodyRows +=
+        rowHtml +=
           '<div style="font-weight:600;color:var(--text2);margin-bottom:6px">All BAS Points (' +
           _drRawKeys.length +
           ' captured)</div>';
-        tbodyRows +=
-          '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:auto">';
-        tbodyRows +=
+        rowHtml += '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:auto">';
+        rowHtml +=
           '<thead><tr>' +
           '<th style="padding:3px 10px 3px 0;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Point Name</th>' +
           '<th style="padding:3px 10px 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
           '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Mapped Column</th>' +
           '</tr></thead><tbody>';
-        // Build collision count map: how many points in this row share each mapped column.
         var _drColCount = {};
         for (var _dci = 0; _dci < _drRawKeys.length; _dci++) {
           var _dcMapped = emMapPointToColumn(_drRawKeys[_dci], null, row.category);
@@ -4779,7 +4840,7 @@ function emRenderTable(data, filters) {
             : '<span style="color:var(--text3)">—</span>';
           var _drValDisplay =
             _drVal === '' ? '<span style="color:var(--text3)">empty</span>' : emHtmlEsc(String(_drVal));
-          tbodyRows +=
+          rowHtml +=
             '<tr>' +
             '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)">' +
             emHtmlEsc(_drKey) +
@@ -4792,16 +4853,14 @@ function emRenderTable(data, filters) {
             '</td>' +
             '</tr>';
         }
-        tbodyRows += '</tbody></table>';
+        rowHtml += '</tbody></table>';
       } else if (row.points && Object.keys(row.points).length > 0) {
-        // Legacy row without pointsRaw — show graceful fallback
-        tbodyRows +=
+        rowHtml +=
           '<div style="color:var(--text2);margin-bottom:8px"><em>Full point list available after re-importing this CSV.</em></div>';
         var _legPts = row.points;
         var _legKeys = Object.keys(_legPts).slice().sort();
-        tbodyRows +=
-          '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:auto">';
-        tbodyRows +=
+        rowHtml += '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:auto">';
+        rowHtml +=
           '<thead><tr>' +
           '<th style="padding:3px 10px 3px 0;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Point / Column</th>' +
           '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
@@ -4810,7 +4869,7 @@ function emRenderTable(data, filters) {
           var _lk = _legKeys[_lki];
           var _lv = _legPts[_lk];
           if (_lv == null) continue;
-          tbodyRows +=
+          rowHtml +=
             '<tr>' +
             '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)">' +
             emHtmlEsc(_lk) +
@@ -4820,106 +4879,170 @@ function emRenderTable(data, filters) {
             '</td>' +
             '</tr>';
         }
-        tbodyRows += '</tbody></table>';
+        rowHtml += '</tbody></table>';
       } else {
-        tbodyRows += '<span style="color:var(--text3)">No point data available for this equipment.</span>';
+        rowHtml += '<span style="color:var(--text3)">No point data available for this equipment.</span>';
       }
-      tbodyRows += '</div></td></tr>';
+      rowHtml += '</div></td></tr>';
     }
+    return rowHtml;
   }
 
-  if (filtered.length === 0) {
-    var emptyMsg =
-      rows.length === 0 ? 'No equipment data — click Import CSVs to begin' : 'No rows match the current filters.';
-    tbodyRows =
-      '<tr><td colspan="' +
-      _emTotalColCount +
-      '" style="padding:48px 32px;text-align:center;font-size:14px;color:var(--text2)">' +
-      emptyMsg +
-      '</td></tr>';
+  // Helper: finalize the table after all rows are in the DOM.
+  function _finalizeTable(tbody, wrapEl) {
+    // Remove loading indicator if present
+    var loadingRow = tbody.querySelector('tr[data-em-loading]');
+    if (loadingRow) tbody.removeChild(loadingRow);
+
+    // Empty-state row
+    if (pageRows.length === 0) {
+      var emptyMsg =
+        rows.length === 0 ? 'No equipment data — click Import CSVs to begin' : 'No rows match the current filters.';
+      var emptyTr = document.createElement('tr');
+      emptyTr.innerHTML =
+        '<td colspan="' +
+        _emTotalColCount +
+        '" style="padding:48px 32px;text-align:center;font-size:14px;color:var(--text2)">' +
+        emptyMsg +
+        '</td>';
+      tbody.appendChild(emptyTr);
+    }
+
+    // Footer average rows (dyn-point cols skipped inside emComputeFooterAvg)
+    var pageAvg = emComputeFooterAvg(pageRows, defs);
+    var totalAvg = emComputeFooterAvg(filtered, defs);
+    var tfootHtml =
+      '<tfoot>' +
+      buildAvgFooterRow(pageAvg, defs, 'Page Average', false, !!_emEditMode) +
+      buildAvgFooterRow(totalAvg, defs, 'Total Average', true, !!_emEditMode) +
+      '</tfoot>';
+    var existingTfoot = wrapEl.querySelector('tfoot');
+    if (existingTfoot) existingTfoot.parentNode.removeChild(existingTfoot);
+    var table = wrapEl.querySelector('table');
+    if (table) {
+      // Use a <table> as the temp container so <tfoot> parses correctly.
+      // A <tbody> container strips/misplaces <tfoot> children.
+      var tfootProxy = document.createElement('table');
+      tfootProxy.innerHTML = tfootHtml;
+      var parsedTfoot = tfootProxy.querySelector('tfoot');
+      if (parsedTfoot) table.appendChild(parsedTfoot);
+    }
+
+    // Inject pagination bar after the scroll container
+    var existingPag = wrapEl.parentNode ? wrapEl.parentNode.querySelector('.em-pagination') : null;
+    if (existingPag) existingPag.parentNode.removeChild(existingPag);
+    var pagDiv = document.createElement('div');
+    pagDiv.innerHTML = paginationHtml;
+    if (wrapEl.parentNode) {
+      wrapEl.parentNode.insertBefore(pagDiv.firstChild, wrapEl.nextSibling);
+    }
+
+    // Sticky offsets + resize handlers now that all columns are in the DOM
+    emUpdateStickyOffsets();
+    emAttachColResizeHandler(wrapEl);
   }
 
-  // ── Pagination bar ──
-  var pid = window._emActivePid || '';
-  var pageSizeOptions = [50, 100, 250, 0];
-  var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
-  var sizeSelectHtml =
-    '<select onchange="emSetPageSize(' +
-    JSON.stringify(pid) +
-    ', this.value)" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
-  for (var si = 0; si < pageSizeOptions.length; si++) {
-    var opt = pageSizeOptions[si];
-    var lbl = pageSizeLabels[opt];
-    var isCurrent = _emPageSize === opt;
-    sizeSelectHtml += '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + lbl + '</option>';
-  }
-  sizeSelectHtml += '</select>';
-
-  var prevDisabled = _emCurrentPage <= 0 || useAll;
-  var nextDisabled = _emCurrentPage >= totalPages - 1 || useAll;
-  var pageLabel = useAll
-    ? 'All ' + filtered.length + ' rows'
-    : totalPages === 1
-      ? 'All rows visible (' + filtered.length + ' rows)'
-      : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
-
-  var paginationHtml =
-    '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
-    '<button onclick="emPrevPage(' +
-    JSON.stringify(pid) +
-    ')" ' +
-    (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
-    '<span style="flex:1;text-align:center">' +
-    pageLabel +
-    '</span>' +
-    '<button onclick="emNextPage(' +
-    JSON.stringify(pid) +
-    ')" ' +
-    (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
-    '<span style="color:var(--text3)">Rows per page:</span>' +
-    sizeSelectHtml +
-    '</div>';
-
-  // Update stats bar for raw view
-  emUpdateStatsPillsForRaw(rows, data.totalBASPoints);
-
-  // ── Footer average rows ──
-  var pageAvg = emComputeFooterAvg(pageRows, defs);
-  var totalAvg = emComputeFooterAvg(filtered, defs);
-  var tfootHtml =
-    '<tfoot>' +
-    buildAvgFooterRow(pageAvg, defs, 'Page Average', false, !!_emEditMode) +
-    buildAvgFooterRow(totalAvg, defs, 'Total Average', true, !!_emEditMode) +
-    '</tfoot>';
-
+  // Write header skeleton immediately — the thead is cheap and makes the table
+  // "appear" to the user right away, even before body rows are rendered.
   wrap.innerHTML =
     '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
     '<thead><tr>' +
     theadCells +
     '</tr></thead>' +
-    '<tbody>' +
-    tbodyRows +
-    '</tbody>' +
-    tfootHtml +
+    '<tbody id="em-tbody-live"></tbody>' +
     '</table>';
 
-  // Inject pagination bar after the scroll container (outside the scroll wrap)
-  var tableWrap = document.getElementById('em-table-wrap');
-  if (tableWrap && tableWrap.parentNode) {
-    var existingPag = tableWrap.parentNode.querySelector('.em-pagination');
-    if (existingPag) existingPag.parentNode.removeChild(existingPag);
-    var pagDiv = document.createElement('div');
-    pagDiv.innerHTML = paginationHtml;
-    tableWrap.parentNode.insertBefore(pagDiv.firstChild, tableWrap.nextSibling);
+  var tbody = wrap.querySelector('#em-tbody-live');
+
+  if (!_useChunked) {
+    // ── Small table: synchronous render (unchanged behavior for ≤100 rows default) ──
+    var tbodyRows = '';
+    for (var ri = 0; ri < pageRows.length; ri++) {
+      tbodyRows += _buildOneRowHtml(pageRows[ri]);
+    }
+    if (pageRows.length === 0) {
+      var emptyMsg2 =
+        rows.length === 0 ? 'No equipment data — click Import CSVs to begin' : 'No rows match the current filters.';
+      tbodyRows =
+        '<tr><td colspan="' +
+        _emTotalColCount +
+        '" style="padding:48px 32px;text-align:center;font-size:14px;color:var(--text2)">' +
+        emptyMsg2 +
+        '</td></tr>';
+    }
+    tbody.innerHTML = tbodyRows;
+    _finalizeTable(tbody, wrap);
+  } else {
+    // ── Large table: chunked async render ───────────────────────────────────
+    // Show a loading indicator row immediately so the user sees feedback.
+    var loadTr = document.createElement('tr');
+    loadTr.setAttribute('data-em-loading', '1');
+    loadTr.innerHTML =
+      '<td colspan="' +
+      _emTotalColCount +
+      '" style="padding:24px 32px;text-align:center;font-size:13px;color:var(--text2);background:var(--s1)">' +
+      '<span style="display:inline-block;margin-right:8px;animation:em-spin 1s linear infinite;' +
+      'border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;width:16px;height:16px;vertical-align:middle"></span>' +
+      'Loading ' +
+      pageRows.length +
+      ' rows × ' +
+      defs.length +
+      ' columns…' +
+      '</td>';
+    tbody.appendChild(loadTr);
+
+    // Inject a tiny keyframes rule for the spinner (idempotent check)
+    if (!document.getElementById('em-spin-style')) {
+      var spinStyle = document.createElement('style');
+      spinStyle.id = 'em-spin-style';
+      spinStyle.textContent = '@keyframes em-spin{to{transform:rotate(360deg)}}';
+      document.head.appendChild(spinStyle);
+    }
+
+    // Chunk size: aim for ~50 ms per batch. With many dyn cols a single row can be
+    // expensive, so keep chunks small. 20 rows per chunk is a safe default.
+    var CHUNK_SIZE = 20;
+    var chunkStart = 0;
+
+    function renderNextChunk() {
+      // Stale-render guard: if a new emRenderTable() was called since we started,
+      // this async chain is obsolete — bail out silently.
+      if (_emRenderGen !== _thisGen) return;
+
+      // Re-acquire tbody in case innerHTML= was re-issued by another call
+      var liveWrap = document.getElementById('em-table-wrap');
+      if (!liveWrap) return;
+      var liveTbody = liveWrap.querySelector('#em-tbody-live');
+      if (!liveTbody) return;
+
+      var chunkEnd = Math.min(chunkStart + CHUNK_SIZE, pageRows.length);
+      var chunkHtml = '';
+      for (var ci2 = chunkStart; ci2 < chunkEnd; ci2++) {
+        chunkHtml += _buildOneRowHtml(pageRows[ci2]);
+      }
+
+      // Remove the loading row before inserting the first real chunk
+      if (chunkStart === 0) {
+        var lr = liveTbody.querySelector('tr[data-em-loading]');
+        if (lr) liveTbody.removeChild(lr);
+      }
+
+      // Append chunk via insertAdjacentHTML for efficiency
+      liveTbody.insertAdjacentHTML('beforeend', chunkHtml);
+      chunkStart = chunkEnd;
+
+      if (chunkStart < pageRows.length) {
+        // Yield to the browser so it can paint and handle input events, then continue
+        setTimeout(renderNextChunk, 0);
+      } else {
+        // All rows rendered — finalize
+        _finalizeTable(liveTbody, liveWrap);
+      }
+    }
+
+    // Kick off the first chunk after a tick so the loading indicator paints first
+    setTimeout(renderNextChunk, 0);
   }
-
-  // Apply computed left: positions to frozen columns now that the DOM is live
-  emUpdateStickyOffsets();
-
-  // Attach column resize handler to the thead
-  emAttachColResizeHandler(wrap);
 }
 
 /* ── emComputeBuildingZoneStats ─────────────────────────────────────────────

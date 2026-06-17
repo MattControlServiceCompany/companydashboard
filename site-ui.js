@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.16.535'; // deployed 2026-06-15 (Audit/Quarterly pagination + WYSIWYG PDF fix)
+  var CH_VERSION = 'v2026.06.16.536'; // deployed 2026-06-15 (Audit/Quarterly pagination + WYSIWYG PDF fix)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
