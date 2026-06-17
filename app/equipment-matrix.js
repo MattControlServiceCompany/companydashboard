@@ -7,16 +7,16 @@ var EM_EQUIP_TYPES = {
   'vav ahu': 'ahu',
   ahu: 'ahu',
   'air handling unit': 'ahu',
-  rtu: 'ahu',
-  'rooftop unit': 'ahu',
-  rooftop: 'ahu',
-  mau: 'ahu',
-  'makeup air unit': 'ahu',
-  'makeup air': 'ahu',
+  rtu: 'rtu',
+  'rooftop unit': 'rtu',
+  rooftop: 'rtu',
+  mau: 'mau', // 9018b1c6: own category (user-confirmed)
+  'makeup air unit': 'mau',
+  'makeup air': 'mau',
   doas: 'doas',
-  erv: 'ahu',
-  hrv: 'ahu',
-  'energy recovery ventilator': 'ahu',
+  erv: 'erv', // 9018b1c6: own category (user-confirmed)
+  hrv: 'erv',
+  'energy recovery ventilator': 'erv',
   'fan coil': 'fcu',
   fcu: 'fcu',
   crac: 'fcu',
@@ -132,7 +132,8 @@ var EM_EQUIP_TYPES = {
    Maps internal category keys (from emClassifyEquipType) to human-readable labels
    shown in the "Equipment Type" column. Used by emFormatCell for isCategory defs. */
 var EM_CATEGORY_LABELS = {
-  ahu: 'AHU / RTU',
+  ahu: 'AHU',
+  rtu: 'RTU',
   vav: 'VAV',
   fpb: 'FPB',
   ddvav: 'DD-VAV',
@@ -158,7 +159,28 @@ var EM_CATEGORY_LABELS = {
   monitoring: 'Monitoring',
   security: 'Security / Access',
   other: 'Other',
+  // 9018b1c6: MAU and ERV get their own categories (user-confirmed)
+  mau: 'Makeup Air Unit',
+  erv: 'Energy Recovery Unit',
 };
+
+/* ── emFormatEquipTypeLabel ──────────────────────────────────────────────────
+   9018b1c6: Returns the human-readable Equipment Type label for a row object.
+   For 'ahu' rows with a subtype, composes a "SZ-RTU" / "VAV-AHU" etc. label
+   by combining the subtype prefix with the unit type token from the equip name.
+   For all other categories, falls through to EM_CATEGORY_LABELS.               */
+function emFormatEquipTypeLabel(row) {
+  if (!row) return '--';
+  var cat = row.category || '';
+  if ((cat !== 'ahu' && cat !== 'rtu') || !row.subtype) {
+    return EM_CATEGORY_LABELS[cat] || (cat ? cat.toUpperCase() : '--');
+  }
+  // ahu/rtu + subtype: compose "SZ-RTU", "VAV-AHU", "MTZ-RTU", etc.
+  var baseName = row.equipName || '';
+  var baseType = cat === 'rtu' || /\brtu\b/i.test(baseName) ? 'RTU' : /\bahu\b/i.test(baseName) ? 'AHU' : 'AHU';
+  var subtypePrefix = row.subtype === 'sz' ? 'SZ' : row.subtype === 'vav' ? 'VAV' : row.subtype === 'mtz' ? 'MTZ' : '';
+  return subtypePrefix ? subtypePrefix + '-' + baseType : EM_CATEGORY_LABELS[cat] || cat.toUpperCase();
+}
 
 /* ── EDIT MODE FLAG ── */
 var _emEditMode = false;
@@ -1690,6 +1712,51 @@ function emIsFloorSegment(str) {
   return false;
 }
 
+/* ── emParseEquipBaseName ────────────────────────────────────────────────────
+   Parses an equipment NAME (not type-string) and returns a base category key
+   if a clear HVAC type token is present.  Returns null if no clear token is
+   found — caller should fall through to emClassifyEquipType.
+
+   Token priority (first match wins, checked in order):
+     DOAS           → 'doas'
+     ERV            → 'erv'   (user-confirmed: own category)
+     RTU            → 'ahu'   (Option A: category stays 'ahu'; subtype carries sz/vav/mtz)
+     AHU            → 'ahu'
+     MAU            → 'mau'   (user-confirmed: own category)
+     FCU            → 'fcu'
+     EF + digit/sep → 'ef'
+     VAV + digit/sep→ 'vav'
+
+   Guards:
+   - Word-boundary regex (case-insensitive)
+   - DOAS checked before RTU/AHU so "DOAS-AHU-1" → doas
+   - Names with a slash are returned null (compound names like "VAV-11/EF-3"
+     fall through to the type-string classifier which handles them correctly)
+   - EF and VAV require a digit or hyphen suffix to avoid false matches        */
+function emParseEquipBaseName(nameStr) {
+  if (!nameStr) return null;
+  var n = nameStr.trim();
+  // Guard: compound slash names fall through to type-string classifier
+  if (n.indexOf('/') !== -1) return null;
+  // Priority 1: DOAS (before RTU/AHU to catch "DOAS-AHU-1")
+  if (/\bdoas\b/i.test(n)) return 'doas';
+  // Priority 2: ERV (energy recovery ventilator — own category per user)
+  if (/\berv\b/i.test(n)) return 'erv';
+  // Priority 3: RTU → own 'rtu' category (subtype carries sz/vav/mtz)
+  if (/\brtu\b/i.test(n)) return 'rtu';
+  // Priority 4: AHU
+  if (/\bahu\b/i.test(n)) return 'ahu';
+  // Priority 5: MAU (makeup air unit — own category per user)
+  if (/\bmau\b/i.test(n)) return 'mau';
+  // Priority 6: FCU
+  if (/\bfcu\b/i.test(n)) return 'fcu';
+  // Priority 7: EF + digit/separator (avoids "HVAC-1" hitting EF token)
+  if (/\bef[-\s]?[\da-z]/i.test(n)) return 'ef';
+  // Priority 8: VAV + digit/separator (avoids "VAV Duct Leakage" where VAV is a descriptor)
+  if (/\bvav[-\s]?\d/i.test(n)) return 'vav';
+  return null;
+}
+
 /* ── emClassifyEquipType ────────────────────────────────────────────────────
    Maps an equipment type string (from CSV "Equipment Type" or control program
    name) to one of the internal category keys: ahu, vav, fpb, ddvav, hwp,
@@ -1728,18 +1795,18 @@ function emClassifyEquipType(equipTypeStr) {
   // ── D. Regex fallbacks (expanded) ──
   // Widen air-handling match to catch "Air Handing Unit" typo (missing 'l')
   if (/\bahu\b|air.?hand/i.test(key)) return 'ahu';
-  if (/\brtu\b/i.test(key)) return 'ahu';
-  if (/\bmau\b/i.test(key)) return 'ahu';
+  if (/\brtu\b/i.test(key)) return 'rtu';
+  if (/\bmau\b/i.test(key)) return 'mau'; // 9018b1c6: own category
   // M3: DOAS is its own type (dedicated energy recovery ventilation unit)
   if (/\bdoas\b/i.test(key)) return 'doas';
-  if (/\berv\b/i.test(key)) return 'ahu';
-  if (/\bhrv\b/i.test(key)) return 'ahu';
+  if (/\berv\b/i.test(key)) return 'erv'; // 9018b1c6: own category
+  if (/\bhrv\b/i.test(key)) return 'erv'; // 9018b1c6: HRV → erv category
   // M3: FCU/CRAC/CRAH are their own fcu type
   if (/\bfcu\b/i.test(key)) return 'fcu';
   if (/\bcrac\b/i.test(key)) return 'fcu';
   if (/\bcrah\b/i.test(key)) return 'fcu';
-  if (/roof.?top/i.test(key)) return 'ahu';
-  if (/make.?up.?air/i.test(key)) return 'ahu';
+  if (/roof.?top/i.test(key)) return 'rtu';
+  if (/make.?up.?air/i.test(key)) return 'mau'; // 9018b1c6: makeup air → mau
   if (/heat.?pump/i.test(key)) return 'ahu';
   if (/\bwshp\b/i.test(key)) return 'ahu';
   if (/\bgshp\b/i.test(key)) return 'ahu';
@@ -1844,14 +1911,14 @@ function emClassifyEquipType(equipTypeStr) {
   // ── E. Fuzzy keyword scan (last resort) ──
   var fuzzyMap = [
     ['ahu', 'ahu'],
-    ['rtu', 'ahu'],
+    ['rtu', 'rtu'],
     ['vav', 'vav'],
     ['chiller', 'chwp'],
     ['boiler', 'hwp'],
     ['cooling tower', 'ct'],
     ['pump', 'hwp'],
     ['fan coil', 'fcu'],
-    ['rooftop', 'ahu'],
+    ['rooftop', 'rtu'],
     ['air handler', 'ahu'],
     ['exhaust fan', 'ef'],
     ['destratification', 'ahu'],
@@ -2055,7 +2122,7 @@ function emClassifyEquipType(equipTypeStr) {
 function emVerifyTypeByPoints(group) {
   var provisional = group.category || 'other';
   var ptKeys = Object.keys(group.pointValues || {});
-  if (ptKeys.length === 0) return provisional;
+  if (ptKeys.length === 0) return { category: provisional, subtype: '' };
 
   // Build a single lowercased space-joined string for quick regex scanning
   var pts = ptKeys.map(function (k) {
@@ -2076,7 +2143,7 @@ function emVerifyTypeByPoints(group) {
   var hasTermFan = hasPoint(/\bfan\b/) && !hasPoint(/supply fan|exhaust fan|return fan/);
 
   // 1. Fire/smoke: tiny point set with smoke zone BNI (not an HVAC unit)
-  if (ptKeys.length <= 2 && hasPoint(/smoke zone.*bni/)) return 'fire';
+  if (ptKeys.length <= 2 && hasPoint(/smoke zone.*bni/)) return { category: 'fire', subtype: '' };
 
   // 2. VFD integration wrapper: drive telemetry but no zone temp or supply fan
   if (
@@ -2084,17 +2151,19 @@ function emVerifyTypeByPoints(group) {
     !hasZoneTemp &&
     !hasSupplyFan
   )
-    return 'controls';
+    return { category: 'controls', subtype: '' };
 
   // 3. VVT zone-damper terminal: Air Source VVT + Zone Damper + zone temp, NO airflow
-  if (hasPoint(/air source vvt/) && hasPoint(/zone damper/) && hasZoneTemp && !hasAirFlow) return 'zone';
+  if (hasPoint(/air source vvt/) && hasPoint(/zone damper/) && hasZoneTemp && !hasAirFlow)
+    return { category: 'zone', subtype: '' };
 
   // 4. VVT furnace/air source: VVT Mode + Zone Communications Failure + supply fan + DX cooling
   if (hasPoint(/vvt mode/) && hasPoint(/zone communications failure/) && hasSupplyFan && hasPoint(/cooling stage 1/))
-    return 'furnace';
+    return { category: 'furnace', subtype: '' };
 
   // 5. DOAS/ERV: energy recovery wheel + supply fan + building pressure
-  if (hasPoint(/energy recovery wheel|energy wheel/) && hasSupplyFan && hasPoint(/building pressure/)) return 'doas';
+  if (hasPoint(/energy recovery wheel|energy wheel/) && hasSupplyFan && hasPoint(/building pressure/))
+    return { category: 'doas', subtype: '' };
 
   // 6. Dual-deck VAV: cold deck supply or air source cold deck + hot deck + zone damper, no airflow sensor
   if (
@@ -2102,17 +2171,19 @@ function emVerifyTypeByPoints(group) {
     hasPoint(/zone damper/) &&
     !hasAirFlow
   )
-    return 'ddvav';
+    return { category: 'ddvav', subtype: '' };
 
   // 7. Fan-powered box (FPB): airflow + terminal fan + heating valve + air source mode
   if (hasAirFlow && hasTermFan && hasPoint(/heating valve|hw valve|reheat valve/) && hasPoint(/air source mode/))
-    return 'fpb';
+    return { category: 'fpb', subtype: '' };
 
   // 8. VAV: airflow + damper position + air source mode, no terminal fan
-  if (hasAirFlow && hasPoint(/damper position|zone damper/) && hasPoint(/air source mode/) && !hasTermFan) return 'vav';
+  if (hasAirFlow && hasPoint(/damper position|zone damper/) && hasPoint(/air source mode/) && !hasTermFan)
+    return { category: 'vav', subtype: '' };
 
   // 9. FCU (Daikin VRF): gas pipe temperature + (fan speed or daikin alarm)
-  if (hasPoint(/gas pipe temperature/) && (hasPoint(/fan speed/) || hasPoint(/daikin.*alarm/))) return 'fcu';
+  if (hasPoint(/gas pipe temperature/) && (hasPoint(/fan speed/) || hasPoint(/daikin.*alarm/)))
+    return { category: 'fcu', subtype: '' };
 
   // 10. FCU (generic hydronic fan coil): zone temp + cooling/heating valve, no airflow, no supply fan
   if (
@@ -2121,17 +2192,66 @@ function emVerifyTypeByPoints(group) {
     !hasAirFlow &&
     !hasSupplyFan
   )
-    return 'fcu';
+    return { category: 'fcu', subtype: '' };
 
   // 11. Tube/radiant heater: tube heater or unit heater points
-  if (hasPoint(/tube heater (enable|status|amperage)/)) return 'heater';
-  if (hasPoint(/unit heater (enable|status)/) && !hasTermFan) return 'heater';
+  if (hasPoint(/tube heater (enable|status|amperage)/)) return { category: 'heater', subtype: '' };
+  if (hasPoint(/unit heater (enable|status)/) && !hasTermFan) return { category: 'heater', subtype: '' };
 
   // 12. RTU (name-only AHU with DX cooling): supply fan + DX staging + zone temp, no VVT
-  if (hasSupplyFan && hasPoint(/cooling stage 1/) && hasZoneTemp && !hasPoint(/vvt mode/)) return 'ahu';
+  // 9018b1c6: this signature matches a single-zone RTU → assign sz subtype
+  // Keep provisional category so 'rtu' rows stay 'rtu', 'ahu' rows stay 'ahu'.
+  if (hasSupplyFan && hasPoint(/cooling stage 1/) && hasZoneTemp && !hasPoint(/vvt mode/))
+    return { category: provisional === 'rtu' ? 'rtu' : 'ahu', subtype: 'sz' };
+
+  // ── Subtype rules (Rules 13-15 + Signal 1): only fire when category is 'ahu' or 'rtu' ──
+  if (provisional === 'ahu' || provisional === 'rtu') {
+    // Signal 1 — TYPE STRING subtype (highest priority for ahu/rtu rows).
+    // Reads the "Equipment Type" column text from the CSV (e.g. "Rooftop Unit (Multizone VAV)").
+    // This solves all 10 RTU (Multizone VAV) rows which lack BAS-level VFD/DSP points.
+    // Falls through to point-based rules (13-15) when type string lacks the qualifier.
+    var _typeStr = (group.equipTypeStr || '').toLowerCase();
+    if (_typeStr) {
+      if (/multizone\s+vav/.test(_typeStr)) {
+        return { category: provisional, subtype: 'vav' };
+      }
+      if (/multizone/.test(_typeStr)) {
+        return { category: provisional, subtype: 'mtz' };
+      }
+    }
+
+    // Rule 13 — MTZ-AHU/MTZ-RTU: multizone (hot/cold deck points)
+    if (hasPoint(/hot.?deck|cold.?deck|face.?and.?bypass|deck.?damper/)) {
+      return { category: provisional, subtype: 'mtz' };
+    }
+
+    // Rule 14 — VAV-AHU/VAV-RTU: VAV-serving unit
+    // PRIMARY signal: VFD / variable-speed supply fan (user-confirmed key differentiator)
+    // Secondary corroboration: duct static pressure or zone dampers
+    var hasVfd = hasPoint(/\bvfd\b|variable.?speed|variable.?frequency|fan.?speed/);
+    var hasDuctStatic = hasPoint(/duct.?static|supply.?duct.*sp\b|\bdsp\b/);
+    if (
+      hasVfd ||
+      (hasDuctStatic &&
+        hasSupplyFan &&
+        (hasPoint(/air.?source.?mode|damper.?position|zone.?damper/) || hasPoint(/duct.?static.*setpoint|\bdsp.*sp\b/)))
+    ) {
+      return { category: provisional, subtype: 'vav' };
+    }
+
+    // Rule 15 — SZ-AHU/SZ-RTU: single-zone unit
+    // Has zone temp and/or zone setpoints; NO duct static; NO air source mode
+    if (
+      (hasZoneTemp || hasPoint(/zone.?cool.*setpoint|zone.?htg.*setpoint/)) &&
+      !hasDuctStatic &&
+      !hasPoint(/air.?source.?mode/)
+    ) {
+      return { category: provisional, subtype: 'sz' };
+    }
+  }
 
   // No signature match — keep provisional name-pass classification
-  return provisional;
+  return { category: provisional, subtype: '' };
 }
 
 function emMapPointToColumn(pointName, pointType, equipCategory) {
@@ -2235,7 +2355,10 @@ function emExtractEquipmentGroups(rows, colMap) {
       // Passing the parsed equipName token avoids these collisions.
       // M3 will replace this with a point-signature classifier anyway.
       var _cpParsed = emParseControlProgram(controlProgram);
-      var category = emClassifyEquipType(_cpParsed.equipName || controlProgram);
+      var _cpEquipName = _cpParsed.equipName || controlProgram;
+      // 9018b1c6: name parser runs first; only falls through to type-string classifier if null
+      var _cpNameBase = emParseEquipBaseName(_cpEquipName);
+      var category = _cpNameBase || emClassifyEquipType(_cpEquipName);
 
       // Group key: building + full control program. Location is no longer part of key.
       // In JOCO WebCTRL each control program string is unique per building (it encodes
@@ -2409,6 +2532,7 @@ function emExtractEquipmentGroups(rows, colMap) {
       var needsVerify =
         provisionalCat === 'other' ||
         provisionalCat === 'ahu' ||
+        provisionalCat === 'rtu' ||
         provisionalCat === 'furnace' ||
         provisionalCat === 'zone' ||
         provisionalCat === 'fcu' ||
@@ -2418,9 +2542,13 @@ function emExtractEquipmentGroups(rows, colMap) {
         provisionalCat === 'ddvav' ||
         provisionalCat === 'doas';
       if (needsVerify) {
+        // 9018b1c6: emVerifyTypeByPoints now returns { category, subtype }
         var refined = emVerifyTypeByPoints(grp);
-        if (refined !== provisionalCat) {
-          grp.category = refined;
+        if (refined.category !== provisionalCat) {
+          grp.category = refined.category;
+        }
+        if (refined.subtype) {
+          grp.subtype = refined.subtype;
         }
       }
     });
@@ -2436,8 +2564,9 @@ function emExtractEquipmentGroups(rows, colMap) {
     var equipName = (row[colMap.equipName] || '').trim();
     var equipTypeStr = (row[colMap.equipType] || '').trim();
     if (!building || !equipName || equipName === '—') continue;
-    // emClassifyEquipType always returns a non-null string now — no rows are filtered
-    var category = emClassifyEquipType(equipTypeStr);
+    // 9018b1c6: name parser runs first on equipName; only falls through to type-string classifier if null
+    var _enrichedNameBase = emParseEquipBaseName(equipName);
+    var category = _enrichedNameBase || emClassifyEquipType(equipTypeStr);
     // Include location in key so same-named equipment in different locations stays separate
     var groupKey = building + '||' + location + '||' + equipName;
     if (!groups.has(groupKey)) {
@@ -2490,6 +2619,7 @@ function emExtractEquipmentGroups(rows, colMap) {
     var needsVerify =
       provisionalCat === 'other' ||
       provisionalCat === 'ahu' ||
+      provisionalCat === 'rtu' ||
       provisionalCat === 'furnace' ||
       provisionalCat === 'zone' ||
       provisionalCat === 'fcu' ||
@@ -2499,9 +2629,13 @@ function emExtractEquipmentGroups(rows, colMap) {
       provisionalCat === 'ddvav' ||
       provisionalCat === 'doas';
     if (needsVerify) {
+      // 9018b1c6: emVerifyTypeByPoints now returns { category, subtype }
       var refined = emVerifyTypeByPoints(grp);
-      if (refined !== provisionalCat) {
-        grp.category = refined;
+      if (refined.category !== provisionalCat) {
+        grp.category = refined.category;
+      }
+      if (refined.subtype) {
+        grp.subtype = refined.subtype;
       }
     }
   });
@@ -2526,6 +2660,7 @@ function emGroupToMatrixRow(groupKey, group) {
     equipName: group.equipName,
     equipType: group.equipTypeStr,
     category: group.category,
+    subtype: group.subtype || '', // 9018b1c6: sz/vav/mtz subtype derived from point signature
     bacnetLocation: group.bacnetLocation || '', // 2224d15d: full BACnet path; used by integration-stub filter
     checks: checks,
     points: group.pointValues,
@@ -2606,6 +2741,18 @@ function emLoadMatrix(projId) {
       if (_bcrow && (!_bcrow.category || _bcrow.category === '') && _bcrow.equipType) {
         _bcrow.category = _bcrow.equipType;
       }
+
+      // 9018b1c6 — Pass 0: name-override for ANY stored row.
+      // Catches DOAS units mis-stored as 'vav' (JOCO DOAS-1 bug) and any other
+      // case where the equipment name unambiguously overrides the stored category.
+      // In-memory only; no storage mutation.
+      if (_bcrow && _bcrow.equipName) {
+        var _p0Override = emParseEquipBaseName(_bcrow.equipName);
+        if (_p0Override && _p0Override !== _bcrow.category) {
+          _bcrow.category = _p0Override;
+        }
+      }
+
       // Step 4 — Reclassify shim: in-memory only; emLoadMatrix never writes back to storage.
       // Pass A: name-based — re-run emClassifyEquipType for rows stored as 'other'.
       // Pass B: point-based — run emVerifyTypeByPoints on originally-'other' rows (even if Pass A
@@ -2624,9 +2771,30 @@ function emLoadMatrix(projId) {
         //   Stored rows carry row.points; expose it as group.pointValues for the function.
         if (_bcrow.points && Object.keys(_bcrow.points).length > 0) {
           var _ptGroup = { category: _bcrow.category, pointValues: _bcrow.points };
-          var _ptRecat = emVerifyTypeByPoints(_ptGroup);
-          if (_ptRecat && _ptRecat !== 'other' && _ptRecat !== _bcrow.category) {
-            _bcrow.category = _ptRecat;
+          var _ptResult = emVerifyTypeByPoints(_ptGroup); // 9018b1c6: returns { category, subtype }
+          if (_ptResult.category && _ptResult.category !== 'other' && _ptResult.category !== _bcrow.category) {
+            _bcrow.category = _ptResult.category;
+          }
+          if (_ptResult.subtype && !_bcrow.subtype) {
+            _bcrow.subtype = _ptResult.subtype;
+          }
+        }
+      }
+
+      // 9018b1c6 — Pass C: subtype derivation for ALL 'ahu'/'rtu' rows (in-memory only).
+      // Sets row.subtype (sz/vav/mtz) from the stored point signature so existing imported
+      // data gets subtypes without requiring a re-import.  Only runs when subtype is not
+      // already set (preserves any future manual override).
+      if (_bcrow && (_bcrow.category === 'ahu' || _bcrow.category === 'rtu') && !_bcrow.subtype) {
+        if (_bcrow.points && Object.keys(_bcrow.points).length > 0) {
+          var _stGroup = {
+            category: _bcrow.category,
+            equipTypeStr: _bcrow.equipType || '',
+            pointValues: _bcrow.points,
+          };
+          var _stResult = emVerifyTypeByPoints(_stGroup);
+          if (_stResult.subtype) {
+            _bcrow.subtype = _stResult.subtype;
           }
         }
       }
@@ -2656,9 +2824,9 @@ function emLoadMatrix(projId) {
       // Unit heaters detected by point signature (Unit Heater Enable/Status/Amperage points)
       if (_hwprow.points && Object.keys(_hwprow.points).length > 0) {
         var _hwpPtGroup = { category: 'hwp', pointValues: _hwprow.points };
-        var _hwpPtRecat = emVerifyTypeByPoints(_hwpPtGroup);
-        if (_hwpPtRecat === 'heater' || _hwpPtRecat === 'furnace') {
-          _hwprow.category = _hwpPtRecat;
+        var _hwpPtResult = emVerifyTypeByPoints(_hwpPtGroup); // 9018b1c6: returns { category, subtype }
+        if (_hwpPtResult.category === 'heater' || _hwpPtResult.category === 'furnace') {
+          _hwprow.category = _hwpPtResult.category;
           continue;
         }
       }
@@ -2772,28 +2940,30 @@ var _emImportMode = 'merge'; // 'merge' = add to existing data; 'replace' = clea
 var _emTypePriority = {
   ahu: 0,
   doas: 1,
-  vav: 2,
-  fpb: 3,
-  ddvav: 4,
-  zone: 5,
-  furnace: 6,
-  fcu: 7,
-  heater: 8,
-  ef: 9,
-  hwp: 10,
-  chwp: 11,
-  ct: 12,
-  lighting: 13,
-  fire: 14,
-  power: 15,
-  plumbing: 16,
-  controls: 17,
-  sensor: 18,
+  mau: 2, // 9018b1c6: MAU sorts near DOAS (dedicated OA units)
+  erv: 3, // 9018b1c6: ERV sorts near DOAS
+  vav: 4,
+  fpb: 5,
+  ddvav: 6,
+  zone: 7,
+  furnace: 8,
+  fcu: 9,
+  heater: 10,
+  ef: 11,
+  hwp: 12,
+  chwp: 13,
+  ct: 14,
+  lighting: 15,
+  fire: 16,
+  power: 17,
+  plumbing: 18,
+  controls: 19,
+  sensor: 20,
   // M4: new non-HVAC categories
-  elevator: 19,
-  monitoring: 20,
-  security: 21,
-  other: 22,
+  elevator: 21,
+  monitoring: 22,
+  security: 23,
+  other: 24,
 };
 var _emSortCol = null;
 var _emSortDir = 1;
@@ -3081,12 +3251,14 @@ function emCalcSummaryStats(rows) {
     other = 0,
     live = 0;
   // M3: new type buckets for stats bar
-  var _hvacNewTypes = { doas: 0, fcu: 0, heater: 0, ef: 0, furnace: 0, zone: 0 };
+  var _hvacNewTypes = { doas: 0, fcu: 0, heater: 0, ef: 0, furnace: 0, zone: 0, mau: 0, erv: 0 };
   var _nonHvacTypes = { fire: 0, power: 0, plumbing: 0, controls: 0, sensor: 0 };
+  // 9018b1c6: subtype counts (additive; ahu base count still accumulates all ahu-category rows)
+  var _subtypeCounts = { 'sz-rtu': 0, 'vav-rtu': 0, 'mtz-rtu': 0, 'sz-ahu': 0, 'vav-ahu': 0, 'mtz-ahu': 0 };
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (r.building) buildings[r.building] = true;
-    if (r.category === 'ahu') ahu++;
+    if (r.category === 'ahu' || r.category === 'rtu') ahu++;
     // M3: VAV family now includes zone (VVT zone terminals)
     if (r.category === 'vav' || r.category === 'fpb' || r.category === 'ddvav' || r.category === 'zone') vav++;
     if (r.category === 'hwp' || r.category === 'chwp' || r.category === 'ct') plants++;
@@ -3095,6 +3267,12 @@ function emCalcSummaryStats(rows) {
     // Count new M3 types
     if (r.category in _hvacNewTypes) _hvacNewTypes[r.category]++;
     if (r.category in _nonHvacTypes) _nonHvacTypes[r.category]++;
+    // 9018b1c6: subtype counting (rtu category always uses 'rtu' base label)
+    if ((r.category === 'ahu' || r.category === 'rtu') && r.subtype) {
+      var _baseLabel = r.category === 'rtu' || /\brtu\b/i.test(r.equipName) ? 'rtu' : 'ahu';
+      var _sk = r.subtype + '-' + _baseLabel;
+      if (_sk in _subtypeCounts) _subtypeCounts[_sk]++;
+    }
     var pts = r.points || {};
     var hasLive = false;
     for (var k in pts) {
@@ -3120,11 +3298,14 @@ function emCalcSummaryStats(rows) {
     ef: _hvacNewTypes.ef,
     furnace: _hvacNewTypes.furnace,
     zone: _hvacNewTypes.zone,
+    mau: _hvacNewTypes.mau,
+    erv: _hvacNewTypes.erv,
     fire: _nonHvacTypes.fire,
     power: _nonHvacTypes.power,
     plumbing: _nonHvacTypes.plumbing,
     controls: _nonHvacTypes.controls,
     sensor: _nonHvacTypes.sensor,
+    subtypes: _subtypeCounts,
   };
 }
 
@@ -3209,8 +3390,17 @@ function emRenderToolbar(data, pid, projBadge) {
   }
   var typeOpts =
     '<option value="">All Types</option>' +
-    '<option value="ahu">AHU / RTU</option>' +
+    '<option value="rtu">RTU</option>' +
+    '<option value="sz-rtu">  SZ-RTU</option>' +
+    '<option value="vav-rtu">  VAV-RTU</option>' +
+    '<option value="mtz-rtu">  MTZ-RTU</option>' +
+    '<option value="ahu">AHU</option>' +
+    '<option value="sz-ahu">  SZ-AHU</option>' +
+    '<option value="vav-ahu">  VAV-AHU</option>' +
+    '<option value="mtz-ahu">  MTZ-AHU</option>' +
     '<option value="doas">DOAS / ERV</option>' +
+    '<option value="mau">Makeup Air Unit</option>' +
+    '<option value="erv">Energy Recovery Unit</option>' +
     '<option value="vav">VAV</option>' +
     '<option value="fpb">FPB</option>' +
     '<option value="ddvav">DD-VAV</option>' +
@@ -3938,6 +4128,8 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     emStatPill('Equipment', stats.total) +
     emStatPill('AHU / RTU', stats.ahu) +
     (stats.doas ? emStatPill('DOAS', stats.doas) : '') +
+    (stats.mau ? emStatPill('MAU', stats.mau) : '') +
+    (stats.erv ? emStatPill('ERV', stats.erv) : '') +
     emStatPill('VAV / FPB', stats.vav) +
     (stats.furnace ? emStatPill('Furnace', stats.furnace) : '') +
     (stats.fcu ? emStatPill('Fan Coil', stats.fcu) : '') +
@@ -4783,7 +4975,7 @@ function emRenderTable(data, filters) {
       var isEdited = edits && edits[editKey] !== undefined;
       var rawVal = emGetCellValByDef(row, def, edits);
       var isEmpty = rawVal === null || rawVal === undefined || rawVal === '';
-      var displayVal = emFormatCell(rawVal, def);
+      var displayVal = emFormatCell(rawVal, def, row); // 9018b1c6: pass row for subtype label
       var cellStyle =
         'border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;' +
         (def.isLive ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
@@ -5146,6 +5338,9 @@ function emComputeBuildingZoneStats(rows, seedRows) {
   // and must be excluded so their blended return-air is not mistaken for a single space.
   // This function is only called for rows with category === 'ahu'.
   function _isSingleZoneAhu(ahuRow) {
+    // 9018b1c6: fast path for rows that have been subtyped
+    if (ahuRow.subtype === 'sz') return true;
+    // Legacy point-check path for rows without subtype
     var _p = emGetNormalizedPoints(ahuRow);
     return (
       (_p['zoneCoolSetpoint'] !== undefined && _p['zoneCoolSetpoint'] !== '') ||
@@ -5160,10 +5355,10 @@ function emComputeBuildingZoneStats(rows, seedRows) {
     var row = rows[i];
     var _rowIsSingleZoneAhu = false;
     if (!zoneCategories[row.category]) {
-      // Not a traditional zone category — check if it is a single-zone AHU.
-      if (row.category !== 'ahu') continue;
+      // Not a traditional zone category — check if it is a single-zone AHU or RTU.
+      if (row.category !== 'ahu' && row.category !== 'rtu') continue;
       _rowIsSingleZoneAhu = _isSingleZoneAhu(row);
-      if (!_rowIsSingleZoneAhu) continue; // true multizone AHU — skip
+      if (!_rowIsSingleZoneAhu) continue; // true multizone AHU/RTU — skip
     }
 
     var bldg = row.building || '(No Building)';
@@ -5569,11 +5764,14 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   var pid = window._emActivePid || '';
   var allRows = data.rows || [];
   var zoneCategories = { vav: true, fpb: true, ddvav: true, fcu: true };
-  var catLabels = { vav: 'VAV', fpb: 'FPB', ddvav: 'DD-VAV', fcu: 'FCU', ahu: 'AHU/RTU' };
+  var catLabels = { vav: 'VAV', fpb: 'FPB', ddvav: 'DD-VAV', fcu: 'FCU', ahu: 'AHU', rtu: 'RTU' };
 
   // Single-zone AHU gate for detail view (mirrors emComputeBuildingZoneStats):
   // include an 'ahu' row only if it has zone setpoints or a zone temp (i.e. single-zone unit).
   function _detailIsSingleZoneAhu(r) {
+    // 9018b1c6: fast path for rows that have been subtyped
+    if (r.subtype === 'sz') return true;
+    // Legacy point-check path for rows without subtype
     var _p = emGetNormalizedPoints(r);
     return (
       (_p['zoneCoolSetpoint'] !== undefined && _p['zoneCoolSetpoint'] !== '') ||
@@ -5588,7 +5786,7 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   var bldgRows = baseFiltered.filter(function (r) {
     if (r.building !== buildingName) return false;
     if (zoneCategories[r.category]) return true;
-    if (r.category === 'ahu') return _detailIsSingleZoneAhu(r);
+    if (r.category === 'ahu' || r.category === 'rtu') return _detailIsSingleZoneAhu(r);
     return false;
   });
 
@@ -6147,7 +6345,8 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
 
   // ── Equipment Type ──
   if (def.isAuditType) {
-    var catLabel = row.category ? row.category.toUpperCase() : 'Unknown';
+    // 9018b1c6: use emFormatEquipTypeLabel so subtype is shown (e.g. "SZ-RTU", "VAV-AHU")
+    var catLabel = emFormatEquipTypeLabel(row);
     return (
       '<td style="' + baseStyle + 'text-align:left;font-size:10px;color:var(--text2)">' + emHtmlEsc(catLabel) + '</td>'
     );
@@ -7091,7 +7290,7 @@ function emTogglePointDrawer(rowId) {
   if (data) emRenderTable(data, _emFilters);
 }
 
-function emFormatCell(val, def) {
+function emFormatCell(val, def, row) {
   if (val === null || val === undefined || val === '') return '--';
   var s = String(val);
   // Step 3 — offline sentinel display: WebCTRL "no data" markers render as muted "offline" label.
@@ -7101,9 +7300,9 @@ function emFormatCell(val, def) {
   if (s.trim() === '?' || s.trim() === 'offline') {
     return '<span style="color:var(--text3);font-size:11px;font-style:italic">offline</span>';
   }
-  // Milestone 2: render category key as a friendly equipment-type label
+  // 9018b1c6: render category using emFormatEquipTypeLabel so subtype is shown (e.g. "SZ-RTU")
   if (def.isCategory) {
-    return EM_CATEGORY_LABELS[s] || (s ? s.toUpperCase() : '--');
+    return row ? emFormatEquipTypeLabel(row) : EM_CATEGORY_LABELS[s] || (s ? s.toUpperCase() : '--');
   }
   if (def.key.indexOf('check_') === 0) {
     if (!def.isLive) {
@@ -7137,7 +7336,26 @@ function emFilterRows(rows, filters) {
   var f = filters || {};
   return rows.filter(function (r) {
     if (f.building && r.building !== f.building) return false;
-    if (f.type && r.category !== f.type) return false;
+    if (f.type) {
+      // 9018b1c6: handle subtype composite filter values (e.g. 'sz-rtu', 'vav-ahu', 'mtz-rtu')
+      // After RTU split: rtu-subtype filters match category==='rtu'; ahu-subtype filters match category==='ahu'
+      if (f.type === 'sz-rtu') {
+        if (!(r.category === 'rtu' && r.subtype === 'sz')) return false;
+      } else if (f.type === 'vav-rtu') {
+        if (!(r.category === 'rtu' && r.subtype === 'vav')) return false;
+      } else if (f.type === 'mtz-rtu') {
+        if (!(r.category === 'rtu' && r.subtype === 'mtz')) return false;
+      } else if (f.type === 'sz-ahu') {
+        if (!(r.category === 'ahu' && r.subtype === 'sz')) return false;
+      } else if (f.type === 'vav-ahu') {
+        if (!(r.category === 'ahu' && r.subtype === 'vav')) return false;
+      } else if (f.type === 'mtz-ahu') {
+        if (!(r.category === 'ahu' && r.subtype === 'mtz')) return false;
+      } else {
+        // Plain category filter (existing behavior)
+        if (r.category !== f.type) return false;
+      }
+    }
     if (f.search) {
       var q = f.search.toLowerCase();
       var haystack = (r.building + ' ' + r.equipName + ' ' + r.location + ' ' + r.notes).toLowerCase();
@@ -7773,6 +7991,16 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasCHWCoil', label: 'Has CHW Coil', default: true },
     { key: 'hasHWCoil', label: 'Has HW Coil', default: true },
     // M4 Part C: default true so missing CO2 lowers audit coverage for AHU/VAV
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
+    { key: 'hasOAFlow', label: 'Has OA Flow Meter', default: false },
+  ],
+  // RTU uses the same compliance profile as AHU (ASHRAE 36 §5.16)
+  rtu: [
+    { key: 'hasReturnFan', label: 'Has Return Fan', default: false },
+    { key: 'hasReliefFan', label: 'Has Relief Fan', default: false },
+    { key: 'hasEconomizer', label: 'Has Economizer', default: true },
+    { key: 'hasCHWCoil', label: 'Has CHW Coil', default: true },
+    { key: 'hasHWCoil', label: 'Has HW Coil', default: true },
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOAFlow', label: 'Has OA Flow Meter', default: false },
   ],
@@ -12069,6 +12297,11 @@ var EM_POINT_CATEGORIES = {
   ],
 };
 
+// RTU uses the same ASHRAE 36 compliance profile as AHU — alias the category key.
+// This ensures EM_POINT_CATEGORIES['rtu'] resolves correctly for compliance scoring,
+// gap analysis, and any other code that indexes into EM_POINT_CATEGORIES by category string.
+EM_POINT_CATEGORIES.rtu = EM_POINT_CATEGORIES.ahu;
+
 /* ── emNormalizePointName ───────────────────────────────────────────────────
    Internal helper: normalize a raw BAS point name for fuzzy matching.
    - Lowercases
@@ -13232,7 +13465,7 @@ var EM_SEQUENCE_DEFS = [
     key: 'ahu_sat_reset',
     label: 'Supply Air Temperature Reset',
     ashrae36: '§5.16.2',
-    equipTypes: ['ahu'],
+    equipTypes: ['ahu', 'rtu'],
     requiredCats: ['sat', 'oat', 'sfSpeed'],
     keyCats: ['sat', 'oat'],
   },
@@ -13240,7 +13473,7 @@ var EM_SEQUENCE_DEFS = [
     key: 'ahu_dsp_reset',
     label: 'Duct Static Pressure Reset',
     ashrae36: '§5.16.1',
-    equipTypes: ['ahu'],
+    equipTypes: ['ahu', 'rtu'],
     requiredCats: ['dsp', 'sfSpeed', 'sfSpeedCmd'],
     keyCats: ['dsp', 'sfSpeedCmd'],
   },
@@ -13248,7 +13481,7 @@ var EM_SEQUENCE_DEFS = [
     key: 'ahu_economizer',
     label: 'Economizer',
     ashrae36: '§5.16.10',
-    equipTypes: ['ahu'],
+    equipTypes: ['ahu', 'rtu'],
     requiredCats: ['oat', 'oaDampCmd', 'mat'],
     keyCats: ['oaDampCmd'],
     configFlag: 'hasEconomizer',
@@ -13257,7 +13490,7 @@ var EM_SEQUENCE_DEFS = [
     key: 'ahu_freeze_prot',
     label: 'Freeze Protection',
     ashrae36: '§5.16.12',
-    equipTypes: ['ahu'],
+    equipTypes: ['ahu', 'rtu'],
     requiredCats: ['freezeStat', 'mat'],
     keyCats: ['freezeStat'],
   },
@@ -13265,7 +13498,7 @@ var EM_SEQUENCE_DEFS = [
     key: 'ahu_min_oa',
     label: 'Minimum Outside Air',
     ashrae36: '§5.16.6',
-    equipTypes: ['ahu'],
+    equipTypes: ['ahu', 'rtu'],
     requiredCats: ['oaDampCmd', 'sfSpeedCmd'],
     keyCats: ['oaDampCmd'],
   },
@@ -13273,7 +13506,7 @@ var EM_SEQUENCE_DEFS = [
     key: 'ahu_rf_control',
     label: 'Return Fan Control',
     ashrae36: '§5.16.5',
-    equipTypes: ['ahu'],
+    equipTypes: ['ahu', 'rtu'],
     requiredCats: ['rfEnable', 'rfSpeedCmd'],
     keyCats: ['rfEnable'],
     configFlag: 'hasReturnFan',
@@ -13378,7 +13611,7 @@ var EM_SEQUENCE_DEFS = [
     key: 'demandCtrl',
     label: 'Demand-Controlled Ventilation (AHU)',
     ashrae36: '§5.16',
-    equipTypes: ['ahu'],
+    equipTypes: ['ahu', 'rtu'],
     requiredCats: ['co2', 'oaDampCmd'],
     keyCats: ['co2'],
     configFlag: 'hasCO2',

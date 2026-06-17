@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.17.548',
+    date: '2026-06-17',
+    title: 'Equipment Matrix: rooftop units now appear as their own type',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix (Energy Department → open a project → Equipment Matrix tab): Rooftop units now appear as their own type — RTU, and where the data shows it, SZ-RTU / VAV-RTU / MTZ-RTU — instead of being lumped under ‘AHU / RTU’. Units the controls label as ‘Multizone VAV’ are now correctly identified as VAV-RTU.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.17.547',
     date: '2026-06-17',
     title: 'Scrolling and modal fixes: pinned headers, smoother panels',

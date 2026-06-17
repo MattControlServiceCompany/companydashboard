@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.17.547'; // deployed 2026-06-17 (Project tab navigation: honor Last Used Tab, persist per-project, fix content/underline desync)
+  var CH_VERSION = 'v2026.06.17.548'; // deployed 2026-06-17 (Equipment Matrix: RTU is its own type (RTU/SZ-RTU/VAV-RTU/MTZ-RTU); subtype read from Multizone-VAV type label)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
