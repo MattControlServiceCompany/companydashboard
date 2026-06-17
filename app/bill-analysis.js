@@ -1158,6 +1158,140 @@ function _analyzeMeterBills(bills, m) {
   return flags;
 }
 
+// ── WATER vs SEWER PARITY CHECK ──
+// Detects months where water and sewer usage diverge beyond a plausible band,
+// which is a strong signal of an OCR misread on one side.
+//
+// Thresholds: flag when water/sewer ratio < LO or > HI.
+// City of Louisburg charges sewer as a fraction of water, so the ratio can
+// legitimately be >1.0. The band is intentionally wide — this is a dismissible
+// warning, never an auto-correction.
+const _WSP_LO = 0.5; // flag if wu/su < 0.5 (sewer >> water by >2×)
+const _WSP_HI = 2.0; // flag if wu/su > 2.0 (water >> sewer by >2×)
+
+/**
+ * Cross-meter parity check: compares Water and Sewer meter bills for the same
+ * building by normalized month+year. Appends warning flags to both bills when
+ * usage diverges beyond the _WSP_LO / _WSP_HI band.
+ *
+ * NON-DESTRUCTIVE: never mutates usage values. Only appends to bill._flags.
+ *
+ * @param {object} building  - Building object with .meters[]
+ */
+function _analyzeWaterSewerParity(building) {
+  if (!building || !Array.isArray(building.meters)) return;
+
+  const waterMeter = building.meters.find((m) => (m.commodity || '') === 'Water');
+  const sewerMeter = building.meters.find((m) => (m.commodity || '') === 'Sewer');
+  if (!waterMeter || !sewerMeter) return;
+
+  const waterBills = waterMeter.bills || [];
+  const sewerBills = sewerMeter.bills || [];
+  if (!waterBills.length || !sewerBills.length) return;
+
+  const FLAG_ID = 'waterSewerParity_warn';
+  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Build an index of sewer bills by normalized month+year key.
+  // Key: "YYYY-MM" where MM is the 0-based month from _billNormMonth.
+  // Uses end-date year so the key stays stable regardless of billing period start.
+  function _wspNormKey(bill) {
+    const nm = _billNormMonth(bill);
+    if (nm < 0) return null;
+    const e = _parseISO(bill.end);
+    if (!e || isNaN(e)) return null;
+    return e.getFullYear() + '-' + String(nm).padStart(2, '0');
+  }
+
+  const sewerByKey = {};
+  for (const sb of sewerBills) {
+    const k = _wspNormKey(sb);
+    if (k) sewerByKey[k] = sb;
+  }
+
+  // Helper: compute a flag message for a (water, sewer) bill pair, or null if no flag.
+  function _wspFlagMsg(wb, sb) {
+    const wu = pf(wb.waterUsage);
+    // Sewer bills may store usage in sewerUsage or waterUsage depending on provider.
+    const su = pf(sb.sewerUsage) || pf(sb.waterUsage);
+    const wCharge = pf(wb.waterCharge) || pf(wb.totalCost);
+    const sCharge = pf(sb.sewerCharge) || pf(sb.totalCost);
+
+    if (wu > 0 && su > 0) {
+      const ratio = wu / su;
+      if (ratio < _WSP_LO || ratio > _WSP_HI) {
+        return (
+          'Water vs sewer usage diverge: water=' +
+          wu.toLocaleString() +
+          ' gal, sewer=' +
+          su.toLocaleString() +
+          ' gal (' +
+          ratio.toFixed(2) +
+          '\xd7 ratio — likely OCR misread)'
+        );
+      }
+    } else if (wu === 0 && su === 0) {
+      // Both zero and both missing — no data to compare
+      return null;
+    } else if (wu === 0 && (su > 0 || sCharge > 0)) {
+      return (
+        'Water usage is 0 but sewer has usage/charge — water bill may be missing usage (sewer=' +
+        su.toLocaleString() +
+        ' gal, sewer charge=$' +
+        sCharge.toFixed(2) +
+        ')'
+      );
+    } else if (su === 0 && (wu > 0 || wCharge > 0)) {
+      return (
+        'Sewer usage is 0 but water has usage/charge — sewer bill may be missing usage (water=' +
+        wu.toLocaleString() +
+        ' gal, water charge=$' +
+        wCharge.toFixed(2) +
+        ')'
+      );
+    }
+    return null;
+  }
+
+  // Helper: upsert or remove a parity flag on a bill object (mutates _flags only).
+  function _wspApplyFlag(bill, flagMsg) {
+    bill._flags = Array.isArray(bill._flags) ? bill._flags : [];
+    const prev = bill._flags.find((f) => f.id === FLAG_ID);
+    if (flagMsg) {
+      if (!prev) {
+        bill._flags.push({
+          id: FLAG_ID,
+          label: flagMsg,
+          severity: 'warning',
+          firedAt: today,
+          dismissed: false,
+          dismissNote: '',
+        });
+      } else {
+        // Update label in case usage values changed (e.g. re-import after correction)
+        prev.label = flagMsg;
+      }
+    } else {
+      // No flag warranted — remove any non-dismissed parity flag
+      if (prev && !prev.dismissed) {
+        bill._flags = bill._flags.filter((f) => f.id !== FLAG_ID);
+      }
+    }
+  }
+
+  for (const wb of waterBills) {
+    const k = _wspNormKey(wb);
+    if (!k) continue;
+    const sb = sewerByKey[k];
+    if (!sb) continue;
+
+    const flagMsg = _wspFlagMsg(wb, sb);
+    _wspApplyFlag(wb, flagMsg);
+    _wspApplyFlag(sb, flagMsg);
+  }
+}
+
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
 async function _postExtractionVerify(bills, utilityName, rawText) {
@@ -4494,6 +4628,8 @@ function _saveBillToMatchedMeter(extracted, match) {
     const _savedBill = existing || billRow;
     runBillValidation(liveMeter, _savedBill);
   }
+  // Run building-level cross-meter validation (water vs sewer parity, etc.)
+  if (typeof runBuildingValidation === 'function') runBuildingValidation(liveBldg);
   // Fix 4: auto-populate meter account number on first save
   if (extracted.AccountNumber && !liveMeter.account) {
     liveMeter.account = extracted.AccountNumber;
@@ -11531,6 +11667,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
           m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
         }
         if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
+        if (typeof runBuildingValidation === 'function') runBuildingValidation(b);
         saveUtilityData();
         const bldgLabel = b.name || b.addr || b.id;
         showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
@@ -11601,6 +11738,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
         m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
       }
       if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
+      if (typeof runBuildingValidation === 'function') runBuildingValidation(targetBldg);
       saveUtilityData();
       const bldgLabel = targetBldg.name || targetBldg.addr || targetBldg.id;
       showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
@@ -11634,6 +11772,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
   newMeter.bills.push(billRow);
   newMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
   if (typeof runBillValidation === 'function') runBillValidation(newMeter, billRow);
+  if (typeof runBuildingValidation === 'function') runBuildingValidation(targetBldg);
 
   saveUtilityData();
 

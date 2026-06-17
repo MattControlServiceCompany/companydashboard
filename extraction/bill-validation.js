@@ -21,6 +21,8 @@ function runBillValidation(meter, bill) {
 
   // Convert transient { field, msg, level } → persistent { id, label, severity, firedAt, dismissed, dismissNote }
   // Preserve any existing dismissed flags — merge by id so dismissals survive a re-validation.
+  // Also preserve any cross-meter flags (e.g. waterSewerParity_warn) that are not produced by
+  // _analyzeMeterBills — those are managed by runBuildingValidation and must not be wiped here.
   const existing = Array.isArray(bill._flags) ? bill._flags : [];
   const today = new Date().toISOString().slice(0, 10);
   const newFlags = transientFlags.map((f) => {
@@ -35,7 +37,11 @@ function runBillValidation(meter, bill) {
       dismissNote: prev ? prev.dismissNote : '',
     };
   });
-  bill._flags = newFlags;
+  // Carry forward any cross-meter flags not managed by _analyzeMeterBills.
+  // Currently: waterSewerParity_warn (managed by _analyzeWaterSewerParity / runBuildingValidation).
+  const CROSS_METER_FLAG_IDS = ['waterSewerParity_warn'];
+  const crossMeterFlags = existing.filter((f) => CROSS_METER_FLAG_IDS.includes(f.id));
+  bill._flags = [...newFlags, ...crossMeterFlags];
 }
 
 /**
@@ -48,6 +54,21 @@ function runBillValidation(meter, bill) {
 function getBillFlagCount(bill) {
   if (!bill || !Array.isArray(bill._flags)) return 0;
   return bill._flags.filter((f) => !f.dismissed).length;
+}
+
+/**
+ * Run building-level validation checks that require cross-meter context.
+ * Currently runs the water vs sewer parity check across all buildings' meters.
+ *
+ * Call this after saving any Water or Sewer bill, passing the building object.
+ * Safe to call for any building — returns immediately if the building lacks
+ * both a Water and Sewer meter.
+ *
+ * @param {object} building  - Building object with .meters[]
+ */
+function runBuildingValidation(building) {
+  if (!building || typeof _analyzeWaterSewerParity !== 'function') return;
+  _analyzeWaterSewerParity(building);
 }
 
 /**

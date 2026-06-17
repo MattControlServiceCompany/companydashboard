@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.17.542',
+    date: '2026-06-17',
+    title: 'Utility bills: water vs. sewer usage mismatches now flagged as warnings',
+    items: [
+      {
+        type: 'feature',
+        text: "CompanyHub now checks each building's water and sewer bills side-by-side each month. If the usage on one side is more than double the other — or if one side shows usage while the other shows zero — an amber warning flag appears on the bill row in the Utility Data tab. The flag is dismissible with a note, just like other bill warnings, and never changes any usage values.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.17.541',
     date: '2026-06-17',
     title: 'Propane: cost now distributes correctly across months when delivery total is blank',

@@ -362,6 +362,11 @@ function importBillCsvRows() {
       if (addedBill) runBillValidation(m, addedBill);
     });
   }
+  // Run building-level cross-meter validation (water vs sewer parity, etc.)
+  if (typeof runBuildingValidation === 'function' && typeof getUDBldg === 'function') {
+    const _csvBldg = getUDBldg(udSelProjId, udSelBldgId);
+    if (_csvBldg) runBuildingValidation(_csvBldg);
+  }
   saveUtilityData();
   closeBillCsvModal();
   udActiveTab = 'bills';
@@ -1941,6 +1946,11 @@ function saveBillRow() {
   if (typeof runBillValidation === 'function') {
     const _savedBill = row || m.bills.find((b) => b.start === data.start) || m.bills[m.bills.length - 1];
     if (_savedBill) runBillValidation(m, _savedBill);
+  }
+  // Run building-level cross-meter validation (water vs sewer parity, etc.)
+  if (typeof runBuildingValidation === 'function' && typeof getUDBldg === 'function') {
+    const _editBldg = getUDBldg(udSelProjId, udSelBldgId);
+    if (_editBldg) runBuildingValidation(_editBldg);
   }
   saveUtilityData();
   closeBillModal();
