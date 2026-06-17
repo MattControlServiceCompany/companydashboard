@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.17.547',
+    date: '2026-06-17',
+    title: 'Scrolling and modal fixes: pinned headers, smoother panels',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Settings and Help modal headers now stay pinned at the top as you scroll through long content lists — previously the header scrolled away and you had to scroll back up to close or switch sections.',
+      },
+      {
+        type: 'fix',
+        text: 'The "Extraction Output" sticky header in the PDF extraction panel now blends with the panel background instead of appearing darker than the surrounding surface.',
+      },
+      {
+        type: 'fix',
+        text: 'The main content area in the Energy page no longer shows a double scrollbar when the detail pane is open. The outer container was scrolling independently of the inner pane — this is resolved.',
+      },
+      {
+        type: 'fix',
+        text: 'The content scroll model is now consistent across all pages: each tab panel handles its own scrolling, and the outer content container no longer competes with it.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.17.546',
     date: '2026-06-17',
     title: 'Project tabs: Last Used Tab now works reliably',

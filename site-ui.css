@@ -33,6 +33,14 @@
   --font: 'Outfit', sans-serif;
   --mono: 'JetBrains Mono', monospace;
   --r: 10px;
+  /* ── Z-INDEX TIER TOKENS ── */
+  --z-sticky: 2; /* position:sticky headers inside scroll containers */
+  --z-chrome: 10; /* in-panel UI chrome (collapse tabs, resize handles) */
+  --z-topbar: 200; /* app topbar */
+  --z-drawer: 500; /* slide-in drawers and their overlays */
+  --z-modal: 800; /* dialogs, settings, help */
+  --z-onboarding: 8500; /* quick-start overlay */
+  --z-toast: 9999; /* toasts, always on top */
 }
 
 /* ── RESET ── */
@@ -611,19 +619,26 @@ body {
 }
 
 /* ── CONTENT ── */
+/* Container must NOT scroll — its active child (.tab-panel.active or .view.active) owns the scroll */
 .content {
   flex: 1;
   min-height: 0;
-  padding: 24px 26px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .tab-panel {
   display: none;
   animation: fadeUp 0.26s ease;
 }
 .tab-panel.active {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 26px;
 }
 
 /* ── PAGE HEADER ── */
@@ -716,7 +731,9 @@ body {
   width: 480px;
   max-width: 95vw;
   max-height: 90vh;
-  overflow-y: auto;
+  overflow: hidden; /* outer MUST NOT scroll — only .settings-body scrolls */
+  display: flex;
+  flex-direction: column;
   animation: fadeUp 0.18s ease;
   box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
 }
@@ -726,6 +743,7 @@ body {
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0; /* pinned — never scrolls away */
 }
 .settings-title {
   font-size: 15px;
@@ -755,6 +773,9 @@ body {
 }
 .settings-body {
   padding: 20px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto; /* sole scroll region for settings modal */
 }
 .settings-section {
   margin-bottom: 20px;
@@ -880,7 +901,9 @@ body {
   width: 500px;
   max-width: 95vw;
   max-height: 90vh;
-  overflow-y: auto;
+  overflow: hidden; /* outer MUST NOT scroll — only .help-body scrolls */
+  display: flex;
+  flex-direction: column;
   animation: fadeUp 0.18s ease;
   box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
 }
@@ -890,6 +913,7 @@ body {
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0; /* pinned — never scrolls away */
 }
 .help-title {
   font-size: 15px;
@@ -919,6 +943,9 @@ body {
 }
 .help-body {
   padding: 20px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto; /* sole scroll region for help modal */
 }
 .help-item {
   padding: 10px 12px;
@@ -1115,7 +1142,7 @@ a:focus-visible,
     display: block;
   }
 
-  .content {
+  .tab-panel.active {
     padding: 16px;
   }
 

@@ -647,19 +647,26 @@
       }
 
       /* ── CONTENT ── */
+      /* Container must NOT scroll — .tab-panel.active owns the scroll */
       .content {
         flex: 1;
         min-height: 0;
-        padding: 24px 26px;
-        overflow-y: auto;
-        overflow-x: hidden;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
       }
       .tab-panel {
         display: none;
         animation: fadeUp 0.26s ease;
       }
       .tab-panel.active {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 24px 26px;
       }
 
       /* ── PAGE HEADER ── */
@@ -738,7 +745,9 @@
         width: 480px;
         max-width: 95vw;
         max-height: 90vh;
-        overflow-y: auto;
+        overflow: hidden; /* outer MUST NOT scroll — only .settings-body scrolls */
+        display: flex;
+        flex-direction: column;
         animation: fadeUp 0.18s ease;
         box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
       }
@@ -748,6 +757,7 @@
         justify-content: space-between;
         padding: 16px 20px;
         border-bottom: 1px solid var(--border);
+        flex-shrink: 0; /* pinned — never scrolls away */
       }
       .settings-title {
         font-size: 15px;
@@ -777,6 +787,9 @@
       }
       .settings-body {
         padding: 20px;
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto; /* sole scroll region for settings modal */
       }
       .settings-section {
         margin-bottom: 20px;
@@ -902,7 +915,9 @@
         width: 500px;
         max-width: 95vw;
         max-height: 90vh;
-        overflow-y: auto;
+        overflow: hidden; /* outer MUST NOT scroll — only .help-body scrolls */
+        display: flex;
+        flex-direction: column;
         animation: fadeUp 0.18s ease;
         box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
       }
@@ -912,6 +927,7 @@
         justify-content: space-between;
         padding: 16px 20px;
         border-bottom: 1px solid var(--border);
+        flex-shrink: 0; /* pinned — never scrolls away */
       }
       .help-title {
         font-size: 15px;
@@ -941,6 +957,9 @@
       }
       .help-body {
         padding: 20px;
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto; /* sole scroll region for help modal */
       }
       .help-item {
         padding: 10px 12px;
@@ -1709,7 +1728,7 @@
           display: block;
         }
 
-        .content {
+        .tab-panel.active {
           padding: 16px;
           overflow-x: auto;
         }
@@ -1737,7 +1756,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=546" />
+    <link rel="stylesheet" href="feedback-widget.css?v=547" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -3008,7 +3027,7 @@
         renderCalendar();
       });
     </script>
-    <script src="app/db.js?v=546"></script>
+    <script src="app/db.js?v=547"></script>
     <script>
       /* ── MOBILE SIDEBAR DRAWER ── */
       function buildMobileSidebarToggle() {
@@ -3086,6 +3105,6 @@
         }
       });
     </script>
-    <script src="feedback-widget.js?v=546"></script>
+    <script src="feedback-widget.js?v=547"></script>
   </body>
 </html>
