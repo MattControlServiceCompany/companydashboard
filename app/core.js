@@ -282,6 +282,8 @@ function init() {
           const _rawTab = s.tab || 'dashboard';
           const _validTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
           const _tabToRestore = _validTabIds.has(_rawTab) ? _rawTab : 'dashboard';
+          // Set _activeProjTab BEFORE openDetail() so renderDetail() renders the correct pane active.
+          window._activeProjTab = _tabToRestore;
           openDetail(p.id);
           if (_tabToRestore !== 'dashboard') {
             const btn = document.querySelector('#pdTabBar button[data-tab="' + _tabToRestore + '"]');
@@ -837,15 +839,23 @@ function openDetail(id) {
   window._activeProjId = id;
   const _dfltTab = sget('ch_defaultProjTab', 'dashboard');
   if (_dfltTab === 'last') {
-    // Keep existing _activeProjTab if it's a known valid tab, otherwise fall back to 'dashboard'.
+    // Keep existing _activeProjTab if it's a known valid tab.
+    // Otherwise try per-project localStorage, then fall back to 'dashboard'.
     const _validTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
     if (!window._activeProjTab || !_validTabIds.has(window._activeProjTab)) {
-      window._activeProjTab = 'dashboard';
+      const _persisted = localStorage.getItem('ch_lastProjTab_' + id);
+      window._activeProjTab = (_persisted && _validTabIds.has(_persisted)) ? _persisted : 'dashboard';
     }
   } else {
     window._activeProjTab = _dfltTab;
   }
   renderDetail(p);
+  // If the active tab is not dashboard, activate the correct content pane now.
+  // renderDetail() only renders ptab-dashboard with active; other panes need sPTab().
+  if (window._activeProjTab && window._activeProjTab !== 'dashboard') {
+    const _tabBtn = document.querySelector(`.pdt[data-tab="${window._activeProjTab}"]`);
+    if (_tabBtn) sPTab(window._activeProjTab, _tabBtn);
+  }
   document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
   document.querySelectorAll(`.spfi[data-pid="${id}"]`).forEach((c) => c.classList.add('active'));
   document.querySelector('.ptab.active')?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -962,7 +972,7 @@ function renderDetail(p) {
             <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;flex-shrink:0">
               ${_getProjTabHTML()}
             </div>
-            <div id="ptab-dashboard" class="ptab active" style="padding:0;overflow-y:auto;overflow-x:hidden">
+            <div id="ptab-dashboard" class="ptab${window._activeProjTab === 'dashboard' || !window._activeProjTab ? ' active' : ''}" style="padding:0;overflow-y:auto;overflow-x:hidden">
               <div id="dash-hdr-${p.id}"></div>
               <div style="padding:16px">
                 <div class="dash-grid">
@@ -2563,6 +2573,10 @@ function sPTab(tab, el) {
   if (tab === 'bas-trends' && typeof btInitView === 'function') btInitView(p.id);
   if (tab === 'bas-alarms' && typeof baInitView === 'function') baInitView(p.id);
   window._activeProjTab = tab;
+  // Persist per-project last-used tab so it survives page reloads.
+  if (window._activeProjId != null) {
+    localStorage.setItem('ch_lastProjTab_' + window._activeProjId, tab);
+  }
   saveProjSession();
 }
 

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.17.545'; // deployed 2026-06-17 (Equipment Matrix column resize: correct column, no sort-trigger, persists, visible handle; Raw + Audit View)
+  var CH_VERSION = 'v2026.06.17.546'; // deployed 2026-06-17 (Project tab navigation: honor Last Used Tab, persist per-project, fix content/underline desync)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,25 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.17.546',
+      date: '2026-06-17',
+      title: 'Project tabs: Last Used Tab now works reliably',
+      items: [
+        {
+          type: 'fix',
+          text: 'When your default tab is set to "Last Used Tab," opening a project now returns you to the tab you were on last time — including after a full page reload. Previously it always fell back to the Dashboard tab. The correct tab is now remembered separately per project.',
+        },
+        {
+          type: 'fix',
+          text: "The tab underline and the tab content panel are now always in sync. Previously, reopening a project could show the wrong tab underlined while a different tab's content was displayed.",
+        },
+        {
+          type: 'fix',
+          text: 'Projects with a specific default tab configured (e.g. always open to Budget) continue to honor that setting and are not affected by the Last Used Tab change.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.17.545',
       date: '2026-06-17',
