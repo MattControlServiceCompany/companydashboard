@@ -9432,6 +9432,18 @@ var EM_POINT_CATEGORIES = {
         'current dewpoint',
       ],
     },
+    // 40a0876a: FPB zones may carry CO2 sensors for DCV (ASHRAE 62.1). hasCO2 flag was wired
+    // in EM_EQUIP_CONFIG_FLAGS but no category entry existed, so CO2 never surfaced in Audit view.
+    {
+      key: 'co2',
+      label: 'Zone CO2 Sensor',
+      required: false,
+      ashrae36Name: 'Zone CO2 Concentration',
+      ashrae36Section: '5.7 / DCV',
+      configFlag: 'hasCO2',
+      patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
+      aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
+    },
   ],
 
   /* ── DDVAV (Dual Duct VAV, ASHRAE 36 §5.13) ────────────────────────── */
@@ -9595,6 +9607,18 @@ var EM_POINT_CATEGORIES = {
         'oa dew point',
         'current dewpoint',
       ],
+    },
+    // 40a0876a: DDVAV zones may carry CO2 sensors for DCV (ASHRAE 62.1). hasCO2 flag was wired
+    // in EM_EQUIP_CONFIG_FLAGS but no category entry existed, so CO2 never surfaced in Audit view.
+    {
+      key: 'co2',
+      label: 'Zone CO2 Sensor',
+      required: false,
+      ashrae36Name: 'Zone CO2 Concentration',
+      ashrae36Section: '5.13 / DCV',
+      configFlag: 'hasCO2',
+      patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
+      aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
     },
   ],
 

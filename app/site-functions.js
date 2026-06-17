@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.16.538',
+    date: '2026-06-16',
+    title: 'Equipment Matrix Audit view: zone CO2 now shows for fan-powered and dual-duct terminals',
+    items: [
+      {
+        type: 'fix',
+        text: 'Fan-Powered Boxes (FPB/FTU) and Dual-Duct Terminals (DDVAV) now show and count zone CO2 sensors in the Equipment Matrix Audit view — they were missing the CO2 category entry that VAV terminals already had.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.16.537',
     date: '2026-06-16',
     title: 'Evergy net-metering bills: generation kWh now captured separately',
