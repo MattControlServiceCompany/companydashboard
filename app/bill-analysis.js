@@ -10510,35 +10510,95 @@ function renderSavedBills() {
       '<div style="padding:16px;font-size:13px;color:var(--text2);text-align:center">No unassigned bills. Assigned bills appear in the Utility Data bills table for their meter.</div>';
     return;
   }
-  // Sort newest first
-  const sorted = [...bills].sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
-  el.innerHTML = sorted
-    .map((b) => {
-      const date = b.savedAt
-        ? new Date(b.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        : '';
-      const period =
-        b.BillingPeriodStart && b.BillingPeriodEnd ? b.BillingPeriodStart + ' – ' + b.BillingPeriodEnd : '';
-      const total = b.TotalCurrentCharges
-        ? '$' + parseFloat(b.TotalCurrentCharges).toLocaleString('en-US', { minimumFractionDigits: 2 })
-        : '';
-      return `<div data-bill-id="${b.id}" style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:13px 15px;margin-bottom:8px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;transition:opacity .25s,transform .25s,max-height .3s;max-height:200px;overflow:hidden">
+
+  // Group bills by account/meter — reuse the same helper from core.js
+  const groups = _groupSavedBills(bills);
+  const hasMultiPeriodGroup = groups.some((g) => g.bills.length > 1);
+
+  if (!hasMultiPeriodGroup) {
+    // All singletons — use original flat card list, newest first
+    const sorted = [...bills].sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+    el.innerHTML = sorted
+      .map((b) => {
+        const date = b.savedAt
+          ? new Date(b.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : '';
+        const period =
+          b.BillingPeriodStart && b.BillingPeriodEnd ? b.BillingPeriodStart + ' – ' + b.BillingPeriodEnd : '';
+        const total = b.TotalCurrentCharges
+          ? '$' + parseFloat(b.TotalCurrentCharges).toLocaleString('en-US', { minimumFractionDigits: 2 })
+          : '';
+        return `<div data-bill-id="${b.id}" style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:13px 15px;margin-bottom:8px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;transition:opacity .25s,transform .25s,max-height .3s;max-height:200px;overflow:hidden">
             <div>
               <div style="font-size:13px;font-weight:600;margin-bottom:3px">${b.CustomerName || b.AccountNumber || 'Unknown'} <span style="font-family:var(--mono);font-size:11px;color:var(--text2)">#${b.AccountNumber || '—'}</span></div>
               <div style="font-size:11px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap">
-                ${period ? `<span>📅 ${period}</span>` : ''}
-                ${b.ServiceAddress ? `<span>📍 ${b.ServiceAddress}</span>` : ''}
-                ${total ? `<span style="color:var(--text)">💵 ${total}</span>` : ''}
+                ${period ? `<span>${period}</span>` : ''}
+                ${b.ServiceAddress ? `<span>${b.ServiceAddress}</span>` : ''}
+                ${total ? `<span style="color:var(--text)">${total}</span>` : ''}
                 <span>Saved ${date}</span>
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
-              <button class="btn btn-ghost btn-sm" onclick="viewSavedBill('${b.id}')">📋 Data</button>
-              ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">📄 PDF</button>` : ''}
+              <button class="btn btn-ghost btn-sm" onclick="viewSavedBill('${b.id}')">Data</button>
+              ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
               <button class="btn btn-em btn-sm" onclick="openAssignModal('${b.id}')">Assign</button>
-              <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">✕</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">Delete</button>
             </div>
           </div>`;
+      })
+      .join('');
+    return;
+  }
+
+  // Grouped view: one card per account/meter group, with expand/collapse of periods
+  el.innerHTML = groups
+    .map((grp) => {
+      const acctDisplay = grp.accountNumber || grp.meterNumber || '';
+      const commodity = grp.commodity || '';
+      const provider = grp.provider || '';
+      // periods sorted oldest→newest within group (from _groupSavedBills)
+      const periodItems = grp.bills
+        .map((b) => {
+          const period =
+            b.BillingPeriodStart && b.BillingPeriodEnd ? b.BillingPeriodStart + ' – ' + b.BillingPeriodEnd : '—';
+          const total = b.TotalCurrentCharges
+            ? '$' + parseFloat(b.TotalCurrentCharges).toLocaleString('en-US', { minimumFractionDigits: 2 })
+            : '';
+          const date = b.savedAt
+            ? new Date(b.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : '';
+          const srcFile = b._sourceFile || '';
+          const srcBadge = srcFile
+            ? `<span title="${srcFile}" style="font-size:9px;background:var(--s3);color:var(--text2);border-radius:3px;padding:1px 4px;margin-left:4px;cursor:default">${srcFile
+                .split(/[/\\]/)
+                .pop()
+                .replace(/\.pdf$/i, '')}</span>`
+            : '';
+          return `<div data-bill-id="${b.id}" style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-top:1px solid var(--border);gap:8px;flex-wrap:wrap;transition:opacity .25s,transform .25s,max-height .3s;max-height:80px;overflow:hidden">
+              <div style="font-size:11px;color:var(--text2);display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <span style="font-family:var(--mono);color:var(--text)">${period}</span>${srcBadge}
+                ${total ? `<span style="color:var(--text)">${total}</span>` : ''}
+                <span>Saved ${date}</span>
+              </div>
+              <div style="display:flex;gap:5px;flex-shrink:0">
+                <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="viewSavedBill('${b.id}')">Data</button>
+                ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
+                <button class="btn btn-em btn-sm" style="font-size:10px" onclick="openAssignModal('${b.id}')">Assign</button>
+                <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">Delete</button>
+              </div>
+            </div>`;
+        })
+        .join('');
+
+      return `<div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;margin-bottom:8px;overflow:hidden">
+          <div style="padding:11px 15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:600">${grp.displayLabel}</span>
+            ${acctDisplay ? `<span style="font-family:var(--mono);font-size:11px;color:var(--text2)">#${acctDisplay}</span>` : ''}
+            ${commodity ? `<span style="font-size:11px;color:var(--text2)">${commodity}${provider ? ' · ' + provider : ''}</span>` : ''}
+            <span style="background:var(--accent);color:#fff;font-size:10px;border-radius:10px;padding:1px 7px;font-weight:600">${grp.bills.length} period${grp.bills.length !== 1 ? 's' : ''}</span>
+          </div>
+          ${periodItems}
+        </div>`;
     })
     .join('');
 }

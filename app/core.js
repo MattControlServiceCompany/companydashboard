@@ -2890,6 +2890,64 @@ function toggleSavedBillsPanel(projId) {
   }
 }
 
+// Group saved bills by account/meter number.
+// Returns array of group objects: { key, accountNumber, meterNumber, displayLabel, commodity, provider, bills[] }
+// Within each group bills are deduped by (BillingPeriodStart, BillingPeriodEnd) keeping latest savedAt,
+// then sorted by BillingPeriodStart ascending (oldest→newest within a group timeline).
+function _groupSavedBills(bills) {
+  const groups = new Map();
+  for (const b of bills) {
+    const acctRaw = b.AccountNumber || b.accountNumber || '';
+    const meterRaw = b.MeterNumber || b.meterNumber || '';
+    const acctClean = acctRaw.replace(/[\s\-]/g, '').toLowerCase();
+    const meterClean = meterRaw.replace(/[\s\-]/g, '').toLowerCase();
+    const key = acctClean ? acctClean : meterClean ? 'meter:' + meterClean : '_unknown';
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        accountNumber: acctRaw,
+        meterNumber: meterRaw,
+        displayLabel:
+          b.CustomerName || b.customerName || b.ServiceAddress || b.serviceAddress || acctRaw || meterRaw || 'Unknown',
+        commodity: b.Commodity || b.commodity || '',
+        provider: b.UtilityCompany || b.utilityCompany || '',
+        bills: [],
+      });
+    }
+    groups.get(key).bills.push(b);
+  }
+
+  // Dedup each group by (BillingPeriodStart, BillingPeriodEnd), keeping latest savedAt
+  for (const grp of groups.values()) {
+    const periodMap = new Map();
+    for (const b of grp.bills) {
+      const ps = b.BillingPeriodStart || b.start || '';
+      const pe = b.BillingPeriodEnd || b.end || '';
+      const periodKey = ps + '|' + pe;
+      if (!periodMap.has(periodKey)) {
+        periodMap.set(periodKey, b);
+      } else {
+        const existing = periodMap.get(periodKey);
+        const newTs = b.savedAt ? new Date(b.savedAt).getTime() : 0;
+        const oldTs = existing.savedAt ? new Date(existing.savedAt).getTime() : 0;
+        if (newTs > oldTs) periodMap.set(periodKey, b);
+      }
+    }
+    // Sort periods by BillingPeriodStart ascending (timeline order within group)
+    grp.bills = Array.from(periodMap.values()).sort((a, b) => {
+      const av = a.BillingPeriodStart || a.start || '';
+      const bv = b.BillingPeriodStart || b.start || '';
+      return av < bv ? -1 : av > bv ? 1 : 0;
+    });
+  }
+
+  return Array.from(groups.values());
+}
+
+// Per-project grouping toggle state: true = grouped by account, false = flat list
+const _sbGroupState = {};
+
 function renderProjSavedBills(projId) {
   const el = document.getElementById('ptab-savedbills-body-' + projId);
   if (!el) return;
@@ -2907,149 +2965,216 @@ function renderProjSavedBills(projId) {
     return;
   }
 
-  // Apply sort (#142)
-  const sortSt = _sbSortState[projId] || { col: 'period', dir: 'desc' };
-  bills = _sbSortBills(bills, sortSt.col, sortSt.dir);
+  const unassignedCount = bills.filter((b) => !b.projId).length;
+
+  // Determine whether grouped view should be used
+  const groups = _groupSavedBills(bills);
+  const hasMultiPeriodGroup = groups.some((g) => g.bills.length > 1);
+  // Default ON when any account has 2+ periods; toggle persists in _sbGroupState
+  if (!(projId in _sbGroupState)) {
+    _sbGroupState[projId] = hasMultiPeriodGroup;
+  }
+  const useGrouped = _sbGroupState[projId];
 
   // Build building + meter options for the assign dropdowns
   const projUD = utilityData[projId];
   const buildings = projUD?.buildings || [];
-  const bldgOptions = buildings.map((b) => `<option value="${b.id}">${b.name || 'Building'}</option>`).join('');
 
-  const getMeterOptions = (bldgId) => {
-    const b = buildings.find((x) => x.id === bldgId);
-    if (!b) return '';
-    return (b.meters || [])
+  // Helper: build per-bill smart-matched assign controls
+  const buildAssignCell = (b) => {
+    const isAssigned = !!b.projId;
+    if (isAssigned) return `<span style="color:var(--green);font-size:10px">Assigned</span>`;
+    if (buildings.length === 0) return `<span style="color:var(--text3);font-size:10px">No buildings</span>`;
+    const commodity = b.Commodity || b.commodity || '';
+    const acct = b.AccountNumber || b.accountNumber || '';
+    const billComm = commodity.toLowerCase();
+    const billAcct = acct.replace(/[\s\-]/g, '').toLowerCase();
+    let bestBldgId = buildings[0]?.id || '';
+    let bestMeterId = '';
+    for (const bld of buildings) {
+      for (const mt of bld.meters || []) {
+        const mc = (mt.commodity || '').toLowerCase();
+        const ma = (mt.account || '').replace(/[\s\-]/g, '').toLowerCase();
+        if (billAcct && ma && billAcct === ma) {
+          bestBldgId = bld.id;
+          bestMeterId = mt.id;
+          break;
+        }
+        if (billComm && mc && billComm === mc && !bestMeterId) {
+          bestBldgId = bld.id;
+          bestMeterId = mt.id;
+        }
+      }
+      if (
+        bestMeterId &&
+        billAcct &&
+        (buildings.find((x) => x.id === bestBldgId)?.meters || []).some(
+          (m) => (m.account || '').replace(/[\s\-]/g, '').toLowerCase() === billAcct,
+        )
+      )
+        break;
+    }
+    const bldgOpts = buildings
       .map(
-        (m) =>
-          `<option value="${m.id}">${m.provider || m.commodity || 'Meter'} ${m.account ? '· ' + m.account : ''}</option>`,
+        (bl) => `<option value="${bl.id}"${bl.id === bestBldgId ? ' selected' : ''}>${bl.name || 'Building'}</option>`,
       )
       .join('');
+    const meterOpts = (buildings.find((x) => x.id === bestBldgId)?.meters || [])
+      .map(
+        (m) =>
+          `<option value="${m.id}"${m.id === bestMeterId ? ' selected' : ''}>${m.provider || m.commodity || 'Meter'} ${m.account ? '· ' + m.account : ''}</option>`,
+      )
+      .join('');
+    return `<div style="display:flex;gap:3px;align-items:center;flex-wrap:nowrap">
+      <select class="fi" id="sb-bldg-${b.id}" style="padding:1px 3px;font-size:10px;height:22px"
+        onchange="(function(s){var mo=document.getElementById('sb-meter-${b.id}');if(mo){var pid=${JSON.stringify(projId)};var bid=s.value;var ud=utilityData[pid];var bld=(ud?.buildings||[]).find(function(x){return x.id===bid});mo.innerHTML=(bld?.meters||[]).map(function(m){return '<option value=\"'+m.id+'\">'+(m.provider||m.commodity||'Meter')+(m.account?' · '+m.account:'')+'</option>'}).join('')}})(this)">${bldgOpts}</select>
+      <select class="fi" id="sb-meter-${b.id}" style="padding:1px 3px;font-size:10px;height:22px">${meterOpts}</select>
+      <button class="btn btn-em btn-sm" style="font-size:10px;padding:1px 6px" onclick="assignSavedBillFromProj('${b.id}',${JSON.stringify(projId)})">Assign</button>
+    </div>`;
   };
 
-  const unassignedCount = bills.filter((b) => !b.projId).length;
+  // Helper: format a saved-at timestamp compactly
+  const fmtSaved = (savedAt) => {
+    if (!savedAt) return '';
+    return (
+      new Date(savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ' ' +
+      new Date(savedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    );
+  };
 
-  const rows = bills
-    .map((b) => {
-      const commodity = b.Commodity || b.commodity || '—';
-      const provider = b.UtilityCompany || b.utilityCompany || '—';
-      const acct = b.AccountNumber || b.accountNumber || '';
-      const start = b.BillingPeriodStart || b.start || '';
-      const end = b.BillingPeriodEnd || b.end || '';
-      const total = b.TotalCurrentCharges || b.totalCost || '';
-      const saved = b.savedAt
-        ? new Date(b.savedAt).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-          }) +
-          ' ' +
-          new Date(b.savedAt).toLocaleTimeString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit',
+  // Helper: format total cost
+  const fmtTotal = (v) => {
+    if (!v) return '—';
+    const n = parseFloat(String(v).replace(/,/g, ''));
+    return isNaN(n) ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  let contentHtml = '';
+
+  if (useGrouped) {
+    // GROUPED VIEW: one collapsible section per account/meter group
+    const groupSections = groups
+      .map((grp) => {
+        const grpUnassigned = grp.bills.filter((b) => !b.projId).length;
+        const commodity = grp.commodity || '—';
+        const provider = grp.provider || '';
+        const acctDisplay = grp.accountNumber || grp.meterNumber || '';
+        const labelDisplay = grp.displayLabel;
+        // Source file badge: use _sourceFile from first bill (if present)
+        const periodRows = grp.bills
+          .map((b) => {
+            const start = b.BillingPeriodStart || b.start || '';
+            const end = b.BillingPeriodEnd || b.end || '';
+            const srcFile = b._sourceFile || '';
+            const srcBadge = srcFile
+              ? `<span title="${srcFile}&#10;Saved: ${b.savedAt || ''}" style="font-size:9px;background:var(--s3);color:var(--text2);border-radius:3px;padding:1px 4px;margin-left:4px;cursor:default;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle">${srcFile
+                  .split(/[/\\]/)
+                  .pop()
+                  .replace(/\.pdf$/i, '')}</span>`
+              : '';
+            return `<tr style="font-size:11px">
+              <td style="padding:3px 6px;font-family:var(--mono);font-size:10px">${start ? start + ' → ' + end : '—'}${srcBadge}</td>
+              <td style="padding:3px 6px;font-family:var(--mono)">${fmtTotal(b.TotalCurrentCharges || b.totalCost)}</td>
+              <td style="padding:3px 6px;color:var(--text3);font-size:10px">${fmtSaved(b.savedAt)}</td>
+              <td style="padding:3px 6px">${buildAssignCell(b)}</td>
+              <td style="padding:3px 8px;text-align:center;border-left:1px solid var(--border)"><button class="btn btn-sm" style="font-size:10px;padding:2px 8px;color:#fff;background:var(--red);border:1px solid var(--red);white-space:nowrap" onclick="deleteSavedBillFromProj('${b.id}',${JSON.stringify(projId)})" title="Delete this bill">Delete</button></td>
+            </tr>`;
           })
-        : '';
-      const isAssigned = !!b.projId;
+          .join('');
 
-      // Smart-match: find the best building+meter for this bill by commodity+account
-      const billComm = (commodity || '').toLowerCase();
-      const billAcct = (acct || '').replace(/[\s\-]/g, '').toLowerCase();
-      let bestBldgId = buildings[0]?.id || '';
-      let bestMeterId = '';
-      for (const bld of buildings) {
-        for (const mt of bld.meters || []) {
-          const mc = (mt.commodity || '').toLowerCase();
-          const ma = (mt.account || '').replace(/[\s\-]/g, '').toLowerCase();
-          if (billAcct && ma && billAcct === ma) {
-            bestBldgId = bld.id;
-            bestMeterId = mt.id;
-            break;
-          }
-          if (billComm && mc && billComm === mc && !bestMeterId) {
-            bestBldgId = bld.id;
-            bestMeterId = mt.id;
-          }
-        }
-        if (
-          bestMeterId &&
-          billAcct &&
-          (buildings.find((x) => x.id === bestBldgId)?.meters || []).some(
-            (m) => (m.account || '').replace(/[\s\-]/g, '').toLowerCase() === billAcct,
-          )
-        )
-          break;
-      }
-      const bldgOpts = buildings
-        .map(
-          (bl) =>
-            `<option value="${bl.id}"${bl.id === bestBldgId ? ' selected' : ''}>${bl.name || 'Building'}</option>`,
-        )
-        .join('');
-      const meterOpts = (buildings.find((x) => x.id === bestBldgId)?.meters || [])
-        .map(
-          (m) =>
-            `<option value="${m.id}"${m.id === bestMeterId ? ' selected' : ''}>${m.provider || m.commodity || 'Meter'} ${m.account ? '· ' + m.account : ''}</option>`,
-        )
-        .join('');
+        // "Assign All" button for the group (only if any unassigned in this group)
+        const assignAllBtn =
+          grpUnassigned > 0 && buildings.length > 0
+            ? `<button class="btn btn-em btn-sm" style="font-size:10px;padding:1px 6px" onclick="(function(){var ids=${JSON.stringify(grp.bills.filter((b) => !b.projId).map((b) => b.id))};ids.forEach(function(id){var bEl=document.getElementById('sb-bldg-'+id);var mEl=document.getElementById('sb-meter-'+id);if(bEl&&mEl)assignSavedBillFromProj(id,${JSON.stringify(projId)})})})()">Assign All</button>`
+            : '';
 
-      return `<tr style="font-size:11px">
-            <td style="padding:3px 6px">${commodity}</td>
-            <td style="padding:3px 6px;color:var(--text2)">${provider}</td>
-            <td style="padding:3px 6px;font-family:var(--mono);font-size:10px">${acct || '—'}</td>
-            <td style="padding:3px 6px;font-family:var(--mono);font-size:10px">${start ? start + ' → ' + end : '—'}</td>
-            <td style="padding:3px 6px;font-family:var(--mono)">${total ? '$' + parseFloat(String(total).replace(/,/g, '')).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
-            <td style="padding:3px 6px;color:var(--text3)">${saved}</td>
-            <td style="padding:3px 6px">
-              ${
-                isAssigned
-                  ? `<span style="color:var(--green);font-size:10px">✓ Assigned</span>`
-                  : buildings.length === 0
-                    ? `<span style="color:var(--text3);font-size:10px">No buildings</span>`
-                    : `<div style="display:flex;gap:3px;align-items:center;flex-wrap:nowrap">
-                      <select class="fi" id="sb-bldg-${b.id}" style="padding:1px 3px;font-size:10px;height:22px"
-                        onchange="(function(s){var mo=document.getElementById('sb-meter-${b.id}');if(mo){var pid=${JSON.stringify(projId)};var bid=s.value;var ud=utilityData[pid];var bld=(ud?.buildings||[]).find(function(x){return x.id===bid});mo.innerHTML=(bld?.meters||[]).map(function(m){return '<option value=\"'+m.id+'\">'+(m.provider||m.commodity||'Meter')+(m.account?' · '+m.account:'')+'</option>'}).join('')}})(this)">${bldgOpts}</select>
-                      <select class="fi" id="sb-meter-${b.id}" style="padding:1px 3px;font-size:10px;height:22px">${meterOpts}</select>
-                      <button class="btn btn-em btn-sm" style="font-size:10px;padding:1px 6px" onclick="assignSavedBillFromProj('${b.id}',${JSON.stringify(projId)})">Assign</button>
-                    </div>`
-              }
-            </td>
-            <td style="padding:3px 8px;text-align:center;border-left:1px solid var(--border)"><button class="btn btn-sm" style="font-size:10px;padding:2px 8px;color:#fff;background:var(--red);border:1px solid var(--red);white-space:nowrap" onclick="deleteSavedBillFromProj('${b.id}',${JSON.stringify(projId)})" title="Delete this bill">✕ Delete</button></td>
-          </tr>`;
-    })
-    .join('');
+        return `<div style="margin-bottom:10px;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          <div style="background:var(--s3);padding:7px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:600;font-size:12px">${labelDisplay}</span>
+            ${acctDisplay ? `<span style="font-family:var(--mono);font-size:10px;color:var(--text2)">#${acctDisplay}</span>` : ''}
+            <span style="font-size:10px;color:var(--text2)">${commodity}${provider ? ' · ' + provider : ''}</span>
+            <span style="background:var(--accent);color:#fff;font-size:10px;border-radius:10px;padding:1px 7px;font-weight:600">${grp.bills.length} period${grp.bills.length !== 1 ? 's' : ''}</span>
+            ${assignAllBtn}
+          </div>
+          <table class="dtbl" style="width:100%">
+            <thead>
+              <tr>
+                <th style="white-space:nowrap">Period</th>
+                <th>Total</th>
+                <th>Saved</th>
+                <th>Assign to Meter</th>
+                <th style="text-align:center;white-space:nowrap;border-left:1px solid var(--border)">Delete</th>
+              </tr>
+            </thead>
+            <tbody>${periodRows}</tbody>
+          </table>
+        </div>`;
+      })
+      .join('');
+    contentHtml = `<div>${groupSections}</div>`;
+  } else {
+    // FLAT VIEW: original sorted table
+    const sortSt = _sbSortState[projId] || { col: 'period', dir: 'desc' };
+    const sortedBills = _sbSortBills(bills, sortSt.col, sortSt.dir);
+    const arrow = (col) => {
+      if (sortSt.col !== col) return '<span style="opacity:.3;font-size:9px">⇅</span>';
+      return sortSt.dir === 'asc' ? '<span style="font-size:9px">▲</span>' : '<span style="font-size:9px">▼</span>';
+    };
+    const thStyle = 'cursor:pointer;user-select:none;white-space:nowrap';
+    const rows = sortedBills
+      .map((b) => {
+        const commodity = b.Commodity || b.commodity || '—';
+        const provider = b.UtilityCompany || b.utilityCompany || '—';
+        const acct = b.AccountNumber || b.accountNumber || '';
+        const start = b.BillingPeriodStart || b.start || '';
+        const end = b.BillingPeriodEnd || b.end || '';
+        return `<tr style="font-size:11px">
+          <td style="padding:3px 6px">${commodity}</td>
+          <td style="padding:3px 6px;color:var(--text2)">${provider}</td>
+          <td style="padding:3px 6px;font-family:var(--mono);font-size:10px">${acct || '—'}</td>
+          <td style="padding:3px 6px;font-family:var(--mono);font-size:10px">${start ? start + ' → ' + end : '—'}</td>
+          <td style="padding:3px 6px;font-family:var(--mono)">${fmtTotal(b.TotalCurrentCharges || b.totalCost)}</td>
+          <td style="padding:3px 6px;color:var(--text3)">${fmtSaved(b.savedAt)}</td>
+          <td style="padding:3px 6px">${buildAssignCell(b)}</td>
+          <td style="padding:3px 8px;text-align:center;border-left:1px solid var(--border)"><button class="btn btn-sm" style="font-size:10px;padding:2px 8px;color:#fff;background:var(--red);border:1px solid var(--red);white-space:nowrap" onclick="deleteSavedBillFromProj('${b.id}',${JSON.stringify(projId)})" title="Delete this bill">Delete</button></td>
+        </tr>`;
+      })
+      .join('');
+    contentHtml = `<div class="card" style="overflow-x:auto">
+      <table class="dtbl" style="min-width:700px">
+        <thead>
+          <tr>
+            <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'commodity')">Commodity ${arrow('commodity')}</th>
+            <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'provider')">Provider ${arrow('provider')}</th>
+            <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'account')">Account ${arrow('account')}</th>
+            <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'period')">Period ${arrow('period')}</th>
+            <th>Total</th>
+            <th>Saved</th>
+            <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'meter')">Assign to Meter ${arrow('meter')}</th>
+            <th style="text-align:center;white-space:nowrap;border-left:1px solid var(--border)">Delete</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
 
-  // Sort arrow helper
-  const arrow = (col) => {
-    if (sortSt.col !== col) return '<span style="opacity:.3;font-size:9px">⇅</span>';
-    return sortSt.dir === 'asc' ? '<span style="font-size:9px">▲</span>' : '<span style="font-size:9px">▼</span>';
-  };
-  const thStyle = 'cursor:pointer;user-select:none;white-space:nowrap';
+  // Toggle button label
+  const toggleLabel = useGrouped ? 'Show Flat List' : 'Group by Account';
+  const toggleTitle = useGrouped ? 'Switch to flat list sorted by period' : 'Group bills by account/meter number';
 
   el.innerHTML = `
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-            <div style="font-size:13px;font-weight:600">${bills.length} saved bill${bills.length !== 1 ? 's' : ''}</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" onclick="autoAssignAllSavedBills(${JSON.stringify(projId)})">⚡ Auto-Assign All (${unassignedCount})</button>` : ''}
-              <button class="btn btn-ghost btn-sm" onclick="sv('view-pdf');showToast('Go to PDF/OCR page to extract new bills')">+ Extract PDF Bill</button>
-              ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteAllSavedBills(${JSON.stringify(projId)})">🗑️ Delete All (${unassignedCount})</button>` : ''}
-            </div>
-          </div>
-          <div class="card" style="overflow-x:auto">
-            <table class="dtbl" style="min-width:700px">
-              <thead>
-                <tr>
-                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'commodity')">Commodity ${arrow('commodity')}</th>
-                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'provider')">Provider ${arrow('provider')}</th>
-                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'account')">Account ${arrow('account')}</th>
-                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'period')">Period ${arrow('period')}</th>
-                  <th>Total</th>
-                  <th>Saved</th>
-                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'meter')">Assign to Meter ${arrow('meter')}</th>
-                  <th style="text-align:center;white-space:nowrap;border-left:1px solid var(--border)">Delete</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:13px;font-weight:600">${bills.length} saved bill${bills.length !== 1 ? 's' : ''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${hasMultiPeriodGroup ? `<button class="btn btn-ghost btn-sm" title="${toggleTitle}" onclick="_sbGroupState[${JSON.stringify(projId)}]=!_sbGroupState[${JSON.stringify(projId)}];renderProjSavedBills(${JSON.stringify(projId)})">${toggleLabel}</button>` : ''}
+        ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" onclick="autoAssignAllSavedBills(${JSON.stringify(projId)})">Auto-Assign All (${unassignedCount})</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="sv('view-pdf');showToast('Go to PDF/OCR page to extract new bills')">+ Extract PDF Bill</button>
+        ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteAllSavedBills(${JSON.stringify(projId)})">Delete All (${unassignedCount})</button>` : ''}
+      </div>
+    </div>
+    ${contentHtml}`;
 }
 
 function deleteSavedBillFromProj(billId, projId) {

@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.16.539',
+    date: '2026-06-16',
+    title: 'Saved Bills: grouped by account/meter with deduped, date-sorted timelines',
+    items: [
+      {
+        type: 'feature',
+        text: 'Saved Bills in the project panel and bill detail modal now group by account/meter — all periods for each account roll up into one consolidated, deduplicated, date-sorted timeline instead of a flat list of individual imports.',
+      },
+      {
+        type: 'feature',
+        text: 'A "Flat list" toggle lets you switch back to the old view showing every imported bill individually, including duplicates.',
+      },
+      {
+        type: 'feature',
+        text: "Each billing period now shows a source-file badge so you can see which import file(s) contributed that period's data.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.16.538',
     date: '2026-06-16',
     title: 'Equipment Matrix Audit view: zone CO2 now shows for fan-powered and dual-duct terminals',
