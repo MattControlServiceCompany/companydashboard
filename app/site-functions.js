@@ -1197,7 +1197,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'feature',
-        text: 'New Cost Estimate tab — turns the ASHRAE 36 audit's required sensors and control sequences into a priced scope of work. Import a pricing CSV (List, Net, and Contract pricing) and toggle each item on or off to build a live hardware + programming total per building.',
+        text: "New Cost Estimate tab — turns the ASHRAE 36 audit's required sensors and control sequences into a priced scope of work. Import a pricing CSV (List, Net, and Contract pricing) and toggle each item on or off to build a live hardware + programming total per building.",
       },
     ]
   },
