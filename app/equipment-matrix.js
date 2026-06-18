@@ -585,7 +585,10 @@ var EM_POINT_MAP = [
     label: 'Zone Cooling Setpoint',
     // FIX 3b (1b74f531): Use /cooling.*setpoint/i to also match 'Cooling Occupied Setpoint'
     // (word order: Cooling → Occupied → Setpoint). negativePatterns blocks Adjust and Unoccupied.
-    patterns: [/cooling.*setpoint/i, /clg setpoint/i],
+    // Phase 1 (item 21eb08f8): added /cooling.*set\s+point/i — RTU-1/RTU-2 ANI variants use
+    // two-word "Set Point" ("Occupied Cooling Set Point"), confirmed in report1779132670069.csv.
+    // MAU-1 uses one-word "Setpoint" ("Occupied Cooling Setpoint") — already matched by first pattern.
+    patterns: [/cooling.*setpoint/i, /cooling.*set\s+point/i, /clg setpoint/i],
     // M1A: added exclusions for PID sub-objects, integration parameters, mismatch alarms,
     // remote/network transmitted copies, and SAT-level cooling setpoints (route to satCoolSpLive).
     negativePatterns: [
@@ -596,14 +599,20 @@ var EM_POINT_MAP = [
     types: ['SP'],
     // Single-zone-AHU (Quick Win 2): 'ahu' added so import-time mapping routes occupied
     // cooling setpoints on single-zone RTUs/AHUs to zoneCoolSetpoint.
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu'],
+    // Phase 1 (item 21eb08f8): added 'rtu', 'mau' — RTU/MAU use category 'rtu'/'mau' but
+    // have the same Carrier/Lennox setpoint point names (e.g. "Setpoint / Cooling Occupied
+    // Setpoint", "Occupied Cooling Set Point") as AHU-category units. Without 'rtu'/'mau'
+    // in cats, the category gate drops these points during WebCTRL import.
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau'],
   },
   {
     col: 'zoneHtgSetpoint',
     label: 'Zone Heating Setpoint',
     // FIX 3b (1b74f531): Use /heating.*setpoint/i to also match 'Heating Occupied Setpoint'.
     // negativePatterns blocks Adjust and Unoccupied.
-    patterns: [/heating.*setpoint/i, /htg setpoint/i],
+    // Phase 1 (item 21eb08f8): added /heating.*set\s+point/i — RTU-1/RTU-2 ANI variants use
+    // two-word "Set Point" ("Occupied Heating Set Point"), confirmed in report1779132670069.csv.
+    patterns: [/heating.*setpoint/i, /heating.*set\s+point/i, /htg setpoint/i],
     // M1A: added exclusions for PID sub-objects, mismatch alarms, remote/network copies,
     // and SAT-level heating setpoints (route to satHtgSpLive).
     negativePatterns: [
@@ -614,23 +623,38 @@ var EM_POINT_MAP = [
     types: ['SP'],
     // Single-zone-AHU (Quick Win 2): 'ahu' added so import-time mapping routes occupied
     // heating setpoints on single-zone RTUs/AHUs to zoneHtgSetpoint.
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu'],
+    // Phase 1 (item 21eb08f8): added 'rtu', 'mau' — same rationale as zoneCoolSetpoint above.
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau'],
   },
   // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSetpoint)
   {
     col: 'zoneCoolAdjust',
     label: 'Cooling Setpoint Adjust',
+    // Phase 1 (item 21eb08f8): patterns derived from real JOCO WebCTRL raw export:
+    //   "Setpoint / Cooling Setpoint Adjust" (BAV, HHW RTU-1, RTU-2, MAU-1)
+    //   "Cooling Setpoint Adjust" (direct ANI variant)
+    // negativePatterns: must NOT match "Cooling Setpoint" (the occupied SP) or "Unoccupied".
+    // The occupied setpoint "Setpoint / Cooling Occupied Setpoint" does NOT contain "Adjust"
+    // so no negative guard is needed for that direction; the positive pattern is specific enough.
     patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i],
-    types: ['SP', 'AV'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+    negativePatterns: [/\b(unoccupied|effective|diagnostic|alarm|remote|command)\b/i],
+    types: ['SP', 'AV', 'BAV'],
+    // Phase 1 (item 21eb08f8): added 'ahu', 'rtu', 'mau' — AHU/RTU/MAU all have adjust points
+    // in the raw WebCTRL export; previously only zone/vav/fpb/ddvav were listed.
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'ahu', 'rtu', 'mau'],
   },
   // Zone heating setpoint ADJUST
   {
     col: 'zoneHtgAdjust',
     label: 'Heating Setpoint Adjust',
+    // Phase 1 (item 21eb08f8): patterns derived from real JOCO WebCTRL raw export:
+    //   "Setpoint / Heating Setpoint Adjust" (BAV, HHW RTU-1, RTU-2, MAU-1)
+    //   "Heating Setpoint Adjust" (direct ANI variant)
     patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i],
-    types: ['SP', 'AV'],
-    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+    negativePatterns: [/\b(unoccupied|effective|diagnostic|alarm|remote|command)\b/i],
+    types: ['SP', 'AV', 'BAV'],
+    // Phase 1 (item 21eb08f8): added 'ahu', 'rtu', 'mau' — same rationale as zoneCoolAdjust.
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'ahu', 'rtu', 'mau'],
   },
   {
     col: 'dischargeAirTemp',
@@ -9105,6 +9129,131 @@ var EM_POINT_CATEGORIES = {
     },
     // K1 (duplicate for ahu — same entry also added to each equipment block below)
     // Already added above as 'demandLevel'
+
+    // Phase 1 (item 21eb08f8): Zone setpoint entries for AHU/RTU —————————————
+    // These match the Carrier/Lennox WebCTRL naming convention seen in JOCO HHW data.
+    // "Setpoint / Cooling Occupied Setpoint" and "Occupied Cooling Set Point" are the
+    // two real variants in report1779132670069.csv. The aliases include both.
+    // (rtu uses ahu via alias at EM_POINT_CATEGORIES.rtu = EM_POINT_CATEGORIES.ahu)
+    {
+      key: 'coolSP',
+      label: 'Zone Cooling Setpoint',
+      required: false,
+      ashrae36Name: 'Zone Cooling Setpoint',
+      ashrae36Section: '5.16',
+      patterns: [
+        /cooling.?setpoint/i,
+        /cool.?setpoint/i,
+        /zone.?cooling.?sp/i,
+        /cooling.?sp\b/i,
+        /setpoint.*cooling occupied/i,
+        /effective cooling setpoint/i,
+        /cooling occupied setpoint/i,
+        /occupied cooling set point/i,
+      ],
+      aliases: [
+        'cooling setpoint',
+        'cool setpoint',
+        'zone cooling sp',
+        'cooling sp',
+        'zone cooling setpoint',
+        'setpoint / cooling occupied setpoint',
+        'setpoint / effective cooling setpoint',
+        'cooling occupied setpoint',
+        'effective cooling setpoint',
+        'occupied cooling set point',
+      ],
+      negativeGuards: [/\badjust\b/i],
+    },
+    {
+      key: 'htgSP',
+      label: 'Zone Heating Setpoint',
+      required: false,
+      ashrae36Name: 'Zone Heating Setpoint',
+      ashrae36Section: '5.16',
+      patterns: [
+        /heating.?setpoint/i,
+        /heat.?setpoint/i,
+        /zone.?heating.?sp/i,
+        /heating.?sp\b/i,
+        /setpoint.*heating occupied/i,
+        /effective heating setpoint/i,
+        /heating occupied setpoint/i,
+        /occupied heating set point/i,
+      ],
+      aliases: [
+        'heating setpoint',
+        'heat setpoint',
+        'zone heating sp',
+        'heating sp',
+        'zone heating setpoint',
+        'setpoint / heating occupied setpoint',
+        'setpoint / effective heating setpoint',
+        'heating occupied setpoint',
+        'effective heating setpoint',
+        'occupied heating set point',
+      ],
+      negativeGuards: [/\badjust\b/i],
+    },
+    {
+      key: 'coolAdj',
+      label: 'Cooling Setpoint Adjust',
+      required: false,
+      ashrae36Name: 'Cooling Setpoint Adjustment',
+      ashrae36Section: '5.16',
+      patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i, /cool setpoint adj/i],
+      aliases: [
+        'cooling setpoint adjust',
+        'clg setpoint adj',
+        'cooling set point adjust',
+        'cool setpoint adj',
+        'setpoint / cooling setpoint adjust',
+      ],
+    },
+    {
+      key: 'htgAdj',
+      label: 'Heating Setpoint Adjust',
+      required: false,
+      ashrae36Name: 'Heating Setpoint Adjustment',
+      ashrae36Section: '5.16',
+      patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i, /heat setpoint adj/i],
+      aliases: [
+        'heating setpoint adjust',
+        'htg setpoint adj',
+        'heating set point adjust',
+        'heat setpoint adj',
+        'setpoint / heating setpoint adjust',
+      ],
+    },
+    // Phase 1 (item 21eb08f8): Alarms category for AHU/RTU ——————————————————
+    // Alarm relay points are present on all Carrier/Lennox RTU programs in JOCO data.
+    // "Alarm Relay Active" (BALM type) and "Compressor Lockout Alarm BNI" are real
+    // point names from report1779132670069.csv. These are not live sensor readings —
+    // they are alarm-state indicators. required=false: absence is not a compliance gap.
+    {
+      key: 'alarmRelay',
+      label: 'Alarm Relay',
+      required: false,
+      ashrae36Name: 'Alarm Relay',
+      ashrae36Section: '5.16',
+      patterns: [
+        /alarm\s+relay/i,
+        /alarm\s+relay\s+active/i,
+        /alarm\s+relay\s+status/i,
+        /unit\s+any\s+alarm/i,
+        /unit\s+alarm\s+active/i,
+        /any\s+alarm\s+active/i,
+        /serious\s+alarm/i,
+      ],
+      aliases: [
+        'alarm relay active',
+        'alarm relay status',
+        'unit any alarm active',
+        'any alarm active output',
+        'serious alarm active output',
+        'unit alarm active',
+      ],
+    },
   ],
 
   /* ── VAV (Single-Duct with Reheat, ASHRAE 36 §5.6) ────────────────── */
@@ -12389,6 +12538,135 @@ var EM_POINT_CATEGORIES = {
 // This ensures EM_POINT_CATEGORIES['rtu'] resolves correctly for compliance scoring,
 // gap analysis, and any other code that indexes into EM_POINT_CATEGORIES by category string.
 EM_POINT_CATEGORIES.rtu = EM_POINT_CATEGORIES.ahu;
+
+// Phase 1 (item 21eb08f8): MAU (Makeup Air Unit) compliance profile.
+// MAU-1 at JOCO HHW has SAT, OAT, occupied cooling/heating setpoints, and adjust points.
+// MAU does NOT have RAT (no return path), no duct static (supply-only), no zone dampers.
+// required=false for setpoints/adjust — presence is informational, not a hard compliance gap.
+// Source: report1779132670069.csv MAU-1 point list.
+EM_POINT_CATEGORIES.mau = [
+  {
+    key: 'sat',
+    label: 'Supply Air Temperature',
+    required: true,
+    ashrae36Name: 'Supply Air Temperature',
+    ashrae36Section: 'MAU',
+    patterns: [/\bsat\b/i, /supply air temp/i, /leaving air temp/i, /supply.?temp/i],
+    aliases: [
+      'sat',
+      'supply air temp',
+      'supply air temperature',
+      'discharge air temp',
+      'discharge air temperature',
+      'discharge temp',
+      'leaving air temp',
+    ],
+  },
+  {
+    key: 'oat',
+    label: 'Outdoor Air Temperature',
+    required: true,
+    ashrae36Name: 'Outdoor Air Temperature',
+    ashrae36Section: 'MAU',
+    patterns: [
+      /\boat\b/i,
+      /outdoor air temp/i,
+      /outside air temp/i,
+      /outside air dry bulb/i,
+      /outdoor air dry bulb/i,
+      /rtu outside air temp/i,
+    ],
+    aliases: [
+      'oat',
+      'outdoor air temp',
+      'outside air temp',
+      'outside air dry bulb',
+      'outdoor air dry bulb',
+      'rtu outside air temperature',
+      'outdoor air temperature',
+      'outside air temperature',
+    ],
+  },
+  {
+    key: 'coolSP',
+    label: 'Zone Cooling Setpoint',
+    required: false,
+    ashrae36Name: 'Zone Cooling Setpoint',
+    ashrae36Section: 'MAU',
+    patterns: [
+      /cooling.?setpoint/i,
+      /cool.?setpoint/i,
+      /setpoint.*cooling occupied/i,
+      /effective cooling setpoint/i,
+      /cooling occupied setpoint/i,
+      /occupied cooling setpoint/i,
+    ],
+    aliases: [
+      'cooling setpoint',
+      'cool setpoint',
+      'zone cooling setpoint',
+      'setpoint / cooling occupied setpoint',
+      'setpoint / effective cooling setpoint',
+      'cooling occupied setpoint',
+      'effective cooling setpoint',
+      'occupied cooling setpoint',
+    ],
+    negativeGuards: [/\badjust\b/i],
+  },
+  {
+    key: 'htgSP',
+    label: 'Zone Heating Setpoint',
+    required: false,
+    ashrae36Name: 'Zone Heating Setpoint',
+    ashrae36Section: 'MAU',
+    patterns: [
+      /heating.?setpoint/i,
+      /heat.?setpoint/i,
+      /setpoint.*heating occupied/i,
+      /effective heating setpoint/i,
+      /heating occupied setpoint/i,
+      /occupied heating setpoint/i,
+    ],
+    aliases: [
+      'heating setpoint',
+      'heat setpoint',
+      'zone heating setpoint',
+      'setpoint / heating occupied setpoint',
+      'setpoint / effective heating setpoint',
+      'heating occupied setpoint',
+      'effective heating setpoint',
+      'occupied heating setpoint',
+    ],
+    negativeGuards: [/\badjust\b/i],
+  },
+  {
+    key: 'coolAdj',
+    label: 'Cooling Setpoint Adjust',
+    required: false,
+    ashrae36Name: 'Cooling Setpoint Adjustment',
+    ashrae36Section: 'MAU',
+    patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i],
+    aliases: ['cooling setpoint adjust', 'clg setpoint adj', 'setpoint / cooling setpoint adjust'],
+  },
+  {
+    key: 'htgAdj',
+    label: 'Heating Setpoint Adjust',
+    required: false,
+    ashrae36Name: 'Heating Setpoint Adjustment',
+    ashrae36Section: 'MAU',
+    patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i],
+    aliases: ['heating setpoint adjust', 'htg setpoint adj', 'setpoint / heating setpoint adjust'],
+  },
+  {
+    key: 'alarmRelay',
+    label: 'Alarm Relay',
+    required: false,
+    ashrae36Name: 'Alarm Relay',
+    ashrae36Section: 'MAU',
+    patterns: [/alarm\s+relay/i, /alarm\s+reset/i, /any\s+alarm\s+active/i, /serious\s+alarm/i],
+    aliases: ['alarm relay active', 'alarm reset bno', 'any alarm active output', 'serious alarm active output'],
+  },
+];
 
 /* ── emNormalizePointName ───────────────────────────────────────────────────
    Internal helper: normalize a raw BAS point name for fuzzy matching.

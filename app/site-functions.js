@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.550',
+    date: '2026-06-18',
+    title: 'Equipment Matrix Audit View: Zone Setpoint and Alarms columns for Rooftop and Makeup Air Units',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix (Energy Department → open a project → Equipment Matrix tab → Audit View): Rooftop Units and Makeup Air Units now show Zone Cooling Setpoint, Zone Heating Setpoint, Cooling Setpoint Adjust, and Heating Setpoint Adjust columns. These columns were already working for VAVs and AHUs — they now correctly capture the same data from RTU and MAU control programs.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Audit View: an Alarms category is now tracked for Rooftop Units. The Alarm Relay point (e.g., "Alarm Relay Active") maps to the new Alarms column when present. The column is informational — absence does not count as a compliance gap.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix Audit View: Outdoor Air Temperature now appears correctly for Rooftop Units and Makeup Air Units. The broadcast OAT point was always being captured during import; the Audit View column was simply not wired to display it for these unit types. Now it does.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.549',
     date: '2026-06-18',
     title: 'Equipment Matrix: single-zone RTUs now correctly identified as SZ-RTU',
