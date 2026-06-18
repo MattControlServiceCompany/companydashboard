@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.560',
+    date: '2026-06-18',
+    title: 'Audit Report now includes a Cost Estimate section',
+    items: [
+      {
+        type: 'feature',
+        text: 'Audit Report now includes a Cost Estimate section summarizing estimated hardware, programming, and recommended-package costs from the Cost Estimate tab (shows an import prompt when no pricing has been loaded).',
+      },
+    ]
+  },
+  {
     v: 'v2026.06.18.559',
     date: '2026-06-18',
     title: 'Cost Estimate: Recommended tier with auto-selected lowest-cost parts',

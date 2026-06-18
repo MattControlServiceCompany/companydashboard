@@ -11809,6 +11809,173 @@ function rptPageASHRAE36Executive(n, d) {
   return resultPages; // always an Array, even for short portfolios (length === 1)
 }
 
+// ─── rptPageASHRAE36CostEstimate ──────────────────────────────────────────
+/**
+ * Estimated Cost page: surfaces priced totals from collectPricingEstimate.
+ * Phase 5 — spec §10 (2026-06-18).
+ * @param {number} n - Page number
+ * @param {object} d - Data from collectASHRAE36Data
+ * @returns {string} Single rptPage() HTML string
+ */
+function rptPageASHRAE36CostEstimate(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  var projId = d.project.id;
+
+  // Guard: collectPricingEstimate may not be in scope if pricing-estimator.js
+  // is not loaded (spec §10 — same pattern as emLoadCustomMappings etc.).
+  var hasFn = typeof collectPricingEstimate === 'function';
+
+  var compEst = null;
+  var recEst = null;
+  if (hasFn) {
+    try {
+      compEst = collectPricingEstimate(projId, 'compliance');
+    } catch (e) {
+      compEst = null;
+    }
+    try {
+      recEst = collectPricingEstimate(projId, 'recommended');
+    } catch (e) {
+      recEst = null;
+    }
+  }
+
+  // Dollar formatter — null means incomplete (missing manual prices), never render $0 for null.
+  // Returns formatted dollar string or em-dash when total is incomplete.
+  function _fmtUSD(v) {
+    if (v === null || v === undefined) return '—';
+    return '$' + Math.round(v).toLocaleString();
+  }
+
+  // ── Section title
+  var sectionTitle =
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:14px;' +
+    'text-transform:uppercase;letter-spacing:0.04em">Estimated Upgrade Cost</div>';
+
+  var bodyHTML;
+
+  if (!hasFn || (!compEst && !recEst)) {
+    // FALLBACK: no pricing imported — render a neutral note, never $0
+    bodyHTML =
+      sectionTitle +
+      '<div class="rpt-a36-callout" style="margin-bottom:16px">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-orange);margin-bottom:4px">Cost Estimate Not Available</div>' +
+      '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+      'Cost estimate not available — import a pricing CSV in the Cost Estimate tab.' +
+      '</div>' +
+      '</div>';
+  } else {
+    // Prefer compliance tier for Phase 1 hardware & Phase 2 labor lines;
+    // fall back to recommended if compliance is null (shouldn't happen normally).
+    var src = compEst || recEst;
+    var basisLabel = (src.basis || 'contract').charAt(0).toUpperCase() + (src.basis || 'contract').slice(1);
+
+    // Detect whether any totals are incomplete (null = missing manual prices for NO-SKU items).
+    // Show "—" in the cell rather than $0; add an incomplete-estimate note.
+    var anyIncomplete =
+      (compEst && (compEst.hardwareTotal === null || compEst.laborTotal === null)) ||
+      (recEst && recEst.grandTotal === null);
+
+    // Build cost rows table
+    var rowStyle =
+      'padding:10px 12px;font-size:12px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)';
+    var labelStyle = rowStyle + ';font-weight:600;width:65%';
+    var valueStyle = rowStyle + ';text-align:right;font-weight:700;font-size:13px';
+    var tblRows = '';
+
+    if (compEst) {
+      tblRows +=
+        '<tr>' +
+        '<td style="' +
+        labelStyle +
+        '">Estimated Hardware Cost (Compliance) — Phase 1</td>' +
+        '<td style="' +
+        valueStyle +
+        '">' +
+        _fmtUSD(compEst.hardwareTotal) +
+        '</td>' +
+        '</tr>' +
+        '<tr>' +
+        '<td style="' +
+        labelStyle +
+        '">Estimated Programming Cost — Phase 2</td>' +
+        '<td style="' +
+        valueStyle +
+        '">' +
+        _fmtUSD(compEst.laborTotal) +
+        '</td>' +
+        '</tr>';
+    }
+
+    if (recEst) {
+      tblRows +=
+        '<tr style="background:rgba(0,0,0,0.03)">' +
+        '<td style="' +
+        labelStyle +
+        ';background:rgba(0,0,0,0.03)">Recommended Package (Compliance + Optimized)</td>' +
+        '<td style="' +
+        valueStyle +
+        ';background:rgba(0,0,0,0.03)">' +
+        _fmtUSD(recEst.grandTotal) +
+        '</td>' +
+        '</tr>';
+    }
+
+    var costTable =
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
+      '<thead><tr>' +
+      '<th style="padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+      'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Line Item</th>' +
+      '<th style="padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+      'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:right">Estimate</th>' +
+      '</tr></thead>' +
+      '<tbody>' +
+      tblRows +
+      '</tbody>' +
+      '</table>';
+
+    // Incomplete-estimate note (shown when NO-SKU rows are missing manual prices)
+    var incompleteNote = '';
+    if (anyIncomplete) {
+      incompleteNote =
+        '<div style="font-size:10px;color:var(--rpt-orange);margin-bottom:10px;line-height:1.5">' +
+        '— Some line items require manual pricing (freeze stats, OA flow stations). ' +
+        'Enter prices in the Cost Estimate tab to complete the estimate.' +
+        '</div>';
+    }
+
+    // Engineering review note
+    var engNote = '';
+    var totalEngReview = (compEst ? compEst.engReviewCount : 0) + (recEst ? recEst.engReviewCount : 0);
+    if (totalEngReview > 0) {
+      engNote =
+        '<div style="font-size:10px;color:var(--rpt-orange);margin-bottom:10px;line-height:1.5">' +
+        '⚠ ' +
+        totalEngReview +
+        ' line item' +
+        (totalEngReview !== 1 ? 's' : '') +
+        ' require engineering review (valve sizing, duct probe length, actuator torque) before quoting.' +
+        '</div>';
+    }
+
+    // Pricing footnote
+    var footnote =
+      '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5;margin-top:6px">' +
+      'Estimates based on ALC catalog pricing at ' +
+      basisLabel +
+      ' basis. ' +
+      'Engineering-review items included at typical sizing. Verify before quoting.' +
+      '</div>';
+
+    bodyHTML = sectionTitle + costTable + incompleteNote + engNote + footnote;
+  }
+
+  return rptPage(n, 'ASHRAE 36 Audit — Estimated Cost', bodyHTML, {
+    data: fakeData,
+    label: 'Page ' + n + ' — Estimated Cost',
+  });
+}
+
 // ─── rptPageASHRAE36Building ──────────────────────────────────────────────
 /**
  * Per-building detail page: structured equipment-by-row table showing sensors
@@ -13110,6 +13277,14 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
       pages.push(_tagA36Section(pg, 'executive'));
       pageNum++;
     });
+  }
+
+  // Phase 5 — Cost Estimate page (spec §10, 2026-06-18).
+  // Inserted after executive summary, before per-building detail pages.
+  // rptPageASHRAE36CostEstimate guards collectPricingEstimate with typeof check
+  // and renders a fallback note when no pricing catalog is imported.
+  if (s.costEstimate !== false) {
+    pages.push(_tagA36Section(rptPageASHRAE36CostEstimate(pageNum++, data), 'costEstimate'));
   }
 
   if (s.building !== false) {
