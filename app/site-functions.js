@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.556',
+    date: '2026-06-18',
+    title: 'Bill extraction queue: grouped view by account/meter',
+    items: [
+      {
+        type: 'feature',
+        text: 'Bill extraction queue (Energy Department → open a project → Bills tab → Extract Bills): when multiple files belong to the same account or meter, results now group into one consolidated row showing each billing period as its own column. Use the flat/grouped toggle to switch between the consolidated view and the original per-file view.',
+      },
+      {
+        type: 'fix',
+        text: 'When the same billing period appears more than once in a grouped account (duplicate-period edge case), each row keeps its own independent checkbox so you can choose exactly which bills to save.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.555',
     date: '2026-06-18',
     title: 'Equipment Matrix: VRF outdoor units and A/C units now have their own equipment types',

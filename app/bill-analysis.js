@@ -4887,6 +4887,7 @@ function appendToQueue(newFiles) {
 }
 
 function clearQueue() {
+  _queueGroupState = null; // Plan 7e0b9d15 §4: reset group state on clear
   window._pdfQueue = null;
   window._pdfQueueRows = null;
   document.getElementById('pdfRightCol').style.display = '';
@@ -5255,6 +5256,82 @@ async function _extractSingleFileForQueue(file, fileIdx) {
   });
 }
 
+// ── Queue grouping state (Plan 7e0b9d15 §1) ──
+// null = auto-detect on next render; true = grouped; false = flat
+let _queueGroupState = null;
+
+// _groupQueueRows(rows) — mirrors _groupSavedBills key-normalization (core.js:2910)
+// but works on queue row objects {resultIdx, billIdx, bill, result, checked, _saved}
+// Returns Map<groupKey, groupEntry>
+function _groupQueueRows(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    if (!row.bill) {
+      // Failed rows go to a synthetic _failed bucket — not part of period matrix
+      if (!groups.has('_failed')) {
+        groups.set('_failed', {
+          key: '_failed',
+          displayLabel: 'Failed',
+          commodity: '',
+          provider: '',
+          rows: [],
+          hasMultiple: false,
+          _isFailed: true,
+        });
+      }
+      groups.get('_failed').rows.push(row);
+      continue;
+    }
+    const b = row.bill;
+    const acctRaw = b.AccountNumber || b.accountNumber || '';
+    const meterRaw = b.MeterNumber || b.meterNumber || '';
+    const acctClean = acctRaw.replace(/[\s\-]/g, '').toLowerCase();
+    const meterClean = meterRaw.replace(/[\s\-]/g, '').toLowerCase();
+    const key = acctClean ? acctClean : meterClean ? 'meter:' + meterClean : '_unknown';
+
+    if (!groups.has(key)) {
+      const displayLabel = acctRaw || meterRaw || 'Unknown Account';
+      // Detect mixed commodity within the group later
+      groups.set(key, {
+        key,
+        displayLabel,
+        commodity: b.Commodity || b.commodity || '',
+        provider: b.UtilityCompany || b.utilityCompany || '',
+        rows: [],
+        hasMultiple: false,
+        _isFailed: false,
+        // track distinct source files to determine hasMultiple
+        _sourceFiles: new Set(),
+      });
+    }
+    const grp = groups.get(key);
+    grp.rows.push(row);
+    if (row.result && row.result.fileName) grp._sourceFiles.add(row.result.fileName);
+  }
+
+  // Post-process each group
+  for (const grp of groups.values()) {
+    if (grp._isFailed) continue;
+    // hasMultiple = more than one distinct source file contributed to this group
+    grp.hasMultiple = grp._sourceFiles ? grp._sourceFiles.size > 1 : false;
+
+    // Sort rows by BillingPeriodStart ascending (oldest → newest)
+    grp.rows.sort((a, b) => {
+      const av = (a.bill && (a.bill.BillingPeriodStart || a.bill.DeliveryDate)) || '';
+      const bv = (b.bill && (b.bill.BillingPeriodStart || b.bill.DeliveryDate)) || '';
+      return av < bv ? -1 : av > bv ? 1 : 0;
+    });
+
+    // Detect mixed commodity
+    const commodities = new Set(
+      grp.rows.map((r) => (r.bill && (r.bill.Commodity || r.bill.commodity)) || '').filter(Boolean),
+    );
+    if (commodities.size > 1) grp.commodity = '(Mixed)';
+  }
+
+  return groups;
+}
+
 function renderQueueResults() {
   const q = window._pdfQueue;
   if (!q) return;
@@ -5312,6 +5389,12 @@ function renderQueueResults() {
   }
   window._pdfQueueRows = rows;
 
+  // ── Grouping detection (Plan 7e0b9d15 §1) ──
+  const groupMap = _groupQueueRows(rows);
+  const hasSharedAccount = [...groupMap.values()].some((g) => !g._isFailed && g.hasMultiple);
+  if (_queueGroupState === null) _queueGroupState = hasSharedAccount;
+  const useGrouped = _queueGroupState;
+
   // Stats
   const okCount = rows.filter((r) => r.bill && !_getQueueDupInfo(r)).length;
   const dupCount = rows.filter((r) => r.bill && _getQueueDupInfo(r)).length;
@@ -5340,40 +5423,103 @@ function renderQueueResults() {
     hdr.parentNode.insertBefore(tabsBar, hdr);
   }
 
-  // File tabs + action bar
+  // ── File tabs / group pills (Plan 7e0b9d15 §3) ──
   let html = '';
   html += '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
-  q.results.forEach((r, i) => {
-    const isActive = i === q._activeFileIdx;
-    const bg = isActive ? 'var(--em)' : 'var(--s2)';
-    const color = isActive ? '#fff' : 'var(--text)';
-    const border = isActive ? 'var(--em)' : 'var(--border2)';
-    const ct = r.status === 'ok' ? r.bills.length : 0;
-    const lbl = _escHtml(r.fileName) + (r.status === 'failed' ? ' ✕' : ' (' + ct + ')');
-    html +=
-      '<button onclick="selectQueueFile(' +
-      i +
-      ')" style="padding:6px 14px;border-radius:6px;border:1px solid ' +
-      border +
-      ';background:' +
-      bg +
-      ';color:' +
-      color +
-      ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
-      lbl +
-      '</button>';
-  });
+  if (useGrouped) {
+    // Per-group pills: "AccountNumber · N periods"
+    for (const grp of groupMap.values()) {
+      if (grp._isFailed) continue;
+      const isActive = q._activeGroupKey === grp.key;
+      const bg = isActive ? 'var(--em)' : 'var(--s2)';
+      const color = isActive ? '#fff' : 'var(--text)';
+      const border = isActive ? 'var(--em)' : 'var(--border2)';
+      const periodCount = grp.rows.length;
+      const lbl = _escHtml(grp.displayLabel) + ' \xb7 ' + periodCount + ' period' + (periodCount !== 1 ? 's' : '');
+      html +=
+        '<button onclick="selectQueueGroup(\'' +
+        grp.key.replace(/'/g, "\\'") +
+        '\')" style="padding:6px 14px;border-radius:6px;border:1px solid ' +
+        border +
+        ';background:' +
+        bg +
+        ';color:' +
+        color +
+        ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
+        lbl +
+        '</button>';
+    }
+    // Failed-files pill if any
+    const failedGrp = groupMap.get('_failed');
+    if (failedGrp && failedGrp.rows.length > 0) {
+      failedGrp.rows.forEach((row) => {
+        const i = row.resultIdx;
+        const r = q.results[i];
+        const isActive = i === q._activeFileIdx && !q._activeGroupKey;
+        const bg = isActive ? 'var(--em)' : 'var(--s2)';
+        const color = isActive ? '#fff' : '#c44';
+        const border = isActive ? 'var(--em)' : 'var(--border2)';
+        html +=
+          '<button onclick="selectQueueFile(' +
+          i +
+          ')" style="padding:6px 14px;border-radius:6px;border:1px solid ' +
+          border +
+          ';background:' +
+          bg +
+          ';color:' +
+          color +
+          ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
+          _escHtml(r ? r.fileName : 'Unknown') +
+          ' ✕</button>';
+      });
+    }
+  } else {
+    // Flat per-file pills (unchanged behavior)
+    q.results.forEach((r, i) => {
+      const isActive = i === q._activeFileIdx;
+      const bg = isActive ? 'var(--em)' : 'var(--s2)';
+      const color = isActive ? '#fff' : 'var(--text)';
+      const border = isActive ? 'var(--em)' : 'var(--border2)';
+      const ct = r.status === 'ok' ? r.bills.length : 0;
+      const lbl = _escHtml(r.fileName) + (r.status === 'failed' ? ' ✕' : ' (' + ct + ')');
+      html +=
+        '<button onclick="selectQueueFile(' +
+        i +
+        ')" style="padding:6px 14px;border-radius:6px;border:1px solid ' +
+        border +
+        ';background:' +
+        bg +
+        ';color:' +
+        color +
+        ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
+        lbl +
+        '</button>';
+    });
+  }
   html += '</div>';
 
   // Action bar
   html +=
     '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:4px;flex-wrap:wrap;gap:6px">';
-  html += '<div style="font-size:12px;color:var(--text)">';
+  html += '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text)">';
   if (okCount > 0) html += '<span style="color:#4a4">' + okCount + ' ready</span>';
-  if (dupCount > 0) html += (okCount > 0 ? ' · ' : '') + '<span style="color:var(--em)">' + dupCount + ' dup</span>';
+  if (dupCount > 0) html += (okCount > 0 ? ' \xb7 ' : '') + '<span style="color:var(--em)">' + dupCount + ' dup</span>';
   if (failCount > 0)
-    html += (okCount + dupCount > 0 ? ' · ' : '') + '<span style="color:#c44">' + failCount + ' failed</span>';
-  if (savedCount > 0) html += ' · <span style="color:var(--text3)">' + savedCount + ' saved</span>';
+    html += (okCount + dupCount > 0 ? ' \xb7 ' : '') + '<span style="color:#c44">' + failCount + ' failed</span>';
+  if (savedCount > 0) html += ' \xb7 <span style="color:var(--text3)">' + savedCount + ' saved</span>';
+  // Toggle button (Plan 7e0b9d15 §3) — shown only when shared accounts detected
+  if (hasSharedAccount) {
+    html +=
+      '<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-left:4px" ' +
+      'onclick="_queueGroupState=!' +
+      useGrouped +
+      ';if(!_queueGroupState&&window._pdfQueue)window._pdfQueue._activeGroupKey=null;renderQueueResults()" ' +
+      'title="' +
+      (useGrouped ? 'Switch to flat per-file view' : 'Switch to consolidated grouped view') +
+      '">' +
+      (useGrouped ? '▦ Flat' : '▦ Grouped') +
+      '</button>';
+  }
   html += '</div>';
   html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
   if (dupCount > 0) {
@@ -5420,138 +5566,335 @@ function renderQueueResults() {
     );
   };
 
-  let billRowsHtml = '<div style="max-height:220px;overflow-y:auto;margin-top:4px">';
-  billRowsHtml += '<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:var(--font)">';
-  billRowsHtml +=
-    '<thead><tr style="color:var(--text2);border-bottom:1px solid var(--border)">' +
-    '<th style="padding:3px 5px;text-align:center;width:22px">' +
-    '<input type="checkbox" onchange="toggleAllQueueRows(this.checked)" checked></th>' +
-    '<th style="padding:3px 6px;text-align:left">File</th>' +
-    '<th style="padding:3px 6px;text-align:left">Period</th>' +
-    '<th style="padding:3px 6px;text-align:left">Status</th>' +
-    '<th style="padding:3px 6px;text-align:left">Project</th>' +
-    '<th style="padding:3px 6px;text-align:left"></th>' +
-    '</tr></thead><tbody>';
-
-  rows.forEach((row, rowIdx) => {
-    // Compute flat index into _pdfDupMap for this row
-    let flatIdx = 0;
-    for (let ri = 0; ri < q.results.length; ri++) {
-      if (ri === row.resultIdx) {
-        flatIdx += row.billIdx >= 0 ? row.billIdx : 0;
-        break;
-      }
-      flatIdx += q.results[ri].bills.length;
-    }
-
+  // ── Shared status-badge builder (reused by both flat + grouped table) ──
+  const _buildStatusBadge = (row) => {
     const dup = row.bill ? _getQueueDupInfo(row) : null;
-    const bgColor = row._saved ? 'rgba(100,180,100,.08)' : dup ? 'rgba(245,158,11,.07)' : 'transparent';
-
-    // Status badge
-    let statusHtml;
     if (!row.bill) {
-      statusHtml = '<span style="color:#c44;font-weight:600;font-size:10px">FAILED</span>';
+      return '<span style="color:#c44;font-weight:600;font-size:10px">FAILED</span>';
     } else if (row.bill.parseError) {
-      statusHtml =
+      return (
         '<span style="color:#e55;font-weight:600;font-size:10px" title="' +
         _escHtml(row.bill._manualReviewLabel || 'Billing period could not be parsed — assign manually') +
-        '">PARSE ERR</span>';
+        '">PARSE ERR</span>'
+      );
     } else if (row.bill._manualReview) {
-      statusHtml =
-        '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
+      return '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
     } else if (row._saved) {
-      statusHtml = '<span style="color:var(--text3);font-size:10px">SAVED</span>';
+      return '<span style="color:var(--text3);font-size:10px">SAVED</span>';
     } else if (dup) {
       const dupAct = dup.action;
       const actLabel =
-        dupAct === 'overwrite' ? ' · OW' : dupAct === 'merge' ? ' · MG' : dupAct === 'skip' ? ' · SK' : '';
-      // Bug 60431cd3: distinguish Saved Bills dup from meter bill dup so user
-      // understands that an empty meter can still show DUP (matching Saved Bills).
+        dupAct === 'overwrite' ? ' \xb7 OW' : dupAct === 'merge' ? ' \xb7 MG' : dupAct === 'skip' ? ' \xb7 SK' : '';
       const dupLocLabel = dup.locationType === 'saved' ? ' (Saved)' : ' (Meter)';
       const dupTitle =
         dup.locationType === 'saved'
           ? 'Duplicate found in Saved Bills — not yet on any meter'
           : 'Duplicate found in meter bill data: ' + (dup.location || '');
-      statusHtml =
+      return (
         '<span style="color:var(--amber);font-weight:700;font-size:10px" title="' +
         _escHtml(dupTitle) +
         '">DUP' +
         _escHtml(dupLocLabel + actLabel) +
-        '</span>';
-    } else {
-      statusHtml = '<span style="color:#4a4;font-size:10px">READY</span>';
+        '</span>'
+      );
     }
+    return '<span style="color:#4a4;font-size:10px">READY</span>';
+  };
 
-    // Period label
-    let periodHtml = '—';
-    if (row.bill) {
-      const b = row.bill;
-      if (b._manualReview) {
-        periodHtml =
-          '<span style="color:#c88;font-style:italic">' + _escHtml(b._manualReviewLabel || 'Manual Review') + '</span>';
-      } else if (b.DeliveryDate) {
-        periodHtml = _escHtml(b.DeliveryDate);
-      } else if (b.BillingPeriodStart || b.BillingPeriodEnd) {
-        periodHtml = _escHtml((b.BillingPeriodStart || '?') + ' – ' + (b.BillingPeriodEnd || '?'));
+  let billRowsHtml = '';
+
+  if (useGrouped) {
+    // ── Grouped period-matrix table (Plan 7e0b9d15 §2) ──
+    // Build the union set of all period keys (sorted chronologically) as column headers
+    const allPeriodKeys = []; // array of {sortKey, label} objects
+    const periodKeySet = new Map(); // sortKey → label
+    for (const grp of groupMap.values()) {
+      if (grp._isFailed) continue;
+      for (const row of grp.rows) {
+        if (!row.bill) continue;
+        const b = row.bill;
+        const sortKey = b.BillingPeriodStart || b.DeliveryDate || '';
+        if (sortKey && !periodKeySet.has(sortKey)) {
+          const isDelivery = !b.BillingPeriodStart && b.DeliveryDate;
+          const label = isDelivery
+            ? 'Del: ' + _fmtShortDate(b.DeliveryDate)
+            : _fmtShortDate(b.BillingPeriodStart) + '–' + _fmtShortDate(b.BillingPeriodEnd);
+          periodKeySet.set(sortKey, label);
+        }
       }
     }
+    // Sort period columns chronologically (oldest L → newest R)
+    const sortedPeriodKeys = Array.from(periodKeySet.keys()).sort();
 
-    // Project dropdown — shows per-bill override; falls back to blank (uses batch proj)
-    const projDropdown =
-      row.bill && !row._saved
-        ? '<select style="font-size:10px;padding:1px 3px;max-width:130px;background:var(--s2);border:1px solid var(--border2);border-radius:3px;color:var(--text)" onchange="setQueueRowProject(' +
-          rowIdx +
-          ',this.value)">' +
-          _queueProjOpts(row.bill._projOverride) +
-          '</select>'
-        : '<span style="color:var(--text3);font-size:10px">—</span>';
+    // Build header
+    billRowsHtml += '<div style="overflow-x:auto;max-height:220px;overflow-y:auto;margin-top:4px">';
+    billRowsHtml += '<table style="border-collapse:collapse;font-size:11px;font-family:var(--font);min-width:100%">';
+    billRowsHtml +=
+      '<thead><tr style="background:var(--s1);position:sticky;top:0;z-index:2">' +
+      '<th style="padding:4px 8px;text-align:left;border:1px solid var(--border);white-space:nowrap;color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Account / Meter</th>';
+    sortedPeriodKeys.forEach((pk) => {
+      billRowsHtml +=
+        '<th style="padding:4px 8px;text-align:center;border:1px solid var(--border);white-space:nowrap;color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">' +
+        _escHtml(periodKeySet.get(pk)) +
+        '</th>';
+    });
+    billRowsHtml += '</tr></thead><tbody>';
 
-    // Actions: Resolve button for dups (opens dup comparison modal)
-    let actionsHtml = '';
-    if (dup && !row._saved) {
-      actionsHtml =
-        '<button onclick="openQueueDupModal(' +
-        rowIdx +
-        ',' +
-        flatIdx +
-        ')" ' +
-        'style="font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid rgba(245,158,11,.5);background:transparent;color:var(--amber);cursor:pointer;font-weight:600">Resolve</button>';
+    // One row per account/meter group
+    for (const grp of groupMap.values()) {
+      if (grp._isFailed) continue;
+
+      // Map this group's rows by period sortKey → array (collision guard for duplicate uploads)
+      const rowByPeriod = new Map();
+      grp.rows.forEach((row) => {
+        if (!row.bill) return;
+        const b = row.bill;
+        const sk = b.BillingPeriodStart || b.DeliveryDate || '';
+        if (!sk) return;
+        if (!rowByPeriod.has(sk)) rowByPeriod.set(sk, []);
+        rowByPeriod.get(sk).push(row);
+      });
+
+      // Commodity badge color
+      const commodityBadge = grp.commodity
+        ? ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--s3);color:var(--text2)">' +
+          _escHtml(grp.commodity) +
+          '</span>'
+        : '';
+
+      billRowsHtml +=
+        '<tr style="border-bottom:1px solid var(--border)">' +
+        '<td style="padding:4px 8px;border:1px solid var(--border);white-space:nowrap;color:var(--text);font-weight:600">' +
+        _escHtml(grp.displayLabel) +
+        commodityBadge +
+        '</td>';
+
+      sortedPeriodKeys.forEach((pk) => {
+        const periodRows = rowByPeriod.get(pk);
+        if (!periodRows || periodRows.length === 0) {
+          billRowsHtml +=
+            '<td style="padding:4px 8px;border:1px solid var(--border);text-align:center;color:var(--text3)">—</td>';
+          return;
+        }
+
+        // Single-row case: render exactly as before (no visual change)
+        // Multi-row case: stack one entry per row so every duplicate gets its own visible checkbox
+        const cellParts = periodRows.map((row) => {
+          const b = row.bill;
+          const rowIdx = rows.indexOf(row);
+          const isChecked = !row._saved ? (row.checked !== false ? ' checked' : '') : '';
+          const canCheck = !row._saved;
+          const fileName = row.result ? row.result.fileName : '';
+          const charge =
+            b.TotalCurrentCharges != null && b.TotalCurrentCharges !== ''
+              ? '$' +
+                Number(b.TotalCurrentCharges).toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })
+              : '—';
+          const statusBadge = _buildStatusBadge(row);
+          const isDelivery = !b.BillingPeriodStart && b.DeliveryDate;
+          const periodLabel = isDelivery
+            ? 'Delivery: ' + _escHtml(b.DeliveryDate)
+            : _escHtml((b.BillingPeriodStart || '?') + ' – ' + (b.BillingPeriodEnd || '?'));
+
+          // For duplicate rows (periodRows.length > 1) show the source file so user can tell them apart
+          const fileTag =
+            periodRows.length > 1 && fileName
+              ? '<div style="font-size:9px;color:var(--text3);margin-bottom:1px;word-break:break-all" title="' +
+                _escHtml(fileName) +
+                '">' +
+                _escHtml(fileName.length > 24 ? fileName.slice(0, 22) + '…' : fileName) +
+                '</div>'
+              : '';
+
+          return (
+            '<div style="' +
+            (periodRows.length > 1 ? 'border-top:1px dashed var(--border);padding-top:3px;margin-top:3px;' : '') +
+            '">' +
+            (periodRows.indexOf(row) === 0
+              ? '<div style="font-size:10px;color:var(--text2);margin-bottom:2px">' + periodLabel + '</div>'
+              : '') +
+            fileTag +
+            '<div style="font-size:11px;color:var(--text);font-weight:600;margin-bottom:2px">' +
+            charge +
+            '</div>' +
+            '<div style="margin-bottom:2px">' +
+            statusBadge +
+            '</div>' +
+            (canCheck && rowIdx >= 0
+              ? '<input type="checkbox" onchange="toggleQueueRow(' +
+                rowIdx +
+                ',this.checked)"' +
+                isChecked +
+                ' title="Include in save batch">'
+              : '') +
+            '</div>'
+          );
+        });
+
+        const firstRow = periodRows[0];
+        const firstFileName = firstRow.result ? firstRow.result.fileName : '';
+        billRowsHtml +=
+          '<td style="padding:4px 8px;border:1px solid var(--border);text-align:center;vertical-align:top;min-width:110px" title="' +
+          _escHtml(firstFileName) +
+          '">' +
+          cellParts.join('') +
+          '</td>';
+      });
+
+      billRowsHtml += '</tr>';
     }
 
-    const fileName = row.result ? _escHtml(row.result.fileName) : '—';
-    const isChecked = row.bill && !row._saved ? (row.checked !== false ? ' checked' : '') : '';
-    const canCheck = row.bill && !row._saved;
+    billRowsHtml += '</tbody></table></div>';
 
+    // Failed files notice (Plan 7e0b9d15 §2)
+    const failedGrpData = groupMap.get('_failed');
+    if (failedGrpData && failedGrpData.rows.length > 0) {
+      billRowsHtml +=
+        '<div style="font-size:11px;color:#c44;padding:6px 4px;margin-top:4px">' +
+        failedGrpData.rows.length +
+        ' file(s) failed — see failed file tab(s) above for retry.</div>';
+    }
+  } else {
+    // ── Flat per-file table (unchanged behavior) ──
+    billRowsHtml = '<div style="max-height:220px;overflow-y:auto;margin-top:4px">';
+    billRowsHtml += '<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:var(--font)">';
     billRowsHtml +=
-      '<tr style="background:' +
-      bgColor +
-      ';border-bottom:1px solid var(--border)">' +
-      '<td style="padding:3px 5px;text-align:center">' +
-      (canCheck
-        ? '<input type="checkbox" onchange="toggleQueueRow(' + rowIdx + ',this.checked)"' + isChecked + '>'
-        : '') +
-      '</td>' +
-      '<td style="padding:3px 6px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="' +
-      fileName +
-      '">' +
-      fileName +
-      '</td>' +
-      '<td style="padding:3px 6px;white-space:nowrap;color:var(--text)">' +
-      periodHtml +
-      '</td>' +
-      '<td style="padding:3px 6px">' +
-      statusHtml +
-      '</td>' +
-      '<td style="padding:3px 6px">' +
-      projDropdown +
-      '</td>' +
-      '<td style="padding:3px 6px">' +
-      actionsHtml +
-      '</td>' +
-      '</tr>';
-  });
+      '<thead><tr style="color:var(--text2);border-bottom:1px solid var(--border)">' +
+      '<th style="padding:3px 5px;text-align:center;width:22px">' +
+      '<input type="checkbox" onchange="toggleAllQueueRows(this.checked)" checked></th>' +
+      '<th style="padding:3px 6px;text-align:left">File</th>' +
+      '<th style="padding:3px 6px;text-align:left">Period</th>' +
+      '<th style="padding:3px 6px;text-align:left">Status</th>' +
+      '<th style="padding:3px 6px;text-align:left">Project</th>' +
+      '<th style="padding:3px 6px;text-align:left"></th>' +
+      '</tr></thead><tbody>';
 
-  billRowsHtml += '</tbody></table></div>';
+    rows.forEach((row, rowIdx) => {
+      // Compute flat index into _pdfDupMap for this row
+      let flatIdx = 0;
+      for (let ri = 0; ri < q.results.length; ri++) {
+        if (ri === row.resultIdx) {
+          flatIdx += row.billIdx >= 0 ? row.billIdx : 0;
+          break;
+        }
+        flatIdx += q.results[ri].bills.length;
+      }
+
+      const dup = row.bill ? _getQueueDupInfo(row) : null;
+      const bgColor = row._saved ? 'rgba(100,180,100,.08)' : dup ? 'rgba(245,158,11,.07)' : 'transparent';
+
+      // Status badge
+      let statusHtml;
+      if (!row.bill) {
+        statusHtml = '<span style="color:#c44;font-weight:600;font-size:10px">FAILED</span>';
+      } else if (row.bill.parseError) {
+        statusHtml =
+          '<span style="color:#e55;font-weight:600;font-size:10px" title="' +
+          _escHtml(row.bill._manualReviewLabel || 'Billing period could not be parsed — assign manually') +
+          '">PARSE ERR</span>';
+      } else if (row.bill._manualReview) {
+        statusHtml =
+          '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
+      } else if (row._saved) {
+        statusHtml = '<span style="color:var(--text3);font-size:10px">SAVED</span>';
+      } else if (dup) {
+        const dupAct = dup.action;
+        const actLabel =
+          dupAct === 'overwrite' ? ' \xb7 OW' : dupAct === 'merge' ? ' \xb7 MG' : dupAct === 'skip' ? ' \xb7 SK' : '';
+        // Bug 60431cd3: distinguish Saved Bills dup from meter bill dup so user
+        // understands that an empty meter can still show DUP (matching Saved Bills).
+        const dupLocLabel = dup.locationType === 'saved' ? ' (Saved)' : ' (Meter)';
+        const dupTitle =
+          dup.locationType === 'saved'
+            ? 'Duplicate found in Saved Bills — not yet on any meter'
+            : 'Duplicate found in meter bill data: ' + (dup.location || '');
+        statusHtml =
+          '<span style="color:var(--amber);font-weight:700;font-size:10px" title="' +
+          _escHtml(dupTitle) +
+          '">DUP' +
+          _escHtml(dupLocLabel + actLabel) +
+          '</span>';
+      } else {
+        statusHtml = '<span style="color:#4a4;font-size:10px">READY</span>';
+      }
+
+      // Period label
+      let periodHtml = '—';
+      if (row.bill) {
+        const b = row.bill;
+        if (b._manualReview) {
+          periodHtml =
+            '<span style="color:#c88;font-style:italic">' +
+            _escHtml(b._manualReviewLabel || 'Manual Review') +
+            '</span>';
+        } else if (b.DeliveryDate) {
+          periodHtml = _escHtml(b.DeliveryDate);
+        } else if (b.BillingPeriodStart || b.BillingPeriodEnd) {
+          periodHtml = _escHtml((b.BillingPeriodStart || '?') + ' – ' + (b.BillingPeriodEnd || '?'));
+        }
+      }
+
+      // Project dropdown — shows per-bill override; falls back to blank (uses batch proj)
+      const projDropdown =
+        row.bill && !row._saved
+          ? '<select style="font-size:10px;padding:1px 3px;max-width:130px;background:var(--s2);border:1px solid var(--border2);border-radius:3px;color:var(--text)" onchange="setQueueRowProject(' +
+            rowIdx +
+            ',this.value)">' +
+            _queueProjOpts(row.bill._projOverride) +
+            '</select>'
+          : '<span style="color:var(--text3);font-size:10px">—</span>';
+
+      // Actions: Resolve button for dups (opens dup comparison modal)
+      let actionsHtml = '';
+      if (dup && !row._saved) {
+        actionsHtml =
+          '<button onclick="openQueueDupModal(' +
+          rowIdx +
+          ',' +
+          flatIdx +
+          ')" ' +
+          'style="font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid rgba(245,158,11,.5);background:transparent;color:var(--amber);cursor:pointer;font-weight:600">Resolve</button>';
+      }
+
+      const fileName = row.result ? _escHtml(row.result.fileName) : '—';
+      const isChecked = row.bill && !row._saved ? (row.checked !== false ? ' checked' : '') : '';
+      const canCheck = row.bill && !row._saved;
+
+      billRowsHtml +=
+        '<tr style="background:' +
+        bgColor +
+        ';border-bottom:1px solid var(--border)">' +
+        '<td style="padding:3px 5px;text-align:center">' +
+        (canCheck
+          ? '<input type="checkbox" onchange="toggleQueueRow(' + rowIdx + ',this.checked)"' + isChecked + '>'
+          : '') +
+        '</td>' +
+        '<td style="padding:3px 6px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="' +
+        fileName +
+        '">' +
+        fileName +
+        '</td>' +
+        '<td style="padding:3px 6px;white-space:nowrap;color:var(--text)">' +
+        periodHtml +
+        '</td>' +
+        '<td style="padding:3px 6px">' +
+        statusHtml +
+        '</td>' +
+        '<td style="padding:3px 6px">' +
+        projDropdown +
+        '</td>' +
+        '<td style="padding:3px 6px">' +
+        actionsHtml +
+        '</td>' +
+        '</tr>';
+    });
+
+    billRowsHtml += '</tbody></table></div>';
+  }
+
   html += billRowsHtml;
   tabsBar.innerHTML = html;
 
@@ -5599,6 +5942,26 @@ function selectQueueFile(idx) {
   const q = window._pdfQueue;
   if (!q) return;
   q._activeFileIdx = idx;
+  q._activeGroupKey = null; // clear group selection when switching to file tab
+  window._pdfMultiIdx = 0;
+  renderQueueResults();
+}
+
+// selectQueueGroup(key) — Plan 7e0b9d15 §4
+// Sets the active group pill and drives the right-column detail to the first file in that group.
+function selectQueueGroup(key) {
+  const q = window._pdfQueue;
+  if (!q) return;
+  q._activeGroupKey = key;
+  // Find the first result file that belongs to this group and set _activeFileIdx
+  const rows = window._pdfQueueRows;
+  if (rows) {
+    const groupMap = _groupQueueRows(rows);
+    const grp = groupMap.get(key);
+    if (grp && grp.rows.length > 0) {
+      q._activeFileIdx = grp.rows[0].resultIdx;
+    }
+  }
   window._pdfMultiIdx = 0;
   renderQueueResults();
 }
