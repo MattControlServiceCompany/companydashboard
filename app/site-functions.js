@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.559',
+    date: '2026-06-18',
+    title: 'Cost Estimate: Recommended tier with auto-selected lowest-cost parts',
+    items: [
+      {
+        type: 'feature',
+        text: "Cost Estimate tab now has a Recommended tier -- it auto-selects the lowest-cost qualifying part for each requirement (leaving sizing-critical valves and controllers on engineering-review defaults), adds optional fault-detection reporting, and lets you compare Compliance vs Recommended side by side.",
+      },
+    ]
+  },
+  {
     v: 'v2026.06.18.558',
     date: '2026-06-18',
     title: 'New Cost Estimate tab in ASHRAE 36 Audit',

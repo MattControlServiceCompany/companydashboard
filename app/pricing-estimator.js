@@ -688,6 +688,7 @@ function buildComplianceRows(projId) {
         lineTotal: lineTotal,
         note: mapEntry.note || '',
         phase: 1,
+        _pointKey: gap.pointKey, // Fix 2: store resolved point key for reliable optimizer skip/class lookup
       });
     });
 
@@ -872,7 +873,10 @@ function _pricingComputeTotals(rows, estimate) {
 
   rows.forEach(function (row) {
     if (row.engReview) engReviewCount++;
-    var toggled = estimate.rowToggles[row.id];
+    // Fix 3: recommended rows carry _baseId (the compliance row id) so toggles
+    // keyed by compliance ids apply consistently across both tiers.
+    var toggleKey = row._baseId || row.id;
+    var toggled = estimate.rowToggles[toggleKey];
     var isOn = toggled !== false; // default on
     if (!isOn) return;
     included++;
@@ -883,7 +887,7 @@ function _pricingComputeTotals(rows, estimate) {
 
     // Manual price override — blank/NaN/zero = MISSING (not $0)
     if (row.noSku) {
-      var manual = parseFloat(estimate.manualPrices[row.id]);
+      var manual = parseFloat(estimate.manualPrices[toggleKey]);
       price = isNaN(manual) || manual === 0 ? null : manual;
     }
 
@@ -1371,10 +1375,798 @@ function updatePricingConfig(projId, key, val) {
   initCostEstimateTab(projId);
 }
 
-/* ── Phase 5 stub — report integration (spec §10) ── */
+/* ══════════════════════════════════════════════════════════════════════════════
+   PHASE 3 — Recommended tier optimizer, COMBO de-dup, FDD add-on,
+              tier toggle, collectPricingEstimate (spec §4, §8, §10, §11)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Optimizer qualifying classes (spec §4) ──────────────────────────────────
+   Maps each optimizable pointKey class to a catalog category keyword filter
+   (case-insensitive substring match on catalog entry .category or .desc).
+   The optimizer finds the lowest-price SKU from the catalog that matches the
+   class filter, then substitutes it for the curated default.
+
+   SKIP LIST (use curated default + engReview, do NOT optimize):
+     immersion temp: hwst, hwrt, chwst, chwrt, cwst, cwrt (thermowell sizing)
+     DP sensors: dsp, hwdp, chwdp (range unknown)
+     coil valves: clgValve, htgValve, reheatValve (Cv/pipe size)
+     OA/RA damper actuators: oaDampCmd, raDampCmd (torque/spring-return safety)
+     VAV zone controllers: discFlow, primaryFlow (I/O count)
+   ─────────────────────────────────────────────────────────────────────────── */
+var OPTIMIZER_SKIP_KEYS = {
+  hwst: true,
+  hwrt: true,
+  chwst: true,
+  chwrt: true,
+  cwst: true,
+  cwrt: true,
+  dsp: true,
+  hwdp: true,
+  chwdp: true,
+  clgValve: true,
+  htgValve: true,
+  reheatValve: true,
+  oaDampCmd: true,
+  raDampCmd: true,
+  discFlow: true,
+  primaryFlow: true,
+};
+
+/* Catalog class filters per optimizable point key.
+   Value = {catMatch, descMatch} — one or both may be provided.
+   Optimizer finds catalog[sku] where category.toLowerCase() contains catMatch
+   (if set) AND desc.toLowerCase() does NOT contain descExclude (if set).
+   The combo class (co2_zone) prefers ZS2-HC-ALC specifically; optimizer picks
+   within ZS CO2 options. */
+var OPTIMIZER_CLASS_FILTERS = {
+  sat: { descMatch: 'duct temperature', descExclude: 'averaging' },
+  rat: { descMatch: 'duct temperature', descExclude: 'averaging' },
+  mat: { descMatch: 'duct temperature', descExclude: 'averaging' },
+  oat: { descMatch: 'outdoor temperature', descExclude: null },
+  co2_ahu: { descMatch: 'duct co2', descExclude: null },
+  co2_zone: { descMatch: 'zone', descExclude: null, skuPrefix: 'ZS2' },
+  dat: { descMatch: 'duct temperature', descExclude: 'averaging' },
+  zoneTemp: { descMatch: 'zone', descExclude: 'co2', skuPrefix: 'ZS2' },
+  dampCmd: { descMatch: 'spring-return', descExclude: null, skuPrefix: 'AFRB' },
+  coldDampCmd: { descMatch: 'spring-return', descExclude: null, skuPrefix: 'AFRB' },
+  hotDampCmd: { descMatch: 'spring-return', descExclude: null, skuPrefix: 'AFRB' },
+  chwIsoValveCmd: { descMatch: 'non-fail-safe', descExclude: null, skuPrefix: 'AMB' },
+  cwIsoValveCmd: { descMatch: 'non-fail-safe', descExclude: null, skuPrefix: 'AMB' },
+  makeupValveCmd: { descMatch: 'non-fail-safe', descExclude: null, skuPrefix: 'AMB' },
+};
+
+/* FDD add-on SKU (spec §11 build #3) — 1 per building in Recommended tier */
+var FDD_SKU = 'ADD-FDD-RPT';
+
+/* ── _pricingFindCheapestSku(pointKey, catalog, basis) ──────────────────────
+   Searches catalog for the cheapest qualifying SKU for the given point key.
+   Returns { sku, unitPrice } or null if no qualifying entry found.
+   Falls back to curated default if no cheaper match exists.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingFindCheapestSku(pointKey, catalog, cfg) {
+  if (!catalog || OPTIMIZER_SKIP_KEYS[pointKey]) return null;
+
+  var classFilter = OPTIMIZER_CLASS_FILTERS[pointKey];
+  if (!classFilter) return null; // no filter defined → cannot optimize
+
+  var basis = cfg.priceBasis || 'contract';
+
+  function getPrice(entry) {
+    if (!entry) return null;
+    if (basis === 'list') return entry.list != null ? entry.list : null;
+    if (basis === 'net') return entry.net != null ? entry.net : null;
+    if (basis === 'contract') {
+      return entry.list != null ? parseFloat((COST_CONTRACT_PCT * entry.list).toFixed(2)) : null;
+    }
+    return null;
+  }
+
+  var bestSku = null;
+  var bestPrice = Infinity;
+
+  Object.keys(catalog).forEach(function (sku) {
+    var entry = catalog[sku];
+    var desc = (entry.desc || '').toLowerCase();
+    var cat = (entry.category || '').toLowerCase();
+
+    // SKU prefix filter (if specified)
+    if (classFilter.skuPrefix && sku.indexOf(classFilter.skuPrefix) !== 0) return;
+
+    // Description match
+    if (classFilter.descMatch && desc.indexOf(classFilter.descMatch.toLowerCase()) === -1) return;
+
+    // Description exclusion
+    if (classFilter.descExclude && desc.indexOf(classFilter.descExclude.toLowerCase()) !== -1) return;
+
+    var price = getPrice(entry);
+    if (price === null || price <= 0) return;
+
+    if (price < bestPrice) {
+      bestPrice = price;
+      bestSku = sku;
+    }
+  });
+
+  if (!bestSku) return null;
+  return { sku: bestSku, unitPrice: bestPrice };
+}
+
+/* ── buildRecommendedRows(projId) ───────────────────────────────────────────
+   Produces the row list for the Recommended tier.
+   Differences from Compliance:
+     1. Optimizer substitutes lowest-price qualifying SKU for safe classes
+     2. COMBO de-dup: zone missing both zoneTemp+co2 → single ZS2-HC-ALC line
+        (identical to compliance combo, but note says "Combo: replaces separate…")
+     3. FDD add-on: one ADD-FDD-RPT row per building
+     4. SKIP list: curated default kept + engReview preserved
+   ─────────────────────────────────────────────────────────────────────────── */
+function buildRecommendedRows(projId) {
+  // Start from compliance rows as foundation, then apply optimizer + add-ons
+  var compRows = buildComplianceRows(projId);
+  if (!compRows.length) return [];
+
+  var catalog = sget('en_pricing_catalog', null);
+  var cfg = _pricingGetConfig();
+  var estimate = _pricingGetEstimate(projId);
+
+  // Build a set of buildings already seen (for FDD add-on dedup)
+  var fddBuildingsSeen = {};
+  var recRows = [];
+  var rowIdx = 10000; // offset to avoid ID collision with compliance rows
+
+  // Process each compliance row and apply optimizer or skip
+  compRows.forEach(function (row) {
+    // Clone the row so compliance rows are unaffected
+    var rec = Object.assign({}, row);
+
+    // Only optimize Phase 1 hardware rows with a real SKU
+    if (rec.phase === 1 && rec.sku && !rec.ioOnly && !rec.noSku) {
+      if (OPTIMIZER_SKIP_KEYS[rec._pointKey || _extractPointKeyFromRowId(row.id)]) {
+        // SKIP: keep curated default, preserve engReview
+        rec.optimizerSkipped = true;
+      } else {
+        // Try to find a cheaper qualifying SKU
+        var pointKey = rec._pointKey || _extractPointKeyFromRowId(row.id);
+        var cheaper = _pricingFindCheapestSku(pointKey, catalog, cfg);
+        if (cheaper && cheaper.sku !== rec.sku) {
+          // Optimizer found a cheaper option
+          rec.optimizerOriginalSku = rec.sku;
+          rec.sku = cheaper.sku;
+          rec.unitPrice = cheaper.unitPrice;
+          rec.lineTotal = rec.qty > 0 ? parseFloat((cheaper.unitPrice * rec.qty).toFixed(2)) : null;
+          rec.optimized = true;
+        }
+      }
+    }
+
+    // Fix 3: store the compliance row id as _baseId BEFORE re-keying,
+    // so toggle state (keyed by compliance ids) is shared between tiers.
+    rec._baseId = row.id;
+
+    // Re-key the row ID so it's distinct from the compliance row ID
+    rec.id = rec.id.replace(/^hw_/, 'rch_').replace(/^seq_/, 'rcs_');
+
+    recRows.push(rec);
+  });
+
+  // Fix 1: FDD add-on — exactly ONE row per project (WebCTRL system-level license, not per-building)
+  // qty is user-editable via the manual-price / qty mechanism; default 1.
+  {
+    var fddUnitPrice = null;
+    var fddLineTotal = null;
+    if (catalog && catalog[FDD_SKU]) {
+      var fddEntry = catalog[FDD_SKU];
+      var basis = cfg.priceBasis || 'contract';
+      if (basis === 'list') fddUnitPrice = fddEntry.list;
+      else if (basis === 'net') fddUnitPrice = fddEntry.net;
+      else fddUnitPrice = fddEntry.list != null ? parseFloat((COST_CONTRACT_PCT * fddEntry.list).toFixed(2)) : null;
+      if (fddUnitPrice !== null) fddLineTotal = fddUnitPrice; // qty=1
+    }
+
+    recRows.push({
+      id: 'rch_fdd_project_' + rowIdx++,
+      building: 'WebCTRL System',
+      item: 'FDD Reporting',
+      type: 'Add-On',
+      equipment: '1 WebCTRL system',
+      qty: 1,
+      sku: FDD_SKU,
+      engReview: false,
+      noSku: catalog ? !catalog[FDD_SKU] : false,
+      ioOnly: false,
+      unitPrice: fddUnitPrice,
+      lineTotal: fddLineTotal,
+      note: '1 per WebCTRL system — verify system count',
+      phase: 1,
+      isFddAddon: true,
+    });
+  }
+
+  return recRows;
+}
+
+/* ── Helper: extract pointKey from a row id produced by buildComplianceRows ──
+   Compliance row IDs have the form: hw_{building}_{effectiveKey}__{cat}_{idx}
+   This is a best-effort extraction used by the optimizer.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _extractPointKeyFromRowId(rowId) {
+  // Strip prefix and trailing _idx
+  var s = rowId.replace(/^hw_[^_]+_/, '').replace(/_\d+$/, '');
+  // s is now like "sat__ahu" or "co2_ahu__ahu" — extract the part before __
+  var parts = s.split('__');
+  return parts[0] || '';
+}
+
+/* ── Tier toggle: render the tier selector buttons ──────────────────────────
+   Spec §8: [Compliance] [Recommended] [Both side-by-side]. Default=Compliance.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingTierToggleHTML(projId, currentTier) {
+  function btn(tier, label) {
+    var active = currentTier === tier;
+    return (
+      '<button onclick="_pricingSetTier(\'' +
+      projId +
+      "','" +
+      tier +
+      '\')"' +
+      ' style="font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border);' +
+      (active ? 'background:var(--accent);color:#fff;font-weight:700;' : 'background:var(--s3);color:var(--text2);') +
+      '">' +
+      label +
+      '</button>'
+    );
+  }
+  return (
+    '<div style="display:flex;gap:4px;align-items:center">' +
+    '<span style="font-size:11px;color:var(--text2);margin-right:2px">Tier:</span>' +
+    btn('compliance', 'Compliance') +
+    btn('recommended', 'Recommended') +
+    btn('both', 'Both') +
+    '</div>'
+  );
+}
+
+function _pricingSetTier(projId, tier) {
+  var est = _pricingGetEstimate(projId);
+  est.tier = tier;
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
+/* ── "Both" side-by-side mode: render two Line-Total columns ────────────────
+   When tier='both', the table shows:
+   - All compliance rows, with an extra "Recommended" total column
+   - A footer showing Compliance total vs Recommended total side by side
+   Implementation: render compliance rows; for each row, also look up the
+   matching recommended row by pointKey+building+phase to show its lineTotal.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _buildBothModeIndex(recRows) {
+  // Index recommended rows by their row ID base (strip the rch_/rcs_ prefix back
+  // to the compliance base key for matching)
+  var idx = {};
+  recRows.forEach(function (r) {
+    // ID format: rch_{building}_{gKey}_{rowIdx} or rcs_{building}_{seqKey}_{rowIdx}
+    // We want to match against the compliance row which has id like hw_{building}_{gKey}_{rowIdx}
+    // Since rowIdx differs we match on (building + gKey portion)
+    var base = r.id.replace(/^rch_/, '').replace(/^rcs_/, '').replace(/_\d+$/, ''); // strip trailing index
+    idx[base] = r;
+  });
+  return idx;
+}
+
+/* ── initCostEstimateTab — Phase 3 extended version ─────────────────────────
+   Replaces the Phase 2 version. Adds tier toggle to toolbar; delegates
+   rendering based on tier (compliance | recommended | both).
+   ─────────────────────────────────────────────────────────────────────────── */
+// Overwrite (shadow) the Phase 2 initCostEstimateTab with Phase 3 version.
+// We rename the old one and the new one takes the same public name.
+var _initCostEstimateTabPhase2 = initCostEstimateTab;
+
+initCostEstimateTab = function initCostEstimateTab(projId) {
+  var el = document.getElementById('ptab-cost-estimate-body-' + projId);
+  if (!el) return;
+
+  var cfg = _pricingGetConfig();
+  var catalog = sget('en_pricing_catalog', null);
+  var meta = sget('en_pricing_meta', null);
+  var estimate = _pricingGetEstimate(projId);
+  var tier = estimate.tier || 'compliance';
+  var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
+
+  // Pick rows based on tier
+  var rows;
+  if (tier === 'recommended') {
+    rows = buildRecommendedRows(projId);
+  } else {
+    // 'compliance' or 'both' — always build compliance rows
+    rows = buildComplianceRows(projId);
+  }
+  _pricingRowCache[projId] = rows;
+
+  var recRows = null;
+  if (tier === 'both') {
+    recRows = buildRecommendedRows(projId);
+    _pricingRowCache[projId + '_rec'] = recRows;
+  }
+
+  var totals = _pricingComputeTotals(rows, estimate);
+  var recTotals = recRows ? _pricingComputeTotals(recRows, estimate) : null;
+
+  // ── Import status
+  var importStatus = '';
+  if (meta) {
+    importStatus =
+      '<span style="font-size:11px;color:var(--text2);margin-left:8px">' +
+      meta.skuCount +
+      ' SKUs imported ' +
+      new Date(meta.importedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+      '</span>';
+  } else {
+    importStatus =
+      '<span style="font-size:11px;color:var(--warn);margin-left:8px">No pricing imported — unit prices will show as "—"</span>';
+  }
+
+  // ── Toolbar (Phase 3 adds tier toggle)
+  var toolbarHTML = [
+    '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
+    '<label class="btn btn-ghost btn-sm" style="cursor:pointer;position:relative">',
+    '<input type="file" accept=".csv" id="pricing-csv-input-' +
+      projId +
+      '" style="position:absolute;opacity:0;width:0;height:0" onchange="handlePricingCSVImport(event,' +
+      projId +
+      ')">',
+    (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') + 'Import Pricing CSV',
+    '</label>',
+    importStatus,
+    '<span style="flex:1"></span>',
+    // Tier toggle (Phase 3)
+    _pricingTierToggleHTML(projId, tier),
+    '<span style="color:var(--border2)">|</span>',
+    // Price Basis
+    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
+    'Price Basis:',
+    '<select id="pricing-basis-' +
+      projId +
+      '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="updatePricingConfig(' +
+      projId +
+      ",'priceBasis',this.value)\">",
+    '<option value="contract"' + (cfg.priceBasis === 'contract' ? ' selected' : '') + '>Contract (40% List)</option>',
+    '<option value="net"' + (cfg.priceBasis === 'net' ? ' selected' : '') + '>Net</option>',
+    '<option value="list"' + (cfg.priceBasis === 'list' ? ' selected' : '') + '>List</option>',
+    '</select>',
+    '</label>',
+    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
+    'Net Multiplier:',
+    '<input type="number" id="pricing-net-mult-' +
+      projId +
+      '" min="0.01" max="1.0" step="0.01" value="' +
+      cfg.netMultiplier +
+      '"',
+    ' style="width:56px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"',
+    ' onchange="updatePricingConfig(' + projId + ",'netMultiplier',parseFloat(this.value))\">",
+    '</label>',
+    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
+    'Contract %:',
+    '<input type="number" id="pricing-contract-pct-' +
+      projId +
+      '" min="1" max="100" step="1" value="' +
+      Math.round(cfg.contractPct * 100) +
+      '"',
+    ' style="width:48px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"',
+    ' onchange="updatePricingConfig(' + projId + ",'contractPct',parseFloat(this.value)/100)\">",
+    '</label>',
+    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
+    'Hourly Rate:',
+    '<input type="number" id="pricing-rate-' + projId + '" min="1" max="999" step="1" value="' + cfg.hourlyRate + '"',
+    ' style="width:56px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"',
+    ' onchange="updatePricingConfig(' + projId + ",'hourlyRate',parseFloat(this.value))\">",
+    '</label>',
+    '</div>',
+  ].join('');
+
+  // ── Collect buildings list
+  var buildings = [];
+  var bldgSet = {};
+  rows.forEach(function (row) {
+    if (!bldgSet[row.building]) {
+      bldgSet[row.building] = true;
+      buildings.push(row.building);
+    }
+  });
+
+  // ── Local _esc helper
+  function _esc(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Render a single row (compliance or recommended)
+  function renderRow(row, isBothMode, matchedRecRow) {
+    // Fix 3: use _baseId (compliance id) as toggle key so Recommended rows
+    // share toggle state with their Compliance counterparts.
+    var toggleKey = row._baseId || row.id;
+    var toggleOn = estimate.rowToggles[toggleKey] !== false;
+    var manualVal = estimate.manualPrices[toggleKey] || '';
+
+    var skuCell = '';
+    if (row.ioOnly) {
+      skuCell = '<span style="color:var(--text3);font-size:10px">—</span>';
+    } else if (row.phase === 2) {
+      skuCell = '<span style="color:var(--text3);font-size:10px">—</span>';
+    } else if (!row.sku) {
+      skuCell = '<span style="color:var(--warn);font-size:10px">Manual Price</span>';
+    } else {
+      var optimizerNote = '';
+      if (row.optimized) {
+        optimizerNote =
+          '<span title="Optimizer: was ' +
+          _esc(row.optimizerOriginalSku || '') +
+          '" style="color:var(--accent);margin-right:3px;font-size:10px">✓</span>';
+      }
+      skuCell =
+        (row.engReview
+          ? '<span title="Engineering review required before ordering" style="color:var(--warn);margin-right:3px;font-size:11px">⚠</span>'
+          : '') +
+        optimizerNote +
+        '<span style="font-family:monospace;font-size:10px">' +
+        row.sku +
+        '</span>';
+      if (row.isFddAddon) {
+        skuCell = '<span style="font-family:monospace;font-size:10px">' + row.sku + '</span>';
+      }
+    }
+
+    var unitPriceCell = '';
+    if (row.ioOnly) {
+      unitPriceCell = '<span style="color:var(--text3);font-size:10px">$0 (I/O)</span>';
+    } else if (row.phase === 2) {
+      unitPriceCell = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '—';
+    } else if (row.noSku) {
+      unitPriceCell =
+        '<input type="number" min="0" step="0.01" value="' +
+        manualVal +
+        '" placeholder="Enter price"' +
+        ' style="width:80px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
+        ' onchange="_pricingManualPrice(event,\'' +
+        projId +
+        "','" +
+        row.id +
+        '\')">';
+    } else if (!hasCatalog) {
+      unitPriceCell = '<span style="color:var(--text3)">—</span>';
+    } else if (row.sku && catalog && !catalog[row.sku]) {
+      unitPriceCell = '<span style="color:var(--warn)" title="SKU not found in imported pricing">⚠ No price</span>';
+    } else {
+      unitPriceCell = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '<span style="color:var(--text3)">—</span>';
+    }
+
+    var lineTotalCell = '';
+    if (row.ioOnly) {
+      lineTotalCell = '<span style="color:var(--text3);font-size:10px">$0</span>';
+    } else if (row.noSku) {
+      var mv = parseFloat(estimate.manualPrices[row.id] || 0);
+      var lt = isNaN(mv) ? null : mv * row.qty;
+      lineTotalCell =
+        lt !== null && lt > 0 ? _pricingFmt(lt) : '<span style="color:var(--warn);font-size:10px">⚠ Enter price</span>';
+    } else {
+      lineTotalCell =
+        row.lineTotal !== null
+          ? '<span' + (!toggleOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(row.lineTotal) + '</span>'
+          : '<span style="color:var(--text3)">—</span>';
+    }
+
+    var rowStyle = !toggleOn ? 'opacity:0.45;' : '';
+    if (row.ioOnly) rowStyle += 'background:var(--s1);';
+
+    // In "Both" mode, add an extra Recommended Line Total column
+    var bothExtraCol = '';
+    if (isBothMode) {
+      var recLt = matchedRecRow ? matchedRecRow.lineTotal : null;
+      bothExtraCol =
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px;' +
+        'border-left:2px solid var(--border2);color:var(--accent)">' +
+        (recLt !== null ? _pricingFmt(recLt) : '<span style="color:var(--text3)">—</span>') +
+        '</td>';
+    }
+
+    return [
+      '<tr style="' + rowStyle + '">',
+      // col 1: Include — Fix 3: pass toggleKey (compliance id) so Recommended
+      // rows write to the same toggle slot as their Compliance counterparts.
+      '<td class="ch-frozen" style="width:36px;text-align:center;padding:4px 6px">',
+      row.ioOnly
+        ? '<span title="Controller I/O — no cost" style="cursor:default;color:var(--text3)">—</span>'
+        : '<input type="checkbox"' +
+          (toggleOn ? ' checked' : '') +
+          ' onchange="_pricingToggleRow(\'' +
+          projId +
+          "','" +
+          toggleKey +
+          '\',this.checked)"' +
+          ' style="cursor:pointer">',
+      '</td>',
+      // col 2: Building
+      '<td class="ch-frozen" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:5px 8px">' +
+        _esc(row.building) +
+        '</td>',
+      // col 3: Item
+      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:5px 8px">' +
+        _esc(row.item) +
+        '</td>',
+      // col 4: Type
+      '<td style="font-size:10px;color:var(--text2);white-space:nowrap;padding:5px 8px">' + _esc(row.type) + '</td>',
+      // col 5: Equipment
+      '<td style="font-size:10px;color:var(--text2);white-space:nowrap;padding:5px 8px">' +
+        _esc(row.equipment) +
+        '</td>',
+      // col 6: Qty
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px">' +
+        row.qty +
+        '</td>',
+      // col 7: SKU
+      '<td style="white-space:nowrap;padding:5px 8px">' + skuCell + '</td>',
+      // col 8: Unit Price
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px">' +
+        unitPriceCell +
+        '</td>',
+      // col 9: Line Total
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px">' +
+        lineTotalCell +
+        '</td>',
+      // col 10 (Both only): Recommended Line Total
+      bothExtraCol,
+      // col 10/11: Notes
+      '<td style="font-size:10px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px">' +
+        _esc(row.note) +
+        '</td>',
+      '</tr>',
+    ].join('');
+  }
+
+  var isBothMode = tier === 'both';
+  var colCount = isBothMode ? 11 : 10;
+  var recRowIdxByBase = isBothMode ? _buildBothModeIndex(recRows || []) : {};
+
+  // ── Table body HTML
+  var tableBodyHTML = '';
+
+  if (rows.length === 0) {
+    tableBodyHTML =
+      '<tr><td colspan="' +
+      colCount +
+      '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">No compliance gaps found. Run the Equipment Matrix audit first.</td></tr>';
+  } else {
+    buildings.forEach(function (bName) {
+      var bRows = rows.filter(function (r) {
+        return r.building === bName;
+      });
+      var hw = bRows.filter(function (r) {
+        return r.phase === 1;
+      });
+      var lb = bRows.filter(function (r) {
+        return r.phase === 2;
+      });
+
+      // Building subtotals (compliance) — Fix 3: use _baseId||id as toggle key
+      var bHw1 = hw.reduce(function (s, r) {
+        return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
+      }, 0);
+      var bLab2 = lb.reduce(function (s, r) {
+        return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
+      }, 0);
+      var bTotal = bHw1 + bLab2;
+
+      // Building subtotals (recommended — for both mode) — Fix 3: use _baseId||id
+      var recBTotal = 0;
+      if (isBothMode && recRows) {
+        var rBRows = recRows.filter(function (r) {
+          return r.building === bName;
+        });
+        recBTotal = rBRows.reduce(function (s, r) {
+          return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
+        }, 0);
+      }
+
+      tableBodyHTML += [
+        '<tr>',
+        '<td colspan="' +
+          colCount +
+          '" style="background:var(--s1);padding:6px 10px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border2)">',
+        _esc(bName),
+        bTotal > 0 && hasCatalog
+          ? ' <span style="font-weight:400;color:var(--text3)">— ' +
+            _pricingFmt(bTotal) +
+            ' est.' +
+            (isBothMode && recBTotal > 0 ? ' / Rec: ' + _pricingFmt(recBTotal) : '') +
+            '</span>'
+          : '',
+        '</td>',
+        '</tr>',
+      ].join('');
+
+      if (hw.length > 0) {
+        tableBodyHTML += [
+          '<tr><td colspan="' +
+            colCount +
+            '" style="background:var(--s3);padding:3px 10px 3px 18px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border)">',
+          'Phase 1 — Hardware',
+          '</td></tr>',
+        ].join('');
+        hw.forEach(function (row) {
+          var matchedRec = null;
+          if (isBothMode) {
+            var base = row.id.replace(/^hw_/, '').replace(/_\d+$/, '');
+            matchedRec = recRowIdxByBase[base] || null;
+          }
+          tableBodyHTML += renderRow(row, isBothMode, matchedRec);
+        });
+      }
+
+      if (lb.length > 0) {
+        tableBodyHTML += [
+          '<tr><td colspan="' +
+            colCount +
+            '" style="background:var(--s3);padding:3px 10px 3px 18px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border)">',
+          'Phase 2 — Programming Labor',
+          '</td></tr>',
+        ].join('');
+        lb.forEach(function (row) {
+          tableBodyHTML += renderRow(row, isBothMode, null);
+        });
+      }
+    });
+  }
+
+  // ── Footer
+  var recTierLabel = tier === 'recommended' ? 'Recommended' : 'Compliance';
+  var footerParts = [
+    '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
+  ];
+
+  if (isBothMode && recTotals) {
+    footerParts.push(
+      '<span style="font-size:11px;font-weight:700;color:var(--text2)">Compliance — Hardware: </span>',
+      '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
+        (totals.grand !== null ? _pricingFmt(totals.phase1) : '—') +
+        '</span>',
+      '<span style="font-size:11px;font-weight:700;color:var(--text2)">Programming: </span>',
+      '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
+        (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
+        '</span>',
+      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Total: ' +
+        (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
+        '</span>',
+      '<span style="color:var(--border2)">|</span>',
+      '<span style="font-size:11px;font-weight:700;color:var(--text2)">Recommended — Hardware: </span>',
+      '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
+        (recTotals.grand !== null ? _pricingFmt(recTotals.phase1) : '—') +
+        '</span>',
+      '<span style="font-size:11px;font-weight:700;color:var(--text2)">Programming: </span>',
+      '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
+        (recTotals.grand !== null ? _pricingFmt(recTotals.phase2) : '—') +
+        '</span>',
+      '<span style="font-size:13px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">Total: ' +
+        (recTotals.grand !== null ? _pricingFmt(recTotals.grand) : '—') +
+        '</span>',
+    );
+  } else {
+    footerParts.push(
+      '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
+      '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
+        (totals.grand !== null ? _pricingFmt(totals.phase1) : '—') +
+        '</span>',
+      '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
+      '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
+        (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
+        '</span>',
+      '<span style="color:var(--border2)">|</span>',
+      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
+        (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
+        '</span>',
+    );
+  }
+
+  footerParts.push(
+    '<span style="flex:1"></span>',
+    '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
+    totals.engReviewCount > 0
+      ? '<span style="font-size:11px;color:var(--warn)">⚠ ' + totals.engReviewCount + ' eng-review</span>'
+      : '',
+    '<span style="color:var(--border2)">|</span>',
+    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
+      (tier === 'both' ? 'Both' : tier === 'recommended' ? 'Recommended' : 'Compliance') +
+      '</span>',
+    '<span style="color:var(--border2)">|</span>',
+    '<span style="font-size:11px;color:var(--text3);text-transform:capitalize">Basis: ' +
+      (cfg.priceBasis || 'contract') +
+      '</span>',
+    '</div>',
+  );
+
+  var footerHTML = footerParts.join('');
+
+  // ── Table header (extra column for Both mode)
+  var extraRecHeader = isBothMode
+    ? '<th style="background:var(--s1);color:var(--accent);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:right;border-left:2px solid var(--border2)">Rec. Total</th>'
+    : '';
+
+  // ── Assemble panel
+  el.innerHTML = [
+    '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
+    toolbarHTML,
+    '<div class="ch-panel-body" style="flex:1;min-height:0;overflow-y:auto;overflow-x:auto">',
+    '<div class="ch-tbl-outer" style="margin:0">',
+    '<div class="ch-tbl-scroll" style="overflow:auto">',
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:860px">',
+    '<thead><tr>',
+    '<th class="ch-frozen" style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px;white-space:nowrap;position:sticky;top:0;z-index:12;left:0;width:36px;text-align:center">Incl</th>',
+    '<th class="ch-frozen" style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;left:36px;min-width:120px;max-width:130px">Building</th>',
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;min-width:140px">Item</th>',
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11">Type</th>',
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11">Equipment</th>',
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:center">Qty</th>',
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;min-width:150px">SKU</th>',
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:center">Unit Price</th>',
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:right">Line Total</th>',
+    extraRecHeader,
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;min-width:180px">Notes</th>',
+    '</tr></thead>',
+    '<tbody id="pricing-tbody-' + projId + '">',
+    tableBodyHTML,
+    '</tbody>',
+    '</table>',
+    '</div>',
+    '</div>',
+    '</div>',
+    '<div id="pricing-footer-' + projId + '">',
+    footerHTML,
+    '</div>',
+    '</div>',
+  ].join('');
+};
+
+/* ── Phase 5 — collectPricingEstimate (spec §10) ────────────────────────────
+   Returns {hardwareTotal, laborTotal, grandTotal, basis, skusMissing,
+            engReviewCount} for tier in {'compliance','recommended'}.
+   Returns null if no en_pricing_catalog.
+   ─────────────────────────────────────────────────────────────────────────── */
 function collectPricingEstimate(projId, tier) {
   var catalog = sget('en_pricing_catalog', null);
   if (!catalog || !Object.keys(catalog).length) return null;
-  // Phase 5: full implementation deferred
-  return null;
+
+  var activeTier = tier || 'compliance';
+  var rows;
+  if (activeTier === 'recommended') {
+    rows = buildRecommendedRows(projId);
+  } else {
+    rows = buildComplianceRows(projId);
+  }
+
+  if (!rows || !rows.length) return null;
+
+  var estimate = _pricingGetEstimate(projId);
+  var cfg = _pricingGetConfig();
+  var totals = _pricingComputeTotals(rows, estimate);
+
+  var skusMissing = 0;
+  var engReviewCount = 0;
+
+  rows.forEach(function (row) {
+    if (row.engReview) engReviewCount++;
+    if (row.phase === 1 && !row.ioOnly && !row.noSku && row.sku) {
+      if (!catalog[row.sku]) skusMissing++;
+    }
+  });
+
+  return {
+    hardwareTotal: totals.phase1,
+    laborTotal: totals.phase2,
+    grandTotal: totals.grand,
+    basis: cfg.priceBasis || 'contract',
+    skusMissing: skusMissing,
+    engReviewCount: engReviewCount,
+  };
 }
