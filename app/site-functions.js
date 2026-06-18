@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.552',
+    date: '2026-06-18',
+    title: 'Equipment Matrix: furnace units, DOAS air handlers, and weather stations now classify correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix (Energy Department → open a project → Equipment Matrix tab): furnace units named F-# (e.g. F-2, F-4) no longer appear as exhaust fans. They now correctly show as Furnace type. Affected rows at MedAct 51 are corrected.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: dedicated outdoor air systems (labeled "Multizone VAV AHU (DOAS)") now classify as DOAS instead of generic AHU. Three JOCO units (MedAct 1131, MedAct 1159, Courthouse DOAS-1) are corrected.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: weather station control programs (labeled "Weather Station (no HVAC)") now classify as Sensor instead of Other.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.551',
     date: '2026-06-18',
     title: 'Equipment Matrix: air temperature and OA damper columns now populate for Rooftop and Makeup Air Units',

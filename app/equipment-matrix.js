@@ -2,6 +2,7 @@
 
 /* ── CONSTANTS ── */
 var EM_EQUIP_TYPES = {
+  'multizone vav ahu (doas)': 'doas', // must precede 'multizone vav ahu' to win Section B exact lookup
   'multizone vav ahu': 'ahu',
   'multizone ahu': 'ahu',
   'vav ahu': 'ahu',
@@ -63,7 +64,7 @@ var EM_EQUIP_TYPES = {
   chwp: 'chwp',
   'cooling tower': 'ct',
   ct: 'ct',
-  'weather station (no hvac)': 'other',
+  'weather station (no hvac)': 'sensor',
   'no gl36 equipment': 'other',
   'no bas equipment': 'other',
   // Exhaust fans — dedicated ef type
@@ -2111,8 +2112,9 @@ function emClassifyEquipType(equipTypeStr) {
   if (/^sp-\d{1,2},/i.test(key)) return 'ef'; // "SP-1,2,3,4" combined entry
   // Stairwell pressurization fans (combined label)
   if (/stairwell pressurization/i.test(key)) return 'ef';
-  // F-N (fan, filter, or fixture abbreviations in fire station context)
-  if (/^f-\d+$/i.test(key)) return 'ef'; // F-2, F-4 — likely exhaust fans
+  // F-N (furnace abbreviation — e.g. MedAct 51 "Front Entry - F-4", "Kitchen/Lounge - F-2")
+  // Must NOT match EF-N (exhaust fans) — pattern anchors to ^f so "ef-2" key won't start with bare f
+  if (/^f-\d+$/i.test(key)) return 'furnace'; // 425c0cb3 fix: F-2, F-4 are furnaces
   // CU-N (condensing unit)
   if (/^cu-\d/i.test(key)) return 'ahu';
   // DX (direct expansion unit)
