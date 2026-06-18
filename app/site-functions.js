@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.549',
+    date: '2026-06-18',
+    title: 'Equipment Matrix: single-zone RTUs now correctly identified as SZ-RTU',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix (Energy Department → open a project → Equipment Matrix tab): Two single-zone rooftop units (HHW RTU-1 and RTU-2) were incorrectly showing as VAV-RTU. The fix filters out firmware-level diagnostic fault point names that were creating false VFD and airflow signals, and adds a positive single-zone check using the controls system zone-count point. SZ-RTU now displays correctly for these units.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.17.548',
     date: '2026-06-17',
     title: 'Equipment Matrix: rooftop units now appear as their own type',

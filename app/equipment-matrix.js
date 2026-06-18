@@ -2130,6 +2130,17 @@ function emVerifyTypeByPoints(group) {
   });
   var ptStr = pts.join('\n'); // newline-separated so anchors don't bleed across names
 
+  // 9018b1c6 Fix 1: Filter out Diagnostic fault-point names before VFD/airflow signal checks.
+  // Carrier/Lennox RTUs include many "Diagnostic: … Fan Speed Fail" / "Diagnostic: … Air Flow …"
+  // BACnet BMBI fault-status points that match fan.?speed and air.?flow regexes but do NOT
+  // indicate a VFD or airflow sensor is installed. Excluding them prevents false VAV promotion.
+  // Raw WebCTRL point names start with "Diagnostic:" (lowercased: "diagnostic:").
+  // Enriched CSV column keys (e.g. "supplyFanSpeed") never start with "diagnostic:" so this
+  // filter has no effect on the enriched CSV true-positive path.
+  var ptsNonDiag = pts.filter(function (p) {
+    return p.indexOf('diagnostic') !== 0;
+  });
+
   function hasPoint(re) {
     for (var i = 0; i < pts.length; i++) {
       if (re.test(pts[i])) return true;
@@ -2137,9 +2148,18 @@ function emVerifyTypeByPoints(group) {
     return false;
   }
 
+  function hasPointNonDiag(re) {
+    for (var i = 0; i < ptsNonDiag.length; i++) {
+      if (re.test(ptsNonDiag[i])) return true;
+    }
+    return false;
+  }
+
   var hasZoneTemp = hasPoint(/zone.?temp|room.?temp|space.?temp/);
   var hasSupplyFan = hasPoint(/supply fan/);
-  var hasAirFlow = hasPoint(/air.?flow|flow control|flow input|\bcfm\b/);
+  // 9018b1c6 Fix 1: hasAirFlow uses ptsNonDiag to prevent "Diagnostic: … Air Flow …" false-positives
+  // affecting Rules 7/8 (FPB/VAV by airflow).
+  var hasAirFlow = hasPointNonDiag(/air.?flow|flow control|flow input|\bcfm\b/);
   var hasTermFan = hasPoint(/\bfan\b/) && !hasPoint(/supply fan|exhaust fan|return fan/);
 
   // 1. Fire/smoke: tiny point set with smoke zone BNI (not an HVAC unit)
@@ -2206,16 +2226,64 @@ function emVerifyTypeByPoints(group) {
 
   // ── Subtype rules (Rules 13-15 + Signal 1): only fire when category is 'ahu' or 'rtu' ──
   if (provisional === 'ahu' || provisional === 'rtu') {
+    // 9018b1c6 Fix B: Case-insensitive lookup for "EI Active Zone" in pointValues.
+    // group.pointValues keys are raw BAS point names (exact casing from export). Using a
+    // case-insensitive scan future-proofs against casing variations (e.g. "ei active zone",
+    // "EI Active Zone", "EI ACTIVE ZONE"). Returns the string value or undefined if absent.
+    var _pv = group.pointValues || {};
+    var _eiActiveZoneKey = null;
+    var _pvKeys = Object.keys(_pv);
+    for (var _ki = 0; _ki < _pvKeys.length; _ki++) {
+      if (_pvKeys[_ki].toLowerCase().trim() === 'ei active zone') {
+        _eiActiveZoneKey = _pvKeys[_ki];
+        break;
+      }
+    }
+    var _eiActiveZoneLookup = _eiActiveZoneKey !== null ? _pv[_eiActiveZoneKey] : undefined;
+
     // Signal 1 — TYPE STRING subtype (highest priority for ahu/rtu rows).
     // Reads the "Equipment Type" column text from the CSV (e.g. "Rooftop Unit (Multizone VAV)").
-    // This solves all 10 RTU (Multizone VAV) rows which lack BAS-level VFD/DSP points.
+    // This solves enriched-CSV rows (e.g. NC Detention AHU-1/2/3) which carry DSP+VFD in the
+    // enriched CSV and whose type string correctly labels them "Multizone VAV".
     // Falls through to point-based rules (13-15) when type string lacks the qualifier.
+    //
+    // 9018b1c6 Fix 2 + Fix A: Guard Signal 1 when a LARGE raw point set contradicts the type label.
+    // When ptKeys.length > 100 (i.e. a full raw BAS export is present, not just enriched columns),
+    // the label is only trusted when raw points provide POSITIVE VAV evidence (duct static OR zone
+    // dampers) AND EI Active Zone is present AND > 1. Signal 1 is suppressed when:
+    //   - No duct static AND no zone dampers, AND EITHER:
+    //     (a) EI Active Zone = 1 (Carrier/Lennox internal counter confirms single-zone), OR
+    //     (b) EI Active Zone is absent entirely (no positive multizone evidence from this signal).
+    // This prevents wrongly classifying a non-Carrier BAS unit with no EI point and no DSP/dampers
+    // as VAV just because the label says "multizone vav" (Fix A requirement).
+    // Signal 1 still fires as VAV when EI Active Zone IS present AND > 1 (genuine positive evidence).
+    // For enriched-only rows (ptKeys.length ≤ 100), Signal 1 fires as before.
     var _typeStr = (group.equipTypeStr || '').toLowerCase();
     if (_typeStr) {
       if (/multizone\s+vav/.test(_typeStr)) {
-        return { category: provisional, subtype: 'vav' };
-      }
-      if (/multizone/.test(_typeStr)) {
+        // Fix 2 + Fix A: raw-point gate for substantial point sets
+        var _suppressSignal1 = false;
+        if (ptKeys.length > 100) {
+          var _hasDuctStaticRaw = hasPointNonDiag(/duct.?static|supply.?duct.*sp\b|\bdsp\b/);
+          var _hasZoneDamperRaw = hasPointNonDiag(/zone.?damper/);
+          // Use case-insensitive lookup result from Fix B above
+          var _eiIsOne =
+            _eiActiveZoneLookup !== undefined &&
+            _eiActiveZoneLookup !== null &&
+            _eiActiveZoneLookup !== '' &&
+            parseFloat(_eiActiveZoneLookup) === 1.0;
+          var _eiIsAbsent =
+            _eiActiveZoneLookup === undefined || _eiActiveZoneLookup === null || _eiActiveZoneLookup === '';
+          // Suppress when no positive VAV evidence AND (EI confirms SZ OR EI is simply absent)
+          if (!_hasDuctStaticRaw && !_hasZoneDamperRaw && (_eiIsOne || _eiIsAbsent)) {
+            _suppressSignal1 = true;
+          }
+        }
+        if (!_suppressSignal1) {
+          return { category: provisional, subtype: 'vav' };
+        }
+        // else: fall through to point-based rules below
+      } else if (/multizone/.test(_typeStr)) {
         return { category: provisional, subtype: 'mtz' };
       }
     }
@@ -2228,8 +2296,10 @@ function emVerifyTypeByPoints(group) {
     // Rule 14 — VAV-AHU/VAV-RTU: VAV-serving unit
     // PRIMARY signal: VFD / variable-speed supply fan (user-confirmed key differentiator)
     // Secondary corroboration: duct static pressure or zone dampers
-    var hasVfd = hasPoint(/\bvfd\b|variable.?speed|variable.?frequency|fan.?speed/);
-    var hasDuctStatic = hasPoint(/duct.?static|supply.?duct.*sp\b|\bdsp\b/);
+    // 9018b1c6 Fix 1: hasVfd uses ptsNonDiag so "Diagnostic: … Fan Speed Fail" fault names
+    // (present in all Carrier/Lennox RTUs) do NOT create false VFD signals.
+    var hasVfd = hasPointNonDiag(/\bvfd\b|variable.?speed|variable.?frequency|fan.?speed/);
+    var hasDuctStatic = hasPointNonDiag(/duct.?static|supply.?duct.*sp\b|\bdsp\b/);
     if (
       hasVfd ||
       (hasDuctStatic &&
@@ -2237,6 +2307,24 @@ function emVerifyTypeByPoints(group) {
         (hasPoint(/air.?source.?mode|damper.?position|zone.?damper/) || hasPoint(/duct.?static.*setpoint|\bdsp.*sp\b/)))
     ) {
       return { category: provisional, subtype: 'vav' };
+    }
+
+    // 9018b1c6 Fix 3: EI Active Zone = 1 is a Carrier/Lennox-specific internal zone counter.
+    // When present and equal to 1, treat as strong positive SZ evidence before Rule 15.
+    // This catches Carrier/Lennox SZ-RTUs that may lack zone temp or zone setpoints in pointValues
+    // but expose EI Active Zone in the raw BAS export.
+    // Uses _eiActiveZoneLookup from Fix B (case-insensitive) above.
+    var _eiActiveZoneVal = _eiActiveZoneLookup;
+    if (
+      _eiActiveZoneVal !== undefined &&
+      _eiActiveZoneVal !== null &&
+      _eiActiveZoneVal !== '' &&
+      parseFloat(_eiActiveZoneVal) === 1.0
+    ) {
+      // Confirm no duct static and no zone dampers (belt-and-suspenders)
+      if (!hasDuctStatic && !hasPointNonDiag(/zone.?damper/)) {
+        return { category: provisional, subtype: 'sz' };
+      }
     }
 
     // Rule 15 — SZ-AHU/SZ-RTU: single-zone unit
