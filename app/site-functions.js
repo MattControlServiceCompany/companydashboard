@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.554',
+    date: '2026-06-18',
+    title: 'Project tabs remember last-used tab per project; fixed corrupted checkmark on bill Confirm & Save',
+    items: [
+      {
+        type: 'fix',
+        text: "Project tabs (Energy Department → open a project) now remember the last-used tab per project and no longer carry a tab selection across different projects. Switching from one project to another restores that project's own last-used tab.",
+      },
+      {
+        type: 'fix',
+        text: 'The Confirm & Save button on the bill auto-assign panel (Energy Department → Bills tab → assign a bill) now shows a correct checkmark instead of a corrupted character.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.553',
     date: '2026-06-18',
     title: 'Equipment Matrix Alarms column now populates for air handlers and rooftop units',

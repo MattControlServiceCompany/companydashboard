@@ -282,8 +282,12 @@ function init() {
           const _rawTab = s.tab || 'dashboard';
           const _validTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
           const _tabToRestore = _validTabIds.has(_rawTab) ? _rawTab : 'dashboard';
-          // Set _activeProjTab BEFORE openDetail() so renderDetail() renders the correct pane active.
+          // Set _activeProjTab AND _activeProjId BEFORE openDetail() so:
+          // 1. renderDetail() renders the correct pane active (_activeProjTab).
+          // 2. openDetail's guard sees _prevProjId === id and preserves the pre-set tab
+          //    instead of clobbering it with the per-project localStorage key.
           window._activeProjTab = _tabToRestore;
+          window._activeProjId = p.id;
           openDetail(p.id);
           if (_tabToRestore !== 'dashboard') {
             const btn = document.querySelector('#pdTabBar button[data-tab="' + _tabToRestore + '"]');
@@ -836,15 +840,22 @@ function openDetail(id) {
   // PRIMARY FIX (087dba92): Set _activeProjTab BEFORE renderDetail() so _getProjTabHTML()
   // generates the correct active button. Previously this was assigned AFTER renderDetail(),
   // causing the tab bar to render with 0 active buttons when _activeProjTab held a stale/invalid id.
+  // GUARD FIX (c-da3b6657 rev): Capture previous project id BEFORE overwriting so the guard
+  // below can distinguish "opening a different project" from "session-restore pre-set same project".
+  const _prevProjId = window._activeProjId;
   window._activeProjId = id;
   const _dfltTab = sget('ch_defaultProjTab', 'dashboard');
   if (_dfltTab === 'last') {
-    // Keep existing _activeProjTab if it's a known valid tab.
-    // Otherwise try per-project localStorage, then fall back to 'dashboard'.
+    // FIX (c-da3b6657): Always read the per-project localStorage key so each project
+    // restores ITS OWN last-used tab. The old guard (!_activeProjTab || invalid) let a
+    // stale global value from a previous project carry forward into the new project.
+    // GUARD REFINEMENT: If _activeProjTab is already validly set AND _prevProjId === id
+    // (caller pre-set it for this same project, e.g. session-restore), preserve it.
+    // Otherwise (different project or no valid pre-set) read the per-project key.
     const _validTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
-    if (!window._activeProjTab || !_validTabIds.has(window._activeProjTab)) {
+    if (!window._activeProjTab || !_validTabIds.has(window._activeProjTab) || _prevProjId !== id) {
       const _persisted = localStorage.getItem('ch_lastProjTab_' + id);
-      window._activeProjTab = (_persisted && _validTabIds.has(_persisted)) ? _persisted : 'dashboard';
+      window._activeProjTab = _persisted && _validTabIds.has(_persisted) ? _persisted : 'dashboard';
     }
   } else {
     window._activeProjTab = _dfltTab;
