@@ -1108,6 +1108,11 @@ function renderDetail(p) {
             <div id="ptab-bas-alarms" class="ptab" style="padding:0;overflow-y:auto">
               <div id="ptab-bas-alarms-body-${p.id}" style="flex:1;overflow-y:auto;min-height:0;"></div>
             </div>
+            <div id="ptab-cost-estimate" class="ptab" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
+              <div id="ptab-cost-estimate-body-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+                <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading cost estimate...</div>
+              </div>
+            </div>
             <div id="ptab-hvacload" class="ptab" style="padding:0;overflow-y:auto">
               <div id="hvl-container-${p.id}" style="display:flex;flex-direction:column;height:100%;min-height:0">
                 <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading HVAC load data...</div>
@@ -2429,6 +2434,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'docs', label: 'Documents', icon: '📁' },
   { id: 'setpoints', label: 'Set Points', icon: '🌡️' },
   { id: 'settings', label: 'Project Settings', icon: '⚙️' },
+  { id: 'cost-estimate', label: 'Cost Estimate', icon: '💲' },
   // Backward-compat: merged tabs — retained so stored orders stay valid
   { id: 'notes', label: 'Notes', icon: '📝' },
   { id: 'tasks', label: 'Tasks', icon: '✅' },
@@ -2583,6 +2589,7 @@ function sPTab(tab, el) {
   if (tab === 'eq-matrix' && typeof initEquipMatrix === 'function') initEquipMatrix(p.id);
   if (tab === 'bas-trends' && typeof btInitView === 'function') btInitView(p.id);
   if (tab === 'bas-alarms' && typeof baInitView === 'function') baInitView(p.id);
+  if (tab === 'cost-estimate' && typeof initCostEstimateTab === 'function') initCostEstimateTab(p.id);
   window._activeProjTab = tab;
   // Persist per-project last-used tab so it survives page reloads.
   if (window._activeProjId != null) {

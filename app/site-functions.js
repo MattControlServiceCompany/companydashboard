@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.558',
+    date: '2026-06-18',
+    title: 'New Cost Estimate tab in ASHRAE 36 Audit',
+    items: [
+      {
+        type: 'feature',
+        text: 'New Cost Estimate tab — turns the ASHRAE 36 audit's required sensors and control sequences into a priced scope of work. Import a pricing CSV (List, Net, and Contract pricing) and toggle each item on or off to build a live hardware + programming total per building.',
+      },
+    ]
+  },
+  {
     v: 'v2026.06.18.557',
     date: '2026-06-18',
     title: 'Audit Report PDF export fixed — clean pages, correct pagination',
