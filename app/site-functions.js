@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.551',
+    date: '2026-06-18',
+    title: 'Equipment Matrix: air temperature and OA damper columns now populate for Rooftop and Makeup Air Units',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Audit View (Energy Department → open a project → Equipment Matrix tab → Audit View): Supply Air Temperature, Return Air Temperature, Mixed Air Temperature, and Outside Air Damper Position now correctly populate for Rooftop Units (RTU) and Makeup Air Units (MAU). These readings were present in the raw data but were not reaching the Audit View columns — RTU-1/RTU-2 Supply/Return/Mixed Air Temp and OA Damper Position, plus MAU-1 Supply Air Temp and OA Damper Position, now all display. MAU Return/Mixed Air Temp is correctly absent (MAU is a 100% outside-air unit with no return-air path).',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix Audit View: diagnostic fault points (e.g., "Diagnostic: Outdoor Air Damper Not Modulating") no longer leak into data columns. A global filter now prevents any point whose name starts with "diagnostic" from being mapped to a live-sensor column, eliminating false readings and column collisions caused by those fault points.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.550',
     date: '2026-06-18',
     title: 'Equipment Matrix Audit View: Zone Setpoint and Alarms columns for Rooftop and Makeup Air Units',

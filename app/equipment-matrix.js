@@ -390,7 +390,11 @@ var EM_POINT_MAP = [
     // from 'other' into these categories; without them in cats the category gate drops legitimate
     // supply-air-temp readings (e.g. a furnace's "Supply Air Temperature"). negativePatterns
     // already guard alarm/setpoint/limit variants so no new false matches are introduced.
-    cats: ['ahu', 'vav', 'fpb', 'other', 'heater', 'furnace', 'doas'],
+    // b647981f: added 'rtu', 'mau' — RTU-1/RTU-2 have "Supply Air Temperature" (BAV, 61.9/0.0 F);
+    // MAU-1 has "Supply Air Temperature" (BAV, 83.34 F). Diagnostic fault points (BMBI type) are
+    // already blocked by the CONTROL_OBJ_TYPES pre-filter in emMapPointToColumn; negativePatterns
+    // block enable/BNO variants. No false-match risk introduced.
+    cats: ['ahu', 'vav', 'fpb', 'other', 'heater', 'furnace', 'doas', 'rtu', 'mau'],
   },
   {
     col: 'returnAirTemp',
@@ -404,7 +408,11 @@ var EM_POINT_MAP = [
     ],
     types: ['AI'],
     // Phase 1 (item 21eb08f8): added 'heater', 'furnace', 'doas' — same rationale as supplyAirTemp.
-    cats: ['ahu', 'other', 'heater', 'furnace', 'doas'],
+    // b647981f: added 'rtu' — RTU-1/RTU-2 both have "Return Air Temperature" (BAV, 76.4/76.0 F).
+    // MAU-1 intentionally excluded: MAU-1 is a supply-only makeup air unit with no return-air path.
+    // Only Diagnostic BMBI points exist for MAU-1 RAT (blocked by CONTROL_OBJ_TYPES pre-filter);
+    // there is no live "Return Air Temperature" BAV point for MAU-1 in the raw export.
+    cats: ['ahu', 'other', 'heater', 'furnace', 'doas', 'rtu'],
   },
   {
     col: 'mixedAirTemp',
@@ -422,7 +430,11 @@ var EM_POINT_MAP = [
     types: ['AI'],
     // Phase 1 (item 21eb08f8): added 'furnace', 'doas' — mixed air is an AHU/furnace/DOAS concept.
     // heater intentionally excluded: a standalone heater does not have a mixed-air plenum.
-    cats: ['ahu', 'furnace', 'doas'],
+    // b647981f: added 'rtu' — RTU-1/RTU-2 both have "Mixed Air Temperature" (BAV, 61.9/58.7 F),
+    // which is the mixed plenum temp after the OA damper blends OA with return air.
+    // MAU-1 intentionally excluded: MAU-1 is 100% outside air (no return air path), so it has no
+    // mixed-air plenum. Only Diagnostic BMBI points exist for MAU-1 MAT; no live BAV value present.
+    cats: ['ahu', 'furnace', 'doas', 'rtu'],
   },
   {
     col: 'outdoorAirTemp',
@@ -502,7 +514,11 @@ var EM_POINT_MAP = [
     // damper" is a common alternative phrasing in JOCO data.
     patterns: [/oa damper/i, /outdoor air damper/i, /outside\s+air\s+damper/i],
     types: ['AO', 'AI'],
-    cats: ['ahu'],
+    // b647981f: added 'rtu', 'mau' — RTU-1/RTU-2 have "Outside Air Damper Position" (BAV, 0.0 %);
+    // MAU-1 has "Outdoor Air Damper Position" (BBV, "Open"). Diagnostic BMBI fault points for
+    // "Outdoor Air Damper Not Modulating" are blocked by CONTROL_OBJ_TYPES pre-filter (BMBI type).
+    // BBV and BNI types are not in CONTROL_OBJ_TYPES so the binary Open/Closed value passes through.
+    cats: ['ahu', 'rtu', 'mau'],
   },
   {
     col: 'coolingValve',
@@ -2371,6 +2387,15 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
   // FIX 4c: Normalize whitespace before pattern matching so 'Mixed  Air Temperature' (double-space)
   // and similar CSV artifacts match the same patterns as single-spaced names.
   pointName = pointName.replace(/\s+/g, ' ').trim();
+  // ROOT-CAUSE FIX (diagnostic guard): The CONTROL_OBJ_TYPES denylist (M1B below) is dead on the
+  // import path because the WebCTRL importer always passes pointType=null (~line 2558), so BMBI
+  // fault/diagnostic points were leaking into live-sensor columns (e.g. "Diagnostic: Outdoor Air
+  // Damper Not Modulating" mapping to oaDamperPosition and colliding with the real damper value).
+  // This guard mirrors the ptsNonDiag filter already used in emVerifyTypeByPoints
+  // (indexOf('diagnostic')!==0). Applies to ALL callers including the import path.
+  // NOTE: alarm points like "Alarm Relay Active" / "Any Alarm Active Output" do NOT start with
+  // "diagnostic" so they are unaffected — alarmRelay entries still map correctly.
+  if (pointName.toLowerCase().indexOf('diagnostic') === 0) return null;
   // Milestone 1: page-lifetime name cache (category-less lookups only — import path passes category)
   if (!equipCategory) {
     if (_emPointNameCache.has(pointName)) return _emPointNameCache.get(pointName);
