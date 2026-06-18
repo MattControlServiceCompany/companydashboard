@@ -6938,10 +6938,13 @@ async function exportReportToPDF() {
       const pageEl = pages[i];
 
       try {
-        // WYSIWYG fix: capture the ACTUAL rendered height so on-screen and PDF match.
-        // Previously hardcoded to 1056px which clipped overflowing content silently.
-        const actualH = pageEl.scrollHeight;
-        const captureH = Math.max(actualH, 1056); // never smaller than a letter page
+        // Fix A (2026-06-18, items 9f80ea0f/346e8add): one-HTML-page → one-PDF-page.
+        // Each .rpt-page is captured at exactly 1056px (the design target height) and
+        // placed as a single image on one PDF page.  The old canvas-slice loop is gone;
+        // it was slicing through rows whenever a page's canvas exceeded the slice height.
+        if (pageEl.scrollHeight > 1056) {
+          console.warn('rpt-page', i + 1, 'scrollHeight', pageEl.scrollHeight, '> 1056px — content may be clipped');
+        }
 
         const canvas = await html2canvas(pageEl, {
           scale: 2,
@@ -6949,50 +6952,21 @@ async function exportReportToPDF() {
           backgroundColor: '#ffffff',
           logging: false,
           width: 816,
-          height: captureH,
+          height: 1056,
         });
 
-        // Scale factor: canvas pixels → PDF points
-        // canvas.width = 816 * 2 = 1632 px maps to contentW points
-        const pxToPt = contentW / canvas.width;
+        // One image per PDF page.  canvas = 1632 × 2112 px (at scale=2).
+        // imageH_pt = (2112 / 1632) * 540 = 698.8 pt — fits within 720 pt content height.
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        const imageH_pt = (canvas.height / canvas.width) * contentW;
 
-        // Slice the canvas vertically across PDF pages so no content is clipped.
-        // Each slice fills one PDF page from margin.top to (pageH - margin.bottom).
-        let srcY_px = 0;
-
-        while (srcY_px < canvas.height) {
-          // Add a PDF page for every logical segment (the first page of the doc is
-          // pre-created; after that, every new slice — whether a new rpt-page or
-          // an overflow continuation — needs doc.addPage()).
-          if (pdfStarted) {
-            doc.addPage();
-          } else {
-            pdfStarted = true;
-          }
-
-          // How many PDF points fit on this PDF page (top to bottom margin)
-          const availableH_pt = contentH; // pageH - margin.top - margin.bottom
-          // Corresponding canvas pixels
-          const sliceH_px = Math.min(Math.round(availableH_pt / pxToPt), canvas.height - srcY_px);
-
-          // Draw the slice into an offscreen canvas
-          const sliceCanvas = document.createElement('canvas');
-          sliceCanvas.width = canvas.width;
-          sliceCanvas.height = sliceH_px;
-          const ctx = sliceCanvas.getContext('2d');
-          ctx.drawImage(canvas, 0, -srcY_px);
-
-          const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
-          // Height of this slice in PDF points
-          const sliceH_pt = sliceH_px * pxToPt;
-          doc.addImage(sliceData, 'JPEG', margin.left, margin.top, contentW, sliceH_pt);
-
-          // Release slice memory
-          sliceCanvas.width = 0;
-          sliceCanvas.height = 0;
-
-          srcY_px += sliceH_px;
+        if (pdfStarted) {
+          doc.addPage();
+        } else {
+          pdfStarted = true;
         }
+
+        doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, imageH_pt);
 
         // Dispose full canvas to release GPU memory between pages (prevents OOM on 70+ page exports)
         canvas.width = 0;
@@ -11623,16 +11597,23 @@ function rptPageASHRAE36Executive(n, d) {
   // Uses _rptPaginateTokens (same shared paginator as rptPageASHRAE36Building) to split
   // buildings across pages based on actual pixel-height estimates instead of flat counts.
   //
-  // Budget math (body available ~895px):
-  //   First page fixed chrome:
-  //     dcvCallout ~80px + callout(topGap) ~50px + tableTitle ~22px + thead ~32px + tableFootnote ~30px
-  //     = ~214px consumed → row budget = 895 - 214 = 681px
-  //   Continuation page fixed chrome:
-  //     contHdr ~20px + tableTitle ~22px + thead ~32px + tableFootnote ~30px
-  //     = ~104px consumed → row budget = 895 - 84 = 811px
-  //   Each building row estH = 28px (5px top pad + 11px text + 5px bottom pad + 7px border/gap)
-  var ROWS_BUDGET_FIRST = 681; // px available for building rows on first page
-  var ROWS_BUDGET_CONT = 811; // px available for building rows on continuation pages
+  // Fix B (2026-06-18, items 9f80ea0f/346e8add): dynamic first-page chrome budget.
+  // Old hardcoded ROWS_BUDGET_FIRST = 681 underestimated callout heights; JOCO has both
+  // callouts simultaneously, causing 24 rows to pack into a space only safe for 21.
+  //
+  // Actual measured chrome heights:
+  //   dcvCallout  ~94px  (3 divs at 11px font, margin-bottom:14px)
+  //   topGap callout ~65px (3 divs at 11px font, margin-bottom:14px)
+  //   tableTitle  ~28px  (13px font + 6px margin-bottom)
+  //   thead       ~32px  (10px font, padding 6+6)
+  //   tableFootnote ~35px (10px, 2 lines)
+  //   safety margin 30px (rounding, multi-line building names, etc.)
+  //
+  // ROWS_BUDGET_CONT corrected: contHdr ~35px + tableTitle ~28px + thead ~32px + footnote ~35px
+  //   = 130px consumed → row budget = 894 - 130 - 20 = 744px (was 811, omitted tableTitle)
+  //
+  // Each building row estH raised to 34px to account for 2-line building names (e.g. JOCO).
+  // ROWS_BUDGET_FIRST and ROWS_BUDGET_CONT are computed after callout strings are built (below).
 
   var p = d.portfolio;
   // Rule 2.3: reportDate drives footer date; label empty.
@@ -11679,6 +11660,21 @@ function rptPageASHRAE36Executive(n, d) {
       '</div>';
   }
 
+  // Fix B: compute dynamic row budgets now that callout presence is known.
+  // Heights below are DOM-measured (2026-06-18 headless run against JOCO):
+  //   dcvCallout actual=86px, topGap callout actual=68px, thead actual=42px (spec had 32 — wrong),
+  //   tableTitle actual=20px, footnote actual=15px (single line in headless).
+  //   Row average actual=38px; estH set to 40px for safety margin on wrapping names.
+  var _firstChromeH = 0;
+  if (dcvCallout) _firstChromeH += 94; // measured ~86px; use 94 for slight overcount safety
+  if (callout) _firstChromeH += 72; // measured ~68px; use 72 for safety
+  _firstChromeH += 28; // tableTitle (~20px actual; 28 is safe overcount)
+  _firstChromeH += 44; // thead — DOM-measured 42px (spec said 32, was wrong)
+  _firstChromeH += 20; // tableFootnote — single-line in headless (~15px actual; 20 for safety)
+  var ROWS_BUDGET_FIRST = 894 - _firstChromeH - 30; // 30px safety margin
+  // Cont: contHdr ~35px + tableTitle ~28px + thead ~44px + footnote ~20px = 127px → 894-127-20 = 747px
+  var ROWS_BUDGET_CONT = 747;
+
   // Shared table styles
   var tableTitle =
     '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building Compliance Status</div>';
@@ -11709,7 +11705,7 @@ function rptPageASHRAE36Executive(n, d) {
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
     '<strong>Score</strong> = weighted composite (40% Sensor Coverage + 60% Sequence Readiness). ' +
-    '<strong>Status thresholds:</strong> Good ≥75%, Needs Attention 50–74%, Significant Gaps <50%.' +
+    '<strong>Status thresholds:</strong> Ready ≥75%, Partial 50–74%, Critical <50%.' +
     '</div>';
 
   // Build a token per building row — type:'row', estH:28px
@@ -11750,15 +11746,16 @@ function rptPageASHRAE36Executive(n, d) {
   }
 
   // Build flat token list — one token per building row
+  // estH=40px: DOM-measured avg 38px for JOCO 2-line names; 40 adds safety for worst-case wrapping
   var allBuildings = d.buildings;
   var tokens = allBuildings.map(function (b) {
-    return { type: 'row', estH: 28, html: _buildRowHTML(b) };
+    return { type: 'row', estH: 40, html: _buildRowHTML(b) };
   });
   // Edge case: no buildings
   if (tokens.length === 0) {
     tokens.push({
       type: 'row',
-      estH: 28,
+      estH: 40,
       html: '<tr><td colspan="6" style="padding:8px;font-size:11px;color:var(--rpt-page-text)">No buildings in portfolio.</td></tr>',
     });
   }
@@ -12739,20 +12736,21 @@ function rptPageASHRAE36SetpointReview(n, d) {
     'Values shown are building averages across all zone equipment in the BAS export.' +
     '</div>';
 
-  // ── Pagination (Issue 6) ──────────────────────────────────────────────────
-  // Budget math (body available ~895px):
-  //   First page fixed chrome:
-  //     preamble ~60px + totalsCallout ~20px + thead ~32px = ~112px consumed
-  //     row budget = 895 - 112 = 783px
-  //   Continuation page fixed chrome:
-  //     contHdr ~20px + thead ~32px = ~52px consumed
-  //     row budget = 895 - 52 = 843px
-  //   Each building row estH = 28px
-  var ROWS_BUDGET_FIRST = 783;
-  var ROWS_BUDGET_CONT = 843;
+  // ── Pagination (Issue 6 + Fix B correction 2026-06-18) ───────────────────
+  // DOM-measured heights (JOCO headless run 2026-06-18):
+  //   preamble actual=70px (budget had 60 — underestimate)
+  //   totalsCallout: not present / negligible
+  //   thead actual=36px (budget had 32)
+  //   First page chrome total: 70 + 36 + 30(safety) = 136px consumed
+  //   row budget = 894 - 136 = 758px
+  // Continuation page:
+  //   contHdr ~35px + thead 36px + 20(safety) = 91px → 894 - 91 = 803px
+  // Each building row actual avg = 44px; estH raised to 46px for safety
+  var ROWS_BUDGET_FIRST = 758;
+  var ROWS_BUDGET_CONT = 803;
 
   var tokens = buildingRows.map(function (row) {
-    return { type: 'row', estH: 28, html: _buildBldgRowHTML(row) };
+    return { type: 'row', estH: 46, html: _buildBldgRowHTML(row) };
   });
 
   var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);

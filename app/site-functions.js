@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.557',
+    date: '2026-06-18',
+    title: 'Audit Report PDF export fixed — clean pages, correct pagination',
+    items: [
+      {
+        type: 'fix',
+        text: 'Audit Report PDF export (open any project → Audit Report tab → Export PDF): each report page now exports as its own PDF page — no clipped rows or blank continuation pages.',
+      },
+      {
+        type: 'fix',
+        text: 'Executive Summary and Setpoint Review sections now paginate correctly across multiple pages, with the right amount of rows per page and a proper continuation header.',
+      },
+      {
+        type: 'fix',
+        text: 'Status-threshold footnote in the Executive Summary now reads Ready / Partial / Critical (≥75%, 50–74%, <50%) — matching the labels used throughout the report.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.556',
     date: '2026-06-18',
     title: 'Bill extraction queue: grouped view by account/meter',
