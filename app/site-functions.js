@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.553',
+    date: '2026-06-18',
+    title: 'Equipment Matrix Alarms column now populates for air handlers and rooftop units',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix (Energy Department → open a project → Equipment Matrix tab): the Alarms column now populates for air handlers (AHU), rooftop units (RTU), makeup air units (MAU), energy recovery ventilators (ERV), and dedicated outdoor air systems (DOAS). Alarm-relay and alarm-active status points are now recognized and mapped correctly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.552',
     date: '2026-06-18',
     title: 'Equipment Matrix: furnace units, DOAS air handlers, and weather stations now classify correctly',

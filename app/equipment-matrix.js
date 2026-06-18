@@ -1518,6 +1518,27 @@ var EM_POINT_MAP = [
     types: ['AI'],
     cats: ['ahu', 'rtu'],
   },
+
+  // b8aec0d8: Alarm Relay column — routes alarm-state indicator points to alarmRelay.
+  // Real point names from JOCO data: "Alarm Relay Active", "Any Alarm Active Output",
+  // "Serious Alarm Active Output" (all on RTU/MAU programs).
+  // EM_POINT_CATEGORIES.ahu (aliased by rtu) and .mau both define a key:'alarmRelay' entry
+  // but EM_POINT_MAP had no col:'alarmRelay' entry, so emMapPointToColumn returned null.
+  // emBuildColKeyToCatKey also depends on this entry existing to build the reverse map.
+  // Note: "Diagnostic: ..." names are already blocked by the diagnostic guard at the top
+  // of emMapPointToColumn, so no negativePatterns are needed here.
+  {
+    col: 'alarmRelay',
+    label: 'Alarm Relay',
+    patterns: [
+      /alarm\s+relay/i,
+      /any\s+alarm\s+active/i,
+      /serious\s+alarm/i,
+      /unit\s+any\s+alarm/i,
+      /unit\s+alarm\s+active/i,
+    ],
+    cats: ['ahu', 'rtu', 'mau', 'erv', 'doas'],
+  },
 ];
 
 /* ── PHASE 1: PARSER ── */
