@@ -73,23 +73,27 @@ var EM_EQUIP_TYPES = {
   bcu: 'fcu',
   // Fan terminal coils — fan-powered terminal equivalent
   ftc: 'fpb',
-  // Energy recovery units
-  eru: 'ahu',
+  // Energy recovery units — ERU is an energy recovery unit, same class as ERV
+  eru: 'erv',
   // Radiant heating ceiling panels — HW-fed terminal heating
   rhc: 'vav',
-  // VRF outdoor units
-  'vrf outdoor unit': 'ahu',
-  'vrf condenser': 'ahu',
+  // VRF outdoor units — own 'vrf' category; NOT scored for ASHRAE 36 compliance
+  'vrf outdoor unit': 'vrf',
+  'vrf condenser': 'vrf',
   // Typo: "Air Handing Unit" (missing 'l')
   'air handing unit': 'ahu',
-  // Destratification fans — air circulation, ahu bucket
-  'destratification fans': 'ahu',
+  // Destratification fans — ceiling circulation fans, ef bucket
+  'destratification fans': 'ef',
   // Fintube heat — HW terminal heating
   'fintube heat': 'hwp',
   // Tube/infrared heaters
   'tube heater': 'heater',
   'infrared heater': 'heater',
   'radiant heater': 'heater',
+  // Standalone air conditioners (telecom room, elevator room, data closet)
+  // Distinct from FCU (hydronic fan coil) — no cooling valve, no central airflow
+  // NOT scored for ASHRAE 36 compliance (no applicable sequence)
+  'air conditioner': 'ac',
   // VFD integration wrappers
   'vfd integration': 'controls',
   // Environmental / weather programs
@@ -163,6 +167,10 @@ var EM_CATEGORY_LABELS = {
   // 9018b1c6: MAU and ERV get their own categories (user-confirmed)
   mau: 'Makeup Air Unit',
   erv: 'Energy Recovery Unit',
+  // 28b0c439: VRF outdoor units — own category, NOT scored for ASHRAE 36 compliance
+  vrf: 'VRF Outdoor Unit',
+  // Standalone A/C units (telecom/elevator/data room) — NOT scored for ASHRAE 36 compliance
+  ac: 'A/C',
 };
 
 /* ── emFormatEquipTypeLabel ──────────────────────────────────────────────────
@@ -1806,15 +1814,23 @@ function emParseEquipBaseName(nameStr) {
   if (/\berv\b/i.test(n)) return 'erv';
   // Priority 3: RTU → own 'rtu' category (subtype carries sz/vav/mtz)
   if (/\brtu\b/i.test(n)) return 'rtu';
-  // Priority 4: AHU
+  // Priority 4: VRF outdoor unit — raw WebCTRL path uses name as type signal
+  // (e.g. "VRF Condenser| HP-1", "VRF Outdoor Unit", "VRF Outdoor Unit | VCU-1")
+  // Keep tight — do NOT match bare "HP" (ambiguous heat pump / high pressure).
+  if (/\bvrf\b/i.test(n)) return 'vrf';
+  // Priority 4.5: AC-# pattern — standalone air conditioner (telecom/elevator/data-room style)
+  // Requires word boundary + digit suffix: avoids false-matching "HVAC-1" (\b prevents match
+  // inside longer token); "CRAC-2" is also safe because the boundary falls before 'C' in CRAC.
+  if (/\bAC-\d/i.test(n)) return 'ac';
+  // Priority 5: AHU
   if (/\bahu\b/i.test(n)) return 'ahu';
-  // Priority 5: MAU (makeup air unit — own category per user)
+  // Priority 6: MAU (makeup air unit — own category per user)
   if (/\bmau\b/i.test(n)) return 'mau';
-  // Priority 6: FCU
+  // Priority 7: FCU
   if (/\bfcu\b/i.test(n)) return 'fcu';
-  // Priority 7: EF + digit/separator (avoids "HVAC-1" hitting EF token)
+  // Priority 8: EF + digit/separator (avoids "HVAC-1" hitting EF token)
   if (/\bef[-\s]?[\da-z]/i.test(n)) return 'ef';
-  // Priority 8: VAV + digit/separator (avoids "VAV Duct Leakage" where VAV is a descriptor)
+  // Priority 9: VAV + digit/separator (avoids "VAV Duct Leakage" where VAV is a descriptor)
   if (/\bvav[-\s]?\d/i.test(n)) return 'vav';
   return null;
 }
@@ -1867,6 +1883,9 @@ function emClassifyEquipType(equipTypeStr) {
   if (/\bfcu\b/i.test(key)) return 'fcu';
   if (/\bcrac\b/i.test(key)) return 'fcu';
   if (/\bcrah\b/i.test(key)) return 'fcu';
+  // Standalone A/C (telecom room, elevator machine room, data closet) — AC-# suffix
+  // Word boundary + digit: avoids "HVAC-1" (no \b before 'AC' in 'HVAC'); safe against CRAC-2
+  if (/\bAC-\d/i.test(key)) return 'ac';
   if (/roof.?top/i.test(key)) return 'rtu';
   if (/make.?up.?air/i.test(key)) return 'mau'; // 9018b1c6: makeup air → mau
   if (/heat.?pump/i.test(key)) return 'ahu';
@@ -1889,14 +1908,14 @@ function emClassifyEquipType(equipTypeStr) {
   if (/exhaust.?fan/i.test(key)) return 'ef';
   // Make-up air units with suffix (MUA-KT01, MUA-1, etc.)
   if (/\bmua[-\s]?(?:\d|[a-z])/i.test(key)) return 'ahu';
-  // Energy recovery units (ERU-1 format)
-  if (/\beru[-\s]?\d/i.test(key)) return 'ahu';
+  // Energy recovery units (ERU-1 format) — ERU is energy recovery, same class as ERV
+  if (/\beru[-\s]?\d/i.test(key)) return 'erv';
   // Blower coil units (BCU-1A format) — M3: fcu type
   if (/\bbcu[-\s]?\d/i.test(key)) return 'fcu';
-  // Stairwell pressurization fans (SPF-1)
-  if (/\bspf[-\s]?\d/i.test(key)) return 'ahu';
-  // VRF outdoor condensing units
-  if (/\bvrf\b/i.test(key)) return 'ahu';
+  // Stairwell pressurization fans (SPF-1) — life-safety pressurization fan, ef bucket
+  if (/\bspf[-\s]?\d/i.test(key)) return 'ef';
+  // VRF outdoor condensing units — 28b0c439: own 'vrf' category, NOT scored for ASHRAE 36
+  if (/\bvrf\b/i.test(key)) return 'vrf';
   if (/\bfpb\b/i.test(key)) return 'fpb';
   if (/fan.?pow|parallel.?fan|\bfpt\b/i.test(key)) return 'fpb';
   if (/fan.?power/i.test(key)) return 'fpb';
@@ -1986,7 +2005,7 @@ function emClassifyEquipType(equipTypeStr) {
     ['destratification', 'ahu'],
     ['blower coil', 'fcu'],
     ['radiant heat', 'hwp'],
-    ['vrf', 'ahu'],
+    ['vrf', 'vrf'],
     ['lighting', 'lighting'],
     ['unit heater', 'heater'],
     ['tube heater', 'heater'],

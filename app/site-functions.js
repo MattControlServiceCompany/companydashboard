@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.555',
+    date: '2026-06-18',
+    title: 'Equipment Matrix: VRF outdoor units and A/C units now have their own equipment types',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix (Energy Department → open a project → Equipment Matrix tab): VRF outdoor units now classify as “VRF Outdoor Unit” instead of Air Handler, and standalone air conditioners (units named AC-#, found in telecom rooms, elevator machine rooms, and data closets) now classify as “A/C” instead of Other. Both types are excluded from ASHRAE-36 compliance scoring where no sequence applies.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Recovery Units (ERU-# naming) now classify as “Energy Recovery Unit” alongside ERV-# units, instead of Air Handler. Destratification fans and stairwell pressurization fans now classify as Exhaust Fan.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.554',
     date: '2026-06-18',
     title: 'Project tabs remember last-used tab per project; fixed corrupted checkmark on bill Confirm & Save',
