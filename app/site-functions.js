@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.564',
+    date: '2026-06-19',
+    title: 'Cost Estimate accuracy + audit explanations',
+    items: [
+      {
+        type: 'fix',
+        text: 'VAV damper commands are now treated as programming (no phantom new-actuator cost -- the actuator is built into the VAV box), removing about $16,600 in list-price items that were never real hardware.',
+      },
+      {
+        type: 'feature',
+        text: 'Each line in the Cost Estimate tab now shows why it is needed and its ASHRAE 36 section reference so anyone reviewing the estimate can see the code basis at a glance.',
+      },
+      {
+        type: 'feature',
+        text: 'The Audit Report rationale table ("What Each Gap Addresses") now flows across as many pages as needed instead of overflowing a single page.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.563',
     date: '2026-06-19',
     title: 'City of Baldwin bill extraction fix',

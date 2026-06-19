@@ -11813,9 +11813,12 @@ function rptPageASHRAE36Executive(n, d) {
 /**
  * Estimated Cost page: surfaces priced totals from collectPricingEstimate.
  * Phase 5 — spec §10 (2026-06-18).
+ * Pagination (2026-06-19): rationale table split across pages via _rptPaginateTokens
+ * when row count exceeds the first-page body budget. Returns an ARRAY of rptPage()
+ * strings (1 element when rationale fits; 2+ when it overflows). Caller must spread.
  * @param {number} n - Page number
  * @param {object} d - Data from collectASHRAE36Data
- * @returns {string} Single rptPage() HTML string
+ * @returns {Array<string>} Array of rptPage() HTML strings
  */
 function rptPageASHRAE36CostEstimate(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
@@ -11967,13 +11970,147 @@ function rptPageASHRAE36CostEstimate(n, d) {
       (pendingCount > 0 ? '' : 'Engineering-review items included at typical sizing. Verify before quoting.') +
       '</div>';
 
+    // ── Per-point rationale block — "What Each Gap Addresses"
+    // Reuses ASHRAE36_GAP_DESCRIPTIONS (this file) and PRICE_POINT_MAP.whyNotHardware
+    // (pricing-estimator.js, loaded in same page scope) to explain WHY each
+    // hardware gap matters to a county decision-maker, with G36 § reference.
+    // Only rendered when buildComplianceRows is available and returns rows.
+    // Pagination: rows converted to _rptPaginateTokens tokens so the rationale
+    // table can span continuation pages when the full JOCO portfolio (~51 rows)
+    // would overflow a single 1056px page. Same paginator as building/exec pages.
+    var rationaleTokens = [];
+    try {
+      if (typeof buildComplianceRows === 'function') {
+        var compRows = buildComplianceRows(projId);
+        // Collect unique phase-1 point keys in order of first appearance
+        var seenKeys = {};
+        compRows.forEach(function (row) {
+          if (row.phase !== 1) return;
+          var pk = row._pointKey;
+          if (!pk || seenKeys[pk]) return;
+          seenKeys[pk] = true;
+          var desc = ASHRAE36_GAP_DESCRIPTIONS[pk];
+          // Use whyNotHardware from PRICE_POINT_MAP for ioOnly programming items (dampCmd etc.),
+          // otherwise use plain text from ASHRAE36_GAP_DESCRIPTIONS.
+          var plainText = '';
+          var g36Ref = row.g36Section || (desc ? '' : '');
+          var isProgramming = row.type === 'Programming';
+          if (isProgramming && row.whyNotHardware) {
+            plainText = row.whyNotHardware;
+          } else if (row.whyNeeded) {
+            plainText = row.whyNeeded;
+          } else if (desc && desc.plain) {
+            plainText = desc.plain;
+          }
+          var shortLabel = desc && desc.short ? _esc(desc.short) : _esc(row.item);
+          if (plainText) {
+            var badge = isProgramming
+              ? '<span style="font-size:9px;background:#e8f0fe;color:#1a56db;border-radius:3px;padding:1px 5px;margin-right:5px;font-weight:600">PROGRAMMING</span>'
+              : '';
+            var g36Badge = g36Ref
+              ? '<span style="font-size:9px;color:var(--rpt-blue);margin-left:4px">ASHRAE 36 ' +
+                _esc(g36Ref) +
+                '</span>'
+              : '';
+            var rowHTML =
+              '<tr>' +
+              '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+              'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:32%;white-space:nowrap">' +
+              badge +
+              shortLabel +
+              g36Badge +
+              '</td>' +
+              '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+              'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
+              _esc(plainText) +
+              '</td>' +
+              '</tr>';
+            // estH: DOM-measured 40–65px per row (avg ~55px); 60px for safety on wrapping text
+            rationaleTokens.push({ type: 'row', html: rowHTML, estH: 60 });
+          }
+        });
+      }
+    } catch (e) {
+      rationaleTokens = []; // non-fatal — omit block if anything throws
+    }
+
     bodyHTML = sectionTitle + costTable + pendingNote + engNote + footnote;
+    // rationaleTokens populated above — pagination happens in page assembly below
   }
 
-  return rptPage(n, 'ASHRAE 36 Audit — Estimated Cost', bodyHTML, {
-    data: fakeData,
-    label: 'Page ' + n + ' — Estimated Cost',
-  });
+  // ── Page assembly with rationale table pagination ──────────────────────────
+  // Budgets DOM-calibrated (2026-06-19 headless measurement against full JOCO):
+  //   Page 1: cost table chrome (sectionTitle+costTable+pendingNote+engNote+footnote)
+  //     consumes ~345px of the 808px body → rationale row budget = 808 − 345 − 17(ratTitle)
+  //     − 27(ratThead) − 18(margin-top) = ~401px. Measured: 627px gave 80px overflow;
+  //     540px is calibrated safe value (627 − 80 − 7px margin).
+  //   Cont pages: intHdr(48) + footer(108) = 156px chrome; body = 900px.
+  //     Measured: 809px budget gave 47px overflow; 750px is calibrated safe value.
+  //
+  // When no rationale rows (fallback path or buildComplianceRows unavailable),
+  // rationaleTokens is [] — _rptPaginateTokens returns [] — we still emit one page.
+  var RATIONALE_BUDGET_FIRST = 540;
+  var RATIONALE_BUDGET_CONT = 750;
+
+  // Shared HTML fragments for the rationale table chrome
+  var _ratTitle =
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
+    'text-transform:uppercase;letter-spacing:0.04em">What Each Gap Addresses</div>';
+  var _ratThead =
+    '<table style="width:100%;border-collapse:collapse">' +
+    '<thead><tr>' +
+    '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Requirement</th>' +
+    '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Why It Matters</th>' +
+    '</tr></thead><tbody>';
+  var _ratTclose = '</tbody></table>';
+
+  var resultPages = [];
+  var currentPageNum = n;
+
+  if (rationaleTokens.length === 0) {
+    // No rationale (fallback path or no rows) — single page, bodyHTML already complete
+    resultPages.push(
+      rptPage(currentPageNum, 'ASHRAE 36 Audit — Estimated Cost', bodyHTML, {
+        data: fakeData,
+        label: 'Page ' + currentPageNum + ' — Estimated Cost',
+      }),
+    );
+  } else {
+    var ratChunks = _rptPaginateTokens(rationaleTokens, RATIONALE_BUDGET_FIRST, RATIONALE_BUDGET_CONT);
+
+    ratChunks.forEach(function (chunk, chunkIdx) {
+      var isFirst = chunkIdx === 0;
+      var chunkRowsHTML = chunk
+        .map(function (tok) {
+          return tok.html;
+        })
+        .join('');
+      var pageBody;
+
+      if (isFirst) {
+        // Page 1: cost table chrome + rationale table opening
+        pageBody =
+          bodyHTML + '<div style="margin-top:18px">' + _ratTitle + _ratThead + chunkRowsHTML + _ratTclose + '</div>';
+      } else {
+        // Continuation pages: just the reprinted rationale header + rows
+        pageBody = '<div>' + _ratTitle + _ratThead + chunkRowsHTML + _ratTclose + '</div>';
+      }
+
+      resultPages.push(
+        rptPage(
+          currentPageNum,
+          isFirst ? 'ASHRAE 36 Audit — Estimated Cost' : 'ASHRAE 36 Audit — Estimated Cost (cont.)',
+          pageBody,
+          { data: fakeData, label: 'Page ' + currentPageNum + ' — Estimated Cost' },
+        ),
+      );
+      currentPageNum++;
+    });
+  }
+
+  return resultPages;
 }
 
 // ─── rptPageASHRAE36Building ──────────────────────────────────────────────
@@ -13284,7 +13421,12 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   // rptPageASHRAE36CostEstimate guards collectPricingEstimate with typeof check
   // and renders a fallback note when no pricing catalog is imported.
   if (s.costEstimate !== false) {
-    pages.push(_tagA36Section(rptPageASHRAE36CostEstimate(pageNum++, data), 'costEstimate'));
+    // Returns Array (1 page when rationale fits; 2+ when paginated) — spread each page.
+    var costPages = rptPageASHRAE36CostEstimate(pageNum, data);
+    costPages.forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'costEstimate'));
+      pageNum++;
+    });
   }
 
   if (s.building !== false) {

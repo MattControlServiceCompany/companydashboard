@@ -47,36 +47,54 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSB duct temp, 8" probe — verify probe length',
+    whyNeeded:
+      'Without a supply air temperature sensor, the system cannot adjust how warm or cold it delivers air based on outdoor conditions — one of the primary ways ASHRAE 36 sequences cut heating and cooling costs.',
+    g36Section: '§5.16.1',
   },
   rat: {
     defaultSku: 'N1-10K-2-D-8-BB-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSB duct temp, 8" probe — verify probe length',
+    whyNeeded:
+      'Measures the temperature of air returning from occupied spaces, giving the system feedback to verify how effectively it is conditioning the building and enabling economizer control.',
+    g36Section: '§5.16.1',
   },
   mat: {
     defaultSku: 'N1-10K-2-D-8-BB-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSB duct temp, 8" probe — verify probe length',
+    whyNeeded:
+      'Required for economizer control — without it, the system cannot determine when outdoor air is cool enough to replace mechanical cooling at no operating cost.',
+    g36Section: '§5.16.2',
   },
   oat: {
     defaultSku: 'N1-10K-2-D-12-WP-A',
     qtyRule: 'perBuilding', // de-dup: 1 per building
     flags: ['engReview'],
     note: 'Weatherproof OAT — 1 per building',
+    whyNeeded:
+      'Nearly every ASHRAE 36 energy-saving sequence depends on outdoor temperature. Without a reliable reading, the system cannot adapt supply air setpoints, economizer lockout, or boiler/chiller reset to changing weather.',
+    g36Section: '§5.1',
   },
   dsp: {
     defaultSku: 'N1-ZPS-LR-EZ-NT-IN-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Low-range duct static pressure — verify range',
+    whyNeeded:
+      'Enables variable fan speed control. When duct pressure is measured and reset based on actual zone demand, fan energy drops 15–30% compared to fixed-speed operation.',
+    g36Section: '§5.16.5',
   },
   co2_ahu: {
     defaultSku: 'N1-DCD10-D-BB-LED-A',
     qtyRule: 'perUnit',
     flags: [],
     note: 'AHU duct CO2 sensor',
+    whyNeeded:
+      'Enables demand-controlled ventilation — the system reduces outdoor air (and the energy to condition it) when rooms are partially or fully empty, saving 5–10% of fan and cooling energy.',
+    g36Section: '§5.16.7',
   },
   /* ── VAV/FPB sensors ── */
   dat: {
@@ -84,6 +102,9 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: [],
     note: '4" duct temp probe',
+    whyNeeded:
+      'Monitors the temperature of air actually delivered to the space, enabling precise reheat control and preventing overcooling at minimum airflow.',
+    g36Section: '§5.6.1',
   },
   /* ── Plant/CT sensors ── */
   hwst: {
@@ -91,54 +112,81 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
+    whyNeeded:
+      'Primary feedback for boiler control. Required for the outdoor reset strategy that lowers water temperature — and heating costs — as outdoor air warms.',
+    g36Section: '§5.20.1',
   },
   hwrt: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
+    whyNeeded:
+      'Measures the temperature drop across the heating system. Low temperature drop signals pump, balancing, or coil problems that raise operating costs.',
+    g36Section: '§5.20.1',
   },
   chwst: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
+    whyNeeded:
+      'Verifies chiller output and enables the setpoint reset strategy that improves chiller efficiency during mild weather.',
+    g36Section: '§5.22.1',
   },
   chwrt: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
+    whyNeeded:
+      'Measures how fully the chilled water is utilized. Poor utilization causes the chiller to over-cycle and consume excess energy.',
+    g36Section: '§5.22.1',
   },
   cwst: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
+    whyNeeded:
+      'Required for cooling tower and chiller coordination, including the condenser water reset strategy that improves chiller efficiency during cooler weather.',
+    g36Section: '§5.24.1',
   },
   cwrt: {
     defaultSku: 'N1-10K-2-I-2-BB-M304-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
+    whyNeeded:
+      'Measures the condenser water temperature rise across the tower, confirming heat rejection and flagging tower performance problems.',
+    g36Section: '§5.24.1',
   },
   hwdp: {
     defaultSku: 'N2-A/WPR2-30-M20-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSA wet DP 0-30 PSID — verify range',
+    whyNeeded:
+      'Allows the pump to slow when fewer zones call for heat rather than running at full design speed regardless of load — saves 10–20% of pump energy.',
+    g36Section: '§5.20.3',
   },
   chwdp: {
     defaultSku: 'N2-A/WPR2-30-M20-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSA wet DP 0-30 PSID — verify range',
+    whyNeeded:
+      'Allows chilled water pumps to slow during light loads. Pump energy drops sharply with speed, yielding 10–20% savings during the many partial-load hours typical in commercial buildings.',
+    g36Section: '§5.22.3',
   },
   oaWetBulb: {
     defaultSku: 'N1-10K-2-H200-O-BB-A',
     qtyRule: 'perBuilding',
     flags: ['engReview'],
     note: 'OA humidity+temp combo — 1 per building',
+    whyNeeded:
+      'Measures outdoor temperature and humidity together, enabling the most accurate method (differential enthalpy) for deciding when outdoor air is suitable for free cooling.',
+    g36Section: '§5.16.2',
   },
   /* ── Zone sensors ── */
   zoneTemp: {
@@ -147,12 +195,18 @@ const PRICE_POINT_MAP = {
     flags: ['comboWith'],
     comboWith: 'co2',
     note: 'Zone temp wall sensor — combos with CO2 zone sensor',
+    whyNeeded:
+      'The primary feedback signal for zone control. Without it, the terminal unit cannot modulate airflow to meet setpoints and there is no way to verify the space is comfortable.',
+    g36Section: '§5.6.1',
   },
   co2_zone: {
     defaultSku: 'ZS2-HC-ALC',
     qtyRule: 'comboZone', // de-dup: if zoneTemp also missing, ZS2-HC-ALC covers both
     flags: [],
     note: 'Zone CO2+temp combo — replaces separate zoneTemp+CO2 if both missing',
+    whyNeeded:
+      'Tracks occupancy through air quality, allowing the zone to reduce outdoor air — and the energy to condition it — when rooms are partially or fully empty.',
+    g36Section: '§5.6.7',
   },
   /* ── AHU actuators ── */
   oaDampCmd: {
@@ -160,31 +214,64 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: '180 in-lb spring-return — verify torque',
+    // PART 2: why-needed rationale + G36 reference
+    whyNeeded:
+      'Controls how much outdoor air enters for free cooling and ventilation. Without BAS control of the OA damper, economizer sequences and minimum ventilation compliance are not possible.',
+    whyNotHardware:
+      'Verify: the AHU may already have a modulating damper actuator (then this is a point-exposure/programming gap) vs genuinely needing a new actuator.',
+    g36Section: '§5.16',
   },
   raDampCmd: {
     defaultSku: 'AFB24-MFT-06-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: '180 in-lb spring-return — verify torque',
+    // PART 2: why-needed rationale + G36 reference
+    whyNeeded:
+      'Works with the OA damper to maintain airflow balance during economizer operation. Without it, the AHU cannot prevent over-pressurization when outdoor air increases.',
+    whyNotHardware:
+      'Verify: the AHU may already have a modulating damper actuator (then this is a point-exposure/programming gap) vs genuinely needing a new actuator.',
+    g36Section: '§5.16',
   },
-  /* ── VAV/FPB/DDVAV actuators ── */
+  /* ── VAV/FPB/DDVAV actuators ──
+     dampCmd / coldDampCmd / hotDampCmd are classified ioOnly (Phase 2 programming, $0 hardware).
+     Rationale: VAV/VVT terminal boxes have integral factory-installed actuators commanded over
+     the internal bus. A missing dampCmd BACnet point is a control point-exposure gap, not
+     missing hardware. Add an actuator SKU (AFRB24-MFT-06-A) only if field inspection confirms
+     a pneumatic or failed actuator. (Investigation 2026-06-19: JOCO Courthouse 378/378 VAVs
+     are Carrier VVT — no dampCmd BACnet point; mapping to new ~$44 actuators overstated ~$16.6k.) */
   dampCmd: {
-    defaultSku: 'AFRB24-MFT-06-A',
+    defaultSku: null,
     qtyRule: 'perUnit',
-    flags: ['engReview'],
-    note: 'Spring-return MFT — verify torque',
+    flags: ['ioOnly'],
+    note: 'Phase 2 programming — not new hardware for VVT/integral-actuator boxes',
+    whyNeeded:
+      'Required to verify each zone damper is responding correctly to temperature setpoints. Without this feedback in the BAS, a stuck or failed actuator cannot be detected until occupants complain.',
+    whyNotHardware:
+      'Damper actuator is integral to the VVT/terminal box and commanded over the internal bus — a missing damper command is a BACnet point-exposure / programming task, not new hardware. Add an actuator SKU only if field inspection finds a pneumatic or failed actuator.',
+    g36Section: '§5.6',
   },
   coldDampCmd: {
-    defaultSku: 'AFRB24-MFT-06-A',
+    defaultSku: null,
     qtyRule: 'perUnit',
-    flags: ['engReview'],
-    note: 'DDVAV cold deck — spring-return MFT',
+    flags: ['ioOnly'],
+    note: 'Phase 2 programming — not new hardware for dual-duct VVT/integral-actuator boxes',
+    whyNeeded:
+      'Controls cool air delivery in a dual-duct system. Without BAS visibility of this command, cooling cannot be modulated or verified to prevent simultaneous heating and cooling.',
+    whyNotHardware:
+      'Damper actuator is integral to the VVT/terminal box and commanded over the internal bus — a missing damper command is a BACnet point-exposure / programming task, not new hardware. Add an actuator SKU only if field inspection finds a pneumatic or failed actuator.',
+    g36Section: '§5.6',
   },
   hotDampCmd: {
-    defaultSku: 'AFRB24-MFT-06-A',
+    defaultSku: null,
     qtyRule: 'perUnit',
-    flags: ['engReview'],
-    note: 'DDVAV hot deck — spring-return MFT',
+    flags: ['ioOnly'],
+    note: 'Phase 2 programming — not new hardware for dual-duct VVT/integral-actuator boxes',
+    whyNeeded:
+      'Controls warm air delivery in a dual-duct system. Both hot and cold deck dampers must be controlled together to prevent simultaneous heating and cooling waste.',
+    whyNotHardware:
+      'Damper actuator is integral to the VVT/terminal box and commanded over the internal bus — a missing damper command is a BACnet point-exposure / programming task, not new hardware. Add an actuator SKU only if field inspection finds a pneumatic or failed actuator.',
+    g36Section: '§5.6',
   },
   /* ── Plant valve actuators ── */
   chwIsoValveCmd: {
@@ -192,18 +279,27 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: '180 in-lb non-fail-safe',
+    whyNeeded:
+      'Controls chilled water flow isolation to individual chillers; required for safe staging, lead/lag rotation, and preventing flow through a non-operating chiller.',
+    g36Section: '§5.22',
   },
   cwIsoValveCmd: {
     defaultSku: 'AMB24-MFT-06-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: '180 in-lb non-fail-safe',
+    whyNeeded:
+      'Controls condenser water flow isolation to individual cooling towers; required for safe tower staging and preventing recirculation through an idle tower.',
+    g36Section: '§5.24',
   },
   makeupValveCmd: {
     defaultSku: 'AMB24-MFT-06-A',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: '180 in-lb non-fail-safe',
+    whyNeeded:
+      'Controls cooling tower makeup water flow automatically; without it, tower basin level must be managed manually and there is no BAS alarm for low water.',
+    g36Section: '§5.24',
   },
   /* ── Coil valves (ENG-REVIEW — spec §3, §4 optimizer must skip) ── */
   clgValve: {
@@ -211,18 +307,27 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: '0.75" 2-way Cv7.4 spring-return — ENG-REVIEW: verify Cv and pipe size',
+    whyNeeded:
+      'Controls chilled water flow through the AHU cooling coil. Required for supply air temperature reset and for coordinating mechanical cooling with the economizer — both core ASHRAE 36 sequences.',
+    g36Section: '§5.16.3',
   },
   htgValve: {
     defaultSku: 'B214+TFRB-3-06-A', // VERIFIED in catalog
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: '0.75" 2-way Cv7.4 spring-return — ENG-REVIEW: verify Cv and pipe size',
+    whyNeeded:
+      'Controls hot water flow through the AHU heating coil. Required for morning warm-up, freeze protection, and cold-weather supply air temperature control.',
+    g36Section: '§5.16.3',
   },
   reheatValve: {
     defaultSku: 'B209+TFRB-3-06-A', // VERIFIED in catalog
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: '0.5" Cv0.8 spring-return — ENG-REVIEW: verify Cv',
+    whyNeeded:
+      'Controls hot water flow through the terminal reheat coil. Without it, zone heating must come entirely from the primary air system, reducing efficiency and occupant comfort.',
+    g36Section: '§5.6.4',
   },
   /* ── VAV zone controller (discFlow/primaryFlow maps to controller, not sensor) ── */
   discFlow: {
@@ -230,12 +335,18 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'VAV zone controller w/ integral flow — ENG-REVIEW: verify if controller replacement or reprogramming only',
+    whyNeeded:
+      'Measures airflow delivered to each zone, confirming minimum ventilation rates and enabling the duct static pressure reset sequence that cuts fan energy by 15–25%.',
+    g36Section: '§5.6.2',
   },
   primaryFlow: {
     defaultSku: 'OF253A-E2',
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'FPB zone controller w/ integral flow — ENG-REVIEW: verify if controller replacement or reprogramming only',
+    whyNeeded:
+      'Measures how much cold primary air the fan-powered box receives from the air handler, driving damper position and determining when the local fan should run.',
+    g36Section: '§5.8.2',
   },
   /* ── I/O Only ($0) ── */
   sfStatus: { defaultSku: null, qtyRule: 'perUnit', flags: ['ioOnly'], note: 'Controller I/O' },
@@ -272,12 +383,18 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['noSku'],
     note: 'Mechanical freeze stat — enter price (~$150 typical)',
+    whyNeeded:
+      'Signals the control system when coil temperatures approach freezing so the air handler shuts down before water coils are damaged — a critical life-safety interlock.',
+    g36Section: '§5.16.6',
   },
   oaFlow: {
     defaultSku: null,
     qtyRule: 'perUnit',
     flags: ['noSku'],
     note: 'OA flow station — enter price (~$1,200 typical)',
+    whyNeeded:
+      'Measures actual outdoor air volume entering the unit. Without it, there is no way to confirm code-required minimum ventilation rates are met, and the duct static pressure reset sequence cannot be verified.',
+    g36Section: '§5.16.7',
   },
 };
 
@@ -687,6 +804,9 @@ function buildComplianceRows(projId) {
         unitPrice: unitPrice,
         lineTotal: lineTotal,
         note: mapEntry.note || '',
+        whyNeeded: mapEntry.whyNeeded || '',
+        whyNotHardware: mapEntry.whyNotHardware || '',
+        g36Section: mapEntry.g36Section || '',
         phase: 1,
         _pointKey: gap.pointKey, // Fix 2: store resolved point key for reliable optimizer skip/class lookup
       });
@@ -842,6 +962,10 @@ function _pricingPointLabel(pointKey) {
 }
 
 function _pricingPointType(pointKey, mapEntry) {
+  // dampCmd / coldDampCmd / hotDampCmd are ioOnly but represent Phase 2 programming
+  // (integral VVT actuator — not a Controller I/O point), so label them "Programming"
+  var dampCmdKeys = ['dampCmd', 'coldDampCmd', 'hotDampCmd'];
+  if (mapEntry.flags.indexOf('ioOnly') !== -1 && dampCmdKeys.indexOf(pointKey) !== -1) return 'Programming';
   if (mapEntry.flags.indexOf('ioOnly') !== -1) return 'IO Only';
   if (mapEntry.flags.indexOf('noSku') !== -1) return 'Manual';
   // Categorize by SKU prefix / point type
@@ -1120,10 +1244,32 @@ function initCostEstimateTab(projId) {
       '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px">' +
         lineTotalCell +
         '</td>',
-      // col 10: Notes
-      '<td style="font-size:10px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px">' +
-        _esc(row.note) +
-        '</td>',
+      // col 10: Notes — visible text = note + G36 §; tooltip = whyNeeded (or whyNotHardware for programming rows)
+      (function () {
+        var noteText = row.note || '';
+        if (row.g36Section) noteText += (noteText ? ' · ' : '') + _esc(row.g36Section);
+        // Build tooltip: for ioOnly Programming rows (integral VVT dampers), surface whyNotHardware;
+        // for all others surface whyNeeded; phase-2 sequence rows have no rationale field.
+        var tooltipText = '';
+        if (row.whyNotHardware) {
+          tooltipText = row.whyNotHardware;
+          if (row.g36Section) tooltipText += ' (' + row.g36Section + ')';
+        } else if (row.whyNeeded) {
+          tooltipText = row.whyNeeded;
+          if (row.g36Section) tooltipText += ' (' + row.g36Section + ')';
+        }
+        var titleAttr = tooltipText ? ' title="' + _esc(tooltipText) + '"' : '';
+        var cursorStyle = tooltipText ? 'cursor:help;' : '';
+        return (
+          '<td style="font-size:10px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;' +
+          cursorStyle +
+          '"' +
+          titleAttr +
+          '>' +
+          _esc(noteText) +
+          '</td>'
+        );
+      })(),
       '</tr>',
     ].join('');
   }
@@ -1447,9 +1593,9 @@ var OPTIMIZER_CLASS_FILTERS = {
   co2_zone: { descMatch: 'zone', descExclude: null, skuPrefix: 'ZS2' },
   dat: { descMatch: 'duct temperature', descExclude: 'averaging' },
   zoneTemp: { descMatch: 'zone', descExclude: 'co2', skuPrefix: 'ZS2' },
-  dampCmd: { descMatch: 'spring-return', descExclude: null, skuPrefix: 'AFRB' },
-  coldDampCmd: { descMatch: 'spring-return', descExclude: null, skuPrefix: 'AFRB' },
-  hotDampCmd: { descMatch: 'spring-return', descExclude: null, skuPrefix: 'AFRB' },
+  // dampCmd/coldDampCmd/hotDampCmd removed (2026-06-19): classified ioOnly in PRICE_POINT_MAP;
+  // _pricingFindCheapestSku is never called for ioOnly rows (guard at line ~1689), making
+  // these entries unreachable dead code.
   chwIsoValveCmd: { descMatch: 'non-fail-safe', descExclude: null, skuPrefix: 'AMB' },
   cwIsoValveCmd: { descMatch: 'non-fail-safe', descExclude: null, skuPrefix: 'AMB' },
   makeupValveCmd: { descMatch: 'non-fail-safe', descExclude: null, skuPrefix: 'AMB' },
@@ -2925,8 +3071,26 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 9: Notes
-    cells.push('<span style="font-size:10px;color:var(--text3)">' + _esc(row.note) + '</span>');
+    // col 9: Notes — visible text = note + G36 §; tooltip = whyNeeded (or whyNotHardware for programming rows)
+    var _noteText9 = row.note || '';
+    if (row.g36Section) _noteText9 += (_noteText9 ? ' \xb7 ' : '') + row.g36Section;
+    var _tooltipText9 = '';
+    if (row.whyNotHardware) {
+      _tooltipText9 = row.whyNotHardware + (row.g36Section ? ' (' + row.g36Section + ')' : '');
+    } else if (row.whyNeeded) {
+      _tooltipText9 = row.whyNeeded + (row.g36Section ? ' (' + row.g36Section + ')' : '');
+    }
+    var _titleAttr9 = _tooltipText9 ? ' title="' + _esc(_tooltipText9) + '"' : '';
+    var _cursorStyle9 = _tooltipText9 ? 'cursor:help;' : '';
+    cells.push(
+      '<span style="font-size:10px;color:var(--text3);' +
+        _cursorStyle9 +
+        '"' +
+        _titleAttr9 +
+        '>' +
+        _esc(_noteText9) +
+        '</span>',
+    );
 
     // Build TR
     var rowStyle = !toggleOn ? 'opacity:0.45;' : '';
