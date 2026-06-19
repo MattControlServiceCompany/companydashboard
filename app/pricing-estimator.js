@@ -32,6 +32,482 @@ const COST_PER_SEQ_HOURS_DEFAULT = {
   vav_dcv: 0.5,
 };
 
+/* ── ROI Savings Impact Model — Phase 5 (2026-06-19)
+   Sources:
+     [NLR-DSP-2026]  Allen, NLR/TP-5500-98345, OSTI 3022261 (fan SP reset)
+     [LBNL-G36-2022] Zhang/Blum/Granderson, J.Bldg.Perf.Sim. 15(2), OSTI 1842567 (31% avg HVAC)
+     [ORNL-G36-2024] Energy & Buildings, DOI:10.1016/j.enbuild.2024.115005 (42% research facility)
+     [NREL-DCV-2023] OSTI 2284042 (DCV 2.6% site energy)
+     [NLR-VSP-2025]  OSTI 3021527 (variable-speed pumps; proxy for DP reset)
+     [G36-2021]      ASHRAE Guideline 36-2021
+     [CSC-BAS-CALC]  CSC BAS Savings Calculator (internal)
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Source-type labels (correction #15) */
+const SAVINGS_SOURCE_LITERATURE = 'literature'; // "Literature range — verify with M&V"
+const SAVINGS_SOURCE_ENGINEERING = 'engineering'; // "Engineering estimate — site-specific calc needed"
+
+/* ORNL context sentence — must accompany every citation of 42% (correction #2) */
+const ORNL_CONTEXT_SENTENCE =
+  '42% measured at a single research test facility with rooftop unit (ORNL 2024); ' +
+  'multizone-VAV simulation (LBNL 2022) shows 31% avg — more representative of a multi-building VAV portfolio.';
+
+/* M&V disclaimer (correction #11) */
+const SAVINGS_DISCLAIMER_TEXT =
+  'Energy savings estimates are based on published research studies and engineering calculations ' +
+  'representing typical ranges for applicable building types. They are not guarantees of performance. ' +
+  'Actual savings depend on existing control sequence quality, equipment condition, utility rates, ' +
+  'occupancy patterns, and climate. Post-installation measurement and verification (M&V) is required ' +
+  'to confirm realized savings.';
+
+/* Per-sequence savings impact data (correction #1, #4, #5, #6, #7, #8, #9, #13, #14, #15)
+   Fields:
+     tier           — 'high'|'med-high'|'med'|'low-med'|'enabler'|'safety'
+     type           — 'savings'|'enabler'|'safety'
+     weight         — numeric sort weight within tier (higher = sort earlier)
+     nominalCostTier — 1=programming-only, 2=one sensor, 3=multiple sensors/AFMS
+     savingsRationale — full sentence shown in Notes column (visible, not hover-only)
+     source         — citation abbreviation
+     sourceType     — SAVINGS_SOURCE_LITERATURE | SAVINGS_SOURCE_ENGINEERING
+   ─────────────────────────────────────────────────────────────────────────── */
+const SEQUENCE_SAVINGS_IMPACT = {
+  ahu_dsp_reset: {
+    tier: 'high',
+    type: 'savings',
+    weight: 3,
+    nominalCostTier: 2,
+    savingsRationale:
+      'Trim-and-respond duct pressure reset reduces supply fan speed during part-load hours, ' +
+      'cutting fan energy 22–65% in applicable systems; field studies show 22–25% in real buildings. ' +
+      '[NLR-DSP-2026, OSTI 3022261]',
+    source: '[NLR-DSP-2026]',
+    sourceType: SAVINGS_SOURCE_LITERATURE,
+  },
+  ahu_sat_reset: {
+    tier: 'high',
+    type: 'savings',
+    weight: 3,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Supply air temperature trim-and-respond reset eliminates over-cooling and simultaneous heating, ' +
+      'reducing chiller and reheat energy. Multizone-VAV simulation: G36 controls cut HVAC energy 31% avg ' +
+      '(LBNL 2022). ' +
+      ORNL_CONTEXT_SENTENCE,
+    source: '[LBNL-G36-2022]',
+    sourceType: SAVINGS_SOURCE_LITERATURE,
+  },
+  ahu_economizer: {
+    tier: 'high',
+    type: 'savings',
+    weight: 2,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Modulating economizer provides free cooling when outdoor conditions are favorable, directly displacing ' +
+      'compressor energy. Applicable in Climate Zone 4A approximately 20–40% of cooling hours annually ' +
+      '(engineering estimate; site-specific simulation needed for $ projection).',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  demandCtrl: {
+    tier: 'med-high',
+    type: 'savings',
+    weight: 2.5,
+    nominalCostTier: 2,
+    savingsRationale:
+      'CO2-based demand-controlled ventilation (AHU duct level) reduces outdoor air delivery during ' +
+      'lower-occupancy periods, cutting heating and cooling energy. National average: 2.6% total site ' +
+      'energy savings; 8.8% heating gas savings in applicable commercial buildings. [NREL-DCV-2023, OSTI 2284042]. ' +
+      'Note: 2.6% is a commercial-office stock average; verify applicability to institutional/detention occupancy.',
+    source: '[NREL-DCV-2023]',
+    sourceType: SAVINGS_SOURCE_LITERATURE,
+  },
+  vav_dcv: {
+    tier: 'med-high',
+    type: 'savings',
+    weight: 2.5,
+    nominalCostTier: 2,
+    savingsRationale:
+      'CO2-based demand-controlled ventilation (zone level — needs zone CO2 sensors) reduces outdoor air ' +
+      'per zone during lower-occupancy periods. Same national average basis as AHU-level DCV: 2.6% total site ' +
+      'energy savings in applicable buildings. [NREL-DCV-2023, OSTI 2284042]. ' +
+      'Note: verify applicability to institutional/detention occupancy patterns.',
+    source: '[NREL-DCV-2023]',
+    sourceType: SAVINGS_SOURCE_LITERATURE,
+  },
+  hwp_supply_reset: {
+    tier: 'med-high',
+    type: 'savings',
+    weight: 2,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Hot water supply temperature trim-and-respond reset reduces boiler firing rate during mild weather ' +
+      'and can push condensing boilers into higher-efficiency operation (up to ~11 AFUE points on condensing-range hours), ' +
+      'reducing heating gas consumption. Savings depend on boiler type — consult BAS Savings Calc for site-specific estimate. ' +
+      '⚠ Verify boiler type: MED (non-condensing) / MED-HIGH (condensing).',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  chwp_supply_reset: {
+    tier: 'med-high',
+    type: 'savings',
+    weight: 2,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Chilled water supply temperature trim-and-respond reset raises the CHWST setpoint under light loads, ' +
+      'reducing chiller lift. Every 1°F increase in CHWST improves chiller COP approximately 1–2% ' +
+      '(rule of thumb from manufacturer performance curves). ' +
+      'Centrifugal chillers most sensitive to CHWST; scroll/recip see smaller gains. ' +
+      'Requires site-specific calculation for $ savings.',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  hwp_pump_dp_reset: {
+    tier: 'med',
+    type: 'savings',
+    weight: 2,
+    nominalCostTier: 2,
+    savingsRationale:
+      'Pump differential pressure reset reduces HW pump speed during lower-load periods. ' +
+      'Pump power follows the cube law — a 20% speed reduction cuts pump power by nearly 50%. ' +
+      'Requires differential pressure sensor installation; programming change is low-cost once sensor is in place. ' +
+      '(Qualitative only — no single-measure study for controls-only savings; drop $ estimate.)',
+    source: '[NLR-VSP-2025]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  chwp_pump_dp_reset: {
+    tier: 'med',
+    type: 'savings',
+    weight: 2,
+    nominalCostTier: 2,
+    savingsRationale:
+      'Pump differential pressure reset reduces CHW pump speed during lower-load periods. ' +
+      'Pump power follows the cube law — a 20% speed reduction cuts pump power by nearly 50%. ' +
+      'CHW pump is typically larger than HW side, so absolute savings may be higher. ' +
+      '(Qualitative only — no single-measure study for controls-only savings; drop $ estimate.)',
+    source: '[NLR-VSP-2025]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  ahu_rf_control: {
+    tier: 'med',
+    type: 'savings',
+    weight: 1.5,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Return fan speed coordination with supply fan maintains building pressurization and eliminates ' +
+      'excess recirculation energy. Only applicable in systems with a powered return fan (hasReturnFan config).',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  vav_zone_temp: {
+    tier: 'med',
+    type: 'savings',
+    weight: 1.5,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Zone temperature setpoints enable G36 dual-maximum logic — heating only activates below the heating ' +
+      'setpoint, cooling only above the cooling setpoint, with a deadband in between. Eliminating zone ' +
+      'over-conditioning directly reduces both heating and cooling energy. ' +
+      'High prevalence in JOCO portfolio: 766 VAV units missing coolSP/htgSP.',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  vav_reheat: {
+    tier: 'med',
+    type: 'savings',
+    weight: 1,
+    nominalCostTier: 1,
+    savingsRationale:
+      'G36 reheat sequencing prevents simultaneous heating and cooling by releasing reheat only after the ' +
+      'cooling damper reaches minimum. Correct implementation can eliminate 5–15% of building energy waste ' +
+      'in systems with misconfigured VAV reheat (rule of thumb from audit practice; no published study — ' +
+      'confirm via BAS trend data before citing in a contract).',
+    source: '[audit rule of thumb]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  ahu_min_oa: {
+    tier: 'low-med',
+    type: 'savings',
+    weight: 1.5,
+    nominalCostTier: 2,
+    savingsRationale:
+      'Compliance/IAQ: code-minimum outside air at all fan speeds — measured airflow ensures ventilation ' +
+      'code is met regardless of fan operating point. ' +
+      'Energy: prevents part-load over-ventilation penalty (secondary benefit). ' +
+      'Primarily a ventilation quality and compliance measure; energy savings are secondary.',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+  vav_damper_writeback: {
+    tier: 'enabler',
+    type: 'enabler',
+    weight: 1,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Enables Duct SP Reset: damper write-back allows the BAS to detect zone damper positions for ' +
+      'supply fan pressure optimization (DSP reset) and unoccupied-mode damper closure. ' +
+      'Also enables fault detection for stuck-damper identification.',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+    enablesLabel: 'Enables Duct SP Reset',
+  },
+  hwp_staging: {
+    tier: 'enabler',
+    type: 'enabler',
+    weight: 1,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Enables HW Plant Reset: boiler/chiller staging sequences ensure the correctly sized unit runs ' +
+      'at each load level, avoiding part-load inefficiency and enabling HW supply temperature and ' +
+      'DP reset sequences to function correctly.',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+    enablesLabel: 'Enables HW Plant Reset',
+  },
+  chwp_staging: {
+    tier: 'enabler',
+    type: 'enabler',
+    weight: 1,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Enables CHW Plant Reset: chiller staging sequences ensure the correctly sized unit runs ' +
+      'at each load level, avoiding part-load inefficiency and enabling CHW supply temperature and ' +
+      'DP reset sequences to function correctly.',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+    enablesLabel: 'Enables CHW Plant Reset',
+  },
+  ahu_freeze_prot: {
+    tier: 'safety',
+    type: 'safety',
+    weight: 0,
+    nominalCostTier: 1,
+    savingsRationale:
+      'Freeze protection prevents coil damage during cold weather — a safety and reliability requirement, ' +
+      'not an energy optimization. Cost avoidance from prevented repairs can be significant but is not ' +
+      'an energy savings.',
+    source: '[G36-2021]',
+    sourceType: SAVINGS_SOURCE_ENGINEERING,
+  },
+};
+
+/* ── Blocking sensor sets per sequence (for effectiveCostTier computation)
+   If ALL blocking sensors for this sequence are already covered → effectiveCostTier=1
+   ─────────────────────────────────────────────────────────────────────────── */
+const SEQUENCE_BLOCKING_SENSORS = {
+  ahu_dsp_reset: ['dsp'],
+  ahu_sat_reset: ['sat'],
+  ahu_economizer: ['mat', 'oat'],
+  demandCtrl: ['co2_ahu'],
+  vav_dcv: ['co2_zone'],
+  hwp_supply_reset: ['hwst', 'hwSetpoint'],
+  chwp_supply_reset: ['chwst', 'chwSetpoint'],
+  hwp_pump_dp_reset: ['hwdp'],
+  chwp_pump_dp_reset: ['chwdp'],
+  ahu_rf_control: [],
+  vav_zone_temp: ['coolSP', 'htgSP'],
+  vav_reheat: [],
+  ahu_min_oa: ['oaDampCmd'],
+  vav_damper_writeback: [],
+  hwp_staging: [],
+  chwp_staging: [],
+  ahu_freeze_prot: [],
+};
+
+/* ── Impact badge chip renderer (Recommended tier only) ─────────────────────
+   Correction #4: enabler = purple-outline; #5: safety = neutral-grey.
+   Correction #15: title attribute shows sourceType label.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _a36ImpactChip(row) {
+  var tier = row.savingsImpact;
+  var sourceTypeLabel =
+    row.sourceType === SAVINGS_SOURCE_LITERATURE
+      ? 'Literature range — verify with M&V'
+      : 'Engineering estimate — site-specific calc needed';
+  var tooltipSuffix = row.savingsSource ? ' | ' + row.savingsSource + ' | ' + sourceTypeLabel : '';
+  if (tier === 'high') {
+    return (
+      '<span title="HIGH savings impact' +
+      tooltipSuffix +
+      '" ' +
+      'style="display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
+      'background:#14532d;color:#86efac;white-space:nowrap">HIGH</span>'
+    );
+  }
+  if (tier === 'med-high') {
+    return (
+      '<span title="MED-HIGH savings impact' +
+      tooltipSuffix +
+      '" ' +
+      'style="display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
+      'background:#1e3a5f;color:#93c5fd;white-space:nowrap">MED-HIGH</span>'
+    );
+  }
+  if (tier === 'med') {
+    return (
+      '<span title="MED savings impact' +
+      tooltipSuffix +
+      '" ' +
+      'style="display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
+      'background:var(--s3);color:var(--text2);white-space:nowrap">MED</span>'
+    );
+  }
+  if (tier === 'low-med') {
+    return (
+      '<span title="LOW-MED savings impact' +
+      tooltipSuffix +
+      '" ' +
+      'style="display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
+      'background:var(--s3);color:var(--text3);white-space:nowrap">LOW-MED</span>'
+    );
+  }
+  if (tier === 'enabler') {
+    var enablesLabel = row._enablesLabel || 'Supporting Sequence';
+    return (
+      '<span title="' +
+      enablesLabel +
+      tooltipSuffix +
+      '" ' +
+      'style="display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
+      'background:transparent;color:#a78bfa;border:1px solid #a78bfa;white-space:nowrap">' +
+      enablesLabel +
+      '</span>'
+    );
+  }
+  if (tier === 'safety') {
+    return (
+      '<span title="Safety / Compliance — not an energy savings measure' +
+      tooltipSuffix +
+      '" ' +
+      'style="display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
+      'background:var(--s3);color:var(--text3);border:1px solid var(--border);white-space:nowrap">Safety / Compliance</span>'
+    );
+  }
+  return '';
+}
+
+/* ── Two-key sort for Recommended tier (correction #3)
+   Primary:  impact group order (HIGH > MED-HIGH > MED > LOW-MED > enabler > safety)
+   Secondary: weight / effectiveCostTier (higher weight, lower cost = sort earlier)
+   Tertiary:  # instances (qty, desc)
+   ─────────────────────────────────────────────────────────────────────────── */
+var _SAVINGS_TIER_ORDER = { high: 0, 'med-high': 1, med: 2, 'low-med': 3, enabler: 4, safety: 5 };
+
+function _pricingSortRecommendedRows(rows) {
+  return rows.slice().sort(function (a, b) {
+    // Primary: tier group
+    var ao = _SAVINGS_TIER_ORDER[a.savingsImpact] != null ? _SAVINGS_TIER_ORDER[a.savingsImpact] : 99;
+    var bo = _SAVINGS_TIER_ORDER[b.savingsImpact] != null ? _SAVINGS_TIER_ORDER[b.savingsImpact] : 99;
+    if (ao !== bo) return ao - bo;
+    // Secondary: weight/effectiveCostTier (higher ratio = better ROI = earlier)
+    var aScore = (a._savingsWeight || 0) / Math.max(a._effectiveCostTier || 1, 1);
+    var bScore = (b._savingsWeight || 0) / Math.max(b._effectiveCostTier || 1, 1);
+    if (Math.abs(aScore - bScore) > 0.0001) return bScore - aScore;
+    // Tertiary: # instances (desc)
+    return (b.qty || 0) - (a.qty || 0);
+  });
+}
+
+/* ── Top-ROI callout card (correction #12)
+   Criteria: HIGH or MED-HIGH tier AND effectiveCostTier <= 2 AND not enabler AND not safety AND >= 1 instance
+   Shows 2-4 items; hidden if < 2.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingTopRoiCallout(projId, recRows) {
+  var qualifiers = recRows.filter(function (r) {
+    return (
+      r.phase === 2 &&
+      (r.savingsImpact === 'high' || r.savingsImpact === 'med-high') &&
+      (r._effectiveCostTier || 2) <= 2 &&
+      r.savingsImpact !== 'enabler' &&
+      r.savingsImpact !== 'safety' &&
+      (r.qty || 0) >= 1
+    );
+  });
+  // Deduplicate by seqKey (keep the first = highest-priority per sort)
+  var seen = {};
+  var unique = [];
+  qualifiers.forEach(function (r) {
+    if (!seen[r.seqKey]) {
+      seen[r.seqKey] = true;
+      unique.push(r);
+    }
+  });
+  // Limit to 4
+  unique = unique.slice(0, 4);
+  if (unique.length < 2) return '';
+
+  // DCV merge: if both demandCtrl and vav_dcv qualify, show one merged line.
+  // Decide the merge BEFORE the loop so order of appearance does not matter (Bug C fix).
+  var hasDemand = unique.some(function (r) {
+    return r.seqKey === 'demandCtrl';
+  });
+  var hasDcv = unique.some(function (r) {
+    return r.seqKey === 'vav_dcv';
+  });
+  var mergeDcv = hasDemand && hasDcv; // pre-decision: vav_dcv is always suppressed when demandCtrl is present
+  var displayRows = [];
+  var dcvMerged = false;
+  unique.forEach(function (r) {
+    if (r.seqKey === 'vav_dcv' && mergeDcv) {
+      // always skip vav_dcv when demandCtrl is present (regardless of iteration order)
+      return;
+    }
+    if (r.seqKey === 'demandCtrl' && mergeDcv && !dcvMerged) {
+      dcvMerged = true;
+      displayRows.push({ label: 'Demand-Controlled Ventilation (AHU + Zone)', row: r });
+      return;
+    }
+    displayRows.push({ label: r.item, row: r });
+  });
+
+  var itemsHTML = displayRows
+    .map(function (entry) {
+      var r = entry.row;
+      var chip = _a36ImpactChip(r);
+      var costNote =
+        r._effectiveCostTier === 1
+          ? '<span style="font-size:10px;color:#86efac;margin-left:6px">Programming only</span>'
+          : '<span style="font-size:10px;color:var(--text3);margin-left:6px">+sensor(s)</span>';
+      return (
+        '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;' +
+        'border-bottom:1px solid rgba(255,255,255,0.07)">' +
+        '<div style="flex-shrink:0;margin-top:1px">' +
+        chip +
+        costNote +
+        '</div>' +
+        '<div>' +
+        '<div style="font-size:11px;font-weight:600;color:var(--text)">' +
+        entry.label +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--text2);margin-top:2px;line-height:1.5">' +
+        (r.savingsRationale || '').slice(0, 160) +
+        (r.savingsRationale && r.savingsRationale.length > 160 ? '…' : '') +
+        '</div>' +
+        '</div>' +
+        '</div>'
+      );
+    })
+    .join('');
+
+  return (
+    '<details open style="margin:10px 14px 0;border:1px solid var(--border2);border-radius:6px;' +
+    'background:var(--s3);overflow:hidden">' +
+    '<summary style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text);' +
+    'cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;' +
+    'background:var(--s2);border-bottom:1px solid var(--border2)">' +
+    '★ Top ROI Measures for This Project' +
+    '<span style="font-size:10px;font-weight:400;color:var(--text2);margin-left:4px">' +
+    '(highest savings per dollar based on current point coverage — full list below)</span>' +
+    '</summary>' +
+    '<div style="padding:4px 12px 8px">' +
+    '<div style="font-size:10px;color:var(--text3);margin-bottom:6px;margin-top:4px">' +
+    ORNL_CONTEXT_SENTENCE +
+    '</div>' +
+    itemsHTML +
+    '</div>' +
+    '</details>'
+  );
+}
+
 /* ── SKU → config defaults (spec §3) ──
    Fields:
      defaultSku  — catalog SKU (or null for NO-SKU)
@@ -1728,6 +2204,48 @@ function buildRecommendedRows(projId) {
     // Re-key the row ID so it's distinct from the compliance row ID
     rec.id = rec.id.replace(/^hw_/, 'rch_').replace(/^seq_/, 'rcs_');
 
+    // ── Phase 5: stamp savings impact fields onto phase-2 sequence rows ──
+    if (rec.phase === 2 && rec.seqKey) {
+      var impactDef = SEQUENCE_SAVINGS_IMPACT[rec.seqKey];
+      if (impactDef) {
+        rec.savingsImpact = impactDef.tier;
+        rec.savingsRationale = impactDef.savingsRationale;
+        rec.savingsSource = impactDef.source;
+        rec.sourceType = impactDef.sourceType;
+        rec._savingsWeight = impactDef.weight;
+        rec._enablesLabel = impactDef.enablesLabel || null;
+
+        // Dynamic effectiveCostTier: if all blocking sensors for this sequence are
+        // already covered in the equipment matrix → effectiveCostTier=1 (programming only).
+        // We approximate "covered" by checking if phase-1 hardware rows for those sensors
+        // exist in compRows (i.e., they AREN'T in the gap list — gaps = missing sensors).
+        // Since buildComplianceRows only adds rows for MISSING points, if a blocking sensor
+        // key has NO row in compRows for this building, it is already covered.
+        var blocking = SEQUENCE_BLOCKING_SENSORS[rec.seqKey] || [];
+        var nominalTier = impactDef.nominalCostTier || 2;
+        if (blocking.length === 0) {
+          // No blocking sensors — programming only
+          rec._effectiveCostTier = 1;
+        } else {
+          // Check if any blocking sensor is still a gap (has a phase-1 row in compRows for this building)
+          var gapPointKeys = {};
+          compRows.forEach(function (cr) {
+            if (cr.phase === 1 && cr.building === rec.building && cr._pointKey) {
+              gapPointKeys[cr._pointKey] = true;
+            }
+          });
+          var anyBlocked = blocking.some(function (sk) {
+            return gapPointKeys[sk];
+          });
+          rec._effectiveCostTier = anyBlocked ? nominalTier : 1;
+        }
+      } else {
+        // No impact definition — leave unlabeled
+        rec.savingsImpact = null;
+        rec._effectiveCostTier = 2;
+      }
+    }
+
     recRows.push(rec);
   });
 
@@ -1764,7 +2282,41 @@ function buildRecommendedRows(projId) {
     });
   }
 
-  return recRows;
+  // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
+  // Apply sort within building groups, preserve building order and phase-1/phase-2 structure.
+  // Non-phase-2 rows are unaffected.
+  var allBuildings = [];
+  var bldgSet = {};
+  recRows.forEach(function (r) {
+    if (r.building && !bldgSet[r.building]) {
+      bldgSet[r.building] = true;
+      allBuildings.push(r.building);
+    }
+  });
+
+  var sortedRows = [];
+  allBuildings.forEach(function (bName) {
+    var bPhase1 = recRows.filter(function (r) {
+      return r.building === bName && r.phase === 1;
+    });
+    var bPhase2 = recRows.filter(function (r) {
+      return r.building === bName && r.phase === 2;
+    });
+    // Apply two-key sort to phase-2 rows only
+    bPhase2 = _pricingSortRecommendedRows(bPhase2);
+    bPhase1.forEach(function (r) {
+      sortedRows.push(r);
+    });
+    bPhase2.forEach(function (r) {
+      sortedRows.push(r);
+    });
+  });
+  // Any rows without a building (shouldn't happen) appended at end
+  recRows.forEach(function (r) {
+    if (!r.building) sortedRows.push(r);
+  });
+
+  return sortedRows;
 }
 
 /* ── Helper: extract pointKey from a row id produced by buildComplianceRows ──
@@ -2344,16 +2896,24 @@ var _pricingBldgFilter = {}; // projId → building name or '' for All
    col 9: Notes — sortable
    ─────────────────────────────────────────────────────────────────────────── */
 var PRICING_TBL_COLS = [
-  { label: 'Incl', noSort: true, noHide: true, numeric: false, minWidth: 36 },
-  { label: 'Building', noSort: false, noHide: false, numeric: false, minWidth: 90 },
-  { label: 'Item', noSort: false, noHide: false, numeric: false, minWidth: 120 },
-  { label: 'Type', noSort: false, noHide: false, numeric: false, minWidth: 70 },
-  { label: 'Equipment', noSort: false, noHide: false, numeric: false, minWidth: 80 },
-  { label: 'Qty', noSort: false, noHide: false, numeric: true, minWidth: 40 },
-  { label: 'SKU', noSort: false, noHide: false, numeric: false, minWidth: 100 },
-  { label: 'Unit Price', noSort: false, noHide: false, numeric: true, minWidth: 80 },
-  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 },
-  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 },
+  { label: 'Incl', noSort: true, noHide: true, numeric: false, minWidth: 36 }, // 0
+  { label: 'Building', noSort: false, noHide: false, numeric: false, minWidth: 90 }, // 1
+  { label: 'Item', noSort: false, noHide: false, numeric: false, minWidth: 120 }, // 2
+  { label: 'Type', noSort: false, noHide: false, numeric: false, minWidth: 70 }, // 3
+  { label: 'Equipment', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 4
+  { label: 'Qty', noSort: false, noHide: false, numeric: true, minWidth: 40 }, // 5
+  { label: 'SKU', noSort: false, noHide: false, numeric: false, minWidth: 100 }, // 6
+  { label: 'Unit Price', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 7
+  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 8
+  {
+    label: 'Impact',
+    noSort: true,
+    noHide: false,
+    numeric: false,
+    minWidth: 80, // 9 — Phase 5 savings badge
+    isImpactCol: true,
+  },
+  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 10
 ];
 
 /* ── Apply labor overrides to a cloned row list ──────────────────────────── */
@@ -3087,26 +3647,54 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 9: Notes — visible text = note + G36 §; tooltip = whyNeeded (or whyNotHardware for programming rows)
-    var _noteText9 = row.note || '';
-    if (row.g36Section) _noteText9 += (_noteText9 ? ' \xb7 ' : '') + row.g36Section;
-    var _tooltipText9 = '';
-    if (row.whyNotHardware) {
-      _tooltipText9 = row.whyNotHardware + (row.g36Section ? ' (' + row.g36Section + ')' : '');
-    } else if (row.whyNeeded) {
-      _tooltipText9 = row.whyNeeded + (row.g36Section ? ' (' + row.g36Section + ')' : '');
+    // col 9: Impact — badge chip for Recommended tier phase-2 rows only (correction #4 / Phase 5)
+    // Fuller-preference rule: badge LEADS but full rationale stays visible in Notes (col 10).
+    var impactCellContent = '';
+    if (tier === 'recommended' && row.phase === 2 && row.savingsImpact) {
+      impactCellContent = _a36ImpactChip(row);
     }
-    var _titleAttr9 = _tooltipText9 ? ' title="' + _esc(_tooltipText9) + '"' : '';
-    var _cursorStyle9 = _tooltipText9 ? 'cursor:help;' : '';
-    cells.push(
-      '<span style="font-size:10px;color:var(--text3);' +
-        _cursorStyle9 +
-        '"' +
-        _titleAttr9 +
-        '>' +
-        _esc(_noteText9) +
-        '</span>',
-    );
+    cells.push(impactCellContent);
+
+    // col 10: Notes — visible text = note + G36 § + (Recommended) full savingsRationale sentence
+    // Fuller-preference: full rationale visible in cell, never hover-only (correction from REVIEW).
+    var _noteText10 = row.note || '';
+    if (row.g36Section) _noteText10 += (_noteText10 ? ' \xb7 ' : '') + row.g36Section;
+
+    // For Recommended tier phase-2 rows: append full rationale sentence (visible, not hover-only)
+    // savingsRationale already contains all warnings (reheat note, boiler-type warning) — no appends needed.
+    var _rationaleText = '';
+    if (tier === 'recommended' && row.phase === 2 && row.savingsRationale) {
+      _rationaleText = row.savingsRationale;
+    }
+
+    var _tooltipText10 = '';
+    if (row.whyNotHardware) {
+      _tooltipText10 = row.whyNotHardware + (row.g36Section ? ' (' + row.g36Section + ')' : '');
+    } else if (row.whyNeeded) {
+      _tooltipText10 = row.whyNeeded + (row.g36Section ? ' (' + row.g36Section + ')' : '');
+    }
+    var _titleAttr10 = _tooltipText10 ? ' title="' + _esc(_tooltipText10) + '"' : '';
+    var _cursorStyle10 = _tooltipText10 ? 'cursor:help;' : '';
+
+    if (_rationaleText) {
+      // Rationale visible in cell (white-space:normal so it wraps; fuller-preference)
+      cells.push(
+        '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4">' +
+          _esc(_noteText10 ? _noteText10 + ' \xb7 ' : '') +
+          _esc(_rationaleText) +
+          '</span>',
+      );
+    } else {
+      cells.push(
+        '<span style="font-size:10px;color:var(--text3);' +
+          _cursorStyle10 +
+          '"' +
+          _titleAttr10 +
+          '>' +
+          _esc(_noteText10) +
+          '</span>',
+      );
+    }
 
     // Build TR
     var rowStyle = !toggleOn ? 'opacity:0.45;' : '';
@@ -3116,11 +3704,17 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return; // skip hidden columns
       var col = PRICING_TBL_COLS[ci] || {};
-      var tdStyle =
-        'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);';
+      // col 10 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
+      var isNotesCol = ci === 10;
+      var isImpactCol = ci === 9;
+      var tdStyle = isNotesCol
+        ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);vertical-align:top;'
+        : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border);';
       else if (ci === 5 || ci === 8) tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
-      else if (ci === 7 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;'; // smaller padding for input
+      else if (ci === 7 && row.phase === 2 && row.seqKey)
+        tdStyle += 'padding:3px 6px;'; // smaller padding for input
+      else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       if (ci === 0 || ci === 1) tdStyle += 'position:sticky;background:inherit;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
       tds += '<td' + cls + ' style="' + tdStyle + '">' + cellContent + '</td>';
@@ -3294,8 +3888,20 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
       (tier === 'both' ? 'Both' : tier === 'recommended' ? 'Recommended' : 'Compliance') +
       '</span>',
-    '</div>',
   );
+
+  // M&V disclaimer — shown in footer when Recommended tier is active (correction #11)
+  if (tier === 'recommended') {
+    footerParts.push(
+      '<div style="width:100%;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);' +
+        'font-size:10px;color:var(--text3);line-height:1.5">' +
+        '<strong style="color:var(--text2)">M&amp;V Disclaimer:</strong> ' +
+        _esc(SAVINGS_DISCLAIMER_TEXT) +
+        '</div>',
+    );
+  }
+
+  footerParts.push('</div>');
   var footerHTML = footerParts.join('');
 
   // ── 11. Build table header HTML with sort labels + resize handles + gear icon
@@ -3378,9 +3984,17 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     : '';
 
   // ── 12. Assemble full panel
+  // Top-ROI callout (Recommended tier only, correction #12)
+  var topRoiCallout = '';
+  if (tier === 'recommended') {
+    var _allRecRows = baseRows; // baseRows = buildRecommendedRows output (already sorted, labor-override applied)
+    topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows);
+  }
+
   el.innerHTML = [
     '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
     toolbarHTML,
+    topRoiCallout,
     '<div class="ch-panel-body" style="flex:1;min-height:0;overflow-y:auto;overflow-x:auto">',
     '<div class="ch-tbl-outer" style="margin:0">',
     '<div class="ch-tbl-scroll" style="overflow:auto">',

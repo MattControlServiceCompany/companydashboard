@@ -11970,10 +11970,23 @@ function rptPageASHRAE36CostEstimate(n, d) {
       (pendingCount > 0 ? '' : 'Engineering-review items included at typical sizing. Verify before quoting.') +
       '</div>';
 
+    // M&V disclaimer (correction #11 — also in tab footer) — plain text, no badge chips
+    var savingsDisclaimerHTML = '';
+    if (typeof SAVINGS_DISCLAIMER_TEXT === 'string' && SAVINGS_DISCLAIMER_TEXT) {
+      savingsDisclaimerHTML =
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;margin-top:8px;' +
+        'padding:6px 8px;border:1px solid var(--rpt-rule);border-radius:3px;background:rgba(0,0,0,0.02)">' +
+        '<strong>M&amp;V Disclaimer: </strong>' +
+        _esc(SAVINGS_DISCLAIMER_TEXT) +
+        '</div>';
+    }
+
     // ── Per-point rationale block — "What Each Gap Addresses"
     // Reuses ASHRAE36_GAP_DESCRIPTIONS (this file) and PRICE_POINT_MAP.whyNotHardware
     // (pricing-estimator.js, loaded in same page scope) to explain WHY each
     // hardware gap matters to a county decision-maker, with G36 § reference.
+    // Phase 5 (correction #10): also adds Phase-2 sequence rows with savingsRationale
+    // as plain text (~120 char truncation). NO badge chips in the PDF.
     // Only rendered when buildComplianceRows is available and returns rows.
     // Pagination: rows converted to _rptPaginateTokens tokens so the rationale
     // table can span continuation pages when the full JOCO portfolio (~51 rows)
@@ -12029,12 +12042,46 @@ function rptPageASHRAE36CostEstimate(n, d) {
             rationaleTokens.push({ type: 'row', html: rowHTML, estH: 60 });
           }
         });
+
+        // Phase 5 (correction #10): append Phase-2 sequence rows with savingsRationale.
+        // Use buildRecommendedRows so savingsRationale is already stamped.
+        // Only savings-type rows (not enabler, not safety). Deduplicate by seqKey.
+        // Plain text only — NO badge chips in the PDF.
+        if (typeof buildRecommendedRows === 'function') {
+          var recRows10 = buildRecommendedRows(projId);
+          var seenSeqKeys = {};
+          recRows10.forEach(function (row) {
+            if (row.phase !== 2) return;
+            if (!row.seqKey || seenSeqKeys[row.seqKey]) return;
+            if (!row.savingsRationale) return;
+            // Exclude enabler and safety — they don't have energy savings rationale
+            if (row.savingsImpact === 'enabler' || row.savingsImpact === 'safety') return;
+            seenSeqKeys[row.seqKey] = true;
+            // Truncate rationale to ~120 chars for the PDF
+            var rationaleSnippet =
+              row.savingsRationale.length > 120 ? row.savingsRationale.slice(0, 120) + '…' : row.savingsRationale;
+            // Tier label — plain text, no chip HTML
+            var tierLabel = row.savingsImpact ? '[' + row.savingsImpact.toUpperCase() + '] ' : '';
+            var seqRowHTML =
+              '<tr>' +
+              '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+              'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:32%;white-space:nowrap">' +
+              _esc(row.item) +
+              '</td>' +
+              '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+              'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
+              _esc(tierLabel + rationaleSnippet) +
+              '</td>' +
+              '</tr>';
+            rationaleTokens.push({ type: 'row', html: seqRowHTML, estH: 60 });
+          });
+        }
       }
     } catch (e) {
       rationaleTokens = []; // non-fatal — omit block if anything throws
     }
 
-    bodyHTML = sectionTitle + costTable + pendingNote + engNote + footnote;
+    bodyHTML = sectionTitle + costTable + pendingNote + engNote + footnote + savingsDisclaimerHTML;
     // rationaleTokens populated above — pagination happens in page assembly below
   }
 

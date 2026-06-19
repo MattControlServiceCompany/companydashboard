@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.566',
+    date: '2026-06-19',
+    title: 'Cost Estimate: ROI-ranked Recommended tier with savings rationale',
+    items: [
+      {
+        type: 'feature',
+        text: "Cost Estimate Recommended tier now ranks control upgrades by energy-savings impact (highest value first), shows the savings rationale and ASHRAE 36 reference per measure, highlights the top return-on-investment measures, and includes a measurement-and-verification disclaimer; the Audit Report explains the savings basis for each sequence.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.565',
     date: '2026-06-19',
     title: 'Cost Estimate label accuracy: equipment count, sensor type, ASHRAE section',
