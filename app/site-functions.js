@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.562',
+    date: '2026-06-18',
+    title: 'Cost Estimate table polish',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate table polish -- adjustable programming hours per sequence, resizable/sortable/hideable columns that remember your layout, frozen item columns, and a building filter.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.561',
     date: '2026-06-18',
     title: 'Cost Estimate shows priced subtotal with pending-item caveat',
