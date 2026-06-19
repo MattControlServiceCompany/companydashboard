@@ -869,7 +869,9 @@ function _pricingComputeTotals(rows, estimate) {
     total = rows.length,
     engReviewCount = 0;
   var hasAnyPrice = false;
-  var anyMissing = false;
+  var pendingPriceCount = 0; // included rows with no resolvable price (NO-SKU unpriced + SKU not in catalog)
+  var catalog = sget('en_pricing_catalog', null);
+  var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
   rows.forEach(function (row) {
     if (row.engReview) engReviewCount++;
@@ -881,18 +883,20 @@ function _pricingComputeTotals(rows, estimate) {
     if (!isOn) return;
     included++;
 
-    if (row.ioOnly) return; // $0, no contribution
+    if (row.ioOnly) return; // $0, legitimately priced at $0 — not pending
 
     var price = row.lineTotal;
 
     // Manual price override — blank/NaN/zero = MISSING (not $0)
     if (row.noSku) {
       var manual = parseFloat(estimate.manualPrices[toggleKey]);
-      price = isNaN(manual) || manual === 0 ? null : manual;
+      price = isNaN(manual) || manual === 0 ? null : manual * row.qty;
     }
 
     if (price === null) {
-      anyMissing = true;
+      // Only count as pending if we have a catalog (otherwise every row is pending
+      // which is the no-catalog path — handled separately via hasCatalog guard).
+      if (hasCatalog) pendingPriceCount++;
       return;
     }
     hasAnyPrice = true;
@@ -900,14 +904,20 @@ function _pricingComputeTotals(rows, estimate) {
     else if (row.phase === 2) phase2 += price;
   });
 
+  // grandTotal is null ONLY when:
+  //   (a) no catalog at all, OR
+  //   (b) zero included rows are priced (nothing to show)
+  var grandNull = !hasCatalog || !hasAnyPrice;
+
   return {
-    phase1: anyMissing ? null : phase1,
-    phase2: anyMissing ? null : phase2,
-    grand: anyMissing ? null : phase1 + phase2,
+    phase1: grandNull ? null : phase1,
+    phase2: grandNull ? null : phase2,
+    grand: grandNull ? null : phase1 + phase2,
     included: included,
     total: total,
     engReviewCount: engReviewCount,
-    hasAnyPrice: hasAnyPrice || anyMissing,
+    pendingPriceCount: pendingPriceCount,
+    hasAnyPrice: hasAnyPrice,
   };
 }
 
@@ -1192,6 +1202,16 @@ function initCostEstimateTab(projId) {
   }
 
   // ── Footer totals
+  var _p2CaveatParts = [];
+  if (totals.pendingPriceCount > 0) {
+    _p2CaveatParts.push(totals.pendingPriceCount + ' item(s) pending price (excluded)');
+  }
+  if (totals.engReviewCount > 0) {
+    _p2CaveatParts.push(totals.engReviewCount + ' eng-review at typical sizing');
+  }
+  _p2CaveatParts.push('Basis: ' + (cfg.priceBasis || 'contract'));
+  var _p2CaveatLine = _p2CaveatParts.join(' · ');
+
   var footerHTML = [
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
     '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
@@ -1208,12 +1228,7 @@ function initCostEstimateTab(projId) {
       '</span>',
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
-    totals.engReviewCount > 0
-      ? '<span style="font-size:11px;color:var(--warn)">⚠ ' + totals.engReviewCount + ' eng-review</span>'
-      : '',
-    '<span style="font-size:11px;color:var(--text3);text-transform:capitalize">Basis: ' +
-      (cfg.priceBasis || 'contract') +
-      '</span>',
+    '<span style="font-size:11px;color:var(--text3)">' + _p2CaveatLine + '</span>',
     '</div>',
   ].join('');
 
@@ -1341,6 +1356,16 @@ function _pricingRefreshFooter(projId) {
   var totals = _pricingComputeTotals(rows, est);
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
+  var _rfCaveatParts = [];
+  if (totals.pendingPriceCount > 0) {
+    _rfCaveatParts.push(totals.pendingPriceCount + ' item(s) pending price (excluded)');
+  }
+  if (totals.engReviewCount > 0) {
+    _rfCaveatParts.push(totals.engReviewCount + ' eng-review at typical sizing');
+  }
+  _rfCaveatParts.push('Basis: ' + (cfg.priceBasis || 'contract'));
+  var _rfCaveatLine = _rfCaveatParts.join(' · ');
+
   footerEl.innerHTML = [
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
     '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
@@ -1357,12 +1382,7 @@ function _pricingRefreshFooter(projId) {
       '</span>',
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
-    totals.engReviewCount > 0
-      ? '<span style="font-size:11px;color:var(--warn)">⚠ ' + totals.engReviewCount + ' eng-review</span>'
-      : '',
-    '<span style="font-size:11px;color:var(--text3);text-transform:capitalize">Basis: ' +
-      (cfg.priceBasis || 'contract') +
-      '</span>',
+    '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatLine + '</span>',
     '</div>',
   ].join('');
 }
@@ -1435,7 +1455,7 @@ var OPTIMIZER_CLASS_FILTERS = {
   makeupValveCmd: { descMatch: 'non-fail-safe', descExclude: null, skuPrefix: 'AMB' },
 };
 
-/* FDD add-on SKU (spec §11 build #3) — 1 per building in Recommended tier */
+/* FDD add-on SKU (spec §11 build #3) — 1 per system (WebCTRL license, not per-building) */
 var FDD_SKU = 'ADD-FDD-RPT';
 
 /* ── _pricingFindCheapestSku(pointKey, catalog, basis) ──────────────────────
@@ -2069,19 +2089,23 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     );
   }
 
+  // Caveat line: pending prices + eng-review + basis
+  var _p3CaveatParts = [];
+  if (totals.pendingPriceCount > 0) {
+    _p3CaveatParts.push(totals.pendingPriceCount + ' item(s) pending price (excluded)');
+  }
+  if (totals.engReviewCount > 0) {
+    _p3CaveatParts.push(totals.engReviewCount + ' eng-review at typical sizing');
+  }
+  _p3CaveatParts.push('Basis: ' + (cfg.priceBasis || 'contract'));
+
   footerParts.push(
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
-    totals.engReviewCount > 0
-      ? '<span style="font-size:11px;color:var(--warn)">⚠ ' + totals.engReviewCount + ' eng-review</span>'
-      : '',
+    '<span style="font-size:11px;color:var(--text3)">' + _p3CaveatParts.join(' · ') + '</span>',
     '<span style="color:var(--border2)">|</span>',
     '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
       (tier === 'both' ? 'Both' : tier === 'recommended' ? 'Recommended' : 'Compliance') +
-      '</span>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:11px;color:var(--text3);text-transform:capitalize">Basis: ' +
-      (cfg.priceBasis || 'contract') +
       '</span>',
     '</div>',
   );
@@ -2130,8 +2154,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
 /* ── Phase 5 — collectPricingEstimate (spec §10) ────────────────────────────
    Returns {hardwareTotal, laborTotal, grandTotal, basis, skusMissing,
-            engReviewCount} for tier in {'compliance','recommended'}.
+            engReviewCount, pendingPriceCount} for tier in {'compliance','recommended'}.
    Returns null if no en_pricing_catalog.
+   pendingPriceCount = included rows with no resolvable price (NO-SKU unpriced +
+   SKU not in catalog). I/O-only ($0) rows are NOT counted as pending.
+   grandTotal is the priced subtotal; null only when no catalog or zero priced rows.
    ─────────────────────────────────────────────────────────────────────────── */
 function collectPricingEstimate(projId, tier) {
   var catalog = sget('en_pricing_catalog', null);
@@ -2168,5 +2195,6 @@ function collectPricingEstimate(projId, tier) {
     basis: cfg.priceBasis || 'contract',
     skusMissing: skusMissing,
     engReviewCount: engReviewCount,
+    pendingPriceCount: totals.pendingPriceCount,
   };
 }

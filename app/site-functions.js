@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.18.561',
+    date: '2026-06-18',
+    title: 'Cost Estimate shows priced subtotal with pending-item caveat',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate now shows a running subtotal of priced items with a clear note for any items still pending a price or engineering review, instead of hiding the total until every line is priced.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.560',
     date: '2026-06-18',
     title: 'Audit Report now includes a Cost Estimate section',
@@ -1199,7 +1210,7 @@ var RELEASE_NOTES = [
         type: 'feature',
         text: 'Audit Report now includes a Cost Estimate section summarizing estimated hardware, programming, and recommended-package costs from the Cost Estimate tab (shows an import prompt when no pricing has been loaded).',
       },
-    ]
+    ],
   },
   {
     v: 'v2026.06.18.559',
@@ -1208,9 +1219,9 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'feature',
-        text: "Cost Estimate tab now has a Recommended tier -- it auto-selects the lowest-cost qualifying part for each requirement (leaving sizing-critical valves and controllers on engineering-review defaults), adds optional fault-detection reporting, and lets you compare Compliance vs Recommended side by side.",
+        text: 'Cost Estimate tab now has a Recommended tier -- it auto-selects the lowest-cost qualifying part for each requirement (leaving sizing-critical valves and controllers on engineering-review defaults), adds optional fault-detection reporting, and lets you compare Compliance vs Recommended side by side.',
       },
-    ]
+    ],
   },
   {
     v: 'v2026.06.18.558',
@@ -1221,7 +1232,7 @@ var RELEASE_NOTES = [
         type: 'feature',
         text: "New Cost Estimate tab — turns the ASHRAE 36 audit's required sensors and control sequences into a priced scope of work. Import a pricing CSV (List, Net, and Contract pricing) and toggle each item on or off to build a live hardware + programming total per building.",
       },
-    ]
+    ],
   },
   {
     v: 'v2026.06.18.557',

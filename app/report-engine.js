@@ -11870,13 +11870,8 @@ function rptPageASHRAE36CostEstimate(n, d) {
     var src = compEst || recEst;
     var basisLabel = (src.basis || 'contract').charAt(0).toUpperCase() + (src.basis || 'contract').slice(1);
 
-    // Detect whether any totals are incomplete (null = missing manual prices for NO-SKU items).
-    // Show "—" in the cell rather than $0; add an incomplete-estimate note.
-    var anyIncomplete =
-      (compEst && (compEst.hardwareTotal === null || compEst.laborTotal === null)) ||
-      (recEst && recEst.grandTotal === null);
-
-    // Build cost rows table
+    // Build cost rows table — values are priced subtotals (pendingPriceCount rows excluded from total).
+    // null only when no catalog or zero priced rows; _fmtUSD renders "—" for null.
     var rowStyle =
       'padding:10px 12px;font-size:12px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)';
     var labelStyle = rowStyle + ';font-weight:600;width:65%';
@@ -11888,7 +11883,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         '<tr>' +
         '<td style="' +
         labelStyle +
-        '">Estimated Hardware Cost (Compliance) — Phase 1</td>' +
+        '">Estimated Hardware (Compliance) — Phase 1</td>' +
         '<td style="' +
         valueStyle +
         '">' +
@@ -11898,7 +11893,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         '<tr>' +
         '<td style="' +
         labelStyle +
-        '">Estimated Programming Cost — Phase 2</td>' +
+        '">Estimated Programming — Phase 2</td>' +
         '<td style="' +
         valueStyle +
         '">' +
@@ -11934,28 +11929,33 @@ function rptPageASHRAE36CostEstimate(n, d) {
       '</tbody>' +
       '</table>';
 
-    // Incomplete-estimate note (shown when NO-SKU rows are missing manual prices)
-    var incompleteNote = '';
-    if (anyIncomplete) {
-      incompleteNote =
+    // Pending-price caveat note (user-approved wording: show subtotal + note excluded items)
+    var pendingCount = compEst ? compEst.pendingPriceCount || 0 : 0;
+    var pendingNote = '';
+    if (pendingCount > 0) {
+      pendingNote =
         '<div style="font-size:10px;color:var(--rpt-orange);margin-bottom:10px;line-height:1.5">' +
-        '— Some line items require manual pricing (freeze stats, OA flow stations). ' +
-        'Enter prices in the Cost Estimate tab to complete the estimate.' +
+        'Excludes ' +
+        pendingCount +
+        ' third-party item' +
+        (pendingCount !== 1 ? 's' : '') +
+        ' (freeze stats, OA flow stations) pending price. ' +
+        'Engineering-review items included at typical sizing — verify before quoting.' +
         '</div>';
     }
 
-    // Engineering review note
+    // Engineering review note (shown only when no pending-price note already covers it)
     var engNote = '';
-    var totalEngReview = (compEst ? compEst.engReviewCount : 0) + (recEst ? recEst.engReviewCount : 0);
-    if (totalEngReview > 0) {
-      engNote =
-        '<div style="font-size:10px;color:var(--rpt-orange);margin-bottom:10px;line-height:1.5">' +
-        '⚠ ' +
-        totalEngReview +
-        ' line item' +
-        (totalEngReview !== 1 ? 's' : '') +
-        ' require engineering review (valve sizing, duct probe length, actuator torque) before quoting.' +
-        '</div>';
+    if (pendingCount === 0) {
+      var totalEngReview = (compEst ? compEst.engReviewCount : 0) + (recEst ? recEst.engReviewCount : 0);
+      if (totalEngReview > 0) {
+        engNote =
+          '<div style="font-size:10px;color:var(--rpt-orange);margin-bottom:10px;line-height:1.5">' +
+          '⚠ Engineering-review items (' +
+          totalEngReview +
+          ') included at typical sizing — verify before quoting.' +
+          '</div>';
+      }
     }
 
     // Pricing footnote
@@ -11964,10 +11964,10 @@ function rptPageASHRAE36CostEstimate(n, d) {
       'Estimates based on ALC catalog pricing at ' +
       basisLabel +
       ' basis. ' +
-      'Engineering-review items included at typical sizing. Verify before quoting.' +
+      (pendingCount > 0 ? '' : 'Engineering-review items included at typical sizing. Verify before quoting.') +
       '</div>';
 
-    bodyHTML = sectionTitle + costTable + incompleteNote + engNote + footnote;
+    bodyHTML = sectionTitle + costTable + pendingNote + engNote + footnote;
   }
 
   return rptPage(n, 'ASHRAE 36 Audit — Estimated Cost', bodyHTML, {
