@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.563',
+    date: '2026-06-19',
+    title: 'City of Baldwin bill extraction fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'City of Baldwin bill extraction: electric, water, and sewer charges are no longer mis-read from the usage number when a scanned bill drops the cents column (the charge is left blank for review instead of showing a wrong amount).',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.18.562',
     date: '2026-06-18',
     title: 'Cost Estimate table polish',

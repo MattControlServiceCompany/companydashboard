@@ -7852,6 +7852,21 @@ const UTILITY_RULES = [
           prevRead = currRead;
           currRead = tmp;
         }
+        // ── FIX(2026-06-19): Bug A — integer-charge-equals-usage guard ──
+        // When OCR drops the decimal charge column on an EL-ELECTRIC (or any
+        // metered) line, the last token on the line is the usage integer, not a
+        // dollar amount.  The existing guard at the top of this function only
+        // catches duplicates of the METER READ tokens; it misses the case where
+        // the "charge" equals the COMPUTED usage.  Real utility charges always
+        // have a cents component (e.g. $195.07), so a value that is:
+        //   (a) a whole-number integer with no decimal part, AND
+        //   (b) exactly equal to the computed usage
+        // is a mis-parse — null it out.  A real charge like $140.00 parses to
+        // 140 (integer) but will differ from the usage in gallons or kWh, so
+        // legitimate integer-valued charges are NOT affected by this guard.
+        if (Number.isInteger(charge) && usage != null && charge === usage) {
+          return { prevRead, currRead, usage, charge: null };
+        }
         return { prevRead, currRead, usage, charge };
       };
 
@@ -8406,6 +8421,16 @@ const UTILITY_RULES = [
       const _swUsageSuspect = _checkWaterUsageSuspect(swPrevRead, swCurrRead, swUsage);
       if (_waUsageSuspect) waUsage = null;
       if (_swUsageSuspect) swUsage = null;
+      // ── FIX(2026-06-19): Bug B — null integer charge when water/sewer usage is suspect ──
+      // When OCR inflates a meter read (e.g. inserts a leading digit turning
+      // 1999992 into 19992992), the computed usage explodes to millions and
+      // _waUsageSuspect fires.  The same mis-parsed line also contributes a
+      // "charge" that is an integer — the actual usage value from the bill
+      // (e.g. 1721 gallons) with no cents component.  Real dollar charges
+      // always have a fractional part; a whole-number integer charge on a
+      // usage-suspect line is the same OCR-drop-decimal mis-parse as Bug A.
+      if (_waUsageSuspect && waCharge != null && Number.isInteger(waCharge)) waCharge = null;
+      if (_swUsageSuspect && swCharge != null && Number.isInteger(swCharge)) swCharge = null;
 
       // ── FIX(2026-06-02): Shared-meter water/sewer mismatch correction ──
       // Water and sewer share the same physical meter so their usage should
