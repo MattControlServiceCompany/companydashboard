@@ -197,7 +197,16 @@ const PRICE_POINT_MAP = {
     note: 'Zone temp wall sensor — combos with CO2 zone sensor',
     whyNeeded:
       'The primary feedback signal for zone control. Without it, the terminal unit cannot modulate airflow to meet setpoints and there is no way to verify the space is comfortable.',
-    g36Section: '§5.6.1',
+    g36Section: '§5.6.1', // fallback (VAV single-duct)
+    // Per-equipment-category G36 section overrides (source: ASHRAE 36-2021 table of contents)
+    // vav=§5.6 (single-duct terminal units), fpb=§5.7 (fan-powered boxes),
+    // ddvav=§5.13 (dual-duct terminal units), fcu=§5.22 (fan coil units)
+    g36SectionByCategory: {
+      vav: '§5.6.1',
+      fpb: '§5.7',
+      ddvav: '§5.13',
+      fcu: '§5.22',
+    },
   },
   co2_zone: {
     defaultSku: 'ZS2-HC-ALC',
@@ -769,13 +778,16 @@ function buildComplianceRows(projId) {
       // Determine type label
       var typeName = _pricingPointType(gap.pointKey, mapEntry);
 
-      // Equipment label
+      // Equipment label — show gap count AND total for context ("1 of 33 FCUs")
+      // If gap === total (all units missing the point), use the shorter "N FCUs" form.
       var totalForCat = bldgEquipCount[gap.equipType] || gap.count;
       var eqLabel;
       if (gap.equipType === 'building') {
         eqLabel = '1 building';
+      } else if (gap.count === totalForCat) {
+        eqLabel = gap.count + ' ' + gap.catLabel + (gap.count !== 1 ? 's' : '');
       } else {
-        eqLabel = totalForCat + ' ' + gap.catLabel + (totalForCat !== 1 ? 's' : '');
+        eqLabel = gap.count + ' of ' + totalForCat + ' ' + gap.catLabel + (totalForCat !== 1 ? 's' : '');
       }
 
       var unitPrice = null;
@@ -806,7 +818,8 @@ function buildComplianceRows(projId) {
         note: mapEntry.note || '',
         whyNeeded: mapEntry.whyNeeded || '',
         whyNotHardware: mapEntry.whyNotHardware || '',
-        g36Section: mapEntry.g36Section || '',
+        g36Section:
+          (mapEntry.g36SectionByCategory && mapEntry.g36SectionByCategory[gap.equipType]) || mapEntry.g36Section || '',
         phase: 1,
         _pointKey: gap.pointKey, // Fix 2: store resolved point key for reliable optimizer skip/class lookup
       });
@@ -970,7 +983,10 @@ function _pricingPointType(pointKey, mapEntry) {
   if (mapEntry.flags.indexOf('noSku') !== -1) return 'Manual';
   // Categorize by SKU prefix / point type
   var sku = mapEntry.defaultSku || '';
-  if (sku.startsWith('ZS2')) return 'CO2/Zone';
+  // Distinguish ZS2 variants: ZS2-HC-ALC is combo CO2+temp; ZS2-ALC is temp-only
+  if (sku === 'ZS2-HC-ALC') return 'CO2/Zone';
+  if (sku === 'ZS2-ALC') return 'Zone Temp';
+  if (sku.startsWith('ZS2')) return 'CO2/Zone'; // catch-all for future ZS2 variants
   if (sku.startsWith('N1-DCD') || pointKey.indexOf('co2') !== -1) return 'CO2';
   if (sku.startsWith('N1-') || sku.startsWith('N2-')) return 'Sensor';
   if (sku.startsWith('AF') || sku.startsWith('AM') || sku.startsWith('AFRB')) return 'Actuator';

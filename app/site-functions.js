@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.565',
+    date: '2026-06-19',
+    title: 'Cost Estimate label accuracy: equipment count, sensor type, ASHRAE section',
+    items: [
+      {
+        type: 'fix',
+        text: 'Cost Estimate now shows how many units of each type actually need a given device (e.g. "1 of 33 fan coil units") instead of the building total, labels zone-temp-only sensors correctly, and cites the right ASHRAE 36 section per equipment type.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.564',
     date: '2026-06-19',
     title: 'Cost Estimate accuracy + audit explanations',
