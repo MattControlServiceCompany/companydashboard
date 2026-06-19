@@ -313,6 +313,102 @@ const SEQUENCE_BLOCKING_SENSORS = {
   ahu_freeze_prot: [],
 };
 
+/* ── Step 5: $ savings range data per sequence (2026-06-19)
+   energyBasis: 'fan' = annualElec × fanFraction × [low..high]
+                'elec' = annualElec × [low..high]
+                'elecPct' = annualElec × constant% (tight range around known study value)
+                null = qualitative only — engineering estimate, show prompt not $
+   Sequences without a published-study % basis are set to null (show qualitative only).
+   DCV: 2.6% total site energy ≈ total elec (approximation; gas savings shown qualitatively).
+   ─────────────────────────────────────────────────────────────────────────── */
+const SAVINGS_RANGE_MAP = {
+  ahu_dsp_reset: { lowPct: 0.22, highPct: 0.65, energyBasis: 'fan', citation: '[NLR-DSP-2026]' },
+  ahu_sat_reset: { lowPct: 0.22, highPct: 0.42, energyBasis: 'fan', citation: '[LBNL-G36-2022 / ORNL-G36-2024]' },
+  demandCtrl: { lowPct: 0.022, highPct: 0.03, energyBasis: 'elec', citation: '[NREL-DCV-2023]' },
+  vav_dcv: { lowPct: 0.022, highPct: 0.03, energyBasis: 'elec', citation: '[NREL-DCV-2023]' },
+  // All others: qualitative only (no fabricated % from engineering-only sources)
+};
+const FAN_FRACTION_DEFAULT = 0.12; // CBECS VAV 10–20%; user-editable
+
+/* ── Get project annual electricity (kWh) from en_utility_<projId> bill data ──
+   Returns { annualKwh: number|null, hasBillData: boolean, elecRate: number }.
+   annualKwh: sum of kWh on all electricity meters over the most recent
+   12 months of bill data (or all bills if fewer than 12 are available).
+   elecRate: weighted average $/kWh across all elec bills; fallback 0.10.
+   Returns hasBillData=false if the project has no electricity bills.
+   Data source: en_utility_<projId> → { buildings: [{ meters: [{ bills: [] }] }] }
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingGetProjectAnnualElec(projId) {
+  var utilData = typeof sget === 'function' ? sget('en_utility_' + projId, null) : null;
+  if (!utilData || !utilData.buildings) return { annualKwh: null, hasBillData: false, elecRate: 0.1 };
+
+  var allElecBills = [];
+  var totalCost = 0,
+    totalKwh = 0;
+  (utilData.buildings || []).forEach(function (b) {
+    (b.meters || []).forEach(function (m) {
+      if (m.commodity && m.commodity !== 'Electricity') return;
+      (m.bills || []).forEach(function (bill) {
+        var kwh = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+        if (kwh > 0) {
+          allElecBills.push({ kwh: kwh, start: bill.start || bill.date || '' });
+          totalKwh += kwh;
+          totalCost += parseFloat(bill.totalCost) || parseFloat(bill.amount) || 0;
+        }
+      });
+    });
+  });
+
+  if (!allElecBills.length) return { annualKwh: null, hasBillData: false, elecRate: 0.1 };
+
+  // Sort by date descending, take most recent 12 months of bills
+  allElecBills.sort(function (a, b) {
+    return (b.start || '').localeCompare(a.start || '');
+  });
+  var recentBills = allElecBills.slice(0, 12);
+  var annualKwh = recentBills.reduce(function (s, b) {
+    return s + b.kwh;
+  }, 0);
+  // If fewer than 12 bills, annualize by extrapolating
+  if (recentBills.length < 12 && recentBills.length > 0) {
+    annualKwh = (annualKwh / recentBills.length) * 12;
+  }
+  var elecRate = totalKwh > 0 && totalCost > 0 ? totalCost / totalKwh : 0.1;
+  return { annualKwh: Math.round(annualKwh), hasBillData: true, elecRate: elecRate };
+}
+
+/* ── Format savings range as "$X,XXX–$Y,YYY/yr" ───────────────────────────── */
+function _pricingFmtSavingsRange(low, high) {
+  function fmt(n) {
+    return '$' + Math.round(n).toLocaleString('en-US');
+  }
+  if (low === high) return fmt(low) + '/yr';
+  return fmt(low) + '–' + fmt(high) + '/yr';
+}
+
+/* ── Compute savings range for a row given annual energy data ───────────────
+   Returns { low, high, label } or null if not computable.
+   The 3 must-validate sequences (hwp_supply_reset, vav_reheat, demandCtrl/vav_dcv)
+   keep their existing persistent warnings from savingsRationale — no $ suppression here
+   beyond what SAVINGS_RANGE_MAP already handles (demandCtrl/vav_dcv ARE in the map).
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeSavingsRange(row, annualKwh, fanFraction, elecRate) {
+  var rmap = SAVINGS_RANGE_MAP[row.seqKey];
+  if (!rmap) return null;
+  if (!annualKwh) return null;
+  // elecRate fallback: $0.10/kWh if not available
+  var rate = elecRate || 0.1;
+  var appEnergy;
+  if (rmap.energyBasis === 'fan') {
+    appEnergy = annualKwh * (fanFraction || FAN_FRACTION_DEFAULT);
+  } else {
+    appEnergy = annualKwh;
+  }
+  var low = Math.round(appEnergy * rmap.lowPct * rate);
+  var high = Math.round(appEnergy * rmap.highPct * rate);
+  return { low: low, high: high, citation: rmap.citation };
+}
+
 /* ── Impact badge chip renderer (Recommended tier only) ─────────────────────
    Correction #4: enabler = purple-outline; #5: safety = neutral-grey.
    Correction #15: title attribute shows sourceType label.
@@ -1027,6 +1123,7 @@ function _pricingGetConfig() {
     hourlyRate: COST_LABOR_RATE_DEFAULT,
     priceBasis: 'contract',
     perSequenceHours: Object.assign({}, COST_PER_SEQ_HOURS_DEFAULT),
+    fanFraction: FAN_FRACTION_DEFAULT, // Step 5: fan energy as % of total elec (CBECS 10–20%)
   };
   if (!stored) return dflt;
   // Merge defaults for any missing keys
@@ -2440,483 +2537,7 @@ function _buildBothModeIndex(recRows) {
   return idx;
 }
 
-/* ── initCostEstimateTab — Phase 3 extended version ─────────────────────────
-   Replaces the Phase 2 version. Adds tier toggle to toolbar; delegates
-   rendering based on tier (compliance | recommended | both).
-   ─────────────────────────────────────────────────────────────────────────── */
-// Overwrite (shadow) the Phase 2 initCostEstimateTab with Phase 3 version.
-// We rename the old one and the new one takes the same public name.
-var _initCostEstimateTabPhase2 = initCostEstimateTab;
-
-initCostEstimateTab = function initCostEstimateTab(projId) {
-  var el = document.getElementById('ptab-cost-estimate-body-' + projId);
-  if (!el) return;
-
-  var cfg = _pricingGetConfig();
-  var catalog = sget('en_pricing_catalog', null);
-  var meta = sget('en_pricing_meta', null);
-  var estimate = _pricingGetEstimate(projId);
-  var tier = estimate.tier || 'compliance';
-  var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
-
-  // Pick rows based on tier
-  var rows;
-  if (tier === 'recommended') {
-    rows = buildRecommendedRows(projId);
-  } else {
-    // 'compliance' or 'both' — always build compliance rows
-    rows = buildComplianceRows(projId);
-  }
-  _pricingRowCache[projId] = rows;
-
-  var recRows = null;
-  if (tier === 'both') {
-    recRows = buildRecommendedRows(projId);
-    _pricingRowCache[projId + '_rec'] = recRows;
-  }
-
-  var totals = _pricingComputeTotals(rows, estimate);
-  var recTotals = recRows ? _pricingComputeTotals(recRows, estimate) : null;
-
-  // ── Import status
-  var importStatus = '';
-  if (meta) {
-    importStatus =
-      '<span style="font-size:11px;color:var(--text2);margin-left:8px">' +
-      meta.skuCount +
-      ' SKUs imported ' +
-      new Date(meta.importedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
-      '</span>';
-  } else {
-    importStatus =
-      '<span style="font-size:11px;color:var(--warn);margin-left:8px">No pricing imported — unit prices will show as "—"</span>';
-  }
-
-  // ── Toolbar (Phase 3 adds tier toggle)
-  var toolbarHTML = [
-    '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
-    '<label class="btn btn-ghost btn-sm" style="cursor:pointer;position:relative">',
-    '<input type="file" accept=".csv" id="pricing-csv-input-' +
-      projId +
-      '" style="position:absolute;opacity:0;width:0;height:0" onchange="handlePricingCSVImport(event,' +
-      projId +
-      ')">',
-    (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') + 'Import Pricing CSV',
-    '</label>',
-    importStatus,
-    '<span style="flex:1"></span>',
-    // Tier toggle (Phase 3)
-    _pricingTierToggleHTML(projId, tier),
-    '<span style="color:var(--border2)">|</span>',
-    // Price Basis
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Price Basis:',
-    '<select id="pricing-basis-' +
-      projId +
-      '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="updatePricingConfig(' +
-      projId +
-      ",'priceBasis',this.value)\">",
-    '<option value="contract"' + (cfg.priceBasis === 'contract' ? ' selected' : '') + '>Contract (40% List)</option>',
-    '<option value="net"' + (cfg.priceBasis === 'net' ? ' selected' : '') + '>Net</option>',
-    '<option value="list"' + (cfg.priceBasis === 'list' ? ' selected' : '') + '>List</option>',
-    '</select>',
-    '</label>',
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Net Multiplier:',
-    '<input type="number" id="pricing-net-mult-' +
-      projId +
-      '" min="0.01" max="1.0" step="0.01" value="' +
-      cfg.netMultiplier +
-      '"',
-    ' style="width:56px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"',
-    ' onchange="updatePricingConfig(' + projId + ",'netMultiplier',parseFloat(this.value))\">",
-    '</label>',
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Contract %:',
-    '<input type="number" id="pricing-contract-pct-' +
-      projId +
-      '" min="1" max="100" step="1" value="' +
-      Math.round(cfg.contractPct * 100) +
-      '"',
-    ' style="width:48px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"',
-    ' onchange="updatePricingConfig(' + projId + ",'contractPct',parseFloat(this.value)/100)\">",
-    '</label>',
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Hourly Rate:',
-    '<input type="number" id="pricing-rate-' + projId + '" min="1" max="999" step="1" value="' + cfg.hourlyRate + '"',
-    ' style="width:56px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"',
-    ' onchange="updatePricingConfig(' + projId + ",'hourlyRate',parseFloat(this.value))\">",
-    '</label>',
-    '</div>',
-  ].join('');
-
-  // ── Collect buildings list
-  var buildings = [];
-  var bldgSet = {};
-  rows.forEach(function (row) {
-    if (!bldgSet[row.building]) {
-      bldgSet[row.building] = true;
-      buildings.push(row.building);
-    }
-  });
-
-  // ── Local _esc helper
-  function _esc(s) {
-    return String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  // ── Render a single row (compliance or recommended)
-  function renderRow(row, isBothMode, matchedRecRow) {
-    // Fix 3: use _baseId (compliance id) as toggle key so Recommended rows
-    // share toggle state with their Compliance counterparts.
-    var toggleKey = row._baseId || row.id;
-    var toggleOn = estimate.rowToggles[toggleKey] !== false;
-    var manualVal = estimate.manualPrices[toggleKey] || '';
-
-    var skuCell = '';
-    if (row.ioOnly) {
-      skuCell = '<span style="color:var(--text3);font-size:10px">—</span>';
-    } else if (row.phase === 2) {
-      skuCell = '<span style="color:var(--text3);font-size:10px">—</span>';
-    } else if (!row.sku) {
-      skuCell = '<span style="color:var(--warn);font-size:10px">Manual Price</span>';
-    } else {
-      var optimizerNote = '';
-      if (row.optimized) {
-        optimizerNote =
-          '<span title="Optimizer: was ' +
-          _esc(row.optimizerOriginalSku || '') +
-          '" style="color:var(--accent);margin-right:3px;font-size:10px">✓</span>';
-      }
-      skuCell =
-        (row.engReview
-          ? '<span title="Engineering review required before ordering" style="color:var(--warn);margin-right:3px;font-size:11px">⚠</span>'
-          : '') +
-        optimizerNote +
-        '<span style="font-family:monospace;font-size:10px">' +
-        row.sku +
-        '</span>';
-      if (row.isFddAddon) {
-        skuCell = '<span style="font-family:monospace;font-size:10px">' + row.sku + '</span>';
-      }
-    }
-
-    var unitPriceCell = '';
-    if (row.ioOnly) {
-      unitPriceCell = '<span style="color:var(--text3);font-size:10px">$0 (I/O)</span>';
-    } else if (row.phase === 2) {
-      unitPriceCell = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '—';
-    } else if (row.noSku) {
-      unitPriceCell =
-        '<input type="number" min="0" step="0.01" value="' +
-        manualVal +
-        '" placeholder="Enter price"' +
-        ' style="width:80px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
-        ' onchange="_pricingManualPrice(event,\'' +
-        projId +
-        "','" +
-        row.id +
-        '\')">';
-    } else if (!hasCatalog) {
-      unitPriceCell = '<span style="color:var(--text3)">—</span>';
-    } else if (row.sku && catalog && !catalog[row.sku]) {
-      unitPriceCell = '<span style="color:var(--warn)" title="SKU not found in imported pricing">⚠ No price</span>';
-    } else {
-      unitPriceCell = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '<span style="color:var(--text3)">—</span>';
-    }
-
-    var lineTotalCell = '';
-    if (row.ioOnly) {
-      lineTotalCell = '<span style="color:var(--text3);font-size:10px">$0</span>';
-    } else if (row.noSku) {
-      var mv = parseFloat(estimate.manualPrices[row.id] || 0);
-      var lt = isNaN(mv) ? null : mv * row.qty;
-      lineTotalCell =
-        lt !== null && lt > 0 ? _pricingFmt(lt) : '<span style="color:var(--warn);font-size:10px">⚠ Enter price</span>';
-    } else {
-      lineTotalCell =
-        row.lineTotal !== null
-          ? '<span' + (!toggleOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(row.lineTotal) + '</span>'
-          : '<span style="color:var(--text3)">—</span>';
-    }
-
-    var rowStyle = !toggleOn ? 'opacity:0.45;' : '';
-    if (row.ioOnly) rowStyle += 'background:var(--s1);';
-
-    // In "Both" mode, add an extra Recommended Line Total column
-    var bothExtraCol = '';
-    if (isBothMode) {
-      var recLt = matchedRecRow ? matchedRecRow.lineTotal : null;
-      bothExtraCol =
-        '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px;' +
-        'border-left:2px solid var(--border2);color:var(--accent)">' +
-        (recLt !== null ? _pricingFmt(recLt) : '<span style="color:var(--text3)">—</span>') +
-        '</td>';
-    }
-
-    return [
-      '<tr style="' + rowStyle + '">',
-      // col 1: Include — Fix 3: pass toggleKey (compliance id) so Recommended
-      // rows write to the same toggle slot as their Compliance counterparts.
-      '<td class="ch-frozen" style="width:36px;text-align:center;padding:4px 6px">',
-      row.ioOnly
-        ? '<span title="Controller I/O — no cost" style="cursor:default;color:var(--text3)">—</span>'
-        : '<input type="checkbox"' +
-          (toggleOn ? ' checked' : '') +
-          ' onchange="_pricingToggleRow(\'' +
-          projId +
-          "','" +
-          toggleKey +
-          '\',this.checked)"' +
-          ' style="cursor:pointer">',
-      '</td>',
-      // col 2: Building
-      '<td class="ch-frozen" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:5px 8px">' +
-        _esc(row.building) +
-        '</td>',
-      // col 3: Item
-      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:5px 8px">' +
-        _esc(row.item) +
-        '</td>',
-      // col 4: Type
-      '<td style="font-size:10px;color:var(--text2);white-space:nowrap;padding:5px 8px">' + _esc(row.type) + '</td>',
-      // col 5: Equipment
-      '<td style="font-size:10px;color:var(--text2);white-space:nowrap;padding:5px 8px">' +
-        _esc(row.equipment) +
-        '</td>',
-      // col 6: Qty
-      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px">' +
-        row.qty +
-        '</td>',
-      // col 7: SKU
-      '<td style="white-space:nowrap;padding:5px 8px">' + skuCell + '</td>',
-      // col 8: Unit Price
-      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px">' +
-        unitPriceCell +
-        '</td>',
-      // col 9: Line Total
-      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px">' +
-        lineTotalCell +
-        '</td>',
-      // col 10 (Both only): Recommended Line Total
-      bothExtraCol,
-      // col 10/11: Notes
-      '<td style="font-size:10px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px">' +
-        _esc(row.note) +
-        '</td>',
-      '</tr>',
-    ].join('');
-  }
-
-  var isBothMode = tier === 'both';
-  var colCount = isBothMode ? 11 : 10;
-  var recRowIdxByBase = isBothMode ? _buildBothModeIndex(recRows || []) : {};
-
-  // ── Table body HTML
-  var tableBodyHTML = '';
-
-  if (rows.length === 0) {
-    tableBodyHTML =
-      '<tr><td colspan="' +
-      colCount +
-      '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">No compliance gaps found. Run the Equipment Matrix audit first.</td></tr>';
-  } else {
-    buildings.forEach(function (bName) {
-      var bRows = rows.filter(function (r) {
-        return r.building === bName;
-      });
-      var hw = bRows.filter(function (r) {
-        return r.phase === 1;
-      });
-      var lb = bRows.filter(function (r) {
-        return r.phase === 2;
-      });
-
-      // Building subtotals (compliance) — Fix 3: use _baseId||id as toggle key
-      var bHw1 = hw.reduce(function (s, r) {
-        return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-      }, 0);
-      var bLab2 = lb.reduce(function (s, r) {
-        return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-      }, 0);
-      var bTotal = bHw1 + bLab2;
-
-      // Building subtotals (recommended — for both mode) — Fix 3: use _baseId||id
-      var recBTotal = 0;
-      if (isBothMode && recRows) {
-        var rBRows = recRows.filter(function (r) {
-          return r.building === bName;
-        });
-        recBTotal = rBRows.reduce(function (s, r) {
-          return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-        }, 0);
-      }
-
-      tableBodyHTML += [
-        '<tr>',
-        '<td colspan="' +
-          colCount +
-          '" style="background:var(--s1);padding:6px 10px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border2)">',
-        _esc(bName),
-        bTotal > 0 && hasCatalog
-          ? ' <span style="font-weight:400;color:var(--text3)">— ' +
-            _pricingFmt(bTotal) +
-            ' est.' +
-            (isBothMode && recBTotal > 0 ? ' / Rec: ' + _pricingFmt(recBTotal) : '') +
-            '</span>'
-          : '',
-        '</td>',
-        '</tr>',
-      ].join('');
-
-      if (hw.length > 0) {
-        tableBodyHTML += [
-          '<tr><td colspan="' +
-            colCount +
-            '" style="background:var(--s3);padding:3px 10px 3px 18px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border)">',
-          'Phase 1 — Hardware',
-          '</td></tr>',
-        ].join('');
-        hw.forEach(function (row) {
-          var matchedRec = null;
-          if (isBothMode) {
-            var base = row.id.replace(/^hw_/, '').replace(/_\d+$/, '');
-            matchedRec = recRowIdxByBase[base] || null;
-          }
-          tableBodyHTML += renderRow(row, isBothMode, matchedRec);
-        });
-      }
-
-      if (lb.length > 0) {
-        tableBodyHTML += [
-          '<tr><td colspan="' +
-            colCount +
-            '" style="background:var(--s3);padding:3px 10px 3px 18px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border)">',
-          'Phase 2 — Programming Labor',
-          '</td></tr>',
-        ].join('');
-        lb.forEach(function (row) {
-          tableBodyHTML += renderRow(row, isBothMode, null);
-        });
-      }
-    });
-  }
-
-  // ── Footer
-  var recTierLabel = tier === 'recommended' ? 'Recommended' : 'Compliance';
-  var footerParts = [
-    '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
-  ];
-
-  if (isBothMode && recTotals) {
-    footerParts.push(
-      '<span style="font-size:11px;font-weight:700;color:var(--text2)">Compliance — Hardware: </span>',
-      '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
-        (totals.grand !== null ? _pricingFmt(totals.phase1) : '—') +
-        '</span>',
-      '<span style="font-size:11px;font-weight:700;color:var(--text2)">Programming: </span>',
-      '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
-        (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
-        '</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Total: ' +
-        (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
-        '</span>',
-      '<span style="color:var(--border2)">|</span>',
-      '<span style="font-size:11px;font-weight:700;color:var(--text2)">Recommended — Hardware: </span>',
-      '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
-        (recTotals.grand !== null ? _pricingFmt(recTotals.phase1) : '—') +
-        '</span>',
-      '<span style="font-size:11px;font-weight:700;color:var(--text2)">Programming: </span>',
-      '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
-        (recTotals.grand !== null ? _pricingFmt(recTotals.phase2) : '—') +
-        '</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">Total: ' +
-        (recTotals.grand !== null ? _pricingFmt(recTotals.grand) : '—') +
-        '</span>',
-    );
-  } else {
-    footerParts.push(
-      '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
-        (totals.grand !== null ? _pricingFmt(totals.phase1) : '—') +
-        '</span>',
-      '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
-        (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
-        '</span>',
-      '<span style="color:var(--border2)">|</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-        (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
-        '</span>',
-    );
-  }
-
-  // Caveat line: pending prices + eng-review + basis
-  var _p3CaveatParts = [];
-  if (totals.pendingPriceCount > 0) {
-    _p3CaveatParts.push(totals.pendingPriceCount + ' item(s) pending price (excluded)');
-  }
-  if (totals.engReviewCount > 0) {
-    _p3CaveatParts.push(totals.engReviewCount + ' eng-review at typical sizing');
-  }
-  _p3CaveatParts.push('Basis: ' + (cfg.priceBasis || 'contract'));
-
-  footerParts.push(
-    '<span style="flex:1"></span>',
-    '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
-    '<span style="font-size:11px;color:var(--text3)">' + _p3CaveatParts.join(' · ') + '</span>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
-      (tier === 'both' ? 'Both' : tier === 'recommended' ? 'Recommended' : 'Compliance') +
-      '</span>',
-    '</div>',
-  );
-
-  var footerHTML = footerParts.join('');
-
-  // ── Table header (extra column for Both mode)
-  var extraRecHeader = isBothMode
-    ? '<th style="background:var(--s1);color:var(--accent);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:right;border-left:2px solid var(--border2)">Rec. Total</th>'
-    : '';
-
-  // ── Assemble panel
-  el.innerHTML = [
-    '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
-    toolbarHTML,
-    '<div class="ch-panel-body" style="flex:1;min-height:0;overflow-y:auto;overflow-x:auto">',
-    '<div class="ch-tbl-outer" style="margin:0">',
-    '<div class="ch-tbl-scroll" style="overflow:auto">',
-    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:860px">',
-    '<thead><tr>',
-    '<th class="ch-frozen" style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px;white-space:nowrap;position:sticky;top:0;z-index:12;left:0;width:36px;text-align:center">Incl</th>',
-    '<th class="ch-frozen" style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;left:36px;min-width:120px;max-width:130px">Building</th>',
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;min-width:140px">Item</th>',
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11">Type</th>',
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11">Equipment</th>',
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:center">Qty</th>',
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;min-width:150px">SKU</th>',
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:center">Unit Price</th>',
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:right">Line Total</th>',
-    extraRecHeader,
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;min-width:180px">Notes</th>',
-    '</tr></thead>',
-    '<tbody id="pricing-tbody-' + projId + '">',
-    tableBodyHTML,
-    '</tbody>',
-    '</table>',
-    '</div>',
-    '</div>',
-    '</div>',
-    '<div id="pricing-footer-' + projId + '">',
-    footerHTML,
-    '</div>',
-    '</div>',
-  ].join('');
-};
+/* Phase 3 render body removed 2026-06-19 — superseded by Phase 4 (below); never called after Phase 4 introduced. Recover from git history if needed. */
 
 /* ══════════════════════════════════════════════════════════════════════════════
    PHASE 4 — Per-sequence labor-hour overrides, column resize/sort/hide
@@ -3252,15 +2873,23 @@ function _pricingUpdateStickyOffsets(projId) {
 }
 
 /* ── Attach column resize handlers (post-render) ────────────────────────── */
+// B2 FIX: use data-col-idx attribute (set by buildTH) so the correct PRICING_TBL_COLS
+// index is used even when some columns are hidden (DOM forEach index ≠ col index).
 function _pricingAttachResizeHandlers(projId) {
   var tableEl = document.querySelector('#ptab-cost-estimate-body-' + projId + ' table.ch-tbl');
   if (!tableEl) return;
   var ths = tableEl.querySelectorAll('thead th');
   if (!ths.length) return;
 
-  ths.forEach(function (th, idx) {
+  ths.forEach(function (th) {
+    // Read actual column index from data attribute stamped by buildTH
+    var colIdx = parseInt(th.getAttribute('data-col-idx'), 10);
+    if (isNaN(colIdx)) return;
     var handle = th.querySelector('.ch-col-resize-handle');
     if (!handle) return;
+
+    // DOM cell index for body cells: count visible ths before this one
+    var domIdx = Array.prototype.indexOf.call(ths, th);
 
     var startX, startW;
     handle.addEventListener('mousedown', function (e) {
@@ -3272,29 +2901,29 @@ function _pricingAttachResizeHandlers(projId) {
 
       function onMove(ev) {
         var dx = ev.clientX - startX;
-        var newW = Math.max(PRICING_TBL_COLS[idx] ? PRICING_TBL_COLS[idx].minWidth : 40, startW + dx);
+        var newW = Math.max(PRICING_TBL_COLS[colIdx] ? PRICING_TBL_COLS[colIdx].minWidth : 40, startW + dx);
         th.style.width = newW + 'px';
         th.style.minWidth = newW + 'px';
-        // Apply same width to all body cells in this column
+        // Apply same width to all body cells in this column (use DOM cell index)
         var rows = tableEl.querySelectorAll('tbody tr, tfoot tr');
         rows.forEach(function (tr) {
-          var td = tr.cells[idx];
+          var td = tr.cells[domIdx];
           if (td) {
             td.style.width = newW + 'px';
             td.style.minWidth = newW + 'px';
           }
         });
-        // Recompute sticky offsets if this is a frozen col
-        if (idx <= 1) _pricingUpdateStickyOffsets(projId);
+        // Recompute sticky offsets if this is a frozen col (cols 0 or 1)
+        if (colIdx <= 1) _pricingUpdateStickyOffsets(projId);
       }
 
       function onUp() {
         handle.classList.remove('dragging');
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
-        // Persist
+        // Persist by col index (not DOM index) so widths survive hide/show
         var widths = _pricingGetColWidths(projId);
-        widths[idx] = th.offsetWidth;
+        widths[colIdx] = th.offsetWidth;
         _pricingSetColWidths(projId, widths);
       }
 
@@ -3305,13 +2934,17 @@ function _pricingAttachResizeHandlers(projId) {
 }
 
 /* ── Attach sort click handlers (post-render) ───────────────────────────── */
+// B2 FIX: use data-col-idx attribute so sort targets correct column when cols are hidden.
 function _pricingAttachSortHandlers(projId) {
   var tableEl = document.querySelector('#ptab-cost-estimate-body-' + projId + ' table.ch-tbl');
   if (!tableEl) return;
   var ths = tableEl.querySelectorAll('thead th');
 
-  ths.forEach(function (th, idx) {
-    var col = PRICING_TBL_COLS[idx];
+  ths.forEach(function (th) {
+    // Read actual column index from data attribute stamped by buildTH
+    var colIdx = parseInt(th.getAttribute('data-col-idx'), 10);
+    if (isNaN(colIdx)) return;
+    var col = PRICING_TBL_COLS[colIdx];
     if (!col || col.noSort) return;
     var label = th.querySelector('.ch-sort-label');
     if (!label) return;
@@ -3321,7 +2954,7 @@ function _pricingAttachSortHandlers(projId) {
       e.stopPropagation();
       var state = _pricingSortState[projId] || { col: null, dir: null };
       var newDir;
-      if (state.col === idx) {
+      if (state.col === colIdx) {
         // Cycle: asc → desc → null (reset)
         if (state.dir === 'asc') newDir = 'desc';
         else if (state.dir === 'desc') newDir = null;
@@ -3329,7 +2962,7 @@ function _pricingAttachSortHandlers(projId) {
       } else {
         newDir = 'asc';
       }
-      _pricingSortState[projId] = { col: newDir ? idx : null, dir: newDir };
+      _pricingSortState[projId] = { col: newDir ? colIdx : null, dir: newDir };
       // Re-render — initCostEstimateTab picks up _pricingSortState
       initCostEstimateTab(projId);
     });
@@ -3337,25 +2970,28 @@ function _pricingAttachSortHandlers(projId) {
 }
 
 /* ── Apply saved column widths (post-render) ────────────────────────────── */
+// FIX 1: use data-col-idx attribute (stamped by buildTH) so the correct
+// PRICING_TBL_COLS column gets the saved width even when some columns are
+// hidden.  The old code used the saved key as a DOM array index into the
+// visible TH NodeList, which pointed to the wrong TH whenever any column
+// to the left of the resized column was hidden.
 function _pricingApplyColWidths(projId) {
   var tableEl = document.querySelector('#ptab-cost-estimate-body-' + projId + ' table.ch-tbl');
   if (!tableEl) return;
   var widths = _pricingGetColWidths(projId);
-  var keys = Object.keys(widths);
-  if (!keys.length) return;
+  if (!Object.keys(widths).length) return;
 
   var ths = tableEl.querySelectorAll('thead th');
-  keys.forEach(function (idx) {
-    var w = widths[idx];
-    var th = ths[parseInt(idx, 10)];
-    if (th) {
-      th.style.width = w + 'px';
-      th.style.minWidth = w + 'px';
-    }
-    // Apply to all body/foot cells in that column
-    var rows = tableEl.querySelectorAll('tbody tr, tfoot tr');
-    rows.forEach(function (tr) {
-      var td = tr.cells[parseInt(idx, 10)];
+  ths.forEach(function (th) {
+    var colIdx = th.getAttribute('data-col-idx');
+    var w = widths[colIdx];
+    if (!w) return;
+    var domIdx = Array.prototype.indexOf.call(ths, th);
+    th.style.width = w + 'px';
+    th.style.minWidth = w + 'px';
+    var bodyRows = tableEl.querySelectorAll('tbody tr, tfoot tr');
+    bodyRows.forEach(function (tr) {
+      var td = tr.cells[domIdx];
       if (td) {
         td.style.width = w + 'px';
         td.style.minWidth = w + 'px';
@@ -3454,6 +3090,15 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
   // ── 5. Sort data rows (only within their phase group; group headers stay in place)
   //       Sort is applied at render time per phase group, building group intact.
+
+  // ── 5b. Step 5: Annual energy data for $ savings range (Recommended tier only)
+  var _annualElecData =
+    tier === 'recommended' || tier === 'both'
+      ? _pricingGetProjectAnnualElec(projId)
+      : { annualKwh: null, hasBillData: false, elecRate: 0.1 };
+  var _fanFraction = cfg.fanFraction !== undefined && cfg.fanFraction !== null ? cfg.fanFraction : FAN_FRACTION_DEFAULT;
+  // Avg electricity rate ($/kWh) — derived from en_utility_<projId> bills in _pricingGetProjectAnnualElec
+  var _elecRate = _annualElecData.elecRate || 0.1;
 
   // ── 6. Helpers
   function _esc(s) {
@@ -3561,6 +3206,23 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       projId +
       ",'hourlyRate',parseFloat(this.value))\">",
     '</label>',
+    // Step 5: fan fraction field — only shown when Recommended tier is active
+    tier === 'recommended' || tier === 'both'
+      ? '<span style="color:var(--border2)">|</span>' +
+        '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px" ' +
+        'title="Fan energy as % of total electricity (CBECS VAV typical range 10–20%); used for DSP/SAT reset savings estimates">' +
+        'Fan energy %:' +
+        '<input type="number" id="pricing-fanfrac-' +
+        projId +
+        '" min="1" max="50" step="1" value="' +
+        Math.round((cfg.fanFraction !== undefined ? cfg.fanFraction : FAN_FRACTION_DEFAULT) * 100) +
+        '"' +
+        ' style="width:44px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--accent);border-radius:4px"' +
+        ' onchange="updatePricingConfig(' +
+        projId +
+        ",'fanFraction',parseFloat(this.value)/100)\">" +
+        '</label>'
+      : '',
     '</div>',
   ].join('');
 
@@ -3754,6 +3416,46 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       _rationaleText = row.savingsRationale;
     }
 
+    // Step 5: $ savings range line (Recommended tier, phase-2 savings sequences only)
+    var _savingsRangeHTML = '';
+    if (
+      (tier === 'recommended' || tier === 'both') &&
+      row.phase === 2 &&
+      row.seqKey &&
+      row.savingsImpact &&
+      row.savingsImpact !== 'enabler' &&
+      row.savingsImpact !== 'safety'
+    ) {
+      var _hasBills = _annualElecData.hasBillData;
+      var _annKwh = _annualElecData.annualKwh;
+      if (!_hasBills) {
+        // Gate: no bill data — show import prompt
+        _savingsRangeHTML =
+          '<div style="margin-top:4px;font-size:9px;color:var(--text3);font-style:italic">' +
+          'Import utility bills to see estimated $ savings</div>';
+      } else if (_annKwh && SAVINGS_RANGE_MAP[row.seqKey]) {
+        var _range = _pricingComputeSavingsRange(row, _annKwh, _fanFraction, _elecRate);
+        if (_range && _range.high > 0) {
+          _savingsRangeHTML =
+            '<div style="margin-top:5px;padding:3px 6px;background:rgba(134,239,172,0.08);' +
+            'border-left:2px solid #86efac;border-radius:0 3px 3px 0;white-space:normal">' +
+            '<span style="font-size:10px;font-weight:700;color:#86efac">Est. ' +
+            _pricingFmtSavingsRange(_range.low, _range.high) +
+            '</span>' +
+            '<span style="font-size:9px;color:var(--text3);margin-left:4px">' +
+            'literature range — M&amp;V required · ' +
+            _esc(_range.citation) +
+            '</span>' +
+            '</div>';
+        }
+      } else if (_annKwh) {
+        // Bill data present but no literature range for this sequence
+        _savingsRangeHTML =
+          '<div style="margin-top:4px;font-size:9px;color:var(--text3);font-style:italic">' +
+          'Site-specific calculation needed for $ estimate</div>';
+      }
+    }
+
     var _tooltipText12 = '';
     if (row.whyNotHardware) {
       _tooltipText12 = row.whyNotHardware + (row.g36Section ? ' (' + row.g36Section + ')' : '');
@@ -3769,7 +3471,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4">' +
           _esc(_noteText12 ? _noteText12 + ' \xb7 ' : '') +
           _esc(_rationaleText) +
-          '</span>',
+          '</span>' +
+          _savingsRangeHTML,
       );
     } else {
       cells.push(
@@ -3779,7 +3482,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           _titleAttr12 +
           '>' +
           _esc(_noteText12) +
-          '</span>',
+          '</span>' +
+          _savingsRangeHTML,
       );
     }
 
@@ -3798,11 +3502,12 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border);';
+      // col 9 (Contract) for Phase 2 sequence rows: smaller padding for the hrs input
+      // MUST be before the generic numeric right-align block (which also matches ci===9)
+      else if (ci === 9 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
       // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Line Total) are right-aligned numerics
       else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
-      // col 9 (Contract) for Phase 2 sequence rows gets smaller padding for the hrs input
-      else if (ci === 9 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       if (ci === 0 || ci === 1) tdStyle += 'position:sticky;background:inherit;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -3979,8 +3684,54 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '</span>',
   );
 
+  // Step 5: Portfolio savings rollup (Recommended tier, when bill data available)
+  if ((tier === 'recommended' || tier === 'both') && _annualElecData.hasBillData && _annualElecData.annualKwh) {
+    // Collect unique seqKeys with a range (de-dup: one per seqKey across buildings)
+    var _portfolioRows = tier === 'recommended' ? filteredRows : recRows || [];
+    var _seenSeqKeys = {};
+    var _portfolioLow = 0,
+      _portfolioHigh = 0,
+      _portfolioCount = 0;
+    _portfolioRows.forEach(function (r) {
+      if (r.phase !== 2 || !r.seqKey || _seenSeqKeys[r.seqKey]) return;
+      if (!r.savingsImpact || r.savingsImpact === 'enabler' || r.savingsImpact === 'safety') return;
+      var _pr = _pricingComputeSavingsRange(r, _annualElecData.annualKwh, _fanFraction, _elecRate);
+      if (_pr && _pr.high > 0) {
+        _seenSeqKeys[r.seqKey] = true;
+        _portfolioLow += _pr.low;
+        _portfolioHigh += _pr.high;
+        _portfolioCount++;
+      }
+    });
+    if (_portfolioCount > 0) {
+      footerParts.push(
+        '<div style="width:100%;margin-top:6px;padding:6px 10px;background:rgba(134,239,172,0.06);' +
+          'border:1px solid rgba(134,239,172,0.2);border-radius:4px">' +
+          '<span style="font-size:11px;font-weight:700;color:#86efac">Portfolio Est. Annual Savings: ' +
+          _pricingFmtSavingsRange(_portfolioLow, _portfolioHigh) +
+          '</span>' +
+          '<span style="font-size:10px;color:var(--text3);margin-left:8px">across ' +
+          _portfolioCount +
+          ' lit.-range sequence' +
+          (_portfolioCount !== 1 ? 's' : '') +
+          ' · literature range — M&amp;V required · based on ' +
+          (_annualElecData.annualKwh / 1000).toFixed(0) +
+          'k kWh/yr · fan % = ' +
+          Math.round(_fanFraction * 100) +
+          '%</span>' +
+          '</div>',
+      );
+    }
+  } else if ((tier === 'recommended' || tier === 'both') && !_annualElecData.hasBillData) {
+    footerParts.push(
+      '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
+        'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.' +
+        '</div>',
+    );
+  }
+
   // M&V disclaimer — shown in footer when Recommended tier is active (correction #11)
-  if (tier === 'recommended') {
+  if (tier === 'recommended' || tier === 'both') {
     footerParts.push(
       '<div style="width:100%;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);' +
         'font-size:10px;color:var(--text3);line-height:1.5">' +
@@ -4053,9 +3804,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         ' style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11px;background:transparent;border:none;color:var(--text2);cursor:pointer;padding:0 2px;z-index:2">⚙</button>';
     }
 
+    // data-col-idx carries the PRICING_TBL_COLS index so sort/resize handlers can
+    // find the correct column even when some columns are hidden (fixing defect B2).
     return (
       '<th' +
       (frozen ? ' class="ch-frozen"' : '') +
+      ' data-col-idx="' +
+      ci +
+      '"' +
       ' style="position:relative;' +
       thStyle(ci, frozenStyle) +
       '">' +

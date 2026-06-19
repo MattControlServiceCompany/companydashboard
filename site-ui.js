@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.19.567'; // deployed 2026-06-17 (Equipment Matrix: RTU is its own type (RTU/SZ-RTU/VAV-RTU/MTZ-RTU); subtype read from Multizone-VAV type label)
+  var CH_VERSION = 'v2026.06.19.568'; // deployed 2026-06-17 (Equipment Matrix: RTU is its own type (RTU/SZ-RTU/VAV-RTU/MTZ-RTU); subtype read from Multizone-VAV type label)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

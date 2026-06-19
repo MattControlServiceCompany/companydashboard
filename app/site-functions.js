@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.568',
+    date: '2026-06-19',
+    title: 'Cost Estimate: estimated annual dollar-savings ranges per measure',
+    items: [
+      {
+        type: 'feature',
+        text: "Cost Estimate Recommended tier now shows estimated annual dollar savings ranges per measure (and a portfolio total) once utility bills are imported, based on published energy-savings percentages and your building's energy use; column widths now persist correctly when columns are hidden.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.567',
     date: '2026-06-19',
     title: 'Cost Estimate table polish: sticky headers, visible scrollbar, List/Net/Contract columns, programming quantity clarity',
