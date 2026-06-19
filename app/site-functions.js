@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.567',
+    date: '2026-06-19',
+    title: 'Cost Estimate table polish: sticky headers, visible scrollbar, List/Net/Contract columns, programming quantity clarity',
+    items: [
+      {
+        type: 'fix',
+        text: "Cost Estimate table column headers now stay visible while scrolling and the horizontal scrollbar is always reachable; List, Net, and Contract prices are shown side by side; and programming rows now show how many of each equipment type need a sequence (e.g. \"1 of 33\") with a blocked/partial breakdown.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.566',
     date: '2026-06-19',
     title: 'Cost Estimate: ROI-ranked Recommended tier with savings rationale',

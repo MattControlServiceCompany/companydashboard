@@ -1278,6 +1278,13 @@ function buildComplianceRows(projId) {
         }
       }
 
+      // Stamp list/net/contractPrice for the three-column display (FIX 2)
+      var _catEntry = catalog && sku ? catalog[sku] : null;
+      var _listPrice = _catEntry && _catEntry.list != null ? _catEntry.list : null;
+      var _netPrice = _catEntry && _catEntry.net != null ? _catEntry.net : null;
+      var _contractPrice =
+        _catEntry && _catEntry.list != null ? parseFloat((cfg.contractPct * _catEntry.list).toFixed(2)) : null;
+
       rows.push({
         id: 'hw_' + bName + '_' + gKey + '_' + rowIdx++,
         building: bName,
@@ -1290,6 +1297,9 @@ function buildComplianceRows(projId) {
         noSku: noSku,
         ioOnly: ioOnly,
         unitPrice: unitPrice,
+        listPrice: _listPrice,
+        netPrice: _netPrice,
+        contractPrice: _contractPrice,
         lineTotal: lineTotal,
         note: mapEntry.note || '',
         whyNeeded: mapEntry.whyNeeded || '',
@@ -1303,15 +1313,25 @@ function buildComplianceRows(projId) {
 
     // --- Phase 2: Sequence labor rows ---
     // Count non-'na' blocked/partial sequences per key across all equipment in this building
+    // Track blocked vs partial breakdown for Qty clarity (FIX 3)
     var seqCounts = {}; // seqKey → count of blocked/partial instances
+    var seqBlocked = {}; // seqKey → count of blocked-only instances
+    var seqPartial = {}; // seqKey → count of partial-only instances
+    var seqApplicable = {}; // seqKey → count of non-'na' instances (denominator)
 
     bldgData.equipResults.forEach(function (eq) {
       if (!eq.seqReadiness) return;
       Object.keys(eq.seqReadiness).forEach(function (seqKey) {
         var entry = eq.seqReadiness[seqKey];
         if (entry.status === 'na') return;
-        if (entry.status === 'blocked' || entry.status === 'partial') {
+        // Count all non-na as applicable (denominator)
+        seqApplicable[seqKey] = (seqApplicable[seqKey] || 0) + 1;
+        if (entry.status === 'blocked') {
           seqCounts[seqKey] = (seqCounts[seqKey] || 0) + 1;
+          seqBlocked[seqKey] = (seqBlocked[seqKey] || 0) + 1;
+        } else if (entry.status === 'partial') {
+          seqCounts[seqKey] = (seqCounts[seqKey] || 0) + 1;
+          seqPartial[seqKey] = (seqPartial[seqKey] || 0) + 1;
         }
       });
     });
@@ -1338,20 +1358,46 @@ function buildComplianceRows(projId) {
       var lineHours = count * hrs;
       var lineTotal = parseFloat((lineHours * hourlyRate).toFixed(2));
 
+      // FIX 3: Equipment label — show "N of M [type]" or "N [type]" if all applicable
+      var applicable = seqApplicable[seqKey] || count;
+      var seqTypeLabel = label.replace(/ \(CO2\/DCV Programming\)$/, ''); // strip suffix for the label
+      var eqLabel2;
+      if (count === applicable) {
+        eqLabel2 = count + ' ' + seqTypeLabel + (count !== 1 ? 's' : '');
+      } else {
+        eqLabel2 = count + ' of ' + applicable + ' ' + seqTypeLabel + (applicable !== 1 ? 's' : '');
+      }
+
+      // FIX 3: Note breakdown — append "· N blocked, N partial" if both present
+      var blockedN = seqBlocked[seqKey] || 0;
+      var partialN = seqPartial[seqKey] || 0;
+      var noteBase = hrs + ' hrs × $' + hourlyRate + '/hr';
+      var noteBreakdown = '';
+      if (blockedN > 0 && partialN > 0) {
+        noteBreakdown = ' · ' + blockedN + ' blocked, ' + partialN + ' partial';
+      } else if (blockedN > 0) {
+        noteBreakdown = ' · ' + blockedN + ' blocked';
+      } else if (partialN > 0) {
+        noteBreakdown = ' · ' + partialN + ' partial';
+      }
+
       rows.push({
         id: 'seq_' + bName + '_' + seqKey + '_' + rowIdx++,
         building: bName,
         item: label,
         type: 'Sequence',
-        equipment: count + ' instance' + (count !== 1 ? 's' : ''),
+        equipment: eqLabel2,
         qty: count,
         sku: null,
         engReview: false,
         noSku: false,
         ioOnly: false,
         unitPrice: parseFloat((hrs * hourlyRate).toFixed(2)),
+        listPrice: null,
+        netPrice: null,
+        contractPrice: null,
         lineTotal: lineTotal,
-        note: hrs + ' hrs × $' + hourlyRate + '/hr',
+        note: noteBase + noteBreakdown,
         phase: 2,
         seqKey: seqKey,
         hrsPerUnit: hrs,
@@ -2193,6 +2239,12 @@ function buildRecommendedRows(projId) {
           rec.unitPrice = cheaper.unitPrice;
           rec.lineTotal = rec.qty > 0 ? parseFloat((cheaper.unitPrice * rec.qty).toFixed(2)) : null;
           rec.optimized = true;
+          // Recompute three-column price fields for the substituted SKU (FIX 2)
+          var _optEntry = catalog ? catalog[cheaper.sku] : null;
+          rec.listPrice = _optEntry && _optEntry.list != null ? _optEntry.list : null;
+          rec.netPrice = _optEntry && _optEntry.net != null ? _optEntry.net : null;
+          rec.contractPrice =
+            _optEntry && _optEntry.list != null ? parseFloat((cfg.contractPct * _optEntry.list).toFixed(2)) : null;
         }
       }
     }
@@ -2883,17 +2935,20 @@ var _pricingSortState = {}; // projId → { col: colIdx, dir: 'asc'|'desc'|null 
 /* ── Per-project building filter state (module-level) ── */
 var _pricingBldgFilter = {}; // projId → building name or '' for All
 
-/* ── Column definitions (indices 0-9 for 10-col default layout)
-   col 0: Include (checkbox) — frozen, no-sort
-   col 1: Building — frozen, sortable
-   col 2: Item — sortable
-   col 3: Type — sortable
-   col 4: Equipment — sortable
-   col 5: Qty — sortable (numeric)
-   col 6: SKU — sortable
-   col 7: Unit Price — sortable (numeric)
-   col 8: Line Total — sortable (numeric)
-   col 9: Notes — sortable
+/* ── Column definitions (indices 0-12 for 13-col default layout)
+   col 0:  Include (checkbox) — frozen, no-sort
+   col 1:  Building — frozen, sortable
+   col 2:  Item — sortable
+   col 3:  Type — sortable
+   col 4:  Equipment — sortable
+   col 5:  Qty — sortable (numeric)
+   col 6:  SKU — sortable
+   col 7:  List — sortable (numeric) — entry.list from catalog
+   col 8:  Net — sortable (numeric) — entry.net (multiplier×list or CSV net)
+   col 9:  Contract (40%) — sortable (numeric) — contractPct×list, always live-computed
+   col 10: Line Total — sortable (numeric) — driven by basis selector
+   col 11: Impact — no-sort — Phase 5 savings badge
+   col 12: Notes — sortable
    ─────────────────────────────────────────────────────────────────────────── */
 var PRICING_TBL_COLS = [
   { label: 'Incl', noSort: true, noHide: true, numeric: false, minWidth: 36 }, // 0
@@ -2903,17 +2958,19 @@ var PRICING_TBL_COLS = [
   { label: 'Equipment', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 4
   { label: 'Qty', noSort: false, noHide: false, numeric: true, minWidth: 40 }, // 5
   { label: 'SKU', noSort: false, noHide: false, numeric: false, minWidth: 100 }, // 6
-  { label: 'Unit Price', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 7
-  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 8
+  { label: 'List', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 7
+  { label: 'Net', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 8
+  { label: 'Contract (40%)', noSort: false, noHide: false, numeric: true, minWidth: 90 }, // 9
+  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 10 — label overridden at render time with active basis
   {
     label: 'Impact',
     noSort: true,
     noHide: false,
     numeric: false,
-    minWidth: 80, // 9 — Phase 5 savings badge
+    minWidth: 80, // 11 — Phase 5 savings badge
     isImpactCol: true,
   },
-  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 10
+  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 12
 ];
 
 /* ── Apply labor overrides to a cloned row list ──────────────────────────── */
@@ -3027,10 +3084,14 @@ function _pricingRowColValue(row, colIdx) {
     case 6:
       return row.sku || '';
     case 7:
-      return row.unitPrice != null ? row.unitPrice : -1;
+      return row.listPrice != null ? row.listPrice : -1;
     case 8:
-      return row.lineTotal != null ? row.lineTotal : -1;
+      return row.netPrice != null ? row.netPrice : -1;
     case 9:
+      return row.contractPrice != null ? row.contractPrice : -1;
+    case 10:
+      return row.lineTotal != null ? row.lineTotal : -1;
+    case 12:
       return row.note || '';
     default:
       return '';
@@ -3569,16 +3630,42 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(skuContent);
 
-    // col 7: Unit Price — for Phase 2 rows, show editable hours input
-    var unitPriceContent = '';
+    // col 7: List price
+    var listContent = '';
+    if (row.phase === 2) {
+      listContent = '<span style="color:var(--text3);font-size:10px">—</span>';
+    } else if (row.ioOnly) {
+      listContent = '<span style="color:var(--text3);font-size:10px">—</span>';
+    } else if (!hasCatalog || row.noSku) {
+      listContent = '<span style="color:var(--text3)">—</span>';
+    } else {
+      listContent = row.listPrice != null ? _pricingFmt(row.listPrice) : '<span style="color:var(--text3)">—</span>';
+    }
+    cells.push(listContent);
+
+    // col 8: Net price
+    var netContent = '';
+    if (row.phase === 2) {
+      netContent = '<span style="color:var(--text3);font-size:10px">—</span>';
+    } else if (row.ioOnly) {
+      netContent = '<span style="color:var(--text3);font-size:10px">—</span>';
+    } else if (!hasCatalog || row.noSku) {
+      netContent = '<span style="color:var(--text3)">—</span>';
+    } else {
+      netContent = row.netPrice != null ? _pricingFmt(row.netPrice) : '<span style="color:var(--text3)">—</span>';
+    }
+    cells.push(netContent);
+
+    // col 9: Contract (40%) — for Phase 2 rows, show editable hours input here
+    var contractContent = '';
     if (row.ioOnly) {
-      unitPriceContent = '<span style="color:var(--text3);font-size:10px">$0 (I/O)</span>';
+      contractContent = '<span style="color:var(--text3);font-size:10px">$0 (I/O)</span>';
     } else if (row.phase === 2 && row.seqKey) {
-      // Per-sequence labor-hour override input (Phase 4)
+      // Per-sequence labor-hour override input (Phase 4) — shown in Contract column
       var defaultHrs = COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] : 2.0;
       var currentHrs = laborOverrides[row.seqKey] != null ? parseFloat(laborOverrides[row.seqKey]) : row.hrsPerUnit;
       var isOverridden = laborOverrides[row.seqKey] != null;
-      unitPriceContent =
+      contractContent =
         '<div style="display:flex;align-items:center;gap:4px">' +
         '<input type="number" min="0" step="0.25" value="' +
         currentHrs +
@@ -3608,9 +3695,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           : '') +
         '</div>';
     } else if (row.phase === 2) {
-      unitPriceContent = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '—';
+      contractContent = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '—';
     } else if (row.noSku) {
-      unitPriceContent =
+      contractContent =
         '<input type="number" min="0" step="0.01" value="' +
         manualVal +
         '" placeholder="Enter price"' +
@@ -3621,16 +3708,16 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         row.id +
         '\')">';
     } else if (!hasCatalog) {
-      unitPriceContent = '<span style="color:var(--text3)">—</span>';
+      contractContent = '<span style="color:var(--text3)">—</span>';
     } else if (row.sku && catalog && !catalog[row.sku]) {
-      unitPriceContent = '<span style="color:var(--warn)" title="SKU not found in imported pricing">⚠ No price</span>';
+      contractContent = '<span style="color:var(--warn)" title="SKU not found in imported pricing">⚠ No price</span>';
     } else {
-      unitPriceContent =
-        row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '<span style="color:var(--text3)">—</span>';
+      contractContent =
+        row.contractPrice != null ? _pricingFmt(row.contractPrice) : '<span style="color:var(--text3)">—</span>';
     }
-    cells.push(unitPriceContent);
+    cells.push(contractContent);
 
-    // col 8: Line Total
+    // col 10: Line Total
     var lineTotalContent = '';
     if (row.ioOnly) {
       lineTotalContent = '<span style="color:var(--text3);font-size:10px">$0</span>';
@@ -3647,18 +3734,18 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 9: Impact — badge chip for Recommended tier phase-2 rows only (correction #4 / Phase 5)
-    // Fuller-preference rule: badge LEADS but full rationale stays visible in Notes (col 10).
+    // col 11: Impact — badge chip for Recommended tier phase-2 rows only (correction #4 / Phase 5)
+    // Fuller-preference rule: badge LEADS but full rationale stays visible in Notes (col 12).
     var impactCellContent = '';
     if (tier === 'recommended' && row.phase === 2 && row.savingsImpact) {
       impactCellContent = _a36ImpactChip(row);
     }
     cells.push(impactCellContent);
 
-    // col 10: Notes — visible text = note + G36 § + (Recommended) full savingsRationale sentence
+    // col 12: Notes — visible text = note + G36 § + (Recommended) full savingsRationale sentence
     // Fuller-preference: full rationale visible in cell, never hover-only (correction from REVIEW).
-    var _noteText10 = row.note || '';
-    if (row.g36Section) _noteText10 += (_noteText10 ? ' \xb7 ' : '') + row.g36Section;
+    var _noteText12 = row.note || '';
+    if (row.g36Section) _noteText12 += (_noteText12 ? ' \xb7 ' : '') + row.g36Section;
 
     // For Recommended tier phase-2 rows: append full rationale sentence (visible, not hover-only)
     // savingsRationale already contains all warnings (reheat note, boiler-type warning) — no appends needed.
@@ -3667,31 +3754,31 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       _rationaleText = row.savingsRationale;
     }
 
-    var _tooltipText10 = '';
+    var _tooltipText12 = '';
     if (row.whyNotHardware) {
-      _tooltipText10 = row.whyNotHardware + (row.g36Section ? ' (' + row.g36Section + ')' : '');
+      _tooltipText12 = row.whyNotHardware + (row.g36Section ? ' (' + row.g36Section + ')' : '');
     } else if (row.whyNeeded) {
-      _tooltipText10 = row.whyNeeded + (row.g36Section ? ' (' + row.g36Section + ')' : '');
+      _tooltipText12 = row.whyNeeded + (row.g36Section ? ' (' + row.g36Section + ')' : '');
     }
-    var _titleAttr10 = _tooltipText10 ? ' title="' + _esc(_tooltipText10) + '"' : '';
-    var _cursorStyle10 = _tooltipText10 ? 'cursor:help;' : '';
+    var _titleAttr12 = _tooltipText12 ? ' title="' + _esc(_tooltipText12) + '"' : '';
+    var _cursorStyle12 = _tooltipText12 ? 'cursor:help;' : '';
 
     if (_rationaleText) {
       // Rationale visible in cell (white-space:normal so it wraps; fuller-preference)
       cells.push(
         '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4">' +
-          _esc(_noteText10 ? _noteText10 + ' \xb7 ' : '') +
+          _esc(_noteText12 ? _noteText12 + ' \xb7 ' : '') +
           _esc(_rationaleText) +
           '</span>',
       );
     } else {
       cells.push(
         '<span style="font-size:10px;color:var(--text3);' +
-          _cursorStyle10 +
+          _cursorStyle12 +
           '"' +
-          _titleAttr10 +
+          _titleAttr12 +
           '>' +
-          _esc(_noteText10) +
+          _esc(_noteText12) +
           '</span>',
       );
     }
@@ -3704,16 +3791,18 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return; // skip hidden columns
       var col = PRICING_TBL_COLS[ci] || {};
-      // col 10 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
-      var isNotesCol = ci === 10;
-      var isImpactCol = ci === 9;
+      // col 12 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
+      var isNotesCol = ci === 12;
+      var isImpactCol = ci === 11;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border);';
-      else if (ci === 5 || ci === 8) tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
-      else if (ci === 7 && row.phase === 2 && row.seqKey)
-        tdStyle += 'padding:3px 6px;'; // smaller padding for input
+      // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Line Total) are right-aligned numerics
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10)
+        tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
+      // col 9 (Contract) for Phase 2 sequence rows gets smaller padding for the hrs input
+      else if (ci === 9 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       if (ci === 0 || ci === 1) tdStyle += 'position:sticky;background:inherit;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -3937,9 +4026,16 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       frozenStyle = 'z-index:11;';
     }
 
+    // col 10 (Line Total) label shows active basis in parens, e.g. "Line Total (Contract)"
+    var colLabel = col.label;
+    if (ci === 10) {
+      var basisLabels = { contract: 'Contract', net: 'Net', list: 'List' };
+      colLabel = 'Line Total (' + (basisLabels[cfg.priceBasis] || 'Contract') + ')';
+    }
+
     var labelHTML = col.noSort
-      ? '<span style="pointer-events:none">' + col.label + '</span>'
-      : '<span class="ch-sort-label" style="cursor:pointer">' + col.label + sortIndicator(ci) + '</span>';
+      ? '<span style="pointer-events:none">' + colLabel + '</span>'
+      : '<span class="ch-sort-label" style="cursor:pointer">' + colLabel + sortIndicator(ci) + '</span>';
 
     var resizeHandle =
       ci < PRICING_TBL_COLS.length - 1
@@ -3995,10 +4091,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
     toolbarHTML,
     topRoiCallout,
-    '<div class="ch-panel-body" style="flex:1;min-height:0;overflow-y:auto;overflow-x:auto">',
-    '<div class="ch-tbl-outer" style="margin:0">',
-    '<div class="ch-tbl-scroll" style="overflow:auto">',
-    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:700px">',
+    '<div class="ch-panel-body" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden">',
+    '<div class="ch-tbl-outer" style="margin:0;border:1px solid var(--border);border-radius:6px;overflow:hidden">',
+    '<div class="ch-tbl-scroll" style="overflow-x:auto;overflow-y:visible">',
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:900px">',
     '<thead><tr>',
     headerCols,
     extraRecHeader,
