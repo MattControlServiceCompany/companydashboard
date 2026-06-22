@@ -5309,6 +5309,10 @@ function renderBaselinePane(pane, m, bills, incl) {
       winterKwRate != null ? { v: fmtKw(winterKwRate) + '/kW', lbl: '❄️ Winter $/kW', color: 'var(--em)' } : null,
       // #101: Regression model type indicator
       (() => {
+        // Baseline exists but bl.reg is null — saved before weather data was uploaded
+        if (bl && !bl.reg) {
+          return { v: 'Not frozen', lbl: '⚠️ Not frozen — re-save baseline', color: 'var(--warn)' };
+        }
         const _blReg = bl && bl.reg ? bl.reg : m._reg;
         if (!_blReg) return null;
         let _modelLabel, _modelColor;
@@ -8531,7 +8535,7 @@ function bspRecalc() {
         case 'baseline':
           return base;
         case 'projected':
-          return base - projSav;
+          return Math.max(0, base - projSav);
         case 'savings':
           return projSav;
         case 'client':

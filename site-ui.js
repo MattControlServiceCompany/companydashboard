@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.19.573'; // deployed 2026-06-22 (WRE charge line items, TCC double-count fix, gas-unit conditional display, extra fields before total)
+  var CH_VERSION = 'v2026.06.19.574'; // deployed 2026-06-22 (clamp negative projected spend to $0, add not-frozen baseline label)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

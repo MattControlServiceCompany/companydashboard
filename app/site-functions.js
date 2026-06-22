@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.574',
+    date: '2026-06-22',
+    title: 'Baseline projections no longer go negative; frozen-regression status now flagged',
+    items: [
+      {
+        type: 'fix',
+        text: 'Projected utility spend on the baseline tab can no longer show a negative dollar amount — it is now clamped to $0 when projected savings exceed the baseline cost.',
+      },
+      {
+        type: 'fix',
+        text: 'The baseline model label now shows a warning ("Not frozen — re-save baseline") when a baseline exists but its regression model has not been frozen, instead of silently displaying "Live Model."',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.573',
     date: '2026-06-22',
     title: 'Wood River bills now show separated charge line items',
