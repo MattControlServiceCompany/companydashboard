@@ -192,6 +192,146 @@ function loadUtilityData() {
     // Guard 4: set key only after save completes
     DB.set(_sewerUsageMigratedKey, '1');
   }
+  // One-time migration: fix Wood River (MMBtu) gas bills where therms was stored
+  // as raw MMBtu instead of Therms (×10). CCF bills also converted (×1.037).
+  // Fix [therms-unit-2026-06-22] — root cause: bill-analysis.js save path applied no
+  // unit conversion when falling through to NaturalGasMMbtu. Constellation/KGS bills
+  // (which set NaturalGasTherms) are excluded by the predicate and left untouched.
+  // Safety: value-range predicate is the primary guard (refuses already-correct bills
+  // even if marker is lost); per-bill _thermsUnitFixed and global key are belt-and-suspenders.
+  const _thermsFixKey = 'en_utility_therms_mmbtu_fix_v1';
+  if (!DB.get(_thermsFixKey)) {
+    const _approxEq = (a, b, tol) => Math.abs(a - b) <= Math.abs(b) * tol;
+    const _pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+    const _thermsReport = { wouldFix: [], skipped: [], ambiguous: [] };
+    // DRY-RUN PASS: log what WOULD be fixed before mutating anything
+    for (const pid of Object.keys(utilityData)) {
+      const ud = utilityData[pid];
+      for (const b of ud.buildings || []) {
+        for (const mt of b.meters || []) {
+          for (const bill of mt.bills || []) {
+            if (bill._thermsUnitFixed) continue; // already corrected
+            const mmbtu = _pf(bill.naturalGasMMbtu);
+            const therms = _pf(bill.therms);
+            const hasTherms = _pf(bill.naturalGasTherms) > 0 || (bill.naturalGasTherms && bill.naturalGasTherms !== '');
+            const hasCCF = _pf(bill.naturalGasCCF) > 0 || (bill.naturalGasCCF && bill.naturalGasCCF !== '');
+            const ccf = _pf(bill.naturalGasCCF);
+            // MMBtu path: mmbtu set, therms/ccf empty, stored therms ≈ raw mmbtu (NOT ≈ mmbtu×10)
+            const needsMMBtu =
+              mmbtu > 0 &&
+              !hasTherms &&
+              !hasCCF &&
+              therms > 0 &&
+              _approxEq(therms, mmbtu, 0.005) &&
+              !_approxEq(therms, mmbtu * 10, 0.005);
+            // CCF path: ccf set, therms field empty, stored therms ≈ raw ccf (NOT ≈ ccf×1.037)
+            const needsCCF =
+              ccf > 0 &&
+              !hasTherms &&
+              therms > 0 &&
+              _approxEq(therms, ccf, 0.005) &&
+              !_approxEq(therms, ccf * 1.037, 0.005);
+            if (needsMMBtu) {
+              _thermsReport.wouldFix.push({
+                pid,
+                building: b.name || b.id,
+                meter: mt.name || mt.id || mt.commodity,
+                billEnd: bill.end,
+                source: 'MMBtu',
+                oldTherms: therms,
+                newTherms: Math.round(mmbtu * 10 * 100) / 100,
+                bill,
+              });
+            } else if (needsCCF) {
+              _thermsReport.wouldFix.push({
+                pid,
+                building: b.name || b.id,
+                meter: mt.name || mt.id || mt.commodity,
+                billEnd: bill.end,
+                source: 'CCF',
+                oldTherms: therms,
+                newTherms: Math.round(ccf * 1.037 * 100) / 100,
+                bill,
+              });
+            } else if (mmbtu > 0 && !hasTherms && !hasCCF && therms > 0) {
+              // Has MMBtu and a therms value but predicate didn't fire — log as ambiguous
+              _thermsReport.ambiguous.push({
+                pid,
+                building: b.name || b.id,
+                billEnd: bill.end,
+                therms,
+                mmbtu,
+                reason: 'neither ≈mmbtu nor ≈mmbtu×10 — may be hand-corrected; left untouched',
+              });
+            }
+          }
+        }
+      }
+    }
+    console.log(
+      '[therms-unit migration v1] DRY-RUN: would fix=' +
+        _thermsReport.wouldFix.length +
+        ' ambiguous=' +
+        _thermsReport.ambiguous.length,
+    );
+    if (_thermsReport.wouldFix.length) {
+      console.table(
+        _thermsReport.wouldFix.map((r) => ({
+          pid: r.pid,
+          building: r.building,
+          meter: r.meter,
+          billEnd: r.billEnd,
+          source: r.source,
+          old: r.oldTherms,
+          new: r.newTherms,
+        })),
+      );
+    }
+    if (_thermsReport.ambiguous.length) {
+      console.warn('[therms-unit migration v1] Ambiguous bills left untouched:');
+      console.table(_thermsReport.ambiguous);
+    }
+    // MUTATION PASS: apply corrections
+    let _thermsFixed = 0;
+    for (const entry of _thermsReport.wouldFix) {
+      const bill = entry.bill;
+      const oldTherms = _pf(bill.therms);
+      const oldThermCost = _pf(bill.thermCost);
+      bill.therms = entry.newTherms;
+      bill._thermsUnitFixed = true;
+      bill._thermsUnitFixedFrom = entry.source;
+      // Recompute totalGasRate so $/therm is correct (~$0.42 not ~$4.18)
+      if (oldThermCost > 0 && entry.newTherms > 0) {
+        bill.totalGasRate = (oldThermCost / entry.newTherms).toFixed(5);
+      }
+      _thermsFixed++;
+      console.log(
+        '[therms-unit migration v1] Fixed ' +
+          entry.building +
+          ' / ' +
+          entry.meter +
+          ' end=' +
+          entry.billEnd +
+          ' therms: ' +
+          oldTherms +
+          ' → ' +
+          entry.newTherms,
+      );
+    }
+    if (_thermsFixed > 0) {
+      saveUtilityData();
+      showToast(
+        _thermsFixed +
+          ' gas bill' +
+          (_thermsFixed > 1 ? 's' : '') +
+          ' corrected: MMBtu→Therms (×10). See console for details. Recommend downloading a backup.',
+      );
+      console.log('[therms-unit migration v1] Saved. Total fixed: ' + _thermsFixed);
+    } else {
+      console.log('[therms-unit migration v1] No bills needed correction.');
+    }
+    DB.set(_thermsFixKey, '1');
+  }
   // Auto-inherit baselines: any meter with bills but no baseline gets
   // the majority baseline from same-commodity meters in the same project
   for (const pid of Object.keys(utilityData)) {

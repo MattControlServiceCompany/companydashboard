@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.19.571'; // deployed 2026-06-22 (Spring Hill: stop address-based meter-number consensus from clobbering distinct meters)
+  var CH_VERSION = 'v2026.06.19.572'; // deployed 2026-06-22 (therms-unit P0: canonicalize MMBtu→Therms at all save paths + idempotent migration for existing Spring Hill gas bills)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

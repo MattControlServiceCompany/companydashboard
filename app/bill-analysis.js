@@ -4131,8 +4131,16 @@ async function confirmAutoAssign() {
       naturalGasCCF: bill.NaturalGasCCF || '',
       naturalGasTherms: bill.NaturalGasTherms || '',
       naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
-      therms:
-        pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu) || '',
+      // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
+      therms: (() => {
+        const t = pf(bill.NaturalGasTherms);
+        if (t) return t; // already Therms — Constellation/KGS
+        const ccf = pf(bill.NaturalGasCCF);
+        if (ccf) return Math.round(ccf * 1.037 * 100) / 100; // CCF → Therms
+        const mm = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+        if (mm) return Math.round(mm * 10 * 100) / 100; // MMBtu → Therms (×10)
+        return '';
+      })(),
       // Bug d4c78f06: thermCost must be the gas commodity cost (GasCharge),
       // not TotalCurrentCharges (which includes base/customer/tax charges).
       // The $/therm rate in Meter Data + Baseline Data tables divides by this field.
@@ -4176,10 +4184,14 @@ async function confirmAutoAssign() {
       eerRate: bill.EERRate || '',
       ptsRate: bill.PTSRate || '',
       rkvaRate: bill.RkVARate || '',
-      // Non-electric commodity rates — computed from usage + charge at save time
+      // Non-electric commodity rates — computed from canonical Therms + charge at save time.
       totalGasRate: (() => {
         const t =
-          pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+          pf(bill.NaturalGasTherms) ||
+          (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0) ||
+          (pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu)
+            ? Math.round(pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu) * 10 * 100) / 100
+            : 0);
         const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
         return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
       })(),
@@ -4529,7 +4541,18 @@ function _saveBillToMatchedMeter(extracted, match) {
     naturalGasCCF: extracted.NaturalGasCCF || '',
     naturalGasTherms: extracted.NaturalGasTherms || '',
     naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
-    therms: pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu) || '',
+    // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
+    // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
+    // set NaturalGasTherms (already Therms). CCF × 1.037 = Therms. Priority: Therms > CCF > MMBtu.
+    therms: (() => {
+      const t = pf(extracted.NaturalGasTherms);
+      if (t) return t; // already Therms — Constellation/KGS
+      const ccf = pf(extracted.NaturalGasCCF);
+      if (ccf) return Math.round(ccf * 1.037 * 100) / 100; // CCF → Therms
+      const mm = pf(extracted.NaturalGasMMbtu);
+      if (mm) return Math.round(mm * 10 * 100) / 100; // MMBtu → Therms (×10)
+      return '';
+    })(),
     // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
     // in tables uses energy-only cost, not total bill cost.
     thermCost:
@@ -4552,9 +4575,13 @@ function _saveBillToMatchedMeter(extracted, match) {
     unitPrice: extracted.UnitPrice || '',
     subtotal: extracted.Subtotal || '',
     tax: extracted.Tax || '',
-    // Non-electric commodity rates — computed from usage + charge at save time
+    // Non-electric commodity rates — computed from canonical Therms + charge at save time.
+    // thermsForRate must mirror the therms IIFE above so $/therm is correct for MMBtu sources.
     totalGasRate: (() => {
-      const t = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu);
+      const t =
+        pf(extracted.NaturalGasTherms) ||
+        (pf(extracted.NaturalGasCCF) ? Math.round(pf(extracted.NaturalGasCCF) * 1.037 * 100) / 100 : 0) ||
+        (pf(extracted.NaturalGasMMbtu) ? Math.round(pf(extracted.NaturalGasMMbtu) * 10 * 100) / 100 : 0);
       const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
       return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
     })(),
@@ -11592,8 +11619,16 @@ function confirmAssignBill() {
     naturalGasCCF: bill.NaturalGasCCF || '',
     naturalGasTherms: bill.NaturalGasTherms || '',
     naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
-    therms:
-      pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu) || '',
+    // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
+    therms: (() => {
+      const t = pf(bill.NaturalGasTherms);
+      if (t) return t; // already Therms — Constellation/KGS
+      const ccf = pf(bill.NaturalGasCCF);
+      if (ccf) return Math.round(ccf * 1.037 * 100) / 100; // CCF → Therms
+      const mm = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+      if (mm) return Math.round(mm * 10 * 100) / 100; // MMBtu → Therms (×10)
+      return '';
+    })(),
     thermCost:
       bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
         ? bill.GasCharge || bill.TotalCurrentCharges || ''
@@ -12306,8 +12341,17 @@ async function _saveSinglePDFBill(extracted, projId) {
     naturalGasCCF: extracted.NaturalGasCCF || '',
     naturalGasTherms: extracted.NaturalGasTherms || '',
     naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     therms: isGas
-      ? pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu) || ''
+      ? (() => {
+          const t = pf(extracted.NaturalGasTherms);
+          if (t) return t; // already Therms — Constellation/KGS
+          const ccf = pf(extracted.NaturalGasCCF);
+          if (ccf) return Math.round(ccf * 1.037 * 100) / 100; // CCF → Therms
+          const mm = pf(extracted.NaturalGasMMbtu);
+          if (mm) return Math.round(mm * 10 * 100) / 100; // MMBtu → Therms (×10)
+          return '';
+        })()
       : '',
     // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
     // in tables uses energy-only cost, not total bill cost.
@@ -12332,9 +12376,12 @@ async function _saveSinglePDFBill(extracted, projId) {
     unitPrice: extracted.UnitPrice || '',
     subtotal: extracted.Subtotal || '',
     tax: extracted.Tax || '',
-    // Non-electric commodity rates — computed from usage + charge at save time
+    // Non-electric commodity rates — computed from canonical Therms + charge at save time.
     totalGasRate: (() => {
-      const t = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu);
+      const t =
+        pf(extracted.NaturalGasTherms) ||
+        (pf(extracted.NaturalGasCCF) ? Math.round(pf(extracted.NaturalGasCCF) * 1.037 * 100) / 100 : 0) ||
+        (pf(extracted.NaturalGasMMbtu) ? Math.round(pf(extracted.NaturalGasMMbtu) * 10 * 100) / 100 : 0);
       const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
       return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
     })(),

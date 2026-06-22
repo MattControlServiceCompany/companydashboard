@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.572',
+    date: '2026-06-22',
+    title: 'Gas bills now store usage in Therms — Spring Hill kicking-off values corrected',
+    items: [
+      {
+        type: 'fix',
+        text: 'Wood River gas bills (and any bill where usage was stored as MMBtu or CCF instead of Therms) now save the correct Therms value — MMBtu is multiplied by 10 and CCF by 1.037 so the unit is always Therms.',
+      },
+      {
+        type: 'fix',
+        text: 'The first time Energy opens after this update, existing Spring Hill gas bills whose usage was stored 10× too low (the MMBtu-as-Therms bug) are corrected automatically. A dry-run count prints to the browser console before any change is made, and a backup-download prompt appears when done.',
+      },
+      {
+        type: 'fix',
+        text: 'Gas cost-per-Therm ($/Therm) displayed on bills is now calculated against the correct Therms value, so Spring Hill rates show ~$0.42/Therm instead of ~$4.18/Therm.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.571',
     date: '2026-06-22',
     title: 'Bill import: two gas meters at the same building keep their own account & meter numbers',

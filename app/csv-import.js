@@ -1937,9 +1937,15 @@ function saveBillRow() {
     const v = g('bl-' + k);
     if (v !== '') data[k] = v;
   }
-  // Bug #133: sync naturalGasTherms → therms so the rest of the dashboard can read it
+  // Bug #133 / Fix [therms-unit-2026-06-22]: sync gas usage to canonical therms (Therms).
+  // Priority: Therms (×1) > CCF (×1.037) > MMBtu (×10). Constellation/KGS set naturalGasTherms;
+  // Wood River sets naturalGasMMbtu. All paths must land in therms as Therms.
   if (data.naturalGasTherms != null && data.naturalGasTherms !== '') {
-    data.therms = data.naturalGasTherms;
+    data.therms = data.naturalGasTherms; // already Therms
+  } else if (data.naturalGasCCF != null && data.naturalGasCCF !== '') {
+    data.therms = String(Math.round(parseFloat(data.naturalGasCCF) * 1.037 * 100) / 100); // CCF → Therms
+  } else if (data.naturalGasMMbtu != null && data.naturalGasMMbtu !== '') {
+    data.therms = String(Math.round(parseFloat(data.naturalGasMMbtu) * 10 * 100) / 100); // MMBtu → Therms (×10)
   }
   const start = data.start;
   const end = data.end;
