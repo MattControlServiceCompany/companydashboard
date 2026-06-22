@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.22.577',
+    date: '2026-06-22',
+    title: 'Utility Data: Import via PDF button in Bills tab',
+    items: [
+      {
+        type: 'feature',
+        text: 'Bills tab now has an "Import via PDF" button in the sticky header — click it to go straight to the PDF extraction view with the current project pre-selected and the file picker ready to open.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.22.576',
     date: '2026-06-22',
     title: 'Cost Estimate: literature ranges without bills, M&V disclaimer gated, sticky headers, editable cells',

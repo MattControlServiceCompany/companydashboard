@@ -3166,6 +3166,9 @@ function renderBillsPane(pane, m, bills, incl) {
     '<button class="btn btn-ghost btn-sm" onclick="openCsvImportForMeter(\'' +
     m.id +
     '\')">📥 Import more periods via CSV</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="openPDFImportFromBills(\'' +
+    m.id +
+    '\')">📄 Import via PDF</button>' +
     '<div class="ud-incl-toggle">' +
     '<span style="font-size:11px;color:var(--text2)">Day calc:</span>' +
     '<button class="ud-incl-btn' +

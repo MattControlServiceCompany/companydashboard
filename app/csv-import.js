@@ -4237,3 +4237,27 @@ window.importBuildingList = importBuildingList;
 function _escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+// #113575be: Open PDF import flow from the Bills tab.
+// Resolves embed context, navigates to the PDF/OCR view, pre-selects the project,
+// and triggers the file picker. Reuses the existing extraction pipeline unchanged.
+function openPDFImportFromBills(mid) {
+  // Resolve embed context so udSelProjId is correct when in project-embed mode
+  _syncEmbedUDContext();
+  // Navigate to the PDF/OCR view
+  if (typeof sv === 'function') sv('pdf');
+  // Small delay to let the view render before pre-selecting project and triggering picker
+  setTimeout(function () {
+    // Refresh dropdown options so the current project appears as a choice
+    if (typeof refreshProjDropdowns === 'function') refreshProjDropdowns();
+    var sel = document.getElementById('pdfProjSel');
+    if (sel && udSelProjId) {
+      sel.value = String(udSelProjId);
+      sel.dispatchEvent(new Event('change'));
+      if (typeof pdfUpdateBldgMeterOpts === 'function') pdfUpdateBldgMeterOpts();
+    }
+    var pdfInput = document.getElementById('pdfInput');
+    if (pdfInput) pdfInput.click();
+  }, 150);
+}
+window.openPDFImportFromBills = openPDFImportFromBills;
