@@ -1191,24 +1191,57 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.571',
+    date: '2026-06-22',
+    title: 'Bill import: two gas meters at the same building keep their own account & meter numbers',
+    items: [
+      {
+        type: 'fix',
+        text: 'When one building has two natural-gas meters (e.g. the two Spring Hill Elementary meters), importing the bill no longer overwrites one meter number with the other just because they share an address — each meter keeps its own account and meter number and matches its own meter.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.570',
     date: '2026-06-22',
     title: 'Cost Estimate columns no longer clip; column resize works; Bills charge columns grouped',
     items: [
-      { type: 'fix', text: 'Cost Estimate table now scrolls horizontally when the window is too narrow — columns were being clipped and the scrollbar was hidden.' },
-      { type: 'fix', text: 'Dragging a column edge to resize it in the Cost Estimate table now works correctly — column widths now stick as you drag.' },
-      { type: 'fix', text: 'In the Bills table, kW demand columns (Facilities kW, Billed kW, TDC kW) are now grouped with the usage data instead of being mixed into the Charges section.' },
+      {
+        type: 'fix',
+        text: 'Cost Estimate table now scrolls horizontally when the window is too narrow — columns were being clipped and the scrollbar was hidden.',
+      },
+      {
+        type: 'fix',
+        text: 'Dragging a column edge to resize it in the Cost Estimate table now works correctly — column widths now stick as you drag.',
+      },
+      {
+        type: 'fix',
+        text: 'In the Bills table, kW demand columns (Facilities kW, Billed kW, TDC kW) are now grouped with the usage data instead of being mixed into the Charges section.',
+      },
     ],
   },
   {
     v: 'v2026.06.19.569',
     date: '2026-06-22',
-    title: 'Cost Estimate: sticky tab fix, tab icon/label overlap fix, Recommended-tier notice, hourly-rate labor totals',
+    title:
+      'Cost Estimate: sticky tab fix, tab icon/label overlap fix, Recommended-tier notice, hourly-rate labor totals',
     items: [
-      { type: 'fix', text: 'Cost Estimate tab no longer stays visible behind other tabs — it now hides correctly when you switch to a different section.' },
-      { type: 'fix', text: 'Tab bar labels and icons no longer overlap when 16 tabs are visible — text is now clipped cleanly on narrower screens.' },
-      { type: 'fix', text: 'Recommended tier in Cost Estimate now shows a notice when a measure has no available substitutions (instead of silently showing nothing).' },
-      { type: 'fix', text: 'Labor totals in Cost Estimate now render correctly before the parts catalog loads, and update immediately when you change hourly rates.' },
+      {
+        type: 'fix',
+        text: 'Cost Estimate tab no longer stays visible behind other tabs — it now hides correctly when you switch to a different section.',
+      },
+      {
+        type: 'fix',
+        text: 'Tab bar labels and icons no longer overlap when 16 tabs are visible — text is now clipped cleanly on narrower screens.',
+      },
+      {
+        type: 'fix',
+        text: 'Recommended tier in Cost Estimate now shows a notice when a measure has no available substitutions (instead of silently showing nothing).',
+      },
+      {
+        type: 'fix',
+        text: 'Labor totals in Cost Estimate now render correctly before the parts catalog loads, and update immediately when you change hourly rates.',
+      },
     ],
   },
   {
@@ -1225,11 +1258,12 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.06.19.567',
     date: '2026-06-19',
-    title: 'Cost Estimate table polish: sticky headers, visible scrollbar, List/Net/Contract columns, programming quantity clarity',
+    title:
+      'Cost Estimate table polish: sticky headers, visible scrollbar, List/Net/Contract columns, programming quantity clarity',
     items: [
       {
         type: 'fix',
-        text: "Cost Estimate table column headers now stay visible while scrolling and the horizontal scrollbar is always reachable; List, Net, and Contract prices are shown side by side; and programming rows now show how many of each equipment type need a sequence (e.g. \"1 of 33\") with a blocked/partial breakdown.",
+        text: 'Cost Estimate table column headers now stay visible while scrolling and the horizontal scrollbar is always reachable; List, Net, and Contract prices are shown side by side; and programming rows now show how many of each equipment type need a sequence (e.g. "1 of 33") with a blocked/partial breakdown.',
       },
     ],
   },
@@ -1240,7 +1274,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'feature',
-        text: "Cost Estimate Recommended tier now ranks control upgrades by energy-savings impact (highest value first), shows the savings rationale and ASHRAE 36 reference per measure, highlights the top return-on-investment measures, and includes a measurement-and-verification disclaimer; the Audit Report explains the savings basis for each sequence.",
+        text: 'Cost Estimate Recommended tier now ranks control upgrades by energy-savings impact (highest value first), shows the savings rationale and ASHRAE 36 reference per measure, highlights the top return-on-investment measures, and includes a measurement-and-verification disclaimer; the Audit Report explains the savings basis for each sequence.',
       },
     ],
   },

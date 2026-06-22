@@ -32,13 +32,36 @@ function udMeterDropHandler(e, mid) {
   }
 }
 
+// Resolves udSelProjId/udSelBldgId from the active embed wrapper when in project-embed mode.
+// Call this at the top of any handler that reads those globals but may fire after
+// renderProjUDBody restores them to pre-embed values. Safe to call in standalone mode (no-op).
+function _syncEmbedUDContext() {
+  if (window._udActiveWrap && window._udActiveWrap.id) {
+    const m2 = window._udActiveWrap.id.match(/^proj-ud-body-(\d+)$/);
+    if (m2) {
+      const pid = Number(m2[1]);
+      udSelProjId = pid;
+      if (typeof projUDSelBldg !== 'undefined' && projUDSelBldg[pid]) {
+        udSelBldgId = projUDSelBldg[pid];
+      }
+    }
+  }
+}
+
 function openCsvImportForMeter(mid) {
+  _syncEmbedUDContext();
   _csvImportMid = mid;
   _csvImportRows = [];
   const b = getUDBldg(udSelProjId, udSelBldgId);
-  if (!b) return;
+  if (!b) {
+    showToast('Building context lost — re-select the meter and try again', 'warn');
+    return;
+  }
   const m = b.meters.find((m) => m.id === mid);
-  if (!m) return;
+  if (!m) {
+    showToast('Meter not found — try re-selecting the meter', 'warn');
+    return;
+  }
 
   const isElec = m.commodity === 'Electric',
     isGas = m.commodity === 'Gas';
@@ -92,9 +115,15 @@ function processBillCsvFile(file) {
 
 function parseBillCsv(text, fname) {
   const b = getUDBldg(udSelProjId, udSelBldgId);
-  if (!b) return;
+  if (!b) {
+    showToast('Building context lost — close and re-open the import dialog', 'warn');
+    return;
+  }
   const m = b.meters.find((m) => m.id === _csvImportMid);
-  if (!m) return;
+  if (!m) {
+    showToast('Meter context lost — close and re-open the import dialog', 'warn');
+    return;
+  }
   const isElec = m.commodity === 'Electric',
     isGas = m.commodity === 'Gas';
 
@@ -129,14 +158,18 @@ function parseBillCsv(text, fname) {
     return -1;
   };
 
-  // Column index lookups
+  // Column index lookups.
+  // Each ci() list includes BOTH underscore/space display names AND camelCase internal names
+  // so that a CSV exported from the Bills tab can be re-imported without losing cost columns.
   const iStart = hdr ? Math.max(ci(['start', 'begin', 'from']), 0) : 0;
   const iEnd = hdr ? (ci(['end', 'to', 'thru', 'through']) > -1 ? ci(['end', 'to', 'thru', 'through']) : 1) : 1;
   const iKwh = hdr ? ci(['kwh', 'consumption', 'usage', 'energy']) : 2;
-  const iDemand = hdr ? ci(['actual_kw', 'actual kw', 'demand_kw', 'demand kw', 'peak kw', 'demand']) : 3;
-  const iBilledKW = hdr ? ci(['billed_kw', 'billed kw', 'billkw', 'bill_kw']) : 4;
-  const iFacKW = hdr ? ci(['facilities_kw', 'facilities kw', 'fac_kw', 'facility kw', 'fac kw']) : 5;
-  const iKwCost = hdr ? ci(['kw_cost', 'kw cost', 'demand cost', 'demand$', 'demand_cost']) : 6;
+  const iDemand = hdr ? ci(['actual_kw', 'actual kw', 'demand_kw', 'demand kw', 'peak kw', 'demand', 'demandkw']) : 3;
+  // camelCase aliases: 'billedkw' matches export header 'billedKW' (lowercased by hdr processing)
+  const iBilledKW = hdr ? ci(['billed_kw', 'billed kw', 'billkw', 'bill_kw', 'billedkw']) : 4;
+  const iFacKW = hdr ? ci(['facilities_kw', 'facilities kw', 'fac_kw', 'facility kw', 'fac kw', 'fackw']) : 5;
+  // camelCase alias: 'kwcost' matches export header 'kwCost'
+  const iKwCost = hdr ? ci(['kw_cost', 'kw cost', 'demand cost', 'demand$', 'demand_cost', 'kwcost']) : 6;
   const iFacKWCst = hdr
     ? ci([
         'facilities_kw_cost',
@@ -145,12 +178,19 @@ function parseBillCsv(text, fname) {
         'fac_kw_cost',
         'fac kw cost',
         'facility kw cost',
+        'fackwcost', // camelCase alias: matches export header 'facKWCost'
       ])
     : 7;
-  const iKwhCst = hdr ? ci(['kwh_cost', 'kwh cost', 'energy cost', 'energy$', 'energy_cost']) : 8;
-  const iTotCst = hdr ? ci(['total_cost', 'total cost', 'total$', 'bill', 'amount', 'total']) : isElec ? 9 : 3;
+  // camelCase alias: 'kwhcost' matches export header 'kwhCost'
+  const iKwhCst = hdr ? ci(['kwh_cost', 'kwh cost', 'energy cost', 'energy$', 'energy_cost', 'kwhcost']) : 8;
+  const iTotCst = hdr
+    ? ci(['total_cost', 'total cost', 'total$', 'bill', 'amount', 'total', 'totalcost'])
+    : isElec
+      ? 9
+      : 3;
   const iTherms = hdr ? ci(['therms', 'therm', 'gas', 'ccf', 'mcf']) : 2;
-  const iThCost = hdr ? ci(['therm_cost', 'therm cost', 'gas cost', 'gas$']) : 3;
+  // camelCase alias: 'thermcost' matches export header 'thermCost'
+  const iThCost = hdr ? ci(['therm_cost', 'therm cost', 'gas cost', 'gas$', 'thermcost']) : 3;
   const iUsage = hdr ? ci(['usage', 'consumption', 'hcf', 'kgal', 'mlb']) : 2;
   const iCost = hdr ? ci(['cost', 'total', 'amount', 'bill$']) : 3;
 
@@ -2250,6 +2290,15 @@ function saveMeter() {
   closeMeterModal();
   renderUDProjList();
   const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
+  if (isEmbed) {
+    // Sync globals to the project/building that was actually saved to.
+    // renderProjUDBody restores udSelProjId/udSelBldgId to pre-embed values after each render,
+    // so they are stale here. Without this sync renderUDDetail fetches the wrong building
+    // and the new/edited meter never appears without a manual reload.
+    udSelProjId = _targetProjId;
+    udSelBldgId = _targetBldgId;
+    if (typeof projUDSelBldg !== 'undefined') projUDSelBldg[_targetProjId] = _targetBldgId;
+  }
   renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
   _refreshBldgPerfIfVisible();
   setTimeout(renderSidebarFolders, 100);

@@ -1328,8 +1328,22 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // (407070400), merging ~16 different buildings under one identity.
     // Account numbers must never be borrowed from other pages — use the page's own
     // value (P1-P5) or fall back to ServiceAddress as the identity key.
+    //
+    // FIX(2026-06-22): MeterNumber is ALSO EXCLUDED from address-based consensus.
+    // Two DISTINCT gas meters can legitimately share one building/ServiceAddress
+    // with DIFFERENT account AND meter numbers (e.g. the two Spring Hill Elementary
+    // meters 540295/02446156C and 567885/9445777C at "Elem - 300 S Webster St", and
+    // the two BofE meters 560189/T920419C and 560190/G0016134C). Address-grouped
+    // "consensus" was a 1-of-2 coin flip that overwrote one meter's number with the
+    // other's, collapsing two real meters into one identity and breaking/mis-routing
+    // auto-match in findMeterMatch. Distinct meters sharing an address must NEVER be
+    // merged or corrected toward each other. Only the SAME meter's own historical
+    // readings may inform a digit correction — that lives in the per-bill recovery
+    // loop below (gated on hist.length, a no-op when there is no prior history, e.g.
+    // a first import like Spring Hill). Identity fields (AccountNumber, MeterNumber)
+    // are never borrowed from sibling bills.
     if (bills.length > 1) {
-      const _CONSENSUS_FIELDS = ['MeterNumber', 'ServiceAddress', 'CustomerName', 'UtilityCompany', 'RateSchedule'];
+      const _CONSENSUS_FIELDS = ['ServiceAddress', 'CustomerName', 'UtilityCompany', 'RateSchedule'];
       const _addrNorm = (s) => {
         let n = (s || 'unknown')
           .toLowerCase()

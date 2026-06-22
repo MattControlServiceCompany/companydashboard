@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.19.570'; // deployed 2026-06-22 (Fix CE table overflow/resize; fix Bills column order)
+  var CH_VERSION = 'v2026.06.19.571'; // deployed 2026-06-22 (Spring Hill: stop address-based meter-number consensus from clobbering distinct meters)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,13 +32,22 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.06.19.570',
+      v: 'v2026.06.19.571',
       date: '2026-06-22',
       title: 'Cost Estimate columns no longer clip; column resize works; Bills charge columns grouped',
       items: [
-        { type: 'fix', text: 'Cost Estimate table now scrolls horizontally when the window is too narrow — columns were being clipped and the scrollbar was hidden.' },
-        { type: 'fix', text: 'Dragging a column edge to resize it in the Cost Estimate table now works correctly — column widths now stick as you drag.' },
-        { type: 'fix', text: 'In the Bills table, kW demand columns (Facilities kW, Billed kW, TDC kW) are now grouped with the usage data instead of being mixed into the Charges section.' },
+        {
+          type: 'fix',
+          text: 'Cost Estimate table now scrolls horizontally when the window is too narrow — columns were being clipped and the scrollbar was hidden.',
+        },
+        {
+          type: 'fix',
+          text: 'Dragging a column edge to resize it in the Cost Estimate table now works correctly — column widths now stick as you drag.',
+        },
+        {
+          type: 'fix',
+          text: 'In the Bills table, kW demand columns (Facilities kW, Billed kW, TDC kW) are now grouped with the usage data instead of being mixed into the Charges section.',
+        },
       ],
     },
     {
