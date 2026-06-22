@@ -1108,7 +1108,7 @@ function renderDetail(p) {
             <div id="ptab-bas-alarms" class="ptab" style="padding:0;overflow-y:auto">
               <div id="ptab-bas-alarms-body-${p.id}" style="flex:1;overflow-y:auto;min-height:0;"></div>
             </div>
-            <div id="ptab-cost-estimate" class="ptab" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
+            <div id="ptab-cost-estimate" class="ptab" style="padding:0;overflow:hidden">
               <div id="ptab-cost-estimate-body-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
                 <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading cost estimate...</div>
               </div>

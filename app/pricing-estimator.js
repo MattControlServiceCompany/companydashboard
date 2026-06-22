@@ -1653,9 +1653,9 @@ function _pricingComputeTotals(rows, estimate) {
     }
 
     if (price === null) {
-      // Only count as pending if we have a catalog (otherwise every row is pending
-      // which is the no-catalog path — handled separately via hasCatalog guard).
-      if (hasCatalog) pendingPriceCount++;
+      // Count hardware rows as pending when catalog is loaded (SKU missing/unpriced).
+      // Without a catalog, hardware rows can't be priced — tracked separately via noCatalog flag.
+      if (hasCatalog && row.phase === 1) pendingPriceCount++;
       return;
     }
     hasAnyPrice = true;
@@ -1663,10 +1663,11 @@ function _pricingComputeTotals(rows, estimate) {
     else if (row.phase === 2) phase2 += price;
   });
 
-  // grandTotal is null ONLY when:
-  //   (a) no catalog at all, OR
-  //   (b) zero included rows are priced (nothing to show)
-  var grandNull = !hasCatalog || !hasAnyPrice;
+  // Bug B fix: grandTotal is null ONLY when zero included rows are priced.
+  // Labor rows (phase 2) are always priced (qty × hrs × hourlyRate) regardless of
+  // whether a pricing catalog is imported. Removing !hasCatalog from this condition
+  // allows labor totals to display even when no catalog is loaded.
+  var grandNull = !hasAnyPrice;
 
   return {
     phase1: grandNull ? null : phase1,
@@ -1677,6 +1678,7 @@ function _pricingComputeTotals(rows, estimate) {
     engReviewCount: engReviewCount,
     pendingPriceCount: pendingPriceCount,
     hasAnyPrice: hasAnyPrice,
+    noCatalog: !hasCatalog, // true when no pricing CSV imported; callers use to show "import CSV" note
   };
 }
 
@@ -2117,6 +2119,8 @@ function _pricingManualPrice(event, projId, rowId) {
 
 // Cache rows per projId for quick lookup
 var _pricingRowCache = {};
+// Bug A: optimizer substitution stats per projId — populated by buildRecommendedRows
+var _pricingOptimizerStats = {}; // projId → { subCount: N }
 function _pricingFindRow(projId, rowId) {
   var rows = _pricingRowCache[projId];
   if (!rows) return null;
@@ -2314,6 +2318,7 @@ function buildRecommendedRows(projId) {
   var fddBuildingsSeen = {};
   var recRows = [];
   var rowIdx = 10000; // offset to avoid ID collision with compliance rows
+  var _optimizerSubCount = 0; // Bug A: track substitutions made
 
   // Process each compliance row and apply optimizer or skip
   compRows.forEach(function (row) {
@@ -2336,6 +2341,7 @@ function buildRecommendedRows(projId) {
           rec.unitPrice = cheaper.unitPrice;
           rec.lineTotal = rec.qty > 0 ? parseFloat((cheaper.unitPrice * rec.qty).toFixed(2)) : null;
           rec.optimized = true;
+          _optimizerSubCount++;
           // Recompute three-column price fields for the substituted SKU (FIX 2)
           var _optEntry = catalog ? catalog[cheaper.sku] : null;
           rec.listPrice = _optEntry && _optEntry.list != null ? _optEntry.list : null;
@@ -2421,7 +2427,7 @@ function buildRecommendedRows(projId) {
       qty: 1,
       sku: FDD_SKU,
       engReview: false,
-      noSku: catalog ? !catalog[FDD_SKU] : false,
+      noSku: !catalog || !catalog[FDD_SKU], // Bug A: always pending when no catalog or SKU missing
       ioOnly: false,
       unitPrice: fddUnitPrice,
       lineTotal: fddLineTotal,
@@ -2464,6 +2470,9 @@ function buildRecommendedRows(projId) {
   recRows.forEach(function (r) {
     if (!r.building) sortedRows.push(r);
   });
+
+  // Bug A: store substitution count so initCostEstimateTab can show a notice
+  _pricingOptimizerStats[projId] = { subCount: _optimizerSubCount };
 
   return sortedRows;
 }
@@ -3621,36 +3630,49 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   ];
 
   if (isBothMode && recTotals) {
+    var _hwPending = '<span style="color:var(--text3);font-size:11px;font-weight:400">CSV needed</span>';
     footerParts.push(
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Compliance — Hardware: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
-        (totals.grand !== null ? _pricingFmt(totals.phase1) : '—') +
+        (totals.noCatalog ? _hwPending : totals.grand !== null ? _pricingFmt(totals.phase1) : '—') +
         '</span>',
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Programming: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
         (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
         '</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Total: ' +
-        (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
+        (totals.grand !== null
+          ? totals.noCatalog
+            ? 'Labor: ' + _pricingFmt(totals.grand)
+            : _pricingFmt(totals.grand)
+          : '—') +
         '</span>',
       '<span style="color:var(--border2)">|</span>',
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Recommended — Hardware: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
-        (recTotals.grand !== null ? _pricingFmt(recTotals.phase1) : '—') +
+        (recTotals.noCatalog ? _hwPending : recTotals.grand !== null ? _pricingFmt(recTotals.phase1) : '—') +
         '</span>',
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Programming: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
         (recTotals.grand !== null ? _pricingFmt(recTotals.phase2) : '—') +
         '</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">Total: ' +
-        (recTotals.grand !== null ? _pricingFmt(recTotals.grand) : '—') +
+        (recTotals.grand !== null
+          ? recTotals.noCatalog
+            ? 'Labor: ' + _pricingFmt(recTotals.grand)
+            : _pricingFmt(recTotals.grand)
+          : '—') +
         '</span>',
     );
   } else {
     footerParts.push(
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
-        (totals.grand !== null ? _pricingFmt(totals.phase1) : '—') +
+        (totals.noCatalog
+          ? '<span style="color:var(--text3);font-size:11px;font-weight:400">Import pricing CSV</span>'
+          : totals.grand !== null
+            ? _pricingFmt(totals.phase1)
+            : '—') +
         '</span>',
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
@@ -3658,7 +3680,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         '</span>',
       '<span style="color:var(--border2)">|</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-        (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
+        (totals.grand !== null
+          ? totals.noCatalog
+            ? 'Labor: ' + _pricingFmt(totals.grand)
+            : _pricingFmt(totals.grand)
+          : '—') +
         '</span>',
     );
   }
@@ -3670,6 +3696,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }
 
   var _p4CaveatParts = [];
+  if (totals.noCatalog) _p4CaveatParts.push('Hardware pending — import pricing CSV to see full estimate');
   if (totals.pendingPriceCount > 0) _p4CaveatParts.push(totals.pendingPriceCount + ' item(s) pending price (excluded)');
   if (totals.engReviewCount > 0) _p4CaveatParts.push(totals.engReviewCount + ' eng-review');
   _p4CaveatParts.push('Basis: ' + (cfg.priceBasis || 'contract'));
@@ -3843,10 +3870,31 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows);
   }
 
+  // Bug A: "no substitutions" notice for Recommended tier when optimizer found nothing
+  var recNoSubsNotice = '';
+  if (tier === 'recommended') {
+    var _optStats = _pricingOptimizerStats[projId];
+    var _subCount = _optStats ? _optStats.subCount : 0;
+    if (_subCount === 0) {
+      recNoSubsNotice =
+        '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
+        'border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text2);line-height:1.5">' +
+        '<strong style="color:var(--text)">No lower-cost substitutions found</strong> — ' +
+        (hasCatalog
+          ? 'the imported catalog contains no cheaper qualifying alternatives for the hardware in this project. ' +
+            'Recommended pricing matches Compliance. '
+          : 'no pricing catalog is loaded, so the optimizer could not search for alternatives. ' +
+            'Import a pricing CSV to enable substitution analysis. ') +
+        'The FDD Reporting add-on line below is unique to the Recommended tier.' +
+        '</div>';
+    }
+  }
+
   el.innerHTML = [
     '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
     toolbarHTML,
     topRoiCallout,
+    recNoSubsNotice,
     '<div class="ch-panel-body" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden">',
     '<div class="ch-tbl-outer" style="margin:0;border:1px solid var(--border);border-radius:6px;overflow:hidden">',
     '<div class="ch-tbl-scroll" style="overflow-x:auto;overflow-y:visible">',
@@ -3881,20 +3929,28 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 (function () {
   var _origRefreshFooter = _pricingRefreshFooter;
   _pricingRefreshFooter = function (projId) {
+    var est = _pricingGetEstimate(projId);
+    var tier = est.tier || 'compliance';
+
+    // Secondary fix: Both-mode has a side-by-side footer that cannot be reproduced
+    // here cheaply (requires recRows). Delegate to full re-render to keep it consistent.
+    if (tier === 'both') {
+      initCostEstimateTab(projId);
+      return;
+    }
+
     // Use labor-override-applied rows from cache if available
     var rows = _pricingRowCache[projId];
     if (!rows) {
       rows = _pricingApplyLaborOverrides(projId, buildComplianceRows(projId));
     }
-    var est = _pricingGetEstimate(projId);
     var cfg = _pricingGetConfig();
     var catalog = sget('en_pricing_catalog', null);
     var totals = _pricingComputeTotals(rows, est);
-    var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
-    var tier = est.tier || 'compliance';
     var filterBldg = _pricingBldgFilter[projId] || '';
 
     var _rfCaveatParts = [];
+    if (totals.noCatalog) _rfCaveatParts.push('Hardware pending — import pricing CSV');
     if (totals.pendingPriceCount > 0)
       _rfCaveatParts.push(totals.pendingPriceCount + ' item(s) pending price (excluded)');
     if (totals.engReviewCount > 0) _rfCaveatParts.push(totals.engReviewCount + ' eng-review');
@@ -3911,7 +3967,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
-        (totals.grand !== null ? _pricingFmt(totals.phase1) : '—') +
+        (totals.noCatalog
+          ? '<span style="color:var(--text3);font-size:11px;font-weight:400">Import pricing CSV</span>'
+          : totals.grand !== null
+            ? _pricingFmt(totals.phase1)
+            : '—') +
         '</span>',
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
@@ -3919,7 +3979,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         '</span>',
       '<span style="color:var(--border2)">|</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-        (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
+        (totals.grand !== null
+          ? totals.noCatalog
+            ? 'Labor: ' + _pricingFmt(totals.grand)
+            : _pricingFmt(totals.grand)
+          : '—') +
         '</span>',
       filterNote,
       '<span style="flex:1"></span>',

@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.569',
+    date: '2026-06-22',
+    title: 'Cost Estimate: sticky tab fix, tab icon/label overlap fix, Recommended-tier notice, hourly-rate labor totals',
+    items: [
+      { type: 'fix', text: 'Cost Estimate tab no longer stays visible behind other tabs — it now hides correctly when you switch to a different section.' },
+      { type: 'fix', text: 'Tab bar labels and icons no longer overlap when 16 tabs are visible — text is now clipped cleanly on narrower screens.' },
+      { type: 'fix', text: 'Recommended tier in Cost Estimate now shows a notice when a measure has no available substitutions (instead of silently showing nothing).' },
+      { type: 'fix', text: 'Labor totals in Cost Estimate now render correctly before the parts catalog loads, and update immediately when you change hourly rates.' },
+    ],
+  },
+  {
     v: 'v2026.06.19.568',
     date: '2026-06-19',
     title: 'Cost Estimate: estimated annual dollar-savings ranges per measure',

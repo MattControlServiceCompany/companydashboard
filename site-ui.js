@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.19.568'; // deployed 2026-06-17 (Equipment Matrix: RTU is its own type (RTU/SZ-RTU/VAV-RTU/MTZ-RTU); subtype read from Multizone-VAV type label)
+  var CH_VERSION = 'v2026.06.19.569'; // deployed 2026-06-22 (Fix sticky Cost Estimate tab; fix tab icon/text overlap at 16 tabs)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
