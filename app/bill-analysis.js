@@ -9808,6 +9808,10 @@ function renderPDFFields(parsed, warnings) {
     Meter2_kWh: 'kWh Used',
     Meter2_KW: 'KW Used',
     Meter2_RKVA: 'RKVA Used',
+    // Wood River Energy per-site charge components (Fix 1 — a84458f0)
+    _wreTriggerCharge: 'Trigger Charge',
+    _wreIndexCharge: 'Index Charge',
+    _wreSWECharge: 'SWE Charge',
   };
   // Fields that represent dollar charges — prefix with $ in display
   const CHARGE_FIELDS = new Set([
@@ -9844,6 +9848,10 @@ function renderPDFFields(parsed, warnings) {
     'PaymentsReceived',
     'FranchiseFee1',
     'FranchiseFee2',
+    // WRE per-site charge components (Fix 1 — a84458f0)
+    '_wreTriggerCharge',
+    '_wreIndexCharge',
+    '_wreSWECharge',
   ]);
   // Fields that MUST display with 4 decimal places (kW, kWh, meter reads per Evergy Billing Details rules)
   const FOURDP_FIELDS = new Set([
@@ -9977,8 +9985,11 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Meter Readings' },
     { type: 'pair', fields: ['MeterNumber', 'ReadDifference'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
-    { type: 'pair', fields: ['NaturalGasTherms', 'NaturalGasCCF'] },
-    { type: 'pair', fields: ['NaturalGasMMbtu', 'ProductionMonth'] },
+    // Fix 3 (60de292d): show only the gas-unit field(s) that are present on this bill.
+    // Each row has a condition so it is skipped when the field is null/empty.
+    { type: 'pair', fields: ['NaturalGasTherms'], condition: 'NaturalGasTherms' },
+    { type: 'pair', fields: ['NaturalGasCCF'], condition: 'NaturalGasCCF' },
+    { type: 'pair', fields: ['NaturalGasMMbtu', 'ProductionMonth'], condition: 'NaturalGasMMbtu' },
     { section: 'Charges' },
     { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge', rateKey: null },
     {
@@ -9989,15 +10000,55 @@ function renderPDFFields(parsed, warnings) {
       unit: 'Therms',
       rateKey: null,
     },
+    // Fix 2 (a84458f0 defect 2): "Gas (MMbtu)" charge-line that used TotalCurrentCharges
+    // caused a double-count (TCC appeared as both a charge component AND the total row).
+    // Removed from _LAYOUT_GAS. WRE-specific charge rows live in _LAYOUT_WRE instead.
+    { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment', rateKey: null },
+    { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+  ];
+  // Fix 1 + Fix 2 (a84458f0): Wood River Energy layout with per-site charge components.
+  // Detected via _detectCommodity when b._utilityName === 'Wood River Energy'.
+  // TotalCurrentCharges appears ONLY as the total row — NOT as a charge-line component.
+  const _LAYOUT_WRE = [
+    { section: 'Account Info' },
+    { type: 'wide', fields: ['UtilityCompany'] },
+    { type: 'wide', fields: ['CustomerName'] },
+    { type: 'wide', fields: ['ServiceAddress'] },
+    { type: 'pair', fields: ['AccountNumber', 'MeterNumber'] },
+    { type: 'pair', fields: ['CustomerNumber', 'Commodity'] },
+    { section: 'Billing Period' },
+    { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
+    { type: 'pair', fields: ['BillDate', 'ProductionMonth'] },
+    { section: 'Meter Readings' },
+    { type: 'pair', fields: ['NaturalGasMMbtu'] },
+    { section: 'Charges' },
+    // Per-site charge component lines (from Fix 1 extractor — a84458f0 defect 1)
+    // _wreTriggerCharge/_wreIndexCharge/_wreSWECharge are underscore-prefixed, so they
+    // are excluded from the extra-field tail by the startsWith('_') filter.
+    // We reference them explicitly here via chargeField so they feed runningTotal correctly.
+    // Note: underscore-prefixed fields work as chargeField since the renderer reads parsed[row.chargeField].
     {
       type: 'charge-line',
-      label: 'Gas (MMbtu)',
-      chargeField: 'TotalCurrentCharges',
+      label: 'Trigger - Fixed',
+      chargeField: '_wreTriggerCharge',
       qtyField: 'NaturalGasMMbtu',
       unit: 'MMbtu',
       rateKey: null,
     },
-    { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment', rateKey: null },
+    {
+      type: 'charge-line',
+      label: 'Index (FOM)',
+      chargeField: '_wreIndexCharge',
+      rateKey: null,
+    },
+    // Special Weather Event: only present on some invoices (hasSWE flag on the record)
+    {
+      type: 'charge-line',
+      label: 'Special Weather Event',
+      chargeField: '_wreSWECharge',
+      rateKey: null,
+      hideIfNull: true,
+    },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
   ];
   const _LAYOUT_WATER = [
@@ -10157,13 +10208,15 @@ function renderPDFFields(parsed, warnings) {
   ];
   // Detect the commodity for this bill and pick a layout. Priority:
   // 1. KGS bills — detected by UtilityCompany name (gets dedicated layout with KGS field order)
-  // 2. explicit Commodity field (Louisburg split + propane)
-  // 3. FuelType field (propane fallback when Commodity missing)
-  // 4. UtilityCompany name hints (generic gas / spire)
-  // 5. Evergy / electric default
+  // 2. Wood River Energy — dedicated layout with per-site charge components (Fix 1+2, a84458f0)
+  // 3. explicit Commodity field (Louisburg split + propane)
+  // 4. FuelType field (propane fallback when Commodity missing)
+  // 5. UtilityCompany name hints (generic gas / spire)
+  // 6. Evergy / electric default
   const _detectCommodity = (b) => {
     const uc = (b.UtilityCompany || '').toLowerCase();
     if (/kansas\s*gas/.test(uc) || b._utilityName === 'Kansas Gas Service') return 'kgs';
+    if (b._utilityName === 'Wood River Energy') return 'wre';
     const c = (b.Commodity || '').toLowerCase();
     if (c === 'gas') return 'gas';
     if (c === 'water') return 'water';
@@ -10178,6 +10231,7 @@ function renderPDFFields(parsed, warnings) {
     electric: _LAYOUT_ELECTRIC,
     gas: _LAYOUT_GAS,
     kgs: _LAYOUT_KGS,
+    wre: _LAYOUT_WRE,
     water: _LAYOUT_WATER,
     sewer: _LAYOUT_SEWER,
     stormwater: _LAYOUT_STORMWATER,
@@ -10416,7 +10470,23 @@ function renderPDFFields(parsed, warnings) {
   };
 
   const totalVal = _pf(parsed.TotalCurrentCharges);
-  const rows = FIELD_LAYOUT.map((row) => {
+  // Fix 4 (d6f8f3a8): splice extra fields BEFORE the total row instead of appending after.
+  // Build a mutable copy of the layout, find the last {type:'total'} entry, and insert
+  // any extra-field pair rows immediately before it. This guarantees Total Current Charges
+  // is always the last row regardless of provider.
+  const _mutableLayout = [...FIELD_LAYOUT];
+  if (extraKeys.length) {
+    const _totalIdx = _mutableLayout.reduce((last, r, i) => (r.type === 'total' ? i : last), -1);
+    const _extraPairRows = [];
+    for (let _ei = 0; _ei < extraKeys.length; _ei += 2) {
+      if (_ei + 1 < extraKeys.length)
+        _extraPairRows.push({ type: 'pair', fields: [extraKeys[_ei], extraKeys[_ei + 1]] });
+      else _extraPairRows.push({ type: 'pair', fields: [extraKeys[_ei]] });
+    }
+    if (_totalIdx >= 0) _mutableLayout.splice(_totalIdx, 0, ..._extraPairRows);
+    else _mutableLayout.push(..._extraPairRows);
+  }
+  const rows = _mutableLayout.map((row) => {
     if (row.condition && !parsed[row.condition]) return '';
     if (row.section) return `<div class="ef-section">${row.section}</div>`;
 
@@ -10614,14 +10684,8 @@ function renderPDFFields(parsed, warnings) {
     }
     return '';
   });
-  // Append extra fields not in layout
-  if (extraKeys.length) {
-    for (let i = 0; i < extraKeys.length; i += 2) {
-      if (i + 1 < extraKeys.length)
-        rows.push(`<div class="ef-pair">${buildCell(extraKeys[i])}${buildCell(extraKeys[i + 1])}</div>`);
-      else rows.push(`<div class="ef-pair">${buildCell(extraKeys[i])}</div>`);
-    }
-  }
+  // Fix 4 (d6f8f3a8): extra fields are now spliced BEFORE the total row in _mutableLayout above.
+  // Phase 2 tail-append removed — Total Current Charges is always the last layout row.
   // Add Field + Export buttons
   rows.push(
     `<div style="margin-top:8px;text-align:center;display:flex;gap:8px;justify-content:center"><button class="btn btn-ghost btn-sm" onclick="addExtractedField()" style="font-size:11px">+ Add Field</button><button class="btn btn-ghost btn-sm" onclick="exportCurrentBillJSON()" style="font-size:11px">Export JSON</button></div>`,
@@ -10671,8 +10735,24 @@ function renderPDFFields(parsed, warnings) {
     Sewer: ['SewerCharge', 'SewerFranchiseFee'],
     Stormwater: ['StormWaterCharge'],
     Propane: ['Subtotal', 'Tax'],
+    // WRE per-site charge components (Fix 1 — a84458f0).
+    Wre: ['_wreTriggerCharge', '_wreIndexCharge', '_wreSWECharge'],
   };
+  // Map _detectCommodity result (lowercase) to the PascalCase keys used above.
+  // WRE must resolve to 'Wre' before falling through to 'Gas', since both have Commodity:'Gas'.
+  const _DETECT_TO_SUM_KEY = {
+    electric: 'Electric',
+    gas: 'Gas',
+    kgs: 'Kgs',
+    wre: 'Wre',
+    water: 'Water',
+    sewer: 'Sewer',
+    stormwater: 'Stormwater',
+    propane: 'Propane',
+  };
+  const _detectedComm2 = _detectCommodity(parsed);
   const _billCommodity =
+    _DETECT_TO_SUM_KEY[_detectedComm2] ||
     parsed.Commodity ||
     (parsed.kWhConsumed
       ? 'Electric'

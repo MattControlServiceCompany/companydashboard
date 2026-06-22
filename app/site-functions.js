@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.573',
+    date: '2026-06-22',
+    title: 'Wood River bills now show separated charge line items',
+    items: [
+      {
+        type: 'fix',
+        text: 'Wood River gas bills now display Trigger-Fixed, Index (FOM), and Special Weather Event charges as separate line items instead of a combined block.',
+      },
+      {
+        type: 'fix',
+        text: 'Total Current Charges on gas bills no longer appears twice — the duplicate entry in the Gas section has been removed.',
+      },
+      {
+        type: 'fix',
+        text: 'Gas bill detail rows now show only the unit types actually present on the bill (e.g. Therms, Mcf) instead of showing all possible unit rows regardless of data.',
+      },
+      {
+        type: 'fix',
+        text: 'All extracted charge fields on gas bills now appear above the Total Current Charges row instead of below it.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.572',
     date: '2026-06-22',
     title: 'Gas bills now store usage in Therms — Spring Hill kicking-off values corrected',

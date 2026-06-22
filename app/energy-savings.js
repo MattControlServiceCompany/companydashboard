@@ -5340,6 +5340,10 @@ const UTILITY_RULES = [
       let _curAcct = null;
       let _curMeter = null;
       let _inSites = false; // true once we pass the header section
+      // Per-site charge component accumulators (reset on each new Service Address)
+      let _curTriggerCharge = null;
+      let _curIndexCharge = null;
+      let _curSWECharge = null;
 
       for (let i = 0; i < _lines.length; i++) {
         const ln = _lines[i];
@@ -5351,6 +5355,10 @@ const UTILITY_RULES = [
         // The building name and Acct/Meter appear on the SAME line in all formats.
         if (/Service\s+Address\s*:/i.test(ln)) {
           _inSites = true;
+          // Reset per-site charge component accumulators
+          _curTriggerCharge = null;
+          _curIndexCharge = null;
+          _curSWECharge = null;
           // Extract building name (text between "Service Address:" and "Acct/Meter:")
           const _saM = ln.match(
             /Service\s+Address\s*:\s*(.+?)\s+Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
@@ -5379,6 +5387,33 @@ const UTILITY_RULES = [
           continue;
         }
 
+        // Trigger - Fixed charge component line.
+        // Format: "Trigger - Fixed   6.24   0.07   $5.2650   $33.22"
+        // Last dollar amount on the line = charge for this component.
+        if (_inSites && /Trigger\s*-?\s*Fixed/i.test(ln)) {
+          const _trigDollarM = ln.match(/\$([\d,]+\.\d{2})\s*$/);
+          if (_trigDollarM) _curTriggerCharge = parseFloat(_trigDollarM[1].replace(/,/g, ''));
+          continue;
+        }
+
+        // Index (FOM) charge component line.
+        // Format: "Index (FOM)   3.34   0.04   $5.0550   $17.09"
+        // OCR variants: "IndexbOM)  60.03  0.67  $5.0550  $306.84" — tolerate garbled parens/O vs 0
+        if (_inSites && /Index[\s(b]*(?:FOM|0M|OM)/i.test(ln)) {
+          const _idxDollarM = ln.match(/\$([\d,]+\.\d{2})\s*$/);
+          if (_idxDollarM) _curIndexCharge = parseFloat(_idxDollarM[1].replace(/,/g, ''));
+          continue;
+        }
+
+        // Special Weather Event charge component line (present only on some invoices).
+        // Format: "Special Weather Event  -2.98  -0.03  $-20.8065  $62.63"
+        // The dollar charge is POSITIVE (surcharge), despite negative MMbtu/rate columns.
+        if (_inSites && /Special\s+Weather\s+Event/i.test(ln)) {
+          const _sweDollarM = ln.match(/\$([\d,]+\.\d{2})\s*$/);
+          if (_sweDollarM) _curSWECharge = parseFloat(_sweDollarM[1].replace(/,/g, ''));
+          continue;
+        }
+
         // Sub-Total line — closes the current site block.
         // Format: "Sub-Total:   13.49   0.13   $56.45"  (embedded)
         //         "Sub-Total:                                   9.58   0.11   $50.31" (OCR with wide spaces)
@@ -5398,6 +5433,9 @@ const UTILITY_RULES = [
               MeterNumber: _curMeter,
               mmbtu: parseFloat(_mmbtuM[1].replace(/,/g, '')),
               dollar: _fixedDollar,
+              triggerCharge: _curTriggerCharge,
+              indexCharge: _curIndexCharge,
+              sweCharge: _curSWECharge,
             });
           }
           // Do NOT reset _curAddr/_curAcct here — next "Service Address:" line will overwrite.
@@ -5432,6 +5470,10 @@ const UTILITY_RULES = [
           CustomerCharge: null,
           TotalCurrentCharges: blk.dollar || null,
           TotalAmountDue: blk.dollar || null,
+          // Per-site charge components (Fix 1 — a84458f0 defect 1)
+          _wreTriggerCharge: blk.triggerCharge != null ? String(blk.triggerCharge) : null,
+          _wreIndexCharge: blk.indexCharge != null ? String(blk.indexCharge) : null,
+          _wreSWECharge: blk.sweCharge != null ? String(blk.sweCharge) : null,
           _wreHasSWE: hasSWEGlobal,
           _wreSummaryMMbtu: summaryMMbtu,
           _wreSummaryTotal: summaryTotalCC,

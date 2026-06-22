@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.19.572'; // deployed 2026-06-22 (therms-unit P0: canonicalize MMBtu→Therms at all save paths + idempotent migration for existing Spring Hill gas bills)
+  var CH_VERSION = 'v2026.06.19.573'; // deployed 2026-06-22 (WRE charge line items, TCC double-count fix, gas-unit conditional display, extra fields before total)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
