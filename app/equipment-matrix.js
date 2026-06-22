@@ -6592,8 +6592,19 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       var match = coveredMap[catKey];
       var tier = match.matchTier;
       // FIX 3a (1b74f531): Use explicit null/undefined check so 0/'0' passes through (was falsy || '')
-      var rawVal =
-        row.points && match.pointName ? (row.points[match.pointName] != null ? row.points[match.pointName] : '') : '';
+      // FIX 4d2834d7: When match.pointName is a col key (from Source 3 / emGetNormalizedPoints),
+      // row.points[match.pointName] returns undefined for data imported before the col key was added.
+      // Fall back to emGetNormalizedPoints(row)[match.pointName] — the WeakMap cache makes this free.
+      var rawVal = '';
+      var _directLookup = row.points && match.pointName ? row.points[match.pointName] : undefined;
+      if (_directLookup != null) {
+        rawVal = _directLookup;
+      } else if (match.pointName && _emKnownPointColKeys && _emKnownPointColKeys.has(match.pointName)) {
+        // match.pointName is a col key — look up the normalized value from the read-time engine.
+        var _normPtsForDisplay = emGetNormalizedPoints(row);
+        var _normVal = _normPtsForDisplay ? _normPtsForDisplay[match.pointName] : undefined;
+        if (_normVal != null) rawVal = _normVal;
+      }
       var displayVal = rawVal !== '' ? (String(rawVal).length > 8 ? String(rawVal).slice(0, 8) : String(rawVal)) : null;
       var tooltipBase = emHtmlEsc((match.pointName || '') + (rawVal !== '' ? ': ' + rawVal : ''));
 

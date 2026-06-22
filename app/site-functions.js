@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.575',
+    date: '2026-06-22',
+    title: 'Equipment Matrix audit cells now display their value when present',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix audit cells that were highlighted green (point present) but showed no value now correctly display the value — the display lookup now falls back to the normalized points index when a direct match is not found.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.574',
     date: '2026-06-22',
     title: 'Baseline projections no longer go negative; frozen-regression status now flagged',
