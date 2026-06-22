@@ -1191,6 +1191,16 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.19.570',
+    date: '2026-06-22',
+    title: 'Cost Estimate columns no longer clip; column resize works; Bills charge columns grouped',
+    items: [
+      { type: 'fix', text: 'Cost Estimate table now scrolls horizontally when the window is too narrow — columns were being clipped and the scrollbar was hidden.' },
+      { type: 'fix', text: 'Dragging a column edge to resize it in the Cost Estimate table now works correctly — column widths now stick as you drag.' },
+      { type: 'fix', text: 'In the Bills table, kW demand columns (Facilities kW, Billed kW, TDC kW) are now grouped with the usage data instead of being mixed into the Charges section.' },
+    ],
+  },
+  {
     v: 'v2026.06.19.569',
     date: '2026-06-22',
     title: 'Cost Estimate: sticky tab fix, tab icon/label overlap fix, Recommended-tier notice, hourly-rate labor totals',
