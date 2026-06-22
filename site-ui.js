@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.19.575'; // deployed 2026-06-22 (fix green+blank audit cells — col-key display lookup fallback 4d2834d7)
+  var CH_VERSION = 'v2026.06.22.576'; // deployed 2026-06-22 (fix green+blank audit cells — col-key display lookup fallback 4d2834d7)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -1138,7 +1138,16 @@ function _pricingSetConfig(updates) {
 /* ── Get estimate state (row toggles, manual prices) ── */
 function _pricingGetEstimate(projId) {
   var stored = sget('en_pricing_estimate_' + projId, null);
-  return stored || { rowToggles: {}, manualPrices: {}, laborOverrides: {}, tier: 'compliance' };
+  return (
+    stored || {
+      rowToggles: {},
+      manualPrices: {},
+      laborOverrides: {},
+      qtyOverrides: {},
+      noteOverrides: {},
+      tier: 'compliance',
+    }
+  );
 }
 function _pricingSetEstimate(projId, est) {
   sset('en_pricing_estimate_' + projId, est);
@@ -1647,7 +1656,9 @@ function _pricingComputeTotals(rows, estimate) {
     var price = row.lineTotal;
 
     // Manual price override — blank/NaN/zero = MISSING (not $0)
-    if (row.noSku) {
+    // Applies to: explicit noSku rows AND SKU rows not found in catalog (Fix: item 6f26cbfd)
+    var _skuMissing = row.sku && hasCatalog && catalog && !catalog[row.sku];
+    if (row.noSku || _skuMissing) {
       var manual = parseFloat(estimate.manualPrices[toggleKey]);
       price = isNaN(manual) || manual === 0 ? null : manual * row.qty;
     }
@@ -2652,6 +2663,71 @@ function _pricingSeqHrsReset(projId, seqKey) {
   initCostEstimateTab(projId);
 }
 
+/* ── Qty override handlers (Fix: item 6f26cbfd) ──────────────────────────── */
+function _pricingQtyOverride(projId, rowId, valStr) {
+  var val = parseFloat(valStr);
+  var est = _pricingGetEstimate(projId);
+  if (!est.qtyOverrides) est.qtyOverrides = {};
+  if (isNaN(val) || val <= 0) {
+    delete est.qtyOverrides[rowId];
+  } else {
+    est.qtyOverrides[rowId] = val;
+  }
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
+function _pricingQtyReset(projId, rowId) {
+  var est = _pricingGetEstimate(projId);
+  if (!est.qtyOverrides) est.qtyOverrides = {};
+  delete est.qtyOverrides[rowId];
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
+/* ── Apply qty overrides to a cloned row list ────────────────────────────── */
+function _pricingApplyQtyOverrides(projId, rows) {
+  var est = _pricingGetEstimate(projId);
+  var overrides = est.qtyOverrides || {};
+  return rows.map(function (row) {
+    var key = row._baseId || row.id;
+    var overrideQty = overrides[key];
+    if (overrideQty == null) return row;
+    var qty = parseFloat(overrideQty);
+    if (isNaN(qty) || qty <= 0) return row;
+    var cloned = Object.assign({}, row);
+    cloned.qty = qty;
+    // Recompute lineTotal with overridden qty (unitPrice is already set by labor/catalog logic)
+    if (cloned.unitPrice != null) {
+      cloned.lineTotal = parseFloat((cloned.unitPrice * qty).toFixed(2));
+    }
+    return cloned;
+  });
+}
+
+/* ── Unit-price override for any row (extends existing manualPrices) ─────── */
+function _pricingUnitPriceOverride(event, projId, rowId) {
+  var val = parseFloat(event.target.value);
+  var est = _pricingGetEstimate(projId);
+  if (!est.manualPrices) est.manualPrices = {};
+  est.manualPrices[rowId] = isNaN(val) ? '' : val;
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
+/* ── Note override handlers ──────────────────────────────────────────────── */
+function _pricingNoteOverride(projId, rowId, val) {
+  var est = _pricingGetEstimate(projId);
+  if (!est.noteOverrides) est.noteOverrides = {};
+  if (!val || !val.trim()) {
+    delete est.noteOverrides[rowId];
+  } else {
+    est.noteOverrides[rowId] = val.trim();
+  }
+  _pricingSetEstimate(projId, est);
+  // No full re-render needed — note is self-contained; footer not affected
+}
+
 /* ── Column width helpers (persistence per ui-standards) ─────────────────── */
 function _pricingGetColWidths(projId) {
   return sget('ch_tbl_col_widths_pricing_tbl_' + projId, {});
@@ -3049,9 +3125,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     recRows = buildRecommendedRows(projId);
   }
 
-  // ── 3. Apply labor overrides (Phase 4)
+  // ── 3. Apply labor + qty overrides (Phase 4 + Fix 6f26cbfd)
   baseRows = _pricingApplyLaborOverrides(projId, baseRows);
   if (recRows) recRows = _pricingApplyLaborOverrides(projId, recRows);
+  baseRows = _pricingApplyQtyOverrides(projId, baseRows);
+  if (recRows) recRows = _pricingApplyQtyOverrides(projId, recRows);
 
   // ── 4. Apply building filter
   var allBuildings = [];
@@ -3273,8 +3351,39 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // col 4: Equipment
     cells.push('<span style="font-size:10px;color:var(--text2)">' + _esc(row.equipment) + '</span>');
 
-    // col 5: Qty
-    cells.push(row.qty != null ? String(row.qty) : '—');
+    // col 5: Qty — editable override (Fix: item 6f26cbfd)
+    var _qtyOverrides = estimate.qtyOverrides || {};
+    var _qtyKey = toggleKey;
+    var _qtyIsOverridden = _qtyOverrides[_qtyKey] != null;
+    var _qtyDisplay = row.qty != null ? row.qty : 0;
+    cells.push(
+      '<div style="display:flex;align-items:center;gap:3px;justify-content:flex-end">' +
+        '<input type="number" min="1" step="1" value="' +
+        _qtyDisplay +
+        '"' +
+        ' title="' +
+        (_qtyIsOverridden
+          ? 'Qty override (default: auto-derived from equipment counts)'
+          : 'Qty (auto-derived; edit to override)') +
+        '"' +
+        ' style="width:44px;font-size:11px;padding:2px 4px;background:var(--s3);color:var(--text);border:1px solid ' +
+        (_qtyIsOverridden ? 'var(--accent)' : 'var(--border)') +
+        ';border-radius:4px;text-align:right;font-variant-numeric:tabular-nums"' +
+        ' onchange="_pricingQtyOverride(\'' +
+        projId +
+        "','" +
+        _qtyKey +
+        '\',this.value)">' +
+        (_qtyIsOverridden
+          ? '<button onclick="_pricingQtyReset(\'' +
+            projId +
+            "','" +
+            _qtyKey +
+            '\')" title="Reset to auto-derived qty"' +
+            ' style="font-size:9px;padding:1px 3px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
+          : '') +
+        '</div>',
+    );
 
     // col 6: SKU
     var skuContent = '';
@@ -3381,7 +3490,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     } else if (!hasCatalog) {
       contractContent = '<span style="color:var(--text3)">—</span>';
     } else if (row.sku && catalog && !catalog[row.sku]) {
-      contractContent = '<span style="color:var(--warn)" title="SKU not found in imported pricing">⚠ No price</span>';
+      // SKU not in catalog — allow manual price entry (reuses est.manualPrices, Fix: item 6f26cbfd)
+      var _skuManualVal = estimate.manualPrices[toggleKey] || '';
+      contractContent =
+        '<input type="number" min="0" step="0.01" value="' +
+        _skuManualVal +
+        '" placeholder="Enter price"' +
+        ' title="SKU not found in imported pricing — enter unit price manually"' +
+        ' style="width:80px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
+        ' onchange="_pricingUnitPriceOverride(event,\'' +
+        projId +
+        "','" +
+        toggleKey +
+        '\')">';
     } else {
       contractContent =
         row.contractPrice != null ? _pricingFmt(row.contractPrice) : '<span style="color:var(--text3)">—</span>';
@@ -3438,10 +3559,32 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       var _hasBills = _annualElecData.hasBillData;
       var _annKwh = _annualElecData.annualKwh;
       if (!_hasBills) {
-        // Gate: no bill data — show import prompt
-        _savingsRangeHTML =
-          '<div style="margin-top:4px;font-size:9px;color:var(--text3);font-style:italic">' +
-          'Import utility bills to see estimated $ savings</div>';
+        // No bill data — show literature % range if available, otherwise show import prompt
+        var _litRange = SAVINGS_RANGE_MAP[row.seqKey];
+        if (_litRange) {
+          var _basisLabel = _litRange.energyBasis === 'fan' ? 'fan energy' : 'site electricity';
+          _savingsRangeHTML =
+            '<div style="margin-top:5px;padding:3px 6px;background:rgba(134,239,172,0.05);' +
+            'border-left:2px solid rgba(134,239,172,0.4);border-radius:0 3px 3px 0;white-space:normal">' +
+            '<span style="font-size:10px;font-weight:700;color:var(--text2)">Est. ' +
+            Math.round(_litRange.lowPct * 100) +
+            '–' +
+            Math.round(_litRange.highPct * 100) +
+            '% of ' +
+            _basisLabel +
+            '</span>' +
+            '<span style="font-size:9px;color:var(--text3);margin-left:4px">' +
+            'literature range · ' +
+            _esc(_litRange.citation) +
+            ' — import utility bills for $ estimate' +
+            '</span>' +
+            '</div>';
+          _anySavingsShown = true;
+        } else {
+          _savingsRangeHTML =
+            '<div style="margin-top:4px;font-size:9px;color:var(--text3);font-style:italic">' +
+            'Import utility bills to see estimated $ savings</div>';
+        }
       } else if (_annKwh && SAVINGS_RANGE_MAP[row.seqKey]) {
         var _range = _pricingComputeSavingsRange(row, _annKwh, _fanFraction, _elecRate);
         if (_range && _range.high > 0) {
@@ -3456,6 +3599,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
             _esc(_range.citation) +
             '</span>' +
             '</div>';
+          _anySavingsShown = true;
         }
       } else if (_annKwh) {
         // Bill data present but no literature range for this sequence
@@ -3474,10 +3618,28 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var _titleAttr12 = _tooltipText12 ? ' title="' + _esc(_tooltipText12) + '"' : '';
     var _cursorStyle12 = _tooltipText12 ? 'cursor:help;' : '';
 
+    // Editable note override (Fix: item 6f26cbfd) — persists to est.noteOverrides[rowId]
+    var _noteOverrides = estimate.noteOverrides || {};
+    var _noteOverrideVal = _noteOverrides[toggleKey] || '';
+    var _noteInputHTML =
+      '<input type="text" value="' +
+      _esc(_noteOverrideVal) +
+      '" placeholder="Add note…"' +
+      ' style="width:100%;min-width:80px;font-size:10px;padding:2px 4px;background:var(--s3);color:var(--text);' +
+      'border:1px solid ' +
+      (_noteOverrideVal ? 'var(--accent)' : 'var(--border)') +
+      ';border-radius:3px;margin-bottom:3px;box-sizing:border-box"' +
+      ' onchange="_pricingNoteOverride(\'' +
+      projId +
+      "','" +
+      toggleKey +
+      '\',this.value)">';
+
     if (_rationaleText) {
       // Rationale visible in cell (white-space:normal so it wraps; fuller-preference)
       cells.push(
-        '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4">' +
+        _noteInputHTML +
+          '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4">' +
           _esc(_noteText12 ? _noteText12 + ' \xb7 ' : '') +
           _esc(_rationaleText) +
           '</span>' +
@@ -3485,7 +3647,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       );
     } else {
       cells.push(
-        '<span style="font-size:10px;color:var(--text3);' +
+        _noteInputHTML +
+          '<span style="font-size:10px;color:var(--text3);' +
           _cursorStyle12 +
           '"' +
           _titleAttr12 +
@@ -3539,6 +3702,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }
 
   // ── 9. Build table body HTML
+  // _anySavingsShown is set true by renderRow when a $ or % savings range is rendered.
+  // Used to gate the M&V disclaimer — only shown when there IS something to disclaim.
+  var _anySavingsShown = false;
   var tableBodyHTML = '';
   if (filteredRows.length === 0) {
     tableBodyHTML =
@@ -3731,6 +3897,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       }
     });
     if (_portfolioCount > 0) {
+      _anySavingsShown = true;
       footerParts.push(
         '<div style="width:100%;margin-top:6px;padding:6px 10px;background:rgba(134,239,172,0.06);' +
           'border:1px solid rgba(134,239,172,0.2);border-radius:4px">' +
@@ -3750,15 +3917,18 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       );
     }
   } else if ((tier === 'recommended' || tier === 'both') && !_annualElecData.hasBillData) {
-    footerParts.push(
-      '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
-        'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.' +
-        '</div>',
-    );
+    // No bill data — footer import-bills note only shown if no % ranges were shown per-row
+    if (!_anySavingsShown) {
+      footerParts.push(
+        '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
+          'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.' +
+          '</div>',
+      );
+    }
   }
 
-  // M&V disclaimer — shown in footer when Recommended tier is active (correction #11)
-  if (tier === 'recommended' || tier === 'both') {
+  // M&V disclaimer — only shown when there IS savings data to disclaim (Fix: was unconditional, item 5d1245ec)
+  if ((tier === 'recommended' || tier === 'both') && _anySavingsShown) {
     footerParts.push(
       '<div style="width:100%;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);' +
         'font-size:10px;color:var(--text3);line-height:1.5">' +
@@ -3863,10 +4033,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     : '';
 
   // ── 12. Assemble full panel
-  // Top-ROI callout (Recommended tier only, correction #12)
+  // Top-ROI callout (Recommended + Both tiers, item d60f455f)
+  // In Both mode, feed recRows (recommended rows carry savingsImpact); baseRows in Both = compliance rows.
   var topRoiCallout = '';
-  if (tier === 'recommended') {
-    var _allRecRows = baseRows; // baseRows = buildRecommendedRows output (already sorted, labor-override applied)
+  if (tier === 'recommended' || tier === 'both') {
+    var _allRecRows = tier === 'both' ? recRows || [] : baseRows;
     topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows);
   }
 
@@ -3895,9 +4066,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     toolbarHTML,
     topRoiCallout,
     recNoSubsNotice,
-    '<div class="ch-panel-body" style="flex:1;min-height:0;overflow-y:auto;overflow-x:auto">',
-    '<div class="ch-tbl-outer" style="margin:0;border:1px solid var(--border);border-radius:6px;overflow:clip">',
-    '<div class="ch-tbl-scroll" style="overflow-x:auto;overflow-y:visible">',
+    '<div class="ch-panel-body" style="flex:1;min-height:0;overflow:visible">',
+    '<div class="ch-tbl-outer" style="margin:0;overflow:visible">',
+    '<div class="ch-tbl-scroll" style="overflow:auto;border:1px solid var(--border);border-radius:6px">',
     '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:1006px;table-layout:fixed">',
     '<thead><tr>',
     headerCols,
@@ -3939,10 +4110,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       return;
     }
 
-    // Use labor-override-applied rows from cache if available
+    // Use labor+qty-override-applied rows from cache if available
     var rows = _pricingRowCache[projId];
     if (!rows) {
-      rows = _pricingApplyLaborOverrides(projId, buildComplianceRows(projId));
+      rows = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, buildComplianceRows(projId)));
     }
     var cfg = _pricingGetConfig();
     var catalog = sget('en_pricing_catalog', null);

@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.22.576',
+    date: '2026-06-22',
+    title: 'Cost Estimate: literature ranges without bills, M&V disclaimer gated, sticky headers, editable cells',
+    items: [
+      {
+        type: 'fix',
+        text: 'Cost Estimate now shows literature-based savings percentage ranges (e.g. 5–15%) when no bills have been imported for a project — you can review ECM options before any bill data is available.',
+      },
+      {
+        type: 'fix',
+        text: 'The M&V disclaimer at the bottom of Cost Estimate is now hidden until at least one ECM row exists — it no longer appears on an empty estimate.',
+      },
+      {
+        type: 'fix',
+        text: 'Top ROI panel in Cost Estimate now populates correctly when the Both (electric + gas) utility tier is selected — it shows the recommended rows ranked by payback.',
+      },
+      {
+        type: 'fix',
+        text: 'Column headers in the Cost Estimate table are sticky again — they stay visible as you scroll down a long list of ECMs, and column widths no longer clip text.',
+      },
+      {
+        type: 'feature',
+        text: 'Qty, unit price, and Notes cells in the Cost Estimate table are now directly editable — click any cell to change the value in place.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.19.575',
     date: '2026-06-22',
     title: 'Equipment Matrix audit cells now display their value when present',
