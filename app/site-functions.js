@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.23.578',
+    date: '2026-06-23',
+    title: 'Cost Estimate scrolls again; BAS CSV import auto-maps outside air columns',
+    items: [
+      {
+        type: 'fix',
+        text: 'Cost Estimate table scrolls again both vertically and horizontally, with column headers staying sticky — the table was clipped and unscrollable after the last layout update.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Trend CSV import now auto-maps "Dry Bulb" and "Wet Bulb" outside-air columns to the correct point types, and recognizes time-stamp columns named "Excel Time" (and similar formats) so imports with those column names no longer require manual field mapping.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.22.577',
     date: '2026-06-22',
     title: 'Utility Data: Import via PDF button in Bills tab',

@@ -51,12 +51,15 @@ var BT_POINT_PATTERNS = {
     'oat',
     'oa temp',
     'oa dry bulb',
+    'dry bulb',
+    'broadcast dry bulb',
     'ambient temp',
     'outdoor temp',
     'outside temp',
     'exterior temp',
     'oa t',
   ],
+  oawetbulb: ['wet bulb', 'oa wet bulb', 'outside air wet bulb', 'outdoor wet bulb', 'broadcast wet bulb', 'oa wb'],
   sat: [
     'supply air temp',
     'discharge air temp',
@@ -166,6 +169,7 @@ var BT_POINT_PATTERNS = {
 
 var BT_POINT_LABELS = {
   oat: 'Outside Air Temp',
+  oawetbulb: 'Outside Air Wet Bulb',
   sat: 'Supply Air Temp',
   satsp: 'Supply Air Temp Setpoint',
   rat: 'Return Air Temp',
@@ -298,8 +302,19 @@ function btScoreMatch(norm, patterns) {
 }
 
 /** Map a column header to a point type key, or null */
+/** True if a column header names a time/timestamp column (e.g. "Date/Time",
+ * "Timestamp", "Excel Time"). Used so secondary/serial time columns are
+ * recognized as timestamps and excluded from data, instead of showing as
+ * "(not used)". btNormalize lowercases and turns "/" into a space. */
+function btIsTimestampHeader(norm) {
+  if (!norm) return false;
+  if (norm === 'time' || norm === 'date') return true;
+  return /(^|\s)(date\s?time|timestamp|excel\s?time|excel\s?date|serial\s?time)(\s|$)/.test(norm);
+}
+
 function btDetectPointType(colHeader) {
   var norm = btNormalize(colHeader);
+  if (btIsTimestampHeader(norm)) return 'timestamp';
   var bestKey = null;
   var bestScore = 0.1; // minimum score threshold
   for (var key in BT_POINT_PATTERNS) {
@@ -1998,6 +2013,7 @@ function btPreviewColumns(csvText) {
     '(not used)',
     'timestamp',
     'oat',
+    'oawetbulb',
     'sat',
     'satsp',
     'rat',

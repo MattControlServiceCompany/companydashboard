@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.22.577'; // deployed 2026-06-22 (Bills tab: Import via PDF button 113575be)
+  var CH_VERSION = 'v2026.06.23.578'; // deployed 2026-06-23 (Cost Estimate scroll fix; BAS CSV auto-map dry/wet bulb + time columns)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
