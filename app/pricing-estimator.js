@@ -3112,6 +3112,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
+
+  // Issue 4 fix: auto-hide Impact column (col 11) when tier cannot produce impact badges.
+  // savingsImpact is only stamped on Recommended/Both phase-2 rows; Compliance always blank.
+  // We clone the hidden array so we don't mutate the user's saved preferences.
+  var _tierHasImpact = tier === 'recommended' || tier === 'both';
+  if (!_tierHasImpact && hidden.indexOf(11) === -1) {
+    hidden = hidden.concat([11]);
+  }
   var meta = sget('en_pricing_meta', null);
 
   var baseRows;
@@ -3481,14 +3489,31 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         '<input type="number" min="0" step="0.01" value="' +
         manualVal +
         '" placeholder="Enter price"' +
-        ' style="width:80px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
+        ' style="width:100%;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
         ' onchange="_pricingManualPrice(event,\'' +
         projId +
         "','" +
         row.id +
         '\')">';
     } else if (!hasCatalog) {
-      contractContent = '<span style="color:var(--text3)">—</span>';
+      // Issue 8 fix: priceable rows (phase-1, not ioOnly, not noSku) get a manual price input even
+      // without a catalog loaded, so the user can enter a unit price and include the row in the estimate.
+      if (row.phase === 1 && !row.ioOnly && !row.noSku) {
+        var _noCatManualVal = estimate.manualPrices[toggleKey] || '';
+        contractContent =
+          '<input type="number" min="0" step="0.01" value="' +
+          _noCatManualVal +
+          '" placeholder="Enter price"' +
+          ' title="No catalog loaded — enter unit price manually"' +
+          ' style="width:100%;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+          ' onchange="_pricingUnitPriceOverride(event,\'' +
+          projId +
+          "','" +
+          toggleKey +
+          '\')">';
+      } else {
+        contractContent = '<span style="color:var(--text3)">—</span>';
+      }
     } else if (row.sku && catalog && !catalog[row.sku]) {
       // SKU not in catalog — allow manual price entry (reuses est.manualPrices, Fix: item 6f26cbfd)
       var _skuManualVal = estimate.manualPrices[toggleKey] || '';
@@ -3497,7 +3522,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         _skuManualVal +
         '" placeholder="Enter price"' +
         ' title="SKU not found in imported pricing — enter unit price manually"' +
-        ' style="width:80px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
+        ' style="width:100%;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
         ' onchange="_pricingUnitPriceOverride(event,\'' +
         projId +
         "','" +
@@ -3619,16 +3644,31 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var _cursorStyle12 = _tooltipText12 ? 'cursor:help;' : '';
 
     // Editable note override (Fix: item 6f26cbfd) — persists to est.noteOverrides[rowId]
+    // Issue 1 fix: input is the sole element in plain rows (no stacked span) so rows stay one line tall.
+    // Rationale-bearing rows (Recommended phase-2) intentionally multi-line; _savingsRangeHTML stays.
     var _noteOverrides = estimate.noteOverrides || {};
     var _noteOverrideVal = _noteOverrides[toggleKey] || '';
+    // Combine row's static note text with override; static text shown as placeholder when no override
+    var _notePlaceholder = _noteText12 || 'Add note…';
+    // Build tooltip from static text + any G36/tooltip text (for plain rows)
+    var _noteTitleAttr = _noteText12
+      ? ' title="' + _esc(_noteText12) + (_tooltipText12 ? ' \xb7 ' + _esc(_tooltipText12) : '') + '"'
+      : _titleAttr12;
     var _noteInputHTML =
       '<input type="text" value="' +
       _esc(_noteOverrideVal) +
-      '" placeholder="Add note…"' +
-      ' style="width:100%;min-width:80px;font-size:10px;padding:2px 4px;background:var(--s3);color:var(--text);' +
+      '" placeholder="' +
+      _esc(_notePlaceholder) +
+      '"' +
+      _noteTitleAttr +
+      ' style="width:100%;font-size:10px;padding:2px 4px;background:' +
+      (_noteOverrideVal ? 'var(--s3)' : 'transparent') +
+      ';color:var(--text);' +
       'border:1px solid ' +
-      (_noteOverrideVal ? 'var(--accent)' : 'var(--border)') +
-      ';border-radius:3px;margin-bottom:3px;box-sizing:border-box"' +
+      (_noteOverrideVal ? 'var(--accent)' : 'transparent') +
+      ';border-radius:3px;box-sizing:border-box"' +
+      ' onfocus="this.style.cssText+=\';background:var(--s3);border-color:var(--border)\'"' +
+      " onblur=\"var v=this.value;this.style.background=v?'var(--s3)':'';this.style.borderColor=v?'var(--accent)':''\"" +
       ' onchange="_pricingNoteOverride(\'' +
       projId +
       "','" +
@@ -3637,26 +3677,18 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     if (_rationaleText) {
       // Rationale visible in cell (white-space:normal so it wraps; fuller-preference)
+      // These rows intentionally multi-line — savings range + rationale are value-add content
       cells.push(
         _noteInputHTML +
-          '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4">' +
+          '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4;margin-top:2px">' +
           _esc(_noteText12 ? _noteText12 + ' \xb7 ' : '') +
           _esc(_rationaleText) +
           '</span>' +
           _savingsRangeHTML,
       );
     } else {
-      cells.push(
-        _noteInputHTML +
-          '<span style="font-size:10px;color:var(--text3);' +
-          _cursorStyle12 +
-          '"' +
-          _titleAttr12 +
-          '>' +
-          _esc(_noteText12) +
-          '</span>' +
-          _savingsRangeHTML,
-      );
+      // Plain row: input fills the cell; one line tall
+      cells.push(_noteInputHTML + _savingsRangeHTML);
     }
 
     // Build TR
@@ -3949,7 +3981,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var w = widths[ci];
     var wStyle = w ? 'width:' + w + 'px;min-width:' + w + 'px;' : '';
     return (
-      'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px 8px 10px;white-space:nowrap;position:sticky;top:0;overflow:hidden;user-select:none;border-right:1px solid var(--border);border-bottom:2px solid var(--border2);' +
+      'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px 8px 10px;white-space:normal;word-break:break-word;position:sticky;top:0;user-select:none;border-right:1px solid var(--border);border-bottom:2px solid var(--border2);' +
       wStyle +
       (extraStyle || '')
     );
@@ -4057,6 +4089,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           : 'no pricing catalog is loaded, so the optimizer could not search for alternatives. ' +
             'Import a pricing CSV to enable substitution analysis. ') +
         'The FDD Reporting add-on line below is unique to the Recommended tier.' +
+        '<br><span style="color:var(--text3)">' +
+        'Note: Phase 2 (labor) costs are identical across all tiers by design — labor hours are the same ' +
+        'regardless of which hardware SKU is selected. Hardware savings (Recommended vs Compliance) only ' +
+        'appear once a pricing catalog with cheaper qualifying SKUs is imported.' +
+        '</span>' +
         '</div>';
     }
   }
@@ -4069,7 +4106,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<div class="ch-panel-body" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">',
     '<div class="ch-tbl-outer" style="margin:0;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">',
     '<div class="ch-tbl-scroll" style="flex:1;min-height:0;overflow:auto;border:1px solid var(--border);border-radius:6px">',
-    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:1006px;table-layout:fixed">',
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:1006px">',
     '<thead><tr>',
     headerCols,
     extraRecHeader,

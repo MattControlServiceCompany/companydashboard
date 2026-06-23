@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.23.580',
+    date: '2026-06-23',
+    title: 'BAS import building selector fixed; Cost Estimate table layout overhaul',
+    items: [
+      {
+        type: 'fix',
+        text: 'Import BAS Trend Data — you can now select a building in Step 1. The dropdown was stuck and empty, preventing any import from starting.',
+      },
+      {
+        type: 'fix',
+        text: 'Cost Estimate table: columns now auto-size to content (headers no longer cut off), rows are shorter, price entry cells fill their full column, the Impact column hides automatically when not applicable, and rows without a catalog price can now have a price entered manually.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.23.579',
     date: '2026-06-23',
     title: 'Gas bills in real units, PDF export fixed, faster meter setup',

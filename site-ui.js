@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.23.579'; // deployed 2026-06-23 (PDF export bottom-clip fix; gas MMBtu rates/units; WRE per-site GasCharge; meter add auto-fill; weather ZIP fallback; bills-table shading)
+  var CH_VERSION = 'v2026.06.23.580'; // deployed 2026-06-23 (BAS import building selector fix; Cost Estimate table Batch 1: column auto-size, header wrap, row height, full-cell inputs, Impact column auto-hide, manual price for unpriced rows)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

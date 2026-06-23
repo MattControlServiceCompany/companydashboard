@@ -1911,7 +1911,7 @@ function btUpdateBuildingList() {
   var projects = sget('en_projects', []);
   var proj = null;
   for (var i = 0; i < projects.length; i++) {
-    if (projects[i].id === projId) {
+    if (String(projects[i].id) === String(projId)) {
       proj = projects[i];
       break;
     }
