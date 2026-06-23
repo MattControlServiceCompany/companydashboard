@@ -1191,6 +1191,37 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.23.579',
+    date: '2026-06-23',
+    title: 'Gas bills in real units, PDF export fixed, faster meter setup',
+    items: [
+      {
+        type: 'fix',
+        text: 'Audit Report PDF export no longer cuts off content at the bottom of pages — tall sections now print in full.',
+      },
+      {
+        type: 'fix',
+        text: "Gas bills now show usage and rates in the meter's own unit (e.g. MMBtu), using the actual rates printed on the bill rather than derived estimates.",
+      },
+      {
+        type: 'fix',
+        text: 'Gas charge now reflects the per-site commodity charge for each location, so multi-site projects show the correct gas cost per site.',
+      },
+      {
+        type: 'feature',
+        text: 'Adding a new meter now pre-fills the building address, defaults the unit to match your other meters of that type, and shows the new meter immediately without needing a page refresh.',
+      },
+      {
+        type: 'feature',
+        text: "Buildings with no weather ZIP now automatically use the project's ZIP as a fallback, and the building ZIP field auto-fills when you enter the building's address.",
+      },
+      {
+        type: 'fix',
+        text: 'Bills table column shading is cleaner — data cells, alternating rows, and header rows now use consistent tones.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.23.578',
     date: '2026-06-23',
     title: 'Cost Estimate scrolls again; BAS CSV import auto-maps outside air columns',

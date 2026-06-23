@@ -952,6 +952,14 @@ const BILL_SCHEMA = {
       isUsage: true,
       gasUnit: 'CCF',
     },
+    {
+      key: 'naturalGasMMbtu',
+      label: 'Gas Usage (MMBtu)',
+      type: 'number',
+      pdfKey: 'NaturalGasMMbtu',
+      isUsage: true,
+      gasUnit: 'MMBtu',
+    },
     { key: 'customerCharge', label: 'Base Charge', type: 'currency', pdfKey: 'CustomerCharge' },
     { key: 'gasCharge', label: 'Gas Charge', type: 'currency', pdfKey: 'GasCharge' },
     { key: 'fuelAdjustment', label: 'Fuel Adjustment', type: 'currency', pdfKey: 'FuelAdjustment' },
@@ -2165,6 +2173,21 @@ function _updateMeterUnitDropdowns() {
   billSel.value = units.includes(prevBill) ? prevBill : reg.defaultUsage;
   dispSel.value = units.includes(prevDisp) ? prevDisp : reg.defaultUsage;
   _updateUnitPreview();
+  // FIX #11 — When adding a new meter, override registry default with units from
+  // existing same-commodity meters on the same building so new meters match siblings.
+  const editId = document.getElementById('mm-edit-id')?.value;
+  if (!editId) {
+    const _pid = document.getElementById('mm-target-proj')?.value || udSelProjId;
+    const _bid = document.getElementById('mm-target-bldg')?.value || udSelBldgId;
+    const _b11 = getUDBldg(_pid, _bid);
+    const sameType = (_b11?.meters || []).filter((m) => m.commodity === commodity && m.billUnit);
+    if (sameType.length) {
+      const refMeter = sameType[sameType.length - 1]; // most recently added
+      if (refMeter.billUnit && units.includes(refMeter.billUnit)) billSel.value = refMeter.billUnit;
+      if (refMeter.displayUnit && units.includes(refMeter.displayUnit)) dispSel.value = refMeter.displayUnit;
+      _updateUnitPreview();
+    }
+  }
 }
 
 function _updateUnitPreview() {
@@ -2227,6 +2250,9 @@ function openMeterModal(editId, projId, bldgId) {
     document.getElementById('mm-commodity').value = 'Electric';
     document.getElementById('mm-blInclude').checked = true;
     _updateMeterUnitDropdowns();
+    // FIX #10 — Pre-fill meter address from parent building's address as an editable suggestion.
+    const _b10 = getUDBldg(_pid, _bid);
+    if (_b10?.addr) document.getElementById('mm-maddr').value = _b10.addr;
   }
   document.getElementById('mm-incl-btn').classList.toggle('sel', _meterInclusive);
   document.getElementById('mm-excl-btn').classList.toggle('sel', !_meterInclusive);
@@ -2304,8 +2330,13 @@ function saveMeter() {
     udSelProjId = _targetProjId;
     udSelBldgId = _targetBldgId;
     if (typeof projUDSelBldg !== 'undefined') projUDSelBldg[_targetProjId] = _targetBldgId;
+    // FIX #12 — _udActiveWrap points to a stale detached tempDiv created during
+    // renderProjUDBody's cloning step. Rendering into it never updates the live DOM.
+    // Re-render via renderProjUDBody so it targets the real proj-ud-body-<id> element.
+    renderProjUDBody(_targetProjId, projUDSelBldg[_targetProjId] || _targetBldgId);
+  } else {
+    renderUDDetail(undefined);
   }
-  renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
   _refreshBldgPerfIfVisible();
   setTimeout(renderSidebarFolders, 100);
   if (isEmbed) {

@@ -4131,6 +4131,14 @@ async function confirmAutoAssign() {
       naturalGasCCF: bill.NaturalGasCCF || '',
       naturalGasTherms: bill.NaturalGasTherms || '',
       naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+      // WRE per-site charge components and printed rates (Fix a84458f0 + printed-rates fix)
+      _wreTriggerCharge: bill._wreTriggerCharge || '',
+      _wreIndexCharge: bill._wreIndexCharge || '',
+      _wreSWECharge: bill._wreSWECharge || '',
+      _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
+      _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+      _wreTriggerRate: bill._wreTriggerRate || '',
+      _wreIndexRate: bill._wreIndexRate || '',
       // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
       therms: (() => {
         const t = pf(bill.NaturalGasTherms);
@@ -4184,16 +4192,18 @@ async function confirmAutoAssign() {
       eerRate: bill.EERRate || '',
       ptsRate: bill.PTSRate || '',
       rkvaRate: bill.RkVARate || '',
-      // Non-electric commodity rates — computed from canonical Therms + charge at save time.
+      // Non-electric commodity rates — computed from canonical usage + charge at save time.
+      // When the bill stores MMBtu natively (WRE) and has no Therms/CCF data, store
+      // totalGasRate as $/MMBtu so the column header and value are semantically consistent.
       totalGasRate: (() => {
-        const t =
-          pf(bill.NaturalGasTherms) ||
-          (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0) ||
-          (pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu)
-            ? Math.round(pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu) * 10 * 100) / 100
-            : 0);
         const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
-        return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
+        const therms =
+          pf(bill.NaturalGasTherms) ||
+          (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
+        if (therms > 0 && c > 0) return (c / therms).toFixed(5); // $/Therm
+        // MMBtu-only path (WRE): store as $/MMBtu — matches the column label when billUnit='MMBtu'
+        const mmbtu = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+        return mmbtu > 0 && c > 0 ? (c / mmbtu).toFixed(5) : '';
       })(),
       totalWaterRate: (() => {
         const u = pf(bill.WaterUsage);
@@ -4283,6 +4293,11 @@ async function confirmAutoAssign() {
           targetMeter.account = bill.AccountNumber;
         }
       }
+    }
+    // Auto-set billUnit='MMBtu' for WRE meters so the bills table shows the MMBtu
+    // column and $/MMBtu rate rather than defaulting to Therms (issue #16/#19).
+    if ((bill._utilityName || '').toLowerCase().includes('wood river') && !targetMeter.billUnit) {
+      targetMeter.billUnit = 'MMBtu';
     }
     targetMeter.bills = targetMeter.bills || [];
     const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
@@ -4541,6 +4556,14 @@ function _saveBillToMatchedMeter(extracted, match) {
     naturalGasCCF: extracted.NaturalGasCCF || '',
     naturalGasTherms: extracted.NaturalGasTherms || '',
     naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    // WRE per-site charge components and printed rates (Fix a84458f0 + printed-rates fix)
+    _wreTriggerCharge: extracted._wreTriggerCharge || '',
+    _wreIndexCharge: extracted._wreIndexCharge || '',
+    _wreSWECharge: extracted._wreSWECharge || '',
+    _wreTriggerMMbtu: extracted._wreTriggerMMbtu || '',
+    _wreIndexMMbtu: extracted._wreIndexMMbtu || '',
+    _wreTriggerRate: extracted._wreTriggerRate || '',
+    _wreIndexRate: extracted._wreIndexRate || '',
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
     // set NaturalGasTherms (already Therms). CCF × 1.037 = Therms. Priority: Therms > CCF > MMBtu.
@@ -4575,15 +4598,18 @@ function _saveBillToMatchedMeter(extracted, match) {
     unitPrice: extracted.UnitPrice || '',
     subtotal: extracted.Subtotal || '',
     tax: extracted.Tax || '',
-    // Non-electric commodity rates — computed from canonical Therms + charge at save time.
-    // thermsForRate must mirror the therms IIFE above so $/therm is correct for MMBtu sources.
+    // Non-electric commodity rates — computed from canonical usage + charge at save time.
+    // When the bill stores MMBtu natively (WRE) and has no Therms/CCF, store as $/MMBtu
+    // so the value is semantically consistent with the column label when billUnit='MMBtu'.
     totalGasRate: (() => {
-      const t =
-        pf(extracted.NaturalGasTherms) ||
-        (pf(extracted.NaturalGasCCF) ? Math.round(pf(extracted.NaturalGasCCF) * 1.037 * 100) / 100 : 0) ||
-        (pf(extracted.NaturalGasMMbtu) ? Math.round(pf(extracted.NaturalGasMMbtu) * 10 * 100) / 100 : 0);
       const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
-      return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
+      const therms =
+        pf(extracted.NaturalGasTherms) ||
+        (pf(extracted.NaturalGasCCF) ? Math.round(pf(extracted.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
+      if (therms > 0 && c > 0) return (c / therms).toFixed(5); // $/Therm
+      // MMBtu-only path (WRE): store as $/MMBtu — matches column label when billUnit='MMBtu'
+      const mmbtu = pf(extracted.NaturalGasMMbtu);
+      return mmbtu > 0 && c > 0 ? (c / mmbtu).toFixed(5) : '';
     })(),
     totalWaterRate: (() => {
       const u = pf(extracted.WaterUsage);
@@ -4656,6 +4682,10 @@ function _saveBillToMatchedMeter(extracted, match) {
   if (!liveBldg) return null;
   const liveMeter = (liveBldg.meters || []).find((m) => m.id === match.meterId);
   if (!liveMeter) return null;
+  // Auto-set billUnit='MMBtu' for WRE meters (issue #16/#19).
+  if ((extracted._utilityName || '').toLowerCase().includes('wood river') && !liveMeter.billUnit) {
+    liveMeter.billUnit = 'MMBtu';
+  }
   liveMeter.bills = liveMeter.bills || [];
   const existing = liveMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
   if (existing) {
@@ -9812,6 +9842,9 @@ function renderPDFFields(parsed, warnings) {
     _wreTriggerCharge: 'Trigger Charge',
     _wreIndexCharge: 'Index Charge',
     _wreSWECharge: 'SWE Charge',
+    // WRE printed rates (source-faithful — from the Rate column of each charge line)
+    _wreTriggerRate: 'Trigger Rate ($/MMBtu)',
+    _wreIndexRate: 'Index Rate ($/MMBtu)',
   };
   // Fields that represent dollar charges — prefix with $ in display
   const CHARGE_FIELDS = new Set([
@@ -10031,15 +10064,19 @@ function renderPDFFields(parsed, warnings) {
       type: 'charge-line',
       label: 'Trigger - Fixed',
       chargeField: '_wreTriggerCharge',
-      qtyField: 'NaturalGasMMbtu',
+      qtyField: '_wreTriggerMMbtu',
       unit: 'MMbtu',
       rateKey: null,
+      printedRateField: '_wreTriggerRate',
     },
     {
       type: 'charge-line',
       label: 'Index (FOM)',
       chargeField: '_wreIndexCharge',
+      qtyField: '_wreIndexMMbtu',
+      unit: 'MMbtu',
       rateKey: null,
+      printedRateField: '_wreIndexRate',
     },
     // Special Weather Event: only present on some invoices (hasSWE flag on the record)
     {

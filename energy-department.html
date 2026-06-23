@@ -5994,7 +5994,6 @@
       .ud-bill-tbl td.sticky-col {
         position: sticky !important;
         z-index: 20;
-        background-color: var(--s1) !important;
         background-clip: padding-box;
         /* Solid right border painted by the cell itself. With the table now
            using border-collapse:separate, this border is owned by the sticky
@@ -6005,6 +6004,16 @@
       .ud-bill-tbl th.sticky-col {
         z-index: 25;
         background-color: var(--s1) !important;
+      }
+      /* Data-row sticky cells use --s2 (panel surface) so they match the table
+         body background instead of the darker header tone (--s1). Even rows
+         step up to --s3 to approximate the rgba(255,255,255,0.04) even-row tint
+         that non-sticky cells inherit. ui-standards.md: headers=--s1, data=--s2. */
+      .ud-bill-tbl td.sticky-col {
+        background-color: var(--s2) !important;
+      }
+      .ud-bill-tbl tr:nth-child(even) td.sticky-col {
+        background-color: var(--s3) !important;
       }
       .ud-bill-tbl tr:hover td.sticky-col {
         background-color: var(--s3) !important;
@@ -6022,13 +6031,19 @@
       .ud-bill-tbl td.sticky-col-right {
         position: sticky !important;
         z-index: 20;
-        background-color: var(--s1) !important;
         background-clip: padding-box;
         border-left: 1px solid var(--border) !important;
       }
       .ud-bill-tbl th.sticky-col-right {
         z-index: 25;
         background-color: var(--s1) !important;
+      }
+      /* Data-row right-sticky cells: same --s2/--s3 treatment as left-sticky. */
+      .ud-bill-tbl td.sticky-col-right {
+        background-color: var(--s2) !important;
+      }
+      .ud-bill-tbl tr:nth-child(even) td.sticky-col-right {
+        background-color: var(--s3) !important;
       }
       .ud-bill-tbl tr:hover td.sticky-col-right {
         background-color: var(--s3) !important;
@@ -12972,6 +12987,12 @@
               <label class="fl">Building Address</label
               ><input class="fi" id="mp-addr" placeholder="e.g. 2500 Van Horn Rd, Independence MO 64050" />
             </div>
+            <div class="fg">
+              <label class="fl"
+                >Default Weather ZIP
+                <span style="font-size: 10px; color: var(--text3)">(used when buildings have no ZIP)</span></label
+              ><input class="fi" id="mp-zip" placeholder="e.g. 64050" maxlength="10" />
+            </div>
             <div class="f2">
               <div class="fg">
                 <label class="fl">Project Type</label>
@@ -13181,7 +13202,20 @@
             </div>
             <div class="fg">
               <label class="fl">Facility Address</label
-              ><input class="fi" id="bm-addr" placeholder="e.g. 2500 Van Horn Rd, Independence MO 64050" />
+              ><input
+                class="fi"
+                id="bm-addr"
+                placeholder="e.g. 2500 Van Horn Rd, Independence MO 64050"
+                oninput="
+                  (function (a) {
+                    var z = document.getElementById('bm-zip');
+                    if (z && !z.value.trim()) {
+                      var m = a.value.match(/\b(\d{5})(?:-\d{4})?\b/);
+                      if (m) z.value = m[1];
+                    }
+                  })(this)
+                "
+              />
             </div>
             <div class="fg" id="bm-aliases-section" style="display: none">
               <label class="fl" style="margin-bottom: 4px"
@@ -14635,7 +14669,7 @@
     <script src="lib/formatting.js?v=576"></script>
     <script src="lib/unit-conversion.js?v=576"></script>
     <script src="lib/csv-parser.js?v=576"></script>
-    <script src="computations/rates.js?v=576"></script>
+    <script src="computations/rates.js?v=579"></script>
     <script src="computations/regression.js?v=576"></script>
     <script src="computations/normalization.js?v=576"></script>
     <script src="computations/eui.js?v=576"></script>
@@ -14650,14 +14684,14 @@
     <script src="extraction/pdf-engine.js?v=576"></script>
     <script src="app/db.js?v=576"></script>
     <script src="app/core.js?v=576"></script>
-    <script src="app/energy-savings.js?v=576"></script>
-    <script src="app/bill-analysis.js?v=576"></script>
+    <script src="app/energy-savings.js?v=579"></script>
+    <script src="app/bill-analysis.js?v=579"></script>
     <script src="extraction/bill-validation.js?v=576"></script>
     <script src="app/district-calendar.js?v=576"></script>
-    <script src="app/utility-data.js?v=577"></script>
+    <script src="app/utility-data.js?v=579"></script>
     <script src="app/pipeline-diagram.js?v=576"></script>
-    <script src="app/csv-import.js?v=577"></script>
-    <script src="app/report-engine.js?v=576"></script>
+    <script src="app/csv-import.js?v=579"></script>
+    <script src="app/report-engine.js?v=579"></script>
     <script src="app/report-preview.js?v=576"></script>
     <script src="app/calculators.js?v=576"></script>
     <script src="app/ecm-calculators.js?v=576"></script>

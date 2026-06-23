@@ -42,8 +42,17 @@ function getStoredRate(bill, type) {
       var stored = parseFloat(bill.totalGasRate);
       if (stored > 0) return stored;
       var usage = parseFloat(bill.NaturalGasTherms) || parseFloat(bill.therms) || 0;
-      var cost = parseFloat(bill.GasCharge) || parseFloat(bill.totalCost) || 0;
-      return usage > 0 && cost > 0 ? cost / usage : 0;
+      var cost =
+        parseFloat(bill.GasCharge) ||
+        parseFloat(bill.gasCharge) ||
+        parseFloat(bill.thermCost) ||
+        parseFloat(bill.totalCost) ||
+        0;
+      if (usage > 0 && cost > 0) return cost / usage;
+      // MMBtu fallback: WRE meters store usage as naturalGasMMbtu; divide charge by MMBtu
+      // so the result is $/MMBtu rather than $/Therm.
+      var mmbtu = parseFloat(bill.naturalGasMMbtu) || parseFloat(bill.NaturalGasMMbtu) || 0;
+      return mmbtu > 0 && cost > 0 ? cost / mmbtu : 0;
     }
     case 'propane': {
       var stored = parseFloat(bill.totalPropaneRate);
@@ -104,6 +113,13 @@ function ensureBillRates(bill) {
     if (therms > 0 && gasChg > 0) {
       bill.totalGasRate = (gasChg / therms).toFixed(5);
       changed = true;
+    } else {
+      // MMBtu fallback: WRE meters store usage as naturalGasMMbtu — compute $/MMBtu
+      var mmbtu = pf(bill.naturalGasMMbtu) || pf(bill.NaturalGasMMbtu);
+      if (mmbtu > 0 && gasChg > 0) {
+        bill.totalGasRate = (gasChg / mmbtu).toFixed(5);
+        changed = true;
+      }
     }
   }
 

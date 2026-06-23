@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.23.578'; // deployed 2026-06-23 (Cost Estimate scroll fix; BAS CSV auto-map dry/wet bulb + time columns)
+  var CH_VERSION = 'v2026.06.23.579'; // deployed 2026-06-23 (PDF export bottom-clip fix; gas MMBtu rates/units; WRE per-site GasCharge; meter add auto-fill; weather ZIP fallback; bills-table shading)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

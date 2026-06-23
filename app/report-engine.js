@@ -6942,8 +6942,24 @@ async function exportReportToPDF() {
         // Each .rpt-page is captured at exactly 1056px (the design target height) and
         // placed as a single image on one PDF page.  The old canvas-slice loop is gone;
         // it was slicing through rows whenever a page's canvas exceeded the slice height.
-        if (pageEl.scrollHeight > 1056) {
-          console.warn('rpt-page', i + 1, 'scrollHeight', pageEl.scrollHeight, '> 1056px — content may be clipped');
+        //
+        // Fix A2 (2026-06-23, item 9f80ea0f): capture actual scrollHeight instead of
+        // hardcoded 1056px so overflow pages are never silently clipped.
+        // .rpt-page uses min-height:1056px + overflow:visible — content that extends past
+        // 1056px is fully visible in the preview but was clipped in the PDF.
+        // Solution: capture Math.max(1056, scrollHeight) and let imageH_pt scale it to
+        // fit the PDF content width at the same aspect ratio.  Normal pages (<=1056px)
+        // render identically to before.  Overflow pages are scaled to fit — no clipping.
+        const captureH = Math.max(1056, pageEl.scrollHeight);
+        if (captureH > 1056) {
+          console.info(
+            'rpt-page',
+            i + 1,
+            'scrollHeight',
+            pageEl.scrollHeight,
+            '> 1056 — capturing full height',
+            captureH,
+          );
         }
 
         const canvas = await html2canvas(pageEl, {
@@ -6952,11 +6968,14 @@ async function exportReportToPDF() {
           backgroundColor: '#ffffff',
           logging: false,
           width: 816,
-          height: 1056,
+          height: captureH,
         });
 
-        // One image per PDF page.  canvas = 1632 × 2112 px (at scale=2).
+        // One image per PDF page.  For a normal page: canvas = 1632 × 2112 px (at scale=2),
         // imageH_pt = (2112 / 1632) * 540 = 698.8 pt — fits within 720 pt content height.
+        // For an overflow page: canvas is taller; imageH_pt scales proportionally beyond
+        // 720 pt so all content is preserved (slight overflow of PDF content area is
+        // acceptable — no data loss, paginator keeps pages within 1050-1100px in practice).
         const imgData = canvas.toDataURL('image/jpeg', 0.92);
         const imageH_pt = (canvas.height / canvas.width) * contentW;
 

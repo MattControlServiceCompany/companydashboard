@@ -2382,8 +2382,21 @@ const CONDENSED_CATEGORIES = {
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
   Gas: [
-    { label: 'Usage (CCF)', type: 'number', w: 100, compute: (r) => _pfBills(r.naturalGasCCF) },
-    { label: 'Usage (Therms)', type: 'number', w: 110, compute: (r) => _pfBills(r.naturalGasTherms) },
+    { label: 'Usage (CCF)', type: 'number', w: 100, gasUnit: 'CCF', compute: (r) => _pfBills(r.naturalGasCCF) },
+    {
+      label: 'Usage (Therms)',
+      type: 'number',
+      w: 110,
+      gasUnit: 'Therms',
+      compute: (r) => _pfBills(r.naturalGasTherms),
+    },
+    {
+      label: 'Usage (MMBtu)',
+      type: 'number',
+      w: 110,
+      gasUnit: 'MMBtu',
+      compute: (r) => _pfBills(r.naturalGasMMbtu),
+    },
     {
       label: 'Gas Cost $',
       type: 'currency',
@@ -2496,8 +2509,9 @@ function openBillsTableSettings(mid) {
     const _settingsBillUnit = meter.commodity === 'Gas' ? getMeterBillUnit(meter) : null;
     items = CONDENSED_CATEGORIES[meter.commodity]
       .filter((c) => {
-        if (_settingsBillUnit === 'CCF' && c.label === 'Usage (Therms)') return false;
-        if (_settingsBillUnit !== 'CCF' && _settingsBillUnit && c.label === 'Usage (CCF)') return false;
+        if ((_settingsBillUnit === 'CCF' || _settingsBillUnit === 'MMBtu') && c.gasUnit === 'Therms') return false;
+        if (_settingsBillUnit !== 'CCF' && _settingsBillUnit && c.gasUnit === 'CCF') return false;
+        if (_settingsBillUnit !== 'MMBtu' && c.gasUnit === 'MMBtu') return false;
         return true;
       })
       .map((c) => ({
@@ -2523,7 +2537,13 @@ function openBillsTableSettings(mid) {
       .filter((e) => {
         if (e.section || SKIP.has(e.key)) return false;
         if (_detailSettingsBillUnit && e.gasUnit === 'CCF' && _detailSettingsBillUnit !== 'CCF') return false;
-        if (_detailSettingsBillUnit && e.gasUnit === 'Therms' && _detailSettingsBillUnit === 'CCF') return false;
+        if (
+          _detailSettingsBillUnit &&
+          e.gasUnit === 'Therms' &&
+          (_detailSettingsBillUnit === 'CCF' || _detailSettingsBillUnit === 'MMBtu')
+        )
+          return false;
+        if (_detailSettingsBillUnit && e.gasUnit === 'MMBtu' && _detailSettingsBillUnit !== 'MMBtu') return false;
         return true;
       })
       .map((e) => ({ key: e.key, label: e.label }));
@@ -2704,8 +2724,9 @@ function renderBillsPane(pane, m, bills, incl) {
     const billUnit = isGas ? getMeterBillUnit(m) : null;
     COL_FIELDS = CONDENSED_CATEGORIES[m.commodity]
       .filter((c) => {
-        if (isGas && c.label === 'Usage (CCF)' && billUnit !== 'CCF') return false;
-        if (isGas && c.label === 'Usage (Therms)' && billUnit === 'CCF') return false;
+        if (isGas && c.gasUnit === 'CCF' && billUnit !== 'CCF') return false;
+        if (isGas && c.gasUnit === 'Therms' && (billUnit === 'CCF' || billUnit === 'MMBtu')) return false;
+        if (isGas && c.gasUnit === 'MMBtu' && billUnit !== 'MMBtu') return false;
         return !hiddenSet.has(c.label);
       })
       .map((c) => ({
@@ -2726,11 +2747,16 @@ function renderBillsPane(pane, m, bills, incl) {
       if (TABLE_SKIP_KEYS.has(e.key)) return false;
       if (hiddenSet.has(e.key)) return false;
       if (isGas && e.gasUnit === 'CCF' && _detailBillUnit !== 'CCF') return false;
-      if (isGas && e.gasUnit === 'Therms' && _detailBillUnit === 'CCF') return false;
+      if (isGas && e.gasUnit === 'Therms' && (_detailBillUnit === 'CCF' || _detailBillUnit === 'MMBtu')) return false;
+      if (isGas && e.gasUnit === 'MMBtu' && _detailBillUnit !== 'MMBtu') return false;
       return true;
     });
+    const _gasDispUnit = isGas ? getMeterDisplayUnit(m) : null;
     COL_FIELDS = schemaForTable.map((e) => ({
-      h: e.label + (e.type === 'currency' ? ' $' : ''),
+      h:
+        e.key === 'totalGasRate' && _gasDispUnit
+          ? 'Total $/' + _gasDispUnit + ' Rate'
+          : e.label + (e.type === 'currency' ? ' $' : ''),
       a: e.type === 'text' || e.type === 'date' ? 'lbl' : '',
       w: _billColumnWidth(e),
       k: e.key,
@@ -3450,7 +3476,8 @@ function getWeatherForBuilding(projId, bldgId) {
   const pid = projId || udSelProjId;
   const bid = bldgId || udSelBldgId;
   const b = getUDBldg(pid, bid);
-  const zip = b?.zip || '';
+  const _projRec = (typeof projects !== 'undefined' ? projects : []).find((p) => String(p.id) === String(pid));
+  const zip = b?.zip || _projRec?.zip || '';
   if (!zip) return { byYm: null, cache: [], zip: '' };
   const cache = wddLoadCache(zip);
   if (!cache.length) return { byYm: null, cache: [], zip };

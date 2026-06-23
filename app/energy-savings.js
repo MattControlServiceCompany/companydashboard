@@ -1417,6 +1417,7 @@ function openProjModal() {
     'mp-name',
     'mp-client',
     'mp-addr',
+    'mp-zip',
     'mp-sqft',
     'mp-pm',
     'mp-tech',
@@ -1450,6 +1451,7 @@ function editProj(id) {
     name: p.name,
     client: p.client,
     addr: p.addr,
+    zip: p.zip,
     sqft: p.sqft,
     pm: p.pm,
     tech: p.tech,
@@ -1548,6 +1550,7 @@ function saveProject() {
     name,
     client: document.getElementById('mp-client').value,
     addr: document.getElementById('mp-addr').value,
+    zip: (document.getElementById('mp-zip')?.value || '').trim(),
     type: document.getElementById('mp-type').value,
     sqft: parseInt(document.getElementById('mp-sqft').value) || 0,
     coolType: document.getElementById('mp-coolType').value,
@@ -5344,6 +5347,12 @@ const UTILITY_RULES = [
       let _curTriggerCharge = null;
       let _curIndexCharge = null;
       let _curSWECharge = null;
+      // Per-component MMBtu quantities (fix 8a271dae — needed for per-component rate display)
+      let _curTriggerMMbtu = null;
+      let _curIndexMMbtu = null;
+      // Per-component printed rates (source-faithful — from the Rate column of each charge line)
+      let _curTriggerRate = null;
+      let _curIndexRate = null;
 
       for (let i = 0; i < _lines.length; i++) {
         const ln = _lines[i];
@@ -5359,6 +5368,10 @@ const UTILITY_RULES = [
           _curTriggerCharge = null;
           _curIndexCharge = null;
           _curSWECharge = null;
+          _curTriggerMMbtu = null;
+          _curIndexMMbtu = null;
+          _curTriggerRate = null;
+          _curIndexRate = null;
           // Extract building name (text between "Service Address:" and "Acct/Meter:")
           const _saM = ln.match(
             /Service\s+Address\s*:\s*(.+?)\s+Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
@@ -5389,19 +5402,36 @@ const UTILITY_RULES = [
 
         // Trigger - Fixed charge component line.
         // Format: "Trigger - Fixed   6.24   0.07   $5.2650   $33.22"
-        // Last dollar amount on the line = charge for this component.
+        // First number after label = per-component MMBtu; last dollar amount = charge.
+        // Rate column ($5.2650) appears between fuel column and the final $ charge.
         if (_inSites && /Trigger\s*-?\s*Fixed/i.test(ln)) {
           const _trigDollarM = ln.match(/\$([\d,]+\.\d{2})\s*$/);
           if (_trigDollarM) _curTriggerCharge = parseFloat(_trigDollarM[1].replace(/,/g, ''));
+          const _trigMmbtuM = ln.match(/Trigger\s*-?\s*Fixed\s+([\d,]+\.?\d*)/i);
+          if (_trigMmbtuM) _curTriggerMMbtu = parseFloat(_trigMmbtuM[1].replace(/,/g, ''));
+          // Capture printed rate — second-to-last $ value on the line (Rate column)
+          const _trigRateMs = ln.match(/\$([\d,]+\.\d{4})/g);
+          if (_trigRateMs && _trigRateMs.length >= 1) {
+            _curTriggerRate = _trigRateMs[_trigRateMs.length - 1].replace(/^\$/, '');
+          }
           continue;
         }
 
         // Index (FOM) charge component line.
         // Format: "Index (FOM)   3.34   0.04   $5.0550   $17.09"
         // OCR variants: "IndexbOM)  60.03  0.67  $5.0550  $306.84" — tolerate garbled parens/O vs 0
+        // First number after label = per-component MMBtu; last dollar amount = charge.
+        // Rate column ($5.0550) appears between fuel column and the final $ charge.
         if (_inSites && /Index[\s(b]*(?:FOM|0M|OM)/i.test(ln)) {
           const _idxDollarM = ln.match(/\$([\d,]+\.\d{2})\s*$/);
           if (_idxDollarM) _curIndexCharge = parseFloat(_idxDollarM[1].replace(/,/g, ''));
+          const _idxMmbtuM = ln.match(/Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]+([\d,]+\.?\d*)/i);
+          if (_idxMmbtuM) _curIndexMMbtu = parseFloat(_idxMmbtuM[1].replace(/,/g, ''));
+          // Capture printed rate — last 4-decimal $ value before the 2-decimal charge
+          const _idxRateMs = ln.match(/\$([\d,]+\.\d{4})/g);
+          if (_idxRateMs && _idxRateMs.length >= 1) {
+            _curIndexRate = _idxRateMs[_idxRateMs.length - 1].replace(/^\$/, '');
+          }
           continue;
         }
 
@@ -5436,6 +5466,10 @@ const UTILITY_RULES = [
               triggerCharge: _curTriggerCharge,
               indexCharge: _curIndexCharge,
               sweCharge: _curSWECharge,
+              triggerMMbtu: _curTriggerMMbtu,
+              indexMMbtu: _curIndexMMbtu,
+              triggerRate: _curTriggerRate,
+              indexRate: _curIndexRate,
             });
           }
           // Do NOT reset _curAddr/_curAcct here — next "Service Address:" line will overwrite.
@@ -5466,7 +5500,7 @@ const UTILITY_RULES = [
           NaturalGasMMbtu: blk.mmbtu != null ? String(blk.mmbtu) : null,
           NaturalGasTherms: null,
           NaturalGasCCF: null,
-          GasCharge: null,
+          GasCharge: blk.dollar || null,
           CustomerCharge: null,
           TotalCurrentCharges: blk.dollar || null,
           TotalAmountDue: blk.dollar || null,
@@ -5474,6 +5508,11 @@ const UTILITY_RULES = [
           _wreTriggerCharge: blk.triggerCharge != null ? String(blk.triggerCharge) : null,
           _wreIndexCharge: blk.indexCharge != null ? String(blk.indexCharge) : null,
           _wreSWECharge: blk.sweCharge != null ? String(blk.sweCharge) : null,
+          // Per-component MMBtu quantities (fix 8a271dae — for per-component rate display)
+          _wreTriggerMMbtu: blk.triggerMMbtu != null ? String(blk.triggerMMbtu) : null,
+          _wreIndexMMbtu: blk.indexMMbtu != null ? String(blk.indexMMbtu) : null,
+          _wreTriggerRate: blk.triggerRate || null,
+          _wreIndexRate: blk.indexRate || null,
           _wreHasSWE: hasSWEGlobal,
           _wreSummaryMMbtu: summaryMMbtu,
           _wreSummaryTotal: summaryTotalCC,
@@ -5500,7 +5539,7 @@ const UTILITY_RULES = [
           NaturalGasMMbtu: summaryMMbtu ? String(summaryMMbtu) : null,
           NaturalGasTherms: null,
           NaturalGasCCF: null,
-          GasCharge: null,
+          GasCharge: summaryTotalCC || null,
           TotalCurrentCharges: summaryTotalCC,
           TotalAmountDue: summaryTotalCC,
           _wreAggregateFallback: true,
