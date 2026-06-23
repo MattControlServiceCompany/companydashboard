@@ -3781,6 +3781,10 @@ function countCriticalMissing(extracted, utilityName) {
 
 // ── Auto-assign: scan all meters across all projects/buildings for account or meter number match ──
 let _autoAssignTarget = null; // {projId, bldgId, meterId}
+let _mbRowTargets = {}; // keyed by _pdfMultiBills index -> match obj or null
+function _isMultiAcctFile() {
+  return new Set((window._pdfMultiBills || []).map((b) => b.AccountNumber).filter(Boolean)).size > 1;
+}
 function _normalizeAddr(a) {
   return (a || '')
     .toLowerCase()
@@ -3928,6 +3932,10 @@ function saveAddressAlias(projId, bldgId, aliasString) {
 window.saveAddressAlias = saveAddressAlias;
 function showAutoAssignBanner(match, extracted) {
   if (!match) return;
+  if (_isMultiAcctFile()) {
+    showMultiBuildingReviewPanel();
+    return;
+  }
   _autoAssignTarget = match;
   const banner = document.getElementById('pdfAutoAssignBanner');
   const msg = document.getElementById('pdfAutoAssignMsg');
@@ -3957,7 +3965,339 @@ function showAutoAssignBanner(match, extracted) {
     if (meterSel && match.meterId) meterSel.value = match.meterId;
   }
 }
+
+// ── Multi-building review panel (Option A) ────────────────────────────────────
+function showMultiBuildingReviewPanel() {
+  const bills = window._pdfMultiBills || [];
+  const panel = document.getElementById('pdfMultiBldgPanel');
+  if (!panel) return;
+
+  // Reset row targets and pre-fill from findMeterMatch
+  _mbRowTargets = {};
+  bills.forEach(function (bill, i) {
+    _mbRowTargets[i] = findMeterMatch(bill) || null;
+  });
+
+  // Count unique accounts for header
+  const uniqueAccts = new Set(
+    bills
+      .map(function (b) {
+        return b.AccountNumber;
+      })
+      .filter(Boolean),
+  );
+
+  // Build project options HTML (shared across unmatched rows)
+  const projOpts = (projects || [])
+    .map(function (p) {
+      return '<option value="' + p.id + '">' + (p.name || 'Project ' + p.id) + '</option>';
+    })
+    .join('');
+
+  // Build table rows
+  const rows = [];
+  bills.forEach(function (bill, i) {
+    const match = _mbRowTargets[i];
+    const period = (bill.BillingPeriodStart || '') + (bill.BillingPeriodEnd ? ' – ' + bill.BillingPeriodEnd : '');
+    const addr = bill.ServiceAddress || '—';
+    const acct = bill.AccountNumber || '—';
+    const dupInfo = (window._pdfDupMap || {})[i];
+    const isDupSkip = dupInfo && dupInfo.action === 'skip';
+
+    let destCell = '';
+    let statusCell = '';
+
+    if (isDupSkip) {
+      destCell = '<span style="color:var(--text3);font-size:12px;">Duplicate — skipped</span>';
+      statusCell =
+        '<span id="mbStatus_' +
+        i +
+        '" style="color:var(--text3);font-size:11px;padding:2px 6px;border-radius:3px;background:var(--s3);">Skip</span>';
+    } else if (match) {
+      destCell = [
+        '<span id="mbStaticDest_' + i + '" style="font-size:12px;">',
+        '<strong>' + (match.proj ? match.proj.name : '') + '</strong>',
+        ' → ' +
+          (match.bldg ? match.bldg.name : '') +
+          ' → ' +
+          (match.meter ? match.meter.commodity || match.meter.account || match.meter.id : ''),
+        '</span>',
+        ' <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px;" onclick="_mbToggleRowOverride(' +
+          i +
+          ')">Change</button>',
+        '<div id="mbOverride_' + i + '" style="display:none;margin-top:6px;">',
+        '<select class="fs" id="mbProjSel_' +
+          i +
+          '" style="min-width:120px;font-size:12px;" onchange="_mbUpdateBldgOpts(' +
+          i +
+          ')">',
+        projOpts,
+        '</select>',
+        '<select class="fs" id="mbBldgSel_' +
+          i +
+          '" style="min-width:120px;font-size:12px;" onchange="_mbUpdateMeterOpts(' +
+          i +
+          ')"><option value="">— building —</option></select>',
+        '<select class="fs" id="mbMeterSel_' +
+          i +
+          '" style="min-width:120px;font-size:12px;" onchange="_mbCommitRowTarget(' +
+          i +
+          ')"><option value="">— meter —</option></select>',
+        '</div>',
+      ].join('');
+      statusCell =
+        '<span id="mbStatus_' +
+        i +
+        '" style="color:var(--em);font-size:11px;padding:2px 6px;border-radius:3px;background:rgba(var(--em-rgb),.1);">Matched</span>';
+    } else {
+      destCell = [
+        '<select class="fs" id="mbProjSel_' +
+          i +
+          '" style="min-width:120px;font-size:12px;" onchange="_mbUpdateBldgOpts(' +
+          i +
+          ')">',
+        '<option value="">— project —</option>',
+        projOpts,
+        '</select>',
+        '<select class="fs" id="mbBldgSel_' +
+          i +
+          '" style="min-width:120px;font-size:12px;" onchange="_mbUpdateMeterOpts(' +
+          i +
+          ')"><option value="">— building —</option></select>',
+        '<select class="fs" id="mbMeterSel_' +
+          i +
+          '" style="min-width:120px;font-size:12px;" onchange="_mbCommitRowTarget(' +
+          i +
+          ')"><option value="">— meter —</option></select>',
+      ].join('');
+      statusCell =
+        '<span id="mbStatus_' +
+        i +
+        '" style="color:var(--accent);font-size:11px;padding:2px 6px;border-radius:3px;background:rgba(128,128,128,.12);">No match — pick below</span>';
+    }
+
+    rows.push(
+      [
+        '<tr style="border-bottom:1px solid var(--s3);">',
+        '<td style="padding:6px 8px;color:var(--text3);font-size:12px;">' + (i + 1) + '</td>',
+        '<td style="padding:6px 8px;font-size:12px;">' + period + '</td>',
+        '<td style="padding:6px 8px;font-size:12px;">' + addr + '</td>',
+        '<td style="padding:6px 8px;font-size:12px;">' + acct + '</td>',
+        '<td style="padding:6px 8px;">' + destCell + '</td>',
+        '<td style="padding:6px 8px;">' + statusCell + '</td>',
+        '</tr>',
+      ].join(''),
+    );
+  });
+
+  const html = [
+    '<div style="border:1px solid var(--s2);border-radius:6px;background:var(--s4);padding:12px;">',
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">',
+    '<strong style="font-size:13px;color:var(--em);">Review — ' +
+      bills.length +
+      ' period' +
+      (bills.length !== 1 ? 's' : '') +
+      ' across ' +
+      uniqueAccts.size +
+      ' account' +
+      (uniqueAccts.size !== 1 ? 's' : '') +
+      '</strong>',
+    '</div>',
+    '<div style="overflow-x:auto;">',
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
+    '<thead>',
+    '<tr style="background:var(--s1);border-bottom:2px solid var(--s2);">',
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;">#</th>',
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Period</th>',
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Service Address</th>',
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Account</th>',
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Destination</th>',
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Status</th>',
+    '</tr>',
+    '</thead>',
+    '<tbody>',
+    rows.join(''),
+    '</tbody>',
+    '</table>',
+    '</div>',
+    '<div style="display:flex;gap:8px;margin-top:12px;">',
+    '<button class="btn btn-primary btn-sm" id="mbSaveAllBtn" onclick="confirmMultiBuildingSave()" disabled>Save All</button>',
+    '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'pdfMultiBldgPanel\').style.display=\'none\'">Cancel</button>',
+    '</div>',
+    '</div>',
+  ].join('');
+
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+
+  // Hide single-account banner and save row while panel is open
+  const banner = document.getElementById('pdfAutoAssignBanner');
+  if (banner) banner.style.display = 'none';
+  const saveRow = document.getElementById('pdfSaveRow');
+  if (saveRow) saveRow.style.display = 'none';
+
+  _mbUpdateSaveAllBtn();
+}
+window.showMultiBuildingReviewPanel = showMultiBuildingReviewPanel;
+
+function _mbUpdateBldgOpts(rowIdx) {
+  const projSel = document.getElementById('mbProjSel_' + rowIdx);
+  const bldgSel = document.getElementById('mbBldgSel_' + rowIdx);
+  const meterSel = document.getElementById('mbMeterSel_' + rowIdx);
+  if (!projSel || !bldgSel || !meterSel) return;
+  const projId = parseInt(projSel.value);
+  _mbRowTargets[rowIdx] = null;
+  if (!projId) {
+    bldgSel.innerHTML = '<option value="">— building —</option>';
+    meterSel.innerHTML = '<option value="">— meter —</option>';
+    _mbUpdateSaveAllBtn();
+    return;
+  }
+  const bldgs = getUDProj(projId).buildings || [];
+  if (!bldgs.length) {
+    bldgSel.innerHTML = '<option value="">No buildings in this project — add one first</option>';
+    meterSel.innerHTML = '<option value="">— meter —</option>';
+    _mbUpdateSaveAllBtn();
+    return;
+  }
+  bldgSel.innerHTML =
+    '<option value="">— building —</option>' +
+    bldgs
+      .map(function (b) {
+        return '<option value="' + b.id + '">' + (b.name || b.id) + '</option>';
+      })
+      .join('');
+  meterSel.innerHTML = '<option value="">— meter —</option>';
+  _mbUpdateSaveAllBtn();
+}
+window._mbUpdateBldgOpts = _mbUpdateBldgOpts;
+
+function _mbUpdateMeterOpts(rowIdx) {
+  const projSel = document.getElementById('mbProjSel_' + rowIdx);
+  const bldgSel = document.getElementById('mbBldgSel_' + rowIdx);
+  const meterSel = document.getElementById('mbMeterSel_' + rowIdx);
+  if (!projSel || !bldgSel || !meterSel) return;
+  const projId = parseInt(projSel.value);
+  const bldgId = bldgSel.value;
+  _mbRowTargets[rowIdx] = null;
+  if (!projId || !bldgId) {
+    meterSel.innerHTML = '<option value="">— meter —</option>';
+    _mbUpdateSaveAllBtn();
+    return;
+  }
+  const bldg = getUDBldg(projId, bldgId);
+  const meters = bldg ? bldg.meters || [] : [];
+  meterSel.innerHTML =
+    '<option value="">— meter —</option>' +
+    meters
+      .map(function (m) {
+        const label = [m.commodity, m.account || m.meter, m.provider].filter(Boolean).join(' · ') || m.id;
+        return '<option value="' + m.id + '">' + label + '</option>';
+      })
+      .join('');
+  _mbUpdateSaveAllBtn();
+}
+window._mbUpdateMeterOpts = _mbUpdateMeterOpts;
+
+function _mbCommitRowTarget(rowIdx) {
+  const projSel = document.getElementById('mbProjSel_' + rowIdx);
+  const bldgSel = document.getElementById('mbBldgSel_' + rowIdx);
+  const meterSel = document.getElementById('mbMeterSel_' + rowIdx);
+  const statusEl = document.getElementById('mbStatus_' + rowIdx);
+  if (!projSel || !bldgSel || !meterSel) return;
+  const projId = parseInt(projSel.value);
+  const bldgId = bldgSel.value;
+  const meterId = meterSel.value;
+  if (projId && bldgId && meterId) {
+    const proj = (projects || []).find(function (p) {
+      return p.id === projId;
+    });
+    const bldg = getUDBldg(projId, bldgId);
+    const meter = bldg
+      ? (bldg.meters || []).find(function (m) {
+          return m.id === meterId;
+        })
+      : null;
+    if (proj && bldg && meter) {
+      _mbRowTargets[rowIdx] = {
+        proj: proj,
+        bldg: bldg,
+        meter: meter,
+        projId: projId,
+        bldgId: bldgId,
+        meterId: meterId,
+      };
+      if (statusEl) {
+        statusEl.textContent = 'Assigned';
+        statusEl.style.color = 'var(--em)';
+        statusEl.style.background = 'rgba(var(--em-rgb),.1)';
+      }
+    } else {
+      _mbRowTargets[rowIdx] = null;
+    }
+  } else {
+    _mbRowTargets[rowIdx] = null;
+    if (statusEl) {
+      statusEl.textContent = 'No match — pick below';
+      statusEl.style.color = 'var(--accent)';
+      statusEl.style.background = 'rgba(128,128,128,.12)';
+    }
+  }
+  _mbUpdateSaveAllBtn();
+}
+window._mbCommitRowTarget = _mbCommitRowTarget;
+
+function _mbUpdateSaveAllBtn() {
+  const btn = document.getElementById('mbSaveAllBtn');
+  if (!btn) return;
+  const bills = window._pdfMultiBills || [];
+  const dupMap = window._pdfDupMap || {};
+  const nonSkipped = bills.filter(function (b, i) {
+    const d = dupMap[i];
+    return !(d && d.action === 'skip');
+  });
+  if (!nonSkipped.length) {
+    btn.disabled = true;
+    return;
+  }
+  const assigned = nonSkipped.filter(function (b, i) {
+    // Find the original index in bills array
+    const origIdx = bills.indexOf(b);
+    return _mbRowTargets[origIdx] !== null && _mbRowTargets[origIdx] !== undefined;
+  });
+  btn.disabled = !(assigned.length === nonSkipped.length);
+}
+window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
+
+function _mbToggleRowOverride(rowIdx) {
+  const ovDiv = document.getElementById('mbOverride_' + rowIdx);
+  if (!ovDiv) return;
+  const isHidden = ovDiv.style.display === 'none';
+  ovDiv.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) {
+    // Initialise project select to currently matched project if any
+    const match = _mbRowTargets[rowIdx];
+    const projSel = document.getElementById('mbProjSel_' + rowIdx);
+    if (projSel && match && match.projId) {
+      projSel.value = match.projId;
+      _mbUpdateBldgOpts(rowIdx);
+      const bldgSel = document.getElementById('mbBldgSel_' + rowIdx);
+      if (bldgSel && match.bldgId) {
+        bldgSel.value = match.bldgId;
+        _mbUpdateMeterOpts(rowIdx);
+        const meterSel = document.getElementById('mbMeterSel_' + rowIdx);
+        if (meterSel && match.meterId) meterSel.value = match.meterId;
+      }
+    }
+  }
+}
+window._mbToggleRowOverride = _mbToggleRowOverride;
+
 async function confirmAutoAssign() {
+  if (_isMultiAcctFile()) {
+    showToast('Use the Save All button in the building review table');
+    return;
+  }
   if (!_autoAssignTarget || !window._pdfMultiBills) return;
   // If the override panel is open and fully filled in, apply the manual selection.
   const overrideRow = document.getElementById('pdfBannerOverrideRow');
@@ -3968,7 +4308,7 @@ async function confirmAutoAssign() {
     if (overrideProjId && overrideBldgId && overrideMeterId) {
       const overrideBldg = getUDBldg(overrideProjId, overrideBldgId);
       const overrideMeter = overrideBldg ? (overrideBldg.meters || []).find((m) => m.id === overrideMeterId) : null;
-      const overrideProj = (window.projects || []).find((p) => p.id === overrideProjId);
+      const overrideProj = (projects || []).find((p) => p.id === overrideProjId);
       if (overrideBldg && overrideMeter && overrideProj) {
         _autoAssignTarget = {
           proj: overrideProj,
@@ -4241,7 +4581,8 @@ async function confirmAutoAssign() {
       }
       if (Object.keys(cp).length) billRow._chargeParts = cp;
     }
-    let billMatch = findMeterMatch(bill) || _autoAssignTarget;
+    let billMatch = findMeterMatch(bill);
+    if (!billMatch) billMatch = _autoAssignTarget;
     const _bComm = (bill.Commodity || '').toLowerCase();
     let _mComm = (billMatch.meter.commodity || '').toLowerCase();
     if (_bComm && !_mComm) {
@@ -4327,6 +4668,357 @@ async function confirmAutoAssign() {
     renderUDProjList();
   }
 }
+
+async function confirmMultiBuildingSave() {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills.length) return;
+  const dupMap = window._pdfDupMap || {};
+
+  // Dup-unresolved gate
+  const unresolved = Object.values(dupMap).filter(function (d) {
+    return d.action === null;
+  });
+  if (unresolved.length > 0) {
+    showToast(unresolved.length + ' duplicate bill(s) need review — click yellow-dot pills to resolve');
+    return;
+  }
+
+  // Unmatched gate — every non-skipped bill must have a destination
+  for (let _bi = 0; _bi < bills.length; _bi++) {
+    const billDup = dupMap[_bi];
+    if (billDup && billDup.action === 'skip') continue;
+    if (!_mbRowTargets[_bi]) {
+      showToast('All billing periods need a destination — assign remaining rows first');
+      return;
+    }
+  }
+
+  const pf = function (v) {
+    return v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
+  };
+  function toISO(d) {
+    if (!d) return '';
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    let p = d.split('/');
+    if (p.length !== 3) p = d.split('-');
+    if (p.length !== 3) return d;
+    const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+    return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
+  }
+
+  // Store PDF once under a shared key to avoid duplication
+  const sharedId = bills[0]?._pdfSharedKey || Date.now();
+  const pdfKey = 'en_pdf_shared_' + String(sharedId).replace(/^en_pdf_shared_/, '');
+  let pdfStored = false;
+
+  let saved = 0;
+  for (let _bi = 0; _bi < bills.length; _bi++) {
+    const bill = bills[_bi];
+    const billDup = dupMap[_bi];
+    if (billDup && billDup.action === 'skip') continue;
+
+    let billMatch = _mbRowTargets[_bi];
+    if (!billMatch) {
+      console.warn('[confirmMultiBuildingSave] no target for bill', _bi, '— skipping');
+      continue;
+    }
+
+    // Store PDF file once on first saved bill
+    let hasPDF = false;
+    if (pdfB64 && !pdfStored) {
+      hasPDF = await pdfStore(pdfKey, pdfB64);
+      bills.forEach(function (b) {
+        b._pdfSharedKey = String(sharedId).replace(/^en_pdf_shared_/, '');
+      });
+      pdfStored = true;
+    } else if (pdfB64) {
+      hasPDF = true;
+    }
+
+    const billId = 'pb' + Date.now() + '_' + saved;
+    const kwhCost = (
+      pf(bill.EnergyOnPeakCharge) +
+      pf(bill.EnergyOffPeakCharge) +
+      pf(bill.ECACharge) +
+      pf(bill.EERCharge) +
+      pf(bill.PTSCharge)
+    ).toFixed(2);
+    const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
+    const otherCost = (
+      pf(bill.CustomerCharge) +
+      pf(bill.TaxExemptDelivery) +
+      pf(bill.BillOffset) +
+      pf(bill.RkVACharge)
+    ).toFixed(2);
+    const taxCost = pf(bill.FranchiseFee).toFixed(2);
+
+    const billRow = {
+      id: 'r' + Date.now() + '_' + saved,
+      start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
+      end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
+      kwh: bill.kWhConsumed || bill.NaturalGasCCF || bill.GallonsDelivered || '',
+      demandKW: bill.ActualKW || '',
+      billedKW: bill.BilledKW || '',
+      facKW: bill.FacilitiesKW || '',
+      facKWCost: bill.FacilitiesCharge || '',
+      kwCost,
+      kwhCost,
+      otherCost,
+      taxCost,
+      totalCost: bill.TotalCurrentCharges || bill.TotalAmountDue || '',
+      fromPDF: true,
+      pdfBillId: billId,
+      hasPDF,
+      pdfKey: pdfKey || null,
+      pdfPageStart: bill._pageStart || null,
+      pdfPageEnd: bill._pageEnd || null,
+      rateSchedule: bill.RateSchedule || '',
+      onPeakKwh: bill.OnPeakKWh || bill.EnergyOnPeakKWh || '',
+      offPeakKwh: bill.OffPeakKWh || bill.EnergyOffPeakKWh || '',
+      onPeakCost: bill.EnergyOnPeakCharge || '',
+      offPeakCost: bill.EnergyOffPeakCharge || '',
+      customerCharge: bill.CustomerCharge || '',
+      demandCharge: bill.BilledKWCharge || '',
+      facilitiesCharge: bill.FacilitiesCharge || '',
+      ecaCharge: bill.ECACharge || '',
+      eerCharge: bill.EERCharge || '',
+      ptsCharge: bill.PTSCharge || '',
+      tdcCharge: bill.TDCCharge || '',
+      rkvaCharge: bill.RkVACharge || '',
+      renewableCharge: bill.RenewableCharge || '',
+      franchiseFee: bill.FranchiseFee || '',
+      franchiseFee1: bill.FranchiseFee1 || '',
+      franchiseFee2: bill.FranchiseFee2 || '',
+      solarCredit: bill.SolarCredit || '',
+      generationKwh: bill.GenerationKwh || '',
+      Meter1_ReadStart: bill.Meter1_ReadStart || '',
+      Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
+      Meter1_StartRead: bill.Meter1_StartRead || '',
+      Meter1_EndRead: bill.Meter1_EndRead || '',
+      Meter1_ReadDiff: bill.Meter1_ReadDiff || '',
+      Meter1_Multiplier: bill.Meter1_Multiplier || '',
+      Meter1_kWh: bill.Meter1_kWh || '',
+      Meter1_KW: bill.Meter1_KW || '',
+      Meter1_RKVA: bill.Meter1_RKVA || '',
+      Meter2_ReadStart: bill.Meter2_ReadStart || '',
+      Meter2_ReadEnd: bill.Meter2_ReadEnd || '',
+      Meter2_StartRead: bill.Meter2_StartRead || '',
+      Meter2_EndRead: bill.Meter2_EndRead || '',
+      Meter2_ReadDiff: bill.Meter2_ReadDiff || '',
+      Meter2_Multiplier: bill.Meter2_Multiplier || '',
+      Meter2_kWh: bill.Meter2_kWh || '',
+      Meter2_KW: bill.Meter2_KW || '',
+      Meter2_RKVA: bill.Meter2_RKVA || '',
+      utilityCompany: bill.UtilityCompany || '',
+      customerName: bill.CustomerName || '',
+      serviceAddress: bill.ServiceAddress || '',
+      accountNumber: bill.AccountNumber || '',
+      meterNumber: bill.MeterNumber || '',
+      numberOfDays: bill.NumberOfDays || '',
+      meterReadStart: bill.MeterReadStart || '',
+      meterReadEnd: bill.MeterReadEnd || '',
+      billDate: bill.BillDate || '',
+      commodity: bill.Commodity || '',
+      startRead: bill.StartRead || '',
+      endRead: bill.EndRead || '',
+      readDifference: bill.ReadDifference || '',
+      meterMultiplier: bill.MeterMultiplier || '',
+      actualRKVA: bill.ActualRKVA || '',
+      tdcKW: bill.TDCkW || '',
+      taxExemptDelivery: bill.TaxExemptDelivery || '',
+      billOffset: bill.BillOffset || '',
+      naturalGasCCF: bill.NaturalGasCCF || '',
+      naturalGasTherms: bill.NaturalGasTherms || '',
+      naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+      _wreTriggerCharge: bill._wreTriggerCharge || '',
+      _wreIndexCharge: bill._wreIndexCharge || '',
+      _wreSWECharge: bill._wreSWECharge || '',
+      _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
+      _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+      _wreTriggerRate: bill._wreTriggerRate || '',
+      _wreIndexRate: bill._wreIndexRate || '',
+      therms: (function () {
+        const t = pf(bill.NaturalGasTherms);
+        if (t) return t;
+        const ccf = pf(bill.NaturalGasCCF);
+        if (ccf) return Math.round(ccf * 1.037 * 100) / 100;
+        const mm = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+        if (mm) return Math.round(mm * 10 * 100) / 100;
+        return '';
+      })(),
+      thermCost:
+        bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
+          ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
+          : '',
+      gasCharge: bill.GasCharge || '',
+      fuelAdjustment: bill.FuelAdjustment || '',
+      waterUsage: bill.WaterUsage || '',
+      waterCharge: bill.WaterCharge || '',
+      waterProtectionFee: bill.WaterProtectionFee || '',
+      sewerUsage: bill.SewerUsage || '',
+      sewerCharge: bill.SewerCharge || '',
+      stormWaterCharge: bill.StormWaterCharge || '',
+      invoiceNumber: bill.InvoiceNumber || '',
+      saleNumber: bill.SaleNumber || '',
+      deliveryDate: bill.DeliveryDate || '',
+      fuelType: bill.FuelType || '',
+      gallonsDelivered: bill.GallonsDelivered || '',
+      unitPrice: bill.UnitPrice || '',
+      subtotal: bill.Subtotal || '',
+      tax: bill.Tax || '',
+      totalKwhRate: (function () {
+        const _kwh = pf(bill.kWhConsumed);
+        const _chg = pf(kwhCost);
+        return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
+      })(),
+      totalKwRate: (function () {
+        const _kw = pf(bill.BilledKW) || pf(bill.ActualKW) || pf(bill.FacilitiesKW);
+        const _chg = pf(kwCost) + pf(bill.FacilitiesCharge);
+        return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
+      })(),
+      facilitiesRate: bill.FacilitiesRate || '',
+      demandRate: bill.DemandRate || '',
+      tdcRate: bill.TDCRate || '',
+      onPeakRate: bill.OnPeakRate || '',
+      offPeakRate: bill.OffPeakRate || '',
+      ecaRate: bill.ECARate || '',
+      eerRate: bill.EERRate || '',
+      ptsRate: bill.PTSRate || '',
+      rkvaRate: bill.RkVARate || '',
+      totalGasRate: (function () {
+        const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+        const therms =
+          pf(bill.NaturalGasTherms) ||
+          (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
+        if (therms > 0 && c > 0) return (c / therms).toFixed(5);
+        const mmbtu = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+        return mmbtu > 0 && c > 0 ? (c / mmbtu).toFixed(5) : '';
+      })(),
+      totalWaterRate: (function () {
+        const u = pf(bill.WaterUsage);
+        const c = pf(bill.WaterCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+        return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+      })(),
+      totalPropaneRate: (function () {
+        const g = pf(bill.GallonsDelivered);
+        const up = pf(bill.UnitPrice);
+        if (up > 0) return up.toFixed(5);
+        const c = pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+        return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
+      })(),
+      totalSewerRate: (function () {
+        const u = pf(bill.SewerUsage);
+        const c = pf(bill.SewerCharge);
+        return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+      })(),
+      totalStormwaterRate: (function () {
+        const c = pf(bill.StormWaterCharge);
+        return c > 0 ? c.toFixed(2) : '';
+      })(),
+    };
+
+    if (bill._rates) {
+      const cp = {};
+      for (const [k, v] of Object.entries(bill._rates)) {
+        if (v.parts && v.parts.length > 1) {
+          cp[k] = v.parts.map(function (p) {
+            return {
+              qty: p.qty || null,
+              rate: p.rate || null,
+              unit: p.unit || null,
+              charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
+            };
+          });
+        }
+      }
+      if (Object.keys(cp).length) billRow._chargeParts = cp;
+    }
+
+    // Commodity-mismatch / meter-create block — identical to confirmAutoAssign
+    const _bComm = (bill.Commodity || '').toLowerCase();
+    let _mComm = (billMatch.meter.commodity || '').toLowerCase();
+    if (_bComm && !_mComm) {
+      billMatch.meter.commodity = bill.Commodity;
+      _mComm = _bComm;
+    }
+    if (_bComm && _mComm && _bComm !== _mComm) {
+      const _existM = (billMatch.bldg.meters || []).find(function (m) {
+        return (m.commodity || '').toLowerCase() === _bComm;
+      });
+      if (_existM) {
+        billMatch = Object.assign({}, billMatch, { meter: _existM, meterId: _existM.id });
+      } else {
+        const _newM = {
+          id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+          commodity:
+            bill.Commodity ||
+            (bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
+              ? 'Gas'
+              : bill.GallonsDelivered || bill.FuelType
+                ? 'Propane'
+                : 'Electric'),
+          provider: bill.UtilityCompany || billMatch.meter.provider || '',
+          account: bill.AccountNumber || billMatch.meter.account || '',
+          meter: '',
+          maddr: billMatch.meter.maddr || '',
+          inclusive: true,
+          bills: [],
+          billUnit: '',
+          displayUnit: '',
+        };
+        billMatch.bldg.meters = billMatch.bldg.meters || [];
+        billMatch.bldg.meters.push(_newM);
+        billMatch = Object.assign({}, billMatch, { meter: _newM, meterId: _newM.id });
+      }
+    }
+
+    const targetMeter = billMatch.meter;
+    if (bill.AccountNumber && targetMeter.account) {
+      const _extN = bill.AccountNumber.replace(/[\s\-]/g, '')
+        .replace(/^0+/, '')
+        .toLowerCase();
+      const _stoN = targetMeter.account
+        .replace(/[\s\-]/g, '')
+        .replace(/^0+/, '')
+        .toLowerCase();
+      if (_extN !== _stoN && (_extN.includes(_stoN) || _stoN.includes(_extN))) {
+        if (bill.AccountNumber.length > targetMeter.account.length) {
+          targetMeter.account = bill.AccountNumber;
+        }
+      }
+    }
+    if ((bill._utilityName || '').toLowerCase().includes('wood river') && !targetMeter.billUnit) {
+      targetMeter.billUnit = 'MMBtu';
+    }
+    targetMeter.bills = targetMeter.bills || [];
+    const dup = targetMeter.bills.find(function (r) {
+      return r.start === billRow.start && r.end === billRow.end;
+    });
+    if (dup) {
+      Object.assign(dup, billRow);
+    } else {
+      targetMeter.bills.push(billRow);
+      targetMeter.bills.sort(function (a, b) {
+        return _parseISO(a.start) - _parseISO(b.start);
+      });
+    }
+    saved++;
+  }
+
+  // Save once after the loop — never per-bill
+  saveUtilityData();
+  window._pdfBillsSaved = true;
+  _inheritBaselinesForProject(udSelProjId);
+  document.getElementById('pdfMultiBldgPanel').style.display = 'none';
+  _mbRowTargets = {};
+  _autoAssignTarget = null;
+  showToast(saved + ' bill' + (saved !== 1 ? 's' : '') + ' saved to matched meters ✓');
+  if (udSelProjId && udSelBldgId) {
+    renderUDDetail();
+    renderUDProjList();
+  }
+}
+window.confirmMultiBuildingSave = confirmMultiBuildingSave;
 
 // Store the current extraction's source PDF once per session and tag every bill
 // in the batch with a shared key, so downstream save paths (_saveBillToMatchedMeter,
@@ -12720,7 +13412,7 @@ function pdfBannerToggleOverride() {
     // Populate project list and pre-select auto-matched values
     const projSel = document.getElementById('pdfBannerProjSel');
     if (projSel) {
-      projSel.innerHTML = (window.projects || [])
+      projSel.innerHTML = (projects || [])
         .map((p) => '<option value="' + p.id + '">' + (p.name || p.id) + '</option>')
         .join('');
       if (_autoAssignTarget && _autoAssignTarget.projId) {

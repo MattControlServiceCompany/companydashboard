@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.23.581',
+    date: '2026-06-23',
+    title: 'Multi-building PDF import: assign periods to buildings and save all at once',
+    items: [
+      {
+        type: 'feature',
+        text: 'When an imported PDF contains multiple buildings, a review table now lets you assign each billing period to its own building and save them all at once — no more periods silently saving to the wrong building.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.23.580',
     date: '2026-06-23',
     title: 'BAS import building selector fixed; Cost Estimate table layout overhaul',

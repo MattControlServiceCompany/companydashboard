@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.23.580'; // deployed 2026-06-23 (BAS import building selector fix; Cost Estimate table Batch 1: column auto-size, header wrap, row height, full-cell inputs, Impact column auto-hide, manual price for unpriced rows)
+  var CH_VERSION = 'v2026.06.23.581'; // deployed 2026-06-23 (Multi-building PDF save: review panel assigns periods to buildings, saves all at once; window.projects scoping fix)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
