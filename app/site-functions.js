@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.24.585',
+    date: '2026-06-24',
+    title: 'Equipment Matrix: phantom rows removed, plant points mapped',
+    items: [
+      {
+        type: 'fix',
+        text: 'VFD Integration and Supply/Return Duct entries no longer appear as equipment rows in the Audit and Summary views — they are BAS sub-programs, not real equipment, and were skewing equipment counts and averages.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now recognizes chiller-plant points: chilled water supply and return temperature, condenser water supply and return temperature, chilled water differential pressure and flow, hot water supply and return temperature, cooling tower fan speed, and plant pump-related points. These now map to the correct columns instead of appearing as unmatched.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.23.584',
     date: '2026-06-23',
     title: 'Equipment Matrix: more points recognized, more noise hidden',

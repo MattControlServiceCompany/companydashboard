@@ -764,6 +764,7 @@ var EM_POINT_MAP = [
     col: 'hwSupplyTemp',
     label: 'HW Supply Temp',
     // Phase 1: added JOCO naming patterns (heating water supply / boiler supply water temp).
+    // 5eb5be06 Phase 1: added per-unit boiler supply/outlet/leaving temp patterns.
     patterns: [
       /hw supply temp/i,
       /hot water supply/i,
@@ -772,6 +773,9 @@ var EM_POINT_MAP = [
       /heating\s+water\s+supply\s+temp/i,
       /boiler\s+\w+\s+supply\s+water\s+temp/i,
       /boiler\s+supply\s+water\s+temp/i,
+      /boiler\s+\d+\s+outlet\s+temp/i, // "Boiler 1/2/3/4 Outlet Temperature"
+      /boiler\s+\d+\s+leaving\s+temp/i, // "Boiler 1 Leaving Temp"
+      /boiler\s+\d+\s+integration\s+outlet/i, // "Boiler N Integration Outlet Temperature"
     ],
     // M2: added negativePatterns. CHW/CHWST names contain "HW" as substring causing false matches.
     // Domestic/DHW points are plumbing (excluded per plan decision A). High/low block alarm limits.
@@ -788,6 +792,7 @@ var EM_POINT_MAP = [
     col: 'hwReturnTemp',
     label: 'HW Return Temp',
     // Phase 1: added JOCO naming patterns (heating water return / boiler return water temp).
+    // 5eb5be06 Phase 1: added per-unit boiler return/entering/inlet temp patterns.
     patterns: [
       /hw return temp/i,
       /hot water return/i,
@@ -796,6 +801,9 @@ var EM_POINT_MAP = [
       /heating\s+water\s+return\s+temp/i,
       /boiler\s+\w+\s+return\s+water\s+temp/i,
       /boiler\s+return\s+water\s+temp/i,
+      /boiler\s+\d+\s+return\s+water\s+temp/i, // "Boiler 1/2/3/4 Return Water Temperature"
+      /boiler\s+\d+\s+entering\s+temp/i, // "Boiler N Entering Temp"
+      /boiler\s+\d+\s+(inlet|integration\s+inlet)\s+temp/i, // "Boiler N Inlet/Integration Inlet Temperature"
     ],
     // M2: added negativePatterns. CHWRT contains "HWRT" as substring; "DHW" contains "HW".
     // Domestic/DHW excluded (plumbing). Flow blocks "Hot Water Return Flow" (not temperature).
@@ -835,7 +843,16 @@ var EM_POINT_MAP = [
   {
     col: 'chwSupplyTemp',
     label: 'CHW Supply Temp',
-    patterns: [/chw supply temp/i, /chilled water supply/i, /chwst\b/i],
+    // 5eb5be06 Phase 1: added per-unit chiller evaporator leaving/supply temp patterns.
+    patterns: [
+      /chw supply temp/i,
+      /chilled water supply/i,
+      /chwst\b/i,
+      /chiller\s+\d+\s+evaporator\s+leaving\s+temp/i, // "Chiller N Evaporator Leaving Temperature"
+      /chiller\s+\d+\s+supply\s+water\s+temp/i, // "Chiller N Supply Water Temperature"
+      /chiller\s+\d+\s+lvg\s+temp/i, // "Chiller N Lvg Temp"
+      /chiller\s+\d+\s+leaving\s+evaporator\s+temp/i, // "Chiller N Leaving Evaporator Temperature"
+    ],
     // M2: high/low block alarm limit names. Flow blocks "Chilled Water Supply Flow"
     // (flow measurement, not temperature — routes to chwFlowLive).
     negativePatterns: [/\b(high|low|alarm|flow)\b/i],
@@ -846,7 +863,14 @@ var EM_POINT_MAP = [
   {
     col: 'chwReturnTemp',
     label: 'CHW Return Temp',
-    patterns: [/chw return temp/i, /chilled water return/i, /chwrt\b/i],
+    // 5eb5be06 Phase 1: added per-unit chiller evaporator entering/return temp patterns.
+    patterns: [
+      /chw return temp/i,
+      /chilled water return/i,
+      /chwrt\b/i,
+      /chiller\s+\d+\s+evaporator\s+entering\s+temp/i, // "Chiller N Evaporator Entering Temperature"
+      /chiller\s+\d+\s+return\s+water\s+temp/i, // "Chiller N Return Water Temperature"
+    ],
     // M2: high/low block alarm limit names (High/Low Chilled Water ReturnTemperature).
     negativePatterns: [/\b(high|low|alarm)\b/i],
     types: ['AI'],
@@ -864,7 +888,14 @@ var EM_POINT_MAP = [
     col: 'chwDiffPressure',
     label: 'CHW Diff Pressure',
     // Phase 1: added JOCO naming pattern for chilled water differential pressure.
-    patterns: [/chw diff pressure/i, /chw differential/i, /chilled\s+water\s+differential\s+pressure/i],
+    // 5eb5be06 Phase 1: added loop DP and per-pump DP patterns.
+    patterns: [
+      /chw diff pressure/i,
+      /chw differential/i,
+      /chilled\s+water\s+differential\s+pressure/i,
+      /chilled\s+water\s+loop\s+dp/i, // "Chilled Water Loop DP", "Chilled Water Loop DP 2"
+      /chilled\s+water\s+pump\s+\d+\s+dp/i, // "Chilled Water Pump N Dp"
+    ],
     negativePatterns: [/setpoint|set\s?point/i, /\b(alarm|high|low)\b/i],
     types: ['AI'],
     // Phase 1: added 'other' so plant equipment classified 'other' are not gated out.
@@ -1011,12 +1042,14 @@ var EM_POINT_MAP = [
     label: 'CT Fan Speed',
     // M3: added CT-N and Tower-N positive patterns so "CT-1 Fan VFD Speed" and "Tower 1 Fan Speed"
     // route here (previously went to sfSpeedLive because ctFanSpeedLive missed the "CT-N" prefix format).
+    // 5eb5be06 Phase 1: added per-unit cooling tower fan speed pattern.
     patterns: [
       /ct fan speed/i,
       /cooling tower fan/i,
       /tower fan/i,
       /\bct-?\d+.*fan.*speed/i,
       /\btower\s*\d+.*fan.*speed/i,
+      /cooling\s+tower\s+\d+\s+fan\s+speed/i, // "Cooling Tower N Fan Speed"
     ],
     // M3: added negativePatterns. HOA (Hand/Off/Auto switch), PID (control loop), run/status
     // (binary run feedback), disabled/enabled status sentences, and runtime alarm objects
@@ -1942,6 +1975,12 @@ function emParseEquipBaseName(nameStr) {
   var n = nameStr.trim();
   // Guard: compound slash names fall through to type-string classifier
   if (n.indexOf('/') !== -1) return null;
+  // Import-time guard: BAS sub-component programs that are NOT real equipment.
+  // Must run BEFORE any HVAC prefix checks (AHU, DOAS, CHWP, HWP, CT).
+  // "AHU 1A-1 VFD Integration" must NOT classify as 'ahu' — it is a drive telemetry sub-program.
+  // "Air Handling Unit 1B - Return Duct" must NOT classify as 'ahu' — it is a duct branch sub-program.
+  if (/\bvfd\s+integration\b/i.test(n)) return 'controls';
+  if (/ - (?:\S+\s+)*(?:supply|return)\s+duct$/i.test(n)) return null; // falls to emClassifyEquipType → 'other'
   // Priority 1: DOAS (before RTU/AHU to catch "DOAS-AHU-1")
   if (/\bdoas\b/i.test(n)) return 'doas';
   // Priority 2: ERV (energy recovery ventilator — own category per user)
@@ -5795,6 +5834,11 @@ function emRenderSummaryView(data, filters) {
   var summaryFilters = Object.assign({}, filters, { building: '' });
   var filtered = emFilterRows(rows, summaryFilters);
 
+  // Strip phantom rows from Summary view rollup — they skew equipment counts and averages.
+  filtered = filtered.filter(function (row) {
+    return !emIsPhantomRow(row);
+  });
+
   // Remove any existing pagination bar (used by table views)
   var tableWrap = document.getElementById('em-table-wrap');
   if (tableWrap && tableWrap.parentNode) {
@@ -6394,6 +6438,13 @@ function emRenderAuditTable(data, filters) {
   var _auditPid = window._emActivePid || '';
   var _auditMaps = emLoadCustomMappings(_auditPid);
   var filtered = emFilterRows(rows, filters);
+
+  // Exclude phantom BAS sub-component rows (VFD Integration, Supply/Return Duct).
+  // These are stored from old imports and must be excluded from Audit view without re-import.
+  // Raw view intentionally skips this filter (see emIsPhantomRow).
+  filtered = filtered.filter(function (row) {
+    return !emIsPhantomRow(row);
+  });
 
   // Build column defs from filtered rows so category columns match what's visible
   var defs = emGetAuditColDefs(filtered);
@@ -7656,6 +7707,19 @@ function emFormatCell(val, def, row) {
   return s;
 }
 
+/**
+ * Returns true if this equipment row is a BAS sub-component program
+ * (VFD Integration, Supply Duct, Return Duct) that should be excluded
+ * from Audit and Summary views. Does NOT affect Raw view.
+ * Uses the full CP-string stored in row.equipName (Milestone 2 — full controlProgram).
+ */
+function emIsPhantomRow(row) {
+  var name = row.equipName || '';
+  if (/\bvfd\s+integration\b/i.test(name)) return true;
+  if (/ - (?:\S+\s+)*(?:supply|return)\s+duct$/i.test(name)) return true;
+  return false;
+}
+
 function emFilterRows(rows, filters) {
   var f = filters || {};
   return rows.filter(function (r) {
@@ -8470,6 +8534,46 @@ var EM_EXCLUSION_PATTERNS = [
   //   The `,?` makes the leading comma optional; `\b(on|off)\b` is word-bounded to prevent
   //   partial matches on "online", "offsite", etc.
   /,?\s*status\s+is\s+(on|off)\b/i,
+
+  // ── Plant noise exclusions (item 5eb5be06 Phase 1) ──────────────────────────
+  //
+  // Plant noise — isolation/condenser/evaporator valve inverse-status mirrors
+  // (WebCTRL BV objects for valve fault state — "Valve Closed, Status Is Open")
+  // Catches: "Boiler 1 Isolation Valve Closed, Status Is Open"
+  //          "Chiller 1 Condenser Valve Disabled, Status Open"
+  //          "Chiller 2 Evaporator Valve Enabled, Status Is Shut"
+  //          "Cooling Tower 1 Isolation Valve Disabled, Status Is Open"
+  // SAFETY: Excludes damper/coil valve points on AHUs and heat exchangers — those
+  //         are correctly mapped to damperPosition/coolingValve in bucket A.
+  //         Requires "isolation", "condenser", or "evaporator" before "valve" to
+  //         prevent false matches on "Chilled Water Valve" (→ coolingValve bucket A).
+  //         Zero bucket A regressions verified 2026-06-24 against joco baseline.
+  /\b(isolation|condenser|evaporator)\s+valve\b.*,\s*status\s*(is\s*)?(open|shut|closed)\b/i,
+
+  // Plant noise — boiler combustion sub-objects (not ASHRAE 36 plant-level points)
+  // Catches: "Boiler N Flame 1 Status", "Boiler N Flame Signal"
+  //          "Boiler N Gas Valve 1", "Boiler N External Spark / HSI"
+  //          "Boiler N Louver Proving Switch", "Boiler N ModSync Enable/Disable"
+  // SAFETY: "modsync" bare word excluded — "ModSync HW Set Point" maps to
+  //         hwSupplySetpoint in bucket A. Tightened to "modsync enable/disable" only.
+  //         Zero bucket A regressions verified 2026-06-24 against joco baseline.
+  /\b(flame\s+(signal|status|\d+)|gas\s+valve\s+\d|external\s+spark|modsync\s+(enable|disable)|louver\s+(proving|relay))\b/i,
+
+  // Plant noise — chiller heat balance AV objects (internal chiller controller calculation)
+  // Not an ASHRAE 36 measured sensor point.
+  /\bheat\s+balance\s+av\b/i,
+
+  // Plant noise — BACnet staging coordination AV objects (soft objects, not hardwired sensors)
+  // Catches: "Active Stages AV - Chillers", "500 Ton Chillers Available AV", "Cooling Towers Online AV"
+  // SAFETY: Verified bucket A contains no names ending in "Stages AV", "Available AV", or "Online AV".
+  /\bstages?\s+av\b/i,
+  /\b(available|online)\s+av\b/i,
+
+  // Targeted domestic HWP pump exclusion — plumbing pumps, NOT ASHRAE 36 §5.21 heating plant pumps
+  // Catches: "Domestic Hot Water Pump Enable", "Domestic Hot Water Pump Status"
+  // Does NOT match: "Domestic Hot Water Supply Temperature" (no "pump" after "water")
+  // The broad /\bdomestic\b/ was previously dropped because it hit 17 bucket A temp sensor names — this is narrower.
+  /domestic\s+hot\s+water\s+pump/i,
 ];
 
 /* ── EM_EQUIP_CONFIG_FLAGS schema ───────────────────────────────────────────
@@ -10475,7 +10579,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Hot Water Supply Temperature',
       required: true,
       ashrae36Name: 'Hot Water Supply Temperature',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       // M6 6B: block chilled/domestic/DHW/high/low/alarm variants from matching hwst
       negativeGuards: [/\b(chw|chwst|domestic|dhw|high|low|alarm)\b/i],
       patterns: [
@@ -10513,6 +10617,17 @@ var EM_POINT_CATEGORIES = {
         'hw supply',
         'hot water supply',
         'hws temp',
+        // 5eb5be06 Phase 1: per-unit boiler supply/outlet/leaving temp aliases
+        'boiler 3 supply water temperature',
+        'boiler 4 supply water temperature',
+        'boiler 1 outlet temperature',
+        'boiler 2 outlet temperature',
+        'boiler 3 outlet temperature',
+        'boiler 4 outlet temperature',
+        'boiler 1 leaving temp',
+        'boiler 2 leaving temp',
+        'boiler 1 integration outlet temperature',
+        'boiler 2 integration outlet temperature',
       ],
     },
     {
@@ -10520,7 +10635,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Hot Water Return Temperature',
       required: true,
       ashrae36Name: 'Hot Water Return Temperature',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       // M6 6B: block chilled/domestic/DHW/high/low/alarm/flow variants from matching hwrt
       negativeGuards: [/\b(chw|chwrt|domestic|dhw|high|low|alarm|flow)\b/i],
       patterns: [
@@ -10553,6 +10668,15 @@ var EM_POINT_CATEGORIES = {
         'return temp',
         'hw return',
         'hot water return',
+        // 5eb5be06 Phase 1: per-unit boiler return/entering/inlet temp aliases
+        'boiler 3 return water temperature',
+        'boiler 4 return water temperature',
+        'boiler 1 entering temp',
+        'boiler 2 entering temp',
+        'boiler 1 inlet temperature',
+        'boiler 2 inlet temperature',
+        'boiler 1 integration inlet temperature',
+        'boiler 2 integration inlet temperature',
       ],
     },
     {
@@ -10560,7 +10684,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Hot Water Differential Pressure',
       required: true,
       ashrae36Name: 'Hot Water Differential Pressure',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /\bhwdp\b/i,
         /hw.?dp\b/i,
@@ -10603,7 +10727,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Hot Water Flow',
       required: false,
       ashrae36Name: 'Hot Water Flow',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       configFlag: 'hasFlowMeter',
       patterns: [/hw.?flow/i, /\bhwfm\b/i, /hot.?water.?flow/i, /heating.?water.?flow/i, /boiler.?loop.?flow/i],
       aliases: [
@@ -10622,7 +10746,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Temperature',
       required: true,
       ashrae36Name: 'Outdoor Air Temperature',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [/\boat\b/i, /outdoor air temp/i, /outside air temp/i, /oa temp/i, /ambient temp/i],
       aliases: [
         'oat',
@@ -10643,7 +10767,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Boiler Status',
       required: true,
       ashrae36Name: 'Boiler Status',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /boiler.?run.?status/i,
         /boiler.?alarm/i,
@@ -10678,6 +10802,11 @@ var EM_POINT_CATEGORIES = {
         'boiler status',
         'boiler 1 alarm bni',
         'boiler 2 alarm bni',
+        // 5eb5be06 Phase 1: per-unit boiler run status and system enable status aliases
+        'boiler 1 run status',
+        'boiler 2 run status',
+        'boiler 3 run status',
+        'boiler system enable status',
       ],
     },
     {
@@ -10685,7 +10814,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Primary HW Pump Status',
       required: true,
       ashrae36Name: 'Primary Hot Water Pump Status',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /phwp.?status/i,
         /primary.?hw.?pump.?status/i,
@@ -10716,6 +10845,9 @@ var EM_POINT_CATEGORIES = {
         'hw pump status',
         'pump p-1 status',
         'pump p-2 status',
+        // 5eb5be06 Phase 1: per-unit boiler pump status aliases
+        'boiler 1 pump status',
+        'boiler 2 pump status',
       ],
     },
     {
@@ -10723,7 +10855,7 @@ var EM_POINT_CATEGORIES = {
       label: 'HW Isolation Valve Status',
       required: false,
       ashrae36Name: 'HW Isolation Valve Status',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       configFlag: 'hasIsoValves',
       patterns: [
         /boiler.?iso.?valve/i,
@@ -10750,7 +10882,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Boiler Enable Command',
       required: true,
       ashrae36Name: 'Boiler Enable Command',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /boiler.?enable/i,
         /boiler.?start.?stop/i,
@@ -10775,7 +10907,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Boiler HW Supply Temperature Setpoint',
       required: true,
       ashrae36Name: 'Boiler HW Supply Temperature Setpoint',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /boiler.?lwt.?setpoint/i,
         /hw.?setpoint/i,
@@ -10812,7 +10944,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Primary HW Pump Enable Command',
       required: true,
       ashrae36Name: 'Primary HW Pump Enable Command',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /primary.?hw.?pump.?enable/i,
         /phwp.?enable/i,
@@ -10842,7 +10974,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Primary HW Pump Speed Command',
       required: true,
       ashrae36Name: 'Primary HW Pump Speed Command',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /primary.?hw.?pump.?vfd/i,
         /phwp.?speed/i,
@@ -10876,7 +11008,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Secondary HW Pump Status',
       required: false,
       ashrae36Name: 'Secondary Hot Water Pump Status',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       configFlag: 'hasSecPump',
       patterns: [
         /shwp.?status/i,
@@ -10902,7 +11034,7 @@ var EM_POINT_CATEGORIES = {
       label: 'HW Isolation Valve Command',
       required: false,
       ashrae36Name: 'HW Isolation Valve Command',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       configFlag: 'hasIsoValves',
       patterns: [
         /boiler.?iso.?valve.?command/i,
@@ -10925,7 +11057,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Demand Level',
       required: false,
       ashrae36Name: 'Demand Level',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
       aliases: [
         'demand level',
@@ -10942,7 +11074,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Relative Humidity',
       required: false,
       ashrae36Name: 'Outdoor Air Relative Humidity',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /oa.?rh\b/i,
         /outdoor.{0,10}humidity/i,
@@ -10972,7 +11104,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Dewpoint',
       required: false,
       ashrae36Name: 'Outdoor Air Dewpoint',
-      ashrae36Section: '5.19',
+      ashrae36Section: '5.21',
       patterns: [
         /outside\s+air\s+dew\s?point/i,
         /outdoor\s+air\s+dew\s?point/i,
@@ -11024,6 +11156,18 @@ var EM_POINT_CATEGORIES = {
         'chw_st',
         'chws temp',
         'cw supply temp',
+        // 5eb5be06 Phase 1: per-unit chiller evaporator leaving/supply temp aliases
+        'chiller 1 evaporator leaving temperature',
+        'chiller 2 evaporator leaving temperature',
+        'chiller 3 evaporator leaving temperature',
+        'chiller 4 evaporator leaving temperature',
+        'chiller 1 supply water temperature',
+        'chiller 2 supply water temperature',
+        'chiller 3 supply water temperature',
+        'chiller 1 lvg temp',
+        'chiller 2 lvg temp',
+        'chiller 1 leaving evaporator temperature',
+        'chiller 2 leaving evaporator temperature',
       ],
     },
     {
@@ -11050,6 +11194,13 @@ var EM_POINT_CATEGORIES = {
         'chw-rt',
         'chw_rt',
         'chwr temp',
+        // 5eb5be06 Phase 1: per-unit chiller evaporator entering/return temp aliases
+        'chiller 1 evaporator entering temperature',
+        'chiller 2 evaporator entering temperature',
+        'chiller 3 evaporator entering temperature',
+        'chiller 1 return water temperature',
+        'chiller 2 return water temperature',
+        'chiller 3 return water temperature',
       ],
     },
     {
@@ -11203,6 +11354,9 @@ var EM_POINT_CATEGORIES = {
         'chiller general alarm',
         'chiller 1 general alarm',
         'chiller 2 general alarm',
+        // 5eb5be06 Phase 1: ALC chiller status and additional chiller status aliases
+        'alc chiller status',
+        'chiller running mode',
       ],
     },
     {
@@ -11238,6 +11392,9 @@ var EM_POINT_CATEGORIES = {
         'chilled water pump 2 vfd status',
         'chwp a dp status',
         'chwp-1 status',
+        // 5eb5be06 Phase 1: additional per-unit CHW pump status aliases
+        'chilled water pump 3 vfd status',
+        'chw pump 3 status',
       ],
     },
     {
@@ -11279,6 +11436,10 @@ var EM_POINT_CATEGORIES = {
         'chilled water pump 2 speed',
         'chilled-water pump 2 speed',
         'chwp-2 speed',
+        // 5eb5be06 Phase 1: per-unit CHW pump speed aliases
+        'chilled water pump 1 speed',
+        'chilled water pump 3 speed',
+        'chilled-water pump 1 speed',
       ],
     },
     {
@@ -11391,6 +11552,9 @@ var EM_POINT_CATEGORIES = {
         'chwp a enable',
         'chwp-1 enable',
         'chwp enable',
+        // 5eb5be06 Phase 1: additional per-unit CHW pump enable aliases
+        'chw pump 3 enable',
+        'chilled water pump 3 vfd enable',
       ],
     },
     {
@@ -11646,6 +11810,10 @@ var EM_POINT_CATEGORIES = {
         'ct fan vfd status',
         'ct 1 fan vfd status',
         'ct 2 fan vfd status',
+        // 5eb5be06 Phase 1: per-unit cooling tower fan VFD status aliases
+        'cooling tower 1 fan vfd status',
+        'cooling tower 2 fan vfd status',
+        'cooling tower 3 fan vfd status',
       ],
     },
     {
@@ -11673,6 +11841,11 @@ var EM_POINT_CATEGORIES = {
         'cwp dp status',
         'cwp 1 dp status',
         'cwp 2 dp status',
+        // 5eb5be06 Phase 1: per-unit condenser/cooling tower pump status aliases
+        'condenser water pump 1 status',
+        'condenser water pump 2 status',
+        'cooling tower pump 1 status',
+        'cooling tower pump 2 status',
       ],
     },
     {
@@ -11749,6 +11922,10 @@ var EM_POINT_CATEGORIES = {
         'ct 1 fan vfd enable',
         'ct 2 fan vfd enable',
         'ct fan enable',
+        // 5eb5be06 Phase 1: per-unit cooling tower fan enable aliases
+        'cooling tower 1 fan enable',
+        'cooling tower 2 fan enable',
+        'cooling tower 3 fan enable',
       ],
     },
     {
@@ -11794,6 +11971,11 @@ var EM_POINT_CATEGORIES = {
         'cwp 1 enable',
         'cwp 2 enable',
         'cwp 3 enable',
+        // 5eb5be06 Phase 1: per-unit condenser/cooling tower pump enable aliases
+        'condenser water pump 1 enable',
+        'condenser water pump 2 enable',
+        'cooling tower pump 1 enable',
+        'cooling tower pump 2 enable',
       ],
     },
     {
