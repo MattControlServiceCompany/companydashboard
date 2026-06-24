@@ -409,7 +409,10 @@ var EM_POINT_MAP = [
   {
     col: 'returnAirTemp',
     label: 'Return Air Temp',
-    patterns: [/return air temp/i, /rat\b/i],
+    // 21eb08f8 Wave 6: added /energy\s+recovery\s+exhaust\s+air\s+temp/i for
+    // "Energy Recovery Exhaust Air Temperature" — ERV exhaust air temp ≈ return air equivalent.
+    // erv cats already added in Wave 5. JOCO bucket-C matches: 1 name.
+    patterns: [/return air temp/i, /rat\b/i, /energy\s+recovery\s+exhaust\s+air\s+temp/i],
     // Phase 2A: guard against "Return Air Temperature Alarm", "Return Air Temp Setpoint".
     // M1A: added control-object exclusions — control selection MSVs and diagnostic fault flags.
     negativePatterns: [
@@ -493,7 +496,10 @@ var EM_POINT_MAP = [
   {
     col: 'ductStaticPressure',
     label: 'Duct Static Pressure',
-    patterns: [/duct static pressure/i, /\bdsp\b/i],
+    // 21eb08f8 Wave 6: added /air\s+source\s+duct\s+static\b/i for "Air Source Duct Static"
+    // (VVT air-source duct static pressure point). negativePatterns unchanged — "Air Source Duct Static"
+    // does not trigger any of them. JOCO bucket-C matches: 1 name.
+    patterns: [/duct static pressure/i, /\bdsp\b/i, /air\s+source\s+duct\s+static\b/i],
     // M1A: added negativePatterns. Blocks alarm objects (High/Low DSP Alarm), exhaust duct static
     // (routes to rdspLive which has /exhaust\s+duct\s+static/i confirmed), and DSP setpoint ANOs
     // (routes to dspSpLive). "exhaust" safe here because rdspLive already has exhaust patterns.
@@ -1075,7 +1081,15 @@ var EM_POINT_MAP = [
   {
     col: 'primaryAirCoolRequest',
     label: 'Primary Air Source Cool Request',
-    patterns: [/primary air source cool request/i, /air source cool request/i, /primary air.*cool.*request/i],
+    // 21eb08f8 Wave 6: added /air\s+source\s+cool\s+requests?/i (explicit plural form).
+    // Note: /air source cool request/i already matched "Air Source Cool Requests" as substring,
+    // but the explicit plural makes intent clear. JOCO bucket-C: "Air Source Cool Requests" (1 name).
+    patterns: [
+      /primary air source cool request/i,
+      /air source cool request/i,
+      /air\s+source\s+cool\s+requests?/i,
+      /primary air.*cool.*request/i,
+    ],
     types: ['AV', 'AI'],
     cats: ['zone', 'vav', 'fpb', 'ddvav'],
   },
@@ -1083,7 +1097,14 @@ var EM_POINT_MAP = [
   {
     col: 'primaryAirHtgRequest',
     label: 'Primary Air Source Heat Request',
-    patterns: [/primary air source heat request/i, /air source heat request/i, /primary air.*heat.*request/i],
+    // 21eb08f8 Wave 6: added /air\s+source\s+heat\s+requests?/i (explicit plural form).
+    // JOCO bucket-C: "Air Source Heat Requests" (1 name).
+    patterns: [
+      /primary air source heat request/i,
+      /air source heat request/i,
+      /air\s+source\s+heat\s+requests?/i,
+      /primary air.*heat.*request/i,
+    ],
     types: ['AV', 'AI'],
     cats: ['zone', 'vav', 'fpb', 'ddvav'],
   },
@@ -1215,12 +1236,16 @@ var EM_POINT_MAP = [
     // 21eb08f8 Wave 5: added /\blennox\s+occupied\b/i for "Lennox Occupied Status" / "Lennox Occupied Status ANI"
     // These are Lennox RTU occupancy state points — functionally equivalent to scheduledOccupied.
     // JOCO matches: 2 names. negativePattern /bacnet\s+schedule|override/i unchanged.
+    // 21eb08f8 Wave 6: added /\boccupancy\s+mode\b/i for "Occupancy Mode", "Occupancy Mode Feedback",
+    // "DOAS Occupancy Mode ANO", "Force Occupancy Mode" — occupancy state output from zone/AHU programs.
+    // JOCO bucket-C matches: 4-6 names. negativePattern /bacnet\s+schedule|override/i unchanged.
     patterns: [
       /\bscheduled?\s+occupied\b/i,
       /\bzone\s+schedule\b/i,
       /\bscheduled\s+on\b/i,
       /\bschedule\s+mode\b/i,
       /\blennox\s+occupied\b/i,
+      /\boccupancy\s+mode\b/i,
     ],
     negativePatterns: [/bacnet\s+schedule|override/i],
     types: ['AV', 'BAV', 'BI'],
@@ -1376,7 +1401,16 @@ var EM_POINT_MAP = [
   {
     col: 'ventilationCFMSetpoint',
     label: 'Ventilation CFM Setpoint',
-    patterns: [/ventilation\s+cfm\s+set/i, /ventilation\s+cfm\s+setpoint/i],
+    // 21eb08f8 Wave 6: added /(minimum\s+)?outside\s+air\s+cfm\s+set\s*point/i for
+    // "Outside Air CFM Setpoint", "AHU-3 Outside Air CFM Setpoint",
+    // "AHU Manager - Minimum Outside Air CFM Set Point",
+    // "Air Source Minimum Outside Air CFM Set Point" — OA minimum ventilation CFM target.
+    // JOCO bucket-C matches: 4 names.
+    patterns: [
+      /ventilation\s+cfm\s+set/i,
+      /ventilation\s+cfm\s+setpoint/i,
+      /(minimum\s+)?outside\s+air\s+cfm\s+set\s*point/i,
+    ],
     types: ['SP', 'AV'],
     cats: ['ahu'],
   },
@@ -1535,7 +1569,15 @@ var EM_POINT_MAP = [
   {
     col: 'exhaustFanSpeed',
     label: 'Exhaust Fan Speed',
-    patterns: [/exhaust\s+fan.*speed/i, /ef.*vfd.*speed/i, /relief\s+fan\s+vfd\s+speed/i],
+    // 21eb08f8 Wave 6: added /energy\s+recovery\s+wheel\s+speed/i for "Energy Recovery Wheel Speed"
+    // — ERV wheel speed is analogous to fan speed. erv cats already added in Wave 5.
+    // JOCO bucket-C matches: 1 name.
+    patterns: [
+      /exhaust\s+fan.*speed/i,
+      /ef.*vfd.*speed/i,
+      /relief\s+fan\s+vfd\s+speed/i,
+      /energy\s+recovery\s+wheel\s+speed/i,
+    ],
     negativePatterns: [/\b(supply|return|ct|boiler|alarm|fault)\b/i],
     types: ['AI', 'AO'],
     // 21eb08f8 Wave 5: added 'erv' — "Energy Recovery Wheel Speed" maps here (wheel speed ≈ fan speed for ERV).
@@ -8347,6 +8389,87 @@ var EM_EXCLUSION_PATTERNS = [
   /crestron\s+(comm|program)/i,
   // 21eb08f8 Wave 5: Water softener plumbing points (not ASHRAE 36)
   /water\s+softener/i,
+
+  // ── 21eb08f8 Wave 6 exclusions ──────────────────────────────────────────────
+  //
+  // PATTERNS DROPPED FROM THE PLAN after zero-regression check:
+  //   /\bvfd\b/i          — DROPPED: would catch 65+ bucket A names (Supply Fan VFD Speed,
+  //                          Exhaust Fan VFD Speed, Return Fan VFD Speed, etc.). Wave 5
+  //                          already handles standalone VFD names via /^VFD\s/i.
+  //   /\blatched\b/i      — DROPPED: would catch 11 bucket A names (Boiler N Latched Fresh Air
+  //                          Damper Status Failure → damperPosition; CT-N Latched Failure (Fan
+  //                          Status) → supplyFanStatus; DOAS N Latched Outside Air Damper
+  //                          Failure → oaDamperPosition; DOAS N Latched Supply Fan Run Status
+  //                          Failure → supplyFanStatus).
+  //   /\bdomestic\b/i     — DROPPED: would catch 17 bucket A names (140/160 Domestic Hot Water
+  //                          Return/Supply Temperature → hwReturnTemp/hwSupplyTemp; Domestic
+  //                          Water Heater N Flue Damper → damperPosition; WH-N Domestic Hot
+  //                          Water Supply Temperature → hwSupplyTemp).
+  //
+  // All remaining patterns verified zero bucket-A intersection before adding.
+
+  // Refrigerant compressor circuit objects (DX/VRF/chiller compressor internal signals)
+  // JOCO bucket-C matches: ~166 names ("A Compressor Enable", "A Compressor Status",
+  //   "A Compressor Signal", "A Compressor Discharge Temp", and VRF/DX compressor variants).
+  // SAFETY: No EM_POINT_MAP column uses "compressor" as a positive keyword.
+  //   No bucket A names contain "compressor" — verified against em_bucketA_mapped_20260623.txt.
+  /\bcompressor\b/i,
+
+  // Refrigerant circuit parameters (suction/superheat/subcooling/refrigerant)
+  // JOCO bucket-C matches: ~75 names (suction pressure/temp, superheat target, subcooling,
+  //   refrigerant charge/level, etc.)
+  // SAFETY: No bucket A names contain any of these keywords — verified.
+  /\b(suction|superheat|subcool|refrigerant)\b/i,
+
+  // DX/VRF inverter objects (DWBP series and other VRF inverter integration points)
+  // JOCO bucket-C matches: ~49 names (inverter capacity, inverter mode, inverter status, etc.)
+  // SAFETY: No bucket A names contain "inverter" — verified.
+  /\binverter\b/i,
+
+  // Electrical metering mid-string (kW, kWh, kVAr, kVA, power factor, real/reactive power, watts)
+  // Complements Wave 5 /^phase\s+[abc].../ (which catches phase-prefixed names).
+  // This catches mid-string occurrences: "Pump 1 kW ANI", "Bypass Mode kWh", "Fan kVAr", etc.
+  // JOCO bucket-C matches: ~152 names.
+  // SAFETY: No bucket A name contains kW/kWh/kVAr/kVA/watt/power factor — verified.
+  //   The billing-demand exclusion (line ~8257) already blocks "KW Demand" forms; this adds
+  //   broader electrical metering coverage.
+  //   Word boundaries prevent matching "kw" inside longer words.
+  /\b(kw|kwh|kvar|kva|power\s+factor|real\s+power|reactive\s+power|watt)\b/i,
+
+  // BACnet communications failure objects (network diagnostic points, not ASHRAE 36 sensors)
+  // JOCO bucket-C matches: ~12 names ("AHU-3 Communications Failure", "Zone Communications
+  //   Failure", "Primary Air Source Communications Failure", etc.)
+  // Note: "Primary Air Source Communications Alarm" already excluded by /\balarm\b/i.
+  // SAFETY: No bucket A names contain "comm failure" pattern — verified.
+  /\bcomm(unications)?\s+failure\b/i,
+
+  // Sump drainage / sump pump monitoring points (plumbing, not ASHRAE 36)
+  // JOCO bucket-C matches: ~5 names.
+  // SAFETY: No bucket A names contain "sump" — verified.
+  /\bsump\b/i,
+
+  // AHU/Cooling Tower safety shutdown objects (life-safety overrides, not ASHRAE 36 audit points)
+  // JOCO bucket-C matches: ~6 names ("AHU Safety Shutdown", "CT Safety Shutdown", etc.)
+  // SAFETY: No bucket A names contain "safety shutdown" — verified.
+  /\bsafety\s+shutdown\b/i,
+
+  // Fireman's panel shutdown commands (life-safety fire override, not ASHRAE 36)
+  // Catches: "Air Handler N Shutdown From Fireman's Panel", "Shutdown From Fire Panel",
+  //   "Shutdown From Fireman Panel" — 16+ names in JOCO confirmed.
+  // SAFETY: No bucket A names contain fireman or "shutdown from" — verified.
+  /(fireman'?s?\s+panel|shutdown\s+from\s+(fireman|fire\s+panel))/i,
+
+  // RTU/Unit variant of the "Status Is On/Off" pattern (Wave 5 extension)
+  // Wave 5 pattern /\b(disabled|enabled),\s*status\s+is\s+(on|off)\b/i caught the
+  // "Disabled, Status Is On" / "Enabled, Status Is Off" form (298 names).
+  // This extends to catch "RTU Disabled, Supply Fan Status Is On" and similar variants
+  // where the trailing phrase is ", <something> Status Is On/Off" without the exact
+  // disabled/enabled comma pattern at the start.
+  // JOCO bucket-C matches: ~8 additional names.
+  // SAFETY: Verified bucket A "Status Is" names all end in "Open/Closed/Shut" — NOT On/Off.
+  //   The `,?` makes the leading comma optional; `\b(on|off)\b` is word-bounded to prevent
+  //   partial matches on "online", "offsite", etc.
+  /,?\s*status\s+is\s+(on|off)\b/i,
 ];
 
 /* ── EM_EQUIP_CONFIG_FLAGS schema ───────────────────────────────────────────

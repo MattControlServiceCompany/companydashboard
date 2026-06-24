@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.23.583'; // deployed 2026-06-23 (Multi-building PDF save: review panel assigns periods to buildings, saves all at once; window.projects scoping fix)
+  var CH_VERSION = 'v2026.06.23.584'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.23.584',
+    date: '2026-06-23',
+    title: 'Equipment Matrix: more points recognized, more noise hidden',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now recognizes occupancy-mode points, energy-recovery ventilator exhaust temperature and wheel speed, air-source heat pump cooling and heating requests, air-source duct static pressure, and outside-air CFM setpoints — these points now map to the correct columns instead of appearing as unmapped.',
+      },
+      {
+        type: 'fix',
+        text: 'About 530 additional non-HVAC noise points are now hidden from the Manage Mappings list: compressor/refrigerant circuit points (suction pressure, superheat, subcool), electrical metering channels (kW, kWh, kVAR and per-phase variants), communications-failure alarms, sump points, safety-shutdown and fireman\'s-panel shutdown sequences, and generic "status is on/off" points.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.23.583',
     date: '2026-06-23',
     title: 'Fixed false "changes may not be saved" warning on Energy Department page',
