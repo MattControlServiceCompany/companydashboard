@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.23.582',
+    date: '2026-06-23',
+    title: 'Equipment Matrix: ~500 more noise points hidden, more setpoint and energy-recovery points recognized',
+    items: [
+      { type: 'fix', text: 'Equipment Matrix now hides ~500 additional non-HVAC BAS points that were cluttering the Manage Mappings list — including variable-frequency drive sub-objects, electrical metering channels (Phase A/B/C current, voltage, power), WebCTRL fault-status mirrors, automatic transfer switches, life-safety sequences, and water softeners.' },
+      { type: 'feature', text: 'Lennox RTU occupancy points (e.g. "Lennox Occupied Status") now map to the Scheduled Occupied column in the Equipment Matrix.' },
+      { type: 'feature', text: 'Active Supply Temperature Setpoint points now map to the SAT Cool Setpoint column.' },
+      { type: 'feature', text: 'Energy Recovery Ventilator (ERV) equipment now contributes to supply air temperature, return air temperature, and exhaust fan speed columns.' },
+    ],
+  },
+  {
     v: 'v2026.06.23.581',
     date: '2026-06-23',
     title: 'Multi-building PDF import: assign periods to buildings and save all at once',

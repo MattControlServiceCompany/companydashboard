@@ -403,7 +403,8 @@ var EM_POINT_MAP = [
     // MAU-1 has "Supply Air Temperature" (BAV, 83.34 F). Diagnostic fault points (BMBI type) are
     // already blocked by the CONTROL_OBJ_TYPES pre-filter in emMapPointToColumn; negativePatterns
     // block enable/BNO variants. No false-match risk introduced.
-    cats: ['ahu', 'vav', 'fpb', 'other', 'heater', 'furnace', 'doas', 'rtu', 'mau'],
+    // 21eb08f8 Wave 5: added 'erv' — "Energy Recovery Supply Air Temperature" should map here.
+    cats: ['ahu', 'vav', 'fpb', 'other', 'heater', 'furnace', 'doas', 'rtu', 'mau', 'erv'],
   },
   {
     col: 'returnAirTemp',
@@ -421,7 +422,8 @@ var EM_POINT_MAP = [
     // MAU-1 intentionally excluded: MAU-1 is a supply-only makeup air unit with no return-air path.
     // Only Diagnostic BMBI points exist for MAU-1 RAT (blocked by CONTROL_OBJ_TYPES pre-filter);
     // there is no live "Return Air Temperature" BAV point for MAU-1 in the raw export.
-    cats: ['ahu', 'other', 'heater', 'furnace', 'doas', 'rtu'],
+    // 21eb08f8 Wave 5: added 'erv' — "Energy Recovery Exhaust Air Temperature" maps here.
+    cats: ['ahu', 'other', 'heater', 'furnace', 'doas', 'rtu', 'erv'],
   },
   {
     col: 'mixedAirTemp',
@@ -585,7 +587,12 @@ var EM_POINT_MAP = [
   {
     col: 'zoneAirTemp',
     label: 'Zone Air Temp',
-    patterns: [/zone air temp/i, /room temp/i, /space temp/i, /zone temp/i],
+    // 21eb08f8 Wave 2: /\bzone\s+\d+\s+temp(erature)?\b/i added for numbered-zone variants.
+    // JOCO matches (5): Master Zone 1 Temperature ANI, Master Zone 2 Temperature ANI,
+    //   Zone 1 Temperature, Zone 2 Temperature, Zone 3 Temperature
+    // 'Master Zone N Temperature ANI' — 'ANI' is a BACnet suffix, NOT 'ano' (ANO=network output),
+    // so it does NOT trigger the \bano\b negativePattern. Pattern confirmed safe.
+    patterns: [/zone air temp/i, /room temp/i, /space temp/i, /zone temp/i, /\bzone\s+\d+\s+temp(erature)?\b/i],
     // Fix 4c566756: labelAliases for WebCTRL snapshot column-name variants where the
     // BACnet key appears in parens after the label (e.g. 'Zone Air Temp (zone_air_temp)').
     // These follow the same pattern used by zoneCO2 and zoneRelativeHumidity labelAliases.
@@ -906,7 +913,18 @@ var EM_POINT_MAP = [
     // 2e6322d5/c0bf56e0: added snapshot-format header 'Zone CO2 (zone_co2)' as labelAlias so
     // enriched-format snapshot CSVs with that column name map to this col at import time.
     labelAliases: ['Zone CO2 AV', 'Zone CO2 (zone_co2)'],
-    patterns: [/\bco2\b/i, /zone\s*co2/i, /carbon dioxide/i, /co2\s*sensor/i, /co2\s*ppm/i],
+    patterns: [
+      /\bco2\b/i,
+      /zone\s*co2/i,
+      /carbon dioxide/i,
+      /co2\s*sensor/i,
+      /co2\s*ppm/i,
+      // 21eb08f8 Wave 2: numbered-zone CO2 variants
+      // JOCO matches (3): Zone 1 CO2, Zone 2 CO2, Zone 3 CO2
+      // Safety: /\bco2\b/i already catches these but the explicit pattern makes intent clear;
+      //   negativePatterns already block alarm/high/low/override/fault/setpoint/oa contexts
+      /\bzone\s+\d+\s+co2\b/i,
+    ],
     // Phase 2A: guard against "CO2 Alarm", "High CO2 Alarm", "CO2 Override", "CO2 Setpoint",
     // "CO2 Fault" — these are alarm/config objects, not live sensor readings.
     // M1A: added maximum/min (CO2 Maximum 1-4 config), diagnostic (sensor failure flag),
@@ -951,6 +969,10 @@ var EM_POINT_MAP = [
       /\brh\s*%/i,
       /\bhumidity\b/i,
       /\bzone\s+hum\b/i,
+      // 21eb08f8 Wave 2: numbered-zone humidity variants
+      // JOCO matches (3): Zone 1 Humidity, Zone 2 Humidity, Zone 3 Humidity
+      // Safety: negativePatterns already block OA/outdoor/return/setpoint/exhaust/supply contexts
+      /\bzone\s+\d+\s+hum(idity)?\b/i,
     ],
     // M1A: expanded negativePatterns. Exhaust/supply-air humidity are not zone RH. High/low/alarm
     // block limit configs and alarm objects. call for/controlling/selection/ano block control
@@ -1184,7 +1206,22 @@ var EM_POINT_MAP = [
   {
     col: 'scheduledOccupied',
     label: 'Scheduled Occupied',
-    patterns: [/\bscheduled?\s+occupied\b/i, /\bzone\s+schedule\b/i, /\bscheduled\s+on\b/i],
+    // 21eb08f8 Wave 4: added /\bschedule\s+mode\b/i for "Schedule Mode" / "Schedule Mode ANI/AV/MSV"
+    // JOCO matches (4): Schedule Mode, Schedule Mode ANI, Schedule Mode AV, Schedule Mode MSV
+    // These represent occupancy mode state (Occupied/Unoccupied/Standby) — same concept as
+    // Scheduled Occupied. negativePatterns block "BACnet Schedule" and "override" forms.
+    // Safety: /bacnet\s+schedule|override/i negativePattern remains intact; "Schedule Mode" does
+    // not match either guard.
+    // 21eb08f8 Wave 5: added /\blennox\s+occupied\b/i for "Lennox Occupied Status" / "Lennox Occupied Status ANI"
+    // These are Lennox RTU occupancy state points — functionally equivalent to scheduledOccupied.
+    // JOCO matches: 2 names. negativePattern /bacnet\s+schedule|override/i unchanged.
+    patterns: [
+      /\bscheduled?\s+occupied\b/i,
+      /\bzone\s+schedule\b/i,
+      /\bscheduled\s+on\b/i,
+      /\bschedule\s+mode\b/i,
+      /\blennox\s+occupied\b/i,
+    ],
     negativePatterns: [/bacnet\s+schedule|override/i],
     types: ['AV', 'BAV', 'BI'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'heater', 'ef', 'zone', 'furnace'],
@@ -1412,7 +1449,15 @@ var EM_POINT_MAP = [
   {
     col: 'satCoolSetpoint',
     label: 'SAT Cooling Setpoint',
-    patterns: [/cooling\s+supply\s+air\s+set/i, /active\s+discharge\s+temp\s+set/i, /active\s+supply\s+air\s+set/i],
+    // 21eb08f8 Wave 5: added /active\s+supply\s+temp.*set/i for "Active Supply Temperature Setpoint"
+    // (Carrier/Lennox RTU effective SAT setpoint — says "Temperature Setpoint" not "Air Setpoint").
+    // JOCO matches: "Active Supply Temperature Setpoint" (1 name). negativePattern /heating/i unchanged.
+    patterns: [
+      /cooling\s+supply\s+air\s+set/i,
+      /active\s+discharge\s+temp\s+set/i,
+      /active\s+supply\s+air\s+set/i,
+      /active\s+supply\s+temp.*set/i,
+    ],
     negativePatterns: [/heating/i],
     types: ['SP', 'AV'],
     cats: ['ahu', 'rtu'],
@@ -1493,7 +1538,8 @@ var EM_POINT_MAP = [
     patterns: [/exhaust\s+fan.*speed/i, /ef.*vfd.*speed/i, /relief\s+fan\s+vfd\s+speed/i],
     negativePatterns: [/\b(supply|return|ct|boiler|alarm|fault)\b/i],
     types: ['AI', 'AO'],
-    cats: ['ahu', 'ef'],
+    // 21eb08f8 Wave 5: added 'erv' — "Energy Recovery Wheel Speed" maps here (wheel speed ≈ fan speed for ERV).
+    cats: ['ahu', 'ef', 'erv'],
   },
 
   // J4: Supply Fan Status / Enable / Command
@@ -1546,6 +1592,52 @@ var EM_POINT_MAP = [
       /unit\s+alarm\s+active/i,
     ],
     cats: ['ahu', 'rtu', 'mau', 'erv', 'doas'],
+  },
+
+  // 21eb08f8 Wave 3: ASHRAE 36 Group 10 VVT (Variable Volume and Temperature) zone columns.
+  // These are air-source broadcast points used in VVT zone terminals to receive the AHU/air-source
+  // mode and status. Per em-subtype rules: classify VAV/multizone only from POSITIVE evidence
+  // (multiple zone dampers/temps, terminals, duct static, Active-Zones). These columns are for
+  // zone/vav/fpb/ddvav category equipment — NOT for AHU-category units.
+
+  // airSourceMode: VVT air-source heating/cooling/auto mode broadcast received by zone terminals.
+  // JOCO confirmed forms (2): "Air Source Mode", "8 STAT CLG Air Source Mode"
+  // The "8 STAT CLG" prefix is a numeric-prefix BAS naming convention; /\bair\s+source\s+mode\b/i
+  // matches both as substring. negativePatterns block alarm and RunFor accumulator variants.
+  {
+    col: 'airSourceMode',
+    label: 'Air Source Mode',
+    patterns: [/\bair\s+source\s+mode\b/i],
+    negativePatterns: [/\b(alarm|fault|override|run\s*for|runfor)\b/i],
+    types: ['MSV', 'AV', 'BAV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+
+  // airSourceStatus: VVT air-source run status (running/idle) broadcast to zone terminals.
+  // JOCO confirmed forms (3): "Air Source Status", "9 STAT HTG Air Source Status",
+  //   "Air Source Status - RunFor"
+  // "Air Source Status - RunFor" is an accumulated run-for-mode duration counter —
+  // negativePatterns exclude it (not a live binary status reading).
+  {
+    col: 'airSourceStatus',
+    label: 'Air Source Status',
+    patterns: [/\bair\s+source\s+status\b/i],
+    negativePatterns: [/\b(alarm|fault|override|run\s*for|runfor)\b/i, /\s*-\s*runfor/i],
+    types: ['BV', 'BI', 'BAV', 'AV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav'],
+  },
+
+  // zoneStatus: occupancy/thermal-mode state of the zone (Occupied/Unoccupied/Warmup/Cooldown).
+  // JOCO confirmed form (1): "Zone Status"
+  // Distinct from scheduledOccupied (binary on/off) — zoneStatus is a multi-state value
+  // representing the current control mode. negativePatterns block comms and alarm variants.
+  {
+    col: 'zoneStatus',
+    label: 'Zone Status',
+    patterns: [/\bzone\s+status\b/i],
+    negativePatterns: [/\b(alarm|fault|comm(unication)?s?\s+fail|comms\s+fail)\b/i],
+    types: ['MSV', 'AV', 'BAV', 'BV'],
+    cats: ['zone', 'vav', 'fpb', 'ddvav', 'fcu'],
   },
 ];
 
@@ -8148,6 +8240,10 @@ function emCopyFromProject(targetProjId) {
 var EM_EXCLUSION_PATTERNS = [
   /^EI\s/i, // Environmental Index points (WebCTRL)
   /environmental\s*index/i,
+  // 21eb08f8 Wave 1: Zone EI variants not caught by ^EI\s (start with "Zone", not "EI")
+  // JOCO matches: Zone EI Time Satisfied, Zone EI Total Weight (2 names)
+  // Safety verified: no HVAC sensor keywords in matched names
+  /\bzone\s+ei\b/i,
   // Note: air source mode/status are ASHRAE 36 Group 10 VVT control points — NOT excluded
   /smoke\s*(detector|zone|alarm|damper|stat)?/i,
   /\bsmoke\b/i,
@@ -8167,6 +8263,90 @@ var EM_EXCLUSION_PATTERNS = [
   /\bhistory\b/i,
   /occupied\s*override/i,
   /occupancy\s*override/i,
+  // 21eb08f8 Wave 1: Virtual override-time objects — control-layer accumulated time, not ASHRAE 36
+  // JOCO matches: Virtual Zone Override Time (1 name)
+  // Safety: name starts with "Virtual" and contains "override time" — no HVAC sensor overlap
+  /virtual.*override\s+time/i,
+  // 21eb08f8 Wave 1: Bare Drive sub-objects — VFD/drive internal monitoring parameters
+  // Pattern targets only names STARTING with "Drive" so it does NOT catch "Supply Fan VFD Amps"
+  // or "Exhaust Fan VFD Amps" (which already map to supplyFanAmps/exhaustFanSpeed columns).
+  // JOCO matches (21): Drive Current, Drive DC Bus Voltage, Drive Fault, Drive Fault Status,
+  //   Drive Hand/Auto Control, Drive In Hand, Drive kWh, Drive MWh, Drive Output Frequency,
+  //   Drive Output Speed, Drive Output Voltage, Drive Power, Drive Ready, Drive Run Enable,
+  //   Drive Run Status, Drive Runtime, Drive Speed Reference, Drive System Not Communicating,
+  //   Drive Temperature, Drive Torque, Drive Valid Test Point
+  // Safety verified: no HVAC sensor keywords (supply/return/zone/temp/setpoint/valve/damper/fan/pressure/humidity/co2)
+  /^drive\s+(current|dc\s+bus|kwh|mwh|output|power|runtime|speed\s+ref(erence)?|temperature|torque|ready|run|fault|hand|in\s+hand|valid|system)/i,
+  // 21eb08f8 Wave 1: Branded drive status objects (ABB/Armstrong/Danfoss) not already excluded by \balarm\b
+  // JOCO matches (6): ABB Drive In Hand, Armstrong Drive HOA In Hand, Armstrong Drive HOA In Off,
+  //   Armstrong Drive Warning, Danfoss Drive In Hand, Danfoss Drive Warning
+  // Safety: pure drive-brand + drive-mode names, no HVAC sensor keywords
+  /\b(ABB|Armstrong|Danfoss)\s+drive\s+(warning|hoa|in\s+hand)/i,
+  // 21eb08f8 Wave 1: Chiller MCS controller internal variables (_MCS and _BAS prefixed)
+  // These are integration objects between the BAS and chiller plant MCS controller —
+  // chiller staging, capacity, refrigerant circuit values — not ASHRAE 36 zone/AHU points.
+  // JOCO _MCS matches (29): _MCS C1/C2/C3 ActSpeed/Amps/DisPress/FaultDesc/IGV%/SuctPress,
+  //   _MCS CHWaterDeltaP, _MCS ChwDiff Psi, _MCS CndDiffPsi, _MCS CndPsi, _MCS CWaterDeltaP,
+  //   _MCS ECHWTemp, _MCS ECWTemp, _MCS Evap Pressure, _MCS LCHWTemp, _MCS LCWTemp, _MCS LoadLimit
+  // JOCO _BAS matches (6): _BAS Chw Set Point, _BAS Cooling_Active_Setpoint_Command to MCS, etc.
+  // Safety: MCS/BAS-prefixed names are categorically chiller plant internal variables
+  /^_MCS\s/i,
+  /^_BAS\s/i,
+  // 21eb08f8 Wave 1: x-prefixed chiller MCS variables (xC1_, xC2_, xC3_, xSystem, xCHW, xCW, xEvap)
+  // JOCO matches (38): xC1/xC2/xC3 RunHrs/ActiveState/ActPower/AlarmDesc/ShaftStability/Starts/Status/Superheat,
+  //   xSystem_Alarm/Fault/Amps/Demand/Efficiency/Power/Status, xSysTempReset,
+  //   xCHW_Flow, xCHWDeltaT, xCW_Flow, xEvap_Flow_Meter_1/_2, xEvap_In/Out_Humidity, xEvapApproach
+  // Safety: all are chiller refrigerant circuit / plant monitoring variables; xEvap humidity points
+  //   are evaporative cooler approach variables (chiller plant), not zone/OA humidity ASHRAE 36 points
+  /^x[A-Z]\d/i,
+  /^xSystem/i,
+  /^xCHW/i,
+  /^xCW/i,
+  /^xEvap/i,
+  // 21eb08f8 Wave 5: Standalone VFD sub-objects (names STARTING with "VFD ")
+  // Wave 1 excluded "Drive ..."-prefixed names; Wave 5 closes the VFD-prefixed gap.
+  // JOCO matches: ~111 names (VFD Amps, VFD Bypass, VFD Current, VFD DC Bus Voltage,
+  //   VFD Fault Code, VFD Frequency, VFD HOA Status, VFD kWh, VFD MWh, VFD Output Speed, etc.)
+  // SAFETY: Anchor ^VFD\s ensures "Supply Fan VFD Amps", "Return Fan VFD Speed" etc. (mid-string VFD)
+  //   are NOT matched. Those already correctly route to supplyFanAmps / supplyFanSpeed columns.
+  /^VFD\s/i,
+  // 21eb08f8 Wave 5: Weighted EI / EI weighting config objects
+  // "Weighted EI #1"–"#16" not caught by existing ^EI\s (starts "Weighted", not "EI").
+  // "Weights #1"–"#16" are EI weighting configuration values, not ASHRAE 36 points.
+  // JOCO matches: 17 + 17 = 34 names
+  /^weighted\s+ei\b/i,
+  /^weights\s+#/i,
+  // 21eb08f8 Wave 5: WebCTRL fault-mirror objects ("Disabled, Status Is On" / "Enabled, Status Is Off")
+  // WebCTRL convention: binary output object's inverse status is reflected in a separate point.
+  // e.g. "Pump 1 Disabled, Status Is On" — these are fault-detection output mirrors, never sensors.
+  // JOCO matches: ~298 names confirmed.
+  // SAFETY: supplyFanStatus already blocks these via its negativePattern /\b(disabled|enabled)\b/i;
+  //   adding here simply removes them from Manage Mappings noise (no import-path behavior change).
+  /\b(disabled|enabled),\s*status\s+is\s+(on|off)\b/i,
+  // 21eb08f8 Wave 5: Automatic Transfer Switch (ATS) status points
+  // ATS LS/S1/S2 On Normal Power/Emergency Power/Test — electrical switchgear, not ASHRAE 36.
+  // JOCO matches: ~12 names (ATS LS On Emergency Power, ATS S1 On Normal Power, etc.)
+  // SAFETY: Anchor ^ATS[\s-] avoids swallowing hypothetical mid-string "ATS" in an HVAC name.
+  /^ATS[\s-]/i,
+  // 21eb08f8 Wave 5: Phase A/B/C electrical metering sub-objects
+  // Power meter integration points from integrated electrical meters — phase-level current,
+  // voltage, power, energy, apparent/reactive/real power, import/export/net kWh.
+  // JOCO matches: ~39 names starting "Phase A/B/C ...".
+  // SAFETY: Anchored ^phase\s+[abc]\s+(specific keywords) — does not match any HVAC sensor name
+  //   in EM_POINT_MAP patterns. The keyword list prevents swallowing future points if any HVAC
+  //   vendor prepends "Phase" to a point name unrelated to electrical metering.
+  /^phase\s+[abc]\s+(current|voltage|power|energy|apparent|reactive|real|power\s+factor|export|import|net|l-l|l-n)\b/i,
+  // 21eb08f8 Wave 5: Emergency safety controls (not ASHRAE 36 zone/AHU audit points)
+  // Emergency Shutdown, Emergency Stop, Emergency Run, Emergency Purge, Emergency Sequence —
+  // life-safety overrides that appear on fire/emergency panels and generator systems.
+  /\bemergency\s+(shutdown|stop|run|purge|sequence)\b/i,
+  // 21eb08f8 Wave 5: Pre-action fire suppression system points
+  /\bpre.?action\b/i,
+  // 21eb08f8 Wave 5: Crestron A/V system network stats (Cresnet RX/TX Byte Count etc.)
+  /\bcresnet\b/i,
+  /crestron\s+(comm|program)/i,
+  // 21eb08f8 Wave 5: Water softener plumbing points (not ASHRAE 36)
+  /water\s+softener/i,
 ];
 
 /* ── EM_EQUIP_CONFIG_FLAGS schema ───────────────────────────────────────────
