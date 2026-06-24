@@ -10083,6 +10083,11 @@ window.addEventListener('DOMContentLoaded', function () {
     }
     refreshNotifUI();
     init();
+    // Reset pending-write counter so init-time IDB writes (baseline inheritance,
+    // migrations) do not trip the beforeunload guard.  Any user-initiated DB.set()
+    // (bill save, import, settings change) happens on a later event-loop tick, so
+    // the counter will correctly go > 0 again for genuine unsaved edits.
+    DB.resetPendingWrites();
     document.querySelector('.content')?.classList.add('app-ready');
   });
 });

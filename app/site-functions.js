@@ -1191,14 +1191,34 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.23.583',
+    date: '2026-06-23',
+    title: 'Fixed false "changes may not be saved" warning on Energy Department page',
+    items: [
+      {
+        type: 'fix',
+        text: 'The browser no longer shows a "changes you made may not be saved" warning when leaving the Energy Department page if you haven\'t actually edited anything. The warning still appears when you have genuine unsaved changes.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.23.582',
     date: '2026-06-23',
     title: 'Equipment Matrix: ~500 more noise points hidden, more setpoint and energy-recovery points recognized',
     items: [
-      { type: 'fix', text: 'Equipment Matrix now hides ~500 additional non-HVAC BAS points that were cluttering the Manage Mappings list — including variable-frequency drive sub-objects, electrical metering channels (Phase A/B/C current, voltage, power), WebCTRL fault-status mirrors, automatic transfer switches, life-safety sequences, and water softeners.' },
-      { type: 'feature', text: 'Lennox RTU occupancy points (e.g. "Lennox Occupied Status") now map to the Scheduled Occupied column in the Equipment Matrix.' },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now hides ~500 additional non-HVAC BAS points that were cluttering the Manage Mappings list — including variable-frequency drive sub-objects, electrical metering channels (Phase A/B/C current, voltage, power), WebCTRL fault-status mirrors, automatic transfer switches, life-safety sequences, and water softeners.',
+      },
+      {
+        type: 'feature',
+        text: 'Lennox RTU occupancy points (e.g. "Lennox Occupied Status") now map to the Scheduled Occupied column in the Equipment Matrix.',
+      },
       { type: 'feature', text: 'Active Supply Temperature Setpoint points now map to the SAT Cool Setpoint column.' },
-      { type: 'feature', text: 'Energy Recovery Ventilator (ERV) equipment now contributes to supply air temperature, return air temperature, and exhaust fan speed columns.' },
+      {
+        type: 'feature',
+        text: 'Energy Recovery Ventilator (ERV) equipment now contributes to supply air temperature, return air temperature, and exhaust fan speed columns.',
+      },
     ],
   },
   {

@@ -308,6 +308,9 @@ const DB = (() => {
   function hasPendingWrites() {
     return _pendingWriteCount > 0;
   }
+  function resetPendingWrites() {
+    _pendingWriteCount = 0;
+  }
 
   // Safety net: if the user navigates away while an IDB write is still in-flight,
   // show a browser confirmation dialog. Modern browsers may ignore returnValue for
@@ -334,6 +337,7 @@ const DB = (() => {
     isFallback,
     isLoadFailed,
     hasPendingWrites,
+    resetPendingWrites,
   };
 })();
 

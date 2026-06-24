@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.23.582'; // deployed 2026-06-23 (Multi-building PDF save: review panel assigns periods to buildings, saves all at once; window.projects scoping fix)
+  var CH_VERSION = 'v2026.06.23.583'; // deployed 2026-06-23 (Multi-building PDF save: review panel assigns periods to buildings, saves all at once; window.projects scoping fix)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
