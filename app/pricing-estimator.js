@@ -1860,16 +1860,15 @@ function initCostEstimateTab(projId) {
       '<tr style="' + rowStyle + '">',
       // col 1: Include checkbox (frozen)
       '<td class="ch-frozen" style="width:36px;text-align:center;padding:4px 6px">',
-      row.ioOnly
-        ? '<span title="Controller I/O — no cost" style="cursor:default;color:var(--text3)">—</span>'
-        : '<input type="checkbox"' +
-          (toggleOn ? ' checked' : '') +
-          ' onchange="_pricingToggleRow(\'' +
-          projId +
-          "','" +
-          row.id +
-          '\',this.checked)"' +
-          ' style="cursor:pointer">',
+      '<input type="checkbox"' +
+        (toggleOn ? ' checked' : '') +
+        (row.ioOnly ? ' title="Controller I/O — no cost"' : '') +
+        ' onchange="_pricingToggleRow(\'' +
+        projId +
+        "','" +
+        row.id +
+        '\',this.checked)"' +
+        ' style="cursor:pointer">',
       '</td>',
       // col 2: Building (frozen)
       '<td class="ch-frozen" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:5px 8px">' +

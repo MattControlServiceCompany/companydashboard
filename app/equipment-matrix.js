@@ -3438,6 +3438,8 @@ var _emComplianceCache = {}; // Performance: module-level compliance result cach
 var _emColKeyToCatKey = null; // FIX A: reverse map { colKey: { equipType: { catKey, catLabel, ashrae36Name, ashrae36Section, required } } } built lazily
 var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results, keyed by rawName+'\0'+category
 var _emPointsComputedCache = new WeakMap(); // Milestone 1: keyed on row object; caches emGetNormalizedPoints result
+var _emAliasCache = null; // 0ca796a9: memoized emLoadCustomAliases result for current pid
+var _emAliasCachePid = null; // 0ca796a9: pid that _emAliasCache was built for
 var _emPointNameCache = new Map(); // Milestone 1: rawName -> colKey, page-lifetime memoization for emMapPointToColumn
 var _emSearchTimer = null; // Performance: debounce timer for search input
 var _emOpenDrawers = new Set(); // M4: per-equipment "All Points" drawer state, keyed by row.id
@@ -4811,6 +4813,18 @@ function _emIsExcluded(rawName) {
 function emGetNormalizedPoints(row) {
   if (_emPointsComputedCache.has(row)) return _emPointsComputedCache.get(row);
 
+  // 0ca796a9: Load custom alias lookup (normalizedRawName → colKey) from the project's
+  // custom mappings store.  Uses window._emActivePid (set by all render entry points before
+  // calling emGetNormalizedPoints).  When no custom mappings exist this returns {} and all
+  // paths fall through to emMapPointToColumn exactly as before (zero coverage-delta guarantee).
+  // Memoized at module level by pid: emLoadCustomAliases is called once per render pass,
+  // not once per row (~2700 rows at JOCO scale).  Cache is busted by emSaveManageMappings.
+  var _pid = typeof window !== 'undefined' && window._emActivePid ? window._emActivePid : '';
+  var _customAliases =
+    _emAliasCachePid === _pid && _emAliasCache !== null
+      ? _emAliasCache
+      : ((_emAliasCachePid = _pid), (_emAliasCache = emLoadCustomAliases(_pid)));
+
   var result = {};
   // Collision-priority (item 0f00639f): track which columns were filled by a virtual point
   // so a real/physical point can overwrite them. Virtual points are a fallback only.
@@ -4829,7 +4843,8 @@ function emGetNormalizedPoints(row) {
         var rawName = rawEntries[ri][0];
         var rawVal = rawEntries[ri][1];
         if (rawVal == null || rawVal === '') continue;
-        var rColKey = emMapPointToColumn(rawName);
+        // 0ca796a9: custom alias check — user-approved mapping takes priority over regex patterns
+        var rColKey = _customAliases[emNormalizePointName(rawName)] || emMapPointToColumn(rawName);
         // Phase D-1: if no ASHRAE col found, auto-key (unless excluded artifact)
         if (!rColKey) {
           if (!_emIsExcluded(rawName)) rColKey = emAutoColKey(rawName);
@@ -4854,7 +4869,8 @@ function emGetNormalizedPoints(row) {
         var rawName2 = rawKeys[rki];
         var rawVal2 = rawEntries[rawName2];
         if (rawVal2 == null || rawVal2 === '') continue;
-        var rColKey2 = emMapPointToColumn(rawName2);
+        // 0ca796a9: custom alias check — user-approved mapping takes priority over regex patterns
+        var rColKey2 = _customAliases[emNormalizePointName(rawName2)] || emMapPointToColumn(rawName2);
         // Phase D-1: if no ASHRAE col found, auto-key (unless excluded artifact)
         if (!rColKey2) {
           if (!_emIsExcluded(rawName2)) rColKey2 = emAutoColKey(rawName2);
@@ -4911,7 +4927,8 @@ function emGetNormalizedPoints(row) {
       if (_emKnownPointColKeys.has(rawKey) || _emColKeyAliases[rawKey]) continue;
       var rawV = pts[rawKey];
       if (rawV == null) continue;
-      var colKey = emMapPointToColumn(rawKey);
+      // 0ca796a9: custom alias check — user-approved mapping takes priority over regex patterns
+      var colKey = _customAliases[emNormalizePointName(rawKey)] || emMapPointToColumn(rawKey);
       // Phase D-1: if no ASHRAE col found, auto-key (unless excluded artifact)
       if (!colKey) {
         if (!_emIsExcluded(rawKey)) colKey = emAutoColKey(rawKey);
@@ -14208,6 +14225,31 @@ function emBuildColKeyToCatKey() {
   }
 }
 
+/* ── emGetColKeyForCategoryKey (0ca796a9) ────────────────────────────────────
+   Given an EM_POINT_CATEGORIES key (e.g. 'sat') and an equipment type (e.g.
+   'ahu'), return the EM_POINT_MAP col key (e.g. 'supplyAirTemp') that Engine 1
+   uses for column display.
+
+   Algorithm: walk _emColKeyToCatKey (built by emBuildColKeyToCatKey) and find
+   the colKey whose catKey matches for the given equipType.  O(n) over ~70
+   entries; called at save time only (never on render hot path).
+
+   Returns: colKey string (e.g. 'supplyAirTemp') or null if no EM_POINT_MAP
+   entry exists for this categoryKey + equipType combination.               */
+function emGetColKeyForCategoryKey(categoryKey, equipType) {
+  if (!categoryKey || !equipType) return null;
+  emBuildColKeyToCatKey(); // ensure _emColKeyToCatKey is populated
+  var colKeys = Object.keys(_emColKeyToCatKey);
+  for (var i = 0; i < colKeys.length; i++) {
+    var ck = colKeys[i];
+    var etMap = _emColKeyToCatKey[ck];
+    if (etMap && etMap[equipType] && etMap[equipType].catKey === categoryKey) {
+      return ck;
+    }
+  }
+  return null;
+}
+
 /* ── emComputeCompliance ────────────────────────────────────────────────────
    For a single equipment row, compute ASHRAE 36 coverage.
    equipRow.category = 'ahu'|'vav'|'fpb'|'ddvav'|'hwp'|'chwp'|'ct'
@@ -14685,6 +14727,36 @@ function emLoadCustomMappings(projId) {
 function emSaveCustomMappings(projId, mappings) {
   if (!projId) return;
   DB.set('en_eqmatrix_cmaps_' + projId, mappings);
+}
+
+/* ── emLoadCustomAliases (0ca796a9) ─────────────────────────────────────────
+   Returns a flat lookup { normalizedRawName → colKey } for Engine 1 (column
+   display) built from the custom mappings store.
+
+   Only entries that have a valid colKey (or can derive one via
+   emGetColKeyForCategoryKey) and are NOT __exclude__ entries are included.
+
+   Backward-compat: entries written before 0ca796a9 lack a colKey field; we
+   derive it on-the-fly from categoryKey + equipCategory.
+
+   When no custom mappings exist, returns {} so all render paths fall through
+   to emMapPointToColumn exactly as before (zero coverage-delta guarantee).  */
+function emLoadCustomAliases(projId) {
+  if (!projId) return {};
+  var maps = emLoadCustomMappings(projId);
+  var result = {};
+  for (var i = 0; i < maps.length; i++) {
+    var m = maps[i];
+    if (!m.rawName || m.categoryKey === '__exclude__') continue;
+    var colKey = m.colKey || emGetColKeyForCategoryKey(m.categoryKey, m.equipCategory);
+    if (!colKey) {
+      if (m.equipCategory)
+        console.warn('[EM] emLoadCustomAliases: no colKey found for', m.categoryKey, m.equipCategory);
+      continue;
+    }
+    result[emNormalizePointName(m.rawName)] = colKey;
+  }
+  return result;
 }
 
 /* ── CREATE BUILDINGS FROM EQUIPMENT MATRIX ──────────────────────────────── */
@@ -16145,14 +16217,21 @@ function emSaveManageMappings(pid) {
     }
 
     if (val === '__exclude__') {
-      modalMappings.push({ rawName: rawName, categoryKey: '__exclude__', equipCategory: '' });
+      modalMappings.push({ rawName: rawName, categoryKey: '__exclude__', equipCategory: '', colKey: null });
     } else {
       // val is "equipType:categoryKey" e.g. "ahu:sat"
       var parts = val.split(':');
       if (parts.length < 2) continue;
       var equipType = parts[0];
       var categoryKey = parts.slice(1).join(':');
-      modalMappings.push({ rawName: rawName, categoryKey: categoryKey, equipCategory: equipType });
+      // 0ca796a9: derive and store colKey so Engine 1 (column display) can resolve the mapping
+      var derivedColKey = emGetColKeyForCategoryKey(categoryKey, equipType) || null;
+      modalMappings.push({
+        rawName: rawName,
+        categoryKey: categoryKey,
+        equipCategory: equipType,
+        colKey: derivedColKey,
+      });
     }
   }
 
@@ -16179,6 +16258,9 @@ function emSaveManageMappings(pid) {
   _emComplianceCache = {};
   _emNormCache = new Map();
   _emPointNameCache = new Map(); // Milestone 1: also clear name lookup cache
+  _emPointsComputedCache = new WeakMap(); // 0ca796a9: force emGetNormalizedPoints re-run so alias store changes appear without full reload
+  _emAliasCache = null;
+  _emAliasCachePid = null; // 0ca796a9: bust pid-level alias memo so next render picks up new mappings
 
   // Close modal
   if (overlay.parentNode) overlay.parentNode.removeChild(overlay);

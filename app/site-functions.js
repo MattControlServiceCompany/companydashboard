@@ -1191,6 +1191,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.25.592',
+    date: '2026-06-25',
+    title:
+      'Equipment Matrix custom aliases now apply in both views; Pricing Estimator Compliance tab Include checkboxes now work',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix — custom point aliases (set in Manage Mappings) now apply correctly in both the Audit table and the ASHRAE-36 Report. Previously, aliases only affected one of the two views.',
+      },
+      {
+        type: 'fix',
+        text: 'Pricing Estimator — on the Compliance tab, IO-only rows now show a working Include checkbox instead of a dash. You can now include or exclude those rows from the estimate.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.25.591',
     date: '2026-06-25',
     title: 'Equipment Matrix: more BAS points recognized, new Occupancy Sensor and Return Air Enthalpy audit columns',
