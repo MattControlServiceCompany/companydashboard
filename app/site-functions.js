@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.25.593',
+    date: '2026-06-25',
+    title: 'Equipment Matrix: one-click fuzzy point suggestions + alias status management in Manage Mappings',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix — Manage Mappings now shows a "Suggested (N)" section listing BAS points the system thinks it can map automatically. Click Accept to confirm a suggestion (it appears in Coverage immediately) or Dismiss to remove it. Only accepted suggestions count toward Coverage % — pending and dismissed entries are ignored.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix — alias entries now carry a status (accepted/pending/dismissed). Backward-compatible: existing aliases with no status are treated as accepted.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.25.592',
     date: '2026-06-25',
     title:

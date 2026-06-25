@@ -14747,6 +14747,9 @@ function emLoadCustomAliases(projId) {
   var result = {};
   for (var i = 0; i < maps.length; i++) {
     var m = maps[i];
+    // Phase E (Section A3): skip pending and dismissed entries — only accepted (or no-status
+    // backward-compat) entries feed Engine 1 (display). Missing status === accepted.
+    if (m.status === 'pending' || m.status === 'dismissed') continue;
     if (!m.rawName || m.categoryKey === '__exclude__') continue;
     var colKey = m.colKey || emGetColKeyForCategoryKey(m.categoryKey, m.equipCategory);
     if (!colKey) {
@@ -15052,6 +15055,11 @@ function emExecuteCreateBuildings() {
    Custom mappings take priority over all 3 auto-match tiers.           */
 function emNormalizePointWithCustom(rawName, equipCategory, customMappings) {
   var maps = customMappings || [];
+  // Phase E (Section A3): filter pending/dismissed before the lookup loop.
+  // Missing status field → accepted (backward-compat, Section A1).
+  maps = maps.filter(function (m) {
+    return !m.status || m.status === 'accepted';
+  });
   var normRaw = emNormalizePointName(rawName);
   for (var mi = 0; mi < maps.length; mi++) {
     var m = maps[mi];
@@ -15864,6 +15872,192 @@ function emBuildCategoryDropdown(rawName, equipCategory, currentVal, allCatOptio
   return selectHtml;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   PHASE E — FUZZY SUGGESTION ENGINE
+   Added: 2026-06-25 (item 21eb08f8 Phase E)
+   Functions: emTokenizeForFuzzy, emPartialAliasScore, emApplyContradictingVeto,
+              emBuildFuzzySuggestions
+   ══════════════════════════════════════════════════════════════════════════ */
+
+var _EM_FUZZY_STOP_WORDS = {
+  air: 1,
+  the: 1,
+  of: 1,
+  unit: 1,
+  sensor: 1,
+  status: 1,
+  point: 1,
+  a: 1,
+  an: 1,
+  and: 1,
+  or: 1,
+};
+
+/* ── emTokenizeForFuzzy (Phase E, Section B1) ───────────────────────────────
+   Lowercase → strip equipment prefix → split on delimiters → drop stop words
+   and pure-numeric tokens → return Set<string>.                             */
+function emTokenizeForFuzzy(rawName) {
+  if (!rawName) return new Set();
+  var s = rawName.toLowerCase();
+  // Strip leading equipment prefix like "AHU-1 ", "RTU-2 ", "VAV-101 "
+  s = s.replace(/^(ahu|rtu|vav|fcu)-?\d*\s*/i, '');
+  // Split on whitespace, underscore, hyphen, slash
+  var parts = s.split(/[\s_\-\/]+/);
+  var tokens = new Set();
+  for (var i = 0; i < parts.length; i++) {
+    var t = parts[i];
+    if (!t) continue;
+    if (_EM_FUZZY_STOP_WORDS[t]) continue;
+    if (/^\d+$/.test(t)) continue; // pure numeric
+    tokens.add(t);
+  }
+  return tokens;
+}
+
+/* ── emPartialAliasScore (Phase E, Section B2) ──────────────────────────────
+   Jaccard similarity between rawTokens and the union of colEntry label +
+   labelAliases tokens. Empty col token set returns 0.                      */
+function emPartialAliasScore(rawTokens, colEntry) {
+  // Build colTokens = union of label tokens + each labelAlias's tokens
+  var colTokens = new Set();
+  var labelToks = emTokenizeForFuzzy(colEntry.label || '');
+  labelToks.forEach(function (t) {
+    colTokens.add(t);
+  });
+  var la = colEntry.labelAliases || [];
+  for (var i = 0; i < la.length; i++) {
+    var laToks = emTokenizeForFuzzy(la[i]);
+    laToks.forEach(function (t) {
+      colTokens.add(t);
+    });
+  }
+  if (colTokens.size === 0) return 0;
+
+  // Jaccard: |intersection| / |union|
+  var intersect = 0;
+  rawTokens.forEach(function (t) {
+    if (colTokens.has(t)) intersect++;
+  });
+  // union size = size(A) + size(B) - intersection
+  var unionSize = rawTokens.size + colTokens.size - intersect;
+  if (unionSize === 0) return 0;
+  return intersect / unionSize;
+}
+
+/* ── emApplyContradictingVeto (Phase E, Section B3) ────────────────────────
+   Mirror _EM_CONTRADICTING_PAIRS veto from emNormalizePointInner.
+   Returns true if the rawName tokens contradict the colEntry label tokens
+   (i.e. this col should be vetoed for this rawName).                       */
+function emApplyContradictingVeto(rawName, colEntry) {
+  var rawTokens = Array.from(emTokenizeForFuzzy(rawName));
+  var colTokens = Array.from(emTokenizeForFuzzy(colEntry.label || ''));
+  for (var vp = 0; vp < _EM_CONTRADICTING_PAIRS.length; vp++) {
+    var pair = _EM_CONTRADICTING_PAIRS[vp];
+    // If colEntry label contains the aliasWord, check rawName for veto words
+    if (colTokens.indexOf(pair.aliasWord) !== -1) {
+      for (var vv = 0; vv < pair.nameVeto.length; vv++) {
+        if (rawTokens.indexOf(pair.nameVeto[vv]) !== -1) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/* ── emBuildFuzzySuggestions (Phase E, Section B4) ─────────────────────────
+   Given an array of unmatched rawName strings and a project id, returns
+   Array<{rawName, suggestedColKey, suggestedCategoryKey, suggestedEquipCategory,
+           score, confidenceBadge, badgeTooltip}> sorted descending by score,
+   filtered to score >= 0.5.
+
+   Excludes names already in the store as accepted, pending, or dismissed.
+   All returned colKeys are real EM_POINT_MAP col keys — never auto_.      */
+function emBuildFuzzySuggestions(unmatchedNames, projId) {
+  if (!unmatchedNames || unmatchedNames.length === 0) return [];
+
+  // Build excluded set from store (any status entry — even pending/dismissed blocks re-suggestion)
+  var storeMaps = projId ? emLoadCustomMappings(projId) : [];
+  var excluded = {};
+  for (var si = 0; si < storeMaps.length; si++) {
+    if (storeMaps[si].rawName) excluded[emNormalizePointName(storeMaps[si].rawName)] = true;
+  }
+
+  // Pre-build colTokens for each EM_POINT_MAP entry (once, ~80 entries)
+  emBuildColKeyToCatKey(); // ensure _emColKeyToCatKey is populated
+
+  var results = [];
+
+  for (var ni = 0; ni < unmatchedNames.length; ni++) {
+    var rawName = unmatchedNames[ni];
+    if (!rawName) continue;
+    var normRaw = emNormalizePointName(rawName);
+
+    // Skip if already in store under any status
+    if (excluded[normRaw]) continue;
+
+    var rawTokens = emTokenizeForFuzzy(rawName);
+    if (rawTokens.size === 0) continue;
+
+    var bestScore = 0;
+    var bestCol = null;
+
+    for (var mi = 0; mi < EM_POINT_MAP.length; mi++) {
+      var colEntry = EM_POINT_MAP[mi];
+      // Veto check first (cheap)
+      if (emApplyContradictingVeto(rawName, colEntry)) continue;
+      var score = emPartialAliasScore(rawTokens, colEntry);
+      if (score > bestScore) {
+        bestScore = score;
+        bestCol = colEntry;
+      }
+    }
+
+    if (bestScore < 0.55 || !bestCol) continue; // Phase E fix: raised from 0.5 to trim weakest matches
+
+    // Resolve suggestedCategoryKey and suggestedEquipCategory from colKey
+    var colKey = bestCol.col;
+    var suggestedCategoryKey = null;
+    var suggestedEquipCategory = '';
+    if (_emColKeyToCatKey && _emColKeyToCatKey[colKey]) {
+      var etMap = _emColKeyToCatKey[colKey];
+      var etKeys = Object.keys(etMap);
+      if (etKeys.length > 0) {
+        suggestedEquipCategory = etKeys[0];
+        suggestedCategoryKey = etMap[etKeys[0]].catKey;
+      }
+    }
+
+    // Badge assignment
+    var confidenceBadge, badgeTooltip;
+    if (bestScore >= 0.75) {
+      confidenceBadge = 'High';
+      badgeTooltip = 'Jaccard score ' + bestScore.toFixed(2) + ' — strong token overlap with "' + bestCol.label + '"';
+    } else if (bestScore >= 0.6) {
+      confidenceBadge = 'Med';
+      badgeTooltip = 'Jaccard score ' + bestScore.toFixed(2) + ' — moderate overlap with "' + bestCol.label + '"';
+    } else {
+      confidenceBadge = 'Low';
+      badgeTooltip = 'Jaccard score ' + bestScore.toFixed(2) + ' — partial overlap with "' + bestCol.label + '"';
+    }
+
+    results.push({
+      rawName: rawName,
+      suggestedColKey: colKey,
+      suggestedCategoryKey: suggestedCategoryKey,
+      suggestedEquipCategory: suggestedEquipCategory,
+      score: bestScore,
+      confidenceBadge: confidenceBadge,
+      badgeTooltip: badgeTooltip,
+      colLabel: bestCol.label,
+    });
+  }
+
+  // Sort descending by score, then cap at top 50 (Phase E fix: volume control)
+  results.sort(function (a, b) {
+    return b.score - a.score;
+  });
+  return results.slice(0, 50);
+}
+
 /* ── emOpenManageMappings ───────────────────────────────────────────────────
    Opens the Manage Mappings modal.
    Section 1: Unmatched Points — points with no auto-match; each has a
@@ -15979,11 +16173,16 @@ function emOpenManageMappings(pid) {
       var allPoints = emGetAllPoints(rows);
       var customMappings = emLoadCustomMappings(pid);
 
-      // Build lookup: normName -> mapping entry from existing custom mappings
+      // Build lookup: normName -> mapping entry from existing custom mappings.
+      // Phase E fix: only include accepted / no-status entries so that pending/dismissed
+      // entries are NOT routed into the Unmatched dropdown section. This prevents Save
+      // from deleting them via the "shown → replaced or dropped" merge path, which would
+      // break the "dismissed never re-suggests" guarantee and silently drop pending entries.
+      // Pending entries appear exclusively in the Suggested section (as designed).
       var existingCustomMap = {};
       for (var mi = 0; mi < customMappings.length; mi++) {
         var m = customMappings[mi];
-        if (m.rawName) existingCustomMap[emNormalizePointName(m.rawName)] = m;
+        if (m.rawName && (!m.status || m.status === 'accepted')) existingCustomMap[emNormalizePointName(m.rawName)] = m;
       }
 
       // Separate into unmatched and matched
@@ -16002,6 +16201,27 @@ function emOpenManageMappings(pid) {
       }
 
       var allCatOptions = emBuildFunctionalCatOptions();
+
+      // Phase E (Section C1): build fuzzy suggestions for unmatched names, persist as pending
+      var unmatchedRawNames = [];
+      for (var fri = 0; fri < unmatchedPoints.length; fri++) {
+        if (
+          unmatchedPoints[fri].status === 'unmatched' &&
+          !existingCustomMap[emNormalizePointName(unmatchedPoints[fri].name)]
+        ) {
+          unmatchedRawNames.push(unmatchedPoints[fri].name);
+        }
+      }
+      var fuzzySuggestions = emBuildFuzzySuggestions(unmatchedRawNames, pid);
+      for (var fsi = 0; fsi < fuzzySuggestions.length; fsi++) {
+        emWriteSuggestion(pid, fuzzySuggestions[fsi]);
+      }
+      // Load all pending entries from store for Suggested section display
+      var allMapsForSuggest = emLoadCustomMappings(pid);
+      var pendingEntries = [];
+      for (var pei = 0; pei < allMapsForSuggest.length; pei++) {
+        if (allMapsForSuggest[pei].status === 'pending') pendingEntries.push(allMapsForSuggest[pei]);
+      }
 
       // Count total occurrences for summary line
       var unmatchedTotalOccurrences = 0;
@@ -16026,11 +16246,81 @@ function emOpenManageMappings(pid) {
       var CHUNK_SIZE = 80;
       var htmlParts = [];
 
+      // Phase E (Section C2): Suggested section at TOP
+      var suggestDisplay = pendingEntries.length > 0 ? '' : 'display:none';
+      var suggestRows = '';
+      for (var sgi = 0; sgi < pendingEntries.length; sgi++) {
+        var pe = pendingEntries[sgi];
+        var fsMeta = null;
+        for (var fsm = 0; fsm < fuzzySuggestions.length; fsm++) {
+          if (emNormalizePointName(fuzzySuggestions[fsm].rawName) === emNormalizePointName(pe.rawName)) {
+            fsMeta = fuzzySuggestions[fsm];
+            break;
+          }
+        }
+        var fsBadge = fsMeta ? fsMeta.confidenceBadge : '';
+        var fsBadgeTip = fsMeta ? fsMeta.badgeTooltip : '';
+        var fsBadgeColor = fsBadge === 'High' ? '#2a7d4f' : fsBadge === 'Med' ? '#8a6a00' : '#a04000';
+        var fsColLabel = fsMeta ? fsMeta.colLabel : pe.colKey || '';
+        var fsRawEsc = emHtmlEsc(pe.rawName);
+        var fsColKeyEsc = emHtmlEsc(pe.colKey || '');
+        suggestRows +=
+          '<tr data-suggest-raw="' +
+          fsRawEsc +
+          '" data-suggest-colkey="' +
+          fsColKeyEsc +
+          '" style="border-bottom:1px solid var(--border)">' +
+          '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:#1a1a1a;' +
+          'max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+          fsRawEsc +
+          '">' +
+          fsRawEsc +
+          '</td>' +
+          '<td style="padding:6px 12px;font-size:11px;color:#1a1a1a">' +
+          emHtmlEsc(fsColLabel) +
+          '</td>' +
+          '<td style="padding:6px 8px;white-space:nowrap">' +
+          (fsBadge
+            ? '<span style="font-size:10px;font-weight:600;color:' +
+              fsBadgeColor +
+              ';padding:2px 6px;border:1px solid ' +
+              fsBadgeColor +
+              ';border-radius:3px" title="' +
+              emHtmlEsc(fsBadgeTip) +
+              '">' +
+              fsBadge +
+              '</span> '
+            : '') +
+          '<button onclick="emAcceptSuggestionInModal(this)" data-pid="' +
+          emHtmlEsc(pid) +
+          '" ' +
+          'style="font-size:10px;padding:3px 8px;background:var(--accent);border:none;color:#fff;border-radius:3px;cursor:pointer;margin-right:4px">Accept</button>' +
+          '<button onclick="emDismissSuggestionInModal(this)" data-pid="' +
+          emHtmlEsc(pid) +
+          '" ' +
+          'style="font-size:10px;padding:3px 8px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer">Dismiss</button>' +
+          '</td><td></td></tr>';
+      }
+      htmlParts.push(
+        '<tr id="em-suggest-section-head" style="' +
+          suggestDisplay +
+          '"><td colspan="4" style="' +
+          sectionHeadStyle +
+          'border-top:none">Suggested ' +
+          '<span id="em-suggest-count">' +
+          pendingEntries.length +
+          '</span>' +
+          ' — AI-free fuzzy matches; review before accepting</td></tr>' +
+          suggestRows,
+      );
+
       // Section 1 header
       htmlParts.push(
         '<tr><td colspan="4" style="' +
           sectionHeadStyle +
-          'border-top:none">Unmatched Points (' +
+          'border-top:' +
+          (pendingEntries.length > 0 ? '2px solid var(--border)' : 'none') +
+          '">Unmatched Points (' +
           unmatchedPoints.length +
           ') — need mapping</td></tr>',
       );
@@ -16158,6 +16448,187 @@ function emOpenManageMappings(pid) {
   }, 0);
 }
 
+/* ── emBustAllCaches (Phase E) ──────────────────────────────────────────────
+   Clears all in-memory caches so that Accept/Dismiss/Save immediately
+   affects every downstream render path without a full page reload.
+   Called by emAcceptSuggestion, emDismissSuggestion, and emSaveManageMappings
+   (replaces the inline cache-clear block in emSaveManageMappings).        */
+function emBustAllCaches() {
+  _emComplianceCache = {};
+  _emNormCache = new Map();
+  _emPointNameCache = new Map();
+  _emPointsComputedCache = new WeakMap();
+  _emAliasCache = null;
+  _emAliasCachePid = null;
+}
+
+/* ── emWriteSuggestion (Phase E) ────────────────────────────────────────────
+   Writes a status:'pending' entry for a fuzzy suggestion.
+   Skips if rawName already has ANY entry in the store (accepted, pending, or
+   dismissed) so we never overwrite a user decision.                        */
+function emWriteSuggestion(pid, suggestion) {
+  if (!pid || !suggestion || !suggestion.rawName || !suggestion.suggestedColKey) return;
+  var maps = emLoadCustomMappings(pid);
+  var normRaw = emNormalizePointName(suggestion.rawName);
+  for (var i = 0; i < maps.length; i++) {
+    if (maps[i].rawName && emNormalizePointName(maps[i].rawName) === normRaw) return; // already has an entry
+  }
+  maps.push({
+    rawName: suggestion.rawName,
+    categoryKey: suggestion.suggestedCategoryKey || null,
+    equipCategory: suggestion.suggestedEquipCategory || '',
+    colKey: suggestion.suggestedColKey,
+    status: 'pending',
+  });
+  emSaveCustomMappings(pid, maps);
+}
+
+/* ── emAcceptSuggestion (Phase E) ───────────────────────────────────────────
+   Flips a pending suggestion to accepted. Derives categoryKey from colKey
+   via _emColKeyToCatKey so the accepted entry is treated exactly like a
+   user-saved mapping. Busts all caches so the next render reflects the
+   change immediately.                                                       */
+function emAcceptSuggestion(pid, rawName, colKey) {
+  if (!pid || !rawName || !colKey) return;
+  var maps = emLoadCustomMappings(pid);
+  var normRaw = emNormalizePointName(rawName);
+  var found = false;
+  for (var i = 0; i < maps.length; i++) {
+    var m = maps[i];
+    if (m.rawName && emNormalizePointName(m.rawName) === normRaw) {
+      // Derive categoryKey and equipCategory from colKey if not already set
+      emBuildColKeyToCatKey();
+      var equipCategory = m.equipCategory || '';
+      var catKey = null;
+      if (_emColKeyToCatKey && _emColKeyToCatKey[colKey]) {
+        var etMap = _emColKeyToCatKey[colKey];
+        // Prefer the equipment type from the existing entry, else first available
+        if (equipCategory && etMap[equipCategory]) {
+          catKey = etMap[equipCategory].catKey;
+        } else {
+          var etKeys = Object.keys(etMap);
+          if (etKeys.length > 0) {
+            catKey = etMap[etKeys[0]].catKey;
+            if (!equipCategory) equipCategory = etKeys[0];
+          }
+        }
+      }
+      m.status = 'accepted';
+      m.colKey = colKey;
+      if (catKey) m.categoryKey = catKey;
+      if (equipCategory) m.equipCategory = equipCategory;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    // Entry may not exist yet (edge case) — push a new accepted entry
+    emBuildColKeyToCatKey();
+    var newEquipCategory = '';
+    var newCatKey = null;
+    if (_emColKeyToCatKey && _emColKeyToCatKey[colKey]) {
+      var etMap2 = _emColKeyToCatKey[colKey];
+      var etKeys2 = Object.keys(etMap2);
+      if (etKeys2.length > 0) {
+        newEquipCategory = etKeys2[0];
+        newCatKey = etMap2[etKeys2[0]].catKey;
+      }
+    }
+    maps.push({
+      rawName: rawName,
+      categoryKey: newCatKey,
+      equipCategory: newEquipCategory,
+      colKey: colKey,
+      status: 'accepted',
+    });
+  }
+  emSaveCustomMappings(pid, maps);
+  emBustAllCaches();
+}
+
+/* ── emDismissSuggestion (Phase E) ─────────────────────────────────────────
+   Sets a pending entry to dismissed so it won't re-suggest on next open.
+   The entry is preserved (not deleted) so emBuildFuzzySuggestions excludes it.
+   Busts all caches to keep render paths consistent.                       */
+function emDismissSuggestion(pid, rawName) {
+  if (!pid || !rawName) return;
+  var maps = emLoadCustomMappings(pid);
+  var normRaw = emNormalizePointName(rawName);
+  var found = false;
+  for (var i = 0; i < maps.length; i++) {
+    var m = maps[i];
+    if (m.rawName && emNormalizePointName(m.rawName) === normRaw && m.status === 'pending') {
+      m.status = 'dismissed';
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    // If no pending entry exists for this name, create a dismissed sentinel
+    maps.push({
+      rawName: rawName,
+      categoryKey: null,
+      equipCategory: '',
+      colKey: null,
+      status: 'dismissed',
+    });
+  }
+  emSaveCustomMappings(pid, maps);
+  emBustAllCaches();
+}
+
+/* ── emAcceptSuggestionInModal (Phase E, Section C3/C5) ─────────────────────
+   Called by the Accept button inside the Suggested section.
+   Accepts the pending suggestion, busts caches, and inline-removes the row.
+   Does NOT close the modal — user can continue reviewing.
+   Audit View re-render is deferred to modal close (emRenderAuditTable).    */
+function emAcceptSuggestionInModal(btn) {
+  // Read pid, rawName, colKey from data attributes to avoid JS string-escaping issues
+  var tr = btn.closest ? btn.closest('tr[data-suggest-raw]') : btn.parentNode.parentNode;
+  if (!tr) return;
+  var pid = btn.getAttribute('data-pid');
+  var rawName = tr.getAttribute('data-suggest-raw');
+  var colKey = tr.getAttribute('data-suggest-colkey');
+  if (!pid || !rawName || !colKey) return;
+  emAcceptSuggestion(pid, rawName, colKey);
+  // Remove the row inline (Section C5)
+  tr.parentNode.removeChild(tr);
+  // Update count badge and hide section if N→0
+  var countEl = document.getElementById('em-suggest-count');
+  var headRow = document.getElementById('em-suggest-section-head');
+  if (countEl) {
+    var remaining = parseInt(countEl.textContent, 10) - 1;
+    if (isNaN(remaining)) remaining = 0;
+    countEl.textContent = remaining;
+    if (remaining <= 0 && headRow) headRow.style.display = 'none';
+  }
+  showToast('Mapping accepted: ' + rawName + ' → ' + colKey);
+}
+
+/* ── emDismissSuggestionInModal (Phase E, Section C4/C5) ───────────────────
+   Called by the Dismiss button inside the Suggested section.
+   Dismisses the pending entry (won't re-suggest), busts caches, and inline-
+   removes the row.                                                          */
+function emDismissSuggestionInModal(btn) {
+  var tr = btn.closest ? btn.closest('tr[data-suggest-raw]') : btn.parentNode.parentNode;
+  if (!tr) return;
+  var pid = btn.getAttribute('data-pid');
+  var rawName = tr.getAttribute('data-suggest-raw');
+  if (!pid || !rawName) return;
+  emDismissSuggestion(pid, rawName);
+  // Remove the row inline
+  tr.parentNode.removeChild(tr);
+  // Update count badge and hide section if N→0
+  var countEl = document.getElementById('em-suggest-count');
+  var headRow = document.getElementById('em-suggest-section-head');
+  if (countEl) {
+    var remaining = parseInt(countEl.textContent, 10) - 1;
+    if (isNaN(remaining)) remaining = 0;
+    countEl.textContent = remaining;
+    if (remaining <= 0 && headRow) headRow.style.display = 'none';
+  }
+}
+
 /* ── emCloseManageMappings ──────────────────────────────────────────────────
    Closes the Manage Mappings modal. Called by the Cancel button, the X
    button, and clicks on the overlay backdrop.                              */
@@ -16217,7 +16688,14 @@ function emSaveManageMappings(pid) {
     }
 
     if (val === '__exclude__') {
-      modalMappings.push({ rawName: rawName, categoryKey: '__exclude__', equipCategory: '', colKey: null });
+      // Phase E: always write status:'accepted' on user-saved mappings (Section A2)
+      modalMappings.push({
+        rawName: rawName,
+        categoryKey: '__exclude__',
+        equipCategory: '',
+        colKey: null,
+        status: 'accepted',
+      });
     } else {
       // val is "equipType:categoryKey" e.g. "ahu:sat"
       var parts = val.split(':');
@@ -16226,11 +16704,13 @@ function emSaveManageMappings(pid) {
       var categoryKey = parts.slice(1).join(':');
       // 0ca796a9: derive and store colKey so Engine 1 (column display) can resolve the mapping
       var derivedColKey = emGetColKeyForCategoryKey(categoryKey, equipType) || null;
+      // Phase E: always write status:'accepted' on user-saved mappings (Section A2)
       modalMappings.push({
         rawName: rawName,
         categoryKey: categoryKey,
         equipCategory: equipType,
         colKey: derivedColKey,
+        status: 'accepted',
       });
     }
   }
@@ -16254,13 +16734,8 @@ function emSaveManageMappings(pid) {
 
   emSaveCustomMappings(pid, merged);
 
-  // Invalidate compliance cache so re-render uses the new mappings
-  _emComplianceCache = {};
-  _emNormCache = new Map();
-  _emPointNameCache = new Map(); // Milestone 1: also clear name lookup cache
-  _emPointsComputedCache = new WeakMap(); // 0ca796a9: force emGetNormalizedPoints re-run so alias store changes appear without full reload
-  _emAliasCache = null;
-  _emAliasCachePid = null; // 0ca796a9: bust pid-level alias memo so next render picks up new mappings
+  // Phase E: use emBustAllCaches() to DRY the inline cache-clear block (Section D1)
+  emBustAllCaches();
 
   // Close modal
   if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
