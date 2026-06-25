@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.25.595',
+    date: '2026-06-25',
+    title: 'Equipment Matrix: F-# furnace units now classify and score correctly when named with a room prefix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix — Furnace units named with a room prefix (e.g. "Front Entry - F-4", "Kitchen/Lounge - F-2") now correctly appear in the Furnace category and receive ASHRAE-36 §5.18 scoring. Previously, units imported before v595 would appear as Unrecognized or Other because the classifier only matched bare names like "F-2". The fix applies automatically when the Equipment Matrix loads — no re-import needed.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.25.594',
     date: '2026-06-25',
     title: 'Equipment Matrix: Furnace / single-zone packaged units now scored against ASHRAE-36 §5.18',

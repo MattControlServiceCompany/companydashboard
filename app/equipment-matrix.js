@@ -2107,6 +2107,9 @@ function emParseEquipBaseName(nameStr) {
   // Requires word boundary + digit suffix: avoids false-matching "HVAC-1" (\b prevents match
   // inside longer token); "CRAC-2" is also safe because the boundary falls before 'C' in CRAC.
   if (/\bAC-\d/i.test(n)) return 'ac';
+  // Priority 4.6: F-# furnace abbreviation (MedAct 51 "Front Entry - F-4", "Kitchen/Lounge - F-2")
+  // Guard: Zone-F# VVT zone dampers must fall through to the zone rule, not furnace.
+  if (/\bF-\d/i.test(n) && !/\bzone\b/i.test(n)) return 'furnace';
   // Priority 5: AHU
   if (/\bahu\b/i.test(n)) return 'ahu';
   // Priority 6: MAU (makeup air unit — own category per user)
@@ -2437,9 +2440,10 @@ function emClassifyEquipType(equipTypeStr) {
   if (/^sp-\d{1,2},/i.test(key)) return 'ef'; // "SP-1,2,3,4" combined entry
   // Stairwell pressurization fans (combined label)
   if (/stairwell pressurization/i.test(key)) return 'ef';
-  // F-N (furnace abbreviation — e.g. MedAct 51 "Front Entry - F-4", "Kitchen/Lounge - F-2")
-  // Must NOT match EF-N (exhaust fans) — pattern anchors to ^f so "ef-2" key won't start with bare f
-  if (/^f-\d+$/i.test(key)) return 'furnace'; // 425c0cb3 fix: F-2, F-4 are furnaces
+  // F-N furnace abbreviation (MedAct 51 "Front Entry - F-4", "Kitchen/Lounge - F-2").
+  // \b before 'f' prevents matching EF-N/SPF-N (the F is preceded by a word char, so no boundary fires).
+  // Zone-F# inputs are pre-empted by the zone-naming block above; the !/\bzone\b/ guard here is belt-and-suspenders.
+  if (/\bf-\d+\b/i.test(key) && !/\bzone\b/i.test(key)) return 'furnace';
   // CU-N (condensing unit)
   if (/^cu-\d/i.test(key)) return 'ahu';
   // DX (direct expansion unit)
