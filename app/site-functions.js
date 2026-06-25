@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.25.588',
+    date: '2026-06-25',
+    title: 'Equipment Matrix: every BAS point is now accounted for in Audit view',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Audit view now shows an "Other BAS Points" column — any BAS point that falls outside the ASHRAE-36 categories gets an auto-key and is counted here, with a click-to-view detail panel so you can see exactly which points are unmatched. The points counter splits into "N ASHRAE Points + N Other Points" so nothing is hidden.',
+      },
+      {
+        type: 'fix',
+        text: 'Auto-keyed "Other" points are firewalled from ASHRAE-36 Coverage % — they can never inflate your compliance score, no matter how many unmatched points exist.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.24.587',
     date: '2026-06-24',
     title: 'Equipment Matrix: Manage Mappings list is cleaner — BAS diagnostic and fault/alarm points hidden',

@@ -4125,11 +4125,20 @@ function emGetAuditColDefs(filteredRows) {
     },
     {
       key: '_baspoints',
-      label: 'Total BAS Points',
+      label: 'ASHRAE Points',
+      group: 'audit',
+      width: 100,
+      isAuditBasPts: true,
+      title: 'Number of BAS points mapped to ASHRAE 36 categories for this equipment (Phase D-1)',
+    },
+    {
+      key: '_autoOther',
+      label: 'Other BAS Points',
       group: 'audit',
       width: 110,
-      isAuditBasPts: true,
-      title: 'Total number of BAS data points found in the imported CSV for this equipment',
+      isAuditOther: true,
+      title:
+        'BAS points present in this equipment that are not mapped to ASHRAE 36 categories. Click count to view list.',
     },
   ];
 
@@ -4626,6 +4635,69 @@ var _emColKeyAliases = {
   zoneTempShortLive: 'zoneTemp',
 };
 
+/* ── Phase D: auto-key helpers (item 21eb08f8 Decision 3) ──────────────────
+   emAutoColKey(rawName)  — deterministic camelCase col key prefixed "auto_".
+   emAutoColLabel(rawName) — human-readable label (digits stripped same way).
+
+   Algorithm (must match auto-key-count.js toAutoColKey exactly):
+     1. Lowercase
+     2. Replace all non-alphanumeric chars with space
+     3. Strip isolated integer tokens (e.g. " 1 " → " ") so "Pump 1 Enable"
+        and "Pump 2 Enable" both yield auto_pumpEnable
+     4. Normalize whitespace / trim
+     5. camelCase (word 0 lowercase, words 1+ title-case), prefix "auto_"
+
+   Compliance firewall: auto_ prefix is a guaranteed namespace —
+     EM_POINT_MAP col keys never start with "auto_", so emComputeCompliance
+     (which iterates EM_POINT_CATEGORIES keys only) cannot match these.
+
+   _emExclusionRegex: single compiled alternation of EM_EXCLUSION_PATTERNS.
+     Built lazily on first use. Excluded names get NO auto_col key.          */
+
+function emAutoColKey(rawName) {
+  var s = rawName.toLowerCase();
+  s = s.replace(/[^a-z0-9 ]/g, ' ');
+  // Strip isolated integer tokens (surrounded by space or string boundary)
+  s = s.replace(/(^|\s)\d+(\s|$)/g, function (m, pre, post) {
+    return pre + ' ' + post;
+  });
+  s = s.replace(/\s+/g, ' ').trim();
+  var words = s.split(' ').filter(function (w) {
+    return w.length > 0;
+  });
+  if (!words.length) return 'auto_unknown';
+  var camel = words
+    .map(function (w, i) {
+      return i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join('');
+  return 'auto_' + camel;
+}
+
+function emAutoColLabel(rawName) {
+  // Human-readable label: same digit-token strip, preserve original casing.
+  var s = rawName.replace(/(^|\s)\d+(\s|$)/g, function (m, pre, post) {
+    return pre + ' ' + post;
+  });
+  s = s.replace(/#/g, '').replace(/\s+/g, ' ').trim();
+  return s || rawName;
+}
+
+// Lazily-built single regex for EM_EXCLUSION_PATTERNS (avoid 57 regex tests per name;
+// built once on first auto-key call). Used only in the auto-key branch — not in Engine 2.
+var _emExclusionRegex = null;
+function _emIsExcluded(rawName) {
+  if (!_emExclusionRegex) {
+    // Join all EM_EXCLUSION_PATTERNS into one alternation for speed.
+    // Each sub-pattern is wrapped in (?:...) to prevent group-reference conflicts.
+    var parts = EM_EXCLUSION_PATTERNS.map(function (r) {
+      return '(?:' + r.source + ')';
+    });
+    _emExclusionRegex = new RegExp(parts.join('|'), 'i');
+  }
+  return _emExclusionRegex.test(rawName);
+}
+
 /* ── emGetNormalizedPoints ───────────────────────────────────────────────────
    Returns a flat { colKey: value } map for a row, derived at read time.
 
@@ -4662,7 +4734,11 @@ function emGetNormalizedPoints(row) {
         var rawVal = rawEntries[ri][1];
         if (rawVal == null || rawVal === '') continue;
         var rColKey = emMapPointToColumn(rawName);
-        if (!rColKey) continue;
+        // Phase D-1: if no ASHRAE col found, auto-key (unless excluded artifact)
+        if (!rColKey) {
+          if (!_emIsExcluded(rawName)) rColKey = emAutoColKey(rawName);
+          if (!rColKey) continue;
+        }
         var rIsVirtual = _isVirtual(rawName);
         if (result[rColKey] == null) {
           // Column is empty — fill it regardless of virtual/real.
@@ -4683,7 +4759,11 @@ function emGetNormalizedPoints(row) {
         var rawVal2 = rawEntries[rawName2];
         if (rawVal2 == null || rawVal2 === '') continue;
         var rColKey2 = emMapPointToColumn(rawName2);
-        if (!rColKey2) continue;
+        // Phase D-1: if no ASHRAE col found, auto-key (unless excluded artifact)
+        if (!rColKey2) {
+          if (!_emIsExcluded(rawName2)) rColKey2 = emAutoColKey(rawName2);
+          if (!rColKey2) continue;
+        }
         var rIsVirtual2 = _isVirtual(rawName2);
         if (result[rColKey2] == null) {
           result[rColKey2] = rawVal2;
@@ -4736,7 +4816,11 @@ function emGetNormalizedPoints(row) {
       var rawV = pts[rawKey];
       if (rawV == null) continue;
       var colKey = emMapPointToColumn(rawKey);
-      if (!colKey) continue;
+      // Phase D-1: if no ASHRAE col found, auto-key (unless excluded artifact)
+      if (!colKey) {
+        if (!_emIsExcluded(rawKey)) colKey = emAutoColKey(rawKey);
+        if (!colKey) continue;
+      }
       var isVirt = _isVirtual(rawKey);
       if (result[colKey] == null) {
         // Column is empty — fill it (real or virtual).
@@ -6491,14 +6575,39 @@ function emRenderAuditTable(data, filters) {
 
   var countEl = document.getElementById('em-row-count');
   if (countEl) {
-    var totalPts = 0,
-      filteredPts = 0;
-    for (var i = 0; i < rows.length; i++) totalPts += Object.keys(rows[i].points || {}).length;
-    for (var i = 0; i < filtered.length; i++) filteredPts += Object.keys(filtered[i].points || {}).length;
-    var ptsText =
-      filtered.length < rows.length
-        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' BAS Points'
-        : totalPts.toLocaleString() + ' Total BAS Points';
+    // Phase D-1: split counter into ASHRAE-mapped points + auto_ Other points
+    var totalAshrae = 0,
+      totalOther = 0,
+      filtAshrae = 0,
+      filtOther = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var _rk = Object.keys(rows[i].points || {});
+      for (var _ri = 0; _ri < _rk.length; _ri++) {
+        if (_rk[_ri].indexOf('auto_') === 0) totalOther++;
+        else totalAshrae++;
+      }
+    }
+    for (var i = 0; i < filtered.length; i++) {
+      var _fk = Object.keys(filtered[i].points || {});
+      for (var _fi = 0; _fi < _fk.length; _fi++) {
+        if (_fk[_fi].indexOf('auto_') === 0) filtOther++;
+        else filtAshrae++;
+      }
+    }
+    var ptsText;
+    if (filtered.length < rows.length) {
+      ptsText =
+        filtAshrae.toLocaleString() +
+        ' ASHRAE + ' +
+        filtOther.toLocaleString() +
+        ' Other  (of ' +
+        totalAshrae.toLocaleString() +
+        ' + ' +
+        totalOther.toLocaleString() +
+        ' total)';
+    } else {
+      ptsText = totalAshrae.toLocaleString() + ' ASHRAE Points  +  ' + totalOther.toLocaleString() + ' Other Points';
+    }
     countEl.textContent = ptsText;
   }
 
@@ -6758,10 +6867,42 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     );
   }
 
-  // ── Total BAS Points ──
+  // ── ASHRAE Points (mapped-only count, Phase D-1 split) ──
   if (def.isAuditBasPts) {
-    var ptCount = Object.keys(row.points || {}).length;
-    return '<td style="' + baseStyle + 'color:var(--text2)">' + (ptCount > 0 ? ptCount : '--') + '</td>';
+    // Count only keys that are real ASHRAE col keys (not auto_ keys from Phase D).
+    var allPtKeys = Object.keys(row.points || {});
+    var ashraeCount = 0;
+    for (var apk = 0; apk < allPtKeys.length; apk++) {
+      if (allPtKeys[apk].indexOf('auto_') !== 0) ashraeCount++;
+    }
+    return '<td style="' + baseStyle + 'color:var(--text2)">' + (ashraeCount > 0 ? ashraeCount : '--') + '</td>';
+  }
+
+  // ── Other BAS Points (auto_ count + drill-down, Phase D-2) ──
+  if (def.isAuditOther) {
+    var otherKeys = Object.keys(row.points || {}).filter(function (k) {
+      return k.indexOf('auto_') === 0;
+    });
+    var otherCount = otherKeys.length;
+    if (otherCount === 0) {
+      return '<td style="' + baseStyle + 'color:var(--text3)">--</td>';
+    }
+    var safeId = String(row.id).replace(/'/g, "\\'");
+    return (
+      '<td style="' +
+      baseStyle +
+      'cursor:pointer" ' +
+      'onclick="emShowAutoKeyDetail(\'' +
+      safeId +
+      '\')" ' +
+      'title="' +
+      otherCount +
+      ' BAS points not mapped to ASHRAE 36. Click to view list.">' +
+      '<span style="display:inline-block;background:var(--s2);color:var(--text2);border:1px solid var(--border);' +
+      'border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;cursor:pointer">' +
+      otherCount +
+      '</span></td>'
+    );
   }
 
   // ── Compliance category cell ──
@@ -7427,6 +7568,132 @@ function emShowComplianceDetail(rowId) {
 function emCloseComplianceDetail() {
   var panel = document.getElementById('em-compliance-detail-panel');
   if (panel) panel.parentNode.removeChild(panel);
+}
+
+/* ── emShowAutoKeyDetail (Phase D-2) ─────────────────────────────────────────
+   Opens a side panel listing all auto_col-keyed points for a single equipment
+   row. Reuses the same fixed-position slide-in panel pattern as
+   emShowComplianceDetail (same id, same z-index, same close button).
+
+   Called by clicking the "N" pill in the "Other BAS Points" audit column.   */
+function emShowAutoKeyDetail(rowId) {
+  var pid = window._emActivePid || '';
+  var data = emLoadMatrix(pid);
+  if (!data) return;
+  var row = null;
+  for (var i = 0; i < (data.rows || []).length; i++) {
+    if (data.rows[i].id === rowId) {
+      row = data.rows[i];
+      break;
+    }
+  }
+  if (!row) return;
+
+  var equipName = row.equipName || row.name || rowId;
+  var normPts = emGetNormalizedPoints(row);
+
+  // Collect auto_col keys sorted alphabetically by label
+  var autoEntries = [];
+  for (var k in normPts) {
+    if (!Object.prototype.hasOwnProperty.call(normPts, k)) continue;
+    if (k.indexOf('auto_') !== 0) continue;
+    // Find the original raw name by scanning row.points / row.pointsRaw for a name
+    // that would produce this auto_col key. If not found, fall back to emAutoColLabel(k).
+    // For display we use emAutoColLabel applied to the key itself (strip "auto_" prefix,
+    // restore word boundaries, which is approximate but readable).
+    var label = k.slice(5); // strip "auto_"
+    // Convert camelCase back to spaced words for display
+    label = label.replace(/([A-Z])/g, ' $1');
+    label = label.charAt(0).toUpperCase() + label.slice(1);
+    autoEntries.push({ key: k, label: label, value: normPts[k] });
+  }
+  autoEntries.sort(function (a, b) {
+    return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
+  });
+
+  var count = autoEntries.length;
+
+  // Build list HTML
+  var listHtml =
+    '<div style="margin-bottom:16px">' +
+    '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;' +
+    'letter-spacing:0.05em;margin-bottom:8px">Other BAS Points (' +
+    count +
+    ')</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">' +
+    'These ' +
+    count +
+    ' point' +
+    (count === 1 ? '' : 's') +
+    ' were found in the BAS export but have no ASHRAE 36 category mapping. ' +
+    'They are included in the total point count but do not affect coverage %.' +
+    '</div>';
+
+  if (autoEntries.length === 0) {
+    listHtml += '<div style="font-size:12px;color:var(--text3)">No unclassified points.</div>';
+  } else {
+    listHtml += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
+    listHtml +=
+      '<thead><tr>' +
+      '<th style="text-align:left;padding:4px 6px;background:var(--s1);border:1px solid var(--border);' +
+      'color:var(--text2);font-weight:600">Point Name</th>' +
+      '<th style="text-align:right;padding:4px 6px;background:var(--s1);border:1px solid var(--border);' +
+      'color:var(--text2);font-weight:600;width:80px">Value</th>' +
+      '</tr></thead><tbody>';
+    for (var ei = 0; ei < autoEntries.length; ei++) {
+      var e = autoEntries[ei];
+      var val = e.value != null ? String(e.value) : '';
+      var valDisp = val.length > 10 ? val.slice(0, 10) : val;
+      var rowBg = ei % 2 === 0 ? '' : 'background:var(--s2);';
+      listHtml +=
+        '<tr style="' +
+        rowBg +
+        '">' +
+        '<td style="padding:3px 6px;border:1px solid var(--border);color:var(--text)">' +
+        emHtmlEsc(e.label) +
+        '</td>' +
+        '<td style="padding:3px 6px;border:1px solid var(--border);color:var(--text2);' +
+        'text-align:right;font-family:monospace" title="' +
+        emHtmlEsc(val) +
+        '">' +
+        emHtmlEsc(valDisp) +
+        '</td>' +
+        '</tr>';
+    }
+    listHtml += '</tbody></table>';
+  }
+  listHtml += '</div>';
+
+  // Assemble panel — reuse same id as compliance detail so only one panel is open at a time
+  var panelId = 'em-compliance-detail-panel';
+  var existing = document.getElementById(panelId);
+  if (existing) existing.parentNode.removeChild(existing);
+
+  var panelHtml =
+    '<div id="' +
+    panelId +
+    '" style="position:fixed;top:0;right:0;width:380px;height:100vh;background:var(--bg);' +
+    'border-left:2px solid var(--border);box-shadow:-4px 0 16px rgba(0,0,0,0.18);z-index:9999;' +
+    'display:flex;flex-direction:column;overflow:hidden">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;' +
+    'border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
+    '<div>' +
+    '<div style="font-weight:700;font-size:13px;color:var(--text)">' +
+    emHtmlEsc(equipName) +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text3)">Other BAS Points &mdash; not ASHRAE 36 mapped</div>' +
+    '</div>' +
+    '<button onclick="emCloseComplianceDetail()" style="background:none;border:none;font-size:18px;' +
+    'cursor:pointer;color:var(--text2);padding:4px;line-height:1" title="Close">&times;</button>' +
+    '</div>' +
+    '<div style="flex:1;overflow-y:auto;padding:16px">' +
+    listHtml +
+    '</div>' +
+    '</div>';
+
+  var container = document.createElement('div');
+  container.innerHTML = panelHtml;
+  document.body.appendChild(container.firstChild);
 }
 
 /* ── emSaveEquipConfigFlagFromPanel ──────────────────────────────────────────
@@ -13407,6 +13674,22 @@ var _EM_CONTRADICTING_PAIRS = [
 ];
 
 function emNormalizePointInner(rawName, equipCategory) {
+  // ── Phase D compliance firewall ───────────────────────────────────────
+  // auto_-prefixed keys are generated by emAutoColKey for unmatched BAS points.
+  // They are NEVER real ASHRAE point names and must NEVER match any compliance
+  // category. Return null immediately — no tier matching, no exclusion check.
+  if (rawName && rawName.indexOf('auto_') === 0) {
+    return {
+      categoryKey: null,
+      categoryLabel: null,
+      matchTier: 0,
+      confidence: 'auto_blocked',
+      auditRelevant: false,
+      ashrae36PointName: null,
+      ashrae36Section: null,
+      rawName: rawName,
+    };
+  }
   // ── Exclusion check ──────────────────────────────────────────────────
   for (var ei = 0; ei < EM_EXCLUSION_PATTERNS.length; ei++) {
     if (EM_EXCLUSION_PATTERNS[ei].test(rawName)) {
@@ -13750,6 +14033,11 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
 
   for (var ri = 0; ri < rawNames.length; ri++) {
     var pName = rawNames[ri];
+    // Phase D compliance firewall (belt-and-suspenders guard): auto_-prefixed keys are
+    // generated by emAutoColKey for unmatched BAS points. emNormalizePointInner also
+    // blocks them, but skip here too so they never enter the coveredKeys map even if the
+    // normalization cache is bypassed or populated from an outside call.
+    if (pName.indexOf('auto_') === 0) continue;
     var match;
     // FIX A: if pName is a known EM_POINT_MAP col key, use the reverse map directly
     // to avoid running the human-name regex on an internal identifier like 'zoneCoolSetpoint'

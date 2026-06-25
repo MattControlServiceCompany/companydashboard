@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.24.587'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
+  var CH_VERSION = 'v2026.06.25.588'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
