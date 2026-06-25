@@ -10820,6 +10820,8 @@ var ASHRAE36_SECTIONS = {
     { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
     { key: 'recommendations', label: 'Recommendations', group: 'Report', defaultOn: true },
     { key: 'setpointReview', label: 'Setpoint Programming Review', group: 'Report', defaultOn: true },
+    // Phase D-3: Point inventory completeness — informational only, never affects Coverage %
+    { key: 'pointInventory', label: 'Point Inventory Completeness', group: 'Report', defaultOn: true },
   ],
   proposal: [
     { key: 'proposalCover', label: 'Cover Page', group: 'Proposal', defaultOn: true },
@@ -11389,6 +11391,38 @@ function collectASHRAE36Data(projId, reportDate) {
     '-' +
     String(dateObj.getDate()).padStart(2, '0');
 
+  // ── Phase D-3: Point inventory totals ──────────────────────────────────────
+  // Count ASHRAE-mapped and auto_ (other) BAS points across ALL rows — read-path
+  // recompute via emGetNormalizedPoints (WeakMap-cached; free on second call).
+  // These counts are INFORMATIONAL ONLY and do NOT affect compliance Coverage %.
+  // The auto_ keys are structurally firewalled from emComputeCompliance by Guard A/B
+  // (emNormalizePointInner early return + emComputeCompliance loop skip).
+  var _invTotalASHRAE = 0;
+  var _invTotalOther = 0;
+  var _invByBuilding = {}; // buildingName → { ashrae: N, other: N }
+  if (typeof emGetNormalizedPoints === 'function') {
+    matData.rows.forEach(function (row) {
+      var bName = row.building || 'Unknown Building';
+      if (!_invByBuilding[bName]) _invByBuilding[bName] = { ashrae: 0, other: 0 };
+      var normPts = emGetNormalizedPoints(row);
+      var normKeys = Object.keys(normPts);
+      for (var _ik = 0; _ik < normKeys.length; _ik++) {
+        if (normKeys[_ik].indexOf('auto_') === 0) {
+          _invTotalOther++;
+          _invByBuilding[bName].other++;
+        } else {
+          _invTotalASHRAE++;
+          _invByBuilding[bName].ashrae++;
+        }
+      }
+    });
+  }
+  var _invBuildingRows = Object.keys(_invByBuilding)
+    .sort()
+    .map(function (bName) {
+      return { name: bName, ashrae: _invByBuilding[bName].ashrae, other: _invByBuilding[bName].other };
+    });
+
   return {
     project: { name: projName, id: projId },
     date: dateStr,
@@ -11415,6 +11449,13 @@ function collectASHRAE36Data(projId, reportDate) {
         totalZones: dcvTotalZones,
         zonesMissingCO2: dcvTotalZones - dcvZonesWithCO2,
       },
+    },
+    // Phase D-3: point inventory (informational; never affects compliance scoring)
+    pointInventory: {
+      totalASHRAE: _invTotalASHRAE,
+      totalOther: _invTotalOther,
+      totalAll: _invTotalASHRAE + _invTotalOther,
+      byBuilding: _invBuildingRows,
     },
   };
 }
@@ -13486,6 +13527,165 @@ function _timelineStep(period, title, desc) {
   );
 }
 
+// ─── rptPageASHRAE36PointInventory ───────────────────────────────────────────
+/**
+ * Point Inventory Completeness page.
+ * Shows total ASHRAE-mapped points + other BAS points per building.
+ * Informational — never affects Coverage % or compliance scoring.
+ * @param {number} n - Page number
+ * @param {object} d - Data from collectASHRAE36Data()
+ * @returns {string}
+ */
+function rptPageASHRAE36PointInventory(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  var inv = d.pointInventory || { totalASHRAE: 0, totalOther: 0, totalAll: 0, byBuilding: [] };
+
+  // ── Summary header block ──────────────────────────────────────────────────
+  var totalPct = inv.totalAll > 0 ? Math.round((inv.totalASHRAE / inv.totalAll) * 100) : 0;
+
+  var summaryBlock =
+    '<div style="display:flex;gap:24px;margin-bottom:20px;flex-wrap:wrap">' +
+    // Card 1: Total points inventoried
+    '<div style="flex:1;min-width:120px;background:var(--rpt-rule);border-radius:6px;padding:14px 16px;text-align:center">' +
+    '<div style="font-size:22px;font-weight:700;color:var(--rpt-page-text)">' +
+    inv.totalAll.toLocaleString() +
+    '</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:4px">Total BAS Points Inventoried</div>' +
+    '</div>' +
+    // Card 2: ASHRAE-mapped points
+    '<div style="flex:1;min-width:120px;background:var(--rpt-rule);border-radius:6px;padding:14px 16px;text-align:center">' +
+    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue)">' +
+    inv.totalASHRAE.toLocaleString() +
+    '</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:4px">ASHRAE 36 Mapped Points</div>' +
+    '</div>' +
+    // Card 3: Other BAS points
+    '<div style="flex:1;min-width:120px;background:var(--rpt-rule);border-radius:6px;padding:14px 16px;text-align:center">' +
+    '<div style="font-size:22px;font-weight:700;color:var(--rpt-page-text)">' +
+    inv.totalOther.toLocaleString() +
+    '</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:4px">Other BAS Points Inventoried</div>' +
+    '</div>' +
+    // Card 4: ASHRAE coverage of total inventory
+    '<div style="flex:1;min-width:120px;background:var(--rpt-rule);border-radius:6px;padding:14px 16px;text-align:center">' +
+    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue)">' +
+    totalPct +
+    '%' +
+    '</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:4px">Points Mapped to ASHRAE 36</div>' +
+    '</div>' +
+    '</div>';
+
+  // ── Narrative ─────────────────────────────────────────────────────────────
+  var narrative =
+    '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:16px">' +
+    'This inventory covers every BAS data object exported from the building automation system for this project. ' +
+    'Of the ' +
+    inv.totalAll.toLocaleString() +
+    ' total points captured, ' +
+    inv.totalASHRAE.toLocaleString() +
+    ' map directly to ASHRAE Guideline 36 sensor and actuator categories and are evaluated in the compliance scoring above. ' +
+    'The remaining ' +
+    inv.totalOther.toLocaleString() +
+    ' points are present in the BAS export but do not correspond to a defined ASHRAE 36 category — these may include vendor-specific status objects, ' +
+    'integration relay programs, setpoint offsets, or equipment not addressed by ASHRAE 36. ' +
+    'All points are accounted for; none are discarded.' +
+    '</div>';
+
+  // ── Per-building table ────────────────────────────────────────────────────
+  var thBase =
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+  var thRight = thBase + ';text-align:right';
+
+  var tableRows = inv.byBuilding
+    .map(function (b) {
+      var bTotal = b.ashrae + b.other;
+      var bPct = bTotal > 0 ? Math.round((b.ashrae / bTotal) * 100) : 0;
+      return (
+        '<tr>' +
+        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+        b.name +
+        '</td>' +
+        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+        bTotal.toLocaleString() +
+        '</td>' +
+        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+        b.ashrae.toLocaleString() +
+        '</td>' +
+        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+        b.other.toLocaleString() +
+        '</td>' +
+        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+        bPct +
+        '%' +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  // Totals row
+  var totalsRow =
+    '<tr style="background:var(--rpt-rule)">' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text)">Total</td>' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:right">' +
+    inv.totalAll.toLocaleString() +
+    '</td>' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-blue);text-align:right">' +
+    inv.totalASHRAE.toLocaleString() +
+    '</td>' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:right">' +
+    inv.totalOther.toLocaleString() +
+    '</td>' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-blue);text-align:right">' +
+    totalPct +
+    '%' +
+    '</td>' +
+    '</tr>';
+
+  var table =
+    '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:16px">' +
+    '<thead><tr>' +
+    '<th style="' +
+    thBase +
+    '">Building</th>' +
+    '<th style="' +
+    thRight +
+    '">Total Points</th>' +
+    '<th style="' +
+    thRight +
+    '">ASHRAE 36 Points</th>' +
+    '<th style="' +
+    thRight +
+    '">Other BAS Points</th>' +
+    '<th style="' +
+    thRight +
+    '">ASHRAE Coverage</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    tableRows +
+    '</tbody>' +
+    '<tfoot>' +
+    totalsRow +
+    '</tfoot>' +
+    '</table>';
+
+  // ── Footnote ──────────────────────────────────────────────────────────────
+  var footnote =
+    '<div style="font-size:9px;color:var(--rpt-page-text);opacity:0.7;line-height:1.5;border-top:1px solid var(--rpt-rule);padding-top:8px">' +
+    'Note: "Other BAS Points" counts are informational. They represent BAS objects that have been captured and logged but ' +
+    'do not correspond to any ASHRAE Guideline 36 sensor or actuator category. ' +
+    'These points do not contribute to and do not reduce the ASHRAE 36 Coverage percentages shown in this report.' +
+    '</div>';
+
+  var bodyHTML = summaryBlock + narrative + table + footnote;
+  return rptPage(n, 'ASHRAE 36 Audit — Point Inventory', bodyHTML, {
+    data: fakeData,
+    label: 'Page ' + n + ' — Point Inventory',
+  });
+}
+
 // ─── generateASHRAE36AuditHTML ────────────────────────────────────────────
 /**
  * Assembles all selected audit report pages into an HTML string.
@@ -13546,6 +13746,10 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
       pageNum++;
     });
   }
+
+  // Phase D-3 — Point Inventory Completeness page (after setpoint review)
+  if (s.pointInventory !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36PointInventory(pageNum++, data), 'pointInventory'));
 
   // Rule 2.4 (Plan B): bake page numbers at generation time.
   return _injectPageNumbers(pages.join('\n'));

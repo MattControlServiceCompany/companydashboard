@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.25.589',
+    date: '2026-06-25',
+    title: 'Equipment Matrix Summary and ASHRAE-36 Report: Other Points now visible everywhere',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Summary view now has an "Other Points" column showing the count of BAS points that fall outside ASHRAE-36 categories for each building, with a footer total — so you can see at a glance how many unclassified points exist across your portfolio.',
+      },
+      {
+        type: 'feature',
+        text: 'ASHRAE-36 audit reports now include a "Point Inventory" page with 4 summary cards (total ASHRAE points, total other points, buildings, and coverage), a per-building breakdown table, and a footnote clarifying that Other Points are informational only and do not affect your Coverage %.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.25.588',
     date: '2026-06-25',
     title: 'Equipment Matrix: every BAS point is now accounted for in Audit view',

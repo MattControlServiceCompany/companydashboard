@@ -5970,6 +5970,47 @@ function emRenderSummaryView(data, filters) {
   // Also compute total-average stats from ALL rows (unfiltered) -- unchanged
   var totalZoneStats = emComputeBuildingZoneStats(rows);
 
+  // ── Phase D-3: Build per-building auto_ (other BAS points) counts ──
+  // Count auto_ keys from emGetNormalizedPoints (read-path recompute, uses WeakMap cache).
+  // These counts are informational inventory — they do NOT affect compliance Coverage %.
+  // We iterate ALL non-phantom filtered rows (not just zone equipment) to get a
+  // building-wide "other points" tally that mirrors what the Audit view's per-row count shows.
+  var _autoCountByBldg = {}; // building name → total auto_ key count (filtered rows)
+  var _autoCountByBldgAll = {}; // building name → total auto_ key count (all unfiltered rows)
+  (function () {
+    for (var _ai = 0; _ai < filtered.length; _ai++) {
+      var _ar = filtered[_ai];
+      var _bk = _ar.building || '';
+      if (!_autoCountByBldg[_bk]) _autoCountByBldg[_bk] = 0;
+      var _normAr = emGetNormalizedPoints(_ar);
+      var _normArKeys = Object.keys(_normAr);
+      for (var _nki = 0; _nki < _normArKeys.length; _nki++) {
+        if (_normArKeys[_nki].indexOf('auto_') === 0) _autoCountByBldg[_bk]++;
+      }
+    }
+    for (var _aii = 0; _aii < rows.length; _aii++) {
+      var _arr = rows[_aii];
+      if (emIsPhantomRow(_arr)) continue;
+      var _bkk = _arr.building || '';
+      if (!_autoCountByBldgAll[_bkk]) _autoCountByBldgAll[_bkk] = 0;
+      var _normArr = emGetNormalizedPoints(_arr);
+      var _normArrKeys = Object.keys(_normArr);
+      for (var _nkii = 0; _nkii < _normArrKeys.length; _nkii++) {
+        if (_normArrKeys[_nkii].indexOf('auto_') === 0) _autoCountByBldgAll[_bkk]++;
+      }
+    }
+  })();
+  var _autoPageTotal = 0;
+  var _bldgNamesFiltered = Object.keys(_autoCountByBldg);
+  for (var _bfj = 0; _bfj < _bldgNamesFiltered.length; _bfj++) {
+    _autoPageTotal += _autoCountByBldg[_bldgNamesFiltered[_bfj]];
+  }
+  var _autoGrandTotal = 0;
+  var _bldgNamesAll2 = Object.keys(_autoCountByBldgAll);
+  for (var _bgj = 0; _bgj < _bldgNamesAll2.length; _bgj++) {
+    _autoGrandTotal += _autoCountByBldgAll[_bldgNamesAll2[_bgj]];
+  }
+
   // Helper: format a numeric avg to 1 decimal + unit.
   // Fix 8c7dcc71 (C): 3-way distinction:
   //   totalZones === 0  -> "N/A" (gray italic) -- building has no zone equipment at all
@@ -6082,12 +6123,16 @@ function emRenderSummaryView(data, filters) {
   html += '<th style="' + thStyleCenter + '">Zones vs Setpoints</th>';
   html += '<th style="' + thStyleCenter + '">CO2 (ppm)</th>';
   html += '<th style="' + thStyleCenter + '">Humidity (%)</th>';
+  html +=
+    '<th style="' +
+    thStyleCenter +
+    '" title="BAS points present in this building that are not mapped to ASHRAE 36 categories. Counted from all equipment rows, all types.">Other Points</th>';
   html += '</tr></thead>';
   html += '<tbody>';
 
   if (bldgNames.length === 0) {
     html +=
-      '<tr><td colspan="7" style="padding:48px;text-align:center;font-size:14px;color:var(--text2)">' +
+      '<tr><td colspan="8" style="padding:48px;text-align:center;font-size:14px;color:var(--text2)">' +
       'No zone equipment (VAV/FPB/DD-VAV) found for the current filter selection.</td></tr>';
   } else {
     var tdStyle = 'padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle;';
@@ -6131,6 +6176,14 @@ function emRenderSummaryView(data, filters) {
       html += '<td style="' + tdCenter + '">' + vsCell + '</td>';
       html += '<td style="' + tdCenter + '">' + fmtAvg(bs.zoneCO2, ' ppm', bs.totalZones) + '</td>';
       html += '<td style="' + tdCenter + '">' + fmtAvg(bs.zoneRelativeHumidity, '%', bs.totalZones) + '</td>';
+      // Phase D-3: Other Points column — count of auto_ keys for this building (informational, not compliance)
+      var _bAutoCnt = _autoCountByBldg[bldg] || 0;
+      html +=
+        '<td style="' +
+        tdCenter +
+        'color:var(--text2)">' +
+        (_bAutoCnt > 0 ? _bAutoCnt.toLocaleString() : '<span style="color:var(--text3)">&#8212;</span>') +
+        '</td>';
       html += '</tr>';
     }
   }
@@ -6169,6 +6222,13 @@ function emRenderSummaryView(data, filters) {
   html += '<td style="' + tfootTdCenter + '">' + pageVsCell + '</td>';
   html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.zoneCO2, ' ppm') + '</td>';
   html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.zoneRelativeHumidity, '%') + '</td>';
+  // Phase D-3: Other Points total for filtered buildings
+  html +=
+    '<td style="' +
+    tfootTdCenter +
+    'color:var(--text2)">' +
+    (_autoPageTotal > 0 ? _autoPageTotal.toLocaleString() : '<span style="color:var(--text3)">&#8212;</span>') +
+    '</td>';
   html += '</tr>';
 
   // Total Average row (all rows in project)
@@ -6196,6 +6256,13 @@ function emRenderSummaryView(data, filters) {
   html += '<td style="' + tfootTdCenter + '">' + totalVsCell + '</td>';
   html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.zoneCO2, ' ppm') + '</td>';
   html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.zoneRelativeHumidity, '%') + '</td>';
+  // Phase D-3: Other Points grand total (all buildings, all rows)
+  html +=
+    '<td style="' +
+    tfootTdCenter +
+    'font-weight:600;color:var(--text2)">' +
+    (_autoGrandTotal > 0 ? _autoGrandTotal.toLocaleString() : '<span style="color:var(--text3)">&#8212;</span>') +
+    '</td>';
   html += '</tr>';
   html += '</tfoot>';
 
