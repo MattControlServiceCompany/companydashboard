@@ -477,7 +477,17 @@ var EM_POINT_MAP = [
     col: 'supplyFanSpeed',
     label: 'Supply Fan Speed',
     // FIX 4b: Added /supply fan.*speed/i and /fan.*vfd.*speed/i to match 'Supply Fan VFD Speed'
-    patterns: [/supply fan.*speed/i, /fan.*vfd.*speed/i, /supply fan speed/i, /fan speed/i, /sf speed/i],
+    // Phase 4 companion: numbered VFD speed pattern for "Supply Fan 1 VFD Speed",
+    // "Supply Fan 1 & 2 VFD Speed", etc. [\d\s&]* matches compound fan numbering.
+    patterns: [
+      /supply fan.*speed/i,
+      /fan.*vfd.*speed/i,
+      /supply fan speed/i,
+      /fan speed/i,
+      /sf speed/i,
+      // Phase 4 companion: numbered fan VFD speed
+      /supply\s+fan\s+\d[\d\s&]*\s+vfd\s+speed\b/i,
+    ],
     // Phase 2A: guard against "Return Fan VFD Speed" (needs rfSpeedLive, Phase 3), "Low Fan Speed
     // Alarm", "Max Fan Speed" / "Maximum Fan Speed" (config limit), "Return Fan Drive Output Speed".
     // M3: added boiler (combustion fan), ct-N (cooling tower fan — routes to ctFanSpeedLive),
@@ -1247,6 +1257,23 @@ var EM_POINT_MAP = [
     global: true,
   },
 
+  // Phase 4: Return Air Enthalpy
+  // ASHRAE 36 §5.3.3 — differential enthalpy economizer control.
+  // Required ONLY when differential enthalpy economizer control is used.
+  // Engine 2: gated by new configFlag hasDiffEnthalpyEcon (default:false).
+  // PLACEMENT: near oaEnthalpy entry (C3 group — economizer sensors).
+  // oaEnthalpy negativePattern already blocks "return" — this col captures exactly what oaEnthalpy rejects.
+  // control\s*selection negativePattern blocks "Air Source Return Air Enthalpy Control Selection - Economizer"
+  // which is a BV mode-select object, not the enthalpy sensor value.
+  {
+    col: 'returnAirEnthalpy',
+    label: 'Return Air Enthalpy',
+    patterns: [/return\s+air\s+enthalpy\b/i, /\bra\s+enthalpy\b/i, /\brat\s+enthalpy\b/i],
+    negativePatterns: [/\b(alarm|fault|diagnostic|setpoint|outside|outdoor)\b/i, /control\s*selection/i],
+    types: ['AI'],
+    cats: ['ahu', 'doas', 'erv'],
+  },
+
   // GROUP 10 — Demand/Mode/Occupancy (user-reported missing; was blocked by EM_EXCLUSION_PATTERNS
   // broad /\bdemand\b/i — now narrowed in Phase 1C to billing demand only)
 
@@ -1295,6 +1322,22 @@ var EM_POINT_MAP = [
     types: ['AV', 'BAV', 'BI'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'heater', 'ef', 'zone', 'furnace'],
     global: true,
+  },
+
+  // Phase 4: Occupancy Sensor
+  // ASHRAE 36 §3.1.5 — optional/conditional ("where a zone has an occupancy sensor").
+  // hasOccSensor configFlag in EM_EQUIP_CONFIG_FLAGS.vav/ddvav (default:false) guards coverage.
+  // Engine 2 adds this to vav/ddvav EM_POINT_CATEGORIES with required:true + configFlag.
+  // \bmode\b in negativePatterns prevents future collision with scheduledOccupied's
+  // /\boccupancy\s+mode\b/i pattern ("Occupancy Mode" stays in scheduledOccupied).
+  // PLACEMENT: after scheduledOccupied entry.
+  {
+    col: 'occupancySensor',
+    label: 'Occupancy Sensor',
+    patterns: [/\boccupancy\s+sensor\b/i, /\bmotion\s+sensor\b/i, /\bpir\s+sensor\b/i],
+    negativePatterns: [/\b(alarm|fault|diagnostic|range|sensitivity|technology|mode)\b/i],
+    types: ['BI', 'BV', 'BAI'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'zone', 'ahu'],
   },
 
   // GROUP 1 — Missing Air Temperature columns (A7/A8/A9)
@@ -1495,6 +1538,8 @@ var EM_POINT_MAP = [
 
   // G2: Duct Static Pressure Setpoint
   // Taxonomy: "Supply Duct Static Set Point", "Supply Fan Duct Static Pressure Setpoint ANO".
+  // Phase 4 companion patterns: fan static set point (e.g. "Supply Fan Static Set Point" after
+  // Phase 3 prefix-strip of "AHU Manager - "), exhaust duct static setpoint for future sites.
   {
     col: 'ductStaticSetpoint',
     label: 'Duct Static Setpoint',
@@ -1503,6 +1548,10 @@ var EM_POINT_MAP = [
       /duct\s+static\s+set/i,
       /supply\s+fan\s+duct\s+static\s+pressure\s+setpoint/i,
       /air\s+source\s+static\s+set\s?point/i,
+      // Phase 4 companion: "Supply Fan Static Set Point" / "Exhaust Fan Static Set Point"
+      // (unlocked via Phase 3 prefix-strip for "AHU/ERU Manager - " prefixed variants)
+      /fan\s+static\s+set\s*point\b/i,
+      /exhaust\s+(duct\s+)?static\s+set\s*point\b/i,
     ],
     types: ['SP', 'AV'],
     cats: ['ahu', 'rtu'],
@@ -1524,6 +1573,10 @@ var EM_POINT_MAP = [
   // H7: SAT Cooling Reset Setpoint
   // Taxonomy: "Cooling Supply Air Set Point", "Active Supply Air Setpoint",
   // "Active Discharge Temp Setpoint" (from locked AMBIG-2 decision: Group 7.1).
+  // Phase 4 companion: /supply\s+air\s+set\s*point\b/i for "Supply Air Set Point"
+  // (unlocked via Phase 3 prefix-strip of "AHU Manager - Supply Air Set Point").
+  // Safety: "Active Supply Air Setpoint" and "Cooling Supply Air Setpoint ANO" already
+  // in bucket-A via existing patterns — the new pattern is additive, no regression.
   {
     col: 'satCoolSetpoint',
     label: 'SAT Cooling Setpoint',
@@ -1535,6 +1588,7 @@ var EM_POINT_MAP = [
       /active\s+discharge\s+temp\s+set/i,
       /active\s+supply\s+air\s+set/i,
       /active\s+supply\s+temp.*set/i,
+      /supply\s+air\s+set\s*point\b/i,
     ],
     negativePatterns: [/heating/i],
     types: ['SP', 'AV'],
@@ -1628,6 +1682,30 @@ var EM_POINT_MAP = [
     cats: ['ahu', 'ef', 'erv'],
   },
 
+  // Phase 4: Exhaust Fan Status / Enable
+  // ASHRAE 36 §5.16.1 / §4.2.9 — exhaust fan run monitoring.
+  // ef.fanStatus in Engine 2 already requires this for ef-category rows.
+  // Engine 1 col adds Raw View visibility for ef-type programs and AHU programs
+  // that directly control their own exhaust fan (18 of 329 JOCO AHU rows have this).
+  // PLACEMENT: after exhaustFanSpeed entry.
+  // \bon\b word boundary on the "on" alternative is MANDATORY — prevents false-positive
+  // on "Exhaust Fan Only Command". command/latched/failure in negativePatterns prevents
+  // DO command outputs and fault mirrors from mapping here.
+  {
+    col: 'exhaustFanStatus',
+    label: 'Exhaust Fan Status',
+    patterns: [
+      /exhaust\s+fan\s+(run\s+)?(status|running|\bon\b|proof)/i,
+      /\bef[-\s]?\d+\s+(run\s+)?status\b/i,
+      /\bef\s+(run\s+)?status\b/i,
+      /exhaust\s+fan\s+\d+\s+(enable|status|run\s+status)\b/i,
+      /exhaust\s+fan\s+(enable|run)\b/i,
+    ],
+    negativePatterns: [/\b(alarm|fault|diagnostic|disabled|enabled|vfd\s+status|speed|command|latched|failure)\b/i],
+    types: ['BI', 'BO', 'BV', 'BAI', 'BAO', 'BAV'],
+    cats: ['ef', 'ahu', 'erv', 'doas'],
+  },
+
   // J4: Supply Fan Status / Enable / Command
   // Taxonomy: "Supply Fan Status", "Supply Fan Enable", "Supply Fan Command",
   // "Fan Status" (short form on RTU/furnace). negativePatterns: speed and VFD signal excluded
@@ -1635,13 +1713,29 @@ var EM_POINT_MAP = [
   {
     col: 'supplyFanStatus',
     label: 'Supply Fan Status',
-    patterns: [/supply\s+fan\s+status/i, /supply\s+fan\s+command/i, /supply\s+fan\s+enable/i, /\bfan\s+status\b/i],
+    patterns: [
+      /supply\s+fan\s+status/i,
+      /supply\s+fan\s+command/i,
+      /supply\s+fan\s+enable/i,
+      /\bfan\s+status\b/i,
+      // Phase 4 companion patterns:
+      // Numbered fan status: "Supply Fan 1 Status", "Supply Fan 2 Status",
+      // "Supply Fan 1 VFD Status", "Supply Fan 2 VFD Status"
+      /supply\s+fan\s+\d+\s+(vfd\s+)?status\b/i,
+      // Proving status: "Supply Fan Proving Status ANI"
+      /supply\s+fan\s+proving\s+status\b/i,
+    ],
     // M3: expanded negativePatterns. Exhaust/EF-N fans are not supply fans. Relief/return fans are
     // not supply fans. Smoke evac and destratification fans are life-safety/specialty. Latched failure
     // sentences (CT fault records) contain "Fan Status" parenthetically. RTU/Unit Disabled/Enabled
     // alarm sentences are diagnostic conditions, not live status readings.
+    // Phase 4 VFD guard narrowing: bare /vfd/i was narrowed to /\bvfd\s+speed\b|\bvfd\s+fault\b/i
+    // so "Supply Fan 1 VFD Status" is no longer blocked. Verified: all 7 bucket-A VFD names
+    // route elsewhere (supplyFanSpeed, supplyFanAmps, exhaustFanSpeed, returnFanSpeed) before
+    // reaching supplyFanStatus — no regression from narrowing.
     negativePatterns: [
-      /alarm|fault|speed|vfd/i,
+      /alarm|fault|speed/i,
+      /\bvfd\s+speed\b|\bvfd\s+fault\b/i,
       /\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|latched|failure|disabled|enabled)\b/i,
       /RTU\s+(Disabled|Enabled)|Unit\s+(Disabled|Enabled)/i,
     ],
@@ -4170,6 +4264,7 @@ function emGetAuditColDefs(filteredRows) {
     co2: 2,
     rhReturn: 2,
     co2Return: 2,
+    occSensor: 2, // Phase 4: occupancy sensor (§3.1.5, configFlag-gated)
     // Group 3 — Air Temperatures
     sat: 3,
     rat: 3,
@@ -4191,6 +4286,7 @@ function emGetAuditColDefs(filteredRows) {
     oaRh: 5,
     oaDewpoint: 5,
     oaEnthalpy: 5,
+    raEnthalpy: 5, // Phase 4: return air enthalpy (§5.3, configFlag-gated)
     oaWetBulb: 5,
     // Group 6 — Non-Zone Setpoints
     dspSp: 6,
@@ -9041,6 +9137,9 @@ var EM_EQUIP_CONFIG_FLAGS = {
     // M4 Part C: default true so missing CO2 lowers audit coverage for AHU/VAV
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOAFlow', label: 'Has OA Flow Meter', default: false },
+    // Phase 4: differential enthalpy economizer requires return air enthalpy sensor (§5.3.3).
+    // default:false — not universal; only set true when this specific economizer type is used.
+    { key: 'hasDiffEnthalpyEcon', label: 'Has Differential Enthalpy Economizer', default: false },
   ],
   // RTU uses the same compliance profile as AHU (ASHRAE 36 §5.16)
   rtu: [
@@ -9765,6 +9864,25 @@ var EM_POINT_CATEGORIES = {
       configFlag: 'hasEconomizer',
       patterns: [/oa.?enthalpy/i, /outdoor.?enthalpy/i, /outside air enthalpy/i, /enthalpy sensor/i],
       aliases: ['oa enthalpy', 'outdoor enthalpy', 'outside air enthalpy', 'oa-h', 'outdoor air h', 'enthalpy sensor'],
+    },
+    // Phase 4: Return Air Enthalpy (ASHRAE 36 §5.3.3 — differential enthalpy economizer only)
+    // Required only when hasDiffEnthalpyEcon=true. Default false → all AHU rows N/A by default.
+    // negativeGuards block OA enthalpy variants and mode-select BV objects.
+    {
+      key: 'raEnthalpy',
+      label: 'Return Air Enthalpy',
+      required: true,
+      configFlag: 'hasDiffEnthalpyEcon', // NEW flag, default:false → all N/A by default
+      ashrae36Name: 'Return Air Enthalpy',
+      ashrae36Section: '5.3',
+      patterns: [/return\s+air\s+enthalpy\b/i, /\bra\s+enthalpy\b/i, /\brat\s+enthalpy\b/i],
+      aliases: [
+        'return air enthalpy',
+        'ra enthalpy',
+        'rat enthalpy',
+        'returnAirEnthalpy', // Phase 4: Engine 1 col key alias for enriched-CSV import path
+      ],
+      negativeGuards: [/\b(outside|outdoor|oa)\b/i, /control\s*selection/i],
     },
     // ── Phase 3a additions to AHU block ────────────────────────────────
     // C1: OA Relative Humidity — moved from ct-only to ahu (and added to ct separately)
@@ -10509,6 +10627,24 @@ var EM_POINT_CATEGORIES = {
       patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
       aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
     },
+    // Phase 4: Occupancy Sensor (ASHRAE 36 §3.1.5 — conditional: "where a zone has an occupancy sensor")
+    // hasOccSensor configFlag in EM_EQUIP_CONFIG_FLAGS.vav (default:false) keeps Coverage % unchanged
+    // until the user explicitly marks a unit. required:true + configFlag means N/A when flag=false.
+    {
+      key: 'occSensor',
+      label: 'Occupancy Sensor',
+      required: true,
+      configFlag: 'hasOccSensor', // existing in EM_EQUIP_CONFIG_FLAGS.vav, default:false
+      ashrae36Name: 'Occupancy Sensor',
+      ashrae36Section: '3.1.5',
+      patterns: [/\boccupancy\s+sensor\b/i, /\bmotion\s+sensor\b/i, /\bpir\s+sensor\b/i],
+      aliases: [
+        'occupancy sensor',
+        'motion sensor',
+        'pir sensor',
+        'occupancySensor', // Phase 4: Engine 1 col key alias for enriched-CSV import path
+      ],
+    },
     // M7: broadcast categories — present on all equipment types
     {
       key: 'demandLevel',
@@ -11021,9 +11157,26 @@ var EM_POINT_CATEGORIES = {
       patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
       aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
     },
+    // Phase 4: Occupancy Sensor (ASHRAE 36 §3.1.5 — conditional: "where a zone has an occupancy sensor")
+    // hasOccSensor configFlag in EM_EQUIP_CONFIG_FLAGS.ddvav (default:false) keeps Coverage % unchanged.
+    {
+      key: 'occSensor',
+      label: 'Occupancy Sensor',
+      required: true,
+      configFlag: 'hasOccSensor', // existing in EM_EQUIP_CONFIG_FLAGS.ddvav, default:false
+      ashrae36Name: 'Occupancy Sensor',
+      ashrae36Section: '3.1.5',
+      patterns: [/\boccupancy\s+sensor\b/i, /\bmotion\s+sensor\b/i, /\bpir\s+sensor\b/i],
+      aliases: [
+        'occupancy sensor',
+        'motion sensor',
+        'pir sensor',
+        'occupancySensor', // Phase 4: Engine 1 col key alias for enriched-CSV import path
+      ],
+    },
   ],
 
-  /* ── HWP (Hot Water Plant, ASHRAE 36 §5.19) ────────────────────────── */
+  /* ── HWP (Hot Water Plant, ASHRAE 36 §5.21) ────────────────────────── */
   hwp: [
     {
       key: 'hwst',
@@ -12825,7 +12978,15 @@ var EM_POINT_CATEGORIES = {
         /fan.?enable/i,
         /fan.?status/i,
       ],
-      aliases: ['exhaust fan enable', 'exhaust fan status', 'ef enable', 'ef status', 'fan enable', 'fan status'],
+      aliases: [
+        'exhaust fan enable',
+        'exhaust fan status',
+        'ef enable',
+        'ef status',
+        'fan enable',
+        'fan status',
+        'exhaustFanStatus', // Phase 4: Engine 1 col key alias for enriched-CSV import path
+      ],
     },
     {
       key: 'fanSpeed',
@@ -14970,7 +15131,7 @@ var EM_SEQUENCE_DEFS = [
   {
     key: 'hwp_supply_reset',
     label: 'Supply Temperature Reset',
-    ashrae36: '§5.19.1',
+    ashrae36: '§5.21.1',
     equipTypes: ['hwp'],
     requiredCats: ['hwst', 'oat', 'hwSetpoint'],
     keyCats: ['hwst', 'hwSetpoint'],
@@ -14978,7 +15139,7 @@ var EM_SEQUENCE_DEFS = [
   {
     key: 'hwp_pump_dp_reset',
     label: 'Pump Differential Pressure Reset',
-    ashrae36: '§5.19.2',
+    ashrae36: '§5.21.2',
     equipTypes: ['hwp'],
     requiredCats: ['hwdp', 'hwPumpSpeed'],
     keyCats: ['hwdp', 'hwPumpSpeed'],
@@ -14986,7 +15147,7 @@ var EM_SEQUENCE_DEFS = [
   {
     key: 'hwp_staging',
     label: 'Staging',
-    ashrae36: '§5.19.3',
+    ashrae36: '§5.21.3',
     equipTypes: ['hwp'],
     requiredCats: ['boilerStatus', 'boilerEnable', 'hwPumpStatus'],
     keyCats: ['boilerEnable'],

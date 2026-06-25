@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.25.591',
+    date: '2026-06-25',
+    title: 'Equipment Matrix: more BAS points recognized, new Occupancy Sensor and Return Air Enthalpy audit columns',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now recognizes more BAS points (exhaust fan status, occupancy sensors, return air enthalpy) and adds Occupancy Sensor + Return Air Enthalpy audit columns (these only count toward Coverage % for units you mark as having them).',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.25.590',
     date: '2026-06-25',
     title: 'Equipment Matrix: ASHRAE Points and Other BAS Points counts fixed for WebCTRL-imported equipment',
