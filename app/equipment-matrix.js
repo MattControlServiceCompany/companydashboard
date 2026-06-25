@@ -6936,18 +6936,26 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
 
   // ── ASHRAE Points (mapped-only count, Phase D-1 split) ──
   if (def.isAuditBasPts) {
-    // Count only keys that are real ASHRAE col keys (not auto_ keys from Phase D).
-    var allPtKeys = Object.keys(row.points || {});
+    // Use emGetNormalizedPoints (WeakMap-cached) as source of truth so WebCTRL-imported rows
+    // (which have pointsRaw but sparse row.points) show correct counts instead of "--".
+    // For enriched-CSV/JOCO rows, emGetNormalizedPoints returns the same col-key set as
+    // row.points — counts are identical, so no regression there.
+    var _normPtsBas = emGetNormalizedPoints(row);
+    var allPtKeysBas = Object.keys(_normPtsBas);
     var ashraeCount = 0;
-    for (var apk = 0; apk < allPtKeys.length; apk++) {
-      if (allPtKeys[apk].indexOf('auto_') !== 0) ashraeCount++;
+    for (var apk = 0; apk < allPtKeysBas.length; apk++) {
+      if (allPtKeysBas[apk].indexOf('auto_') !== 0) ashraeCount++;
     }
     return '<td style="' + baseStyle + 'color:var(--text2)">' + (ashraeCount > 0 ? ashraeCount : '--') + '</td>';
   }
 
   // ── Other BAS Points (auto_ count + drill-down, Phase D-2) ──
   if (def.isAuditOther) {
-    var otherKeys = Object.keys(row.points || {}).filter(function (k) {
+    // Use emGetNormalizedPoints (WeakMap-cached) as source of truth so WebCTRL-imported rows
+    // show their auto_-keyed unmatched points here. Enriched-CSV rows have no auto_ keys in
+    // emGetNormalizedPoints either, so their "--" display is unchanged.
+    var _normPtsOther = emGetNormalizedPoints(row);
+    var otherKeys = Object.keys(_normPtsOther).filter(function (k) {
       return k.indexOf('auto_') === 0;
     });
     var otherCount = otherKeys.length;
@@ -7273,7 +7281,24 @@ function emAuditGetSortVal(row, def) {
     var c = emComputeCompliance(row, {}, _sortMaps);
     return c.coveragePct;
   }
-  if (def.isAuditBasPts) return Object.keys(row.points || {}).length;
+  if (def.isAuditBasPts) {
+    var _bpNorm = emGetNormalizedPoints(row);
+    var _bpKeys = Object.keys(_bpNorm);
+    var _bpCount = 0;
+    for (var _bpi = 0; _bpi < _bpKeys.length; _bpi++) {
+      if (_bpKeys[_bpi].indexOf('auto_') !== 0) _bpCount++;
+    }
+    return _bpCount;
+  }
+  if (def.isAuditOther) {
+    var _otNorm = emGetNormalizedPoints(row);
+    var _otCount = 0;
+    var _otAllKeys = Object.keys(_otNorm);
+    for (var _oti = 0; _oti < _otAllKeys.length; _oti++) {
+      if (_otAllKeys[_oti].indexOf('auto_') === 0) _otCount++;
+    }
+    return _otCount;
+  }
   if (def.isAuditCat) {
     var catKey = def.catKey;
     if (!row.category || def.catEquipTypes.indexOf(row.category) === -1) return -1;

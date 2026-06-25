@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.25.590',
+    date: '2026-06-25',
+    title: 'Equipment Matrix: ASHRAE Points and Other BAS Points counts fixed for WebCTRL-imported equipment',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix Audit view — the "ASHRAE Points" and "Other BAS Points" count cells and their column sorting now display correctly for WebCTRL-imported equipment (previously showed "--" and sorted as zero). Enriched-CSV and JOCO rows are unchanged.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.25.589',
     date: '2026-06-25',
     title: 'Equipment Matrix Summary and ASHRAE-36 Report: Other Points now visible everywhere',
