@@ -545,7 +545,8 @@ var EM_POINT_MAP = [
     // MAU-1 has "Outdoor Air Damper Position" (BBV, "Open"). Diagnostic BMBI fault points for
     // "Outdoor Air Damper Not Modulating" are blocked by CONTROL_OBJ_TYPES pre-filter (BMBI type).
     // BBV and BNI types are not in CONTROL_OBJ_TYPES so the binary Open/Closed value passes through.
-    cats: ['ahu', 'rtu', 'mau'],
+    // 425c0cb3: added 'furnace' — F-2/F-4 have OA damper enable; furnace.oaDamper catDef needs this col
+    cats: ['ahu', 'rtu', 'mau', 'furnace'],
   },
   {
     col: 'coolingValve',
@@ -626,7 +627,8 @@ var EM_POINT_MAP = [
     // Single-zone-AHU (Quick Win 2): 'ahu' added so import-time mapping routes "Zone Temp"
     // on single-zone RTUs/AHUs to zoneAirTemp. Gate in emComputeBuildingZoneStats prevents
     // true multizone AHUs from being counted as zone equipment at runtime.
-    cats: ['vav', 'fpb', 'ddvav', 'ahu'],
+    // 425c0cb3: added 'furnace' — furnace.zoneTemp catDef aliases cover 'Zone Air Temp' label
+    cats: ['vav', 'fpb', 'ddvav', 'ahu', 'furnace'],
   },
   {
     col: 'zoneCoolSetpoint',
@@ -651,7 +653,8 @@ var EM_POINT_MAP = [
     // have the same Carrier/Lennox setpoint point names (e.g. "Setpoint / Cooling Occupied
     // Setpoint", "Occupied Cooling Set Point") as AHU-category units. Without 'rtu'/'mau'
     // in cats, the category gate drops these points during WebCTRL import.
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau'],
+    // 425c0cb3: added 'furnace' — furnace.coolSP catDef aliases cover 'Zone Cooling Setpoint' label
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau', 'furnace'],
   },
   {
     col: 'zoneHtgSetpoint',
@@ -672,7 +675,8 @@ var EM_POINT_MAP = [
     // Single-zone-AHU (Quick Win 2): 'ahu' added so import-time mapping routes occupied
     // heating setpoints on single-zone RTUs/AHUs to zoneHtgSetpoint.
     // Phase 1 (item 21eb08f8): added 'rtu', 'mau' — same rationale as zoneCoolSetpoint above.
-    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau'],
+    // 425c0cb3: added 'furnace' — furnace.htgSP catDef aliases cover 'Zone Heating Setpoint' label
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'ahu', 'rtu', 'mau', 'furnace'],
   },
   // Zone cooling setpoint ADJUST (separate from occupied setpoint, which uses existing zoneCoolSetpoint)
   {
@@ -1041,7 +1045,8 @@ var EM_POINT_MAP = [
       /\b(exhaust|supply\s+air|high|low|alarm|call\s+for|controlling|selection|ano\b)\b/i,
     ],
     types: ['AI'],
-    cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'zone'],
+    // 425c0cb3: added 'furnace' — furnace.zoneHumidity catDef aliases cover 'Zone RH %' label
+    cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'zone', 'furnace'],
   },
   // Phase 2C: expanded cats from ['ct'] to ['ct', 'ahu', 'dhu'] — "Outside Air Wet Bulb" and
   // "Broadcast Wet Bulb" appear on AHU and DHU (pool dehumidifier) equipment in JOCO data,
@@ -1191,7 +1196,8 @@ var EM_POINT_MAP = [
     // in emMapPointToColumn; it was previously blocked here, hiding useful data.
     negativePatterns: [/high|low|alarm|effective|set\s?point/i],
     types: ['AI'],
-    cats: ['zone', 'fcu', 'heater', 'ef'],
+    // 425c0cb3: added 'furnace' — furnace.zoneTemp catDef aliases cover 'Zone Temperature' label
+    cats: ['zone', 'fcu', 'heater', 'ef', 'furnace'],
   },
 
   // ── Phase 3a NEW ENTRIES ────────────────────────────────────────────────
@@ -1750,7 +1756,8 @@ var EM_POINT_MAP = [
     label: 'Supply Fan Amperage',
     patterns: [/supply\s+fan\s+amperage/i, /supply\s+fan.*amps/i, /supply\s+fan\s+vfd\s+amps/i],
     types: ['AI'],
-    cats: ['ahu', 'rtu'],
+    // 425c0cb3: added 'furnace' — furnace.sfAmps catDef aliases cover 'Supply Fan Amperage' label
+    cats: ['ahu', 'rtu', 'furnace'],
   },
 
   // b8aec0d8: Alarm Relay column — routes alarm-state indicator points to alarmRelay.
@@ -9281,6 +9288,14 @@ var EM_EQUIP_CONFIG_FLAGS = {
       default: 'office_space',
     },
   ],
+  // 425c0cb3: Single-zone packaged RTU-style (F-2/F-4) — ASHRAE G36 §5.18.
+  // hasDXCooling/hasGasHeat default:true — F-2/F-4 have both; missing stage points will lower
+  // coverage. Set false on heat-only furnaces or cool-only units.
+  // oaDamper has required:false and no configFlag — it is always-optional, never penalizes coverage.
+  furnace: [
+    { key: 'hasDXCooling', label: 'Has DX Cooling', default: true },
+    { key: 'hasGasHeat', label: 'Has Gas Heat Stage', default: true },
+  ],
 };
 
 /* ── GL36_TEMP_DEFAULTS ─────────────────────────────────────────────────────
@@ -13473,60 +13488,199 @@ var EM_POINT_CATEGORIES = {
     },
   ],
 
-  /* ── M3 NEW TYPE: Furnace (VVT air-source unit / split-system furnace) ─ */
+  /* ── M3 NEW TYPE: Furnace (single-zone packaged RTU-style, ASHRAE G36 §5.18) ── */
+  /* 425c0cb3: Expanded from sparse (1 required point) to full G36 §5.18 scoring.  */
+  /* F-2/F-4 at MedAct 51 are the primary targets; zero impact on non-furnace types */
   furnace: [
+    // ── Core §5.18 control-loop points (always required) ──────────────────────
+    {
+      key: 'sat',
+      label: 'Supply Air Temperature',
+      required: true,
+      ashrae36Name: 'Supply Air Temperature',
+      ashrae36Section: '5.18',
+      // §5.18.4: SAT is the primary controlled variable for single-zone SZ-VAV units
+      patterns: [/supply air temp/i, /\bsat\b/i, /discharge air temp/i, /supply.?temp/i, /sa temp/i],
+      aliases: [
+        'supply air temp',
+        'supply air temperature',
+        'sat',
+        'discharge air temp',
+        'discharge air temperature',
+        'discharge temp',
+        'supply temp',
+        'sa temp',
+      ],
+    },
     {
       key: 'sfStatus',
       label: 'Supply Fan Status',
       required: true,
       ashrae36Name: 'Supply Fan Status',
-      ashrae36Section: 'Furnace/VVT',
-      patterns: [/supply fan.?status/i, /supply fan.?run/i, /sf.?status/i, /fan.?status/i],
-      aliases: ['supply fan status', 'supply fan run', 'sf status', 'fan status'],
+      ashrae36Section: '5.18',
+      // §5.18.3.1: fan proof-of-operation is required; also covers supply fan enable/command
+      // per emBuildColKeyToCatKey: supplyFanStatus col label 'Supply Fan Status' matches
+      // sfStatus aliases; 'supply fan enable' and 'supply fan command' added so the col-key
+      // reverse bridge resolves correctly when BAS uses enable-command naming.
+      patterns: [
+        /supply fan.?status/i,
+        /supply fan.?run/i,
+        /sf.?status/i,
+        /fan.?status/i,
+        /supply fan.?enable/i,
+        /supply fan.?command/i,
+      ],
+      aliases: [
+        'supply fan status',
+        'supply fan run',
+        'sf status',
+        'fan status',
+        'supply fan enable',
+        'supply fan command',
+      ],
     },
+    {
+      key: 'zoneTemp',
+      label: 'Zone Air Temperature',
+      required: true,
+      ashrae36Name: 'Zone Air Temperature',
+      ashrae36Section: '5.18',
+      // §5.18.4.1: zone temperature is the feedback sensor for the control loop.
+      // aliases cover both zoneAirTemp col label ('Zone Air Temp') and zoneTemp col label
+      // ('Zone Temperature') so emBuildColKeyToCatKey bridges either col to this key.
+      patterns: [/zone.?temp/i, /zone air temp/i, /room.?temp/i, /space temp/i, /zone temperature/i],
+      aliases: [
+        'zone air temp',
+        'zone air temperature',
+        'zone temp',
+        'zone temperature',
+        'room temp',
+        'space temp',
+        'room temperature',
+      ],
+    },
+    {
+      key: 'coolSP',
+      label: 'Zone Cooling Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Cooling Setpoint',
+      ashrae36Section: '5.18',
+      // §5.18.4.2: cooling setpoint is mandatory for mode-logic scoring
+      // maps to zoneCoolSetpoint col (label 'Zone Cooling Setpoint')
+      patterns: [/cooling.*setpoint/i, /cooling.*set\s+point/i, /clg setpoint/i, /zone cool.*setpoint/i],
+      aliases: [
+        'zone cooling setpoint',
+        'cooling setpoint',
+        'effective cooling setpoint',
+        'occupied cooling setpoint',
+        'clg setpoint',
+        'cool setpoint',
+      ],
+    },
+    {
+      key: 'htgSP',
+      label: 'Zone Heating Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Heating Setpoint',
+      ashrae36Section: '5.18',
+      // §5.18.4.2: heating setpoint is mandatory for mode-logic scoring
+      // maps to zoneHtgSetpoint col (label 'Zone Heating Setpoint')
+      patterns: [/heating.*setpoint/i, /heating.*set\s+point/i, /htg setpoint/i, /zone htg.*setpoint/i],
+      aliases: [
+        'zone heating setpoint',
+        'heating setpoint',
+        'effective heating setpoint',
+        'occupied heating setpoint',
+        'htg setpoint',
+        'heat setpoint',
+      ],
+    },
+
+    // ── Stage points — required when configFlag is true (default:true for F-2/F-4) ──
     {
       key: 'clgStage',
       label: 'DX Cooling Stage 1',
-      required: false,
+      required: true,
       ashrae36Name: 'Cooling Stage 1',
-      ashrae36Section: 'Furnace/VVT',
+      ashrae36Section: '5.18',
+      // §5.18.6: DX cooling stage is required for units with DX cooling.
+      // configFlag hasDXCooling default:true → F-2/F-4 are penalized if missing.
+      // Set hasDXCooling=false for heat-only furnaces → goes to naPoints (N/A), not counted.
+      // No EM_POINT_MAP col entry — matched by BAS name regex at compliance time (patterns/aliases).
+      configFlag: 'hasDXCooling',
       patterns: [/cooling stage 1/i, /dx cooling/i, /stage 1 cool/i, /clg stage/i],
       aliases: ['cooling stage 1', 'dx cooling', 'stage 1 cool', 'clg stage 1'],
     },
     {
       key: 'gasHeat',
-      label: 'Gas Heat Stage',
-      required: false,
+      label: 'Gas Heat Stage 1',
+      required: true,
       ashrae36Name: 'Gas Heat Stage 1',
-      ashrae36Section: 'Furnace/VVT',
+      ashrae36Section: '5.18',
+      // §5.18.5: heat stage is required for units with gas heat.
+      // configFlag hasGasHeat default:true → F-2/F-4 are penalized if missing.
+      // Set hasGasHeat=false for cool-only units → goes to naPoints (N/A), not counted.
+      // No EM_POINT_MAP col entry — matched by BAS name regex at compliance time.
+      configFlag: 'hasGasHeat',
       patterns: [/gas heat/i, /heat stage/i, /heating stage/i, /burner/i],
-      aliases: ['gas heat', 'heat stage', 'heating stage', 'burner enable'],
+      aliases: ['gas heat', 'heat stage', 'heating stage', 'burner enable', 'gas heat stage 1'],
+    },
+
+    // ── Optional points (required:false — do not count against coverage) ──────
+    {
+      key: 'oaDamper',
+      label: 'OA Damper Enable',
+      required: false,
+      ashrae36Name: 'Outdoor Air Damper',
+      ashrae36Section: '5.18',
+      // §5.18.7: OA damper optional — not all single-zone units have one.
+      // required:false → never counted against coverage regardless of whether the point exists.
+      // maps to oaDamperPosition col (label 'OA Damper Position')
+      patterns: [/oa.?damper/i, /outdoor air damper/i, /bypass damper/i, /supply air bypass/i],
+      aliases: ['oa damper', 'outdoor air damper', 'oa damper position', 'bypass damper', 'supply air bypass damper'],
+    },
+    {
+      key: 'sfAmps',
+      label: 'Supply Fan Amperage',
+      required: false,
+      ashrae36Name: 'Supply Fan Amperage',
+      ashrae36Section: '5.18',
+      // Monitoring only — not a G36 required point; required:false so missing does not penalize.
+      // maps to supplyFanAmps col (label 'Supply Fan Amperage')
+      patterns: [/supply\s+fan\s+amperage/i, /supply\s+fan.*amps/i, /supply\s+fan\s+vfd\s+amps/i],
+      aliases: ['supply fan amperage', 'supply fan amps', 'supply fan vfd amps'],
+    },
+    {
+      key: 'zoneHumidity',
+      label: 'Zone Humidity',
+      required: false,
+      ashrae36Name: 'Zone Relative Humidity',
+      ashrae36Section: '5.18',
+      // Monitoring only — not a G36 required point; required:false so missing does not penalize.
+      // maps to zoneRelativeHumidity col (label 'Zone RH %')
+      patterns: [/zone\s*r\.?h/i, /zone\s*humid/i, /space\s*r\.?h/i, /room\s*r\.?h/i],
+      aliases: ['zone rh %', 'zone relative humidity', 'zone humidity', 'zone rh', 'zone hum'],
     },
     {
       key: 'vvtMode',
       label: 'VVT Mode',
       required: false,
       ashrae36Name: 'VVT Mode',
-      ashrae36Section: 'Furnace/VVT',
+      ashrae36Section: '5.18',
+      // VVT air-source only; absent on F-2/F-4 single-zone packaged units.
+      // Kept here so VVT-style furnaces don't lose an existing scored point.
       patterns: [/vvt mode/i, /vvt.*mode/i],
       aliases: ['vvt mode', 'vvt mode av', 'vvt mode msv'],
     },
-    {
-      key: 'oaDamper',
-      label: 'OA Damper',
-      required: false,
-      ashrae36Name: 'Outdoor Air Damper',
-      ashrae36Section: 'Furnace/VVT',
-      patterns: [/oa.?damper/i, /outdoor air damper/i, /bypass damper/i, /supply air bypass/i],
-      aliases: ['oa damper', 'outdoor air damper', 'bypass damper', 'supply air bypass damper'],
-    },
+
+    // ── Broadcast points — present on all equipment types (required:false) ───
     // M7: broadcast categories — present on all equipment types
     {
       key: 'demandLevel',
       label: 'Demand Level',
       required: false,
       ashrae36Name: 'Demand Level',
-      ashrae36Section: 'Furnace/VVT',
+      ashrae36Section: '5.18',
       patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
       aliases: [
         'demand level',
@@ -13543,7 +13697,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Relative Humidity',
       required: false,
       ashrae36Name: 'Outdoor Air Relative Humidity',
-      ashrae36Section: 'Furnace/VVT',
+      ashrae36Section: '5.18',
       patterns: [
         /oa.?rh\b/i,
         /outdoor.{0,10}humidity/i,
@@ -13573,7 +13727,7 @@ var EM_POINT_CATEGORIES = {
       label: 'Outdoor Air Dewpoint',
       required: false,
       ashrae36Name: 'Outdoor Air Dewpoint',
-      ashrae36Section: 'Furnace/VVT',
+      ashrae36Section: '5.18',
       patterns: [
         /outside\s+air\s+dew\s?point/i,
         /outdoor\s+air\s+dew\s?point/i,

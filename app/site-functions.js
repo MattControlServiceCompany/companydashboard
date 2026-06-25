@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.25.594',
+    date: '2026-06-25',
+    title: 'Equipment Matrix: Furnace / single-zone packaged units now scored against ASHRAE-36 §5.18',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix — Audit View now rates Furnace / single-zone packaged units against the ASHRAE-36 §5.18 standard (previously showed N/A). Five core points are required: Supply Air Temp, Supply Fan Status, Zone Temp, Zone Cooling Setpoint, and Zone Heating Setpoint. DX Cooling Stage and Gas Heat Stage count as required when those capabilities are present on the unit (config-gated). OA Damper and zone humidity are optional bonus points.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.25.593',
     date: '2026-06-25',
     title: 'Equipment Matrix: one-click fuzzy point suggestions + alias status management in Manage Mappings',
