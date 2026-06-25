@@ -1191,16 +1191,43 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.24.587',
+    date: '2026-06-24',
+    title: 'Equipment Matrix: Manage Mappings list is cleaner — BAS diagnostic and fault/alarm points hidden',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix Manage Mappings (Audit view) now hides BAS-internal diagnostic, fault, alarm, and coordination points — names like Diagnostic:, latched-failure, VVT coordination, Active Fault/Error, and booster pump ops — so the unmatched list shows only real equipment points that need attention.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.24.586',
     date: '2026-06-24',
-    title: 'Cost Estimate tab restructured: 4-tier layout, collapsible Top ROI panel, Include column on every row',
+    title:
+      'Cost Estimate tab restructured: 3-tier Cost Estimate (Recommended / Compliance / Full Scope) plus a Compare view, collapsible Top ROI panel, Include column on every row',
     items: [
-      { type: 'feature', text: 'Cost Estimate now has four tabs — Recommended (best-ROI subset), Compliance (all required items), Full Scope (Compliance plus FDD Reporting), and Compare (side-by-side totals) — so you can instantly see the cost difference between scope options.' },
-      { type: 'feature', text: 'The Top ROI Measures panel at the top of the Cost Estimate tab now has a collapse/expand chevron so you can hide it when working on the detailed line-item table below.' },
-      { type: 'feature', text: 'Every row in the Cost Estimate table now shows an Include checkbox, giving you full control over which line items are counted in the totals without removing them from the list.' },
-      { type: 'fix', text: 'The Notes column in Cost Estimate no longer shows redundant hours and rate text for labor rows — that information is already in the Hours column. Any blocked/partial counts are now shown in the Equipment column where they belong.' },
-      { type: 'fix', text: 'Equipment Matrix Audit view no longer shows VFD Integration and Supply/Return Duct as equipment rows — these are BAS sub-programs, not real equipment, and were skewing sensor counts and averages.' }
-    ]
+      {
+        type: 'feature',
+        text: 'Cost Estimate now has four tabs — Recommended (best-ROI subset), Compliance (all required items), Full Scope (Compliance plus FDD Reporting), and Compare (side-by-side totals) — so you can instantly see the cost difference between scope options.',
+      },
+      {
+        type: 'feature',
+        text: 'The Top ROI Measures panel at the top of the Cost Estimate tab now has a collapse/expand chevron so you can hide it when working on the detailed line-item table below.',
+      },
+      {
+        type: 'feature',
+        text: 'Every row in the Cost Estimate table now shows an Include checkbox, giving you full control over which line items are counted in the totals without removing them from the list.',
+      },
+      {
+        type: 'fix',
+        text: 'The Notes column in Cost Estimate no longer shows redundant hours and rate text for labor rows — that information is already in the Hours column. Any blocked/partial counts are now shown in the Equipment column where they belong.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix Audit view no longer shows VFD Integration and Supply/Return Duct as equipment rows — these are BAS sub-programs, not real equipment, and were skewing sensor counts and averages.',
+      },
+    ],
   },
   {
     v: 'v2026.06.24.585',

@@ -911,9 +911,20 @@ var EM_POINT_MAP = [
   {
     col: 'cwSupplyTemp',
     label: 'CW Supply Temp',
-    patterns: [/cw supply temp/i, /condenser water supply/i, /cwst\b/i],
+    // P2.8 (gap-analysis Phase 2): CT basin leaving water temperature variants added.
+    // "Cooling Tower Basin Leaving Water Temperature", "CT Basin Temperature 1/2", "Tower Basin Temperature"
+    // are the condenser-loop supply temp measurement at the basin — equivalent to CW supply for CT audit.
+    // negativePattern guards "Low Tower Basin Temperature" (alarm-limit-adjacent) and "Basin Heater Failure".
+    patterns: [
+      /cw supply temp/i,
+      /condenser water supply/i,
+      /cwst\b/i,
+      /cooling\s+tower\s+basin\s+(leaving\s+water|water)\s+temp/i, // "Cooling Tower Basin Leaving Water Temperature"
+      /\bct\s+basin\s+temp(erature)?/i, // "CT Basin Temperature 1/2"
+      /^tower\s+basin\s+temp(erature)?$/i, // "Tower Basin Temperature" (anchored to avoid "Low Tower Basin Temp...")
+    ],
     // M2: high/low block alarm limit names (High/Low Condenser Water Supply Temperature).
-    negativePatterns: [/\b(high|low|alarm)\b/i],
+    negativePatterns: [/\b(high|low|alarm|heater|drain|bypass|control|selection)\b/i],
     types: ['AI'],
     cats: ['ct'],
   },
@@ -8574,6 +8585,87 @@ var EM_EXCLUSION_PATTERNS = [
   // Does NOT match: "Domestic Hot Water Supply Temperature" (no "pump" after "water")
   // The broad /\bdomestic\b/ was previously dropped because it hit 17 bucket A temp sensor names — this is narrower.
   /domestic\s+hot\s+water\s+pump/i,
+
+  // ── Gap-analysis Phase 1 exclusions (21eb08f8 / 5eb5be06 / 7d8d02ab) ────
+  // All patterns verified zero bucket-A intersection 2026-06-24 against bucket_a_current.txt (648 names).
+
+  // P1.1 — Diagnostic: prefix (closes 7d8d02ab Manage Mappings noise)
+  // emMapPointToColumn already returns null for "Diagnostic: ..." names (diagnostic fast-exit step 2).
+  // Adding here removes them from Manage Mappings unmatched list — display-only change, no import effect.
+  // JOCO bucket-C matches: ~91 names. Zero bucket-A hits verified.
+  /^diagnostic:/i,
+
+  // P1.2 — Targeted latched failure (replaces dropped broad /\blatched\b/i)
+  // Catches: "Chilled Water Pump N Latched Run Status Failure",
+  //          "Domestic Hot Water Boiler N Latched Run Status Failure",
+  //          "AHU-N Latched Supply Fan Run Status Failure", "Boiler 4 Latched Run Status Failure"
+  // Does NOT match: "CT-N Latched Fan Run Status Failure" → supplyFanStatus (bucket A, safe — "Fan"
+  //   between "Latched" and "Run" prevents the pattern from matching those 7 bucket-A names).
+  // JOCO bucket-C matches: ~62 names. Zero bucket-A hits verified.
+  /\blatched\s+(run\s+)?status\s+failure\b/i,
+
+  // P1.3 — VVT zone coordination objects (chiller staging / AHU manager signals)
+  // Catches: "Active Zones #1"-"#16", "Max Zones #1"-"#16",
+  //          "Heat Request #1"-"#16", "Pressure Request #1"-"#16",
+  //          "RunFor Maximum N", "Air Source RunforMax"
+  // JOCO bucket-C matches: ~94 names. Zero bucket-A hits verified (including "Air Source Status - RunFor").
+  /^active\s+zones?\s*#/i,
+  /^max\s+zones?\s*#/i,
+  /^(heat|pressure|cool)\s+request\s*#/i,
+  /^runfor\s+maximum/i,
+  /^air\s+source\s+runfor/i,
+
+  // P1.4 — Bare available/online plant counts (without AV suffix)
+  // Catches: "500T Chillers Available", "500T Chillers Online", "Cooling Towers Online",
+  //          "Chilled Water Pumps Online - Primary/Secondary", "Tower Water Pumps Online"
+  // The AV-suffix versions are already in bucket B via /\b(available|online)\s+av\b/i.
+  // JOCO bucket-C matches: ~7 names. Zero bucket-A hits verified.
+  /\b(chillers?|towers?|pumps?)\s+(available|online)\b(?!\s+av)/i,
+
+  // P1.5 — Overhead door, hydrogen sensor, AccuChart — building system noise
+  // Not ASHRAE 36 HVAC audit points. JOCO matches: ~27 names total.
+  // Zero bucket-A hits verified.
+  /overhead\s+door/i,
+  /\bhydrogen\s+sensor\b/i,
+  /\baccuchart\b/i,
+
+  // P1.6 — Domestic HW boiler/tank/system ops (targeted, complements P1 pump exclusion)
+  // Catches: "Domestic Hot Water Boiler N Enable/Status/Fire Rate Signal/Latched Failure",
+  //          "Domestic Hot Water Tank 1/2 Temperature", "Domestic Hot Water System Supply",
+  //          "Domestic Hot Water Flow"
+  // Does NOT catch: "Domestic Hot Water Supply/Return Temperature" (already in bucket A → hwSupplyTemp/hwReturnTemp).
+  // JOCO bucket-C matches: ~25 names. Zero bucket-A hits verified.
+  /domestic\s+hot\s+water\s+(boiler|tank|system\s+supply|flow)\b/i,
+
+  // P1.7 — AHU/unit BV control objects — enable/disable command outputs and supervisor objects
+  // These are DO command outputs or BACnet supervisor objects, NOT ASHRAE 36 sensor readings.
+  // /\b(cooling|heating)\s+enabled\b/ verified safe: coolingValve/heatingValve negativePatterns
+  //   already block /\benable\b/i so no bucket-A overlap. (?!\s+valve) prevents future conflicts.
+  // JOCO bucket-C matches: ~15 names. Zero bucket-A hits verified.
+  /\b(cooling|heating)\s+enabled\b(?!\s+valve)/i,
+  /\bnetwork\s+control\b/i,
+  /\bnot\s+under\s+manager\s+control\b/i,
+
+  // ── Gap-analysis Phase 5 additional exclusions (21eb08f8 Group I-IV) ────
+  // All patterns verified zero bucket-A intersection 2026-06-24.
+  // NOTE: /\b(pid|p\.i\.d)\b/i was planned but DROPPED — 16 bucket-A hits confirmed
+  //   (Heating Valve PID, Return Air Humidity PID, BACnet PID Setpoint variants, etc.)
+
+  // P5 Group II — Active Fault/Error/Warning objects (chiller MCS fault reporting)
+  // Catches: "Active Fault", "Active Error Code", "Active Warning", "ActiveFaultDesc_1/2",
+  //          "Active Application Mode", "Active Mixing Valve", "Active LL Setpoint"
+  // Does NOT catch: "Active Cooling Setpoint", "Active Heating Setpoint", etc. (bucket A — those
+  //   have "Cooling", "Heating", "Humidity", "Supply" after "Active", not error/fault/warning words).
+  // JOCO bucket-C matches: ~36 names. Zero bucket-A hits verified.
+  /^active\s+(error|fault|warning|problem|stage\b)/i,
+  /activefaultdesc/i,
+  /^active\s+(application|mixing\s+valve|ll\s+setpoint|reheat|supplemental|dx)/i,
+
+  // P5 Group IV — Domestic water booster pumps (plumbing, not ASHRAE 36 HVAC)
+  // "Booster Pump N Enable/Status/Speed" are domestic water pressure booster pumps.
+  // Distinct from ASHRAE 36 §5.21 HW/CHW plant pumps. ~30 names in JOCO bucket C.
+  // Zero bucket-A hits verified.
+  /\bbooster\s+pump\b/i,
 ];
 
 /* ── EM_EQUIP_CONFIG_FLAGS schema ───────────────────────────────────────────
@@ -10807,6 +10899,9 @@ var EM_POINT_CATEGORIES = {
         'boiler 2 run status',
         'boiler 3 run status',
         'boiler system enable status',
+        // Gap-analysis Phase 2 P2.7: boiler 4 aliases
+        'boiler 4 status',
+        'boiler 4 run status',
       ],
     },
     {
@@ -11440,6 +11535,14 @@ var EM_POINT_CATEGORIES = {
         'chilled water pump 1 speed',
         'chilled water pump 3 speed',
         'chilled-water pump 1 speed',
+        // Gap-analysis Phase 2 P2.6: additional pump speed aliases not yet present
+        'chilled water pump 2 speed',
+        'chilled-water pump 2 speed',
+        // Condenser water pump speed (CT plant) — no dedicated CW pump speed column exists;
+        // routing to schwpSpeed here so point names are mapped rather than unmatched.
+        'condenser water pump 1 speed',
+        'condenser water pump 2 speed',
+        'condenser water pump 3 speed',
       ],
     },
     {
