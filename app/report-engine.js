@@ -11854,6 +11854,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
 
   var compEst = null;
   var recEst = null;
+  var fsEst = null;
   if (hasFn) {
     try {
       compEst = collectPricingEstimate(projId, 'compliance');
@@ -11864,6 +11865,11 @@ function rptPageASHRAE36CostEstimate(n, d) {
       recEst = collectPricingEstimate(projId, 'recommended');
     } catch (e) {
       recEst = null;
+    }
+    try {
+      fsEst = collectPricingEstimate(projId, 'full-scope');
+    } catch (e) {
+      fsEst = null;
     }
   }
 
@@ -11881,7 +11887,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
 
   var bodyHTML;
 
-  if (!hasFn || (!compEst && !recEst)) {
+  if (!hasFn || (!compEst && !recEst && !fsEst)) {
     // FALLBACK: no pricing imported — render a neutral note, never $0
     bodyHTML =
       sectionTitle +
@@ -11894,10 +11900,11 @@ function rptPageASHRAE36CostEstimate(n, d) {
   } else {
     // Prefer compliance tier for Phase 1 hardware & Phase 2 labor lines;
     // fall back to recommended if compliance is null (shouldn't happen normally).
-    var src = compEst || recEst;
+    var src = compEst || recEst || fsEst;
     var basisLabel = (src.basis || 'contract').charAt(0).toUpperCase() + (src.basis || 'contract').slice(1);
 
-    // Build cost rows table — values are priced subtotals (pendingPriceCount rows excluded from total).
+    // Build cost rows table in cost-ascending order: Recommended → Compliance → Full Scope.
+    // Values are priced subtotals (pendingPriceCount rows excluded from total).
     // null only when no catalog or zero priced rows; _fmtUSD renders "—" for null.
     var rowStyle =
       'padding:10px 12px;font-size:12px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)';
@@ -11905,12 +11912,28 @@ function rptPageASHRAE36CostEstimate(n, d) {
     var valueStyle = rowStyle + ';text-align:right;font-weight:700;font-size:13px';
     var tblRows = '';
 
+    // Row 1: Recommended (cheapest — best-ROI subset of Compliance, no add-ons)
+    if (recEst) {
+      tblRows +=
+        '<tr>' +
+        '<td style="' +
+        labelStyle +
+        '">Recommended Package (best-ROI subset)</td>' +
+        '<td style="' +
+        valueStyle +
+        '">' +
+        _fmtUSD(recEst.grandTotal) +
+        '</td>' +
+        '</tr>';
+    }
+
+    // Rows 2–3: Compliance — Phase 1 hardware and Phase 2 programming (middle tier)
     if (compEst) {
       tblRows +=
         '<tr>' +
         '<td style="' +
         labelStyle +
-        '">Estimated Hardware (Compliance) — Phase 1</td>' +
+        '">ASHRAE 36 Compliance — Hardware (Phase 1)</td>' +
         '<td style="' +
         valueStyle +
         '">' +
@@ -11920,7 +11943,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         '<tr>' +
         '<td style="' +
         labelStyle +
-        '">Estimated Programming — Phase 2</td>' +
+        '">ASHRAE 36 Compliance — Programming (Phase 2)</td>' +
         '<td style="' +
         valueStyle +
         '">' +
@@ -11929,16 +11952,17 @@ function rptPageASHRAE36CostEstimate(n, d) {
         '</tr>';
     }
 
-    if (recEst) {
+    // Row 4: Full Scope (most expensive — Compliance + FDD add-on)
+    if (fsEst) {
       tblRows +=
         '<tr style="background:rgba(0,0,0,0.03)">' +
         '<td style="' +
         labelStyle +
-        ';background:rgba(0,0,0,0.03)">Recommended Package (Compliance + Optimized)</td>' +
+        ';background:rgba(0,0,0,0.03)">Full Scope (Compliance + FDD Reporting)</td>' +
         '<td style="' +
         valueStyle +
         ';background:rgba(0,0,0,0.03)">' +
-        _fmtUSD(recEst.grandTotal) +
+        _fmtUSD(fsEst.grandTotal) +
         '</td>' +
         '</tr>';
     }

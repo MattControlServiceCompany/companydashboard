@@ -1979,8 +1979,8 @@ function emParseEquipBaseName(nameStr) {
   // Must run BEFORE any HVAC prefix checks (AHU, DOAS, CHWP, HWP, CT).
   // "AHU 1A-1 VFD Integration" must NOT classify as 'ahu' — it is a drive telemetry sub-program.
   // "Air Handling Unit 1B - Return Duct" must NOT classify as 'ahu' — it is a duct branch sub-program.
-  if (/\bvfd\s+integration\b/i.test(n)) return 'controls';
-  if (/ - (?:\S+\s+)*(?:supply|return)\s+duct$/i.test(n)) return null; // falls to emClassifyEquipType → 'other'
+  if (/\bvfd\s+integration\d*\b/i.test(n)) return 'controls';
+  if (/ - (?:\S+\s+)*(?:supply|return)\s+duct\d*$/i.test(n)) return null; // falls to emClassifyEquipType → 'other'
   // Priority 1: DOAS (before RTU/AHU to catch "DOAS-AHU-1")
   if (/\bdoas\b/i.test(n)) return 'doas';
   // Priority 2: ERV (energy recovery ventilator — own category per user)
@@ -2023,7 +2023,7 @@ function emClassifyEquipType(equipTypeStr) {
   if (!equipTypeStr) return 'other';
   var raw = equipTypeStr.trim();
 
-  if (/\bvfd\s+integration\b/i.test(raw)) return 'other';
+  if (/\bvfd\s+integration\d*\b/i.test(raw)) return 'other';
 
   // ── A. Strip leading manufacturer names ──
   var mfgPattern =
@@ -6652,8 +6652,8 @@ function emRenderAuditTable(data, filters) {
     sizeSelectHtml +
     '</div>';
 
-  // Update stats bar for audit view
-  emUpdateStatsPillsForAudit(rows);
+  // Update stats bar for audit view (pass filtered, not raw rows, so pills match visible rows)
+  emUpdateStatsPillsForAudit(filtered);
 
   var pageTotals = emComputeAuditFooterTotals(pageRows, defs);
   var allTotals = emComputeAuditFooterTotals(filtered, defs);
@@ -7715,8 +7715,8 @@ function emFormatCell(val, def, row) {
  */
 function emIsPhantomRow(row) {
   var name = row.equipName || '';
-  if (/\bvfd\s+integration\b/i.test(name)) return true;
-  if (/ - (?:\S+\s+)*(?:supply|return)\s+duct$/i.test(name)) return true;
+  if (/\bvfd\s+integration\d*\b/i.test(name)) return true;
+  if (/ - (?:\S+\s+)*(?:supply|return)\s+duct\d*$/i.test(name)) return true;
   return false;
 }
 

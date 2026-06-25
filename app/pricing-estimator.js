@@ -584,12 +584,19 @@ function _pricingTopRoiCallout(projId, recRows) {
     })
     .join('');
 
+  var _roiChevronId = 'roi-chevron-' + projId;
   return (
     '<details open style="margin:10px 14px 0;border:1px solid var(--border2);border-radius:6px;' +
-    'background:var(--s3);overflow:hidden">' +
+    'background:var(--s3);overflow:hidden"' +
+    ' ontoggle="(function(d){var c=document.getElementById(\'' +
+    _roiChevronId +
+    "');if(c)c.textContent=d.open?'▼':'▶';})(this)\">" +
     '<summary style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text);' +
     'cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;' +
     'background:var(--s2);border-bottom:1px solid var(--border2)">' +
+    '<span id="' +
+    _roiChevronId +
+    '" style="font-size:10px;color:var(--text2);flex-shrink:0">▼</span>' +
     '★ Top ROI Measures for This Project' +
     '<span style="font-size:10px;font-weight:400;color:var(--text2);margin-left:4px">' +
     '(highest savings per dollar based on current point coverage — full list below)</span>' +
@@ -1474,17 +1481,17 @@ function buildComplianceRows(projId) {
         eqLabel2 = count + ' of ' + applicable + ' ' + seqTypeLabel + (applicable !== 1 ? 's' : '');
       }
 
-      // FIX 3: Note breakdown — append "· N blocked, N partial" if both present
+      // Item 5a317ac7: blocked/partial breakdown folded into Equipment label (not Note).
+      // hrs × $rate/hr was redundant with col 9 (hours spinner) and is removed entirely.
       var blockedN = seqBlocked[seqKey] || 0;
       var partialN = seqPartial[seqKey] || 0;
-      var noteBase = hrs + ' hrs × $' + hourlyRate + '/hr';
-      var noteBreakdown = '';
+      var statusBreakdown = '';
       if (blockedN > 0 && partialN > 0) {
-        noteBreakdown = ' · ' + blockedN + ' blocked, ' + partialN + ' partial';
+        statusBreakdown = ' (' + blockedN + ' blocked, ' + partialN + ' partial)';
       } else if (blockedN > 0) {
-        noteBreakdown = ' · ' + blockedN + ' blocked';
+        statusBreakdown = ' (' + blockedN + ' blocked)';
       } else if (partialN > 0) {
-        noteBreakdown = ' · ' + partialN + ' partial';
+        statusBreakdown = ' (' + partialN + ' partial)';
       }
 
       rows.push({
@@ -1492,7 +1499,7 @@ function buildComplianceRows(projId) {
         building: bName,
         item: label,
         type: 'Sequence',
-        equipment: eqLabel2,
+        equipment: eqLabel2 + statusBreakdown,
         qty: count,
         sku: null,
         engReview: false,
@@ -1503,7 +1510,7 @@ function buildComplianceRows(projId) {
         netPrice: null,
         contractPrice: null,
         lineTotal: lineTotal,
-        note: noteBase + noteBreakdown,
+        note: '', // phase-2 rows have no static note; free-text override via est.noteOverrides
         phase: 2,
         seqKey: seqKey,
         hrsPerUnit: hrs,
@@ -2192,8 +2199,8 @@ function updatePricingConfig(projId, key, val) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   PHASE 3 — Recommended tier optimizer, COMBO de-dup, FDD add-on,
-              tier toggle, collectPricingEstimate (spec §4, §8, §10, §11)
+   PHASE 3 — Three-tier model (Recommended/Compliance/Full Scope), optimizer,
+              COMBO de-dup, tier toggle, collectPricingEstimate (spec §4, §8, §10, §11)
    ══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Optimizer qualifying classes (spec §4) ──────────────────────────────────
@@ -2309,12 +2316,16 @@ function _pricingFindCheapestSku(pointKey, catalog, cfg) {
 
 /* ── buildRecommendedRows(projId) ───────────────────────────────────────────
    Produces the row list for the Recommended tier.
+   Recommended = best-ROI curated SUBSET of Compliance. Always <= Compliance cost.
    Differences from Compliance:
      1. Optimizer substitutes lowest-price qualifying SKU for safe classes
      2. COMBO de-dup: zone missing both zoneTemp+co2 → single ZS2-HC-ALC line
         (identical to compliance combo, but note says "Combo: replaces separate…")
-     3. FDD add-on: one ADD-FDD-RPT row per building
+     3. Phase-2 savings-impact filter: keep only rows where savingsImpact is
+        'high', 'med-high', or 'med'. Drops 'low-med', 'enabler', 'safety', null.
      4. SKIP list: curated default kept + engReview preserved
+     5. NO add-ons — FDD add-on moved to buildFullScopeRows
+   Tier ordering: Recommended <= Compliance <= Full Scope (structural guarantee).
    ─────────────────────────────────────────────────────────────────────────── */
 function buildRecommendedRows(projId) {
   // Start from compliance rows as foundation, then apply optimizer + add-ons
@@ -2325,10 +2336,7 @@ function buildRecommendedRows(projId) {
   var cfg = _pricingGetConfig();
   var estimate = _pricingGetEstimate(projId);
 
-  // Build a set of buildings already seen (for FDD add-on dedup)
-  var fddBuildingsSeen = {};
   var recRows = [];
-  var rowIdx = 10000; // offset to avoid ID collision with compliance rows
   var _optimizerSubCount = 0; // Bug A: track substitutions made
 
   // Process each compliance row and apply optimizer or skip
@@ -2412,41 +2420,19 @@ function buildRecommendedRows(projId) {
       }
     }
 
-    recRows.push(rec);
-  });
-
-  // Fix 1: FDD add-on — exactly ONE row per project (WebCTRL system-level license, not per-building)
-  // qty is user-editable via the manual-price / qty mechanism; default 1.
-  {
-    var fddUnitPrice = null;
-    var fddLineTotal = null;
-    if (catalog && catalog[FDD_SKU]) {
-      var fddEntry = catalog[FDD_SKU];
-      var basis = cfg.priceBasis || 'contract';
-      if (basis === 'list') fddUnitPrice = fddEntry.list;
-      else if (basis === 'net') fddUnitPrice = fddEntry.net;
-      else fddUnitPrice = fddEntry.list != null ? parseFloat((COST_CONTRACT_PCT * fddEntry.list).toFixed(2)) : null;
-      if (fddUnitPrice !== null) fddLineTotal = fddUnitPrice; // qty=1
+    // Phase-2 savings-impact filter: Recommended only keeps high/med-high/med sequences.
+    // Drop 'low-med', 'enabler', 'safety', and null-impact phase-2 rows.
+    // Phase-1 hardware rows are all kept (optimizer already reduces their cost;
+    // conservative approach per blueprint Risk 2 — phase-1 seqKey mapping not stamped).
+    if (rec.phase === 2) {
+      var _keepTiers = { high: true, 'med-high': true, med: true };
+      if (!_keepTiers[rec.savingsImpact]) {
+        return; // skip this row — drop low-ROI, enabler, safety, and null-impact sequences
+      }
     }
 
-    recRows.push({
-      id: 'rch_fdd_project_' + rowIdx++,
-      building: 'WebCTRL System',
-      item: 'FDD Reporting',
-      type: 'Add-On',
-      equipment: '1 WebCTRL system',
-      qty: 1,
-      sku: FDD_SKU,
-      engReview: false,
-      noSku: !catalog || !catalog[FDD_SKU], // Bug A: always pending when no catalog or SKU missing
-      ioOnly: false,
-      unitPrice: fddUnitPrice,
-      lineTotal: fddLineTotal,
-      note: '1 per WebCTRL system — verify system count',
-      phase: 1,
-      isFddAddon: true,
-    });
-  }
+    recRows.push(rec);
+  });
 
   // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
   // Apply sort within building groups, preserve building order and phase-1/phase-2 structure.
@@ -2488,6 +2474,67 @@ function buildRecommendedRows(projId) {
   return sortedRows;
 }
 
+/* ── buildFullScopeRows(projId) ─────────────────────────────────────────────
+   Produces the row list for the Full Scope tier.
+   Full Scope = Compliance + all add-ons (FDD reporting, future add-ons).
+   Row IDs: fsc_ prefix (phase 1), fsl_ prefix (phase 2).
+   Each row carries _baseId = compliance row id so toggle state transfers.
+   Ordering: Full Scope >= Compliance >= Recommended (structural guarantee).
+   ─────────────────────────────────────────────────────────────────────────── */
+function buildFullScopeRows(projId) {
+  var compRows = buildComplianceRows(projId);
+  if (!compRows.length) return [];
+
+  var catalog = sget('en_pricing_catalog', null);
+  var cfg = _pricingGetConfig();
+  var fsRows = [];
+  var rowIdx = 20000; // offset to avoid ID collision with compliance + recommended rows
+
+  // Clone all compliance rows with fsc_/fsl_ ID prefix and _baseId linkage
+  compRows.forEach(function (row) {
+    var fs = Object.assign({}, row);
+    // Store compliance row id for shared toggle state
+    fs._baseId = row.id;
+    // Re-key the row ID with full-scope prefix
+    fs.id = fs.id.replace(/^hw_/, 'fsc_').replace(/^seq_/, 'fsl_');
+    fsRows.push(fs);
+  });
+
+  // Add FDD add-on row (moved from buildRecommendedRows — Full Scope is the correct home)
+  {
+    var fddUnitPrice = null;
+    var fddLineTotal = null;
+    if (catalog && catalog[FDD_SKU]) {
+      var fddEntry = catalog[FDD_SKU];
+      var basis = cfg.priceBasis || 'contract';
+      if (basis === 'list') fddUnitPrice = fddEntry.list;
+      else if (basis === 'net') fddUnitPrice = fddEntry.net;
+      else fddUnitPrice = fddEntry.list != null ? parseFloat((COST_CONTRACT_PCT * fddEntry.list).toFixed(2)) : null;
+      if (fddUnitPrice !== null) fddLineTotal = fddUnitPrice; // qty=1
+    }
+
+    fsRows.push({
+      id: 'fsc_fdd_project_' + rowIdx++,
+      building: 'WebCTRL System',
+      item: 'FDD Reporting',
+      type: 'Add-On',
+      equipment: '1 WebCTRL system',
+      qty: 1,
+      sku: FDD_SKU,
+      engReview: false,
+      noSku: !catalog || !catalog[FDD_SKU],
+      ioOnly: false,
+      unitPrice: fddUnitPrice,
+      lineTotal: fddLineTotal,
+      note: '1 per WebCTRL system — verify system count',
+      phase: 1,
+      isFddAddon: true,
+    });
+  }
+
+  return fsRows;
+}
+
 /* ── Helper: extract pointKey from a row id produced by buildComplianceRows ──
    Compliance row IDs have the form: hw_{building}_{effectiveKey}__{cat}_{idx}
    This is a best-effort extraction used by the optimizer.
@@ -2501,7 +2548,8 @@ function _extractPointKeyFromRowId(rowId) {
 }
 
 /* ── Tier toggle: render the tier selector buttons ──────────────────────────
-   Spec §8: [Compliance] [Recommended] [Both side-by-side]. Default=Compliance.
+   Order (left→right, cost-ascending): Recommended | Compliance | Full Scope | Compare
+   'both' stored tier value preserved for saved-state compatibility; label → 'Compare'.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingTierToggleHTML(projId, currentTier) {
   function btn(tier, label) {
@@ -2522,9 +2570,10 @@ function _pricingTierToggleHTML(projId, currentTier) {
   return (
     '<div style="display:flex;gap:4px;align-items:center">' +
     '<span style="font-size:11px;color:var(--text2);margin-right:2px">Tier:</span>' +
-    btn('compliance', 'Compliance') +
     btn('recommended', 'Recommended') +
-    btn('both', 'Both') +
+    btn('compliance', 'Compliance') +
+    btn('full-scope', 'Full Scope') +
+    btn('both', 'Compare') +
     '</div>'
   );
 }
@@ -2596,7 +2645,7 @@ var PRICING_TBL_COLS = [
   { label: 'Building', noSort: false, noHide: false, numeric: false, minWidth: 90 }, // 1
   { label: 'Item', noSort: false, noHide: false, numeric: false, minWidth: 120 }, // 2
   { label: 'Type', noSort: false, noHide: false, numeric: false, minWidth: 70 }, // 3
-  { label: 'Equipment', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 4
+  { label: 'Equipment', noSort: false, noHide: false, numeric: false, minWidth: 120 }, // 4 — widened for "(N blocked, N partial)" suffix (item 5a317ac7)
   { label: 'Qty', noSort: false, noHide: false, numeric: true, minWidth: 40 }, // 5
   { label: 'SKU', noSort: false, noHide: false, numeric: false, minWidth: 100 }, // 6
   { label: 'List', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 7
@@ -2630,7 +2679,7 @@ function _pricingApplyLaborOverrides(projId, rows) {
     cloned.hrsPerUnit = hrs;
     cloned.unitPrice = parseFloat((hrs * hourlyRate).toFixed(2));
     cloned.lineTotal = parseFloat((hrs * row.qty * hourlyRate).toFixed(2));
-    cloned.note = hrs + ' hrs × $' + hourlyRate + '/hr (override)';
+    cloned.note = ''; // hrs displayed in col 9 spinner; no static note needed (item 5a317ac7)
     return cloned;
   });
 }
@@ -3114,7 +3163,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
   // Issue 4 fix: auto-hide Impact column (col 11) when tier cannot produce impact badges.
-  // savingsImpact is only stamped on Recommended/Both phase-2 rows; Compliance always blank.
+  // savingsImpact is only stamped on Recommended/Both phase-2 rows; Compliance/Full Scope blank.
   // We clone the hidden array so we don't mutate the user's saved preferences.
   var _tierHasImpact = tier === 'recommended' || tier === 'both';
   if (!_tierHasImpact && hidden.indexOf(11) === -1) {
@@ -3125,6 +3174,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var baseRows;
   if (tier === 'recommended') {
     baseRows = buildRecommendedRows(projId);
+  } else if (tier === 'full-scope') {
+    baseRows = buildFullScopeRows(projId);
   } else {
     baseRows = buildComplianceRows(projId);
   }
@@ -3335,16 +3386,15 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     // col 0: Include
     cells.push(
-      row.ioOnly
-        ? '<span title="Controller I/O — no cost" style="cursor:default;color:var(--text3)">—</span>'
-        : '<input type="checkbox"' +
-            (toggleOn ? ' checked' : '') +
-            ' onchange="_pricingToggleRow(\'' +
-            projId +
-            "','" +
-            toggleKey +
-            '\',this.checked)"' +
-            ' style="cursor:pointer">',
+      '<input type="checkbox"' +
+        (toggleOn ? ' checked' : '') +
+        (row.ioOnly ? ' title="Controller I/O — no cost"' : '') +
+        ' onchange="_pricingToggleRow(\'' +
+        projId +
+        "','" +
+        toggleKey +
+        '\',this.checked)"' +
+        ' style="cursor:pointer">',
     );
 
     // col 1: Building
@@ -3681,7 +3731,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       cells.push(
         _noteInputHTML +
           '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4;margin-top:2px">' +
-          _esc(_noteText12 ? _noteText12 + ' \xb7 ' : '') +
           _esc(_rationaleText) +
           '</span>' +
           _savingsRangeHTML,
@@ -3905,7 +3954,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<span style="font-size:11px;color:var(--text3)">' + _p4CaveatParts.join(' · ') + '</span>',
     '<span style="color:var(--border2)">|</span>',
     '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
-      (tier === 'both' ? 'Both' : tier === 'recommended' ? 'Recommended' : 'Compliance') +
+      (tier === 'both'
+        ? 'Compare'
+        : tier === 'recommended'
+          ? 'Recommended'
+          : tier === 'full-scope'
+            ? 'Full Scope'
+            : 'Compliance') +
       '</span>',
   );
 
@@ -4073,28 +4128,37 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows);
   }
 
-  // Bug A: "no substitutions" notice for Recommended tier when optimizer found nothing
+  // Recommended tier: "no substitutions" notice + empty-state guard
   var recNoSubsNotice = '';
   if (tier === 'recommended') {
-    var _optStats = _pricingOptimizerStats[projId];
-    var _subCount = _optStats ? _optStats.subCount : 0;
-    if (_subCount === 0) {
+    // Empty-state: if filter removed all rows (project has no high/med-high/med sequences)
+    if (filteredRows.length === 0) {
       recNoSubsNotice =
         '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
         'border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text2);line-height:1.5">' +
-        '<strong style="color:var(--text)">No lower-cost substitutions found</strong> — ' +
-        (hasCatalog
-          ? 'the imported catalog contains no cheaper qualifying alternatives for the hardware in this project. ' +
-            'Recommended pricing matches Compliance. '
-          : 'no pricing catalog is loaded, so the optimizer could not search for alternatives. ' +
-            'Import a pricing CSV to enable substitution analysis. ') +
-        'The FDD Reporting add-on line below is unique to the Recommended tier.' +
-        '<br><span style="color:var(--text3)">' +
-        'Note: Phase 2 (labor) costs are identical across all tiers by design — labor hours are the same ' +
-        'regardless of which hardware SKU is selected. Hardware savings (Recommended vs Compliance) only ' +
-        'appear once a pricing catalog with cheaper qualifying SKUs is imported.' +
-        '</span>' +
+        '<strong style="color:var(--text)">No high-ROI measures identified</strong> — ' +
+        'all required items for this project are in the Compliance tier. ' +
+        'Switch to Compliance to view the full scope.' +
         '</div>';
+    } else {
+      var _optStats = _pricingOptimizerStats[projId];
+      var _subCount = _optStats ? _optStats.subCount : 0;
+      if (_subCount === 0) {
+        recNoSubsNotice =
+          '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
+          'border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text2);line-height:1.5">' +
+          '<strong style="color:var(--text)">No lower-cost substitutions found</strong> — ' +
+          (hasCatalog
+            ? 'the imported catalog contains no cheaper qualifying alternatives for the hardware in this project. ' +
+              'Recommended hardware pricing matches Compliance. '
+            : 'no pricing catalog is loaded, so the optimizer could not search for alternatives. ' +
+              'Import a pricing CSV to enable substitution analysis. ') +
+          '<br><span style="color:var(--text3)">' +
+          'Note: Recommended shows only high/med-high/med ROI sequences (subset of Compliance). ' +
+          'FDD Reporting add-on is in Full Scope tier.' +
+          '</span>' +
+          '</div>';
+      }
     }
   }
 
@@ -4140,9 +4204,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var est = _pricingGetEstimate(projId);
     var tier = est.tier || 'compliance';
 
-    // Secondary fix: Both-mode has a side-by-side footer that cannot be reproduced
-    // here cheaply (requires recRows). Delegate to full re-render to keep it consistent.
-    if (tier === 'both') {
+    // Secondary fix: Both/full-scope modes have footers that cannot be reproduced
+    // here cheaply. Delegate to full re-render to keep them consistent.
+    if (tier === 'both' || tier === 'full-scope') {
       initCostEstimateTab(projId);
       return;
     }
@@ -4232,7 +4296,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
 /* ── Phase 5 — collectPricingEstimate (spec §10) ────────────────────────────
    Returns {hardwareTotal, laborTotal, grandTotal, basis, skusMissing,
-            engReviewCount, pendingPriceCount} for tier in {'compliance','recommended'}.
+            engReviewCount, pendingPriceCount} for tier in {'compliance','recommended','full-scope'}.
    Returns null if no en_pricing_catalog.
    pendingPriceCount = included rows with no resolvable price (NO-SKU unpriced +
    SKU not in catalog). I/O-only ($0) rows are NOT counted as pending.
@@ -4246,6 +4310,8 @@ function collectPricingEstimate(projId, tier) {
   var rows;
   if (activeTier === 'recommended') {
     rows = buildRecommendedRows(projId);
+  } else if (activeTier === 'full-scope') {
+    rows = buildFullScopeRows(projId);
   } else {
     rows = buildComplianceRows(projId);
   }
