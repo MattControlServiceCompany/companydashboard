@@ -11927,6 +11927,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
     'text-transform:uppercase;letter-spacing:0.04em">Estimated Upgrade Cost</div>';
 
   var bodyHTML;
+  var rationaleTokens = []; // hoisted: always initialized (fix for bug 4c6a380d — was inside else only)
 
   if (!hasFn || (!compEst && !recEst && !fsEst)) {
     // FALLBACK: no pricing imported — render a neutral note, never $0
@@ -12080,7 +12081,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
     // Pagination: rows converted to _rptPaginateTokens tokens so the rationale
     // table can span continuation pages when the full JOCO portfolio (~51 rows)
     // would overflow a single 1056px page. Same paginator as building/exec pages.
-    var rationaleTokens = [];
+    // rationaleTokens is declared above (hoisted before if/else — bug 4c6a380d fix).
     try {
       if (typeof buildComplianceRows === 'function') {
         var compRows = buildComplianceRows(projId);

@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.26.596',
+    date: '2026-06-26',
+    title: 'Audit Report: Cost Estimate section no longer crashes when no pricing catalog is loaded',
+    items: [
+      {
+        type: 'fix',
+        text: 'Audit Report — The Cost Estimate section (Page 3 of the ASHRAE-36 report) no longer crashes with a JavaScript error when a project has no pricing catalog imported. The section now renders correctly even with an empty catalog, showing a blank estimate table instead of a white page.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.25.595',
     date: '2026-06-25',
     title: 'Equipment Matrix: F-# furnace units now classify and score correctly when named with a room prefix',
