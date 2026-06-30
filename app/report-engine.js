@@ -10111,122 +10111,107 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   sat: {
     short: 'Supply air temperature sensor',
     impact: '3–8% heating & cooling savings',
-    plain:
-      'Without this sensor, the system cannot adjust how warm or cold it delivers air based on outdoor conditions — one of the primary ways smart controls cut heating and cooling costs.',
+    plain: 'Required for supply air temperature reset, reducing heating and cooling energy based on actual demand.',
   },
   rat: {
     short: 'Return air temperature sensor',
     impact: '2–5% fan and cooling savings',
-    plain:
-      'Measures the temperature of air returning from occupied spaces, giving the system the feedback it needs to verify how effectively it is conditioning the building.',
+    plain: 'Measures return air temperature, providing feedback on how effectively the system conditions the building.',
   },
   mat: {
     short: 'Mixed air temperature sensor',
     impact: '3–6% cooling savings',
-    plain:
-      'Required for free-cooling (economizer) control — without it, the system cannot determine when outdoor air is cool enough to replace mechanical cooling at no operating cost.',
+    plain: 'Required for economizer control — enables the system to use outdoor air instead of mechanical cooling.',
   },
   oat: {
     short: 'Outdoor air temperature sensor',
     impact: '4–10% combined savings',
-    plain:
-      'Nearly every energy-saving sequence depends on outdoor temperature; without a reliable reading, the system cannot adapt to changing weather conditions.',
+    plain: 'Required for nearly every energy-saving sequence; without it, the system cannot adapt to changing weather.',
   },
   dsp: {
     short: 'Duct static pressure sensor',
     impact: '15–30% fan energy savings',
-    plain:
-      'Enables variable fan speed control — when pressure is measured and reset based on actual demand, fan energy drops 15–30% compared to fixed-speed operation.',
+    plain: 'Enables fan speed control based on actual demand; fan energy drops 15–30% versus fixed-speed operation.',
   },
   sfVfd: {
     short: 'Supply fan VFD',
     impact: '20–40% fan energy savings',
     plain:
-      'Allows fan speed to match actual load — at 80% speed a fan uses roughly half the energy of full-speed operation, making this one of the highest-return hardware upgrades available.',
+      'Allows fan speed to match load; at 80% speed, energy consumption drops to roughly half of full-speed operation.',
   },
   satReset: {
     short: 'Supply air temperature reset sequence',
     impact: '5–12% heating & cooling savings',
-    plain:
-      'Adjusts supply air temperature based on what zones actually need, delivering less extreme temperatures during mild weather and reducing conditioning energy.',
+    plain: 'Adjusts supply air temperature to match zone demand, reducing conditioning energy during mild weather.',
   },
   dspReset: {
     short: 'Duct static pressure reset sequence',
     impact: '10–25% fan energy savings',
-    plain:
-      'Lowers the duct pressure target when zones have adequate airflow, allowing the fan to slow down — this sequence alone typically cuts fan energy by 15% or more.',
+    plain: 'Lowers duct pressure when zones have adequate airflow; typically cuts fan energy by 15% or more.',
   },
   economizer: {
     short: 'Economizer control sequence',
     impact: '5–15% cooling savings',
-    plain:
-      'Uses outdoor air for free cooling whenever conditions allow; without it, mechanical cooling runs even when outdoor air could do the same job at no operating cost.',
+    plain: 'Uses outdoor air for free cooling whenever conditions allow, reducing mechanical cooling run time.',
   },
   demandCtrl: {
     short: 'CO2-based demand control ventilation',
     impact: '5–10% fan and cooling savings',
     plain:
-      'Brings in only as much outdoor air as current occupancy requires; without it, the system conditions full design ventilation air even when rooms are nearly empty.',
+      'Reduces outdoor air to match actual occupancy, avoiding the energy cost of conditioning ventilation air for empty rooms.',
   },
   optStart: {
     short: 'Optimal start/stop sequence',
     impact: '3–8% overall savings',
     plain:
-      'Calculates the minimum warm-up or cool-down time needed before occupancy, eliminating the 1–2 hours of early starts that condition an empty building every day.',
+      'Minimizes pre-occupancy warm-up time, eliminating early starts that condition an empty building each morning.',
   },
   hwReset: {
     short: 'Hot water supply temperature reset',
     impact: '5–15% boiler savings',
-    plain:
-      'Reduces boiler water temperature as outdoor air warms, cutting heat loss and improving efficiency — especially valuable for condensing boilers.',
+    plain: 'Reduces boiler water temperature as outdoor air warms, cutting heat loss and improving boiler efficiency.',
   },
   chwReset: {
     short: 'Chilled water supply temperature reset',
     impact: '3–10% chiller savings',
-    plain:
-      'Raises chilled water temperature during light loads, allowing the chiller to operate more efficiently during the many hours buildings run below peak cooling demand.',
+    plain: 'Raises chilled water temperature during light loads, allowing the chiller to run more efficiently.',
   },
   leadLag: {
     short: 'Lead/lag equipment rotation',
     impact: '2–5% equipment life extension',
-    plain:
-      'Alternates which pump or boiler serves as the primary unit, distributing wear evenly and keeping all equipment operational between maintenance cycles.',
+    plain: 'Alternates the primary pump or boiler to distribute wear evenly and maximize equipment reliability.',
   },
   zoneCoolSp: {
     short: 'Zone cooling setpoint',
     impact: 'Baseline requirement',
     plain:
-      'Defines the target temperature for cooling each space; required for code compliance and to prevent the system from heating and cooling the same zone simultaneously.',
+      'Defines the zone cooling target; required for code compliance and to prevent simultaneous heating and cooling.',
   },
   zoneHtgSp: {
     short: 'Zone heating setpoint',
     impact: 'Baseline requirement',
-    plain:
-      'Defines the minimum temperature for each space and enables temperature setbacks during unoccupied hours to avoid heating empty rooms.',
+    plain: 'Defines the zone heating minimum and enables temperature setbacks to avoid heating empty rooms.',
   },
   discFlow: {
     short: 'Discharge airflow measurement',
     impact: 'Required for VAV minimum ventilation',
     plain:
-      'Confirms each space receives its required minimum ventilation air and enables the fan pressure reset sequences that cut fan energy — both are impossible without measured airflow.',
+      'Confirms minimum ventilation to each space and enables duct pressure reset sequences; both require measured airflow.',
   },
   hwSupTemp: {
     short: 'Hot water supply temperature sensor',
     impact: 'Required for HW reset',
-    plain:
-      'Verifies boiler output and is required for the temperature reset strategy that reduces boiler energy during milder weather.',
+    plain: 'Verifies boiler output and is required for the outdoor temperature reset strategy.',
   },
   hwRetTemp: {
     short: 'Hot water return temperature sensor',
     impact: 'Required for delta-T monitoring',
-    plain:
-      'Measures the temperature drop across the heating system, flagging inefficiencies such as pump, balancing, or coil problems that raise operating costs.',
+    plain: 'Measures temperature drop across the heating system, flagging pump, balancing, or coil problems.',
   },
   hwDiffPres: {
     short: 'Hot water differential pressure sensor',
     impact: '10–20% pump energy savings',
-    plain:
-      'Enables the pump to slow down when fewer zones call for heat; without it, the pump runs at full speed regardless of load.',
+    plain: 'Enables the pump to slow when fewer zones call for heat rather than running at full speed.',
   },
   chwSupTemp: {
     short: 'Chilled water supply temperature sensor',
@@ -10238,208 +10223,194 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'Chilled water return temperature sensor',
     impact: 'Required for delta-T monitoring',
     plain:
-      'Measures how fully the chilled water is being utilized; poor utilization forces the chiller to work harder and cycle more often.',
+      'Measures chilled water utilization; poor utilization causes the chiller to work harder and cycle more often.',
   },
   chwDiffPres: {
     short: 'Chilled water differential pressure sensor',
     impact: '10–20% pump energy savings',
-    plain:
-      'Allows chilled water pumps to slow during light loads — pump energy drops sharply with speed, making this sensor essential for part-load efficiency.',
+    plain: 'Allows chilled water pumps to slow during light loads; pump energy drops sharply with speed.',
   },
   cwst: {
     short: 'Condenser water supply temperature sensor',
     impact: '3–8% chiller savings',
     plain:
-      'Required for cooling tower and chiller coordination, including the temperature reset strategy that improves chiller efficiency during cooler weather.',
+      'Required for cooling tower control and the condenser water reset strategy that improves chiller efficiency.',
   },
   ctFanSpeed: {
     short: 'Cooling tower fan speed control',
     impact: '30–50% tower fan savings',
-    plain:
-      'Variable-speed tower fans can cut fan energy 30–50% during mild weather by running only as fast as needed to reach the target condenser water temperature.',
+    plain: 'Cuts tower fan energy 30–50% by varying fan speed to maintain the condenser water setpoint.',
   },
   // ── AHU point keys ──────────────────────────────────────────────────────
   sfStatus: {
     short: 'Supply fan status feedback',
     impact: 'Required for proof-of-operation',
-    plain:
-      'Confirms the fan is actually running — not just commanded on — preventing control sequences from operating without airflow, which can damage equipment.',
+    plain: 'Confirms the fan is running, not just commanded on, preventing sequences from operating without airflow.',
   },
   sfSpeed: {
     short: 'Supply fan speed feedback',
     impact: 'Required for VFD verification',
     plain:
-      'Confirms the variable speed drive is responding to commands; without it, the system cannot detect a drive fault that causes the fan to run at full speed regardless of load.',
+      'Confirms the drive is responding to commands; without it, a fault causing full-speed operation cannot be detected.',
   },
   sfEnable: {
     short: 'Supply fan enable command',
     impact: 'Required for scheduled operation',
-    plain:
-      'Allows the control system to start and stop the air handler on occupancy schedules; without it, automated scheduling and optimal start sequences cannot be verified.',
+    plain: 'Allows the control system to start and stop the air handler on occupancy schedules.',
   },
   sfSpeedCmd: {
     short: 'Supply fan speed command',
     impact: '20–40% fan energy savings',
     plain:
-      'The control signal that tells the drive how fast to run; without it, the drive defaults to fixed speed and all variable-speed energy savings are lost.',
+      'Commands drive speed; without it, the drive defaults to fixed speed and all variable-speed savings are lost.',
   },
   oaDampCmd: {
     short: 'OA damper position command',
     impact: 'Required for economizer control',
     plain:
-      'Controls how much outdoor air enters for ventilation and free cooling; without it, economizer operation is not possible and ventilation is fixed at a manual setting.',
+      'Controls outdoor air volume for ventilation and free cooling; without it, economizer operation is not possible.',
   },
   raDampCmd: {
     short: 'Return air damper position command',
     impact: 'Required for economizer control',
     plain:
-      'Works with the outdoor air damper to maintain airflow balance — as outdoor air increases for free cooling, the return damper closes to prevent over-pressurization.',
+      'Works with the outdoor air damper to maintain airflow balance and prevent over-pressurization during free cooling.',
   },
   clgValve: {
     short: 'Cooling coil valve command',
     impact: 'Required for mechanical cooling control',
     plain:
-      'Controls chilled water flow through the cooling coil; required for supply air temperature reset and for coordinating mechanical cooling with the economizer.',
+      'Controls chilled water flow through the cooling coil; required for temperature reset and economizer coordination.',
   },
   htgValve: {
     short: 'Heating coil valve command',
     impact: 'Required for preheat and morning warm-up',
     plain:
-      'Controls hot water flow through the heating coil; required for morning warm-up, freeze protection, and cold-weather supply air temperature control.',
+      'Controls hot water flow through the heating coil; required for morning warm-up, freeze protection, and supply air control.',
   },
   freezeStat: {
     short: 'Freeze protection status',
     impact: 'Required for freeze protection safety',
     plain:
-      'Signals the control system when coil temperatures approach freezing so the air handler can be shut down before water coils are damaged.',
+      'Triggers air handler shutdown when coil temperatures approach freezing, preventing costly water coil damage.',
   },
   oaFlow: {
     short: 'Outdoor airflow measurement',
     impact: 'Required for ventilation compliance',
     plain:
-      'Measures actual outdoor air volume entering the unit; without it, there is no way to confirm that code-required minimum ventilation rates are being met.',
+      'Measures actual outdoor air volume; without it, code-required minimum ventilation rates cannot be confirmed.',
   },
   oaEnthalpy: {
     short: 'Outdoor air enthalpy sensor',
     impact: 'Required for differential enthalpy economizer',
     plain:
-      'Measures outdoor air temperature and humidity together, enabling the most accurate method for deciding when outdoor air is truly suitable for free cooling.',
+      'Measures outdoor air temperature and humidity together, enabling the most accurate economizer control method.',
   },
   rfEnable: {
     short: 'Return fan enable command',
     impact: 'Required for building pressure control',
     plain:
-      'Coordinates return fan operation with the supply fan to maintain stable building pressure, preventing door and comfort problems during economizer operation.',
+      'Coordinates return fan operation with the supply fan to maintain stable building pressure during economizer mode.',
   },
   rfSpeedCmd: {
     short: 'Return fan speed command',
     impact: 'Required for building pressure control',
     plain:
-      'Modulates return fan speed to match supply fan airflow; without it, the return fan runs at a fixed speed and cannot adapt as the supply fan varies with load.',
+      'Matches return fan speed to supply fan airflow, preventing pressure swings as the supply fan varies with load.',
   },
   bldgPressure: {
     short: 'Building static pressure sensor',
     impact: 'Required for relief fan/exhaust control',
-    plain:
-      'Allows the system to modulate exhaust or relief fans to prevent over-pressurization during economizer operation, avoiding door problems, drafts, and comfort complaints.',
+    plain: 'Enables exhaust fan modulation to prevent over-pressurization during economizer operation.',
   },
   co2: {
     short: 'CO2 sensor (return or zone)',
     impact: '5–10% fan and cooling savings',
-    plain:
-      'Tracks occupancy through air quality, allowing the system to reduce outdoor air — and the energy to condition it — when rooms are partially or fully empty.',
+    plain: 'Measures occupancy through air quality, allowing the system to reduce outdoor air when rooms are empty.',
   },
   // ── VAV / Terminal point keys ────────────────────────────────────────────
   zoneTemp: {
     short: 'Zone air temperature sensor',
     impact: 'Required for zone control',
-    plain:
-      'The primary feedback signal for zone control — without it, the terminal unit cannot modulate airflow to meet setpoints and there is no way to verify that the space is comfortable.',
+    plain: 'The required feedback signal for zone control; without it, airflow cannot be modulated to meet setpoints.',
   },
   coolSP: {
     short: 'Zone cooling setpoint',
     impact: 'Baseline requirement',
-    plain:
-      'Defines the cooling target temperature; required to prevent simultaneous heating and cooling and to support temperature setbacks during unoccupied hours.',
+    plain: 'Defines the zone cooling target; required to prevent simultaneous heating and cooling.',
   },
   htgSP: {
     short: 'Zone heating setpoint',
     impact: 'Baseline requirement',
-    plain:
-      'Defines the heating target temperature and enables unoccupied setbacks that avoid heating empty spaces overnight or on weekends.',
+    plain: 'Defines the zone heating target and enables unoccupied setbacks to avoid heating empty spaces.',
   },
   dat: {
     short: 'Discharge air temperature sensor',
     impact: 'Required for reheat control',
     plain:
-      'Monitors the temperature of air actually delivered to the space, enabling precise reheat control and preventing overcooling at minimum airflow.',
+      'Monitors delivered air temperature, enabling precise reheat control and preventing overcooling at minimum airflow.',
   },
   fanStatus: {
     short: 'AHU supply fan status (at terminal)',
     impact: 'Required for terminal unit sequencing',
-    plain:
-      'Tells the terminal unit whether the air handler is running so it can open its damper at the right time — preventing wasted energy from a damper open against no airflow.',
+    plain: 'Prevents the terminal damper from opening when the air handler is off, avoiding energy waste.',
   },
   dampCmd: {
     short: 'Damper position command',
     impact: 'Required for zone airflow control',
     plain:
-      'The primary actuator for zone temperature control — modulates how much conditioned air the terminal unit delivers to meet setpoints and maintain minimum ventilation.',
+      'Modulates conditioned air delivery to meet zone temperature setpoints and maintain minimum ventilation requirements.',
   },
   reheatValve: {
     short: 'Reheat valve command',
     impact: 'Required for zone heating',
     plain:
-      'Controls hot water flow through the terminal reheat coil; without it, zone heating must come entirely from the primary air system, reducing efficiency and comfort.',
+      'Controls the terminal reheat coil; without it, zone heating must come from the primary air system at higher cost.',
   },
   primaryFlow: {
     short: 'Primary (cold deck) airflow',
     impact: 'Required for fan-powered box control',
-    plain:
-      'Measures how much cold primary air the terminal receives from the air handler, driving damper position and determining when the local fan should run.',
+    plain: 'Measures cold primary air delivered to the terminal, driving damper modulation and local fan operation.',
   },
   termFanStatus: {
     short: 'Terminal fan status',
     impact: 'Required for fan-powered box proof',
-    plain:
-      'Confirms the terminal fan is actually running, enabling proper sequencing and alarming when the fan fails to start as commanded.',
+    plain: 'Confirms the terminal fan is running and enables alarms when the fan fails to start as commanded.',
   },
   termFanEnable: {
     short: 'Terminal fan enable command',
     impact: 'Required for fan-powered box control',
-    plain:
-      'Starts and stops the local terminal fan on demand; without it, the fan either runs continuously (wasting energy) or never runs (causing comfort and air quality problems).',
+    plain: 'Starts and stops the local fan on demand; without it, the fan runs continuously or not at all.',
   },
   coldDampCmd: {
     short: 'Cold deck damper command (dual-duct)',
     impact: 'Required for dual-duct cooling control',
     plain:
-      'Controls cool air delivery in a dual-duct system; without it, cooling cannot be modulated to meet zone setpoints or coordinated to prevent simultaneous heating and cooling.',
+      'Controls cool air delivery in a dual-duct system; without it, simultaneous heating and cooling cannot be prevented.',
   },
   hotDampCmd: {
     short: 'Hot deck damper command (dual-duct)',
     impact: 'Required for dual-duct heating control',
     plain:
-      'Controls warm air delivery in a dual-duct system; both hot and cold deck dampers must be controlled together to prevent simultaneous heating and cooling.',
+      'Controls warm air in a dual-duct system; both deck dampers must coordinate to prevent simultaneous heating and cooling.',
   },
   // ── HW Plant point keys ──────────────────────────────────────────────────
   hwst: {
     short: 'Hot water supply temperature sensor',
     impact: 'Required for HW reset sequences',
     plain:
-      'Primary feedback for boiler control; required for the outdoor reset strategy that lowers water temperature — and heating costs — as outdoor air warms.',
+      'Required for boiler control and the outdoor reset strategy that lowers water temperature as outdoor air warms.',
   },
   hwrt: {
     short: 'Hot water return temperature sensor',
     impact: 'Required for delta-T monitoring',
     plain:
-      'Measures the temperature drop across the heating system; low temperature drop signals pump, balancing, or coil problems that raise operating costs.',
+      'Measures temperature drop across the heating system; a low reading signals pump, balancing, or coil problems.',
   },
   hwdp: {
     short: 'Hot water differential pressure sensor',
     impact: '10–20% pump energy savings',
-    plain:
-      'Allows the pump to slow when fewer zones call for heat rather than running at full design speed regardless of load.',
+    plain: 'Allows the pump to slow when fewer zones call for heat rather than running at full design speed.',
   },
   boilerStatus: {
     short: 'Boiler status feedback',
@@ -10451,31 +10422,29 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'Boiler enable command',
     impact: 'Required for boiler sequencing',
     plain:
-      'Allows the control system to start and stop individual boilers for staging and rotation; without it, all boilers run continuously regardless of heating demand.',
+      'Allows individual boilers to be started and stopped for staged operation; without it, all boilers run continuously.',
   },
   hwSetpoint: {
     short: 'HW supply temperature setpoint',
     impact: 'Required for outdoor air reset',
     plain:
-      'The command that tells the boiler what temperature to target; adjusting this setpoint with outdoor temperature is one of the most effective ways to reduce boiler energy costs.',
+      'Sets the boiler target temperature; outdoor air reset of this value is a high-impact boiler energy strategy.',
   },
   hwPumpStatus: {
     short: 'Hot water pump status feedback',
     impact: 'Required for pump sequencing',
-    plain:
-      'Confirms heating water is circulating and enables lead/lag rotation and failure alarms — without it, pump problems may go undetected.',
+    plain: 'Confirms heating water is circulating; enables lead/lag rotation and alarms if a pump fails.',
   },
   hwPumpEnable: {
     short: 'Hot water pump enable command',
     impact: 'Required for pump staging',
     plain:
-      'Starts individual pumps as part of lead/lag sequences; without individual control, the plant cannot rotate equipment or shed pumps when demand is low.',
+      'Starts individual pumps for lead/lag sequences; without it, the plant cannot rotate or shed pumps at low demand.',
   },
   hwPumpSpeed: {
     short: 'Hot water pump speed command',
     impact: '10–25% pump energy savings',
-    plain:
-      'Slows the pump to match actual heating demand rather than running at full design speed, directly reducing pump energy costs.',
+    plain: 'Allows the pump to match speed to actual heating demand rather than running at full design speed.',
   },
   // ── CHW Plant point keys ─────────────────────────────────────────────────
   chwst: {
@@ -10488,136 +10457,129 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'Chilled water return temperature sensor',
     impact: 'Required for delta-T monitoring',
     plain:
-      'Measures how fully the chilled water is utilized; poor utilization causes the chiller to over-cycle and consume excess energy.',
+      'Measures chilled water utilization; poor utilization causes the chiller to over-cycle and consume excess energy.',
   },
   chwdp: {
     short: 'Chilled water differential pressure sensor',
     impact: '10–20% pump energy savings',
-    plain:
-      'Allows chilled water pumps to slow during light loads; pump energy drops sharply with speed, yielding large savings during the many partial-load hours typical of commercial buildings.',
+    plain: 'Allows chilled water pumps to slow during light loads; pump energy drops sharply with speed.',
   },
   // ── HWP additional point keys ───────────────────────────────────────────
   hwFlow: {
     short: 'Hot water flow meter',
     impact: 'Required for BTU metering and delta-T monitoring',
     plain:
-      'Measures actual heat delivered, enabling efficiency tracking and detection of low temperature-drop conditions that signal pumping or coil problems.',
+      'Measures actual heat delivered and detects low temperature-drop conditions that signal pumping or coil problems.',
   },
   hwIsoValve: {
     short: 'Boiler isolation valve status',
     impact: 'Required for safe boiler staging',
     plain:
-      'Confirms the boiler inlet and outlet valves are open before the boiler fires; without this check, staging into a closed system risks pressure damage and failed starts.',
+      'Confirms boiler isolation valves are open before staging; a closed system risks pressure damage and failed starts.',
   },
   secHWPumpStatus: {
     short: 'Secondary hot water pump status feedback',
     impact: 'Required for secondary loop verification',
     plain:
-      'Confirms distribution pumps are running and heat is reaching terminal units; enables lead/lag rotation and failure alarms.',
+      'Confirms distribution pumps are running and heat is reaching terminal units; enables lead/lag and failure alarms.',
   },
   hwIsoValveCmd: {
     short: 'Boiler isolation valve command',
     impact: 'Required for boiler sequencing',
     plain:
-      'Opens and closes individual boiler ports during staging; without it, boilers cannot be safely added to or removed from the loop without manual intervention.',
+      'Isolates individual boilers during staging; without it, boilers require manual valve operation to be added or removed.',
   },
   // ── CHWP additional point keys ─────────────────────────────────────────
   chillerEvapDP: {
     short: 'Chiller evaporator differential pressure sensor',
     impact: 'Required for minimum flow protection',
     plain:
-      'Verifies adequate chilled water flow through the chiller barrel; without it, low-flow conditions that freeze the evaporator go undetected until costly equipment damage occurs.',
+      'Confirms adequate flow through the chiller barrel; without it, low-flow conditions that freeze the evaporator go undetected.',
   },
   chwFlow: {
     short: 'Chilled water flow meter',
     impact: 'Required for ton metering and delta-T monitoring',
     plain:
-      'Measures actual cooling delivered in tons, enabling efficiency tracking and detection of poor chilled water utilization that causes chiller over-cycling.',
+      'Measures cooling delivered in tons and detects poor chilled water utilization that causes chiller over-cycling.',
   },
   chillerStatus: {
     short: 'Chiller run status feedback',
     impact: 'Required for chiller staging and alarming',
-    plain:
-      'Confirms each chiller is running and fault-free, enabling staged operation and immediate alarms when the most critical plant equipment trips offline.',
+    plain: 'Confirms each chiller is running and fault-free; enables staged operation and fault alarms.',
   },
   pchwpStatus: {
     short: 'Primary chilled water pump status feedback',
     impact: 'Required for pump sequencing and alarming',
-    plain:
-      'Confirms chilled water is circulating through the chiller barrel before the chiller starts, preventing damage; also enables lead/lag rotation and failure alarms.',
+    plain: 'Confirms pump flow before chiller start; prevents evaporator damage and enables lead/lag rotation.',
   },
   schwpStatus: {
     short: 'Secondary chilled water pump status feedback',
     impact: 'Required for distribution loop verification',
-    plain:
-      'Confirms cooling is being distributed to the building; without it, pump failures go undetected and lead/lag rotation is not possible.',
+    plain: 'Confirms cooling is being distributed; pump failures and lead/lag rotation cannot be managed without it.',
   },
   schwpSpeed: {
     short: 'Secondary chilled water pump speed feedback',
     impact: 'Required for pump VFD verification',
-    plain:
-      'Confirms the variable speed drive is following speed commands; without it, a drive fault that locks the pump at full speed cannot be detected.',
+    plain: 'Confirms the drive is following speed commands; a stuck-at-full-speed fault cannot be detected without it.',
   },
   chwIsoValveStatus: {
     short: 'Chiller CHW isolation valve status feedback',
     impact: 'Required for safe chiller staging',
     plain:
-      'Confirms the evaporator-side valve is open before the chiller is enabled; starting a chiller without confirmed flow risks freeze damage and failed starts.',
+      'Confirms the evaporator valve is open before the chiller starts; unconfirmed flow risks freeze damage and failed starts.',
   },
   chillerEnable: {
     short: 'Chiller enable command',
     impact: 'Required for chiller staging sequences',
-    plain:
-      'Starts and stops individual chillers for staged and lead/lag operation; without it, all chillers must run continuously regardless of cooling demand.',
+    plain: 'Starts and stops individual chillers for staging; without it, all chillers run continuously.',
   },
   chwSetpoint: {
     short: 'Chiller leaving water temperature setpoint command',
     impact: 'Required for CHW supply temperature reset',
     plain:
-      'The command that tells the chiller what temperature to target; raising this setpoint during mild weather is one of the most effective ways to reduce chiller energy costs.',
+      'Sets the chiller target temperature; raising it during mild weather is a high-impact chiller energy strategy.',
   },
   pchwpEnable: {
     short: 'Primary chilled water pump enable command',
     impact: 'Required for pump staging sequences',
-    plain:
-      'Starts individual primary pumps before chiller staging and as part of lead/lag rotation; without it, primary pumps cannot be safely managed by the control system.',
+    plain: 'Enables primary pump staging and lead/lag rotation; without it, pumps cannot be safely sequenced.',
   },
   schwpEnable: {
     short: 'Secondary chilled water pump enable command',
     impact: 'Required for distribution pump staging',
     plain:
-      'Starts and stops distribution pumps in response to cooling demand; without it, secondary pumps must run continuously, wasting energy during low-load periods.',
+      'Starts and stops distribution pumps in response to cooling demand; without it, secondary pumps run continuously.',
   },
   chwIsoValveCmd: {
     short: 'CHW isolation valve command',
     impact: 'Required for chiller isolation during staging',
     plain:
-      'Opens and closes each chiller evaporator port during staging; without it, chillers cannot be safely added to or removed from the loop without manual intervention.',
+      'Opens and closes chiller evaporator ports during staging; without it, chillers require manual valve operation.',
   },
   // ── CT (Cooling Tower) point keys ─────────────────────────────────────────
   cwrt: {
     short: 'Condenser water return temperature sensor',
     impact: 'Required for condenser delta-T monitoring',
     plain:
-      'Measures heat rejected through the cooling tower; low temperature drop signals tower, chiller, or pumping problems that reduce overall plant efficiency.',
+      'Measures heat rejected through the cooling tower; a low temperature drop signals tower, chiller, or pumping problems.',
   },
   oaWetBulb: {
     short: 'Outdoor air wet-bulb temperature sensor',
     impact: 'Required for cooling tower approach control',
     plain:
-      'Sets the performance target for the cooling tower and enables the condenser water setpoint reset strategy that improves chiller efficiency during mild weather.',
+      'Sets the cooling tower performance target and enables the condenser water reset that improves chiller efficiency.',
   },
   oaRH: {
     short: 'Outdoor air relative humidity sensor',
     impact: 'Supports wet-bulb calculation',
     plain:
-      'Combined with outdoor air temperature, allows the system to calculate wet-bulb temperature without a dedicated sensor, enabling condenser water reset based on actual conditions.',
+      'Combined with outdoor temperature, enables wet-bulb calculation without a dedicated sensor for condenser water reset.',
   },
   ctFanStatus: {
     short: 'Cooling tower fan run status feedback',
     impact: 'Required for fan proof-of-operation',
     plain:
-      'Confirms the tower fan is running and providing evaporative cooling; without it, fan failures that allow condenser water temperatures to rise cannot be detected or alarmed.',
+      'Confirms the tower fan is running; without it, failures allowing condenser water temperatures to rise cannot be detected.',
   },
   cwPumpStatus: {
     short: 'Condenser water pump run status feedback',
@@ -10628,157 +10590,147 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   sumpLevel: {
     short: 'Cooling tower sump/basin water level',
     impact: 'Required for freeze and overflow protection',
-    plain:
-      'Monitors basin water level to trigger makeup water when low (preventing pump cavitation) and to detect overflow or a stuck-open valve that wastes water.',
+    plain: 'Monitors basin level to prevent pump cavitation and detect overflow from a stuck-open makeup valve.',
   },
   cwIsoValveStatus: {
     short: 'Condenser water isolation valve status feedback',
     impact: 'Required for safe chiller staging',
     plain:
-      'Confirms the condenser-side valve is open before the chiller is enabled; starting without confirmed condenser flow risks refrigerant-side damage and failed starts.',
+      'Confirms the condenser valve is open before the chiller starts; unconfirmed flow risks refrigerant damage and failed starts.',
   },
   ctFanEnable: {
     short: 'Cooling tower fan enable command',
     impact: 'Required for tower fan sequencing',
     plain:
-      'Starts and stops tower fans in response to condenser water temperature; without it, fans run continuously or require manual control, eliminating energy savings from fan cycling.',
+      'Starts and stops tower fans based on condenser water temperature; without it, fans run continuously and cycling savings are lost.',
   },
   cwPumpEnable: {
     short: 'Condenser water pump enable command',
     impact: 'Required for condenser pump staging',
     plain:
-      'Starts condenser pumps before chiller staging and supports lead/lag rotation; without individual pump control, safe chiller staging is not possible.',
+      'Starts condenser pumps for chiller staging and lead/lag rotation; without it, safe chiller staging is not possible.',
   },
   cwIsoValveCmd: {
     short: 'Condenser water isolation valve command',
     impact: 'Required for chiller staging sequences',
-    plain:
-      'Opens and closes each condenser-side port during staging; without it, chillers cannot be safely added to or removed from the condenser loop without manual intervention.',
+    plain: 'Opens and closes condenser ports during staging; without it, chillers require manual valve operation.',
   },
   makeupValveCmd: {
     short: 'Cooling tower makeup water valve command',
     impact: 'Required for basin level control',
     plain:
-      'Automatically refills the basin when level drops, preventing pump cavitation; without control, a fixed valve position risks overflow during light load or pump damage when the basin empties.',
+      'Automatically refills the basin when level drops, preventing pump cavitation and overflow from a fixed valve position.',
   },
   // ── EM_SEQUENCE_DEFS sequence keys ──────────────────────────────────────
   ahu_sat_reset: {
     short: 'Supply air temperature reset sequence (AHU)',
     impact: '5–12% heating & cooling savings',
     plain:
-      'Adjusts supply air temperature based on outdoor conditions and zone demand, reducing conditioning energy during the many hours buildings operate below peak load.',
+      'Adjusts supply air temperature to match outdoor conditions and zone demand, cutting conditioning energy during partial loads.',
   },
   ahu_dsp_reset: {
     short: 'Duct static pressure reset sequence (AHU)',
     impact: '10–25% fan energy savings',
-    plain:
-      'Lowers duct pressure when zones have adequate airflow, allowing the fan to slow down significantly — this sequence alone typically cuts fan energy by 15% or more annually.',
+    plain: 'Lowers duct pressure when zones have adequate airflow; typically cuts fan energy by 15% or more annually.',
   },
   ahu_economizer: {
     short: 'Economizer control sequence (AHU)',
     impact: '5–15% cooling savings',
-    plain:
-      'Uses outdoor air for free cooling whenever conditions allow; without it, the chiller runs even when outdoor air could do the same job at no operating cost.',
+    plain: 'Uses outdoor air for free cooling whenever conditions allow, reducing chiller run time.',
   },
   ahu_freeze_prot: {
     short: 'Freeze protection sequence (AHU)',
     impact: 'Required for coil safety',
-    plain:
-      'Shuts down the air handler if freezing conditions are detected, preventing cold outdoor air from freezing water coils and causing costly equipment damage.',
+    plain: 'Shuts down the air handler when freezing is detected, preventing costly water coil damage.',
   },
   ahu_min_oa: {
     short: 'Minimum outdoor air control sequence (AHU)',
     impact: 'Required for ventilation compliance',
     plain:
-      'Coordinates the outdoor air damper with fan speed to ensure code-required minimum ventilation is maintained even as the fan slows for energy savings.',
+      'Coordinates the outdoor air damper with fan speed to maintain code-required minimum ventilation during part-load operation.',
   },
   ahu_rf_control: {
     short: 'Return fan control sequence (AHU)',
     impact: 'Required for building pressure control',
     plain:
-      'Tracks supply fan airflow with the return fan to maintain building pressurization; without it, economizer operation causes pressure swings that affect door operation and occupant comfort.',
+      'Matches return fan speed to supply fan output to maintain pressurization; without it, economizer causes pressure swings.',
   },
   vav_zone_temp: {
     short: 'Zone temperature control sequence (VAV)',
     impact: 'Required for zone comfort and compliance',
     plain:
-      'The foundational zone control sequence — modulates airflow to hold each space between heating and cooling setpoints; without it, temperatures float and simultaneous heating and cooling is common.',
+      'Modulates airflow to maintain zone temperature between setpoints; without it, temperatures drift and simultaneous heating and cooling is common.',
   },
   vav_damper_writeback: {
     short: 'Damper position write-back sequence (VAV)',
     impact: 'Required for position verification and diagnostics',
     plain:
-      'Surfaces the damper command position as a BACnet read-back point, enabling fault detection and diagnostics to verify the actuator is responding as commanded. Applicable only to units that expose a damper command point in the BAS export.',
+      'Surfaces the damper command as a BACnet read-back point for fault detection; applicable to units that expose this point in the BAS export.',
   },
   vav_reheat: {
     short: 'Zone reheat sequence (VAV)',
     impact: 'Required for zone heating at minimum airflow',
     plain:
-      'Activates terminal reheat when a zone cools below setpoint at minimum airflow; without it, all heating must come from primary air, increasing air handler energy and reducing comfort.',
+      'Activates reheat at minimum airflow; without it, zone heating falls to the primary air system, increasing air handler energy.',
   },
   hwp_supply_reset: {
     short: 'Hot water supply temperature reset sequence',
     impact: '5–15% boiler savings',
-    plain:
-      'Reduces boiler water temperature as outdoor air warms, cutting heat loss and improving efficiency — especially valuable for condensing boilers that benefit from lower return temperatures.',
+    plain: 'Reduces boiler water temperature as outdoor air warms, cutting heat loss and improving boiler efficiency.',
   },
   hwp_pump_dp_reset: {
     short: 'Hot water pump differential pressure reset sequence',
     impact: '10–25% pump energy savings',
-    plain:
-      'Lowers pump pressure when zone valves are wide open, allowing the pump to slow down — pump energy drops sharply with speed, delivering large savings during partial-load hours.',
+    plain: 'Lowers pump pressure when zone valves are wide open, allowing the pump to slow and cut energy.',
   },
   hwp_staging: {
     short: 'Boiler and pump staging sequence',
     impact: 'Required for efficient multi-boiler operation',
     plain:
-      'Starts and stops boilers and pumps based on actual heating demand and rotates lead/lag assignments to equalize wear; without it, all equipment runs regardless of load.',
+      'Stages boilers and pumps to match actual demand and rotates lead/lag assignments; without it, all equipment runs continuously.',
   },
   chwp_supply_reset: {
     short: 'Chilled water supply temperature reset sequence',
     impact: '3–10% chiller savings',
-    plain:
-      'Raises chilled water temperature when cooling demand is light, allowing the chiller to run more efficiently during the many hours below peak load.',
+    plain: 'Raises chilled water temperature during light loads, allowing the chiller to run more efficiently.',
   },
   chwp_pump_dp_reset: {
     short: 'Chilled water pump differential pressure reset sequence',
     impact: '10–20% pump energy savings',
     plain:
-      'Lowers pump pressure when coil valves are wide open, reducing pump speed and energy during the partial-load hours that dominate most cooling seasons.',
+      'Lowers pump pressure when coil valves are wide open, reducing pump speed and energy during partial-load hours.',
   },
   chwp_staging: {
     short: 'Chiller and pump staging sequence',
     impact: 'Required for efficient multi-chiller operation',
     plain:
-      'Starts and stops chillers and pumps based on cooling demand and rotates lead/lag assignments; without it, systems run excess capacity at low efficiency during shoulder seasons.',
+      'Stages chillers and pumps based on cooling demand and rotates lead/lag assignments; without it, excess capacity runs at low efficiency.',
   },
   // ── VAV/zone DCV sequence key ──────────────────────────────────────────────
   vav_dcv: {
     short: 'Demand-controlled ventilation (VAV zones)',
     impact: '5–10% fan and cooling savings',
-    plain:
-      'Adjusts outdoor air to each zone based on CO₂ readings so the system only ventilates occupied spaces — avoiding the energy cost of conditioning outside air for empty rooms.',
+    plain: 'Adjusts outdoor air per zone based on CO₂ readings, avoiding the energy cost of ventilating empty rooms.',
   },
   // ── Heater point key ────────────────────────────────────────────────────────
   enable: {
     short: 'Heater enable / status',
     impact: 'Required for heater scheduling',
     plain:
-      'Allows the control system to start and stop unit heaters on occupancy schedules; without it, heaters cannot be automatically disabled during unoccupied hours.',
+      'Starts and stops unit heaters on occupancy schedules; without it, heaters run continuously during unoccupied hours.',
   },
   // ── VVT Zone point key ──────────────────────────────────────────────────────
   zoneDamper: {
     short: 'Zone damper position command',
     impact: 'Required for zone airflow control',
-    plain:
-      'Controls the volume of conditioned air delivered to each zone; without a damper command, the system cannot modulate airflow to meet setpoints or maintain minimum ventilation.',
+    plain: 'Controls conditioned air volume to each zone; without it, airflow cannot be modulated to meet setpoints.',
   },
   // ── oaRh lowercase alias (equipment-matrix uses lowercase h) ────────────────
   oaRh: {
     short: 'Outdoor air relative humidity sensor',
     impact: 'Supports wet-bulb calculation',
     plain:
-      'Combined with outdoor air temperature, allows the system to calculate wet-bulb temperature without a dedicated sensor, enabling condenser water reset based on actual conditions.',
+      'Combined with outdoor temperature, enables wet-bulb calculation without a dedicated sensor for condenser water reset.',
   },
   // ── Setpoint value compliance gap types (Phase 5) ────────────────────────────
   // These describe deviations from GL36 §3.1.1.1 defaults, not missing hardware.
@@ -10787,25 +10739,25 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'Zone setpoint differs from GL36 §3.1.1.1 default',
     impact: 'Zero-hardware quick win',
     plain:
-      'One or more zone temperature setpoints differ from the ASHRAE Guideline 36 defaults. Designer overrides are permitted under §3.1.1.1 — these items should be confirmed intentional. If not, correcting them costs nothing and immediately improves occupant comfort and energy performance.',
+      'One or more zone setpoints differ from Guideline 36 defaults. Overrides are permitted — confirm these are intentional; corrections are a no-cost software change.',
   },
   spDeadbandTooNarrow: {
     short: 'Heating/cooling deadband below GL36 §3.1.1.1 minimum (1°F)',
     impact: 'Zero-hardware quick win',
     plain:
-      'The gap between the occupied heating and cooling setpoints is narrower than the Guideline 36 minimum of 1°F. A narrow deadband causes the heating and cooling systems to compete against each other, wasting energy. Widening it to at least 2°F is a BAS programming change with no hardware cost.',
+      'The occupied deadband is below the Guideline 36 minimum of 1°F, causing heating and cooling to compete. Widening to at least 2°F requires only a programming change.',
   },
   spCO2Deviation: {
     short: 'CO₂ demand-control setpoint differs from GL36 Table 3.1.1.3 default',
     impact: 'Zero-hardware quick win',
     plain:
-      'The zone CO₂ setpoint differs from the GL36 Table 3.1.1.3 default for this occupancy type. An incorrect setpoint can cause the system to over-ventilate (wasting energy) or under-ventilate (reducing air quality). Confirming or correcting these values is a software-only change.',
+      'Zone CO₂ setpoint differs from the Guideline 36 default; an incorrect value causes over-ventilation or under-ventilation. Correction is software-only.',
   },
   spNotScheduled: {
     short: 'Setpoint value not found in export — schedule status unknown',
     impact: 'Data completeness',
     plain:
-      'The BAS export did not include a numeric value for this setpoint. The point may exist in the controller but was not trended or exported. Verifying the programmed value requires a direct BAS lookup and costs no hardware.',
+      'The BAS export did not include a numeric value for this setpoint; the programmed value requires a direct BAS lookup to verify.',
   },
 };
 
@@ -10817,6 +10769,7 @@ var ASHRAE36_SECTIONS = {
   audit: [
     { key: 'cover', label: 'Cover Page', group: 'Report', defaultOn: true },
     { key: 'executive', label: 'Executive Summary', group: 'Report', defaultOn: true },
+    { key: 'costEstimate', label: 'Gap Details', group: 'Report', defaultOn: true },
     { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
     { key: 'recommendations', label: 'Recommendations', group: 'Report', defaultOn: true },
     { key: 'setpointReview', label: 'Setpoint Programming Review', group: 'Report', defaultOn: true },
@@ -11544,15 +11497,7 @@ function _a36StatusChip(status, inPlace, required) {
   var word = status === 'green' ? 'Ready' : status === 'amber' ? 'Partial' : 'Critical';
   var label =
     inPlace !== undefined && required !== undefined ? word + ' · ' + inPlace + '/' + required + ' sensors' : word;
-  return (
-    '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;color:' +
-    color +
-    ';background:transparent;border:1px solid ' +
-    color +
-    '">' +
-    label +
-    '</span>'
-  );
+  return '<span style="font-size:10px;color:var(--rpt-page-text)">' + label + '</span>';
 }
 
 // ─── rptPageASHRAE36Cover ─────────────────────────────────────────────────
@@ -11690,7 +11635,7 @@ function rptPageASHRAE36Executive(n, d) {
   if (topGap) {
     callout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-orange);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
       '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
       (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].short : topGap.key) +
       '</div>' +
@@ -11716,7 +11661,7 @@ function rptPageASHRAE36Executive(n, d) {
     var dcvSentence = dcvParts.join(' and ') + ' have no CO₂ sensor.';
     dcvCallout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">Demand Control Ventilation Readiness</div>' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Demand Control Ventilation Readiness</div>' +
       '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
       ' Without CO₂ sensing, these units ventilate at full design rates even when spaces are empty—wasting fan and cooling energy. ' +
@@ -11889,304 +11834,100 @@ function rptPageASHRAE36CostEstimate(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var projId = d.project.id;
 
-  // Guard: collectPricingEstimate may not be in scope if pricing-estimator.js
-  // is not loaded (spec §10 — same pattern as emLoadCustomMappings etc.).
-  var hasFn = typeof collectPricingEstimate === 'function';
-
-  var compEst = null;
-  var recEst = null;
-  var fsEst = null;
-  if (hasFn) {
-    try {
-      compEst = collectPricingEstimate(projId, 'compliance');
-    } catch (e) {
-      compEst = null;
-    }
-    try {
-      recEst = collectPricingEstimate(projId, 'recommended');
-    } catch (e) {
-      recEst = null;
-    }
-    try {
-      fsEst = collectPricingEstimate(projId, 'full-scope');
-    } catch (e) {
-      fsEst = null;
-    }
-  }
-
-  // Dollar formatter — null means incomplete (missing manual prices), never render $0 for null.
-  // Returns formatted dollar string or em-dash when total is incomplete.
-  function _fmtUSD(v) {
-    if (v === null || v === undefined) return '—';
-    return '$' + Math.round(v).toLocaleString();
-  }
-
-  // ── Section title
-  var sectionTitle =
-    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:14px;' +
-    'text-transform:uppercase;letter-spacing:0.04em">Estimated Upgrade Cost</div>';
-
-  var bodyHTML;
-  var rationaleTokens = []; // hoisted: always initialized (fix for bug 4c6a380d — was inside else only)
-
-  if (!hasFn || (!compEst && !recEst && !fsEst)) {
-    // FALLBACK: no pricing imported — render a neutral note, never $0
-    bodyHTML =
-      sectionTitle +
-      '<div class="rpt-a36-callout" style="margin-bottom:16px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-orange);margin-bottom:4px">Cost Estimate Not Available</div>' +
-      '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
-      'Cost estimate not available — import a pricing CSV in the Cost Estimate tab.' +
-      '</div>' +
-      '</div>';
-  } else {
-    // Prefer compliance tier for Phase 1 hardware & Phase 2 labor lines;
-    // fall back to recommended if compliance is null (shouldn't happen normally).
-    var src = compEst || recEst || fsEst;
-    var basisLabel = (src.basis || 'contract').charAt(0).toUpperCase() + (src.basis || 'contract').slice(1);
-
-    // Build cost rows table in cost-ascending order: Recommended → Compliance → Full Scope.
-    // Values are priced subtotals (pendingPriceCount rows excluded from total).
-    // null only when no catalog or zero priced rows; _fmtUSD renders "—" for null.
-    var rowStyle =
-      'padding:10px 12px;font-size:12px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)';
-    var labelStyle = rowStyle + ';font-weight:600;width:65%';
-    var valueStyle = rowStyle + ';text-align:right;font-weight:700;font-size:13px';
-    var tblRows = '';
-
-    // Row 1: Recommended (cheapest — best-ROI subset of Compliance, no add-ons)
-    if (recEst) {
-      tblRows +=
-        '<tr>' +
-        '<td style="' +
-        labelStyle +
-        '">Recommended Package (best-ROI subset)</td>' +
-        '<td style="' +
-        valueStyle +
-        '">' +
-        _fmtUSD(recEst.grandTotal) +
-        '</td>' +
-        '</tr>';
-    }
-
-    // Rows 2–3: Compliance — Phase 1 hardware and Phase 2 programming (middle tier)
-    if (compEst) {
-      tblRows +=
-        '<tr>' +
-        '<td style="' +
-        labelStyle +
-        '">ASHRAE 36 Compliance — Hardware (Phase 1)</td>' +
-        '<td style="' +
-        valueStyle +
-        '">' +
-        _fmtUSD(compEst.hardwareTotal) +
-        '</td>' +
-        '</tr>' +
-        '<tr>' +
-        '<td style="' +
-        labelStyle +
-        '">ASHRAE 36 Compliance — Programming (Phase 2)</td>' +
-        '<td style="' +
-        valueStyle +
-        '">' +
-        _fmtUSD(compEst.laborTotal) +
-        '</td>' +
-        '</tr>';
-    }
-
-    // Row 4: Full Scope (most expensive — Compliance + FDD add-on)
-    if (fsEst) {
-      tblRows +=
-        '<tr style="background:rgba(0,0,0,0.03)">' +
-        '<td style="' +
-        labelStyle +
-        ';background:rgba(0,0,0,0.03)">Full Scope (Compliance + FDD Reporting)</td>' +
-        '<td style="' +
-        valueStyle +
-        ';background:rgba(0,0,0,0.03)">' +
-        _fmtUSD(fsEst.grandTotal) +
-        '</td>' +
-        '</tr>';
-    }
-
-    var costTable =
-      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
-      '<thead><tr>' +
-      '<th style="padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-      'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Line Item</th>' +
-      '<th style="padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-      'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:right">Estimate</th>' +
-      '</tr></thead>' +
-      '<tbody>' +
-      tblRows +
-      '</tbody>' +
-      '</table>';
-
-    // Pending-price caveat note (user-approved wording: show subtotal + note excluded items)
-    var pendingCount = compEst ? compEst.pendingPriceCount || 0 : 0;
-    var pendingNote = '';
-    if (pendingCount > 0) {
-      pendingNote =
-        '<div style="font-size:10px;color:var(--rpt-orange);margin-bottom:10px;line-height:1.5">' +
-        'Excludes ' +
-        pendingCount +
-        ' third-party item' +
-        (pendingCount !== 1 ? 's' : '') +
-        ' (freeze stats, OA flow stations) pending price. ' +
-        'Engineering-review items included at typical sizing — verify before quoting.' +
-        '</div>';
-    }
-
-    // Engineering review note (shown only when no pending-price note already covers it)
-    var engNote = '';
-    if (pendingCount === 0) {
-      var totalEngReview = (compEst ? compEst.engReviewCount : 0) + (recEst ? recEst.engReviewCount : 0);
-      if (totalEngReview > 0) {
-        engNote =
-          '<div style="font-size:10px;color:var(--rpt-orange);margin-bottom:10px;line-height:1.5">' +
-          '⚠ Engineering-review items (' +
-          totalEngReview +
-          ') included at typical sizing — verify before quoting.' +
-          '</div>';
-      }
-    }
-
-    // Pricing footnote
-    var footnote =
-      '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5;margin-top:6px">' +
-      'Estimates based on ALC catalog pricing at ' +
-      basisLabel +
-      ' basis. ' +
-      (pendingCount > 0 ? '' : 'Engineering-review items included at typical sizing. Verify before quoting.') +
-      '</div>';
-
-    // M&V disclaimer (correction #11 — also in tab footer) — plain text, no badge chips
-    var savingsDisclaimerHTML = '';
-    if (typeof SAVINGS_DISCLAIMER_TEXT === 'string' && SAVINGS_DISCLAIMER_TEXT) {
-      savingsDisclaimerHTML =
-        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;margin-top:8px;' +
-        'padding:6px 8px;border:1px solid var(--rpt-rule);border-radius:3px;background:rgba(0,0,0,0.02)">' +
-        '<strong>M&amp;V Disclaimer: </strong>' +
-        _esc(SAVINGS_DISCLAIMER_TEXT) +
-        '</div>';
-    }
-
-    // ── Per-point rationale block — "What Each Gap Addresses"
-    // Reuses ASHRAE36_GAP_DESCRIPTIONS (this file) and PRICE_POINT_MAP.whyNotHardware
-    // (pricing-estimator.js, loaded in same page scope) to explain WHY each
-    // hardware gap matters to a county decision-maker, with G36 § reference.
-    // Phase 5 (correction #10): also adds Phase-2 sequence rows with savingsRationale
-    // as plain text (~120 char truncation). NO badge chips in the PDF.
-    // Only rendered when buildComplianceRows is available and returns rows.
-    // Pagination: rows converted to _rptPaginateTokens tokens so the rationale
-    // table can span continuation pages when the full JOCO portfolio (~51 rows)
-    // would overflow a single 1056px page. Same paginator as building/exec pages.
-    // rationaleTokens is declared above (hoisted before if/else — bug 4c6a380d fix).
-    try {
-      if (typeof buildComplianceRows === 'function') {
-        var compRows = buildComplianceRows(projId);
-        // Collect unique phase-1 point keys in order of first appearance
-        var seenKeys = {};
-        compRows.forEach(function (row) {
-          if (row.phase !== 1) return;
-          var pk = row._pointKey;
-          if (!pk || seenKeys[pk]) return;
-          seenKeys[pk] = true;
-          var desc = ASHRAE36_GAP_DESCRIPTIONS[pk];
-          // Use whyNotHardware from PRICE_POINT_MAP for ioOnly programming items (dampCmd etc.),
-          // otherwise use plain text from ASHRAE36_GAP_DESCRIPTIONS.
-          var plainText = '';
-          var g36Ref = row.g36Section || (desc ? '' : '');
-          var isProgramming = row.type === 'Programming';
-          if (isProgramming && row.whyNotHardware) {
-            plainText = row.whyNotHardware;
-          } else if (row.whyNeeded) {
-            plainText = row.whyNeeded;
-          } else if (desc && desc.plain) {
-            plainText = desc.plain;
-          }
-          var shortLabel = desc && desc.short ? _esc(desc.short) : _esc(row.item);
-          if (plainText) {
-            var badge = isProgramming
-              ? '<span style="font-size:9px;background:#e8f0fe;color:#1a56db;border-radius:3px;padding:1px 5px;margin-right:5px;font-weight:600">PROGRAMMING</span>'
-              : '';
-            var g36Badge = g36Ref
-              ? '<span style="font-size:9px;color:var(--rpt-blue);margin-left:4px">ASHRAE 36 ' +
-                _esc(g36Ref) +
-                '</span>'
-              : '';
-            var rowHTML =
-              '<tr>' +
-              '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-              'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:32%;white-space:nowrap">' +
-              badge +
-              shortLabel +
-              g36Badge +
-              '</td>' +
-              '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-              'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
-              _esc(plainText) +
-              '</td>' +
-              '</tr>';
-            // estH: DOM-measured 40–65px per row (avg ~55px); 60px for safety on wrapping text
-            rationaleTokens.push({ type: 'row', html: rowHTML, estH: 60 });
-          }
-        });
-
-        // Phase 5 (correction #10): append Phase-2 sequence rows with savingsRationale.
-        // Use buildRecommendedRows so savingsRationale is already stamped.
-        // Only savings-type rows (not enabler, not safety). Deduplicate by seqKey.
-        // Plain text only — NO badge chips in the PDF.
-        if (typeof buildRecommendedRows === 'function') {
-          var recRows10 = buildRecommendedRows(projId);
-          var seenSeqKeys = {};
-          recRows10.forEach(function (row) {
-            if (row.phase !== 2) return;
-            if (!row.seqKey || seenSeqKeys[row.seqKey]) return;
-            if (!row.savingsRationale) return;
-            // Exclude enabler and safety — they don't have energy savings rationale
-            if (row.savingsImpact === 'enabler' || row.savingsImpact === 'safety') return;
-            seenSeqKeys[row.seqKey] = true;
-            // Truncate rationale to ~120 chars for the PDF
-            var rationaleSnippet =
-              row.savingsRationale.length > 120 ? row.savingsRationale.slice(0, 120) + '…' : row.savingsRationale;
-            // Tier label — plain text, no chip HTML
-            var tierLabel = row.savingsImpact ? '[' + row.savingsImpact.toUpperCase() + '] ' : '';
-            var seqRowHTML =
-              '<tr>' +
-              '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-              'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:32%;white-space:nowrap">' +
-              _esc(row.item) +
-              '</td>' +
-              '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-              'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
-              _esc(tierLabel + rationaleSnippet) +
-              '</td>' +
-              '</tr>';
-            rationaleTokens.push({ type: 'row', html: seqRowHTML, estH: 60 });
-          });
+  var rationaleTokens = [];
+  try {
+    if (typeof buildComplianceRows === 'function') {
+      var compRows = buildComplianceRows(projId);
+      // Collect unique phase-1 point keys in order of first appearance
+      var seenKeys = {};
+      compRows.forEach(function (row) {
+        if (row.phase !== 1) return;
+        var pk = row._pointKey;
+        if (!pk || seenKeys[pk]) return;
+        seenKeys[pk] = true;
+        var desc = ASHRAE36_GAP_DESCRIPTIONS[pk];
+        // Use whyNotHardware from PRICE_POINT_MAP for ioOnly programming items (dampCmd etc.),
+        // otherwise use plain text from ASHRAE36_GAP_DESCRIPTIONS.
+        var plainText = '';
+        var g36Ref = row.g36Section || (desc ? '' : '');
+        var isProgramming = row.type === 'Programming';
+        if (isProgramming && row.whyNotHardware) {
+          plainText = row.whyNotHardware;
+        } else if (row.whyNeeded) {
+          plainText = row.whyNeeded;
+        } else if (desc && desc.plain) {
+          plainText = desc.plain;
         }
-      }
-    } catch (e) {
-      rationaleTokens = []; // non-fatal — omit block if anything throws
-    }
+        var shortLabel = desc && desc.short ? _esc(desc.short) : _esc(row.item);
+        if (plainText) {
+          var badge = isProgramming ? 'Programming — ' : '';
+          var rowHTML =
+            '<tr>' +
+            '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+            'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:28%;white-space:nowrap">' +
+            badge +
+            shortLabel +
+            '</td>' +
+            '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+            'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:18%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+            (g36Ref ? 'ASHRAE 36 ' + _esc(g36Ref) : '') +
+            '</td>' +
+            '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+            'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
+            _esc(plainText) +
+            '</td>' +
+            '</tr>';
+          // estH: DOM-measured 40–65px per row (avg ~55px); 60px for safety on wrapping text
+          rationaleTokens.push({ type: 'row', html: rowHTML, estH: 60 });
+        }
+      });
 
-    bodyHTML = sectionTitle + costTable + pendingNote + engNote + footnote + savingsDisclaimerHTML;
-    // rationaleTokens populated above — pagination happens in page assembly below
+      // Phase 5 (correction #10): append Phase-2 sequence rows with savingsRationale.
+      // Use buildRecommendedRows so savingsRationale is already stamped.
+      // Only savings-type rows (not enabler, not safety). Deduplicate by seqKey.
+      // Plain text only — NO badge chips in the PDF.
+      if (typeof buildRecommendedRows === 'function') {
+        var recRows10 = buildRecommendedRows(projId);
+        var seenSeqKeys = {};
+        recRows10.forEach(function (row) {
+          if (row.phase !== 2) return;
+          if (!row.seqKey || seenSeqKeys[row.seqKey]) return;
+          if (!row.savingsRationale) return;
+          // Exclude enabler and safety — they don't have energy savings rationale
+          if (row.savingsImpact === 'enabler' || row.savingsImpact === 'safety') return;
+          seenSeqKeys[row.seqKey] = true;
+          // Truncate rationale to ~120 chars for the PDF
+          var rationaleSnippet =
+            row.savingsRationale.length > 120 ? row.savingsRationale.slice(0, 120) + '…' : row.savingsRationale;
+          // Tier label — plain text, no chip HTML
+          var tierLabel = row.savingsImpact ? '[' + row.savingsImpact.toUpperCase() + '] ' : '';
+          var seqRowHTML =
+            '<tr>' +
+            '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+            'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:28%;white-space:nowrap">' +
+            _esc(row.item) +
+            '</td>' +
+            '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+            'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:18%"></td>' +
+            '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+            'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
+            _esc(tierLabel + rationaleSnippet) +
+            '</td>' +
+            '</tr>';
+          rationaleTokens.push({ type: 'row', html: seqRowHTML, estH: 60 });
+        });
+      }
+    }
+  } catch (e) {
+    rationaleTokens = []; // non-fatal — omit block if anything throws
   }
 
   // ── Page assembly with rationale table pagination ──────────────────────────
-  // Budgets DOM-calibrated (2026-06-19 headless measurement against full JOCO):
-  //   Page 1: cost table chrome (sectionTitle+costTable+pendingNote+engNote+footnote)
-  //     consumes ~345px of the 808px body → rationale row budget = 808 − 345 − 17(ratTitle)
-  //     − 27(ratThead) − 18(margin-top) = ~401px. Measured: 627px gave 80px overflow;
-  //     540px is calibrated safe value (627 − 80 − 7px margin).
-  //   Cont pages: intHdr(48) + footer(108) = 156px chrome; body = 900px.
-  //     Measured: 809px budget gave 47px overflow; 750px is calibrated safe value.
-  //
-  // When no rationale rows (fallback path or buildComplianceRows unavailable),
-  // rationaleTokens is [] — _rptPaginateTokens returns [] — we still emit one page.
-  var RATIONALE_BUDGET_FIRST = 540;
+  // Budget updated (2026-06-29): cost table removed; full body available for rows.
+  //   Page 1 body ~808px; chrome = _ratTitle(~17px) + _ratThead(~27px) + div(~18px) = ~62px
+  //   Row budget = 808 − 62 = ~746px; using 740 for safety margin.
+  //   Cont pages: same calibrated value of 750px.
+  var RATIONALE_BUDGET_FIRST = 740;
   var RATIONALE_BUDGET_CONT = 750;
 
   // Shared HTML fragments for the rationale table chrome
@@ -12197,7 +11938,9 @@ function rptPageASHRAE36CostEstimate(n, d) {
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Requirement</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:28%">Requirement</th>' +
+    '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:18%">ASHRAE 36 Spec</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Why It Matters</th>' +
     '</tr></thead><tbody>';
@@ -12207,12 +11950,17 @@ function rptPageASHRAE36CostEstimate(n, d) {
   var currentPageNum = n;
 
   if (rationaleTokens.length === 0) {
-    // No rationale (fallback path or no rows) — single page, bodyHTML already complete
+    // No rationale (fallback path or no rows) — single page with simple note
     resultPages.push(
-      rptPage(currentPageNum, 'ASHRAE 36 Audit — Estimated Cost', bodyHTML, {
-        data: fakeData,
-        label: 'Page ' + currentPageNum + ' — Estimated Cost',
-      }),
+      rptPage(
+        currentPageNum,
+        'ASHRAE 36 Audit — Gap Details',
+        '<div style="font-size:11px;color:var(--rpt-page-text)">No gap data available.</div>',
+        {
+          data: fakeData,
+          label: 'Page ' + currentPageNum + ' — Gap Details',
+        },
+      ),
     );
   } else {
     var ratChunks = _rptPaginateTokens(rationaleTokens, RATIONALE_BUDGET_FIRST, RATIONALE_BUDGET_CONT);
@@ -12224,23 +11972,14 @@ function rptPageASHRAE36CostEstimate(n, d) {
           return tok.html;
         })
         .join('');
-      var pageBody;
-
-      if (isFirst) {
-        // Page 1: cost table chrome + rationale table opening
-        pageBody =
-          bodyHTML + '<div style="margin-top:18px">' + _ratTitle + _ratThead + chunkRowsHTML + _ratTclose + '</div>';
-      } else {
-        // Continuation pages: just the reprinted rationale header + rows
-        pageBody = '<div>' + _ratTitle + _ratThead + chunkRowsHTML + _ratTclose + '</div>';
-      }
+      var pageBody = '<div>' + _ratTitle + _ratThead + chunkRowsHTML + _ratTclose + '</div>';
 
       resultPages.push(
         rptPage(
           currentPageNum,
-          isFirst ? 'ASHRAE 36 Audit — Estimated Cost' : 'ASHRAE 36 Audit — Estimated Cost (cont.)',
+          isFirst ? 'ASHRAE 36 Audit — Gap Details' : 'ASHRAE 36 Audit — Gap Details (cont.)',
           pageBody,
-          { data: fakeData, label: 'Page ' + currentPageNum + ' — Estimated Cost' },
+          { data: fakeData, label: 'Page ' + currentPageNum + ' — Gap Details' },
         ),
       );
       currentPageNum++;
@@ -12561,20 +12300,12 @@ function rptPageASHRAE36Building(n, d, building) {
         '</td>' +
         '<td style="' +
         tdBase +
-        ';color:' +
-        (sensorsSum === 0 ? 'var(--rpt-green)' : 'var(--rpt-page-text)') +
-        ';font-weight:' +
-        (sensorsSum === 0 ? '400' : '700') +
-        '">' +
+        ';color:var(--rpt-page-text);font-weight:400">' +
         sensorsCell +
         '</td>' +
         '<td style="' +
         tdBase +
-        ';color:' +
-        (seqsSum === 0 ? 'var(--rpt-green)' : 'var(--rpt-page-text)') +
-        ';font-weight:' +
-        (seqsSum === 0 ? '400' : '700') +
-        '">' +
+        ';color:var(--rpt-page-text);font-weight:400">' +
         seqsCell +
         '</td>' +
         '</tr>',
@@ -12651,14 +12382,14 @@ function rptPageASHRAE36Building(n, d, building) {
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
     '<span style="font-weight:600">Dedicated BAS power monitoring:</span> ' +
     (b.hasPowerMonitoring
-      ? '<span style="color:var(--rpt-green);font-weight:700">Detected</span>'
-      : '<span style="color:var(--rpt-page-text);opacity:0.6">Not detected in this export</span>') +
+      ? '<span style="color:var(--rpt-page-text)">Installed</span>'
+      : '<span style="color:var(--rpt-page-text);opacity:0.6">Not found in this export</span>') +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
     '<span style="font-weight:600">Dedicated outdoor-air sensor program:</span> ' +
     (b.hasOAConditions
-      ? '<span style="color:var(--rpt-green);font-weight:700">Detected</span>'
-      : '<span style="color:var(--rpt-page-text);opacity:0.6">Not detected in this export</span>') +
+      ? '<span style="color:var(--rpt-page-text)">Installed</span>'
+      : '<span style="color:var(--rpt-page-text);opacity:0.6">Not found in this export</span>') +
     '</div>' +
     '</div>' +
     '</div>';

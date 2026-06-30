@@ -626,8 +626,7 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSB duct temp, 8" probe — verify probe length',
-    whyNeeded:
-      'Without a supply air temperature sensor, the system cannot adjust how warm or cold it delivers air based on outdoor conditions — one of the primary ways ASHRAE 36 sequences cut heating and cooling costs.',
+    whyNeeded: 'Required for supply air temperature reset, reducing heating and cooling energy based on actual demand.',
     g36Section: '§5.16.1',
   },
   rat: {
@@ -636,7 +635,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'NSB duct temp, 8" probe — verify probe length',
     whyNeeded:
-      'Measures the temperature of air returning from occupied spaces, giving the system feedback to verify how effectively it is conditioning the building and enabling economizer control.',
+      'Measures return air temperature, providing feedback on how effectively the system conditions the building.',
     g36Section: '§5.16.1',
   },
   mat: {
@@ -644,8 +643,7 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSB duct temp, 8" probe — verify probe length',
-    whyNeeded:
-      'Required for economizer control — without it, the system cannot determine when outdoor air is cool enough to replace mechanical cooling at no operating cost.',
+    whyNeeded: 'Required for economizer control — enables the system to use outdoor air instead of mechanical cooling.',
     g36Section: '§5.16.2',
   },
   oat: {
@@ -654,7 +652,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Weatherproof OAT — 1 per building',
     whyNeeded:
-      'Nearly every ASHRAE 36 energy-saving sequence depends on outdoor temperature. Without a reliable reading, the system cannot adapt supply air setpoints, economizer lockout, or boiler/chiller reset to changing weather.',
+      'Required for nearly every energy-saving sequence; without it, the system cannot adapt to changing weather.',
     g36Section: '§5.1',
   },
   dsp: {
@@ -663,7 +661,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Low-range duct static pressure — verify range',
     whyNeeded:
-      'Enables variable fan speed control. When duct pressure is measured and reset based on actual zone demand, fan energy drops 15–30% compared to fixed-speed operation.',
+      'Enables fan speed control based on actual demand; fan energy drops 15–30% versus fixed-speed operation.',
     g36Section: '§5.16.5',
   },
   co2_ahu: {
@@ -672,7 +670,7 @@ const PRICE_POINT_MAP = {
     flags: [],
     note: 'AHU duct CO2 sensor',
     whyNeeded:
-      'Enables demand-controlled ventilation — the system reduces outdoor air (and the energy to condition it) when rooms are partially or fully empty, saving 5–10% of fan and cooling energy.',
+      'Reduces outdoor air intake to match actual occupancy, cutting fan and cooling energy by 5–10% when rooms are empty.',
     g36Section: '§5.16.7',
   },
   /* ── VAV/FPB sensors ── */
@@ -682,7 +680,7 @@ const PRICE_POINT_MAP = {
     flags: [],
     note: '4" duct temp probe',
     whyNeeded:
-      'Monitors the temperature of air actually delivered to the space, enabling precise reheat control and preventing overcooling at minimum airflow.',
+      'Monitors delivered air temperature, enabling precise reheat control and preventing overcooling at minimum airflow.',
     g36Section: '§5.6.1',
   },
   /* ── Plant/CT sensors ── */
@@ -692,7 +690,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded:
-      'Primary feedback for boiler control. Required for the outdoor reset strategy that lowers water temperature — and heating costs — as outdoor air warms.',
+      'Required for boiler control and the outdoor reset strategy that lowers water temperature as outdoor air warms.',
     g36Section: '§5.20.1',
   },
   hwrt: {
@@ -701,7 +699,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded:
-      'Measures the temperature drop across the heating system. Low temperature drop signals pump, balancing, or coil problems that raise operating costs.',
+      'Measures temperature drop across the heating system; a low reading signals pump, balancing, or coil problems.',
     g36Section: '§5.20.1',
   },
   chwst: {
@@ -709,8 +707,7 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
-    whyNeeded:
-      'Verifies chiller output and enables the setpoint reset strategy that improves chiller efficiency during mild weather.',
+    whyNeeded: 'Verifies chiller output; enables the setpoint reset strategy that improves chiller efficiency.',
     g36Section: '§5.22.1',
   },
   chwrt: {
@@ -718,8 +715,7 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
-    whyNeeded:
-      'Measures how fully the chilled water is utilized. Poor utilization causes the chiller to over-cycle and consume excess energy.',
+    whyNeeded: 'Poor chilled water utilization causes the chiller to over-cycle and consume excess energy.',
     g36Section: '§5.22.1',
   },
   cwst: {
@@ -728,7 +724,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded:
-      'Required for cooling tower and chiller coordination, including the condenser water reset strategy that improves chiller efficiency during cooler weather.',
+      'Required for cooling tower control and the condenser water reset strategy that improves chiller efficiency.',
     g36Section: '§5.24.1',
   },
   cwrt: {
@@ -737,7 +733,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Immersion w/ 304SS thermowell',
     whyNeeded:
-      'Measures the condenser water temperature rise across the tower, confirming heat rejection and flagging tower performance problems.',
+      'Measures heat rejected through the cooling tower; a low temperature drop signals tower, chiller, or pumping problems.',
     g36Section: '§5.24.1',
   },
   hwdp: {
@@ -745,8 +741,7 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSA wet DP 0-30 PSID — verify range',
-    whyNeeded:
-      'Allows the pump to slow when fewer zones call for heat rather than running at full design speed regardless of load — saves 10–20% of pump energy.',
+    whyNeeded: 'Allows the pump to slow when fewer zones call for heat rather than running at full design speed.',
     g36Section: '§5.20.3',
   },
   chwdp: {
@@ -754,8 +749,7 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perUnit',
     flags: ['engReview'],
     note: 'NSA wet DP 0-30 PSID — verify range',
-    whyNeeded:
-      'Allows chilled water pumps to slow during light loads. Pump energy drops sharply with speed, yielding 10–20% savings during the many partial-load hours typical in commercial buildings.',
+    whyNeeded: 'Allows chilled water pumps to slow during light loads; pump energy drops sharply with speed.',
     g36Section: '§5.22.3',
   },
   oaWetBulb: {
@@ -763,8 +757,7 @@ const PRICE_POINT_MAP = {
     qtyRule: 'perBuilding',
     flags: ['engReview'],
     note: 'OA humidity+temp combo — 1 per building',
-    whyNeeded:
-      'Measures outdoor temperature and humidity together, enabling the most accurate method (differential enthalpy) for deciding when outdoor air is suitable for free cooling.',
+    whyNeeded: 'Measures outdoor temperature and humidity for the most accurate economizer control.',
     g36Section: '§5.16.2',
   },
   /* ── Zone sensors ── */
@@ -775,7 +768,7 @@ const PRICE_POINT_MAP = {
     comboWith: 'co2',
     note: 'Zone temp wall sensor — combos with CO2 zone sensor',
     whyNeeded:
-      'The primary feedback signal for zone control. Without it, the terminal unit cannot modulate airflow to meet setpoints and there is no way to verify the space is comfortable.',
+      'The required feedback signal for zone control; without it, airflow cannot be modulated to meet setpoints.',
     g36Section: '§5.6.1', // fallback (VAV single-duct)
     // Per-equipment-category G36 section overrides (source: ASHRAE 36-2021 table of contents)
     // vav=§5.6 (single-duct terminal units), fpb=§5.7 (fan-powered boxes),
@@ -793,7 +786,7 @@ const PRICE_POINT_MAP = {
     flags: [],
     note: 'Zone CO2+temp combo — replaces separate zoneTemp+CO2 if both missing',
     whyNeeded:
-      'Tracks occupancy through air quality, allowing the zone to reduce outdoor air — and the energy to condition it — when rooms are partially or fully empty.',
+      'Measures occupancy through air quality, allowing the system to reduce outdoor air when rooms are empty.',
     g36Section: '§5.6.7',
   },
   /* ── AHU actuators ── */
@@ -804,7 +797,7 @@ const PRICE_POINT_MAP = {
     note: '180 in-lb spring-return — verify torque',
     // PART 2: why-needed rationale + G36 reference
     whyNeeded:
-      'Controls how much outdoor air enters for free cooling and ventilation. Without BAS control of the OA damper, economizer sequences and minimum ventilation compliance are not possible.',
+      'Controls outdoor air volume for ventilation and free cooling; without it, economizer operation is not possible.',
     whyNotHardware:
       'Verify: the AHU may already have a modulating damper actuator (then this is a point-exposure/programming gap) vs genuinely needing a new actuator.',
     g36Section: '§5.16',
@@ -816,7 +809,7 @@ const PRICE_POINT_MAP = {
     note: '180 in-lb spring-return — verify torque',
     // PART 2: why-needed rationale + G36 reference
     whyNeeded:
-      'Works with the OA damper to maintain airflow balance during economizer operation. Without it, the AHU cannot prevent over-pressurization when outdoor air increases.',
+      'Works with the outdoor air damper to maintain airflow balance and prevent over-pressurization during free cooling.',
     whyNotHardware:
       'Verify: the AHU may already have a modulating damper actuator (then this is a point-exposure/programming gap) vs genuinely needing a new actuator.',
     g36Section: '§5.16',
@@ -834,9 +827,8 @@ const PRICE_POINT_MAP = {
     flags: ['ioOnly'],
     note: 'Phase 2 programming — not new hardware for VVT/integral-actuator boxes',
     whyNeeded:
-      'Required to verify each zone damper is responding correctly to temperature setpoints. Without this feedback in the BAS, a stuck or failed actuator cannot be detected until occupants complain.',
-    whyNotHardware:
-      'Damper actuator is integral to the VVT/terminal box and commanded over the internal bus — a missing damper command is a BACnet point-exposure / programming task, not new hardware. Add an actuator SKU only if field inspection finds a pneumatic or failed actuator.',
+      'Modulates conditioned air delivery to meet zone temperature setpoints and maintain minimum ventilation requirements.',
+    whyNotHardware: 'Terminal unit actuator is integral; this is a programming task, not new hardware.',
     g36Section: '§5.6',
   },
   coldDampCmd: {
@@ -845,9 +837,8 @@ const PRICE_POINT_MAP = {
     flags: ['ioOnly'],
     note: 'Phase 2 programming — not new hardware for dual-duct VVT/integral-actuator boxes',
     whyNeeded:
-      'Controls cool air delivery in a dual-duct system. Without BAS visibility of this command, cooling cannot be modulated or verified to prevent simultaneous heating and cooling.',
-    whyNotHardware:
-      'Damper actuator is integral to the VVT/terminal box and commanded over the internal bus — a missing damper command is a BACnet point-exposure / programming task, not new hardware. Add an actuator SKU only if field inspection finds a pneumatic or failed actuator.',
+      'Controls cool air delivery in a dual-duct system; without it, simultaneous heating and cooling cannot be prevented.',
+    whyNotHardware: 'Terminal unit actuator is integral; this is a programming task, not new hardware.',
     g36Section: '§5.6',
   },
   hotDampCmd: {
@@ -856,9 +847,8 @@ const PRICE_POINT_MAP = {
     flags: ['ioOnly'],
     note: 'Phase 2 programming — not new hardware for dual-duct VVT/integral-actuator boxes',
     whyNeeded:
-      'Controls warm air delivery in a dual-duct system. Both hot and cold deck dampers must be controlled together to prevent simultaneous heating and cooling waste.',
-    whyNotHardware:
-      'Damper actuator is integral to the VVT/terminal box and commanded over the internal bus — a missing damper command is a BACnet point-exposure / programming task, not new hardware. Add an actuator SKU only if field inspection finds a pneumatic or failed actuator.',
+      'Controls warm air in a dual-duct system; both deck dampers must coordinate to prevent simultaneous heating and cooling.',
+    whyNotHardware: 'Terminal unit actuator is integral; this is a programming task, not new hardware.',
     g36Section: '§5.6',
   },
   /* ── Plant valve actuators ── */
@@ -868,7 +858,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: '180 in-lb non-fail-safe',
     whyNeeded:
-      'Controls chilled water flow isolation to individual chillers; required for safe staging, lead/lag rotation, and preventing flow through a non-operating chiller.',
+      'Controls chilled water flow to individual chillers; required for safe staging, lead/lag rotation, and preventing recirculation.',
     g36Section: '§5.22',
   },
   cwIsoValveCmd: {
@@ -877,7 +867,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: '180 in-lb non-fail-safe',
     whyNeeded:
-      'Controls condenser water flow isolation to individual cooling towers; required for safe tower staging and preventing recirculation through an idle tower.',
+      'Controls condenser water flow to individual cooling towers; required for safe tower staging and preventing recirculation.',
     g36Section: '§5.24',
   },
   makeupValveCmd: {
@@ -886,7 +876,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: '180 in-lb non-fail-safe',
     whyNeeded:
-      'Controls cooling tower makeup water flow automatically; without it, tower basin level must be managed manually and there is no BAS alarm for low water.',
+      'Automatically refills the cooling tower basin when level drops; prevents pump cavitation and maintains water balance.',
     g36Section: '§5.24',
   },
   /* ── Coil valves (ENG-REVIEW — spec §3, §4 optimizer must skip) ── */
@@ -896,7 +886,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: '0.75" 2-way Cv7.4 spring-return — ENG-REVIEW: verify Cv and pipe size',
     whyNeeded:
-      'Controls chilled water flow through the AHU cooling coil. Required for supply air temperature reset and for coordinating mechanical cooling with the economizer — both core ASHRAE 36 sequences.',
+      'Controls chilled water flow through the cooling coil; required for temperature reset and economizer coordination.',
     g36Section: '§5.16.3',
   },
   htgValve: {
@@ -905,7 +895,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: '0.75" 2-way Cv7.4 spring-return — ENG-REVIEW: verify Cv and pipe size',
     whyNeeded:
-      'Controls hot water flow through the AHU heating coil. Required for morning warm-up, freeze protection, and cold-weather supply air temperature control.',
+      'Controls hot water flow through the heating coil; required for morning warm-up, freeze protection, and supply air control.',
     g36Section: '§5.16.3',
   },
   reheatValve: {
@@ -914,7 +904,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: '0.5" Cv0.8 spring-return — ENG-REVIEW: verify Cv',
     whyNeeded:
-      'Controls hot water flow through the terminal reheat coil. Without it, zone heating must come entirely from the primary air system, reducing efficiency and occupant comfort.',
+      'Controls the terminal reheat coil; without it, zone heating must come from the primary air system at higher cost.',
     g36Section: '§5.6.4',
   },
   /* ── VAV zone controller (discFlow/primaryFlow maps to controller, not sensor) ── */
@@ -924,7 +914,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'VAV zone controller w/ integral flow — ENG-REVIEW: verify if controller replacement or reprogramming only',
     whyNeeded:
-      'Measures airflow delivered to each zone, confirming minimum ventilation rates and enabling the duct static pressure reset sequence that cuts fan energy by 15–25%.',
+      'Confirms minimum ventilation to each zone and enables the duct static pressure reset sequence; both require measured airflow.',
     g36Section: '§5.6.2',
   },
   primaryFlow: {
@@ -933,7 +923,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'FPB zone controller w/ integral flow — ENG-REVIEW: verify if controller replacement or reprogramming only',
     whyNeeded:
-      'Measures how much cold primary air the fan-powered box receives from the air handler, driving damper position and determining when the local fan should run.',
+      'Measures cold primary air delivered to the terminal, driving damper modulation and local fan operation.',
     g36Section: '§5.8.2',
   },
   /* ── I/O Only ($0) ── */
@@ -972,7 +962,7 @@ const PRICE_POINT_MAP = {
     flags: ['noSku'],
     note: 'Mechanical freeze stat — enter price (~$150 typical)',
     whyNeeded:
-      'Signals the control system when coil temperatures approach freezing so the air handler shuts down before water coils are damaged — a critical life-safety interlock.',
+      'Triggers air handler shutdown when coil temperatures approach freezing, preventing costly water coil damage.',
     g36Section: '§5.16.6',
   },
   oaFlow: {
@@ -981,7 +971,7 @@ const PRICE_POINT_MAP = {
     flags: ['noSku'],
     note: 'OA flow station — enter price (~$1,200 typical)',
     whyNeeded:
-      'Measures actual outdoor air volume entering the unit. Without it, there is no way to confirm code-required minimum ventilation rates are met, and the duct static pressure reset sequence cannot be verified.',
+      'Measures actual outdoor air volume; without it, code-required minimum ventilation rates cannot be confirmed.',
     g36Section: '§5.16.7',
   },
 };

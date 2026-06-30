@@ -2288,11 +2288,34 @@ function renderMeterWorkspace() {
   // and show its horizontal scrollbar instead of letting the table push the whole
   // column wider than .ud-layout can accommodate.
   if (udActiveTab === 'bills') {
-    pane.style.cssText = 'display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;';
+    // flex:0 0 auto — content-sized so no forced void; overflow:visible so position:sticky
+    // children (.bills-thead-wrap) can stick relative to #maMeterWorkspace scroll container
+    pane.style.cssText = 'display:flex;flex-direction:column;min-height:0;min-width:0;overflow:visible;flex:0 0 auto;';
   } else {
-    pane.style.cssText = 'display:block;padding:18px 20px;overflow-y:auto;';
+    // flex:0 0 auto — overrides CSS flex:1; content sizes naturally; #maMeterWorkspace scrolls
+    pane.style.cssText = 'display:block;padding:18px 20px;overflow-y:visible;flex:0 0 auto;min-height:0;';
   }
   if (udActiveTab === 'bills') renderBillsPane(pane, m, bills, incl);
+  // After bills pane renders, cap .bills-scroll-body to the remaining visible height so
+  // its horizontal scrollbar lands at the bottom of the workspace and stays on-screen.
+  // Without this, flex:0 0 auto makes the body content-sized and a 33-bill table would
+  // push the scrollbar ~1000px off the bottom of the viewport.
+  if (udActiveTab === 'bills') {
+    requestAnimationFrame(() => {
+      const ws = document.getElementById('maMeterWorkspace');
+      const scrollBody = document.getElementById('billsScrollBody');
+      if (!ws || !scrollBody) return;
+      const maTabsEl = ws.querySelector('.ma-tabs');
+      const stickyHdrEl = pane.querySelector('.bills-sticky-hdr');
+      const theadWrapEl = document.getElementById('billsTheadWrap');
+      const avail =
+        ws.clientHeight -
+        (maTabsEl ? maTabsEl.offsetHeight : 36) -
+        (stickyHdrEl ? stickyHdrEl.offsetHeight : 0) -
+        (theadWrapEl ? theadWrapEl.offsetHeight : 0);
+      if (avail > 60) scrollBody.style.maxHeight = avail + 'px';
+    });
+  }
   if (udActiveTab === 'norm') renderNormPane(pane, m, bills, incl);
   if (udActiveTab === 'baseline') renderBaselinePane(pane, m, bills, incl);
   if (udActiveTab === 'stats') renderMeterDataPane(pane, m, bills, incl);

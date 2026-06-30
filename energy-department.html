@@ -33,7 +33,7 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=596" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=597" rel="stylesheet" />
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
@@ -738,6 +738,12 @@
         overflow-x: hidden;
         flex: 1;
         min-height: 0;
+      }
+      /* Direct children of non-flex views must not shrink — same pattern as
+         .ptab.active > * above. Without this, flex-shrink:1 (default) compresses
+         children to fit the bounded container and overflow-y:auto never activates. */
+      .view.active:not(.view-flex) > * {
+        flex-shrink: 0;
       }
       .view.active.view-flex {
         display: flex;
@@ -5751,6 +5757,9 @@
         flex-shrink: 0;
         overflow-x: auto;
         background: var(--s2);
+        position: sticky;
+        top: 36px; /* sits just below .ma-tabs (36px tall) when #maMeterWorkspace scrolls */
+        z-index: 4;
       }
       .bills-thead-wrap .ud-bill-tbl {
         margin: 0;
@@ -5758,7 +5767,7 @@
       .bills-scroll-body {
         overflow-y: auto;
         overflow-x: auto;
-        flex: 1 1 0;
+        flex: 0 0 auto; /* content-sized — no void below last row; #maMeterWorkspace handles tall-content scroll */
         min-height: 0;
         min-width: 0;
       }
@@ -6422,6 +6431,7 @@
         flex: 1;
         min-height: 0;
         min-width: 0;
+        overflow-y: auto; /* scroll container — content-sized children scroll here */
       }
       .ma-tabs {
         display: flex;
@@ -7608,7 +7618,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=596" />
+    <link rel="stylesheet" href="feedback-widget.css?v=597" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -14666,47 +14676,47 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=596"></script>
-    <script src="lib/formatting.js?v=596"></script>
-    <script src="lib/unit-conversion.js?v=596"></script>
-    <script src="lib/csv-parser.js?v=596"></script>
-    <script src="computations/rates.js?v=596"></script>
-    <script src="computations/regression.js?v=596"></script>
-    <script src="computations/normalization.js?v=596"></script>
-    <script src="computations/eui.js?v=596"></script>
-    <script src="computations/pollution.js?v=596"></script>
-    <script src="computations/csc.js?v=596"></script>
-    <script src="computations/savings.js?v=596"></script>
-    <script src="computations/anomaly-detection.js?v=596"></script>
-    <script src="lib/perf-table.js?v=596"></script>
-    <script src="lib/shared-charts.js?v=596"></script>
-    <script src="computations/report-data.js?v=596"></script>
-    <script src="computations/data-quality.js?v=596"></script>
-    <script src="extraction/pdf-engine.js?v=596"></script>
-    <script src="app/db.js?v=596"></script>
-    <script src="app/core.js?v=596"></script>
-    <script src="app/energy-savings.js?v=596"></script>
-    <script src="app/bill-analysis.js?v=596"></script>
-    <script src="extraction/bill-validation.js?v=596"></script>
-    <script src="app/district-calendar.js?v=596"></script>
-    <script src="app/utility-data.js?v=596"></script>
-    <script src="app/pipeline-diagram.js?v=596"></script>
-    <script src="app/csv-import.js?v=596"></script>
-    <script src="app/report-engine.js?v=596"></script>
-    <script src="app/report-preview.js?v=596"></script>
-    <script src="app/calculators.js?v=596"></script>
-    <script src="app/ecm-calculators.js?v=596"></script>
-    <script src="app/equipment-matrix.js?v=596"></script>
-    <script src="app/graphics-setpoints.js?v=596"></script>
-    <script src="app/budget.js?v=596"></script>
-    <script src="app/hours.js?v=596"></script>
-    <script src="app/scorecard.js?v=596"></script>
-    <script src="app/portal-export.js?v=596"></script>
-    <script src="app/bas-trends.js?v=596"></script>
-    <script src="app/bas-alarms.js?v=596"></script>
-    <script src="app/pricing-estimator.js?v=596"></script>
+    <script src="lib/date-helpers.js?v=597"></script>
+    <script src="lib/formatting.js?v=597"></script>
+    <script src="lib/unit-conversion.js?v=597"></script>
+    <script src="lib/csv-parser.js?v=597"></script>
+    <script src="computations/rates.js?v=597"></script>
+    <script src="computations/regression.js?v=597"></script>
+    <script src="computations/normalization.js?v=597"></script>
+    <script src="computations/eui.js?v=597"></script>
+    <script src="computations/pollution.js?v=597"></script>
+    <script src="computations/csc.js?v=597"></script>
+    <script src="computations/savings.js?v=597"></script>
+    <script src="computations/anomaly-detection.js?v=597"></script>
+    <script src="lib/perf-table.js?v=597"></script>
+    <script src="lib/shared-charts.js?v=597"></script>
+    <script src="computations/report-data.js?v=597"></script>
+    <script src="computations/data-quality.js?v=597"></script>
+    <script src="extraction/pdf-engine.js?v=597"></script>
+    <script src="app/db.js?v=597"></script>
+    <script src="app/core.js?v=597"></script>
+    <script src="app/energy-savings.js?v=597"></script>
+    <script src="app/bill-analysis.js?v=597"></script>
+    <script src="extraction/bill-validation.js?v=597"></script>
+    <script src="app/district-calendar.js?v=597"></script>
+    <script src="app/utility-data.js?v=597"></script>
+    <script src="app/pipeline-diagram.js?v=597"></script>
+    <script src="app/csv-import.js?v=597"></script>
+    <script src="app/report-engine.js?v=597"></script>
+    <script src="app/report-preview.js?v=597"></script>
+    <script src="app/calculators.js?v=597"></script>
+    <script src="app/ecm-calculators.js?v=597"></script>
+    <script src="app/equipment-matrix.js?v=597"></script>
+    <script src="app/graphics-setpoints.js?v=597"></script>
+    <script src="app/budget.js?v=597"></script>
+    <script src="app/hours.js?v=597"></script>
+    <script src="app/scorecard.js?v=597"></script>
+    <script src="app/portal-export.js?v=597"></script>
+    <script src="app/bas-trends.js?v=597"></script>
+    <script src="app/bas-alarms.js?v=597"></script>
+    <script src="app/pricing-estimator.js?v=597"></script>
 
-    <script src="app/site-functions.js?v=596"></script>
+    <script src="app/site-functions.js?v=597"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -14863,10 +14873,10 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=596"></script>
-    <script src="feedback-widget.js?v=596"></script>
+    <script src="app/tooltips-help.js?v=597"></script>
+    <script src="feedback-widget.js?v=597"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
-    <script src="lib/rich-text.js?v=596"></script>
+    <script src="lib/rich-text.js?v=597"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

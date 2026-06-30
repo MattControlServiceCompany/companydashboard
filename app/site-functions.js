@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.29.597',
+    date: '2026-06-29',
+    title: 'ASHRAE 36 Audit Report redesigned Gap Details page; Utility tab scroll fixed',
+    items: [
+      {
+        type: 'change',
+        text: 'Audit Report — The "Estimated Cost" page is now called "Gap Details." It shows a 3-column table (gap, ASHRAE section, and why it matters) instead of a cost summary. Status labels changed from colored badges to plain text ("Installed" / "Not found in this export"). Callout headings are now black instead of orange or blue.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report — All gap descriptions (the "Why It Matters" column) have been shortened to a single concise sentence. The previous 2–3 sentence explanations have been replaced with tighter technical summaries.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department — The Utility tab now scrolls correctly. Previously, short bill lists left a large dark void below the last row, and large bill tables pushed the horizontal scrollbar off-screen. Both are fixed: content is now sized to its rows, and the scroll body is capped to the visible workspace height.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.26.596',
     date: '2026-06-26',
     title: 'Audit Report: Cost Estimate section no longer crashes when no pricing catalog is loaded',
