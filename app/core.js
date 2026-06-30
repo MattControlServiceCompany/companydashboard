@@ -1067,7 +1067,6 @@ function renderDetail(p) {
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','savproj')">📈 Savings Projection</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','perf')">💡 Building Performance</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','scorecard')" title="Print-ready building summary for board presentations">📋 Scorecard</button>
-                      <button class="btn btn-ghost btn-sm" onclick="(function(){var _b=getUDBldg('${p.id}',projUDSelBldg['${p.id}']);if(typeof openEcmCalculatorForBuilding==='function')openEcmCalculatorForBuilding('${p.id}',projUDSelBldg['${p.id}'],_b?_b.name:'Building');})()" title="Open ECM Calculator pre-filled with this building's bill data">⚡ ECM Calculator</button>
                       <button class="btn btn-ghost btn-sm" onclick="openBldgModalForProj(${p.id}, projUDSelBldg['${p.id}'])">✏️ Edit Building</button>
                       <button class="btn btn-ghost btn-sm" onclick="openExportModal('building','${p.id}')" title="Export utility bill data to JSON or CSV">📤 Export Data</button>
                       <button class="btn btn-em btn-sm" onclick="projUDOpenMeterModal('${p.id}')">+ Add Meter</button>

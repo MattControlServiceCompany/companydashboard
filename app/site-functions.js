@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.30.600',
+    date: '2026-06-30',
+    title: 'Utility Data: ECM Calculator button removed from building header',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department → Utility Data: The ECM Calculator button no longer appears in the building detail header. ECM calculators are still available from the sidebar under “ECM Calculators.”',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.30.599',
     date: '2026-06-30',
     title: "What's New popup wider + single scroll; Energy Savings delete fix",
