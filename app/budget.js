@@ -661,7 +661,6 @@ function renderBudgetKPICard(projId) {
   const fyLabel = _fyLabel(year);
   const progressBar = Math.round(progressPct);
   const progressColor = ytdVarPct <= 0 ? 'var(--green)' : ytdVarPct <= 5 ? 'var(--amber)' : 'var(--danger)';
-  const monthsLeft = 12 - lines[0] ? 0 : 0; // computed below
   const nowYM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   const fyMonths = _fyMonths(year, fyStart);
   const elapsed = fyMonths.filter((ym) => ym <= nowYM).length;

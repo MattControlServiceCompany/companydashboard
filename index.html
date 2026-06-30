@@ -1482,8 +1482,8 @@
         display: flex;
       }
       .rn-modal {
-        width: 620px;
-        max-width: 94vw;
+        width: 900px;
+        max-width: 96vw;
         max-height: 85vh;
         background: var(--s2);
         border-radius: 10px;
@@ -1543,16 +1543,18 @@
       .rn-legend-item.rn-chg {
         color: var(--text3);
       }
-      .rn-current {
-        flex: 0 0 auto;
-        min-height: 52%;
-        padding: 20px 24px 16px;
-        border-bottom: 2px solid var(--border);
-        overflow-y: auto;
-      }
-      .rn-history {
+      .rn-body {
         flex: 1 1 auto;
         overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      .rn-current {
+        padding: 20px 24px 16px;
+        border-bottom: 2px solid var(--border);
+        background: var(--s1);
+      }
+      .rn-history {
         padding: 12px 24px 20px;
       }
       .rn-history-label {
@@ -1756,7 +1758,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=598" />
+    <link rel="stylesheet" href="feedback-widget.css?v=599" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -3027,7 +3029,7 @@
         renderCalendar();
       });
     </script>
-    <script src="app/db.js?v=598"></script>
+    <script src="app/db.js?v=599"></script>
     <script>
       /* ── MOBILE SIDEBAR DRAWER ── */
       function buildMobileSidebarToggle() {
@@ -3105,6 +3107,6 @@
         }
       });
     </script>
-    <script src="feedback-widget.js?v=598"></script>
+    <script src="feedback-widget.js?v=599"></script>
   </body>
 </html>

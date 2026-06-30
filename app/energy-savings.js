@@ -165,6 +165,7 @@ function removeSavingsMeasure(projId, msrId) {
   if (!Array.isArray(sd._userDeletedIds)) sd._userDeletedIds = [];
   if (!sd._userDeletedIds.includes(msrId)) sd._userDeletedIds.push(msrId);
   sset('en_projects', projects);
+  renderSavingsMatrix(projId);
 }
 
 function renderSavingsMatrix(projId) {

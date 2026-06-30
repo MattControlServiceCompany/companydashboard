@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.29.598'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
+  var CH_VERSION = 'v2026.06.30.599'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,21 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.30.599',
+      date: '2026-06-30',
+      title: "What's New popup wider + single scroll; Energy Savings delete fix",
+      items: [
+        {
+          type: 'change',
+          text: "Energy Department → What's New popup: now opens wider with the latest version shown full-width and a single smooth scroll for older versions.",
+        },
+        {
+          type: 'fix',
+          text: 'Energy Department → Energy Savings Measures table: deleting a measure now removes the row immediately instead of requiring a tab switch to take effect.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.29.598',
       date: '2026-06-29',
@@ -1082,9 +1097,11 @@
         '<span class="rn-legend-item rn-chg"></span>' +
         '</div>' +
         '</div>' +
+        '<div class="rn-body">' +
         '<div class="rn-current" id="rnCurrent"></div>' +
         '<div class="rn-history" id="rnHistory">' +
         '<div class="rn-history-label"></div>' +
+        '</div>' +
         '</div>' +
         '<div class="rn-footer">' +
         '<button class="rn-dismiss-btn" id="rnDismissBtn"></button>' +
