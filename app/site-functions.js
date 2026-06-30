@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.29.598',
+    date: '2026-06-29',
+    title: 'Equipment Matrix categories overhauled; bill extraction memory buildup fixed',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix → Manage Point Mappings: Every BAS point now lands in a clearly-named category — no more points hidden or dumped in a generic “Other” bucket.',
+      },
+      {
+        type: 'fix',
+        text: 'Utility Data bill extraction: Fixed a memory buildup when extracting several PDF bills in a row.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.29.597',
     date: '2026-06-29',
     title: 'ASHRAE 36 Audit Report redesigned Gap Details page; Utility tab scroll fixed',

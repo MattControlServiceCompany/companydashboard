@@ -8658,11 +8658,12 @@ async function extractPDFText(ab, statusCb) {
           // 180° and run a full OCR pass to replace the best result.
           const ORIENT_SCORE_THRESHOLD = 3;
           if (bestScore < ORIENT_SCORE_THRESHOLD) {
+            let pgO, canvasO, canvas180;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
-              const pgO = await pdf.getPage(pgNum);
+              pgO = await pdf.getPage(pgNum);
               const vpO = pgO.getViewport({ scale: 2.5 });
-              const canvasO = document.createElement('canvas');
+              canvasO = document.createElement('canvas');
               canvasO.width = vpO.width;
               canvasO.height = vpO.height;
               const ctxO = canvasO.getContext('2d');
@@ -8670,7 +8671,7 @@ async function extractPDFText(ab, statusCb) {
               // Crop top 20% strip for a fast orientation probe
               const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
               const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
-              const canvas180 = rotateCanvas180(canvasO);
+              canvas180 = rotateCanvas180(canvasO);
               // Quick probe: recognize top strip at both orientations
               const [probe0, probe180] = await Promise.all([
                 recognizeWithTimeout(worker, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
@@ -8701,14 +8702,19 @@ async function extractPDFText(ab, statusCb) {
                   bestScore = rotScore;
                 }
               }
-              // F2: release orientation canvases and PDF page after all orient OCR is done
-              canvasO.width = 0;
-              canvasO.height = 0;
-              canvas180.width = 0;
-              canvas180.height = 0;
-              if (pgO.cleanup) pgO.cleanup();
             } catch (_orientErr) {
               /* orientation probe failed — continue with existing best */
+            } finally {
+              // F2: release orientation canvases and PDF page after all orient OCR is done
+              if (canvasO) {
+                canvasO.width = 0;
+                canvasO.height = 0;
+              }
+              if (canvas180) {
+                canvas180.width = 0;
+                canvas180.height = 0;
+              }
+              if (pgO && pgO.cleanup) pgO.cleanup();
             }
           }
           // ── CHANGE 5: Otsu binarization triggered pass ────────────────────────
@@ -8717,16 +8723,17 @@ async function extractPDFText(ab, statusCb) {
           // and OCRs the B/W image.  Kept only if it scores higher than current best.
           const BINARIZE_SCORE_THRESHOLD = 5;
           if (bestScore < BINARIZE_SCORE_THRESHOLD) {
+            let pgB, canvasB, binCanvas;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
-              const pgB = await pdf.getPage(pgNum);
+              pgB = await pdf.getPage(pgNum);
               const vpB = pgB.getViewport({ scale: 2.5 });
-              const canvasB = document.createElement('canvas');
+              canvasB = document.createElement('canvas');
               canvasB.width = vpB.width;
               canvasB.height = vpB.height;
               const ctxB = canvasB.getContext('2d');
               await pgB.render({ canvasContext: ctxB, viewport: vpB }).promise;
-              const binCanvas = binarizeCanvas(canvasB);
+              binCanvas = binarizeCanvas(canvasB);
               const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
               const binText = binResult.data.text;
               const binScore = scorePage(binText);
@@ -8742,14 +8749,19 @@ async function extractPDFText(ab, statusCb) {
                 bestText = binText;
                 bestScore = binScore;
               }
-              // F2: release binarize canvases and PDF page after OCR is done
-              canvasB.width = 0;
-              canvasB.height = 0;
-              binCanvas.width = 0;
-              binCanvas.height = 0;
-              if (pgB.cleanup) pgB.cleanup();
             } catch (_binErr) {
               /* binarize pass failed — continue with existing best */
+            } finally {
+              // F2: release binarize canvases and PDF page after OCR is done
+              if (canvasB) {
+                canvasB.width = 0;
+                canvasB.height = 0;
+              }
+              if (binCanvas) {
+                binCanvas.width = 0;
+                binCanvas.height = 0;
+              }
+              if (pgB && pgB.cleanup) pgB.cleanup();
             }
           }
           // ── end triggered passes ───────────────────────────────────────────────

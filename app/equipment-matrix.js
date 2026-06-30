@@ -9151,6 +9151,447 @@ var EM_EXCLUSION_PATTERNS = [
   /\bbooster\s+pump\b/i,
 ];
 
+/* ── EM_NAMED_EXCLUSIONS ────────────────────────────────────────────────────
+   Replaces the "exclusion→null" behavior of EM_EXCLUSION_PATTERNS.
+   Each group maps one or more patterns to a NAMED category so formerly-
+   excluded points are visible in the Manage Mappings modal instead of hidden.
+   auditRelevant=false is set on the returned object — these categories do NOT
+   count toward ASHRAE 36 compliance scoring.
+   Checked BEFORE ASHRAE 36 matching to prevent false HVAC classification.
+   Precedence: first group whose patterns[] match wins.                     */
+var EM_NAMED_EXCLUSIONS = [
+  // ── Alarm / Safety ──────────────────────────────────────────────────────
+  {
+    key: 'alarm',
+    label: 'Alarm / Safety',
+    patterns: [
+      /\balarm\b/i, // Wave 1 any alarm
+      /\blatched\s+(run\s+)?status\s+failure\b/i, // P1.2 latched failure
+      /^active\s+(error|fault|warning|problem)\b/i, // P5 II fault objects
+      /activefaultdesc/i, // P5 II ActiveFaultDesc
+      /\bsafety\s+shutdown\b/i, // Wave 6 safety shutdown
+      // hvacSubObject-refine P1: fault/failure/trip rescue (~257 names)
+      /\bfault\b/i, // VFD Fault, System Fault, Ground Fault
+      /\bfailure\b/i, // Boiler 1 Failure, Latched Failure, AHU Failure
+      /\btrip(ped)?\b/i, // Tripped relay points
+      /Plant\s+Shutdown\s+Activated/i, // Plant Shutdown Activated - 1 Or More...
+      /Number\s+of\s+Alarms/i, // Number of Alarms (counter points)
+      /Exhaust\s+Dmpr\s+\w+\s+Failed\s+To/i, // Exhaust Dmpr 2A Failed To Open/Shut
+      /^System_Alarm\b|^System_Fault\b/i, // System_Alarm, System_Fault
+      /^Relay_Override_Alarm\b/i,
+      // Phase 1 rescue — staticSafety cluster (~43 names)
+      // GUARD: "Duct Static Safety" names are Bucket-A (dsp category) — only catch explicit High/Low trip names
+      // GUARD: "Building Pressure" names are Bucket-A (bldgPressure) — removed that pattern
+      /\b(High|Low)\s+(Supply\s+Fan\s+|Supply\s+)?Static\s+Safety\b/i, // High Static Safety, Low Static Safety, High Supply Fan Static Safety
+      /\bNetwork\s+Point\s+Read\s+Error\b/i, // Network Point Read Error (AHU program monitoring)
+      /^(High|Low)\s+Pressure\s+Warning\b/i, // High/Low Pressure Warning (monitoring alarms)
+    ],
+  },
+  // ── Fire / Life Safety ──────────────────────────────────────────────────
+  {
+    key: 'fireLifeSafety',
+    label: 'Fire / Life Safety',
+    patterns: [
+      /smoke\s*(detector|zone|alarm|damper|stat)?/i, // Wave 1 smoke
+      /\bsmoke\b/i, // Wave 1 bare smoke
+      /\bemergency\s+(shutdown|stop|run|purge|sequence)\b/i, // Wave 5 emergency
+      /\bpre.?action\b/i, // Wave 5 pre-action
+      /(fireman'?s?\s+panel|shutdown\s+from\s+(fireman|fire\s+panel))/i, // Wave 6
+      // Phase 1 rescue — fireDamperLS cluster (safe fire-only names; Damper Command/Open already Bucket-A)
+      /^(EF|SF)-?\d+\s+Speed\s+Command(\s*-\s*ANI)?\b/i, // EF-1 Speed Command - ANI
+      /^Hood\s+\d+\s+Temp\s+Sensor\s+\d+(\s*-\s*ANI)?\b/i, // Hood 1 Temp Sensor 1 - ANI
+      // GUARD: removed /\bFreeze\s+Protection\b/i — "Freeze Protection" is ASHRAE freezeStat (Bucket-A)
+      /^Window\s+Open\s+(Input|Output)\b/i, // Window Open Input/Output
+      /^Fan\s+Inlet\s+Pressure\b/i, // Fan Inlet Pressure
+      /^Ahu-?\d+\s+FA\s+Dmpr\s+Ov\s+Cmd\b/i, // Ahu-1 FA Dmpr Ov Cmd
+      /^Plenum\s+Air\s+Temperature\b/i, // Plenum Air Temperature
+      // Second rescue pass 2026-06-30: fire-panel override signals (ahu, 19+19 rows)
+      /^Fire\s+Command\s+Panel\b/i, // Fire Command Panel - Return To Auto, Fire Command Panel - Shutdown
+    ],
+  },
+  // ── BMS Config / Supervisor ─────────────────────────────────────────────
+  {
+    key: 'bmsConfig',
+    label: 'BMS Config / Supervisor',
+    patterns: [
+      /^EI\s/i, // Wave 1 Environmental Index
+      /environmental\s*index/i,
+      /\bzone\s+ei\b/i, // Wave 1 Zone EI
+      /^weighted\s+ei\b/i, // Wave 5 Weighted EI
+      /^weights\s+#/i, // Wave 5 EI Weights
+      /^diagnostic:/i, // P1.1 Diagnostic: prefix
+      /\bnetwork\s+control\b/i, // P1.7 network control objects
+      /\bnot\s+under\s+manager\s+control\b/i, // P1.7 manager control
+      /\baccuchart\b/i, // P1.5 AccuChart
+      // hvacSubObject-refine P2: BACnet MSV "Control Selection" objects (~162 names) — NOT sensors
+      /\bcontrol\s+selection\b/i, // Air Source Return Air Temperature Control Selection - *
+      /\bzone\s+control\s+selection\b/i,
+      /\bstaging\s+method\s+selector\b/i,
+      /\bstatic\s+reset\s+selection\b/i,
+      /\bcooling\s+source\s+selection\b/i,
+      /SSDP\s+(Control\s+Selection|X\s+100)/i,
+      /\bP3\s+Selection\b/i,
+      /\bLS\d\/LS\d\s+Control\s+Selection\b/i,
+    ],
+  },
+  // ── Schedule / Occupancy ────────────────────────────────────────────────
+  {
+    key: 'scheduleOccupancy',
+    label: 'Schedule / Occupancy',
+    patterns: [
+      /\bbacnet\s+schedule\b/i, // Wave 1 BACnet Schedule
+      /occupied\s*override/i, // Wave 1 occupied override
+      /occupancy\s*override/i,
+      /virtual.*override\s+time/i, // Wave 1 virtual override time
+      // hvacSubObject-refine P20: Crestron DI points, seasonal config (~8 names)
+      /^z_DI_Occ\b|^z_DI_Override\b|^z_DI_ZUM\b/i, // Crestron zone occupancy DI points
+      /^z_MO_Flash\s+Warn\b/i,
+      /^(Summer|Winter)\s+(Begin|End)\s+Month\b/i,
+      /^Observation\s+Timer\b/i,
+      // Second rescue pass 2026-06-30: fpb "Scheduled On" (99 rows)
+      /^Scheduled\s+On\b/i, // Scheduled On (fpb terminal unit scheduling point)
+    ],
+  },
+  // ── Energy / Consumption Tracking ───────────────────────────────────────
+  {
+    key: 'energyTracking',
+    label: 'Energy / Consumption Tracking',
+    patterns: [
+      /\bruntime\b/i, // Wave 1 runtime
+      /run\s*hours?/i, // Wave 1 run hours
+      /energy.*month/i, // Wave 1 energy month/year
+      /energy.*year/i,
+      /monthly.*energy/i,
+      /yearly.*energy/i,
+      /\btrend\b/i, // Wave 1 trend logs
+      /\bhistory\b/i, // Wave 1 history logs
+      // hvacSubObject-refine P13: usage/metering/fuel/service intervals (~63 names)
+      /\bUsage\b/i, // Usage Last Month, Usage This Year, Today's Usage
+      /Previous\s+(Month|Year)\s+Usage/i,
+      /This\s+(Month|Year)\s+Usage/i,
+      /^(Monthly|Yearly|Daily)\s+Use\s+Write\b/i,
+      /^Reset\s+Usage\b/i,
+      /^Natural\s+Gas\s+Flow\b/i,
+      /^Total\s+Fuel\b/i, // Total Fuel, Total Fuel (high/low)
+      /^Service\s+Interval\s+(Days|Hours|Weeks)\s+Remaining\b/i,
+      /^(Reheat|Cooling|Heating|Melting)\s+Hours\b/i,
+      /Electric\s+Reheater\s+\d+\s+Hours\b/i,
+      /^Engine\s+Operating\s+Hours\b/i,
+      /^(Peak|Flow)\s+(Month|Today|Year|Peak\s+Synch|Use\s+Synch)\b/i,
+      /Volume\s+(Rate|Total)\s*-\s*(GPH|GPM|MGD|Gallons)/i, // Volume Rate - GPH etc.
+      /^Mass\s+Rate\s*-\s*Lb\/Hr\b/i,
+      /^BTU\s+(Calc|Meter)\b/i,
+      /^MWh$|^MJ\s+to\s+BTU$/i,
+      // Phase 1+2 rescue — powerUpsGenerator/weatherAndBus metering sync sub-objects
+      /^Energy\s+(Peak|Use)\s+(Synch|Synchronization)\b/i, // Energy Peak Synch, Energy Use Synch
+      /^Use\s+Every\s+(Minute|Year)\b/i, // Use Every Minute, Use Every Year
+    ],
+  },
+  // ── Electrical / Power Monitoring ───────────────────────────────────────
+  {
+    key: 'electricalMonitoring',
+    label: 'Electrical / Power Monitoring',
+    patterns: [
+      /\b(peak\s+demand|interval\s+demand|billing\s+demand|demand\s+meter|demand\s+kw|kw\s+demand|kwh\s+demand)\b/i,
+      /electrical\s*bypass/i,
+      /\bbypass\b.*\b(relay|contact|switch)\b/i,
+      /^ATS[\s-]/i, // Wave 5 ATS transfer switch
+      /^phase\s+[abc]\s+(current|voltage|power|energy|apparent|reactive|real|power\s+factor|export|import|net|l-l|l-n)\b/i,
+      /\b(kw|kwh|kvar|kva|power\s+factor|real\s+power|reactive\s+power|watt)\b/i, // Wave 6
+    ],
+  },
+  // ── VFD / Drive Sub-Object ──────────────────────────────────────────────
+  {
+    key: 'vfdSubObject',
+    label: 'VFD / Drive Sub-Object',
+    patterns: [
+      /^drive\s+(current|dc\s+bus|kwh|mwh|output|power|runtime|speed\s+ref(erence)?|temperature|torque|ready|run|fault|hand|in\s+hand|valid|system)/i,
+      /\b(ABB|Armstrong|Danfoss)\s+drive\s+(warning|hoa|in\s+hand)/i,
+      /^VFD\s/i, // Wave 5 VFD prefix
+      /\binverter\b/i, // Wave 6 inverter sub-objects
+      // hvacSubObject-refine P4: frequency/torque/DC-bus rescue (~125 names)
+      /\bAverage\s+(AC\s+)?RMS\s+(Frequency|Current)\b/i, // Average AC RMS Frequency
+      /\bBypass\s+Input\s+(Frequency|Current)\b/i,
+      /\b(Output|Input)\s+Frequency\b/i,
+      /\bMotor\s+Torque\b/i,
+      /^Torque\b/i,
+      /^DC\s+Bus\s+Abnormal\b/i, // DC Bus Abnormal (drive fault)
+      /\bDrive\s+Power\s+\d+\b/i, // MCS Drv Power 1/2/3
+    ],
+  },
+  // ── Chiller Plant / MCS ─────────────────────────────────────────────────
+  {
+    key: 'chillerPlant',
+    label: 'Chiller Plant / MCS',
+    patterns: [
+      /^_MCS\s/i, // Wave 1 _MCS
+      /^_BAS\s/i, // Wave 1 _BAS
+      /^x[A-Z]\d/i, // Wave 1 x-prefix chiller MCS
+      /^xSystem/i,
+      /^xCHW/i,
+      /^xCW/i,
+      /^xEvap/i,
+      /\bheat\s+balance\s+av\b/i, // plant noise
+      /\bstages?\s+av\b/i,
+      /\b(available|online)\s+av\b/i,
+      /\b(chillers?|towers?|pumps?)\s+(available|online)\b(?!\s+av)/i, // P1.4
+      /^active\s+(application|mixing\s+valve|ll\s+setpoint|reheat|supplemental|dx)\b/i, // P5 II
+      /^active\s+stage\b/i, // P5 II Active Stage
+      // hvacSubObject-refine P3 named: broader MCS/x-prefix patterns (~246 names total)
+      /^MCS\s/i, // MCS C1_ActSpeed, MCS CHWaterDeltaP (no leading _)
+      /^x[A-Za-z]{2,}/i, // xAmbientTemp, xRefrigLeakDetect — broader than ^x[A-Z]\d
+      // Phase 1 rescue — chillerPlantCoord cluster (~328 names, chiller plant context)
+      // NEGATIVE GUARDS: must NOT steal "Chilled Water Supply Temperature", "Chilled Water Return Temperature"
+      // Those are already Bucket-A (cwst/cwrt). Patterns below are plant-coordination points ONLY.
+      /^Evaporator\s+(Entering|Leaving)\s+Water\s+Temperature\b/i, // chiller-internal; cwst/cwrt guard not needed (distinct names)
+      /^Condenser\s+(Entering|Leaving)\s+Water\s+Temperature\b/i, // Tower water temps (Bucket-A cwrt/cwst are CHW side)
+      /^Capacity\s+Limit\s+Output\b/i, // Chiller capacity limit signal
+      /^Chiller\s+(Limited|Local[\s\/]Remote|Current|Capacity\s+Limit|Run\s+-\s+Mechanical\s+Cooling)\b/i,
+      /^Chiller\(?s?\)?\s+Running\s*$/i, // Chiller(s) Running — $ prevents stealing "Chiller Running State" (chillerStatus, Bucket-A)
+      /^(High|Low)\s+Loop\s+Differential\s+Pressure\b/i, // Loop DP alarms
+      /^Pressure\s+Request\s+\d+\b/i, // Pressure Request 1, 2, ...
+      /^Chilled\s+Water\s+Pump\s+\d+\s+(VFD\s+Signal|Position\s+AV|Available)\b/i,
+      /^Chiller\s+\d+\s+(Condenser|Evaporator)\s+(Valve\s+Open|Flow\s+Request)\b/i,
+      /^Loop\s+Bypass\s+Valve\s+Signal\b/i,
+      /^Cooling\s+Tower\s+\d+\s+(Clearing|Bypass\s+Valve\s+Signal)\b/i,
+      /^Heat\s+Exchanger\s+\d+\s+(Condenser|Evaporator)\s+(Valve\s+Open|Flow\s+Request|Flow\s+Off)\b/i,
+      /^Condenser\s+Flow\s+Requests?\b/i,
+      /^Evaporator\s+Delta\s+Temperature\b/i,
+      /^Saturated\s+Condenser\s+Temp(erture)?\s*-\s*Circuit\s+[AB]\b/i,
+      /^(Warning|Problem)\s+Alarms?\b/i,
+      /^Rotation\s+Frequency:\s+(Primary\s+Chilled\s+Water\s+Pumps?|Chillers?\s*[\d,\s]*)\b/i,
+      /^Demand\s+Levels?\s+\d+\s+and\s+\d+\b/i,
+      /^Ph\s+[ABC]\s+DP\s+ANI\b/i,
+      /^(Energy\s+Rate|Energy\s+Total)\s*-\s*(kBtu|BTU|Btu)\/Hr(\s+ANI)?\b/i,
+      /^Energy\s+Total\s*-\s*BTU(\s+ANI)?\b/i,
+      // GUARD: removed /^Meter\s+(Supply|Return)\s+Temperature/ — these are Bucket-A (hwrt/sat)
+      /^Communication\s+Failed\s+to\s+BTU\s+Meter\b/i,
+      /^Bypass\s+Valve\s+Signal\b/i,
+    ],
+  },
+  // ── Refrigerant / Compressor Circuit ────────────────────────────────────
+  {
+    key: 'refrigerant',
+    label: 'Refrigerant / Compressor Circuit',
+    patterns: [
+      /\bcompressor\b/i, // Wave 6 compressor
+      /\b(suction|superheat|subcool|refrigerant)\b/i, // Wave 6 refrigerant
+    ],
+  },
+  // ── VVT Zone Coordination ────────────────────────────────────────────────
+  {
+    key: 'vvtCoordination',
+    label: 'VVT Zone Coordination',
+    patterns: [
+      /^active\s+zones?\s*#/i, // P1.3
+      /^max\s+zones?\s*#/i,
+      /^(heat|pressure|cool)\s+request\s*#/i,
+      /^runfor\s+maximum/i,
+      /^air\s+source\s+runfor/i,
+      // hvacSubObject-refine P11 named: air source coordination signals (~51 names)
+      /^Air\s+Source\s+(Air|Cool|Heat)\s+Requests?\b/i, // Air Source Cool Requests
+      /^Air\s+Source\s+Economizer\s+Ready\b/i,
+      /^Air\s+Source\s+(Static|Minimum)\b/i, // Air Source Static, Air Source Minimum
+      /\b(Clg|Htg|Heating|Cooling)\s+Air\s+Source\s+Min(imum)?\b/i,
+      /\b(Heating|Cooling)\s+Capacity\s*(-?\s*ANI)?\b/i,
+      /^At\s+Maximum\s+Capacity\b/i,
+      /^Actual\s+Capacity\b|ActualCapacity\b/i,
+      /^Effective\s+(Cooling|Heating)\s+Load\b/i, // virtual zone load signals
+      // Phase 1 rescue — vvtSequencing cluster (~25 names)
+      /^Primary\s+Air\s+Source\b/i, // Primary Air Source (VVT AHU identity signal)
+      /^Air\s+Source\s+Mode\b/i, // Air Source Mode
+      /^Heat\s+Source\s+(Supply|Return|Communications\s+Lost)\b/i,
+      /^(Cooling|Heating)\s+Pressure\s+Request\b/i, // Cooling/Heating Pressure Request
+      /^Heating\s+Source\s+(Run|Request)\b/i,
+      /^Percent\s+Stroke\s+Curve\s+Select\b/i,
+      /^(Heat|Cool)\s+Request(\s+BV)?\b/i, // Heat Request BV, Cool Request BV
+      /^Vent\s+Air\s+Source\s+Run\b/i,
+      /^Cool\s+Source\s+Communications\s+Lost\b/i,
+      /^(Zone|Air\s+Source)\s+Emergency\s+Power\s+Priority\b/i,
+      // Phase 2 rescue — AHU run sequence signals
+      /^(Heat|Cool)\s+Run\s+For\b/i, // Heat Run For, Cool Run For
+      // GUARD: removed /^(Cooling|Heating)\s+Air\s+Source\s+Supply\b/ — matches "Cooling Air Source Supply"
+      // which classifies as ahuSAT (Bucket-A supply air temp) in vav context. Added to EM_POINT_CATEGORIES.ahu instead.
+      // Second rescue pass 2026-06-30: Cool Source Mode (114) and Cool Source Supply (108) — ahu primary.
+      // SAFE: verified hvacSubObject in vav context (no Bucket-A clash).
+      /^(Cool)\s+Source\s+(Mode|Supply)\b/i, // Cool Source Mode, Cool Source Supply (ahu VVT coordination)
+    ],
+  },
+  // ── Status / Feedback ────────────────────────────────────────────────────
+  {
+    key: 'statusFeedback',
+    label: 'Status / Feedback',
+    patterns: [
+      /\b(disabled|enabled),\s*status\s+is\s+(on|off)\b/i, // Wave 5 status mirrors
+      /,?\s*status\s+is\s+(on|off)\b/i, // Wave 6 RTU variant
+      /\b(isolation|condenser|evaporator)\s+valve\b.*,\s*status\s*(is\s*)?(open|shut|closed)\b/i,
+    ],
+  },
+  // ── Hot Water Plant Sub-Object ───────────────────────────────────────────
+  {
+    key: 'hwpSubObject',
+    label: 'Hot Water Plant Sub-Object',
+    patterns: [
+      /\b(flame\s+(signal|status|\d+)|gas\s+valve\s+\d|external\s+spark|modsync\s+(enable|disable)|louver\s+(proving|relay))\b/i,
+      // Phase 1 rescue — hwpBoilerPlant cluster (~113 names, boiler/HWP context)
+      /^Flame\s+BV\b/i, // Flame BV (boolean valve signal)
+      /^Hold\s+Code(\s+Active)?\b/i, // Hold Code, Hold Code Active
+      /^Error\s+Code(\s+(ANI|AV))?\b/i, // Error Code ANI, Error Code AV
+      /^State\s+(AV|Description\s+MSV)\b/i, // State AV, State Description MSV
+      /^(Inlet|Outlet|S5|Stack)\s+Sensor\b/i, // Inlet/Outlet/S5/Stack Sensor
+      /^Controller\s+Run\s+Time\b/i, // Controller Run Time — GUARD: "Burner Run Time" is gasHeat (Bucket-A)
+      /^4-20\s+Ma\s+Remote\s+Control\s+Input\b/i,
+      /^ETHours\s+AV\b/i,
+      /^Flue\s+Gas\s+Temp\s+AV\b/i,
+      /^Boiler\s+\d+\s+(Fire\s+Rate\s+Signal|Position\s+AV)\b/i,
+      /^Rotation\s+Frequency:\s+(Boilers?|Heating\s+Water\s+Pumps?)\b/i,
+      // GUARD: removed /^(Hot\s+Water\s+Differential\s+Pressure|Hot\s+Water\s+Loop\s+DP)\b/i
+      //   — hwdp is Bucket-A (ASHRAE hot water differential pressure). Leave in ASHRAE.
+      /^Heat\s+Source\s+On\s+BV\b/i,
+      // GUARD: removed /^Burner\s+(High|Low|Medium)\s+Hours\s+(ANI|AV)\b/i
+      //   — "Burner High/Low/Medium Hours" classifies as gasHeat (Bucket-A). Leave in ASHRAE.
+    ],
+  },
+  // ── Plumbing / Domestic Water ────────────────────────────────────────────
+  {
+    key: 'plumbing',
+    label: 'Plumbing / Domestic Water',
+    patterns: [
+      /water\s+softener/i, // Wave 5 water softener
+      /\bsump\b/i, // Wave 6 sump
+      /domestic\s+hot\s+water\s+pump/i, // plant noise pump
+      /domestic\s+hot\s+water\s+(boiler|tank|system\s+supply|flow)\b/i, // P1.6
+      /\bbooster\s+pump\b/i, // P5 IV booster pump
+    ],
+  },
+  // ── Command / Control Output ─────────────────────────────────────────────
+  {
+    key: 'commandOutput',
+    label: 'Command / Control Output',
+    patterns: [
+      /\b(cooling|heating)\s+enabled\b(?!\s+valve)/i, // P1.7 enable/disable commands
+      // Second rescue pass 2026-06-30: FCU prohibit-thermostat commands, fpb terminal fan relay
+      /^Prohibit\s+Thermostat\s+On\/Off\b/i, // Prohibit Thermostat On/Off Occupied/Unoccupied (fcu, 50+50 rows)
+      /^Fan\s*$/i, // bare "Fan" (fpb terminal fan relay, 120 rows; safe: hvacSubObject in all other contexts)
+    ],
+  },
+  // ── Security / Access Control ────────────────────────────────────────────
+  {
+    key: 'security',
+    label: 'Security / Access Control',
+    patterns: [
+      /overhead\s+door/i, // P1.5 overhead door
+    ],
+  },
+  // ── Environmental Monitoring ─────────────────────────────────────────────
+  {
+    key: 'environmentalMonitoring',
+    label: 'Environmental Monitoring',
+    patterns: [
+      /\bhydrogen\s+sensor\b/i, // P1.5 hydrogen sensor
+      // hvacSubObject-refine P14: gas sensors, weather data (~30 names)
+      /Nitrogen\s+Dioxide/i, // Nitrogen Dioxide #1, #2 North, #3 South
+      /^NO2\s+(#?\d|Level)\b/i,
+      /^NO\s+Sensor\b/i, // Nitric Oxide sensor
+      /^Zone\s+VOC\b/i,
+      /\bRadiometer\b/i,
+      /Precipat(a)?tion\s+Sensor/i, // typo-tolerant: Precipatation (sic) Sensor
+      /^Forecast\s+Day\s+\d+\s+PoP\b/i, // Forecast Day 0 PoP (weather from BMS)
+      /^(Network|Primary|Secondary)\s+Dry\s+Bulb\s+Sensor\b/i,
+      /^Low\s+UV\s+Radiometer\s+Level\b/i,
+      /^High\s+(Nitrogen|Hydrogen)\s+(Dioxide\s+)?Level\b/i,
+    ],
+  },
+  // ── BACnet / Network Communication ──────────────────────────────────────
+  {
+    key: 'bacnetComm',
+    label: 'BACnet / Network Communication',
+    patterns: [
+      /BNI$/, // Wave 1 BACnet Network Interface suffix
+      /\bcomm(unications)?\s+failure\b/i, // Wave 6 comm failure
+      /\bcresnet\b/i, // Wave 5 Cresnet A/V
+      /crestron\s+(comm|program)/i,
+      // hvacSubObject-refine P18: controller diagnostics (~9 names)
+      /^TCP\s+(RX|TX|Total)\s+(Byte|Packet)\s+Count\b/i,
+      /^Total\s+RAM\s+ANI$|^Free\s+RAM\s+ANI$/i,
+      /^Number\s+Of\s+Processes\s+Running\b/i,
+      /^Manager\s+Program\s+Heartbeat\b/i,
+      /^(System|Unit|Heat\s+Trace\s+System|Controller)\s+Not\s+Communicating\b/i,
+      /^COMM?\s*\/\s*Outside\s+PC\b/i,
+      /^BMS\s+Communications\s+Timeout\b/i,
+    ],
+  },
+  // ── Laboratory Equipment ─────────────────────────────────────────────────
+  {
+    key: 'laboratoryEquip',
+    label: 'Laboratory Equipment',
+    // hvacSubObject-refine P15: fume hoods, isolation rooms (~12 names)
+    patterns: [
+      /^HEV-?\d{3}[A-Z]?\s+(Face\s+Velocity|Sash\s+Open)\b/i, // HEV-145C/D/E/F/G fume hoods
+      /^GEV-?\d{3}\s+(Offset|Total\s+Zone)/i, // GEV-145 fume hood exhaust data
+      /Hood\s+(Heat\s+Sensor|Lights\s+On)\b/i,
+      /^Kitchen\s+Hood\s+Ventilation\b/i,
+      /^Iso\s+Cell\s+\d{4}\b/i, // Iso Cell 1241/1242/1244/1245 (isolation rooms)
+    ],
+  },
+  // ── Operating Mode Selection ─────────────────────────────────────────────
+  {
+    key: 'modeSelection',
+    label: 'Operating Mode Selection',
+    patterns: [
+      // Phase 1 rescue — operationalCodes cluster (~51 names)
+      /^Aux(il[ia]ry|ilary)?\s+Mode\b/i, // Auxiliary Mode, Auxilary Mode
+      /^Mode\s+Select(ion)?\b/i, // Mode Select, Mode Selection
+      /^Master\s+Mode\b/i, // Master Mode
+      /^System\s+Operating\s+State(\s+Reason)?\b/i, // System Operating State, ...Reason
+      /^Point\(?s?\)?\s+Locked\b/i, // Point(s) Locked
+      /^Unit\s+Manual\s+Off\b/i, // Unit Manual Off
+      /^Power\s+On\b/i, // Power On
+      /^Fan\s+Safety\s+Override\b/i, // Fan Safety Override
+      /^Test\s+&\s+Validation\s+Mode\b/i, // Test & Validation Mode
+      /^Morning\s+Warm\s*(?:[Uu]p)?\b/i, // Morning Warmup, Morning Warm Up
+      /^System\s+Control\s+ANO\b/i, // System Control ANO (specific form; not bare "System Control")
+      /^Operating\s+DOAS\s+Units\b/i, // Operating DOAS Units
+      /^(HVAC|Hvac)\s+Mode(\s+(ANI|Text|Override\s+ANO))?\b/i, // HVAC Mode ANI, HVAC Mode Text
+      /^DX\s+Day\s+Rotation\b/i, // DX Day Rotation
+      /^(Cooling|Heating|Fan|Electric\s+Reheat)\s+State\b/i, // Cooling State, Heating State
+      /^System\s+On\s*\/\s*Off\b/i, // System On/Off
+      /^Unit\s+On\/Off\s+Control\b/i, // Unit On/Off Control
+      /^Operating\s+State\b/i, // Operating State
+      /^(Circuit|System)\s+\d+\s+(Error\s+Code|Operational\s+Code)\b/i,
+      // Phase 2 — AHU HVAC mode cluster
+      /^Ahu\s+Control\b/i, // Ahu Control
+      /^System\s+Control\b(?!\s+ANO)/, // System Control (but not System Control ANO — handled above)
+      // Second rescue pass 2026-06-30: FCU occupancy/operating mode points
+      /^Occupancy\s+Mode\b/i, // Occupancy Mode (fcu, 50 rows) — safe: hvacSubObject in all contexts
+      /^Operating\s+Mode(\s+ANO)?\b/i, // Operating Mode, Operating Mode ANO (fcu, 14+13 rows)
+    ],
+  },
+  // ── Louver / Damper Position ─────────────────────────────────────────────
+  // Second rescue pass 2026-06-30: FCU louver position points.
+  // SAFE: "Louver Position" is hvacSubObject in ahu, vav, fcu, and other contexts (verified).
+  {
+    key: 'louverDamper',
+    label: 'Louver / Damper Position',
+    patterns: [
+      /^Louver\s+Position(\s+ANO)?\b/i, // Louver Position, Louver Position ANO (fcu, 26+26 rows)
+    ],
+  },
+];
+
+/* ── emMatchNamedExclusion ──────────────────────────────────────────────────
+   Finds the first EM_NAMED_EXCLUSIONS group whose patterns[] match rawName.
+   Returns the group object { key, label } or null if no match.            */
+function emMatchNamedExclusion(rawName) {
+  for (var _ni = 0; _ni < EM_NAMED_EXCLUSIONS.length; _ni++) {
+    var _ng = EM_NAMED_EXCLUSIONS[_ni];
+    for (var _np = 0; _np < _ng.patterns.length; _np++) {
+      if (_ng.patterns[_np].test(rawName)) return _ng;
+    }
+  }
+  return null;
+}
+
 /* ── EM_EQUIP_CONFIG_FLAGS schema ───────────────────────────────────────────
    Per-equipment configuration flags stored in data.edits keyed by
    rowId + '::config'. Describes optional equipment features so the
@@ -10344,6 +10785,250 @@ var EM_POINT_CATEGORIES = {
         'unit alarm active',
       ],
     },
+    // ── Second rescue pass 2026-06-30: AHU-specific sub-object categories ─
+    // These entries are placed in EM_POINT_CATEGORIES.ahu (NOT named exclusions)
+    // because many of the names below are Bucket-A in vav/fcu context.
+    // By constraining to ahu context, vav/fcu ASHRAE matches are preserved.
+    {
+      // Zone Humidity / High/Low Zone Humidity appearing on AHU rows.
+      // CRITICAL GUARD: "Zone Humidity" is fcu.zoneHumidity (Bucket-A) in fcu context and
+      //   furnace.zoneHumidity (Bucket-A) in furnace context. This ahu-only entry fires ONLY
+      //   in ahu context → fcu/furnace Bucket-A is preserved.
+      key: 'ahuZoneHumidity',
+      label: 'Zone Humidity Monitor (AHU)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['zone humidity', 'high zone humidity', 'low zone humidity', 'zone humidity ani'],
+      patterns: [
+        /^(High|Low)\s+Zone\s+Humidity\b/i, // High/Low Zone Humidity
+        /^Zone\s+Humidity(\s+ANI)?\s*$/i, // Zone Humidity, Zone Humidity ANI
+      ],
+    },
+    {
+      // AHU zone/section airflow measurement points (CFM sub-objects).
+      // "Air Flow N", "Outside Air CFM" etc. are Bucket-A (discFlow) in vav context
+      //   and hvacSubObject in ahu context → must be ahu-only.
+      key: 'ahuAirflow',
+      label: 'AHU Airflow / CFM Monitor',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Air\s+Flow\s+\d+\b/i, // Air Flow 1-8 (50+50+50+50+15+15+15+15 rows)
+        /\bAir\s+(Total\s+)?CFM\b/i, // Outside/Return/Supply Air CFM variants (many)
+        /^Low\s+Outdoor\s+Airflow\b/i, // Low Outdoor Airflow (16 rows)
+        /^(Exhaust)\s+Air\s+(CFM|FPM)\b/i, // Exhaust Air CFM/FPM (fan 1/2, total)
+        /^Ra\s+Cfm\b/i, // Ra Cfm (informal return air CFM label, 4 rows)
+        /^Outside\s+Air\s+cfm\b/, // Outside Air cfm (lowercase variant, 3 rows)
+        /^Economizer\s+Outside\s+Air\s+CFM\b/i, // Economizer Outside Air CFM (5 rows)
+      ],
+    },
+    {
+      // AHU source mode / VVT air-source signal sub-objects.
+      // These names are Bucket-A (ahuSAT or hwPlantStatus) in VAV context →
+      //   CANNOT be in a global named exclusion. This ahu-only entry fires in ahu
+      //   context; vav/other contexts still hit their ASHRAE categories.
+      key: 'ahuSourceMode',
+      label: 'AHU Source Mode / VVT Signal',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Air\s+Source\s+Supply(\s+Static)?\b/i, // Air Source Supply (56), Air Source Supply Static (22)
+        /^(Cooling|Heating)\s+Air\s+Source\s+Supply\b/i, // Cooling/Heating Air Source Supply (9+9)
+        /^Heat\s+Source\s+Mode\b/i, // Heat Source Mode (ahu) — Bucket-A hwPlantStatus in vav
+      ],
+    },
+    // ── Third-pass rescue: AHU-specific operational monitoring (non-ASHRAE) ──────
+    // All placed here (ahu-only) because many of these names are Bucket-A in vav context.
+    {
+      key: 'ahuFanDP',
+      label: 'AHU Fan Differential Pressure (Monitor)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Supply\s+Fan\s+\d+\s+Differential\s+Pressure\s*$/i, // Supply Fan 1/2 DP (19/17)
+        /^Supply\s+Fan\s+\d+\s+Supply\s+Air\s+Differential\s+Pressure\s*$/i, // Supply Fan 1/2 SA DP (17/17)
+        /^Supply\s+Fan\s+Supply\s+Air\s+Differential\s+Pressure\s*$/i, // Supply Fan SA DP (2)
+        /^[SR]A\s+Velocity\s+Pressure\s*$/i, // SA Velocity Pressure (2), RA Velocity Pressure (2)
+      ],
+    },
+    {
+      key: 'ahuVFDMonitor',
+      label: 'AHU Relief / Exhaust Fan VFD & RPM Monitor',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Relief\s+Fan\s+VFD\s+Signal\s*$/i, // Relief Fan VFD Signal (14) — Bucket-A vfDrive in vav
+        /^Relief\s+Fan\s+Amps?\s*$/i, // Relief Fan Amps (3)
+        /^Exhaust\s+Fan\s+VFD\s+(Signal|Go)\s*$/i, // Exhaust Fan VFD Signal (4), Exhaust Fan VFD Go (2)
+        /^Exhaust\s+Fan\s+\d+\s+VFD\s+Speed\s*$/i, // Exhaust Fan 1 VFD Speed (3)
+        /^Supply\s+Fan\s+RPM(\s+ANI)?\s*$/i, // Supply Fan RPM (6), Supply Fan RPM ANI (6)
+        /^Dual\s+Operating\s+Mode\b/i, // Dual Operating Mode - Fan Wall Speed (2)
+      ],
+    },
+    {
+      key: 'ahuERV',
+      label: 'AHU Energy Recovery Wheel (Monitor)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Enthalpy\s+Wheel\b/i, // Enthalpy Wheel Exhaust Temp (7), VFD Speed (7)
+        /^Sensible\s+Wheel\b/i, // Sensible Wheel VFD Speed (7)
+        /^Energy\s+Recovery\s+(Valve|Unit\s+Amperage)\s*$/i, // Energy Recovery Valve (4), Unit Amperage (2)
+      ],
+    },
+    {
+      key: 'ahuHumidifyMonitor',
+      label: 'AHU Humidification Monitor',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Supply\s+Air\s+Humidity\s*$/i, // Supply Air Humidity (10)
+        /^Humidifier\s+Signal\s*$/i, // Humidifier Signal (4)
+      ],
+    },
+    {
+      key: 'ahuFloorOcc',
+      label: 'AHU Floor Occupancy Signal',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Floor\s+Occupied\s*$/i, // Floor Occupied (16) — Bucket-A occupancyMode in vav
+      ],
+    },
+    {
+      key: 'ahuCondensate',
+      label: 'AHU Condensate Detection',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Condensate\s+Switch(\s+Activated)?\s*$/i, // Condensate Switch (5), Condensate Switch Activated (5)
+      ],
+    },
+    {
+      key: 'ahuStairPress',
+      label: 'AHU Stair Pressurization',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Stair\s+Pressurization\b/i, // Stair Pressurization Fan Speed (4)
+        /^(High|Low)\s+Stair\s+Pressurization\s+Pressure\s*$/i, // High/Low Stair Pressurization Pressure (4+4)
+      ],
+    },
+    {
+      key: 'ahuDamperCtrl',
+      label: 'AHU Damper Controls (Non-ASHRAE)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Inlet\s+Damper\s*$/i, // Inlet Damper (7)
+        /^OAD\s+(Conditioned|Non-Conditioned)\s*$/i, // OAD Conditioned (3), OAD Non-Conditioned (3)
+        /^Supply\s+Air\s+Isolation\s+Damper\s*$/i, // Supply Air Isolation Damper (2)
+        /^(Supply\s+Air|Bypass)\s+Damper\s+Not\s+At\s+Commanded\s+Position\s*$/i, // (2+2)
+        /^Heating\s+Damper\s+Signal\s*$/i, // Heating Damper Signal (2)
+        /^(East|West)\s+Supply\s+Duct\s+Damper\b/i, // East/West Supply Duct Damper (MD-1/2) (2+2)
+        /^Unit\s+Isolation\s+Damper\s*$/i, // Unit Isolation Damper (2)
+        /^Supply\s+Air\s+Damper\s+Not\s+At\s+Commanded\s+Position\s*$/i, // (2)
+      ],
+    },
+    {
+      key: 'ahuDXRefrig',
+      label: 'AHU DX Refrigeration Points',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^(Leaving|Returning)\s+Temperature\s*$/i, // Leaving/Returning Temperature (4+4)
+        /^(Leaving|Returning)\s+Liquid\s+Temp\s*$/i, // Leaving/Returning Liquid Temp (4+4)
+        /^System\s+\d+\s+EEV\s+Output\s*$/i, // System 1/2 EEV Output (4+4)
+        /^Condenser\s+System\s+\d+\s+Error\s*$/i, // Condenser System 1/2 Error (4+4)
+        /^A\s+Condenser\s+Signal\s*$/i, // A Condenser Signal (2)
+        /^Rotation\s+Frequency.*DX\b/i, // Rotation Frequency: DX Compressors (2)
+        /^Exhaust\s+Air\s+Temperature\s*$/i, // Exhaust Air Temperature (5) — no eat category in ahu
+      ],
+    },
+    {
+      key: 'ahuAirTempAlarm',
+      label: 'AHU Air Temperature Alarms',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^(High|Low)\s+(Cooling|Heating)\s+Air\s+Temperature(\s+Warning)?\s*$/i, // 8 names (3 rows each)
+        /^(Cooling|Heating)\s+Air\s+Temperature\s*$/i, // Cooling Air Temperature (2), Heating Air Temperature (1)
+      ],
+    },
+    {
+      key: 'ahuDiagnostics',
+      label: 'AHU Diagnostics and Control Flags',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Diagnostic\s+Reset\s+BNO\s*$/i, // (2)
+        /^Purge\s+Mode\s+Failed\s*$/i, // (2)
+        /^Reset\s+All\s+Alarms\s*$/i, // Reset All Alarms (3) — ahu primary only
+        /^SZ\d+\s+Dmprs\s+OK\s+BV\s*$/i, // SZ3/SZ11/SZ14 Dmprs OK BV (4+2+2)
+        /^Supply\s+Fan\s+Cycling\s+BNO\s*$/i, // (2)
+        /^Economizer\s+(Signal|Minimum\s+Position(\s+ANO)?)\s*$/i, // (2+2+2)
+        /^Test\s+(ANI|BNI|ANO|BNO)\s+\d\s*$/i, // Test ANI/BNI/ANO/BNO 1/2 (8 names × 2 rows)
+        /^Communication\s+Heartbeat\s*$/i, // (2)
+        /^Proof\s+Of\s+Airflow\s*$/i, // (2)
+        /^Air\s+Handler\s+Local\s+Control\s*$/i, // (2)
+        /^Local\s+Override\s*$/i, // Local Override (2, ahu primary) — safe ahu-only
+      ],
+    },
+    {
+      key: 'ahuGasHeat',
+      label: 'AHU Gas Heating Control',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Mod\s+Gas\s+(Furnace\s+Output|Valve\s+Position)\s*$/i, // Mod Gas Furnace Output (3), Valve Position (2)
+        /^Gas\s+Valve\s+Signal\s*$/i, // Gas Valve Signal (2)
+      ],
+    },
+    {
+      key: 'ahuMgrControl',
+      label: 'AHU Manager Run / Relay Control',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Manager\s+Run\s+\((Off|On)\)\s*$/i, // Manager Run (Off) (4), Manager Run (On) (4)
+        /^Run\s+\((Off|On)\)\s*$/i, // Run (Off) (2), Run (On) (2)
+        /^Remote\s+Start\/Stop\s*$/i, // Remote Start/Stop (2)
+        /^Supply\s+Fan\s+Relay\s*$/i, // Supply Fan Relay (2)
+        /^Heating\s+On\s*$/i, // Heating On (2)
+        /^High\s+Outside\s+Air\s+Filter\s+Pressure\s+Drop\s*$/i, // (2)
+      ],
+    },
   ],
 
   /* ── VAV (Single-Duct with Reheat, ASHRAE 36 §5.6) ────────────────── */
@@ -10751,6 +11436,41 @@ var EM_POINT_CATEGORIES = {
         'oa dewpoint',
         'oa dew point',
         'current dewpoint',
+      ],
+    },
+    // ── Third-pass rescue: cross-system points primary-cat'd to vav (non-ASHRAE) ──
+    // These are VAV-context hvacSubObject. Named exclusions cannot be used because many
+    // are Bucket-A in ahu context; placing here (vav-only) preserves ahu Bucket-A.
+    {
+      key: 'vavWeatherStation',
+      label: 'Weather Station / OA Psychrometric Points',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Outside\s+Air\s+Dry\s+Bulb\s*$/i, // Outside Air Dry Bulb (1732 vav rows)
+        /^Outside\s+Air\s+Wet\s+Bulb\s*$/i, // Outside Air Wet Bulb (1724 vav rows)
+        /^Outside\s+Air\s+Enthalpy\s*$/i, // Outside Air Enthalpy (1730 vav rows) — Bucket-A in ahu
+        /^Outside\s+Air\s+Temperature\s+-\s+RNet\s*$/i, // Outside Air Temperature - RNet (109 vav rows)
+        /^Air\s+Source\s+Duct\s+Static\s*$/i, // Air Source Duct Static (804 vav rows)
+      ],
+    },
+    {
+      key: 'vavScheduling',
+      label: 'VAV Zone Scheduling / Occupancy Flags',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Cleaning\s+Schedule\s*$/i, // Cleaning Schedule (385 vav rows)
+        /^Dedicated\s+Occupancy\s+Sensors\s*$/i, // Dedicated Occupancy Sensors (385 vav rows)
+        /^Local\s+Override\s+Initiated\s*$/i, // Local Override Initiated (114 vav rows)
+        /^Virtual\s+Zone\s+Humidity\s*$/i, // Virtual Zone Humidity (12 vav rows)
+        /^Virtual\s+(Cooling|Heating)\s+Percent\s*$/i, // Virtual Cooling/Heating Percent (5+5 vav)
+        /^Reset\s+All\s+Alarms\s+ANO\s*$/i, // Reset All Alarms ANO (3 vav rows)
+        /^DOAS\s+Occupancy\s+Mode\s+ANO\s*$/i, // DOAS Occupancy Mode ANO (3 vav rows)
       ],
     },
   ],
@@ -11208,6 +11928,29 @@ var EM_POINT_CATEGORIES = {
         'motion sensor',
         'pir sensor',
         'occupancySensor', // Phase 4: Engine 1 col key alias for enriched-CSV import path
+      ],
+    },
+    // ── Third-pass rescue: DDVAV-specific non-ASHRAE points ──────────────────
+    {
+      key: 'ddvavDeckTemp',
+      label: 'DD-VAV Air Source Deck Temperatures',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Air\s+Source\s+(Cold|Hot)\s+Deck\s+Supply\s+Temp\s*$/i, // Air Source Cold/Hot Deck Supply Temp (77+77)
+      ],
+    },
+    {
+      key: 'ddvavDamperPos',
+      label: 'DD-VAV Zone Damper Position',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Zone\s+Damper\s+(Signal|Position)?\s*$/i, // Zone Damper Signal (53), Zone Damper (42)
       ],
     },
   ],
@@ -12877,6 +13620,103 @@ var EM_POINT_CATEGORIES = {
       patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i, /zone\s+hum\b/i],
       aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity', 'zone hum', 'zone relative humidity'],
     },
+    // ── Second rescue pass 2026-06-30: FCU-specific monitoring sub-objects ─
+    // These entries are placed in EM_POINT_CATEGORIES.fcu (NOT named exclusions)
+    // because the same names are Bucket-A (rat, sfAmps) in ahu context.
+    // FCU-only placement preserves ahu Bucket-A matches.
+    {
+      // Return Air Temperature ANI and bare Return Temperature on FCU rows.
+      // GUARD: "Return Air Temperature" (bare) and "Return Temperature" are rat (Bucket-A) in ahu.
+      //   This fcu-only entry fires only in fcu context; ahu context still hits ahu.rat.
+      key: 'fcuReturnTemp',
+      label: 'FCU Return Air Temperature (Monitor)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['return temperature', 'return air temperature ani'],
+      patterns: [
+        /^Return\s+Air\s+Temperature\s+ANI\b/i, // Return Air Temperature ANI (fcu, 54 rows)
+        /^Return\s+Temperature\s*$/i, // Return Temperature (fcu, 35 rows)
+      ],
+    },
+    {
+      // Supply Fan Amps on FCU rows. GUARD: sfAmps (Bucket-A) in ahu context.
+      // FCU-only so ahu.sfAmps is not stolen.
+      key: 'fcuElectrical',
+      label: 'FCU Electrical Monitoring',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['supply fan amps'],
+      patterns: [
+        /^Supply\s+Fan\s+Amps?\b/i, // Supply Fan Amps (fcu, 27 rows)
+      ],
+    },
+    // ── Third-pass rescue: FCU-specific non-ASHRAE points ────────────────────
+    {
+      key: 'fcuElectricMonitor',
+      label: 'FCU Electric Power / Current Monitor',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Electric\s+(Current|Power)(\s+ANI)?\s*$/i, // Electric Current/Power/ANI (4+4+4+4 rows)
+        /^Outdoor\s+Unit\s+Outside\s+Air\s+Temperature(\s+ANI)?\s*$/i, // (4+4 rows)
+      ],
+    },
+    {
+      key: 'fcuGasHeat',
+      label: 'FCU Gas Heating Stages',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Gas\s+Heating\s+Stage\s+\d\s*$/i, // Gas Heating Stage 1/2 (3+2 rows)
+        /^DX\s+Heat\s+Fail\s+-\s+Gas\s+Heat\s+Running\s*$/i, // DX Heat Fail - Gas Heat Running (2 rows)
+        /^Heater\s+Output\s*$/i, // Heater Output (3 rows)
+      ],
+    },
+    {
+      key: 'fcuEquipment',
+      label: 'FCU Equipment / Control Points',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Associated\s+Equipment\s+1\s*$/i, // Associated Equipment 1 (10 rows)
+        /^AirRunSource\s*$/i, // AirRunSource (3 rows)
+        /^Control\s+Disk\s+Position\s*$/i, // Control Disk Position (3 rows)
+        /^Fan\s+Request\s+BV\s*$/i, // Fan Request BV (2 rows)
+        /^Outside\s+Air\s+Reset\s+En(b|abl)e\s*$/i, // Outside Air Reset Enbale [sic] (14 rows)
+        /^Control\s+Override\s*$/i, // Control Override (3 rows)
+        /^Emergency\s*$/i, // Emergency (3 rows)
+        /^Occupancy\s*$/i, // Occupancy (3 rows, fcu) — safe ahu-specific per ASHRAE
+        /^Fan\s+Hours\s*$/i, // Fan Hours (1 row)
+        /^System\s+Temperature\s+Control\s*$/i, // System Temperature Control (1)
+        /^Percent\s+Capacity\s*$/i, // Percent Capacity (1)
+        /^Status_BV\s*$/i, // Status_BV (1)
+      ],
+    },
+    {
+      key: 'fcuAlarmDiag',
+      label: 'FCU Alarm / Diagnostic Points',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^(Fan\s+Issue|Loss\s+Of\s+Air\s+Flow|Main\s+Fan\s+Overload)\s*$/i,
+        /^(Return\s+Air\s+Sensor\s+Issue|Supply\s+Air\s+Sensor\s+Issue)\s*$/i,
+        /^(Supply\s+Air\s+Over\s+Temperature|Supply\s+Air\s+Under\s+Temperature)\s*$/i,
+        /^Unit\s+Turned\s+Off\s*$/i,
+        /^Return\s+Dewpoint\s*$/i,
+        /^Dew\s+Point\s+Over\s+Temperature\s*$/i,
+        /^Cooling\s+Control\s+Temperature\s*$/i,
+      ],
+    },
   ],
 
   /* ── M3 NEW TYPE: Heater (unit heater / tube heater / infrared) ─────── */
@@ -12996,6 +13836,58 @@ var EM_POINT_CATEGORIES = {
         'current dewpoint',
       ],
     },
+    // ── Third-pass rescue: Heater-specific non-ASHRAE points ─────────────────
+    {
+      key: 'heaterElectrical',
+      label: 'Unit Heater Electrical Monitoring',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Supply\s+Fan\s+Amperage\s*$/i, // Supply Fan Amperage (71 rows, heater primary)
+        /^Unit\s+Heater\s+Amp(erage|s)?\s*$/i, // Unit Heater Amperage (13), Unit Heater Amps (11)
+        /^Tube\s+Heater\s+Amperage\s*$/i, // Tube Heater Amperage (2)
+      ],
+    },
+    {
+      key: 'heaterDoors',
+      label: 'Unit Heater Door / Occupancy Interlock',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Door\s+Contacts\s*$/i, // Door Contacts (4)
+        /^Networked\s+Door\s+Contact\s*$/i, // Networked Door Contact (6)
+        /^Doors\s+Open\s*$/i, // Doors Open (2)
+        /^Heating\s+Demand\s+Locked\s+Out\s+-\s+Doors\s+Open\s*$/i, // (2)
+        /^Unit\s+Heater\s+Manual\s+Off\s*$/i, // Unit Heater Manual Off (11)
+        /^Overide\s*$/i, // Overide [sic] (4, heater primary)
+      ],
+    },
+    {
+      key: 'heaterSetpoint',
+      label: 'Unit Heater Setpoint Adjustments',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^(Cool|Heat)\s+SpAdj\s*$/i, // Cool SpAdj (18), Heat SpAdj (18)
+      ],
+    },
+    {
+      key: 'heaterStaging',
+      label: 'Unit Heater Stage Control',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Unit\s+Heater\s+Stage\s+\d\s*$/i, // Unit Heater Stage 1 (4), Stage 2 (3)
+      ],
+    },
   ],
 
   /* ── M3 NEW TYPE: EF (Exhaust Fan) ─────────────────────────────────── */
@@ -13112,6 +14004,46 @@ var EM_POINT_CATEGORIES = {
         'oa dewpoint',
         'oa dew point',
         'current dewpoint',
+      ],
+    },
+    // ── Third-pass rescue: EF-specific non-ASHRAE points ─────────────────────
+    {
+      key: 'efElectrical',
+      label: 'Exhaust Fan Electrical Monitoring',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Exhaust\s+Fan\s+Amp(erage|s)(\s+ANI)?\s*$/i, // Exhaust Fan Amperage (34), Amps (31), Amps ANI (2)
+        /^Exhaust\s+Fan\s+\d+\s+Amperage\s*$/i, // Exhaust Fan 2 Amperage (2)
+      ],
+    },
+    {
+      key: 'efAirflow',
+      label: 'Exhaust Fan Airflow / Damper',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Exhaust\s+Fan\s+CFM\s*$/i, // Exhaust Fan CFM (7)
+        /^OA\s+Intake\s+Damper\s*$/i, // OA Intake Damper (5)
+      ],
+    },
+    {
+      key: 'efControl',
+      label: 'Exhaust Fan Control / Misc',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: [],
+      patterns: [
+        /^Wall\s+Switch\s*$/i, // Wall Switch (3)
+        /^Exhaust\s+Fan\s+Manual\s+Off\s*$/i, // Exhaust Fan Manual Off (3)
+        /^Associated\s+Equipment\s+ANI\s*$/i, // Associated Equipment ANI (2)
+        /^High\s+Zone\s+CO2\s*$/i, // High Zone CO2 (3, ef primary) — CO2 alarm on ef object
+        /^High\s+VOC\s+Level\s+Warning\s*$/i, // High VOC Level Warning (4, ef primary)
       ],
     },
   ],
@@ -14029,6 +14961,951 @@ EM_POINT_CATEGORIES.mau = [
   },
 ];
 
+/* ── Step 2: New EM_POINT_CATEGORIES blocks for non-HVAC equipment types ────
+   2026-06-29: Added to give points from lighting/fire/elevator/etc. programs
+   a named equipment context. These overlap with broadcast categories but
+   provide equipment-specific precision when equipCategory is known.       */
+
+EM_POINT_CATEGORIES.lighting = [
+  {
+    key: 'lightingControl',
+    label: 'Lighting Control',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bdimm(ing|er)?\b/i,
+      /\bdaylight\b/i,
+      /\bscene\s+(control|select|level)/i,
+      /\blocal\s+override\b/i,
+      /^EM\s+(cans?|down|lin|lts?|pend|back|wall|track)/i, // EM lighting circuits
+      /^back\s+EM\b/i,
+      /\bem\s+lighting\b/i,
+      /\blighting\s+(level|status|mode|output|control)/i,
+      /\boccup(ied|ancy)?\s+(sensor|control|mode|status)\b/i,
+    ],
+    aliases: [
+      'lighting control',
+      'dimming level',
+      'daylight level',
+      'scene control',
+      'lighting level',
+      'lighting output',
+      'occupancy sensor',
+      'occupancy mode',
+    ],
+  },
+];
+
+EM_POINT_CATEGORIES.fire = [
+  {
+    key: 'fireLifeSafety',
+    label: 'Fire / Life Safety',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bfire\b/i,
+      /\bfacp\b/i,
+      /\bsprinkler\b/i,
+      /\bfired\s+detected\b/i,
+      /\bpull\s+station\b/i,
+      /\bsuppress(ion)?\b/i,
+    ],
+    aliases: ['fire alarm', 'fire detected', 'fire panel status', 'facp status', 'sprinkler flow', 'fire suppression'],
+  },
+];
+
+EM_POINT_CATEGORIES.elevator = [
+  {
+    key: 'elevatorSystem',
+    label: 'Elevator System',
+    nonAshrae: true,
+    required: false,
+    patterns: [/\belev(ator)?\b/i, /\bfloor\s+indicator\b/i, /\bcab\s+temp/i, /\bpithead\b/i, /\bhoist(way)?\b/i],
+    aliases: ['elevator status', 'elevator fault', 'cab temperature'],
+  },
+];
+
+EM_POINT_CATEGORIES.security = [
+  {
+    key: 'security',
+    label: 'Security / Access Control',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bdoor\s+(contact|status|open|closed)\b/i,
+      /\bmotion\s+(sensor|detect)/i,
+      /\bcard\s+reader\b/i,
+      /\baccess\s+(control|point)\b/i,
+      /\bentry\s+(door|contact)\b/i,
+    ],
+    aliases: ['door contact status', 'motion sensor', 'card reader status', 'door open status'],
+  },
+];
+
+EM_POINT_CATEGORIES.plumbing = [
+  {
+    key: 'plumbing',
+    label: 'Plumbing / Domestic Water',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bdomestic\s+(hot|cold|water)\b/i,
+      /\bwater\s+heater\b/i,
+      /\bpressure\s+booster\b/i,
+      /\bdwbp\b/i,
+      /\bwater\s+press(ure)?\b/i,
+      /\bflow\s+(meter|rate|gpm)\b/i,
+    ],
+    aliases: [
+      'domestic hot water temperature',
+      'domestic water pressure',
+      'water heater status',
+      'domestic hw supply temp',
+      'flow rate gpm',
+    ],
+  },
+];
+
+EM_POINT_CATEGORIES.power = [
+  {
+    key: 'electricalMonitoring',
+    label: 'Electrical / Power Monitoring',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bamperage\b/i,
+      /\bvoltage\b/i,
+      /\bpower\s+(meter|quality|consumption)\b/i,
+      /\ba\s+input\s+rms\b/i,
+      /\bv\s+input\s+rms\b/i,
+      /\bline\s+(current|voltage)\b/i,
+      /^generator\b/i,
+      /\bgenerator\s+(status|fault|run)\b/i,
+    ],
+    aliases: ['amperage', 'voltage', 'power meter', 'generator status', 'line voltage'],
+  },
+];
+
+EM_POINT_CATEGORIES.monitoring = [
+  {
+    key: 'environmentalMonitoring',
+    label: 'Environmental Monitoring',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bcarbon\s+monoxide\b/i,
+      /^CO\s+(#?\d+|[\d]+\s*ppm)/i,
+      /\bco\s+(level|sensor|alarm)\b/i,
+      /\bfreez(er|ing)\s+(temp|status)\b/i,
+      /\brefrigerator\s+(temp|status)\b/i,
+      /\bcpu\s+(utiliz|load|temp)\b/i,
+      /\bnox\s+(level|sensor)\b/i,
+      /\bh2\s+(sensor|level|detect)\b/i,
+    ],
+    aliases: ['carbon monoxide', 'freezer temperature', 'refrigerator temperature', 'co level', 'co sensor'],
+  },
+];
+
+EM_POINT_CATEGORIES.erv = [
+  {
+    key: 'ervHeatRecovery',
+    label: 'Energy Recovery Ventilator',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\beru\b/i,
+      /\berv\b/i,
+      /\bheat\s+wheel\b/i,
+      /\benergy\s+recovery\b/i,
+      /\bexhaust\s+air\s+damper\b/i,
+      /\bwrap\s+(humidity|temp)/i,
+    ],
+    aliases: ['erv status', 'eru fault', 'heat wheel temperature', 'heat wheel humidity', 'energy recovery ventilator'],
+  },
+];
+
+EM_POINT_CATEGORIES.sensor = [
+  {
+    key: 'weatherSensor',
+    label: 'Weather / Environmental Sensor',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\boutdoor\s+(temp|humid|press|wind|solar)\b/i,
+      /\bweather\s+station\b/i,
+      /\brain\s+(sensor|detect|gauge)\b/i,
+      /\bwind\s+(speed|direction)\b/i,
+      /\bsolar\s+(radiation|irradiance)\b/i,
+      /\batmospheric\s+press\b/i,
+    ],
+    aliases: ['outdoor temperature', 'weather station', 'wind speed', 'solar radiation'],
+  },
+];
+
+EM_POINT_CATEGORIES.vrf = [
+  {
+    key: 'vrfSystem',
+    label: 'VRF System',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bvrf\b/i,
+      /\bvariable\s+refrigerant\b/i,
+      /\bcool\s+source\s+(mode|comm|on|supply)\b/i,
+      /\bnvo\s+active\b/i,
+      /\bz_di\b/i,
+    ],
+    aliases: ['vrf status', 'vrf fault', 'cool source mode', 'cool source communications lost'],
+  },
+];
+
+EM_POINT_CATEGORIES.ac = [
+  {
+    key: 'acUnit',
+    label: 'Air Conditioning Unit',
+    nonAshrae: true,
+    required: false,
+    patterns: [/^accu?-?\d+\s+/i, /\bair\s+condition(ing|er|ed)\b/i, /\bpckgd?\s+unit\b/i],
+    aliases: ['ac unit status', 'air conditioner fault', 'packaged unit'],
+  },
+];
+
+/* ── Step 3: ASHRAE 36 alias additions ─────────────────────────────────────
+   New entries for the AHU block (added post-mau for structural separation).
+   These entries have ashrae36Name and auditRelevant: true (no nonAshrae flag)
+   so they contribute to compliance scoring.                               */
+
+EM_POINT_CATEGORIES.ahu.push(
+  {
+    key: 'returnAirHumidity',
+    label: 'Return Air Humidity',
+    required: false,
+    ashrae36Name: 'Return Air Humidity',
+    ashrae36Section: '5.16',
+    patterns: [/return\s+air\s+humidity/i, /ahu-?\d+\s*-\s*return\s+air\s+humidity/i, /\brah\b/i],
+    aliases: ['return air humidity', 'return air rh', 'ra humidity', 'ahu return humidity'],
+  },
+  {
+    key: 'buildingPressure',
+    label: 'Building Pressure',
+    required: false,
+    ashrae36Name: 'Building Pressure',
+    ashrae36Section: '5.16',
+    patterns: [/building\s+pressure/i, /bldg\s+pressure/i, /building\s+static\s+press/i],
+    aliases: ['building pressure', 'bldg pressure', 'building static pressure', 'building differential pressure'],
+  },
+);
+
+// oaRh aliases: local outdoor/outside air humidity variants
+EM_POINT_CATEGORIES.zone.forEach(function (entry) {
+  if (entry.key === 'oaRh') {
+    entry.aliases = entry.aliases.concat([
+      'local outdoor air humidity',
+      'local outside air humidity',
+      'local oa humidity',
+      'local oat rh',
+    ]);
+    entry.patterns.push(/local\s+(outdoor|outside)\s+air\s+humidity/i);
+  }
+});
+
+// HWP WH-N domestic hot water supply temperature aliases
+EM_POINT_CATEGORIES.hwp.forEach(function (entry) {
+  if (entry.key === 'hwSupplyTemp') {
+    entry.aliases = entry.aliases.concat([
+      'wh domestic hot water supply temperature',
+      'wh hot water supply temp',
+      'domestic hot water supply temperature',
+    ]);
+    entry.patterns.push(/^WH-?\d+\s+domestic\s+hot\s+water\s+supply/i);
+  }
+});
+
+/* ── Steps 4-5: Broadcast categories ───────────────────────────────────────
+   Applied to ALL equipment types after equipment-specific ASHRAE matching.
+   nonAshrae: true → auditRelevant=false → excluded from ASHRAE 36 scoring.
+   Order matters: earlier entries have higher priority.
+
+   NOTE: These fire only if named exclusions (EM_NAMED_EXCLUSIONS) AND all
+   equipment-specific ASHRAE categories failed to match. The ASHRAE negativeGuards
+   prevent real sensor names from being captured here.                     */
+
+EM_POINT_CATEGORIES._broadcast = [
+  // ── Status / Feedback ─────────────────────────────────────────────────
+  // Catches generic status points not mapped to ASHRAE 36 columns.
+  // ASHRAE status entries (supplyFanStatus, coolingValvePos, etc.) fire first.
+  {
+    key: 'statusFeedback',
+    label: 'Status / Feedback',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bstatus\b/i,
+      /\bstate\s+(status|output)\b/i,
+      /\bfeedback\b/i,
+      /\bconfirm(ation|ed)?\b.*\bopen|open.*\bconfirm/i,
+    ],
+    aliases: [],
+  },
+  // ── Setpoint / Config ─────────────────────────────────────────────────
+  // Catches generic setpoint/configuration objects. ASHRAE setpoints fire first.
+  {
+    key: 'setpointConfig',
+    label: 'Setpoint / Config',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /setpoint/i,
+      /set\s+point/i,
+      /\bsetpt\b/i,
+      /\bsp\b.*\b(cool|heat|temp|press|flow)\b/i,
+      /prohibit\s+set\s+point/i,
+      /\bdeadband\b/i,
+      /\bthreshold\b/i,
+      /\blimit\s+(high|low)\b/i,
+      /high\s+limit|low\s+limit/i,
+    ],
+    aliases: ['setpoint', 'set point'],
+  },
+  // ── Enable / Disable Control ──────────────────────────────────────────
+  // Catches enable/disable command objects. ASHRAE negativeGuards block enable
+  // from appearing in ASHRAE sensor categories (e.g. ahu.oat.negativeGuards).
+  {
+    key: 'enableDisable',
+    label: 'Enable / Disable Control',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\benable\b/i,
+      /\bdisable\b/i,
+      /\benabled\b/i,
+      /\bdisabled\b/i,
+      /\ballow\b.*\b(heat|cool|vent|mode)\b/i,
+      /\bpermiss(ion|ive)\b/i,
+      /\blockout\b/i,
+    ],
+    aliases: [],
+    negativeGuards: [/,\s*status\s+is\s+(on|off)/i], // avoid double-catching statusFeedback
+  },
+  // ── Command / Control Output ──────────────────────────────────────────
+  {
+    key: 'commandOutput',
+    label: 'Command / Control Output',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\b(auto|off)\s+command\b/i,
+      /\bcommand\b.*\b(output|bv|bno)\b/i,
+      /\bmanual\s+(position|override|command)\b/i,
+      /\bforce\s+(open|closed|on|off)\b/i,
+      /\bsequence\s+(command|output)\b/i,
+    ],
+    aliases: [],
+  },
+  // ── PID Control Object ────────────────────────────────────────────────
+  // Note: /\bpid\b/i was previously DROPPED from exclusions due to 16 bucket-A
+  // ASHRAE matches (Heating Valve PID → heatingValve, etc.). Those ASHRAE entries
+  // fire first, so the PID broadcast only catches non-ASHRAE PID objects.
+  {
+    key: 'pidControl',
+    label: 'PID Control Object',
+    nonAshrae: true,
+    required: false,
+    patterns: [/\bpid\b/i, /\bp\.i\.d\b/i, /\bproportional.integral/i],
+    aliases: [],
+    negativeGuards: [
+      /\b(heating|cooling|supply|zone|chilled|hot)\s+(valve|coil)\b/i, // ASHRAE valve PIDs
+    ],
+  },
+  // ── Run / Start / Stop ───────────────────────────────────────────────
+  // Narrow to explicit run/start/stop BV command objects.
+  // "runtime" and "run hours" are caught by energyTracking named exclusion first.
+  {
+    key: 'runControl',
+    label: 'Run / Start / Stop',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^(ahu|boiler|pump|fan|chiller|unit|ct|ef|rtu|asu|hvac|equip(ment)?)\s*-?\d*\s+run$/i,
+      /\b(start|stop)\s+(command|request|signal)\b/i,
+      /\bstart\s+stop\b/i,
+      /\bunit\s+start\b/i,
+      // hvacSubObject-refine P12: equipment running/shutdown states (~54 names)
+      /^Heater\s+\d+\s+Running\b/i, // Heater 1 Running through Heater 12 Running
+      /^(RTU|AHU)\s*-?\d+\s+Running\b/i, // RTU-1 Running, RTU-2 Running
+      /^Unit\s+(Running|Shutdown|Turned\s+On|In\s+Standby|Communication\s+Lost)\b/i,
+      /^(BCU|ASU|DOAS)\s*-?\d*\s+Run\b/i, // BCU Run
+      /Associated\s+(AHU|Equipment)\s+Running\b/i,
+      /^System\s+Running\b/i,
+      // Phase 1 rescue — fanAmpSubObject system run control
+      /^System\s+Run\s+Control\b/i, // System Run Control
+      /^Start\s*\/\s*Stop\s+BNO\b/i, // Start/Stop BNO
+    ],
+    aliases: [],
+  },
+  // ── HOA / Manual Control Switch ───────────────────────────────────────
+  {
+    key: 'hoaControl',
+    label: 'HOA / Manual Control Switch',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bh[.\s-]?o[.\s-]?a\b/i,
+      /\bhoa\s+(switch|select|mode|status)\b/i,
+      /\bauto\s+off\s+switch\b/i,
+      /hand[./\s-]off[./\s-]auto/i,
+      // hvacSubObject-refine P9: numeric HOA position labels (~65 names)
+      /\d+[A-D]\s+Off\s+Position\b/i, // 2A Off Position, 3D Off Position
+      /\d+[A-D]\s+Hand\s+Position\b/i,
+      /^Slider\s+Adjustment\b/i,
+      /^Key\s+Pad\s+ON\b/i,
+      /^Keyed\s+Shutdown\b/i,
+    ],
+    aliases: ['hoa', 'hand off auto', 'auto off switch'],
+  },
+  // ── DX / Staging Output ───────────────────────────────────────────────
+  {
+    key: 'dxStaging',
+    label: 'DX / Staging Output',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /cooling\s+stage\s*\d/i,
+      /\bstage\s+\d+\s+(on|off|cool|heat)\b/i,
+      /active\s+(cooling|heating)\s+capacity/i,
+      /actual\s+running\s+capacity/i,
+      /\bcooling\s+on\b/i,
+      /\bstaging\s+(output|mode|control)\b/i,
+      // Second rescue pass 2026-06-30: AHU heating stages and fpb heat stage
+      /^(Heating|Cooling)\s+Stage\s+\d/i, // Heating Stage 1 (32), Heating Stage 2 (21) — ahu
+      /^Heat\s+Stage\s+\d/i, // Heat Stage 2&3 (fpb, 16 rows)
+    ],
+    aliases: [],
+  },
+  // ── UPS / Battery / Bypass ────────────────────────────────────────────
+  {
+    key: 'upsSystem',
+    label: 'UPS / Battery / Bypass',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bbattery\s+(charge|percent|status|level|fail)\b/i,
+      /\bbattery\s+charger\b/i,
+      /\bbypass\s+mode\b/i,
+      /\bups\b/i,
+      /\buninterruptible\b/i,
+      /\bbackup\s+power\b/i,
+      // hvacSubObject-refine P16: detailed UPS/battery states (~13 names)
+      /Battery\s+(Breaker\s+Open|Discharging|Low|Manual\s+Test|Terminals\s+Reversed|Test\s+(Failed|Passed)|Percentage\s+Charge|Time\s+Remaining|Volts)\b/i,
+      /^Bypass\s+(Not\s+Available|Overload|System\s+Not\s+Communicating|Underload|Valid\s+Test)\b/i,
+      /^On\s+Normal\b/i, // UPS on normal power
+      /^Low\s+Battery\b/i,
+      /^Input\s+Breaker\s+Open\b/i,
+      /^Maintenance\s+Bypass\s+Breaker\s+Closed\b/i,
+      // Phase 1 rescue — powerUpsGenerator UPS-specific sub-objects (~35+ names)
+      /^Rectifier\s+Phase\s+[ABC]\s+Temperature\s+Sensor\s+\d+\b/i,
+      /^System\s+Output\s+(Apparent\s+Power|Pct\s+Power)\s+Phs\s+[ABC]\b/i,
+      /^System\s+Output\s+Power\s+Phase\s+[ABC]\b/i,
+      /^(A|B|C)\s+(Input|Output)\s+RMS\s+Current\b/i,
+      /^DC\s+Bus\s+Current\b/i,
+      /^Max\s+Charge\s+Current\b/i,
+      /^Output\s+(Apparent\s+Power\s+Rating|Percent\s+Load)\b/i,
+      /^(Battery|Equipment)\s+Over\s+Temperature\b/i,
+      /^Battery\s+(Auto\s+Test\s+In\s+Progress|Temperature\s+(for\s+Cabinet|Out\s+Of\s+Range))\b/i,
+      /^(Backfeed|Input)\s+Breaker\s+Open\b/i,
+      /^System\s+Input\s+Nominal\s+Frequency\b/i,
+      /^Booster\s+-\s+Charger\s+Temperature\s+\d+\b/i,
+      /^Fan\s+Hours\s+Exceeded\b/i,
+    ],
+    aliases: ['battery status', 'ups status', 'bypass mode'],
+  },
+  // ── Leak / Water Detection ────────────────────────────────────────────
+  {
+    key: 'leakDetect',
+    label: 'Leak / Water Detection',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /leak\s+detect/i,
+      /water\s+detect/i,
+      /\bdrain\s+pan\s+(overflow|water|level|detect)\b/i,
+      /\bfloor\s+leak\b/i,
+      /water\s+in\s+drain/i,
+    ],
+    aliases: ['leak detector', 'water detected', 'drain pan water'],
+  },
+  // ── Equipment Filter Status ───────────────────────────────────────────
+  {
+    key: 'filterStatus',
+    label: 'Equipment Filter Status',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /dirty\s+(filter|exhaust\s+filter|supply\s+filter)/i,
+      /clogged\s+(air\s+)?filter/i,
+      /filter\s+(dirty|clogged|alarm|status)/i,
+      /outside\s+air\s+filter\s+(dirty|clogged)/i,
+      // Phase 1 rescue — filterMonitoring cluster (~18 names)
+      /\bHigh\s+(Pre-?Filter|Final\s+Filter|Filter)\s+Pressure\s+Drop\b/i, // High Filter Pressure Drop
+      /^Filter\s+(50|100)%/i, // Filter 50%, Filter 100% — FIXED: was /\b/ which doesn't match after % at EOL
+      /^Filter\s+Reset\s+BNO\b/i, // Filter Reset BNO
+      /^Pre[\s-]?Filter\b/i, // Pre Filter, Pre-Filter (FIXED: was Pre-?Filter which missed space variant)
+      /^Final\s+Filter\b/i, // Final Filter
+      /^(Exhaust|Supply)\s+Filter\s+(Switch|Sign)?\b/i, // Exhaust Filter Switch
+      /^Filter\s+Sign\b/i, // Filter Sign
+      // Second rescue pass 2026-06-30: bare filter and OA filter names
+      /^Filter\s*$/i, // bare "Filter" (ahu, 47 rows — simple filter status relay)
+      /^(Outside|Return)\s+Air\s+Filter\b/i, // Outside Air Filter (3), Return Air Filter Pressure (2)
+    ],
+    aliases: ['dirty filter', 'clogged filter', 'filter dirty'],
+  },
+  // ── Dehumidification Sub-Object ───────────────────────────────────────
+  {
+    key: 'dehumidification',
+    label: 'Dehumidification Sub-Object',
+    nonAshrae: true,
+    required: false,
+    patterns: [/dehumidif/i, /\bdhum\b/i],
+    aliases: ['dehumidification mode', 'dehumidification status'],
+  },
+  // ── VVT Zone Coordination (extra) ────────────────────────────────────
+  // Named exclusions handle "Active Zones #", "Max Zones #", "Heat Request #" etc.
+  // These patterns catch additional VVT coordination point names.
+  {
+    key: 'vvtCoordination',
+    label: 'VVT Zone Coordination',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^(air|cool|heat|dp)\s+request\s*\d/i,
+      /\badjacent\s+zone\s+(heat|cool)\s+mode\b/i,
+      /\bzone\s+(heat|cool)\s+request\b/i,
+      /\bvvt\s+(mode|zone|coord)\b/i,
+      /\bdp\s+request\b/i,
+      // hvacSubObject-refine P11 broadcast: additional VVT coordination signals
+      /^Air\s+Source\s+(Air|Cool|Heat)\s+Requests?\b/i,
+      /^Air\s+Source\s+Economizer\s+Ready\b/i,
+      /^Air\s+Source\s+(Static|Minimum)\b/i,
+      /\b(Clg|Htg|Heating|Cooling)\s+Air\s+Source\s+Min(imum)?\b/i,
+      /^At\s+Maximum\s+Capacity\b/i,
+      /^Actual\s+Capacity\b|ActualCapacity\b/i,
+      /^Effective\s+(Cooling|Heating)\s+Load\b/i,
+    ],
+    aliases: [],
+  },
+  // ── Energy / Consumption Tracking (extra) ────────────────────────────
+  // Named exclusions handle runtime, run hours, trend, history.
+  // These catch degree-day and burner cycle sub-objects not covered there.
+  {
+    key: 'energyTracking',
+    label: 'Energy / Consumption Tracking',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bcdd\b/i,
+      /\bhdd\b/i,
+      /burner\s+cycle\s+(count|start)/i,
+      /\bannual\s+test\b/i,
+      /\bdemand\s+(period|begin|end|month|year)\b/i,
+      /fuel\s+(use|consumption|total)\b/i,
+      /\bgallons?\s+(used|consumed|total)\b/i,
+    ],
+    aliases: [],
+  },
+  // ── Chiller Plant / MCS (extra) ──────────────────────────────────────
+  // Named exclusions handle _MCS, _BAS, x-prefix, heat balance AV, etc.
+  // These patterns catch additional chiller plant sub-objects.
+  {
+    key: 'chillerPlant',
+    label: 'Chiller Plant / MCS',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^CH-?\d+\s+/i, // CH-1, CH-2, CH-3 prefix points
+      /^C[1-4]_/i, // C1_, C2_, C3_ internal MCS vars
+      /^chiller\s+[1-4]\b/i, // Chiller 1/2/3/4 points
+      /\b(cond|evap|chwt?|cwt?|chwrt?|cwrt?)\s*(approach|delta|psi|delta-t)\b/i,
+      /tower\s+(basin|drain|bypass|inlet|outlet)/i,
+      /\bcondenser\s+water\s+(press|flow|temp|pump)\b/i,
+      /\bchilled\s+water\s+(diff|delta|pump\s+speed)\b/i,
+      // hvacSubObject-refine P3 broadcast: MCS module, plant-level, heat exchanger (~246 names total)
+      /^Module\s+\d+\s+(3\s+phase|igv|loading|volts)/i, // Module 1 IGV Position %, Module 2 Loading Demand %
+      /^Plant\s+(COP|Cost|Efficiency|Nominal\s+Capacity|Shutdown)/i, // Plant COP, Plant Cost Today
+      /^Heat\s+Exchanger\s+\d+\s+(Clearing|Flow|Tons|Position)/i, // Heat Exchanger 1 Clearing
+      /Total\s+Evaporator\s+Water\s+Flow/i, // Total Evaporator Water Flow Requests Total
+      /^CW\s+(Cost|Flow)\b/i, // CW Cost Today, CW_Flow
+      /Evap_Flow_Meter|Evap_In_Pressure/i, // Evaporator flow meter internal vars
+      /^C\d\s+_RunHrs\b/i, // C1 _RunHrs, C2 _RunHrs
+      /\bSystem\s+Capacity\s+Code\b/i, // System Capacity Code
+      /^Cooling\s+Towers?\s+Requested\b/i, // Cooling Towers Requested ANI
+    ],
+    aliases: [],
+    negativeGuards: [/\b(valve|coil|supply\s+temp|return\s+temp)\b/i], // keep ASHRAE valve/coil
+  },
+  // ── Refrigerant / Compressor Circuit (extra) ──────────────────────────
+  // Named exclusions handle compressor, suction, superheat, refrigerant.
+  // These catch circuit-numbered patterns.
+  {
+    key: 'refrigerant',
+    label: 'Refrigerant / Compressor Circuit',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /circuit\s+[1-4]\s+(discharge|head|fault|evap|pressure|temp|liquid)/i,
+      /\b(discharge|suction)\s+(pressure|temperature)\b/i,
+      /\bhead\s+pressure\b/i,
+      /\bliquid\s+line\s+(temp|press)\b/i,
+    ],
+    aliases: [],
+  },
+  // ── Fan Sub-Object (NEW, hvacSubObject-refine P8) ────────────────────
+  // Catches boiler fan proving switches and dedicated exhaust fan points.
+  // Placed BEFORE hwpSubObject so "Boiler 1 Fan 1 Proving Switch" wins here
+  // rather than falling to the broader proving-switch pattern in hwpSubObject.
+  {
+    key: 'fanSubObject',
+    label: 'Fan Sub-Object',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bFan\s+\d+\s+Proving\s+Switch\b/i, // Boiler 1 Fan 1 Proving Switch
+      /\bMain\s+Fan\s+\d+\b/i, // Boiler 1 Main Fan 1
+      /^BMS\s+Exhaust\s+Fan\s+Only/i, // BMS Exhaust Fan Only Command
+      /^EF-?\d+\s+Request\b/i, // EF-21 Request
+    ],
+    aliases: [],
+  },
+  // ── Pump Sub-Object (NEW, hvacSubObject-refine P6) ───────────────────
+  // Catches pump speed, clearing, isolation valve, cycle count for non-ASHRAE pump points.
+  // Placed BEFORE hwpSubObject so "Boiler Pump Cycle Count" wins here over
+  // the broader /\bCycle\s+Count\b/i pattern in hwpSubObject.
+  {
+    key: 'pumpSubObject',
+    label: 'Pump Sub-Object',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bPump\s+\d+\s+(Clearing|Isolation\s+Valve|Speed|Dp|VFD\s+Fault|Failure)\b/i,
+      /\bPump\s+(Cycle\s+Count|Isolation|Clearing)\b/i,
+      /CHWP\s+\d+\s+(Speed|Clearing|Isolation)/i,
+      /\bBoiler\s+Pump\b/i, // Boiler Pump Cycle Count, Boiler Pump Status
+    ],
+    aliases: [],
+  },
+  // ── Hot Water Plant Sub-Object (extra) ──────────────────────────────
+  // Named exclusions handle flame signal, gas valve, external spark, modsync.
+  // These catch ET boiler efficiency data and other HWP sub-objects.
+  {
+    key: 'hwpSubObject',
+    label: 'Hot Water Plant Sub-Object',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^ET\s+(day|hour|month|year|flue|error|minutes?|mwh|kwh)/i,
+      /\bboiler\s+[1-6]\s+(flue|combustion|air\s+press|draft|efficiency)\b/i,
+      /\bmodulat(ing|ion)\s+(rate|signal|output)\b/i,
+      /\bstack\s+(temp|press|flue)\b/i,
+      /\binlet\s+gas\s+press\b/i,
+      // hvacSubObject-refine P5: boiler blocking/proving/cycle sub-objects (~108 names)
+      /\bBlocking\s+Code\b/i, // Boiler 1 Active Blocking Code, Boiler 1 Blocking Code
+      /\bCycle\s+Count\b/i, // Boiler 1 Cycle Count (non-pump; pump version caught above)
+      /\bAir\s+Pressure\s+Switch\b/i, // Boiler 1 Air Pressure Switch
+      /\bProving\s+Switch\b/i, // broader (Fan N Proving Switch caught by fanSubObject above)
+      /\bBlocked\s+Drain\s+Switch\b/i, // Boiler 1 Blocked Drain Switch
+      /Heat\s+Cycles?\b/i, // Heat Cycles (boiler ignition tracking)
+      /\bIgnitions?\s*(Count|ANI)?\b/i, // Ignitions ANI
+      /Number\s+of\s+(Crank|Successful\s+Starts)/i, // Number of Crank Attempts
+      /^Firing\s+Rate\b/i, // Firing Rate ANI
+    ],
+    aliases: [],
+  },
+  // ── Plumbing / Domestic Water (extra) ────────────────────────────────
+  // Named exclusions handle water softener, sump, domestic HW pump/boiler/tank, booster pump.
+  // These catch additional plumbing sub-objects.
+  {
+    key: 'plumbing',
+    label: 'Plumbing / Domestic Water',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^DWBP-?\d/i,
+      /\bdomestic\s+water\s+(press|flow|pump)\b/i,
+      /\bwater\s+(heater|tank|temp)\b(?!\s+plant)/i,
+      /\bwh-?\d+\b/i,
+      // Phase 1 rescue — plumbingSpecialty cluster water meter sub-objects
+      /^Flow\s+(Peak|Use)\s+(Synch|Synchronization)\b/i, // Flow Peak Synch, Flow Use Synch
+      /^Conversion\s+Constant\b/i, // Conversion Constant (water meter pulse factor)
+      /^Instant\s+Demand\b/i, // Instant Demand (water flow rate)
+    ],
+    aliases: [],
+    negativeGuards: [/\bplant\b/i], // avoid catching hot water plant entries
+  },
+  // ── VFD / Drive Sub-Object (extra) ─────────────────────────────────
+  // Named exclusions handle Drive prefix, VFD prefix, inverter.
+  // These catch mid-string VFD monitoring sub-objects.
+  {
+    key: 'vfdSubObject',
+    label: 'VFD / Drive Sub-Object',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bpump\s+vfd\s+(fault|freq|amp|speed|status)\b/i,
+      /\bfan\s+vfd\s+(fault|freq|amp|speed|status)\b/i,
+      /\bvfd\s+(bypass|comm|dc\s+bus)\b/i,
+    ],
+    aliases: [],
+  },
+  // ── Fire / Life Safety (extra) ───────────────────────────────────────
+  // Named exclusions handle smoke, emergency shutdown, pre-action, fireman panel.
+  // These catch additional fire/life-safety points.
+  {
+    key: 'fireLifeSafety',
+    label: 'Fire / Life Safety',
+    nonAshrae: true,
+    required: false,
+    patterns: [/\bfire\s+(suppress|panel|control)\b/i, /\bfacp\b/i, /\bhazard\s+(detect|sensor)\b/i],
+    aliases: [],
+  },
+  // ── Lighting Control (extra) ─────────────────────────────────────────
+  // Equipment-specific lighting block handles dimming, occupancy, scenes.
+  // These catch EM lighting circuit names not in that block.
+  {
+    key: 'lightingControl',
+    label: 'Lighting Control',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bem\s+(cans?|pendant|lts|track|wall|back)\b/i,
+      /\bdmx\s+(lights?|control)\b/i,
+      /\bfluorescent\s+(status|dim)\b/i,
+      // hvacSubObject-refine P17: Crestron/ADC circuit names (~36 names)
+      /^Reg\s+(Cans?|Linears?|Pendants?|Downlights?)\b/i,
+      /^Regular\s+(Linears?|Pendants?)\b/i,
+      /^(North|South|East|West)\s+(EMs?|Regular|Track)\b/i,
+      /^(Main|Front|Window)\s+(EMs?|Pendants?)\b/i,
+      /^Load\s+\d+\s+(Level|Pendants?)\b/i,
+      /^HLT\s+Load\s+[\d-]+\b/i, // HLT Load 1-3, 4-6, 7-9
+      /^Linear\s+Uplights?\b/i,
+      /^Photocell(-\d+\s+\w+)?\b/i,
+      /^Shades?\s+(Up|Down)\b/i,
+      /^(South|West)\s+(Track|track\s+lights?)\b/i,
+      /^Wall\s+Wash\b|Wiall\s+Wash\b/i, // typo-tolerant
+      /^Load\s+Power\s+Source\b/i,
+      // Phase 1 rescue — lightingSubObject cluster (~42 names, all lighting context)
+      /^(relayXXX|circuitXXX|PanelXXX|Circuitxxx)$/i, // placeholder template labels
+      /^High\s+Level\s+Trim\b/i, // High Level Trim (lighting zone trim)
+      /^(Flash-Warn|DH\s+Sensitivity\s+Ratio)\b/i, // Flash-Warn, DH Sensitivity Ratio
+      /^z_DI_Keypad\b/i, // z_DI_Keypad (keypad input register)
+      /^z_MO_Control\s+Mode\b/i, // z_MO_Control Mode
+      /^(Site\s+Lighting\s+Command|Lighting\s+Group\s+Vacant)\b/i,
+      /^Load\s+\d+\s+CMD\b/i, // Load 1 CMD, Load 2 CMD
+      /^Load\s+\d+-\d+\s+(CMD|FB)\b/i, // Load 1-3 CMD, Load 1-3 FB
+      /^Digital\s+Inputs\b/i, // Digital Inputs (lighting panel I/O)
+    ],
+    aliases: [],
+  },
+  // ── ERV / Heat Recovery (extra) ──────────────────────────────────────
+  {
+    key: 'ervHeatRecovery',
+    label: 'Energy Recovery Ventilator',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^ERU(-\d+)?\s+(fault|latched|local|run|status)/i,
+      /\bheat\s+wheel\s+(temp|humidity|speed|bypass)/i,
+      /\bwrap\s+(temp|humidity|eff(iciency)?)\b/i,
+      /\bexhaust\s+air\s+(damper|fan)\s+(pos|position|status|cmd)\b/i,
+    ],
+    aliases: [],
+  },
+  // ── Generator / Standby Power ─────────────────────────────────────────
+  {
+    key: 'generatorAts',
+    label: 'Generator / Standby Power',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bemergency\s+power\s+(on|off|status)\b/i,
+      /\bgenerator\s+(run|fault|transfer|status)\b/i,
+      /\btransfer\s+switch\b/i,
+      /\bnormal\s+power\s+(on|off|avail)\b/i,
+      // hvacSubObject-refine P19: generator fuel/hours/strobes (~4 names)
+      /^Emer(gency)?\s+Generator\s+Running\b/i,
+      /^Engine\s+(Operating\s+)?Hours\b/i,
+      /^Engine\s+Starts\b/i,
+      /^Emergency\s+Strobes\b/i,
+      /^Fuel\s+Level\b/i, // generator fuel level
+      /^Ullage\b/i, // tank ullage (fuel remaining)
+    ],
+    aliases: ['emergency power on', 'generator run', 'transfer switch'],
+  },
+  // ── Environmental Monitoring (extra) ──────────────────────────────────
+  {
+    key: 'environmentalMonitoring',
+    label: 'Environmental Monitoring',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^CO\s+[\d#]/i,
+      /\bcarbon\s+(monoxide|dioxide)\b/i,
+      /\bco\s+([\d]+\s*ppm|sensor|level|detector)\b/i,
+      /\bnatural\s+gas\s+(leak|detect|sensor)\b/i,
+      /\bair\s+quality\s+(index|sensor|monitor)\b/i,
+      // Phase 1 rescue — monitoringSubObject + weatherAndBus clusters
+      /^(Time\s+Satisfied|Zone\s+Occ)\s+Limit\b/i, // Time Satisfied Limit, Zone Occ Limit
+      /^(Secondary|Local|Network)\s+(Dry\s+Bulb|Humidity)\s+Sensor\b/i, // Secondary Dry Bulb Sensor
+      /^Weather\s+Service\s+Valid\b/i, // Weather Service Valid
+      /^Update\s+Timer\b/i, // Update Timer (weather bus polling)
+      /^Forecast\s+Day\s+\d+\s+(High|Low)\s+Temp\b/i, // Forecast Day 1 High Temp
+      /^Current\s+(Feels\s+Like|Pressure|Wind\s+Degrees)\b/i, // Current Feels Like, Current Pressure
+    ],
+    aliases: [],
+  },
+  // ── BACnet / Network Communication (extra) ────────────────────────────
+  // Named exclusions handle BNI suffix, comm failure, cresnet.
+  // These catch nvo/nvi LON points and BACnet Comm sub-objects.
+  {
+    key: 'bacnetComm',
+    label: 'BACnet / Network Communication',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^nvo\s+/i,
+      /^nvi\s+/i,
+      /\bbacnet\s+(comm|object|device)\b/i,
+      /\bbms\s+comm\s+(timeout|failure|status)\b/i,
+      /\bnet\s+comm\b/i,
+    ],
+    aliases: [],
+  },
+  // ── BMS Config / Supervisor (extra) ──────────────────────────────────
+  {
+    key: 'bmsConfig',
+    label: 'BMS Config / Supervisor',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bdemand\s+(limiting|source|level|period)\b/i,
+      /\bahu\s+manager\b/i,
+      /\bsupervisor\b/i,
+      /\bcontrol\s+mode\b/i,
+      /\bbuilding\s+mode\b/i,
+      /\bunit\s+mode\b/i,
+      /\boperation\s+mode\b/i,
+      /\bapplication\s+mode\b/i,
+      /\bsystem\s+(mode|select|status)\b/i,
+    ],
+    aliases: [],
+  },
+  // ── Schedule / Occupancy (extra) ──────────────────────────────────────
+  {
+    key: 'scheduleOccupancy',
+    label: 'Schedule / Occupancy',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\boccup(ied|ancy|ancy\s+mode)?\s+(schedule|sensor|input)\b/i,
+      /\boverride\s+(time|duration|count)\b/i,
+      /\bafter\s+hours\b/i,
+      /\bnight\s+(setback|mode)\b/i,
+      // Phase 2 rescue — FCU prohibit/override schedule sub-objects
+      /^Prohibit\s+(On\/Off\s+at\s+Thermostat|Fan\s+Change|Mode\s+Change)\s+[AB]NO\b/i,
+      /^Virtual\s+Override\b/i, // Virtual Override (schedule override signal)
+    ],
+    aliases: [],
+  },
+  // ── Security / Access Control (extra) ────────────────────────────────
+  {
+    key: 'security',
+    label: 'Security / Access Control',
+    nonAshrae: true,
+    required: false,
+    patterns: [/\bintercom\b/i, /\bcard\s+access\b/i, /\bsecurity\s+(arm|disarm|status)\b/i],
+    aliases: [],
+  },
+  // ── VRF/DX Refrigerant Sub-Object (NEW — Phase 1 vrfSubObject cluster, ~50 names) ──────
+  {
+    key: 'vrfSubObject',
+    label: 'VRF/DX Refrigerant Sub-Object',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^M\s+(Condensing|Evaporating)\s+(Pressure|Temperature)(\s+ANI)?\b/i, // M Condensing Pressure
+      /^M\s+EV\s+Position\s+\d+(\s+ANI)?\b/i, // M EV Position 1 ANI
+      /^M\s+Fan\s+Step(\s+ANI)?\b/i, // M Fan Step ANI
+      /^M\s+(Gas|Liquid)\s+Pipe\s+Temperature\b/i, // M Gas Pipe Temperature
+      /^Liquid\s+Pipe\s+Temperature(\s+ANI)?\b/i, // Liquid Pipe Temperature ANI
+      /^(Gas\s+Pipe\s+Temperature|Expansion\s+Valve\s+Position)(\s+ANI)?\b/i,
+      /^(Oil\s+Return\s+Mode|Defrost\s+Mode|Reversing\s+Valve(\s+Position)?)\b/i,
+    ],
+    aliases: [],
+  },
+  // ── Energy Recovery Wheel / Coil (NEW — Phase 2 energyRecovery cluster, ~8 safe names) ──
+  {
+    key: 'energyRecovery',
+    label: 'Energy Recovery Wheel / Coil',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^Sensible\s+Wheel\s+Exhaust\s+Temperature\b/i, // Sensible Wheel Exhaust Temperature
+      /^Energy\s+Recovery\s+(Coil|Entering|Leaving)\s*(Temperature)?\b/i, // Energy Recovery Coil Temp
+    ],
+    aliases: [],
+  },
+  // ── Coil Leaving / Entering Temperature (NEW — Phase 2 coilTemperature cluster, ~8 names) ──
+  {
+    key: 'coilTemperature',
+    label: 'Coil Leaving / Entering Temperature',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^(Chilled|Hot)\s+Water\s+Coil\s+(Leaving|Entering)\s+Temperature\b/i, // Chilled Water Coil Leaving Temp
+      /^(Chilled|Hot)\s+Water\s+Coil\s+Temperature\b/i, // Chilled Water Coil Temperature
+    ],
+    aliases: [],
+  },
+  // ── VAV Fintube Heater Points (NEW — Phase 2 fintubeHeater cluster, ~5 names) ───────────
+  {
+    key: 'fintubeHeater',
+    label: 'VAV Fintube Heater Points',
+    nonAshrae: true,
+    required: false,
+    patterns: [/\bFintube\b/i], // Fintube Valve Percentage, Fintube OA Reset
+    aliases: [],
+  },
+  // ── Snow Melt / Heat Trace System (NEW — Phase 1 plumbingSpecialty/snowMelt, ~15 names) ──
+  {
+    key: 'snowMelt',
+    label: 'Snow Melt / Heat Trace System',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /\bsnow\s+melt\b/i, // Snow Melt On/Off, Snow Melt Status
+      /\bslab\s+temp(erature)?\b/i, // Slab Temp, Slab Temperature
+      /^Heat\s+Trace\s+(Amps?|Temperature)(\s+(x100\s+)?ANI)?\b/i, // Heat Trace Amps x100 ANI
+      /^Mix\s+System\s+(Output|Target)\b/i, // Mix System Output, Mix System Target
+      /^Add\s+Melt\s+Time\b/i, // Add Melt Time
+      /^(Cold|Warm)\s+Weather\s+Cutout\b/i, // Cold Weather Cutout, Warm Weather Cutout
+    ],
+    aliases: [],
+  },
+  // ── Live Broadcast Variable (NEW — Phase 1 liveBcastVar cluster, ~28 names) ──────────────
+  // MUST be broadcast (not named exclusion) — "zoneDamperLive" is already in Bucket-A via
+  // dampCmd ASHRAE alias matching. As a broadcast entry, ASHRAE wins first and this only
+  // catches names that genuinely fall through.
+  {
+    key: 'liveBcast',
+    label: 'Live Broadcast Variable',
+    nonAshrae: true,
+    required: false,
+    patterns: [
+      /^[a-z][a-zA-Z0-9]*(Live|Bcast)$/, // oatLive, satLive, oatLiveBcast
+      /^rhZone$/, // rhZone (zone relative humidity broadcast)
+    ],
+    aliases: [],
+  },
+];
+
 /* ── emNormalizePointName ───────────────────────────────────────────────────
    Internal helper: normalize a raw BAS point name for fuzzy matching.
    - Lowercases
@@ -14118,20 +15995,22 @@ function emNormalizePointInner(rawName, equipCategory) {
       rawName: rawName,
     };
   }
-  // ── Exclusion check ──────────────────────────────────────────────────
-  for (var ei = 0; ei < EM_EXCLUSION_PATTERNS.length; ei++) {
-    if (EM_EXCLUSION_PATTERNS[ei].test(rawName)) {
-      return {
-        categoryKey: null,
-        categoryLabel: null,
-        matchTier: 0,
-        confidence: 'excluded',
-        auditRelevant: false,
-        ashrae36PointName: null,
-        ashrae36Section: null,
-        rawName: rawName,
-      };
-    }
+  // ── Named exclusion check (Step 1 overhaul — 2026-06-29) ────────────
+  // Returns a NAMED category for all formerly-excluded points so they are
+  // visible in the Manage Mappings modal. Fires BEFORE ASHRAE 36 matching.
+  var _namedExcl = emMatchNamedExclusion(rawName);
+  if (_namedExcl) {
+    return {
+      categoryKey: _namedExcl.key,
+      categoryLabel: _namedExcl.label,
+      matchTier: 4,
+      confidence: 'named-exclusion',
+      auditRelevant: false,
+      ashrae36PointName: null,
+      ashrae36Section: null,
+      rawName: rawName,
+      required: false,
+    };
   }
 
   var cats = equipCategory && EM_POINT_CATEGORIES[equipCategory] ? EM_POINT_CATEGORIES[equipCategory] : [];
@@ -14143,12 +16022,16 @@ function emNormalizePointInner(rawName, equipCategory) {
   // cross-category lookups where the equipment context is unknown.
   var _skipTier2 = !cats.length;
 
-  // If no category known, try all equipment types
+  // If no category known, try all equipment types (excluding _broadcast — appended below)
   if (!cats.length) {
     var allCats = Object.keys(EM_POINT_CATEGORIES);
     for (var ac = 0; ac < allCats.length; ac++) {
-      cats = cats.concat(EM_POINT_CATEGORIES[allCats[ac]]);
+      if (allCats[ac] !== '_broadcast') cats = cats.concat(EM_POINT_CATEGORIES[allCats[ac]]);
     }
+  }
+  // Always append broadcast categories at lowest priority (Steps 4-5)
+  if (EM_POINT_CATEGORIES._broadcast) {
+    cats = cats.concat(EM_POINT_CATEGORIES._broadcast);
   }
 
   var normDisplay = emNormalizePointName(rawName);
@@ -14179,7 +16062,7 @@ function emNormalizePointInner(rawName, equipCategory) {
         categoryLabel: cat.label,
         matchTier: 1,
         confidence: 'high',
-        auditRelevant: true,
+        auditRelevant: !cat.nonAshrae,
         ashrae36PointName: cat.ashrae36Name,
         ashrae36Section: cat.ashrae36Section,
         rawName: rawName,
@@ -14201,7 +16084,7 @@ function emNormalizePointInner(rawName, equipCategory) {
             categoryLabel: cat.label,
             matchTier: 2,
             confidence: 'high',
-            auditRelevant: true,
+            auditRelevant: !cat.nonAshrae,
             ashrae36PointName: cat.ashrae36Name,
             ashrae36Section: cat.ashrae36Section,
             rawName: rawName,
@@ -14245,7 +16128,7 @@ function emNormalizePointInner(rawName, equipCategory) {
             categoryLabel: cat.label,
             matchTier: 2,
             confidence: 'medium',
-            auditRelevant: true,
+            auditRelevant: !cat.nonAshrae,
             ashrae36PointName: cat.ashrae36Name,
             ashrae36Section: cat.ashrae36Section,
             rawName: rawName,
@@ -14265,7 +16148,7 @@ function emNormalizePointInner(rawName, equipCategory) {
           categoryLabel: cat.label,
           matchTier: 3,
           confidence: 'medium',
-          auditRelevant: true,
+          auditRelevant: !cat.nonAshrae,
           ashrae36PointName: cat.ashrae36Name,
           ashrae36Section: cat.ashrae36Section,
           rawName: rawName,
@@ -14289,7 +16172,7 @@ function emNormalizePointInner(rawName, equipCategory) {
           categoryLabel: cat.label,
           matchTier: 3,
           confidence: 'low',
-          auditRelevant: true,
+          auditRelevant: !cat.nonAshrae,
           ashrae36PointName: cat.ashrae36Name,
           ashrae36Section: cat.ashrae36Section,
           rawName: rawName,
@@ -14300,16 +16183,20 @@ function emNormalizePointInner(rawName, equipCategory) {
     }
   }
 
-  // No match found
+  // No match found — last-resort named category (Step 6, 2026-06-29)
+  // Sub-classify parse artifacts: very short opaque uppercase tokens suggest
+  // a BAS program-name parse failure that cannot be auto-resolved.
+  var _isArtifact = /^[A-Z]{2,5}(-\d+)?$/.test(rawName) || /^[A-Z]{2,5}\d{1,3}[A-Z]?$/.test(rawName);
   return {
-    categoryKey: null,
-    categoryLabel: null,
+    categoryKey: _isArtifact ? 'parseArtifact' : 'hvacSubObject',
+    categoryLabel: _isArtifact ? 'Unrecognized / Parse Artifact' : 'HVAC Equipment Sub-Object',
     matchTier: 0,
-    confidence: 'none',
-    auditRelevant: true,
+    confidence: 'fallback',
+    auditRelevant: false,
     ashrae36PointName: null,
     ashrae36Section: null,
     rawName: rawName,
+    required: false,
   };
 }
 
@@ -15777,16 +17664,14 @@ function emGetAllPoints(rows) {
     var norm = entry.norm;
     var status, matchedLabel, matchedKey, confidence;
     if (!norm || !norm.categoryKey) {
+      // auto_-blocked or truly null — only category with no key after 2026-06-29 overhaul
       status = 'unmatched';
       matchedLabel = '';
       matchedKey = '';
       confidence = '';
-    } else if (!norm.auditRelevant) {
-      status = 'excluded';
-      matchedLabel = '';
-      matchedKey = '';
-      confidence = 'excluded';
     } else {
+      // All named categories (ASHRAE and non-ASHRAE) show as 'matched'.
+      // auditRelevant=false means excluded from compliance scoring, not hidden.
       status = 'matched';
       matchedLabel = norm.categoryLabel || norm.categoryKey;
       // Build "equipType:categoryKey" — use bestCat as equipment type approximation
@@ -16428,13 +18313,13 @@ function emOpenManageMappings(pid) {
           '" data-suggest-colkey="' +
           fsColKeyEsc +
           '" style="border-bottom:1px solid var(--border)">' +
-          '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:#1a1a1a;' +
+          '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);' +
           'max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
           fsRawEsc +
           '">' +
           fsRawEsc +
           '</td>' +
-          '<td style="padding:6px 12px;font-size:11px;color:#1a1a1a">' +
+          '<td style="padding:6px 12px;font-size:11px;color:var(--text)">' +
           emHtmlEsc(fsColLabel) +
           '</td>' +
           '<td style="padding:6px 8px;white-space:nowrap">' +

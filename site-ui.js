@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.29.597'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
+  var CH_VERSION = 'v2026.06.29.598'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,7 +32,21 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.06.19.571',
+      v: 'v2026.06.29.598',
+      date: '2026-06-29',
+      title: 'Equipment Matrix categories overhauled; bill extraction memory buildup fixed',
+      items: [
+        {
+          type: 'feature',
+          text: 'Equipment Matrix → Manage Point Mappings: Every BAS point now lands in a clearly-named category — no more points hidden or dumped in a generic "Other" bucket.',
+        },
+        {
+          type: 'fix',
+          text: 'Utility Data bill extraction: Fixed a memory buildup when extracting several PDF bills in a row.',
+        },
+      ],
+    },
+    {
       date: '2026-06-22',
       title: 'Cost Estimate columns no longer clip; column resize works; Bills charge columns grouped',
       items: [
