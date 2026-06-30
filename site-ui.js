@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.30.602'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
+  var CH_VERSION = 'v2026.06.30.603'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,17 +32,13 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.06.30.599',
+      v: 'v2026.06.30.603',
       date: '2026-06-30',
-      title: "What's New popup wider + single scroll; Energy Savings delete fix",
+      title: 'Equipment Matrix → Manage Point Mappings: scrollbar visible and mouse-wheel improved',
       items: [
         {
-          type: 'change',
-          text: "Energy Department → What's New popup: now opens wider with the latest version shown full-width and a single smooth scroll for older versions.",
-        },
-        {
           type: 'fix',
-          text: 'Energy Department → Energy Savings Measures table: deleting a measure now removes the row immediately instead of requiring a tab switch to take effect.',
+          text: 'Equipment Matrix → Manage Point Mappings: the scrollbar track is now visually distinct from the modal background so it is clearly visible and easier to grab, and mouse-wheel scrolling now moves the list correctly regardless of mouse or driver settings.',
         },
       ],
     },

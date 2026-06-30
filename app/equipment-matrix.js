@@ -18215,7 +18215,11 @@ function emOpenManageMappings(pid) {
       function (e) {
         if (e.target && e.target.tagName === 'SELECT') {
           e.preventDefault();
-          _mmBody.scrollTop += e.deltaY;
+          // Normalize deltaY to pixels: deltaMode 0=pixels (use as-is),
+          // 1=lines (~40px each), 2=pages (use clientHeight).
+          var delta =
+            e.deltaMode === 0 ? e.deltaY : e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY * _mmBody.clientHeight;
+          _mmBody.scrollTop += delta;
         }
       },
       { passive: false },

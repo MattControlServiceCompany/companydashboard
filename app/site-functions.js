@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.30.603',
+    date: '2026-06-30',
+    title: 'Equipment Matrix → Manage Point Mappings: scrollbar visible and mouse-wheel improved',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix → Manage Point Mappings: the scrollbar track is now visually distinct from the modal background so it is clearly visible and easier to grab, and mouse-wheel scrolling now moves the list correctly regardless of mouse or driver settings.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.30.602',
     date: '2026-06-30',
     title: 'Equipment Matrix → Manage Point Mappings: scroll now works over dropdowns',
