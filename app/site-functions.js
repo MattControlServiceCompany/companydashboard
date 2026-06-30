@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.30.605',
+    date: '2026-06-30',
+    title: "Popup scroll fix and Equipment Matrix auto-mapping",
+    items: [
+      {
+        type: 'fix',
+        text: "Fixed: the What’s New popup no longer blocks scrolling — it closes automatically when you navigate to another view.",
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix → Manage Point Mappings: removed the ‘review before accepting’ suggestions list; those points now map automatically.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.30.604',
     date: '2026-06-30',
     title: "What's New popup fixed, PDF extraction scroll + batch mismatch fixes",

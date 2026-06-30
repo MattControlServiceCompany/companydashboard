@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.30.604'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
+  var CH_VERSION = 'v2026.06.30.605'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,44 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.30.605',
+      date: '2026-06-30',
+      title: "Popup scroll fix and Equipment Matrix auto-mapping",
+      items: [
+        {
+          type: 'fix',
+          text: "Fixed: the What's New popup no longer blocks scrolling — it closes automatically when you navigate to another view.",
+        },
+        {
+          type: 'fix',
+          text: "Equipment Matrix → Manage Point Mappings: removed the 'review before accepting' suggestions list; those points now map automatically.",
+        },
+      ],
+    },
+    {
+      v: 'v2026.06.30.604',
+      date: '2026-06-30',
+      title: "What's New popup fixed, PDF extraction scroll + batch mismatch fixes",
+      items: [
+        {
+          type: 'fix',
+          text: "Fixed: the What's New popup could block scrolling on every tab — it no longer blocks scroll and won't keep reappearing.",
+        },
+        {
+          type: 'fix',
+          text: 'Fixed: Energy Department → Bill Extraction — you can now scroll down to see the extracted bill data after running OCR.',
+        },
+        {
+          type: 'feature',
+          text: 'New: Energy Department → Bill Extraction — view bills already extracted while the rest of a batch is still processing.',
+        },
+        {
+          type: 'fix',
+          text: 'Fixed: batch bill extraction now applies the same charge corrections as single-file mode, removing false Sum Mismatch warnings.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.30.603',
       date: '2026-06-30',

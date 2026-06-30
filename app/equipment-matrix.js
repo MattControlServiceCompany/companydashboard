@@ -10875,6 +10875,21 @@ var EM_POINT_CATEGORIES = {
       ],
     },
     {
+      // 2026-06-30: Exhaust fan speed/status on AHU rows — distinct from ef.fanStatus/fanSpeed
+      // because ahu-category equipment sometimes directly controls/monitors its own exhaust fan.
+      // GUARD: NO patterns here — neutral-path Tier 3 would steal ef.fanStatus/fanSpeed Bucket-A
+      // names (ahu is concatenated BEFORE ef in the neutral merge order).
+      // Aliases-only: Tier 2 fires in ahu-specific context, Tier 2 is SKIPPED in neutral path,
+      // so ef.fanStatus/fanSpeed remain Bucket-A in neutral classification.
+      key: 'ahuExhaustFan',
+      label: 'AHU Exhaust Fan Speed / Status',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['exhaust fan speed', 'exhaust fan status'],
+      patterns: [],
+    },
+    {
       key: 'ahuERV',
       label: 'AHU Energy Recovery Wheel (Monitor)',
       nonAshrae: true,
@@ -11473,6 +11488,64 @@ var EM_POINT_CATEGORIES = {
         /^DOAS\s+Occupancy\s+Mode\s+ANO\s*$/i, // DOAS Occupancy Mode ANO (3 vav rows)
       ],
     },
+    // 2026-06-30: VVT zone coordination / status broadcast points (nonAshrae) ──────
+    // These signals are received by VVT zone terminals from the air-source AHU.
+    // Placed at END of vav array so existing ASHRAE entries (fanStatus, zoneTemp, etc.) take priority.
+    // airSourceStatus is NOT listed here — vav.fanStatus already has it as alias (line 11229).
+    {
+      key: 'vvtZoneStatus',
+      label: 'Zone Status / Mode Feedback',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['zone status'],
+      patterns: [/^Zone\s+Status\s*$/i],
+    },
+    {
+      key: 'vvtAirSourceMode',
+      label: 'Air Source Mode Broadcast',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['air source mode'],
+      patterns: [/\bair\s+source\s+mode\b/i],
+    },
+    {
+      key: 'vvtCoolRequest',
+      label: 'VVT Zone Cool Request',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['primary air source cool request', 'air source cool request', 'air source cool requests'],
+      patterns: [/air\s+source\s+cool\s+requests?/i],
+    },
+    {
+      key: 'vvtHtgRequest',
+      label: 'VVT Zone Heat Request',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['primary air source heat request', 'air source heat request', 'air source heat requests'],
+      patterns: [/air\s+source\s+heat\s+requests?/i],
+    },
+    {
+      key: 'vvtSfAmpsMonitor',
+      label: 'Supply Fan Amperage Monitor (VVT Zone)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['supply fan amperage'],
+      patterns: [/^Supply\s+Fan\s+Amperage\s*$/i],
+    },
+    {
+      key: 'vvtOccStatus',
+      label: 'Occupancy Status (Zone)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['occupancy status'],
+      patterns: [/^Occupancy\s+Status\s*$/i],
+    },
   ],
 
   /* ── FPB (Fan-Powered Box — Parallel or Series, ASHRAE 36 §5.7/5.8) ─ */
@@ -11737,6 +11810,62 @@ var EM_POINT_CATEGORIES = {
       patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
       aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
     },
+    // 2026-06-30: VVT zone coordination / status broadcast points (nonAshrae) ──────
+    // Same set as vav. fpb.fanStatus already has 'air source status' as alias — not repeated here.
+    {
+      key: 'vvtZoneStatus',
+      label: 'Zone Status / Mode Feedback',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['zone status'],
+      patterns: [/^Zone\s+Status\s*$/i],
+    },
+    {
+      key: 'vvtAirSourceMode',
+      label: 'Air Source Mode Broadcast',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['air source mode'],
+      patterns: [/\bair\s+source\s+mode\b/i],
+    },
+    {
+      key: 'vvtCoolRequest',
+      label: 'VVT Zone Cool Request',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['primary air source cool request', 'air source cool request', 'air source cool requests'],
+      patterns: [/air\s+source\s+cool\s+requests?/i],
+    },
+    {
+      key: 'vvtHtgRequest',
+      label: 'VVT Zone Heat Request',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['primary air source heat request', 'air source heat request', 'air source heat requests'],
+      patterns: [/air\s+source\s+heat\s+requests?/i],
+    },
+    {
+      key: 'vvtSfAmpsMonitor',
+      label: 'Supply Fan Amperage Monitor (VVT Zone)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['supply fan amperage'],
+      patterns: [/^Supply\s+Fan\s+Amperage\s*$/i],
+    },
+    {
+      key: 'vvtOccStatus',
+      label: 'Occupancy Status (Zone)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['occupancy status'],
+      patterns: [/^Occupancy\s+Status\s*$/i],
+    },
   ],
 
   /* ── DDVAV (Dual Duct VAV, ASHRAE 36 §5.13) ────────────────────────── */
@@ -11952,6 +12081,62 @@ var EM_POINT_CATEGORIES = {
       patterns: [
         /^Zone\s+Damper\s+(Signal|Position)?\s*$/i, // Zone Damper Signal (53), Zone Damper (42)
       ],
+    },
+    // 2026-06-30: VVT zone coordination / status broadcast points (nonAshrae) ──────
+    // Same set as vav/fpb. ddvav.fanStatus already has 'air source status' as alias — not repeated.
+    {
+      key: 'vvtZoneStatus',
+      label: 'Zone Status / Mode Feedback',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['zone status'],
+      patterns: [/^Zone\s+Status\s*$/i],
+    },
+    {
+      key: 'vvtAirSourceMode',
+      label: 'Air Source Mode Broadcast',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['air source mode'],
+      patterns: [/\bair\s+source\s+mode\b/i],
+    },
+    {
+      key: 'vvtCoolRequest',
+      label: 'VVT Zone Cool Request',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['primary air source cool request', 'air source cool request', 'air source cool requests'],
+      patterns: [/air\s+source\s+cool\s+requests?/i],
+    },
+    {
+      key: 'vvtHtgRequest',
+      label: 'VVT Zone Heat Request',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['primary air source heat request', 'air source heat request', 'air source heat requests'],
+      patterns: [/air\s+source\s+heat\s+requests?/i],
+    },
+    {
+      key: 'vvtSfAmpsMonitor',
+      label: 'Supply Fan Amperage Monitor (VVT Zone)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['supply fan amperage'],
+      patterns: [/^Supply\s+Fan\s+Amperage\s*$/i],
+    },
+    {
+      key: 'vvtOccStatus',
+      label: 'Occupancy Status (Zone)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['occupancy status'],
+      patterns: [/^Occupancy\s+Status\s*$/i],
     },
   ],
 
@@ -13717,6 +13902,16 @@ var EM_POINT_CATEGORIES = {
         /^Cooling\s+Control\s+Temperature\s*$/i,
       ],
     },
+    // 2026-06-30: FCU Zone Status nonAshrae — zoneStatus col cats include 'fcu'.
+    {
+      key: 'vvtZoneStatus',
+      label: 'Zone Status / Mode Feedback',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['zone status'],
+      patterns: [/^Zone\s+Status\s*$/i],
+    },
   ],
 
   /* ── M3 NEW TYPE: Heater (unit heater / tube heater / infrared) ─────── */
@@ -14823,6 +15018,71 @@ var EM_POINT_CATEGORIES = {
         'oa dew point',
         'current dewpoint',
       ],
+    },
+    // 2026-06-30: VVT zone coordination / status broadcast points (nonAshrae) ──────
+    // zone category does NOT have fanStatus, so airSourceStatus needs its own nonAshrae entry here.
+    {
+      key: 'vvtZoneStatus',
+      label: 'Zone Status / Mode Feedback',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['zone status'],
+      patterns: [/^Zone\s+Status\s*$/i],
+    },
+    {
+      key: 'vvtAirSourceMode',
+      label: 'Air Source Mode Broadcast',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['air source mode'],
+      patterns: [/\bair\s+source\s+mode\b/i],
+    },
+    {
+      key: 'vvtAirSourceStatus',
+      label: 'Air Source Status Broadcast',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['air source status'],
+      patterns: [/\bair\s+source\s+status\b/i],
+    },
+    {
+      key: 'vvtCoolRequest',
+      label: 'VVT Zone Cool Request',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['primary air source cool request', 'air source cool request', 'air source cool requests'],
+      patterns: [/air\s+source\s+cool\s+requests?/i],
+    },
+    {
+      key: 'vvtHtgRequest',
+      label: 'VVT Zone Heat Request',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['primary air source heat request', 'air source heat request', 'air source heat requests'],
+      patterns: [/air\s+source\s+heat\s+requests?/i],
+    },
+    {
+      key: 'vvtSfAmpsMonitor',
+      label: 'Supply Fan Amperage Monitor (VVT Zone)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['supply fan amperage'],
+      patterns: [/^Supply\s+Fan\s+Amperage\s*$/i],
+    },
+    {
+      key: 'vvtOccStatus',
+      label: 'Occupancy Status (Zone)',
+      nonAshrae: true,
+      required: false,
+      auditRelevant: false,
+      aliases: ['occupancy status'],
+      patterns: [/^Occupancy\s+Status\s*$/i],
     },
   ],
 };
@@ -18235,6 +18495,29 @@ function emOpenManageMappings(pid) {
     // d5fe0454: wrap in try/catch so any unexpected exception surfaces as a toast
     // instead of silently swallowing the error and leaving the modal stuck on "Loading…".
     try {
+      // 2026-06-30: One-time migration — purge stale Phase-E 'pending' suggestions.
+      // These were written on 2026-06-25 when these points were status:'unmatched'.
+      // The 2026-06-29 hvacSubObject catch-all made them status:'matched', but
+      // emWriteSuggestion's no-op guard prevented the store from being updated.
+      // Now that Part 1 adds named nonAshrae categories for these points, pending
+      // entries are fully superseded. Clearing them removes the stale Suggested
+      // section without touching any user-accepted or dismissed mappings.
+      (function _clearStalePending() {
+        var _mig = emLoadCustomMappings(pid);
+        if (
+          _mig.some(function (m) {
+            return m.status === 'pending';
+          })
+        ) {
+          emSaveCustomMappings(
+            pid,
+            _mig.filter(function (m) {
+              return m.status !== 'pending';
+            }),
+          );
+        }
+      })();
+
       var allPoints = emGetAllPoints(rows);
       var customMappings = emLoadCustomMappings(pid);
 

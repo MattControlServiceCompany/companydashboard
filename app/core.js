@@ -355,6 +355,20 @@ function updateHomeStats() {
 
 /* ── VIEW SWITCH ── */
 function sv(id, btn) {
+  // Dismiss What's New popup on any navigation so it does not intercept
+  // wheel events in the destination view (scroll bug confirmed 2026-06-30).
+  // closeReleaseNotes(true) saves ch_seen_version so the popup won't reopen
+  // on reload. Falls back to direct DOM dismiss if the function isn't ready.
+  if (document.querySelector('.rn-overlay') && document.querySelector('.rn-overlay').classList.contains('open')) {
+    if (typeof closeReleaseNotes === 'function') {
+      closeReleaseNotes(true);
+    } else {
+      document.querySelector('.rn-overlay').classList.remove('open');
+      if (typeof RELEASE_NOTES !== 'undefined' && RELEASE_NOTES[0]) {
+        localStorage.setItem('ch_seen_version', RELEASE_NOTES[0].v || RELEASE_NOTES[0].version || '');
+      }
+    }
+  }
   // Auto-save extraction state when navigating away from PDF view so the
   // user never loses in-progress work (bug fcb73e12). The old confirm()
   // dialog was removed — state is silently persisted and restored on return.
