@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.30.602',
+    date: '2026-06-30',
+    title: 'Equipment Matrix → Manage Point Mappings: scroll now works over dropdowns',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix → Manage Point Mappings: the list now scrolls with the mouse wheel even when the pointer is over a category dropdown, and the scrollbar is wider and easier to grab.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.30.601',
     date: '2026-06-30',
     title: 'Zoom controls on Saved Bills and Energy Savings tables',

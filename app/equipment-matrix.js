@@ -18165,7 +18165,7 @@ function emOpenManageMappings(pid) {
     '<button onclick="emCloseManageMappings()" ' +
     'style="font-size:16px;background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 8px;line-height:1;flex-shrink:0">X</button>' +
     '</div>' +
-    '<div style="flex:1;overflow-y:auto;min-height:0">' +
+    '<div id="em-mm-body" style="flex:1;overflow-y:auto;min-height:0">' +
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead>' +
     '<tr style="background:var(--s1)">' +
@@ -18203,6 +18203,24 @@ function emOpenManageMappings(pid) {
   var el = document.createElement('div');
   el.innerHTML = shellHtml;
   document.body.appendChild(el.firstChild);
+
+  // FIX A: Redirect wheel events over <select> elements back to the modal body.
+  // Native <select> captures wheel to cycle options, preventing the body div from
+  // scrolling when the pointer is over an Unmatched row's category dropdown.
+  // Attached once per modal open via the stable #em-mm-body id.
+  var _mmBody = document.getElementById('em-mm-body');
+  if (_mmBody) {
+    _mmBody.addEventListener(
+      'wheel',
+      function (e) {
+        if (e.target && e.target.tagName === 'SELECT') {
+          e.preventDefault();
+          _mmBody.scrollTop += e.deltaY;
+        }
+      },
+      { passive: false },
+    );
+  }
 
   // Defer the expensive computation so the modal shell can paint first.
   setTimeout(function () {
