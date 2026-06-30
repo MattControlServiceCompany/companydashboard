@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.30.601',
+    date: '2026-06-30',
+    title: 'Zoom controls on Saved Bills and Energy Savings tables',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department → Utility Data: the Saved Bills and Energy Savings Measures tables now have zoom in/out controls to fit more rows on screen.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.30.600',
     date: '2026-06-30',
     title: 'Utility Data: ECM Calculator button removed from building header',

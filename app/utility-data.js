@@ -3240,6 +3240,9 @@ function renderBillsPane(pane, m, bills, incl) {
     '<button id="vcm-toggle" class="btn btn-ghost btn-sm' +
     (_vcmActive ? ' active' : '') +
     '" onclick="toggleValueCorrectionMode()" title="Value Correction Mode — click numeric cells to correct values">✏️ Correct</button>' +
+    (typeof tableZoomControlHTML === 'function'
+      ? tableZoomControlHTML('maPane', 'en_bills_zoom_' + m.id, 'bills-zoom-lbl-' + m.id)
+      : '') +
     '</div>';
 
   // Flag banner
@@ -3273,6 +3276,13 @@ function renderBillsPane(pane, m, bills, incl) {
     '</tbody>' +
     '</table>' +
     '</div>';
+
+  // Apply persisted zoom to bills table (restores stored zoom level on every bills tab open)
+  if (typeof setTableZoom === 'function') {
+    requestAnimationFrame(function () {
+      setTableZoom('maPane', null, 'en_bills_zoom_' + m.id, 'bills-zoom-lbl-' + m.id);
+    });
+  }
 
   // VCM delegated click listener (Update a3a423eb) — single handler on the body table
   // so it survives re-renders and doesn't leak multiple listeners

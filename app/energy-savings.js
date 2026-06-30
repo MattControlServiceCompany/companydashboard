@@ -1122,9 +1122,10 @@ function _renderSavingsContent(wrap, projId) {
                 <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${projId},'${wrap.id === 'ptab-savings' ? 'ptab' : 'sv'}')">📐 Calc Templates</button>
                 <button class="btn btn-ghost btn-sm" onclick="_svAddMeasureFrom(${projId})">+ Add Measure</button>
                 <button class="btn btn-em btn-sm" onclick="_svRecalcFrom(${projId})">⚡ Recalc $ Savings</button>
+                ${typeof tableZoomControlHTML === 'function' ? tableZoomControlHTML('sv-matrix-wrap-' + projId, 'en_sv_matrix_zoom_' + projId, 'sv-matrix-zoom-lbl-' + projId) : ''}
               </div>
             </div>
-            <div style="overflow-x:auto">
+            <div id="sv-matrix-wrap-${projId}" style="overflow-x:auto">
               <table class="dtbl sv-matrix-tbl">
                 <thead>
                   <tr>
@@ -1162,6 +1163,12 @@ function _renderSavingsContent(wrap, projId) {
 
           ${summaryHtml}
         </div>`;
+  // Apply persisted zoom to savings matrix table
+  if (typeof setTableZoom === 'function') {
+    requestAnimationFrame(function () {
+      setTableZoom('sv-matrix-wrap-' + projId, null, 'en_sv_matrix_zoom_' + projId, 'sv-matrix-zoom-lbl-' + projId);
+    });
+  }
 }
 
 // ── Savings page action handlers ──
