@@ -5609,6 +5609,7 @@ function startQueueExtraction(files) {
     batchProjId: parseInt(document.getElementById('pdfProjSel').value) || null,
     status: 'idle',
     _processedCount: 0,
+    _previewMode: false,
   };
   refreshProjDropdowns();
   document.getElementById('pdfSaveRow').style.display = 'none';
@@ -5693,6 +5694,7 @@ function _escHtml(s) {
 function renderQueueProgress() {
   const q = window._pdfQueue;
   if (!q) return;
+  if (q._previewMode) return;
   const dz = document.getElementById('dropZone');
   const pct =
     q.files.length > 0
@@ -5725,7 +5727,11 @@ function renderQueueProgress() {
       totalBillsFound +
       ' bill' +
       (totalBillsFound !== 1 ? 's' : '') +
-      ' found so far</div>';
+      ' found so far — ' +
+      '<button onclick="previewQueueResults()" style="background:none;border:none;' +
+      'color:var(--em);cursor:pointer;font-size:13px;font-family:var(--font);' +
+      'text-decoration:underline;padding:0">View</button>' +
+      '</div>';
   } else {
     html += '<div style="margin-bottom:14px"></div>';
   }
@@ -5880,6 +5886,7 @@ async function _runExtractionFrom(startIdx) {
       });
     }
     renderQueueProgress();
+    if (window._pdfQueue && window._pdfQueue._previewMode) renderQueueResults();
   }
 
   // If cancelQueue() already handled the UI, don't override it
@@ -5888,6 +5895,7 @@ async function _runExtractionFrom(startIdx) {
     return;
   }
   q.status = 'done';
+  q._previewMode = false;
   q.currentIdx = q.files.length;
   q._processedCount = q.files.length;
   const allBills = [];
@@ -5994,6 +6002,18 @@ async function _extractSingleFileForQueue(file, fileIdx) {
           }
         });
 
+        // ── POST-EXTRACTION VERIFICATION ──
+        // Brings queue path to parity with single-file path (processPDF ~line 9226).
+        // Runs Strategy B (rate×qty OCR correction) and Strategy C (subtraction
+        // inference) before analysis so that _warnings reflect corrected values,
+        // not raw OCR-inflated charges. Fix for batch "Sum Mismatch" false positives.
+        try {
+          const _qPevResult = await _postExtractionVerify(finalBills, rule.name, text);
+          finalBills = _qPevResult.bills;
+        } catch (pev_err) {
+          console.warn('[queue] _postExtractionVerify failed, continuing without verification:', pev_err);
+        }
+
         // Run analysis for warnings (stored on each bill as _warnings)
         const analysisResults = analyzeBillExtraction(finalBills, rule.name);
         finalBills.forEach((b, bi) => {
@@ -6095,6 +6115,24 @@ function _groupQueueRows(rows) {
   return groups;
 }
 
+function previewQueueResults() {
+  const q = window._pdfQueue;
+  if (!q) return;
+  q._previewMode = true;
+  renderQueueResults();
+}
+
+function exitPreviewMode() {
+  const q = window._pdfQueue;
+  if (!q) return;
+  q._previewMode = false;
+  const dz = document.getElementById('dropZone');
+  if (dz) dz.classList.remove('collapsed');
+  const rightCol = document.getElementById('pdfRightCol');
+  if (rightCol) rightCol.style.display = 'none';
+  renderQueueProgress();
+}
+
 function renderQueueResults() {
   const q = window._pdfQueue;
   if (!q) return;
@@ -6181,13 +6219,26 @@ function renderQueueResults() {
   if (!tabsBar) {
     tabsBar = document.createElement('div');
     tabsBar.id = 'queueTabsBar';
-    tabsBar.style.cssText = 'position:sticky;top:0;z-index:12;background:var(--bg);padding-bottom:4px';
+    tabsBar.style.cssText = 'background:var(--bg);padding-bottom:4px';
     const hdr = document.getElementById('extractedFieldsHdr');
     hdr.parentNode.insertBefore(tabsBar, hdr);
   }
 
   // ── File tabs / group pills (Plan 7e0b9d15 §3) ──
   let html = '';
+  if (q.status === 'running') {
+    html +=
+      '<div style="font-size:12px;color:var(--text2);padding:4px 0 8px;border-bottom:1px solid var(--border);margin-bottom:8px">' +
+      'Extraction in progress (' +
+      q.results.length +
+      ' of ' +
+      q.files.length +
+      ' files done). ' +
+      'Results update as files complete. ' +
+      '<button onclick="exitPreviewMode()" style="background:none;border:none;color:var(--em);' +
+      'cursor:pointer;font-family:var(--font);font-size:12px;text-decoration:underline;padding:0">' +
+      '← Back to progress</button></div>';
+  }
   html += '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
   if (useGrouped) {
     // Per-group pills: "AccountNumber · N periods"
@@ -6390,10 +6441,10 @@ function renderQueueResults() {
     const sortedPeriodKeys = Array.from(periodKeySet.keys()).sort();
 
     // Build header
-    billRowsHtml += '<div style="overflow-x:auto;max-height:220px;overflow-y:auto;margin-top:4px">';
+    billRowsHtml += '<div style="overflow-x:auto;margin-top:4px">';
     billRowsHtml += '<table style="border-collapse:collapse;font-size:11px;font-family:var(--font);min-width:100%">';
     billRowsHtml +=
-      '<thead><tr style="background:var(--s1);position:sticky;top:0;z-index:2">' +
+      '<thead><tr style="background:var(--s1)">' +
       '<th style="padding:4px 8px;text-align:left;border:1px solid var(--border);white-space:nowrap;color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Account / Meter</th>';
     sortedPeriodKeys.forEach((pk) => {
       billRowsHtml +=
@@ -6522,7 +6573,7 @@ function renderQueueResults() {
     }
   } else {
     // ── Flat per-file table (unchanged behavior) ──
-    billRowsHtml = '<div style="max-height:220px;overflow-y:auto;margin-top:4px">';
+    billRowsHtml = '<div style="overflow-x:auto;margin-top:4px">';
     billRowsHtml += '<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:var(--font)">';
     billRowsHtml +=
       '<thead><tr style="color:var(--text2);border-bottom:1px solid var(--border)">' +

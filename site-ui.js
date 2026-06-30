@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.30.603'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
+  var CH_VERSION = 'v2026.06.30.604'; // deployed 2026-06-23 (EM Wave 6 point mapping: 7 new aliases + 9 exclusion patterns, +9 mapped +532 excluded)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -1113,13 +1113,19 @@
     overlay.querySelector('.rn-history-label').textContent = 'Previous Versions';
     overlay.querySelector('#rnDismissBtn').textContent = 'Got it';
     overlay.addEventListener('click', function (e) {
-      if (e.target === overlay) closeReleaseNotes(false);
+      if (e.target === overlay) closeReleaseNotes(true);
     });
     document.getElementById('rnCloseBtn').addEventListener('click', function () {
-      closeReleaseNotes(false);
+      closeReleaseNotes(true);
     });
     document.getElementById('rnDismissBtn').addEventListener('click', function () {
       closeReleaseNotes(true);
+    });
+    // FIX C: Escape key closes the popup and marks seen
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && overlay.classList.contains('open')) {
+        closeReleaseNotes(true);
+      }
     });
     var currentEl = document.getElementById('rnCurrent');
     var historyEl = document.getElementById('rnHistory');

@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.30.604',
+    date: '2026-06-30',
+    title: "What's New popup fixed, PDF extraction scroll + batch mismatch fixes",
+    items: [
+      {
+        type: 'fix',
+        text: "Fixed: the What's New popup could block scrolling on every tab — it no longer blocks scroll and won't keep reappearing.",
+      },
+      {
+        type: 'fix',
+        text: 'Fixed: Energy Department → Bill Extraction — you can now scroll down to see the extracted bill data after running OCR.',
+      },
+      {
+        type: 'feature',
+        text: 'New: Energy Department → Bill Extraction — view bills already extracted while the rest of a batch is still processing.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed: batch bill extraction now applies the same charge corrections as single-file mode, removing false Sum Mismatch warnings.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.30.603',
     date: '2026-06-30',
     title: 'Equipment Matrix → Manage Point Mappings: scrollbar visible and mouse-wheel improved',
@@ -5543,10 +5566,10 @@ function buildReleaseNotesModal() {
 
   // Step 3: Wire event handlers — no inline onclick attributes.
   overlay.addEventListener('click', function (e) {
-    if (e.target === overlay) closeReleaseNotes(false);
+    if (e.target === overlay) closeReleaseNotes(true);
   });
   document.getElementById('rnCloseBtn').addEventListener('click', function () {
-    closeReleaseNotes(false);
+    closeReleaseNotes(true);
   });
   document.getElementById('rnDismissBtn').addEventListener('click', function () {
     closeReleaseNotes(true);
@@ -5572,8 +5595,8 @@ function openReleaseNotes() {
   if (overlay) overlay.classList.add('open');
 }
 
-/* markSeen: true = "Got it" button clicked, update ch_seen_version.
-   false = X or backdrop click, do not update (modal will re-show next time if on-update mode). */
+/* markSeen: always pass true — any close path saves ch_seen_version to prevent reopen loop.
+   The parameter is kept for backward compat but should always be true. */
 function closeReleaseNotes(markSeen) {
   if (markSeen && RELEASE_NOTES[0]) {
     localStorage.setItem('ch_seen_version', RELEASE_NOTES[0].v || RELEASE_NOTES[0].version || '');
@@ -5680,6 +5703,12 @@ document.addEventListener('keydown', function (e) {
 });
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
+  // Release Notes popup — close and mark seen so it doesn't reopen
+  var rnOverlay = document.getElementById('rnOverlay');
+  if (rnOverlay && rnOverlay.classList.contains('open')) {
+    closeReleaseNotes(true);
+    return;
+  }
   // Confirm modal takes priority — resolve false and return
   var confirmModal = document.getElementById('confirmModal');
   if (confirmModal && confirmModal.classList.contains('open')) {

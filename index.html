@@ -1477,6 +1477,7 @@
         display: none;
         align-items: center;
         justify-content: center;
+        pointer-events: none;
       }
       .rn-overlay.open {
         display: flex;
@@ -1492,6 +1493,7 @@
         flex-direction: column;
         overflow: hidden;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+        pointer-events: auto;
       }
       .rn-header {
         flex-shrink: 0;
@@ -1758,7 +1760,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=603" />
+    <link rel="stylesheet" href="feedback-widget.css?v=604" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -3029,7 +3031,7 @@
         renderCalendar();
       });
     </script>
-    <script src="app/db.js?v=603"></script>
+    <script src="app/db.js?v=604"></script>
     <script>
       /* ── MOBILE SIDEBAR DRAWER ── */
       function buildMobileSidebarToggle() {
@@ -3107,6 +3109,6 @@
         }
       });
     </script>
-    <script src="feedback-widget.js?v=603"></script>
+    <script src="feedback-widget.js?v=604"></script>
   </body>
 </html>
