@@ -1728,9 +1728,9 @@
           overflow-y: auto;
         }
 
-        .app-wrap {
-          display: block;
-        }
+        /* .app-wrap stays display:flex at all widths — see site-ui.css comment
+           at the equivalent media block for why the display:block override
+           was removed (P0 scroll fix, 2026-06-30). */
 
         .tab-panel.active {
           padding: 16px;
@@ -1760,7 +1760,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=607" />
+    <link rel="stylesheet" href="feedback-widget.css?v=608" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -3031,7 +3031,7 @@
         renderCalendar();
       });
     </script>
-    <script src="app/db.js?v=607"></script>
+    <script src="app/db.js?v=608"></script>
     <script>
       /* ── MOBILE SIDEBAR DRAWER ── */
       function buildMobileSidebarToggle() {
@@ -3109,6 +3109,6 @@
         }
       });
     </script>
-    <script src="feedback-widget.js?v=607"></script>
+    <script src="feedback-widget.js?v=608"></script>
   </body>
 </html>

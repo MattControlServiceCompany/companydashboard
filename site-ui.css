@@ -1138,9 +1138,12 @@ a:focus-visible,
     overflow-y: auto;
   }
 
-  .app-wrap {
-    display: block;
-  }
+  /* .app-wrap stays display:flex at all widths (base rule above, ~line 473).
+     A display:block override used to live here and broke the height-bounding
+     flex chain (.app-wrap -> .content -> .tab-panel.active/.view.active) at
+     <=899px, making every page unscrollable below the fold (P0, 2026-06-30).
+     The mobile drawer only needs .sidebar{position:fixed} (above) — it does
+     NOT need .app-wrap to leave flex. Do not re-add display:block here. */
 
   .tab-panel.active {
     padding: 16px;

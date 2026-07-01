@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.01.608',
+    date: '2026-07-01',
+    title: 'App-wide scroll fix at narrow window sizes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Fixed: the dashboard now scrolls correctly at any window size, including half-screen and narrower; Service Department tabs scroll properly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.30.607',
     date: '2026-06-30',
     title: 'Manage Point Mappings scroll fix',
