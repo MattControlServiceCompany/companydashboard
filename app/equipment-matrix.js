@@ -18411,7 +18411,7 @@ function emOpenManageMappings(pid) {
     'style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px" ' +
     'onclick="emCloseManageMappings(event)">' +
     '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;width:860px;max-width:100%;' +
-    'max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.4)" ' +
+    'max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.4)" ' +
     'onclick="event.stopPropagation()">' +
     '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;flex-shrink:0">' +
     '<div style="flex:1">' +

@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.30.607',
+    date: '2026-06-30',
+    title: 'Manage Point Mappings scroll fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Fixed: the Manage Point Mappings window now scrolls properly to reach all points.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.30.606',
     date: '2026-06-30',
     title: 'Evergy bill sum-mismatch fix',
