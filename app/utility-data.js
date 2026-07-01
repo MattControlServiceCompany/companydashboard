@@ -335,7 +335,29 @@ function loadUtilityData() {
   // Auto-inherit baselines: any meter with bills but no baseline gets
   // the majority baseline from same-commodity meters in the same project
   for (const pid of Object.keys(utilityData)) {
-    _inheritBaselinesForProject(pid);
+    const _inheritedN = _inheritBaselinesForProject(pid);
+    // Trust indicator: surface the silent auto-inherit so it's not a surprise.
+    // saveBaseline() already toasts its own inherit count when the user clicks
+    // Save Baseline — this is the ONLY place the automatic on-load inherit
+    // (guarded so it can never re-fire for a meter that already has any
+    // baseline, see _inheritBaselinesForProject) gets reported to the user.
+    if (_inheritedN > 0 && typeof showToast === 'function') {
+      const _names = _lastInheritDetails
+        .slice(0, 3)
+        .map((d) => d.meterName + (d.sourceMeterName ? ' (from ' + d.sourceMeterName + ')' : ''))
+        .join(', ');
+      const _more = _lastInheritDetails.length > 3 ? ' +' + (_lastInheritDetails.length - 3) + ' more' : '';
+      showToast(
+        'Baseline range auto-copied for ' +
+          _inheritedN +
+          ' meter' +
+          (_inheritedN !== 1 ? 's' : '') +
+          ': ' +
+          _names +
+          _more +
+          ' — not frozen; Save Baseline to lock it.',
+      );
+    }
   }
 }
 function saveUtilityData() {
@@ -352,11 +374,20 @@ function _inheritBaselinesForProject(projId) {
   bldgs.forEach((b) =>
     (b.meters || []).forEach((m) => {
       if (m.baseline && m.baseline.months && m.baseline.months.length > 0)
-        allBaselines.push({ commodity: m.commodity, months: m.baseline.months });
+        allBaselines.push({
+          commodity: m.commodity,
+          months: m.baseline.months,
+          meterName: meterLabel(m),
+        });
     }),
   );
   if (!allBaselines.length) return 0;
   let count = 0;
+  // Trust-indicator toast (display-only): stash which meters were auto-inherited
+  // and from which sibling so the caller (loadUtilityData) can surface a
+  // non-blocking notice. Reset on every call — does NOT change what gets
+  // written to m.baseline below.
+  const inheritedDetails = [];
   bldgs.forEach((b) =>
     (b.meters || []).forEach((m) => {
       if (m.baseline && m.baseline.months && m.baseline.months.length > 0) return;
@@ -366,18 +397,40 @@ function _inheritBaselinesForProject(projId) {
       const counts = {};
       pool.forEach((c) => {
         const key = c.months.slice().sort().join(',');
-        counts[key] = counts[key] || { months: c.months, n: 0 };
+        counts[key] = counts[key] || { months: c.months, n: 0, sourceMeterName: c.meterName };
         counts[key].n++;
       });
       const best = Object.values(counts).sort((a, b) => b.n - a.n)[0];
       if (best) {
         m.baseline = { months: [...best.months], reg: null };
         count++;
+        inheritedDetails.push({ meterName: meterLabel(m), sourceMeterName: best.sourceMeterName });
       }
     }),
   );
   if (count > 0) saveUtilityData();
+  _lastInheritDetails = inheritedDetails;
   return count;
+}
+// Module-level scratch used only to pass display detail out of
+// _inheritBaselinesForProject() to its auto-load caller for the toast below —
+// saveBaseline()'s own call to this function does not read it (it already
+// shows its own inherited-count toast).
+let _lastInheritDetails = [];
+
+// ── Trust indicator: frozen vs live baseline (display-only) ────────────────
+// A meter's baseline is "frozen" iff m.baseline.reg holds valid coefficients
+// for the meter's commodity. This mirrors the EXACT validity check
+// getNormRows() uses to decide whether to use the frozen regression instead
+// of a live one (computations/normalization.js, "frozenRegValid", ~line 617).
+// Kept as one shared helper so the Baseline-tab pill, the meter-chip badge,
+// and the building header badge can never disagree with each other.
+// Read-only — never call this to decide what gets written to m.baseline.
+function isBaselineFrozen(m) {
+  const reg = m && m.baseline ? m.baseline.reg : null;
+  if (!reg) return false;
+  const isElecMeter = m.commodity === 'Electric';
+  return !!((isElecMeter && reg.cdd) || (!isElecMeter && reg.hdd));
 }
 
 /* ══════════════════════════════════════════════════════
@@ -1913,6 +1966,29 @@ function renderUDDetail(targetWrap) {
     if (b.sqft) parts.push('<span>📐 ' + Number(b.sqft).toLocaleString() + ' sq ft</span>');
     const meters = b.meters || [];
     parts.push('<span>⚡ ' + meters.length + ' meter' + (meters.length !== 1 ? 's' : '') + '</span>');
+    // Trust indicator (building-level summary): "X of Y meters frozen" — Y is
+    // meters that actually have bill data (the only ones baselines apply to),
+    // X is how many of those have a FROZEN (locked, isBaselineFrozen()) baseline.
+    // Reuses the same shared flag as the meter-chip badge and Baseline-tab pill —
+    // display-only, reads existing data, no new storage.
+    const _metersWithBills = meters.filter((mm) => (mm.bills || []).length > 0);
+    if (_metersWithBills.length > 0) {
+      const _frozenCt = _metersWithBills.filter((mm) => isBaselineFrozen(mm)).length;
+      const _frozenAll = _frozenCt === _metersWithBills.length;
+      const _frozenColor = _frozenAll ? 'var(--violet)' : _frozenCt === 0 ? 'var(--warn)' : 'var(--text2)';
+      const _frozenIco = _frozenAll ? '🔒' : _frozenCt === 0 ? '⚠️' : '🔒';
+      parts.push(
+        '<span style="color:' +
+          _frozenColor +
+          '" title="Meters with a frozen (locked) baseline, out of meters that have bill data">' +
+          _frozenIco +
+          ' ' +
+          _frozenCt +
+          ' of ' +
+          _metersWithBills.length +
+          ' meters frozen</span>',
+      );
+    }
     hdrSub.innerHTML = parts.join('');
   }
 
@@ -1985,10 +2061,17 @@ function renderUDDetail(targetWrap) {
           m.baselineInclude === false
             ? '<span style="font-size:8px;font-weight:700;color:var(--danger,#ef4444);background:rgba(239,68,68,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Excluded from baseline &amp; performance">excl</span>'
             : '';
-        const _blTag =
-          m.baseline && m.baseline.months && m.baseline.months.length > 0
-            ? '<span style="font-size:8px;font-weight:700;color:#22c55e;background:rgba(34,197,94,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline set">BL</span>'
-            : '';
+        // Trust indicator: distinguish frozen (locked regression, immune to new
+        // bills) vs has-a-baseline-but-not-frozen (re-save needed — commonly a
+        // silent auto-inherit from a sibling meter, see _inheritBaselinesForProject)
+        // vs no baseline at all. Reuses the shared isBaselineFrozen() check so this
+        // never disagrees with the Baseline-tab pill or the building header badge.
+        const _hasBlObj = !!(m.baseline && m.baseline.months && m.baseline.months.length > 0);
+        const _blTag = _hasBlObj
+          ? isBaselineFrozen(m)
+            ? '<span style="font-size:8px;font-weight:700;color:var(--violet);background:rgba(139,92,246,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline frozen — locked regression, immune to new bills">🔒 BL</span>'
+            : '<span style="font-size:8px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline set but NOT frozen — re-save baseline to lock it (may be silently auto-inherited from a sibling meter)">⚠ BL</span>'
+          : '';
         const _flagTag =
           _mFlagCount > 0
             ? '<span style="font-size:8px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.12);padding:1px 4px;border-radius:3px;margin-left:2px" title="' +
@@ -5370,13 +5453,18 @@ function renderBaselinePane(pane, m, bills, incl) {
         : null,
       summerKwRate != null ? { v: fmtKw(summerKwRate) + '/kW', lbl: '☀️ Summer $/kW', color: 'var(--warn)' } : null,
       winterKwRate != null ? { v: fmtKw(winterKwRate) + '/kW', lbl: '❄️ Winter $/kW', color: 'var(--em)' } : null,
-      // #101: Regression model type indicator
+      // #101: Regression model type indicator. Uses the shared isBaselineFrozen()
+      // helper (same validity check getNormRows() uses) so this pill can never
+      // disagree with the meter-chip badge or the building header badge.
       (() => {
-        // Baseline exists but bl.reg is null — saved before weather data was uploaded
-        if (bl && !bl.reg) {
+        const _isFrozen = isBaselineFrozen(m);
+        // Baseline exists but bl.reg is null/invalid — saved before weather data
+        // existed, OR silently auto-inherited from a sibling meter (see
+        // _inheritBaselinesForProject / the auto-inherit toast on load).
+        if (bl && !_isFrozen) {
           return { v: 'Not frozen', lbl: '⚠️ Not frozen — re-save baseline', color: 'var(--warn)' };
         }
-        const _blReg = bl && bl.reg ? bl.reg : m._reg;
+        const _blReg = _isFrozen ? bl.reg : m._reg;
         if (!_blReg) return null;
         let _modelLabel, _modelColor;
         if (_blReg.dual) {
@@ -5394,7 +5482,6 @@ function renderBaselinePane(pane, m, bills, incl) {
         } else {
           return null;
         }
-        const _isFrozen = !!(bl && bl.reg);
         return { v: _modelLabel, lbl: _isFrozen ? '🔒 Frozen Model' : '⚡ Live Model', color: _modelColor };
       })(),
     ].filter(Boolean);
@@ -5411,6 +5498,25 @@ function renderBaselinePane(pane, m, bills, incl) {
             </div>`,
         )
         .join('') +
+      '</div>';
+  } else {
+    // Fix the dead "no baseline" state: previously this whole block (blStatsInner)
+    // stayed '' and the pill strip never rendered at all for a meter with no
+    // usable baseline (bl missing, OR bl exists but <3 overlapping bill rows) —
+    // the user saw blank space with no frozen/live indicator whatsoever. Show an
+    // explicit one-pill indicator instead, reusing the same pill markup/colors.
+    const _liveLbl = bl ? '⚠️ Not frozen — re-save baseline' : '⚡ Live — recomputes on load / not frozen';
+    const _liveColor = bl ? 'var(--warn)' : 'var(--em2)';
+    blStatsInner =
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">' +
+      '<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0">' +
+      '<span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">Model</span>' +
+      '<span style="font-size:12px;font-weight:700;color:' +
+      _liveColor +
+      ';white-space:nowrap">' +
+      _liveLbl +
+      '</span>' +
+      '</div>' +
       '</div>';
   }
 

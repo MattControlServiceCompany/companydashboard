@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.01.609',
+    date: '2026-07-01',
+    title: 'Equipment Matrix labels + baseline trust indicator',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix: many points now show their specific category name (e.g. "Air Source Minimum") instead of a generic catch-all bucket, making Manage Point Mappings easier to scan.',
+      },
+      {
+        type: 'feature',
+        text: 'Utility Data: meters now show a lock or warning badge indicating whether their baseline is frozen or still auto-updating, plus a building-level "X of Y meters frozen" count and a toast when a baseline is auto-copied from a sibling meter.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.01.608',
     date: '2026-07-01',
     title: 'App-wide scroll fix at narrow window sizes',
