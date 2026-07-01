@@ -1191,13 +1191,24 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.06.30.605',
+    v: 'v2026.06.30.606',
     date: '2026-06-30',
-    title: "Popup scroll fix and Equipment Matrix auto-mapping",
+    title: 'Evergy bill sum-mismatch fix',
     items: [
       {
         type: 'fix',
-        text: "Fixed: the What’s New popup no longer blocks scrolling — it closes automatically when you navigate to another view.",
+        text: 'Fixed: Evergy bills with a "Comparative Usage Information" table on the page could show a Sum Mismatch warning and an incorrect EER charge amount — the extractor no longer gets confused by that table when reading charge amounts.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.06.30.605',
+    date: '2026-06-30',
+    title: 'Popup scroll fix and Equipment Matrix auto-mapping',
+    items: [
+      {
+        type: 'fix',
+        text: 'Fixed: the What’s New popup no longer blocks scrolling — it closes automatically when you navigate to another view.',
       },
       {
         type: 'fix',

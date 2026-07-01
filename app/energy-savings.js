@@ -1903,12 +1903,88 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (_partsKey && parts.length > 1) _xChgParts[_partsKey] = parts;
     return found ? total.toFixed(2) : null;
   };
+  // ── Table-bleed strip, opt-in only (see `enableTableBleedFix` param below) ──
+  // Evergy prints a "Comparative Usage Information" graphic (title / Period
+  // header row / Current row / Previous row / Last Year row = 5 lines) as a
+  // sidebar box. On some page layouts PDF text extraction merges this box's
+  // text into the SAME visual rows as a charge's continuation lines,
+  // injecting 60-150+ chars of column-padding text between the qty and the
+  // "kWh/kW at $rate" text -- far beyond the 40-char GAP budget below --
+  // even though both the qty and the rate are correctly OCR'd elsewhere in
+  // the same 5-line window (confirmed on the EER line of the Evergy Maint
+  // Bldg bill, account 0669287870, April 2026 -- see dashboardlogic entry).
+  //
+  // "Comparative Usage Information" itself is a STABLE, verbatim marker
+  // (unmangled by OCR across every sample bill), unlike the row labels
+  // "Current"/"Previous"/"Last Year" which OCR mangles differently every
+  // time (e.g. "Curent", "purrent", or the unrecognizable "tyes:" for "Last
+  // Year"). So instead of pattern-matching the fragile row-label words, this
+  // uses the stable title to POSITIONALLY identify exactly which 5 lines
+  // belong to the table (title + 4 rows) and only touches text inside that
+  // bounded window.
+  //
+  // Within the window, each line is reduced to whatever sits at/after its
+  // own "resume trigger": a qty tightly bound to "kWh/kW at $" (the
+  // strongest signal -- rejects an unrelated decimal, like a garbled
+  // "kWh/day" column value, that isn't actually adjacent to "at $"), a bare
+  // "kWh/kW at $" (for header rows where the qty lives on a different
+  // line), or a new charge keyword. A window line with neither a resume
+  // trigger nor a "$" amount is pure noise (a label+cell row with nothing
+  // usable) and is dropped entirely. This never deletes a qty or rate that
+  // was actually present -- it only removes text that was already
+  // unusable/ignored -- so it cannot manufacture a wrong number, unlike a
+  // blanket GAP increase or a blanket whitespace collapse (both tried and
+  // rejected during investigation of item 5129e92f: a blanket collapse
+  // shrank the gap around an UNRELATED decimal on the Last Year row of a
+  // sibling bill enough to falsely match it as the qty, dropping that
+  // bill's correct EER match entirely).
+  //
+  // NOT enabled for every caller: a field with an existing `_rates[field]`
+  // entry is treated as fully verified downstream (bill-analysis.js
+  // Strategy C, `_postExtractionVerify`), even if that entry only captured
+  // ONE of several rate tiers. On this bill ECA's first tier is completely
+  // invisible to OCR (a separate bar-chart-label bleed with zero "ECA" text
+  // -- xChg can't even find it), so populating `_rates.ECACharge` from the
+  // second tier alone would make ECACharge look "verified" and block
+  // Strategy C's total-residual recovery of the missing first tier. Confirmed
+  // empirically: enabling this for ECA drops Strategy C's `unverified` list
+  // to length 0 (gate requires exactly 1) and the Sum Mismatch is never
+  // corrected. Enabling it ONLY for EER (a single-tier charge on this rate
+  // schedule) leaves `unverified === ['ECACharge']`, so Strategy C fires and
+  // resolves the mismatch via the total-residual formula. See
+  // dashboardlogic.md for the full writeup. Only opt in a charge type here
+  // after confirming (via a Strategy C simulation, not just "does it parse")
+  // that doing so won't suppress a residual-based correction elsewhere.
+  const TABLE_MARKER = /Comparative\s+Usage\s+Information/i;
+  const TABLE_RESUME_RE = new RegExp(
+    '(?:[0-9,]+[.:][0-9]{2,}\\s*k[Ww]h?\\s+at\\s+\\$)' + // qty tightly bound to "kWh/kW at $"
+      '|(?:k[Ww]h?\\s+at\\s+\\$)' + // bare "kWh/kW at $" (qty lives elsewhere in the block)
+      '|(?:(?:ECA|EER|PTS|TD[CG]|R[kK]VA|Cust(?:omer)?|Fac(?:ilities)?|Demand|Energy)[\\s.]+' +
+      '(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9]))', // a new charge keyword starting on this line
+    'i',
+  );
+  const _cleanTableWindowLine = (line) => {
+    const rm = line.match(TABLE_RESUME_RE);
+    if (rm) return line.slice(rm.index);
+    if (!/\$/.test(line)) return ''; // pure table-noise row -- nothing usable, drop it
+    return line; // has a $ but no recognized resume trigger -- leave untouched (fail safe)
+  };
   // ── Rate extraction: captures rate, quantity, AND OCR'd charge from each charge line ──
   // Evergy charge lines: "[keyword] [qty] kW/kWh at $[rate] per kW/kWh ... $[charge]"
   // Returns {qty, rate, unit, computed, parts[]} or null
   // Each part: {qty, rate, unit, computed, ocrCharge}
-  const xRate = (keyword, excludeRe) => {
-    const lines = t.split('\n');
+  const xRate = (keyword, excludeRe, enableTableBleedFix) => {
+    let lines = t.split('\n');
+    if (enableTableBleedFix) {
+      lines = lines.slice();
+      for (let li = 0; li < lines.length; li++) {
+        if (TABLE_MARKER.test(lines[li])) {
+          for (let w = li; w < Math.min(li + 5, lines.length); w++) {
+            lines[w] = _cleanTableWindowLine(lines[w]);
+          }
+        }
+      }
+    }
     const results = [];
     for (let i = 0; i < lines.length; i++) {
       if (!new RegExp(keyword, 'i').test(lines[i])) continue;
@@ -2974,7 +3050,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _rOffPk = xRate('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]');
   const _rTiered = xRate('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
   const _rEca = xRate('E[CG]A' + SEP + C);
-  const _rEer = xRate('EER' + SEP + C);
+  // 3rd arg `true` opts EER into the Comparative-Usage-Information table-bleed
+  // strip (see xRate's TABLE_MARKER/_cleanTableWindowLine comment above for
+  // why ECA deliberately does NOT opt in). Item 5129e92f, 2026-06-30.
+  const _rEer = xRate('EER' + SEP + C, null, true);
   const _rPts = xRate('PTS' + SEP + C);
   const _rTdc = xRate('TD[CG]' + SEP + C);
   const _rRkva = xRate('R[kK]VA' + SEP + C);
