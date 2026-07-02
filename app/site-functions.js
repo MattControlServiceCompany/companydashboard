@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.01.610',
+    date: '2026-07-01',
+    title: 'Manage Point Mappings: fixed already-mapped points',
+    items: [
+      {
+        type: 'fix',
+        text: "Manage Point Mappings: points you've already mapped no longer show up as 'needs mapping' \u2014 they now appear in a 'Custom Overrides' section, and the unmatched count is accurate.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.01.609',
     date: '2026-07-01',
     title: 'Equipment Matrix labels + baseline trust indicator',

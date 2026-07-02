@@ -19461,15 +19461,28 @@ function emOpenManageMappings(pid) {
         if (m.rawName && (!m.status || m.status === 'accepted')) existingCustomMap[emNormalizePointName(m.rawName)] = m;
       }
 
-      // Separate into unmatched and matched
+      // Separate into unmatched, matched, and matched-with-custom-override.
+      // f3e8d2a1 fix: previously ANY point with a saved custom mapping (hasCustom)
+      // was forced into unmatchedPoints regardless of pt.status, so already
+      // correctly-mapped points (auto-matched OR overridden to a better category)
+      // were permanently shown under "need mapping" — Save Mappings could never
+      // clear them because hasCustom stayed true on every reopen (permanent loop).
+      // Now: only genuinely unmatched points (pt.status === 'unmatched') land in
+      // the Unmatched/need-mapping bucket. Matched points that also have an
+      // accepted custom mapping go to their own "Custom Overrides" bucket —
+      // still editable via the same dropdown, but not counted as unmatched and
+      // not labeled "need mapping".
       var unmatchedPoints = [];
       var matchedPoints = [];
+      var overridePoints = [];
       for (var pi = 0; pi < allPoints.length; pi++) {
         var pt = allPoints[pi];
         var normName = emNormalizePointName(pt.name);
         var hasCustom = !!existingCustomMap[normName];
-        if (pt.status === 'unmatched' || hasCustom) {
+        if (pt.status === 'unmatched') {
           unmatchedPoints.push(pt);
+        } else if (pt.status === 'matched' && hasCustom) {
+          overridePoints.push(pt);
         } else if (pt.status === 'matched') {
           matchedPoints.push(pt);
         }
@@ -19504,6 +19517,8 @@ function emOpenManageMappings(pid) {
       for (var ui = 0; ui < unmatchedPoints.length; ui++) unmatchedTotalOccurrences += unmatchedPoints[ui].count;
       var matchedTotalOccurrences = 0;
       for (var mti = 0; mti < matchedPoints.length; mti++) matchedTotalOccurrences += matchedPoints[mti].count;
+      var overrideTotalOccurrences = 0;
+      for (var ovi = 0; ovi < overridePoints.length; ovi++) overrideTotalOccurrences += overridePoints[ovi].count;
 
       // Update summary line
       var summaryEl = document.getElementById('em-mm-summary');
@@ -19513,7 +19528,11 @@ function emOpenManageMappings(pid) {
           ' unmatched  |  ' +
           matchedPoints.length +
           ' auto-matched  |  ' +
-          (unmatchedTotalOccurrences + matchedTotalOccurrences) +
+          overridePoints.length +
+          ' custom override' +
+          (overridePoints.length !== 1 ? 's' : '') +
+          '  |  ' +
+          (unmatchedTotalOccurrences + matchedTotalOccurrences + overrideTotalOccurrences) +
           ' total point occurrences';
       }
 
@@ -19634,6 +19653,53 @@ function emOpenManageMappings(pid) {
               '</td>' +
               '<td style="padding:6px 8px;font-size:11px">' +
               selectHtml +
+              '</td>' +
+              '<td></td></tr>',
+          );
+        }
+      }
+
+      // Custom Overrides section (f3e8d2a1) — points that ARE auto-matched but also
+      // have an accepted custom mapping (e.g. a user override to a more precise
+      // category). Rendered separately from Unmatched so these do not appear as
+      // "need mapping" — they already have a valid, saved assignment. Still shown
+      // with an editable dropdown (same as the Unmatched rows) so users can adjust
+      // or clear the override if desired.
+      if (overridePoints.length > 0) {
+        htmlParts.push(
+          '<tr><td colspan="4" style="' +
+            sectionHeadStyle +
+            '">Custom Overrides (' +
+            overridePoints.length +
+            ') — already mapped, edit if needed</td></tr>',
+        );
+        for (var opi = 0; opi < overridePoints.length; opi++) {
+          var op = overridePoints[opi];
+          var normOp = emNormalizePointName(op.name);
+          var opEntry = existingCustomMap[normOp];
+          var opCurrentVal = '';
+          if (opEntry) {
+            opCurrentVal =
+              opEntry.categoryKey === '__exclude__'
+                ? '__exclude__'
+                : opEntry.equipCategory
+                  ? opEntry.equipCategory + ':' + opEntry.categoryKey
+                  : opEntry.categoryKey;
+          }
+          var opCountTitle = 'This point appears on ' + op.count + ' equipment row' + (op.count !== 1 ? 's' : '');
+          var opSelectHtml = emBuildCategoryDropdown(op.name, op.equipCategory, opCurrentVal, allCatOptions);
+          htmlParts.push(
+            '<tr style="border-bottom:1px solid var(--border)">' +
+              '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
+              emHtmlEsc(op.name) +
+              '</td>' +
+              '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
+              emHtmlEsc(opCountTitle) +
+              '">' +
+              op.count +
+              '</td>' +
+              '<td style="padding:6px 8px;font-size:11px">' +
+              opSelectHtml +
               '</td>' +
               '<td></td></tr>',
           );
