@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.02.611',
+    date: '2026-07-02',
+    title: 'Cleaner client reports: Audit Report and Cost Estimate pages',
+    items: [
+      {
+        type: 'fix',
+        text: "Audit Report / Cost Estimate proposal pages now show clean client-ready 'Why It Matters' summaries with no internal engineering notes, warning symbols, or priority tags mixed in.",
+      },
+      {
+        type: 'fix',
+        text: 'Point Inventory table in the Audit Report now paginates cleanly across pages instead of overflowing and overlapping the footer on projects with many buildings.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.01.610',
     date: '2026-07-01',
     title: 'Manage Point Mappings: fixed already-mapped points',

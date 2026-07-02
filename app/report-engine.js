@@ -11892,15 +11892,24 @@ function rptPageASHRAE36CostEstimate(n, d) {
         recRows10.forEach(function (row) {
           if (row.phase !== 2) return;
           if (!row.seqKey || seenSeqKeys[row.seqKey]) return;
-          if (!row.savingsRationale) return;
-          // Exclude enabler and safety — they don't have energy savings rationale
+          // Prefer the clean client-facing sentence (2026-06-30 report defect fix — see
+          // pricing-estimator.js SEQUENCE_SAVINGS_IMPACT.clientSummary). savingsRationale is
+          // internal-only (citations, warnings, JOCO-specific counts) and must never reach a client PDF.
+          var clientText = row.clientSummary || row.savingsRationale;
+          if (!clientText) return;
+          // Exclude enabler and safety — they don't have client-facing energy savings rationale
           if (row.savingsImpact === 'enabler' || row.savingsImpact === 'safety') return;
           seenSeqKeys[row.seqKey] = true;
-          // Truncate rationale to ~120 chars for the PDF
-          var rationaleSnippet =
-            row.savingsRationale.length > 120 ? row.savingsRationale.slice(0, 120) + '…' : row.savingsRationale;
-          // Tier label — plain text, no chip HTML
-          var tierLabel = row.savingsImpact ? '[' + row.savingsImpact.toUpperCase() + '] ' : '';
+          // Safety-net truncation only (clientSummary is already a concise single sentence and
+          // should not normally hit this limit). Break on the last word boundary, never mid-word.
+          var rationaleSnippet = clientText;
+          if (rationaleSnippet.length > 160) {
+            var cut = rationaleSnippet.slice(0, 160);
+            var lastSpace = cut.lastIndexOf(' ');
+            if (lastSpace > 0) cut = cut.slice(0, lastSpace);
+            rationaleSnippet = cut + '…';
+          }
+          // No internal priority-tier tag ([HIGH]/[MED]/etc.) in the client PDF — internal-only signal.
           var seqRowHTML =
             '<tr>' +
             '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
@@ -11911,7 +11920,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
             'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:18%"></td>' +
             '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
             'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
-            _esc(tierLabel + rationaleSnippet) +
+            _esc(rationaleSnippet) +
             '</td>' +
             '</tr>';
           rationaleTokens.push({ type: 'row', html: seqRowHTML, estH: 60 });
@@ -12902,9 +12911,9 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // ── Preamble ──────────────────────────────────────────────────────────────
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
-    'ASHRAE Guideline 36 §3.1.1.1 and Table 3.1.1.1 define <strong>default</strong> occupied and unoccupied temperature setpoints for three zone types. ' +
+    'ASHRAE Guideline 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types. ' +
     'These are starting points — designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
-    '<strong>Items marked Needs Review should be confirmed with the design engineer or facility staff to determine whether the deviation is intentional.</strong> ' +
+    'Items marked Needs Review should be confirmed with the design engineer or facility staff to determine whether the deviation is intentional. ' +
     'Values shown are building averages across all zone equipment in the BAS export.' +
     '</div>';
 
@@ -13330,35 +13339,54 @@ function rptPageASHRAE36PointInventory(n, d) {
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
   var thRight = thBase + ';text-align:right';
 
-  var tableRows = inv.byBuilding
-    .map(function (b) {
-      var bTotal = b.ashrae + b.other;
-      var bPct = bTotal > 0 ? Math.round((b.ashrae / bTotal) * 100) : 0;
-      return (
-        '<tr>' +
-        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
-        b.name +
-        '</td>' +
-        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:right">' +
-        bTotal.toLocaleString() +
-        '</td>' +
-        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border-bottom:1px solid var(--rpt-rule);text-align:right">' +
-        b.ashrae.toLocaleString() +
-        '</td>' +
-        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:right">' +
-        b.other.toLocaleString() +
-        '</td>' +
-        '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border-bottom:1px solid var(--rpt-rule);text-align:right">' +
-        bPct +
-        '%' +
-        '</td>' +
-        '</tr>'
-      );
-    })
-    .join('');
+  var tableHead =
+    '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:16px;table-layout:fixed">' +
+    '<thead><tr>' +
+    '<th style="' +
+    thBase +
+    '">Building</th>' +
+    '<th style="' +
+    thRight +
+    '">Total Points</th>' +
+    '<th style="' +
+    thRight +
+    '">ASHRAE 36 Points</th>' +
+    '<th style="' +
+    thRight +
+    '">Other BAS Points</th>' +
+    '<th style="' +
+    thRight +
+    '">ASHRAE Coverage</th>' +
+    '</tr></thead>';
 
-  // Totals row
-  var totalsRow =
+  function _buildInvRowHTML(b) {
+    var bTotal = b.ashrae + b.other;
+    var bPct = bTotal > 0 ? Math.round((b.ashrae / bTotal) * 100) : 0;
+    return (
+      '<tr>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      b.name +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+      bTotal.toLocaleString() +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+      b.ashrae.toLocaleString() +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+      b.other.toLocaleString() +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+      bPct +
+      '%' +
+      '</td>' +
+      '</tr>'
+    );
+  }
+
+  // Totals row — pushed as the final token so it stays attached to the last building row
+  // whenever possible (see pagination note below).
+  var totalsRowHTML =
     '<tr style="background:var(--rpt-rule)">' +
     '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text)">Total</td>' +
     '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:right">' +
@@ -13376,33 +13404,6 @@ function rptPageASHRAE36PointInventory(n, d) {
     '</td>' +
     '</tr>';
 
-  var table =
-    '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:16px">' +
-    '<thead><tr>' +
-    '<th style="' +
-    thBase +
-    '">Building</th>' +
-    '<th style="' +
-    thRight +
-    '">Total Points</th>' +
-    '<th style="' +
-    thRight +
-    '">ASHRAE 36 Points</th>' +
-    '<th style="' +
-    thRight +
-    '">Other BAS Points</th>' +
-    '<th style="' +
-    thRight +
-    '">ASHRAE Coverage</th>' +
-    '</tr></thead>' +
-    '<tbody>' +
-    tableRows +
-    '</tbody>' +
-    '<tfoot>' +
-    totalsRow +
-    '</tfoot>' +
-    '</table>';
-
   // ── Footnote ──────────────────────────────────────────────────────────────
   var footnote =
     '<div style="font-size:9px;color:var(--rpt-page-text);opacity:0.7;line-height:1.5;border-top:1px solid var(--rpt-rule);padding-top:8px">' +
@@ -13411,11 +13412,65 @@ function rptPageASHRAE36PointInventory(n, d) {
     'These points do not contribute to and do not reduce the ASHRAE 36 Coverage percentages shown in this report.' +
     '</div>';
 
-  var bodyHTML = summaryBlock + narrative + table + footnote;
-  return rptPage(n, 'ASHRAE 36 Audit — Point Inventory', bodyHTML, {
-    data: fakeData,
-    label: 'Page ' + n + ' — Point Inventory',
+  // ── Pagination (2026-06-30 report defect fix — Point Inventory ran under the footer with
+  //   27 buildings because this page previously returned a single un-paginated string, unlike
+  //   its ASHRAE-36 siblings which use _rptPaginateTokens. Converted to the same pattern used by
+  //   rptPageASHRAE36SetpointReview: chrome estimated conservatively, rows tokenized, totals row
+  //   appended as the final token so it rides along with the last chunk of building rows. ──
+  //   First-page chrome: summaryBlock (~90px) + narrative (~106px) + thead (~32px) = ~228px;
+  //   using a wide safety margin (260px consumed) since these are estimates, not DOM-measured.
+  //   Continuation chrome: contHdr (~35px) + thead (~32px) + safety = ~91px, matching the
+  //   Setpoint Programming Review budget.
+  var ROWS_BUDGET_FIRST = 630;
+  var ROWS_BUDGET_CONT = 803;
+
+  var tokens = inv.byBuilding.map(function (b) {
+    return { type: 'row', estH: 30, html: _buildInvRowHTML(b) };
   });
+  tokens.push({ type: 'row', estH: 30, html: totalsRowHTML });
+
+  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
+  var numChunks = chunks.length;
+  var resultPages = [];
+
+  chunks.forEach(function (chunk, chunkIndex) {
+    var tbodyRows = chunk
+      .map(function (tok) {
+        return tok.html;
+      })
+      .join('');
+    var table = tableHead + '<tbody>' + tbodyRows + '</tbody></table>';
+
+    var pageN = n + chunkIndex;
+    var bodyHTML;
+    if (chunkIndex === 0) {
+      bodyHTML = summaryBlock + narrative + table + (chunkIndex === numChunks - 1 ? footnote : '');
+    } else {
+      var contHdr =
+        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
+        'Point Inventory Completeness — continued (' +
+        (chunkIndex + 1) +
+        ' of ' +
+        numChunks +
+        ')' +
+        '</div>';
+      bodyHTML = contHdr + table + (chunkIndex === numChunks - 1 ? footnote : '');
+    }
+
+    resultPages.push(
+      rptPage(pageN, 'ASHRAE 36 Audit — Point Inventory', bodyHTML, {
+        data: fakeData,
+        label:
+          'Page ' +
+          pageN +
+          ' — Point Inventory' +
+          (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
+      }),
+    );
+  });
+
+  return resultPages; // always an Array (length >= 1)
 }
 
 // ─── generateASHRAE36AuditHTML ────────────────────────────────────────────
@@ -13480,8 +13535,15 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   }
 
   // Phase D-3 — Point Inventory Completeness page (after setpoint review)
-  if (s.pointInventory !== false)
-    pages.push(_tagA36Section(rptPageASHRAE36PointInventory(pageNum++, data), 'pointInventory'));
+  // Returns an Array (like setpointReview) — spread each page individually so pagination
+  // (2026-06-30 fix) actually takes effect instead of collapsing back into one overflowing page.
+  if (s.pointInventory !== false) {
+    var invPages = rptPageASHRAE36PointInventory(pageNum, data);
+    invPages.forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'pointInventory'));
+      pageNum++;
+    });
+  }
 
   // Rule 2.4 (Plan B): bake page numbers at generation time.
   return _injectPageNumbers(pages.join('\n'));
