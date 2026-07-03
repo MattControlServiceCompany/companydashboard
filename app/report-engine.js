@@ -1007,9 +1007,9 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       '" alt="CSC Letterhead" class="csc-header-img" style="width:100%;display:block">' +
       bodyHTML +
       footerTextHtml +
-      '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
       footerLabelHtml +
       footerImgHtml +
+      '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
       '</div>'
     );
   }
@@ -1034,9 +1034,9 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     bodyHTML +
     '</div>' +
     footerTextHtml +
-    '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
     footerLabelHtml +
     footerImgHtml +
+    '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
     '</div>'
   );
 }
@@ -7011,8 +7011,11 @@ async function exportReportToPDF() {
     let filename;
     if (data._ashrae) {
       // ASHRAE 36 reports: use report type to produce distinct, collision-free names
-      const ashraeLabel = data._ashrae.type === 'proposal' ? 'Service Proposal' : 'Audit Report';
-      filename = client + ' - ASHRAE 36 ' + ashraeLabel + ' ' + dateStr + '.pdf';
+      if (data._ashrae.type === 'proposal') {
+        filename = client + ' - Service Proposal ' + dateStr + '.pdf';
+      } else {
+        filename = client + ' - ASHRAE 36 Audit Report ' + dateStr + '.pdf';
+      }
     } else {
       const period = (data.period && data.period.label) || '';
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
@@ -11591,7 +11594,7 @@ function rptPageASHRAE36Cover(n, d) {
   // Use rptPage with a data-like object for footer formatting
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  return rptPage(n, 'ASHRAE 36 Audit — Cover', bodyHTML, {
+  return rptPage(n, 'ASHRAE 36 Audit Report — Cover', bodyHTML, {
     hero: true,
     data: fakeData,
     label: 'Page ' + n + ' — ASHRAE 36 Cover',
@@ -11718,7 +11721,14 @@ function rptPageASHRAE36Executive(n, d) {
     '<strong>Status thresholds:</strong> Ready ≥75%, Partial 50–74%, Critical <50%.' +
     '</div>';
 
-  // Build a token per building row — type:'row', estH:28px
+  // Build a token per building row — type:'row', estH:52px
+  // Row-height uniformity fix (2026-07): every <td> wraps its content in a flex box with a
+  // shared min-height (ROW_BOX_MIN_H) so 1-line and 2-line building names render at the same
+  // row height instead of alternating ~30.5px/~50px. Building names are NEVER truncated or
+  // forced to nowrap — a name that needs 2 lines simply grows the row (and every cell in it)
+  // to match; ROW_BOX_MIN_H is tuned to the 2-line ceiling so the common case looks uniform.
+  var ROW_BOX_MIN_H = 40;
+  var _rowBoxStyle = 'min-height:' + ROW_BOX_MIN_H + 'px;display:flex;align-items:center';
   function _buildRowHTML(b) {
     var bar =
       '<div style="display:flex;align-items:center;gap:4px">' +
@@ -11734,38 +11744,58 @@ function rptPageASHRAE36Executive(n, d) {
     return (
       '<tr>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      '<div style="' +
+      _rowBoxStyle +
+      '">' +
       b.name +
-      '</td>' +
+      '</div></td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      '<div style="' +
+      _rowBoxStyle +
+      ';justify-content:center">' +
       b.equipCount +
-      '</td>' +
+      '</div></td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      '<div style="' +
+      _rowBoxStyle +
+      ';justify-content:center">' +
       b.pointPct +
-      '%</td>' +
+      '%</div></td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      '<div style="' +
+      _rowBoxStyle +
+      ';justify-content:center">' +
       (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
-      '</td>' +
+      '</div></td>' +
       '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
+      '<div style="' +
+      _rowBoxStyle +
+      '">' +
       bar +
-      '</td>' +
+      '</div></td>' +
       '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
+      '<div style="' +
+      _rowBoxStyle +
+      '">' +
       _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired) +
-      '</td>' +
+      '</div></td>' +
       '</tr>'
     );
   }
 
   // Build flat token list — one token per building row
-  // estH=40px: DOM-measured avg 38px for JOCO 2-line names; 40 adds safety for worst-case wrapping
+  // estH: ROW_BOX_MIN_H (40px content box) + 10px td padding (5+5) = 50px per row, now uniform
+  // for every row (1-line or 2-line building name) after the row-height fix above. Placeholder
+  // value re-verified against real DOM-measured heights on JOCO data (see gate results).
   var allBuildings = d.buildings;
   var tokens = allBuildings.map(function (b) {
-    return { type: 'row', estH: 40, html: _buildRowHTML(b) };
+    return { type: 'row', estH: ROW_BOX_MIN_H + 10, html: _buildRowHTML(b) };
   });
   // Edge case: no buildings
   if (tokens.length === 0) {
     tokens.push({
       type: 'row',
-      estH: 40,
+      estH: ROW_BOX_MIN_H + 10,
       html: '<tr><td colspan="6" style="padding:8px;font-size:11px;color:var(--rpt-page-text)">No buildings in portfolio.</td></tr>',
     });
   }
@@ -11805,7 +11835,7 @@ function rptPageASHRAE36Executive(n, d) {
     }
 
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit — Executive Summary', bodyHTML, {
+      rptPage(pageN, 'ASHRAE 36 Audit Report — Executive Summary', bodyHTML, {
         data: fakeData,
         label:
           'Page ' +
@@ -11963,7 +11993,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
     resultPages.push(
       rptPage(
         currentPageNum,
-        'ASHRAE 36 Audit — Gap Details',
+        'ASHRAE 36 Audit Report — Gap Details',
         '<div style="font-size:11px;color:var(--rpt-page-text)">No gap data available.</div>',
         {
           data: fakeData,
@@ -11986,7 +12016,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
       resultPages.push(
         rptPage(
           currentPageNum,
-          isFirst ? 'ASHRAE 36 Audit — Gap Details' : 'ASHRAE 36 Audit — Gap Details (cont.)',
+          isFirst ? 'ASHRAE 36 Audit Report — Gap Details' : 'ASHRAE 36 Audit Report — Gap Details (cont.)',
           pageBody,
           { data: fakeData, label: 'Page ' + currentPageNum + ' — Gap Details' },
         ),
@@ -12459,7 +12489,7 @@ function rptPageASHRAE36Building(n, d, building) {
     }
 
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit — ' + b.name, bodyHTML, {
+      rptPage(pageN, 'ASHRAE 36 Audit Report — ' + b.name, bodyHTML, {
         data: fakeData,
         label:
           'Page ' + pageN + ' — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
@@ -12577,18 +12607,8 @@ function rptPageASHRAE36Recommendations(n, d) {
     '</tbody>' +
     '</table>';
 
-  var nextStep =
-    '<div class="rpt-a36-callout" style="border-top:1px solid var(--rpt-rule)">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">What Happens Next</div>' +
-    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
-    'Control Service Company can provide a detailed scope of work and fixed-fee proposal to address these gaps through BAS programming and hardware upgrades. ' +
-    'Typical projects are phased to minimize disruption and are designed to begin generating energy savings within the first 90 days. ' +
-    'Contact your CSC representative to review these findings and discuss next steps.' +
-    '</div>' +
-    '</div>';
-
-  var bodyHTML = table + nextStep;
-  return rptPage(n, 'ASHRAE 36 Audit — Recommendations', bodyHTML, {
+  var bodyHTML = table;
+  return rptPage(n, 'ASHRAE 36 Audit Report — Recommendations', bodyHTML, {
     data: fakeData,
     label: 'Page ' + n + ' — Recommendations',
   });
@@ -12663,7 +12683,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       'Import an updated equipment matrix export to enable this analysis.' +
       '</div>';
     return [
-      rptPage(n, 'ASHRAE 36 Audit — Setpoint Programming Review', emptyBody, {
+      rptPage(n, 'ASHRAE 36 Audit Report — Setpoint Programming Review', emptyBody, {
         data: fakeData,
         label: 'Page ' + n + ' — Setpoint Programming Review',
       }),
@@ -12970,7 +12990,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     }
 
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit — Setpoint Programming Review', bodyHTML, {
+      rptPage(pageN, 'ASHRAE 36 Audit Report — Setpoint Programming Review', bodyHTML, {
         data: fakeData,
         label:
           'Page ' +
@@ -13204,31 +13224,21 @@ function rptPageASHRAE36ProposalOutcomes(n, d) {
     '<div class="rpt-a36-callout" style="margin-bottom:14px;border-top:1px solid var(--rpt-rule)">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">Typical Implementation Timeline</div>' +
     '<div style="display:flex;gap:0">' +
-    _timelineStep('Weeks 1–2', 'Site Assessment', 'Final point verification and hardware list confirmation') +
     _timelineStep(
-      'Weeks 3–6',
+      'Weeks 1–4',
       'Hardware Installation',
       'Sensor and actuator installation with minimal operational impact',
     ) +
-    _timelineStep('Weeks 7–10', 'Programming', 'BAS sequence programming and initial testing') +
+    _timelineStep('Weeks 5–8', 'Programming', 'BAS sequence programming and initial testing') +
     _timelineStep(
-      'Weeks 11–12',
+      'Weeks 9–10',
       'Commissioning',
       'Functional testing and savings verification with occupied conditions',
     ) +
     '</div>' +
     '</div>';
 
-  var nextStep =
-    '<div class="rpt-a36-callout" style="border-top:1px solid var(--rpt-rule)">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">Ready to Move Forward?</div>' +
-    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
-    'Contact your Control Service Company representative to schedule a pre-proposal walkthrough, finalize scope, and receive a fixed-fee project cost. ' +
-    'We can typically begin hardware procurement within two weeks of contract execution.' +
-    '</div>' +
-    '</div>';
-
-  var bodyHTML = outcomes + timeline + nextStep;
+  var bodyHTML = outcomes + timeline;
   return rptPage(n, 'ASHRAE 36 Proposal — Expected Outcomes', bodyHTML, {
     data: fakeData,
     label: 'Page ' + n + ' — Expected Outcomes',
@@ -13459,7 +13469,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     }
 
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit — Point Inventory', bodyHTML, {
+      rptPage(pageN, 'ASHRAE 36 Audit Report — Point Inventory', bodyHTML, {
         data: fakeData,
         label:
           'Page ' +

@@ -1191,6 +1191,20 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.03.616',
+    date: '2026-07-03',
+    title: 'Audit Report and Service Proposal: footer page numbers, uniform rows, and copy fixes',
+    items: [
+      { type: 'fix', text: "Audit Report and Service Proposal: page numbers are now visible in the footer of every page (they were being painted over and hidden before)." },
+      { type: 'fix', text: 'Audit Report: summary table rows are now a uniform height, so two-line building names no longer make some rows taller than others.' },
+      { type: 'change', text: "Audit Report header now reads 'ASHRAE 36 Audit Report' throughout (was missing the word 'Report' in most places)." },
+      { type: 'fix', text: "Service Proposal: the exported PDF filename no longer includes 'ASHRAE 36'." },
+      { type: 'change', text: 'Service Proposal: the project timeline now starts at installation — the Site Assessment step was removed since the assessment is already complete by the time a proposal exists.' },
+      { type: 'change', text: "Audit Report and Service Proposal: the 'What Happens Next' and 'Ready to Move Forward?' closing sections have been removed." },
+      { type: 'change', text: 'Note: the Audit Report is now 41 pages (was 40) because the uniform row heights fit slightly fewer rows per page.' },
+    ],
+  },
+  {
     v: 'v2026.07.03.615',
     date: '2026-07-03',
     title: 'Equipment Matrix: control-voltage signals no longer misread as setpoints',
