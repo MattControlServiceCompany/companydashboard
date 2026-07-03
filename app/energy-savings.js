@@ -3,6 +3,75 @@
 // ══════════════════════════════════════════════════════
 const SUMMER_MOS = [5, 6, 7, 8]; // Jun–Sep (0-indexed)
 
+// FIX(2026-07-02, item 219e6828): Shared address plausibility check.
+// Extractors that fall back to a printed "ADDRESS:" stub as a bill's identity
+// label (e.g. City of Baldwin, energy-savings.js:7676) have no guarantee that
+// OCR produced anything address-like — badly scanned pages can yield pure
+// noise ("= == ==", "Ee Eee"), boilerplate footer text that bled onto the
+// same OCR line ("FOR AFTER HOURS UTILITY ASSISTANCE CALL [phone number]"), or
+// a real address with unstripped date/amount garbage glued on. This function
+// is the single source of truth for "does this look like a real address" —
+// used both when the value is captured (energy-savings.js) and again when it
+// is rendered as a UI label (bill-analysis.js _bldgName) so any future
+// extractor gets the same protection without re-deriving the heuristic.
+// Deliberately conservative: requires a recognized street-type word (ST, AVE,
+// RD, ...) OR (digits + enough distinct letters) to pass. Numbered-street
+// addresses like "512 8TH ST" / "421 6TH ST" (very common — e.g. Baldwin's
+// grid) must still pass, so a low-distinct-letter-count check is only applied
+// when there's NO recognized street word, not universally (a strict "few
+// distinct letters" rule would wrongly reject "8TH ST" for having only T/H/S).
+function _looksLikeAddress(s) {
+  if (!s || typeof s !== 'string') return false;
+  const str = s.trim();
+  if (str.length < 4) return false;
+  // Boilerplate/footer text that OCR glued onto the ADDRESS: line (phone
+  // numbers, "call after hours", etc.) — never a real service address.
+  if (/\d{3}[-.]?\d{3}[-.]?\d{4}/.test(str)) return false;
+  if (/\b(CALL|AFTER HOURS|ASSISTANCE|CUSTOMER SERVICE)\b/i.test(str)) return false;
+  // Mostly symbols/whitespace noise ("= == ==", "re cnmEEm    or   |") rather
+  // than real text.
+  const alnumCount = (str.match(/[A-Za-z0-9]/g) || []).length;
+  if (alnumCount / str.length < 0.5) return false;
+  const hasDigit = /\d/.test(str);
+  const hasStreetWord =
+    /\b(ST|STREET|AVE|AVENUE|RD|ROAD|DR|DRIVE|LN|LANE|BLVD|BOULEVARD|CT|COURT|PL|PLACE|WAY|HWY|HIGHWAY|PKWY|PARKWAY|CIR|CIRCLE|TER|TERRACE|TRL|TRAIL)\b/i.test(
+      str
+    );
+  if (hasStreetWord) return true; // "512 8TH ST", "614 DEARBORN ST"
+  // No recognized street-type word — only accept if it still strongly looks
+  // like real alphanumeric text (house number + enough distinct letters),
+  // not repeated-character garble like "Ee Eee" or "00 Fm em".
+  const letters = str.replace(/[^A-Za-z]/g, '');
+  const distinctLetters = new Set(letters.toUpperCase()).size;
+  return hasDigit && distinctLetters >= 6 && str.length >= 8;
+}
+
+// FIX(2026-07-02, item 219e6828): Generalized trailing-junk stripper for
+// ADDRESS: captures. The prior stripper (see energy-savings.js ServiceAddress
+// extraction) only cut at a well-formed date (\d{1,2}/\d{1,2}/\d{2,4}), which
+// real Baldwin OCR routinely defeats with garbled dates like "as/25/2" (month
+// OCR'd as letters) or "4/25/2" (1-digit year). This walks whitespace-split
+// tokens, always keeps the first token (house number, even if OCR-garbled —
+// dropping it would break legitimate short addresses), and stops at the
+// first later token that looks numeric/decimal-ish (a bled-in date or dollar
+// amount) or is purely symbolic ("|", "=="), instead of requiring a
+// perfectly formed date pattern.
+function _stripAddressTrailingJunk(raw) {
+  if (!raw) return null;
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  const kept = [tokens[0]];
+  for (let i = 1; i < tokens.length; i++) {
+    const tok = tokens[i];
+    const isNumericish = /\d/.test(tok) && (/[\/.]/.test(tok) || /^\d+$/.test(tok) || tok.length <= 2);
+    const isSymbolic = /^[^A-Za-z0-9]+$/.test(tok);
+    if (isNumericish || isSymbolic) break;
+    kept.push(tok);
+  }
+  const result = kept.join(' ').trim();
+  return result || null;
+}
+
 // Set ud-layout height by measuring fixed chrome above it
 function _setUDLayoutHeight(viewId) {
   const appWrap = document.querySelector('.app-wrap');
@@ -7673,10 +7742,19 @@ const UTILITY_RULES = [
       // FIX(2026-06-02): Truncate at the FIRST date-like token or run of
       // numeric/amount columns that bleeds from adjacent columns into the
       // address field.
+      // FIX(2026-07-02, item 219e6828): Replaced the well-formed-date-only
+      // split with _stripAddressTrailingJunk (shared, near top of file),
+      // which also strips garbled dates like "as/25/2" / "4/25/2" that
+      // defeated the old \d{1,2}/\d{1,2}/\d{2,4} split. ServiceAddress itself
+      // is intentionally left NON-null even when garbage (a page with a
+      // garbled account number relies on ServiceAddress for identity — see
+      // "Skip pages" comment below; nulling it here could silently drop a
+      // whole bill). Plausibility gating instead happens via the
+      // _addressPlausible flag stamped onto `shared` below, which the UI
+      // (bill-analysis.js _bldgName) uses to decide whether to show this
+      // value as a label or fall back to the account number.
       const _addrRaw = page.match(/ADDRESS\s*[;:]\s*([^\n]+)/i)?.[1]?.trim() || null;
-      const ServiceAddress = _addrRaw
-        ? (_addrRaw.split(/\s+\d{1,2}\/\d{1,2}\/\d{2,4}/)[0] || _addrRaw).trim() || null
-        : null;
+      const ServiceAddress = _addrRaw ? _stripAddressTrailingJunk(_addrRaw) : null;
 
       // Skip pages that have no account number AND no service address
       // (email/receipt pages that slipped through the page-1 guard).
@@ -8535,6 +8613,10 @@ const UTILITY_RULES = [
         ...(_acctOCRNormalized ? { _accountOCRNormalized: true, _accountOCRRaw: _p5RawAcct } : {}),
         ...(_accountFromAddress ? { _accountFromAddress: true } : {}),
         ...(_dateReconstructed.length > 0 ? { _date_reconstructed: _dateReconstructed } : {}),
+        // FIX(2026-07-02, item 219e6828): plausibility flag consumed by
+        // bill-analysis.js _bldgName to decide whether ServiceAddress is
+        // safe to show as a chip label (see _looksLikeAddress above).
+        _addressPlausible: _looksLikeAddress(ServiceAddress),
       };
 
       const bills = [];

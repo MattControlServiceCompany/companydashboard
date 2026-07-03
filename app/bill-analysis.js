@@ -9697,8 +9697,18 @@ function renderMultiBillUI(bills, box) {
   periods.sort((a, b) => b.sortDate - a.sortDate);
   // Commodity tabs: group pills by commodity when multiple types exist
   const _commOrder = ['Gas', 'Water', 'Sewer', 'Stormwater', 'Electric', 'Propane', 'Other'];
+  // FIX(2026-07-02, item 219e6828): indexOf() returns -1 for any commodity not
+  // in this fixed list (e.g. the literal 'Unknown' commodity stamped on a
+  // synthetic Manual Review bill by _unmatchedToSyntheticBills when a page
+  // fails to parse) which used to sort BEFORE every real commodity (-1 < 0)
+  // and silently win the default-active-tab position below. Rank anything
+  // not in the list to the END instead so a real commodity is always default.
+  const _commRank = (c) => {
+    const i = _commOrder.indexOf(c);
+    return i === -1 ? 999 : i;
+  };
   const _uniqueComms = [...new Set(bills.map((b) => b.Commodity || 'Other'))].sort(
-    (a, b) => _commOrder.indexOf(a) - _commOrder.indexOf(b),
+    (a, b) => _commRank(a) - _commRank(b),
   );
   const _hasMultiComm = _uniqueComms.length > 1;
   if (_hasMultiComm && !window._pdfCommTab) window._pdfCommTab = _uniqueComms[0];
@@ -9790,7 +9800,32 @@ function renderMultiBillUI(bills, box) {
       const match = typeof findMeterMatch === 'function' ? findMeterMatch(b) : null;
       if (match && match.bldg && match.bldg.name) return match.bldg.name;
       if (!b.ServiceAddress) return acct;
-      const addr = b.ServiceAddress;
+      // FIX(2026-07-02, item 219e6828): don't render raw OCR garbage as a
+      // building-tab label. Extractors that key an identity fallback off a
+      // printed "ADDRESS:" stub can capture pure noise ("= == =="), boilerplate
+      // footer text, or address+junk that didn't get stripped (see
+      // energy-savings.js _looksLikeAddress / _stripAddressTrailingJunk).
+      // Bills saved BEFORE this fix shipped may still carry an unstripped
+      // ServiceAddress (e.g. "614 DEARBORN ST   as/25/2 | o9s4.58") — re-run
+      // the stripper here too so the label is clean regardless of when the
+      // bill was extracted, not just for fresh extractions. _addressPlausible
+      // is stamped by the (already-stripped) extractor output when present;
+      // fall back to stripping + re-checking live for older saved bills that
+      // predate the flag. Universal rule: never drop the underlying bill for
+      // a bad label — fall back to the account number with a visible "needs
+      // review" marker so the bill stays selectable/saveable.
+      const _cleanAddr =
+        typeof _stripAddressTrailingJunk === 'function'
+          ? _stripAddressTrailingJunk(b.ServiceAddress) || b.ServiceAddress
+          : b.ServiceAddress;
+      const _plausible =
+        b._addressPlausible !== undefined
+          ? b._addressPlausible
+          : typeof _looksLikeAddress === 'function'
+            ? _looksLikeAddress(_cleanAddr)
+            : true;
+      if (!_plausible) return acct + ' (needs review)';
+      const addr = _cleanAddr;
       const afterComma = addr.includes(',') ? addr.split(',').slice(1).join(',').trim() : addr;
       return (
         afterComma.replace(/\b(LOUISBURG|KANSAS CITY|OLATHE|LENEXA|OVERLAND PARK|SHAWNEE|KS|MO)\b/gi, '').trim() || acct
@@ -9812,8 +9847,16 @@ function renderMultiBillUI(bills, box) {
         lbl += ' · ' + comm;
       }
       const acctPeriods = filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct);
-      const ct = acctPeriods.length;
-      const firstIdx = acctPeriods.length ? acctPeriods[0].i : 0;
+      // FIX(2026-07-02, item 219e6828): count ALL periods for this account
+      // across every commodity, not just the currently active commodity tab.
+      // A building-tab chip means "how many periods exist for this building,"
+      // independent of which commodity sub-tab happens to be selected — the
+      // old acctPeriods-based count read 0 on every chip whenever the default
+      // active commodity tab (see _commRank above) held no bills for that
+      // account (e.g. the synthetic 'Unknown' manual-review tab).
+      const acctAllPeriods = periods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct);
+      const ct = acctAllPeriods.length;
+      const firstIdx = acctPeriods.length ? acctPeriods[0].i : acctAllPeriods.length ? acctAllPeriods[0].i : 0;
       _bldgTabsHtml +=
         '<button onclick="window._pdfBuildingTab=\'' +
         acct +
@@ -11712,6 +11755,25 @@ function renderPDFFields(parsed, warnings) {
   // Sum mismatch is detected from current data (same source as the big banner above) so the
   // Data Analysis line and the big banner are always consistent.
   const hasSumIssue = hasCurrentSumMismatch;
+  // FIX(2026-07-02, item 219e6828): `warnings` above is only ever the ONE
+  // currently-displayed bill's own warning list — every call site passes a
+  // single bill's warnings (e.g. renderPDFFields(finalBills[newestIdx],
+  // analysisResults[newestIdx]?.warnings || [])). In a multi-bill batch, the
+  // selected bill can be clean while its siblings aren't, which used to let
+  // the green "All expected fields present" banner fire even when the batch
+  // as a whole had warnings (the header badge, computed from the same
+  // window._pdfBillWarnings source, would say "57 warnings" right above a
+  // green all-clear). Compute the true batch-wide count here and never allow
+  // an unqualified green banner while it's nonzero — show a batch-scoped
+  // amber notice instead so a clean-looking bill doesn't imply a clean batch.
+  const _pdfBatchBills = window._pdfMultiBills;
+  const _pdfIsBatch = Array.isArray(_pdfBatchBills) && _pdfBatchBills.length > 1;
+  const _pdfBatchWarnCount = _pdfIsBatch
+    ? (window._pdfBillWarnings || []).reduce(
+        (s, r) => s + (r?.warnings || []).filter((w) => w.level === 'error' || w.level === 'warn').length,
+        0,
+      )
+    : 0;
   let summaryHtml = '';
   if (errorCount || warnCount) {
     const parts = [];
@@ -11762,6 +11824,15 @@ function renderPDFFields(parsed, warnings) {
       '</span>' +
       flagLinks +
       '</div>';
+  } else if (_pdfIsBatch && _pdfBatchWarnCount > 0) {
+    // This bill is clean, but the batch isn't — never show the green
+    // all-clear here (see FIX comment above).
+    summaryHtml =
+      '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(245,158,11,.14);border:1px solid #f59e0b;font-size:12px;color:var(--amber);font-weight:600">⚠️ ' +
+      _pdfBatchWarnCount +
+      ' warning' +
+      (_pdfBatchWarnCount > 1 ? 's' : '') +
+      ' across the batch — review before saving (this bill has none)</div>';
   } else if (correctedFields.length && !errorCount && !warnCount) {
     summaryHtml =
       '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:var(--green)">✓ All expected fields present — ' +
