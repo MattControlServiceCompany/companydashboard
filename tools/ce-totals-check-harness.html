@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Cost Estimate Totals Check Harness (dummy data, local only, not user-facing)</title>
+  </head>
+  <body>
+    <!--
+      Regression-baseline harness for tools/ce-totals-check.js (b771dec6 Batch 0).
+      Dummy data below is copied verbatim from the b771dec6 investigation harness at
+      C:\Users\Matt Miller\AI\my-knowledge-base\outputs\2026-07-03-cost-estimate-tab-investigation\harness-source-1920.html
+      so totals stay comparable across batches. Building names are real JOCO names
+      (from known-good-values/joco.md) but all equipment IDs / point-gap lists / $
+      prices are synthetic dummy data — no real project data.
+    -->
+    <script>
+      function sget(k, def) {
+        try {
+          var v = localStorage.getItem(k);
+          return v !== null ? JSON.parse(v) : def;
+        } catch (e) {
+          return def;
+        }
+      }
+      function sset(k, v) {
+        try {
+          localStorage.setItem(k, JSON.stringify(v));
+        } catch (e) {}
+      }
+      function showToast(msg) {
+        console.log('[toast]', msg);
+      }
+      var projects = [
+        {
+          id: 9001,
+          name: 'Johnson County, Kansas (TEST DUMMY DATA)',
+          client: 'Johnson County, Kansas (TEST DUMMY DATA)',
+        },
+      ];
+
+      var BLOCKED = { status: 'blocked' };
+      var PARTIAL = { status: 'partial' };
+      function makeEquip(id, name, category, missingKeys, seqReadiness) {
+        return {
+          id: id,
+          name: name,
+          category: category,
+          compliance: {
+            missingPoints: missingKeys.map(function (k) {
+              return { categoryKey: k };
+            }),
+          },
+          seqReadiness: seqReadiness || {},
+        };
+      }
+      var _buildings = [
+        {
+          name: 'Johnson County Courthouse',
+          equipResults: [
+            makeEquip('ahu1', 'AHU-1', 'ahu', ['sat', 'dsp', 'oat', 'economizerCmd'], {
+              ahu_sat_reset: BLOCKED,
+              ahu_dsp_reset: BLOCKED,
+              ahu_economizer: BLOCKED,
+              ahu_min_oa: PARTIAL,
+            }),
+            makeEquip('ahu2', 'AHU-2', 'ahu', ['sat', 'dsp'], {
+              ahu_sat_reset: BLOCKED,
+              ahu_dsp_reset: BLOCKED,
+              ahu_rf_control: PARTIAL,
+            }),
+            makeEquip('vav1', 'VAV-101', 'vav', ['zoneTemp', 'dampCmd'], {
+              vav_zone_temp: BLOCKED,
+              vav_damper_writeback: BLOCKED,
+              vav_reheat: PARTIAL,
+            }),
+            makeEquip('vav2', 'VAV-102', 'vav', ['zoneTemp', 'dampCmd'], {
+              vav_zone_temp: BLOCKED,
+              vav_damper_writeback: BLOCKED,
+            }),
+            makeEquip('vav3', 'VAV-103', 'vav', ['zoneTemp'], {
+              vav_zone_temp: PARTIAL,
+            }),
+            makeEquip('hwp1', 'HWP-1', 'hwp', ['hwst', 'hwrt'], {
+              hwp_supply_reset: BLOCKED,
+              hwp_pump_dp_reset: BLOCKED,
+            }),
+          ],
+        },
+        {
+          name: 'MedAct 1159 Sunflower',
+          equipResults: [
+            makeEquip('rtu1', 'RTU-1', 'ahu', ['sat', 'rat', 'oat', 'dsp'], {
+              ahu_sat_reset: BLOCKED,
+              ahu_dsp_reset: BLOCKED,
+              ahu_economizer: PARTIAL,
+            }),
+            makeEquip('vav4', 'VAV-201', 'vav', ['zoneTemp', 'dampCmd'], {
+              vav_zone_temp: BLOCKED,
+              vav_damper_writeback: BLOCKED,
+            }),
+            makeEquip('vav5', 'VAV-202', 'vav', ['zoneTemp', 'dampCmd'], {
+              vav_zone_temp: BLOCKED,
+              vav_damper_writeback: PARTIAL,
+            }),
+            makeEquip('fpb1', 'FPB-1', 'fpb', ['zoneTemp'], {
+              vav_zone_temp: PARTIAL,
+            }),
+          ],
+        },
+        {
+          name: 'Firestation-13',
+          equipResults: [
+            makeEquip('ahu3', 'AHU-3', 'ahu', ['sat', 'dsp', 'oat'], {
+              ahu_sat_reset: BLOCKED,
+              ahu_dsp_reset: BLOCKED,
+            }),
+            makeEquip('ef1', 'EF-1', 'ef', [], {}),
+          ],
+        },
+      ];
+      function collectASHRAE36Data() {
+        return { buildings: _buildings };
+      }
+
+      localStorage.setItem(
+        'en_pricing_catalog',
+        JSON.stringify({
+          'N1-10K-2-D-8-BB-A': { list: 45, net: 27, contract: 18, computed_net: 27, category: 'Sensor', desc: 'Duct Temp Sensor 8in' },
+          'N1-10K-2-D-12-WP-A': { list: 52, net: 31.2, contract: 20.8, computed_net: 31.2, category: 'Sensor', desc: 'OAT Sensor Weatherproof' },
+          'N1-ZPS-LR-EZ-NT-IN-A': { list: 120, net: 72, contract: 48, computed_net: 72, category: 'Sensor', desc: 'Duct Static Pressure' },
+          'ZS2-ALC': { list: 95, net: 57, contract: 38, computed_net: 57, category: 'Sensor', desc: 'Zone Temp Wall Sensor' },
+          'ZS2-HC-ALC': { list: 145, net: 87, contract: 58, computed_net: 87, category: 'Sensor', desc: 'Zone CO2 Temp Wall Sensor' },
+        }),
+      );
+      localStorage.setItem(
+        'en_pricing_meta',
+        JSON.stringify({ importedAt: '2026-07-03T00:00:00.000Z', filename: 'DUMMY-catalog.csv', skuCount: 5 }),
+      );
+
+      localStorage.setItem(
+        'en_utility_9001',
+        JSON.stringify([
+          { building: 'Johnson County Courthouse', type: 'electric', kwh: 40000, month: '2026-01', cost: 4200 },
+          { building: 'Johnson County Courthouse', type: 'electric', kwh: 38000, month: '2026-02', cost: 4000 },
+          { building: 'MedAct 1159 Sunflower', type: 'electric', kwh: 22000, month: '2026-01', cost: 2300 },
+        ]),
+      );
+    </script>
+
+    <script src="file:///C:/Users/Matt Miller/AI/companydashboard/app/pricing-estimator.js"></script>
+
+    <script>
+      // Exposed for tools/ce-totals-check.js via page.evaluate(() => window.__ceSnapshot())
+      function __ceFingerprint(rows) {
+        return (rows || [])
+          .map(function (r) {
+            return { id: r.id, building: r.building, item: r.item, qty: r.qty, lineTotal: r.lineTotal, phase: r.phase };
+          })
+          .sort(function (a, b) {
+            if (a.id < b.id) return -1;
+            if (a.id > b.id) return 1;
+            return 0;
+          });
+      }
+      window.__ceSnapshot = function () {
+        var out = {};
+        ['compliance', 'recommended', 'full-scope'].forEach(function (tier) {
+          var rows;
+          if (tier === 'recommended') rows = buildRecommendedRows(9001);
+          else if (tier === 'full-scope') rows = buildFullScopeRows(9001);
+          else rows = buildComplianceRows(9001);
+          out[tier] = {
+            totals: collectPricingEstimate(9001, tier),
+            rows: __ceFingerprint(rows),
+          };
+        });
+        return out;
+      };
+      window.__ceReady = true;
+    </script>
+  </body>
+</html>

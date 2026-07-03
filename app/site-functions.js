@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.03.614',
+    date: '2026-07-03',
+    title: 'Cost Estimate tab: clearer table layout',
+    items: [
+      {
+        type: 'change',
+        text: 'The Cost Estimate table now shows visible grid lines between rows and columns, making it easier to read across a wide table.',
+      },
+      {
+        type: 'change',
+        text: 'Cost Estimate column headers are now single-line and shorter (e.g. "Contract" instead of "Contract (40% List)"), so they no longer take up extra vertical space.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed the frozen Building column on the Cost Estimate tab showing ghosted, overlapping text bleeding through from other columns when scrolling sideways.',
+      },
+      {
+        type: 'feature',
+        text: 'The Include column header on the Cost Estimate tab now has a select-all checkbox to quickly check or uncheck every visible row at once.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.03.613',
     date: '2026-07-03',
     title: 'PDF/OCR: cleaner multi-meter utility bill batches',

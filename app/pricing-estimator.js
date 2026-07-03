@@ -2138,6 +2138,19 @@ function _pricingToggleRow(projId, rowId, checked) {
   _pricingRefreshRowState(projId, rowId, checked);
 }
 
+function _pricingToggleAllRows(projId, checked) {
+  // Select-all checkbox in the Incl column header (mirrors _pricingToggleRow above,
+  // but applies to every currently-visible/filtered row at once — item b771dec6 1d).
+  var est = _pricingGetEstimate(projId);
+  var rows = _pricingRowCache[projId] || [];
+  rows.forEach(function (row) {
+    var key = row._baseId || row.id;
+    est.rowToggles[key] = checked;
+  });
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
 function _pricingRefreshRowState(projId, rowId, checked) {
   // Find all tds in this row via the checkbox
   var cb = document.querySelector('#ptab-cost-estimate-body-' + projId + ' input[onchange*="' + rowId + '"]');
@@ -2686,7 +2699,7 @@ var PRICING_TBL_COLS = [
   { label: 'SKU', noSort: false, noHide: false, numeric: false, minWidth: 100 }, // 6
   { label: 'List', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 7
   { label: 'Net', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 8
-  { label: 'Contract (40%)', noSort: false, noHide: false, numeric: true, minWidth: 90 }, // 9
+  { label: 'Contract', noSort: false, noHide: false, numeric: true, minWidth: 90 }, // 9
   { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 10 — label overridden at render time with active basis
   {
     label: 'Impact',
@@ -3788,9 +3801,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       var isNotesCol = ci === 12;
       var isImpactCol = ci === 11;
       var tdStyle = isNotesCol
-        ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);vertical-align:top;'
-        : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);';
-      if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border);';
+        ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
+        : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
+      if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border2);';
       // col 9 (Contract) for Phase 2 sequence rows: smaller padding for the hrs input
       // MUST be before the generic numeric right-align block (which also matches ci===9)
       else if (ci === 9 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
@@ -3798,7 +3811,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
-      if (ci === 0 || ci === 1) tdStyle += 'position:sticky;background:inherit;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
       tds += '<td' + cls + ' style="' + tdStyle + '">' + cellContent + '</td>';
     });
@@ -3815,7 +3827,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       }
     }
 
-    return '<tr style="' + rowStyle + '">' + tds + '</tr>';
+    var trClass = row.ioOnly ? ' class="ch-tbl-row-io"' : '';
+    return '<tr' + trClass + ' style="' + rowStyle + '">' + tds + '</tr>';
   }
 
   // ── 9. Build table body HTML
@@ -4072,7 +4085,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var w = widths[ci];
     var wStyle = w ? 'width:' + w + 'px;min-width:' + w + 'px;' : '';
     return (
-      'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px 8px 10px;white-space:normal;word-break:break-word;position:sticky;top:0;user-select:none;border-right:1px solid var(--border);border-bottom:2px solid var(--border2);' +
+      'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px 8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;top:0;user-select:none;border-right:1px solid var(--border);border-bottom:2px solid var(--border2);' +
       wStyle +
       (extraStyle || '')
     );
@@ -4101,12 +4114,28 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var colLabel = col.label;
     if (ci === 10) {
       var basisLabels = { contract: 'Contract', net: 'Net', list: 'List' };
-      colLabel = 'Line Total (' + (basisLabels[cfg.priceBasis] || 'Contract') + ')';
+      colLabel = 'Total (' + (basisLabels[cfg.priceBasis] || 'Contract') + ')';
     }
 
-    var labelHTML = col.noSort
-      ? '<span style="pointer-events:none">' + colLabel + '</span>'
-      : '<span class="ch-sort-label" style="cursor:pointer">' + colLabel + sortIndicator(ci) + '</span>';
+    var labelHTML;
+    if (ci === 0) {
+      // col 0 (Incl): header-level select-all checkbox replaces the "INCL" text label
+      var _allOn =
+        filteredRows.length > 0 &&
+        filteredRows.every(function (r) {
+          return estimate.rowToggles[r._baseId || r.id] !== false;
+        });
+      labelHTML =
+        '<input type="checkbox"' +
+        (_allOn ? ' checked' : '') +
+        ' onclick="event.stopPropagation();_pricingToggleAllRows(\'' +
+        projId +
+        '\',this.checked)" title="Select/deselect all rows" style="cursor:pointer;vertical-align:middle">';
+    } else {
+      labelHTML = col.noSort
+        ? '<span style="pointer-events:none">' + colLabel + '</span>'
+        : '<span class="ch-sort-label" style="cursor:pointer">' + colLabel + sortIndicator(ci) + '</span>';
+    }
 
     var resizeHandle =
       ci < PRICING_TBL_COLS.length - 1
@@ -4316,10 +4345,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '}',
     /* Sort label hover */
     '.ch-tbl .ch-sort-label:hover { color: var(--text); }',
-    /* Frozen cells */
-    '.ch-tbl .ch-frozen { position: sticky; }',
+    /* Frozen cells (Freeze-panes spec: opaque background + z-index so scrolled */
+    /* content cannot bleed through; per-row-state overrides below) */
+    '.ch-tbl .ch-frozen { position: sticky; z-index: 10; background: var(--s2); }',
+    '.ch-tbl tbody tr.ch-tbl-row-io td.ch-frozen { background: var(--s1); }',
+    '.ch-tbl tbody tr.ch-tbl-row-io:hover td.ch-frozen { background: var(--s4); }',
     /* Cell grid lines (ui-standards §Tables §Cell grid lines) */
-    '.ch-tbl td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }',
+    '.ch-tbl td { border-right: 1px solid var(--border2); border-bottom: 1px solid var(--border2); }',
     '.ch-tbl td:last-child { border-right: none; }',
     '.ch-tbl tbody tr:last-child td { border-bottom: none; }',
     /* Row hover */
