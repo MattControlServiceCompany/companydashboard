@@ -1191,13 +1191,32 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.03.613',
+    date: '2026-07-03',
+    title: 'PDF/OCR: cleaner multi-meter utility bill batches',
+    items: [
+      {
+        type: 'fix',
+        text: "Multi-meter utility bill uploads now show clean building names on each bill chip — garbled scans get a plain 'needs review' label instead of OCR noise.",
+      },
+      {
+        type: 'fix',
+        text: 'Each building chip now shows the real number of billing periods for that account, instead of always showing (0).',
+      },
+      {
+        type: 'fix',
+        text: 'A batch of bills with unresolved warnings now shows an accurate amber warning banner instead of a false green all-clear when the newest bill happens to be clean.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.03.612',
     date: '2026-07-03',
     title: 'Utility Data: clearer baseline badges',
     items: [
       {
         type: 'feature',
-        text: "Utility Data baseline badges now show three clear states instead of one confusing warning — frozen (locked in), saved without weather data, or no saved regression yet — with plain-language explanations when you hover over each one.",
+        text: 'Utility Data baseline badges now show three clear states instead of one confusing warning — frozen (locked in), saved without weather data, or no saved regression yet — with plain-language explanations when you hover over each one.',
       },
       {
         type: 'change',
