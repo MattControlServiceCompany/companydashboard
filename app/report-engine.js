@@ -11496,6 +11496,11 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
 // status: 'green'|'amber'|'red'; inPlace/required: sensor counts (optional).
 // Renders "Ready · 3/3 sensors" style label when counts are provided.
 function _a36StatusChip(status, inPlace, required) {
+  // `color` is computed for the caller's colored status bar (data-viz, kept — see the
+  // `.rpt-a36-*` executive-summary/building rows that render `color` alongside this chip's
+  // word). Batch 3 item 3c ("make chip WORD black") was already satisfied at this line —
+  // the word itself renders in var(--rpt-page-text) (#000000), not `color`; confirmed via
+  // before/after render, no visual change on this element. Left as-is, not re-touched.
   var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
   var word = status === 'green' ? 'Ready' : status === 'amber' ? 'Partial' : 'Critical';
   var label =
@@ -12412,9 +12417,13 @@ function rptPageASHRAE36Building(n, d, building) {
     '</div>';
 
   // Plan sec 6 item 4 / sec 10 item 3: Infrastructure callout
+  // 2026-07 design-language pass (Batch 3 item 3c): removed the rgba(0,0,0,0.02) background
+  // tint (transparent, border-only per the same rule already applied to .rpt-a36-callout
+  // elsewhere) and the opacity:0.6 grey "Not found in this export" text (grey text on a
+  // client deliverable is banned — full black, same weight as "Installed").
   var infraCallout =
     '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px;' +
-    'background:rgba(0,0,0,0.02);border:1px solid var(--rpt-rule);border-radius:3px">' +
+    'border:1px solid var(--rpt-rule);border-radius:3px">' +
     '<div style="font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (BAS Export)</div>' +
     '<div style="display:flex;gap:24px">' +
@@ -12422,13 +12431,13 @@ function rptPageASHRAE36Building(n, d, building) {
     '<span style="font-weight:600">Dedicated BAS power monitoring:</span> ' +
     (b.hasPowerMonitoring
       ? '<span style="color:var(--rpt-page-text)">Installed</span>'
-      : '<span style="color:var(--rpt-page-text);opacity:0.6">Not found in this export</span>') +
+      : '<span style="color:var(--rpt-page-text)">Not found in this export</span>') +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
     '<span style="font-weight:600">Dedicated outdoor-air sensor program:</span> ' +
     (b.hasOAConditions
       ? '<span style="color:var(--rpt-page-text)">Installed</span>'
-      : '<span style="color:var(--rpt-page-text);opacity:0.6">Not found in this export</span>') +
+      : '<span style="color:var(--rpt-page-text)">Not found in this export</span>') +
     '</div>' +
     '</div>' +
     '</div>';
@@ -13246,13 +13255,13 @@ function rptPageASHRAE36ProposalOutcomes(n, d) {
 }
 
 function _proposalOutcomeCard(title, body, color) {
+  // 2026-07 design-language pass (Batch 3 item 3c): uniform var(--rpt-rule) border on all
+  // four sides (was a colored 3px top accent) + black bold title (was colored to match the
+  // accent). `color` is still accepted/passed by call sites but intentionally unused here —
+  // matches the same "keep the data, drop the color" pattern used by _a36StatusChip.
   return (
-    '<div style="border:1px solid var(--rpt-rule);border-radius:4px;padding:10px 12px;border-top:3px solid ' +
-    color +
-    '">' +
-    '<div style="font-size:11px;font-weight:700;color:' +
-    color +
-    ';margin-bottom:4px">' +
+    '<div style="border:1px solid var(--rpt-rule);border-radius:4px;padding:10px 12px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">' +
     title +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
