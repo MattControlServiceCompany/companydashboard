@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.03.612',
+    date: '2026-07-03',
+    title: 'Utility Data: clearer baseline badges',
+    items: [
+      {
+        type: 'feature',
+        text: "Utility Data baseline badges now show three clear states instead of one confusing warning — frozen (locked in), saved without weather data, or no saved regression yet — with plain-language explanations when you hover over each one.",
+      },
+      {
+        type: 'change',
+        text: 'Saving a baseline without weather data now warns you with a clear message instead of showing a plain success message that looked identical to a normal save.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.02.611',
     date: '2026-07-02',
     title: 'Cleaner client reports: Audit Report and Cost Estimate pages',

@@ -433,6 +433,45 @@ function isBaselineFrozen(m) {
   return !!((isElecMeter && reg.cdd) || (!isElecMeter && reg.hdd));
 }
 
+// P0 35105124(a): the binary frozen/not-frozen check above collapses two very
+// different "not frozen" causes into one look, which is what made Louisburg's
+// badges look like a bug when they were actually truthfully reporting two
+// distinct, legitimate conditions (see docs/dashboardlogic.md entry for this
+// fix, and investigation.md for the reproduction). Classifies a meter's
+// baseline into one of four trust states, read-only, built entirely on top of
+// isBaselineFrozen() so it can never disagree with it:
+//   'frozen'     — isBaselineFrozen() true: valid HDD/CDD coefficients saved.
+//   'no-weather' — a regression WAS computed (m.baseline.reg is a real object
+//                  from computeMeterRegression(), which per computations/
+//                  regression.js:191 always returns {hdd,cdd,dual} and never
+//                  bare null) but it has null hdd/cdd/dual sub-fields because
+//                  no usable weather data existed at compute time. Fixable by
+//                  uploading weather for the building's ZIP and re-saving.
+//   'inherited'  — no regression was ever computed for this meter: m.baseline
+//                  .reg is the bare literal `null`. This is the fingerprint
+//                  _inheritBaselinesForProject() writes (:371-414) when it
+//                  silently copies a sibling meter's date range on page load,
+//                  but it is also written by two bulk-apply branches in
+//                  saveBaselineToAllProjectMeters() (~:6266, ~:6279 — "no
+//                  bills yet" / "not enough matching months") which set
+//                  `start` while leaving `reg: null` literally. Classifying
+//                  on `reg` alone (not `start`) keeps all reg===null writers
+//                  in the same bucket instead of misreading the bulk-apply
+//                  cases as "no-weather", which would tell the user to
+//                  upload weather data for a problem weather can't fix (see
+//                  stages/35105124/review.md checklist item 1). Fixable by
+//                  opening this meter's own Baseline tab and clicking Save
+//                  Baseline for the first time (or ensuring enough
+//                  overlapping bill months exist for the bulk-apply case).
+//   'none'       — no baseline object at all (or an empty one).
+function getBaselineTrustState(m) {
+  const bl = m && m.baseline;
+  if (!bl || !bl.months || !bl.months.length) return 'none';
+  if (isBaselineFrozen(m)) return 'frozen';
+  if (bl.reg == null) return 'inherited';
+  return 'no-weather';
+}
+
 /* ══════════════════════════════════════════════════════
                UTILITY DATA AUDIT LOG
                Every change to saved bill data runs through logUtilityAudit so the
@@ -1971,16 +2010,33 @@ function renderUDDetail(targetWrap) {
     // X is how many of those have a FROZEN (locked, isBaselineFrozen()) baseline.
     // Reuses the same shared flag as the meter-chip badge and Baseline-tab pill —
     // display-only, reads existing data, no new storage.
+    // P0 35105124(a): the compact count keeps its original "X of Y frozen" text
+    // (space here is tight), but the tooltip now breaks out the two different
+    // NOT-frozen causes via getBaselineTrustState() so hovering explains WHY,
+    // matching the wording used on the chip and Baseline-tab pill.
     const _metersWithBills = meters.filter((mm) => (mm.bills || []).length > 0);
     if (_metersWithBills.length > 0) {
       const _frozenCt = _metersWithBills.filter((mm) => isBaselineFrozen(mm)).length;
+      const _noWeatherCt = _metersWithBills.filter((mm) => getBaselineTrustState(mm) === 'no-weather').length;
+      const _inheritedCt = _metersWithBills.filter((mm) => getBaselineTrustState(mm) === 'inherited').length;
       const _frozenAll = _frozenCt === _metersWithBills.length;
       const _frozenColor = _frozenAll ? 'var(--violet)' : _frozenCt === 0 ? 'var(--warn)' : 'var(--text2)';
       const _frozenIco = _frozenAll ? '🔒' : _frozenCt === 0 ? '⚠️' : '🔒';
+      const _breakdown = [];
+      if (_frozenCt) _breakdown.push('🔒 ' + _frozenCt + ' frozen');
+      if (_noWeatherCt)
+        _breakdown.push('⚠ ' + _noWeatherCt + ' saved without weather data — re-save after uploading weather');
+      if (_inheritedCt)
+        _breakdown.push('🔗 ' + _inheritedCt + ' auto-inherited — not frozen; open Baseline and Save to freeze');
+      const _title =
+        'Meters with a frozen (locked) baseline, out of meters that have bill data' +
+        (_breakdown.length ? ' — ' + _breakdown.join(' · ') : '');
       parts.push(
         '<span style="color:' +
           _frozenColor +
-          '" title="Meters with a frozen (locked) baseline, out of meters that have bill data">' +
+          '" title="' +
+          _title.replace(/"/g, '&quot;') +
+          '">' +
           _frozenIco +
           ' ' +
           _frozenCt +
@@ -2061,17 +2117,21 @@ function renderUDDetail(targetWrap) {
           m.baselineInclude === false
             ? '<span style="font-size:8px;font-weight:700;color:var(--danger,#ef4444);background:rgba(239,68,68,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Excluded from baseline &amp; performance">excl</span>'
             : '';
-        // Trust indicator: distinguish frozen (locked regression, immune to new
-        // bills) vs has-a-baseline-but-not-frozen (re-save needed — commonly a
-        // silent auto-inherit from a sibling meter, see _inheritBaselinesForProject)
-        // vs no baseline at all. Reuses the shared isBaselineFrozen() check so this
-        // never disagrees with the Baseline-tab pill or the building header badge.
-        const _hasBlObj = !!(m.baseline && m.baseline.months && m.baseline.months.length > 0);
-        const _blTag = _hasBlObj
-          ? isBaselineFrozen(m)
+        // P0 35105124(a): trust indicator distinguishes THREE states (not the
+        // old binary lock/warning) via getBaselineTrustState() so a saved-but-
+        // no-weather baseline no longer looks identical to a silently
+        // auto-inherited one — each has a different fix. All three call sites
+        // (this chip, the building header, the Baseline-tab pill) share the
+        // same classifier so they can never disagree with each other.
+        const _blState = getBaselineTrustState(m);
+        const _blTag =
+          _blState === 'frozen'
             ? '<span style="font-size:8px;font-weight:700;color:var(--violet);background:rgba(139,92,246,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline frozen — locked regression, immune to new bills">🔒 BL</span>'
-            : '<span style="font-size:8px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline set but NOT frozen — re-save baseline to lock it (may be silently auto-inherited from a sibling meter)">⚠ BL</span>'
-          : '';
+            : _blState === 'no-weather'
+              ? '<span style="font-size:8px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Saved without weather data — re-save after uploading weather. Baseline months were saved, but no HDD/CDD data was available for this building\'s ZIP at save time, so no regression could be computed.">⚠ BL</span>'
+              : _blState === 'inherited'
+                ? '<span style="font-size:8px;font-weight:700;color:var(--em2);background:rgba(56,189,248,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="No valid saved regression — open Baseline and Save to freeze.">🔗 BL</span>'
+                : '';
         const _flagTag =
           _mFlagCount > 0
             ? '<span style="font-size:8px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.12);padding:1px 4px;border-radius:3px;margin-left:2px" title="' +
@@ -5453,16 +5513,27 @@ function renderBaselinePane(pane, m, bills, incl) {
         : null,
       summerKwRate != null ? { v: fmtKw(summerKwRate) + '/kW', lbl: '☀️ Summer $/kW', color: 'var(--warn)' } : null,
       winterKwRate != null ? { v: fmtKw(winterKwRate) + '/kW', lbl: '❄️ Winter $/kW', color: 'var(--em)' } : null,
-      // #101: Regression model type indicator. Uses the shared isBaselineFrozen()
-      // helper (same validity check getNormRows() uses) so this pill can never
-      // disagree with the meter-chip badge or the building header badge.
+      // #101 / P0 35105124(a): Regression model type indicator. Uses the shared
+      // getBaselineTrustState() classifier (built on isBaselineFrozen()) so this
+      // pill can never disagree with the meter-chip badge or the building header
+      // badge, and distinguishes WHY a baseline isn't frozen instead of a single
+      // generic "Not frozen" message.
       (() => {
-        const _isFrozen = isBaselineFrozen(m);
-        // Baseline exists but bl.reg is null/invalid — saved before weather data
-        // existed, OR silently auto-inherited from a sibling meter (see
-        // _inheritBaselinesForProject / the auto-inherit toast on load).
-        if (bl && !_isFrozen) {
-          return { v: 'Not frozen', lbl: '⚠️ Not frozen — re-save baseline', color: 'var(--warn)' };
+        const _blState = getBaselineTrustState(m);
+        const _isFrozen = _blState === 'frozen';
+        if (_blState === 'no-weather') {
+          return {
+            v: 'Not frozen',
+            lbl: '⚠️ Saved without weather data — re-save after uploading weather',
+            color: 'var(--warn)',
+          };
+        }
+        if (_blState === 'inherited') {
+          return {
+            v: 'Not frozen',
+            lbl: '🔗 Auto-inherited — not frozen; open Baseline and Save to freeze',
+            color: 'var(--em2)',
+          };
         }
         const _blReg = _isFrozen ? bl.reg : m._reg;
         if (!_blReg) return null;
@@ -5505,8 +5576,24 @@ function renderBaselinePane(pane, m, bills, incl) {
     // usable baseline (bl missing, OR bl exists but <3 overlapping bill rows) —
     // the user saw blank space with no frozen/live indicator whatsoever. Show an
     // explicit one-pill indicator instead, reusing the same pill markup/colors.
-    const _liveLbl = bl ? '⚠️ Not frozen — re-save baseline' : '⚡ Live — recomputes on load / not frozen';
-    const _liveColor = bl ? 'var(--warn)' : 'var(--em2)';
+    // P0 35105124(a): even in this "insufficient overlapping bill rows" branch,
+    // still distinguish the three trust states rather than lumping every bl-truthy
+    // case under one generic "Not frozen" message.
+    const _blState2 = getBaselineTrustState(m);
+    let _liveLbl, _liveColor;
+    if (_blState2 === 'frozen') {
+      _liveLbl = '🔒 Frozen — insufficient overlapping bill data to show stats';
+      _liveColor = 'var(--violet)';
+    } else if (_blState2 === 'no-weather') {
+      _liveLbl = '⚠️ Saved without weather data — re-save after uploading weather';
+      _liveColor = 'var(--warn)';
+    } else if (_blState2 === 'inherited') {
+      _liveLbl = '🔗 Auto-inherited — not frozen; open Baseline and Save to freeze';
+      _liveColor = 'var(--em2)';
+    } else {
+      _liveLbl = '⚡ Live — recomputes on load / not frozen';
+      _liveColor = 'var(--em2)';
+    }
     blStatsInner =
       '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">' +
       '<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0">' +
@@ -6072,7 +6159,7 @@ function saveBaseline(mid) {
 
   // Compute frozen regression from baseline-period rows ONLY and store it
   // This prevents post-baseline bills from ever changing the baseline model
-  const { byYm: weatherByYm } = getWeatherForBuilding();
+  const { byYm: weatherByYm, zip: _blZip } = getWeatherForBuilding();
   const allRows = getNormRows(
     m,
     (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start)),
@@ -6085,13 +6172,32 @@ function saveBaseline(mid) {
   m.baseline = { start: checked[0], end: checked[checked.length - 1], months: checked, reg: frozenReg };
   saveUtilityData();
   const _blInherited = _inheritBaselinesForProject(udSelProjId);
-  showToast(
-    'Baseline saved — ' +
-      checked.length +
-      ' months' +
-      (_blInherited ? ' · ' + _blInherited + ' other meter' + (_blInherited !== 1 ? 's' : '') + ' inherited' : '') +
-      ' ✓',
-  );
+  // P0 35105124(b): computeMeterRegression() can legitimately return a real
+  // {hdd,cdd,dual} object with every sub-field null when no weather data was
+  // available for this row set at save time (weatherByYm null — building/
+  // project has no ZIP set, or that ZIP has no weather cache uploaded yet; see
+  // getWeatherForBuilding() ~:3591). The save above still happens — this never
+  // blocks the user — but the plain "Baseline saved ✓" success toast would be
+  // misleading in that case, since isBaselineFrozen() will immediately report
+  // this meter as NOT frozen right after. Reuses the same canonical
+  // isBaselineFrozen() check the badges use so this warning can never disagree
+  // with what the badge shows a moment later.
+  if (!isBaselineFrozen(m)) {
+    showToast(
+      'Baseline saved WITHOUT weather regression — badge will show Not Frozen. ' +
+        (_blZip ? 'Upload weather data for ZIP ' + _blZip : 'Set the building ZIP and upload weather data') +
+        ' and re-save to freeze.',
+      'warn',
+    );
+  } else {
+    showToast(
+      'Baseline saved — ' +
+        checked.length +
+        ' months' +
+        (_blInherited ? ' · ' + _blInherited + ' other meter' + (_blInherited !== 1 ? 's' : '') + ' inherited' : '') +
+        ' ✓',
+    );
+  }
 }
 
 function saveBaselineToAllMeters(sourceMid) {
