@@ -1894,6 +1894,10 @@ function emDetectColMap(headerRow) {
       equipType: 1, // inferred from equipment name portion
       pointName: 2, // BACnet point Name
       pointValue: 3, // Live value
+      // 3d6d7244 Batch 1: BACnet object Type column, verified against real JOCO WebCTRL header
+      // ("Location","Control Program","Name","Value","Type","COV Increment",...) and confirmed
+      // live against report1779125231048.csv:64 ("Cooling Set Point Signal","5.7 V","BAO",...).
+      pointType: 4, // BACnet object type (e.g. BAI, BAO, BALM, BMSV, ANI) — index verified live
       checkStart: -1,
       checkCount: 0,
       pointStart: -1,
@@ -2718,14 +2722,16 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
   // FIX 4c: Normalize whitespace before pattern matching so 'Mixed  Air Temperature' (double-space)
   // and similar CSV artifacts match the same patterns as single-spaced names.
   pointName = pointName.replace(/\s+/g, ' ').trim();
-  // ROOT-CAUSE FIX (diagnostic guard): The CONTROL_OBJ_TYPES denylist (M1B below) is dead on the
-  // import path because the WebCTRL importer always passes pointType=null (~line 2558), so BMBI
-  // fault/diagnostic points were leaking into live-sensor columns (e.g. "Diagnostic: Outdoor Air
-  // Damper Not Modulating" mapping to oaDamperPosition and colliding with the real damper value).
-  // This guard mirrors the ptsNonDiag filter already used in emVerifyTypeByPoints
-  // (indexOf('diagnostic')!==0). Applies to ALL callers including the import path.
+  // ROOT-CAUSE FIX (diagnostic guard): The CONTROL_OBJ_TYPES denylist (M1B below) was dead on the
+  // import path because the WebCTRL importer used to always pass pointType=null; this guard
+  // mirrors the ptsNonDiag filter already used in emVerifyTypeByPoints
+  // (indexOf('diagnostic')!==0) as defense-in-depth regardless of pointType. Applies to ALL callers.
   // NOTE: alarm points like "Alarm Relay Active" / "Any Alarm Active Output" do NOT start with
   // "diagnostic" so they are unaffected — alarmRelay entries still map correctly.
+  // 3d6d7244 Batch 1: the WebCTRL import call site (~2905) now passes the real BACnet pointType
+  // instead of null (see emExtractEquipmentGroups). The two drill-down call sites (~5600s) still
+  // pass null this batch — see the `mapping.types` guard below, which is conditional on
+  // pointType being truthy, so those call sites are unaffected and remain byte-identical.
   if (pointName.toLowerCase().indexOf('diagnostic') === 0) return null;
   // Milestone 1: page-lifetime name cache (category-less lookups only — import path passes category)
   if (!equipCategory) {
@@ -2736,10 +2742,19 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
   // caller — the collision resolution block uses it to detect virtual vs. real points.
   var matchName = pointName.replace(/^\s*virtual\s+/i, '');
   // M1B: Pre-filter for BACnet control-object types. BPID/BMSV/BALM/BMBI are categorically
-  // never live sensor readings. If the caller supplies a pointType in this set, skip ALL
-  // EM_POINT_MAP entries entirely — the name-pattern layer (negativePatterns) is defense-in-depth.
+  // never live sensor readings — HOWEVER this batch (3d6d7244 Batch 1, revised after gate
+  // failure) measured via the harness that reviving this prefilter now that the import path
+  // passes a real pointType causes unjustified collateral loss on non-SP columns: zoneStatus
+  // (types includes 'MSV') dropped from 1066 -> 0 populated instances because "Zone Status"
+  // legitimately reports as BMSV in the real WebCTRL data — the denylist is column-blind and
+  // directly contradicts that column's own declared accepted type. oaDamperPosition,
+  // scheduledOccupied, buildingStaticPressure, and hwDiffPressure also moved. Per this batch's
+  // scope (deny outputs on SP-declared columns ONLY — see the mapping.types 'SP' check below),
+  // this prefilter is left DEAD (inert) for now — same as its pre-Batch-1 state — and deferred
+  // to a future batch that can build a per-column-aware version. See dashboardlogic.md.
   var CONTROL_OBJ_TYPES = ['BPID', 'BMSV', 'BALM', 'BMBI'];
-  if (pointType && CONTROL_OBJ_TYPES.indexOf(pointType) !== -1) {
+  var _controlObjPrefilterEnabled = false; // deliberately inert this batch — see comment above
+  if (_controlObjPrefilterEnabled && pointType && CONTROL_OBJ_TYPES.indexOf(pointType) !== -1) {
     return null;
   }
   var _mapResult = null;
@@ -2762,6 +2777,20 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
             }
           }
           if (blocked) break; // break inner loop — skip this mapping entry entirely
+        }
+        // 3d6d7244 Batch 1 (revised after gate failure — see dashboardlogic.md):
+        // The EM_POINT_MAP `types:` allow-list vocabulary ('AI','SP','BV','AO', etc.) was
+        // authored against generic BACnet object-type abbreviations and never matches the
+        // REAL WebCTRL export vocabulary (BAI/BAO/BAV/ANI/ANO/BBO/BNO/...), so enforcing it
+        // verbatim as an allow-list broke 58 of 82 typed columns (harness before/after diff).
+        // Narrow fix: only reject the one proven bad class — a column explicitly declared
+        // as a setpoint (types includes 'SP') receiving a point whose REAL BACnet type is an
+        // analog/binary OUTPUT (BAO/ANO/BBO/BNO) — e.g. a 0-10V analog-output "Cooling Set
+        // Point Signal" (BAO) must not map to zoneCoolSetpoint. No other columns are gated.
+        // Conditional on pointType truthy so the enriched-CSV path (no pointType) and the
+        // two drill-down call sites (still pass null this batch) are byte-identical to today.
+        if (pointType && mapping.types && mapping.types.indexOf('SP') !== -1 && /^(BAO|ANO|BBO|BNO)$/.test(pointType)) {
+          break; // setpoint-typed column, but real BACnet type is an output — skip this mapping entry
         }
         _mapResult = mapping.col;
         break;
@@ -2793,6 +2822,10 @@ function emExtractEquipmentGroups(rows, colMap) {
       var controlProgram = (wrow[1] || '').trim();
       var pointName = (wrow[2] || '').trim();
       var pointVal = wrow[3] != null ? String(wrow[3]).trim() : '';
+      // 3d6d7244 Batch 1: real BACnet object type (e.g. BAO, BAI, BALM), used by
+      // emMapPointToColumn's type guard to stop analog-output/control points (e.g. a
+      // 0-10V "Cooling Set Point Signal") from mapping into setpoint sensor columns.
+      var pointType = (wrow[colMap.pointType] || '').trim();
       if (!controlProgram) continue;
 
       var building = emParseBACnetBuilding(bacnetPath);
@@ -2895,7 +2928,9 @@ function emExtractEquipmentGroups(rows, colMap) {
       if (pointName !== '' && pointVal !== '') {
         wgroup.pointValues[pointName] = pointVal;
       }
-      var pointCol = emMapPointToColumn(pointName, null, category);
+      // 3d6d7244 Batch 1: pass the real BACnet pointType (was hardcoded null) so the type
+      // guard in emMapPointToColumn can reject non-sensor object types for typed columns.
+      var pointCol = emMapPointToColumn(pointName, pointType, category);
       if (pointCol && pointVal !== '') {
         // ── Collision resolution ──────────────────────────────────────────
         // Phase 2B: detect whether the incoming point is a "Virtual" qualifier point.

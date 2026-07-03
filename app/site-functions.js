@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.03.615',
+    date: '2026-07-03',
+    title: 'Equipment Matrix: control-voltage signals no longer misread as setpoints',
+    items: [
+      {
+        type: 'fix',
+        text: "Equipment Matrix: control-voltage signals (like a 5.7 V cooling output) are no longer misread as zone temperature setpoints — six affected readings across JOCO now show correctly, and the raw point values remain visible in the point drawer.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.03.614',
     date: '2026-07-03',
     title: 'Cost Estimate tab: clearer table layout',
