@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.04.619',
+    date: '2026-07-04',
+    title: 'Baseline freeze now preserves manual adjustments',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data -> Baseline: freezing or re-freezing a baseline no longer erases manually entered monthly baseline values or cost-savings adjustments -- they are preserved exactly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.03.618',
     date: '2026-07-03',
     title: 'Cost Estimate tab: clearer summaries, smarter sorting, cleaner notes',
