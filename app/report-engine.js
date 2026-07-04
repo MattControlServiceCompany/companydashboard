@@ -10113,75 +10113,77 @@ window.addEventListener('resize', () => {
 var ASHRAE36_GAP_DESCRIPTIONS = {
   sat: {
     short: 'Supply air temperature sensor',
-    impact: '3–8% heating & cooling savings',
+    impact: 'Reduces heating and cooling energy waste',
     plain: 'Required for supply air temperature reset, reducing heating and cooling energy based on actual demand.',
   },
   rat: {
     short: 'Return air temperature sensor',
-    impact: '2–5% fan and cooling savings',
+    impact: 'Confirms system conditioning effectiveness',
     plain: 'Measures return air temperature, providing feedback on how effectively the system conditions the building.',
   },
   mat: {
     short: 'Mixed air temperature sensor',
-    impact: '3–6% cooling savings',
+    impact: 'Enables free cooling from outdoor air',
     plain: 'Required for economizer control — enables the system to use outdoor air instead of mechanical cooling.',
   },
   oat: {
     short: 'Outdoor air temperature sensor',
-    impact: '4–10% combined savings',
+    impact: 'Required for weather-adaptive control',
     plain: 'Required for nearly every energy-saving sequence; without it, the system cannot adapt to changing weather.',
   },
   dsp: {
     short: 'Duct static pressure sensor',
-    impact: '15–30% fan energy savings',
-    plain: 'Enables fan speed control based on actual demand; fan energy drops 15–30% versus fixed-speed operation.',
+    impact: 'Cuts fan energy versus fixed speed',
+    plain:
+      'Enables fan speed control based on actual demand instead of running the fan at fixed full speed at all times.',
   },
   sfVfd: {
     short: 'Supply fan VFD',
-    impact: '20–40% fan energy savings',
+    impact: 'Cuts fan energy versus fixed speed',
     plain:
-      'Allows fan speed to match load; at 80% speed, energy consumption drops to roughly half of full-speed operation.',
+      'Allows fan speed to match load; energy consumption drops sharply as speed is reduced, following fan-affinity physics.',
   },
   satReset: {
     short: 'Supply air temperature reset sequence',
-    impact: '5–12% heating & cooling savings',
+    impact: 'Reduces conditioning energy in mild weather',
     plain: 'Adjusts supply air temperature to match zone demand, reducing conditioning energy during mild weather.',
   },
   dspReset: {
     short: 'Duct static pressure reset sequence',
-    impact: '10–25% fan energy savings',
-    plain: 'Lowers duct pressure when zones have adequate airflow; typically cuts fan energy by 15% or more.',
+    impact: 'Cuts fan energy when demand is low',
+    plain:
+      'Lowers duct pressure when zones have adequate airflow, so the fan stops working harder than the building needs.',
   },
   economizer: {
     short: 'Economizer control sequence',
-    impact: '5–15% cooling savings',
+    impact: 'Reduces mechanical cooling run time',
     plain: 'Uses outdoor air for free cooling whenever conditions allow, reducing mechanical cooling run time.',
   },
   demandCtrl: {
     short: 'CO2-based demand control ventilation',
-    impact: '5–10% fan and cooling savings',
+    impact: 'Avoids conditioning air for empty rooms',
     plain:
       'Reduces outdoor air to match actual occupancy, avoiding the energy cost of conditioning ventilation air for empty rooms.',
   },
   optStart: {
     short: 'Optimal start/stop sequence',
-    impact: '3–8% overall savings',
+    impact: 'Eliminates unnecessary early-morning warm-up',
     plain:
       'Minimizes pre-occupancy warm-up time, eliminating early starts that condition an empty building each morning.',
   },
   hwReset: {
     short: 'Hot water supply temperature reset',
-    impact: '5–15% boiler savings',
+    impact: 'Cuts boiler heat loss, improves efficiency',
     plain: 'Reduces boiler water temperature as outdoor air warms, cutting heat loss and improving boiler efficiency.',
   },
   chwReset: {
     short: 'Chilled water supply temperature reset',
-    impact: '3–10% chiller savings',
+    impact: 'Improves chiller efficiency in light loads',
     plain: 'Raises chilled water temperature during light loads, allowing the chiller to run more efficiently.',
   },
   leadLag: {
     short: 'Lead/lag equipment rotation',
-    impact: '2–5% equipment life extension',
+    impact: 'Extends equipment life through even wear',
     plain: 'Alternates the primary pump or boiler to distribute wear evenly and maximize equipment reliability.',
   },
   zoneCoolSp: {
@@ -10213,7 +10215,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   hwDiffPres: {
     short: 'Hot water differential pressure sensor',
-    impact: '10–20% pump energy savings',
+    impact: 'Lets pump slow when heating demand drops',
     plain: 'Enables the pump to slow when fewer zones call for heat rather than running at full speed.',
   },
   chwSupTemp: {
@@ -10230,19 +10232,20 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   chwDiffPres: {
     short: 'Chilled water differential pressure sensor',
-    impact: '10–20% pump energy savings',
+    impact: 'Lets pump slow during light cooling loads',
     plain: 'Allows chilled water pumps to slow during light loads; pump energy drops sharply with speed.',
   },
   cwst: {
     short: 'Condenser water supply temperature sensor',
-    impact: '3–8% chiller savings',
+    impact: 'Improves chiller efficiency',
     plain:
       'Required for cooling tower control and the condenser water reset strategy that improves chiller efficiency.',
   },
   ctFanSpeed: {
     short: 'Cooling tower fan speed control',
-    impact: '30–50% tower fan savings',
-    plain: 'Cuts tower fan energy 30–50% by varying fan speed to maintain the condenser water setpoint.',
+    impact: 'Cuts tower fan energy versus fixed speed',
+    plain:
+      'Cuts tower fan energy by varying fan speed to maintain the condenser water setpoint instead of running fixed-speed.',
   },
   // ── AHU point keys ──────────────────────────────────────────────────────
   sfStatus: {
@@ -10263,7 +10266,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   sfSpeedCmd: {
     short: 'Supply fan speed command',
-    impact: '20–40% fan energy savings',
+    impact: 'Cuts fan energy versus fixed speed',
     plain:
       'Commands drive speed; without it, the drive defaults to fixed speed and all variable-speed savings are lost.',
   },
@@ -10328,7 +10331,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   co2: {
     short: 'CO2 sensor (return or zone)',
-    impact: '5–10% fan and cooling savings',
+    impact: 'Avoids conditioning air for empty rooms',
     plain: 'Measures occupancy through air quality, allowing the system to reduce outdoor air when rooms are empty.',
   },
   // ── VAV / Terminal point keys ────────────────────────────────────────────
@@ -10412,7 +10415,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   hwdp: {
     short: 'Hot water differential pressure sensor',
-    impact: '10–20% pump energy savings',
+    impact: 'Lets pump slow when heating demand drops',
     plain: 'Allows the pump to slow when fewer zones call for heat rather than running at full design speed.',
   },
   boilerStatus: {
@@ -10446,7 +10449,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   hwPumpSpeed: {
     short: 'Hot water pump speed command',
-    impact: '10–25% pump energy savings',
+    impact: 'Matches pump speed to heating demand',
     plain: 'Allows the pump to match speed to actual heating demand rather than running at full design speed.',
   },
   // ── CHW Plant point keys ─────────────────────────────────────────────────
@@ -10464,7 +10467,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   chwdp: {
     short: 'Chilled water differential pressure sensor',
-    impact: '10–20% pump energy savings',
+    impact: 'Lets pump slow during light cooling loads',
     plain: 'Allows chilled water pumps to slow during light loads; pump energy drops sharply with speed.',
   },
   // ── HWP additional point keys ───────────────────────────────────────────
@@ -10627,18 +10630,19 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   // ── EM_SEQUENCE_DEFS sequence keys ──────────────────────────────────────
   ahu_sat_reset: {
     short: 'Supply air temperature reset sequence (AHU)',
-    impact: '5–12% heating & cooling savings',
+    impact: 'Reduces conditioning energy in mild weather',
     plain:
       'Adjusts supply air temperature to match outdoor conditions and zone demand, cutting conditioning energy during partial loads.',
   },
   ahu_dsp_reset: {
     short: 'Duct static pressure reset sequence (AHU)',
-    impact: '10–25% fan energy savings',
-    plain: 'Lowers duct pressure when zones have adequate airflow; typically cuts fan energy by 15% or more annually.',
+    impact: 'Cuts fan energy when demand is low',
+    plain:
+      'Lowers duct pressure when zones have adequate airflow, so the fan stops working harder than the building needs.',
   },
   ahu_economizer: {
     short: 'Economizer control sequence (AHU)',
-    impact: '5–15% cooling savings',
+    impact: 'Reduces mechanical cooling run time',
     plain: 'Uses outdoor air for free cooling whenever conditions allow, reducing chiller run time.',
   },
   ahu_freeze_prot: {
@@ -10678,12 +10682,12 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   hwp_supply_reset: {
     short: 'Hot water supply temperature reset sequence',
-    impact: '5–15% boiler savings',
+    impact: 'Cuts boiler heat loss, improves efficiency',
     plain: 'Reduces boiler water temperature as outdoor air warms, cutting heat loss and improving boiler efficiency.',
   },
   hwp_pump_dp_reset: {
     short: 'Hot water pump differential pressure reset sequence',
-    impact: '10–25% pump energy savings',
+    impact: 'Lets pump slow when heating demand drops',
     plain: 'Lowers pump pressure when zone valves are wide open, allowing the pump to slow and cut energy.',
   },
   hwp_staging: {
@@ -10694,12 +10698,12 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   chwp_supply_reset: {
     short: 'Chilled water supply temperature reset sequence',
-    impact: '3–10% chiller savings',
+    impact: 'Improves chiller efficiency in light loads',
     plain: 'Raises chilled water temperature during light loads, allowing the chiller to run more efficiently.',
   },
   chwp_pump_dp_reset: {
     short: 'Chilled water pump differential pressure reset sequence',
-    impact: '10–20% pump energy savings',
+    impact: 'Lets pump slow during light cooling loads',
     plain:
       'Lowers pump pressure when coil valves are wide open, reducing pump speed and energy during partial-load hours.',
   },
@@ -10712,7 +10716,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   // ── VAV/zone DCV sequence key ──────────────────────────────────────────────
   vav_dcv: {
     short: 'Demand-controlled ventilation (VAV zones)',
-    impact: '5–10% fan and cooling savings',
+    impact: 'Avoids conditioning air for empty rooms',
     plain: 'Adjusts outdoor air per zone based on CO₂ readings, avoiding the energy cost of ventilating empty rooms.',
   },
   // ── Heater point key ────────────────────────────────────────────────────────
@@ -10774,7 +10778,12 @@ var ASHRAE36_SECTIONS = {
     { key: 'executive', label: 'Executive Summary', group: 'Report', defaultOn: true },
     { key: 'costEstimate', label: 'Gap Details', group: 'Report', defaultOn: true },
     { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
-    { key: 'recommendations', label: 'Recommendations', group: 'Report', defaultOn: true },
+    // Batch 3 item 6 / plan 3e Option A: Recommendations page deleted (41pp -> 40pp). Gap
+    // Details already covers the same findings with real ASHRAE 36 spec citations that
+    // Recommendations lacked — removing the page eliminates the "what's the difference
+    // between these two sections" complaint by removing one of the two sections.
+    // rptPageASHRAE36Recommendations() itself is left defined (no other callers) — only its
+    // inclusion in the Audit section list / generation pipeline is removed.
     { key: 'setpointReview', label: 'Setpoint Programming Review', group: 'Report', defaultOn: true },
     // Phase D-3: Point inventory completeness — informational only, never affects Coverage %
     { key: 'pointInventory', label: 'Point Inventory Completeness', group: 'Report', defaultOn: true },
@@ -11503,8 +11512,15 @@ function _a36StatusChip(status, inPlace, required) {
   // before/after render, no visual change on this element. Left as-is, not re-touched.
   var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
   var word = status === 'green' ? 'Ready' : status === 'amber' ? 'Partial' : 'Critical';
+  // Batch 3 item 2/3a: at 100% (inPlace === required, required > 0) the fraction is a
+  // tautology ("Ready · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells the
+  // reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
+  // unchanged (e.g. "Partial · 178/261 sensors", "Critical · 7/16 sensors").
+  var isComplete = inPlace !== undefined && required !== undefined && required > 0 && inPlace === required;
   var label =
-    inPlace !== undefined && required !== undefined ? word + ' · ' + inPlace + '/' + required + ' sensors' : word;
+    inPlace !== undefined && required !== undefined && !isComplete
+      ? word + ' · ' + inPlace + '/' + required + ' sensors'
+      : word;
   return '<span style="font-size:10px;color:var(--rpt-page-text)">' + label + '</span>';
 }
 
@@ -11561,7 +11577,7 @@ function rptPageASHRAE36Cover(n, d) {
     '</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
     "This report evaluates the facility's building automation system against ASHRAE Guideline 36 — the industry standard for high-performance HVAC control. " +
-    'It identifies the specific sensors to install and control sequences to program that will unlock an estimated 15–30% in HVAC energy savings. ' +
+    'It identifies the specific sensors to install and control sequences to program to bring the facility to Guideline 36 compliance. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
@@ -11673,7 +11689,7 @@ function rptPageASHRAE36Executive(n, d) {
       '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
       ' Without CO₂ sensing, these units ventilate at full design rates even when spaces are empty—wasting fan and cooling energy. ' +
-      'Adding CO₂ sensors enables demand control ventilation (typical 5–10% fan and cooling savings).' +
+      'Adding CO₂ sensors enables demand control ventilation, so equipment stops conditioning air for spaces that are empty.' +
       '</div>' +
       '</div>';
   }
@@ -11683,15 +11699,22 @@ function rptPageASHRAE36Executive(n, d) {
   //   dcvCallout actual=86px, topGap callout actual=68px, thead actual=42px (spec had 32 — wrong),
   //   tableTitle actual=20px, footnote actual=15px (single line in headless).
   //   Row average actual=38px; estH set to 40px for safety margin on wrapping names.
+  //
+  // Batch 3 item 3b re-verification (2026-07, per plan invariant "any row-height change
+  // re-verifies the budget"): the footnote grew from a single line (~15px) to 3 lines (~45px
+  // DOM-measured) once the plain-language tier sentences were appended. The old 20px budget
+  // under-counted this by ~25-30px, causing a checkOverflow() hit (scrollH 1086 vs clientH
+  // 1056) on the first Executive Summary page. Re-measured and bumped below; re-verified via
+  // headless render afterward that checkOverflow() returns 0 and the page count is unchanged.
   var _firstChromeH = 0;
   if (dcvCallout) _firstChromeH += 94; // measured ~86px; use 94 for slight overcount safety
   if (callout) _firstChromeH += 72; // measured ~68px; use 72 for safety
   _firstChromeH += 28; // tableTitle (~20px actual; 28 is safe overcount)
   _firstChromeH += 44; // thead — DOM-measured 42px (spec said 32, was wrong)
-  _firstChromeH += 20; // tableFootnote — single-line in headless (~15px actual; 20 for safety)
+  _firstChromeH += 50; // tableFootnote — 3-line plain-language footnote, DOM-measured 45px actual; 50 for safety
   var ROWS_BUDGET_FIRST = 894 - _firstChromeH - 30; // 30px safety margin
-  // Cont: contHdr ~35px + tableTitle ~28px + thead ~44px + footnote ~20px = 127px → 894-127-20 = 747px
-  var ROWS_BUDGET_CONT = 747;
+  // Cont: contHdr ~35px + tableTitle ~28px + thead ~44px + footnote ~50px = 157px → 894-157-20 = 717px
+  var ROWS_BUDGET_CONT = 717;
 
   // Shared table styles
   var tableTitle =
@@ -11720,10 +11743,15 @@ function rptPageASHRAE36Executive(n, d) {
     thStyle +
     '">Status</th>' +
     '</tr></thead>';
+  // Batch 3 item 3/3b (copy-options.md Option A — RECOMMENDED): append one plain-language
+  // sentence per tier so a facility owner reading "Critical <50%" learns what that means
+  // operationally, not just the number. Numeric footnote kept intact, meaning appended inline.
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
     '<strong>Score</strong> = weighted composite (40% Sensor Coverage + 60% Sequence Readiness). ' +
-    '<strong>Status thresholds:</strong> Ready ≥75%, Partial 50–74%, Critical <50%.' +
+    '<strong>Status thresholds:</strong> Ready ≥75% (meets the ASHRAE 36 baseline), Partial 50–74% ' +
+    '(some sensors and sequences are in place, but work is needed before sequences can run reliably), ' +
+    'Critical <50% (the building lacks the sensors or programming needed to run ASHRAE 36 sequences at all).' +
     '</div>';
 
   // Build a token per building row — type:'row', estH:52px
@@ -12551,7 +12579,9 @@ function rptPageASHRAE36Recommendations(n, d) {
         '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
         gap.count +
         ' units' +
-        (affectedStr ? '<br><span style="color:var(--rpt-page-text);opacity:0.7">' + affectedStr + '</span>' : '') +
+        // Batch 3 item 4: opacity:0.7 grey text removed (grey text on a client deliverable is
+        // banned) — full black, matching the design-language pass elsewhere on this branch.
+        (affectedStr ? '<br><span style="color:var(--rpt-page-text)">' + affectedStr + '</span>' : '') +
         '</td>' +
         '</tr>'
       );
@@ -12584,7 +12614,7 @@ function rptPageASHRAE36Recommendations(n, d) {
       '</div>' +
       '</td>' +
       '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule);vertical-align:top;white-space:nowrap">' +
-      (dcvDesc.impact || '5–10% fan and cooling savings') +
+      (dcvDesc.impact || 'Avoids conditioning air for empty rooms') +
       '</td>' +
       '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
       dcvUnitStr +
@@ -12800,21 +12830,26 @@ function rptPageASHRAE36SetpointReview(n, d) {
   }
 
   // ── Status badge ─────────────────────────────────────────────────────────
+  // Batch 3 item 4 (design-language pass extended to a flagged spot, per bolding-consistency-
+  // audit.md Tier 7): this was the only spot in the ASHRAE-36 report pages using hardcoded hex
+  // instead of the report's own CSS variable palette. NOT_SCHEDULED has no neutral/grey token
+  // in the palette and grey text is banned site-wide, so it now uses the same plain-black-text
+  // + var(--rpt-rule) border treatment used elsewhere in this pass (infraCallout, outcome cards).
   function _statusCell(status) {
     if (status === 'NEEDS_REVIEW') {
       return (
         '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-        'color:#92400e;background:transparent;border:1px solid #f59e0b">Needs Review</span>'
+        'color:var(--rpt-orange);background:transparent;border:1px solid var(--rpt-orange)">Needs Review</span>'
       );
     } else if (status === 'NOT_SCHEDULED') {
       return (
         '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-        'color:#6b7280;background:transparent;border:1px solid #d1d5db">Not Scheduled</span>'
+        'color:var(--rpt-page-text);background:transparent;border:1px solid var(--rpt-rule)">Not Scheduled</span>'
       );
     }
     return (
       '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-      'color:#166534;background:transparent;border:1px solid #4ade80">Matches</span>'
+      'color:var(--rpt-green);background:transparent;border:1px solid var(--rpt-green)">Matches</span>'
     );
   }
 
@@ -13123,7 +13158,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
       ' affected' +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule)">' +
-      '5–10% fan and cooling savings' +
+      'Avoids conditioning air for empty rooms' +
       '</td>' +
       '</tr>';
   }
@@ -13178,14 +13213,18 @@ function rptPageASHRAE36ProposalScope(n, d) {
       '</tbody></table>'
     : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No sequence programming gaps identified — all key ASHRAE 36 sequences appear to be active.</div>';
 
+  // Batch 3 item 4 (design-language pass extended to a flagged spot, per bolding-consistency-
+  // audit.md finding #2): same "more human / less colored fill" treatment already applied to
+  // _proposalOutcomeCard one page later in this same document — colored border + colored
+  // title (var(--rpt-blue) and hardcoded #7c3aed purple) → var(--rpt-rule) border + black title.
   var bodyHTML =
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;border-bottom:2px solid var(--rpt-blue);padding-bottom:3px">Phase 1 — Hardware &amp; Sensor Upgrades</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 1 — Hardware &amp; Sensor Upgrades</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Installation of missing sensors and actuators required for Guideline 36 compliance. This phase establishes the hardware foundation for sequence programming.</div>' +
     ph1HTML +
     '</div>' +
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:#7c3aed;margin-bottom:6px;border-bottom:2px solid #7c3aed;padding-bottom:3px">Phase 2 — BAS Sequence Programming</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2 — BAS Sequence Programming</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming and commissioning of ASHRAE Guideline 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
     ph2HTML +
     '</div>';
@@ -13209,7 +13248,7 @@ function rptPageASHRAE36ProposalOutcomes(n, d) {
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">' +
     _proposalOutcomeCard(
       'Energy Cost Reduction',
-      'ASHRAE 36 sequences typically reduce HVAC energy use by 15–30% compared to conventional control strategies, primarily through fan speed optimization, temperature reset, and economizer improvements.',
+      'ASHRAE 36 sequences reduce HVAC energy use compared to conventional control strategies, primarily through fan speed optimization, temperature reset, and economizer improvements.',
       'var(--rpt-green)',
     ) +
     _proposalOutcomeCard(
@@ -13540,8 +13579,8 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     });
   }
 
-  if (s.recommendations !== false)
-    pages.push(_tagA36Section(rptPageASHRAE36Recommendations(pageNum++, data), 'recommendations'));
+  // Batch 3 item 6 / plan 3e Option A: Recommendations page deleted from the Audit report
+  // (41pp -> 40pp) — see the ASHRAE36_SECTIONS.audit comment above for rationale.
 
   // Phase 5 — Setpoint Programming Review (appended after recommendations)
   // Returns an Array (like executive section) — spread each page individually.
