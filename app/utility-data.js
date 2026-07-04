@@ -6144,6 +6144,22 @@ function blSelectAll(mid, sel) {
   updateBaselineRange(mid);
 }
 
+// Shared writer for every baseline-freeze call site (saveBaseline,
+// saveBaselineToAllMeters, saveBaselineToAllProjectMeters). Freezing a
+// baseline recomputes start/end/months/reg but must never discard any other
+// user-entered baseline field -- most importantly manual `overrides` (read by
+// getNormRows(), computations/normalization.js:620-623, which takes
+// precedence over any reg, frozen or not) and Circle Grove Propane-style
+// `costSavOverrides` (read by savings.js). A bare `m.baseline = {start,end,
+// months,reg}` silently wiped both keys on re-save -- this was P1 bug
+// cc5a30f6, and it is what destroyed Matt's certified Louisburg baselines on
+// HS Electric and CG Propane between the 2026-06-05 and 2026-06-22 backups.
+// Spreading the existing object first keeps every key that isn't one of the
+// four explicitly being recomputed here.
+function _freezeBaselineFields(m, start, end, months, reg) {
+  m.baseline = { ...(m.baseline || {}), start, end, months, reg };
+}
+
 function saveBaseline(mid) {
   const checked = [...document.querySelectorAll('#blPeriodList input[type=checkbox]:checked')]
     .map((c) => c.value)
@@ -6169,7 +6185,7 @@ function saveBaseline(mid) {
   const blOnlyRows = allRows.filter((r) => checked.includes(r.ym));
   const frozenReg = computeMeterRegression(blOnlyRows);
 
-  m.baseline = { start: checked[0], end: checked[checked.length - 1], months: checked, reg: frozenReg };
+  _freezeBaselineFields(m, checked[0], checked[checked.length - 1], checked, frozenReg);
   saveUtilityData();
   const _blInherited = _inheritBaselinesForProject(udSelProjId);
   // P0 35105124(b): computeMeterRegression() can legitimately return a real
@@ -6223,12 +6239,7 @@ function saveBaselineToAllMeters(sourceMid) {
     if (validMonths.length < 3) return;
     const blOnlyRows = allRows.filter((r) => validMonths.includes(r.ym));
     const frozenReg = computeMeterRegression(blOnlyRows);
-    m.baseline = {
-      start: validMonths[0],
-      end: validMonths[validMonths.length - 1],
-      months: validMonths,
-      reg: frozenReg,
-    };
+    _freezeBaselineFields(m, validMonths[0], validMonths[validMonths.length - 1], validMonths, frozenReg);
     count++;
   });
   if (count === 0) {
@@ -6273,12 +6284,7 @@ function saveBaselineToAllProjectMeters(sourceMid) {
       const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
       if (!bills.length) {
         // No bills — still set baseline months so it's ready when data arrives
-        m.baseline = {
-          start: blMonths[0],
-          end: blMonths[blMonths.length - 1],
-          months: blMonths.slice(),
-          reg: null,
-        };
+        _freezeBaselineFields(m, blMonths[0], blMonths[blMonths.length - 1], blMonths.slice(), null);
         count++;
         return;
       }
@@ -6286,24 +6292,14 @@ function saveBaselineToAllProjectMeters(sourceMid) {
       const validMonths = blMonths.filter((ym) => allRows.some((r) => r.ym === ym));
       if (validMonths.length < 3) {
         // Not enough matching bill data — still set the baseline months
-        m.baseline = {
-          start: blMonths[0],
-          end: blMonths[blMonths.length - 1],
-          months: blMonths.slice(),
-          reg: null,
-        };
+        _freezeBaselineFields(m, blMonths[0], blMonths[blMonths.length - 1], blMonths.slice(), null);
         count++;
         skipped++;
         return;
       }
       const blOnlyRows = allRows.filter((r) => validMonths.includes(r.ym));
       const frozenReg = computeMeterRegression(blOnlyRows);
-      m.baseline = {
-        start: validMonths[0],
-        end: validMonths[validMonths.length - 1],
-        months: validMonths,
-        reg: frozenReg,
-      };
+      _freezeBaselineFields(m, validMonths[0], validMonths[validMonths.length - 1], validMonths, frozenReg);
       count++;
     });
   });
