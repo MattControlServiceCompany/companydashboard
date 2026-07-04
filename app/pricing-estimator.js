@@ -609,6 +609,8 @@ function _pricingTopRoiCallout(projId, recRows) {
         r._effectiveCostTier === 1
           ? '<span style="font-size:10px;color:#86efac;margin-left:6px">Programming only</span>'
           : '<span style="font-size:10px;color:var(--text3);margin-left:6px">+sensor(s)</span>';
+      // b771dec6 2b: prefer clientSummary (already stamped by buildRecommendedRows) over savingsRationale
+      var _summaryText = r.clientSummary || r.savingsRationale || '';
       return (
         '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;' +
         'border-bottom:1px solid rgba(255,255,255,0.07)">' +
@@ -621,8 +623,8 @@ function _pricingTopRoiCallout(projId, recRows) {
         entry.label +
         '</div>' +
         '<div style="font-size:10px;color:var(--text2);margin-top:2px;line-height:1.5">' +
-        (r.savingsRationale || '').slice(0, 160) +
-        (r.savingsRationale && r.savingsRationale.length > 160 ? '…' : '') +
+        _summaryText.slice(0, 160) +
+        (_summaryText.length > 160 ? '…' : '') +
         '</div>' +
         '</div>' +
         '</div>'
@@ -631,10 +633,15 @@ function _pricingTopRoiCallout(projId, recRows) {
     .join('');
 
   var _roiChevronId = 'roi-chevron-' + projId;
+  var _roiOpen = _pricingGetRoiOpen(projId); // b771dec6 2a: collapsed by default, persisted per-project
   return (
-    '<details open style="margin:10px 14px 0;border:1px solid var(--border2);border-radius:6px;' +
+    '<details' +
+    (_roiOpen ? ' open' : '') +
+    ' style="margin:10px 14px 0;border:1px solid var(--border2);border-radius:6px;' +
     'background:var(--s3);overflow:hidden"' +
-    ' ontoggle="(function(d){var c=document.getElementById(\'' +
+    ' ontoggle="(function(d){_pricingSetRoiOpen(' +
+    JSON.stringify(projId) +
+    ", d.open);var c=document.getElementById('" +
     _roiChevronId +
     "');if(c)c.textContent=d.open?'▼':'▶';})(this)\">" +
     '<summary style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text);' +
@@ -642,15 +649,14 @@ function _pricingTopRoiCallout(projId, recRows) {
     'background:var(--s2);border-bottom:1px solid var(--border2)">' +
     '<span id="' +
     _roiChevronId +
-    '" style="font-size:10px;color:var(--text2);flex-shrink:0">▼</span>' +
+    '" style="font-size:10px;color:var(--text2);flex-shrink:0">' +
+    (_roiOpen ? '▼' : '▶') +
+    '</span>' +
     '★ Top ROI Measures for This Project' +
     '<span style="font-size:10px;font-weight:400;color:var(--text2);margin-left:4px">' +
     '(highest savings per dollar based on current point coverage — full list below)</span>' +
     '</summary>' +
     '<div style="padding:4px 12px 8px">' +
-    '<div style="font-size:10px;color:var(--text3);margin-bottom:6px;margin-top:4px">' +
-    ORNL_CONTEXT_SENTENCE +
-    '</div>' +
     itemsHTML +
     '</div>' +
     '</details>'
@@ -1194,6 +1200,17 @@ function _pricingGetEstimate(projId) {
 }
 function _pricingSetEstimate(projId, est) {
   sset('en_pricing_estimate_' + projId, est);
+}
+
+/* ── Top ROI card open/collapsed persistence (b771dec6 2a) — defaults collapsed ── */
+function _pricingGetRoiOpen(projId) {
+  var est = _pricingGetEstimate(projId);
+  return !!est.roiOpen;
+}
+function _pricingSetRoiOpen(projId, open) {
+  var est = _pricingGetEstimate(projId);
+  est.roiOpen = !!open;
+  _pricingSetEstimate(projId, est);
 }
 
 /* ── buildComplianceRows(projId) — spec §8, §3, §5 ─────────────────────────
@@ -2495,6 +2512,25 @@ function buildRecommendedRows(projId) {
     }
   });
 
+  // b771dec6 2c: order building groups by descending ROI — score = the best (max)
+  // phase-2 weight/effectiveCostTier ratio among that building's rows. Reorders which
+  // building group renders first; does not flatten rows across buildings (Batch 5 territory)
+  // and does not touch Compliance/Full-Scope (they don't call this function).
+  var _bldgRoiScore = {};
+  allBuildings.forEach(function (bName) {
+    var score = 0;
+    recRows.forEach(function (r) {
+      if (r.building === bName && r.phase === 2) {
+        var s = (r._savingsWeight || 0) / Math.max(r._effectiveCostTier || 1, 1);
+        if (s > score) score = s;
+      }
+    });
+    _bldgRoiScore[bName] = score;
+  });
+  allBuildings.sort(function (a, b) {
+    return _bldgRoiScore[b] - _bldgRoiScore[a];
+  });
+
   var sortedRows = [];
   allBuildings.forEach(function (bName) {
     var bPhase1 = recRows.filter(function (r) {
@@ -3651,24 +3687,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.push(lineTotalContent);
 
     // col 11: Impact — badge chip for Recommended tier phase-2 rows only (correction #4 / Phase 5)
-    // Fuller-preference rule: badge LEADS but full rationale stays visible in Notes (col 12).
     var impactCellContent = '';
     if (tier === 'recommended' && row.phase === 2 && row.savingsImpact) {
       impactCellContent = _a36ImpactChip(row);
     }
     cells.push(impactCellContent);
 
-    // col 12: Notes — visible text = note + G36 § + (Recommended) full savingsRationale sentence
-    // Fuller-preference: full rationale visible in cell, never hover-only (correction from REVIEW).
+    // col 12: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
+    // superseding the earlier "Fuller-preference" decision (full rationale always visible in-cell)
+    // because it made Recommended phase-2 rows taller than every other row in the table —
+    // Matt rejected that height-inconsistency tradeoff. The rationale/clientSummary sentence now
+    // lives in the hover tooltip (_tooltipText12 below) instead of a second visible line.
     var _noteText12 = row.note || '';
     if (row.g36Section) _noteText12 += (_noteText12 ? ' \xb7 ' : '') + row.g36Section;
-
-    // For Recommended tier phase-2 rows: append full rationale sentence (visible, not hover-only)
-    // savingsRationale already contains all warnings (reheat note, boiler-type warning) — no appends needed.
-    var _rationaleText = '';
-    if (tier === 'recommended' && row.phase === 2 && row.savingsRationale) {
-      _rationaleText = row.savingsRationale;
-    }
 
     // Step 5: $ savings range line (Recommended tier, phase-2 savings sequences only)
     var _savingsRangeHTML = '';
@@ -3739,12 +3770,18 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     } else if (row.whyNeeded) {
       _tooltipText12 = row.whyNeeded + (row.g36Section ? ' (' + row.g36Section + ')' : '');
     }
+    // b771dec6 2d: Recommended phase-2 clientSummary/savingsRationale (formerly a second visible
+    // line in-cell) now prefixes the hover tooltip so no content is lost, just relocated.
+    if (tier === 'recommended' && row.phase === 2 && (row.clientSummary || row.savingsRationale)) {
+      var _rationalePrefix12 = row.clientSummary || row.savingsRationale;
+      _tooltipText12 = _rationalePrefix12 + (_tooltipText12 ? ' \xb7 ' + _tooltipText12 : '');
+    }
     var _titleAttr12 = _tooltipText12 ? ' title="' + _esc(_tooltipText12) + '"' : '';
     var _cursorStyle12 = _tooltipText12 ? 'cursor:help;' : '';
 
     // Editable note override (Fix: item 6f26cbfd) — persists to est.noteOverrides[rowId]
-    // Issue 1 fix: input is the sole element in plain rows (no stacked span) so rows stay one line tall.
-    // Rationale-bearing rows (Recommended phase-2) intentionally multi-line; _savingsRangeHTML stays.
+    // Input is the sole element in every row (no stacked span) so all rows stay one line tall
+    // (b771dec6 2d: uniform truncate + hover pattern, replacing the old multi-line exception).
     var _noteOverrides = estimate.noteOverrides || {};
     var _noteOverrideVal = _noteOverrides[toggleKey] || '';
     // Combine row's static note text with override; static text shown as placeholder when no override
@@ -3774,20 +3811,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       toggleKey +
       '\',this.value)">';
 
-    if (_rationaleText) {
-      // Rationale visible in cell (white-space:normal so it wraps; fuller-preference)
-      // These rows intentionally multi-line — savings range + rationale are value-add content
-      cells.push(
-        _noteInputHTML +
-          '<span style="font-size:10px;color:var(--text2);display:block;white-space:normal;word-break:break-word;line-height:1.4;margin-top:2px">' +
-          _esc(_rationaleText) +
-          '</span>' +
-          _savingsRangeHTML,
-      );
-    } else {
-      // Plain row: input fills the cell; one line tall
-      cells.push(_noteInputHTML + _savingsRangeHTML);
-    }
+    // Single-line branch always used (b771dec6 2d) — rationale/clientSummary text now lives in the
+    // hover tooltip (_tooltipText12 above), not as a second visible line, so every row is one line tall.
+    cells.push(_noteInputHTML + _savingsRangeHTML);
 
     // Build TR
     var rowStyle = !toggleOn ? 'opacity:0.45;' : '';

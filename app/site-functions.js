@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.03.618',
+    date: '2026-07-03',
+    title: 'Cost Estimate tab: clearer summaries, smarter sorting, cleaner notes',
+    items: [
+      {
+        type: 'change',
+        text: 'Cost Estimate tab: the Top ROI savings summary now starts collapsed and remembers whether you last left it open or closed.',
+      },
+      {
+        type: 'change',
+        text: 'Cost Estimate tab: Top ROI summary text now uses clear, plain-language descriptions instead of internal research citations.',
+      },
+      {
+        type: 'feature',
+        text: 'Cost Estimate tab: the Recommended tier now lists buildings ordered by best value (highest return) first, instead of a fixed building order.',
+      },
+      {
+        type: 'fix',
+        text: 'Cost Estimate tab: the Notes column is now consistent for every row — a single-line note with the full text available on hover, instead of some rows stretching taller to show the whole note.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.03.617',
     date: '2026-07-03',
     title: 'ASHRAE 36 Audit Report: cleaner status labels, plain-language scoring, and consistent styling',
