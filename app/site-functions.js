@@ -1191,17 +1191,62 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.03.617',
+    date: '2026-07-03',
+    title: 'ASHRAE 36 Audit Report: cleaner status labels, plain-language scoring, and consistent styling',
+    items: [
+      {
+        type: 'change',
+        text: 'Audit Report: buildings at 100% sensor coverage now show just "Ready" instead of "Ready 12/12 sensors" — the fraction only appears when coverage is below 100%.',
+      },
+      {
+        type: 'feature',
+        text: 'Audit Report: a plain-language explanation of the Ready / Partial / Critical scoring now appears under the summary table — Ready means the ASHRAE 36 baseline is met, Partial means some sensors and sequences are in place but more work is needed, Critical means the building lacks what it needs to run the sequences at all.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report: the Recommendations section has been removed — Gap Details already lists the same findings tied to the specific ASHRAE 36 requirement each one is missing, so removing Recommendations eliminates a confusing duplicate section (the Audit Report is now 40 pages).',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report and Service Proposal: vague savings ranges like "10-25% fan energy savings" have been replaced with plain descriptions of what each fix actually does.',
+      },
+      {
+        type: 'change',
+        text: "Audit Report and Service Proposal: remaining colored backgrounds and colored section headings have been replaced with plain black text and grey rules, matching the rest of the report's simplified design.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.03.616',
     date: '2026-07-03',
     title: 'Audit Report and Service Proposal: footer page numbers, uniform rows, and copy fixes',
     items: [
-      { type: 'fix', text: "Audit Report and Service Proposal: page numbers are now visible in the footer of every page (they were being painted over and hidden before)." },
-      { type: 'fix', text: 'Audit Report: summary table rows are now a uniform height, so two-line building names no longer make some rows taller than others.' },
-      { type: 'change', text: "Audit Report header now reads 'ASHRAE 36 Audit Report' throughout (was missing the word 'Report' in most places)." },
+      {
+        type: 'fix',
+        text: 'Audit Report and Service Proposal: page numbers are now visible in the footer of every page (they were being painted over and hidden before).',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report: summary table rows are now a uniform height, so two-line building names no longer make some rows taller than others.',
+      },
+      {
+        type: 'change',
+        text: "Audit Report header now reads 'ASHRAE 36 Audit Report' throughout (was missing the word 'Report' in most places).",
+      },
       { type: 'fix', text: "Service Proposal: the exported PDF filename no longer includes 'ASHRAE 36'." },
-      { type: 'change', text: 'Service Proposal: the project timeline now starts at installation — the Site Assessment step was removed since the assessment is already complete by the time a proposal exists.' },
-      { type: 'change', text: "Audit Report and Service Proposal: the 'What Happens Next' and 'Ready to Move Forward?' closing sections have been removed." },
-      { type: 'change', text: 'Note: the Audit Report is now 41 pages (was 40) because the uniform row heights fit slightly fewer rows per page.' },
+      {
+        type: 'change',
+        text: 'Service Proposal: the project timeline now starts at installation — the Site Assessment step was removed since the assessment is already complete by the time a proposal exists.',
+      },
+      {
+        type: 'change',
+        text: "Audit Report and Service Proposal: the 'What Happens Next' and 'Ready to Move Forward?' closing sections have been removed.",
+      },
+      {
+        type: 'change',
+        text: 'Note: the Audit Report is now 41 pages (was 40) because the uniform row heights fit slightly fewer rows per page.',
+      },
     ],
   },
   {
@@ -1211,7 +1256,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'fix',
-        text: "Equipment Matrix: control-voltage signals (like a 5.7 V cooling output) are no longer misread as zone temperature setpoints — six affected readings across JOCO now show correctly, and the raw point values remain visible in the point drawer.",
+        text: 'Equipment Matrix: control-voltage signals (like a 5.7 V cooling output) are no longer misread as zone temperature setpoints — six affected readings across JOCO now show correctly, and the raw point values remain visible in the point drawer.',
       },
     ],
   },
