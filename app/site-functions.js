@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.04.622',
+    date: '2026-07-04',
+    title: 'Cost Estimate: related items now share one row',
+    items: [
+      {
+        type: 'improvement',
+        text: 'Cost Estimate: a sensor and the control sequence it enables now appear together on a single row with a combined price, instead of split across two phase sections.',
+      },
+      {
+        type: 'improvement',
+        text: 'Cost Estimate: the Phase 1 Hardware / Phase 2 Programming Labor divider rows are gone — items are grouped by building only, making the table shorter and easier to read.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.04.621',
     date: '2026-07-04',
     title: 'Cost Estimate: table no longer gets squeezed',
