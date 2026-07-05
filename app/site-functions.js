@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.04.620',
+    date: '2026-07-04',
+    title: 'Cost Estimate tab: simpler toolbar and clearer disclaimer',
+    items: [
+      {
+        type: 'improvement',
+        text: 'Cost Estimate: pricing settings (Price Basis, Net multiplier, Contract %, Hourly Rate, Fan energy %) and column visibility now live together under one ⚙ Table Settings button in the toolbar.',
+      },
+      {
+        type: 'fix',
+        text: 'Cost Estimate: the Table Settings window now reopens correctly after changing a value.',
+      },
+      {
+        type: 'improvement',
+        text: 'Cost Estimate: the measurement & verification disclaimer now appears inside the Top Return-on-Investment summary card instead of the page footer, and always displays even when few measures qualify.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.04.619',
     date: '2026-07-04',
     title: 'Baseline freeze now preserves manual adjustments',
