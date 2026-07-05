@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.04.621',
+    date: '2026-07-04',
+    title: 'Cost Estimate: table no longer gets squeezed',
+    items: [
+      {
+        type: 'fix',
+        text: 'Cost Estimate: the pricing table keeps a usable minimum height even with the Top Return-on-Investment card expanded — no more sliver-thin table on smaller windows.',
+      },
+      {
+        type: 'improvement',
+        text: 'Cost Estimate: the Top Return-on-Investment card scrolls within itself when it holds many measures, instead of pushing the table off screen.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.04.620',
     date: '2026-07-04',
     title: 'Cost Estimate tab: simpler toolbar and clearer disclaimer',
