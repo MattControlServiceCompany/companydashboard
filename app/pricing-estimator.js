@@ -549,11 +549,24 @@ function _pricingSortRecommendedRows(rows) {
   });
 }
 
+/* ── Small HTML-escape helper for module-level (non-closure) functions.
+   Mirrors the `_esc` closure defined inside initCostEstimateTab — needed here because
+   _pricingTopRoiCallout is a standalone top-level function (b771dec6 3b).
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingEscText(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 /* ── Top-ROI callout card (correction #12)
    Criteria: HIGH or MED-HIGH tier AND effectiveCostTier <= 2 AND not enabler AND not safety AND >= 1 instance
    Shows 2-4 items; hidden if < 2.
+   b771dec6 3b: M&V disclaimer relocated here from the footer (see `showDisclaimer` param).
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingTopRoiCallout(projId, recRows) {
+function _pricingTopRoiCallout(projId, recRows, showDisclaimer) {
   var qualifiers = recRows.filter(function (r) {
     return (
       r.phase === 2 &&
@@ -575,7 +588,22 @@ function _pricingTopRoiCallout(projId, recRows) {
   });
   // Limit to 4
   unique = unique.slice(0, 4);
-  if (unique.length < 2) return '';
+
+  // b771dec6 3b: disclaimer body built independent of the `unique.length < 2` gate below,
+  // so it is never silently dropped when there are too few qualifying measures to show a list.
+  var _disclaimerBodyHTML =
+    '<strong style="color:var(--text2)">M&amp;V Disclaimer:</strong> ' + _pricingEscText(SAVINGS_DISCLAIMER_TEXT);
+
+  if (unique.length < 2) {
+    if (!showDisclaimer) return '';
+    // Lightweight wrapper — no items to list, but the disclaimer still surfaces (edge case).
+    return (
+      '<div style="margin:10px 14px 0;padding:8px 12px;border:1px solid var(--border2);' +
+      'border-radius:6px;background:var(--s3);font-size:10px;color:var(--text3);line-height:1.5">' +
+      _disclaimerBodyHTML +
+      '</div>'
+    );
+  }
 
   // DCV merge: if both demandCtrl and vav_dcv qualify, show one merged line.
   // Decide the merge BEFORE the loop so order of appearance does not matter (Bug C fix).
@@ -634,6 +662,13 @@ function _pricingTopRoiCallout(projId, recRows) {
 
   var _roiChevronId = 'roi-chevron-' + projId;
   var _roiOpen = _pricingGetRoiOpen(projId); // b771dec6 2a: collapsed by default, persisted per-project
+  // b771dec6 3b: disclaimer appended inside the card body (was previously in the table footer)
+  var _disclaimerHTML = showDisclaimer
+    ? '<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border);' +
+      'font-size:10px;color:var(--text3);line-height:1.5">' +
+      _disclaimerBodyHTML +
+      '</div>'
+    : '';
   return (
     '<details' +
     (_roiOpen ? ' open' : '') +
@@ -658,6 +693,7 @@ function _pricingTopRoiCallout(projId, recRows) {
     '</summary>' +
     '<div style="padding:4px 12px 8px">' +
     itemsHTML +
+    _disclaimerHTML +
     '</div>' +
     '</details>'
   );
@@ -2974,33 +3010,35 @@ function _pricingHideEmptyCols(projId, rows) {
   initCostEstimateTab(projId);
 }
 
-/* ── Close col-visibility popover when clicking outside ─────────────────── */
-function _pricingCloseColPopover(projId) {
-  var pop = document.getElementById('pricing-col-popover-' + projId);
+/* ── Close Table Settings popover when clicking outside ───────────────────
+   Renamed from _pricingCloseColPopover (b771dec6 3a) — the popover now holds
+   pricing config too, not just the column checklist.
+   Also removes the tracked outside-click listener (see _pricingSettingsPopoverOutsideHandler
+   below) — found during functional verify: any Pricing Config field change re-renders the
+   whole panel via initCostEstimateTab, which destroys the popover DOM node but NOT the
+   document-level outside-click listener from the previous open(). Since the popover element
+   id is the same on every open (keyed by projId, not per-instance), that stale listener would
+   otherwise immediately close the NEXT popover the user opens (same id match) — reopening
+   Table Settings after any config edit would silently fail. Explicit listener bookkeeping
+   fixes it (was a latent bug in the pre-3a col-only popover too, now much more visible since
+   Table Settings is reopened far more often).
+   ─────────────────────────────────────────────────────────────────────────── */
+var _pricingSettingsPopoverOutsideHandler = {};
+function _pricingCloseSettingsPopover(projId) {
+  var pop = document.getElementById('pricing-settings-popover-' + projId);
   if (pop) pop.remove();
+  if (_pricingSettingsPopoverOutsideHandler[projId]) {
+    document.removeEventListener('click', _pricingSettingsPopoverOutsideHandler[projId]);
+    delete _pricingSettingsPopoverOutsideHandler[projId];
+  }
 }
 
-/* ── Toggle col-visibility popover ─────────────────────────────────────────
-   Opens a small checklist of columns below the gear icon.
+/* ── Column-visibility checklist HTML (b771dec6 3a) ───────────────────────
+   Factored out of the old col-popover so _pricingOpenSettingsPopover can compose
+   it as one section of the combined Table Settings popover. Same storage keys
+   (_pricingGetHiddenCols/_pricingSetHiddenCols) and same buttons — markup only.
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingToggleColPopover(projId, gearBtn) {
-  // Close any open popover first
-  _pricingCloseColPopover(projId);
-
-  var pop = document.createElement('div');
-  pop.id = 'pricing-col-popover-' + projId;
-  pop.style.cssText = [
-    'position:absolute',
-    'background:var(--s2)',
-    'border:1px solid var(--border)',
-    'border-radius:6px',
-    'padding:8px 10px',
-    'z-index:800',
-    'min-width:160px',
-    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
-    'font-size:11px',
-  ].join(';');
-
+function _pricingBuildColVisibilityHTML(projId) {
   var hidden = _pricingGetHiddenCols(projId);
   var rows = _pricingRowCache[projId] || [];
 
@@ -3036,28 +3074,149 @@ function _pricingToggleColPopover(projId, gearBtn) {
     projId +
     '\')" style="font-size:10px;padding:2px 8px;background:var(--s3);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer">Show All</button>';
   html += '</div>';
+  return html;
+}
+
+/* ── Table Settings popover (b771dec6 3a) ─────────────────────────────────
+   Renamed/extended from _pricingToggleColPopover. Replaces the old Notes-header
+   gear icon (deleted — documented exception to ui-standards.md's gear-in-
+   rightmost-header convention, recorded there per Matt's instruction) as the
+   single entry point for pricing config (Price Basis/Net×/Contract%/Hourly
+   Rate/Fan energy% — moved VERBATIM, same ids/onchange/updatePricingConfig)
+   plus the column-visibility checklist. Same positioning/outside-click/
+   appendChild pattern as the old col popover.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingOpenSettingsPopover(projId, btn) {
+  // Close any open popover first
+  _pricingCloseSettingsPopover(projId);
+
+  var cfg = _pricingGetConfig();
+  var estimate = _pricingGetEstimate(projId);
+  var tier = estimate.tier || 'compliance';
+
+  var pop = document.createElement('div');
+  pop.id = 'pricing-settings-popover-' + projId;
+  pop.style.cssText = [
+    'position:absolute',
+    'background:var(--s2)',
+    'border:1px solid var(--border)',
+    'border-radius:6px',
+    'padding:10px 12px',
+    'z-index:800',
+    'min-width:220px',
+    'max-width:280px',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
+    'font-size:11px',
+  ].join(';');
+
+  // Section 1: pricing config — moved verbatim from the old toolbar (same ids/onchange)
+  var html =
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Pricing Config</div>';
+  html +=
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Price Basis:' +
+    '<select id="pricing-basis-' +
+    projId +
+    '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="updatePricingConfig(' +
+    projId +
+    ",'priceBasis',this.value)\">" +
+    '<option value="contract"' +
+    (cfg.priceBasis === 'contract' ? ' selected' : '') +
+    '>Contract (40% List)</option>' +
+    '<option value="net"' +
+    (cfg.priceBasis === 'net' ? ' selected' : '') +
+    '>Net</option>' +
+    '<option value="list"' +
+    (cfg.priceBasis === 'list' ? ' selected' : '') +
+    '>List</option>' +
+    '</select></label>';
+  html +=
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Net ×:' +
+    '<input type="number" id="pricing-net-mult-' +
+    projId +
+    '" min="0.01" max="1.0" step="0.01" value="' +
+    cfg.netMultiplier +
+    '"' +
+    ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
+    ' onchange="updatePricingConfig(' +
+    projId +
+    ",'netMultiplier',parseFloat(this.value))\">" +
+    '</label>';
+  html +=
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Contract %:' +
+    '<input type="number" id="pricing-contract-pct-' +
+    projId +
+    '" min="1" max="100" step="1" value="' +
+    Math.round(cfg.contractPct * 100) +
+    '"' +
+    ' style="width:44px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
+    ' onchange="updatePricingConfig(' +
+    projId +
+    ",'contractPct',parseFloat(this.value)/100)\">" +
+    '</label>';
+  html +=
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Hourly Rate:' +
+    '<input type="number" id="pricing-rate-' +
+    projId +
+    '" min="1" max="999" step="1" value="' +
+    cfg.hourlyRate +
+    '"' +
+    ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
+    ' onchange="updatePricingConfig(' +
+    projId +
+    ",'hourlyRate',parseFloat(this.value))\">" +
+    '</label>';
+  if (tier === 'recommended' || tier === 'both') {
+    html +=
+      '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
+      'title="Fan energy as % of total electricity (CBECS VAV typical range 10–20%); used for DSP/SAT reset savings estimates">' +
+      'Fan energy %:' +
+      '<input type="number" id="pricing-fanfrac-' +
+      projId +
+      '" min="1" max="50" step="1" value="' +
+      Math.round((cfg.fanFraction !== undefined ? cfg.fanFraction : FAN_FRACTION_DEFAULT) * 100) +
+      '"' +
+      ' style="width:44px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--accent);border-radius:4px"' +
+      ' onchange="updatePricingConfig(' +
+      projId +
+      ",'fanFraction',parseFloat(this.value)/100)\">" +
+      '</label>';
+  }
+
+  // Section 2: column-visibility checklist
+  html += '<div style="border-top:1px solid var(--border);margin:8px 0 6px;padding-top:8px">';
+  html += _pricingBuildColVisibilityHTML(projId);
+  html += '</div>';
+
   pop.innerHTML = html;
 
-  // Position relative to gear button
-  var rect = gearBtn.getBoundingClientRect();
+  // Position relative to the Table Settings button (same pattern as the old col popover)
+  var rect = btn.getBoundingClientRect();
   var container = document.getElementById('ptab-cost-estimate-body-' + projId);
   if (container) {
     var cRect = container.getBoundingClientRect();
     pop.style.top = rect.bottom - cRect.top + 4 + 'px';
-    pop.style.right = '4px';
+    pop.style.left = rect.left - cRect.left + 'px';
     pop.style.position = 'absolute';
     container.style.position = 'relative';
     container.appendChild(pop);
   }
 
-  // Close on outside click
+  // Close on outside click. Tracked in _pricingSettingsPopoverOutsideHandler (by projId)
+  // so _pricingCloseSettingsPopover can explicitly remove this exact listener — prevents a
+  // stale listener from a previous open() (destroyed by a config-change re-render) from
+  // closing the NEXT popover instance the moment it opens (see comment above the tracker var).
   setTimeout(function () {
-    document.addEventListener('click', function handler(e) {
-      if (!pop.contains(e.target) && e.target !== gearBtn) {
-        _pricingCloseColPopover(projId);
-        document.removeEventListener('click', handler);
+    function handler(e) {
+      if (!pop.contains(e.target) && e.target !== btn) {
+        _pricingCloseSettingsPopover(projId);
       }
-    });
+    }
+    _pricingSettingsPopoverOutsideHandler[projId] = handler;
+    document.addEventListener('click', handler);
   }, 10);
 }
 
@@ -3372,6 +3531,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       .join('') +
     '</select></label>';
 
+  // b771dec6 3a: toolbar keeps only Import Pricing CSV + Tier toggle + Building filter
+  // (Matt's explicit list). Price Basis/Net×/Contract%/Hourly Rate/Fan energy% + the
+  // column-visibility checklist (previously a gear icon in the Notes header) moved into
+  // the "⚙ Table Settings" popover — see _pricingOpenSettingsPopover.
   var toolbarHTML = [
     '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
     '<label class="btn btn-ghost btn-sm" style="cursor:pointer;position:relative">',
@@ -3383,77 +3546,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') + 'Import Pricing CSV',
     '</label>',
     importStatus,
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenSettingsPopover(\'' +
+      projId +
+      '\',this)" title="Pricing config + column visibility" style="cursor:pointer">⚙ Table Settings</button>',
     '<span style="flex:1"></span>',
     // Tier toggle
     _pricingTierToggleHTML(projId, tier),
     '<span style="color:var(--border2)">|</span>',
     bldgFilterHTML,
-    '<span style="color:var(--border2)">|</span>',
-    // Price Basis
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Price Basis:',
-    '<select id="pricing-basis-' +
-      projId +
-      '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="updatePricingConfig(' +
-      projId +
-      ",'priceBasis',this.value)\">",
-    '<option value="contract"' + (cfg.priceBasis === 'contract' ? ' selected' : '') + '>Contract (40% List)</option>',
-    '<option value="net"' + (cfg.priceBasis === 'net' ? ' selected' : '') + '>Net</option>',
-    '<option value="list"' + (cfg.priceBasis === 'list' ? ' selected' : '') + '>List</option>',
-    '</select></label>',
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Net ×:',
-    '<input type="number" id="pricing-net-mult-' +
-      projId +
-      '" min="0.01" max="1.0" step="0.01" value="' +
-      cfg.netMultiplier +
-      '"' +
-      ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
-      ' onchange="updatePricingConfig(' +
-      projId +
-      ",'netMultiplier',parseFloat(this.value))\">",
-    '</label>',
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Contract %:',
-    '<input type="number" id="pricing-contract-pct-' +
-      projId +
-      '" min="1" max="100" step="1" value="' +
-      Math.round(cfg.contractPct * 100) +
-      '"' +
-      ' style="width:44px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
-      ' onchange="updatePricingConfig(' +
-      projId +
-      ",'contractPct',parseFloat(this.value)/100)\">",
-    '</label>',
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Hourly Rate:',
-    '<input type="number" id="pricing-rate-' +
-      projId +
-      '" min="1" max="999" step="1" value="' +
-      cfg.hourlyRate +
-      '"' +
-      ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
-      ' onchange="updatePricingConfig(' +
-      projId +
-      ",'hourlyRate',parseFloat(this.value))\">",
-    '</label>',
-    // Step 5: fan fraction field — only shown when Recommended tier is active
-    tier === 'recommended' || tier === 'both'
-      ? '<span style="color:var(--border2)">|</span>' +
-        '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px" ' +
-        'title="Fan energy as % of total electricity (CBECS VAV typical range 10–20%); used for DSP/SAT reset savings estimates">' +
-        'Fan energy %:' +
-        '<input type="number" id="pricing-fanfrac-' +
-        projId +
-        '" min="1" max="50" step="1" value="' +
-        Math.round((cfg.fanFraction !== undefined ? cfg.fanFraction : FAN_FRACTION_DEFAULT) * 100) +
-        '"' +
-        ' style="width:44px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--accent);border-radius:4px"' +
-        ' onchange="updatePricingConfig(' +
-        projId +
-        ",'fanFraction',parseFloat(this.value)/100)\">" +
-        '</label>'
-      : '',
     '</div>',
   ].join('');
 
@@ -4089,16 +4189,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
   }
 
-  // M&V disclaimer — only shown when there IS savings data to disclaim (Fix: was unconditional, item 5d1245ec)
-  if ((tier === 'recommended' || tier === 'both') && _anySavingsShown) {
-    footerParts.push(
-      '<div style="width:100%;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);' +
-        'font-size:10px;color:var(--text3);line-height:1.5">' +
-        '<strong style="color:var(--text2)">M&amp;V Disclaimer:</strong> ' +
-        _esc(SAVINGS_DISCLAIMER_TEXT) +
-        '</div>',
-    );
-  }
+  // b771dec6 3b: M&V disclaimer moved from here into the Top ROI card
+  // (see _pricingTopRoiCallout's `showDisclaimer` param / call site below).
 
   footerParts.push('</div>');
   var footerHTML = footerParts.join('');
@@ -4122,7 +4214,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     return sSt.dir === 'asc' ? ' ▲' : ' ▼';
   }
 
-  function buildTH(ci, extraStyle, frozen, isGear) {
+  function buildTH(ci, extraStyle, frozen) {
     var col = PRICING_TBL_COLS[ci];
     if (!col) return '';
     if (hidden.indexOf(ci) !== -1) return ''; // skip hidden
@@ -4168,16 +4260,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         ? '<div class="ch-col-resize-handle" style="position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;background:transparent;z-index:1"></div>'
         : '';
 
-    var gearHTML = '';
-    if (isGear) {
-      // Last column header gets the gear icon (column visibility toggle)
-      gearHTML =
-        '<button onclick="_pricingToggleColPopover(\'' +
-        projId +
-        '\',this)"' +
-        ' title="Toggle column visibility"' +
-        ' style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11px;background:transparent;border:none;color:var(--text2);cursor:pointer;padding:0 2px;z-index:2">⚙</button>';
-    }
+    // b771dec6 3a: gear icon removed from the header — column visibility now lives in
+    // the "⚙ Table Settings" toolbar popover alongside pricing config (see
+    // _pricingOpenSettingsPopover). Documented exception recorded in ui-standards.md.
 
     // data-col-idx carries the PRICING_TBL_COLS index so sort/resize handlers can
     // find the correct column even when some columns are hidden (fixing defect B2).
@@ -4192,7 +4277,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '">' +
       labelHTML +
       resizeHandle +
-      gearHTML +
       '</th>'
     );
   }
@@ -4202,8 +4286,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   PRICING_TBL_COLS.forEach(function (col, ci) {
     if (hidden.indexOf(ci) !== -1) return;
     var isFrozen = ci <= 1;
-    var isGear = ci === PRICING_TBL_COLS.length - 1; // Notes col gets gear
-    headerCols += buildTH(ci, null, isFrozen, isGear);
+    headerCols += buildTH(ci, null, isFrozen);
   });
   // Both mode extra header
   var extraRecHeader = isBothMode
@@ -4216,7 +4299,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var topRoiCallout = '';
   if (tier === 'recommended' || tier === 'both') {
     var _allRecRows = tier === 'both' ? recRows || [] : baseRows;
-    topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows);
+    // b771dec6 3b: _anySavingsShown reaches its final value in the footer step (step 10)
+    // above, which runs before this call — verified after Batches 1-2 land.
+    topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows, _anySavingsShown);
   }
 
   // Recommended tier: "no substitutions" notice + empty-state guard
