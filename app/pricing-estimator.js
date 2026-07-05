@@ -691,7 +691,7 @@ function _pricingTopRoiCallout(projId, recRows, showDisclaimer) {
     '<span style="font-size:10px;font-weight:400;color:var(--text2);margin-left:4px">' +
     '(highest savings per dollar based on current point coverage — full list below)</span>' +
     '</summary>' +
-    '<div style="padding:4px 12px 8px">' +
+    '<div style="padding:4px 12px 8px;max-height:180px;overflow-y:auto">' +
     itemsHTML +
     _disclaimerHTML +
     '</div>' +
@@ -4343,9 +4343,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     toolbarHTML,
     topRoiCallout,
     recNoSubsNotice,
-    '<div class="ch-panel-body" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">',
-    '<div class="ch-tbl-outer" style="margin:0;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">',
-    '<div class="ch-tbl-scroll" style="flex:1;min-height:0;overflow:auto;border:1px solid var(--border);border-radius:6px">',
+    '<div class="ch-panel-body" style="flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
+    '<div class="ch-tbl-outer" style="margin:0;flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
+    '<div class="ch-tbl-scroll" style="flex:1;min-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px">',
     '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:1006px">',
     '<thead><tr>',
     headerCols,
