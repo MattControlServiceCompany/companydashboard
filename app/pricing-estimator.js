@@ -2204,6 +2204,21 @@ function _pricingToggleAllRows(projId, checked) {
   initCostEstimateTab(projId);
 }
 
+function _pricingToggleCombinedRow(projId, hwKey, seqKey, checked) {
+  // b771dec6 5c (Finding 7): a merged sensor+sequence row shows ONE checkbox controlling TWO
+  // underlying toggle keys — the phase-1 hardware row's and its paired phase-2 sequence row's.
+  // Both are set together so the single visible control always reflects one consistent
+  // include/exclude state for the whole combined line. A full re-render (not the single-row
+  // opacity patch _pricingToggleRow uses) is required because two independent rowToggles keys
+  // change at once and the footer/building-subtotal totals must reflect both — those totals are
+  // recomputed by the untouched _pricingComputeTotals/buildXRows pipeline on every render.
+  var est = _pricingGetEstimate(projId);
+  est.rowToggles[hwKey] = checked;
+  est.rowToggles[seqKey] = checked;
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
 function _pricingRefreshRowState(projId, rowId, checked) {
   // Find all tds in this row via the checkbox
   var cb = document.querySelector('#ptab-cost-estimate-body-' + projId + ' input[onchange*="' + rowId + '"]');
@@ -3957,6 +3972,333 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     return '<tr' + trClass + ' style="' + rowStyle + '">' + tds + '</tr>';
   }
 
+  // b771dec6 Batch 5 (Finding 7): renderMergedRow — combines a phase-1 hardware (sensor) row
+  // with its paired phase-2 sequence row into one visible <tr>. Presentation-only: does NOT
+  // read/write anything the five build/compute functions produced beyond what renderRow already
+  // reads; lineTotal is recomputed fresh here (hw.lineTotal + seq.lineTotal), never written back
+  // to either row object, so buildComplianceRows/buildRecommendedRows/buildFullScopeRows/
+  // _pricingComputeTotals/collectPricingEstimate remain byte-identical to their pre-Batch-5
+  // output (verified by ce-totals-check, which fingerprints those functions' output, not the
+  // DOM). Deliberately duplicates a small amount of column-rendering logic from renderRow above
+  // instead of modifying it, per the plan's explicit scope ("Only the table-body HTML-assembly
+  // loop... changes"; the five build functions AND renderRow itself were left untouched).
+  function renderMergedRow(hwRow, seqRow, isBothMd, matchedRecRow, hiddenCols) {
+    var hwToggleKey = hwRow._baseId || hwRow.id;
+    var seqToggleKey = seqRow._baseId || seqRow.id;
+    var hwOn = estimate.rowToggles[hwToggleKey] !== false;
+    var seqOn = estimate.rowToggles[seqToggleKey] !== false;
+    // b771dec6 5c: two toggles become one — the combined checkbox reads "on" only when BOTH
+    // underlying rows are on; clicking it forces both to the same new value (see
+    // _pricingToggleCombinedRow). Deliberate UX change, recorded in dashboardlogic.md.
+    var combinedOn = hwOn && seqOn;
+    var laborOverrides = estimate.laborOverrides || {};
+
+    var cells = [];
+
+    // col 0: single combined Include checkbox
+    cells.push(
+      '<input type="checkbox"' +
+        (combinedOn ? ' checked' : '') +
+        ' title="Sensor + blocking sequence — one control for both"' +
+        ' onchange="_pricingToggleCombinedRow(\'' +
+        projId +
+        "','" +
+        hwToggleKey +
+        "','" +
+        seqToggleKey +
+        '\',this.checked)"' +
+        ' style="cursor:pointer">',
+    );
+
+    // col 1: Building
+    cells.push('<span style="font-size:11px">' + _esc(hwRow.building) + '</span>');
+
+    // col 2: Item — concatenated (5c: implementer's call = inline, keeps row height uniform
+    // with every other row per the Batch 2d one-line convention; full text in title for the
+    // case it truncates at narrow viewports)
+    var _combinedItemFull = hwRow.item + ' + ' + seqRow.item;
+    cells.push(
+      '<span style="font-size:11px" title="' +
+        _esc(_combinedItemFull) +
+        '">' +
+        _esc(hwRow.item) +
+        ' <span style="color:var(--text3)">+</span> ' +
+        _esc(seqRow.item) +
+        '</span>',
+    );
+
+    // col 3: Type
+    cells.push('<span style="font-size:10px;color:var(--text2)">' + _esc(hwRow.type) + ' + Sequence</span>');
+
+    // col 4: Equipment
+    cells.push(
+      '<span style="font-size:10px;color:var(--text2)">' +
+        _esc(hwRow.equipment) +
+        ' \xb7 ' +
+        _esc(seqRow.equipment) +
+        '</span>',
+    );
+
+    // col 5: Qty — shows both if different (5c). Read-only text, not an editable input: unlike
+    // a single row, a combined row has two independent underlying qty overrides (hw's and seq's)
+    // and one input control can't unambiguously target either — editing still works from each
+    // row's own qtyOverride storage, just not exposed on this merged display cell.
+    var _qtyText = hwRow.qty === seqRow.qty ? String(hwRow.qty) : hwRow.qty + ' / ' + seqRow.qty;
+    cells.push(
+      '<span style="font-size:11px;font-variant-numeric:tabular-nums" title="Sensor qty ' +
+        hwRow.qty +
+        ' / Sequence qty ' +
+        seqRow.qty +
+        '">' +
+        _qtyText +
+        '</span>',
+    );
+
+    // col 6: SKU — from the hardware row (sequence rows never have a SKU)
+    var _skuContent = '';
+    if (hwRow.ioOnly) {
+      _skuContent = '<span style="color:var(--text3);font-size:10px">—</span>';
+    } else if (!hwRow.sku) {
+      _skuContent = '<span style="color:var(--warn);font-size:10px">Manual Price</span>';
+    } else {
+      var _optNote = hwRow.optimized
+        ? '<span title="Optimizer: was ' +
+          _esc(hwRow.optimizerOriginalSku || '') +
+          '" style="color:var(--accent);margin-right:3px;font-size:10px">✓</span>'
+        : '';
+      _skuContent =
+        (hwRow.engReview
+          ? '<span title="Engineering review required" style="color:var(--warn);margin-right:3px;font-size:11px">⚠</span>'
+          : '') +
+        _optNote +
+        '<span style="font-family:monospace;font-size:10px">' +
+        _esc(hwRow.sku) +
+        '</span>';
+    }
+    cells.push(_skuContent);
+
+    // col 7: List — from the hardware row
+    var _listContent =
+      hwRow.ioOnly || !hasCatalog || hwRow.noSku
+        ? '<span style="color:var(--text3);font-size:10px">—</span>'
+        : hwRow.listPrice != null
+          ? _pricingFmt(hwRow.listPrice)
+          : '<span style="color:var(--text3)">—</span>';
+    cells.push(_listContent);
+
+    // col 8: Net — from the hardware row
+    var _netContent =
+      hwRow.ioOnly || !hasCatalog || hwRow.noSku
+        ? '<span style="color:var(--text3);font-size:10px">—</span>'
+        : hwRow.netPrice != null
+          ? _pricingFmt(hwRow.netPrice)
+          : '<span style="color:var(--text3)">—</span>';
+    cells.push(_netContent);
+
+    // col 9: Contract — hw's per-unit contract price (read-only) stacked above the sequence's
+    // existing editable hours-override input (same control/onchange as renderRow's phase-2
+    // branch — labor-hour editing is preserved unchanged on the merged row).
+    var _hwContractText = hwRow.ioOnly
+      ? '$0 (I/O)'
+      : hwRow.contractPrice != null
+        ? _pricingFmt(hwRow.contractPrice)
+        : '—';
+    var _defaultHrs =
+      COST_PER_SEQ_HOURS_DEFAULT[seqRow.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[seqRow.seqKey] : 2.0;
+    var _currentHrs =
+      laborOverrides[seqRow.seqKey] != null ? parseFloat(laborOverrides[seqRow.seqKey]) : seqRow.hrsPerUnit;
+    var _hrsOverridden = laborOverrides[seqRow.seqKey] != null;
+    var _seqHoursHTML =
+      '<div style="display:flex;align-items:center;gap:3px;justify-content:flex-end">' +
+      '<input type="number" min="0" step="0.25" value="' +
+      _currentHrs +
+      '"' +
+      ' title="Hours per instance (default: ' +
+      _defaultHrs +
+      ')"' +
+      ' style="width:40px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border:1px solid ' +
+      (_hrsOverridden ? 'var(--accent)' : 'var(--border)') +
+      ';border-radius:3px;text-align:right;font-variant-numeric:tabular-nums"' +
+      ' onchange="_pricingSeqHrsChange(\'' +
+      projId +
+      "','" +
+      seqRow.seqKey +
+      '\',this.value)">' +
+      '<span style="font-size:9px;color:var(--text3)">hrs</span>' +
+      '</div>';
+    var _contractContent =
+      '<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">' +
+      '<span style="font-size:10px;color:var(--text2)" title="Sensor contract price">' +
+      _hwContractText +
+      '</span>' +
+      _seqHoursHTML +
+      '</div>';
+    cells.push(_contractContent);
+
+    // col 10: Line Total — hw.lineTotal + seq.lineTotal, computed fresh here every render
+    // (5c: "never written back") — the underlying row objects and their lineTotal fields are
+    // never mutated, so toggling this row on/off moves the grand total by exactly this combined
+    // amount and back (footer total comes from _pricingComputeTotals summing the SAME unmerged
+    // per-row lineTotal fields keyed by rowToggles, untouched by this function).
+    var _combinedLineTotal = (hwRow.lineTotal || 0) + (seqRow.lineTotal || 0);
+    var _lineTotalContent =
+      '<span' + (!combinedOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(_combinedLineTotal) + '</span>';
+    cells.push(_lineTotalContent);
+
+    // col 11: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
+    // sequence half of the pair
+    var _impactCellContent = '';
+    if (tier === 'recommended' && seqRow.savingsImpact) {
+      _impactCellContent = _a36ImpactChip(seqRow);
+    }
+    cells.push(_impactCellContent);
+
+    // Step 5 $ savings range chip — same logic as renderRow, scoped to the sequence half so this
+    // content isn't dropped by merging (Recommended tier, phase-2 savings sequences only)
+    var _savingsRangeHTML = '';
+    if (
+      (tier === 'recommended' || tier === 'both') &&
+      seqRow.seqKey &&
+      seqRow.savingsImpact &&
+      seqRow.savingsImpact !== 'enabler' &&
+      seqRow.savingsImpact !== 'safety'
+    ) {
+      var _hasBills = _annualElecData.hasBillData;
+      var _annKwh = _annualElecData.annualKwh;
+      if (!_hasBills) {
+        var _litRange = SAVINGS_RANGE_MAP[seqRow.seqKey];
+        if (_litRange) {
+          var _basisLabel = _litRange.energyBasis === 'fan' ? 'fan energy' : 'site electricity';
+          _savingsRangeHTML =
+            '<div style="margin-top:5px;padding:3px 6px;background:rgba(134,239,172,0.05);' +
+            'border-left:2px solid rgba(134,239,172,0.4);border-radius:0 3px 3px 0;white-space:normal">' +
+            '<span style="font-size:10px;font-weight:700;color:var(--text2)">Est. ' +
+            Math.round(_litRange.lowPct * 100) +
+            '–' +
+            Math.round(_litRange.highPct * 100) +
+            '% of ' +
+            _basisLabel +
+            '</span>' +
+            '<span style="font-size:9px;color:var(--text3);margin-left:4px">' +
+            'literature range · ' +
+            _esc(_litRange.citation) +
+            ' — import utility bills for $ estimate' +
+            '</span>' +
+            '</div>';
+          _anySavingsShown = true;
+        }
+      } else if (_annKwh && SAVINGS_RANGE_MAP[seqRow.seqKey]) {
+        var _range = _pricingComputeSavingsRange(seqRow, _annKwh, _fanFraction, _elecRate);
+        if (_range && _range.high > 0) {
+          _savingsRangeHTML =
+            '<div style="margin-top:5px;padding:3px 6px;background:rgba(134,239,172,0.08);' +
+            'border-left:2px solid #86efac;border-radius:0 3px 3px 0;white-space:normal">' +
+            '<span style="font-size:10px;font-weight:700;color:#86efac">Est. ' +
+            _pricingFmtSavingsRange(_range.low, _range.high) +
+            '</span>' +
+            '<span style="font-size:9px;color:var(--text3);margin-left:4px">' +
+            'literature range — M&amp;V required · ' +
+            _esc(_range.citation) +
+            '</span>' +
+            '</div>';
+          _anySavingsShown = true;
+        }
+      }
+    }
+
+    // col 12: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
+    // lost. clientSummary/savingsRationale are read from the module-level SEQUENCE_SAVINGS_IMPACT
+    // constant directly (not only from seqRow's own stamped fields, which buildRecommendedRows
+    // only sets for the Recommended tier) so the combined tooltip carries the sequence's benefit
+    // sentence on EVERY tier, not just Recommended.
+    var _seqImpactDef = SEQUENCE_SAVINGS_IMPACT[seqRow.seqKey];
+    var _seqSummaryText =
+      seqRow.clientSummary ||
+      seqRow.savingsRationale ||
+      (_seqImpactDef && (_seqImpactDef.clientSummary || _seqImpactDef.savingsRationale)) ||
+      '';
+    var _hwWhy = hwRow.whyNeeded || '';
+    var _combinedTooltipParts = [];
+    if (_hwWhy) _combinedTooltipParts.push(_hwWhy + (hwRow.g36Section ? ' (' + hwRow.g36Section + ')' : ''));
+    if (_seqSummaryText) _combinedTooltipParts.push(_seqSummaryText);
+    var _combinedTooltip = _combinedTooltipParts.join(' \xb7 ');
+
+    var _noteText12 = hwRow.note || '';
+    if (hwRow.g36Section) _noteText12 += (_noteText12 ? ' \xb7 ' : '') + hwRow.g36Section;
+    var _notePlaceholder = _noteText12 || 'Add note…';
+    var _noteOverrides = estimate.noteOverrides || {};
+    // Combined row shares ONE note-override slot, keyed by the hw row's toggle key (stable,
+    // arbitrary choice — matches the "one control" pattern already used for the checkbox).
+    var _noteKey = hwToggleKey;
+    var _noteOverrideVal = _noteOverrides[_noteKey] || '';
+    var _noteTitleAttr = _combinedTooltip
+      ? ' title="' + _esc(_noteText12 ? _noteText12 + ' \xb7 ' + _combinedTooltip : _combinedTooltip) + '"'
+      : _noteText12
+        ? ' title="' + _esc(_noteText12) + '"'
+        : '';
+    var _noteInputHTML =
+      '<input type="text" value="' +
+      _esc(_noteOverrideVal) +
+      '" placeholder="' +
+      _esc(_notePlaceholder) +
+      '"' +
+      _noteTitleAttr +
+      ' style="width:100%;font-size:10px;padding:2px 4px;background:' +
+      (_noteOverrideVal ? 'var(--s3)' : 'transparent') +
+      ';color:var(--text);' +
+      'border:1px solid ' +
+      (_noteOverrideVal ? 'var(--accent)' : 'transparent') +
+      ';border-radius:3px;box-sizing:border-box"' +
+      ' onfocus="this.style.cssText+=\';background:var(--s3);border-color:var(--border)\'"' +
+      " onblur=\"var v=this.value;this.style.background=v?'var(--s3)':'';this.style.borderColor=v?'var(--accent)':''\"" +
+      ' onchange="_pricingNoteOverride(\'' +
+      projId +
+      "','" +
+      _noteKey +
+      '\',this.value)">';
+    cells.push(_noteInputHTML + _savingsRangeHTML);
+
+    // Build TR — same column layout/CSS as renderRow
+    var rowStyle = !combinedOn ? 'opacity:0.45;' : '';
+    var tds = '';
+    cells.forEach(function (cellContent, ci) {
+      if (hiddenCols.indexOf(ci) !== -1) return;
+      var isNotesCol = ci === 12;
+      var isImpactCol = ci === 11;
+      var tdStyle = isNotesCol
+        ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
+        : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
+      if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border2);';
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10)
+        tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
+      else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
+      var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
+      tds += '<td' + cls + ' style="' + tdStyle + '">' + cellContent + '</td>';
+    });
+
+    if (isBothMd) {
+      var recLt = matchedRecRow ? matchedRecRow.lineTotal : null;
+      if (hiddenCols.indexOf(-1) === -1) {
+        tds +=
+          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px;border-left:2px solid var(--border2);border-bottom:1px solid var(--border);color:var(--accent)">' +
+          (recLt !== null ? _pricingFmt(recLt) : '<span style="color:var(--text3)">—</span>') +
+          '</td>';
+      }
+    }
+
+    return (
+      '<tr class="ch-tbl-row-merged" data-merged-hw="' +
+      _esc(hwRow.id) +
+      '" data-merged-seq="' +
+      _esc(seqRow.id) +
+      '" style="' +
+      rowStyle +
+      '">' +
+      tds +
+      '</tr>'
+    );
+  }
+
   // ── 9. Build table body HTML
   // _anySavingsShown is set true by renderRow when a $ or % savings range is rendered.
   // Used to gate the M&V disclaimer — only shown when there IS something to disclaim.
@@ -4018,27 +4360,51 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           : '') +
         '</td></tr>';
 
+      // b771dec6 5a/5b (Finding 7): Phase divider rows removed — hardware sensors and their
+      // blocking sequences now render as merged same-row lines where paired, in a single
+      // building group (no more "Phase 1 — Hardware" / "Phase 2 — Programming Labor" dividers).
+      // Pairing runs AFTER bHw1/bLab2/bTotal above, which already summed the FULL unmerged
+      // hw/lb arrays — subtotals and the footer Grand Total are unaffected by this presentation
+      // pass. Each phase-1 hw row is claimed by AT MOST one phase-2 seq row (first match wins,
+      // in current sort order); sequences with no blocking sensors, or whose blocking sensors
+      // are absent/already claimed, render standalone exactly as before.
+      var claimedHwIds = {};
+      var claimedSeqIds = {};
+      var pairedSeqByHwId = {};
+      lb.forEach(function (seqRow) {
+        var blocking = (seqRow.seqKey && SEQUENCE_BLOCKING_SENSORS[seqRow.seqKey]) || [];
+        if (!blocking.length) return; // no blocking sensors → standalone (Finding 7)
+        for (var _hi = 0; _hi < hw.length; _hi++) {
+          var _hwCandidate = hw[_hi];
+          if (claimedHwIds[_hwCandidate.id]) continue; // already claimed by another sequence
+          if (_hwCandidate._pointKey && blocking.indexOf(_hwCandidate._pointKey) !== -1) {
+            claimedHwIds[_hwCandidate.id] = true;
+            claimedSeqIds[seqRow.id] = true;
+            pairedSeqByHwId[_hwCandidate.id] = seqRow;
+            break;
+          }
+        }
+      });
+
       if (hw.length > 0) {
-        tableBodyHTML +=
-          '<tr><td colspan="' +
-          visibleColSpan +
-          '" style="background:var(--s3);padding:3px 10px 3px 18px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border)">Phase 1 — Hardware</td></tr>';
         hw.forEach(function (row) {
           var matchedRec = null;
           if (isBothMode) {
             var base = row.id.replace(/^hw_/, '').replace(/_\d+$/, '');
             matchedRec = recRowIdxByBase[base] || null;
           }
-          tableBodyHTML += renderRow(row, isBothMode, matchedRec, hidden);
+          var pairedSeq = pairedSeqByHwId[row.id];
+          if (pairedSeq) {
+            tableBodyHTML += renderMergedRow(row, pairedSeq, isBothMode, matchedRec, hidden);
+          } else {
+            tableBodyHTML += renderRow(row, isBothMode, matchedRec, hidden);
+          }
         });
       }
 
       if (lb.length > 0) {
-        tableBodyHTML +=
-          '<tr><td colspan="' +
-          visibleColSpan +
-          '" style="background:var(--s3);padding:3px 10px 3px 18px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border)">Phase 2 — Programming Labor</td></tr>';
         lb.forEach(function (row) {
+          if (claimedSeqIds[row.id]) return; // already rendered combined with its paired hw row
           tableBodyHTML += renderRow(row, isBothMode, null, hidden);
         });
       }
