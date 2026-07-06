@@ -79,11 +79,11 @@ function normMonth(startStr, endStr, incl, allBills) {
     } else {
       const prev = assignments[i - 1];
       const gapDays = (s - _parseISO(prev.end)) / (1000 * 60 * 60 * 24);
-      if (gapDays <= 3) {
-        // Continuous: always just increment from previous month
+      if (gapDays >= -3 && gapDays <= 3) {
+        // Continuous chain (incl. 1-3 day read jitter/overlap): always just increment from previous month
         ym = nextMonth(prev.ym);
       } else {
-        // Gap in data: restart from majority-days
+        // Gap OR substantial overlap: restart from majority-days
         ym = majorityMonth(s, e);
       }
     }
