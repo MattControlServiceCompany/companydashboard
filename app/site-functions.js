@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.06.624',
+    date: '2026-07-06',
+    title: 'Cost Estimate: even rows, aligned columns, and sorting',
+    items: [
+      {
+        type: 'fix',
+        text: 'Cost Estimate: every table row is now the same height — savings details moved into a compact badge with the full text on hover.',
+      },
+      {
+        type: 'fix',
+        text: 'Cost Estimate: columns are now the same width in all three tiers instead of shifting with their contents.',
+      },
+      {
+        type: 'feature',
+        text: 'Cost Estimate: new Sort selector — keep the default order, put the best-return building first, or rank every line item by best return across all buildings.',
+      },
+      {
+        type: 'improvement',
+        text: 'Cost Estimate: rows that need no new hardware now say "No hardware needed" instead of "IO Only".',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.06.623',
     date: '2026-07-06',
     title: 'Bill deletion made reliable',
