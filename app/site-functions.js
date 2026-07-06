@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.06.623',
+    date: '2026-07-06',
+    title: 'Bill deletion made reliable',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data: deleting a bill now always acts on the meter you are viewing, and if the app ever cannot resolve which meter you mean, it shows a warning message instead of silently doing nothing.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.04.622',
     date: '2026-07-04',
     title: 'Cost Estimate: related items now share one row',
