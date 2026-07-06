@@ -784,9 +784,13 @@ function toggleChargeDetail(rowId) {
   if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 async function deleteBillRow(mid, rowId) {
+  _syncEmbedUDContext();
   const b = getUDBldg(udSelProjId, udSelBldgId);
   const m = b?.meters?.find((m) => m.id === mid);
-  if (!m) return;
+  if (!m) {
+    showToast('Meter not found — re-select the meter and try again', 'warn');
+    return;
+  }
   const _delRow = m.bills.find((r) => r.id === rowId);
   if (_delRow) {
     const period =
