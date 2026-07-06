@@ -981,7 +981,7 @@ function renderDetail(p) {
             <span class="phc-sep">|</span>
             <span>Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
             <span class="phc-sep">|</span>
-            <span><span class="phc-val">${getUDBldgs(p.id).length}</span> building${getUDBldgs(p.id).length !== 1 ? 's' : ''} · <span class="phc-val">${getUDBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0) ? Number(getUDBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0)).toLocaleString() + ' total sf' : ''}</span></span>
+            <span><span class="phc-val">${getBaselineEligibleBldgs(p.id).length}</span> building${getBaselineEligibleBldgs(p.id).length !== 1 ? 's' : ''} · <span class="phc-val">${getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0) ? Number(getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0)).toLocaleString() + ' total sf' : ''}</span></span>
             <span class="phc-sep">|</span>
             <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">📊 Project Baseline</button>
             <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">📈 Projected Savings</button>
