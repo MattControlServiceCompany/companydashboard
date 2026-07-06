@@ -29,10 +29,18 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   const bl = m.baseline;
   if (!bl || !bl.months || bl.months.length < 3) return empty;
 
-  // Cache: return stored result if bills AND overrides haven't changed
-  const _ovrHash = bl.costSavOverrides ? JSON.stringify(bl.costSavOverrides) : '';
+  // Cache: return stored result if bills AND baseline (reg/months/overrides) haven't changed.
+  // Versioned 'v2|' key: fingerprints the full baseline (reg included — freeze now invalidates),
+  // superseding the old _ovrHash-only key. The 'v2|' prefix is also the purge mechanism for every
+  // pre-existing persisted v1 cache (see saveUtilityData() strip-on-save + bcbc84e0).
+  const _blFp = JSON.stringify({
+    reg: bl.reg || null,
+    months: bl.months || null,
+    overrides: bl.overrides || null,
+    costSavOverrides: bl.costSavOverrides || null,
+  });
   const cacheKey =
-    bills.length + '_' + (bills[0]?.start || '') + '_' + (bills[bills.length - 1]?.end || '') + '_' + _ovrHash;
+    'v2|' + bills.length + '_' + (bills[0]?.start || '') + '_' + (bills[bills.length - 1]?.end || '') + '|' + _blFp;
   if (m._savingsCache && m._savingsCacheKey === cacheKey) return m._savingsCache;
 
   const byYM = {};

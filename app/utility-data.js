@@ -363,6 +363,18 @@ function loadUtilityData() {
 function saveUtilityData() {
   // Write each project to its own localStorage key
   Object.keys(utilityData).forEach(function (pid) {
+    // Strip transient, runtime-only computed fields before persisting so a stale cache can never
+    // be written to disk again (bcbc84e0). These are rebuilt on next render by getMeterSavings()/
+    // getNormRows() — safe to delete from the live in-memory objects.
+    (utilityData[pid].buildings || []).forEach(function (b) {
+      (b.meters || []).forEach(function (m) {
+        delete m._savingsCache;
+        delete m._savingsCacheKey;
+        delete m._reg;
+        delete m._savingsByYM;
+        delete m._unitSavByCalMo;
+      });
+    });
     sset('en_utility_' + pid, utilityData[pid]);
   });
   _refreshBldgPerfIfVisible();
