@@ -1703,7 +1703,7 @@ function _pricingPointType(pointKey, mapEntry) {
   // (integral VVT actuator — not a Controller I/O point), so label them "Programming"
   var dampCmdKeys = ['dampCmd', 'coldDampCmd', 'hotDampCmd'];
   if (mapEntry.flags.indexOf('ioOnly') !== -1 && dampCmdKeys.indexOf(pointKey) !== -1) return 'Programming';
-  if (mapEntry.flags.indexOf('ioOnly') !== -1) return 'IO Only';
+  if (mapEntry.flags.indexOf('ioOnly') !== -1) return 'No hardware needed';
   if (mapEntry.flags.indexOf('noSku') !== -1) return 'Manual';
   // Categorize by SKU prefix / point type
   var sku = mapEntry.defaultSku || '';
@@ -1903,7 +1903,7 @@ function initCostEstimateTab(projId) {
 
     var unitPriceCell = '';
     if (row.ioOnly) {
-      unitPriceCell = '<span style="color:var(--text3);font-size:10px">$0 (I/O)</span>';
+      unitPriceCell = '<span style="color:var(--text3);font-size:10px">$0 (no part)</span>';
     } else if (row.phase === 2) {
       // Labor: show hours × rate
       unitPriceCell = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '—';
@@ -1951,7 +1951,7 @@ function initCostEstimateTab(projId) {
       '<td class="ch-frozen" style="width:36px;text-align:center;padding:4px 6px">',
       '<input type="checkbox"' +
         (toggleOn ? ' checked' : '') +
-        (row.ioOnly ? ' title="Controller I/O — no cost"' : '') +
+        (row.ioOnly ? ' title="Uses existing wiring — no new part needed"' : '') +
         ' onchange="_pricingToggleRow(\'' +
         projId +
         "','" +
@@ -2563,24 +2563,17 @@ function buildRecommendedRows(projId) {
     }
   });
 
-  // b771dec6 2c: order building groups by descending ROI — score = the best (max)
-  // phase-2 weight/effectiveCostTier ratio among that building's rows. Reorders which
-  // building group renders first; does not flatten rows across buildings (Batch 5 territory)
-  // and does not touch Compliance/Full-Scope (they don't call this function).
-  var _bldgRoiScore = {};
-  allBuildings.forEach(function (bName) {
-    var score = 0;
-    recRows.forEach(function (r) {
-      if (r.building === bName && r.phase === 2) {
-        var s = (r._savingsWeight || 0) / Math.max(r._effectiveCostTier || 1, 1);
-        if (s > score) score = s;
-      }
-    });
-    _bldgRoiScore[bName] = score;
-  });
-  allBuildings.sort(function (a, b) {
-    return _bldgRoiScore[b] - _bldgRoiScore[a];
-  });
+  // 0ae36950 (979fd1af sort control): Batch 2c's hardcoded descending-ROI building sort has been
+  // REMOVED from here — Matt asked for a user-facing sort control ("sort by best building return
+  // and by best equipment return"), not a fixed default order he never asked for. allBuildings
+  // now stays in natural/source order (the order buildings first appear walking recRows, which
+  // itself follows buildComplianceRows' project-data order). The "Best building return first"
+  // mode of the new toolbar sort control (initCostEstimateTab, tier==='recommended') reproduces
+  // the exact same score formula at render time — see _pricingComputeBldgRoiScores below.
+  // Per plan constraint: sorting must live in the RENDER layer only, so this function's output
+  // array stays byte-identical for ce-totals-check (which fingerprints per-row by id anyway, so
+  // building order was never actually gate-relevant — but other future consumers of this
+  // function's return order should see the natural order, not a baked-in ranking).
 
   var sortedRows = [];
   allBuildings.forEach(function (bName) {
@@ -2786,14 +2779,14 @@ var PRICING_TBL_COLS = [
   { label: 'SKU', noSort: false, noHide: false, numeric: false, minWidth: 100 }, // 6
   { label: 'List', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 7
   { label: 'Net', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 8
-  { label: 'Contract', noSort: false, noHide: false, numeric: true, minWidth: 90 }, // 9
+  { label: 'Contract', noSort: false, noHide: false, numeric: true, minWidth: 110 }, // 9 — widened (0ae36950) to fit the merged-row side-by-side sensor-price + hours-input layout
   { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 10 — label overridden at render time with active basis
   {
     label: 'Impact',
     noSort: true,
     noHide: false,
     numeric: false,
-    minWidth: 80, // 11 — Phase 5 savings badge
+    minWidth: 170, // 11 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
     isImpactCol: true,
   },
   { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 12
@@ -2995,6 +2988,83 @@ function _pricingBldgFilterChange(projId, val) {
   initCostEstimateTab(projId);
 }
 
+/* ── Row sort control (979fd1af, item 0ae36950) ──────────────────────────────
+   Matt's ask: "the user should have the ability to sort by best building return and by
+   best equipment return." Module-level, per-project, resets on reload — same persistence
+   rule as _pricingSortState/_pricingBldgFilter above (ui-standards.md: "Sort persists per
+   session; resets on page reload — do NOT persist sort across sessions").
+   Recommended tier ONLY — it's the only tier with savings-weight fields (_savingsWeight/
+   _effectiveCostTier) to score against; Compliance/Full-Scope never show this control.
+     'default'   — natural/source order (buildRecommendedRows' own order; see 0ae36950 note
+                   there — this is NOT the old hardcoded descending-ROI order, which has been
+                   removed; Matt said he never asked for that default).
+     'building'  — group headers ordered by descending building ROI score (lifted verbatim
+                   from the removed Batch 2c logic — see _pricingComputeBldgRoiScores).
+     'equipment' — flat ranked list of equipment rows (merged + standalone) by the same
+                   savings-per-cost ratio, across ALL buildings; no building grouping/subtotal
+                   rows in this mode (subtotals only make sense grouped) — Building stays a
+                   visible per-row column. See the tier==='recommended' && sortMode==='equipment'
+                   branch in initCostEstimateTab's table-body assembly.
+   ─────────────────────────────────────────────────────────────────────────── */
+var _pricingRowSortMode = {}; // projId → 'default' | 'building' | 'equipment'
+function _pricingGetRowSortMode(projId) {
+  return _pricingRowSortMode[projId] || 'default';
+}
+function _pricingRowSortModeChange(projId, val) {
+  _pricingRowSortMode[projId] = val;
+  initCostEstimateTab(projId);
+}
+
+/* ── Score a building for the 'building' sort mode — same ratio Batch 2c used:
+   max over the building's phase-2 rows of (savings weight / effective cost tier). ── */
+function _pricingComputeBldgRoiScores(rows) {
+  var scores = {};
+  rows.forEach(function (r) {
+    if (r.phase !== 2 || !r.building) return;
+    var s = (r._savingsWeight || 0) / Math.max(r._effectiveCostTier || 1, 1);
+    if (scores[r.building] == null || s > scores[r.building]) scores[r.building] = s;
+  });
+  return scores;
+}
+
+/* ── Score a single equipment row for the 'equipment' flat-rank sort mode. Standalone
+   hardware-only rows (no seqKey — a sensor with no blocking sequence in this project) carry
+   no savings data, so they sink to the bottom of the ranking (score -1, below any real
+   sequence's 0). Merged rows are scored from their sequence half. ── */
+function _pricingEquipRowScore(row) {
+  // phase-1 standalone hw rows (no blocking sequence) never have _savingsWeight stamped —
+  // score them below any real sequence (whose minimum possible score is 0) so they sink to
+  // the bottom of the 'equipment' ranked list rather than the top.
+  if (row.phase !== 2) return -1;
+  return (row._savingsWeight || 0) / Math.max(row._effectiveCostTier || 1, 1);
+}
+
+/* ── Pair phase-1 hardware rows with the phase-2 sequence row they block, within ONE
+   building's row set (b771dec6 Batch 5 pairing logic, factored out so both the grouped
+   render loop and the flat 'equipment' sort mode share one implementation instead of two
+   copies drifting apart). Each hw row claimed by at most one sequence; sequences with no
+   blocking sensors, or whose blocking sensors are absent/already claimed, stay standalone. ── */
+function _pricingPairHwSeq(hw, lb) {
+  var claimedHwIds = {};
+  var claimedSeqIds = {};
+  var pairedSeqByHwId = {};
+  lb.forEach(function (seqRow) {
+    var blocking = (seqRow.seqKey && SEQUENCE_BLOCKING_SENSORS[seqRow.seqKey]) || [];
+    if (!blocking.length) return; // no blocking sensors → standalone
+    for (var _hi = 0; _hi < hw.length; _hi++) {
+      var _hwCandidate = hw[_hi];
+      if (claimedHwIds[_hwCandidate.id]) continue; // already claimed by another sequence
+      if (_hwCandidate._pointKey && blocking.indexOf(_hwCandidate._pointKey) !== -1) {
+        claimedHwIds[_hwCandidate.id] = true;
+        claimedSeqIds[seqRow.id] = true;
+        pairedSeqByHwId[_hwCandidate.id] = seqRow;
+        break;
+      }
+    }
+  });
+  return { claimedHwIds: claimedHwIds, claimedSeqIds: claimedSeqIds, pairedSeqByHwId: pairedSeqByHwId };
+}
+
 /* ── Toggle column visibility ─────────────────────────────────────────────── */
 function _pricingToggleCol(projId, colIdx) {
   var hidden = _pricingGetHiddenCols(projId);
@@ -3187,7 +3257,7 @@ function _pricingOpenSettingsPopover(projId, btn) {
   if (tier === 'recommended' || tier === 'both') {
     html +=
       '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
-      'title="Fan energy as % of total electricity (CBECS VAV typical range 10–20%); used for DSP/SAT reset savings estimates">' +
+      'title="Fan energy as % of total electricity (CBECS VAV typical range 10–20%); used for duct pressure/supply air temp reset savings estimates">' +
       'Fan energy %:' +
       '<input type="number" id="pricing-fanfrac-' +
       projId +
@@ -3415,6 +3485,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var hidden = _pricingGetHiddenCols(projId);
   var sortState = _pricingSortState[projId] || { col: null, dir: null };
   var filterBldg = _pricingBldgFilter[projId] || '';
+  // 979fd1af: row sort control — Recommended tier only (the only tier with savings-weight
+  // fields to score by). See _pricingGetRowSortMode for mode definitions.
+  var _rowSortMode = tier === 'recommended' ? _pricingGetRowSortMode(projId) : 'default';
 
   // ── 2. Build base rows (Phase 3 row builder)
   var catalog = sget('en_pricing_catalog', null);
@@ -3486,6 +3559,16 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
   });
 
+  // 979fd1af "Best building return first": lifted verbatim from the removed Batch 2c logic in
+  // buildRecommendedRows (see the 0ae36950 note there). Only reorders which building group
+  // renders first — does not flatten rows across buildings (that's the 'equipment' mode below).
+  if (tier === 'recommended' && _rowSortMode === 'building') {
+    var _bldgRoiScores = _pricingComputeBldgRoiScores(filteredRows);
+    buildings = buildings.slice().sort(function (a, b) {
+      return (_bldgRoiScores[b] || 0) - (_bldgRoiScores[a] || 0);
+    });
+  }
+
   var isBothMode = tier === 'both';
   // Effective column count (both mode adds 1 extra col)
   var totalColCount = PRICING_TBL_COLS.length + (isBothMode ? 1 : 0);
@@ -3512,6 +3595,91 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  // 0ae36950: single-line $-savings-range chip, rendered in the Impact column (Recommended tier
+  // phase-2 rows only). Replaces the old wrapping <div> that was appended below the Notes-cell
+  // input — at narrow Notes-column widths that div's white-space:normal text wrapped into many
+  // lines, driving individual rows up to 233px tall (b771dec6 column-width-invest root cause).
+  // Full detail text now lives entirely in the title tooltip (ui-standards single-line + hover
+  // convention), matching the existing _a36ImpactChip pattern it now sits next to. Shared by
+  // renderRow and renderMergedRow (called with whichever row carries the seqKey — for a merged
+  // row that's the sequence half, since only phase-2 rows have savings data).
+  function _savingsRangeChipHTML(seqLikeRow) {
+    if (
+      !(
+        (tier === 'recommended' || tier === 'both') &&
+        seqLikeRow.seqKey &&
+        seqLikeRow.savingsImpact &&
+        seqLikeRow.savingsImpact !== 'enabler' &&
+        seqLikeRow.savingsImpact !== 'safety'
+      )
+    ) {
+      return '';
+    }
+    var _hasBills = _annualElecData.hasBillData;
+    var _annKwh = _annualElecData.annualKwh;
+    var _chipBase =
+      'display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
+      'white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;margin-left:4px;';
+    if (!_hasBills) {
+      // No bill data — show literature % range if available, otherwise a plain-language note
+      var _litRange = SAVINGS_RANGE_MAP[seqLikeRow.seqKey];
+      if (_litRange) {
+        var _basisLabel = _litRange.energyBasis === 'fan' ? 'fan energy' : 'site electricity';
+        _anySavingsShown = true;
+        return (
+          '<span title="' +
+          _esc(
+            'Literature range: ' +
+              Math.round(_litRange.lowPct * 100) +
+              '–' +
+              Math.round(_litRange.highPct * 100) +
+              '% of ' +
+              _basisLabel +
+              ' \xb7 ' +
+              _litRange.citation +
+              ' — import utility bills for a dollar estimate',
+          ) +
+          '" style="' +
+          _chipBase +
+          'background:var(--s3);color:var(--text2)">Est. ' +
+          Math.round(_litRange.lowPct * 100) +
+          '–' +
+          Math.round(_litRange.highPct * 100) +
+          '%</span>'
+        );
+      }
+      return (
+        '<span title="Import utility bills to see an estimated dollar savings" style="' +
+        _chipBase +
+        'color:var(--text3);font-style:italic;font-weight:400">Needs bill data</span>'
+      );
+    }
+    if (_annKwh && SAVINGS_RANGE_MAP[seqLikeRow.seqKey]) {
+      var _range = _pricingComputeSavingsRange(seqLikeRow, _annKwh, _fanFraction, _elecRate);
+      if (_range && _range.high > 0) {
+        _anySavingsShown = true;
+        return (
+          '<span title="' +
+          _esc('Literature range — M&V required \xb7 ' + _range.citation) +
+          '" style="' +
+          _chipBase +
+          'background:rgba(134,239,172,0.12);color:#86efac">Est. ' +
+          _pricingFmtSavingsRange(_range.low, _range.high) +
+          '</span>'
+        );
+      }
+      return '';
+    }
+    if (_annKwh) {
+      return (
+        '<span title="Site-specific calculation needed for a dollar estimate" style="' +
+        _chipBase +
+        'color:var(--text3);font-style:italic;font-weight:400">Needs site calc</span>'
+      );
+    }
+    return '';
   }
 
   // ── 7. Build toolbar HTML (extends Phase 3 toolbar with building filter)
@@ -3546,10 +3714,38 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       .join('') +
     '</select></label>';
 
+  // 979fd1af: row sort control — Recommended tier only (the only tier with savings-weight
+  // fields to score by; Compliance/Full-Scope never stamp _savingsWeight/_effectiveCostTier
+  // so there is nothing meaningful to sort them by — the control simply doesn't appear there).
+  var rowSortHTML = '';
+  if (tier === 'recommended') {
+    var _curSortMode = _pricingGetRowSortMode(projId);
+    rowSortHTML =
+      '<span style="color:var(--border2)">|</span>' +
+      '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px" ' +
+      'title="Choose how buildings and equipment are ordered in this table">' +
+      'Sort:' +
+      '<select onchange="_pricingRowSortModeChange(\'' +
+      projId +
+      '\',this.value)"' +
+      ' style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px">' +
+      '<option value="default"' +
+      (_curSortMode === 'default' ? ' selected' : '') +
+      '>Default order</option>' +
+      '<option value="building"' +
+      (_curSortMode === 'building' ? ' selected' : '') +
+      '>Best building return first</option>' +
+      '<option value="equipment"' +
+      (_curSortMode === 'equipment' ? ' selected' : '') +
+      '>Best equipment return first</option>' +
+      '</select></label>';
+  }
+
   // b771dec6 3a: toolbar keeps only Import Pricing CSV + Tier toggle + Building filter
   // (Matt's explicit list). Price Basis/Net×/Contract%/Hourly Rate/Fan energy% + the
   // column-visibility checklist (previously a gear icon in the Notes header) moved into
-  // the "⚙ Table Settings" popover — see _pricingOpenSettingsPopover.
+  // the "⚙ Table Settings" popover — see _pricingOpenSettingsPopover. 0ae36950 adds the
+  // Recommended-only row sort control (979fd1af) after the building filter.
   var toolbarHTML = [
     '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
     '<label class="btn btn-ghost btn-sm" style="cursor:pointer;position:relative">',
@@ -3569,6 +3765,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     _pricingTierToggleHTML(projId, tier),
     '<span style="color:var(--border2)">|</span>',
     bldgFilterHTML,
+    rowSortHTML,
     '</div>',
   ].join('');
 
@@ -3588,7 +3785,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.push(
       '<input type="checkbox"' +
         (toggleOn ? ' checked' : '') +
-        (row.ioOnly ? ' title="Controller I/O — no cost"' : '') +
+        (row.ioOnly ? ' title="Uses existing wiring — no new part needed"' : '') +
         ' onchange="_pricingToggleRow(\'' +
         projId +
         "','" +
@@ -3697,7 +3894,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // col 9: Contract (40%) — for Phase 2 rows, show editable hours input here
     var contractContent = '';
     if (row.ioOnly) {
-      contractContent = '<span style="color:var(--text3);font-size:10px">$0 (I/O)</span>';
+      contractContent = '<span style="color:var(--text3);font-size:10px">$0 (no part)</span>';
     } else if (row.phase === 2 && row.seqKey) {
       // Per-sequence labor-hour override input (Phase 4) — shown in Contract column
       var defaultHrs = COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] : 2.0;
@@ -3801,11 +3998,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 11: Impact — badge chip for Recommended tier phase-2 rows only (correction #4 / Phase 5)
+    // col 11: Impact — savings-tier badge (correction #4 / Phase 5) + (0ae36950) the $-savings-range
+    // chip, moved here from the Notes column. Both are single-line inline-block spans so this cell
+    // never grows the row taller than any other row's baseline height — see _savingsRangeChipHTML.
     var impactCellContent = '';
     if (tier === 'recommended' && row.phase === 2 && row.savingsImpact) {
       impactCellContent = _a36ImpactChip(row);
     }
+    impactCellContent += _savingsRangeChipHTML(row);
     cells.push(impactCellContent);
 
     // col 12: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
@@ -3815,69 +4015,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // lives in the hover tooltip (_tooltipText12 below) instead of a second visible line.
     var _noteText12 = row.note || '';
     if (row.g36Section) _noteText12 += (_noteText12 ? ' \xb7 ' : '') + row.g36Section;
-
-    // Step 5: $ savings range line (Recommended tier, phase-2 savings sequences only)
-    var _savingsRangeHTML = '';
-    if (
-      (tier === 'recommended' || tier === 'both') &&
-      row.phase === 2 &&
-      row.seqKey &&
-      row.savingsImpact &&
-      row.savingsImpact !== 'enabler' &&
-      row.savingsImpact !== 'safety'
-    ) {
-      var _hasBills = _annualElecData.hasBillData;
-      var _annKwh = _annualElecData.annualKwh;
-      if (!_hasBills) {
-        // No bill data — show literature % range if available, otherwise show import prompt
-        var _litRange = SAVINGS_RANGE_MAP[row.seqKey];
-        if (_litRange) {
-          var _basisLabel = _litRange.energyBasis === 'fan' ? 'fan energy' : 'site electricity';
-          _savingsRangeHTML =
-            '<div style="margin-top:5px;padding:3px 6px;background:rgba(134,239,172,0.05);' +
-            'border-left:2px solid rgba(134,239,172,0.4);border-radius:0 3px 3px 0;white-space:normal">' +
-            '<span style="font-size:10px;font-weight:700;color:var(--text2)">Est. ' +
-            Math.round(_litRange.lowPct * 100) +
-            '–' +
-            Math.round(_litRange.highPct * 100) +
-            '% of ' +
-            _basisLabel +
-            '</span>' +
-            '<span style="font-size:9px;color:var(--text3);margin-left:4px">' +
-            'literature range · ' +
-            _esc(_litRange.citation) +
-            ' — import utility bills for $ estimate' +
-            '</span>' +
-            '</div>';
-          _anySavingsShown = true;
-        } else {
-          _savingsRangeHTML =
-            '<div style="margin-top:4px;font-size:9px;color:var(--text3);font-style:italic">' +
-            'Import utility bills to see estimated $ savings</div>';
-        }
-      } else if (_annKwh && SAVINGS_RANGE_MAP[row.seqKey]) {
-        var _range = _pricingComputeSavingsRange(row, _annKwh, _fanFraction, _elecRate);
-        if (_range && _range.high > 0) {
-          _savingsRangeHTML =
-            '<div style="margin-top:5px;padding:3px 6px;background:rgba(134,239,172,0.08);' +
-            'border-left:2px solid #86efac;border-radius:0 3px 3px 0;white-space:normal">' +
-            '<span style="font-size:10px;font-weight:700;color:#86efac">Est. ' +
-            _pricingFmtSavingsRange(_range.low, _range.high) +
-            '</span>' +
-            '<span style="font-size:9px;color:var(--text3);margin-left:4px">' +
-            'literature range — M&amp;V required · ' +
-            _esc(_range.citation) +
-            '</span>' +
-            '</div>';
-          _anySavingsShown = true;
-        }
-      } else if (_annKwh) {
-        // Bill data present but no literature range for this sequence
-        _savingsRangeHTML =
-          '<div style="margin-top:4px;font-size:9px;color:var(--text3);font-style:italic">' +
-          'Site-specific calculation needed for $ estimate</div>';
-      }
-    }
 
     var _tooltipText12 = '';
     if (row.whyNotHardware) {
@@ -3927,8 +4064,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '\',this.value)">';
 
     // Single-line branch always used (b771dec6 2d) — rationale/clientSummary text now lives in the
-    // hover tooltip (_tooltipText12 above), not as a second visible line, so every row is one line tall.
-    cells.push(_noteInputHTML + _savingsRangeHTML);
+    // hover tooltip (_tooltipText12 above), not as a second visible line, so every row is one line
+    // tall. (0ae36950: the $-savings-range chip that used to be appended here now renders in the
+    // Impact column instead — see col 11 above — so this cell is never anything but the input.)
+    cells.push(_noteInputHTML);
 
     // Build TR
     var rowStyle = !toggleOn ? 'opacity:0.45;' : '';
@@ -4095,11 +4234,16 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           : '<span style="color:var(--text3)">—</span>';
     cells.push(_netContent);
 
-    // col 9: Contract — hw's per-unit contract price (read-only) stacked above the sequence's
-    // existing editable hours-override input (same control/onchange as renderRow's phase-2
-    // branch — labor-hour editing is preserved unchanged on the merged row).
+    // col 9: Contract — hw's per-unit contract price (read-only, as prefix text) alongside the
+    // sequence's existing editable hours-override input (same control/onchange as renderRow's
+    // phase-2 branch — labor-hour editing is preserved unchanged on the merged row).
+    // 0ae36950: restructured from a flex-direction:column stack (price ABOVE the hours input) to
+    // a single-line side-by-side layout — the stacked version added a fixed +9px to every merged
+    // row's height vs. every other row in the table (all three tiers), the second uniform-height
+    // root cause found in b771dec6 column-width-invest. Contract column's minWidth was widened
+    // (PRICING_TBL_COLS[9], 90→110) to fit "price + hrs input" comfortably at default width.
     var _hwContractText = hwRow.ioOnly
-      ? '$0 (I/O)'
+      ? '$0 (no part)'
       : hwRow.contractPrice != null
         ? _pricingFmt(hwRow.contractPrice)
         : '—';
@@ -4108,15 +4252,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var _currentHrs =
       laborOverrides[seqRow.seqKey] != null ? parseFloat(laborOverrides[seqRow.seqKey]) : seqRow.hrsPerUnit;
     var _hrsOverridden = laborOverrides[seqRow.seqKey] != null;
-    var _seqHoursHTML =
-      '<div style="display:flex;align-items:center;gap:3px;justify-content:flex-end">' +
+    var _contractContent =
+      '<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;white-space:nowrap">' +
+      '<span style="font-size:9px;color:var(--text2)" title="Sensor contract price">' +
+      _hwContractText +
+      '</span>' +
+      '<span style="color:var(--text3);font-size:9px">+</span>' +
       '<input type="number" min="0" step="0.25" value="' +
       _currentHrs +
       '"' +
       ' title="Hours per instance (default: ' +
       _defaultHrs +
       ')"' +
-      ' style="width:40px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border:1px solid ' +
+      ' style="width:36px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border:1px solid ' +
       (_hrsOverridden ? 'var(--accent)' : 'var(--border)') +
       ';border-radius:3px;text-align:right;font-variant-numeric:tabular-nums"' +
       ' onchange="_pricingSeqHrsChange(\'' +
@@ -4125,13 +4273,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       seqRow.seqKey +
       '\',this.value)">' +
       '<span style="font-size:9px;color:var(--text3)">hrs</span>' +
-      '</div>';
-    var _contractContent =
-      '<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">' +
-      '<span style="font-size:10px;color:var(--text2)" title="Sensor contract price">' +
-      _hwContractText +
-      '</span>' +
-      _seqHoursHTML +
       '</div>';
     cells.push(_contractContent);
 
@@ -4146,65 +4287,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.push(_lineTotalContent);
 
     // col 11: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
-    // sequence half of the pair
+    // sequence half of the pair. (0ae36950: $-savings-range chip also moved here from Notes,
+    // same as renderRow — see _savingsRangeChipHTML.)
     var _impactCellContent = '';
     if (tier === 'recommended' && seqRow.savingsImpact) {
       _impactCellContent = _a36ImpactChip(seqRow);
     }
+    _impactCellContent += _savingsRangeChipHTML(seqRow);
     cells.push(_impactCellContent);
-
-    // Step 5 $ savings range chip — same logic as renderRow, scoped to the sequence half so this
-    // content isn't dropped by merging (Recommended tier, phase-2 savings sequences only)
-    var _savingsRangeHTML = '';
-    if (
-      (tier === 'recommended' || tier === 'both') &&
-      seqRow.seqKey &&
-      seqRow.savingsImpact &&
-      seqRow.savingsImpact !== 'enabler' &&
-      seqRow.savingsImpact !== 'safety'
-    ) {
-      var _hasBills = _annualElecData.hasBillData;
-      var _annKwh = _annualElecData.annualKwh;
-      if (!_hasBills) {
-        var _litRange = SAVINGS_RANGE_MAP[seqRow.seqKey];
-        if (_litRange) {
-          var _basisLabel = _litRange.energyBasis === 'fan' ? 'fan energy' : 'site electricity';
-          _savingsRangeHTML =
-            '<div style="margin-top:5px;padding:3px 6px;background:rgba(134,239,172,0.05);' +
-            'border-left:2px solid rgba(134,239,172,0.4);border-radius:0 3px 3px 0;white-space:normal">' +
-            '<span style="font-size:10px;font-weight:700;color:var(--text2)">Est. ' +
-            Math.round(_litRange.lowPct * 100) +
-            '–' +
-            Math.round(_litRange.highPct * 100) +
-            '% of ' +
-            _basisLabel +
-            '</span>' +
-            '<span style="font-size:9px;color:var(--text3);margin-left:4px">' +
-            'literature range · ' +
-            _esc(_litRange.citation) +
-            ' — import utility bills for $ estimate' +
-            '</span>' +
-            '</div>';
-          _anySavingsShown = true;
-        }
-      } else if (_annKwh && SAVINGS_RANGE_MAP[seqRow.seqKey]) {
-        var _range = _pricingComputeSavingsRange(seqRow, _annKwh, _fanFraction, _elecRate);
-        if (_range && _range.high > 0) {
-          _savingsRangeHTML =
-            '<div style="margin-top:5px;padding:3px 6px;background:rgba(134,239,172,0.08);' +
-            'border-left:2px solid #86efac;border-radius:0 3px 3px 0;white-space:normal">' +
-            '<span style="font-size:10px;font-weight:700;color:#86efac">Est. ' +
-            _pricingFmtSavingsRange(_range.low, _range.high) +
-            '</span>' +
-            '<span style="font-size:9px;color:var(--text3);margin-left:4px">' +
-            'literature range — M&amp;V required · ' +
-            _esc(_range.citation) +
-            '</span>' +
-            '</div>';
-          _anySavingsShown = true;
-        }
-      }
-    }
 
     // col 12: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
     // lost. clientSummary/savingsRationale are read from the module-level SEQUENCE_SAVINGS_IMPACT
@@ -4256,7 +4346,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       "','" +
       _noteKey +
       '\',this.value)">';
-    cells.push(_noteInputHTML + _savingsRangeHTML);
+    cells.push(_noteInputHTML);
 
     // Build TR — same column layout/CSS as renderRow
     var rowStyle = !combinedOn ? 'opacity:0.45;' : '';
@@ -4309,6 +4399,60 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<tr><td colspan="' +
       visibleColSpan +
       '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">No compliance gaps found. Run the Equipment Matrix audit first.</td></tr>';
+  } else if (tier === 'recommended' && _rowSortMode === 'equipment') {
+    // 979fd1af "Best equipment return first": flat ranked list across ALL buildings by
+    // savings-per-cost (same ratio as the 'building' mode / the removed Batch 2c default) —
+    // no per-building grouping or subtotal header rows in this mode (subtotals only make sense
+    // grouped; Building stays a visible column on every row, same as always). Standalone
+    // hardware-only rows (no blocking sequence) sink to the bottom — see _pricingEquipRowScore.
+    var _flatItems = [];
+    buildings.forEach(function (bName) {
+      var bRows = filteredRows.filter(function (r) {
+        return r.building === bName;
+      });
+      var hw = bRows.filter(function (r) {
+        return r.phase === 1;
+      });
+      var lb = bRows.filter(function (r) {
+        return r.phase === 2;
+      });
+      if (sortState.col != null && sortState.dir) {
+        hw = _pricingSortRows(hw, sortState.col, sortState.dir);
+        lb = _pricingSortRows(lb, sortState.col, sortState.dir);
+      }
+      var _pairs = _pricingPairHwSeq(hw, lb);
+      var claimedSeqIds = _pairs.claimedSeqIds;
+      var pairedSeqByHwId = _pairs.pairedSeqByHwId;
+
+      hw.forEach(function (row) {
+        var matchedRec = null;
+        if (isBothMode) {
+          var base = row.id.replace(/^hw_/, '').replace(/_\d+$/, '');
+          matchedRec = recRowIdxByBase[base] || null;
+        }
+        var pairedSeq = pairedSeqByHwId[row.id];
+        if (pairedSeq) {
+          _flatItems.push({
+            score: _pricingEquipRowScore(pairedSeq),
+            html: renderMergedRow(row, pairedSeq, isBothMode, matchedRec, hidden),
+          });
+        } else {
+          _flatItems.push({ score: _pricingEquipRowScore(row), html: renderRow(row, isBothMode, matchedRec, hidden) });
+        }
+      });
+      lb.forEach(function (row) {
+        if (claimedSeqIds[row.id]) return; // already rendered combined with its paired hw row
+        _flatItems.push({ score: _pricingEquipRowScore(row), html: renderRow(row, isBothMode, null, hidden) });
+      });
+    });
+    _flatItems.sort(function (a, b) {
+      return b.score - a.score;
+    });
+    tableBodyHTML = _flatItems
+      .map(function (it) {
+        return it.html;
+      })
+      .join('');
   } else {
     buildings.forEach(function (bName) {
       var bRows = filteredRows.filter(function (r) {
@@ -4368,23 +4512,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       // pass. Each phase-1 hw row is claimed by AT MOST one phase-2 seq row (first match wins,
       // in current sort order); sequences with no blocking sensors, or whose blocking sensors
       // are absent/already claimed, render standalone exactly as before.
-      var claimedHwIds = {};
-      var claimedSeqIds = {};
-      var pairedSeqByHwId = {};
-      lb.forEach(function (seqRow) {
-        var blocking = (seqRow.seqKey && SEQUENCE_BLOCKING_SENSORS[seqRow.seqKey]) || [];
-        if (!blocking.length) return; // no blocking sensors → standalone (Finding 7)
-        for (var _hi = 0; _hi < hw.length; _hi++) {
-          var _hwCandidate = hw[_hi];
-          if (claimedHwIds[_hwCandidate.id]) continue; // already claimed by another sequence
-          if (_hwCandidate._pointKey && blocking.indexOf(_hwCandidate._pointKey) !== -1) {
-            claimedHwIds[_hwCandidate.id] = true;
-            claimedSeqIds[seqRow.id] = true;
-            pairedSeqByHwId[_hwCandidate.id] = seqRow;
-            break;
-          }
-        }
-      });
+      // 0ae36950: factored into _pricingPairHwSeq so the 'equipment' flat-sort mode below
+      // shares this exact pairing logic instead of a second drifting copy.
+      var _pairs = _pricingPairHwSeq(hw, lb);
+      var claimedSeqIds = _pairs.claimedSeqIds;
+      var pairedSeqByHwId = _pairs.pairedSeqByHwId;
 
       if (hw.length > 0) {
         hw.forEach(function (row) {
@@ -4566,7 +4698,15 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var sSt = _pricingSortState[projId] || { col: null, dir: null };
 
   function thStyle(ci, extraStyle) {
-    var w = widths[ci];
+    // 0ae36950: fall back to the column's declared minWidth as the explicit default width
+    // when the user hasn't drag-resized (widths[ci] falsy). Previously an unset width meant
+    // NO width style at all, so auto table-layout sized each column to its own render's
+    // content (different rows/content per tier), producing different widths for the same
+    // logical column across Compliance/Recommended/Full-Scope (b771dec6 column-width-invest).
+    // Explicit per-column defaults make shared columns pixel-identical across tiers at a
+    // given viewport, while drag-resize (widths[ci] truthy) still always wins.
+    var col = PRICING_TBL_COLS[ci];
+    var w = widths[ci] || (col ? col.minWidth : null);
     var wStyle = w ? 'width:' + w + 'px;min-width:' + w + 'px;' : '';
     return (
       'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 6px 8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;top:0;user-select:none;border-right:1px solid var(--border);border-bottom:2px solid var(--border2);' +
@@ -4712,7 +4852,17 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<div class="ch-panel-body" style="flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
     '<div class="ch-tbl-outer" style="margin:0;flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
     '<div class="ch-tbl-scroll" style="flex:1;min-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px">',
-    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:1006px">',
+    // 0ae36950: dropped `width:100%` — with per-column default widths now always set (see
+    // thStyle), a table wider than the sum of its own column widths (any viewport past ~1280px)
+    // was being stretched by width:100% to fill the scroll container, and CSS auto table-layout
+    // redistributes that extra width proportionally across ALL columns by their existing width
+    // share. Recommended has one more column (Impact) than Compliance/Full-Scope, so its total
+    // specified width differs, and the SAME shared column rendered at a different absolute px
+    // width per tier at wide viewports even though thStyle gives them identical explicit widths.
+    // Dropping width:100% makes the table render at its natural (column-sum) width in every case
+    // — extra container space just shows as blank space to the right inside .ch-tbl-scroll,
+    // which already provides the horizontal scrollbar for narrower viewports.
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;min-width:1006px">',
     '<thead><tr>',
     headerCols,
     extraRecHeader,
