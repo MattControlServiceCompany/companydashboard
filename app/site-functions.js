@@ -1191,6 +1191,37 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.07.625',
+    date: '2026-07-07',
+    title: 'Cost Estimate tab: legend, stable layout, and a new Summary view',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate tab: new legend popover explains what each symbol and badge on the table means.',
+      },
+      {
+        type: 'feature',
+        text: 'Cost Estimate tab: new Summary sub-tab shows per-building totals at a glance instead of scrolling the full item list.',
+      },
+      {
+        type: 'improvement',
+        text: 'Cost Estimate tab: the tier toolbar no longer shifts position when you switch between Recommended and Compare — it stays put.',
+      },
+      {
+        type: 'improvement',
+        text: 'Cost Estimate tab: the footer always shows the selected tier and the savings note, even after edits, instead of disappearing.',
+      },
+      {
+        type: 'improvement',
+        text: 'Cost Estimate tab: Hours now has its own column instead of sharing space with the parts price, so labor time is easier to read.',
+      },
+      {
+        type: 'improvement',
+        text: 'Cost Estimate tab: long building, item, type, and equipment names now clip cleanly instead of stretching the table — hover to see the full name.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.06.624',
     date: '2026-07-06',
     title: 'Cost Estimate: even rows, aligned columns, and sorting',
