@@ -3792,6 +3792,21 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   if (filterBldg && hidden.indexOf(1) === -1) {
     hidden = hidden.concat([1]);
   }
+
+  // Phase 8 (3ee6b754): seqKey → display-item-name map, built once per render from the same
+  // global EM_SEQUENCE_DEFS source (and the same DCV suffix rule) buildBaseRows already uses to
+  // label phase-2 rows — so a standalone $0 ioOnly row can say "Enables: <name>" below without
+  // depending on that sequence's own row being present in the CURRENT tier/filter's row list
+  // (render-time lookup only, no new stored field — see renderRow col 12).
+  var _seqItemLabelByKey = {};
+  if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+    EM_SEQUENCE_DEFS.forEach(function (sd) {
+      var _lbl = sd.label;
+      if (sd.key === 'demandCtrl' || sd.key === 'vav_dcv') _lbl += ' (CO2/DCV Programming)';
+      _seqItemLabelByKey[sd.key] = _lbl;
+    });
+  }
+
   var meta = sget('en_pricing_meta', null);
 
   var baseRows;
@@ -4371,6 +4386,29 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       impactCellContent = _a36ImpactChip(row);
     }
     impactCellContent += _savingsRangeChipHTML(row);
+    // Phase 8 (3ee6b754): a standalone $0 ioOnly row (renderRow only ever sees ioOnly rows that
+    // were NOT claimed by _pricingPairHwSeq — claimed ones render via renderMergedRow instead,
+    // which already shows the paired sequence's real Impact chip) never gets savingsImpact
+    // stamped (only phase-2 seqKey rows do, buildRecommendedRows), so impactCellContent is always
+    // '' here for it — it reads as "no impact" instead of "named prerequisite for a sequence".
+    // Render-time-only lookup against the existing SEQUENCE_BLOCKING_SENSORS map (no new field
+    // stamped on the row, can't drift from _pricingPairHwSeq's own pairing logic).
+    if ((tier === 'recommended' || tier === 'both') && row.ioOnly && !impactCellContent) {
+      var _enablesLabels = [];
+      Object.keys(SEQUENCE_BLOCKING_SENSORS).forEach(function (_sk) {
+        var _blocking = SEQUENCE_BLOCKING_SENSORS[_sk] || [];
+        if (row._pointKey && _blocking.indexOf(row._pointKey) !== -1 && _seqItemLabelByKey[_sk]) {
+          _enablesLabels.push(_seqItemLabelByKey[_sk]);
+        }
+      });
+      if (_enablesLabels.length) {
+        impactCellContent =
+          '<span title="This point has no cost of its own — it unblocks the listed sequence(s)" ' +
+          'style="font-size:9px;color:var(--text3);font-style:italic">Enables: ' +
+          _esc(_enablesLabels.join(', ')) +
+          '</span>';
+      }
+    }
     cells.push(impactCellContent);
 
     // col 13: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
