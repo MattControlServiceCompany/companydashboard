@@ -2998,6 +2998,53 @@ function _pricingSetHiddenCols(projId, hiddenArr) {
   sset('ch_tbl_hidden_pricing_tbl_' + projId, hiddenArr);
 }
 
+/* ── Column-schema migration (review-phase4.md #2) ─────────────────────────
+   PRICING_TBL_COLS gained a new "Hours" column at index 10 in Phase 4, which
+   shifted every column previously at index >=10 up by one (old 10 = Line
+   Total → new 11, old 11 = Impact → new 12, old 12 = Notes → new 13). Both
+   column widths (ch_tbl_col_widths_pricing_tbl_<id>) and hidden columns
+   (ch_tbl_hidden_pricing_tbl_<id>) are persisted keyed by raw PRICING_TBL_COLS
+   index with no migration, so any state saved before this deploy silently
+   misapplies to the wrong column post-Phase-4 (e.g. a widened Line Total
+   column lands on Hours instead).
+   PRICING_COL_SCHEMA_VERSION bump the schema below your PRICING_TBL_COLS
+   change if you insert/remove a column again, and extend the shift logic to
+   match. The stored per-project version marker makes this idempotent — it
+   only shifts once, never re-shifts an already-migrated or fresh
+   post-Phase-4 map, and never deletes the user's saved widths/hidden set,
+   only relocates them to the column they were originally set for. */
+var PRICING_COL_SCHEMA_VERSION = 2; // 2 = Phase 4 (Hours column inserted at index 10)
+function _pricingGetColSchemaVersion(projId) {
+  return sget('ch_tbl_colschema_ver_pricing_tbl_' + projId, 1); // 1 = pre-Phase-4 (no marker ever written)
+}
+function _pricingSetColSchemaVersion(projId, ver) {
+  sset('ch_tbl_colschema_ver_pricing_tbl_' + projId, ver);
+}
+function _pricingMigrateColSchema(projId) {
+  var storedVer = _pricingGetColSchemaVersion(projId);
+  if (storedVer >= PRICING_COL_SCHEMA_VERSION) return; // already migrated (or fresh) — idempotent no-op
+
+  var oldWidths = _pricingGetColWidths(projId);
+  var newWidths = {};
+  Object.keys(oldWidths).forEach(function (k) {
+    var ki = parseInt(k, 10);
+    if (isNaN(ki)) {
+      newWidths[k] = oldWidths[k]; // preserve any non-numeric marker key untouched
+    } else {
+      newWidths[ki >= 10 ? ki + 1 : ki] = oldWidths[k];
+    }
+  });
+  _pricingSetColWidths(projId, newWidths);
+
+  var oldHidden = _pricingGetHiddenCols(projId);
+  var newHidden = oldHidden.map(function (ci) {
+    return ci >= 10 ? ci + 1 : ci;
+  });
+  _pricingSetHiddenCols(projId, newHidden);
+
+  _pricingSetColSchemaVersion(projId, PRICING_COL_SCHEMA_VERSION);
+}
+
 /* ── Sort rows by column index ─────────────────────────────────────────────── */
 function _pricingSortRows(rows, colIdx, dir) {
   if (!dir || colIdx == null) return rows;
@@ -3661,6 +3708,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var el = document.getElementById('ptab-cost-estimate-body-' + projId);
   if (!el) return;
 
+  // review-phase4.md #2: migrate any pre-Phase-4 saved column widths/hidden-cols to the
+  // new post-Hours-column indices before anything reads them. Must run before the first
+  // _pricingGetHiddenCols/_pricingGetColWidths call below — idempotent, safe to call every render.
+  _pricingMigrateColSchema(projId);
+
   // ── 1. Get state
   var estimate = _pricingGetEstimate(projId);
   var tier = estimate.tier || 'compliance';
@@ -3676,12 +3728,24 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var cfg = _pricingGetConfig();
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
-  // Issue 4 fix: auto-hide Impact column (col 11) when tier cannot produce impact badges.
+  // Issue 4 fix: auto-hide the Impact column when tier cannot produce impact badges.
   // savingsImpact is only stamped on Recommended/Both phase-2 rows; Compliance/Full Scope blank.
   // We clone the hidden array so we don't mutate the user's saved preferences.
+  // Phase-4-fix (review-phase4.md #1): look up the Impact column by its isImpactCol flag
+  // instead of a hardcoded index — Phase 4's Hours column insertion shifted Impact from 11 to
+  // 12 and a literal `11` here was left stale, which hid Line Total (the new col 11) instead of
+  // Impact on Compliance/Full Scope. Deriving the index from PRICING_TBL_COLS means the next
+  // column insertion can't silently break this again.
+  var _impactColIdx = -1;
+  for (var _ci = 0; _ci < PRICING_TBL_COLS.length; _ci++) {
+    if (PRICING_TBL_COLS[_ci].isImpactCol) {
+      _impactColIdx = _ci;
+      break;
+    }
+  }
   var _tierHasImpact = tier === 'recommended' || tier === 'both';
-  if (!_tierHasImpact && hidden.indexOf(11) === -1) {
-    hidden = hidden.concat([11]);
+  if (!_tierHasImpact && _impactColIdx !== -1 && hidden.indexOf(_impactColIdx) === -1) {
+    hidden = hidden.concat([_impactColIdx]);
   }
   var meta = sget('en_pricing_meta', null);
 
