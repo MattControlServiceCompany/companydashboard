@@ -4607,19 +4607,58 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         '</span>',
     );
 
-    // col 5: Qty — shows both if different (5c). Read-only text, not an editable input: unlike
-    // a single row, a combined row has two independent underlying qty overrides (hw's and seq's)
-    // and one input control can't unambiguously target either — editing still works from each
-    // row's own qtyOverride storage, just not exposed on this merged display cell.
-    var _qtyText = hwRow.qty === seqRow.qty ? String(hwRow.qty) : hwRow.qty + ' / ' + seqRow.qty;
+    // col 5: Qty — Phase 9 (13b52e14): two independently-editable inputs, one per underlying
+    // qtyOverride key (hw's and seq's), same control/handler/storage as renderRow's standalone
+    // Qty input above — never collapsed to one input even when the two values match, so the
+    // display doesn't reintroduce the original ambiguity the next time they diverge.
+    var _qtyOverridesM = estimate.qtyOverrides || {};
+    var _hwQtyKey = hwToggleKey;
+    var _seqQtyKey = seqToggleKey;
+    var _hwQtyOverridden = _qtyOverridesM[_hwQtyKey] != null;
+    var _seqQtyOverridden = _qtyOverridesM[_seqQtyKey] != null;
+    function _mergedQtyInput(qty, key, isOverridden, label) {
+      return (
+        '<input type="number" min="1" step="1" value="' +
+        qty +
+        '"' +
+        ' title="' +
+        label +
+        ' qty ' +
+        (isOverridden
+          ? '(overridden; default: auto-derived from equipment counts)'
+          : '(auto-derived; edit to override)') +
+        '"' +
+        (isOverridden ? '' : ' class="ch-soft-input"') +
+        ' style="width:32px;font-size:10px;padding:1px 2px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums' +
+        (isOverridden ? ';border:1px solid var(--accent)' : '') +
+        '"' +
+        ' onchange="_pricingQtyOverride(\'' +
+        projId +
+        "','" +
+        key +
+        '\',this.value)">' +
+        (isOverridden
+          ? '<button onclick="_pricingQtyReset(\'' +
+            projId +
+            "','" +
+            key +
+            '\')" title="Reset ' +
+            label +
+            ' qty to auto-derived"' +
+            ' style="font-size:8px;padding:0 2px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.3">↺</button>'
+          : '')
+      );
+    }
     cells.push(
-      '<span style="font-size:11px;font-variant-numeric:tabular-nums" title="Sensor qty ' +
+      '<div style="display:flex;align-items:center;gap:2px;justify-content:flex-end" title="Sensor qty ' +
         hwRow.qty +
         ' / Sequence qty ' +
         seqRow.qty +
         '">' +
-        _qtyText +
-        '</span>',
+        _mergedQtyInput(hwRow.qty != null ? hwRow.qty : 0, _hwQtyKey, _hwQtyOverridden, 'Sensor') +
+        '<span style="color:var(--text3);font-size:10px">/</span>' +
+        _mergedQtyInput(seqRow.qty != null ? seqRow.qty : 0, _seqQtyKey, _seqQtyOverridden, 'Sequence') +
+        '</div>',
     );
 
     // col 6: SKU — from the hardware row (sequence rows never have a SKU)
