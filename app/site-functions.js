@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.07.626',
+    date: '2026-07-07',
+    title: 'Cost Estimate tab: Top ROI panel shows every qualifying measure',
+    items: [
+      {
+        type: 'improvement',
+        text: 'Cost Estimate tab: the Top Return-on-Investment panel now shows every qualifying measure in full instead of stopping at the first four with a scrollbar.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.07.625',
     date: '2026-07-07',
     title: 'Cost Estimate tab: legend, stable layout, and a new Summary view',
