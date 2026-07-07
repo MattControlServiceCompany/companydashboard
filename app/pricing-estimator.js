@@ -3719,6 +3719,15 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var hidden = _pricingGetHiddenCols(projId);
   var sortState = _pricingSortState[projId] || { col: null, dir: null };
   var filterBldg = _pricingBldgFilter[projId] || '';
+  // Phase 5 (d284e714): fetched once, up-front, so renderRow/renderMergedRow (called below,
+  // before the later `var widths` used for header sizing) can clip label spans to the column's
+  // CURRENT width (resized or default) instead of forcing the table wider than its declared
+  // width — see _pricingClipSpanMaxW.
+  var _colWidthsForClip = _pricingGetColWidths(projId);
+  function _pricingClipSpanMaxW(ci) {
+    var w = _colWidthsForClip[ci] || _colWidthsForClip[String(ci)] || PRICING_TBL_COLS[ci].minWidth;
+    return Math.max(20, w - 16); // 16 = cell's own horizontal padding (5px 8px × 2 sides)
+  }
   // 979fd1af: row sort control — Recommended tier only (the only tier with savings-weight
   // fields to score by). See _pricingGetRowSortMode for mode definitions.
   var _rowSortMode = tier === 'recommended' ? _pricingGetRowSortMode(projId) : 'default';
@@ -4064,17 +4073,60 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         ' style="cursor:pointer">',
     );
 
-    // col 1: Building
-    cells.push('<span style="font-size:11px">' + _esc(row.building) + '</span>');
+    // col 1: Building — Phase 5 (d284e714): clip overflow instead of forcing the table wider
+    // than its declared column widths; title carries the untruncated value.
+    // DEVIATION FROM PLAN TEXT (measured, see phase5 verify results-before/after.json): the
+    // plan's literal instruction (only overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+    // on the span) does nothing on a plain inline element — browsers report clientWidth/
+    // scrollWidth as 0 for non-block inline boxes, so no clipping occurs and the column still
+    // grows to fit content (measured: Building TH/TD width unchanged at 430px vs its declared
+    // 90px minWidth, before AND after the literal-only change, seeded long-building-name test).
+    // Minimal correct variant: display:inline-block + an explicit max-width (tied to the
+    // column's current width, resized or default) actually bounds the box so ellipsis clipping
+    // takes effect — this is the same pattern already used elsewhere in this file for the
+    // savings-range chip (~line 3868-3870, `display:inline-block;max-width:120px;overflow:hidden`).
+    cells.push(
+      '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(1) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(row.building) +
+        '">' +
+        _esc(row.building) +
+        '</span>',
+    );
 
-    // col 2: Item
-    cells.push('<span style="font-size:11px">' + _esc(row.item) + '</span>');
+    // col 2: Item — Phase 5: same clipping pattern
+    cells.push(
+      '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(2) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(row.item) +
+        '">' +
+        _esc(row.item) +
+        '</span>',
+    );
 
-    // col 3: Type
-    cells.push('<span style="font-size:10px;color:var(--text2)">' + _esc(row.type) + '</span>');
+    // col 3: Type — Phase 5: same clipping pattern
+    cells.push(
+      '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(3) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(row.type) +
+        '">' +
+        _esc(row.type) +
+        '</span>',
+    );
 
-    // col 4: Equipment
-    cells.push('<span style="font-size:10px;color:var(--text2)">' + _esc(row.equipment) + '</span>');
+    // col 4: Equipment — Phase 5: same clipping pattern
+    cells.push(
+      '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(4) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(row.equipment) +
+        '">' +
+        _esc(row.equipment) +
+        '</span>',
+    );
 
     // col 5: Qty — editable override (Fix: item 6f26cbfd)
     var _qtyOverrides = estimate.qtyOverrides || {};
@@ -4427,15 +4479,28 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         ' style="cursor:pointer">',
     );
 
-    // col 1: Building
-    cells.push('<span style="font-size:11px">' + _esc(hwRow.building) + '</span>');
+    // col 1: Building — Phase 5 (d284e714): clip overflow instead of forcing the table wider
+    // than its declared column widths; title carries the untruncated value. Same measured
+    // deviation as renderRow's col 1 above (display:inline-block + explicit max-width required —
+    // plain overflow:hidden on an inline <span> is a no-op).
+    cells.push(
+      '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(1) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(hwRow.building) +
+        '">' +
+        _esc(hwRow.building) +
+        '</span>',
+    );
 
     // col 2: Item — concatenated (5c: implementer's call = inline, keeps row height uniform
     // with every other row per the Batch 2d one-line convention; full text in title for the
-    // case it truncates at narrow viewports)
+    // case it truncates at narrow viewports). Phase 5: added overflow clipping to the span.
     var _combinedItemFull = hwRow.item + ' + ' + seqRow.item;
     cells.push(
-      '<span style="font-size:11px" title="' +
+      '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(2) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
         _esc(_combinedItemFull) +
         '">' +
         _esc(hwRow.item) +
@@ -4444,15 +4509,27 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         '</span>',
     );
 
-    // col 3: Type
-    cells.push('<span style="font-size:10px;color:var(--text2)">' + _esc(hwRow.type) + ' + Sequence</span>');
-
-    // col 4: Equipment
+    // col 3: Type — Phase 5: same clipping pattern
+    var _combinedTypeFull = hwRow.type + ' + Sequence';
     cells.push(
-      '<span style="font-size:10px;color:var(--text2)">' +
-        _esc(hwRow.equipment) +
-        ' \xb7 ' +
-        _esc(seqRow.equipment) +
+      '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(3) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(_combinedTypeFull) +
+        '">' +
+        _esc(_combinedTypeFull) +
+        '</span>',
+    );
+
+    // col 4: Equipment — Phase 5: same clipping pattern
+    var _combinedEquipFull = hwRow.equipment + ' \xb7 ' + seqRow.equipment;
+    cells.push(
+      '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(4) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(_combinedEquipFull) +
+        '">' +
+        _esc(_combinedEquipFull) +
         '</span>',
     );
 
@@ -5091,6 +5168,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     ? '<th style="background:var(--s1);color:var(--accent);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:right;border-left:2px solid var(--border2);border-bottom:2px solid var(--border2)">Rec. Total</th>'
     : '';
 
+  // Phase 5 (d284e714): the old hardcoded `min-width:1006px` predated the Hours column (Phase 4)
+  // and other column widenings, so it drifted out of sync with the real column-width sum. Compute
+  // it live from PRICING_TBL_COLS + the current hidden-cols set so it can never drift again when
+  // columns change.
+  var _tblMinWidth = PRICING_TBL_COLS.reduce(function (sum, col, ci) {
+    return sum + (hidden.indexOf(ci) !== -1 ? 0 : col.minWidth);
+  }, 0);
+
   // ── 12. Assemble full panel
   // Top-ROI callout (Recommended + Both tiers, item d60f455f)
   // In Both mode, feed recRows (recommended rows carry savingsImpact); baseRows in Both = compliance rows.
@@ -5154,7 +5239,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // Dropping width:100% makes the table render at its natural (column-sum) width in every case
     // — extra container space just shows as blank space to the right inside .ch-tbl-scroll,
     // which already provides the horizontal scrollbar for narrower viewports.
-    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;min-width:1006px">',
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;min-width:' + _tblMinWidth + 'px">',
     '<thead><tr>',
     headerCols,
     extraRecHeader,
