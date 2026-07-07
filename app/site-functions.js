@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.07.628',
+    date: '2026-07-07',
+    title: 'Cost Estimate tab: merged rows get two editable quantities',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate tab: combined hardware + labor line items now have two editable quantity boxes, one for each part, instead of fixed ##/## text. This closes out the full Cost Estimate redesign.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.07.627',
     date: '2026-07-07',
     title: 'Cost Estimate tab: sensor-only rows now explain what they enable',
