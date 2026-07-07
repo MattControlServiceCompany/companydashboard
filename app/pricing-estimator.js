@@ -2855,16 +2855,17 @@ var PRICING_TBL_COLS = [
   { label: 'List', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 7
   { label: 'Net', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 8
   { label: 'Contract', noSort: false, noHide: false, numeric: true, minWidth: 110 }, // 9 — widened (0ae36950) to fit the merged-row side-by-side sensor-price + hours-input layout
-  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 10 — label overridden at render time with active basis
+  { label: 'Hours', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 10 — labor hours, split out of Contract (phase 4923ca9b/75827077)
+  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 11 — label overridden at render time with active basis
   {
     label: 'Impact',
     noSort: true,
     noHide: false,
     numeric: false,
-    minWidth: 170, // 11 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
+    minWidth: 170, // 12 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
     isImpactCol: true,
   },
-  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 12
+  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 13
 ];
 
 /* ── Apply labor overrides to a cloned row list ──────────────────────────── */
@@ -3049,8 +3050,13 @@ function _pricingRowColValue(row, colIdx) {
     case 9:
       return row.contractPrice != null ? row.contractPrice : -1;
     case 10:
+      // Hours (phase 4923ca9b/75827077) — sortable/hide-empty value is the row's base
+      // hrsPerUnit, same "raw field, not live override" convention already used by case 9
+      // (Contract sorts by contractPrice, not a typed-in manualPrice override either).
+      return row.hrsPerUnit != null ? row.hrsPerUnit : -1;
+    case 11:
       return row.lineTotal != null ? row.lineTotal : -1;
-    case 12:
+    case 13:
       return row.note || '';
     default:
       return '';
@@ -4092,47 +4098,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(netContent);
 
-    // col 9: Contract (40%) — for Phase 2 rows, show editable hours input here
+    // col 9: Contract (40%) — dollar-price branches only (Phase 4 923ca9b/75827077: labor-hour
+    // input moved to its own Hours column below, so Contract never mixes parts price + hours).
     var contractContent = '';
     if (row.ioOnly) {
       contractContent = '<span style="color:var(--text3);font-size:10px">$0 (no part)</span>';
-    } else if (row.phase === 2 && row.seqKey) {
-      // Per-sequence labor-hour override input (Phase 4) — shown in Contract column
-      var defaultHrs = COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] : 2.0;
-      var currentHrs = laborOverrides[row.seqKey] != null ? parseFloat(laborOverrides[row.seqKey]) : row.hrsPerUnit;
-      var isOverridden = laborOverrides[row.seqKey] != null;
-      contractContent =
-        '<div style="display:flex;align-items:center;gap:4px">' +
-        '<input type="number" min="0" step="0.25" value="' +
-        currentHrs +
-        '"' +
-        ' title="Hours per instance (default: ' +
-        defaultHrs +
-        ')"' +
-        (isOverridden ? '' : ' class="ch-soft-input"') +
-        ' style="width:52px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums' +
-        (isOverridden ? ';border:1px solid var(--accent)' : '') +
-        '"' +
-        ' onchange="_pricingSeqHrsChange(\'' +
-        projId +
-        "','" +
-        row.seqKey +
-        '\',this.value)">' +
-        '<span style="font-size:10px;color:var(--text3)">hrs</span>' +
-        (isOverridden
-          ? '<button onclick="_pricingSeqHrsReset(\'' +
-            projId +
-            "','" +
-            row.seqKey +
-            '\')"' +
-            ' title="Reset to default (' +
-            defaultHrs +
-            ' hrs)"' +
-            ' style="font-size:9px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
-          : '') +
-        '</div>';
-    } else if (row.phase === 2) {
-      contractContent = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '—';
     } else if (row.noSku) {
       contractContent =
         '<input type="number" min="0" step="0.01" value="' +
@@ -4183,7 +4153,48 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(contractContent);
 
-    // col 10: Line Total
+    // col 10: Hours — labor-hour override input, split out of Contract (Phase 4 923ca9b/75827077).
+    // Moved, not rewritten: identical markup/onchange/override-detection/reset-button that used to
+    // live in the Contract cell for row.phase===2 && row.seqKey rows.
+    var hoursContent = '<span style="color:var(--text3)">—</span>';
+    if (row.phase === 2 && row.seqKey) {
+      var defaultHrs = COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] : 2.0;
+      var currentHrs = laborOverrides[row.seqKey] != null ? parseFloat(laborOverrides[row.seqKey]) : row.hrsPerUnit;
+      var isOverridden = laborOverrides[row.seqKey] != null;
+      hoursContent =
+        '<div style="display:flex;align-items:center;gap:4px">' +
+        '<input type="number" min="0" step="0.25" value="' +
+        currentHrs +
+        '"' +
+        ' title="Hours per instance (default: ' +
+        defaultHrs +
+        ')"' +
+        (isOverridden ? '' : ' class="ch-soft-input"') +
+        ' style="width:52px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums' +
+        (isOverridden ? ';border:1px solid var(--accent)' : '') +
+        '"' +
+        ' onchange="_pricingSeqHrsChange(\'' +
+        projId +
+        "','" +
+        row.seqKey +
+        '\',this.value)">' +
+        '<span style="font-size:10px;color:var(--text3)">hrs</span>' +
+        (isOverridden
+          ? '<button onclick="_pricingSeqHrsReset(\'' +
+            projId +
+            "','" +
+            row.seqKey +
+            '\')"' +
+            ' title="Reset to default (' +
+            defaultHrs +
+            ' hrs)"' +
+            ' style="font-size:9px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
+          : '') +
+        '</div>';
+    }
+    cells.push(hoursContent);
+
+    // col 11: Line Total
     var lineTotalContent = '';
     if (row.ioOnly) {
       lineTotalContent = '<span style="color:var(--text3);font-size:10px">$0</span>';
@@ -4200,7 +4211,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 11: Impact — savings-tier badge (correction #4 / Phase 5) + (0ae36950) the $-savings-range
+    // col 12: Impact — savings-tier badge (correction #4 / Phase 5) + (0ae36950) the $-savings-range
     // chip, moved here from the Notes column. Both are single-line inline-block spans so this cell
     // never grows the row taller than any other row's baseline height — see _savingsRangeChipHTML.
     var impactCellContent = '';
@@ -4210,7 +4221,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     impactCellContent += _savingsRangeChipHTML(row);
     cells.push(impactCellContent);
 
-    // col 12: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
+    // col 13: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
     // superseding the earlier "Fuller-preference" decision (full rationale always visible in-cell)
     // because it made Recommended phase-2 rows taller than every other row in the table —
     // Matt rejected that height-inconsistency tradeoff. The rationale/clientSummary sentence now
@@ -4268,7 +4279,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // Single-line branch always used (b771dec6 2d) — rationale/clientSummary text now lives in the
     // hover tooltip (_tooltipText12 above), not as a second visible line, so every row is one line
     // tall. (0ae36950: the $-savings-range chip that used to be appended here now renders in the
-    // Impact column instead — see col 11 above — so this cell is never anything but the input.)
+    // Impact column instead — see col 12 above — so this cell is never anything but the input.)
     cells.push(_noteInputHTML);
 
     // Build TR
@@ -4279,18 +4290,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return; // skip hidden columns
       var col = PRICING_TBL_COLS[ci] || {};
-      // col 12 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
-      var isNotesCol = ci === 12;
-      var isImpactCol = ci === 11;
+      // col 13 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
+      var isNotesCol = ci === 13;
+      var isImpactCol = ci === 12;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border2);';
-      // col 9 (Contract) for Phase 2 sequence rows: smaller padding for the hrs input
-      // MUST be before the generic numeric right-align block (which also matches ci===9)
-      else if (ci === 9 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
-      // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Line Total) are right-aligned numerics
-      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10)
+      // col 10 (Hours) for Phase 2 sequence rows: smaller padding for the hrs input (Phase 4:
+      // moved here from Contract, which no longer carries this branch since Hours is its own col)
+      // MUST be before the generic numeric right-align block (which also matches ci===10)
+      else if (ci === 10 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
+      // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Hours), 11 (Line Total) are right-aligned numerics
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -4436,30 +4448,26 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           : '<span style="color:var(--text3)">—</span>';
     cells.push(_netContent);
 
-    // col 9: Contract — hw's per-unit contract price (read-only, as prefix text) alongside the
-    // sequence's existing editable hours-override input (same control/onchange as renderRow's
-    // phase-2 branch — labor-hour editing is preserved unchanged on the merged row).
-    // 0ae36950: restructured from a flex-direction:column stack (price ABOVE the hours input) to
-    // a single-line side-by-side layout — the stacked version added a fixed +9px to every merged
-    // row's height vs. every other row in the table (all three tiers), the second uniform-height
-    // root cause found in b771dec6 column-width-invest. Contract column's minWidth was widened
-    // (PRICING_TBL_COLS[9], 90→110) to fit "price + hrs input" comfortably at default width.
+    // col 9: Contract — hw's per-unit contract price, own cell (Phase 4 923ca9b/75827077: split
+    // from the sequence's hours input, which now lives in its own Hours column below — no more
+    // "+" glue text needed since price and hours are independent cells).
     var _hwContractText = hwRow.ioOnly
       ? '$0 (no part)'
       : hwRow.contractPrice != null
         ? _pricingFmt(hwRow.contractPrice)
         : '—';
+    cells.push(_hwContractText);
+
+    // col 10: Hours — sequence's editable hours-override input (same control/onchange as
+    // renderRow's phase-2 branch — labor-hour editing is preserved unchanged on the merged row),
+    // now its own cell instead of glued to Contract with a "+".
     var _defaultHrs =
       COST_PER_SEQ_HOURS_DEFAULT[seqRow.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[seqRow.seqKey] : 2.0;
     var _currentHrs =
       laborOverrides[seqRow.seqKey] != null ? parseFloat(laborOverrides[seqRow.seqKey]) : seqRow.hrsPerUnit;
     var _hrsOverridden = laborOverrides[seqRow.seqKey] != null;
-    var _contractContent =
+    var _hoursContent =
       '<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;white-space:nowrap">' +
-      '<span style="font-size:9px;color:var(--text2)" title="Sensor contract price">' +
-      _hwContractText +
-      '</span>' +
-      '<span style="color:var(--text3);font-size:9px">+</span>' +
       '<input type="number" min="0" step="0.25" value="' +
       _currentHrs +
       '"' +
@@ -4467,7 +4475,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       _defaultHrs +
       ')"' +
       (_hrsOverridden ? '' : ' class="ch-soft-input"') +
-      ' style="width:36px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border-radius:3px;text-align:right;font-variant-numeric:tabular-nums' +
+      ' style="width:44px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border-radius:3px;text-align:right;font-variant-numeric:tabular-nums' +
       (_hrsOverridden ? ';border:1px solid var(--accent)' : '') +
       '"' +
       ' onchange="_pricingSeqHrsChange(\'' +
@@ -4476,10 +4484,21 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       seqRow.seqKey +
       '\',this.value)">' +
       '<span style="font-size:9px;color:var(--text3)">hrs</span>' +
+      (_hrsOverridden
+        ? '<button onclick="_pricingSeqHrsReset(\'' +
+          projId +
+          "','" +
+          seqRow.seqKey +
+          '\')"' +
+          ' title="Reset to default (' +
+          _defaultHrs +
+          ' hrs)"' +
+          ' style="font-size:9px;padding:1px 3px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
+        : '') +
       '</div>';
-    cells.push(_contractContent);
+    cells.push(_hoursContent);
 
-    // col 10: Line Total — hw.lineTotal + seq.lineTotal, computed fresh here every render
+    // col 11: Line Total — hw.lineTotal + seq.lineTotal, computed fresh here every render
     // (5c: "never written back") — the underlying row objects and their lineTotal fields are
     // never mutated, so toggling this row on/off moves the grand total by exactly this combined
     // amount and back (footer total comes from _pricingComputeTotals summing the SAME unmerged
@@ -4489,7 +4508,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span' + (!combinedOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(_combinedLineTotal) + '</span>';
     cells.push(_lineTotalContent);
 
-    // col 11: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
+    // col 12: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
     // sequence half of the pair. (0ae36950: $-savings-range chip also moved here from Notes,
     // same as renderRow — see _savingsRangeChipHTML.)
     var _impactCellContent = '';
@@ -4499,7 +4518,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     _impactCellContent += _savingsRangeChipHTML(seqRow);
     cells.push(_impactCellContent);
 
-    // col 12: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
+    // col 13: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
     // lost. clientSummary/savingsRationale are read from the module-level SEQUENCE_SAVINGS_IMPACT
     // constant directly (not only from seqRow's own stamped fields, which buildRecommendedRows
     // only sets for the Recommended tier) so the combined tooltip carries the sequence's benefit
@@ -4556,13 +4575,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var tds = '';
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return;
-      var isNotesCol = ci === 12;
-      var isImpactCol = ci === 11;
+      var isNotesCol = ci === 13;
+      var isImpactCol = ci === 12;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border2);';
-      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10)
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -4943,9 +4962,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       frozenStyle = 'z-index:11;';
     }
 
-    // col 10 (Line Total) label shows active basis in parens, e.g. "Line Total (Contract)"
+    // col 11 (Line Total) label shows active basis in parens, e.g. "Line Total (Contract)"
     var colLabel = col.label;
-    if (ci === 10) {
+    if (ci === 11) {
       var basisLabels = { contract: 'Contract', net: 'Net', list: 'List' };
       colLabel = 'Total (' + (basisLabels[cfg.priceBasis] || 'Contract') + ')';
     }
