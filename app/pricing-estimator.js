@@ -455,6 +455,81 @@ function _pricingComputeSavingsRange(row, annualKwh, fanFraction, elecRate) {
   return { low: low, high: high, citation: rmap.citation };
 }
 
+/* ── 45ceb14f: shared footer-string builders ─────────────────────────────────
+   Extracted so the full-render footer (initCostEstimateTab) and the partial-
+   refresh footer (_pricingRefreshFooter, patched below) render byte-identical
+   Tier-label / advisory-line HTML instead of two independently-maintained
+   copies. Pure functions — no DOM access, no globals mutated.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingTierLabelHTML(tier) {
+  return (
+    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
+    (tier === 'both'
+      ? 'Compare'
+      : tier === 'recommended'
+        ? 'Recommended'
+        : tier === 'full-scope'
+          ? 'Full Scope'
+          : 'Compliance') +
+    '</span>'
+  );
+}
+
+function _pricingAdvisoryLineHTML(anySavingsShown) {
+  return (
+    '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
+    (anySavingsShown
+      ? 'Savings estimates shown below in the Impact column.'
+      : 'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.') +
+    '</div>'
+  );
+}
+
+// 45ceb14f: re-derives the full-render path's `_anySavingsShown` boolean from a cached row array,
+// without re-rendering any row. Mirrors the two places the full render sets that flag:
+//   1. Per-row $/% savings chip (_savingsRangeChipHTML, ~line 3709) — called unconditionally for
+//      every row regardless of estimate.rowToggles, so this does NOT need row-toggle state.
+//   2. Portfolio-savings rollup (footer step, ~line 4784) — also independent of rowToggles.
+// Only meaningful for tier === 'recommended' (the only tier _pricingRefreshFooter still handles
+// inline; 'both' and 'full-scope' already delegate to a full initCostEstimateTab re-render, see
+// the guard at the top of the patched _pricingRefreshFooter below).
+function _pricingComputeAnySavingsShown(rows, annualElecData, fanFraction, elecRate) {
+  var hasBills = annualElecData.hasBillData;
+  var annKwh = annualElecData.annualKwh;
+  var any = false;
+
+  // Mirrors _savingsRangeChipHTML's two branches (lit-range-no-bill-data / $-range-with-bill-data).
+  rows.forEach(function (row) {
+    if (!(row.seqKey && row.savingsImpact && row.savingsImpact !== 'enabler' && row.savingsImpact !== 'safety')) {
+      return;
+    }
+    if (!hasBills) {
+      if (SAVINGS_RANGE_MAP[row.seqKey]) any = true;
+      return;
+    }
+    if (annKwh && SAVINGS_RANGE_MAP[row.seqKey]) {
+      var range = _pricingComputeSavingsRange(row, annKwh, fanFraction, elecRate);
+      if (range && range.high > 0) any = true;
+    }
+  });
+
+  // Mirrors the portfolio-rollup loop (footer step, ~line 4784-4794).
+  if (hasBills && annKwh) {
+    var seenSeqKeys = {};
+    rows.forEach(function (r) {
+      if (r.phase !== 2 || !r.seqKey || seenSeqKeys[r.seqKey]) return;
+      if (!r.savingsImpact || r.savingsImpact === 'enabler' || r.savingsImpact === 'safety') return;
+      var pr = _pricingComputeSavingsRange(r, annKwh, fanFraction, elecRate);
+      if (pr && pr.high > 0) {
+        seenSeqKeys[r.seqKey] = true;
+        any = true;
+      }
+    });
+  }
+
+  return any;
+}
+
 /* ── Impact badge chip renderer (Recommended tier only) ─────────────────────
    Correction #4: enabler = purple-outline; #5: safety = neutral-grey.
    Correction #15: title attribute shows sourceType label.
@@ -4678,16 +4753,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // the isBothMode (Compare) and else (single-tier) branches below since this sits before the
   // branch split.
   var recTierLabel = tier === 'recommended' ? 'Recommended' : 'Compliance';
-  var _tierLabelHTML =
-    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
-    (tier === 'both'
-      ? 'Compare'
-      : tier === 'recommended'
-        ? 'Recommended'
-        : tier === 'full-scope'
-          ? 'Full Scope'
-          : 'Compliance') +
-    '</span>';
+  // 45ceb14f: extracted to _pricingTierLabelHTML (byte-identical output) so
+  // _pricingRefreshFooter's partial-refresh path can render the same Tier label without a
+  // second copy of this ternary. recTierLabel above is pre-existing/unused — left as-is,
+  // out of scope for this fix.
+  var _tierLabelHTML = _pricingTierLabelHTML(tier);
   var footerParts = [
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
     _tierLabelHTML,
@@ -4821,13 +4891,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // finding). Now it's unconditionally present in these two tiers, with text depending on
   // whether ANY savings info (the portfolio rollup above or a per-row chip) ended up visible.
   if (tier === 'recommended' || tier === 'both') {
-    footerParts.push(
-      '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
-        (_anySavingsShown
-          ? 'Savings estimates shown below in the Impact column.'
-          : 'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.') +
-        '</div>',
-    );
+    // 45ceb14f: extracted to _pricingAdvisoryLineHTML (byte-identical output) so
+    // _pricingRefreshFooter's partial-refresh path can render the identical advisory line.
+    footerParts.push(_pricingAdvisoryLineHTML(_anySavingsShown));
   }
 
   // b771dec6 3b: M&V disclaimer moved from here into the Top ROI card
@@ -5056,6 +5122,22 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var totals = _pricingComputeTotals(rows, est);
     var filterBldg = _pricingBldgFilter[projId] || '';
 
+    // 45ceb14f: re-derive the Tier-label + advisory-line state the same way the full render
+    // does, WITHOUT re-rendering rows. tier is always 'compliance' or 'recommended' here (see
+    // the 'both'/'full-scope' delegation guard above), so this mirrors the full render's
+    // _annualElecData/_fanFraction/_elecRate derivation (app/pricing-estimator.js:3684-3690)
+    // narrowed to that same two-tier domain — 'compliance' never has bill data pulled (matches
+    // the full path, where _annualElecData is only computed for 'recommended'/'both').
+    var _annualElecData =
+      tier === 'recommended'
+        ? _pricingGetProjectAnnualElec(projId)
+        : { annualKwh: null, hasBillData: false, elecRate: 0.1 };
+    var _fanFraction =
+      cfg.fanFraction !== undefined && cfg.fanFraction !== null ? cfg.fanFraction : FAN_FRACTION_DEFAULT;
+    var _elecRate = _annualElecData.elecRate || 0.1;
+    var _anySavingsShown =
+      tier === 'recommended' ? _pricingComputeAnySavingsShown(rows, _annualElecData, _fanFraction, _elecRate) : false;
+
     var _rfCaveatParts = [];
     if (totals.noCatalog) _rfCaveatParts.push('Hardware pending — import pricing CSV');
     if (totals.pendingPriceCount > 0)
@@ -5072,6 +5154,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     footerEl.innerHTML = [
       '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
+      _pricingTierLabelHTML(tier), // 45ceb14f: was missing entirely from this path
+      '<span style="color:var(--border2)">|</span>', // 45ceb14f: separator to match full-render field order
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
         (totals.noCatalog
@@ -5096,6 +5180,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="flex:1"></span>',
       '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
       '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatParts.join(' · ') + '</span>',
+      tier === 'recommended' ? _pricingAdvisoryLineHTML(_anySavingsShown) : '', // 45ceb14f: was missing entirely
       '</div>',
     ].join('');
   };
