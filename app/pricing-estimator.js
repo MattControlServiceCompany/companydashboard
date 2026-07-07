@@ -3118,6 +3118,107 @@ function _pricingCloseSettingsPopover(projId) {
   }
 }
 
+/* ── Legend popover (Phase 1, cost-estimate-ux-2026-07-06) ────────────────
+   Plain-language explanation of every icon/color/label in the table that
+   otherwise has no on-page explanation (closes 82463b0f, 0fe8312b, 5ea71e75,
+   7497271f). Same open/close/outside-click pattern as _pricingOpenSettingsPopover
+   above — separate tracker map so the two popovers don't clobber each other's
+   outside-click listeners.
+   ─────────────────────────────────────────────────────────────────────────── */
+var _pricingLegendPopoverOutsideHandler = {};
+function _pricingCloseLegendPopover(projId) {
+  var pop = document.getElementById('pricing-legend-popover-' + projId);
+  if (pop) pop.remove();
+  if (_pricingLegendPopoverOutsideHandler[projId]) {
+    document.removeEventListener('click', _pricingLegendPopoverOutsideHandler[projId]);
+    delete _pricingLegendPopoverOutsideHandler[projId];
+  }
+}
+
+function _pricingOpenLegendPopover(projId, btn) {
+  // Close any open popover first (both kinds — only one popover open at a time)
+  _pricingCloseLegendPopover(projId);
+  _pricingCloseSettingsPopover(projId);
+
+  var pop = document.createElement('div');
+  pop.id = 'pricing-legend-popover-' + projId;
+  pop.style.cssText = [
+    'position:absolute',
+    'background:var(--s2)',
+    'border:1px solid var(--border)',
+    'border-radius:6px',
+    'padding:10px 12px',
+    'z-index:800',
+    'min-width:280px',
+    'max-width:340px',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
+    'font-size:11px',
+  ].join(';');
+
+  var items = [
+    {
+      icon: '<span style="color:var(--warn);font-size:11px">⚠</span>',
+      text: 'next to a part number — needs an on-site check before ordering (probe length, pressure range, etc.). The price shown is still correct.',
+    },
+    {
+      icon: '<span style="color:var(--accent);font-size:11px">✓</span>',
+      text: 'next to a part number — a cheaper qualifying part was substituted here. Hover to see the original part.',
+    },
+    {
+      icon: '<span style="color:var(--warn)">Manual Price</span>',
+      text: 'no catalog part exists for this item; a price is typed in by hand.',
+    },
+    { icon: 'Dimmed rows', text: 'no new part is needed; existing wiring/points are reused.' },
+    {
+      icon: 'Shaded first columns',
+      text: 'these stay visible while you scroll sideways; the shading is just so scrolled content can’t show through them.',
+    },
+    {
+      icon: 'Default order',
+      text: 'rows and buildings appear in the order they were generated, not sorted by size, cost, or savings.',
+    },
+  ];
+
+  var html =
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Table Legend</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:8px">';
+  items.forEach(function (it) {
+    html +=
+      '<div style="display:flex;gap:6px;align-items:baseline">' +
+      '<span style="flex-shrink:0;font-weight:600;color:var(--text)">' +
+      it.icon +
+      '</span>' +
+      '<span style="color:var(--text2);line-height:1.4">' +
+      it.text +
+      '</span>' +
+      '</div>';
+  });
+  html += '</div>';
+  pop.innerHTML = html;
+
+  // Position relative to the ⓘ Legend button (same pattern as Table Settings popover)
+  var rect = btn.getBoundingClientRect();
+  var container = document.getElementById('ptab-cost-estimate-body-' + projId);
+  if (container) {
+    var cRect = container.getBoundingClientRect();
+    pop.style.top = rect.bottom - cRect.top + 4 + 'px';
+    pop.style.left = rect.left - cRect.left + 'px';
+    pop.style.position = 'absolute';
+    container.style.position = 'relative';
+    container.appendChild(pop);
+  }
+
+  setTimeout(function () {
+    function handler(e) {
+      if (!pop.contains(e.target) && e.target !== btn) {
+        _pricingCloseLegendPopover(projId);
+      }
+    }
+    _pricingLegendPopoverOutsideHandler[projId] = handler;
+    document.addEventListener('click', handler);
+  }, 10);
+}
+
 /* ── Column-visibility checklist HTML (b771dec6 3a) ───────────────────────
    Factored out of the old col-popover so _pricingOpenSettingsPopover can compose
    it as one section of the combined Table Settings popover. Same storage keys
@@ -3729,9 +3830,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       projId +
       '\',this.value)"' +
       ' style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px">' +
-      '<option value="default"' +
+      '<option value="default" title="Rows appear in the order they were generated — not sorted by ' +
+      'size, cost, or savings"' +
       (_curSortMode === 'default' ? ' selected' : '') +
-      '>Default order</option>' +
+      '>Default order (unsorted)</option>' +
       '<option value="building"' +
       (_curSortMode === 'building' ? ' selected' : '') +
       '>Best building return first</option>' +
@@ -3760,6 +3862,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenSettingsPopover(\'' +
       projId +
       '\',this)" title="Pricing config + column visibility" style="cursor:pointer">⚙ Table Settings</button>',
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenLegendPopover(\'' +
+      projId +
+      '\',this)" title="What the icons and colors in this table mean" style="cursor:pointer">ⓘ Legend</button>',
     '<span style="flex:1"></span>',
     // Tier toggle
     _pricingTierToggleHTML(projId, tier),
@@ -3821,9 +3926,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           ? 'Qty override (default: auto-derived from equipment counts)'
           : 'Qty (auto-derived; edit to override)') +
         '"' +
-        ' style="width:44px;font-size:11px;padding:2px 4px;background:var(--s3);color:var(--text);border:1px solid ' +
-        (_qtyIsOverridden ? 'var(--accent)' : 'var(--border)') +
-        ';border-radius:4px;text-align:right;font-variant-numeric:tabular-nums"' +
+        (_qtyIsOverridden ? '' : ' class="ch-soft-input"') +
+        ' style="width:44px;font-size:11px;padding:2px 4px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums' +
+        (_qtyIsOverridden ? ';border:1px solid var(--accent)' : '') +
+        '"' +
         ' onchange="_pricingQtyOverride(\'' +
         projId +
         "','" +
@@ -3908,9 +4014,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         ' title="Hours per instance (default: ' +
         defaultHrs +
         ')"' +
-        ' style="width:52px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid ' +
-        (isOverridden ? 'var(--accent)' : 'var(--border)') +
-        ';border-radius:4px;text-align:right;font-variant-numeric:tabular-nums"' +
+        (isOverridden ? '' : ' class="ch-soft-input"') +
+        ' style="width:52px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums' +
+        (isOverridden ? ';border:1px solid var(--accent)' : '') +
+        '"' +
         ' onchange="_pricingSeqHrsChange(\'' +
         projId +
         "','" +
@@ -3952,7 +4059,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           _noCatManualVal +
           '" placeholder="Enter price"' +
           ' title="No catalog loaded — enter unit price manually"' +
-          ' style="width:100%;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+          ' style="width:100%;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
           ' onchange="_pricingUnitPriceOverride(event,\'' +
           projId +
           "','" +
@@ -4264,9 +4371,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       ' title="Hours per instance (default: ' +
       _defaultHrs +
       ')"' +
-      ' style="width:36px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border:1px solid ' +
-      (_hrsOverridden ? 'var(--accent)' : 'var(--border)') +
-      ';border-radius:3px;text-align:right;font-variant-numeric:tabular-nums"' +
+      (_hrsOverridden ? '' : ' class="ch-soft-input"') +
+      ' style="width:36px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border-radius:3px;text-align:right;font-variant-numeric:tabular-nums' +
+      (_hrsOverridden ? ';border:1px solid var(--accent)' : '') +
+      '"' +
       ' onchange="_pricingSeqHrsChange(\'' +
       projId +
       "','" +
@@ -4985,6 +5093,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '.ch-tbl tbody tr:hover td { background: var(--s4); }',
     /* Tabular nums for numeric cells */
     '.ch-tbl td { font-variant-numeric: tabular-nums; }',
+    /* Phase 1 (cost-estimate-ux-2026-07-06): soften optional editable-cell borders — */
+    /* non-overridden Qty/Hours inputs get the .ch-soft-input class with a transparent */
+    /* border (background still signals "editable"); reveal the border on hover/focus */
+    /* so the edit affordance is not lost. Deviation from the plan's literal selector */
+    /* (".ch-tbl input:hover") — that selector alone can never win against the inline */
+    /* border-color already set on overridden (var(--accent)) and required-manual-price */
+    /* (var(--warn)) inputs (inline style beats any non-!important stylesheet rule, */
+    /* pseudo-class or not), so a blanket rule would either do nothing on those inputs */
+    /* or require !important, which WOULD incorrectly flatten their border to grey on */
+    /* hover. Scoping to .ch-soft-input (only added when NOT overridden/required) keeps */
+    /* those meaningful borders on regardless of hover, per the constraint above. */
+    '.ch-tbl input.ch-soft-input { border: 1px solid transparent; }',
+    '.ch-tbl input.ch-soft-input:hover, .ch-tbl input.ch-soft-input:focus { border-color: var(--border); }',
   ].join('\n');
   if (document.head) document.head.appendChild(style);
 })();
