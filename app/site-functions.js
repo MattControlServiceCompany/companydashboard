@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.07.627',
+    date: '2026-07-07',
+    title: 'Cost Estimate tab: sensor-only rows now explain what they enable',
+    items: [
+      {
+        type: 'improvement',
+        text: 'Cost Estimate tab: line items for stand-alone $0 sensor/point rows now show "Enables: <sequence name>" in the Impact column, instead of looking like they have no impact at all.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.07.626',
     date: '2026-07-07',
     title: 'Cost Estimate tab: Top ROI panel shows every qualifying measure',
