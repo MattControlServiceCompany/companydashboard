@@ -455,6 +455,81 @@ function _pricingComputeSavingsRange(row, annualKwh, fanFraction, elecRate) {
   return { low: low, high: high, citation: rmap.citation };
 }
 
+/* ── 45ceb14f: shared footer-string builders ─────────────────────────────────
+   Extracted so the full-render footer (initCostEstimateTab) and the partial-
+   refresh footer (_pricingRefreshFooter, patched below) render byte-identical
+   Tier-label / advisory-line HTML instead of two independently-maintained
+   copies. Pure functions — no DOM access, no globals mutated.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingTierLabelHTML(tier) {
+  return (
+    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
+    (tier === 'both'
+      ? 'Compare'
+      : tier === 'recommended'
+        ? 'Recommended'
+        : tier === 'full-scope'
+          ? 'Full Scope'
+          : 'Compliance') +
+    '</span>'
+  );
+}
+
+function _pricingAdvisoryLineHTML(anySavingsShown) {
+  return (
+    '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
+    (anySavingsShown
+      ? 'Savings estimates shown below in the Impact column.'
+      : 'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.') +
+    '</div>'
+  );
+}
+
+// 45ceb14f: re-derives the full-render path's `_anySavingsShown` boolean from a cached row array,
+// without re-rendering any row. Mirrors the two places the full render sets that flag:
+//   1. Per-row $/% savings chip (_savingsRangeChipHTML, ~line 3709) — called unconditionally for
+//      every row regardless of estimate.rowToggles, so this does NOT need row-toggle state.
+//   2. Portfolio-savings rollup (footer step, ~line 4784) — also independent of rowToggles.
+// Only meaningful for tier === 'recommended' (the only tier _pricingRefreshFooter still handles
+// inline; 'both' and 'full-scope' already delegate to a full initCostEstimateTab re-render, see
+// the guard at the top of the patched _pricingRefreshFooter below).
+function _pricingComputeAnySavingsShown(rows, annualElecData, fanFraction, elecRate) {
+  var hasBills = annualElecData.hasBillData;
+  var annKwh = annualElecData.annualKwh;
+  var any = false;
+
+  // Mirrors _savingsRangeChipHTML's two branches (lit-range-no-bill-data / $-range-with-bill-data).
+  rows.forEach(function (row) {
+    if (!(row.seqKey && row.savingsImpact && row.savingsImpact !== 'enabler' && row.savingsImpact !== 'safety')) {
+      return;
+    }
+    if (!hasBills) {
+      if (SAVINGS_RANGE_MAP[row.seqKey]) any = true;
+      return;
+    }
+    if (annKwh && SAVINGS_RANGE_MAP[row.seqKey]) {
+      var range = _pricingComputeSavingsRange(row, annKwh, fanFraction, elecRate);
+      if (range && range.high > 0) any = true;
+    }
+  });
+
+  // Mirrors the portfolio-rollup loop (footer step, ~line 4784-4794).
+  if (hasBills && annKwh) {
+    var seenSeqKeys = {};
+    rows.forEach(function (r) {
+      if (r.phase !== 2 || !r.seqKey || seenSeqKeys[r.seqKey]) return;
+      if (!r.savingsImpact || r.savingsImpact === 'enabler' || r.savingsImpact === 'safety') return;
+      var pr = _pricingComputeSavingsRange(r, annKwh, fanFraction, elecRate);
+      if (pr && pr.high > 0) {
+        seenSeqKeys[r.seqKey] = true;
+        any = true;
+      }
+    });
+  }
+
+  return any;
+}
+
 /* ── Impact badge chip renderer (Recommended tier only) ─────────────────────
    Correction #4: enabler = purple-outline; #5: safety = neutral-grey.
    Correction #15: title attribute shows sourceType label.
@@ -2703,6 +2778,17 @@ function _pricingTierToggleHTML(projId, currentTier) {
     btn('compliance', 'Compliance') +
     btn('full-scope', 'Full Scope') +
     btn('both', 'Compare') +
+    // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): "Summary" — NOT a data-filtering tier
+    // like the four above (it doesn't change which rows qualify). It's a presentation-only
+    // sub-tab that aggregates the per-building totals the other three tiers already compute
+    // (see _pricingRenderSummaryTab). Stored in the same `estimate.tier` slot for simplicity —
+    // reuses the existing toggle-button/active-state/persistence mechanism — but consumers that
+    // branch on tier for ROW-BUILDING purposes (buildRecommendedRows/buildComplianceRows/
+    // buildFullScopeRows selection) never see 'summary' because initCostEstimateTab short-
+    // circuits into the summary render path before reaching that branch. Existing tier keys
+    // ('recommended'/'compliance'/'full-scope'/'both') are unchanged; this is purely additive.
+    '<span style="color:var(--border2);margin:0 2px">|</span>' +
+    btn('summary', 'Summary') +
     '</div>'
   );
 }
@@ -2780,16 +2866,17 @@ var PRICING_TBL_COLS = [
   { label: 'List', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 7
   { label: 'Net', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 8
   { label: 'Contract', noSort: false, noHide: false, numeric: true, minWidth: 110 }, // 9 — widened (0ae36950) to fit the merged-row side-by-side sensor-price + hours-input layout
-  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 10 — label overridden at render time with active basis
+  { label: 'Hours', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 10 — labor hours, split out of Contract (phase 4923ca9b/75827077)
+  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 11 — label overridden at render time with active basis
   {
     label: 'Impact',
     noSort: true,
     noHide: false,
     numeric: false,
-    minWidth: 170, // 11 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
+    minWidth: 170, // 12 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
     isImpactCol: true,
   },
-  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 12
+  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 13
 ];
 
 /* ── Apply labor overrides to a cloned row list ──────────────────────────── */
@@ -2922,6 +3009,53 @@ function _pricingSetHiddenCols(projId, hiddenArr) {
   sset('ch_tbl_hidden_pricing_tbl_' + projId, hiddenArr);
 }
 
+/* ── Column-schema migration (review-phase4.md #2) ─────────────────────────
+   PRICING_TBL_COLS gained a new "Hours" column at index 10 in Phase 4, which
+   shifted every column previously at index >=10 up by one (old 10 = Line
+   Total → new 11, old 11 = Impact → new 12, old 12 = Notes → new 13). Both
+   column widths (ch_tbl_col_widths_pricing_tbl_<id>) and hidden columns
+   (ch_tbl_hidden_pricing_tbl_<id>) are persisted keyed by raw PRICING_TBL_COLS
+   index with no migration, so any state saved before this deploy silently
+   misapplies to the wrong column post-Phase-4 (e.g. a widened Line Total
+   column lands on Hours instead).
+   PRICING_COL_SCHEMA_VERSION bump the schema below your PRICING_TBL_COLS
+   change if you insert/remove a column again, and extend the shift logic to
+   match. The stored per-project version marker makes this idempotent — it
+   only shifts once, never re-shifts an already-migrated or fresh
+   post-Phase-4 map, and never deletes the user's saved widths/hidden set,
+   only relocates them to the column they were originally set for. */
+var PRICING_COL_SCHEMA_VERSION = 2; // 2 = Phase 4 (Hours column inserted at index 10)
+function _pricingGetColSchemaVersion(projId) {
+  return sget('ch_tbl_colschema_ver_pricing_tbl_' + projId, 1); // 1 = pre-Phase-4 (no marker ever written)
+}
+function _pricingSetColSchemaVersion(projId, ver) {
+  sset('ch_tbl_colschema_ver_pricing_tbl_' + projId, ver);
+}
+function _pricingMigrateColSchema(projId) {
+  var storedVer = _pricingGetColSchemaVersion(projId);
+  if (storedVer >= PRICING_COL_SCHEMA_VERSION) return; // already migrated (or fresh) — idempotent no-op
+
+  var oldWidths = _pricingGetColWidths(projId);
+  var newWidths = {};
+  Object.keys(oldWidths).forEach(function (k) {
+    var ki = parseInt(k, 10);
+    if (isNaN(ki)) {
+      newWidths[k] = oldWidths[k]; // preserve any non-numeric marker key untouched
+    } else {
+      newWidths[ki >= 10 ? ki + 1 : ki] = oldWidths[k];
+    }
+  });
+  _pricingSetColWidths(projId, newWidths);
+
+  var oldHidden = _pricingGetHiddenCols(projId);
+  var newHidden = oldHidden.map(function (ci) {
+    return ci >= 10 ? ci + 1 : ci;
+  });
+  _pricingSetHiddenCols(projId, newHidden);
+
+  _pricingSetColSchemaVersion(projId, PRICING_COL_SCHEMA_VERSION);
+}
+
 /* ── Sort rows by column index ─────────────────────────────────────────────── */
 function _pricingSortRows(rows, colIdx, dir) {
   if (!dir || colIdx == null) return rows;
@@ -2974,8 +3108,13 @@ function _pricingRowColValue(row, colIdx) {
     case 9:
       return row.contractPrice != null ? row.contractPrice : -1;
     case 10:
+      // Hours (phase 4923ca9b/75827077) — sortable/hide-empty value is the row's base
+      // hrsPerUnit, same "raw field, not live override" convention already used by case 9
+      // (Contract sorts by contractPrice, not a typed-in manualPrice override either).
+      return row.hrsPerUnit != null ? row.hrsPerUnit : -1;
+    case 11:
       return row.lineTotal != null ? row.lineTotal : -1;
-    case 12:
+    case 13:
       return row.note || '';
     default:
       return '';
@@ -3116,6 +3255,107 @@ function _pricingCloseSettingsPopover(projId) {
     document.removeEventListener('click', _pricingSettingsPopoverOutsideHandler[projId]);
     delete _pricingSettingsPopoverOutsideHandler[projId];
   }
+}
+
+/* ── Legend popover (Phase 1, cost-estimate-ux-2026-07-06) ────────────────
+   Plain-language explanation of every icon/color/label in the table that
+   otherwise has no on-page explanation (closes 82463b0f, 0fe8312b, 5ea71e75,
+   7497271f). Same open/close/outside-click pattern as _pricingOpenSettingsPopover
+   above — separate tracker map so the two popovers don't clobber each other's
+   outside-click listeners.
+   ─────────────────────────────────────────────────────────────────────────── */
+var _pricingLegendPopoverOutsideHandler = {};
+function _pricingCloseLegendPopover(projId) {
+  var pop = document.getElementById('pricing-legend-popover-' + projId);
+  if (pop) pop.remove();
+  if (_pricingLegendPopoverOutsideHandler[projId]) {
+    document.removeEventListener('click', _pricingLegendPopoverOutsideHandler[projId]);
+    delete _pricingLegendPopoverOutsideHandler[projId];
+  }
+}
+
+function _pricingOpenLegendPopover(projId, btn) {
+  // Close any open popover first (both kinds — only one popover open at a time)
+  _pricingCloseLegendPopover(projId);
+  _pricingCloseSettingsPopover(projId);
+
+  var pop = document.createElement('div');
+  pop.id = 'pricing-legend-popover-' + projId;
+  pop.style.cssText = [
+    'position:absolute',
+    'background:var(--s2)',
+    'border:1px solid var(--border)',
+    'border-radius:6px',
+    'padding:10px 12px',
+    'z-index:800',
+    'min-width:280px',
+    'max-width:340px',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
+    'font-size:11px',
+  ].join(';');
+
+  var items = [
+    {
+      icon: '<span style="color:var(--warn);font-size:11px">⚠</span>',
+      text: 'next to a part number — needs an on-site check before ordering (probe length, pressure range, etc.). The price shown is still correct.',
+    },
+    {
+      icon: '<span style="color:var(--accent);font-size:11px">✓</span>',
+      text: 'next to a part number — a cheaper qualifying part was substituted here. Hover to see the original part.',
+    },
+    {
+      icon: '<span style="color:var(--warn)">Manual Price</span>',
+      text: 'no catalog part exists for this item; a price is typed in by hand.',
+    },
+    { icon: 'Dimmed rows', text: 'no new part is needed; existing wiring/points are reused.' },
+    {
+      icon: 'Shaded first columns',
+      text: 'these stay visible while you scroll sideways; the shading is just so scrolled content can’t show through them.',
+    },
+    {
+      icon: 'Default order',
+      text: 'rows and buildings appear in the order they were generated, not sorted by size, cost, or savings.',
+    },
+  ];
+
+  var html =
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Table Legend</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:8px">';
+  items.forEach(function (it) {
+    html +=
+      '<div style="display:flex;gap:6px;align-items:baseline">' +
+      '<span style="flex-shrink:0;font-weight:600;color:var(--text)">' +
+      it.icon +
+      '</span>' +
+      '<span style="color:var(--text2);line-height:1.4">' +
+      it.text +
+      '</span>' +
+      '</div>';
+  });
+  html += '</div>';
+  pop.innerHTML = html;
+
+  // Position relative to the ⓘ Legend button (same pattern as Table Settings popover)
+  var rect = btn.getBoundingClientRect();
+  var container = document.getElementById('ptab-cost-estimate-body-' + projId);
+  if (container) {
+    var cRect = container.getBoundingClientRect();
+    pop.style.top = rect.bottom - cRect.top + 4 + 'px';
+    pop.style.left = rect.left - cRect.left + 'px';
+    pop.style.position = 'absolute';
+    container.style.position = 'relative';
+    container.appendChild(pop);
+  }
+
+  setTimeout(function () {
+    function handler(e) {
+      if (!pop.contains(e.target) && e.target !== btn) {
+        _pricingCloseLegendPopover(projId);
+      }
+    }
+    _pricingLegendPopoverOutsideHandler[projId] = handler;
+    document.addEventListener('click', handler);
+  }, 10);
 }
 
 /* ── Column-visibility checklist HTML (b771dec6 3a) ───────────────────────
@@ -3479,12 +3719,41 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var el = document.getElementById('ptab-cost-estimate-body-' + projId);
   if (!el) return;
 
+  // review-phase4.md #2: migrate any pre-Phase-4 saved column widths/hidden-cols to the
+  // new post-Hours-column indices before anything reads them. Must run before the first
+  // _pricingGetHiddenCols/_pricingGetColWidths call below — idempotent, safe to call every render.
+  _pricingMigrateColSchema(projId);
+
   // ── 1. Get state
   var estimate = _pricingGetEstimate(projId);
   var tier = estimate.tier || 'compliance';
+
+  // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): "Summary" is a presentation-only sub-tab,
+  // not a row-filtering tier — it aggregates the SAME per-building totals the three real tiers
+  // (Recommended/Compliance/Full Scope) already compute (see _pricingRenderSummaryTab). Short-
+  // circuit here, before any of the row-building/column-state logic below runs, so 'summary'
+  // never reaches the buildRecommendedRows/buildComplianceRows/buildFullScopeRows selection or
+  // any hidden-cols/width/sort state meant for the data table. rowToggles/manualPrices/
+  // laborOverrides/qtyOverrides/column widths/hidden-cols all live on `estimate`/per-projId
+  // storage independent of which tier is active, so switching Summary <-> any other tier and
+  // back round-trips that state for free — nothing here needs to save/restore it.
+  if (tier === 'summary') {
+    _pricingRenderSummaryTab(projId, el, estimate);
+    return;
+  }
+
   var hidden = _pricingGetHiddenCols(projId);
   var sortState = _pricingSortState[projId] || { col: null, dir: null };
   var filterBldg = _pricingBldgFilter[projId] || '';
+  // Phase 5 (d284e714): fetched once, up-front, so renderRow/renderMergedRow (called below,
+  // before the later `var widths` used for header sizing) can clip label spans to the column's
+  // CURRENT width (resized or default) instead of forcing the table wider than its declared
+  // width — see _pricingClipSpanMaxW.
+  var _colWidthsForClip = _pricingGetColWidths(projId);
+  function _pricingClipSpanMaxW(ci) {
+    var w = _colWidthsForClip[ci] || _colWidthsForClip[String(ci)] || PRICING_TBL_COLS[ci].minWidth;
+    return Math.max(20, w - 16); // 16 = cell's own horizontal padding (5px 8px × 2 sides)
+  }
   // 979fd1af: row sort control — Recommended tier only (the only tier with savings-weight
   // fields to score by). See _pricingGetRowSortMode for mode definitions.
   var _rowSortMode = tier === 'recommended' ? _pricingGetRowSortMode(projId) : 'default';
@@ -3494,12 +3763,35 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var cfg = _pricingGetConfig();
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
-  // Issue 4 fix: auto-hide Impact column (col 11) when tier cannot produce impact badges.
+  // Issue 4 fix: auto-hide the Impact column when tier cannot produce impact badges.
   // savingsImpact is only stamped on Recommended/Both phase-2 rows; Compliance/Full Scope blank.
   // We clone the hidden array so we don't mutate the user's saved preferences.
+  // Phase-4-fix (review-phase4.md #1): look up the Impact column by its isImpactCol flag
+  // instead of a hardcoded index — Phase 4's Hours column insertion shifted Impact from 11 to
+  // 12 and a literal `11` here was left stale, which hid Line Total (the new col 11) instead of
+  // Impact on Compliance/Full Scope. Deriving the index from PRICING_TBL_COLS means the next
+  // column insertion can't silently break this again.
+  var _impactColIdx = -1;
+  for (var _ci = 0; _ci < PRICING_TBL_COLS.length; _ci++) {
+    if (PRICING_TBL_COLS[_ci].isImpactCol) {
+      _impactColIdx = _ci;
+      break;
+    }
+  }
   var _tierHasImpact = tier === 'recommended' || tier === 'both';
-  if (!_tierHasImpact && hidden.indexOf(11) === -1) {
-    hidden = hidden.concat([11]);
+  if (!_tierHasImpact && _impactColIdx !== -1 && hidden.indexOf(_impactColIdx) === -1) {
+    hidden = hidden.concat([_impactColIdx]);
+  }
+
+  // Phase 6 (5ff6c401): auto-hide the Building column (index 1) when a single building is
+  // selected in the Building filter — every visible row shows the identical value once the
+  // group-header divider rows are removed below, so the column is pure redundant width in that
+  // state. Re-shown automatically when "All Buildings" is selected (still needed for scanning/
+  // sorting since there's no group header to identify a building anymore). Derived from filter
+  // state, not a saved user preference — mirrors the Impact-column auto-hide above, not written
+  // to _pricingGetHiddenCols storage.
+  if (filterBldg && hidden.indexOf(1) === -1) {
+    hidden = hidden.concat([1]);
   }
   var meta = sget('en_pricing_meta', null);
 
@@ -3729,9 +4021,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       projId +
       '\',this.value)"' +
       ' style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px">' +
-      '<option value="default"' +
+      '<option value="default" title="Rows appear in the order they were generated — not sorted by ' +
+      'size, cost, or savings"' +
       (_curSortMode === 'default' ? ' selected' : '') +
-      '>Default order</option>' +
+      '>Default order (unsorted)</option>' +
       '<option value="building"' +
       (_curSortMode === 'building' ? ' selected' : '') +
       '>Best building return first</option>' +
@@ -3760,12 +4053,35 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenSettingsPopover(\'' +
       projId +
       '\',this)" title="Pricing config + column visibility" style="cursor:pointer">⚙ Table Settings</button>',
-    '<span style="flex:1"></span>',
-    // Tier toggle
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenLegendPopover(\'' +
+      projId +
+      '\',this)" title="What the icons and colors in this table mean" style="cursor:pointer">ⓘ Legend</button>',
+    // Tier toggle — 35742dd5 (Phase 2). DEVIATION FROM PLAN (flagged, see plan.md Phase 2 +
+    // implementer report): the plan's literal fix — wrapping Tier in its own flex:0 0 auto
+    // div positioned right after a flex:1 spacer, with Building+Sort in a second flex:0 0
+    // auto group after it — does NOT change Tier's position at all. In a single flex row,
+    // items after a flex:1 spacer are still laid out left-to-right in sequence; Tier's left
+    // edge is mathematically (containerWidth - TierWidth - sepWidth - BuildingSortWidth)
+    // regardless of any flex:0 0 auto wrapper, because Tier is sandwiched BETWEEN the spacer
+    // and the variable-width Building/Sort group. Verified empirically: before/after
+    // tierBtnLeft was byte-identical across all 4 tiers with the plan's literal wrapper
+    // (see verify/phase2/results-before.json vs an intermediate results-after.json — both
+    // showed Recommended=1743.625 vs other tiers=~1955, i.e. the exact ~211px bug,
+    // completely unchanged by the wrapper).
+    // ACTUAL FIX: move the flex:1 spacer from BEFORE Tier to AFTER it (between Tier/sep and
+    // the Building+Sort group). Tier's left edge is now simply the natural width of the
+    // fixed left-side toolbar content (Import CSV/status/Settings/Legend) — a constant that
+    // never depends on whether Sort is present. The spacer absorbs 100% of the width
+    // fluctuation, and only the Building+Sort group's right edge moves.
+    '<div style="flex:0 0 auto;display:flex;align-items:center">',
     _pricingTierToggleHTML(projId, tier),
+    '</div>',
     '<span style="color:var(--border2)">|</span>',
+    '<span style="flex:1"></span>',
+    '<div style="flex:0 0 auto;display:flex;align-items:center;gap:8px">',
     bldgFilterHTML,
     rowSortHTML,
+    '</div>',
     '</div>',
   ].join('');
 
@@ -3794,17 +4110,60 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         ' style="cursor:pointer">',
     );
 
-    // col 1: Building
-    cells.push('<span style="font-size:11px">' + _esc(row.building) + '</span>');
+    // col 1: Building — Phase 5 (d284e714): clip overflow instead of forcing the table wider
+    // than its declared column widths; title carries the untruncated value.
+    // DEVIATION FROM PLAN TEXT (measured, see phase5 verify results-before/after.json): the
+    // plan's literal instruction (only overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+    // on the span) does nothing on a plain inline element — browsers report clientWidth/
+    // scrollWidth as 0 for non-block inline boxes, so no clipping occurs and the column still
+    // grows to fit content (measured: Building TH/TD width unchanged at 430px vs its declared
+    // 90px minWidth, before AND after the literal-only change, seeded long-building-name test).
+    // Minimal correct variant: display:inline-block + an explicit max-width (tied to the
+    // column's current width, resized or default) actually bounds the box so ellipsis clipping
+    // takes effect — this is the same pattern already used elsewhere in this file for the
+    // savings-range chip (~line 3868-3870, `display:inline-block;max-width:120px;overflow:hidden`).
+    cells.push(
+      '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(1) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(row.building) +
+        '">' +
+        _esc(row.building) +
+        '</span>',
+    );
 
-    // col 2: Item
-    cells.push('<span style="font-size:11px">' + _esc(row.item) + '</span>');
+    // col 2: Item — Phase 5: same clipping pattern
+    cells.push(
+      '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(2) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(row.item) +
+        '">' +
+        _esc(row.item) +
+        '</span>',
+    );
 
-    // col 3: Type
-    cells.push('<span style="font-size:10px;color:var(--text2)">' + _esc(row.type) + '</span>');
+    // col 3: Type — Phase 5: same clipping pattern
+    cells.push(
+      '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(3) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(row.type) +
+        '">' +
+        _esc(row.type) +
+        '</span>',
+    );
 
-    // col 4: Equipment
-    cells.push('<span style="font-size:10px;color:var(--text2)">' + _esc(row.equipment) + '</span>');
+    // col 4: Equipment — Phase 5: same clipping pattern
+    cells.push(
+      '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(4) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(row.equipment) +
+        '">' +
+        _esc(row.equipment) +
+        '</span>',
+    );
 
     // col 5: Qty — editable override (Fix: item 6f26cbfd)
     var _qtyOverrides = estimate.qtyOverrides || {};
@@ -3821,9 +4180,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           ? 'Qty override (default: auto-derived from equipment counts)'
           : 'Qty (auto-derived; edit to override)') +
         '"' +
-        ' style="width:44px;font-size:11px;padding:2px 4px;background:var(--s3);color:var(--text);border:1px solid ' +
-        (_qtyIsOverridden ? 'var(--accent)' : 'var(--border)') +
-        ';border-radius:4px;text-align:right;font-variant-numeric:tabular-nums"' +
+        (_qtyIsOverridden ? '' : ' class="ch-soft-input"') +
+        ' style="width:44px;font-size:11px;padding:2px 4px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums' +
+        (_qtyIsOverridden ? ';border:1px solid var(--accent)' : '') +
+        '"' +
         ' onchange="_pricingQtyOverride(\'' +
         projId +
         "','" +
@@ -3891,46 +4251,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(netContent);
 
-    // col 9: Contract (40%) — for Phase 2 rows, show editable hours input here
+    // col 9: Contract (40%) — dollar-price branches only (Phase 4 923ca9b/75827077: labor-hour
+    // input moved to its own Hours column below, so Contract never mixes parts price + hours).
     var contractContent = '';
     if (row.ioOnly) {
       contractContent = '<span style="color:var(--text3);font-size:10px">$0 (no part)</span>';
-    } else if (row.phase === 2 && row.seqKey) {
-      // Per-sequence labor-hour override input (Phase 4) — shown in Contract column
-      var defaultHrs = COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] : 2.0;
-      var currentHrs = laborOverrides[row.seqKey] != null ? parseFloat(laborOverrides[row.seqKey]) : row.hrsPerUnit;
-      var isOverridden = laborOverrides[row.seqKey] != null;
-      contractContent =
-        '<div style="display:flex;align-items:center;gap:4px">' +
-        '<input type="number" min="0" step="0.25" value="' +
-        currentHrs +
-        '"' +
-        ' title="Hours per instance (default: ' +
-        defaultHrs +
-        ')"' +
-        ' style="width:52px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid ' +
-        (isOverridden ? 'var(--accent)' : 'var(--border)') +
-        ';border-radius:4px;text-align:right;font-variant-numeric:tabular-nums"' +
-        ' onchange="_pricingSeqHrsChange(\'' +
-        projId +
-        "','" +
-        row.seqKey +
-        '\',this.value)">' +
-        '<span style="font-size:10px;color:var(--text3)">hrs</span>' +
-        (isOverridden
-          ? '<button onclick="_pricingSeqHrsReset(\'' +
-            projId +
-            "','" +
-            row.seqKey +
-            '\')"' +
-            ' title="Reset to default (' +
-            defaultHrs +
-            ' hrs)"' +
-            ' style="font-size:9px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
-          : '') +
-        '</div>';
-    } else if (row.phase === 2) {
-      contractContent = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '—';
     } else if (row.noSku) {
       contractContent =
         '<input type="number" min="0" step="0.01" value="' +
@@ -3952,7 +4277,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           _noCatManualVal +
           '" placeholder="Enter price"' +
           ' title="No catalog loaded — enter unit price manually"' +
-          ' style="width:100%;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+          ' style="width:100%;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border:1px solid var(--warn);border-radius:4px;text-align:right"' +
           ' onchange="_pricingUnitPriceOverride(event,\'' +
           projId +
           "','" +
@@ -3981,7 +4306,48 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(contractContent);
 
-    // col 10: Line Total
+    // col 10: Hours — labor-hour override input, split out of Contract (Phase 4 923ca9b/75827077).
+    // Moved, not rewritten: identical markup/onchange/override-detection/reset-button that used to
+    // live in the Contract cell for row.phase===2 && row.seqKey rows.
+    var hoursContent = '<span style="color:var(--text3)">—</span>';
+    if (row.phase === 2 && row.seqKey) {
+      var defaultHrs = COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[row.seqKey] : 2.0;
+      var currentHrs = laborOverrides[row.seqKey] != null ? parseFloat(laborOverrides[row.seqKey]) : row.hrsPerUnit;
+      var isOverridden = laborOverrides[row.seqKey] != null;
+      hoursContent =
+        '<div style="display:flex;align-items:center;gap:4px">' +
+        '<input type="number" min="0" step="0.25" value="' +
+        currentHrs +
+        '"' +
+        ' title="Hours per instance (default: ' +
+        defaultHrs +
+        ')"' +
+        (isOverridden ? '' : ' class="ch-soft-input"') +
+        ' style="width:52px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums' +
+        (isOverridden ? ';border:1px solid var(--accent)' : '') +
+        '"' +
+        ' onchange="_pricingSeqHrsChange(\'' +
+        projId +
+        "','" +
+        row.seqKey +
+        '\',this.value)">' +
+        '<span style="font-size:10px;color:var(--text3)">hrs</span>' +
+        (isOverridden
+          ? '<button onclick="_pricingSeqHrsReset(\'' +
+            projId +
+            "','" +
+            row.seqKey +
+            '\')"' +
+            ' title="Reset to default (' +
+            defaultHrs +
+            ' hrs)"' +
+            ' style="font-size:9px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
+          : '') +
+        '</div>';
+    }
+    cells.push(hoursContent);
+
+    // col 11: Line Total
     var lineTotalContent = '';
     if (row.ioOnly) {
       lineTotalContent = '<span style="color:var(--text3);font-size:10px">$0</span>';
@@ -3998,7 +4364,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 11: Impact — savings-tier badge (correction #4 / Phase 5) + (0ae36950) the $-savings-range
+    // col 12: Impact — savings-tier badge (correction #4 / Phase 5) + (0ae36950) the $-savings-range
     // chip, moved here from the Notes column. Both are single-line inline-block spans so this cell
     // never grows the row taller than any other row's baseline height — see _savingsRangeChipHTML.
     var impactCellContent = '';
@@ -4008,7 +4374,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     impactCellContent += _savingsRangeChipHTML(row);
     cells.push(impactCellContent);
 
-    // col 12: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
+    // col 13: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
     // superseding the earlier "Fuller-preference" decision (full rationale always visible in-cell)
     // because it made Recommended phase-2 rows taller than every other row in the table —
     // Matt rejected that height-inconsistency tradeoff. The rationale/clientSummary sentence now
@@ -4066,7 +4432,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // Single-line branch always used (b771dec6 2d) — rationale/clientSummary text now lives in the
     // hover tooltip (_tooltipText12 above), not as a second visible line, so every row is one line
     // tall. (0ae36950: the $-savings-range chip that used to be appended here now renders in the
-    // Impact column instead — see col 11 above — so this cell is never anything but the input.)
+    // Impact column instead — see col 12 above — so this cell is never anything but the input.)
     cells.push(_noteInputHTML);
 
     // Build TR
@@ -4077,18 +4443,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return; // skip hidden columns
       var col = PRICING_TBL_COLS[ci] || {};
-      // col 12 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
-      var isNotesCol = ci === 12;
-      var isImpactCol = ci === 11;
+      // col 13 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
+      var isNotesCol = ci === 13;
+      var isImpactCol = ci === 12;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border2);';
-      // col 9 (Contract) for Phase 2 sequence rows: smaller padding for the hrs input
-      // MUST be before the generic numeric right-align block (which also matches ci===9)
-      else if (ci === 9 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
-      // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Line Total) are right-aligned numerics
-      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10)
+      // col 10 (Hours) for Phase 2 sequence rows: smaller padding for the hrs input (Phase 4:
+      // moved here from Contract, which no longer carries this branch since Hours is its own col)
+      // MUST be before the generic numeric right-align block (which also matches ci===10)
+      else if (ci === 10 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
+      // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Hours), 11 (Line Total) are right-aligned numerics
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -4149,15 +4516,28 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         ' style="cursor:pointer">',
     );
 
-    // col 1: Building
-    cells.push('<span style="font-size:11px">' + _esc(hwRow.building) + '</span>');
+    // col 1: Building — Phase 5 (d284e714): clip overflow instead of forcing the table wider
+    // than its declared column widths; title carries the untruncated value. Same measured
+    // deviation as renderRow's col 1 above (display:inline-block + explicit max-width required —
+    // plain overflow:hidden on an inline <span> is a no-op).
+    cells.push(
+      '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(1) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(hwRow.building) +
+        '">' +
+        _esc(hwRow.building) +
+        '</span>',
+    );
 
     // col 2: Item — concatenated (5c: implementer's call = inline, keeps row height uniform
     // with every other row per the Batch 2d one-line convention; full text in title for the
-    // case it truncates at narrow viewports)
+    // case it truncates at narrow viewports). Phase 5: added overflow clipping to the span.
     var _combinedItemFull = hwRow.item + ' + ' + seqRow.item;
     cells.push(
-      '<span style="font-size:11px" title="' +
+      '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(2) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
         _esc(_combinedItemFull) +
         '">' +
         _esc(hwRow.item) +
@@ -4166,15 +4546,27 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         '</span>',
     );
 
-    // col 3: Type
-    cells.push('<span style="font-size:10px;color:var(--text2)">' + _esc(hwRow.type) + ' + Sequence</span>');
-
-    // col 4: Equipment
+    // col 3: Type — Phase 5: same clipping pattern
+    var _combinedTypeFull = hwRow.type + ' + Sequence';
     cells.push(
-      '<span style="font-size:10px;color:var(--text2)">' +
-        _esc(hwRow.equipment) +
-        ' \xb7 ' +
-        _esc(seqRow.equipment) +
+      '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(3) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(_combinedTypeFull) +
+        '">' +
+        _esc(_combinedTypeFull) +
+        '</span>',
+    );
+
+    // col 4: Equipment — Phase 5: same clipping pattern
+    var _combinedEquipFull = hwRow.equipment + ' \xb7 ' + seqRow.equipment;
+    cells.push(
+      '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
+        _pricingClipSpanMaxW(4) +
+        'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        _esc(_combinedEquipFull) +
+        '">' +
+        _esc(_combinedEquipFull) +
         '</span>',
     );
 
@@ -4234,49 +4626,57 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           : '<span style="color:var(--text3)">—</span>';
     cells.push(_netContent);
 
-    // col 9: Contract — hw's per-unit contract price (read-only, as prefix text) alongside the
-    // sequence's existing editable hours-override input (same control/onchange as renderRow's
-    // phase-2 branch — labor-hour editing is preserved unchanged on the merged row).
-    // 0ae36950: restructured from a flex-direction:column stack (price ABOVE the hours input) to
-    // a single-line side-by-side layout — the stacked version added a fixed +9px to every merged
-    // row's height vs. every other row in the table (all three tiers), the second uniform-height
-    // root cause found in b771dec6 column-width-invest. Contract column's minWidth was widened
-    // (PRICING_TBL_COLS[9], 90→110) to fit "price + hrs input" comfortably at default width.
+    // col 9: Contract — hw's per-unit contract price, own cell (Phase 4 923ca9b/75827077: split
+    // from the sequence's hours input, which now lives in its own Hours column below — no more
+    // "+" glue text needed since price and hours are independent cells).
     var _hwContractText = hwRow.ioOnly
       ? '$0 (no part)'
       : hwRow.contractPrice != null
         ? _pricingFmt(hwRow.contractPrice)
         : '—';
+    cells.push(_hwContractText);
+
+    // col 10: Hours — sequence's editable hours-override input (same control/onchange as
+    // renderRow's phase-2 branch — labor-hour editing is preserved unchanged on the merged row),
+    // now its own cell instead of glued to Contract with a "+".
     var _defaultHrs =
       COST_PER_SEQ_HOURS_DEFAULT[seqRow.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[seqRow.seqKey] : 2.0;
     var _currentHrs =
       laborOverrides[seqRow.seqKey] != null ? parseFloat(laborOverrides[seqRow.seqKey]) : seqRow.hrsPerUnit;
     var _hrsOverridden = laborOverrides[seqRow.seqKey] != null;
-    var _contractContent =
+    var _hoursContent =
       '<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;white-space:nowrap">' +
-      '<span style="font-size:9px;color:var(--text2)" title="Sensor contract price">' +
-      _hwContractText +
-      '</span>' +
-      '<span style="color:var(--text3);font-size:9px">+</span>' +
       '<input type="number" min="0" step="0.25" value="' +
       _currentHrs +
       '"' +
       ' title="Hours per instance (default: ' +
       _defaultHrs +
       ')"' +
-      ' style="width:36px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border:1px solid ' +
-      (_hrsOverridden ? 'var(--accent)' : 'var(--border)') +
-      ';border-radius:3px;text-align:right;font-variant-numeric:tabular-nums"' +
+      (_hrsOverridden ? '' : ' class="ch-soft-input"') +
+      ' style="width:44px;font-size:10px;padding:1px 3px;background:var(--s3);color:var(--text);border-radius:3px;text-align:right;font-variant-numeric:tabular-nums' +
+      (_hrsOverridden ? ';border:1px solid var(--accent)' : '') +
+      '"' +
       ' onchange="_pricingSeqHrsChange(\'' +
       projId +
       "','" +
       seqRow.seqKey +
       '\',this.value)">' +
       '<span style="font-size:9px;color:var(--text3)">hrs</span>' +
+      (_hrsOverridden
+        ? '<button onclick="_pricingSeqHrsReset(\'' +
+          projId +
+          "','" +
+          seqRow.seqKey +
+          '\')"' +
+          ' title="Reset to default (' +
+          _defaultHrs +
+          ' hrs)"' +
+          ' style="font-size:9px;padding:1px 3px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
+        : '') +
       '</div>';
-    cells.push(_contractContent);
+    cells.push(_hoursContent);
 
-    // col 10: Line Total — hw.lineTotal + seq.lineTotal, computed fresh here every render
+    // col 11: Line Total — hw.lineTotal + seq.lineTotal, computed fresh here every render
     // (5c: "never written back") — the underlying row objects and their lineTotal fields are
     // never mutated, so toggling this row on/off moves the grand total by exactly this combined
     // amount and back (footer total comes from _pricingComputeTotals summing the SAME unmerged
@@ -4286,7 +4686,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span' + (!combinedOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(_combinedLineTotal) + '</span>';
     cells.push(_lineTotalContent);
 
-    // col 11: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
+    // col 12: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
     // sequence half of the pair. (0ae36950: $-savings-range chip also moved here from Notes,
     // same as renderRow — see _savingsRangeChipHTML.)
     var _impactCellContent = '';
@@ -4296,7 +4696,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     _impactCellContent += _savingsRangeChipHTML(seqRow);
     cells.push(_impactCellContent);
 
-    // col 12: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
+    // col 13: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
     // lost. clientSummary/savingsRationale are read from the module-level SEQUENCE_SAVINGS_IMPACT
     // constant directly (not only from seqRow's own stamped fields, which buildRecommendedRows
     // only sets for the Recommended tier) so the combined tooltip carries the sequence's benefit
@@ -4353,13 +4753,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var tds = '';
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return;
-      var isNotesCol = ci === 12;
-      var isImpactCol = ci === 11;
+      var isNotesCol = ci === 13;
+      var isImpactCol = ci === 12;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border2);';
-      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10)
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -4471,45 +4871,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         lb = _pricingSortRows(lb, sortState.col, sortState.dir);
       }
 
-      // Building subtotal
-      var bHw1 = hw.reduce(function (s, r) {
-        return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-      }, 0);
-      var bLab2 = lb.reduce(function (s, r) {
-        return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-      }, 0);
-      var bTotal = bHw1 + bLab2;
-
-      var recBTotal = 0;
-      if (isBothMode && recRows) {
-        var rBRows = recRows.filter(function (r) {
-          return r.building === bName;
-        });
-        recBTotal = rBRows.reduce(function (s, r) {
-          return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-        }, 0);
-      }
-
-      tableBodyHTML +=
-        '<tr><td colspan="' +
-        visibleColSpan +
-        '" style="background:var(--s1);padding:6px 10px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border2)">' +
-        _esc(bName) +
-        (bTotal > 0 && hasCatalog
-          ? ' <span style="font-weight:400;color:var(--text3)">— ' +
-            _pricingFmt(bTotal) +
-            ' est.' +
-            (isBothMode && recBTotal > 0 ? ' / Rec: ' + _pricingFmt(recBTotal) : '') +
-            '</span>'
-          : '') +
-        '</td></tr>';
-
+      // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): the building group-header <tr>
+      // (building name + subtotal, "— $X est.") that used to render here is REMOVED — the data
+      // table now renders buildings' rows back-to-back with no divider row. Building totals live
+      // in their own "Summary" sub-tab instead (see _pricingRenderSummaryTab), which computes its
+      // own per-building/per-tier totals independently (across all three tiers, not just the
+      // currently active one), so the bHw1/bLab2/bTotal/recBTotal calc that used to feed this
+      // <tr> is no longer needed here and was removed with it (nothing else in this scope reads
+      // those vars — verified by grep before removal).
+      //
       // b771dec6 5a/5b (Finding 7): Phase divider rows removed — hardware sensors and their
       // blocking sequences now render as merged same-row lines where paired, in a single
       // building group (no more "Phase 1 — Hardware" / "Phase 2 — Programming Labor" dividers).
-      // Pairing runs AFTER bHw1/bLab2/bTotal above, which already summed the FULL unmerged
-      // hw/lb arrays — subtotals and the footer Grand Total are unaffected by this presentation
-      // pass. Each phase-1 hw row is claimed by AT MOST one phase-2 seq row (first match wins,
+      // Each phase-1 hw row is claimed by AT MOST one phase-2 seq row (first match wins,
       // in current sort order); sequences with no blocking sensors, or whose blocking sensors
       // are absent/already claimed, render standalone exactly as before.
       // 0ae36950: factored into _pricingPairHwSeq so the 'equipment' flat-sort mode below
@@ -4544,9 +4918,21 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }
 
   // ── 10. Footer
+  // Phase 3 (32521b08, cost-estimate-ux-2026-07-06): Tier: label moved to the FRONT of the
+  // footer row (was last, easy to miss per the investigation) so it's the first thing read in
+  // every tier, before the Phase1/Phase2/Total figures — same field-order rule applies to both
+  // the isBothMode (Compare) and else (single-tier) branches below since this sits before the
+  // branch split.
   var recTierLabel = tier === 'recommended' ? 'Recommended' : 'Compliance';
+  // 45ceb14f: extracted to _pricingTierLabelHTML (byte-identical output) so
+  // _pricingRefreshFooter's partial-refresh path can render the same Tier label without a
+  // second copy of this ternary. recTierLabel above is pre-existing/unused — left as-is,
+  // out of scope for this fix.
+  var _tierLabelHTML = _pricingTierLabelHTML(tier);
   var footerParts = [
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
+    _tierLabelHTML,
+    '<span style="color:var(--border2)">|</span>',
   ];
 
   if (isBothMode && recTotals) {
@@ -4625,17 +5011,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
     '<span style="font-size:11px;color:var(--text3)">' + _p4CaveatParts.join(' · ') + '</span>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
-      (tier === 'both'
-        ? 'Compare'
-        : tier === 'recommended'
-          ? 'Recommended'
-          : tier === 'full-scope'
-            ? 'Full Scope'
-            : 'Compliance') +
-      '</span>',
   );
+  // (Tier: label now rendered at the front of footerParts, see Phase 3 comment above.)
 
   // Step 5: Portfolio savings rollup (Recommended tier, when bill data available)
   if ((tier === 'recommended' || tier === 'both') && _annualElecData.hasBillData && _annualElecData.annualKwh) {
@@ -4676,15 +5053,18 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           '</div>',
       );
     }
-  } else if ((tier === 'recommended' || tier === 'both') && !_annualElecData.hasBillData) {
-    // No bill data — footer import-bills note only shown if no % ranges were shown per-row
-    if (!_anySavingsShown) {
-      footerParts.push(
-        '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
-          'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.' +
-          '</div>',
-      );
-    }
+  }
+
+  // Phase 3 (32521b08): advisory line always reserves its slot for Recommended/Compare tiers —
+  // previously this line only rendered when there was no bill data AND no per-row savings chip
+  // had shown (`!_anySavingsShown`, old `else if` branch above), so footer height/content jumped
+  // between projects/tiers for reasons the user couldn't see (the investigation's root-cause
+  // finding). Now it's unconditionally present in these two tiers, with text depending on
+  // whether ANY savings info (the portfolio rollup above or a per-row chip) ended up visible.
+  if (tier === 'recommended' || tier === 'both') {
+    // 45ceb14f: extracted to _pricingAdvisoryLineHTML (byte-identical output) so
+    // _pricingRefreshFooter's partial-refresh path can render the identical advisory line.
+    footerParts.push(_pricingAdvisoryLineHTML(_anySavingsShown));
   }
 
   // b771dec6 3b: M&V disclaimer moved from here into the Top ROI card
@@ -4734,9 +5114,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       frozenStyle = 'z-index:11;';
     }
 
-    // col 10 (Line Total) label shows active basis in parens, e.g. "Line Total (Contract)"
+    // col 11 (Line Total) label shows active basis in parens, e.g. "Line Total (Contract)"
     var colLabel = col.label;
-    if (ci === 10) {
+    if (ci === 11) {
       var basisLabels = { contract: 'Contract', net: 'Net', list: 'List' };
       colLabel = 'Total (' + (basisLabels[cfg.priceBasis] || 'Contract') + ')';
     }
@@ -4798,6 +5178,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var extraRecHeader = isBothMode
     ? '<th style="background:var(--s1);color:var(--accent);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:right;border-left:2px solid var(--border2);border-bottom:2px solid var(--border2)">Rec. Total</th>'
     : '';
+
+  // Phase 5 (d284e714): the old hardcoded `min-width:1006px` predated the Hours column (Phase 4)
+  // and other column widenings, so it drifted out of sync with the real column-width sum. Compute
+  // it live from PRICING_TBL_COLS + the current hidden-cols set so it can never drift again when
+  // columns change.
+  var _tblMinWidth = PRICING_TBL_COLS.reduce(function (sum, col, ci) {
+    return sum + (hidden.indexOf(ci) !== -1 ? 0 : col.minWidth);
+  }, 0);
 
   // ── 12. Assemble full panel
   // Top-ROI callout (Recommended + Both tiers, item d60f455f)
@@ -4862,7 +5250,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // Dropping width:100% makes the table render at its natural (column-sum) width in every case
     // — extra container space just shows as blank space to the right inside .ch-tbl-scroll,
     // which already provides the horizontal scrollbar for narrower viewports.
-    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;min-width:1006px">',
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;min-width:' + _tblMinWidth + 'px">',
     '<thead><tr>',
     headerCols,
     extraRecHeader,
@@ -4889,6 +5277,232 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }, 0);
 };
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   PHASE 6 — "Summary" sub-tab (5ff6c401, cost-estimate-ux-2026-07-06)
+   User decision (recorded on item 5ff6c401, overrides plan.md's original "in-tab collapsible
+   panel" default): Building Totals is its own SEPARATE sub-tab, a peer of Recommended/
+   Compliance/Full Scope/Compare in the same Tier toggle — not a panel nested inside one of them.
+   Presentation-only: computes NOTHING new. For each of the three real tiers it calls the exact
+   same builder (buildRecommendedRows/buildComplianceRows/buildFullScopeRows) + the exact same
+   _pricingApplyLaborOverrides/_pricingApplyQtyOverrides pipeline + the exact same per-building
+   toggle-aware reduce() the old (now-removed) in-table group-header row used
+   (`estimate.rowToggles[r._baseId||r.id] !== false ? s + (r.lineTotal||0) : s`) — byte-identical
+   math, just aggregated across all three tiers and displayed in its own table instead of once
+   per active tier as a <tr> divider. Always shows ALL buildings (ignores the Building filter —
+   that filter is a per-tier data-table control, not meaningful here) including buildings that
+   only carry Full-Scope-only content (e.g. the FDD add-on's pseudo-building "WebCTRL System",
+   which has no Compliance/Recommended rows — see buildFullScopeRows) per the "Summary views
+   include ALL buildings" rule.
+   ══════════════════════════════════════════════════════════════════════════════ */
+function _pricingSummaryEsc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Building-name cell: same ellipsis-clip + title-tooltip pattern Phase 5 established for the
+// data table's Building column (_pricingClipSpanMaxW) — this table has only one text column
+// competing for width, so a fixed generous max-width (well above the data table's 90px minWidth)
+// is used instead of a per-column resize state (this table has no resizable columns).
+function _pricingSummaryBldgCellHTML(name) {
+  return (
+    '<span style="display:inline-block;vertical-align:middle;max-width:260px;overflow:hidden;' +
+    'text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:var(--text)" title="' +
+    _pricingSummaryEsc(name) +
+    '">' +
+    _pricingSummaryEsc(name) +
+    '</span>'
+  );
+}
+
+// Aggregates per-building / per-tier totals. Returns:
+//   { buildings: [{ building, tiers: { recommended: {items,hw,lb,total}, compliance: {...},
+//                    'full-scope': {...} } }, ...],
+//     tierTotals: { recommended: <totals from _pricingComputeTotals>, compliance: {...},
+//                   'full-scope': {...} } }
+function _pricingComputeSummaryData(projId, estimate) {
+  var tierDefs = [
+    { key: 'compliance', builder: buildComplianceRows },
+    { key: 'recommended', builder: buildRecommendedRows },
+    { key: 'full-scope', builder: buildFullScopeRows },
+  ];
+  var perTier = {};
+  var bldgOrder = [];
+  var bldgSeen = {};
+
+  tierDefs.forEach(function (t) {
+    var rows = t.builder(projId);
+    rows = _pricingApplyLaborOverrides(projId, rows);
+    rows = _pricingApplyQtyOverrides(projId, rows);
+    perTier[t.key] = rows;
+    rows.forEach(function (r) {
+      if (r.building && !bldgSeen[r.building]) {
+        bldgSeen[r.building] = true;
+        bldgOrder.push(r.building);
+      }
+    });
+  });
+
+  function sumRows(rows) {
+    var hw = rows.filter(function (r) {
+      return r.phase === 1;
+    });
+    var lb = rows.filter(function (r) {
+      return r.phase === 2;
+    });
+    var hwSum = hw.reduce(function (s, r) {
+      return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
+    }, 0);
+    var lbSum = lb.reduce(function (s, r) {
+      return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
+    }, 0);
+    return { items: rows.length, hw: hwSum, lb: lbSum, total: hwSum + lbSum };
+  }
+
+  var buildings = bldgOrder.map(function (bName) {
+    var tiers = {};
+    tierDefs.forEach(function (t) {
+      var bRows = perTier[t.key].filter(function (r) {
+        return r.building === bName;
+      });
+      tiers[t.key] = sumRows(bRows);
+    });
+    return { building: bName, tiers: tiers };
+  });
+
+  var tierTotals = {};
+  tierDefs.forEach(function (t) {
+    tierTotals[t.key] = _pricingComputeTotals(perTier[t.key], estimate);
+  });
+
+  return { buildings: buildings, tierTotals: tierTotals };
+}
+
+function _pricingRenderSummaryTab(projId, el, estimate) {
+  var data = _pricingComputeSummaryData(projId, estimate);
+  var tierCols = [
+    { key: 'compliance', label: 'Compliance' },
+    { key: 'recommended', label: 'Recommended' },
+    { key: 'full-scope', label: 'Full Scope' },
+  ];
+
+  var toolbarHTML =
+    '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">' +
+    '<span style="font-size:12px;font-weight:700;color:var(--text2)">Building Totals — all buildings, across all tiers</span>' +
+    '<span style="flex:1"></span>' +
+    '<div style="flex:0 0 auto;display:flex;align-items:center">' +
+    _pricingTierToggleHTML(projId, 'summary') +
+    '</div>' +
+    '</div>';
+
+  var theadCells =
+    '<th style="' +
+    'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;' +
+    'padding:8px 10px;white-space:nowrap;position:sticky;top:0;text-align:left;border-right:1px solid var(--border);border-bottom:2px solid var(--border2)">Building</th>';
+  tierCols.forEach(function (t) {
+    theadCells +=
+      '<th colspan="3" style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;' +
+      'letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;text-align:center;' +
+      'border-left:2px solid var(--border2);border-bottom:1px solid var(--border)">' +
+      t.label +
+      '</th>';
+  });
+  var theadSubCells =
+    '<th style="background:var(--s1);border-right:1px solid var(--border);border-bottom:2px solid var(--border2)"></th>';
+  tierCols.forEach(function (t) {
+    ['Items', 'Hardware $', 'Total $'].forEach(function (sub, i) {
+      theadSubCells +=
+        '<th style="background:var(--s1);color:var(--text3);font-size:9px;font-weight:700;text-transform:uppercase;' +
+        'padding:6px 8px;white-space:nowrap;position:sticky;top:24px;text-align:right;' +
+        (i === 0 ? 'border-left:2px solid var(--border2);' : '') +
+        'border-bottom:2px solid var(--border2)">' +
+        sub +
+        '</th>';
+    });
+  });
+
+  var bodyRows = '';
+  if (data.buildings.length === 0) {
+    bodyRows =
+      '<tr><td colspan="' +
+      (1 + tierCols.length * 3) +
+      '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">No buildings found. Run the Equipment Matrix audit first.</td></tr>';
+  } else {
+    data.buildings.forEach(function (b) {
+      var row =
+        '<td style="overflow:hidden;padding:6px 10px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2)">' +
+        _pricingSummaryBldgCellHTML(b.building) +
+        '</td>';
+      tierCols.forEach(function (t) {
+        var d = b.tiers[t.key];
+        row +=
+          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text2);' +
+          'padding:6px 8px;border-bottom:1px solid var(--border2);border-left:2px solid var(--border2)">' +
+          d.items +
+          '</td>' +
+          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--border2)">' +
+          (d.hw > 0 ? _pricingFmt(d.hw) : '<span style="color:var(--text3)">—</span>') +
+          '</td>' +
+          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;padding:6px 8px;border-bottom:1px solid var(--border2)">' +
+          (d.total > 0 ? _pricingFmt(d.total) : '<span style="color:var(--text3)">—</span>') +
+          '</td>';
+      });
+      bodyRows += '<tr>' + row + '</tr>';
+    });
+  }
+
+  // Grand-total footer row — cross-checks against each tier's own footer Grand Total
+  // (_pricingComputeTotals output), NOT a re-sum of the rows above, so a discrepancy between
+  // "sum of buildings shown" and "the real tier total" (e.g. a row with no `building` field)
+  // would be visible rather than silently hidden.
+  var grandRow =
+    '<td style="padding:6px 10px;font-weight:700;color:var(--text);background:var(--s2);border-right:1px solid var(--border2);border-top:2px solid var(--border2)">Grand Total</td>';
+  tierCols.forEach(function (t) {
+    var tt = data.tierTotals[t.key];
+    grandRow +=
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text2);' +
+      'padding:6px 8px;background:var(--s2);border-top:2px solid var(--border2);border-left:2px solid var(--border2)">' +
+      tt.included +
+      ' / ' +
+      tt.total +
+      '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;background:var(--s2);border-top:2px solid var(--border2)">' +
+      (tt.grand !== null ? _pricingFmt(tt.phase1) : '<span style="color:var(--text3)">—</span>') +
+      '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;color:var(--em);' +
+      'background:var(--s2);border-top:2px solid var(--border2)">' +
+      (tt.grand !== null ? _pricingFmt(tt.grand) : '<span style="color:var(--text3)">—</span>') +
+      '</td>';
+  });
+
+  el.innerHTML = [
+    '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
+    toolbarHTML,
+    '<div class="ch-panel-body" style="flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
+    '<div class="ch-tbl-outer" style="margin:0;flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
+    '<div class="ch-tbl-scroll" style="flex:1;min-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px">',
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;min-width:600px">',
+    '<thead>',
+    '<tr>' + theadCells + '</tr>',
+    '<tr>' + theadSubCells + '</tr>',
+    '</thead>',
+    '<tbody>',
+    bodyRows,
+    '<tr>' + grandRow + '</tr>',
+    '</tbody>',
+    '</table>',
+    '</div>',
+    '</div>',
+    '</div>',
+    '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
+    '<span style="font-size:11px;color:var(--text3)">Reuses the exact per-row totals each tier’s own table computes — no new pricing math. Switch tiers above to see the item-level breakdown behind any number.</span>',
+    '</div>',
+    '</div>',
+  ].join('');
+}
+
 /* ── Phase 4: patch _pricingRefreshFooter to apply labor overrides ──────── */
 (function () {
   var _origRefreshFooter = _pricingRefreshFooter;
@@ -4898,7 +5512,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     // Secondary fix: Both/full-scope modes have footers that cannot be reproduced
     // here cheaply. Delegate to full re-render to keep them consistent.
-    if (tier === 'both' || tier === 'full-scope') {
+    // Phase 6 (5ff6c401): 'summary' has no footer element in this partial-refresh sense at all
+    // (its own render path builds a different footer) — delegate defensively even though no
+    // checkbox/override control exists on the Summary sub-tab today to trigger this call.
+    if (tier === 'both' || tier === 'full-scope' || tier === 'summary') {
       initCostEstimateTab(projId);
       return;
     }
@@ -4912,6 +5529,22 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var catalog = sget('en_pricing_catalog', null);
     var totals = _pricingComputeTotals(rows, est);
     var filterBldg = _pricingBldgFilter[projId] || '';
+
+    // 45ceb14f: re-derive the Tier-label + advisory-line state the same way the full render
+    // does, WITHOUT re-rendering rows. tier is always 'compliance' or 'recommended' here (see
+    // the 'both'/'full-scope' delegation guard above), so this mirrors the full render's
+    // _annualElecData/_fanFraction/_elecRate derivation (app/pricing-estimator.js:3684-3690)
+    // narrowed to that same two-tier domain — 'compliance' never has bill data pulled (matches
+    // the full path, where _annualElecData is only computed for 'recommended'/'both').
+    var _annualElecData =
+      tier === 'recommended'
+        ? _pricingGetProjectAnnualElec(projId)
+        : { annualKwh: null, hasBillData: false, elecRate: 0.1 };
+    var _fanFraction =
+      cfg.fanFraction !== undefined && cfg.fanFraction !== null ? cfg.fanFraction : FAN_FRACTION_DEFAULT;
+    var _elecRate = _annualElecData.elecRate || 0.1;
+    var _anySavingsShown =
+      tier === 'recommended' ? _pricingComputeAnySavingsShown(rows, _annualElecData, _fanFraction, _elecRate) : false;
 
     var _rfCaveatParts = [];
     if (totals.noCatalog) _rfCaveatParts.push('Hardware pending — import pricing CSV');
@@ -4929,6 +5562,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     footerEl.innerHTML = [
       '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
+      _pricingTierLabelHTML(tier), // 45ceb14f: was missing entirely from this path
+      '<span style="color:var(--border2)">|</span>', // 45ceb14f: separator to match full-render field order
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
         (totals.noCatalog
@@ -4953,6 +5588,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="flex:1"></span>',
       '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
       '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatParts.join(' · ') + '</span>',
+      tier === 'recommended' ? _pricingAdvisoryLineHTML(_anySavingsShown) : '', // 45ceb14f: was missing entirely
       '</div>',
     ].join('');
   };
@@ -4985,6 +5621,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '.ch-tbl tbody tr:hover td { background: var(--s4); }',
     /* Tabular nums for numeric cells */
     '.ch-tbl td { font-variant-numeric: tabular-nums; }',
+    /* Phase 1 (cost-estimate-ux-2026-07-06): soften optional editable-cell borders — */
+    /* non-overridden Qty/Hours inputs get the .ch-soft-input class with a transparent */
+    /* border (background still signals "editable"); reveal the border on hover/focus */
+    /* so the edit affordance is not lost. Deviation from the plan's literal selector */
+    /* (".ch-tbl input:hover") — that selector alone can never win against the inline */
+    /* border-color already set on overridden (var(--accent)) and required-manual-price */
+    /* (var(--warn)) inputs (inline style beats any non-!important stylesheet rule, */
+    /* pseudo-class or not), so a blanket rule would either do nothing on those inputs */
+    /* or require !important, which WOULD incorrectly flatten their border to grey on */
+    /* hover. Scoping to .ch-soft-input (only added when NOT overridden/required) keeps */
+    /* those meaningful borders on regardless of hover, per the constraint above. */
+    '.ch-tbl input.ch-soft-input { border: 1px solid transparent; }',
+    '.ch-tbl input.ch-soft-input:hover, .ch-tbl input.ch-soft-input:focus { border-color: var(--border); }',
   ].join('\n');
   if (document.head) document.head.appendChild(style);
 })();
