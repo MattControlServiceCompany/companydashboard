@@ -5,6 +5,11 @@
      en_pricing_meta           — global {importedAt,filename,skuCount}
      en_pricing_config         — global {netMultiplier,contractPct,hourlyRate,priceBasis,perSequenceHours}
      en_pricing_estimate_{id}  — per-project {rowToggles,manualPrices,laborOverrides,tier}
+     en_pricing_budget_{id}    — per-project {mode,amount,denomination,termMonths,fitToBudget,
+                                 fitExcludedIds,fitPrevToggleValues,fitAppliedAt} (174ad49a).
+                                 NOT the same as en_budget_{id} in app/budget.js (that key is
+                                 "monthly utility-spend budget" — a different feature this one
+                                 never reads or writes).
    ──────────────────────────────────────────────────────────────────────────── */
 
 /* ── Constants (spec §1, §5) ── */
@@ -483,6 +488,66 @@ function _pricingAdvisoryLineHTML(anySavingsShown) {
       : 'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.') +
     '</div>'
   );
+}
+
+/* ── Budget input (174ad49a) — per-project, own storage key. Two modes:
+     'financing' — Mode A: "I have a total project cost, spread it over a term."
+     'recurring'  — Mode B: "I have a periodic ceiling, tell me what fits inside it."
+   Both modes share amount/denomination/termMonths so ONE conversion function
+   (_pricingComputeBudgetTotal, below) serves both — see that function for why they
+   reduce to the same arithmetic from opposite directions. fitToBudget/fitExcludedIds/
+   fitPrevToggleValues/fitAppliedAt are Phase 3 state, present here from Phase 1 so the
+   stored shape never needs a second migration.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingGetBudget(projId) {
+  var stored = sget('en_pricing_budget_' + projId, null);
+  var dflt = {
+    mode: 'recurring', // 'financing' | 'recurring'
+    amount: null, // null = no budget set — all budget UI stays silent/hidden
+    denomination: 'monthly', // 'lump' | 'annual' | 'quarterly' | 'monthly'
+    termMonths: 12,
+    fitToBudget: false, // Phase 3: user has applied the Fit-to-Budget filter
+    fitExcludedIds: [], // Phase 3: toggleKeys this feature (not the user) last turned off
+    fitPrevToggleValues: {}, // Phase 3: toggleKey -> prior rowToggles value, for exact Clear/undo
+    fitAppliedAt: null,
+  };
+  if (!stored) return dflt;
+  return Object.assign({}, dflt, stored);
+}
+function _pricingSetBudget(projId, updates) {
+  var b = _pricingGetBudget(projId);
+  Object.assign(b, updates);
+  sset('en_pricing_budget_' + projId, b);
+  return b;
+}
+
+/* ── Convert a budget entry into one comparable dollar total (174ad49a).
+   Mode A (financing): the user's figure IS the thing being spread — a lump total, or a
+   periodic payment that, over termMonths, finances a total. Either way, the result is
+   "the total this budget affords."
+   Mode B (recurring): the user's figure is a ceiling the measure-list total must fit
+   inside. A lump ceiling compares directly. A periodic ceiling ("$6,800/mo") has no
+   meaning as a one-time project-cost ceiling by itself — termMonths (labeled "Compare
+   over (months)" for this mode) turns "$6,800/mo" into "$81,600 over 12 months," a
+   horizon the USER set, never one this function invents.
+   Returns null when no amount is set — callers must render nothing in that case, not a
+   zero or a placeholder, so untouched projects see no UI change from this feature.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeBudgetTotal(budget) {
+  if (!budget || budget.amount == null || isNaN(budget.amount) || Number(budget.amount) <= 0) return null;
+  var amount = Number(budget.amount);
+  var term = Number(budget.termMonths) || 12;
+  if (budget.denomination === 'lump') {
+    return { total: amount, basisLabel: _pricingFmt(amount) + ' lump sum' };
+  }
+  var monthsPerPeriod = { monthly: 1, quarterly: 3, annual: 12 }[budget.denomination] || 1;
+  var monthlyAmount = amount / monthsPerPeriod;
+  var total = monthlyAmount * term;
+  var perLabel = { monthly: '/mo', quarterly: '/qtr', annual: '/yr' }[budget.denomination] || '/mo';
+  return {
+    total: total,
+    basisLabel: _pricingFmt(amount) + perLabel + ' × ' + term + ' mo = ' + _pricingFmt(total),
+  };
 }
 
 // 45ceb14f: re-derives the full-render path's `_anySavingsShown` boolean from a cached row array,
@@ -2388,6 +2453,12 @@ function updatePricingConfig(projId, key, val) {
   initCostEstimateTab(projId);
 }
 
+/* ── 174ad49a: budget field onchange handler — same shape as updatePricingConfig ── */
+function _pricingUpdateBudget(projId, key, val) {
+  _pricingSetBudget(projId, { [key]: val });
+  initCostEstimateTab(projId);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    PHASE 3 — Three-tier model (Recommended/Compliance/Full Scope), optimizer,
               COMBO de-dup, tier toggle, collectPricingEstimate (spec §4, §8, §10, §11)
@@ -3417,6 +3488,7 @@ function _pricingOpenSettingsPopover(projId, btn) {
   var cfg = _pricingGetConfig();
   var estimate = _pricingGetEstimate(projId);
   var tier = estimate.tier || 'compliance';
+  var budget = _pricingGetBudget(projId); // 174ad49a
 
   var pop = document.createElement('div');
   pop.id = 'pricing-settings-popover-' + projId;
@@ -3509,6 +3581,84 @@ function _pricingOpenSettingsPopover(projId, btn) {
       ",'fanFraction',parseFloat(this.value)/100)\">" +
       '</label>';
   }
+
+  // Section 1b (174ad49a): Budget input — dual mode (Mode A "Project Financing" spreads a
+  // one-time total over a term; Mode B "Recurring Services Budget" is a periodic ceiling the
+  // measure list must fit inside), lump/annual/quarterly/monthly denominations, per Matt's
+  // 2026-07-03 spec. Lives in Table Settings (not the toolbar) per b771dec6 3a's rule that only
+  // Tiers/Buildings/Import Pricing CSV stay outside this popover.
+  html += '<div style="border-top:1px solid var(--border);margin:8px 0 6px;padding-top:8px">';
+  html +=
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Budget</div>';
+  html +=
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Mode:' +
+    '<select id="pricing-budget-mode-' +
+    projId +
+    '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="_pricingUpdateBudget(' +
+    projId +
+    ",'mode',this.value)\">" +
+    '<option value="recurring"' +
+    (budget.mode === 'recurring' ? ' selected' : '') +
+    '>Recurring Services Budget</option>' +
+    '<option value="financing"' +
+    (budget.mode === 'financing' ? ' selected' : '') +
+    '>Project Financing</option>' +
+    '</select></label>';
+  html +=
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Amount:' +
+    '<span style="display:flex;gap:4px">' +
+    '<input type="number" min="0" step="1" id="pricing-budget-amount-' +
+    projId +
+    '" value="' +
+    (budget.amount != null ? budget.amount : '') +
+    '" placeholder="0"' +
+    ' style="width:76px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+    ' onchange="_pricingUpdateBudget(' +
+    projId +
+    ",'amount',parseFloat(this.value)||null)\">" +
+    '<select id="pricing-budget-denom-' +
+    projId +
+    '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="_pricingUpdateBudget(' +
+    projId +
+    ",'denomination',this.value)\">" +
+    ['lump', 'monthly', 'quarterly', 'annual']
+      .map(function (d) {
+        var lbl = d === 'lump' ? 'Lump sum' : d.charAt(0).toUpperCase() + d.slice(1);
+        return '<option value="' + d + '"' + (budget.denomination === d ? ' selected' : '') + '>' + lbl + '</option>';
+      })
+      .join('') +
+    '</select></span></label>';
+  if (budget.denomination !== 'lump') {
+    html +=
+      '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
+      'title="' +
+      (budget.mode === 'financing'
+        ? 'How many months the financing plan spans'
+        : 'How many months to compare the recurring budget against — a horizon you choose, not one this feature assumes') +
+      '">' +
+      (budget.mode === 'financing' ? 'Financing term (months):' : 'Compare over (months):') +
+      '<input type="number" min="1" step="1" id="pricing-budget-term-' +
+      projId +
+      '" value="' +
+      budget.termMonths +
+      '"' +
+      ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+      ' onchange="_pricingUpdateBudget(' +
+      projId +
+      ",'termMonths',parseInt(this.value,10)||12)\">" +
+      '</label>';
+  }
+  var _budgetComp = _pricingComputeBudgetTotal(budget);
+  if (_budgetComp) {
+    html +=
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:2px">' +
+      (budget.mode === 'financing' ? 'Affords: ' : 'Ceiling: ') +
+      _budgetComp.basisLabel +
+      '</div>';
+  }
+  html += '</div>';
 
   // Section 2: column-visibility checklist
   html += '<div style="border-top:1px solid var(--border);margin:8px 0 6px;padding-top:8px">';
