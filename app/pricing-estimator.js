@@ -3865,12 +3865,32 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenLegendPopover(\'' +
       projId +
       '\',this)" title="What the icons and colors in this table mean" style="cursor:pointer">ⓘ Legend</button>',
-    '<span style="flex:1"></span>',
-    // Tier toggle
+    // Tier toggle — 35742dd5 (Phase 2). DEVIATION FROM PLAN (flagged, see plan.md Phase 2 +
+    // implementer report): the plan's literal fix — wrapping Tier in its own flex:0 0 auto
+    // div positioned right after a flex:1 spacer, with Building+Sort in a second flex:0 0
+    // auto group after it — does NOT change Tier's position at all. In a single flex row,
+    // items after a flex:1 spacer are still laid out left-to-right in sequence; Tier's left
+    // edge is mathematically (containerWidth - TierWidth - sepWidth - BuildingSortWidth)
+    // regardless of any flex:0 0 auto wrapper, because Tier is sandwiched BETWEEN the spacer
+    // and the variable-width Building/Sort group. Verified empirically: before/after
+    // tierBtnLeft was byte-identical across all 4 tiers with the plan's literal wrapper
+    // (see verify/phase2/results-before.json vs an intermediate results-after.json — both
+    // showed Recommended=1743.625 vs other tiers=~1955, i.e. the exact ~211px bug,
+    // completely unchanged by the wrapper).
+    // ACTUAL FIX: move the flex:1 spacer from BEFORE Tier to AFTER it (between Tier/sep and
+    // the Building+Sort group). Tier's left edge is now simply the natural width of the
+    // fixed left-side toolbar content (Import CSV/status/Settings/Legend) — a constant that
+    // never depends on whether Sort is present. The spacer absorbs 100% of the width
+    // fluctuation, and only the Building+Sort group's right edge moves.
+    '<div style="flex:0 0 auto;display:flex;align-items:center">',
     _pricingTierToggleHTML(projId, tier),
+    '</div>',
     '<span style="color:var(--border2)">|</span>',
+    '<span style="flex:1"></span>',
+    '<div style="flex:0 0 auto;display:flex;align-items:center;gap:8px">',
     bldgFilterHTML,
     rowSortHTML,
+    '</div>',
     '</div>',
   ].join('');
 
