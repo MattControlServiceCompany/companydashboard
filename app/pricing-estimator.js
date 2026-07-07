@@ -4672,9 +4672,26 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }
 
   // ── 10. Footer
+  // Phase 3 (32521b08, cost-estimate-ux-2026-07-06): Tier: label moved to the FRONT of the
+  // footer row (was last, easy to miss per the investigation) so it's the first thing read in
+  // every tier, before the Phase1/Phase2/Total figures — same field-order rule applies to both
+  // the isBothMode (Compare) and else (single-tier) branches below since this sits before the
+  // branch split.
   var recTierLabel = tier === 'recommended' ? 'Recommended' : 'Compliance';
+  var _tierLabelHTML =
+    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
+    (tier === 'both'
+      ? 'Compare'
+      : tier === 'recommended'
+        ? 'Recommended'
+        : tier === 'full-scope'
+          ? 'Full Scope'
+          : 'Compliance') +
+    '</span>';
   var footerParts = [
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
+    _tierLabelHTML,
+    '<span style="color:var(--border2)">|</span>',
   ];
 
   if (isBothMode && recTotals) {
@@ -4753,17 +4770,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
     '<span style="font-size:11px;color:var(--text3)">' + _p4CaveatParts.join(' · ') + '</span>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
-      (tier === 'both'
-        ? 'Compare'
-        : tier === 'recommended'
-          ? 'Recommended'
-          : tier === 'full-scope'
-            ? 'Full Scope'
-            : 'Compliance') +
-      '</span>',
   );
+  // (Tier: label now rendered at the front of footerParts, see Phase 3 comment above.)
 
   // Step 5: Portfolio savings rollup (Recommended tier, when bill data available)
   if ((tier === 'recommended' || tier === 'both') && _annualElecData.hasBillData && _annualElecData.annualKwh) {
@@ -4804,15 +4812,22 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           '</div>',
       );
     }
-  } else if ((tier === 'recommended' || tier === 'both') && !_annualElecData.hasBillData) {
-    // No bill data — footer import-bills note only shown if no % ranges were shown per-row
-    if (!_anySavingsShown) {
-      footerParts.push(
-        '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
-          'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.' +
-          '</div>',
-      );
-    }
+  }
+
+  // Phase 3 (32521b08): advisory line always reserves its slot for Recommended/Compare tiers —
+  // previously this line only rendered when there was no bill data AND no per-row savings chip
+  // had shown (`!_anySavingsShown`, old `else if` branch above), so footer height/content jumped
+  // between projects/tiers for reasons the user couldn't see (the investigation's root-cause
+  // finding). Now it's unconditionally present in these two tiers, with text depending on
+  // whether ANY savings info (the portfolio rollup above or a per-row chip) ended up visible.
+  if (tier === 'recommended' || tier === 'both') {
+    footerParts.push(
+      '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
+        (_anySavingsShown
+          ? 'Savings estimates shown below in the Impact column.'
+          : 'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.') +
+        '</div>',
+    );
   }
 
   // b771dec6 3b: M&V disclaimer moved from here into the Top ROI card
