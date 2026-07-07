@@ -661,8 +661,7 @@ function _pricingTopRoiCallout(projId, recRows, showDisclaimer) {
       unique.push(r);
     }
   });
-  // Limit to 4
-  unique = unique.slice(0, 4);
+  // Phase 7 (f33b69be): no cap — show every deduplicated qualifier, not just the first 4.
 
   // b771dec6 3b: disclaimer body built independent of the `unique.length < 2` gate below,
   // so it is never silently dropped when there are too few qualifying measures to show a list.
@@ -764,9 +763,9 @@ function _pricingTopRoiCallout(projId, recRows, showDisclaimer) {
     '</span>' +
     '★ Top ROI Measures for This Project' +
     '<span style="font-size:10px;font-weight:400;color:var(--text2);margin-left:4px">' +
-    '(highest savings per dollar based on current point coverage — full list below)</span>' +
+    '(full detail for every item is in the table below)</span>' +
     '</summary>' +
-    '<div style="padding:4px 12px 8px;max-height:180px;overflow-y:auto">' +
+    '<div style="padding:4px 12px 8px">' +
     itemsHTML +
     _disclaimerHTML +
     '</div>' +
