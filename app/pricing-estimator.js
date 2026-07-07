@@ -2778,6 +2778,17 @@ function _pricingTierToggleHTML(projId, currentTier) {
     btn('compliance', 'Compliance') +
     btn('full-scope', 'Full Scope') +
     btn('both', 'Compare') +
+    // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): "Summary" — NOT a data-filtering tier
+    // like the four above (it doesn't change which rows qualify). It's a presentation-only
+    // sub-tab that aggregates the per-building totals the other three tiers already compute
+    // (see _pricingRenderSummaryTab). Stored in the same `estimate.tier` slot for simplicity —
+    // reuses the existing toggle-button/active-state/persistence mechanism — but consumers that
+    // branch on tier for ROW-BUILDING purposes (buildRecommendedRows/buildComplianceRows/
+    // buildFullScopeRows selection) never see 'summary' because initCostEstimateTab short-
+    // circuits into the summary render path before reaching that branch. Existing tier keys
+    // ('recommended'/'compliance'/'full-scope'/'both') are unchanged; this is purely additive.
+    '<span style="color:var(--border2);margin:0 2px">|</span>' +
+    btn('summary', 'Summary') +
     '</div>'
   );
 }
@@ -3716,6 +3727,21 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // ── 1. Get state
   var estimate = _pricingGetEstimate(projId);
   var tier = estimate.tier || 'compliance';
+
+  // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): "Summary" is a presentation-only sub-tab,
+  // not a row-filtering tier — it aggregates the SAME per-building totals the three real tiers
+  // (Recommended/Compliance/Full Scope) already compute (see _pricingRenderSummaryTab). Short-
+  // circuit here, before any of the row-building/column-state logic below runs, so 'summary'
+  // never reaches the buildRecommendedRows/buildComplianceRows/buildFullScopeRows selection or
+  // any hidden-cols/width/sort state meant for the data table. rowToggles/manualPrices/
+  // laborOverrides/qtyOverrides/column widths/hidden-cols all live on `estimate`/per-projId
+  // storage independent of which tier is active, so switching Summary <-> any other tier and
+  // back round-trips that state for free — nothing here needs to save/restore it.
+  if (tier === 'summary') {
+    _pricingRenderSummaryTab(projId, el, estimate);
+    return;
+  }
+
   var hidden = _pricingGetHiddenCols(projId);
   var sortState = _pricingSortState[projId] || { col: null, dir: null };
   var filterBldg = _pricingBldgFilter[projId] || '';
@@ -3755,6 +3781,17 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var _tierHasImpact = tier === 'recommended' || tier === 'both';
   if (!_tierHasImpact && _impactColIdx !== -1 && hidden.indexOf(_impactColIdx) === -1) {
     hidden = hidden.concat([_impactColIdx]);
+  }
+
+  // Phase 6 (5ff6c401): auto-hide the Building column (index 1) when a single building is
+  // selected in the Building filter — every visible row shows the identical value once the
+  // group-header divider rows are removed below, so the column is pure redundant width in that
+  // state. Re-shown automatically when "All Buildings" is selected (still needed for scanning/
+  // sorting since there's no group header to identify a building anymore). Derived from filter
+  // state, not a saved user preference — mirrors the Impact-column auto-hide above, not written
+  // to _pricingGetHiddenCols storage.
+  if (filterBldg && hidden.indexOf(1) === -1) {
+    hidden = hidden.concat([1]);
   }
   var meta = sget('en_pricing_meta', null);
 
@@ -4834,45 +4871,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         lb = _pricingSortRows(lb, sortState.col, sortState.dir);
       }
 
-      // Building subtotal
-      var bHw1 = hw.reduce(function (s, r) {
-        return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-      }, 0);
-      var bLab2 = lb.reduce(function (s, r) {
-        return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-      }, 0);
-      var bTotal = bHw1 + bLab2;
-
-      var recBTotal = 0;
-      if (isBothMode && recRows) {
-        var rBRows = recRows.filter(function (r) {
-          return r.building === bName;
-        });
-        recBTotal = rBRows.reduce(function (s, r) {
-          return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-        }, 0);
-      }
-
-      tableBodyHTML +=
-        '<tr><td colspan="' +
-        visibleColSpan +
-        '" style="background:var(--s1);padding:6px 10px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border2)">' +
-        _esc(bName) +
-        (bTotal > 0 && hasCatalog
-          ? ' <span style="font-weight:400;color:var(--text3)">— ' +
-            _pricingFmt(bTotal) +
-            ' est.' +
-            (isBothMode && recBTotal > 0 ? ' / Rec: ' + _pricingFmt(recBTotal) : '') +
-            '</span>'
-          : '') +
-        '</td></tr>';
-
+      // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): the building group-header <tr>
+      // (building name + subtotal, "— $X est.") that used to render here is REMOVED — the data
+      // table now renders buildings' rows back-to-back with no divider row. Building totals live
+      // in their own "Summary" sub-tab instead (see _pricingRenderSummaryTab), which computes its
+      // own per-building/per-tier totals independently (across all three tiers, not just the
+      // currently active one), so the bHw1/bLab2/bTotal/recBTotal calc that used to feed this
+      // <tr> is no longer needed here and was removed with it (nothing else in this scope reads
+      // those vars — verified by grep before removal).
+      //
       // b771dec6 5a/5b (Finding 7): Phase divider rows removed — hardware sensors and their
       // blocking sequences now render as merged same-row lines where paired, in a single
       // building group (no more "Phase 1 — Hardware" / "Phase 2 — Programming Labor" dividers).
-      // Pairing runs AFTER bHw1/bLab2/bTotal above, which already summed the FULL unmerged
-      // hw/lb arrays — subtotals and the footer Grand Total are unaffected by this presentation
-      // pass. Each phase-1 hw row is claimed by AT MOST one phase-2 seq row (first match wins,
+      // Each phase-1 hw row is claimed by AT MOST one phase-2 seq row (first match wins,
       // in current sort order); sequences with no blocking sensors, or whose blocking sensors
       // are absent/already claimed, render standalone exactly as before.
       // 0ae36950: factored into _pricingPairHwSeq so the 'equipment' flat-sort mode below
@@ -5266,6 +5277,232 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }, 0);
 };
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   PHASE 6 — "Summary" sub-tab (5ff6c401, cost-estimate-ux-2026-07-06)
+   User decision (recorded on item 5ff6c401, overrides plan.md's original "in-tab collapsible
+   panel" default): Building Totals is its own SEPARATE sub-tab, a peer of Recommended/
+   Compliance/Full Scope/Compare in the same Tier toggle — not a panel nested inside one of them.
+   Presentation-only: computes NOTHING new. For each of the three real tiers it calls the exact
+   same builder (buildRecommendedRows/buildComplianceRows/buildFullScopeRows) + the exact same
+   _pricingApplyLaborOverrides/_pricingApplyQtyOverrides pipeline + the exact same per-building
+   toggle-aware reduce() the old (now-removed) in-table group-header row used
+   (`estimate.rowToggles[r._baseId||r.id] !== false ? s + (r.lineTotal||0) : s`) — byte-identical
+   math, just aggregated across all three tiers and displayed in its own table instead of once
+   per active tier as a <tr> divider. Always shows ALL buildings (ignores the Building filter —
+   that filter is a per-tier data-table control, not meaningful here) including buildings that
+   only carry Full-Scope-only content (e.g. the FDD add-on's pseudo-building "WebCTRL System",
+   which has no Compliance/Recommended rows — see buildFullScopeRows) per the "Summary views
+   include ALL buildings" rule.
+   ══════════════════════════════════════════════════════════════════════════════ */
+function _pricingSummaryEsc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Building-name cell: same ellipsis-clip + title-tooltip pattern Phase 5 established for the
+// data table's Building column (_pricingClipSpanMaxW) — this table has only one text column
+// competing for width, so a fixed generous max-width (well above the data table's 90px minWidth)
+// is used instead of a per-column resize state (this table has no resizable columns).
+function _pricingSummaryBldgCellHTML(name) {
+  return (
+    '<span style="display:inline-block;vertical-align:middle;max-width:260px;overflow:hidden;' +
+    'text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:var(--text)" title="' +
+    _pricingSummaryEsc(name) +
+    '">' +
+    _pricingSummaryEsc(name) +
+    '</span>'
+  );
+}
+
+// Aggregates per-building / per-tier totals. Returns:
+//   { buildings: [{ building, tiers: { recommended: {items,hw,lb,total}, compliance: {...},
+//                    'full-scope': {...} } }, ...],
+//     tierTotals: { recommended: <totals from _pricingComputeTotals>, compliance: {...},
+//                   'full-scope': {...} } }
+function _pricingComputeSummaryData(projId, estimate) {
+  var tierDefs = [
+    { key: 'compliance', builder: buildComplianceRows },
+    { key: 'recommended', builder: buildRecommendedRows },
+    { key: 'full-scope', builder: buildFullScopeRows },
+  ];
+  var perTier = {};
+  var bldgOrder = [];
+  var bldgSeen = {};
+
+  tierDefs.forEach(function (t) {
+    var rows = t.builder(projId);
+    rows = _pricingApplyLaborOverrides(projId, rows);
+    rows = _pricingApplyQtyOverrides(projId, rows);
+    perTier[t.key] = rows;
+    rows.forEach(function (r) {
+      if (r.building && !bldgSeen[r.building]) {
+        bldgSeen[r.building] = true;
+        bldgOrder.push(r.building);
+      }
+    });
+  });
+
+  function sumRows(rows) {
+    var hw = rows.filter(function (r) {
+      return r.phase === 1;
+    });
+    var lb = rows.filter(function (r) {
+      return r.phase === 2;
+    });
+    var hwSum = hw.reduce(function (s, r) {
+      return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
+    }, 0);
+    var lbSum = lb.reduce(function (s, r) {
+      return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
+    }, 0);
+    return { items: rows.length, hw: hwSum, lb: lbSum, total: hwSum + lbSum };
+  }
+
+  var buildings = bldgOrder.map(function (bName) {
+    var tiers = {};
+    tierDefs.forEach(function (t) {
+      var bRows = perTier[t.key].filter(function (r) {
+        return r.building === bName;
+      });
+      tiers[t.key] = sumRows(bRows);
+    });
+    return { building: bName, tiers: tiers };
+  });
+
+  var tierTotals = {};
+  tierDefs.forEach(function (t) {
+    tierTotals[t.key] = _pricingComputeTotals(perTier[t.key], estimate);
+  });
+
+  return { buildings: buildings, tierTotals: tierTotals };
+}
+
+function _pricingRenderSummaryTab(projId, el, estimate) {
+  var data = _pricingComputeSummaryData(projId, estimate);
+  var tierCols = [
+    { key: 'compliance', label: 'Compliance' },
+    { key: 'recommended', label: 'Recommended' },
+    { key: 'full-scope', label: 'Full Scope' },
+  ];
+
+  var toolbarHTML =
+    '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">' +
+    '<span style="font-size:12px;font-weight:700;color:var(--text2)">Building Totals — all buildings, across all tiers</span>' +
+    '<span style="flex:1"></span>' +
+    '<div style="flex:0 0 auto;display:flex;align-items:center">' +
+    _pricingTierToggleHTML(projId, 'summary') +
+    '</div>' +
+    '</div>';
+
+  var theadCells =
+    '<th style="' +
+    'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;' +
+    'padding:8px 10px;white-space:nowrap;position:sticky;top:0;text-align:left;border-right:1px solid var(--border);border-bottom:2px solid var(--border2)">Building</th>';
+  tierCols.forEach(function (t) {
+    theadCells +=
+      '<th colspan="3" style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;' +
+      'letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;text-align:center;' +
+      'border-left:2px solid var(--border2);border-bottom:1px solid var(--border)">' +
+      t.label +
+      '</th>';
+  });
+  var theadSubCells =
+    '<th style="background:var(--s1);border-right:1px solid var(--border);border-bottom:2px solid var(--border2)"></th>';
+  tierCols.forEach(function (t) {
+    ['Items', 'Hardware $', 'Total $'].forEach(function (sub, i) {
+      theadSubCells +=
+        '<th style="background:var(--s1);color:var(--text3);font-size:9px;font-weight:700;text-transform:uppercase;' +
+        'padding:6px 8px;white-space:nowrap;position:sticky;top:24px;text-align:right;' +
+        (i === 0 ? 'border-left:2px solid var(--border2);' : '') +
+        'border-bottom:2px solid var(--border2)">' +
+        sub +
+        '</th>';
+    });
+  });
+
+  var bodyRows = '';
+  if (data.buildings.length === 0) {
+    bodyRows =
+      '<tr><td colspan="' +
+      (1 + tierCols.length * 3) +
+      '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">No buildings found. Run the Equipment Matrix audit first.</td></tr>';
+  } else {
+    data.buildings.forEach(function (b) {
+      var row =
+        '<td style="overflow:hidden;padding:6px 10px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2)">' +
+        _pricingSummaryBldgCellHTML(b.building) +
+        '</td>';
+      tierCols.forEach(function (t) {
+        var d = b.tiers[t.key];
+        row +=
+          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text2);' +
+          'padding:6px 8px;border-bottom:1px solid var(--border2);border-left:2px solid var(--border2)">' +
+          d.items +
+          '</td>' +
+          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--border2)">' +
+          (d.hw > 0 ? _pricingFmt(d.hw) : '<span style="color:var(--text3)">—</span>') +
+          '</td>' +
+          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;padding:6px 8px;border-bottom:1px solid var(--border2)">' +
+          (d.total > 0 ? _pricingFmt(d.total) : '<span style="color:var(--text3)">—</span>') +
+          '</td>';
+      });
+      bodyRows += '<tr>' + row + '</tr>';
+    });
+  }
+
+  // Grand-total footer row — cross-checks against each tier's own footer Grand Total
+  // (_pricingComputeTotals output), NOT a re-sum of the rows above, so a discrepancy between
+  // "sum of buildings shown" and "the real tier total" (e.g. a row with no `building` field)
+  // would be visible rather than silently hidden.
+  var grandRow =
+    '<td style="padding:6px 10px;font-weight:700;color:var(--text);background:var(--s2);border-right:1px solid var(--border2);border-top:2px solid var(--border2)">Grand Total</td>';
+  tierCols.forEach(function (t) {
+    var tt = data.tierTotals[t.key];
+    grandRow +=
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text2);' +
+      'padding:6px 8px;background:var(--s2);border-top:2px solid var(--border2);border-left:2px solid var(--border2)">' +
+      tt.included +
+      ' / ' +
+      tt.total +
+      '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;background:var(--s2);border-top:2px solid var(--border2)">' +
+      (tt.grand !== null ? _pricingFmt(tt.phase1) : '<span style="color:var(--text3)">—</span>') +
+      '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;color:var(--em);' +
+      'background:var(--s2);border-top:2px solid var(--border2)">' +
+      (tt.grand !== null ? _pricingFmt(tt.grand) : '<span style="color:var(--text3)">—</span>') +
+      '</td>';
+  });
+
+  el.innerHTML = [
+    '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
+    toolbarHTML,
+    '<div class="ch-panel-body" style="flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
+    '<div class="ch-tbl-outer" style="margin:0;flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
+    '<div class="ch-tbl-scroll" style="flex:1;min-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px">',
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;min-width:600px">',
+    '<thead>',
+    '<tr>' + theadCells + '</tr>',
+    '<tr>' + theadSubCells + '</tr>',
+    '</thead>',
+    '<tbody>',
+    bodyRows,
+    '<tr>' + grandRow + '</tr>',
+    '</tbody>',
+    '</table>',
+    '</div>',
+    '</div>',
+    '</div>',
+    '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
+    '<span style="font-size:11px;color:var(--text3)">Reuses the exact per-row totals each tier’s own table computes — no new pricing math. Switch tiers above to see the item-level breakdown behind any number.</span>',
+    '</div>',
+    '</div>',
+  ].join('');
+}
+
 /* ── Phase 4: patch _pricingRefreshFooter to apply labor overrides ──────── */
 (function () {
   var _origRefreshFooter = _pricingRefreshFooter;
@@ -5275,7 +5512,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     // Secondary fix: Both/full-scope modes have footers that cannot be reproduced
     // here cheaply. Delegate to full re-render to keep them consistent.
-    if (tier === 'both' || tier === 'full-scope') {
+    // Phase 6 (5ff6c401): 'summary' has no footer element in this partial-refresh sense at all
+    // (its own render path builds a different footer) — delegate defensively even though no
+    // checkbox/override control exists on the Summary sub-tab today to trigger this call.
+    if (tier === 'both' || tier === 'full-scope' || tier === 'summary') {
       initCostEstimateTab(projId);
       return;
     }
