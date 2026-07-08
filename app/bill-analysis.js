@@ -11424,7 +11424,17 @@ function renderPDFFields(parsed, warnings) {
         .map((p, idx) => {
           const suffix =
             isTiered && row.chargeField === 'EnergyOnPeakCharge' ? ' Tier ' + (idx + 1) : ' (' + (idx + 1) + ')';
-          const partCharge = p.ocrCharge != null ? p.ocrCharge : p.computed;
+          // 2026-07-08 (louisburg-b14af0e3): Strategy B (_postExtractionVerify, ~line
+          // 1810-1846) may already have corrected the FIELD-level charge
+          // (parsed[row.chargeField]) from its rate-derived _rates[...].computed sum —
+          // but it only ever rewrites the top-level field, never the stale per-part
+          // p.ocrCharge this renderer has unconditionally preferred since before Strategy
+          // B existed (commit 284e1c5). When a correction fired, trust the SAME computed
+          // value Strategy B trusted for this part; otherwise keep the existing
+          // OCR-dollar-first default (still correct for the common, uncorrected case).
+          const _fieldWasCorrected = parsed['_auto_corrected_' + row.chargeField] != null;
+          const partCharge =
+            _fieldWasCorrected && p.computed != null ? p.computed : p.ocrCharge != null ? p.ocrCharge : p.computed;
           runningTotal += partCharge;
           const rtFmt = runningTotal.toLocaleString('en-US', {
             minimumFractionDigits: 2,
@@ -11556,6 +11566,29 @@ function renderPDFFields(parsed, warnings) {
       'FuelAdjustment',
     ],
     Gas: [
+      'CustomerCharge',
+      'GasCharge',
+      'FuelAdjustment',
+      'DeliveryCharge',
+      'GasSystemReliability',
+      'WeatherNormalization',
+      'WinterEventCost',
+      'FranchiseFee',
+      'DelayedPaymentCharge',
+    ],
+    // 2026-07-08 (537c4e5e): _detectCommodity (~line 11053) returns 'kgs' for KGS bills
+    // (keyed off UtilityCompany/_utilityName, checked BEFORE the Commodity field is even
+    // consulted), and _DETECT_TO_SUM_KEY (~line 11578) maps that to 'Kgs' — but this map
+    // had no 'Kgs' property, so the lookup fell through to
+    // `|| _CHARGE_SUM_KEYS_BY_COMMODITY.Electric` and silently summed 2 of 17
+    // Electric-only fields that happen to also exist on a KGS bill (CustomerCharge,
+    // FranchiseFee), producing a false "SUM MISMATCH" banner next to the (correct)
+    // green all-clear banner. Same 9-field list as Gas — KGS bills use identical charge
+    // field names to standard Gas bills. validateBillData's gasCompSum (~165-199) and
+    // analyzeBillExtraction's expectedTotal (~3609-3627) already use this exact 9-field
+    // list correctly for KGS; only THIS map (renderPDFFields's own, independent copy)
+    // lacked the entry.
+    Kgs: [
       'CustomerCharge',
       'GasCharge',
       'FuelAdjustment',

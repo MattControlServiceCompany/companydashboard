@@ -35,7 +35,7 @@ function _looksLikeAddress(s) {
   const hasDigit = /\d/.test(str);
   const hasStreetWord =
     /\b(ST|STREET|AVE|AVENUE|RD|ROAD|DR|DRIVE|LN|LANE|BLVD|BOULEVARD|CT|COURT|PL|PLACE|WAY|HWY|HIGHWAY|PKWY|PARKWAY|CIR|CIRCLE|TER|TERRACE|TRL|TRAIL)\b/i.test(
-      str
+      str,
     );
   if (hasStreetWord) return true; // "512 8TH ST", "614 DEARBORN ST"
   // No recognized street-type word — only accept if it still strongly looks
@@ -3217,7 +3217,19 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         });
       }
       _rates[chargeKey].parts = existingParts;
-      _rates[chargeKey].computed = existingParts.reduce((s, p) => s + (p.ocrCharge ?? p.computed), 0);
+      // 2026-07-08 (louisburg-8f39b3ee): a part xRate fully parsed (has BOTH qty and
+      // rate) already carries a trustworthy rate-derived `computed` — prefer it over
+      // `ocrCharge`, which can be a garbled OCR digit misread (e.g. Circle Grove May
+      // bill: printed "$82.08" vs. the true 5455.7967 kWh x $0.01521 = $82.98 — a
+      // genuine $0.90 OCR error the per-part validator, energy-savings.js ~3450-3465,
+      // already flags but this recompute was silently erasing at the field level).
+      // Only fall back to ocrCharge/computed for parts xChg supplied that xRate could
+      // not parse at all (qty AND rate both null) — those have no rate-derived value
+      // to prefer in the first place.
+      _rates[chargeKey].computed = existingParts.reduce(
+        (s, p) => s + (p.qty != null && p.rate != null ? p.computed : (p.ocrCharge ?? p.computed)),
+        0,
+      );
     }
   }
   if (Object.keys(_rates).length) result._rates = _rates;
