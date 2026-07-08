@@ -247,6 +247,25 @@ function init() {
     } catch (e) {}
     localStorage.setItem('ch_projTabOrder_basBeforeSettings', '1');
   }
+  // Migrate: move 'settings' (Project Settings) to the END of the stored tab order
+  // (backlog 128f49b2 — Matt: "why is Project Settings in the middle of the tab bar?"
+  // It sat mid-bar only because it was appended before Cost Estimate was added later —
+  // no design intent. Settings tabs conventionally go last.)
+  if (!localStorage.getItem('ch_projTabOrder_settingsLast')) {
+    try {
+      const _sclSaved = JSON.parse(localStorage.getItem('ch_projTabOrder'));
+      if (Array.isArray(_sclSaved) && _sclSaved.length) {
+        const _sclIdx = _sclSaved.indexOf('settings');
+        // Only migrate if 'settings' isn't already the last entry
+        if (_sclIdx !== -1 && _sclIdx !== _sclSaved.length - 1) {
+          const _sclNew = _sclSaved.filter((id) => id !== 'settings');
+          _sclNew.push('settings');
+          localStorage.setItem('ch_projTabOrder', JSON.stringify(_sclNew));
+        }
+      }
+    } catch (e) {}
+    localStorage.setItem('ch_projTabOrder_settingsLast', '1');
+  }
   checkRecurringMeetings();
   buildWeekStrip();
   buildHomeCal();
@@ -2446,8 +2465,12 @@ const PROJ_TABS_DEFAULT = [
   { id: 'district', label: 'District Calendar', icon: '🗓️' },
   { id: 'docs', label: 'Documents', icon: '📁' },
   { id: 'setpoints', label: 'Set Points', icon: '🌡️' },
-  { id: 'settings', label: 'Project Settings', icon: '⚙️' },
   { id: 'cost-estimate', label: 'Cost Estimate', icon: '💲' },
+  // Fix 128f49b2: Project Settings moved to the END of the bar (settings tabs
+  // conventionally sit last). It used to sit mid-bar (before Cost Estimate) purely
+  // because it was appended here before Cost Estimate was added later — no design
+  // intent. See the ch_projTabOrder_settingsLast migration below for existing users.
+  { id: 'settings', label: 'Project Settings', icon: '⚙️' },
   // Backward-compat: merged tabs — retained so stored orders stay valid
   { id: 'notes', label: 'Notes', icon: '📝' },
   { id: 'tasks', label: 'Tasks', icon: '✅' },

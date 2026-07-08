@@ -3933,24 +3933,46 @@
         font-family: var(--mono);
         color: var(--text);
       }
-      /* ── Project tab bar — equal-width tabs, always show icons ── */
-      /* Strategy: flex:1 on each tab makes all 16 visible tabs share the bar width equally.     */
-      /* Text + icons are sized small enough to fit without overflow at 1280px–2560px.           */
-      /* Icons (.pdt-ico) are NEVER hidden — container query only adjusts padding at <900px.     */
+      /* ── Project tab bar — evenly-padded tabs, always show icons ── */
+      /* Strategy (128f49b2): forcing all 16 tabs to the SAME box width (old flex:1 1 0)
+         made short labels ("Hours") sit in the same box as long labels ("Equipment
+         Matrix"), and with left-aligned text that produced very different visual
+         gaps between labels — the "not equally spaced" complaint. It also forced a
+         65px box at 1280px container width, which truncated almost every label
+         ("Dashboc", "Equipme", "BAS Trer" — measured, all 16 tabs affected).
+         Fix: each tab sizes to its OWN content + identical padding (flex: 1 0 auto,
+         flex-basis:auto, flex-shrink:0 so no label can ever be squeezed below its
+         natural width) and centers its label. Equal flex-grow lets tabs share any
+         leftover bar width equally at wide viewports. Content-measured natural
+         widths (icon+label, current font/padding) range 57px (Hours) – 113px
+         (Equipment Matrix); their sum (~1.4k px content + padding) exceeds the
+         available bar width at both 1280px and 2560px with 16 tabs, so .pd-tabs
+         keeps overflow-x:auto (thin scrollbar) as the no-truncation fallback —
+         matching the horizontal-scroll pattern already used by other subtab bars
+         in this app (.ma-tabs). Icons (.pdt-ico) are NEVER hidden. */
       .pd-tabs {
         display: flex;
         gap: 0;
         padding: 8px 8px 0;
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
-        overflow-x: hidden;
+        overflow-x: auto;
         flex-wrap: nowrap;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border2) transparent;
+      }
+      .pd-tabs::-webkit-scrollbar {
+        height: 3px;
+      }
+      .pd-tabs::-webkit-scrollbar-thumb {
+        background: var(--border2);
+        border-radius: 2px;
       }
       .pdt {
         font-family: var(--font);
         font-size: 10.5px;
         font-weight: 500;
-        padding: 5px 4px;
+        padding: 6px 14px;
         border-radius: 6px 6px 0 0;
         border: none;
         cursor: pointer;
@@ -3961,14 +3983,11 @@
         user-select: none;
         display: inline-flex;
         align-items: center;
-        justify-content: flex-start;
+        justify-content: center;
         gap: 3px;
         white-space: nowrap;
-        /* Equal-width: each tab takes an equal share of the bar */
-        flex: 1 1 0;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        /* Equal growth beyond natural content size; never shrinks (no truncation). */
+        flex: 1 0 auto;
       }
       .pdt-ico {
         font-style: normal;
@@ -3995,7 +4014,7 @@
           padding: 6px 4px 0;
         }
         .pdt {
-          padding: 4px 2px;
+          padding: 5px 8px;
           font-size: 10px;
         }
         .pdt-ico {
