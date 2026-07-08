@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.07.631',
+    date: '2026-07-07',
+    title: 'Cost Estimate tab: Fit to Budget on the Recommended view',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate tab, Recommended view: new "Fit to Budget" option — when a recurring budget is set, preview exactly which measures fit within it, apply with one click, and undo safely. Your own checkbox choices are always preserved.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.07.630',
     date: '2026-07-07',
     title: 'Cost Estimate tab: see how the total compares to your budget',
