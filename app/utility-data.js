@@ -363,6 +363,18 @@ function loadUtilityData() {
 function saveUtilityData() {
   // Write each project to its own localStorage key
   Object.keys(utilityData).forEach(function (pid) {
+    // Strip transient, runtime-only computed fields before persisting so a stale cache can never
+    // be written to disk again (bcbc84e0). These are rebuilt on next render by getMeterSavings()/
+    // getNormRows() — safe to delete from the live in-memory objects.
+    (utilityData[pid].buildings || []).forEach(function (b) {
+      (b.meters || []).forEach(function (m) {
+        delete m._savingsCache;
+        delete m._savingsCacheKey;
+        delete m._reg;
+        delete m._savingsByYM;
+        delete m._unitSavByCalMo;
+      });
+    });
     sset('en_utility_' + pid, utilityData[pid]);
   });
   _refreshBldgPerfIfVisible();
@@ -697,6 +709,18 @@ function getUDProj(pid) {
 }
 function getUDBldgs(pid) {
   return getUDProj(pid).buildings;
+}
+// Baseline/header-eligible buildings only (9ca94e0c): excludes buildings with no sqft (EUI-chart
+// parity, graphics-setpoints.js:1606) or where every calc-commodity meter is baselineInclude:false.
+// Do NOT repoint getUDBldgs() itself — management/data-entry screens must keep showing ALL buildings
+// including these. Only the project header (core.js:984) consumes this variant.
+function getBaselineEligibleBldgs(pid) {
+  return getUDBldgs(pid).filter((b) => {
+    if (!(parseInt(b.sqft || 0) > 0)) return false;
+    const calc = (b.meters || []).filter((m) => isCalcCommodity(pid, m.commodity));
+    if (calc.length && calc.every((m) => m.baselineInclude === false)) return false;
+    return true;
+  });
 }
 function getUDBldg(pid, bid) {
   return getUDBldgs(pid).find((b) => b.id === bid);
