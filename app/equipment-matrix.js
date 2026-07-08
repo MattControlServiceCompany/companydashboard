@@ -112,6 +112,8 @@ var EM_EQUIP_TYPES = {
   'electric meter': 'power',
   'power meter': 'power',
   ups: 'power',
+  upsm: 'power', // review.md required change 3: "UPSM Monitoring" (2 real Courthouse rows)
+  upsp: 'power', // review.md required change 3: "UPSP Monitoring" (2 real Courthouse rows)
   ats: 'power',
   // Lighting — recognized category so JOCO-style "Lighting - ADC" parses correctly
   lighting: 'lighting',
@@ -2180,7 +2182,15 @@ function emClassifyEquipType(equipTypeStr) {
   // a key that legitimately appears as its own word ("ERV-1", "ERV 1", "AHU 3").
   for (var pattern in EM_EQUIP_TYPES) {
     if (!EM_EQUIP_TYPES.hasOwnProperty(pattern)) continue;
-    var _wbRe = new RegExp('\\b' + emEscapeRegexLiteral(pattern) + '\\b', 'i');
+    // review.md required change 1: short keys (<=2 chars, e.g. "ct"/"uh"/"uv") false-match
+    // inside longer words/names even with word boundaries (e.g. "CT Room Exhaust Fan",
+    // "Imaging / CT 118 - VAV-120"). Step B exact lookup and Step D's curated digit/suffix
+    // regexes already handle these keys correctly — skip them here as before.
+    if (pattern.length <= 2) continue;
+    var _wbRe = new RegExp(
+      (/^\w/.test(pattern) ? '\\b' : '') + emEscapeRegexLiteral(pattern) + (/\w$/.test(pattern) ? '\\b' : ''),
+      'i',
+    );
     if (_wbRe.test(key)) return EM_EQUIP_TYPES[pattern];
   }
 
