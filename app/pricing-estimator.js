@@ -4154,22 +4154,44 @@ function _pricingApplyColWidths(projId) {
    layout box stays in the DOM flow and no sibling control can slide into the gap. The Tier
    toggle itself is NEVER hidden/wrapped — it is the one control this whole rule protects.
 
-   opts (all optional — Summary's call passes none, since these slots are always hidden there):
-     { hasCatalog, importStatus, allBuildings, filterBldg }
-   Deliberately NOT re-derived inside this function: hasCatalog/allBuildings/filterBldg depend on
-   tier-specific row-building/catalog state that only initCostEstimateTab already computes.
-   Recomputing them here would mean a second buildRecommendedRows/buildComplianceRows/
-   buildFullScopeRows call per render — duplicating row-building logic this item's plan puts
-   off-limits ("What NOT to touch").
+   opts.allBuildings (optional — Summary's call passes none, since the Building-filter slot is
+   always hidden there): the list of distinct building names for the CURRENT tier's row set.
+   Deliberately NOT re-derived inside this function: it depends on tier-specific row-building
+   state (buildRecommendedRows/buildComplianceRows/buildFullScopeRows) that only
+   initCostEstimateTab already computes — recomputing it here would mean a second row-build call
+   per render, duplicating row-building logic this item's plan puts off-limits ("What NOT to
+   touch"). Safe to omit/leave empty for Summary: the Building <select> now has a fixed width
+   (d5286981 Change 2) so an empty option list doesn't change the reserved slot's width.
+
+   hasCatalog/importStatus (catalog-import status) and filterBldg (the current Building-filter
+   selection) ARE re-derived inside this function on every call, deliberately — both are simple,
+   side-effect-free reads (sget('en_pricing_catalog'/'en_pricing_meta'), _pricingBldgFilter[projId])
+   that are the SAME regardless of which tier is rendering, not row-building-derived. Passing them
+   in via opts (an earlier draft of this function did) meant Summary's caller — which has no
+   catalog/meta values of its own to pass — defaulted them to hasCatalog=false/importStatus='',
+   giving Summary's reserved-but-hidden Import CSV slot a DIFFERENT (shorter) width than the
+   other 4 views' real value ("N SKUs imported <date>" vs empty string). Because the toolbar row
+   is flex-wrap:wrap, that width difference changed where the row wrapped onto a second line
+   between Summary and the other 4 tiers — reproducing a subtler version of the exact bug this
+   item exists to fix. Self-deriving these three values, identically on every tier including
+   Summary, closes that gap.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingBuildToolbarHTML(projId, tier, opts) {
   opts = opts || {};
   var isSummary = tier === 'summary';
   var isRecommended = tier === 'recommended';
-  var hasCatalog = !!opts.hasCatalog;
-  var importStatus = opts.importStatus || '';
+  var catalog = sget('en_pricing_catalog', null);
+  var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
+  var meta = sget('en_pricing_meta', null);
+  var importStatus = meta
+    ? '<span style="font-size:11px;color:var(--text2);margin-left:8px">' +
+      meta.skuCount +
+      ' SKUs imported ' +
+      new Date(meta.importedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+      '</span>'
+    : '<span style="font-size:11px;color:var(--warn);margin-left:8px">No pricing imported — unit prices will show as "—"</span>';
   var allBuildings = opts.allBuildings || [];
-  var filterBldg = opts.filterBldg || '';
+  var filterBldg = _pricingBldgFilter[projId] || '';
 
   var rowFilterActive = !isSummary; // Import CSV, Table Settings, Legend, Building filter
   var sortActive = isRecommended; // Sort: Recommended-only, unchanged from the existing rule
@@ -4404,8 +4426,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     });
   }
 
-  var meta = sget('en_pricing_meta', null);
-
   var baseRows;
   if (tier === 'recommended') {
     baseRows = buildRecommendedRows(projId);
@@ -4585,20 +4605,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     return '';
   }
 
-  // ── 7. Build toolbar HTML (extends Phase 3 toolbar with building filter)
-  var importStatus = '';
-  if (meta) {
-    importStatus =
-      '<span style="font-size:11px;color:var(--text2);margin-left:8px">' +
-      meta.skuCount +
-      ' SKUs imported ' +
-      new Date(meta.importedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
-      '</span>';
-  } else {
-    importStatus =
-      '<span style="font-size:11px;color:var(--warn);margin-left:8px">No pricing imported — unit prices will show as "—"</span>';
-  }
-
   // d5286981: toolbar HTML assembly now delegates to the shared _pricingBuildToolbarHTML
   // (defined above initCostEstimateTab) so every Cost Estimate view — including Summary via
   // _pricingRenderSummaryTab — renders the toolbar's shared controls (Import CSV, Table
@@ -4608,13 +4614,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // content differed from Summary's much shorter title-span toolbar, shifting the Tier toggle's
   // position between views (ui-standards.md "Stable control placement rule", 2026-07-08 binding;
   // origin bug logged as d5286981). See _pricingBuildToolbarHTML's own header comment for the
-  // 35742dd5 Phase-2 spacer-placement history this extraction preserves verbatim.
-  var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, {
-    hasCatalog: hasCatalog,
-    importStatus: importStatus,
-    allBuildings: allBuildings,
-    filterBldg: filterBldg,
-  });
+  // 35742dd5 Phase-2 spacer-placement history this extraction preserves verbatim, and for why
+  // hasCatalog/importStatus/filterBldg are re-derived INSIDE that function now rather than
+  // passed in (only `allBuildings` remains tier-dependent enough to need passing).
+  var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, { allBuildings: allBuildings });
 
   // ── 8. Render row function (Phase 4: adds hours-override input for labor rows)
   var recRowIdxByBase = isBothMode ? _buildBothModeIndex(recRows || []) : {};
