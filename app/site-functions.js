@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.633',
+    date: '2026-07-08',
+    title: 'Audit Report: clearer Gap Details labels and a cleaner Building Infrastructure section',
+    items: [
+      {
+        type: 'fix',
+        text: 'Audit Report, Gap Details table: rows that support an ASHRAE 36 sequence but do not have their own code citation now say "Prerequisite" instead of showing a blank cell.',
+      },
+      {
+        type: 'fix',
+        text: "Audit Report: the box outline around the Building Infrastructure section has been removed to match the rest of the report's spacing style.",
+      },
+      {
+        type: 'change',
+        text: 'Audit Report: Building Infrastructure notes (not part of ASHRAE 36 scoring) are now an opt-in checkbox in the report modal, unchecked by default, instead of always appearing.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.08.632',
     date: '2026-07-08',
     title: 'Project tab bar: Settings moved to the end, no more truncated labels',
