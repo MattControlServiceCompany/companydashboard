@@ -112,6 +112,8 @@ var EM_EQUIP_TYPES = {
   'electric meter': 'power',
   'power meter': 'power',
   ups: 'power',
+  upsm: 'power', // review.md required change 3: "UPSM Monitoring" (2 real Courthouse rows)
+  upsp: 'power', // review.md required change 3: "UPSP Monitoring" (2 real Courthouse rows)
   ats: 'power',
   // Lighting — recognized category so JOCO-style "Lighting - ADC" parses correctly
   lighting: 'lighting',
@@ -171,6 +173,9 @@ var EM_CATEGORY_LABELS = {
   vrf: 'VRF Outdoor Unit',
   // Standalone A/C units (telecom/elevator/data room) — NOT scored for ASHRAE 36 compliance
   ac: 'A/C',
+  // 3d6d7244 Phase 5: life-safety/shutdown relay equipment (e.g. "Fireman's AHU Shutdown") —
+  // own visible category per Matt's 2026-07-03 confirmation, NOT scored for ASHRAE 36 compliance
+  lifesafety: 'Life-Safety / Controls',
 };
 
 /* ── emFormatEquipTypeLabel ──────────────────────────────────────────────────
@@ -2127,6 +2132,14 @@ function emParseEquipBaseName(nameStr) {
   return null;
 }
 
+// 3d6d7244 Phase 5 / 995813de: escapes a literal string for safe embedding inside a RegExp
+// (EM_EQUIP_TYPES has keys containing regex-special characters, e.g. "hot water plant
+// (boilers)", "multizone vav ahu (doas)" — these must be escaped before building a
+// word-boundary RegExp from them in emClassifyEquipType Step C below).
+function emEscapeRegexLiteral(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /* ── emClassifyEquipType ────────────────────────────────────────────────────
    Maps an equipment type string (from CSV "Equipment Type" or control program
    name) to one of the internal category keys: ahu, vav, fpb, ddvav, hwp,
@@ -2154,12 +2167,31 @@ function emClassifyEquipType(equipTypeStr) {
   // ── B. Exact lookup ──
   if (key in EM_EQUIP_TYPES) return EM_EQUIP_TYPES[key];
 
+  // 61e0c538: AC-# device tag (standalone air conditioner, e.g. telecom/elevator-machine-room
+  // AC unit) must resolve to 'ac' BEFORE the Step C substring scan below — otherwise a name
+  // like "Security Elevator 02-04 AC-1,3,6" hits the generic 'elevator' substring first and
+  // the more specific AC-# device tag never gets a chance. Mirrors emParseEquipBaseName's own
+  // Priority 4.5 AC-# check, which already runs before any elevator logic on that path.
+  if (/\bAC-\d/i.test(key)) return 'ac';
+
   // ── C. Substring scan of EM_EQUIP_TYPES keys ──
-  // Skip patterns of 2 chars or fewer — word-boundary regex handles them safely below
-  // and short keys false-match inside longer words (e.g. 'ct' inside 'MedAct', 'uh' inside 'touch').
+  // 995813de / 3d6d7244 Phase 5: word-boundary match, not bare substring, for EVERY key
+  // regardless of length. The old bare `indexOf` scan false-matched short keys inside longer
+  // words — "erv" inside "interview"/"serving"/"supervisor"/"observation", "server" containing
+  // "erv" (995813de). Word-boundary matching removes the false positives while still matching
+  // a key that legitimately appears as its own word ("ERV-1", "ERV 1", "AHU 3").
   for (var pattern in EM_EQUIP_TYPES) {
+    if (!EM_EQUIP_TYPES.hasOwnProperty(pattern)) continue;
+    // review.md required change 1: short keys (<=2 chars, e.g. "ct"/"uh"/"uv") false-match
+    // inside longer words/names even with word boundaries (e.g. "CT Room Exhaust Fan",
+    // "Imaging / CT 118 - VAV-120"). Step B exact lookup and Step D's curated digit/suffix
+    // regexes already handle these keys correctly — skip them here as before.
     if (pattern.length <= 2) continue;
-    if (key.indexOf(pattern) !== -1) return EM_EQUIP_TYPES[pattern];
+    var _wbRe = new RegExp(
+      (/^\w/.test(pattern) ? '\\b' : '') + emEscapeRegexLiteral(pattern) + (/\w$/.test(pattern) ? '\\b' : ''),
+      'i',
+    );
+    if (_wbRe.test(key)) return EM_EQUIP_TYPES[pattern];
   }
 
   // ── D. Regex fallbacks (expanded) ──
@@ -2536,6 +2568,48 @@ function emVerifyTypeByPoints(group) {
   // affecting Rules 7/8 (FPB/VAV by airflow).
   var hasAirFlow = hasPointNonDiag(/air.?flow|flow control|flow input|\bcfm\b/);
   var hasTermFan = hasPoint(/\bfan\b/) && !hasPoint(/supply fan|exhaust fan|return fan/);
+
+  // 3d6d7244 Phase 5 — Rule 0: "not real equipment at all" verdict, checked FIRST.
+  // All 15 rules below (1-15) are positive redirects to another HVAC-adjacent type; none of
+  // them can say "this whole point set is a relay/command wrapper with zero sensor signal,
+  // regardless of what the name says." That gap is why "Fireman's AHU Shutdown - Courthouse"
+  // (58 points, every one an Auto/Off Command BV relay pair across 29 AHUs, zero sensors) kept
+  // its name-derived 'ahu' category even after point verification ran. Matt confirmed 2026-07-03
+  // (activity log, item 3d6d7244): life-safety/shutdown equipment gets its own visible category
+  // ('lifesafety'), never ASHRAE-scored (no EM_POINT_CATEGORIES['lifesafety'] entry needed —
+  // emComputeCompliance already returns a graceful zero-coverage result for any category with no
+  // entry, confirmed by reading that function directly).
+  var hasVfdSignal = hasPoint(
+    /output frequency|drive temperature|motor current|motor torque|motor kw|\bvfd\b|variable.?speed|variable.?frequency/,
+  );
+  var _allCommandRelay =
+    pts.length > 0 &&
+    pts.every(function (p) {
+      return (
+        /\b(auto|off|on|start|stop|enable|disable|shutdown|command)\b/.test(p) &&
+        !/zone.?temp|room.?temp|space.?temp|supply fan|air.?flow|flow control|\bcfm\b|damper position|zone damper/.test(
+          p,
+        )
+      );
+    });
+  if (!hasZoneTemp && !hasSupplyFan && !hasAirFlow && !hasVfdSignal && _allCommandRelay) {
+    return { category: 'lifesafety', subtype: '' };
+  }
+
+  // 3d6d7244 Phase 5 — Rule 0b: lighting/room-control panel misnamed as HVAC equipment.
+  // "Interview 1301-A - GLPP-21-1B" and "DA Secure Interview LL0501 - S-29-0" both have point
+  // sets that are 100% lighting-panel/room-control signal (lighting group/zone status, load
+  // CMD/status, occupancy-sensor status, panel/circuit/relay identifiers, schedule/control mode)
+  // and ZERO HVAC signal — this is what "decipher what they actually are based on the points"
+  // (Matt's ask) looks like: point evidence, not the name string, drives the category. Requires
+  // the SAME zero-HVAC-signal gate as Rule 0 so a real AHU/RTU with an incidental "load" point
+  // is never pulled in.
+  var hasLightingPanelSignal = hasPoint(
+    /lighting\s*(group|zone)|\bload\s*\d*\s*(cmd|command|status)\b|\bocc(?:upancy)?\s*sensor\b.*status|lighting.*(occupied|vacant)/,
+  );
+  if (!hasZoneTemp && !hasSupplyFan && !hasAirFlow && !hasVfdSignal && hasLightingPanelSignal) {
+    return { category: 'lighting', subtype: '' };
+  }
 
   // 1. Fire/smoke: tiny point set with smoke zone BNI (not an HVAC unit)
   if (ptKeys.length <= 2 && hasPoint(/smoke zone.*bni/)) return { category: 'fire', subtype: '' };
@@ -3043,7 +3117,15 @@ function emExtractEquipmentGroups(rows, colMap) {
         provisionalCat === 'vav' ||
         provisionalCat === 'fpb' ||
         provisionalCat === 'ddvav' ||
-        provisionalCat === 'doas';
+        provisionalCat === 'doas' ||
+        // 3d6d7244 Phase 5: widen to the short-key categories reached via the (now word-boundary-
+        // fixed) Step C substring scan, so a real point signature can still override/correct a
+        // name-derived 'erv'/'ef'/'ac'/'elevator' guess — same doctrine as the existing entries
+        // above, extended to the categories implicated in Matt's named examples + 61e0c538.
+        provisionalCat === 'erv' ||
+        provisionalCat === 'ef' ||
+        provisionalCat === 'ac' ||
+        provisionalCat === 'elevator';
       if (needsVerify) {
         // 9018b1c6: emVerifyTypeByPoints now returns { category, subtype }
         var refined = emVerifyTypeByPoints(grp);
@@ -3130,7 +3212,12 @@ function emExtractEquipmentGroups(rows, colMap) {
       provisionalCat === 'vav' ||
       provisionalCat === 'fpb' ||
       provisionalCat === 'ddvav' ||
-      provisionalCat === 'doas';
+      provisionalCat === 'doas' ||
+      // 3d6d7244 Phase 5: same widening as the WebCTRL branch above — see comment there.
+      provisionalCat === 'erv' ||
+      provisionalCat === 'ef' ||
+      provisionalCat === 'ac' ||
+      provisionalCat === 'elevator';
     if (needsVerify) {
       // 9018b1c6: emVerifyTypeByPoints now returns { category, subtype }
       var refined = emVerifyTypeByPoints(grp);
@@ -3262,14 +3349,31 @@ function emLoadMatrix(projId) {
       //   moved them to a provisional non-'other' like 'ef' or 'fpb') so that point signatures
       //   can override an incorrect name-derived guess.  This catches F-2/F-4 (stored 'other',
       //   name pass → 'ef', point pass → 'ahu' via rule 12) and FTC/RHC fan-coil rows.
-      if (_bcrow && _bcrow.category === 'other' && _bcrow.equipType) {
+      // 3d6d7244 Phase 5: widened beyond 'other' to also cover 'ahu'/'rtu'/'erv'/'ef'/'ac'/
+      // 'elevator' rows STORED before this fix shipped (or before the SPF-2/erv/AC-# fixes in
+      // this same batch) — without this widening, a stale stored category never gets re-examined
+      // because Pass A/B's gate never lets it in. Confirmed empirically: a stored 'ahu' row for
+      // "North Stair Pressure Fan 1 - SPF-2" resolves correctly to 'ef' via
+      // emClassifyEquipType(equipType) today, but only reaches that call once this gate widens.
+      var _needsSelfHeal =
+        _bcrow &&
+        _bcrow.equipType &&
+        (_bcrow.category === 'other' ||
+          _bcrow.category === 'ahu' ||
+          _bcrow.category === 'rtu' ||
+          _bcrow.category === 'erv' ||
+          _bcrow.category === 'ef' ||
+          _bcrow.category === 'ac' ||
+          _bcrow.category === 'elevator');
+      if (_needsSelfHeal) {
         // Pass A: name-based reclassify
         var _recat = emClassifyEquipType(_bcrow.equipType);
-        if (_recat && _recat !== 'other') {
+        if (_recat && _recat !== 'other' && _recat !== _bcrow.category) {
           _bcrow.category = _recat;
         }
-        // Pass B: point-based — always run on originally-'other' rows (they may now be
-        //   provisional 'ef', 'fpb', 'vav', etc. from Pass A; points take precedence).
+        // Pass B: point-based — runs on the (possibly Pass-A-updated) category; points take
+        //   precedence over the name-derived guess, including Rule 0/0b's "not real HVAC
+        //   equipment at all" verdicts (3d6d7244 Phase 5).
         //   emVerifyTypeByPoints expects group.pointValues (object keyed by point name).
         //   Stored rows carry row.points; expose it as group.pointValues for the function.
         if (_bcrow.points && Object.keys(_bcrow.points).length > 0) {
@@ -17317,6 +17421,12 @@ function emNormalizePointInner(rawName, equipCategory) {
         }
         // Tier 2b: tokenized subset match + contradicting-word veto (M6 6A)
         // Replaces the old substring check (aliasNorm.length >= 4 && normDisplay.includes(aliasNorm)).
+        // efa09ef4: the >= 4 minimum-length guard from the old substring check was dropped when
+        // M6 replaced it with tokenized matching, letting a 3-char alias like "sat" match any
+        // name containing that exact token coincidentally (e.g. "SAT Reset Setpoint" incorrectly
+        // matching an unrelated satCoolSpLive-style alias). Restore the same >= 4 threshold here,
+        // gating the new tokenized mechanism instead of the removed substring one.
+        if (aliasNorm.length < 4) continue;
         // Step 1: tokenize
         var aliasTokens = aliasNorm.split(' ').filter(function (t) {
           return t.length > 0;
