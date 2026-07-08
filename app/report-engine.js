@@ -10778,6 +10778,17 @@ var ASHRAE36_SECTIONS = {
     { key: 'executive', label: 'Executive Summary', group: 'Report', defaultOn: true },
     { key: 'costEstimate', label: 'Gap Details', group: 'Report', defaultOn: true },
     { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
+    // a0c2152 (2026-07-06): power monitoring / OA-sensor metadata is not ASHRAE 36 scoring
+    // content. Matt has twice asked why non-ASHRAE content is in the report, so this
+    // callout is now an independent, unchecked-by-default sub-option (threaded into
+    // rptPageASHRAE36Building via showBuildingInfra) rather than always baked into the
+    // Per-Building Detail pages.
+    {
+      key: 'buildingInfra',
+      label: 'Include building infrastructure notes (not part of ASHRAE 36 scoring)',
+      group: 'Report',
+      defaultOn: false,
+    },
     // Batch 3 item 6 / plan 3e Option A: Recommendations page deleted (41pp -> 40pp). Gap
     // Details already covers the same findings with real ASHRAE 36 spec citations that
     // Recommendations lacked — removing the page eliminates the "what's the difference
@@ -11933,7 +11944,14 @@ function rptPageASHRAE36CostEstimate(n, d) {
             '</td>' +
             '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
             'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:18%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-            (g36Ref ? 'ASHRAE 36 ' + _esc(g36Ref) : '') +
+            // a0c2152 (2026-07-06): render-side only. Rows with no g36Section (row.type ===
+            // 'Programming' items and hardware feedback points that don't carry their own
+            // ASHRAE 36 citation) previously rendered a blank cell here, which read to Matt
+            // as "this item has no ASHRAE 36 basis." These items ARE ASHRAE-relevant — they
+            // are prerequisites needed by a cited sequence, just not independently cited.
+            // Data-source fix for row.g36Section population itself is a separate, cross-lane
+            // follow-up owned by another agent in pricing-estimator.js — not duplicated here.
+            (g36Ref ? 'ASHRAE 36 ' + _esc(g36Ref) : 'Prerequisite') +
             '</td>' +
             '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
             'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
@@ -12070,7 +12088,12 @@ function rptPageASHRAE36CostEstimate(n, d) {
  * @param {object} d - Data from collectASHRAE36Data
  * @param {object} building - Single building entry from d.buildings
  */
-function rptPageASHRAE36Building(n, d, building) {
+function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
+  // @param {boolean} [showBuildingInfra] - 2026-07-06 (a0c2152): whether to append the
+  //   Building Infrastructure (BAS Export) callout. Defaults to false/omitted (unchecked)
+  //   because power-monitoring/OA-sensor metadata is not ASHRAE 36 scoring content — Matt
+  //   twice asked why non-ASHRAE content is in the report. Driven by the modal's
+  //   'buildingInfra' checkbox (ASHRAE36_SECTIONS.audit, defaultOn:false).
   // PRE-SPLIT PAGINATION (Stage 2 fix, 2026-06-11):
   // Returns an ARRAY of rptPage() HTML strings -- one element per printed page.
   // Short buildings (low total estH) return a single-element array.
@@ -12449,9 +12472,11 @@ function rptPageASHRAE36Building(n, d, building) {
   // tint (transparent, border-only per the same rule already applied to .rpt-a36-callout
   // elsewhere) and the opacity:0.6 grey "Not found in this export" text (grey text on a
   // client deliverable is banned — full black, same weight as "Installed").
+  // 2026-07-06 (a0c2152): the v617 pass above still left an inline border/border-radius
+  // that contradicts .rpt-a36-callout's own CSS rule (energy-department.html ~2799: "NO
+  // background. NO border-left. NO border. Just spacing."). Removed — plain spacing only.
   var infraCallout =
-    '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px;' +
-    'border:1px solid var(--rpt-rule);border-radius:3px">' +
+    '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px">' +
     '<div style="font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (BAS Export)</div>' +
     '<div style="display:flex;gap:24px">' +
@@ -12506,7 +12531,7 @@ function rptPageASHRAE36Building(n, d, building) {
     if (chunkIndex === 0) {
       bodyHTML = gauges + intro + equipTable;
       if (isLastChunk) {
-        bodyHTML += summaryLine + infraCallout;
+        bodyHTML += summaryLine + (showBuildingInfra ? infraCallout : '');
       }
     } else {
       var contHdr =
@@ -12521,7 +12546,7 @@ function rptPageASHRAE36Building(n, d, building) {
         '</div>';
       bodyHTML = contHdr + equipTable;
       if (isLastChunk) {
-        bodyHTML += summaryLine + infraCallout;
+        bodyHTML += summaryLine + (showBuildingInfra ? infraCallout : '');
       }
     }
 
@@ -13570,8 +13595,11 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
   }
 
   if (s.building !== false) {
+    // a0c2152: buildingInfra is an independent sub-flag (default unchecked) — only pass
+    // showBuildingInfra=true when the user explicitly ticks it in the modal.
+    var showBuildingInfra = s.buildingInfra === true;
     data.buildings.forEach(function (b) {
-      var bPages = rptPageASHRAE36Building(pageNum, data, b);
+      var bPages = rptPageASHRAE36Building(pageNum, data, b, showBuildingInfra);
       bPages.forEach(function (pg) {
         pages.push(_tagA36Section(pg, 'building'));
         pageNum++;
