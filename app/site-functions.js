@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.635',
+    date: '2026-07-08',
+    title: 'Cost Estimate: buttons stay in the same place on every view',
+    items: [
+      {
+        type: 'fix',
+        text: 'Cost Estimate tab toolbar: the Tier buttons (Recommended / Compliance / Full Scope / Compare / Summary) and the Building filter no longer shift position when you switch between views - they now sit at the same spot on screen every time.',
+      },
+      {
+        type: 'change',
+        text: 'Cost Estimate tab toolbar: the Building and Sort dropdowns now have a fixed width so the toolbar no longer reflows differently depending on which buildings or sort options are available on a given view.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.08.634',
     date: '2026-07-08',
     title: 'Equipment Matrix: equipment types corrected for life-safety and lighting-panel points',
