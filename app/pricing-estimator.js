@@ -4139,6 +4139,166 @@ function _pricingApplyColWidths(projId) {
   });
 }
 
+/* ── d5286981: shared Cost Estimate toolbar builder ────────────────────────
+   Used by every Cost Estimate view — Recommended/Compliance/Full Scope/Compare
+   (initCostEstimateTab) AND Summary (_pricingRenderSummaryTab) — so a control that appears
+   on more than one view renders at the exact same screen position on all of them
+   (ui-standards.md "Stable control placement rule", 2026-07-08, binding). Origin bug: Summary
+   built its own, much shorter toolbarHTML (just a title span before the Tier toggle), so the
+   Tier toggle's left edge differed from the other 4 views, which all share the same fixed-width
+   Import CSV/Table Settings/Legend content before Tier.
+
+   Controls that don't apply on the current tier (Import CSV/Table Settings/Legend/Building
+   filter on Summary; Sort on every tier except Recommended) are hidden IN PLACE via
+   visibility:hidden + pointer-events:none + aria-hidden — never display:none — so the reserved
+   layout box stays in the DOM flow and no sibling control can slide into the gap. The Tier
+   toggle itself is NEVER hidden/wrapped — it is the one control this whole rule protects.
+
+   opts (all optional — Summary's call passes none, since these slots are always hidden there):
+     { hasCatalog, importStatus, allBuildings, filterBldg }
+   Deliberately NOT re-derived inside this function: hasCatalog/allBuildings/filterBldg depend on
+   tier-specific row-building/catalog state that only initCostEstimateTab already computes.
+   Recomputing them here would mean a second buildRecommendedRows/buildComplianceRows/
+   buildFullScopeRows call per render — duplicating row-building logic this item's plan puts
+   off-limits ("What NOT to touch").
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingBuildToolbarHTML(projId, tier, opts) {
+  opts = opts || {};
+  var isSummary = tier === 'summary';
+  var isRecommended = tier === 'recommended';
+  var hasCatalog = !!opts.hasCatalog;
+  var importStatus = opts.importStatus || '';
+  var allBuildings = opts.allBuildings || [];
+  var filterBldg = opts.filterBldg || '';
+
+  var rowFilterActive = !isSummary; // Import CSV, Table Settings, Legend, Building filter
+  var sortActive = isRecommended; // Sort: Recommended-only, unchanged from the existing rule
+
+  // visibility:hidden (not display:none) reserves the exact layout box so sibling controls never
+  // slide into the gap when this slot doesn't apply to the current tier. pointer-events:none +
+  // aria-hidden stop stray interaction/AT announcement of a control that can't act on this view.
+  function slot(html, active) {
+    return (
+      '<span style="display:inline-flex;align-items:center;' +
+      (active ? '' : 'visibility:hidden;pointer-events:none;') +
+      '"' +
+      (active ? '' : ' aria-hidden="true"') +
+      '>' +
+      html +
+      '</span>'
+    );
+  }
+
+  var importCsvHTML =
+    '<label class="btn btn-ghost btn-sm" style="cursor:pointer;position:relative">' +
+    '<input type="file" accept=".csv" id="pricing-csv-input-' +
+    projId +
+    '" style="position:absolute;opacity:0;width:0;height:0" onchange="handlePricingCSVImport(event,' +
+    projId +
+    ')">' +
+    (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') +
+    'Import Pricing CSV' +
+    '</label>' +
+    importStatus;
+
+  var tableSettingsBtnHTML =
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenSettingsPopover(\'' +
+    projId +
+    '\',this)" title="Pricing config + column visibility" style="cursor:pointer">⚙ Table Settings</button>';
+
+  var legendBtnHTML =
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenLegendPopover(\'' +
+    projId +
+    '\',this)" title="What the icons and colors in this table mean" style="cursor:pointer">ⓘ Legend</button>';
+
+  // Building filter dropdown — width:150px added (d5286981 Change 2) so a reserved-but-hidden
+  // instance (Summary) always matches a visible instance's width regardless of how long building
+  // names in this project happen to be (previously auto-sized to the widest <option> text).
+  var bldgFilterHTML =
+    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">' +
+    'Building:' +
+    '<select onchange="_pricingBldgFilterChange(\'' +
+    projId +
+    '\',this.value)"' +
+    ' style="font-size:11px;padding:2px 6px;width:150px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px">' +
+    '<option value=""' +
+    (!filterBldg ? ' selected' : '') +
+    '>All Buildings</option>' +
+    allBuildings
+      .map(function (b) {
+        return (
+          '<option value="' +
+          _pricingEscText(b) +
+          '"' +
+          (filterBldg === b ? ' selected' : '') +
+          '>' +
+          _pricingEscText(b) +
+          '</option>'
+        );
+      })
+      .join('') +
+    '</select></label>';
+
+  // 979fd1af: row sort control — Recommended tier only (the only tier with savings-weight fields
+  // to score by; Compliance/Full-Scope never stamp _savingsWeight/_effectiveCostTier so there is
+  // nothing meaningful to sort them by). d5286981: the STRING is now always built (un-gated) so
+  // the reserved slot always has real content/width to reserve on every tier — the
+  // Recommended-only GATING moved to the sortActive/slot() wrapper below (see plan.md step 2).
+  var _curSortMode = _pricingGetRowSortMode(projId);
+  var rowSortHTML =
+    '<span style="color:var(--border2)">|</span>' +
+    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px" ' +
+    'title="Choose how buildings and equipment are ordered in this table">' +
+    'Sort:' +
+    '<select onchange="_pricingRowSortModeChange(\'' +
+    projId +
+    '\',this.value)"' +
+    ' style="font-size:11px;padding:2px 6px;width:170px;overflow:hidden;text-overflow:ellipsis;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px">' +
+    '<option value="default" title="Rows appear in the order they were generated — not sorted by ' +
+    'size, cost, or savings"' +
+    (_curSortMode === 'default' ? ' selected' : '') +
+    '>Default order (unsorted)</option>' +
+    '<option value="building"' +
+    (_curSortMode === 'building' ? ' selected' : '') +
+    '>Best building return first</option>' +
+    '<option value="equipment"' +
+    (_curSortMode === 'equipment' ? ' selected' : '') +
+    '>Best equipment return first</option>' +
+    '</select></label>';
+
+  // d5286981: Summary's caption sits INSIDE the existing flex:1 spacer (not a separate element)
+  // — empty string on every other tier, preserving today's visual output exactly there. Because
+  // the spacer is the ELASTIC region between the fixed-width "before Tier" group and the
+  // fixed-width "after spacer" group, putting content here cannot move either neighbor; it only
+  // consumes some of the spacer's free space. Wording is the plain-language rewrite of the old
+  // "Building Totals — all buildings, across all tiers" ("tiers" is jargon; "pricing options" is
+  // the term the Tier toggle's own visible button labels already use).
+  var middleHTML = isSummary
+    ? '<span style="font-size:12px;font-weight:700;color:var(--text2)">Building totals — every building, across all pricing options</span>'
+    : '';
+
+  return [
+    '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
+    slot(importCsvHTML, rowFilterActive),
+    slot(tableSettingsBtnHTML, rowFilterActive),
+    slot(legendBtnHTML, rowFilterActive),
+    // Tier toggle — 35742dd5 (Phase 2) established that the flex:1 spacer must sit AFTER Tier,
+    // not before it, so Tier's left edge is just the natural width of the fixed left-side
+    // content (now IDENTICAL on all 5 views) — never wrapped in slot(): this is the one control
+    // the whole binding rule (ui-standards.md "Stable control placement rule") protects.
+    '<div style="flex:0 0 auto;display:flex;align-items:center">',
+    _pricingTierToggleHTML(projId, tier),
+    '</div>',
+    '<span style="color:var(--border2)">|</span>',
+    '<span style="flex:1">' + middleHTML + '</span>',
+    '<div style="flex:0 0 auto;display:flex;align-items:center;gap:8px">',
+    slot(bldgFilterHTML, rowFilterActive),
+    slot(rowSortHTML, sortActive),
+    '</div>',
+    '</div>',
+  ].join('');
+}
+
 /* ── Phase 4: save Phase 3 version of initCostEstimateTab ─────────────────── */
 var _initCostEstimateTabPhase3 = initCostEstimateTab;
 
@@ -4439,102 +4599,22 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:11px;color:var(--warn);margin-left:8px">No pricing imported — unit prices will show as "—"</span>';
   }
 
-  // Building filter dropdown
-  var bldgFilterHTML =
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">' +
-    'Building:' +
-    '<select onchange="_pricingBldgFilterChange(\'' +
-    projId +
-    '\',this.value)"' +
-    ' style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px">' +
-    '<option value=""' +
-    (!filterBldg ? ' selected' : '') +
-    '>All Buildings</option>' +
-    allBuildings
-      .map(function (b) {
-        return '<option value="' + _esc(b) + '"' + (filterBldg === b ? ' selected' : '') + '>' + _esc(b) + '</option>';
-      })
-      .join('') +
-    '</select></label>';
-
-  // 979fd1af: row sort control — Recommended tier only (the only tier with savings-weight
-  // fields to score by; Compliance/Full-Scope never stamp _savingsWeight/_effectiveCostTier
-  // so there is nothing meaningful to sort them by — the control simply doesn't appear there).
-  var rowSortHTML = '';
-  if (tier === 'recommended') {
-    var _curSortMode = _pricingGetRowSortMode(projId);
-    rowSortHTML =
-      '<span style="color:var(--border2)">|</span>' +
-      '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px" ' +
-      'title="Choose how buildings and equipment are ordered in this table">' +
-      'Sort:' +
-      '<select onchange="_pricingRowSortModeChange(\'' +
-      projId +
-      '\',this.value)"' +
-      ' style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px">' +
-      '<option value="default" title="Rows appear in the order they were generated — not sorted by ' +
-      'size, cost, or savings"' +
-      (_curSortMode === 'default' ? ' selected' : '') +
-      '>Default order (unsorted)</option>' +
-      '<option value="building"' +
-      (_curSortMode === 'building' ? ' selected' : '') +
-      '>Best building return first</option>' +
-      '<option value="equipment"' +
-      (_curSortMode === 'equipment' ? ' selected' : '') +
-      '>Best equipment return first</option>' +
-      '</select></label>';
-  }
-
-  // b771dec6 3a: toolbar keeps only Import Pricing CSV + Tier toggle + Building filter
-  // (Matt's explicit list). Price Basis/Net×/Contract%/Hourly Rate/Fan energy% + the
-  // column-visibility checklist (previously a gear icon in the Notes header) moved into
-  // the "⚙ Table Settings" popover — see _pricingOpenSettingsPopover. 0ae36950 adds the
-  // Recommended-only row sort control (979fd1af) after the building filter.
-  var toolbarHTML = [
-    '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
-    '<label class="btn btn-ghost btn-sm" style="cursor:pointer;position:relative">',
-    '<input type="file" accept=".csv" id="pricing-csv-input-' +
-      projId +
-      '" style="position:absolute;opacity:0;width:0;height:0" onchange="handlePricingCSVImport(event,' +
-      projId +
-      ')">',
-    (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') + 'Import Pricing CSV',
-    '</label>',
-    importStatus,
-    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenSettingsPopover(\'' +
-      projId +
-      '\',this)" title="Pricing config + column visibility" style="cursor:pointer">⚙ Table Settings</button>',
-    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenLegendPopover(\'' +
-      projId +
-      '\',this)" title="What the icons and colors in this table mean" style="cursor:pointer">ⓘ Legend</button>',
-    // Tier toggle — 35742dd5 (Phase 2). DEVIATION FROM PLAN (flagged, see plan.md Phase 2 +
-    // implementer report): the plan's literal fix — wrapping Tier in its own flex:0 0 auto
-    // div positioned right after a flex:1 spacer, with Building+Sort in a second flex:0 0
-    // auto group after it — does NOT change Tier's position at all. In a single flex row,
-    // items after a flex:1 spacer are still laid out left-to-right in sequence; Tier's left
-    // edge is mathematically (containerWidth - TierWidth - sepWidth - BuildingSortWidth)
-    // regardless of any flex:0 0 auto wrapper, because Tier is sandwiched BETWEEN the spacer
-    // and the variable-width Building/Sort group. Verified empirically: before/after
-    // tierBtnLeft was byte-identical across all 4 tiers with the plan's literal wrapper
-    // (see verify/phase2/results-before.json vs an intermediate results-after.json — both
-    // showed Recommended=1743.625 vs other tiers=~1955, i.e. the exact ~211px bug,
-    // completely unchanged by the wrapper).
-    // ACTUAL FIX: move the flex:1 spacer from BEFORE Tier to AFTER it (between Tier/sep and
-    // the Building+Sort group). Tier's left edge is now simply the natural width of the
-    // fixed left-side toolbar content (Import CSV/status/Settings/Legend) — a constant that
-    // never depends on whether Sort is present. The spacer absorbs 100% of the width
-    // fluctuation, and only the Building+Sort group's right edge moves.
-    '<div style="flex:0 0 auto;display:flex;align-items:center">',
-    _pricingTierToggleHTML(projId, tier),
-    '</div>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="flex:1"></span>',
-    '<div style="flex:0 0 auto;display:flex;align-items:center;gap:8px">',
-    bldgFilterHTML,
-    rowSortHTML,
-    '</div>',
-    '</div>',
-  ].join('');
+  // d5286981: toolbar HTML assembly now delegates to the shared _pricingBuildToolbarHTML
+  // (defined above initCostEstimateTab) so every Cost Estimate view — including Summary via
+  // _pricingRenderSummaryTab — renders the toolbar's shared controls (Import CSV, Table
+  // Settings, Legend, Tier toggle, Building filter, Sort) at the exact same screen position.
+  // Previously this block built its own inline toolbarHTML array (Import CSV/status/Settings/
+  // Legend, Tier toggle, spacer, Building filter, Recommended-only Sort) — that fixed left-side
+  // content differed from Summary's much shorter title-span toolbar, shifting the Tier toggle's
+  // position between views (ui-standards.md "Stable control placement rule", 2026-07-08 binding;
+  // origin bug logged as d5286981). See _pricingBuildToolbarHTML's own header comment for the
+  // 35742dd5 Phase-2 spacer-placement history this extraction preserves verbatim.
+  var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, {
+    hasCatalog: hasCatalog,
+    importStatus: importStatus,
+    allBuildings: allBuildings,
+    filterBldg: filterBldg,
+  });
 
   // ── 8. Render row function (Phase 4: adds hours-override input for labor rows)
   var recRowIdxByBase = isBothMode ? _buildBothModeIndex(recRows || []) : {};
@@ -5910,14 +5990,13 @@ function _pricingRenderSummaryTab(projId, el, estimate) {
     { key: 'full-scope', label: 'Full Scope' },
   ];
 
-  var toolbarHTML =
-    '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">' +
-    '<span style="font-size:12px;font-weight:700;color:var(--text2)">Building Totals — all buildings, across all tiers</span>' +
-    '<span style="flex:1"></span>' +
-    '<div style="flex:0 0 auto;display:flex;align-items:center">' +
-    _pricingTierToggleHTML(projId, 'summary') +
-    '</div>' +
-    '</div>';
+  // d5286981: shared toolbar builder — see _pricingBuildToolbarHTML's header comment. Summary
+  // passes no opts (Import CSV/Table Settings/Legend/Building filter/Sort are all reserved-but-
+  // hidden here), so the Tier toggle renders at the exact same screen position it does on the
+  // other 4 views. Replaces the old inline title-span/spacer/tier-toggle-only toolbarHTML, which
+  // had different fixed-width content before the Tier toggle than the other 4 views — the
+  // origin bug for this item (ui-standards.md "Stable control placement rule").
+  var toolbarHTML = _pricingBuildToolbarHTML(projId, 'summary');
 
   var theadCells =
     '<th style="' +
