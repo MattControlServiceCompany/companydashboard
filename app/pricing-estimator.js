@@ -3324,6 +3324,196 @@ function _pricingPairHwSeq(hw, lb) {
   return { claimedHwIds: claimedHwIds, claimedSeqIds: claimedSeqIds, pairedSeqByHwId: pairedSeqByHwId };
 }
 
+/* ── Fit-to-Budget plan (174ad49a Phase 3, Mode B only) ───────────────────────
+   Computes which Recommended-tier "units" (hw+seq pairs, or standalone rows — the
+   SAME units _pricingEquipRowScore/_pricingPairHwSeq already rank for the existing
+   'equipment' sort mode) to keep vs. exclude so the tier's grand total fits inside
+   the Mode-B ceiling. Ranks best-ROI-per-dollar first (reusing _pricingEquipRowScore
+   verbatim — not a new scoring formula), then walks the ranked list keeping every
+   unit that still fits, skipping (not stopping at) ones that don't. Returns a full
+   plan — kept/excluded toggle keys, before/after totals — WITHOUT writing anything,
+   so the caller can show the user the exact effect before an explicit Apply.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeBudgetFitPlan(projId) {
+  var budget = _pricingGetBudget(projId);
+  var comp = _pricingComputeBudgetTotal(budget);
+  if (!comp || budget.mode !== 'recurring') return null;
+
+  var estimate = _pricingGetEstimate(projId);
+  var rows = buildRecommendedRows(projId);
+  rows = _pricingApplyLaborOverrides(projId, rows);
+  rows = _pricingApplyQtyOverrides(projId, rows);
+
+  var order = [];
+  var bldgSeen = {};
+  rows.forEach(function (r) {
+    if (r.building && !bldgSeen[r.building]) {
+      bldgSeen[r.building] = true;
+      order.push(r.building);
+    }
+  });
+
+  var units = [];
+  order.forEach(function (bName) {
+    var bRows = rows.filter(function (r) {
+      return r.building === bName;
+    });
+    var hw = bRows.filter(function (r) {
+      return r.phase === 1;
+    });
+    var lb = bRows.filter(function (r) {
+      return r.phase === 2;
+    });
+    var pairs = _pricingPairHwSeq(hw, lb);
+    hw.forEach(function (hwRow) {
+      var seqRow = pairs.pairedSeqByHwId[hwRow.id];
+      var cost = (hwRow.lineTotal || 0) + (seqRow ? seqRow.lineTotal || 0 : 0);
+      units.push({
+        toggleKeys: seqRow ? [hwRow._baseId || hwRow.id, seqRow._baseId || seqRow.id] : [hwRow._baseId || hwRow.id],
+        cost: cost,
+        score: seqRow ? _pricingEquipRowScore(seqRow) : _pricingEquipRowScore(hwRow),
+      });
+    });
+    lb.forEach(function (seqRow) {
+      if (pairs.claimedSeqIds[seqRow.id]) return; // counted above with its paired hw row
+      units.push({
+        toggleKeys: [seqRow._baseId || seqRow.id],
+        cost: seqRow.lineTotal || 0,
+        score: _pricingEquipRowScore(seqRow),
+      });
+    });
+  });
+
+  units.sort(function (a, b) {
+    return b.score - a.score;
+  });
+
+  var running = 0;
+  var keepKeys = [];
+  var excludeKeys = [];
+  units.forEach(function (u) {
+    if (running + u.cost <= comp.total) {
+      running += u.cost;
+      keepKeys = keepKeys.concat(u.toggleKeys);
+    } else {
+      excludeKeys = excludeKeys.concat(u.toggleKeys);
+    }
+  });
+
+  var totals = _pricingComputeTotals(rows, estimate);
+  return {
+    ceiling: comp.total,
+    ceilingLabel: comp.basisLabel,
+    beforeTotal: totals.grand,
+    afterTotal: running,
+    keepKeys: keepKeys,
+    excludeKeys: excludeKeys,
+    excludedCount: excludeKeys.length,
+    totalCount: keepKeys.length + excludeKeys.length,
+  };
+}
+
+function _pricingOpenBudgetFitPreview(projId, btn) {
+  _pricingCloseSettingsPopover(projId);
+  var plan = _pricingComputeBudgetFitPlan(projId);
+  if (!plan) {
+    if (typeof showToast === 'function') showToast('Set a Recurring Services Budget amount first.');
+    return;
+  }
+  var pop = document.createElement('div');
+  pop.id = 'pricing-budgetfit-popover-' + projId;
+  pop.style.cssText = [
+    'position:absolute',
+    'background:var(--s2)',
+    'border:1px solid var(--border)',
+    'border-radius:6px',
+    'padding:10px 12px',
+    'z-index:900',
+    'min-width:260px',
+    'max-width:320px',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
+    'font-size:11px',
+  ].join(';');
+  pop.innerHTML =
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Fit to Budget — Preview</div>' +
+    '<div style="color:var(--text2);line-height:1.6;margin-bottom:8px">' +
+    'Ceiling: <strong style="color:var(--text)">' +
+    plan.ceilingLabel +
+    '</strong><br>' +
+    'Current Recommended total: <strong style="color:var(--text)">' +
+    _pricingFmt(plan.beforeTotal) +
+    '</strong><br>' +
+    'After fitting: <strong style="color:var(--text)">' +
+    _pricingFmt(plan.afterTotal) +
+    '</strong><br>' +
+    '<strong style="color:var(--warn)">' +
+    plan.excludedCount +
+    ' of ' +
+    plan.totalCount +
+    ' item(s)</strong> would be unchecked (kept items are ranked best ROI-per-dollar first) — ' +
+    'excluded items are NOT deleted, just unchecked; re-check any of them individually afterward, ' +
+    'or use Clear to restore all of them at once.' +
+    '</div>' +
+    '<div style="display:flex;gap:6px;justify-content:flex-end">' +
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingCloseBudgetFitPopover(\'' +
+    projId +
+    '\')" style="cursor:pointer">Cancel</button>' +
+    '<button class="btn btn-sm" onclick="_pricingApplyBudgetFit(\'' +
+    projId +
+    '\')" style="cursor:pointer;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 10px">Apply</button>' +
+    '</div>';
+  var rect = btn.getBoundingClientRect();
+  var container = document.getElementById('ptab-cost-estimate-body-' + projId);
+  if (container) {
+    var cRect = container.getBoundingClientRect();
+    pop.style.top = rect.bottom - cRect.top + 4 + 'px';
+    pop.style.left = rect.left - cRect.left + 'px';
+    pop.style.position = 'absolute';
+    container.style.position = 'relative';
+    container.appendChild(pop);
+  }
+}
+function _pricingCloseBudgetFitPopover(projId) {
+  var pop = document.getElementById('pricing-budgetfit-popover-' + projId);
+  if (pop) pop.remove();
+}
+function _pricingApplyBudgetFit(projId) {
+  var plan = _pricingComputeBudgetFitPlan(projId);
+  if (!plan) return;
+  var estimate = _pricingGetEstimate(projId);
+  estimate.rowToggles = estimate.rowToggles || {};
+  var prevValues = {};
+  plan.excludeKeys.forEach(function (k) {
+    prevValues[k] = estimate.rowToggles[k] !== undefined ? estimate.rowToggles[k] : null;
+    estimate.rowToggles[k] = false;
+  });
+  _pricingSetEstimate(projId, estimate);
+  _pricingSetBudget(projId, {
+    fitToBudget: true,
+    fitExcludedIds: plan.excludeKeys,
+    fitPrevToggleValues: prevValues,
+    fitAppliedAt: Date.now(),
+  });
+  _pricingCloseBudgetFitPopover(projId);
+  if (typeof showToast === 'function') {
+    showToast('Fit to Budget applied — ' + plan.excludedCount + ' item(s) unchecked to fit ' + plan.ceilingLabel);
+  }
+  initCostEstimateTab(projId);
+}
+function _pricingClearBudgetFit(projId) {
+  var budget = _pricingGetBudget(projId);
+  var estimate = _pricingGetEstimate(projId);
+  var prevValues = budget.fitPrevToggleValues || {};
+  (budget.fitExcludedIds || []).forEach(function (k) {
+    if (prevValues[k] === null || prevValues[k] === undefined) delete estimate.rowToggles[k];
+    else estimate.rowToggles[k] = prevValues[k];
+  });
+  _pricingSetEstimate(projId, estimate);
+  _pricingSetBudget(projId, { fitToBudget: false, fitExcludedIds: [], fitPrevToggleValues: {}, fitAppliedAt: null });
+  if (typeof showToast === 'function') showToast('Fit to Budget cleared — Recommended items restored.');
+  initCostEstimateTab(projId);
+}
+
 /* ── Toggle column visibility ─────────────────────────────────────────────── */
 function _pricingToggleCol(projId, colIdx) {
   var hidden = _pricingGetHiddenCols(projId);
@@ -3707,6 +3897,30 @@ function _pricingOpenSettingsPopover(projId, btn) {
       (budget.mode === 'financing' ? 'Affords: ' : 'Ceiling: ') +
       _budgetComp.basisLabel +
       '</div>';
+  }
+  // 174ad49a Phase 3: Fit-to-Budget action — Mode B only, and only meaningful while viewing
+  // Recommended (the tier the "measure list" refers to). Shown (not hidden) on other tiers with
+  // an explanatory note, so the control isn't a mystery the user can't find.
+  if (budget.mode === 'recurring' && _budgetComp) {
+    if (tier !== 'recommended') {
+      html +=
+        '<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:4px">Switch to the Recommended tier to use Fit to Budget.</div>';
+    } else if (budget.fitToBudget) {
+      html +=
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px">' +
+        '<span style="color:var(--accent);font-weight:700">Fit to Budget: ON (' +
+        (budget.fitExcludedIds || []).length +
+        ' excluded)</span>' +
+        '<button class="btn btn-ghost btn-sm" onclick="_pricingClearBudgetFit(\'' +
+        projId +
+        '\')" style="cursor:pointer">Clear</button>' +
+        '</div>';
+    } else {
+      html +=
+        '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenBudgetFitPreview(\'' +
+        projId +
+        '\',this)" style="cursor:pointer;margin-top:4px;width:100%">Fit to Budget…</button>';
+    }
   }
   html += '</div>';
 
