@@ -536,10 +536,17 @@ function _pricingSetBudget(projId, updates) {
 function _pricingComputeBudgetTotal(budget) {
   if (!budget || budget.amount == null || isNaN(budget.amount) || Number(budget.amount) <= 0) return null;
   var amount = Number(budget.amount);
-  var term = Number(budget.termMonths) || 12;
   if (budget.denomination === 'lump') {
     return { total: amount, basisLabel: _pricingFmt(amount) + ' lump sum' };
   }
+  // 174ad49a Phase 2 guard (review-phase-b1.md check D): the Term field's markup min="1" is not
+  // enforced on the stored value — a negative (-99), zero, blank, or non-integer (1.5) termMonths
+  // must suppress the preview the SAME WAY an invalid amount already does above, not fall through
+  // to arithmetic that renders a negative "ceiling"/"affords" total. No clamping to a fallback
+  // value here on purpose: silently substituting 12 for a corrupt stored term would show a number
+  // the user never entered as if it were valid.
+  var term = Number(budget.termMonths);
+  if (!isFinite(term) || term < 1 || Math.floor(term) !== term) return null;
   var monthsPerPeriod = { monthly: 1, quarterly: 3, annual: 12 }[budget.denomination] || 1;
   var monthlyAmount = amount / monthsPerPeriod;
   var total = monthlyAmount * term;
@@ -548,6 +555,49 @@ function _pricingComputeBudgetTotal(budget) {
     total: total,
     basisLabel: _pricingFmt(amount) + perLabel + ' × ' + term + ' mo = ' + _pricingFmt(total),
   };
+}
+
+/* ── Budget-vs-total indicator (174ad49a Phase 2) ─────────────────────────────
+   Presentation only — compares a tier's ALREADY-COMPUTED grand total (from
+   _pricingComputeTotals, read by the caller) against the budget entry. Touches no
+   pricing math, no row selection. Returns '' when no budget amount is set, so every
+   project that hasn't used this feature sees zero change to its footer. Shared by
+   the main tier footer, _pricingRefreshFooter's partial-refresh footer, and the
+   Summary sub-tab footer so all three always agree on the wording — same reason
+   _pricingTierLabelHTML/_pricingAdvisoryLineHTML above are shared, not copied.
+   contextLabel (optional) prefixes the mode label — used by Compare/Summary where
+   more than one total is visible in the same footer (e.g. "vs Recommended").
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingBudgetVsTotalHTML(budget, grandTotal, contextLabel) {
+  var comp = _pricingComputeBudgetTotal(budget);
+  if (!comp || grandTotal == null) return '';
+  var modeLabel =
+    (contextLabel ? contextLabel + ' — ' : '') + (budget.mode === 'financing' ? 'Financing' : 'Recurring budget');
+  var diff = comp.total - grandTotal; // positive = under budget (room to spare)
+  var withinBudget = grandTotal <= comp.total;
+  var pct = comp.total > 0 ? Math.abs(diff) / comp.total : 0;
+  var stateLabel = withinBudget
+    ? 'within budget (' + _pricingFmt(diff) + ' to spare)'
+    : Math.round(pct * 100) + '% OVER (' + _pricingFmt(-diff) + ' short)';
+  var stateColor = withinBudget ? '#86efac' : 'var(--warn)';
+  return (
+    '<div style="width:100%;margin-top:6px;padding:6px 10px;background:' +
+    (withinBudget ? 'rgba(134,239,172,0.06)' : 'rgba(248,113,113,0.08)') +
+    ';border:1px solid ' +
+    (withinBudget ? 'rgba(134,239,172,0.2)' : 'var(--warn)') +
+    ';border-radius:4px">' +
+    '<span style="font-size:11px;font-weight:700;color:var(--text2)">' +
+    modeLabel +
+    ': ' +
+    comp.basisLabel +
+    '</span>' +
+    '<span style="font-size:11px;font-weight:700;color:' +
+    stateColor +
+    ';margin-left:8px">' +
+    stateLabel +
+    '</span>' +
+    '</div>'
+  );
 }
 
 // 45ceb14f: re-derives the full-render path's `_anySavingsShown` boolean from a cached row array,
@@ -5296,6 +5346,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // b771dec6 3b: M&V disclaimer moved from here into the Top ROI card
   // (see _pricingTopRoiCallout's `showDisclaimer` param / call site below).
 
+  // 174ad49a Phase 2: budget-vs-total indicator — every tier, including Compare (where it
+  // compares against Recommended, the tier the original budget complaint was about).
+  var _budgetForFooter = _pricingGetBudget(projId);
+  var _budgetCompareTotal = isBothMode ? (recTotals ? recTotals.grand : null) : totals.grand;
+  footerParts.push(
+    _pricingBudgetVsTotalHTML(_budgetForFooter, _budgetCompareTotal, isBothMode ? 'vs Recommended' : ''),
+  );
+
   footerParts.push('</div>');
   var footerHTML = footerParts.join('');
 
@@ -5608,6 +5666,7 @@ function _pricingComputeSummaryData(projId, estimate) {
 
 function _pricingRenderSummaryTab(projId, el, estimate) {
   var data = _pricingComputeSummaryData(projId, estimate);
+  var _summaryBudget = _pricingGetBudget(projId); // 174ad49a Phase 2
   var tierCols = [
     { key: 'compliance', label: 'Compliance' },
     { key: 'recommended', label: 'Recommended' },
@@ -5724,6 +5783,11 @@ function _pricingRenderSummaryTab(projId, el, estimate) {
     '</div>',
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
     '<span style="font-size:11px;color:var(--text3)">Reuses the exact per-row totals each tier’s own table computes — no new pricing math. Switch tiers above to see the item-level breakdown behind any number.</span>',
+    tierCols
+      .map(function (t) {
+        return _pricingBudgetVsTotalHTML(_summaryBudget, data.tierTotals[t.key].grand, t.label);
+      })
+      .join(''),
     '</div>',
     '</div>',
   ].join('');
@@ -5815,6 +5879,7 @@ function _pricingRenderSummaryTab(projId, el, estimate) {
       '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
       '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatParts.join(' · ') + '</span>',
       tier === 'recommended' ? _pricingAdvisoryLineHTML(_anySavingsShown) : '', // 45ceb14f: was missing entirely
+      _pricingBudgetVsTotalHTML(_pricingGetBudget(projId), totals.grand, ''), // 174ad49a Phase 2
       '</div>',
     ].join('');
   };
