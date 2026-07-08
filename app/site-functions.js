@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.632',
+    date: '2026-07-08',
+    title: 'Project tab bar: Settings moved to the end, no more truncated labels',
+    items: [
+      {
+        type: 'fix',
+        text: 'Project Settings is now always the last tab in the project tab bar instead of sitting in the middle.',
+      },
+      {
+        type: 'fix',
+        text: 'Tab bar buttons are now evenly spaced with their full labels visible — no more cut-off tab names at narrower window widths.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.07.631',
     date: '2026-07-07',
     title: 'Cost Estimate tab: Fit to Budget on the Recommended view',
