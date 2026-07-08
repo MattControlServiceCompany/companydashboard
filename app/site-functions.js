@@ -1191,6 +1191,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.634',
+    date: '2026-07-08',
+    title: 'Equipment Matrix: equipment types corrected for life-safety and lighting-panel points',
+    items: [
+      {
+        type: 'fix',
+        text: "Equipment Matrix: life-safety shutdown relays (like the Fireman's AHU Shutdown and Emergency Ventilation Shutdown) are no longer counted as air handlers - they now show under a new Life-Safety / Controls category.",
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: lighting control panels (Interview room and GLPP lighting groups, elevator lobby lighting) are no longer counted as air handlers - they now show under Lighting.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: stairwell pressurization fans are no longer counted as air handlers - they now show as Exhaust Fans, matching what they actually are.',
+      },
+      {
+        type: 'fix',
+        text: "Equipment Matrix: equipment names like \"Multizone VAV AHU (DOAS)\" now classify correctly as DOAS units instead of falling back to a generic AHU label.",
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: security elevator equipment tagged with an AC unit number (e.g. "AC-6") now classifies as AC instead of Elevator.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.08.633',
     date: '2026-07-08',
     title: 'Audit Report: clearer Gap Details labels and a cleaner Building Infrastructure section',
