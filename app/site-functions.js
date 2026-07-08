@@ -1191,6 +1191,30 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.638',
+    date: '2026-07-08',
+    title: 'Energy Department > PDF/OCR: bill extraction totals now reconcile correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > PDF/OCR: fixed a bug where an itemized charge row (like ECA Charge) could keep showing a stale value even after the bill total was auto-corrected, making the numbers on screen not add up.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department > PDF/OCR: Evergy electric bills with multi-part charges now keep the rate-derived corrected amount instead of reverting to the raw OCR-read value, fixing recurring Sum Mismatch errors.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department > PDF/OCR: gas (KGS) bills now sum the gas charge fields for their total-reconciliation check instead of accidentally using the electric bill field list, fixing false Sum Mismatch banners on gas bills.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department > PDF/OCR: two Howard Hall billing periods will now correctly show a small (about $1) genuine mismatch that was previously hidden by the gas-bill bug above — this is a real, separate extraction gap now being tracked as its own item.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.08.637',
     date: '2026-07-08',
     title: 'Energy Department > Cost Estimate: tier names now mean what they say',
