@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.636',
+    date: '2026-07-08',
+    title: 'Dashboard / Utility Data: Louisburg savings figure now cents-exact',
+    items: [
+      {
+        type: 'fix',
+        text: 'Dashboard tab: the Louisburg Q1 2026 Actual Savings chip now reads $9,056.01, matching the certified quarterly report to the cent. A stale saved calculation had been showing $9,056.00.',
+      },
+      {
+        type: 'fix',
+        text: 'Utility Data tab: baseline savings figures are now protected from ever serving an out-of-date saved calculation after the baseline period, bill list, or overrides change - the dashboard always shows the current numbers.',
+      },
+      {
+        type: 'change',
+        text: 'Spring Hill project header now shows 1 building (Woodland Spring Middle) instead of 8 - the other 7 have zero square footage and are fully excluded from baseline calculations, so they no longer inflate the building count shown at the top of the page. The Utility Data tab itself still lists all 8 buildings for data entry.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.08.635',
     date: '2026-07-08',
     title: 'Cost Estimate: buttons stay in the same place on every view',
