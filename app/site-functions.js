@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.637',
+    date: '2026-07-08',
+    title: 'Energy Department > Cost Estimate: tier names now mean what they say',
+    items: [
+      {
+        type: 'change',
+        text: "Energy Department > Cost Estimate: the three tiers are redefined so their names match what they actually contain. Compliance now shows only the work strictly required by the ASHRAE 36 audit. Recommended now shows the best-value measures that fit the client's monthly budget across the chosen term (12/24/36/48 months) - no budget entered means the highest-impact items only. Full Scope now shows the complete catalog, including everything beyond compliance.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.08.636',
     date: '2026-07-08',
     title: 'Dashboard / Utility Data: Louisburg savings figure now cents-exact',
@@ -1243,7 +1254,7 @@ var RELEASE_NOTES = [
       },
       {
         type: 'fix',
-        text: "Equipment Matrix: equipment names like \"Multizone VAV AHU (DOAS)\" now classify correctly as DOAS units instead of falling back to a generic AHU label.",
+        text: 'Equipment Matrix: equipment names like "Multizone VAV AHU (DOAS)" now classify correctly as DOAS units instead of falling back to a generic AHU label.',
       },
       {
         type: 'fix',
