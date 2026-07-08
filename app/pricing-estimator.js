@@ -3344,9 +3344,24 @@ function _pricingComputeBudgetFitPlan(projId) {
   rows = _pricingApplyLaborOverrides(projId, rows);
   rows = _pricingApplyQtyOverrides(projId, rows);
 
+  // Fix (174ad49a Phase B3 review-phase-b3.md Check C / required fix 1): a row the user
+  // already manually excluded (rowToggles[key] === false) before ever opening Fit is not
+  // Fit's to re-enable -- _pricingApplyBudgetFit only ever DEMOTES (writes false for
+  // excludeKeys); it never promotes a keepKeys row back to true. So an already-off row must
+  // never enter the candidate pool or the running/afterTotal math here, or Preview can
+  // promise a total Apply will never actually deliver. Mirrors the exact `toggled !== false`
+  // test _pricingComputeTotals already uses (line ~1934-1936) so afterTotal truthfully
+  // predicts what _pricingComputeTotals will show after Apply, in every case. beforeTotal
+  // below still uses the full, unfiltered `rows` via _pricingComputeTotals, which already
+  // honors toggles correctly on its own -- only the units/greedy pool needed this filter.
+  var poolRows = rows.filter(function (r) {
+    var toggleKey = r._baseId || r.id;
+    return estimate.rowToggles[toggleKey] !== false;
+  });
+
   var order = [];
   var bldgSeen = {};
-  rows.forEach(function (r) {
+  poolRows.forEach(function (r) {
     if (r.building && !bldgSeen[r.building]) {
       bldgSeen[r.building] = true;
       order.push(r.building);
@@ -3355,7 +3370,7 @@ function _pricingComputeBudgetFitPlan(projId) {
 
   var units = [];
   order.forEach(function (bName) {
-    var bRows = rows.filter(function (r) {
+    var bRows = poolRows.filter(function (r) {
       return r.building === bName;
     });
     var hw = bRows.filter(function (r) {
@@ -3505,6 +3520,14 @@ function _pricingClearBudgetFit(projId) {
   var estimate = _pricingGetEstimate(projId);
   var prevValues = budget.fitPrevToggleValues || {};
   (budget.fitExcludedIds || []).forEach(function (k) {
+    // Fix (174ad49a Phase B3 review-phase-b3.md Check D / Clear ruling (a), required fix 2):
+    // only restore a key if its CURRENT value still equals exactly what Apply set (always
+    // `false` for every key in fitExcludedIds) -- i.e. nothing has touched it since Apply.
+    // If the user manually re-checked (or otherwise changed) it after Apply, that's their
+    // most recent deliberate action; Clear must never silently overwrite it ("never destroy
+    // user state"). No new stored state is needed -- "still false" IS the untouched-since-
+    // Apply signal, since Apply is the only thing that ever wrote false to these specific keys.
+    if (estimate.rowToggles[k] !== false) return; // touched since Apply -- leave it alone
     if (prevValues[k] === null || prevValues[k] === undefined) delete estimate.rowToggles[k];
     else estimate.rowToggles[k] = prevValues[k];
   });
