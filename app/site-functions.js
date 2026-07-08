@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.07.629',
+    date: '2026-07-07',
+    title: 'Cost Estimate tab: enter a budget in Table Settings',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate tab: under Table Settings, you can now enter a client budget — either a one-time project financing amount spread over a chosen term, or a recurring monthly/quarterly/annual amount. The on-screen budget-versus-total comparison arrives in the next update.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.07.628',
     date: '2026-07-07',
     title: 'Cost Estimate tab: merged rows get two editable quantities',
