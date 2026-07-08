@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.07.630',
+    date: '2026-07-07',
+    title: 'Cost Estimate tab: see how the total compares to your budget',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate tab: every pricing view now shows how the total compares to the client budget you entered — green when within budget, with the exact dollars and percent when over.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.07.629',
     date: '2026-07-07',
     title: 'Cost Estimate tab: enter a budget in Table Settings',
