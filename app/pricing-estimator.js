@@ -1240,7 +1240,7 @@ const PRICE_POINT_MAP = {
     note: 'Mechanical freeze stat — enter price (~$150 typical)',
     whyNeeded:
       'Triggers air handler shutdown when coil temperatures approach freezing, preventing costly water coil damage.',
-    g36Section: '§5.16.6',
+    g36Section: '§5.16.12',
   },
   oaFlow: {
     defaultSku: null,
@@ -1448,7 +1448,17 @@ function _pricingSetRoiOpen(projId, open) {
      note, phase (1=hardware|2=labor)
    }
    ─────────────────────────────────────────────────────────────────────────── */
-function buildComplianceRows(projId) {
+/* ── buildCatalogRows(projId) ───────────────────────────────────────────────
+   Single row-generation engine (c82cc354 REV 2, Step 1). Produces EVERY
+   ASHRAE-36 hardware gap (phase 1) and EVERY applicable sequence-programming
+   row (phase 2) for the project — the full catalog. Tiers (Compliance,
+   Recommended, Full Scope) are membership FILTERS over this one function's
+   output, not separate generators — row ids (hw_…/seq_…) are shared across
+   tiers via _baseId so all user state (rowToggles, manualPrices,
+   laborOverrides, qtyOverrides, noteOverrides) stays keyed consistently.
+   Formerly named buildComplianceRows — byte-identical body, renamed only.
+   ─────────────────────────────────────────────────────────────────────────── */
+function buildCatalogRows(projId) {
   if (typeof collectASHRAE36Data !== 'function') return [];
   var ashData = collectASHRAE36Data(projId);
   if (!ashData || !ashData.buildings) return [];
@@ -1797,6 +1807,22 @@ function buildComplianceRows(projId) {
   });
 
   return rows;
+}
+
+/* ── buildComplianceRows(projId) ────────────────────────────────────────────
+   Compliance tier (c82cc354 REV 2, Step 1) = strictly ASHRAE-36-required rows:
+   every phase-1 required-point hardware gap, plus phase-2 sequence rows whose
+   sequence type is 'safety' (currently only ahu_freeze_prot — G36 §5.16.12,
+   a required Bucket-A point per EM_POINT_CATEGORIES, equipment-matrix.js).
+   Savings-type sequences (SAT reset, DSP reset, DCV, etc.) are NOT compliance
+   items — they live in Recommended (budget-fit) and Full Scope (all).
+   ─────────────────────────────────────────────────────────────────────────── */
+function buildComplianceRows(projId) {
+  return buildCatalogRows(projId).filter(function (row) {
+    if (row.phase === 1) return true;
+    var def = SEQUENCE_SAVINGS_IMPACT[row.seqKey];
+    return !!(def && def.type === 'safety');
+  });
 }
 
 /* ── Label helpers ── */
@@ -2626,22 +2652,37 @@ function _pricingFindCheapestSku(pointKey, catalog, cfg) {
 }
 
 /* ── buildRecommendedRows(projId) ───────────────────────────────────────────
-   Produces the row list for the Recommended tier.
-   Recommended = best-ROI curated SUBSET of Compliance. Always <= Compliance cost.
-   Differences from Compliance:
-     1. Optimizer substitutes lowest-price qualifying SKU for safe classes
-     2. COMBO de-dup: zone missing both zoneTemp+co2 → single ZS2-HC-ALC line
-        (identical to compliance combo, but note says "Combo: replaces separate…")
-     3. Phase-2 savings-impact filter: keep only rows where savingsImpact is
-        'high', 'med-high', or 'med'. Drops 'low-med', 'enabler', 'safety', null.
-     4. SKIP list: curated default kept + engReview preserved
-     5. NO add-ons — FDD add-on moved to buildFullScopeRows
-   Tier ordering: Recommended <= Compliance <= Full Scope (structural guarantee).
+   Produces the row list for the Recommended tier — c82cc354 REV 2 (Step 2b):
+   DYNAMIC, BUDGET-DRIVEN membership over the full catalog, per Matt's fork-1
+   answer ("it should probably not be a static logic"). No longer a static
+   savings-tier filter of Compliance; Recommended is NOT a subset of
+   Compliance (measures are not compliance items — tier-analysis §2/§7).
+
+   1. Clone every buildCatalogRows(projId) row; optimizer substitutes the
+      lowest-price qualifying SKU for safe classes (unchanged); stamp
+      savings-impact fields + dynamic _effectiveCostTier on phase-2 rows
+      (unchanged). NO static tier filter — every sequence type is stamped and
+      candidate for membership, not just high/med-high/med.
+   2. Bundle every SAVINGS-type sequence with all its claimed blocking
+      hardware into one "unit" (_pricingBuildRoiUnits) — a measure is never
+      sold without the sensors it needs; standalone hardware and
+      enabler/safety/null-impact sequences never form a unit and can never
+      appear in Recommended.
+   3. Ceiling = _pricingComputeBudgetTotal(budget) when a recurring budget is
+      set — membership is the ranked (_pricingEquipRowScore, best ROI-per-
+      dollar first) greedy prefix that fits (_pricingGreedyPrefix, the
+      shipped v631 Fit-to-Budget engine, reused verbatim). No budget (or Mode
+      A financing, or an invalid term) → membership = HIGH-impact units only
+      (Matt's specified fallback).
+   4. Kept rows (sequence + its claimed hardware) are returned in the
+      existing building-grouped / phase-sorted order.
    ─────────────────────────────────────────────────────────────────────────── */
 function buildRecommendedRows(projId) {
-  // Start from compliance rows as foundation, then apply optimizer + add-ons
-  var compRows = buildComplianceRows(projId);
-  if (!compRows.length) return [];
+  // Start from the FULL catalog (every hardware gap + every applicable
+  // sequence), not the Compliance-restricted subset — Recommended candidates
+  // include savings sequences Compliance no longer carries.
+  var catRows = buildCatalogRows(projId);
+  if (!catRows.length) return [];
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
@@ -2650,9 +2691,9 @@ function buildRecommendedRows(projId) {
   var recRows = [];
   var _optimizerSubCount = 0; // Bug A: track substitutions made
 
-  // Process each compliance row and apply optimizer or skip
-  compRows.forEach(function (row) {
-    // Clone the row so compliance rows are unaffected
+  // Process each catalog row and apply optimizer + savings-impact stamping
+  catRows.forEach(function (row) {
+    // Clone the row so catalog rows are unaffected
     var rec = Object.assign({}, row);
 
     // Only optimize Phase 1 hardware rows with a real SKU
@@ -2682,11 +2723,11 @@ function buildRecommendedRows(projId) {
       }
     }
 
-    // Fix 3: store the compliance row id as _baseId BEFORE re-keying,
-    // so toggle state (keyed by compliance ids) is shared between tiers.
+    // Fix 3: store the catalog row id as _baseId BEFORE re-keying,
+    // so toggle state (keyed by catalog ids) is shared between tiers.
     rec._baseId = row.id;
 
-    // Re-key the row ID so it's distinct from the compliance row ID
+    // Re-key the row ID so it's distinct from the catalog row ID
     rec.id = rec.id.replace(/^hw_/, 'rch_').replace(/^seq_/, 'rcs_');
 
     // ── Phase 5: stamp savings impact fields onto phase-2 sequence rows ──
@@ -2704,18 +2745,18 @@ function buildRecommendedRows(projId) {
         // Dynamic effectiveCostTier: if all blocking sensors for this sequence are
         // already covered in the equipment matrix → effectiveCostTier=1 (programming only).
         // We approximate "covered" by checking if phase-1 hardware rows for those sensors
-        // exist in compRows (i.e., they AREN'T in the gap list — gaps = missing sensors).
-        // Since buildComplianceRows only adds rows for MISSING points, if a blocking sensor
-        // key has NO row in compRows for this building, it is already covered.
+        // exist in catRows (i.e., they AREN'T in the gap list — gaps = missing sensors).
+        // Since buildCatalogRows only adds rows for MISSING points, if a blocking sensor
+        // key has NO row in catRows for this building, it is already covered.
         var blocking = SEQUENCE_BLOCKING_SENSORS[rec.seqKey] || [];
         var nominalTier = impactDef.nominalCostTier || 2;
         if (blocking.length === 0) {
           // No blocking sensors — programming only
           rec._effectiveCostTier = 1;
         } else {
-          // Check if any blocking sensor is still a gap (has a phase-1 row in compRows for this building)
+          // Check if any blocking sensor is still a gap (has a phase-1 row in catRows for this building)
           var gapPointKeys = {};
-          compRows.forEach(function (cr) {
+          catRows.forEach(function (cr) {
             if (cr.phase === 1 && cr.building === rec.building && cr._pointKey) {
               gapPointKeys[cr._pointKey] = true;
             }
@@ -2732,18 +2773,59 @@ function buildRecommendedRows(projId) {
       }
     }
 
-    // Phase-2 savings-impact filter: Recommended only keeps high/med-high/med sequences.
-    // Drop 'low-med', 'enabler', 'safety', and null-impact phase-2 rows.
-    // Phase-1 hardware rows are all kept (optimizer already reduces their cost;
-    // conservative approach per blueprint Risk 2 — phase-1 seqKey mapping not stamped).
-    if (rec.phase === 2) {
-      var _keepTiers = { high: true, 'med-high': true, med: true };
-      if (!_keepTiers[rec.savingsImpact]) {
-        return; // skip this row — drop low-ROI, enabler, safety, and null-impact sequences
-      }
-    }
-
+    // c82cc354 REV 2: the static phase-2 savings-tier filter (high/med-high/med
+    // only) is REMOVED — every sequence type is stamped and kept here; actual
+    // Recommended membership is decided by the budget-driven greedy/HIGH-only
+    // rule below, not by a fixed impact-tier cutoff.
     recRows.push(rec);
+  });
+
+  // ── c82cc354 REV 2 (Step 2b.2-3): budget-driven dynamic membership ──
+  // Apply the same labor/qty overrides the shipped Fit-to-Budget plan used
+  // before ranking, and exclude rows the user already manually toggled off
+  // (never re-enter the pool — mirrors the shipped 3357-3360 behavior) so the
+  // greedy ranking/ceiling math reflects the user's current, real numbers.
+  var pooled = _pricingApplyLaborOverrides(projId, recRows);
+  pooled = _pricingApplyQtyOverrides(projId, pooled);
+  var poolRows = pooled.filter(function (r) {
+    var toggleKey = r._baseId || r.id;
+    return estimate.rowToggles[toggleKey] !== false;
+  });
+
+  var units = _pricingBuildRoiUnits(poolRows);
+
+  var budget = _pricingGetBudget(projId);
+  var comp = _pricingComputeBudgetTotal(budget);
+  var keepUnitToggleKeys = {};
+  if (comp && budget.mode === 'recurring') {
+    // Budget entered: ranked prefix that fits the ceiling — the shipped v631
+    // Fit-to-Budget greedy engine, reused verbatim as the membership rule
+    // (pricing-estimator.js:536-558 conversion; NOT re-derived here).
+    var _fitPlan = _pricingGreedyPrefix(units, comp.total);
+    _fitPlan.keepKeys.forEach(function (k) {
+      keepUnitToggleKeys[k] = true;
+    });
+  } else {
+    // No budget (or Mode A financing, or an invalid term): highest-impact
+    // (HIGH) units only — Matt's specified fallback.
+    units.forEach(function (u) {
+      if (u.seqRow && u.seqRow.savingsImpact === 'high') {
+        u.toggleKeys.forEach(function (k) {
+          keepUnitToggleKeys[k] = true;
+        });
+      }
+    });
+  }
+
+  // A row survives in Recommended only if it's the sequence half or a claimed
+  // hardware half of a KEPT unit. Standalone hardware (never formed a unit)
+  // and non-kept sequences/hardware are absent from the tier entirely — not
+  // merely unchecked (tier-analysis §7: "rows outside the prefix are simply
+  // not in the tier"). Their toggle/override state is preserved by id and
+  // reappears intact if the budget later grows to include them again.
+  recRows = recRows.filter(function (r) {
+    var toggleKey = r._baseId || r.id;
+    return !!keepUnitToggleKeys[toggleKey];
   });
 
   // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
@@ -2798,29 +2880,273 @@ function buildRecommendedRows(projId) {
   return sortedRows;
 }
 
+/* ── buildOptionalPointRows(projId) ──────────────────────────────────────────
+   c82cc354 REV 2 (Step 4) — the "beyond-compliance" optional-point generator.
+   For each building/equipment from collectASHRAE36Data, walks
+   EM_POINT_CATEGORIES[eq.category] definitions with required === false
+   (extra CO2, reheat/coil valve actuators, plant iso/makeup valves, …) and
+   prices the ones that are genuinely missing:
+     - SKIPPED if already covered: eq.compliance.coveredPoints already reports
+       a match for ANY category (required or not) whose raw point name was
+       found on this equipment — emComputeCompliance's own point-matching
+       loop (equipment-matrix.js ~17707-17740) is NOT restricted to required
+       categories, so coveredPoints is the correct/only source of truth here;
+       this function does not re-implement point-name matching.
+     - SKIPPED if N/A per configFlag: replicates emComputeCompliance's
+       configFlag N/A handling (equipment-matrix.js ~17771-17788) exactly —
+       same EM_EQUIP_CONFIG_FLAGS default lookup, same emLoadEquipConfigFlags
+       per-equipment override — so an optional point whose prerequisite
+       feature isn't present (e.g. no economizer) is correctly excluded, not
+       priced as a gap.
+     - EXCLUDED (not priced) if PRICE_POINT_MAP has no entry for the point key
+       — Full Scope only prices what CSC has a catalogued hardware solution
+       for; unmapped optional points are never invented a SKU.
+   Grouping/pricing/de-dup rules (co2 zone/ahu split, oat/oaWetBulb per-
+   building de-dup, contract-basis getUnitPrice) are the SAME as
+   buildCatalogRows' phase-1 hardware-gap logic — replicated here rather than
+   shared because the source category (required vs optional) and hence the
+   gap-detection rule differ.
+   Row shape: phase 1, id: 'opt_…', isOptionalPoint: true, type label distinct
+   ('Beyond-Compliance'), grouped under the REAL building (never WebCTRL
+   System campus-wide).
+   ─────────────────────────────────────────────────────────────────────────── */
+function buildOptionalPointRows(projId) {
+  if (typeof collectASHRAE36Data !== 'function') return [];
+  var ashData = collectASHRAE36Data(projId);
+  if (!ashData || !ashData.buildings) return [];
+  if (typeof EM_POINT_CATEGORIES === 'undefined') return [];
+
+  var catalog = sget('en_pricing_catalog', null);
+  var cfg = _pricingGetConfig();
+  var rows = [];
+  var rowIdx = 0;
+
+  function getUnitPrice(sku) {
+    if (!catalog || !sku) return null;
+    var entry = catalog[sku];
+    if (!entry) return null;
+    var basis = cfg.priceBasis || 'contract';
+    if (basis === 'list') return entry.list != null ? entry.list : null;
+    if (basis === 'net') return entry.net != null ? entry.net : null;
+    if (basis === 'contract') {
+      if (entry.list != null) return parseFloat((COST_CONTRACT_PCT * entry.list).toFixed(2));
+      return null;
+    }
+    return null;
+  }
+
+  ashData.buildings.forEach(function (bldgData) {
+    var bName = bldgData.name;
+    var optionalGaps = {}; // gKey -> {pointKey, equipType, catLabel, count, mapEntry}
+    var oatDeDupDone = false;
+    var oaWetBulbDeDupDone = false;
+
+    bldgData.equipResults.forEach(function (eq) {
+      var cat = eq.category;
+      var catDefs = EM_POINT_CATEGORIES[cat];
+      if (!catDefs) return;
+
+      // Already-covered optional categories (any match, required or not —
+      // emComputeCompliance's coveredPoints is not required-only).
+      var coveredKeys = {};
+      (eq.compliance && eq.compliance.coveredPoints ? eq.compliance.coveredPoints : []).forEach(function (cp) {
+        coveredKeys[cp.categoryKey] = true;
+      });
+
+      var flags = typeof emLoadEquipConfigFlags === 'function' ? emLoadEquipConfigFlags(projId, eq.id) : {};
+
+      catDefs.forEach(function (def) {
+        if (def.required) return; // only optional (required:false) categories
+        if (coveredKeys[def.key]) return; // already present on this equipment
+
+        // Replicate emComputeCompliance's configFlag N/A handling
+        // (equipment-matrix.js ~17771-17788) for optional categories too.
+        if (def.configFlag) {
+          var flagDefault = true;
+          var flagDefs = (typeof EM_EQUIP_CONFIG_FLAGS !== 'undefined' && EM_EQUIP_CONFIG_FLAGS[cat]) || [];
+          for (var fi = 0; fi < flagDefs.length; fi++) {
+            if (flagDefs[fi].key === def.configFlag) {
+              flagDefault = flagDefs[fi]['default'];
+              break;
+            }
+          }
+          var flagVal = def.configFlag in flags ? flags[def.configFlag] : flagDefault;
+          if (!flagVal) return; // N/A for this equipment — not a real gap
+        }
+
+        var pointKey = def.key;
+        var mapEntry = PRICE_POINT_MAP[pointKey];
+        if (!mapEntry) return; // unmapped — EXCLUDED, no catalogued hardware (spec §5)
+
+        var effectiveKey = pointKey;
+        if (pointKey === 'co2') {
+          var zoneTypes = ['vav', 'fpb', 'ddvav', 'zone'];
+          effectiveKey = zoneTypes.indexOf(cat) !== -1 ? 'co2_zone' : 'co2_ahu';
+          mapEntry = PRICE_POINT_MAP[effectiveKey];
+          if (!mapEntry) return;
+        }
+
+        if (effectiveKey === 'oat') {
+          if (oatDeDupDone) return;
+          oatDeDupDone = true;
+          var key = 'oat__building';
+          if (!optionalGaps[key]) {
+            optionalGaps[key] = {
+              pointKey: effectiveKey,
+              equipType: 'building',
+              catLabel: 'Building',
+              count: 0,
+              mapEntry: mapEntry,
+            };
+          }
+          optionalGaps[key].count = 1;
+          return;
+        }
+        if (effectiveKey === 'oaWetBulb') {
+          if (oaWetBulbDeDupDone) return;
+          oaWetBulbDeDupDone = true;
+          var key2 = 'oaWetBulb__building';
+          if (!optionalGaps[key2]) {
+            optionalGaps[key2] = {
+              pointKey: effectiveKey,
+              equipType: 'building',
+              catLabel: 'Building',
+              count: 0,
+              mapEntry: mapEntry,
+            };
+          }
+          optionalGaps[key2].count = 1;
+          return;
+        }
+
+        var gKey = effectiveKey + '__' + cat;
+        var catLabel = _pricingCatLabel(cat);
+        if (!optionalGaps[gKey]) {
+          optionalGaps[gKey] = {
+            pointKey: effectiveKey,
+            equipType: cat,
+            catLabel: catLabel,
+            count: 0,
+            mapEntry: mapEntry,
+          };
+        }
+        optionalGaps[gKey].count++;
+      });
+    });
+
+    var bldgEquipCount = {};
+    bldgData.equipResults.forEach(function (eq) {
+      bldgEquipCount[eq.category] = (bldgEquipCount[eq.category] || 0) + 1;
+    });
+
+    Object.keys(optionalGaps).forEach(function (gKey) {
+      var gap = optionalGaps[gKey];
+      if (gap.count <= 0) return;
+
+      var mapEntry = gap.mapEntry;
+      var sku = mapEntry.defaultSku;
+      var engReview = mapEntry.flags.indexOf('engReview') !== -1;
+      var noSku = mapEntry.flags.indexOf('noSku') !== -1;
+      var ioOnly = mapEntry.flags.indexOf('ioOnly') !== -1;
+      var typeName = _pricingPointType(gap.pointKey, mapEntry);
+
+      var totalForCat = bldgEquipCount[gap.equipType] || gap.count;
+      var eqLabel;
+      if (gap.equipType === 'building') {
+        eqLabel = '1 building';
+      } else if (gap.count === totalForCat) {
+        eqLabel = gap.count + ' ' + gap.catLabel + (gap.count !== 1 ? 's' : '');
+      } else {
+        eqLabel = gap.count + ' of ' + totalForCat + ' ' + gap.catLabel + (totalForCat !== 1 ? 's' : '');
+      }
+
+      var unitPrice = null;
+      var lineTotal = null;
+      if (ioOnly) {
+        unitPrice = 0;
+        lineTotal = 0;
+      } else if (!noSku && sku) {
+        unitPrice = getUnitPrice(sku);
+        if (unitPrice !== null) lineTotal = parseFloat((unitPrice * gap.count).toFixed(2));
+      }
+
+      var _catEntry = catalog && sku ? catalog[sku] : null;
+      var _listPrice = _catEntry && _catEntry.list != null ? _catEntry.list : null;
+      var _netPrice = _catEntry && _catEntry.net != null ? _catEntry.net : null;
+      var _contractPrice =
+        _catEntry && _catEntry.list != null ? parseFloat((cfg.contractPct * _catEntry.list).toFixed(2)) : null;
+
+      rows.push({
+        id: 'opt_' + bName + '_' + gKey + '_' + rowIdx++,
+        building: bName,
+        item: _pricingPointLabel(gap.pointKey),
+        type: typeName,
+        typeLabel: 'Beyond-Compliance',
+        equipment: eqLabel,
+        qty: gap.count,
+        sku: sku || null,
+        engReview: engReview,
+        noSku: noSku,
+        ioOnly: ioOnly,
+        unitPrice: unitPrice,
+        listPrice: _listPrice,
+        netPrice: _netPrice,
+        contractPrice: _contractPrice,
+        lineTotal: lineTotal,
+        note: mapEntry.note || '',
+        whyNeeded: mapEntry.whyNeeded || '',
+        whyNotHardware: mapEntry.whyNotHardware || '',
+        g36Section:
+          (mapEntry.g36SectionByCategory && mapEntry.g36SectionByCategory[gap.equipType]) || mapEntry.g36Section || '',
+        phase: 1,
+        _pointKey: gap.pointKey,
+        isOptionalPoint: true,
+      });
+    });
+  });
+
+  return rows;
+}
+
 /* ── buildFullScopeRows(projId) ─────────────────────────────────────────────
-   Produces the row list for the Full Scope tier.
-   Full Scope = Compliance + all add-ons (FDD reporting, future add-ons).
-   Row IDs: fsc_ prefix (phase 1), fsl_ prefix (phase 2).
-   Each row carries _baseId = compliance row id so toggle state transfers.
-   Ordering: Full Scope >= Compliance >= Recommended (structural guarantee).
+   Produces the row list for the Full Scope tier — "the complete per-building
+   modernization" (c82cc354 REV 2, Step 4): every required-point hardware gap
+   + ALL applicable G36 sequences (the full catalog, not Compliance's
+   safety-restricted subset) + every optional (required:false) point with a
+   catalogued hardware mapping + the FDD Reporting add-on.
+   Row IDs: fsc_/fsl_ prefix (catalog clone), fso_ prefix (optional-point
+   clone). Each row carries _baseId so toggle state transfers/shares with the
+   other tiers (fso_ rows share state only among themselves — their _baseId
+   is their own opt_ id, since optional points have no Compliance/Recommended
+   counterpart).
+   Ordering: Full Scope >= Compliance in every building (structural
+   guarantee); Full Scope ⊇ Compliance and ⊇ Recommended's _baseId sets.
    ─────────────────────────────────────────────────────────────────────────── */
 function buildFullScopeRows(projId) {
-  var compRows = buildComplianceRows(projId);
-  if (!compRows.length) return [];
+  var catRows = buildCatalogRows(projId);
+  if (!catRows.length) return [];
 
   var catalog = sget('en_pricing_catalog', null);
   var cfg = _pricingGetConfig();
   var fsRows = [];
   var rowIdx = 20000; // offset to avoid ID collision with compliance + recommended rows
 
-  // Clone all compliance rows with fsc_/fsl_ ID prefix and _baseId linkage
-  compRows.forEach(function (row) {
+  // Clone all catalog rows with fsc_/fsl_ ID prefix and _baseId linkage
+  catRows.forEach(function (row) {
     var fs = Object.assign({}, row);
-    // Store compliance row id for shared toggle state
+    // Store catalog row id for shared toggle state
     fs._baseId = row.id;
     // Re-key the row ID with full-scope prefix
     fs.id = fs.id.replace(/^hw_/, 'fsc_').replace(/^seq_/, 'fsl_');
+    fsRows.push(fs);
+  });
+
+  // c82cc354 REV 2 (Step 4): optional (beyond-compliance) point rows
+  var optRows = buildOptionalPointRows(projId);
+  optRows.forEach(function (row) {
+    var fs = Object.assign({}, row);
+    fs._baseId = row.id; // own opt_ id — no Compliance/Recommended counterpart
+    fs.id = fs.id.replace(/^opt_/, 'fso_');
     fsRows.push(fs);
   });
 
@@ -2872,7 +3198,13 @@ function _extractPointKeyFromRowId(rowId) {
 }
 
 /* ── Tier toggle: render the tier selector buttons ──────────────────────────
-   Order (left→right, cost-ascending): Recommended | Compliance | Full Scope | Compare
+   Order (left→right): Recommended | Compliance | Full Scope | Compare
+   c82cc354 REV 2: the old "cost-ascending" guarantee no longer holds — Recommended
+   is a budget-fit ranked selection of measures, NOT a subset of Compliance, so its
+   $ total is independent of Compliance's and can be higher OR lower depending on
+   the client's budget/term. The only guaranteed set relations are: Compliance ⊆
+   Full Scope, Recommended ⊆ Full Scope (by _baseId), and Recommended's total is
+   bounded by its budget ceiling (or the HIGH-impact-only total with no budget).
    'both' stored tier value preserved for saved-state compatibility; label → 'Compare'.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingTierToggleHTML(projId, currentTier) {
@@ -3301,8 +3633,17 @@ function _pricingEquipRowScore(row) {
 /* ── Pair phase-1 hardware rows with the phase-2 sequence row they block, within ONE
    building's row set (b771dec6 Batch 5 pairing logic, factored out so both the grouped
    render loop and the flat 'equipment' sort mode share one implementation instead of two
-   copies drifting apart). Each hw row claimed by at most one sequence; sequences with no
-   blocking sensors, or whose blocking sensors are absent/already claimed, stay standalone. ── */
+   copies drifting apart). Sequences with no blocking sensors, or whose blocking sensors
+   are absent/already claimed, stay standalone.
+   c82cc354 REV 2 (Step 2a): a sequence now claims ALL of its blocking hardware rows in
+   the building, not just the first match — the shipped one-hw-per-sequence `break`
+   stranded additional blocking sensors (e.g. economizer's second sensor, OAT) outside
+   the bundle. A measure is never sold without every sensor it needs, and a blocking
+   sensor never appears standalone once its sequence claims it. Shared by the grouped
+   render loop, the flat 'equipment' sort mode, and (new) the Recommended/Fit-to-Budget
+   membership engine (_pricingBuildRoiUnits) — one implementation, upgraded once.
+   JOCO $ effect of this change: +$160 (7 previously-stranded OAT rows) vs the old
+   claim-one behavior — logged in dashboardlogic.md. ── */
 function _pricingPairHwSeq(hw, lb) {
   var claimedHwIds = {};
   var claimedSeqIds = {};
@@ -3310,18 +3651,127 @@ function _pricingPairHwSeq(hw, lb) {
   lb.forEach(function (seqRow) {
     var blocking = (seqRow.seqKey && SEQUENCE_BLOCKING_SENSORS[seqRow.seqKey]) || [];
     if (!blocking.length) return; // no blocking sensors → standalone
-    for (var _hi = 0; _hi < hw.length; _hi++) {
-      var _hwCandidate = hw[_hi];
-      if (claimedHwIds[_hwCandidate.id]) continue; // already claimed by another sequence
+    hw.forEach(function (_hwCandidate) {
+      if (claimedHwIds[_hwCandidate.id]) return; // already claimed by another sequence
       if (_hwCandidate._pointKey && blocking.indexOf(_hwCandidate._pointKey) !== -1) {
         claimedHwIds[_hwCandidate.id] = true;
         claimedSeqIds[seqRow.id] = true;
         pairedSeqByHwId[_hwCandidate.id] = seqRow;
-        break;
       }
-    }
+    });
   });
   return { claimedHwIds: claimedHwIds, claimedSeqIds: claimedSeqIds, pairedSeqByHwId: pairedSeqByHwId };
+}
+
+/* ── _pricingBuildRoiUnits(rows) ─────────────────────────────────────────────
+   c82cc354 REV 2 (Step 2a) — shared membership-candidate builder. Walks
+   buildings in row order (the order they appear in `rows`); for each phase-2
+   sequence row whose SEQUENCE_SAVINGS_IMPACT type === 'savings', builds ONE
+   unit = that sequence row + every phase-1 hardware row _pricingPairHwSeq
+   claims for it (a measure is never sold without the hardware it needs).
+   cost = sum of the unit's row lineTotals (override-applied by the caller
+   BEFORE calling this); score = _pricingEquipRowScore(seqRow) — the SAME
+   ranking the 'equipment' sort mode and the shipped Fit-to-Budget engine use.
+   Standalone hardware (no blocking sequence) and enabler/safety/null-impact
+   sequences NEVER create a unit — they are not "measures" to rank/sell, so
+   they never enter Recommended-tier membership or the Fit-to-Budget pool.
+   Used by buildRecommendedRows (the new budget-driven membership engine) and
+   by _pricingComputeBudgetFitPlan (retained for backcompat/non-Recommended
+   callers — see Step 2c).
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingBuildRoiUnits(rows) {
+  var order = [];
+  var bldgSeen = {};
+  rows.forEach(function (r) {
+    if (r.building && !bldgSeen[r.building]) {
+      bldgSeen[r.building] = true;
+      order.push(r.building);
+    }
+  });
+
+  var units = [];
+  order.forEach(function (bName) {
+    var bRows = rows.filter(function (r) {
+      return r.building === bName;
+    });
+    var hw = bRows.filter(function (r) {
+      return r.phase === 1;
+    });
+    var lb = bRows.filter(function (r) {
+      return r.phase === 2;
+    });
+    var pairs = _pricingPairHwSeq(hw, lb);
+
+    // Invert pairedSeqByHwId (hwId -> seqRow) into seqId -> [hwRow, ...] so a
+    // sequence that claimed multiple hardware rows becomes ONE unit, not one
+    // per claimed hw row (which would double-count the sequence's lineTotal).
+    var hwBySeqId = {};
+    hw.forEach(function (hwRow) {
+      var seqRow = pairs.pairedSeqByHwId[hwRow.id];
+      if (!seqRow) return;
+      if (!hwBySeqId[seqRow.id]) hwBySeqId[seqRow.id] = [];
+      hwBySeqId[seqRow.id].push(hwRow);
+    });
+
+    lb.forEach(function (seqRow) {
+      if (!seqRow.seqKey) return;
+      var def = SEQUENCE_SAVINGS_IMPACT[seqRow.seqKey];
+      if (!def || def.type !== 'savings') return; // enabler/safety/null-impact never create units
+
+      var claimedHw = hwBySeqId[seqRow.id] || [];
+      var cost = seqRow.lineTotal || 0;
+      var toggleKeys = [seqRow._baseId || seqRow.id];
+      claimedHw.forEach(function (hwRow) {
+        cost += hwRow.lineTotal || 0;
+        toggleKeys.push(hwRow._baseId || hwRow.id);
+      });
+
+      units.push({
+        toggleKeys: toggleKeys,
+        cost: cost,
+        score: _pricingEquipRowScore(seqRow),
+        seqRow: seqRow,
+        hwRows: claimedHw,
+      });
+    });
+    // Standalone hardware rows (no blocking sequence) never create a unit —
+    // they are not membership candidates for Recommended/Fit-to-Budget.
+  });
+  return units;
+}
+
+/* ── _pricingGreedyPrefix(units, ceiling) ────────────────────────────────────
+   c82cc354 REV 2 (Step 2a) — the shipped v631 Fit-to-Budget greedy walk,
+   extracted so buildRecommendedRows can reuse it as THE membership engine.
+   Sort units score-desc (STABLE — Array#sort in this engine preserves
+   relative order of equal-score elements, same tie-break the shipped Fit
+   preview always produced) then walk keeping every unit that still fits under
+   `ceiling`, skipping (never stopping at) ones that don't — a cheaper
+   lower-ranked unit later in the list can still fit even after a pricier
+   higher-ranked one was skipped. Returns kept/excluded toggle keys, the kept
+   running total, and the kept unit objects themselves (rows can be recovered
+   from unit.seqRow/unit.hwRows without re-deriving toggle keys).
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingGreedyPrefix(units, ceiling) {
+  var sorted = units.slice().sort(function (a, b) {
+    return b.score - a.score;
+  });
+
+  var running = 0;
+  var keepKeys = [];
+  var excludeKeys = [];
+  var keptUnits = [];
+  sorted.forEach(function (u) {
+    if (running + u.cost <= ceiling) {
+      running += u.cost;
+      keepKeys = keepKeys.concat(u.toggleKeys);
+      keptUnits.push(u);
+    } else {
+      excludeKeys = excludeKeys.concat(u.toggleKeys);
+    }
+  });
+
+  return { keepKeys: keepKeys, excludeKeys: excludeKeys, total: running, keptUnits: keptUnits };
 }
 
 /* ── Fit-to-Budget plan (174ad49a Phase 3, Mode B only) ───────────────────────
@@ -3333,6 +3783,15 @@ function _pricingPairHwSeq(hw, lb) {
    unit that still fits, skipping (not stopping at) ones that don't. Returns a full
    plan — kept/excluded toggle keys, before/after totals — WITHOUT writing anything,
    so the caller can show the user the exact effect before an explicit Apply.
+   c82cc354 REV 2 (Step 2a/2c): reimplemented on top of the shared
+   _pricingBuildRoiUnits/_pricingGreedyPrefix helpers (verbatim math, no new
+   formula) instead of its own copy of the unit-build + greedy loop. The
+   Recommended tier no longer has a UI entry point to this function — Recommended
+   membership is now computed the SAME way directly inside buildRecommendedRows
+   (Step 2b), so this function is effectively superseded there. It is RETAINED,
+   unchanged in contract/return shape, for any non-Recommended caller and for
+   backward compatibility with the stored budget.fitToBudget/fitExcludedIds/
+   fitPrevToggleValues fields a past Apply may have written.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingComputeBudgetFitPlan(projId) {
   var budget = _pricingGetBudget(projId);
@@ -3359,72 +3818,19 @@ function _pricingComputeBudgetFitPlan(projId) {
     return estimate.rowToggles[toggleKey] !== false;
   });
 
-  var order = [];
-  var bldgSeen = {};
-  poolRows.forEach(function (r) {
-    if (r.building && !bldgSeen[r.building]) {
-      bldgSeen[r.building] = true;
-      order.push(r.building);
-    }
-  });
-
-  var units = [];
-  order.forEach(function (bName) {
-    var bRows = poolRows.filter(function (r) {
-      return r.building === bName;
-    });
-    var hw = bRows.filter(function (r) {
-      return r.phase === 1;
-    });
-    var lb = bRows.filter(function (r) {
-      return r.phase === 2;
-    });
-    var pairs = _pricingPairHwSeq(hw, lb);
-    hw.forEach(function (hwRow) {
-      var seqRow = pairs.pairedSeqByHwId[hwRow.id];
-      var cost = (hwRow.lineTotal || 0) + (seqRow ? seqRow.lineTotal || 0 : 0);
-      units.push({
-        toggleKeys: seqRow ? [hwRow._baseId || hwRow.id, seqRow._baseId || seqRow.id] : [hwRow._baseId || hwRow.id],
-        cost: cost,
-        score: seqRow ? _pricingEquipRowScore(seqRow) : _pricingEquipRowScore(hwRow),
-      });
-    });
-    lb.forEach(function (seqRow) {
-      if (pairs.claimedSeqIds[seqRow.id]) return; // counted above with its paired hw row
-      units.push({
-        toggleKeys: [seqRow._baseId || seqRow.id],
-        cost: seqRow.lineTotal || 0,
-        score: _pricingEquipRowScore(seqRow),
-      });
-    });
-  });
-
-  units.sort(function (a, b) {
-    return b.score - a.score;
-  });
-
-  var running = 0;
-  var keepKeys = [];
-  var excludeKeys = [];
-  units.forEach(function (u) {
-    if (running + u.cost <= comp.total) {
-      running += u.cost;
-      keepKeys = keepKeys.concat(u.toggleKeys);
-    } else {
-      excludeKeys = excludeKeys.concat(u.toggleKeys);
-    }
-  });
+  var units = _pricingBuildRoiUnits(poolRows);
+  var plan = _pricingGreedyPrefix(units, comp.total);
 
   var totals = _pricingComputeTotals(rows, estimate);
   return {
     ceiling: comp.total,
     ceilingLabel: comp.basisLabel,
     beforeTotal: totals.grand,
-    afterTotal: running,
-    keepKeys: keepKeys,
-    excludeKeys: excludeKeys,
-    excludedCount: excludeKeys.length,
-    totalCount: keepKeys.length + excludeKeys.length,
+    afterTotal: plan.total,
+    keepKeys: plan.keepKeys,
+    excludeKeys: plan.excludeKeys,
+    excludedCount: plan.excludeKeys.length,
+    totalCount: plan.keepKeys.length + plan.excludeKeys.length,
   };
 }
 
@@ -5802,37 +6208,60 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows, _anySavingsShown);
   }
 
-  // Recommended tier: "no substitutions" notice + empty-state guard
+  // Recommended tier: budget-state prompt + "no substitutions" notice + empty-state guard
+  // c82cc354 REV 2 (Step 2c/Step 3): Recommended is now DYNAMIC and budget-driven, not a
+  // static high/med-high/med subset of Compliance — the copy below reflects that.
   var recNoSubsNotice = '';
   if (tier === 'recommended') {
-    // Empty-state: if filter removed all rows (project has no high/med-high/med sequences)
-    if (filteredRows.length === 0) {
-      recNoSubsNotice =
+    var _recBudget = _pricingGetBudget(projId);
+    var _recBudgetComp = _pricingComputeBudgetTotal(_recBudget);
+    var _recHasBudget = !!(_recBudgetComp && _recBudget.mode === 'recurring');
+
+    // No-budget plain-language prompt (Matt's exact-intent copy, Step 2c) — shown whenever the
+    // tier is running on the HIGH-impact-only fallback (no recurring budget entered/valid).
+    var recBudgetPrompt = '';
+    if (!_recHasBudget) {
+      recBudgetPrompt =
         '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
         'border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text2);line-height:1.5">' +
-        '<strong style="color:var(--text)">No high-ROI measures identified</strong> — ' +
-        'all required items for this project are in the Compliance tier. ' +
-        'Switch to Compliance to view the full scope.' +
+        'Showing the highest-impact measures only. Enter the client’s budget (Table Settings → Budget) ' +
+        'to tailor this tier to what they can spend.' +
+        '</div>';
+    }
+
+    // Empty-state: filter removed all rows (no budget-fit units at all — e.g. a ceiling too
+    // small to fit even the cheapest measure, or no HIGH-impact measures exist for this project).
+    if (filteredRows.length === 0) {
+      recNoSubsNotice =
+        recBudgetPrompt +
+        '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
+        'border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text2);line-height:1.5">' +
+        '<strong style="color:var(--text)">No measures fit this tier</strong> — ' +
+        (_recHasBudget
+          ? 'no measure (with its required hardware) fits inside the current budget ceiling. Raise the budget or term to include measures.'
+          : 'this project has no HIGH-impact measures identified. Enter the client’s budget to include lower-impact measures instead.') +
+        ' Switch to Compliance or Full Scope to view required/complete scope.' +
         '</div>';
     } else {
       var _optStats = _pricingOptimizerStats[projId];
       var _subCount = _optStats ? _optStats.subCount : 0;
+      var _subsNotice = '';
       if (_subCount === 0) {
-        recNoSubsNotice =
+        _subsNotice =
           '<div style="margin:8px 14px 0;padding:8px 12px;background:var(--s3);border:1px solid var(--border);' +
           'border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text2);line-height:1.5">' +
           '<strong style="color:var(--text)">No lower-cost substitutions found</strong> — ' +
           (hasCatalog
-            ? 'the imported catalog contains no cheaper qualifying alternatives for the hardware in this project. ' +
-              'Recommended hardware pricing matches Compliance. '
+            ? 'the imported catalog contains no cheaper qualifying alternatives for the hardware in this project. '
             : 'no pricing catalog is loaded, so the optimizer could not search for alternatives. ' +
               'Import a pricing CSV to enable substitution analysis. ') +
           '<br><span style="color:var(--text3)">' +
-          'Note: Recommended shows only high/med-high/med ROI sequences (subset of Compliance). ' +
+          'Recommended is a budget-fit ranked selection of measures (not a fixed subset of Compliance). ' +
           'FDD Reporting add-on is in Full Scope tier.' +
           '</span>' +
           '</div>';
       }
+      recNoSubsNotice = recBudgetPrompt + _subsNotice;
     }
   }
 
@@ -6129,10 +6558,14 @@ function _pricingRenderSummaryTab(projId, el, estimate) {
       return;
     }
 
-    // Use labor+qty-override-applied rows from cache if available
+    // Use labor+qty-override-applied rows from cache if available. Fallback (cache miss)
+    // must use the tier-CORRECT builder — 'recommended' is no longer a filtered subset of
+    // buildComplianceRows (c82cc354 REV 2), so this must call buildRecommendedRows for that
+    // tier or the footer would show the wrong (Compliance) total while labeled Recommended.
     var rows = _pricingRowCache[projId];
     if (!rows) {
-      rows = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, buildComplianceRows(projId)));
+      var _fallbackRows = tier === 'recommended' ? buildRecommendedRows(projId) : buildComplianceRows(projId);
+      rows = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, _fallbackRows));
     }
     var cfg = _pricingGetConfig();
     var catalog = sget('en_pricing_catalog', null);
