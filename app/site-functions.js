@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.643',
+    date: '2026-07-09',
+    title: 'Equipment Matrix: fixed bad temperature readings on zone setpoint columns',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: a few rows were showing an obviously-wrong zone setpoint (like "5.7°F") because a raw voltage or signal reading was being displayed as if it were a temperature. Those cells now show blank instead of a bogus value in Summary, Raw, and Audit views. This closes a gap left by an earlier fix that only caught the problem for newly-imported data.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.09.642',
     date: '2026-07-09',
     title: 'Energy Department > Audit Reports: fixed duplicate header on JOCO report pages',
