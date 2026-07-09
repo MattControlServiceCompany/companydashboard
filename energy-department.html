@@ -3986,8 +3986,11 @@
         justify-content: center;
         gap: 3px;
         white-space: nowrap;
-        /* Equal growth beyond natural content size; never shrinks (no truncation). */
-        flex: 1 0 auto;
+        /* 128f49b2 (reopened): uniform width, not equal growth on unequal bases — see
+           _equalizeProjTabWidths() in core.js, which measures the widest tab's natural
+           content width and writes it into --pdt-w. The `auto` fallback keeps tabs usable
+           (content-sized, no collapse) for the one frame before JS runs or if JS errors. */
+        flex: 0 0 var(--pdt-w, auto);
       }
       .pdt-ico {
         font-style: normal;
@@ -5970,8 +5973,11 @@
       .ud-bill-tbl tr:hover td {
         background: var(--s4);
       }
+      /* d2fe8e5e: unified with the sticky-column even-row rule below (var(--s3))
+         instead of a separate translucent rgba overlay — the two mechanisms only
+         agreed by coincidence in dark theme and diverged visibly in light theme. */
       .ud-bill-tbl tr:nth-child(even) td {
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--s3);
       }
       .ud-bill-tbl tr:nth-child(even):hover td {
         background: var(--s3);
@@ -6057,8 +6063,9 @@
       }
       /* Data-row sticky cells use --s2 (panel surface) so they match the table
          body background instead of the darker header tone (--s1). Even rows
-         step up to --s3 to approximate the rgba(255,255,255,0.04) even-row tint
-         that non-sticky cells inherit. ui-standards.md: headers=--s1, data=--s2. */
+         step up to --s3 — d2fe8e5e: same token non-sticky even-row cells now use
+         directly (no longer a separate rgba approximation). ui-standards.md:
+         headers=--s1, data=--s2. */
       .ud-bill-tbl td.sticky-col {
         background-color: var(--s2) !important;
       }
