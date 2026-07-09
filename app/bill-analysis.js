@@ -8931,7 +8931,15 @@ async function extractPDFText(ab, statusCb) {
           const abortPromise = new Promise((_, reject) => {
             abortPoll = setInterval(() => {
               if (window._pdfAbort) reject(Object.assign(new Error('Aborted by user'), { _aborted: true }));
-            }, 250); // poll every 250ms — cheap, and 250ms is an imperceptible worst-case delay to Cancel
+              // Overshoot fix (70096fe4 review): OCR_TOTAL_BUDGET_MS checkpoints only run
+              // BETWEEN awaits, so they can't stop a recognize() call already in flight —
+              // a budget trip mid-call could previously overshoot the plan's "budget+30s"
+              // gate-(a) tolerance by up to the full 90s OCR_TIMEOUT_MS. Reuse this same
+              // 250ms poll (already proven safe for abort) so a budget trip interrupts an
+              // in-flight recognize() just as promptly as a user Cancel does.
+              else if (performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS)
+                reject(Object.assign(new Error('OCR budget exceeded mid-recognize'), { _budgetExceeded: true }));
+            }, 250); // poll every 250ms — cheap, imperceptible worst-case delay to Cancel/budget
           });
           try {
             const result = await Promise.race([
@@ -9033,7 +9041,11 @@ async function extractPDFText(ab, statusCb) {
                 bestScore = score;
               }
             } catch (pageErr) {
-              if (pageErr._aborted) {
+              if (pageErr._aborted || pageErr._budgetExceeded) {
+                // Overshoot fix: a budget trip mid-recognize is handled exactly like an
+                // abort — stop this page's passes immediately rather than falling through
+                // to "log as failed pass, try the next one" (which would keep burning time).
+                if (pageErr._budgetExceeded) _ocrBudgetExceeded = true;
                 if (canvas) {
                   canvas.width = 0;
                   canvas.height = 0;
@@ -9151,7 +9163,9 @@ async function extractPDFText(ab, statusCb) {
                   bestScore = score;
                 }
               } catch (pageErr) {
-                if (pageErr._aborted) {
+                if (pageErr._aborted || pageErr._budgetExceeded) {
+                  // Overshoot fix: same immediate-stop treatment as the primary pass loop.
+                  if (pageErr._budgetExceeded) _ocrBudgetExceeded = true;
                   if (canvas) {
                     canvas.width = 0;
                     canvas.height = 0;
