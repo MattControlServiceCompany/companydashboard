@@ -7277,7 +7277,7 @@ function rptPageBoardSummary(n, d) {
       : '<div style="font-size:10px;color:var(--rpt-page-text);font-style:italic;text-align:center;padding:16px">No monthly savings data available.</div>';
 
   var bodyHTML =
-    '<div contenteditable="true" style="padding:4px 0">' +
+    '<div contenteditable="true" style="padding:4px 48px">' +
     // Headline
     '<div style="text-align:center;margin-bottom:14px">' +
     '<div style="font-size:18px;font-weight:800;color:var(--rpt-blue);letter-spacing:0.01em">' +
@@ -13417,7 +13417,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '</div>';
 
   var bodyHTML =
-    '<div style="padding:16px 0">' +
+    '<div style="padding:16px 48px">' +
     '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE Guideline 36</div>' +
     '<div style="font-size:17px;font-weight:600;color:var(--rpt-page-text);margin-bottom:4px">BAS Programming &amp; Upgrade Proposal</div>' +
     '<div style="font-size:13px;color:var(--rpt-page-text);margin-bottom:20px">' +
