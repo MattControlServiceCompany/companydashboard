@@ -3857,8 +3857,23 @@ function findMeterMatch(extracted) {
         if (_acctFuzzyMatch(acct, mAcct) || (meterNum && mMeter && meterNum === mMeter)) {
           const mComm = (m.commodity || '').toLowerCase();
           const commMatch = billComm && mComm && billComm === mComm;
-          if (commMatch) return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id };
-          if (!bestMatch) bestMatch = { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id };
+          // matchType: 'identity' — account/meter-number hit, as opposed to the
+          // fuzzy address-only fallback below. Fix b-46a984a0: the batch queue UI
+          // uses this to decide whether a match can render as plain confirmed text
+          // or must force an explicit user pick (never silently misattach a
+          // lower-confidence address match).
+          if (commMatch)
+            return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id, matchType: 'identity' };
+          if (!bestMatch)
+            bestMatch = {
+              proj,
+              bldg,
+              meter: m,
+              projId: proj.id,
+              bldgId: bldg.id,
+              meterId: m.id,
+              matchType: 'identity',
+            };
         }
       }
       // Bug 86d02961: address fallback runs even when bestMatch exists so that
@@ -3907,6 +3922,7 @@ function findMeterMatch(extracted) {
               meterId: candidateMeter.id,
               fuzzyScore: candidateScore,
               isAlias,
+              matchType: 'address',
             };
           }
         }
@@ -6176,6 +6192,16 @@ function renderQueueResults() {
     }
   });
 
+  // Fix b-46a984a0 (batch-to-meter Destination review): precompute the meter match for
+  // every row up front, mirroring _mbRowTargets in showMultiBuildingReviewPanel (the
+  // multi-account-in-one-file case). Lets the Destination column show/require a
+  // confirm-or-pick step BEFORE save instead of only reporting the result afterward.
+  // Recomputed on every render (cheap) rather than cached on the bill so it always
+  // reflects the live project/building/meter data.
+  rows.forEach((row) => {
+    row._autoMatch = row.bill ? findMeterMatch(row.bill) || null : null;
+  });
+
   if (rows.length === 0) {
     dzTitle.innerHTML = '📄 Batch extraction — no bills found';
     document.getElementById('pdfRightCol').style.display = '';
@@ -6415,6 +6441,144 @@ function renderQueueResults() {
     return '<span style="color:#4a4;font-size:10px">READY</span>';
   };
 
+  // ── Destination cell builder (fix b-46a984a0 — batch-to-meter review) ──
+  // GATE: zero silent auto-routes. An 'identity' match (account/meter-number hit) is
+  // shown as confirmed text the user can still override via "Change". Anything else —
+  // 'address'-only fuzzy match or no match at all — always renders the cascading
+  // Project→Building→Meter picker and forces an explicit user pick (never pre-selects
+  // a building/meter from a weak address guess). handlerArg must already be a valid
+  // JS literal for the onclick/onchange call (numeric rowIdx unquoted, group key quoted).
+  const _buildDestCell = (bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn) => {
+    const ov = bill._meterOverride || null;
+    const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
+    const expanded = !!bill._destExpanded || !isIdentity;
+    if (isIdentity && !expanded) {
+      const destText =
+        autoMatch.proj.name +
+        ' → ' +
+        autoMatch.bldg.name +
+        ' → ' +
+        (autoMatch.meter.provider || autoMatch.meter.meter || 'meter');
+      return (
+        '<div style="font-size:10px;color:var(--text)" title="Identity match — account/meter number found">' +
+        _escHtml(destText) +
+        ' <a href="javascript:void(0)" onclick="' +
+        setExpandFn +
+        '(' +
+        handlerArg +
+        ',true)" style="font-size:9px;color:var(--em);text-decoration:underline">Change</a></div>'
+      );
+    }
+    // Cascading picker. For an identity match under "Change", pre-fill with the
+    // match's own proj/bldg/meter (an editable confirm, like the single-file banner's
+    // override toggle). For an address-only or absent match, leave building/meter BLANK
+    // even though we know a guess — the user must actively confirm it (this is the
+    // trust-violation guard: a wrong silent attach is worse than no attach).
+    const curProj =
+      ov && ov.projId != null
+        ? ov.projId
+        : isIdentity && autoMatch
+          ? autoMatch.projId
+          : bill._projOverride || (window._pdfQueue && window._pdfQueue.batchProjId) || '';
+    const curBldg = ov && ov.bldgId ? ov.bldgId : isIdentity && autoMatch && !ov ? autoMatch.bldgId : '';
+    const curMeter = ov && ov.meterId ? ov.meterId : isIdentity && autoMatch && !ov ? autoMatch.meterId : '';
+    const selStyle =
+      'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
+      'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
+    const projOpts =
+      '<option value="">Select project…</option>' +
+      (projects || [])
+        .map(
+          (p) =>
+            '<option value="' +
+            p.id +
+            '"' +
+            (String(p.id) === String(curProj) ? ' selected' : '') +
+            '>' +
+            _escHtml(p.name) +
+            '</option>',
+        )
+        .join('');
+    const bldgOpts =
+      '<option value="">Select building…</option>' +
+      (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
+        .map(
+          (b2) =>
+            '<option value="' +
+            b2.id +
+            '"' +
+            (String(b2.id) === String(curBldg) ? ' selected' : '') +
+            '>' +
+            _escHtml(b2.name || b2.id) +
+            '</option>',
+        )
+        .join('');
+    const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
+    const meterOpts =
+      '<option value="">Select meter…</option>' +
+      ((bldgObj && bldgObj.meters) || [])
+        .map((m) => {
+          const lbl =
+            (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : m.meter ? ' (' + m.meter + ')' : '');
+          return (
+            '<option value="' +
+            m.id +
+            '"' +
+            (String(m.id) === String(curMeter) ? ' selected' : '') +
+            '>' +
+            _escHtml(lbl) +
+            '</option>'
+          );
+        })
+        .join('');
+    const hint =
+      autoMatch && autoMatch.matchType === 'address'
+        ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
+          _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
+          '</div>'
+        : !autoMatch
+          ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
+          : '';
+    const changeLink = isIdentity
+      ? '<a href="javascript:void(0)" onclick="' +
+        setExpandFn +
+        '(' +
+        handlerArg +
+        ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
+      : '';
+    return (
+      hint +
+      '<select style="' +
+      selStyle +
+      '" onchange="' +
+      setProjFn +
+      '(' +
+      handlerArg +
+      ',this.value)">' +
+      projOpts +
+      '</select>' +
+      '<select style="' +
+      selStyle +
+      '" onchange="' +
+      setBldgFn +
+      '(' +
+      handlerArg +
+      ',this.value)">' +
+      bldgOpts +
+      '</select>' +
+      '<select style="' +
+      selStyle +
+      '" onchange="' +
+      setMeterFn +
+      '(' +
+      handlerArg +
+      ',this.value)">' +
+      meterOpts +
+      '</select>' +
+      changeLink
+    );
+  };
+
   let billRowsHtml = '';
 
   if (useGrouped) {
@@ -6445,7 +6609,8 @@ function renderQueueResults() {
     billRowsHtml += '<table style="border-collapse:collapse;font-size:11px;font-family:var(--font);min-width:100%">';
     billRowsHtml +=
       '<thead><tr style="background:var(--s1)">' +
-      '<th style="padding:4px 8px;text-align:left;border:1px solid var(--border);white-space:nowrap;color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Account / Meter</th>';
+      '<th style="padding:4px 8px;text-align:left;border:1px solid var(--border);white-space:nowrap;color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Account / Meter</th>' +
+      '<th style="padding:4px 8px;text-align:left;border:1px solid var(--border);white-space:nowrap;color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Destination</th>';
     sortedPeriodKeys.forEach((pk) => {
       billRowsHtml +=
         '<th style="padding:4px 8px;text-align:center;border:1px solid var(--border);white-space:nowrap;color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">' +
@@ -6476,11 +6641,32 @@ function renderQueueResults() {
           '</span>'
         : '';
 
+      // Destination control is shown ONCE per group (not once per bill row) — applies
+      // the chosen meter to every row sharing this account/meter key. Pick the match/bill
+      // representative from the first row that still has an unsaved bill (falls back to
+      // the group's first row if all are saved) so already-saved bills don't hide the
+      // control for the rest of the group.
+      const grpRepRow = grp.rows.find((r) => r.bill && !r._saved) || grp.rows.find((r) => r.bill);
+      const grpDestHtml = grpRepRow
+        ? _buildDestCell(
+            grpRepRow.bill,
+            grpRepRow._autoMatch,
+            "'" + grp.key.replace(/'/g, "\\'") + "'",
+            'setQueueGroupDestProj',
+            'setQueueGroupDestBldg',
+            'setQueueGroupDestMeter',
+            'setQueueGroupDestExpand',
+          )
+        : '<span style="color:var(--text3);font-size:10px">—</span>';
+
       billRowsHtml +=
         '<tr style="border-bottom:1px solid var(--border)">' +
         '<td style="padding:4px 8px;border:1px solid var(--border);white-space:nowrap;color:var(--text);font-weight:600">' +
         _escHtml(grp.displayLabel) +
         commodityBadge +
+        '</td>' +
+        '<td style="padding:4px 8px;border:1px solid var(--border);min-width:120px;vertical-align:top">' +
+        grpDestHtml +
         '</td>';
 
       sortedPeriodKeys.forEach((pk) => {
@@ -6582,7 +6768,7 @@ function renderQueueResults() {
       '<th style="padding:3px 6px;text-align:left">File</th>' +
       '<th style="padding:3px 6px;text-align:left">Period</th>' +
       '<th style="padding:3px 6px;text-align:left">Status</th>' +
-      '<th style="padding:3px 6px;text-align:left">Project</th>' +
+      '<th style="padding:3px 6px;text-align:left">Destination</th>' +
       '<th style="padding:3px 6px;text-align:left"></th>' +
       '</tr></thead><tbody>';
 
@@ -6651,14 +6837,19 @@ function renderQueueResults() {
         }
       }
 
-      // Project dropdown — shows per-bill override; falls back to blank (uses batch proj)
-      const projDropdown =
+      // Destination cell (fix b-46a984a0) — identity match shows confirmed text +
+      // "Change"; address-only/no-match always shows the Project→Building→Meter picker.
+      const destHtml =
         row.bill && !row._saved
-          ? '<select style="font-size:10px;padding:1px 3px;max-width:130px;background:var(--s2);border:1px solid var(--border2);border-radius:3px;color:var(--text)" onchange="setQueueRowProject(' +
-            rowIdx +
-            ',this.value)">' +
-            _queueProjOpts(row.bill._projOverride) +
-            '</select>'
+          ? _buildDestCell(
+              row.bill,
+              row._autoMatch,
+              String(rowIdx),
+              'setQueueRowDestProj',
+              'setQueueRowDestBldg',
+              'setQueueRowDestMeter',
+              'setQueueRowDestExpand',
+            )
           : '<span style="color:var(--text3);font-size:10px">—</span>';
 
       // Actions: Resolve button for dups (opens dup comparison modal)
@@ -6697,8 +6888,8 @@ function renderQueueResults() {
         '<td style="padding:3px 6px">' +
         statusHtml +
         '</td>' +
-        '<td style="padding:3px 6px">' +
-        projDropdown +
+        '<td style="padding:3px 6px;min-width:120px;vertical-align:top">' +
+        destHtml +
         '</td>' +
         '<td style="padding:3px 6px">' +
         actionsHtml +
@@ -6849,6 +7040,93 @@ function setQueueRowProject(rowIdx, val) {
   rows[rowIdx].bill._projOverride = projId;
 }
 
+// ── Destination (Project→Building→Meter) setters — fix b-46a984a0 ──
+// Sets bill._meterOverride, checked BEFORE findMeterMatch in saveQueuedBills so a
+// manual pick always wins over the auto-match (per-bill + per-group variants below;
+// grouped view applies the same choice to every bill sharing that account/meter key).
+function setQueueRowDestExpand(rowIdx, expand) {
+  const rows = window._pdfQueueRows;
+  if (!rows || !rows[rowIdx] || !rows[rowIdx].bill) return;
+  rows[rowIdx].bill._destExpanded = !!expand;
+  if (!expand) delete rows[rowIdx].bill._meterOverride;
+  renderQueueResults();
+}
+function setQueueRowDestProj(rowIdx, val) {
+  const rows = window._pdfQueueRows;
+  if (!rows || !rows[rowIdx] || !rows[rowIdx].bill) return;
+  rows[rowIdx].bill._meterOverride = { projId: parseInt(val) || null, bldgId: null, meterId: null };
+  renderQueueResults();
+}
+function setQueueRowDestBldg(rowIdx, val) {
+  const rows = window._pdfQueueRows;
+  if (!rows || !rows[rowIdx] || !rows[rowIdx].bill) return;
+  const ov = rows[rowIdx].bill._meterOverride || { projId: null, bldgId: null, meterId: null };
+  ov.bldgId = val || null;
+  ov.meterId = null;
+  rows[rowIdx].bill._meterOverride = ov;
+  renderQueueResults();
+}
+function setQueueRowDestMeter(rowIdx, val) {
+  const rows = window._pdfQueueRows;
+  if (!rows || !rows[rowIdx] || !rows[rowIdx].bill) return;
+  const ov = rows[rowIdx].bill._meterOverride || { projId: null, bldgId: null, meterId: null };
+  ov.meterId = val || null;
+  rows[rowIdx].bill._meterOverride = ov;
+  renderQueueResults();
+}
+// Group-level variants (grouped/period-matrix view) — same override, applied to every
+// row's bill sharing the group's account/meter key so the picker only appears once.
+function setQueueGroupDestExpand(groupKey, expand) {
+  const rows = window._pdfQueueRows;
+  if (!rows) return;
+  const grp = _groupQueueRows(rows).get(groupKey);
+  if (!grp) return;
+  grp.rows.forEach((row) => {
+    if (!row.bill) return;
+    row.bill._destExpanded = !!expand;
+    if (!expand) delete row.bill._meterOverride;
+  });
+  renderQueueResults();
+}
+function setQueueGroupDestProj(groupKey, val) {
+  const rows = window._pdfQueueRows;
+  if (!rows) return;
+  const grp = _groupQueueRows(rows).get(groupKey);
+  if (!grp) return;
+  const projId = parseInt(val) || null;
+  grp.rows.forEach((row) => {
+    if (row.bill) row.bill._meterOverride = { projId, bldgId: null, meterId: null };
+  });
+  renderQueueResults();
+}
+function setQueueGroupDestBldg(groupKey, val) {
+  const rows = window._pdfQueueRows;
+  if (!rows) return;
+  const grp = _groupQueueRows(rows).get(groupKey);
+  if (!grp) return;
+  grp.rows.forEach((row) => {
+    if (!row.bill) return;
+    const ov = row.bill._meterOverride || { projId: null, bldgId: null, meterId: null };
+    ov.bldgId = val || null;
+    ov.meterId = null;
+    row.bill._meterOverride = ov;
+  });
+  renderQueueResults();
+}
+function setQueueGroupDestMeter(groupKey, val) {
+  const rows = window._pdfQueueRows;
+  if (!rows) return;
+  const grp = _groupQueueRows(rows).get(groupKey);
+  if (!grp) return;
+  grp.rows.forEach((row) => {
+    if (!row.bill) return;
+    const ov = row.bill._meterOverride || { projId: null, bldgId: null, meterId: null };
+    ov.meterId = val || null;
+    row.bill._meterOverride = ov;
+  });
+  renderQueueResults();
+}
+
 // (#36) Open the existing dup comparison modal for a specific queue bill row.
 // Sets up window._pdfMultiBills so _renderDupModal can find the bill + dup info.
 function openQueueDupModal(rowIdx, flatIdx) {
@@ -6970,13 +7248,40 @@ async function saveQueuedBills() {
     failed = 0;
   const summaryEntries = [];
 
+  // Fix (item 68e569a4 / plan §2.5): the meter-match fast path below writes hasPDF/
+  // pdfKey from bill._pdfSharedKey (see _saveBillToMatchedMeter), but nothing in the
+  // batch queue ever stored the source PDF or tagged bills with that key before this
+  // point — every batch bill saved via the fast path landed with hasPDF:false,
+  // pdfKey:null, making the bill image unretrievable (Matt's "can't see the bill
+  // image" complaint). Store each result's PDF once, shared across all its bills,
+  // mirroring _dupBulkAction / savePDFAllBills which already do this for the
+  // single-file flow. Runs BEFORE the save loop so pdfB64 swaps below don't collide.
+  const _storedResultIdx = new Set();
+  for (const row of toSave) {
+    if (_storedResultIdx.has(row.resultIdx)) continue;
+    _storedResultIdx.add(row.resultIdx);
+    const result = q.results[row.resultIdx];
+    if (result && result.pdfB64 && result.bills && result.bills.length) {
+      const prevB64ForStore = pdfB64;
+      pdfB64 = result.pdfB64;
+      try {
+        await _ensureBatchPdfStored(result.bills);
+      } catch (storeErr) {
+        console.warn('[Queue Save] _ensureBatchPdfStored failed for', result.fileName, storeErr);
+      } finally {
+        pdfB64 = prevB64ForStore;
+      }
+    }
+  }
+
   for (const row of toSave) {
     const period =
       (row.bill.BillingPeriodStart || row.bill.DeliveryDate || '?') +
       ' → ' +
       (row.bill.BillingPeriodEnd || row.bill.DeliveryDate || '?');
     try {
-      const projId = row.bill._projOverride || q.batchProjId;
+      const projId =
+        row.bill._projOverride || (row.bill._meterOverride && row.bill._meterOverride.projId) || q.batchProjId;
 
       let flatIdx = 0;
       for (let ri = 0; ri < q.results.length; ri++) {
@@ -7020,9 +7325,55 @@ async function saveQueuedBills() {
         continue;
       }
 
-      // Try global meter match first (finds correct building by account number)
-      const meterMatch = findMeterMatch(row.bill);
-      if (meterMatch) {
+      // Manual Destination override (fix b-46a984a0) takes priority over the auto-match —
+      // a user's explicit Project→Building→Meter pick in the batch review UI always wins.
+      // Only counts when meterId is set (a fully-specified pick); a partial pick (e.g.
+      // project only, no building/meter chosen) falls through to the auto-match/fallback
+      // below untouched.
+      if (row.bill._meterOverride && row.bill._meterOverride.meterId) {
+        const ov = row.bill._meterOverride;
+        const ovProj = projects.find((p) => p.id === ov.projId);
+        const ovBldg = ovProj && getUDBldg(ov.projId, ov.bldgId);
+        const ovMeter = ovBldg && (ovBldg.meters || []).find((m) => m.id === ov.meterId);
+        if (ovProj && ovBldg && ovMeter) {
+          try {
+            const dest = _saveBillToMatchedMeter(row.bill, {
+              proj: ovProj,
+              bldg: ovBldg,
+              meter: ovMeter,
+              projId: ov.projId,
+              bldgId: ov.bldgId,
+              meterId: ov.meterId,
+            });
+            if (dest) {
+              saved++;
+              row._saved = true;
+              summaryEntries.push({ period, status: 'saved', destination: dest, method: 'manual' });
+              continue;
+            }
+          } catch (ovErr) {
+            console.warn('[Queue Save] manual destination override save failed, trying auto-match:', ovErr);
+          }
+        }
+      }
+
+      // Try global meter match first (finds correct building by account number).
+      // Reuse the match precomputed in renderQueueResults (row._autoMatch) so the
+      // Destination column and the actual save always agree — recompute only if for
+      // some reason the row was never rendered (defensive; should not normally happen).
+      //
+      // GATE (fix b-46a984a0): only an 'identity' match (account/meter-number hit) may
+      // auto-save here. An 'address'-only match is NOT silently applied even though
+      // findMeterMatch() found one — the batch UI showed it as an "unconfirmed"
+      // suggestion the user had to actively accept via the Destination picker (handled
+      // above as _meterOverride), and if they didn't, this is exactly the live-incident
+      // bug (a bill mis-routed to the wrong building via address fallback — 219e6828,
+      // and Ballfields landing under High School). Falling through to the project-scoped
+      // _saveSinglePDFBill fallback below is safe: that path only matches by account/
+      // meter number within the batch project, never by address, so an unconfirmed
+      // address guess can never silently misattach a bill to the wrong building.
+      const meterMatch = row._autoMatch !== undefined ? row._autoMatch : findMeterMatch(row.bill);
+      if (meterMatch && meterMatch.matchType === 'identity') {
         try {
           const dest = _saveBillToMatchedMeter(row.bill, meterMatch);
           if (dest) {
