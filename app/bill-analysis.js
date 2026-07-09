@@ -447,7 +447,7 @@ function validateBillData(extracted, utilityName) {
 // Statistical outlier detection — compare against historical bills for same account/meter
 // historicalCache (optional): pre-built { [normalizedAccountNumber]: bill[] } map from _postExtractionVerify.
 // When provided, skips the redundant project walk; falls back to walking projects if absent.
-function detectStatisticalOutliers(extracted, historicalCache) {
+function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   const warnings = [];
   if (!extracted || !extracted.AccountNumber) return warnings;
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
@@ -482,8 +482,8 @@ function detectStatisticalOutliers(extracted, historicalCache) {
     }
   }
 
-  const pdfBills = sget('en_pdf_bills', []) || [];
-  for (const b of pdfBills) {
+  const candidates = (pdfBillsIndex && pdfBillsIndex[acct]) || (!pdfBillsIndex ? sget('en_pdf_bills', []) || [] : []);
+  for (const b of candidates) {
     const ba = (b.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
     const bc = (b.Commodity || b.commodity || '').toLowerCase();
     if (acct && ba && acct === ba && (!extComm || !bc || extComm === bc)) historicalBills.push(b);
@@ -3756,13 +3756,36 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
   }
 }
 
+// Build account-number -> en_pdf_bills[] index ONCE per batch.
+// Mirrors _buildHistoricalCache (line ~1505) and _checkDuplicates's assignedByAcct
+// (line ~7545) — same idiom, applied to the one remaining per-bill full-array scan.
+function _buildPdfBillsIndex() {
+  const idx = Object.create(null);
+  const pdfBills = sget('en_pdf_bills', []) || [];
+  for (const b of pdfBills) {
+    const k = (b.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
+    if (!k) continue;
+    if (!idx[k]) idx[k] = [];
+    idx[k].push(b);
+  }
+  return idx;
+}
+
 // Run full validation + stats on extracted bill(s), return combined warnings per bill index
-function analyzeBillExtraction(bills, utilityName, historicalCache) {
+async function analyzeBillExtraction(bills, utilityName, historicalCache, statusCb) {
+  const pdfBillsIndex = _buildPdfBillsIndex();
   const results = [];
+  const YIELD_EVERY = 10; // same cadence as _postExtractionVerify's own pattern
   for (let i = 0; i < bills.length; i++) {
+    if (statusCb && (i === 0 || i % YIELD_EVERY === 0)) {
+      statusCb('Verifying bill ' + (i + 1) + ' of ' + bills.length + '...');
+    }
+    if (i > 0 && i % YIELD_EVERY === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     const b = bills[i];
     const vWarnings = validateBillData(b, utilityName || b.UtilityCompany || '_default');
-    const sWarnings = detectStatisticalOutliers(b, historicalCache);
+    const sWarnings = detectStatisticalOutliers(b, historicalCache, pdfBillsIndex);
     results.push({ billIndex: i, warnings: [...vWarnings, ...sWarnings] });
   }
   return results;
@@ -5588,6 +5611,7 @@ function clearPDFOCR() {
   window._pdfOcrPasses = null;
   window._pdfPassScores = null;
   window._pdfOcrEmptyPages = null;
+  window._pdfOcrBudgetExceeded = null;
   _clearExtractionState();
   document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
   document.getElementById('pdfInput').value = '';
@@ -5954,6 +5978,8 @@ async function _extractSingleFileForQueue(file, fileIdx) {
             return;
           }
         }
+        const _budgetHit = window._pdfOcrBudgetExceeded;
+        window._pdfOcrBudgetExceeded = null; // consume once
 
         // Check specific local utilities first — their bills often appear in
         // multi-utility PDFs alongside Evergy, and Evergy's broader detection
@@ -6030,8 +6056,26 @@ async function _extractSingleFileForQueue(file, fileIdx) {
           console.warn('[queue] _postExtractionVerify failed, continuing without verification:', pev_err);
         }
 
+        // ── OCR budget-exceeded: loud failure, not a silent spinner (subtask 4) ──
+        // Only flag bills that STILL fail the key-field check after everything else
+        // has run — a bill that already recovered before the budget tripped should
+        // not be punished with a label it doesn't need.
+        if (_budgetHit) {
+          finalBills.forEach((b) => {
+            if (!_hasKeyField(b) && !b._manualReview) {
+              b._manualReview = true;
+              b._manualReviewLabel =
+                'Could not fully extract — OCR budget exceeded (' +
+                _budgetHit.pagesRead +
+                ' of ' +
+                _budgetHit.pagesTotal +
+                ' pages read); manual entry required';
+            }
+          });
+        }
+
         // Run analysis for warnings (stored on each bill as _warnings)
-        const analysisResults = analyzeBillExtraction(finalBills, rule.name);
+        const analysisResults = await analyzeBillExtraction(finalBills, rule.name, undefined, statusCb);
         finalBills.forEach((b, bi) => {
           b._warnings = analysisResults[bi]?.warnings || [];
           b._sourceFile = file.name;
@@ -8609,17 +8653,36 @@ function _countOcrSignals(txt) {
   return (txt.match(/[\d$]/g) || []).length;
 }
 // ── end OCR helpers ───────────────────────────────────────────────────────────
+// Generous timeout wrapper for un-timed pdfjs awaits (getDocument/getPage/
+// getTextContent/render are normally sub-second to low-single-digit seconds
+// even at 4x scale) — a timeout here is treated as "this page/pass failed",
+// not a fatal error, by the surrounding try/catch at each call site.
+// Module-level (not nested in extractPDFText) so processPDF's separate
+// OCR-retry block (a sibling function) can use it too.
+const PDFJS_AWAIT_TIMEOUT_MS = 30000; // 30s
+function _withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error((label || 'operation') + ' timed out after ' + ms / 1000 + 's')), ms),
+    ),
+  ]);
+}
 async function extractPDFText(ab, statusCb) {
   let pdf = null;
   try {
     if (typeof pdfjsLib === 'undefined') return null;
     pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-    pdf = await pdfjsLib.getDocument({
-      data: ab,
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      useSystemFonts: true,
-    }).promise;
+    pdf = await _withTimeout(
+      pdfjsLib.getDocument({
+        data: ab,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
+      }).promise,
+      PDFJS_AWAIT_TIMEOUT_MS,
+      'getDocument',
+    );
     const maxPages = Math.min(pdf.numPages, 200);
 
     // ── Step 1: extract native text per page, track which pages have no text ──
@@ -8627,8 +8690,17 @@ async function extractPDFText(ab, statusCb) {
     const ocrNeeded = [];
     for (let i = 1; i <= maxPages; i++) {
       if (statusCb) statusCb('Reading page ' + i + ' of ' + maxPages + '...');
-      const pg = await pdf.getPage(i);
-      const c = await pg.getTextContent();
+      let pg, c;
+      try {
+        pg = await _withTimeout(pdf.getPage(i), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + i + ')');
+        c = await _withTimeout(pg.getTextContent(), PDFJS_AWAIT_TIMEOUT_MS, 'getTextContent(' + i + ')');
+      } catch (stepErr) {
+        // A hung/failed native-text read is treated the same as "this page needs OCR",
+        // not a fatal error — one bad page shouldn't abort the whole extraction.
+        pageTexts.push('');
+        ocrNeeded.push(i);
+        continue;
+      }
       const items = c.items.filter((s) => s.str && s.str.trim());
       if (!items.length) {
         pageTexts.push('');
@@ -8833,6 +8905,9 @@ async function extractPDFText(ab, statusCb) {
         ];
         // Timeout for individual recognize() calls (90 seconds) — prevents Tesseract hangs
         const OCR_TIMEOUT_MS = 90000;
+        // Wall-clock cap across ALL pages/passes for one file — prevents an
+        // unbounded worst case (many pages x many passes) from hanging forever.
+        const OCR_TOTAL_BUDGET_MS = 4 * 60 * 1000; // 4 min
         // Helper to create a fresh worker with correct params.
         // Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
         const _createOCRWorker = async (loggerCb) => {
@@ -8852,15 +8927,33 @@ async function extractPDFText(ab, statusCb) {
           const timer = setTimeout(() => {
             timedOut = true;
           }, OCR_TIMEOUT_MS);
+          let abortPoll = null;
+          const abortPromise = new Promise((_, reject) => {
+            abortPoll = setInterval(() => {
+              if (window._pdfAbort) reject(Object.assign(new Error('Aborted by user'), { _aborted: true }));
+              // Overshoot fix (70096fe4 review): OCR_TOTAL_BUDGET_MS checkpoints only run
+              // BETWEEN awaits, so they can't stop a recognize() call already in flight —
+              // a budget trip mid-call could previously overshoot the plan's "budget+30s"
+              // gate-(a) tolerance by up to the full 90s OCR_TIMEOUT_MS. Reuse this same
+              // 250ms poll (already proven safe for abort) so a budget trip interrupts an
+              // in-flight recognize() just as promptly as a user Cancel does.
+              else if (performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS)
+                reject(Object.assign(new Error('OCR budget exceeded mid-recognize'), { _budgetExceeded: true }));
+            }, 250); // poll every 250ms — cheap, imperceptible worst-case delay to Cancel/budget
+          });
           try {
             const result = await Promise.race([
               w.recognize(canvas, params),
               new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout after 90s')), OCR_TIMEOUT_MS)),
+              abortPromise,
             ]);
             clearTimeout(timer);
+            clearInterval(abortPoll);
             return { result, newWorker: null };
           } catch (err) {
             clearTimeout(timer);
+            clearInterval(abortPoll);
+            if (err._aborted) throw err; // let caller distinguish abort from a real timeout/failure
             if (timedOut) {
               // Kill the hung worker — its queued recognize() call will never finish
               try {
@@ -8878,8 +8971,14 @@ async function extractPDFText(ab, statusCb) {
 
         // Store all OCR pass texts for consensus re-extraction on mismatched values
         const allPassTexts = {};
+        const _ocrStartTime = performance.now();
+        let _ocrBudgetExceeded = false;
         for (let idx = 0; idx < ocrNeeded.length; idx++) {
           if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
+          if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
+            _ocrBudgetExceeded = true;
+          }
+          if (_ocrBudgetExceeded) break;
           const pgNum = ocrNeeded[idx];
           let bestText = '',
             bestScore = 0;
@@ -8887,6 +8986,10 @@ async function extractPDFText(ab, statusCb) {
 
           for (let pass = 0; pass < OCR_PASSES.length; pass++) {
             if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR pass loop
+            if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
+              _ocrBudgetExceeded = true;
+            }
+            if (_ocrBudgetExceeded) break;
             const cfg = OCR_PASSES[pass];
             if (statusCb)
               statusCb(
@@ -8906,14 +9009,19 @@ async function extractPDFText(ab, statusCb) {
                   cfg.label +
                   ')...',
               );
-            const pg = await pdf.getPage(pgNum);
-            const vp = pg.getViewport({ scale: cfg.scale });
-            let canvas = document.createElement('canvas');
-            canvas.width = vp.width;
-            canvas.height = vp.height;
-            let ctx = canvas.getContext('2d');
-            await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+            let pg, vp, canvas, ctx;
             try {
+              pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
+              vp = pg.getViewport({ scale: cfg.scale });
+              canvas = document.createElement('canvas');
+              canvas.width = vp.width;
+              canvas.height = vp.height;
+              ctx = canvas.getContext('2d');
+              await _withTimeout(
+                pg.render({ canvasContext: ctx, viewport: vp }).promise,
+                PDFJS_AWAIT_TIMEOUT_MS,
+                'render(' + pgNum + ')',
+              );
               const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
               const t0 = performance.now();
               const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
@@ -8933,6 +9041,18 @@ async function extractPDFText(ab, statusCb) {
                 bestScore = score;
               }
             } catch (pageErr) {
+              if (pageErr._aborted || pageErr._budgetExceeded) {
+                // Overshoot fix: a budget trip mid-recognize is handled exactly like an
+                // abort — stop this page's passes immediately rather than falling through
+                // to "log as failed pass, try the next one" (which would keep burning time).
+                if (pageErr._budgetExceeded) _ocrBudgetExceeded = true;
+                if (canvas) {
+                  canvas.width = 0;
+                  canvas.height = 0;
+                }
+                if (pg && pg.cleanup) pg.cleanup();
+                break;
+              }
               // If timeout killed the worker, swap in the fresh replacement
               if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
               passScoreLog.push({
@@ -8946,11 +9066,13 @@ async function extractPDFText(ab, statusCb) {
               if (statusCb) statusCb('OCR failed on page ' + pgNum + ' pass ' + (pass + 1) + ': ' + pageErr.message);
             }
             // F2: release canvas backing store and PDF page operator list after each pass
-            canvas.width = 0;
-            canvas.height = 0;
-            canvas = null;
+            if (canvas) {
+              canvas.width = 0;
+              canvas.height = 0;
+              canvas = null;
+            }
             ctx = null;
-            if (pg.cleanup) pg.cleanup();
+            if (pg && pg.cleanup) pg.cleanup();
             // Early exit after pass 0 (2.5x) if this is a cover page — no meter data to gain from more passes
             if (pass === 0 && isCoverPage(bestText)) break;
             // Early exit after pass 1 (3.5x) if 2.5x + 3.5x already hit a strong score
@@ -8990,6 +9112,10 @@ async function extractPDFText(ab, statusCb) {
           if (needsRetry) {
             for (let pass = 0; pass < OCR_RETRY_PASSES.length; pass++) {
               if (window._pdfAbort) break; // Bug #134: honour cancel inside retry pass loop
+              if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
+                _ocrBudgetExceeded = true;
+              }
+              if (_ocrBudgetExceeded) break;
               const cfg = OCR_RETRY_PASSES[pass];
               if (statusCb)
                 statusCb(
@@ -9005,14 +9131,19 @@ async function extractPDFText(ab, statusCb) {
                     cfg.label +
                     ')...',
                 );
-              const pg = await pdf.getPage(pgNum);
-              const vp = pg.getViewport({ scale: cfg.scale });
-              let canvas = document.createElement('canvas');
-              canvas.width = vp.width;
-              canvas.height = vp.height;
-              let ctx = canvas.getContext('2d');
-              await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+              let pg, vp, canvas, ctx;
               try {
+                pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
+                vp = pg.getViewport({ scale: cfg.scale });
+                canvas = document.createElement('canvas');
+                canvas.width = vp.width;
+                canvas.height = vp.height;
+                ctx = canvas.getContext('2d');
+                await _withTimeout(
+                  pg.render({ canvasContext: ctx, viewport: vp }).promise,
+                  PDFJS_AWAIT_TIMEOUT_MS,
+                  'render(' + pgNum + ')',
+                );
                 const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
                 const t0 = performance.now();
                 const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
@@ -9032,6 +9163,16 @@ async function extractPDFText(ab, statusCb) {
                   bestScore = score;
                 }
               } catch (pageErr) {
+                if (pageErr._aborted || pageErr._budgetExceeded) {
+                  // Overshoot fix: same immediate-stop treatment as the primary pass loop.
+                  if (pageErr._budgetExceeded) _ocrBudgetExceeded = true;
+                  if (canvas) {
+                    canvas.width = 0;
+                    canvas.height = 0;
+                  }
+                  if (pg && pg.cleanup) pg.cleanup();
+                  break;
+                }
                 if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
                 passScoreLog.push({
                   page: pgNum,
@@ -9045,11 +9186,13 @@ async function extractPDFText(ab, statusCb) {
                   statusCb('OCR retry failed on page ' + pgNum + ' (' + cfg.label + '): ' + pageErr.message);
               }
               // F2: release canvas backing store and PDF page operator list after each retry pass
-              canvas.width = 0;
-              canvas.height = 0;
-              canvas = null;
+              if (canvas) {
+                canvas.width = 0;
+                canvas.height = 0;
+                canvas = null;
+              }
               ctx = null;
-              if (pg.cleanup) pg.cleanup();
+              if (pg && pg.cleanup) pg.cleanup();
             }
           }
           // ── CHANGE 4: 180° upside-down heuristic ──────────────────────────────
@@ -9059,17 +9202,40 @@ async function extractPDFText(ab, statusCb) {
           // significantly more digits/dollar-signs, we rotate the full canvas
           // 180° and run a full OCR pass to replace the best result.
           const ORIENT_SCORE_THRESHOLD = 3;
+          // Bug #134 / budget: neither was checked here before — a Cancel click or an
+          // exceeded budget wouldn't stop this refinement pass until the outer page loop's
+          // next iteration. Check immediately before spending more OCR time on this page.
+          // Commit bestText-so-far before any early break here — otherwise a budget/abort
+          // trip at this exact checkpoint would silently discard this page's already-
+          // completed primary+retry OCR passes (the loop's normal end-of-iteration commit,
+          // a few lines down, would never run). Partial-results policy: keep pages already
+          // OCR'd, never throw away work that already succeeded.
+          if (window._pdfAbort) {
+            pageTexts[pgNum - 1] = bestText;
+            break;
+          }
+          if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
+            _ocrBudgetExceeded = true;
+          }
+          if (_ocrBudgetExceeded) {
+            pageTexts[pgNum - 1] = bestText;
+            break;
+          }
           if (bestScore < ORIENT_SCORE_THRESHOLD) {
             let pgO, canvasO, canvas180;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
-              pgO = await pdf.getPage(pgNum);
+              pgO = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
               const vpO = pgO.getViewport({ scale: 2.5 });
               canvasO = document.createElement('canvas');
               canvasO.width = vpO.width;
               canvasO.height = vpO.height;
               const ctxO = canvasO.getContext('2d');
-              await pgO.render({ canvasContext: ctxO, viewport: vpO }).promise;
+              await _withTimeout(
+                pgO.render({ canvasContext: ctxO, viewport: vpO }).promise,
+                PDFJS_AWAIT_TIMEOUT_MS,
+                'render(' + pgNum + ')',
+              );
               // Crop top 20% strip for a fast orientation probe
               const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
               const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
@@ -9124,17 +9290,34 @@ async function extractPDFText(ab, statusCb) {
           // orientation check.  Re-renders at 2.5x, binarizes via Otsu threshold,
           // and OCRs the B/W image.  Kept only if it scores higher than current best.
           const BINARIZE_SCORE_THRESHOLD = 5;
+          // Bug #134 / budget: same missing-checkpoint fix as the orientation block above,
+          // including committing bestText-so-far before breaking (same reasoning).
+          if (window._pdfAbort) {
+            pageTexts[pgNum - 1] = bestText;
+            break;
+          }
+          if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
+            _ocrBudgetExceeded = true;
+          }
+          if (_ocrBudgetExceeded) {
+            pageTexts[pgNum - 1] = bestText;
+            break;
+          }
           if (bestScore < BINARIZE_SCORE_THRESHOLD) {
             let pgB, canvasB, binCanvas;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
-              pgB = await pdf.getPage(pgNum);
+              pgB = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
               const vpB = pgB.getViewport({ scale: 2.5 });
               canvasB = document.createElement('canvas');
               canvasB.width = vpB.width;
               canvasB.height = vpB.height;
               const ctxB = canvasB.getContext('2d');
-              await pgB.render({ canvasContext: ctxB, viewport: vpB }).promise;
+              await _withTimeout(
+                pgB.render({ canvasContext: ctxB, viewport: vpB }).promise,
+                PDFJS_AWAIT_TIMEOUT_MS,
+                'render(' + pgNum + ')',
+              );
               binCanvas = binarizeCanvas(canvasB);
               const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
               const binText = binResult.data.text;
@@ -9178,6 +9361,11 @@ async function extractPDFText(ab, statusCb) {
             window._pdfOcrEmptyPages.push(pgNum);
           }
         }
+        // Loud-failure signal (subtask 4): consumed once by the caller (processPDF /
+        // _extractSingleFileForQueue), same convention as window._pdfOcrEmptyPages.
+        window._pdfOcrBudgetExceeded = _ocrBudgetExceeded
+          ? { pagesRead: new Set(passScoreLog.map((p) => p.page)).size, pagesTotal: ocrNeeded.length }
+          : null;
         // Save all pass texts for consensus re-extraction
         window._pdfOcrPasses = allPassTexts;
         // Save pass score log for debug output
@@ -9351,6 +9539,8 @@ async function processPDF(file) {
         globalTaskDone();
         return;
       } // Bug #134: honour cancel after extraction
+      const _budgetHit = window._pdfOcrBudgetExceeded;
+      window._pdfOcrBudgetExceeded = null; // consume once
       // ── Empty-page warning: surface any pages that returned no OCR text ──
       // An empty page means the billing period on that page was silently dropped.
       // We flag it here so the user knows to re-run extraction or check the PDF.
@@ -9492,13 +9682,32 @@ async function processPDF(file) {
                       retryTexts.push(pageTexts[i - 1] || '');
                       continue;
                     }
-                    const pg = await pdf2.getPage(i);
-                    const vp = pg.getViewport({ scale });
-                    let canvas = document.createElement('canvas');
-                    canvas.width = vp.width;
-                    canvas.height = vp.height;
-                    let ctx = canvas.getContext('2d');
-                    await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+                    let pg, vp, canvas, ctx;
+                    try {
+                      pg = await _withTimeout(pdf2.getPage(i), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + i + ')');
+                      vp = pg.getViewport({ scale });
+                      canvas = document.createElement('canvas');
+                      canvas.width = vp.width;
+                      canvas.height = vp.height;
+                      ctx = canvas.getContext('2d');
+                      await _withTimeout(
+                        pg.render({ canvasContext: ctx, viewport: vp }).promise,
+                        PDFJS_AWAIT_TIMEOUT_MS,
+                        'render(' + i + ')',
+                      );
+                    } catch (renderErr) {
+                      // Treat a getPage/render timeout the same as "this page needs OCR
+                      // retry but failed" — don't let it abort the whole retry batch.
+                      retryTexts.push('');
+                      if (canvas) {
+                        canvas.width = 0;
+                        canvas.height = 0;
+                        canvas = null;
+                      }
+                      ctx = null;
+                      if (pg && pg.cleanup) pg.cleanup();
+                      continue;
+                    }
                     try {
                       const { result: retryResult } = await recognizeWithTimeout(retryWorker, canvas, {
                         rotateAuto: true,
@@ -9703,7 +9912,25 @@ async function processPDF(file) {
             finalBills = finalBills.concat(_syntheticReviewBills);
           }
 
-          const analysisResults = analyzeBillExtraction(finalBills, rule.name, _pevCache);
+          // ── OCR budget-exceeded: loud failure, not a silent spinner (subtask 4) ──
+          // Only flag bills that STILL fail the key-field check after everything else
+          // has run — a bill that already recovered before the budget tripped should
+          // not be punished with a label it doesn't need.
+          if (_budgetHit) {
+            finalBills.forEach((b) => {
+              if (!_singleHasKeyField(b) && !b._manualReview) {
+                b._manualReview = true;
+                b._manualReviewLabel =
+                  'Could not fully extract — OCR budget exceeded (' +
+                  _budgetHit.pagesRead +
+                  ' of ' +
+                  _budgetHit.pagesTotal +
+                  ' pages read); manual entry required';
+              }
+            });
+          }
+
+          const analysisResults = await analyzeBillExtraction(finalBills, rule.name, _pevCache, statusMsg);
           window._pdfBillWarnings = analysisResults;
           window._pdfUnmatchedPages = _extractUnmatchedPages;
           if (_extractUnmatchedPages.length > 0) {
