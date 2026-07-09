@@ -10373,11 +10373,22 @@ function renderMultiBillUI(bills, box) {
   if (_multiAcct) {
     const _acctKeys = [...new Set(bills.map((b) => b.AccountNumber || '_unknown'))];
     const _bldgName = (acct) => {
-      const b = bills.find((x) => x.AccountNumber === acct);
-      if (!b) return acct;
+      // FIX(2026-07-09, item 219e6828 defect 2): '_unknown' is the internal grouping
+      // key _acctKeys uses for bills with no AccountNumber — no bill's AccountNumber
+      // is ever literally that string, so `bills.find(x => x.AccountNumber === acct)`
+      // always missed for these bills and this function fell through every branch
+      // below to `return acct`, leaking the raw sentinel as a chip label (e.g.
+      // "_unknown · Electric (4)" in Matt's screenshot). Match bills the same
+      // sentinel-normalized way _acctKeys/_bldgTabsHtml do, and use a readable
+      // fallback label instead of the internal key wherever `acct` would otherwise
+      // be shown verbatim.
+      const isUnassigned = acct === '_unknown';
+      const _fallbackLabel = isUnassigned ? 'Unassigned (needs review)' : acct;
+      const b = bills.find((x) => (x.AccountNumber || '_unknown') === acct);
+      if (!b) return _fallbackLabel;
       const match = typeof findMeterMatch === 'function' ? findMeterMatch(b) : null;
       if (match && match.bldg && match.bldg.name) return match.bldg.name;
-      if (!b.ServiceAddress) return acct;
+      if (!b.ServiceAddress) return _fallbackLabel;
       // FIX(2026-07-02, item 219e6828): don't render raw OCR garbage as a
       // building-tab label. Extractors that key an identity fallback off a
       // printed "ADDRESS:" stub can capture pure noise ("= == =="), boilerplate
@@ -10402,16 +10413,28 @@ function renderMultiBillUI(bills, box) {
           : typeof _looksLikeAddress === 'function'
             ? _looksLikeAddress(_cleanAddr)
             : true;
-      if (!_plausible) return acct + ' (needs review)';
+      if (!_plausible) return isUnassigned ? _fallbackLabel : acct + ' (needs review)';
       const addr = _cleanAddr;
       const afterComma = addr.includes(',') ? addr.split(',').slice(1).join(',').trim() : addr;
       return (
-        afterComma.replace(/\b(LOUISBURG|KANSAS CITY|OLATHE|LENEXA|OVERLAND PARK|SHAWNEE|KS|MO)\b/gi, '').trim() || acct
+        afterComma.replace(/\b(LOUISBURG|KANSAS CITY|OLATHE|LENEXA|OVERLAND PARK|SHAWNEE|KS|MO)\b/gi, '').trim() ||
+        _fallbackLabel
       );
     };
     const _hasMultiCommsAcross = new Set(bills.map((b) => b.Commodity || 'Electric')).size > 1;
     if (!window._pdfBuildingTab || !_acctKeys.includes(window._pdfBuildingTab)) {
-      window._pdfBuildingTab = bills[idx]?.AccountNumber || _acctKeys[0];
+      // FIX(2026-07-09, item 219e6828 defect 1): the building tab used to default to
+      // bills[idx]'s account (the newest bill overall) regardless of which commodity
+      // tab was active. window._pdfCommTab defaults independently (first commodity in
+      // _commOrder) a few lines above — the two defaults could point at incompatible
+      // bill sets (e.g. commTab=Water, buildingTab=a Sewer-only account), so the
+      // account+commodity filters below never overlapped and "Monthly Billing
+      // Periods" rendered empty on first load. Default the building tab from the
+      // first bill under the already-active commodity tab so they always agree.
+      const _defaultAcctForComm = filteredPeriods.length
+        ? bills[filteredPeriods[0].i].AccountNumber || '_unknown'
+        : null;
+      window._pdfBuildingTab = _defaultAcctForComm || bills[idx]?.AccountNumber || _acctKeys[0];
     }
     let _bldgTabsHtml = '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
     for (const acct of _acctKeys) {
@@ -10435,8 +10458,17 @@ function renderMultiBillUI(bills, box) {
       const acctAllPeriods = periods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct);
       const ct = acctAllPeriods.length;
       const firstIdx = acctPeriods.length ? acctPeriods[0].i : acctAllPeriods.length ? acctAllPeriods[0].i : 0;
+      // FIX(2026-07-09, item 219e6828 defect 1): this onclick used to only set
+      // window._pdfBuildingTab, never window._pdfCommTab. If the clicked account's
+      // commodity didn't match whatever commodity tab happened to already be active,
+      // the two selectors disagreed and the "Monthly Billing Periods" pill list (which
+      // requires both to match, see bldgPeriods below) rendered empty — the click
+      // looked dead. Sync the commodity tab to this account's real commodity too.
+      const _acctComm = bills[firstIdx]?.Commodity || _uniqueComms[0] || 'Electric';
       _bldgTabsHtml +=
-        '<button onclick="window._pdfBuildingTab=\'' +
+        '<button onclick="window._pdfCommTab=\'' +
+        _acctComm +
+        "';window._pdfBuildingTab='" +
         acct +
         "';selectMultiBill(" +
         firstIdx +
@@ -10631,6 +10663,23 @@ function selectCommTab(tab) {
   window._pdfCommTab = tab;
   const bills = window._pdfMultiBills;
   if (!bills) return;
+  // FIX(2026-07-09, item 219e6828 defect 1): clicking a commodity tab used to leave
+  // window._pdfBuildingTab pointed at whatever account was selected before the click.
+  // If that account has no bills under the newly-clicked commodity, the building tab
+  // and commodity tab filters never overlap and "Monthly Billing Periods" renders
+  // empty (see investigation-baldwin-2026-07-09.md) — the click looked dead. Re-point
+  // the building tab (and the selected bill) at the first account that actually has
+  // bills under the clicked commodity.
+  const currentAcctHasTab = bills.some(
+    (b) => (b.AccountNumber || '_unknown') === window._pdfBuildingTab && (b.Commodity || 'Other') === tab,
+  );
+  if (!currentAcctHasTab) {
+    const firstBillIdx = bills.findIndex((b) => (b.Commodity || 'Other') === tab);
+    if (firstBillIdx !== -1) {
+      window._pdfBuildingTab = bills[firstBillIdx].AccountNumber || '_unknown';
+      window._pdfMultiIdx = firstBillIdx;
+    }
+  }
   const box = document.getElementById('pdfAIBox');
   renderMultiBillUI(bills, box);
   const idx = window._pdfMultiIdx || 0;
