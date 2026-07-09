@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.642',
+    date: '2026-07-09',
+    title: 'Energy Department > Audit Reports: fixed duplicate header on JOCO report pages',
+    items: [
+      {
+        type: 'fix',
+        text: "Energy Department > Audit Reports: the ASHRAE compliance report's Building Compliance Status section no longer shows its heading twice on continuation pages (when the table spans more than one page) — it now prints once, matching the rest of the report.",
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.09.641',
     date: '2026-07-09',
     title: 'Energy Department > Utility Data: PDF bill uploads no longer stall forever',
