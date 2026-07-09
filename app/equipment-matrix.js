@@ -4946,6 +4946,41 @@ function _emIsExcluded(rawName) {
   return _emExclusionRegex.test(rawName);
 }
 
+// 4c566756 (2nd attempt, read-time value-shape guard): columns that must only ever hold a
+// plausible zone-comfort temperature. The v2026.07.03.615 fix (commit 516c2c0) added a
+// pointType-based deny rule inside emMapPointToColumn, but that guard only fires when a real
+// BACnet pointType string is passed in — grepping all 6 callers found only the CSV import-time
+// caller (emExtractEquipmentGroups) ever supplies one. The read-time renormalization engine
+// below (emGetNormalizedPoints) is what Summary View, Raw View, and Audit View all actually call
+// on every render to resolve zoneCoolSetpoint/zoneHtgSetpoint — none of its 3 internal
+// emMapPointToColumn call sites pass pointType, so a raw "Cooling Set Point Signal" = "5.7 V"
+// (a 0-10V analog-output signal, not a temperature) kept flowing into zoneCoolSetpoint and
+// rendering "5.7°F" even after the import-time fix shipped. This is independent of pointType
+// availability by design — it fixes already-imported data with no re-import.
+var EM_ZONE_SETPOINT_VALUE_GUARD_COLS = { zoneCoolSetpoint: true, zoneHtgSetpoint: true };
+// Real JOCO zone occupied setpoints observed in production data range 58.8°F-82.3°F
+// (full-table-scan.json, em-summary-dataquality-2026-07-09 investigation). 45-95°F gives a
+// wide safety margin on both sides so no legitimate comfort-range setpoint is ever rejected,
+// while still excluding physically-impossible values like 5.7°F or a 200°F control signal.
+var EM_ZONE_SETPOINT_MIN_F = 45;
+var EM_ZONE_SETPOINT_MAX_F = 95;
+function _emIsPlausibleZoneSetpointValue(rawVal) {
+  if (rawVal == null) return false;
+  var s = String(rawVal).trim();
+  if (s === '') return false;
+  // Reject values that carry an explicit non-temperature unit suffix — these are control
+  // signals (0-10V analog output, 4-20mA current loop, % duty cycle, psi/in.wc pressure,
+  // ppm) that a name-pattern match alone cannot distinguish from a real setpoint.
+  if (/(^|\s)(v|volts?|ma|milliamps?|amps?|psi|pct|%|ppm|cfm|in\.?\s*wc|"\s*wc)\s*$/i.test(s)) return false;
+  var n = parseFloat(s);
+  if (isNaN(n)) return false;
+  // Domain-range guard: catches signal values that don't carry a recognizable unit suffix
+  // at all (e.g. a bare "5.7" or a stuck/miswired sensor reading like "200") — a zone
+  // heating/cooling setpoint cannot physically fall outside human comfort range.
+  if (n < EM_ZONE_SETPOINT_MIN_F || n > EM_ZONE_SETPOINT_MAX_F) return false;
+  return true;
+}
+
 /* ── emGetNormalizedPoints ───────────────────────────────────────────────────
    Returns a flat { colKey: value } map for a row, derived at read time.
 
@@ -4959,7 +4994,11 @@ function _emIsExcluded(rawName) {
      - Never overwrites an already-set colKey.
      - Preserves 0 / '0' / false — only skips null/undefined.
      - Result is WeakMap-memoized on the row object (invalidated when
-       emSaveMatrix loads fresh deserialized row objects).            */
+       emSaveMatrix loads fresh deserialized row objects).
+     - 4c566756: before caching, zoneCoolSetpoint/zoneHtgSetpoint are re-validated against
+       _emIsPlausibleZoneSetpointValue regardless of which branch below populated them — a
+       single choke point so every caller (Summary/Raw/Audit views, drill-downs, compliance
+       report) gets the fix with zero re-import required.                                 */
 function emGetNormalizedPoints(row) {
   if (_emPointsComputedCache.has(row)) return _emPointsComputedCache.get(row);
 
@@ -5096,6 +5135,18 @@ function emGetNormalizedPoints(row) {
         _virtualFilledCols[colKey] = false;
       }
       // else: already held by a real point or a pass-1 value — do not overwrite.
+    }
+  }
+
+  // 4c566756 (2nd attempt, read-time guard): strip any zone setpoint value that isn't a
+  // plausible temperature reading, regardless of which branch above (pointsRaw array format,
+  // pointsRaw object format, or legacy row.points pass 1/2) populated it. Blank/removed is the
+  // correct outcome when the only matching raw point was actually a voltage/signal reading —
+  // this matches the pre-bug expected behavior of "no setpoint data" rather than showing a
+  // physically-impossible value.
+  for (var _spCol in EM_ZONE_SETPOINT_VALUE_GUARD_COLS) {
+    if (result[_spCol] !== undefined && !_emIsPlausibleZoneSetpointValue(result[_spCol])) {
+      delete result[_spCol];
     }
   }
 
