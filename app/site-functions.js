@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.645',
+    date: '2026-07-09',
+    title: 'Fixed WoodRiver gas rate showing 10x too low',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > Utility Bills / Meter Performance: the "Total $/MMBtu Rate" for WoodRiver Energy natural gas meters (Spring Hill / Woodland Spring Middle and other MMBtu-only gas accounts) was showing a value 10 times too low (e.g. $0.52/MMBtu instead of the correct $5.25/MMBtu). This affects the rate shown on bill entries, the Meter Performance table, and any savings/cost calculations that reference the gas rate for these meters. Rates now display and calculate correctly.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.09.644',
     date: '2026-07-09',
     title: 'Equipment Matrix: fixed false "Not Ready" on Zone Temperature for VVT zone terminals',
