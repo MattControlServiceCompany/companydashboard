@@ -3851,6 +3851,60 @@ function emStatPill(label, val) {
   );
 }
 
+/* ── emStatPillCompact ───────────────────────────────────────────────────────
+   Smaller variant of emStatPill used only by the Raw View breakdown (up to
+   ~21 categories — the "wall of huge tiles" Matt flagged). Same info, ~40%
+   less footprint per tile so the full breakdown reads as a tidy compact grid
+   instead of a row of oversized cards. Audit View's 5 KPI pills are untouched
+   (emStatPill) — they were never the complaint and stay full-size as the
+   at-a-glance headline numbers. */
+function emStatPillCompact(label, val) {
+  return (
+    '<div style="display:flex;flex-direction:column;align-items:center;min-width:46px;padding:1px 2px">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.1">' +
+    val +
+    '</div>' +
+    '<div style="font-size:8.5px;color:var(--text3);margin-top:1px;text-transform:uppercase;letter-spacing:0.03em;white-space:nowrap">' +
+    label +
+    '</div>' +
+    '</div>'
+  );
+}
+
+/* ── emRawStatsCollapsed persistence ─────────────────────────────────────────
+   Whether the Raw View equipment-breakdown grid is collapsed to a one-line
+   summary. Persisted like en_em_zoom (DB.get/set, lazy-loaded once). Default
+   false (expanded but compact) so every number stays reachable without an
+   extra click unless the user chooses to collapse it. */
+var _emRawStatsCollapsed = null;
+function emGetRawStatsCollapsed() {
+  if (_emRawStatsCollapsed === null) {
+    _emRawStatsCollapsed = DB.get('en_em_rawStatsCollapsed', false) === true;
+  }
+  return _emRawStatsCollapsed;
+}
+function emToggleRawStatsCollapse() {
+  _emRawStatsCollapsed = !emGetRawStatsCollapsed();
+  DB.set('en_em_rawStatsCollapsed', _emRawStatsCollapsed);
+  var grid = document.getElementById('em-raw-stats-grid');
+  var arrow = document.getElementById('em-raw-stats-arrow');
+  if (grid) grid.style.display = _emRawStatsCollapsed ? 'none' : 'flex';
+  if (arrow) arrow.textContent = _emRawStatsCollapsed ? '▸' : '▾';
+}
+
+/* ── emResetStatsBarLayout ───────────────────────────────────────────────────
+   Restores #em-stats-bar to its default single-row flex layout. Needed
+   because emUpdateStatsPillsForRaw switches the bar to a stacked block
+   layout (toggle line + wrapped grid); Audit View must undo that when the
+   user switches back, or the bar would stay in block mode. */
+function emResetStatsBarLayout(bar) {
+  bar.style.display = 'flex';
+  bar.style.flexDirection = 'row';
+  bar.style.gap = '16px';
+  bar.style.flexWrap = 'wrap';
+  bar.style.padding = '12px 20px';
+}
+
 function emCalcSummaryStats(rows) {
   var buildings = {},
     ahu = 0,
@@ -4703,6 +4757,7 @@ function emComputeAuditStats(rows) {
 function emUpdateStatsPillsForAudit(rows) {
   var bar = document.getElementById('em-stats-bar');
   if (!bar) return;
+  emResetStatsBarLayout(bar); // undo Raw View's stacked/collapsible layout if it was active
   var base = emCalcSummaryStats(rows);
   var audit = emComputeAuditStats(rows);
   var avgCov = audit.avgCoverage;
@@ -4738,33 +4793,57 @@ function emUpdateStatsPillsForAudit(rows) {
 }
 
 /* ── emUpdateStatsPillsForRaw ───────────────────────────────────────────────
-   Restore the stats bar to raw-mode pills.                               */
+   Restore the stats bar to raw-mode pills. Matt flagged this as "one giant
+   full-width row of large tiles that dominates the screen" (up to 21
+   categories). Fixed by (a) rendering every tile with emStatPillCompact
+   instead of the full-size emStatPill Audit View uses for its 5 KPIs, and
+   (b) a collapsible "Equipment Breakdown" toggle line above the grid so the
+   whole thing can be reduced to one line on click — all numbers stay
+   reachable either way, nothing is hidden by default. */
 function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
   var bar = document.getElementById('em-stats-bar');
   if (!bar) return;
   var stats = emCalcSummaryStats(rows);
+  var pillsHtml =
+    emStatPillCompact('Buildings', stats.buildings) +
+    emStatPillCompact('Equipment', stats.total) +
+    emStatPillCompact('AHU / RTU', stats.ahu) +
+    (stats.doas ? emStatPillCompact('DOAS', stats.doas) : '') +
+    (stats.mau ? emStatPillCompact('MAU', stats.mau) : '') +
+    (stats.erv ? emStatPillCompact('ERV', stats.erv) : '') +
+    emStatPillCompact('VAV / FPB', stats.vav) +
+    (stats.furnace ? emStatPillCompact('Furnace', stats.furnace) : '') +
+    (stats.fcu ? emStatPillCompact('Fan Coil', stats.fcu) : '') +
+    (stats.heater ? emStatPillCompact('Heater', stats.heater) : '') +
+    (stats.ef ? emStatPillCompact('Exh Fan', stats.ef) : '') +
+    emStatPillCompact('Plants', stats.plants) +
+    (stats.lighting ? emStatPillCompact('Lighting', stats.lighting) : '') +
+    (stats.fire ? emStatPillCompact('Fire', stats.fire) : '') +
+    (stats.power ? emStatPillCompact('Power', stats.power) : '') +
+    (stats.plumbing ? emStatPillCompact('Plumbing', stats.plumbing) : '') +
+    (stats.controls ? emStatPillCompact('Controls', stats.controls) : '') +
+    (stats.sensor ? emStatPillCompact('Sensors', stats.sensor) : '') +
+    (stats.other ? emStatPillCompact('Other', stats.other) : '') +
+    emStatPillCompact('Has Data', stats.live) +
+    (totalBASPoints ? emStatPillCompact('BAS Points', totalBASPoints.toLocaleString()) : '');
+
+  var collapsed = emGetRawStatsCollapsed();
+  bar.style.display = 'block';
+  bar.style.padding = '8px 20px';
   bar.innerHTML =
-    emStatPill('Buildings', stats.buildings) +
-    emStatPill('Equipment', stats.total) +
-    emStatPill('AHU / RTU', stats.ahu) +
-    (stats.doas ? emStatPill('DOAS', stats.doas) : '') +
-    (stats.mau ? emStatPill('MAU', stats.mau) : '') +
-    (stats.erv ? emStatPill('ERV', stats.erv) : '') +
-    emStatPill('VAV / FPB', stats.vav) +
-    (stats.furnace ? emStatPill('Furnace', stats.furnace) : '') +
-    (stats.fcu ? emStatPill('Fan Coil', stats.fcu) : '') +
-    (stats.heater ? emStatPill('Heater', stats.heater) : '') +
-    (stats.ef ? emStatPill('Exh Fan', stats.ef) : '') +
-    emStatPill('Plants', stats.plants) +
-    (stats.lighting ? emStatPill('Lighting', stats.lighting) : '') +
-    (stats.fire ? emStatPill('Fire', stats.fire) : '') +
-    (stats.power ? emStatPill('Power', stats.power) : '') +
-    (stats.plumbing ? emStatPill('Plumbing', stats.plumbing) : '') +
-    (stats.controls ? emStatPill('Controls', stats.controls) : '') +
-    (stats.sensor ? emStatPill('Sensors', stats.sensor) : '') +
-    (stats.other ? emStatPill('Other', stats.other) : '') +
-    emStatPill('Has Data', stats.live) +
-    (totalBASPoints ? emStatPill('BAS Points', totalBASPoints.toLocaleString()) : '');
+    '<div onclick="emToggleRawStatsCollapse()" style="cursor:pointer;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text2);user-select:none;' +
+    (collapsed ? '' : 'padding-bottom:6px;') +
+    '">' +
+    '<span id="em-raw-stats-arrow">' +
+    (collapsed ? '▸' : '▾') +
+    '</span>' +
+    '<span>Equipment Breakdown</span>' +
+    '</div>' +
+    '<div id="em-raw-stats-grid" style="display:' +
+    (collapsed ? 'none' : 'flex') +
+    ';flex-wrap:wrap;gap:6px 14px">' +
+    pillsHtml +
+    '</div>';
 }
 
 var _EM_GROUP_COLORS = {

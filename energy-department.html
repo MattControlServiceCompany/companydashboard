@@ -3973,6 +3973,8 @@
         flex-wrap: nowrap;
         scrollbar-width: thin;
         scrollbar-color: var(--border2) transparent;
+        flex: 1 1 auto;
+        min-width: 0;
       }
       .pd-tabs::-webkit-scrollbar {
         height: 3px;
@@ -3980,6 +3982,83 @@
       .pd-tabs::-webkit-scrollbar-thumb {
         background: var(--border2);
         border-radius: 2px;
+      }
+      /* ── Tab bar overflow affordance (fixes item: tabs cut off / unreachable) ──
+         Root cause: the 128f49b2 equalize-width fix makes EVERY tab pay the widest
+         tab's own natural width (measured ~133px), so total bar width = tabCount x
+         133px regardless of viewport. That fits at a full 3440px ultrawide window
+         (measured: no overflow, ~1000px to spare) but Matt documented that he
+         actively resizes browser windows narrower on the same ultrawide monitor
+         (reference_screen_resolution.md: "reproduce across a live resize 3440 ->
+         ~1720"); at those in-between widths .pd-tabs DOES overflow (confirmed
+         empirically at 1720px: last tab only ~75% visible). The existing fallback
+         was overflow-x:auto with a 3px scrollbar — present but practically
+         invisible against the dark theme, with zero other cue that more tabs
+         exist. That is the actual defect: not that it overflows (scrolling here
+         is an accepted, intentional fallback per the 128f49b2 comment above), but
+         that when it does, there was no discoverable way to know more tabs exist.
+         Fix: wrap .pd-tabs in .pd-tabs-wrap and add (a) edge gradient fades and
+         (b) click-to-scroll chevron buttons, both shown/hidden via JS
+         (_updateProjTabScrollAffordance in core.js) based on actual scrollWidth vs
+         clientWidth — so they only appear when there really is more to reach. */
+      .pd-tabs-wrap {
+        position: relative;
+        display: flex;
+        align-items: stretch;
+        min-width: 0;
+        flex-shrink: 0;
+      }
+      .pd-tabs-fade {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 28px;
+        pointer-events: none;
+        z-index: var(--z-chrome, 10);
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      .pd-tabs-fade.left {
+        left: 0;
+        background: linear-gradient(to right, var(--s2), transparent);
+      }
+      .pd-tabs-fade.right {
+        right: 0;
+        background: linear-gradient(to left, var(--s2), transparent);
+      }
+      .pd-tabs-wrap.can-scroll-left .pd-tabs-fade.left,
+      .pd-tabs-wrap.can-scroll-right .pd-tabs-fade.right {
+        opacity: 1;
+      }
+      .pd-tabs-arrow {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 20px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--s2);
+        border: none;
+        cursor: pointer;
+        color: var(--text2);
+        font-size: 14px;
+        line-height: 1;
+        z-index: 11;
+      }
+      .pd-tabs-arrow:hover {
+        color: var(--em);
+        background: var(--s3);
+      }
+      .pd-tabs-arrow.left {
+        left: 0;
+      }
+      .pd-tabs-arrow.right {
+        right: 0;
+      }
+      .pd-tabs-wrap.can-scroll-left .pd-tabs-arrow.left,
+      .pd-tabs-wrap.can-scroll-right .pd-tabs-arrow.right {
+        display: flex;
       }
       .pdt {
         font-family: var(--font);

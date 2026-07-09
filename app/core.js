@@ -1013,8 +1013,14 @@ function renderDetail(p) {
           <!-- Project-level panel content (shown when project-level buttons clicked) -->
           <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto"></div>
           <div class="card" id="pd-tabs-card-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
-            <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;flex-shrink:0">
-              ${_getProjTabHTML()}
+            <div class="pd-tabs-wrap" id="pdTabBarWrap">
+              <button class="pd-tabs-arrow left" onclick="_scrollProjTabs(-1)" aria-label="Scroll tabs left" title="Scroll left">&#8249;</button>
+              <div class="pd-tabs-fade left"></div>
+              <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;flex:1 1 auto;min-width:0">
+                ${_getProjTabHTML()}
+              </div>
+              <div class="pd-tabs-fade right"></div>
+              <button class="pd-tabs-arrow right" onclick="_scrollProjTabs(1)" aria-label="Scroll tabs right" title="Scroll right">&#8250;</button>
             </div>
             <div id="ptab-dashboard" class="ptab${window._activeProjTab === 'dashboard' || !window._activeProjTab ? ' active' : ''}" style="padding:0;overflow-y:auto;overflow-x:hidden">
               <div id="dash-hdr-${p.id}"></div>
@@ -2528,10 +2534,49 @@ function _equalizeProjTabWidths() {
   });
   const w = Math.ceil(max) + 'px';
   btns.forEach((b) => b.style.setProperty('--pdt-w', w));
+  _updateProjTabScrollAffordance();
 }
+
+// ── Tab bar overflow affordance ──────────────────────────────────────────────
+// Fixes "tabs cut off / unreachable": the equalize-width scheme above can
+// still overflow at narrower-than-full-ultrawide window widths (confirmed at
+// ~1720px — a width Matt is documented to resize to on his 3440px monitor).
+// The existing overflow-x:auto + thin scrollbar was never a discoverable
+// affordance. This toggles CSS classes that reveal an edge fade + a
+// click-to-scroll chevron only when there's actually more to reach in that
+// direction, computed from real scrollWidth/clientWidth — never guessed.
+function _updateProjTabScrollAffordance() {
+  const bar = document.getElementById('pdTabBar');
+  const wrap = bar ? bar.closest('.pd-tabs-wrap') : null;
+  if (!bar || !wrap) return;
+  const canLeft = bar.scrollLeft > 2;
+  const canRight = bar.scrollLeft < bar.scrollWidth - bar.clientWidth - 2;
+  wrap.classList.toggle('can-scroll-left', canLeft);
+  wrap.classList.toggle('can-scroll-right', canRight);
+}
+function _scrollProjTabs(dir) {
+  const bar = document.getElementById('pdTabBar');
+  if (!bar) return;
+  bar.scrollBy({ left: dir * 220, behavior: 'smooth' });
+}
+// Registered once for the lifetime of the page — recomputes affordance on a
+// live window resize without requiring a reload (same debounced-listener
+// pattern as _recomputeBillsColLayout's resize guard in utility-data.js).
+if (!window._pdTabsResizeListenerAdded) {
+  window._pdTabsResizeListenerAdded = true;
+  let _pdTabsResizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(_pdTabsResizeTimer);
+    _pdTabsResizeTimer = setTimeout(() => {
+      if (document.getElementById('pdTabBar')) _updateProjTabScrollAffordance();
+    }, 200);
+  });
+}
+
 function _initTabDrag() {
   const bar = document.getElementById('pdTabBar');
   if (!bar) return;
+  bar.addEventListener('scroll', () => _updateProjTabScrollAffordance());
   let dragId = null;
   bar.addEventListener('dragstart', (e) => {
     const btn = e.target.closest('.pdt');
