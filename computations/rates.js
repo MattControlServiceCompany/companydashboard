@@ -41,13 +41,23 @@ function getStoredRate(bill, type) {
     case 'gas': {
       var stored = parseFloat(bill.totalGasRate);
       if (stored > 0) return stored;
-      var usage = parseFloat(bill.NaturalGasTherms) || parseFloat(bill.therms) || 0;
       var cost =
         parseFloat(bill.GasCharge) ||
         parseFloat(bill.gasCharge) ||
         parseFloat(bill.thermCost) ||
         parseFloat(bill.totalCost) ||
         0;
+      // Bug de22533b: bill.therms is a synthetic, always-populated field
+      // (canonicalized from Therms/CCF/MMbtu at save time, see bill-analysis.js
+      // [therms-unit-2026-06-22]) — it shadowed the MMBtu fallback below for every
+      // WRE (MMBtu-only) bill because it's never falsy. Use only genuine raw usage
+      // fields here (NaturalGasTherms, or NaturalGasCCF converted) so MMBtu-only
+      // bills correctly fall through to the MMBtu branch instead.
+      var usage = parseFloat(bill.NaturalGasTherms) || 0;
+      if (!usage) {
+        var ccf = parseFloat(bill.NaturalGasCCF) || 0;
+        if (ccf > 0) usage = Math.round(ccf * 1.037 * 100) / 100;
+      }
       if (usage > 0 && cost > 0) return cost / usage;
       // MMBtu fallback: WRE meters store usage as naturalGasMMbtu; divide charge by MMBtu
       // so the result is $/MMBtu rather than $/Therm.
@@ -108,7 +118,14 @@ function ensureBillRates(bill) {
 
   // Gas: totalGasRate (use gasCharge/commodity cost, not total bill cost — bug d4c78f06)
   if (!pf(bill.totalGasRate)) {
-    var therms = pf(bill.NaturalGasTherms) || pf(bill.therms) || pf(bill.NaturalGasCCF);
+    // Bug de22533b: bill.therms is a synthetic, always-populated field (canonicalized
+    // from Therms/CCF/MMbtu at save time, see bill-analysis.js [therms-unit-2026-06-22])
+    // — it shadowed the MMBtu fallback below for every WRE (MMBtu-only) bill because
+    // it's never falsy. Use only genuine raw usage fields (NaturalGasTherms, or
+    // NaturalGasCCF converted) here so MMBtu-only bills fall through correctly.
+    var therms =
+      pf(bill.NaturalGasTherms) ||
+      (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
     var gasChg = pf(bill.GasCharge) || pf(bill.gasCharge) || pf(bill.thermCost);
     if (therms > 0 && gasChg > 0) {
       bill.totalGasRate = (gasChg / therms).toFixed(5);
