@@ -11875,7 +11875,7 @@ function rptPageASHRAE36Executive(n, d) {
         numChunks +
         ')' +
         '</div>';
-      bodyHTML = contHdr + tableTitle + table + tableFootnote;
+      bodyHTML = contHdr + table + tableFootnote;
     }
 
     resultPages.push(
