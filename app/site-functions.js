@@ -1191,6 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.639',
+    date: '2026-07-08',
+    title: 'Energy Department > PDF/OCR: batch bill uploads now show where each bill will land',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department > PDF/OCR: the batch upload queue now shows a Destination column for every bill. Bills with a verified account/meter match save automatically, just like before.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department > PDF/OCR: bills that only match by address (not by account/meter number) no longer save automatically to a guessed building. Those rows now wait for you to explicitly pick the Project, Building, and Meter before saving, which fixes bills getting routed to the wrong building when two buildings share an address.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department > PDF/OCR: bills saved from the batch upload queue now keep their bill PDF attached, so the original bill image is available afterward.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.08.638',
     date: '2026-07-08',
     title: 'Energy Department > PDF/OCR: bill extraction totals now reconcile correctly',
