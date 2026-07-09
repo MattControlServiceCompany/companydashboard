@@ -1191,6 +1191,18 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.644',
+    date: '2026-07-09',
+    title: 'Equipment Matrix: fixed false "Not Ready" on Zone Temperature for VVT zone terminals',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > Equipment Matrix / Audit Report: zone terminals on Carrier VVT systems (common across the JOCO portfolio) were showing "Not Ready" for the Zone Temperature Control sequence even though they were actively controlling zone temperature. This was because heat/cool setpoints for these terminals live on the VVT master controller, not the terminal itself, so the terminal could never satisfy the old check. A terminal reporting zone temperature now counts as Ready for this sequence. Missing setpoint sensors are still flagged separately under "Sensors to Install" — this only changes sequence readiness, not sensor coverage. 303 JOCO rows flip from Not Ready to Ready; Sequence Readiness on the cover page moves from 35% to 43%.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.09.643',
     date: '2026-07-09',
     title: 'Equipment Matrix: fixed bad temperature readings on zone setpoint columns',
