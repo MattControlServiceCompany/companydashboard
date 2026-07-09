@@ -18596,11 +18596,19 @@ var EM_SEQUENCE_DEFS = [
 
   /* ── VAV sequences ──────────────────────────────────────────────────── */
   {
+    // 8ea3ca72 (2026-07-09, Matt's decision): requiredCats intentionally does NOT
+    // include coolSP/htgSP. Carrier VVT zone terminals expose zone temperature
+    // per-terminal but heat/cool setpoints live at the master controller (standard
+    // for VVT — never a per-terminal BACnet point). A terminal reporting zone temp
+    // IS controlling zone temperature; gating this sequence on setpoints produced a
+    // systematic false "Not Ready" for ~219 of 719 JOCO VAV rows. Setpoint hardware
+    // coverage is still tracked separately via EM_POINT_CATEGORIES (Sensors to
+    // Install column) — this only changes SEQUENCE readiness, not hardware coverage.
     key: 'vav_zone_temp',
     label: 'Zone Temperature Control',
     ashrae36: '§5.6.1',
     equipTypes: ['vav', 'fpb', 'ddvav'],
-    requiredCats: ['zoneTemp', 'coolSP', 'htgSP'],
+    requiredCats: ['zoneTemp'],
     keyCats: ['zoneTemp'],
   },
   {
