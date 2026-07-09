@@ -1191,6 +1191,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.646',
+    date: '2026-07-09',
+    title: 'Fixed Baldwin bill display: empty billing periods and dead commodity clicks',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > Utility Bills / PDF extraction: on multi-meter bills (e.g. City of Baldwin electric/water/sewer), clicking a building tab or a commodity tab (Electric/Water/Sewer) could leave the two tabs pointed at different accounts, so the "Monthly Billing Periods" list showed empty and commodity tab clicks appeared to do nothing. Both tabs now stay in sync no matter which one you click, so the periods list and account details always match what\'s selected.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department > Utility Bills: a bill with no account number on the printed PDF could show a literal "_unknown" as its building tab label instead of a readable name. It now shows "Unassigned (needs review)" or the bill\'s address when available.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.09.645',
     date: '2026-07-09',
     title: 'Fixed WoodRiver gas rate showing 10x too low',
