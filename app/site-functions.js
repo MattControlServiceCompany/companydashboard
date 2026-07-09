@@ -1191,6 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.08.640',
+    date: '2026-07-08',
+    title: 'Energy Department > Utility Data: bills table now fits your screen',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > Utility Data: the bills table no longer forces horizontal scrolling on widescreen monitors — columns now fill the available width correctly instead of overflowing.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department > Utility Data: resizing the browser window now re-arranges the bills table columns immediately. You no longer need to hard-refresh the page for the layout to fix itself.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department: the project tabs across the top are now evenly sized, instead of varying widths that made the tab bar look uneven.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.08.639',
     date: '2026-07-08',
     title: 'Energy Department > PDF/OCR: batch bill uploads now show where each bill will land',
