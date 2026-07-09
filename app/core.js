@@ -1387,6 +1387,7 @@ function renderDetail(p) {
   // Populate tabs after DOM is ready
   requestAnimationFrame(() => {
     _initTabDrag();
+    _equalizeProjTabWidths();
     initProjUDTab(p.id);
     initDashboardTab(p.id);
     _updateCompactHdrBaseline(p.id);
@@ -2509,6 +2510,25 @@ function _getProjTabHTML() {
     })
     .join('');
 }
+// 128f49b2 (reopened): uniform tab width = widest tab's own natural content need,
+// measured at render time (icon+label width varies by font/theme, so this can't be a
+// hardcoded constant). Written as a CSS custom property read by .pdt's flex-basis.
+// Re-run after any (re)render of #pdTabBar — the tab SET/labels are fixed at 16 items
+// and never change with viewport size, so (unlike the bills table) this needs no
+// resize listener: natural widths are viewport-independent.
+function _equalizeProjTabWidths() {
+  const bar = document.getElementById('pdTabBar');
+  if (!bar) return;
+  const btns = bar.querySelectorAll('.pdt');
+  if (!btns.length) return;
+  btns.forEach((b) => b.style.removeProperty('--pdt-w')); // reset so max isn't measured against a stale value
+  let max = 0;
+  btns.forEach((b) => {
+    max = Math.max(max, b.getBoundingClientRect().width);
+  });
+  const w = Math.ceil(max) + 'px';
+  btns.forEach((b) => b.style.setProperty('--pdt-w', w));
+}
 function _initTabDrag() {
   const bar = document.getElementById('pdTabBar');
   if (!bar) return;
@@ -2547,6 +2567,7 @@ function _initTabDrag() {
     order.splice(toIdx, 0, dragId);
     _saveProjTabOrder(order);
     bar.innerHTML = _getProjTabHTML();
+    _equalizeProjTabWidths();
   });
 }
 

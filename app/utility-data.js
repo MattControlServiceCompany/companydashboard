@@ -24,6 +24,25 @@ const _openMeterIds = new Set(); // tracks which meter cards are expanded
 let _vcmActive = false; // Value Correction Mode toggle state (Update a3a423eb)
 let _vcmKeyHandler = null; // module-level ref so Cancel/Save can remove it
 
+// d2fe8e5e: tracks the most recently rendered Bills pane so the debounced
+// window resize listener below can re-run column layout in-place (no
+// reload) instead of leaving stale column widths/sticky offsets after the
+// window shrinks. Guarded so the listener is registered exactly once
+// across the module's lifetime, never once-per-render.
+let _lastBillsRenderCtx = null;
+let _billsResizeTimer = null;
+if (!window._billsResizeListenerAdded) {
+  window._billsResizeListenerAdded = true;
+  window.addEventListener('resize', () => {
+    clearTimeout(_billsResizeTimer);
+    _billsResizeTimer = setTimeout(() => {
+      if (_lastBillsRenderCtx && document.body.contains(_lastBillsRenderCtx.pane)) {
+        _recomputeBillsColLayout(_lastBillsRenderCtx.pane, _lastBillsRenderCtx.m, _lastBillsRenderCtx.cols);
+      }
+    }, 200);
+  });
+}
+
 function loadUtilityData() {
   utilityData = {};
   // One-time migration: if old combined key exists, split into per-project keys then remove it
@@ -3426,18 +3445,33 @@ function renderBillsPane(pane, m, bills, incl) {
 
   // Layout: info bar (fixed) + header table (fixed) + scrolling body table
   // Single scrollable container — thead frozen via split-table, auto column sizing
+  // d2fe8e5e: seed `width:auto` BEFORE first paint, overriding .ud-bill-tbl's own
+  // `width:100%` CSS. This is deliberately NOT a `table-layout:fixed` + colgroup
+  // seed (tried first, reverted — see note below) — the browser's native
+  // auto-layout pass must still run once so real per-column content width
+  // (including any row past the first, since auto-layout shares one measured
+  // width across every cell in a column) can be captured; forcing fixed-layout
+  // before that first measurement would permanently lock every column at its
+  // seed value, since table-layout:fixed cells report their column's assigned
+  // width via getBoundingClientRect() regardless of actual content length —
+  // silently clipping any real content that needs more room than the seed
+  // hint (violates "never hide values"). `width:100%` alone was the actual bug
+  // (stretch-to-fill an oversized #maPane before any JS runs); removing just
+  // that, and leaving layout auto, gives the RAF measurement in
+  // _recomputeBillsColLayout a true, unstretched content-driven width to read
+  // — exactly what it needs before growing/flooring/freezing it via colgroup.
   pane.innerHTML =
     '<div class="bills-sticky-hdr">' +
     stickyHdrInner +
     '</div>' +
     flagBanner +
     '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:auto;flex-shrink:0;">' +
-    '<table class="ud-bill-tbl" id="billsHdrTbl">' +
+    '<table class="ud-bill-tbl" id="billsHdrTbl" style="width:auto">' +
     tblHead +
     '</table>' +
     '</div>' +
     '<div class="bills-scroll-body" id="billsScrollBody">' +
-    '<table class="ud-bill-tbl" id="billsBodyTbl">' +
+    '<table class="ud-bill-tbl" id="billsBodyTbl" style="width:auto">' +
     '<tbody>' +
     tblBody +
     '</tbody>' +
@@ -3468,8 +3502,15 @@ function renderBillsPane(pane, m, bills, incl) {
     if (_vcmActive) vcmBodyTbl.classList.add('vcm-active');
   }
 
+  // d2fe8e5e: track latest render context so the module-level debounced
+  // resize listener (declared near the top of this file) can re-run column
+  // layout after a live window resize, with no full re-render/reload needed.
+  _lastBillsRenderCtx = { pane, m, cols };
+
   // After browser auto-sizes body table, copy column widths to header table so they align
   requestAnimationFrame(() => {
+    _recomputeBillsColLayout(pane, m, cols);
+
     const hdrTbl = pane.querySelector('#billsHdrTbl');
     const bodyTbl = pane.querySelector('#billsBodyTbl');
     const theadWrap = pane.querySelector('#billsTheadWrap');
@@ -3477,86 +3518,6 @@ function renderBillsPane(pane, m, bills, incl) {
     if (!hdrTbl || !bodyTbl || !scrollBody || !theadWrap) return;
 
     const storageKey = `bills_col_widths_${m.id}`;
-
-    // Load saved widths, falling back to measured natural widths
-    const firstRow = bodyTbl.querySelector('tbody tr:first-child');
-    if (!firstRow) return;
-    const rawWidths = Array.from(firstRow.querySelectorAll('td')).map((td) => td.getBoundingClientRect().width);
-    if (!rawWidths.length) return;
-    // Update b7e542eb: also measure header cell widths (in their own auto-layout
-    // table) so that header text (e.g. "RATE SCHEDULE") sets the minimum — the
-    // column can't be narrower than its header even if data values are short.
-    const hdrRow = hdrTbl.querySelector('thead tr');
-    const hdrWidths = hdrRow
-      ? Array.from(hdrRow.querySelectorAll('th')).map((th) => th.getBoundingClientRect().width)
-      : [];
-
-    let savedWidths = null;
-    try {
-      const s = DB.get(storageKey);
-      if (s) savedWidths = s;
-    } catch (e) {}
-    // Update 97: `minW` on a col is a hard floor that saved widths can't
-    // undercut — ensures date columns (and any other structurally-wide
-    // fields) can't be shrunk below readability by a stale resize save.
-    // Update b7e542eb: removed `cols[i]?.w || 0` from the max calculation
-    // so columns use their natural browser-measured content width instead
-    // of being forced to the defined `w` default. This lets narrower
-    // columns (Rate Schedule, Table Settings, etc.) shrink to fit their
-    // actual content and frees up visible space for more data columns.
-    // Column width = max(body cell, header cell, minW floor) — never the
-    // arbitrary `w` hint that was padding columns wider than necessary.
-    const widths = rawWidths.map((w, i) => {
-      const floor = Math.max(40, cols[i]?.minW || 0);
-      if (savedWidths && savedWidths[i]) return Math.max(floor, savedWidths[i]);
-      const hdrW = hdrWidths[i] || 0;
-      return Math.max(Math.ceil(w), Math.ceil(hdrW), floor);
-    });
-
-    function applyWidths(ws) {
-      const cg = '<colgroup>' + ws.map((w) => `<col style="width:${w}px">`).join('') + '</colgroup>';
-      // Remove existing colgroups first
-      hdrTbl.querySelectorAll('colgroup').forEach((c) => c.remove());
-      bodyTbl.querySelectorAll('colgroup').forEach((c) => c.remove());
-      hdrTbl.insertAdjacentHTML('afterbegin', cg);
-      bodyTbl.insertAdjacentHTML('afterbegin', cg);
-      hdrTbl.style.tableLayout = 'fixed';
-      bodyTbl.style.tableLayout = 'fixed';
-      const totalW = ws.reduce((s, w) => s + w, 0);
-      hdrTbl.style.width = totalW + 'px';
-      bodyTbl.style.width = totalW + 'px';
-      // Left-sticky columns (Update 90): compute cumulative left
-      // offsets for cols flagged `sticky: true` (Norm Month / Start /
-      // End) and apply them to every matching header + body cell.
-      let cumLeft = 0;
-      for (let i = 0; i < cols.length; i++) {
-        if (!cols[i].sticky) continue;
-        const w = ws[i];
-        const hdrCell = hdrTbl.querySelector(`th[data-col="${i}"]`);
-        if (hdrCell) hdrCell.style.left = cumLeft + 'px';
-        bodyTbl.querySelectorAll(`td[data-sticky="${i}"]`).forEach((td) => {
-          td.style.left = cumLeft + 'px';
-        });
-        cumLeft += w || 0;
-      }
-      // Right-sticky columns (Update 93): iterate BACKWARDS from the
-      // last col, accumulating from the right edge. cols flagged
-      // `rightSticky: true` (Total Cost + Actions) get their `right`
-      // style set so they pin to the right edge during horizontal scroll.
-      let cumRight = 0;
-      for (let i = cols.length - 1; i >= 0; i--) {
-        if (!cols[i].rightSticky) continue;
-        const w = ws[i];
-        const hdrCell = hdrTbl.querySelector(`th[data-col="${i}"]`);
-        if (hdrCell) hdrCell.style.right = cumRight + 'px';
-        bodyTbl.querySelectorAll(`td[data-sticky-right="${i}"]`).forEach((td) => {
-          td.style.right = cumRight + 'px';
-        });
-        cumRight += w || 0;
-      }
-    }
-
-    applyWidths(widths);
 
     // Sync horizontal scroll
     scrollBody.addEventListener(
@@ -3612,6 +3573,104 @@ function renderBillsPane(pane, m, bills, incl) {
       _resizing = null;
     });
   });
+}
+
+// d2fe8e5e: column-width measurement + colgroup/sticky-offset apply logic,
+// extracted from renderBillsPane's initial-render RAF into a named,
+// re-callable function so the initial render and the debounced resize
+// listener (module-level, near the top of this file) share one source of
+// truth. A hard reload was already proven (by investigation) to always
+// recompute correctly at any given window size — calling this same function
+// again on resize makes an in-place resize behave identically, with no
+// separate "resize case" to get wrong.
+function _recomputeBillsColLayout(pane, m, cols) {
+  const hdrTbl = pane.querySelector('#billsHdrTbl');
+  const bodyTbl = pane.querySelector('#billsBodyTbl');
+  const theadWrap = pane.querySelector('#billsTheadWrap');
+  const scrollBody = pane.querySelector('#billsScrollBody');
+  if (!hdrTbl || !bodyTbl || !scrollBody || !theadWrap) return;
+
+  const storageKey = `bills_col_widths_${m.id}`;
+
+  // Load saved widths, falling back to measured natural widths
+  const firstRow = bodyTbl.querySelector('tbody tr:first-child');
+  if (!firstRow) return;
+  const rawWidths = Array.from(firstRow.querySelectorAll('td')).map((td) => td.getBoundingClientRect().width);
+  if (!rawWidths.length) return;
+  // Update b7e542eb: also measure header cell widths (in their own auto-layout
+  // table) so that header text (e.g. "RATE SCHEDULE") sets the minimum — the
+  // column can't be narrower than its header even if data values are short.
+  const hdrRow = hdrTbl.querySelector('thead tr');
+  const hdrWidths = hdrRow
+    ? Array.from(hdrRow.querySelectorAll('th')).map((th) => th.getBoundingClientRect().width)
+    : [];
+
+  let savedWidths = null;
+  try {
+    const s = DB.get(storageKey);
+    if (s) savedWidths = s;
+  } catch (e) {}
+  // Update 97: `minW` on a col is a hard floor that saved widths can't
+  // undercut — ensures date columns (and any other structurally-wide
+  // fields) can't be shrunk below readability by a stale resize save.
+  // Update b7e542eb: removed `cols[i]?.w || 0` from the max calculation
+  // so columns use their natural browser-measured content width instead
+  // of being forced to the defined `w` default. This lets narrower
+  // columns (Rate Schedule, Table Settings, etc.) shrink to fit their
+  // actual content and frees up visible space for more data columns.
+  // Column width = max(body cell, header cell, minW floor) — never the
+  // arbitrary `w` hint that was padding columns wider than necessary.
+  const widths = rawWidths.map((w, i) => {
+    const floor = Math.max(40, cols[i]?.minW || 0);
+    if (savedWidths && savedWidths[i]) return Math.max(floor, savedWidths[i]);
+    const hdrW = hdrWidths[i] || 0;
+    return Math.max(Math.ceil(w), Math.ceil(hdrW), floor);
+  });
+
+  function applyWidths(ws) {
+    const cg = '<colgroup>' + ws.map((w) => `<col style="width:${w}px">`).join('') + '</colgroup>';
+    // Remove existing colgroups first
+    hdrTbl.querySelectorAll('colgroup').forEach((c) => c.remove());
+    bodyTbl.querySelectorAll('colgroup').forEach((c) => c.remove());
+    hdrTbl.insertAdjacentHTML('afterbegin', cg);
+    bodyTbl.insertAdjacentHTML('afterbegin', cg);
+    hdrTbl.style.tableLayout = 'fixed';
+    bodyTbl.style.tableLayout = 'fixed';
+    const totalW = ws.reduce((s, w) => s + w, 0);
+    hdrTbl.style.width = totalW + 'px';
+    bodyTbl.style.width = totalW + 'px';
+    // Left-sticky columns (Update 90): compute cumulative left
+    // offsets for cols flagged `sticky: true` (Norm Month / Start /
+    // End) and apply them to every matching header + body cell.
+    let cumLeft = 0;
+    for (let i = 0; i < cols.length; i++) {
+      if (!cols[i].sticky) continue;
+      const w = ws[i];
+      const hdrCell = hdrTbl.querySelector(`th[data-col="${i}"]`);
+      if (hdrCell) hdrCell.style.left = cumLeft + 'px';
+      bodyTbl.querySelectorAll(`td[data-sticky="${i}"]`).forEach((td) => {
+        td.style.left = cumLeft + 'px';
+      });
+      cumLeft += w || 0;
+    }
+    // Right-sticky columns (Update 93): iterate BACKWARDS from the
+    // last col, accumulating from the right edge. cols flagged
+    // `rightSticky: true` (Total Cost + Actions) get their `right`
+    // style set so they pin to the right edge during horizontal scroll.
+    let cumRight = 0;
+    for (let i = cols.length - 1; i >= 0; i--) {
+      if (!cols[i].rightSticky) continue;
+      const w = ws[i];
+      const hdrCell = hdrTbl.querySelector(`th[data-col="${i}"]`);
+      if (hdrCell) hdrCell.style.right = cumRight + 'px';
+      bodyTbl.querySelectorAll(`td[data-sticky-right="${i}"]`).forEach((td) => {
+        td.style.right = cumRight + 'px';
+      });
+      cumRight += w || 0;
+    }
+  }
+
+  applyWidths(widths);
 }
 
 function toggleUdNav(layoutId) {
