@@ -1191,6 +1191,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.641',
+    date: '2026-07-09',
+    title: 'Energy Department > Utility Data: PDF bill uploads no longer stall forever',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > Utility Data: a bill PDF that used to get stuck and never finish extracting (spinner runs forever) now gives up after a time budget and flags itself for manual review instead of hanging the upload indefinitely.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department > Utility Data: bills that hit the new time budget are clearly marked as needing manual review, the same way bills with missing fields already are, so you know to check them instead of assuming they extracted cleanly.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.08.640',
     date: '2026-07-08',
     title: 'Energy Department > Utility Data: bills table now fits your screen',
