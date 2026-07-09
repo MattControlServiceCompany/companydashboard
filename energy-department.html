@@ -33,7 +33,7 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=646" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=647" rel="stylesheet" />
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
@@ -2065,15 +2065,25 @@
       /* Page number now rendered by JS via .rpt-pg-footer-pagenum */
 
       /* -- Page Footer -- */
+      /* Density pass (feat/audit-report-reframe-density, 2026-07-09): the footer wave graphic
+         previously scaled to the full 816px page width with no height cap, rendering at
+         107.6px (1.12in) tall — report-standard.md's footer convention only requires branding
+         + page number, not a 1.1in illustration (density investigation Finding 1). Capped to a
+         fixed 40px (~0.42in) box with object-fit:cover so the same wave art still shows (just a
+         slice of it), not stretched/distorted. */
       .rpt-footer {
         position: absolute;
         bottom: 0;
         left: 0;
         width: 100%;
+        height: 40px;
+        overflow: hidden;
         text-align: center;
       }
       .rpt-footer img {
         width: 100%;
+        height: 100%;
+        object-fit: cover;
         display: block;
       }
       .rpt-footer-text {
@@ -2082,9 +2092,9 @@
         padding: 4px 48px;
         display: flex;
         justify-content: space-between;
-        /* Pin above the footer wave image (~74px tall) so it doesn't flow mid-page */
+        /* Pin above the footer wave image (now 40px tall) so it doesn't flow mid-page */
         position: absolute;
-        bottom: 74px;
+        bottom: 40px;
         left: 0;
         right: 0;
       }
@@ -2110,8 +2120,11 @@
 
       /* -- Page Body -- */
       .rpt-body {
-        /* 48px sides = 0.5in, aligned with .rpt-int-hdr and .rpt-footer-text padding */
-        padding: 12px 48px 80px;
+        /* 48px sides = 0.5in, aligned with .rpt-int-hdr and .rpt-footer-text padding.
+           Bottom padding reduced 80px -> 30px (feat/audit-report-reframe-density,
+           2026-07-09, density Finding 1): the footer graphic shrank from 107.6px to 40px, so
+           the old 80px clearance was reserving far more space than the slimmer footer needs. */
+        padding: 12px 48px 30px;
       }
 
       /* -- Section Headings -- */
@@ -7666,7 +7679,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=646" />
+    <link rel="stylesheet" href="feedback-widget.css?v=647" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -14724,47 +14737,47 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=646"></script>
-    <script src="lib/formatting.js?v=646"></script>
-    <script src="lib/unit-conversion.js?v=646"></script>
-    <script src="lib/csv-parser.js?v=646"></script>
-    <script src="computations/rates.js?v=646"></script>
-    <script src="computations/regression.js?v=646"></script>
-    <script src="computations/normalization.js?v=646"></script>
-    <script src="computations/eui.js?v=646"></script>
-    <script src="computations/pollution.js?v=646"></script>
-    <script src="computations/csc.js?v=646"></script>
-    <script src="computations/savings.js?v=646"></script>
-    <script src="computations/anomaly-detection.js?v=646"></script>
-    <script src="lib/perf-table.js?v=646"></script>
-    <script src="lib/shared-charts.js?v=646"></script>
-    <script src="computations/report-data.js?v=646"></script>
-    <script src="computations/data-quality.js?v=646"></script>
-    <script src="extraction/pdf-engine.js?v=646"></script>
-    <script src="app/db.js?v=646"></script>
-    <script src="app/core.js?v=646"></script>
-    <script src="app/energy-savings.js?v=646"></script>
-    <script src="app/bill-analysis.js?v=646"></script>
-    <script src="extraction/bill-validation.js?v=646"></script>
-    <script src="app/district-calendar.js?v=646"></script>
-    <script src="app/utility-data.js?v=646"></script>
-    <script src="app/pipeline-diagram.js?v=646"></script>
-    <script src="app/csv-import.js?v=646"></script>
-    <script src="app/report-engine.js?v=646"></script>
-    <script src="app/report-preview.js?v=646"></script>
-    <script src="app/calculators.js?v=646"></script>
-    <script src="app/ecm-calculators.js?v=646"></script>
-    <script src="app/equipment-matrix.js?v=646"></script>
-    <script src="app/graphics-setpoints.js?v=646"></script>
-    <script src="app/budget.js?v=646"></script>
-    <script src="app/hours.js?v=646"></script>
-    <script src="app/scorecard.js?v=646"></script>
-    <script src="app/portal-export.js?v=646"></script>
-    <script src="app/bas-trends.js?v=646"></script>
-    <script src="app/bas-alarms.js?v=646"></script>
-    <script src="app/pricing-estimator.js?v=646"></script>
+    <script src="lib/date-helpers.js?v=647"></script>
+    <script src="lib/formatting.js?v=647"></script>
+    <script src="lib/unit-conversion.js?v=647"></script>
+    <script src="lib/csv-parser.js?v=647"></script>
+    <script src="computations/rates.js?v=647"></script>
+    <script src="computations/regression.js?v=647"></script>
+    <script src="computations/normalization.js?v=647"></script>
+    <script src="computations/eui.js?v=647"></script>
+    <script src="computations/pollution.js?v=647"></script>
+    <script src="computations/csc.js?v=647"></script>
+    <script src="computations/savings.js?v=647"></script>
+    <script src="computations/anomaly-detection.js?v=647"></script>
+    <script src="lib/perf-table.js?v=647"></script>
+    <script src="lib/shared-charts.js?v=647"></script>
+    <script src="computations/report-data.js?v=647"></script>
+    <script src="computations/data-quality.js?v=647"></script>
+    <script src="extraction/pdf-engine.js?v=647"></script>
+    <script src="app/db.js?v=647"></script>
+    <script src="app/core.js?v=647"></script>
+    <script src="app/energy-savings.js?v=647"></script>
+    <script src="app/bill-analysis.js?v=647"></script>
+    <script src="extraction/bill-validation.js?v=647"></script>
+    <script src="app/district-calendar.js?v=647"></script>
+    <script src="app/utility-data.js?v=647"></script>
+    <script src="app/pipeline-diagram.js?v=647"></script>
+    <script src="app/csv-import.js?v=647"></script>
+    <script src="app/report-engine.js?v=647"></script>
+    <script src="app/report-preview.js?v=647"></script>
+    <script src="app/calculators.js?v=647"></script>
+    <script src="app/ecm-calculators.js?v=647"></script>
+    <script src="app/equipment-matrix.js?v=647"></script>
+    <script src="app/graphics-setpoints.js?v=647"></script>
+    <script src="app/budget.js?v=647"></script>
+    <script src="app/hours.js?v=647"></script>
+    <script src="app/scorecard.js?v=647"></script>
+    <script src="app/portal-export.js?v=647"></script>
+    <script src="app/bas-trends.js?v=647"></script>
+    <script src="app/bas-alarms.js?v=647"></script>
+    <script src="app/pricing-estimator.js?v=647"></script>
 
-    <script src="app/site-functions.js?v=646"></script>
+    <script src="app/site-functions.js?v=647"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -14921,10 +14934,10 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=646"></script>
-    <script src="feedback-widget.js?v=646"></script>
+    <script src="app/tooltips-help.js?v=647"></script>
+    <script src="feedback-widget.js?v=647"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
-    <script src="lib/rich-text.js?v=646"></script>
+    <script src="lib/rich-text.js?v=647"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

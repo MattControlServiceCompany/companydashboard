@@ -1191,6 +1191,26 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.647',
+    date: '2026-07-09',
+    title: 'JOCO Audit Report: fuller ASHRAE 36 summary, shorter report',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department > Reports > Audit Report: the section formerly called "Gap Details" is now "ASHRAE Guideline 36 Sequences" and lists every applicable sequence for the whole portfolio (not just the ones with problems), each with a plain-language description and a Status column so you can see what\'s fully working alongside what needs attention.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department > Reports > Audit Report: status labels now read "Fully Covered", "Partially Covered", and "Not Covered" instead of "Ready", "Partial", and "Critical" — clearer at a glance for anyone outside the BAS team.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department > Reports > Audit Report: the report is denser and shorter (39 pages down to 26 for a typical portfolio) — smaller footers and smarter page-packing for smaller buildings, with no content cut off.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.09.646',
     date: '2026-07-09',
     title: 'Fixed Baldwin bill display: empty billing periods and dead commodity clicks',

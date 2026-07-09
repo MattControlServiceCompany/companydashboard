@@ -10769,6 +10769,56 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
 };
 
 /**
+ * ASHRAE36_SEQUENCE_PLAIN — plain-English, non-technical descriptions used ONLY by the
+ * "ASHRAE Guideline 36 Sequences" summary table (rptPageASHRAE36CostEstimate). Keyed by
+ * EM_SEQUENCE_DEFS.key (equipment-matrix.js). Deliberately a SEPARATE object from
+ * ASHRAE36_GAP_DESCRIPTIONS above — that dictionary is shared by the Executive Summary
+ * top-gaps callout, per-building missing-point rows, and the Proposal's Scope of Work page,
+ * so editing its wording risks unintended changes across those sections. This table's
+ * content is new (2026-07-09 content reframe, Matt's decision: "all sequences, plain-
+ * language") and needs its own curated, deliberately jargon-free copy — avoid terms like
+ * "economizer," "BACnet," "BAS export" that a non-technical reader will not recognize.
+ * DRAFT COPY, not final — see stages/audit-reframe-2026-07-09/sequence-descriptions.txt for
+ * the sign-off list generated from this object; Matt should review before this ships broadly.
+ */
+var ASHRAE36_SEQUENCE_PLAIN = {
+  ahu_sat_reset:
+    "Adjusts how warm or cool the air handler's output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.",
+  ahu_dsp_reset:
+    "Lets the supply fan slow down when the building doesn't need full airflow, instead of always pushing air at full force. Cuts fan energy use.",
+  ahu_economizer:
+    "Uses outdoor air to cool the building for free when it's cool enough outside, so the cooling equipment doesn't have to run as much.",
+  ahu_freeze_prot:
+    'Automatically shuts the air handler down if coil temperatures get cold enough to risk a frozen, burst water coil.',
+  ahu_min_oa:
+    'Keeps a minimum amount of fresh outdoor air coming into the building at all times to meet ventilation requirements, even as fan speed changes.',
+  ahu_rf_control:
+    "Keeps the return fan's speed matched to the supply fan so the building doesn't develop pressure problems, like doors that are hard to open or drafts.",
+  vav_zone_temp:
+    'Keeps each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
+  vav_damper_writeback:
+    'Confirms the air damper in each zone is actually at the position the system commands, so a stuck or failed damper gets caught early instead of silently wasting energy or causing comfort complaints.',
+  vav_reheat:
+    "Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn't overcool when it needs less airflow.",
+  hwp_supply_reset:
+    "Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn't heat water hotter than it needs to.",
+  hwp_pump_dp_reset:
+    'Lets the hot water pump slow down when fewer rooms are calling for heat, instead of always pumping at full speed.',
+  hwp_staging:
+    'Automatically brings a second boiler online only when the building actually needs the extra heat, and shuts it back off when demand drops, instead of running every boiler all the time.',
+  chwp_supply_reset:
+    "Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn't have to work as hard as it does on a full-load day.",
+  chwp_pump_dp_reset:
+    'Lets the chilled water pump slow down when cooling demand is low, instead of always pumping at full speed.',
+  chwp_staging:
+    'Automatically brings a second chiller online only when the building actually needs the extra cooling, and shuts it back off when demand drops.',
+  demandCtrl:
+    'Uses a CO2 sensor to bring in only as much outdoor air as the number of people in the building actually calls for, instead of a fixed amount around the clock.',
+  vav_dcv:
+    'Uses a CO2 sensor at the zone level to adjust ventilation air based on how many people are actually in that specific room.',
+};
+
+/**
  * ASHRAE36_SECTIONS — defines available report sections for the audit and proposal.
  * Mirrors the REPORT_SECTIONS pattern.
  */
@@ -10776,7 +10826,7 @@ var ASHRAE36_SECTIONS = {
   audit: [
     { key: 'cover', label: 'Cover Page', group: 'Report', defaultOn: true },
     { key: 'executive', label: 'Executive Summary', group: 'Report', defaultOn: true },
-    { key: 'costEstimate', label: 'Gap Details', group: 'Report', defaultOn: true },
+    { key: 'costEstimate', label: 'ASHRAE Guideline 36 Sequences', group: 'Report', defaultOn: true },
     { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
     // a0c2152 (2026-07-06): power monitoring / OA-sensor metadata is not ASHRAE 36 scoring
     // content. Matt has twice asked why non-ASHRAE content is in the report, so this
@@ -11209,7 +11259,11 @@ function collectASHRAE36Data(projId, reportDate) {
     // Status band
     var status = composite >= 75 ? 'green' : composite >= 50 ? 'amber' : 'red';
     var statusColor = composite >= 75 ? 'var(--rpt-green)' : composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
-    var statusLabel = composite >= 75 ? 'Ready' : composite >= 50 ? 'Partial' : 'Critical';
+    // Display-label rename (item ed465b3c, 2026-07-09): matches _a36StatusChip's wording.
+    // This field isn't rendered directly anywhere today (the chip helper independently
+    // derives its word from `status`), kept in sync anyway so it can't drift if a future
+    // caller starts reading it.
+    var statusLabel = composite >= 75 ? 'Fully Covered' : composite >= 50 ? 'Partially Covered' : 'Not Covered';
     // Sensor counts for status chip display
     var totalSensorsInPlace = totalPointsMatched;
     var totalSensorsRequired = totalPointsRequired;
@@ -11514,7 +11568,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
 
 // ─── Status chip helper ────────────────────────────────────────────────────
 // status: 'green'|'amber'|'red'; inPlace/required: sensor counts (optional).
-// Renders "Ready · 3/3 sensors" style label when counts are provided.
+// Renders "Fully Covered · 3/3 sensors" style label when counts are provided.
 function _a36StatusChip(status, inPlace, required) {
   // `color` is computed for the caller's colored status bar (data-viz, kept — see the
   // `.rpt-a36-*` executive-summary/building rows that render `color` alongside this chip's
@@ -11522,11 +11576,14 @@ function _a36StatusChip(status, inPlace, required) {
   // the word itself renders in var(--rpt-page-text) (#000000), not `color`; confirmed via
   // before/after render, no visual change on this element. Left as-is, not re-touched.
   var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
-  var word = status === 'green' ? 'Ready' : status === 'amber' ? 'Partial' : 'Critical';
+  // Display-label rename (item ed465b3c, 2026-07-09, Matt's decision): Ready/Partial/Critical
+  // -> Fully Covered/Partially Covered/Not Covered. DISPLAY TEXT ONLY — the 'green'/'amber'/
+  // 'red' status keys and every caller's >=75/>=50 threshold logic are untouched.
+  var word = status === 'green' ? 'Fully Covered' : status === 'amber' ? 'Partially Covered' : 'Not Covered';
   // Batch 3 item 2/3a: at 100% (inPlace === required, required > 0) the fraction is a
-  // tautology ("Ready · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells the
-  // reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
-  // unchanged (e.g. "Partial · 178/261 sensors", "Critical · 7/16 sensors").
+  // tautology ("Fully Covered · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells
+  // the reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
+  // unchanged (e.g. "Partially Covered · 178/261 sensors", "Not Covered · 7/16 sensors").
   var isComplete = inPlace !== undefined && required !== undefined && required > 0 && inPlace === required;
   var label =
     inPlace !== undefined && required !== undefined && !isComplete
@@ -11755,14 +11812,17 @@ function rptPageASHRAE36Executive(n, d) {
     '">Status</th>' +
     '</tr></thead>';
   // Batch 3 item 3/3b (copy-options.md Option A — RECOMMENDED): append one plain-language
-  // sentence per tier so a facility owner reading "Critical <50%" learns what that means
+  // sentence per tier so a facility owner reading "Not Covered <50%" learns what that means
   // operationally, not just the number. Numeric footnote kept intact, meaning appended inline.
+  // Labels renamed (item ed465b3c, 2026-07-09): Ready/Partial/Critical -> Fully Covered/
+  // Partially Covered/Not Covered — display text only; the underlying 'green'/'amber'/'red'
+  // status keys and >=75/>=50 thresholds are unchanged (see _a36StatusChip).
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
     '<strong>Score</strong> = weighted composite (40% Sensor Coverage + 60% Sequence Readiness). ' +
-    '<strong>Status thresholds:</strong> Ready ≥75% (meets the ASHRAE 36 baseline), Partial 50–74% ' +
+    '<strong>Status thresholds:</strong> Fully Covered ≥75% (meets the ASHRAE 36 baseline), Partially Covered 50–74% ' +
     '(some sensors and sequences are in place, but work is needed before sequences can run reliably), ' +
-    'Critical <50% (the building lacks the sensors or programming needed to run ASHRAE 36 sequences at all).' +
+    'Not Covered <50% (the building lacks the sensors or programming needed to run ASHRAE 36 sequences at all).' +
     '</div>';
 
   // Build a token per building row — type:'row', estH:52px
@@ -11771,7 +11831,23 @@ function rptPageASHRAE36Executive(n, d) {
   // row height instead of alternating ~30.5px/~50px. Building names are NEVER truncated or
   // forced to nowrap — a name that needs 2 lines simply grows the row (and every cell in it)
   // to match; ROW_BOX_MIN_H is tuned to the 2-line ceiling so the common case looks uniform.
-  var ROW_BOX_MIN_H = 40;
+  // Density pass (feat/audit-report-reframe-density, 2026-07-09): was 40px, sized to force
+  // EVERY row (including the rare 2-line building name) to the same tall height. Most JOCO
+  // building names are short and fit on one line. See density investigation Finding 3
+  // (stages/joco-audit-density-2026-07-09/investigation.md): 26 rows @ 50px/row = 3 pages
+  // with a near-empty 3rd page.
+  // First pass reduced this to 22px, but that under-measured: the Status cell text got
+  // LONGER in the same pass (item ed465b3c, 2026-07-09: "Partial" -> "Partially Covered",
+  // "Ready"/"Critical" similarly lengthened), so most non-100% rows now wrap the status
+  // fraction ("Partially Covered · 2658/4032 sensors") onto 2 lines inside the Status column
+  // — headless DOM measurement (getBoundingClientRect on live rendered rows) showed actual
+  // row heights of 41-44px, not the assumed 32px (22+10 padding), which silently overflowed
+  // the first Executive Summary page in the real jsPDF export (page grew to 1148px, spilling
+  // table rows into the footer/footnote area — caught by rendering an actual PDF and looking
+  // at it, not by the DOM proxy count alone). Re-tuned to 34px (34+10=44px matches the
+  // measured max) — still a real reduction from the original 50px/row, just accurate instead
+  // of optimistic.
+  var ROW_BOX_MIN_H = 34;
   var _rowBoxStyle = 'min-height:' + ROW_BOX_MIN_H + 'px;display:flex;align-items:center';
   function _buildRowHTML(b) {
     var bar =
@@ -11906,113 +11982,78 @@ function rptPageASHRAE36Executive(n, d) {
  */
 function rptPageASHRAE36CostEstimate(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var projId = d.project.id;
 
+  // feat/audit-report-reframe-density (2026-07-09): content reframe per Matt's confirmed
+  // decision ("all sequences, plain-language"). This table used to list ONLY missing-sensor
+  // rows and blocked/partial sequence rows (a punch list, via buildComplianceRows /
+  // buildRecommendedRows in pricing-estimator.js). It now lists EVERY ASHRAE Guideline 36
+  // sequence applicable to the equipment present in this portfolio, with a Ready/Partial/
+  // Critical status per sequence, so the reader sees the full compliance picture, not just
+  // gaps. Individual missing-sensor/hardware rows are NOT removed from the report overall —
+  // they still drive the Proposal's Scope of Work page (rptPageASHRAE36ProposalScope, which
+  // reads d.portfolio.topGaps) — only this Audit-report table's row source changed.
+  //
+  // Source of truth for "every applicable sequence": EM_SEQUENCE_DEFS (equipment-matrix.js).
+  // Per-equipment readiness: d.buildings[*].equipResults[*].seqReadiness, already computed in
+  // collectASHRAE36Data() via emComputeSequenceReadiness() (status 'ready'|'partial'|
+  // 'blocked'|'na' per sequence per equipment instance). Here we aggregate across the whole
+  // portfolio: a sequence is included if it applies to at least one piece of equipment
+  // anywhere (status !== 'na'); the row's overall status is the % of applicable equipment
+  // instances that are 'ready' (>=75% green/Ready, >=50% amber/Partial, else red/Critical) —
+  // same thresholds already used for building-level composite status elsewhere in this file.
   var rationaleTokens = [];
   try {
-    if (typeof buildComplianceRows === 'function') {
-      var compRows = buildComplianceRows(projId);
-      // Collect unique phase-1 point keys in order of first appearance
-      var seenKeys = {};
-      compRows.forEach(function (row) {
-        if (row.phase !== 1) return;
-        var pk = row._pointKey;
-        if (!pk || seenKeys[pk]) return;
-        seenKeys[pk] = true;
-        var desc = ASHRAE36_GAP_DESCRIPTIONS[pk];
-        // Use whyNotHardware from PRICE_POINT_MAP for ioOnly programming items (dampCmd etc.),
-        // otherwise use plain text from ASHRAE36_GAP_DESCRIPTIONS.
-        var plainText = '';
-        var g36Ref = row.g36Section || (desc ? '' : '');
-        var isProgramming = row.type === 'Programming';
-        if (isProgramming && row.whyNotHardware) {
-          plainText = row.whyNotHardware;
-        } else if (row.whyNeeded) {
-          plainText = row.whyNeeded;
-        } else if (desc && desc.plain) {
-          plainText = desc.plain;
-        }
-        var shortLabel = desc && desc.short ? _esc(desc.short) : _esc(row.item);
-        if (plainText) {
-          var badge = isProgramming ? 'Programming — ' : '';
-          var rowHTML =
-            '<tr>' +
-            '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-            'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:28%;white-space:nowrap">' +
-            badge +
-            shortLabel +
-            '</td>' +
-            '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-            'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:18%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-            // a0c2152 (2026-07-06): render-side only. Rows with no g36Section (row.type ===
-            // 'Programming' items and hardware feedback points that don't carry their own
-            // ASHRAE 36 citation) previously rendered a blank cell here, which read to Matt
-            // as "this item has no ASHRAE 36 basis." These items ARE ASHRAE-relevant — they
-            // are prerequisites needed by a cited sequence, just not independently cited.
-            // Data-source fix for row.g36Section population itself is a separate, cross-lane
-            // follow-up owned by another agent in pricing-estimator.js — not duplicated here.
-            (g36Ref ? 'ASHRAE 36 ' + _esc(g36Ref) : 'Prerequisite') +
-            '</td>' +
-            '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-            'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
-            _esc(plainText) +
-            '</td>' +
-            '</tr>';
-          // estH: DOM-measured 40–65px per row (avg ~55px); 60px for safety on wrapping text
-          rationaleTokens.push({ type: 'row', html: rowHTML, estH: 60 });
-        }
-      });
-
-      // Phase 5 (correction #10): append Phase-2 sequence rows with savingsRationale.
-      // Use buildRecommendedRows so savingsRationale is already stamped.
-      // Only savings-type rows (not enabler, not safety). Deduplicate by seqKey.
-      // Plain text only — NO badge chips in the PDF.
-      if (typeof buildRecommendedRows === 'function') {
-        var recRows10 = buildRecommendedRows(projId);
-        var seenSeqKeys = {};
-        recRows10.forEach(function (row) {
-          if (row.phase !== 2) return;
-          if (!row.seqKey || seenSeqKeys[row.seqKey]) return;
-          // Prefer the clean client-facing sentence (2026-06-30 report defect fix — see
-          // pricing-estimator.js SEQUENCE_SAVINGS_IMPACT.clientSummary). savingsRationale is
-          // internal-only (citations, warnings, JOCO-specific counts) and must never reach a client PDF.
-          var clientText = row.clientSummary || row.savingsRationale;
-          if (!clientText) return;
-          // Exclude enabler and safety — they don't have client-facing energy savings rationale
-          if (row.savingsImpact === 'enabler' || row.savingsImpact === 'safety') return;
-          seenSeqKeys[row.seqKey] = true;
-          // Safety-net truncation only (clientSummary is already a concise single sentence and
-          // should not normally hit this limit). Break on the last word boundary, never mid-word.
-          var rationaleSnippet = clientText;
-          if (rationaleSnippet.length > 160) {
-            var cut = rationaleSnippet.slice(0, 160);
-            var lastSpace = cut.lastIndexOf(' ');
-            if (lastSpace > 0) cut = cut.slice(0, lastSpace);
-            rationaleSnippet = cut + '…';
-          }
-          // No internal priority-tier tag ([HIGH]/[MED]/etc.) in the client PDF — internal-only signal.
-          var seqRowHTML =
-            '<tr>' +
-            '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-            'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:28%;white-space:nowrap">' +
-            _esc(row.item) +
-            '</td>' +
-            '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-            'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:18%"></td>' +
-            '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-            'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
-            _esc(rationaleSnippet) +
-            '</td>' +
-            '</tr>';
-          rationaleTokens.push({ type: 'row', html: seqRowHTML, estH: 60 });
+    var seqAgg = {}; // seqKey -> { ready, partial, blocked, total }
+    (d.buildings || []).forEach(function (b) {
+      (b.equipResults || []).forEach(function (eq) {
+        var sr = eq.seqReadiness || {};
+        Object.keys(sr).forEach(function (seqKey) {
+          var entry = sr[seqKey];
+          if (!entry || entry.status === 'na') return;
+          if (!seqAgg[seqKey]) seqAgg[seqKey] = { ready: 0, partial: 0, blocked: 0, total: 0 };
+          seqAgg[seqKey].total++;
+          if (entry.status === 'ready') seqAgg[seqKey].ready++;
+          else if (entry.status === 'partial') seqAgg[seqKey].partial++;
+          else if (entry.status === 'blocked') seqAgg[seqKey].blocked++;
         });
-      }
-    }
+      });
+    });
+
+    var seqDefsList =
+      typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
+    seqDefsList.forEach(function (seq) {
+      var agg = seqAgg[seq.key];
+      if (!agg || agg.total === 0) return; // not applicable to any equipment in this portfolio
+      var readyPct = Math.round((agg.ready / agg.total) * 100);
+      var seqStatus = readyPct >= 75 ? 'green' : readyPct >= 50 ? 'amber' : 'red';
+      var plainDesc = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[seq.key]) || '';
+      var rowHTML =
+        '<tr>' +
+        '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:24%">' +
+        _esc(seq.label) +
+        '</td>' +
+        '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+        'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:14%;white-space:nowrap">' +
+        'ASHRAE 36 ' +
+        _esc(seq.ashrae36 || '') +
+        '</td>' +
+        '<td style="padding:7px 10px;border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:12%">' +
+        _a36StatusChip(seqStatus) +
+        '</td>' +
+        '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+        'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
+        _esc(plainDesc) +
+        '</td>' +
+        '</tr>';
+      // estH: DOM-measured 40–65px per row (avg ~55px); 60px for safety on wrapping text
+      rationaleTokens.push({ type: 'row', html: rowHTML, estH: 60 });
+    });
   } catch (e) {
     rationaleTokens = []; // non-fatal — omit block if anything throws
   }
 
-  // ── Page assembly with rationale table pagination ──────────────────────────
+  // ── Page assembly with sequence table pagination ───────────────────────────
   // Budget updated (2026-06-29): cost table removed; full body available for rows.
   //   Page 1 body ~808px; chrome = _ratTitle(~17px) + _ratThead(~27px) + div(~18px) = ~62px
   //   Row budget = 808 − 62 = ~746px; using 740 for safety margin.
@@ -12020,19 +12061,25 @@ function rptPageASHRAE36CostEstimate(n, d) {
   var RATIONALE_BUDGET_FIRST = 740;
   var RATIONALE_BUDGET_CONT = 750;
 
-  // Shared HTML fragments for the rationale table chrome
+  var SEQ_SECTION_TITLE = 'ASHRAE Guideline 36 Sequences';
+
+  // Shared HTML fragments for the sequence table chrome
   var _ratTitle =
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
-    'text-transform:uppercase;letter-spacing:0.04em">What Each Gap Addresses</div>';
+    'text-transform:uppercase;letter-spacing:0.04em">' +
+    SEQ_SECTION_TITLE +
+    '</div>';
   var _ratThead =
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:28%">Requirement</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:24%">Sequence</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:18%">ASHRAE 36 Spec</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:14%">ASHRAE 36 Spec</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Why It Matters</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:12%">Status</th>' +
+    '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Description</th>' +
     '</tr></thead><tbody>';
   var _ratTclose = '</tbody></table>';
 
@@ -12040,15 +12087,15 @@ function rptPageASHRAE36CostEstimate(n, d) {
   var currentPageNum = n;
 
   if (rationaleTokens.length === 0) {
-    // No rationale (fallback path or no rows) — single page with simple note
+    // No sequence data (fallback path or no rows) — single page with simple note
     resultPages.push(
       rptPage(
         currentPageNum,
-        'ASHRAE 36 Audit Report — Gap Details',
-        '<div style="font-size:11px;color:var(--rpt-page-text)">No gap data available.</div>',
+        'ASHRAE 36 Audit Report — ' + SEQ_SECTION_TITLE,
+        '<div style="font-size:11px;color:var(--rpt-page-text)">No sequence data available.</div>',
         {
           data: fakeData,
-          label: 'Page ' + currentPageNum + ' — Gap Details',
+          label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE,
         },
       ),
     );
@@ -12067,9 +12114,11 @@ function rptPageASHRAE36CostEstimate(n, d) {
       resultPages.push(
         rptPage(
           currentPageNum,
-          isFirst ? 'ASHRAE 36 Audit Report — Gap Details' : 'ASHRAE 36 Audit Report — Gap Details (cont.)',
+          isFirst
+            ? 'ASHRAE 36 Audit Report — ' + SEQ_SECTION_TITLE
+            : 'ASHRAE 36 Audit Report — ' + SEQ_SECTION_TITLE + ' (cont.)',
           pageBody,
-          { data: fakeData, label: 'Page ' + currentPageNum + ' — Gap Details' },
+          { data: fakeData, label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE },
         ),
       );
       currentPageNum++;
@@ -12088,24 +12137,21 @@ function rptPageASHRAE36CostEstimate(n, d) {
  * @param {object} d - Data from collectASHRAE36Data
  * @param {object} building - Single building entry from d.buildings
  */
-function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
-  // @param {boolean} [showBuildingInfra] - 2026-07-06 (a0c2152): whether to append the
-  //   Building Infrastructure (BAS Export) callout. Defaults to false/omitted (unchecked)
-  //   because power-monitoring/OA-sensor metadata is not ASHRAE 36 scoring content — Matt
-  //   twice asked why non-ASHRAE content is in the report. Driven by the modal's
-  //   'buildingInfra' checkbox (ASHRAE36_SECTIONS.audit, defaultOn:false).
-  // PRE-SPLIT PAGINATION (Stage 2 fix, 2026-06-11):
-  // Returns an ARRAY of rptPage() HTML strings -- one element per printed page.
-  // Short buildings (low total estH) return a single-element array.
-  // Caller (generateASHRAE36AuditHTML) must spread the array into pages[].
-  // Pixel budgets for _rptPaginateTokens (shared paginator):
-  //   Page body height available = 1056px page - 12px top pad - ~45px int-hdr - 12px body-top-pad
-  //     - 80px body-bottom-pad - 12px page-bottom-pad = ~895px actual
-  //   First page: subtract gauges (~100px) + intro (~35px) + table thead (~30px) = 730px for rows
-  //   Cont pages: subtract cont-header (~35px) + table thead (~30px) = 830px for rows
-  var ROWS_BUDGET_FIRST = 730; // px available for equipment rows on page 1
-  var ROWS_BUDGET_CONT = 830; // px available for equipment rows on continuation pages
-
+/**
+ * _a36BuildingContent — shared per-building content builder, extracted from
+ * rptPageASHRAE36Building (feat/audit-report-reframe-density, 2026-07-09) so the SAME
+ * gauges/table/summary HTML can be consumed two ways:
+ *   1. rptPageASHRAE36Building — a building whose content is too tall for one shared page
+ *      gets its own dedicated page(s), exactly as before this refactor (byte-identical
+ *      output for that path — only the setup code moved, none of the logic changed).
+ *   2. _a36BuildingBlockToken — a building whose content fits comfortably on a page gets
+ *      packed alongside other small buildings on a SHARED page (density Finding 4: 26 of 39
+ *      pages were "Per-Building Detail," one building = one forced full 1056px page even for
+ *      a building with 1 piece of equipment — see
+ *      stages/joco-audit-density-2026-07-09/investigation.md).
+ * Returns { b, fakeData, gauges, intro, tableHead, tokens, summaryLine, infraCallout }.
+ */
+function _a36BuildingContent(d, building, showBuildingInfra) {
   var b = building;
   // Rule 2.3: reportDate drives footer date; label empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
@@ -12277,8 +12323,9 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
         notReadySeqs.push(_seqLabel(sk, sr[sk]));
       }
     }
+    // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered".
     var seqsCell =
-      notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Ready</span>' : notReadySeqs.join(', ');
+      notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Fully Covered</span>' : notReadySeqs.join(', ');
     var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
     var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
 
@@ -12375,7 +12422,9 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
 
     var sensorsCell =
       sensorsSum === 0 ? '0 — Complete' : sensorsBreakdown ? sensorsSum + ' — ' + sensorsBreakdown : String(sensorsSum);
-    var seqsCell = seqsSum === 0 ? '0 — Ready' : seqsBreakdown ? seqsSum + ' — ' + seqsBreakdown : String(seqsSum);
+    // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered".
+    var seqsCell =
+      seqsSum === 0 ? '0 — Fully Covered' : seqsBreakdown ? seqsSum + ' — ' + seqsBreakdown : String(seqsSum);
 
     var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-rule)';
     tokens.push({
@@ -12501,6 +12550,52 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
     'and sequences that cannot run until those sensors are installed.' +
     '</div>';
 
+  return {
+    b: b,
+    fakeData: fakeData,
+    gauges: gauges,
+    intro: intro,
+    tableHead: tableHead,
+    tokens: tokens,
+    summaryLine: summaryLine,
+    infraCallout: infraCallout,
+  };
+}
+
+// ─── rptPageASHRAE36Building ──────────────────────────────────────────────
+/**
+ * Per-building detail page: structured equipment-by-row table showing sensors
+ * present, sensors needed (with human-readable names), and sequences not ready.
+ * Used for a SINGLE building whose own content is too tall to share a page with
+ * others (see generateASHRAE36AuditHTML's packing loop, which calls this ONLY as a
+ * fallback for oversized buildings — most buildings now go through
+ * _a36BuildingBlockToken instead so they can pack multiple-per-page).
+ * @param {number} n - Page number
+ * @param {object} d - Data from collectASHRAE36Data
+ * @param {object} building - Single building entry from d.buildings
+ * @param {boolean} [showBuildingInfra]
+ * PRE-SPLIT PAGINATION (Stage 2 fix, 2026-06-11):
+ * Returns an ARRAY of rptPage() HTML strings -- one element per printed page.
+ * Pixel budgets for _rptPaginateTokens (shared paginator):
+ *   Page body height available = 1056px page - 12px top pad - ~45px int-hdr - 12px body-top-pad
+ *     - 80px body-bottom-pad - 12px page-bottom-pad = ~895px actual
+ *   First page: subtract gauges (~100px) + intro (~35px) + table thead (~30px) = 730px for rows
+ *   Cont pages: subtract cont-header (~35px) + table thead (~30px) = 830px for rows
+ */
+function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
+  var ROWS_BUDGET_FIRST = 730; // px available for equipment rows on page 1
+  var ROWS_BUDGET_CONT = 830; // px available for equipment rows on continuation pages
+
+  var c = _a36BuildingContent(d, building, showBuildingInfra);
+  var b = c.b;
+  var fakeData = c.fakeData;
+  var gauges = c.gauges;
+  var intro = c.intro;
+  var tableHead = c.tableHead;
+  var tokens = c.tokens;
+  var summaryLine = c.summaryLine;
+  var infraCallout = c.infraCallout;
+
   // Chunk tokens into pages using the shared pixel-height paginator.
   // Replaces the old row-count loop (ROWS_PER_PAGE_FIRST/CONT) which caused overflow
   // when rows contained multi-line sensor/sequence lists.
@@ -12560,6 +12655,51 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
   });
 
   return resultPages; // always an Array, even for short buildings (length === 1)
+}
+
+// ─── _a36BuildingBlockToken ────────────────────────────────────────────────
+/**
+ * Density fix (feat/audit-report-reframe-density, 2026-07-09), Finding 4: builds ONE
+ * building's gauges+intro+table+summary as a single atomic, non-splittable HTML block with
+ * an estimated pixel height, for packing multiple small buildings onto a shared page via
+ * _rptPaginateTokens (mirrors the pattern rptPageASHRAE36Executive already uses for building
+ * rows). Used by generateASHRAE36AuditHTML for every building whose content fits within one
+ * page; buildings too tall for a single page still fall back to rptPageASHRAE36Building's own
+ * dedicated multi-page treatment (unchanged).
+ * @returns {{estH:number, html:string, type:'block', name:string}}
+ */
+function _a36BuildingBlockToken(d, building, showBuildingInfra) {
+  var c = _a36BuildingContent(d, building, showBuildingInfra);
+  var tbodyRows = c.tokens
+    .map(function (tok) {
+      return tok.html;
+    })
+    .join('');
+  var equipTable =
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
+    c.tableHead +
+    '<tbody>' +
+    tbodyRows +
+    '</tbody>' +
+    '</table>';
+  var innerHTML = c.gauges + c.intro + equipTable + c.summaryLine + (showBuildingInfra ? c.infraCallout : '');
+  // Block chrome: bottom rule + spacing separates one building's block from the next when
+  // several share a page (buildings otherwise have no visual separator once the per-building
+  // page wrapper is gone).
+  var blockHTML =
+    '<div style="margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--rpt-rule)">' +
+    innerHTML +
+    '</div>';
+
+  // estH: same chrome estimate used by rptPageASHRAE36Building's ROWS_BUDGET_FIRST derivation
+  // (gauges ~100px + intro ~35px + thead ~30px) + summed row heights + summary line (~30px) +
+  // optional infra callout (~50px) + this block's own separator chrome (~32px).
+  var rowsH = c.tokens.reduce(function (s, t) {
+    return s + (t.estH || 20);
+  }, 0);
+  var estH = 100 + 35 + 30 + rowsH + 30 + (showBuildingInfra ? 50 : 0) + 32;
+
+  return { type: 'block', estH: estH, html: blockHTML, name: c.b.name };
 }
 
 // ─── rptPageASHRAE36Recommendations ──────────────────────────────────────
@@ -13598,13 +13738,60 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     // a0c2152: buildingInfra is an independent sub-flag (default unchecked) — only pass
     // showBuildingInfra=true when the user explicitly ticks it in the modal.
     var showBuildingInfra = s.buildingInfra === true;
-    data.buildings.forEach(function (b) {
-      var bPages = rptPageASHRAE36Building(pageNum, data, b, showBuildingInfra);
-      bPages.forEach(function (pg) {
+
+    // Density fix (feat/audit-report-reframe-density, 2026-07-09), Finding 4: this used to be
+    // `data.buildings.forEach` calling rptPageASHRAE36Building once per building, which forces
+    // EVERY building onto its own full 1056px page regardless of content size — 26 of JOCO's
+    // 39 total report pages, many holding a single equipment category row on an otherwise
+    // blank page (see stages/joco-audit-density-2026-07-09/investigation.md Finding 4).
+    // Now: each building becomes an atomic block token (_a36BuildingBlockToken); small
+    // buildings pack multiple-per-page via the same _rptPaginateTokens paginator already used
+    // for the Executive Summary table. A building whose own content is too tall for one page
+    // (estH over the budget) falls back to rptPageASHRAE36Building's existing dedicated
+    // multi-page treatment, unchanged, so no building's content is ever clipped.
+    // Verified via headless render against live JOCO data (2026-07-09): 860px let a handful
+    // of packed pages grow to ~1160-1224px actual scrollHeight (still auto-scaled to fit one
+    // PDF page per Fix A2 above, not clipped, but denser than intended) — tightened to 700px
+    // for a larger safety margin against the estH approximation in _a36BuildingBlockToken.
+    var BUILDING_PAGE_BUDGET = 750; // px — interior page body (~895px) minus safety margin
+    var _bldgFakeData = { project: { client: data.project.name }, period: { label: '', reportDate: data.rawDate } };
+    var _pendingBlocks = [];
+
+    function _flushPendingBuildingBlocks() {
+      if (!_pendingBlocks.length) return;
+      var _chunks = _rptPaginateTokens(_pendingBlocks, BUILDING_PAGE_BUDGET, BUILDING_PAGE_BUDGET);
+      _chunks.forEach(function (chunk) {
+        var bodyHTML = chunk
+          .map(function (t) {
+            return t.html;
+          })
+          .join('');
+        var pg = rptPage(pageNum, 'ASHRAE 36 Audit Report — Per-Building Detail', bodyHTML, {
+          data: _bldgFakeData,
+          label: 'Page ' + pageNum + ' — Per-Building Detail',
+        });
         pages.push(_tagA36Section(pg, 'building'));
         pageNum++;
       });
+      _pendingBlocks = [];
+    }
+
+    data.buildings.forEach(function (b) {
+      var blockTok = _a36BuildingBlockToken(data, b, showBuildingInfra);
+      if (blockTok.estH <= BUILDING_PAGE_BUDGET) {
+        _pendingBlocks.push(blockTok);
+      } else {
+        // Too tall to share a page — flush anything already queued (preserves building order
+        // in the printed report) then give this one building its own dedicated page(s).
+        _flushPendingBuildingBlocks();
+        var bPages = rptPageASHRAE36Building(pageNum, data, b, showBuildingInfra);
+        bPages.forEach(function (pg) {
+          pages.push(_tagA36Section(pg, 'building'));
+          pageNum++;
+        });
+      }
     });
+    _flushPendingBuildingBlocks();
   }
 
   // Batch 3 item 6 / plan 3e Option A: Recommendations page deleted from the Audit report
