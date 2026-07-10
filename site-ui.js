@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.10.654'; // deployed 2026-07-10 (fix: Cost Estimate toolbar — Building/Sort moved to toolbar, Budget surfaced as toolbar chip, 70235050 + 174ad49a)
+  var CH_VERSION = 'v2026.07.10.655'; // deployed 2026-07-10 (fix: Audit Report visual pass — footer dedup, building heading, table borders, footer image squish fix)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

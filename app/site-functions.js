@@ -1191,13 +1191,36 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.655',
+    date: '2026-07-10',
+    title: 'Audit Report visual cleanup',
+    items: [
+      {
+        type: 'fix',
+        text: 'Audit Report: the footer no longer repeats the building location a second time under the page footer.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report: building names now appear as a clear, properly styled heading instead of blending into the surrounding text.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report: tables now use darker, more visible borders and stray rule lines between sections have been cleaned up.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report: the footer logo graphic no longer stretches or squishes out of proportion.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.654',
     date: '2026-07-10',
     title: 'Cost Estimate toolbar cleanup',
     items: [
       {
         type: 'change',
-        text: 'Energy Department > Cost Estimate: the Building and Sort filters have moved out of Table Settings and into the main toolbar so they are visible without opening a menu. The Budget is now also an always-visible toolbar control (with its own popover) instead of being hidden inside Table Settings.',
+        text: 'Cost Estimate: the Building and Sort filters have moved out of Table Settings and into the main toolbar so they are visible without opening a menu. The Budget is now also an always-visible toolbar control (with its own popover) instead of being hidden inside Table Settings.',
       },
     ],
   },
@@ -1208,7 +1231,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > Equipment Matrix > Audit View: the header counter now shows the correct split of points that count toward ASHRAE 36 scoring vs additional points found that are not scored. It was previously double-counting every scored point and always showing zero for the second group.',
+        text: 'Equipment Matrix > Audit View: the header counter now shows the correct split of points that count toward ASHRAE 36 scoring vs additional points found that are not scored. It was previously double-counting every scored point and always showing zero for the second group.',
       },
     ],
   },
@@ -1219,7 +1242,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > Bills: when a scanned utility bill scores low confidence during OCR, the automatic higher-resolution retry (which re-scans the page at a larger scale to try to recover missing fields like billing period or kWh) was silently failing to run due to a code scoping bug -- it now actually executes as intended, giving low-quality scans a better chance to fully extract without manual review.',
+        text: 'Bills: when a scanned utility bill scores low confidence during OCR, the automatic higher-resolution retry (which re-scans the page at a larger scale to try to recover missing fields like billing period or kWh) was silently failing to run due to a code scoping bug -- it now actually executes as intended, giving low-quality scans a better chance to fully extract without manual review.',
       },
     ],
   },
@@ -1241,15 +1264,15 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'change',
-        text: 'Energy Department > Audit Report (ASHRAE Guideline 36): compliance status wording changed from "Covered" to "Compliant" (e.g. "Fully Compliant", "Partially Compliant") throughout the Building Compliance Status table and status chips, to match ASHRAE Guideline 36 compliance language.',
+        text: 'Audit Report (ASHRAE Guideline 36): compliance status wording changed from "Covered" to "Compliant" (e.g. "Fully Compliant", "Partially Compliant") throughout the Building Compliance Status table and status chips, to match ASHRAE Guideline 36 compliance language.',
       },
       {
         type: 'change',
-        text: 'Energy Department > Audit Report: the ASHRAE Guideline 36 Sequences reference table no longer shows a per-project Status column -- that table now focuses on explaining what each sequence is; project-level status still appears on the Building Compliance Status table and Per-Building Detail.',
+        text: 'Audit Report: the ASHRAE Guideline 36 Sequences reference table no longer shows a per-project Status column -- that table now focuses on explaining what each sequence is; project-level status still appears on the Building Compliance Status table and Per-Building Detail.',
       },
       {
         type: 'fix',
-        text: 'Energy Department > Audit Report: Building Compliance Status table column headers ("Equipment", "Sensor Coverage", "Sequence Readiness") no longer clip -- columns were widened and headers now wrap cleanly.',
+        text: 'Audit Report: Building Compliance Status table column headers ("Equipment", "Sensor Coverage", "Sequence Readiness") no longer clip -- columns were widened and headers now wrap cleanly.',
       },
     ],
   },
@@ -1260,11 +1283,11 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > BAS Trends import: point matching now recognizes more point-name variations from WebCTRL trend exports, so fewer points are skipped as unrecognized during import.',
+        text: 'BAS Trends import: point matching now recognizes more point-name variations from WebCTRL trend exports, so fewer points are skipped as unrecognized during import.',
       },
       {
         type: 'feature',
-        text: 'Energy Department > BAS Trends import: Building and Equipment fields now auto-fill from the imported WebCTRL export instead of requiring manual entry.',
+        text: 'BAS Trends import: Building and Equipment fields now auto-fill from the imported WebCTRL export instead of requiring manual entry.',
       },
     ],
   },
@@ -1275,11 +1298,11 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'feature',
-        text: 'Energy Department > project tab bar: when a project has too many tabs to fit the window, left/right arrow buttons and an edge fade now appear so you can see and click to scroll to hidden tabs instead of hunting for a thin scrollbar.',
+        text: 'project tab bar: when a project has too many tabs to fit the window, left/right arrow buttons and an edge fade now appear so you can see and click to scroll to hidden tabs instead of hunting for a thin scrollbar.',
       },
       {
         type: 'change',
-        text: 'Energy Department > Equipment Matrix > Raw View: the equipment breakdown stat tiles (Buildings, Equipment, AHU/RTU, VAV/FPB, etc.) are now a compact grid instead of oversized full-width tiles, and can be collapsed to a single "Equipment Breakdown" line via the toggle above the grid.',
+        text: 'Equipment Matrix > Raw View: the equipment breakdown stat tiles (Buildings, Equipment, AHU/RTU, VAV/FPB, etc.) are now a compact grid instead of oversized full-width tiles, and can be collapsed to a single "Equipment Breakdown" line via the toggle above the grid.',
       },
     ],
   },
@@ -1291,15 +1314,15 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'feature',
-        text: 'Energy Department > Reports > Audit Report: the section formerly called "Gap Details" is now "ASHRAE Guideline 36 Sequences" and lists every applicable sequence for the whole portfolio (not just the ones with problems), each with a plain-language description and a Status column so you can see what\'s fully working alongside what needs attention.',
+        text: 'Reports > Audit Report: the section formerly called "Gap Details" is now "ASHRAE Guideline 36 Sequences" and lists every applicable sequence for the whole portfolio (not just the ones with problems), each with a plain-language description and a Status column so you can see what\'s fully working alongside what needs attention.',
       },
       {
         type: 'change',
-        text: 'Energy Department > Reports > Audit Report: status labels now read "Fully Covered", "Partially Covered", and "Not Covered" instead of "Ready", "Partial", and "Critical" — clearer at a glance for anyone outside the BAS team.',
+        text: 'Reports > Audit Report: status labels now read "Fully Covered", "Partially Covered", and "Not Covered" instead of "Ready", "Partial", and "Critical" — clearer at a glance for anyone outside the BAS team.',
       },
       {
         type: 'change',
-        text: 'Energy Department > Reports > Audit Report: the report is denser and shorter (39 pages down to 26 for a typical portfolio) — smaller footers and smarter page-packing for smaller buildings, with no content cut off.',
+        text: 'Reports > Audit Report: the report is denser and shorter (39 pages down to 26 for a typical portfolio) — smaller footers and smarter page-packing for smaller buildings, with no content cut off.',
       },
     ],
   },
@@ -1311,11 +1334,11 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > Utility Bills / PDF extraction: on multi-meter bills (e.g. City of Baldwin electric/water/sewer), clicking a building tab or a commodity tab (Electric/Water/Sewer) could leave the two tabs pointed at different accounts, so the "Monthly Billing Periods" list showed empty and commodity tab clicks appeared to do nothing. Both tabs now stay in sync no matter which one you click, so the periods list and account details always match what\'s selected.',
+        text: 'Utility Bills / PDF extraction: on multi-meter bills (e.g. City of Baldwin electric/water/sewer), clicking a building tab or a commodity tab (Electric/Water/Sewer) could leave the two tabs pointed at different accounts, so the "Monthly Billing Periods" list showed empty and commodity tab clicks appeared to do nothing. Both tabs now stay in sync no matter which one you click, so the periods list and account details always match what\'s selected.',
       },
       {
         type: 'fix',
-        text: 'Energy Department > Utility Bills: a bill with no account number on the printed PDF could show a literal "_unknown" as its building tab label instead of a readable name. It now shows "Unassigned (needs review)" or the bill\'s address when available.',
+        text: 'Utility Bills: a bill with no account number on the printed PDF could show a literal "_unknown" as its building tab label instead of a readable name. It now shows "Unassigned (needs review)" or the bill\'s address when available.',
       },
     ],
   },
@@ -1327,7 +1350,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > Utility Bills / Meter Performance: the "Total $/MMBtu Rate" for WoodRiver Energy natural gas meters (Spring Hill / Woodland Spring Middle and other MMBtu-only gas accounts) was showing a value 10 times too low (e.g. $0.52/MMBtu instead of the correct $5.25/MMBtu). This affects the rate shown on bill entries, the Meter Performance table, and any savings/cost calculations that reference the gas rate for these meters. Rates now display and calculate correctly.',
+        text: 'Utility Bills / Meter Performance: the "Total $/MMBtu Rate" for WoodRiver Energy natural gas meters (Spring Hill / Woodland Spring Middle and other MMBtu-only gas accounts) was showing a value 10 times too low (e.g. $0.52/MMBtu instead of the correct $5.25/MMBtu). This affects the rate shown on bill entries, the Meter Performance table, and any savings/cost calculations that reference the gas rate for these meters. Rates now display and calculate correctly.',
       },
     ],
   },
@@ -1339,7 +1362,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > Equipment Matrix / Audit Report: zone terminals on Carrier VVT systems (common across the JOCO portfolio) were showing "Not Ready" for the Zone Temperature Control sequence even though they were actively controlling zone temperature. This was because heat/cool setpoints for these terminals live on the VVT master controller, not the terminal itself, so the terminal could never satisfy the old check. A terminal reporting zone temperature now counts as Ready for this sequence. Missing setpoint sensors are still flagged separately under "Sensors to Install" — this only changes sequence readiness, not sensor coverage. 303 JOCO rows flip from Not Ready to Ready; Sequence Readiness on the cover page moves from 35% to 43%.',
+        text: 'Equipment Matrix / Audit Report: zone terminals on Carrier VVT systems (common across the JOCO portfolio) were showing "Not Ready" for the Zone Temperature Control sequence even though they were actively controlling zone temperature. This was because heat/cool setpoints for these terminals live on the VVT master controller, not the terminal itself, so the terminal could never satisfy the old check. A terminal reporting zone temperature now counts as Ready for this sequence. Missing setpoint sensors are still flagged separately under "Sensors to Install" — this only changes sequence readiness, not sensor coverage. 303 JOCO rows flip from Not Ready to Ready; Sequence Readiness on the cover page moves from 35% to 43%.',
       },
     ],
   },
@@ -1359,11 +1382,11 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.07.09.642',
     date: '2026-07-09',
-    title: 'Energy Department > Audit Reports: fixed duplicate header on JOCO report pages',
+    title: 'Audit Reports: fixed duplicate header on JOCO report pages',
     items: [
       {
         type: 'fix',
-        text: "Energy Department > Audit Reports: the ASHRAE compliance report's Building Compliance Status section no longer shows its heading twice on continuation pages (when the table spans more than one page) — it now prints once, matching the rest of the report.",
+        text: "Audit Reports: the ASHRAE compliance report's Building Compliance Status section no longer shows its heading twice on continuation pages (when the table spans more than one page) — it now prints once, matching the rest of the report.",
       },
     ],
   },
@@ -1371,15 +1394,15 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.07.09.641',
     date: '2026-07-09',
-    title: 'Energy Department > Utility Data: PDF bill uploads no longer stall forever',
+    title: 'Utility Data: PDF bill uploads no longer stall forever',
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > Utility Data: a bill PDF that used to get stuck and never finish extracting (spinner runs forever) now gives up after a time budget and flags itself for manual review instead of hanging the upload indefinitely.',
+        text: 'Utility Data: a bill PDF that used to get stuck and never finish extracting (spinner runs forever) now gives up after a time budget and flags itself for manual review instead of hanging the upload indefinitely.',
       },
       {
         type: 'change',
-        text: 'Energy Department > Utility Data: bills that hit the new time budget are clearly marked as needing manual review, the same way bills with missing fields already are, so you know to check them instead of assuming they extracted cleanly.',
+        text: 'Utility Data: bills that hit the new time budget are clearly marked as needing manual review, the same way bills with missing fields already are, so you know to check them instead of assuming they extracted cleanly.',
       },
     ],
   },
@@ -1387,15 +1410,15 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.07.08.640',
     date: '2026-07-08',
-    title: 'Energy Department > Utility Data: bills table now fits your screen',
+    title: 'Utility Data: bills table now fits your screen',
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > Utility Data: the bills table no longer forces horizontal scrolling on widescreen monitors — columns now fill the available width correctly instead of overflowing.',
+        text: 'Utility Data: the bills table no longer forces horizontal scrolling on widescreen monitors — columns now fill the available width correctly instead of overflowing.',
       },
       {
         type: 'fix',
-        text: 'Energy Department > Utility Data: resizing the browser window now re-arranges the bills table columns immediately. You no longer need to hard-refresh the page for the layout to fix itself.',
+        text: 'Utility Data: resizing the browser window now re-arranges the bills table columns immediately. You no longer need to hard-refresh the page for the layout to fix itself.',
       },
       {
         type: 'change',
@@ -1407,19 +1430,19 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.07.08.639',
     date: '2026-07-08',
-    title: 'Energy Department > PDF/OCR: batch bill uploads now show where each bill will land',
+    title: 'PDF/OCR: batch bill uploads now show where each bill will land',
     items: [
       {
         type: 'feature',
-        text: 'Energy Department > PDF/OCR: the batch upload queue now shows a Destination column for every bill. Bills with a verified account/meter match save automatically, just like before.',
+        text: 'PDF/OCR: the batch upload queue now shows a Destination column for every bill. Bills with a verified account/meter match save automatically, just like before.',
       },
       {
         type: 'fix',
-        text: 'Energy Department > PDF/OCR: bills that only match by address (not by account/meter number) no longer save automatically to a guessed building. Those rows now wait for you to explicitly pick the Project, Building, and Meter before saving, which fixes bills getting routed to the wrong building when two buildings share an address.',
+        text: 'PDF/OCR: bills that only match by address (not by account/meter number) no longer save automatically to a guessed building. Those rows now wait for you to explicitly pick the Project, Building, and Meter before saving, which fixes bills getting routed to the wrong building when two buildings share an address.',
       },
       {
         type: 'fix',
-        text: 'Energy Department > PDF/OCR: bills saved from the batch upload queue now keep their bill PDF attached, so the original bill image is available afterward.',
+        text: 'PDF/OCR: bills saved from the batch upload queue now keep their bill PDF attached, so the original bill image is available afterward.',
       },
     ],
   },
@@ -1427,23 +1450,23 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.07.08.638',
     date: '2026-07-08',
-    title: 'Energy Department > PDF/OCR: bill extraction totals now reconcile correctly',
+    title: 'PDF/OCR: bill extraction totals now reconcile correctly',
     items: [
       {
         type: 'fix',
-        text: 'Energy Department > PDF/OCR: fixed a bug where an itemized charge row (like ECA Charge) could keep showing a stale value even after the bill total was auto-corrected, making the numbers on screen not add up.',
+        text: 'PDF/OCR: fixed a bug where an itemized charge row (like ECA Charge) could keep showing a stale value even after the bill total was auto-corrected, making the numbers on screen not add up.',
       },
       {
         type: 'fix',
-        text: 'Energy Department > PDF/OCR: Evergy electric bills with multi-part charges now keep the rate-derived corrected amount instead of reverting to the raw OCR-read value, fixing recurring Sum Mismatch errors.',
+        text: 'PDF/OCR: Evergy electric bills with multi-part charges now keep the rate-derived corrected amount instead of reverting to the raw OCR-read value, fixing recurring Sum Mismatch errors.',
       },
       {
         type: 'fix',
-        text: 'Energy Department > PDF/OCR: gas (KGS) bills now sum the gas charge fields for their total-reconciliation check instead of accidentally using the electric bill field list, fixing false Sum Mismatch banners on gas bills.',
+        text: 'PDF/OCR: gas (KGS) bills now sum the gas charge fields for their total-reconciliation check instead of accidentally using the electric bill field list, fixing false Sum Mismatch banners on gas bills.',
       },
       {
         type: 'change',
-        text: 'Energy Department > PDF/OCR: two Howard Hall billing periods will now correctly show a small (about $1) genuine mismatch that was previously hidden by the gas-bill bug above — this is a real, separate extraction gap now being tracked as its own item.',
+        text: 'PDF/OCR: two Howard Hall billing periods will now correctly show a small (about $1) genuine mismatch that was previously hidden by the gas-bill bug above — this is a real, separate extraction gap now being tracked as its own item.',
       },
     ],
   },
@@ -1451,11 +1474,11 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.07.08.637',
     date: '2026-07-08',
-    title: 'Energy Department > Cost Estimate: tier names now mean what they say',
+    title: 'Cost Estimate: tier names now mean what they say',
     items: [
       {
         type: 'change',
-        text: "Energy Department > Cost Estimate: the three tiers are redefined so their names match what they actually contain. Compliance now shows only the work strictly required by the ASHRAE 36 audit. Recommended now shows the best-value measures that fit the client's monthly budget across the chosen term (12/24/36/48 months) - no budget entered means the highest-impact items only. Full Scope now shows the complete catalog, including everything beyond compliance.",
+        text: "Cost Estimate: the three tiers are redefined so their names match what they actually contain. Compliance now shows only the work strictly required by the ASHRAE 36 audit. Recommended now shows the best-value measures that fit the client's monthly budget across the chosen term (12/24/36/48 months) - no budget entered means the highest-impact items only. Full Scope now shows the complete catalog, including everything beyond compliance.",
       },
     ],
   },
