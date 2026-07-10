@@ -4416,12 +4416,21 @@ function emGetAuditColDefs(filteredRows) {
     },
     {
       key: '_coverage',
-      label: 'Coverage %',
+      label: 'Sensor Coverage %',
       group: 'audit',
       width: 90,
       isAuditCoverage: true,
       title:
         'Percentage of required ASHRAE 36 BAS points present for this equipment. Click a cell for details. N/A = no requirements for this type.',
+    },
+    {
+      key: '_seqPct',
+      label: 'Sequence Readiness %',
+      group: 'audit',
+      width: 110,
+      isAuditSeqPct: true,
+      title:
+        'Percentage of applicable ASHRAE 36 sequences that are fully ready (all required points present) for this equipment. N/A = no applicable sequences for this equipment type.',
     },
     {
       key: '_baspoints',
@@ -7335,6 +7344,47 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     );
   }
 
+  // ── Sequence Readiness % (rolls up per-sequence status already cached in seqReadiness) ──
+  if (def.isAuditSeqPct) {
+    var _seqApplicable = 0;
+    var _seqReady = 0;
+    for (var _sk in seqReadiness) {
+      if (!seqReadiness.hasOwnProperty(_sk)) continue;
+      if (seqReadiness[_sk].status === 'na') continue;
+      _seqApplicable++;
+      if (seqReadiness[_sk].status === 'ready') _seqReady++;
+    }
+    if (_seqApplicable === 0) {
+      // No applicable ASHRAE 36 sequences for this equipment type — neutral N/A, never a
+      // fabricated percentage (see stages/audit-report-na-rationale-2026-07-10/wording-decision.md).
+      return (
+        '<td style="' +
+        baseStyle +
+        'color:var(--text3)" title="No applicable ASHRAE 36 sequences for this equipment type">N/A</td>'
+      );
+    }
+    var _seqPctVal = Math.round((_seqReady / _seqApplicable) * 100);
+    var _seqPctColor = _seqPctVal >= 75 ? '#27ae60' : _seqPctVal >= 50 ? '#e67e22' : '#c0392b';
+    var _seqPctBg =
+      _seqPctVal >= 75 ? 'rgba(39,174,96,0.1)' : _seqPctVal >= 50 ? 'rgba(230,126,34,0.1)' : 'rgba(192,57,43,0.1)';
+    return (
+      '<td style="' +
+      baseStyle +
+      'background:' +
+      _seqPctBg +
+      ';color:' +
+      _seqPctColor +
+      ';font-weight:700" ' +
+      'title="' +
+      _seqReady +
+      ' of ' +
+      _seqApplicable +
+      ' applicable sequences ready">' +
+      _seqPctVal +
+      '%</td>'
+    );
+  }
+
   // ── ASHRAE Points (mapped-only count, Phase D-1 split) ──
   if (def.isAuditBasPts) {
     // Use emGetNormalizedPoints (WeakMap-cached) as source of truth so WebCTRL-imported rows
@@ -7681,6 +7731,21 @@ function emAuditGetSortVal(row, def) {
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
     var c = emComputeCompliance(row, {}, _sortMaps);
     return c.coveragePct;
+  }
+  if (def.isAuditSeqPct) {
+    _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
+    var _sortCompliance = emComputeCompliance(row, {}, _sortMaps);
+    var _sortReadiness = emComputeSequenceReadiness(row, _sortCompliance);
+    var _sortApplicable = 0;
+    var _sortReady = 0;
+    for (var _ssk in _sortReadiness) {
+      if (!_sortReadiness.hasOwnProperty(_ssk)) continue;
+      if (_sortReadiness[_ssk].status === 'na') continue;
+      _sortApplicable++;
+      if (_sortReadiness[_ssk].status === 'ready') _sortReady++;
+    }
+    // N/A (no applicable sequences) sorts as -1, below the 0-100 range of real percentages
+    return _sortApplicable > 0 ? Math.round((_sortReady / _sortApplicable) * 100) : -1;
   }
   if (def.isAuditBasPts) {
     var _bpNorm = emGetNormalizedPoints(row);
