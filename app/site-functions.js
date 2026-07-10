@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.660',
+    date: '2026-07-10',
+    title: 'Equipment Matrix — auto-matched points can now be corrected',
+    items: [
+      {
+        type: 'feature',
+        text: 'On the Equipment Matrix "Manage Point Mappings" screen, each row in the Auto-Matched Points section now has an Edit button — click it to change the assigned category if the auto-match got it wrong.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.659',
     date: '2026-07-10',
     title: 'Cost Estimate now shows the labor rate right in the table',

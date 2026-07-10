@@ -20091,7 +20091,18 @@ function emOpenManageMappings(pid) {
               mp.count +
               '</td>' +
               '<td style="padding:6px 12px;font-size:11px;color:var(--text2)">' +
+              '<span class="em-automatch-label">' +
               emHtmlEsc(mp.matchedLabel) +
+              '</span> ' +
+              '<button onclick="emEditAutoMatchRow(this)" data-rawname="' +
+              emHtmlEsc(mp.name) +
+              '" data-equip="' +
+              emHtmlEsc(mp.equipCategory) +
+              '" data-matchedkey="' +
+              emHtmlEsc(mp.matchedKey) +
+              '" style="font-size:10px;padding:2px 7px;background:var(--s3);border:1px solid var(--border);' +
+              'color:var(--text);border-radius:3px;cursor:pointer;margin-left:8px" ' +
+              'title="Change this point\'s assigned category">Edit</button>' +
               '</td>' +
               '<td style="padding:6px 12px;font-size:11px;text-align:center" title="' +
               emHtmlEsc(confTitle) +
@@ -20144,6 +20155,27 @@ function emOpenManageMappings(pid) {
       }
     }
   }, 0);
+}
+
+/* ── emEditAutoMatchRow ─────────────────────────────────────────────────────
+   Manage Point Mappings modal — Auto-Matched Points section previously showed
+   the assigned category as read-only text, giving the user no way to correct
+   a wrong auto-match short of adding a duplicate override in the Unmatched
+   section. This swaps the row's category <td> for the same editable <select>
+   used by the Unmatched/Custom Overrides sections, pre-filled to the current
+   auto-matched category. No classifier logic is touched — this only builds
+   UI that writes into the existing custom-mapping store via the unchanged,
+   section-agnostic `select[data-rawname]` scan in emSaveManageMappings.    */
+function emEditAutoMatchRow(btn) {
+  if (!btn) return;
+  var td = btn.closest('td');
+  if (!td) return;
+  var rawName = btn.getAttribute('data-rawname') || '';
+  var equipCategory = btn.getAttribute('data-equip') || '';
+  var matchedKey = btn.getAttribute('data-matchedkey') || '';
+  var allCatOptions = emBuildFunctionalCatOptions();
+  var selectHtml = emBuildCategoryDropdown(rawName, equipCategory, matchedKey, allCatOptions);
+  td.innerHTML = selectHtml;
 }
 
 /* ── emBustAllCaches (Phase E) ──────────────────────────────────────────────
