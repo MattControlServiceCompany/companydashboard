@@ -11789,7 +11789,7 @@ function rptPageASHRAE36Executive(n, d) {
   var tableTitle =
     '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building Compliance Status</div>';
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:#fff;background:var(--rpt-blue);text-align:left;white-space:normal;line-height:1.25';
   // Column widths (2026-07-09, fix/report-wording-compliance-rows): explicit colgroup +
   // table-layout:fixed added so column widths are deterministic instead of browser
   // auto-layout. Auto-layout let long building names (e.g. "P25309 - Jo Co Arts and
@@ -11804,7 +11804,37 @@ function rptPageASHRAE36Executive(n, d) {
   // ("MedAct 1159 Sunflower Firestation-13", 37 chars) still wrapping. Took 3% from
   // Equipment/Sensor/Sequence (narrow numeric/percent content, had slack) and 2% from Score
   // (bar already tightened to a 60px ceiling, had slack) and gave all 5% to Building.
-  var colWidths = { building: 33, equipment: 7, sensor: 8, sequence: 8, score: 14, status: 30 };
+  // Header-clip fix (2026-07-09, same branch, follow-up): the 7/8/8% widths above were sized
+  // for the DATA rows (2-3 char percentages) but left the HEADER labels ("Equipment", "Sensor
+  // Coverage", "Sequence Readiness") clipped — DOM-confirmed scrollWidth > clientWidth on all
+  // 3 <th> cells, with the neighboring th's own background painting over the overflow (each
+  // th has its own solid background, so there's no visible "leak", just cut-off letters).
+  // "Equipment" is a single unbreakable word (no space to wrap on) so it needs its column wide
+  // enough for the whole word on one line; "Sensor Coverage"/"Sequence Readiness" can wrap
+  // between the two words once white-space:normal is explicit (added to thStyle above,
+  // replacing an unset value that rendered the same as browser default but wasn't taking
+  // effect in this table-layout:fixed context) and the row grows a 2nd header line via
+  // `line-height` above; thead height already budgeted at 44px (see ROWS_BUDGET_FIRST comment
+  // above) which two 10px lines fit inside.
+  // First attempt took the full 5% from Status alone (30->25) — headless-verified via a
+  // Range.getClientRects() line-count probe (the only reliable "did this text actually wrap"
+  // check; scrollWidth==clientWidth is NOT reliable for a block/flex div that fills its
+  // parent, since it just reports the container's own box when content doesn't overflow it)
+  // that this REGRESSED one row: the portfolio's longest status string ("Partially Compliant
+  // · 2658/4032 sensors", natural width 173px) wrapped to 2 lines at Status's new 25%
+  // (164px avail). Re-measured Building's real slack the same way (force
+  // display:inline-block + white-space:nowrap, read scrollWidth): the longest building name
+  // ("MedAct 1159 Sunflower Firestation-13") only needs 186px natural width against 222px
+  // avail at the original 33% — 36px of genuine slack, contrary to the 2026-07-09 comment
+  // above claiming zero slack (that comment was about the auto-layout wrapping bug fixed by
+  // adding table-layout:fixed, not about remaining headroom once fixed-layout was in place).
+  // Final split: Building 33->30 (-3%, still 14px above its 186px need), Status 30->28 (-2%,
+  // still ~13px above its 173px need), Score untouched (already has a small pre-existing
+  // 3px overflow on the "100%" score-bar text, out of scope for this header-only fix — do not
+  // shrink Score further or that pre-existing issue gets worse). +5% total went to
+  // Equipment/Sensor/Sequence. Re-verified after rebalancing: 0 header overflow, 0 data-row
+  // line-wrap regressions (see dashboardlogic entry for the exact before/after numbers).
+  var colWidths = { building: 30, equipment: 10, sensor: 9, sequence: 9, score: 14, status: 28 };
   var colgroup =
     '<colgroup>' +
     '<col style="width:' +
