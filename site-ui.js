@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.10.652'; // deployed 2026-07-10 (fix: OCR higher-scale retry silent no-op, a00af2f4)
+  var CH_VERSION = 'v2026.07.10.653'; // deployed 2026-07-10 (fix: Equipment Matrix Audit View header counter, ec16fadd)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

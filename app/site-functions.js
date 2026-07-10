@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.653',
+    date: '2026-07-10',
+    title: 'Fix: Equipment Matrix point counter was showing the wrong split',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > Equipment Matrix > Audit View: the header counter now shows the correct split of points that count toward ASHRAE 36 scoring vs additional points found that are not scored. It was previously double-counting every scored point and always showing zero for the second group.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.652',
     date: '2026-07-10',
     title: 'Fix: OCR higher-scale retry on low-confidence bills now runs',
