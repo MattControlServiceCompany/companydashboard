@@ -1191,6 +1191,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.648',
+    date: '2026-07-09',
+    title: 'Project tab bar scroll arrows + compact Equipment Matrix stat tiles',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department > project tab bar: when a project has too many tabs to fit the window, left/right arrow buttons and an edge fade now appear so you can see and click to scroll to hidden tabs instead of hunting for a thin scrollbar.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department > Equipment Matrix > Raw View: the equipment breakdown stat tiles (Buildings, Equipment, AHU/RTU, VAV/FPB, etc.) are now a compact grid instead of oversized full-width tiles, and can be collapsed to a single "Equipment Breakdown" line via the toggle above the grid.',
+      },
+    ],
+  },
+
+  {
     v: 'v2026.07.09.647',
     date: '2026-07-09',
     title: 'JOCO Audit Report: fuller ASHRAE 36 summary, shorter report',
