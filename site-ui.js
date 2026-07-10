@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.10.651'; // deployed 2026-07-10 (hotfix: energy-department.html cache-bust tag for site-functions.js was stuck at v648)
+  var CH_VERSION = 'v2026.07.10.652'; // deployed 2026-07-10 (fix: OCR higher-scale retry silent no-op, a00af2f4)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.652',
+    date: '2026-07-10',
+    title: 'Fix: OCR higher-scale retry on low-confidence bills now runs',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > Bills: when a scanned utility bill scores low confidence during OCR, the automatic higher-resolution retry (which re-scans the page at a larger scale to try to recover missing fields like billing period or kWh) was silently failing to run due to a code scoping bug -- it now actually executes as intended, giving low-quality scans a better chance to fully extract without manual review.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.651',
     date: '2026-07-10',
     title: "Hotfix: What's New panel showing stale version",
