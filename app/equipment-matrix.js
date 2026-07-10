@@ -7040,15 +7040,19 @@ function emRenderAuditTable(data, filters) {
       totalOther = 0,
       filtAshrae = 0,
       filtOther = 0;
+    // ec16fadd fix: read through emGetNormalizedPoints(row) (WeakMap-cached), same pattern as
+    // the already-correct per-row cells (isAuditBasPts/isAuditOther, ~7330-7374) and Summary
+    // Phase D-3 (~6366-6392) — NOT raw row.points, which stores every mapped point twice
+    // (raw BAS name + ASHRAE column key) and never contains an auto_-prefixed key at all.
     for (var i = 0; i < rows.length; i++) {
-      var _rk = Object.keys(rows[i].points || {});
+      var _rk = Object.keys(emGetNormalizedPoints(rows[i]));
       for (var _ri = 0; _ri < _rk.length; _ri++) {
         if (_rk[_ri].indexOf('auto_') === 0) totalOther++;
         else totalAshrae++;
       }
     }
     for (var i = 0; i < filtered.length; i++) {
-      var _fk = Object.keys(filtered[i].points || {});
+      var _fk = Object.keys(emGetNormalizedPoints(filtered[i]));
       for (var _fi = 0; _fi < _fk.length; _fi++) {
         if (_fk[_fi].indexOf('auto_') === 0) filtOther++;
         else filtAshrae++;
@@ -7058,15 +7062,19 @@ function emRenderAuditTable(data, filters) {
     if (filtered.length < rows.length) {
       ptsText =
         filtAshrae.toLocaleString() +
-        ' ASHRAE + ' +
+        ' points count toward ASHRAE 36 scoring + ' +
         filtOther.toLocaleString() +
-        ' Other  (of ' +
+        ' additional points found (not scored) — of ' +
         totalAshrae.toLocaleString() +
         ' + ' +
         totalOther.toLocaleString() +
-        ' total)';
+        ' building-wide';
     } else {
-      ptsText = totalAshrae.toLocaleString() + ' ASHRAE Points  +  ' + totalOther.toLocaleString() + ' Other Points';
+      ptsText =
+        totalAshrae.toLocaleString() +
+        ' points count toward ASHRAE 36 scoring · ' +
+        totalOther.toLocaleString() +
+        ' additional points found (not scored)';
     }
     countEl.textContent = ptsText;
   }
