@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.09.650'; // deployed 2026-07-09 (Audit Report: Covered->Compliant wording + Building Compliance Status header-clip fix)
+  var CH_VERSION = 'v2026.07.10.651'; // deployed 2026-07-10 (hotfix: energy-department.html cache-bust tag for site-functions.js was stuck at v648)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -34,7 +34,7 @@
     {
       v: 'v2026.06.30.605',
       date: '2026-06-30',
-      title: "Popup scroll fix and Equipment Matrix auto-mapping",
+      title: 'Popup scroll fix and Equipment Matrix auto-mapping',
       items: [
         {
           type: 'fix',

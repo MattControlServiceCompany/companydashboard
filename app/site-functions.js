@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.651',
+    date: '2026-07-10',
+    title: "Hotfix: What's New panel showing stale version",
+    items: [
+      {
+        type: 'fix',
+        text: "What's New panel was showing an out-of-date version number because a cache-bust tag on the Energy Department page was not updated on the last couple of deploys, causing some browsers to keep using an old cached copy of the site logic. The tag is now corrected so the page always loads the current version.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.09.650',
     date: '2026-07-09',
     title: 'Audit Report: compliance wording + table header fix',
