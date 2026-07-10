@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.657',
+    date: '2026-07-10',
+    title: 'Bill uploads now double-check the account before overwriting a saved bill',
+    items: [
+      {
+        type: 'fix',
+        text: 'Uploading a PDF bill that only loosely matches a building/meter (by address, not by account or meter number) no longer silently overwrites an existing bill on that meter. It now gets sent to Saved Bills for you to review and assign yourself, so the correct bill data is never replaced by mistake.',
+      },
+      {
+        type: 'fix',
+        text: 'This protection now applies everywhere a bill gets saved — multi-building uploads, promoting a Saved Bill onto a meter, and auto-creating a new meter — not just the original save queue. Manually picking a destination for a bill yourself ("Change") still works exactly as before.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.656',
     date: '2026-07-10',
     title: 'Equipment Matrix Audit view: clearer sensor vs. sequence readiness',
