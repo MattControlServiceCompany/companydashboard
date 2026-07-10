@@ -3292,7 +3292,7 @@ var _pricingSortState = {}; // projId → { col: colIdx, dir: 'asc'|'desc'|null 
 /* ── Per-project building filter state (module-level) ── */
 var _pricingBldgFilter = {}; // projId → building name or '' for All
 
-/* ── Column definitions (indices 0-12 for 13-col default layout)
+/* ── Column definitions (indices 0-13 for 14-col default layout)
    col 0:  Include (checkbox) — frozen, no-sort
    col 1:  Building — frozen, sortable
    col 2:  Item — sortable
@@ -3303,9 +3303,14 @@ var _pricingBldgFilter = {}; // projId → building name or '' for All
    col 7:  List — sortable (numeric) — entry.list from catalog
    col 8:  Net — sortable (numeric) — entry.net (multiplier×list or CSV net)
    col 9:  Contract (40%) — sortable (numeric) — contractPct×list, always live-computed
-   col 10: Line Total — sortable (numeric) — driven by basis selector
-   col 11: Impact — no-sort — Phase 5 savings badge
-   col 12: Notes — sortable
+   col 10: Hours — sortable (numeric) — labor hours, phase-2 rows only
+   col 11: Rate — sortable (numeric) — cc78ac9e: the $/hr labor rate applied to phase-2 Hours to
+           produce Line Total (en_pricing_config.hourlyRate, fallback COST_LABOR_RATE_DEFAULT).
+           Display-only — never affects unitPrice/lineTotal math, which _pricingApplyLaborOverrides
+           already computes upstream of rendering.
+   col 12: Line Total — sortable (numeric) — driven by basis selector
+   col 13: Impact — no-sort — Phase 5 savings badge
+   col 14: Notes — sortable
    ─────────────────────────────────────────────────────────────────────────── */
 var PRICING_TBL_COLS = [
   { label: 'Incl', noSort: true, noHide: true, numeric: false, minWidth: 36 }, // 0
@@ -3319,16 +3324,17 @@ var PRICING_TBL_COLS = [
   { label: 'Net', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 8
   { label: 'Contract', noSort: false, noHide: false, numeric: true, minWidth: 110 }, // 9 — widened (0ae36950) to fit the merged-row side-by-side sensor-price + hours-input layout
   { label: 'Hours', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 10 — labor hours, split out of Contract (phase 4923ca9b/75827077)
-  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 11 — label overridden at render time with active basis
+  { label: 'Rate', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 11 — cc78ac9e: labor $/hr rate, restored between Hours and Line Total
+  { label: 'Line Total', noSort: false, noHide: false, numeric: true, minWidth: 80 }, // 12 — label overridden at render time with active basis
   {
     label: 'Impact',
     noSort: true,
     noHide: false,
     numeric: false,
-    minWidth: 170, // 12 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
+    minWidth: 170, // 13 — Phase 5 savings-tier badge + (0ae36950) the $-savings-range chip moved here from Notes
     isImpactCol: true,
   },
-  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 13
+  { label: 'Notes', noSort: false, noHide: false, numeric: false, minWidth: 80 }, // 14
 ];
 
 /* ── Apply labor overrides to a cloned row list ──────────────────────────── */
@@ -3461,22 +3467,34 @@ function _pricingSetHiddenCols(projId, hiddenArr) {
   sset('ch_tbl_hidden_pricing_tbl_' + projId, hiddenArr);
 }
 
-/* ── Column-schema migration (review-phase4.md #2) ─────────────────────────
+/* ── Column-schema migration (review-phase4.md #2; extended cc78ac9e) ──────
    PRICING_TBL_COLS gained a new "Hours" column at index 10 in Phase 4, which
    shifted every column previously at index >=10 up by one (old 10 = Line
-   Total → new 11, old 11 = Impact → new 12, old 12 = Notes → new 13). Both
-   column widths (ch_tbl_col_widths_pricing_tbl_<id>) and hidden columns
+   Total → new 11, old 11 = Impact → new 12, old 12 = Notes → new 13). cc78ac9e
+   (2026-07-10) then restored the "Rate" column at index 11, shifting the
+   Phase-4 schema's columns >=11 up by one again (v2's 11 = Line Total → v3's
+   12, v2's 12 = Impact → v3's 13, v2's 13 = Notes → v3's 14). Both column
+   widths (ch_tbl_col_widths_pricing_tbl_<id>) and hidden columns
    (ch_tbl_hidden_pricing_tbl_<id>) are persisted keyed by raw PRICING_TBL_COLS
-   index with no migration, so any state saved before this deploy silently
-   misapplies to the wrong column post-Phase-4 (e.g. a widened Line Total
-   column lands on Hours instead).
+   index with no migration, so any state saved before either deploy silently
+   misapplies to the wrong column afterward.
    PRICING_COL_SCHEMA_VERSION bump the schema below your PRICING_TBL_COLS
-   change if you insert/remove a column again, and extend the shift logic to
-   match. The stored per-project version marker makes this idempotent — it
-   only shifts once, never re-shifts an already-migrated or fresh
-   post-Phase-4 map, and never deletes the user's saved widths/hidden set,
-   only relocates them to the column they were originally set for. */
-var PRICING_COL_SCHEMA_VERSION = 2; // 2 = Phase 4 (Hours column inserted at index 10)
+   change if you insert/remove a column again, and extend SHIFT_STEPS to
+   match. Migration now runs as a CHAIN of per-version shift steps (one entry
+   per version bump, keyed by the threshold index that version's insertion
+   used) so a project's marker can be at ANY earlier version (1, 2, ...) and
+   still land on the exact current schema — not just the most recent bump.
+   The stored per-project version marker keeps this idempotent — it only
+   shifts once, never re-shifts an already-migrated or fresh map, and never
+   deletes the user's saved widths/hidden set, only relocates them to the
+   column they were originally set for. */
+var PRICING_COL_SCHEMA_VERSION = 3; // 3 = cc78ac9e (Rate column inserted at index 11)
+// One entry per version bump: shifting FROM (entry index + 1) TO (entry index + 2) inserted a
+// column at `threshold` — every existing index >= threshold moves up by one.
+var _PRICING_COL_SCHEMA_SHIFT_STEPS = [
+  { fromVer: 1, threshold: 10 }, // v1 -> v2: Hours column inserted at index 10 (Phase 4)
+  { fromVer: 2, threshold: 11 }, // v2 -> v3: Rate column inserted at index 11 (cc78ac9e)
+];
 function _pricingGetColSchemaVersion(projId) {
   return sget('ch_tbl_colschema_ver_pricing_tbl_' + projId, 1); // 1 = pre-Phase-4 (no marker ever written)
 }
@@ -3487,24 +3505,28 @@ function _pricingMigrateColSchema(projId) {
   var storedVer = _pricingGetColSchemaVersion(projId);
   if (storedVer >= PRICING_COL_SCHEMA_VERSION) return; // already migrated (or fresh) — idempotent no-op
 
-  var oldWidths = _pricingGetColWidths(projId);
-  var newWidths = {};
-  Object.keys(oldWidths).forEach(function (k) {
-    var ki = parseInt(k, 10);
-    if (isNaN(ki)) {
-      newWidths[k] = oldWidths[k]; // preserve any non-numeric marker key untouched
-    } else {
-      newWidths[ki >= 10 ? ki + 1 : ki] = oldWidths[k];
-    }
-  });
-  _pricingSetColWidths(projId, newWidths);
+  var widths = _pricingGetColWidths(projId);
+  var hidden = _pricingGetHiddenCols(projId);
 
-  var oldHidden = _pricingGetHiddenCols(projId);
-  var newHidden = oldHidden.map(function (ci) {
-    return ci >= 10 ? ci + 1 : ci;
+  _PRICING_COL_SCHEMA_SHIFT_STEPS.forEach(function (step) {
+    if (storedVer > step.fromVer) return; // already past this step
+    var newWidths = {};
+    Object.keys(widths).forEach(function (k) {
+      var ki = parseInt(k, 10);
+      if (isNaN(ki)) {
+        newWidths[k] = widths[k]; // preserve any non-numeric marker key untouched
+      } else {
+        newWidths[ki >= step.threshold ? ki + 1 : ki] = widths[k];
+      }
+    });
+    widths = newWidths;
+    hidden = hidden.map(function (ci) {
+      return ci >= step.threshold ? ci + 1 : ci;
+    });
   });
-  _pricingSetHiddenCols(projId, newHidden);
 
+  _pricingSetColWidths(projId, widths);
+  _pricingSetHiddenCols(projId, hidden);
   _pricingSetColSchemaVersion(projId, PRICING_COL_SCHEMA_VERSION);
 }
 
@@ -3565,8 +3587,12 @@ function _pricingRowColValue(row, colIdx) {
       // (Contract sorts by contractPrice, not a typed-in manualPrice override either).
       return row.hrsPerUnit != null ? row.hrsPerUnit : -1;
     case 11:
+      // Rate (cc78ac9e) — the single global labor $/hr rate, only meaningful for phase-2 rows
+      // that actually carry hours (same "row has this column's thing" convention as case 10).
+      return row.phase === 2 && row.seqKey ? _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT : -1;
+    case 12:
       return row.lineTotal != null ? row.lineTotal : -1;
-    case 13:
+    case 14:
       return row.note || '';
     default:
       return '';
@@ -4018,10 +4044,11 @@ function _pricingCloseLegendPopover(projId) {
 }
 
 function _pricingOpenLegendPopover(projId, btn) {
-  // Close any open popover first (all three kinds — only one popover open at a time)
+  // Close any open popover first (all four kinds — only one popover open at a time)
   _pricingCloseLegendPopover(projId);
   _pricingCloseSettingsPopover(projId);
   _pricingCloseBudgetPopover(projId);
+  _pricingCloseRatePopover(projId);
 
   var pop = document.createElement('div');
   pop.id = 'pricing-legend-popover-' + projId;
@@ -4125,10 +4152,11 @@ function _pricingCloseBudgetPopover(projId) {
 }
 
 function _pricingOpenBudgetPopover(projId, btn) {
-  // Close any open popover first (all three kinds — only one popover open at a time)
+  // Close any open popover first (all four kinds — only one popover open at a time)
   _pricingCloseBudgetPopover(projId);
   _pricingCloseSettingsPopover(projId);
   _pricingCloseLegendPopover(projId);
+  _pricingCloseRatePopover(projId);
 
   var estimate = _pricingGetEstimate(projId);
   var tier = estimate.tier || 'compliance';
@@ -4168,6 +4196,105 @@ function _pricingOpenBudgetPopover(projId, btn) {
       }
     }
     _pricingBudgetPopoverOutsideHandler[projId] = handler;
+    document.addEventListener('click', handler);
+  }, 10);
+}
+
+/* ── Rate section HTML (1476aedd) ─────────────────────────────────────────
+   Shared by the Table Settings popover (Section 1a, the existing "Hourly Rate:" row,
+   unchanged) and the new standalone toolbar Rate popover below — same id
+   (pricing-rate-{projId}), same updatePricingConfig(projId,'hourlyRate',...) onchange
+   wiring, same en_pricing_config storage key, exact same input markup as the Table
+   Settings copy (mirrors the _pricingBuildBudgetSectionHTML precedent: one storage path,
+   two entry points, no forked logic). Reusing the same element id is safe because only
+   one of the two popovers is ever in the DOM at a time (Table Settings and Rate close
+   each other on open, same as every other toolbar popover pair here).
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingBuildRateSectionHTML(projId, cfg) {
+  return (
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Labor Rate</div>' +
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Hourly Rate:' +
+    '<span style="display:flex;align-items:center;gap:4px">' +
+    '<input type="number" id="pricing-rate-' +
+    projId +
+    '" min="1" max="999" step="1" value="' +
+    cfg.hourlyRate +
+    '"' +
+    ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
+    ' onchange="updatePricingConfig(' +
+    projId +
+    ",'hourlyRate',parseFloat(this.value))\">" +
+    '<span style="font-size:10px;color:var(--text3)">$/hr</span>' +
+    '</span></label>' +
+    '<div style="font-size:10px;color:var(--text3);line-height:1.4">' +
+    'Applied to every programming-labor row’s Hours to compute its Line Total (see the Rate column).' +
+    '</div>'
+  );
+}
+
+/* ── Standalone Rate popover (1476aedd, discoverability fix) ──────────────────────────
+   Same "buried in Table Settings, nothing in the toolbar hints it exists" problem the
+   Budget control had (174ad49a) and the same fix: an always-visible toolbar chip
+   (_pricingBuildToolbarHTML's rateBtnHTML) opens this small dedicated popover instead of
+   requiring a trip through "⚙ Table Settings". Same open/close/outside-click/positioning
+   pattern as _pricingOpenBudgetPopover — own tracker map so all four popovers' outside-click
+   listeners stay independent.
+   ─────────────────────────────────────────────────────────────────────────── */
+var _pricingRatePopoverOutsideHandler = {};
+function _pricingCloseRatePopover(projId) {
+  var pop = document.getElementById('pricing-rate-popover-' + projId);
+  if (pop) pop.remove();
+  if (_pricingRatePopoverOutsideHandler[projId]) {
+    document.removeEventListener('click', _pricingRatePopoverOutsideHandler[projId]);
+    delete _pricingRatePopoverOutsideHandler[projId];
+  }
+}
+
+function _pricingOpenRatePopover(projId, btn) {
+  // Close any open popover first (only one popover open at a time)
+  _pricingCloseRatePopover(projId);
+  _pricingCloseSettingsPopover(projId);
+  _pricingCloseLegendPopover(projId);
+  _pricingCloseBudgetPopover(projId);
+
+  var cfg = _pricingGetConfig();
+
+  var pop = document.createElement('div');
+  pop.id = 'pricing-rate-popover-' + projId;
+  pop.style.cssText = [
+    'position:absolute',
+    'background:var(--s2)',
+    'border:1px solid var(--border)',
+    'border-radius:6px',
+    'padding:10px 12px',
+    'z-index:800',
+    'min-width:220px',
+    'max-width:280px',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
+    'font-size:11px',
+  ].join(';');
+  pop.innerHTML = _pricingBuildRateSectionHTML(projId, cfg);
+
+  // Position relative to the Rate button (same pattern as the other toolbar popovers)
+  var rect = btn.getBoundingClientRect();
+  var container = document.getElementById('ptab-cost-estimate-body-' + projId);
+  if (container) {
+    var cRect = container.getBoundingClientRect();
+    pop.style.top = rect.bottom - cRect.top + 4 + 'px';
+    pop.style.left = rect.left - cRect.left + 'px';
+    pop.style.position = 'absolute';
+    container.style.position = 'relative';
+    container.appendChild(pop);
+  }
+
+  setTimeout(function () {
+    function handler(e) {
+      if (!pop.contains(e.target) && e.target !== btn) {
+        _pricingCloseRatePopover(projId);
+      }
+    }
+    _pricingRatePopoverOutsideHandler[projId] = handler;
     document.addEventListener('click', handler);
   }, 10);
 }
@@ -4333,12 +4460,13 @@ function _pricingBuildBudgetSectionHTML(projId, tier) {
    appendChild pattern as the old col popover.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingOpenSettingsPopover(projId, btn) {
-  // Close any open popover first (all three kinds — only one popover open at a time;
+  // Close any open popover first (all four kinds — only one popover open at a time;
   // cost-estimate-toolbar-2026-07-10 added the Legend/Budget closes for full symmetry with
-  // the other two open functions, which already close this one)
+  // the other two open functions, which already close this one; 1476aedd added Rate)
   _pricingCloseSettingsPopover(projId);
   _pricingCloseLegendPopover(projId);
   _pricingCloseBudgetPopover(projId);
+  _pricingCloseRatePopover(projId);
 
   var cfg = _pricingGetConfig();
   var estimate = _pricingGetEstimate(projId);
@@ -4756,6 +4884,24 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     _budgetBtnLabel +
     '</button>';
 
+  // Rate toolbar chip (1476aedd discoverability fix) — mirrors the Budget chip immediately above
+  // markup-for-markup (same "btn btn-ghost btn-sm" class, same cursor:pointer, same "Label: value"
+  // text pattern): the hourly labor rate used to live ONLY inside Table Settings with nothing in
+  // the toolbar hinting it existed. This button opens a dedicated small popover
+  // (_pricingOpenRatePopover) built from _pricingBuildRateSectionHTML — the exact same
+  // markup/onchange wiring as the Table Settings "Hourly Rate:" row, same en_pricing_config
+  // storage key. Label shows the current $/hr so the toolbar itself answers "what rate is this
+  // estimate using" without opening anything.
+  var cfgForRateBtn = _pricingGetConfig();
+  var rateBtnHTML =
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenRatePopover(\'' +
+    projId +
+    '\',this)" title="Labor rate — the $/hr applied to every programming-labor row\'s Hours to compute its Line Total" style="cursor:pointer">' +
+    'Rate: ' +
+    _pricingFmt(cfgForRateBtn.hourlyRate || COST_LABOR_RATE_DEFAULT) +
+    '/hr' +
+    '</button>';
+
   // Building filter dropdown — width:150px added (d5286981 Change 2) so a reserved-but-hidden
   // instance (Summary) always matches a visible instance's width regardless of how long building
   // names in this project happen to be (previously auto-sized to the widest <option> text).
@@ -4828,6 +4974,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     slot(tableSettingsBtnHTML, rowFilterActive),
     slot(legendBtnHTML, rowFilterActive),
     slot(budgetBtnHTML, rowFilterActive),
+    slot(rateBtnHTML, rowFilterActive),
     // Tier toggle — 35742dd5 (Phase 2) established that the flex:1 spacer must sit AFTER Tier,
     // not before it, so Tier's left edge is just the natural width of the fixed left-side
     // content (now IDENTICAL on all 5 views) — never wrapped in slot(): this is the one control
@@ -5408,7 +5555,23 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(hoursContent);
 
-    // col 11: Line Total
+    // col 11: Rate — cc78ac9e ("Rate column never built"): display-only $/hr labor rate applied
+    // to this row's Hours to produce Line Total. Read-only (no input — the rate itself is edited
+    // in Table Settings/the toolbar Rate chip, both of which write en_pricing_config.hourlyRate;
+    // this cell never writes anything, so it cannot drift from the value _pricingApplyLaborOverrides
+    // already used to compute unitPrice/lineTotal upstream). Only phase-2 labor rows carry an
+    // hourly rate — hardware rows show the same em-dash placeholder Hours uses for non-labor rows.
+    var rateContent = '<span style="color:var(--text3)">—</span>';
+    if (row.phase === 2 && row.seqKey) {
+      var _rowRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
+      rateContent =
+        '<span style="font-size:11px">' +
+        _pricingFmt(_rowRate) +
+        '<span style="font-size:10px;color:var(--text3)">/hr</span></span>';
+    }
+    cells.push(rateContent);
+
+    // col 12: Line Total
     var lineTotalContent = '';
     if (row.ioOnly) {
       lineTotalContent = '<span style="color:var(--text3);font-size:10px">$0</span>';
@@ -5425,7 +5588,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 12: Impact — savings-tier badge (correction #4 / Phase 5) + (0ae36950) the $-savings-range
+    // col 13: Impact — savings-tier badge (correction #4 / Phase 5) + (0ae36950) the $-savings-range
     // chip, moved here from the Notes column. Both are single-line inline-block spans so this cell
     // never grows the row taller than any other row's baseline height — see _savingsRangeChipHTML.
     var impactCellContent = '';
@@ -5458,7 +5621,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(impactCellContent);
 
-    // col 13: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
+    // col 14: Notes — visible text = note + G36 §. Truncate + hover everywhere (b771dec6 2d):
     // superseding the earlier "Fuller-preference" decision (full rationale always visible in-cell)
     // because it made Recommended phase-2 rows taller than every other row in the table —
     // Matt rejected that height-inconsistency tradeoff. The rationale/clientSummary sentence now
@@ -5527,9 +5690,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return; // skip hidden columns
       var col = PRICING_TBL_COLS[ci] || {};
-      // col 13 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
-      var isNotesCol = ci === 13;
-      var isImpactCol = ci === 12;
+      // col 14 (Notes) may contain wrapped rationale text — allow wrap; other cols nowrap
+      var isNotesCol = ci === 14;
+      var isImpactCol = ci === 13;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
@@ -5538,8 +5701,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       // moved here from Contract, which no longer carries this branch since Hours is its own col)
       // MUST be before the generic numeric right-align block (which also matches ci===10)
       else if (ci === 10 && row.phase === 2 && row.seqKey) tdStyle += 'padding:3px 6px;';
-      // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Hours), 11 (Line Total) are right-aligned numerics
-      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11)
+      // cols 5 (Qty), 7 (List), 8 (Net), 9 (Contract), 10 (Hours), 11 (Rate), 12 (Line Total) are right-aligned numerics
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11 || ci === 12)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -5799,7 +5962,20 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '</div>';
     cells.push(_hoursContent);
 
-    // col 11: Line Total — hw.lineTotal + seq.lineTotal, computed fresh here every render
+    // col 11: Rate — cc78ac9e ("Rate column never built"): same read-only $/hr display as
+    // renderRow's col 11, sourced from the sequence half of the pair (the merged row's Hours
+    // cell edits seqRow.seqKey's hours, so the rate that applies to it is the same one).
+    var _rateContent = '<span style="color:var(--text3)">—</span>';
+    if (seqRow.phase === 2 && seqRow.seqKey) {
+      var _mergedRowRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
+      _rateContent =
+        '<span style="font-size:10px">' +
+        _pricingFmt(_mergedRowRate) +
+        '<span style="font-size:9px;color:var(--text3)">/hr</span></span>';
+    }
+    cells.push(_rateContent);
+
+    // col 12: Line Total — hw.lineTotal + seq.lineTotal, computed fresh here every render
     // (5c: "never written back") — the underlying row objects and their lineTotal fields are
     // never mutated, so toggling this row on/off moves the grand total by exactly this combined
     // amount and back (footer total comes from _pricingComputeTotals summing the SAME unmerged
@@ -5809,7 +5985,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span' + (!combinedOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(_combinedLineTotal) + '</span>';
     cells.push(_lineTotalContent);
 
-    // col 12: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
+    // col 13: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
     // sequence half of the pair. (0ae36950: $-savings-range chip also moved here from Notes,
     // same as renderRow — see _savingsRangeChipHTML.)
     var _impactCellContent = '';
@@ -5819,7 +5995,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     _impactCellContent += _savingsRangeChipHTML(seqRow);
     cells.push(_impactCellContent);
 
-    // col 13: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
+    // col 14: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
     // lost. clientSummary/savingsRationale are read from the module-level SEQUENCE_SAVINGS_IMPACT
     // constant directly (not only from seqRow's own stamped fields, which buildRecommendedRows
     // only sets for the Recommended tier) so the combined tooltip carries the sequence's benefit
@@ -5876,13 +6052,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var tds = '';
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return;
-      var isNotesCol = ci === 13;
-      var isImpactCol = ci === 12;
+      var isNotesCol = ci === 14;
+      var isImpactCol = ci === 13;
       var tdStyle = isNotesCol
         ? 'overflow:hidden;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);vertical-align:top;'
         : 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2);';
       if (ci === 0) tdStyle += 'text-align:center;width:36px;border-right:1px solid var(--border2);';
-      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11)
+      else if (ci === 5 || ci === 7 || ci === 8 || ci === 9 || ci === 10 || ci === 11 || ci === 12)
         tdStyle += 'text-align:right;font-variant-numeric:tabular-nums;';
       else if (isImpactCol) tdStyle += 'text-align:center;vertical-align:middle;';
       var cls = ci === 0 || ci === 1 ? ' class="ch-frozen"' : '';
@@ -6245,9 +6421,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       frozenStyle = 'z-index:11;';
     }
 
-    // col 11 (Line Total) label shows active basis in parens, e.g. "Line Total (Contract)"
+    // col 12 (Line Total) label shows active basis in parens, e.g. "Line Total (Contract)"
     var colLabel = col.label;
-    if (ci === 11) {
+    if (ci === 12) {
       var basisLabels = { contract: 'Contract', net: 'Net', list: 'List' };
       colLabel = 'Total (' + (basisLabels[cfg.priceBasis] || 'Contract') + ')';
     }

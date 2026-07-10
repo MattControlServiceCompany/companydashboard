@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.659',
+    date: '2026-07-10',
+    title: 'Cost Estimate now shows the labor rate right in the table',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Cost Estimate tab has a new "Rate" column showing the labor rate used for each pricing row, so you can see it without opening Table Settings.',
+      },
+      {
+        type: 'feature',
+        text: 'A "Rate: $X/hr" chip now sits in the Cost Estimate toolbar next to the Budget chip — click it to open and adjust the hourly rate directly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.658',
     date: '2026-07-10',
     title: 'Audit Report no longer shows a false "Fully Compliant" for equipment it never checked',
