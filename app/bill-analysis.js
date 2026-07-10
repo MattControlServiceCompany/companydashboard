@@ -4265,6 +4265,14 @@ function _mbCommitRowTarget(rowIdx) {
         projId: projId,
         bldgId: bldgId,
         meterId: meterId,
+        // Fix 11e47d64/9de73981: tag explicit user picks so
+        // confirmMultiBuildingSave()'s identity gate lets them through
+        // regardless of account/matchType — an explicit Project->Building->
+        // Meter choice via this "Change" override is authoritative, same as
+        // the _meterOverride exemption saveQueuedBills already grants manual
+        // picks. findMeterMatch() never produces this value, so it cannot be
+        // spoofed by an auto-match.
+        matchType: 'manual',
       };
       if (statusEl) {
         statusEl.textContent = 'Assigned';
@@ -5034,55 +5042,66 @@ async function confirmMultiBuildingSave() {
     const dup = targetMeter.bills.find(function (r) {
       return r.start === billRow.start && r.end === billRow.end;
     });
-    if (dup) {
-      // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0
-      // identity gate at ~line 7420): only overwrite an EXISTING period's bill
-      // data when billMatch came from an 'identity' match (account/meter-number
-      // hit, not an address-similarity guess, matchType from findMeterMatch)
-      // AND the incoming bill's own AccountNumber reasonably agrees with the
-      // target meter's stored account. Without this check, a period-colliding
-      // bill routed here on a low-confidence address guess can silently
-      // clobber a DIFFERENT account's already-correct saved data — the
-      // confirmed mechanism behind the Louisburg Maintenance Building incident
-      // (multi-account PDF, account 8980291458's numbers overwrote account
-      // 0669287870's bill via an address-only match with no account check).
-      const _acctAgrees =
-        !targetMeter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, targetMeter.account);
-      if (billMatch.matchType === 'identity' && _acctAgrees) {
+    // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0
+    // identity gate at ~line 7420): evaluated ONCE, before the dup/no-dup
+    // branch, and applies to BOTH — a non-identity (address-similarity) guess
+    // must not silently write to targetMeter.bills at all, whether that write
+    // is an overwrite of an existing period (dup) OR a brand-new push (no
+    // dup). The non-colliding push case is the MORE COMMON real-world trigger
+    // (most re-uploaded bills land on a NEW period, not the exact one already
+    // saved) and was originally left ungated here — confirmed empirically
+    // against the real Louisburg incident accounts (8980291458 vs
+    // 0669287870) during review. Only two things may pass this gate:
+    //   (a) billMatch.matchType === 'identity' (account/meter-number hit from
+    //       findMeterMatch) AND the incoming bill's own AccountNumber
+    //       reasonably agrees with the target meter's stored account, or
+    //   (b) billMatch.matchType === 'manual' — the user explicitly picked
+    //       this Project -> Building -> Meter via the "Change" override in
+    //       showMultiBuildingReviewPanel / _mbCommitRowTarget. An explicit
+    //       user pick is authoritative and always wins, exactly like the
+    //       _meterOverride exemption in saveQueuedBills — it must not be
+    //       diverted to review just because it lacks an 'identity' tag.
+    const _isManualPick = billMatch.matchType === 'manual';
+    const _acctAgrees =
+      !targetMeter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, targetMeter.account);
+    const _gateOK = _isManualPick || (billMatch.matchType === 'identity' && _acctAgrees);
+    if (_gateOK) {
+      if (dup) {
         Object.assign(dup, billRow);
-        saved++;
       } else {
-        console.warn(
-          '[confirmMultiBuildingSave] identity gate failed — refusing to overwrite existing period, routing to Saved Bills for review instead of auto-applying',
-          {
-            billIdx: _bi,
-            matchType: billMatch.matchType,
-            incomingAcct: bill.AccountNumber,
-            targetMeterAcct: targetMeter.account,
-          },
-        );
-        const _pdfBillsForReview = (await sget('en_pdf_bills', [])) || [];
-        _pdfBillsForReview.push(
-          Object.assign(
-            {
-              id: 'pb' + Date.now() + '_' + _bi + '_review',
-              savedAt: new Date().toISOString(),
-              projId: billMatch.projId || null,
-              projName: (billMatch.proj && billMatch.proj.name) || 'General',
-              hasPDF,
-            },
-            bill,
-          ),
-        );
-        await sset('en_pdf_bills', _pdfBillsForReview);
-        flaggedForReview++;
+        targetMeter.bills.push(billRow);
+        targetMeter.bills.sort(function (a, b) {
+          return _parseISO(a.start) - _parseISO(b.start);
+        });
       }
-    } else {
-      targetMeter.bills.push(billRow);
-      targetMeter.bills.sort(function (a, b) {
-        return _parseISO(a.start) - _parseISO(b.start);
-      });
       saved++;
+    } else {
+      console.warn(
+        '[confirmMultiBuildingSave] identity gate failed — refusing to write to targetMeter.bills (',
+        dup ? 'would have overwritten an existing period' : 'would have created a new bill on a guessed meter',
+        '), routing to Saved Bills for review instead of auto-applying',
+        {
+          billIdx: _bi,
+          matchType: billMatch.matchType,
+          incomingAcct: bill.AccountNumber,
+          targetMeterAcct: targetMeter.account,
+        },
+      );
+      const _pdfBillsForReview = (await sget('en_pdf_bills', [])) || [];
+      _pdfBillsForReview.push(
+        Object.assign(
+          {
+            id: 'pb' + Date.now() + '_' + _bi + '_review',
+            savedAt: new Date().toISOString(),
+            projId: billMatch.projId || null,
+            projName: (billMatch.proj && billMatch.proj.name) || 'General',
+            hasPDF,
+          },
+          bill,
+        ),
+      );
+      await sset('en_pdf_bills', _pdfBillsForReview);
+      flaggedForReview++;
     }
   }
 
