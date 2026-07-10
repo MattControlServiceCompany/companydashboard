@@ -163,6 +163,62 @@ var BT_POINT_PATTERNS = {
   co2: ['co2', 'carbon dioxide', 'co2 concentration', 'co2 ppm', 'iaq co2'],
   humidity: ['humidity', 'rh', 'relative humidity', 'rh %'],
   override: ['override', 'manual override', 'hand override', 'forced'],
+
+  // 2026-07-09 (backlog 7687ce58): categories added to close the vocabulary
+  // gap identified against real WebCTRL "combined_" exports and the wiki
+  // gap-analysis (bas-trend-data-analysis.md). Kept as their own point types
+  // rather than folded into an existing one (e.g. econtemp vs oat) because
+  // they represent physically distinct sensors that can appear alongside the
+  // point they'd otherwise be conflated with in the same export.
+  econtemp: ['economizer control temp', 'econ control temp', 'economizer temp', 'econ temp'],
+  econsp: [
+    'economizer set point',
+    'economizer setpoint',
+    'econ set point',
+    'econ setpoint',
+    'economizer lockout setpoint',
+  ],
+  preheattemp: [
+    'preheat air temp',
+    'preheat temp',
+    'preheat discharge temp',
+    'preheat leaving temp',
+    'preheat coil temp',
+  ],
+  reliefexhauststatus: [
+    'relief fan status',
+    'relief fan enable',
+    'relief fan run',
+    'exhaust fan status',
+    'exhaust fan enable',
+    'exhaust fan run',
+    'ef status',
+    'rf status',
+  ],
+  clgstage: ['cooling stage', 'clg stage', 'compressor stage', 'dx stage', 'cool stage', 'stage cooling'],
+  htgstage: ['heating stage', 'htg stage', 'electric heat stage', 'heat stage', 'aux heat stage', 'stage heating'],
+  reheatvalve: ['reheat valve', 'rht valve', 'reheat position', 'reheat coil valve', 'rh valve', 'reheat vlv'],
+  zoneairflow: [
+    'zone airflow',
+    'zone cfm',
+    'box airflow',
+    'vav airflow',
+    'zone air flow',
+    'discharge airflow',
+    'box cfm',
+  ],
+  zonedamper: [
+    'vav damper',
+    'box damper',
+    'zone damper',
+    'damper position',
+    'vav damper position',
+    'box damper position',
+  ],
+  compstatus: ['compressor status', 'comp status', 'compressor run', 'comp run', 'compressor enable', 'dx status'],
+  chwstemp: ['chw supply temp', 'chilled water supply temp', 'chws temp', 'chw supply', 'chilled water supply'],
+  chwrtemp: ['chw return temp', 'chilled water return temp', 'chwr temp', 'chw return', 'chilled water return'],
+  bldgpressure: ['building pressure', 'building static pressure', 'space pressure', 'bldg pressure'],
 };
 
 /* ── POINT TYPE HUMAN LABELS ───────────────────────────────────────────────── */
@@ -191,6 +247,21 @@ var BT_POINT_LABELS = {
   co2: 'CO2 (ppm)',
   humidity: 'Relative Humidity %',
   override: 'Manual Override',
+
+  // 2026-07-09 (backlog 7687ce58) — labels for the vocabulary-gap categories added above
+  econtemp: 'Economizer Control Temp',
+  econsp: 'Economizer Setpoint',
+  preheattemp: 'Preheat Air Temp',
+  reliefexhauststatus: 'Relief/Exhaust Fan Status',
+  clgstage: 'Cooling Stage',
+  htgstage: 'Heating Stage',
+  reheatvalve: 'Reheat Valve %',
+  zoneairflow: 'Zone Airflow (CFM)',
+  zonedamper: 'Zone/VAV Damper Position',
+  compstatus: 'Compressor Status',
+  chwstemp: 'CHW Supply Temp',
+  chwrtemp: 'CHW Return Temp',
+  bldgpressure: 'Building Pressure',
 };
 
 /** Return a human-readable label for a detection key */
@@ -288,15 +359,60 @@ function btIsOccupied(ts, schedule) {
   return h >= sch.startHour && h < sch.endHour;
 }
 
-/** Score how well a normalized name matches a pattern list */
+/** True if a token sitting BETWEEN two matched pattern words is safe to skip
+ * over — i.e. it looks like an embedded zone/equipment identifier ("101",
+ * "12", "dp") rather than an unrelated descriptive word. Keeps the
+ * token-subset matcher below from over-matching on long, unrelated headers. */
+function btIsGapToken(tok) {
+  if (!tok) return true;
+  if (/^\d+[a-z]?$/.test(tok)) return true; // "101", "12", "12a"
+  if (tok.length <= 2) return true; // "dp", "sp", "ef"
+  return false;
+}
+
+/** Score how well a normalized name matches a pattern list.
+ * 2026-07-09 (backlog 7687ce58): a column header like "Zone 101 Temp" or
+ * "VAV-12 Damper Position" has a zone/equipment number interleaved between
+ * the words of the pattern ("zone temp", "vav damper"), which breaks a plain
+ * contiguous-substring test. Contiguous substring match is tried first
+ * (fast path, also covers all single-word patterns); if that fails, fall
+ * back to a token-subset match — the pattern's words must appear in the
+ * header IN ORDER, but words in between (skipped tokens) are allowed as
+ * long as they look like an embedded identifier rather than unrelated text
+ * (see btIsGapToken). The fallback score is discounted slightly vs an exact
+ * contiguous match so a real contiguous match always wins a tie. */
 function btScoreMatch(norm, patterns) {
   var best = 0;
+  var normTokens = norm.split(' ').filter(Boolean);
   for (var i = 0; i < patterns.length; i++) {
     var p = btNormalize(patterns[i]);
+    var score = 0;
     if (norm.indexOf(p) !== -1) {
-      var score = Math.min(1, (p.length / norm.length) * 1.5);
-      if (score > best) best = score;
+      score = Math.min(1, (p.length / norm.length) * 1.5);
+    } else {
+      var pTokens = p.split(' ').filter(Boolean);
+      if (pTokens.length > 1) {
+        var ti = 0;
+        var gapOk = true;
+        for (var k = 0; k < normTokens.length && ti < pTokens.length; k++) {
+          if (normTokens[k] === pTokens[ti]) {
+            ti++;
+          } else if (ti > 0) {
+            // Already matched at least one pattern token — anything we skip
+            // from here on must look like an embedded identifier.
+            if (!btIsGapToken(normTokens[k])) {
+              gapOk = false;
+              break;
+            }
+          }
+        }
+        if (gapOk && ti === pTokens.length) {
+          var matchedLen = pTokens.join(' ').length;
+          score = Math.min(1, (matchedLen / norm.length) * 1.5) * 0.92;
+        }
+      }
     }
+    if (score > best) best = score;
   }
   return best;
 }
@@ -1825,6 +1941,7 @@ function btOpenImportModal() {
     '<input id="bt-equip-tag" type="text" placeholder="AHU-1" list="bt-equip-datalist" style="width:100%;background:var(--s3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;" />',
     '<datalist id="bt-equip-datalist"></datalist>',
     '<div id="bt-equip-tag-warn" style="font-size:11px;color:var(--amber);margin-top:4px;display:none;"></div>',
+    '<div id="bt-equip-tag-note" style="font-size:11px;color:var(--text3);margin-top:4px;display:none;"></div>',
     '</div>',
 
     // CSV drop zone
@@ -1995,6 +2112,91 @@ function btReadFile(file) {
   reader.readAsText(file);
 }
 
+/**
+ * Fix A (backlog 7687ce58): fuzzy-match the CSV's "Site: <name>" header
+ * (parsed into parsed.meta.siteName by btParseHeaderBlock for the
+ * webctrl_multi/webctrl_single formats) against the already-populated
+ * Building <select> options. Returns the matching option's value, or null
+ * if there's no siteName, no options, or no reasonable match — in which
+ * case the caller leaves the dropdown on "Select building..." exactly as
+ * before this fix (no guessing).
+ */
+function btDeriveBuildingMatch(siteName, bldgSelectEl) {
+  if (!siteName || !bldgSelectEl) return null;
+  var target = btNormalize(siteName);
+  if (!target) return null;
+  var opts = bldgSelectEl.options;
+  // Pass 1: exact normalized match
+  for (var i = 0; i < opts.length; i++) {
+    var val = opts[i].value;
+    if (!val || val === '_manual') continue;
+    if (btNormalize(opts[i].textContent || '') === target) return val;
+  }
+  // Pass 2: partial containment either direction (e.g. "Louisburg High School"
+  // vs "Louisburg High")
+  for (var j = 0; j < opts.length; j++) {
+    var val2 = opts[j].value;
+    if (!val2 || val2 === '_manual') continue;
+    var label2 = btNormalize(opts[j].textContent || '');
+    if (label2 && (label2.indexOf(target) !== -1 || target.indexOf(label2) !== -1)) return val2;
+  }
+  return null;
+}
+
+/**
+ * Fix A (backlog 7687ce58): derive an Equipment/System Tag candidate from
+ * the common leading-token prefix shared across the CSV's data column
+ * headers (WebCTRL multi-point format is "[Equipment] [Point] (Unit)", e.g.
+ * "AHU-1 OAT (F)" / "Zone 101 Temp (F)"). Only trusts a prefix that (a)
+ * looks like an equipment/zone identifier (letters+digits, e.g. "AHU-1",
+ * "VAV12", or a two-token "Zone 101" style id) and (b) covers at least half
+ * of the data columns — anything short of that is left blank rather than
+ * guessed. A real WebCTRL export can legitimately mix more than one
+ * equipment/zone group in one file; the dominant group is returned as
+ * `tag`, and any other identifier-like prefixes found are returned in
+ * `otherPrefixes` so the modal can show a non-blocking note instead of
+ * silently ignoring them.
+ */
+function btDeriveEquipTag(columns) {
+  var counts = {};
+  var order = [];
+  var dataColCount = 0;
+
+  columns.forEach(function (col) {
+    if (col.detected === 'timestamp') return;
+    dataColCount++;
+    var raw = (col.raw || '').trim();
+    if (!raw) return;
+    var stripped = raw.replace(/\s*\([^)]*\)\s*$/, '').trim(); // drop trailing "(Unit)"
+    var tokens = stripped.split(/\s+/).filter(Boolean);
+    if (!tokens.length) return;
+
+    var prefix = tokens[0];
+    var isTagLike = /^[A-Za-z]{2,8}-?\d{1,4}[A-Za-z]?$/.test(prefix);
+    if (!isTagLike && tokens.length > 1 && /^[A-Za-z]{2,8}$/.test(tokens[0]) && /^\d{1,4}$/.test(tokens[1])) {
+      prefix = tokens[0] + ' ' + tokens[1]; // e.g. "Zone 101"
+      isTagLike = true;
+    }
+    if (!isTagLike) return;
+
+    if (!counts[prefix]) {
+      counts[prefix] = 0;
+      order.push(prefix);
+    }
+    counts[prefix]++;
+  });
+
+  if (!order.length || !dataColCount) return { tag: null, otherPrefixes: [] };
+
+  order.sort(function (a, b) {
+    return counts[b] - counts[a];
+  });
+  var top = order[0];
+  if (counts[top] / dataColCount < 0.5) return { tag: null, otherPrefixes: [] };
+
+  return { tag: top, otherPrefixes: order.slice(1) };
+}
+
 function btPreviewColumns(csvText) {
   var parsed;
   try {
@@ -2035,7 +2237,59 @@ function btPreviewColumns(csvText) {
     'co2',
     'humidity',
     'override',
+    // 2026-07-09 (backlog 7687ce58) — vocabulary-gap categories
+    'econtemp',
+    'econsp',
+    'preheattemp',
+    'reliefexhauststatus',
+    'clgstage',
+    'htgstage',
+    'reheatvalve',
+    'zoneairflow',
+    'zonedamper',
+    'compstatus',
+    'chwstemp',
+    'chwrtemp',
+    'bldgpressure',
   ];
+
+  // Fix A (backlog 7687ce58): auto-fill Building from the CSV "Site:" header
+  // (webctrl_multi/webctrl_single formats only) and Equipment tag from the
+  // common column-header prefix — both remain fully editable/overridable.
+  // Only auto-fill fields the user hasn't already set, so a manual choice
+  // made before/while the file loads is never silently clobbered.
+  var bldgSel = document.getElementById('bt-bldg-sel');
+  if (bldgSel && !bldgSel.disabled && !bldgSel.value && parsed.meta && parsed.meta.siteName) {
+    var matchVal = btDeriveBuildingMatch(parsed.meta.siteName, bldgSel);
+    if (matchVal) {
+      bldgSel.value = matchVal;
+      btPopulateEquipDatalist();
+    }
+  }
+
+  var equipInput = document.getElementById('bt-equip-tag');
+  var noteEl = document.getElementById('bt-equip-tag-note');
+  if (equipInput && !equipInput.value.trim()) {
+    var derived = btDeriveEquipTag(parsed.columns);
+    if (derived.tag) equipInput.value = derived.tag;
+    if (noteEl) {
+      if (derived.tag && derived.otherPrefixes.length) {
+        noteEl.textContent =
+          'Also found: ' +
+          derived.otherPrefixes.join(', ') +
+          ' — imported under ' +
+          derived.tag +
+          '; import separately if needed.';
+        noteEl.style.display = '';
+      } else {
+        noteEl.style.display = 'none';
+        noteEl.textContent = '';
+      }
+    }
+  } else if (noteEl) {
+    noteEl.style.display = 'none';
+    noteEl.textContent = '';
+  }
 
   var rows = [];
   parsed.columns.forEach(function (col) {
