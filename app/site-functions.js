@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.654',
+    date: '2026-07-10',
+    title: 'Cost Estimate toolbar cleanup',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department > Cost Estimate: the Building and Sort filters have moved out of Table Settings and into the main toolbar so they are visible without opening a menu. The Budget is now also an always-visible toolbar control (with its own popover) instead of being hidden inside Table Settings.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.653',
     date: '2026-07-10',
     title: 'Fix: Equipment Matrix point counter was showing the wrong split',

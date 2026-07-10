@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.10.653'; // deployed 2026-07-10 (fix: Equipment Matrix Audit View header counter, ec16fadd)
+  var CH_VERSION = 'v2026.07.10.654'; // deployed 2026-07-10 (fix: Cost Estimate toolbar — Building/Sort moved to toolbar, Budget surfaced as toolbar chip, 70235050 + 174ad49a)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
