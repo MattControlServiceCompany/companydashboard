@@ -4751,6 +4751,7 @@ async function confirmMultiBuildingSave() {
   let pdfStored = false;
 
   let saved = 0;
+  let flaggedForReview = 0;
   for (let _bi = 0; _bi < bills.length; _bi++) {
     const bill = bills[_bi];
     const billDup = dupMap[_bi];
@@ -5034,14 +5035,55 @@ async function confirmMultiBuildingSave() {
       return r.start === billRow.start && r.end === billRow.end;
     });
     if (dup) {
-      Object.assign(dup, billRow);
+      // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0
+      // identity gate at ~line 7420): only overwrite an EXISTING period's bill
+      // data when billMatch came from an 'identity' match (account/meter-number
+      // hit, not an address-similarity guess, matchType from findMeterMatch)
+      // AND the incoming bill's own AccountNumber reasonably agrees with the
+      // target meter's stored account. Without this check, a period-colliding
+      // bill routed here on a low-confidence address guess can silently
+      // clobber a DIFFERENT account's already-correct saved data — the
+      // confirmed mechanism behind the Louisburg Maintenance Building incident
+      // (multi-account PDF, account 8980291458's numbers overwrote account
+      // 0669287870's bill via an address-only match with no account check).
+      const _acctAgrees =
+        !targetMeter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, targetMeter.account);
+      if (billMatch.matchType === 'identity' && _acctAgrees) {
+        Object.assign(dup, billRow);
+        saved++;
+      } else {
+        console.warn(
+          '[confirmMultiBuildingSave] identity gate failed — refusing to overwrite existing period, routing to Saved Bills for review instead of auto-applying',
+          {
+            billIdx: _bi,
+            matchType: billMatch.matchType,
+            incomingAcct: bill.AccountNumber,
+            targetMeterAcct: targetMeter.account,
+          },
+        );
+        const _pdfBillsForReview = (await sget('en_pdf_bills', [])) || [];
+        _pdfBillsForReview.push(
+          Object.assign(
+            {
+              id: 'pb' + Date.now() + '_' + _bi + '_review',
+              savedAt: new Date().toISOString(),
+              projId: billMatch.projId || null,
+              projName: (billMatch.proj && billMatch.proj.name) || 'General',
+              hasPDF,
+            },
+            bill,
+          ),
+        );
+        await sset('en_pdf_bills', _pdfBillsForReview);
+        flaggedForReview++;
+      }
     } else {
       targetMeter.bills.push(billRow);
       targetMeter.bills.sort(function (a, b) {
         return _parseISO(a.start) - _parseISO(b.start);
       });
+      saved++;
     }
-    saved++;
   }
 
   // Save once after the loop — never per-bill
@@ -5051,7 +5093,14 @@ async function confirmMultiBuildingSave() {
   document.getElementById('pdfMultiBldgPanel').style.display = 'none';
   _mbRowTargets = {};
   _autoAssignTarget = null;
-  showToast(saved + ' bill' + (saved !== 1 ? 's' : '') + ' saved to matched meters ✓');
+  showToast(
+    saved +
+      ' bill' +
+      (saved !== 1 ? 's' : '') +
+      ' saved to matched meters' +
+      (flaggedForReview ? ', ' + flaggedForReview + ' flagged for review (account mismatch) — check Saved Bills' : '') +
+      ' ✓',
+  );
   if (udSelProjId && udSelBldgId) {
     renderUDDetail();
     renderUDProjList();
@@ -5455,7 +5504,18 @@ function _resolveBillDestination(bill, dup, projId) {
     return { method: 'dup', destination: 'Saved Bills', dup };
   }
   const match = findMeterMatch(bill);
-  if (match) {
+  // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0 identity
+  // gate): only an 'identity' match (account/meter-number hit) may resolve as
+  // method:'match' here — the two callers of this function (_dupBulkAction,
+  // savePDFAllBills) both auto-save straight to match.meter via
+  // _saveBillToMatchedMeter with no further confirmation whenever method==='match'.
+  // An 'address'-only match (fuzzy ServiceAddress similarity, no account/meter
+  // number hit) is an unconfirmed guess and must NOT auto-route to a meter write —
+  // fall through to the project-scoped / unassigned path below instead, which is
+  // the same safe fallback (project-scoped account match, or Saved Bills for
+  // manual review) that saveQueuedBills falls through to when its identity gate
+  // fails.
+  if (match && match.matchType === 'identity') {
     return {
       method: 'match',
       destination:
@@ -11166,7 +11226,15 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     if (sb.pdfPageEnd && !sb._pageEnd) sb._pageEnd = sb.pdfPageEnd;
     if (sb.pdfKey && !sb._pdfSharedKey) sb._pdfSharedKey = sb.pdfKey;
     const meterMatch = findMeterMatch(sb);
-    if (meterMatch) {
+    // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0 identity
+    // gate): only promote a Saved Bills record onto a meter when the match is
+    // 'identity' grade (account/meter-number hit). An 'address'-only match is an
+    // unconfirmed guess — promoting on that guess risks the same silent-overwrite
+    // mechanism as the Louisburg Maintenance Building incident (11e47d64/9de73981)
+    // if the promoted bill's period collides with an existing bill on the guessed
+    // meter. On a non-identity match, leave the bill in Saved Bills — that is
+    // already the safe review location, no extra action needed.
+    if (meterMatch && meterMatch.matchType === 'identity') {
       const dest = _saveBillToMatchedMeter(sb, meterMatch);
       if (dest) {
         const removeIdx = pdfBills.indexOf(sb);
@@ -13741,9 +13809,18 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
         }
       }
     }
-    if (bestScore >= 0.6) {
-      targetBldg = bestBldg;
-    }
+    // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0 identity
+    // gate): bestScore/bestBldg above is an ADDRESS-similarity guess, never an
+    // identity match — Steps 1/3 already tried account/meter-number identity
+    // lookups and found nothing, which is why execution reached here. Auto-
+    // committing a brand-new meter under a best-guess building risks the same
+    // misattachment class as the Louisburg Maintenance Building incident
+    // (11e47d64/9de73981), just shaped as a spurious new meter instead of an
+    // overwrite. Do NOT auto-apply the address guess — intentionally do not set
+    // targetBldg here, so a bill with no identity match always falls through to
+    // the "Unmatched Bills" sentinel building below (visible in the project's
+    // building list) for a human to review and reassign, rather than being
+    // silently placed under a guessed building.
   }
 
   if (!targetBldg) {
