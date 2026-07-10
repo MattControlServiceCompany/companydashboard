@@ -969,10 +969,13 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // Rule 2.2: rpt-pg-footer class on every page (including cover) for DOM check compliance.
   const footerImgHtml =
     '<div class="rpt-footer rpt-pg-footer"><img src="' + CSC_FOOTER_B64 + '" alt="CSC Footer"></div>';
+  // Rule 2.3: date exactly once per page, footer only. The header (.rpt-info) and
+  // cover subtitle already carry the client/location and never a date — do not
+  // duplicate the location here, just the date (or period label fallback).
   const footerTextHtml =
     '<div class="rpt-footer-text">' +
     '<span>' +
-    (data ? data.project.client + (_fmtRptDate ? ' — ' + _fmtRptDate : ' — ' + data.period.label) : '') +
+    (data ? (_fmtRptDate ? _fmtRptDate : data.period.label) : '') +
     '</span>' +
     '</div>';
   const footerLabelHtml =
@@ -7983,7 +7986,13 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   function addFooter() {
     try {
-      doc.addImage(CSC_FOOTER_B64, 'JPEG', 0, ph - 55, pw, 55);
+      // 2026-07-10: CSC_FOOTER_B64 was re-cropped to ~19.99:1 (was 7.585:1) as part of the
+      // Audit Report footer-squish fix (app/csv-import.js). jsPDF addImage stretches to the
+      // given w/h like html2canvas does, so the footer height here must track the asset's
+      // real ratio (pw / 19.99 ≈ 30.6pt) instead of the old hardcoded 55pt, or this legacy
+      // export path would now distort the image the other way (too tall).
+      var _footerH = pw / 19.99;
+      doc.addImage(CSC_FOOTER_B64, 'JPEG', 0, ph - _footerH, pw, _footerH);
     } catch (e) {}
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
@@ -12222,7 +12231,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
  *      pages were "Per-Building Detail," one building = one forced full 1056px page even for
  *      a building with 1 piece of equipment — see
  *      stages/joco-audit-density-2026-07-09/investigation.md).
- * Returns { b, fakeData, gauges, intro, tableHead, tokens, summaryLine, infraCallout }.
+ * Returns { b, fakeData, gauges, intro, tableHead, tokens, summaryRowHtml, infraCallout }.
  */
 function _a36BuildingContent(d, building, showBuildingInfra) {
   var b = building;
@@ -12286,14 +12295,21 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
       ? _a36GaugeSVG(b.seqPct, '#7c3aed', 'Sequences', 70)
       : '<svg width="70" height="77.7" viewBox="0 0 70 77.7" style="display:block">' +
         '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
-        '<text x="35" y="39" text-anchor="middle" font-size="13" font-weight="700" fill="#9ca3af" font-family="Arial,sans-serif">N/A</text>' +
+        // Grey text on a client deliverable is banned (same rule already applied to the
+        // "Not found in this export" text below) — full black, matching --rpt-page-text.
+        '<text x="35" y="39" text-anchor="middle" font-size="13" font-weight="700" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">N/A</text>' +
         '<text x="35" y="68.95" text-anchor="middle" font-size="8.05" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">Sequences</text>' +
         '</svg>') +
     '</div>' +
     '<div style="flex:1">' +
-    '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:4px">' +
+    // Building name is the top-level heading for the whole block (gauges + table +
+    // total) — reuse the report's own .rpt-body h2 "Section Headings" treatment
+    // (16px, var(--rpt-blue), trailing rule) instead of a smaller inline style so
+    // each building's section reads as a real header at a glance (2026-07-10 fix,
+    // was 12px/600 — smaller than the 13px body text).
+    '<h2 style="margin:0 0 4px 0">' +
     b.name +
-    '</div>' +
+    '</h2>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">' +
     b.equipCount +
     ' equipment units audited</div>' +
@@ -12402,7 +12418,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
       notReadySeqs.length === 0
         ? '<span style="color:var(--rpt-green)">Fully Compliant</span>'
         : notReadySeqs.join(', ');
-    var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
+    // 2026-07-10 fix: --rpt-rule (#d9dde3) is barely visible on a client deliverable —
+    // use the near-black --rpt-border token for row separators instead. Scoped to this
+    // Per-Building Detail table only (not a global --rpt-rule change, which also backs
+    // several stat-card fills elsewhere in the report).
+    var rowBorder = 'border-bottom:1px solid var(--rpt-border)';
     var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
 
     // Pixel-height estimate for this row (used by chunk pagination below).
@@ -12503,7 +12523,8 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var seqsCell =
       seqsSum === 0 ? '0 — Fully Compliant' : seqsBreakdown ? seqsSum + ' — ' + seqsBreakdown : String(seqsSum);
 
-    var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-rule)';
+    // 2026-07-10 fix: near-black --rpt-border, same reasoning as _pushEquipRow's rowBorder above.
+    var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-border)';
     tokens.push({
       type: 'row',
       estH: sensorsSum > 0 || seqsSum > 0 ? 34 : 26,
@@ -12572,10 +12593,16 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     });
   }
 
-  // Summary and infra callout (last chunk only)
-  var summaryLine =
-    '<div class="rpt-a36-callout" style="font-size:11px;color:var(--rpt-page-text);' +
-    'border-top:1px solid var(--rpt-rule);padding-top:8px;margin-bottom:10px">' +
+  // Total row (last chunk only) — a real <tfoot> row inside the equipment table
+  // (2026-07-10 fix), not a free-standing div with its own border-top. Matt's rule:
+  // rules only as part of a table's structure, never free-floating. Mirrors the
+  // canonical totals-row treatment (.rpt-table tr.rpt-tot td: border-top 2px solid
+  // --rpt-table-tot-bdr, background --rpt-table-tot-bg) inlined here since this
+  // table doesn't carry the .rpt-table class.
+  var summaryRowHtml =
+    '<tfoot><tr style="background:var(--rpt-table-tot-bg)">' +
+    '<td colspan="4" style="padding:6px 8px;font-size:11px;color:var(--rpt-page-text);' +
+    'border-top:2px solid var(--rpt-table-tot-bdr)">' +
     '<strong>Total for ' +
     b.name +
     ':</strong> install ' +
@@ -12591,7 +12618,8 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     ' equipment unit' +
     (b.equipCount !== 1 ? 's' : '') +
     '.' +
-    '</div>';
+    '</td>' +
+    '</tr></tfoot>';
 
   // Plan sec 6 item 4 / sec 10 item 3: Infrastructure callout
   // 2026-07 design-language pass (Batch 3 item 3c): removed the rgba(0,0,0,0.02) background
@@ -12634,7 +12662,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     intro: intro,
     tableHead: tableHead,
     tokens: tokens,
-    summaryLine: summaryLine,
+    summaryRowHtml: summaryRowHtml,
     infraCallout: infraCallout,
   };
 }
@@ -12670,7 +12698,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
   var intro = c.intro;
   var tableHead = c.tableHead;
   var tokens = c.tokens;
-  var summaryLine = c.summaryLine;
+  var summaryRowHtml = c.summaryRowHtml;
   var infraCallout = c.infraCallout;
 
   // Chunk tokens into pages using the shared pixel-height paginator.
@@ -12688,22 +12716,26 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
         return tok.html;
       })
       .join('');
+    var isLastChunk = chunkIndex === numChunks - 1;
+    var pageN = n + chunkIndex;
+
+    // 2026-07-10 fix: the Total row is a real <tfoot> row inside the table (only on the
+    // last chunk) instead of a free-standing div appended after the table — no
+    // free-floating rule sandwiching the total.
     var equipTable =
       '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
       tableHead +
       '<tbody>' +
       tbodyRows +
       '</tbody>' +
+      (isLastChunk ? summaryRowHtml : '') +
       '</table>';
-
-    var isLastChunk = chunkIndex === numChunks - 1;
-    var pageN = n + chunkIndex;
 
     var bodyHTML;
     if (chunkIndex === 0) {
       bodyHTML = gauges + intro + equipTable;
       if (isLastChunk) {
-        bodyHTML += summaryLine + (showBuildingInfra ? infraCallout : '');
+        bodyHTML += showBuildingInfra ? infraCallout : '';
       }
     } else {
       var contHdr =
@@ -12718,7 +12750,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
         '</div>';
       bodyHTML = contHdr + equipTable;
       if (isLastChunk) {
-        bodyHTML += summaryLine + (showBuildingInfra ? infraCallout : '');
+        bodyHTML += showBuildingInfra ? infraCallout : '';
       }
     }
 
@@ -12752,21 +12784,22 @@ function _a36BuildingBlockToken(d, building, showBuildingInfra) {
       return tok.html;
     })
     .join('');
+  // 2026-07-10 fix: the Total row is a real <tfoot> row inside the table instead of a
+  // free-standing div appended after the table — no free-floating rule above the total.
   var equipTable =
     '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
     c.tableHead +
     '<tbody>' +
     tbodyRows +
     '</tbody>' +
+    c.summaryRowHtml +
     '</table>';
-  var innerHTML = c.gauges + c.intro + equipTable + c.summaryLine + (showBuildingInfra ? c.infraCallout : '');
-  // Block chrome: bottom rule + spacing separates one building's block from the next when
-  // several share a page (buildings otherwise have no visual separator once the per-building
-  // page wrapper is gone).
-  var blockHTML =
-    '<div style="margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--rpt-rule)">' +
-    innerHTML +
-    '</div>';
+  var innerHTML = c.gauges + c.intro + equipTable + (showBuildingInfra ? c.infraCallout : '');
+  // Block chrome: pure spacing (no border-bottom) separates one building's block from the
+  // next when several share a page — 2026-07-10 fix: a free-standing rule directly under the
+  // Total row violated the "rules only as part of a table's structure" rule; margin-bottom
+  // alone is enough separation between blocks.
+  var blockHTML = '<div style="margin-bottom:24px">' + innerHTML + '</div>';
 
   // estH: same chrome estimate used by rptPageASHRAE36Building's ROWS_BUDGET_FIRST derivation
   // (gauges ~100px + intro ~35px + thead ~30px) + summed row heights + summary line (~30px) +
