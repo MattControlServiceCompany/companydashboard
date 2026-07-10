@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.656',
+    date: '2026-07-10',
+    title: 'Equipment Matrix Audit view: clearer sensor vs. sequence readiness',
+    items: [
+      {
+        type: 'change',
+        text: 'Equipment Matrix Audit view: the "Coverage %" column is now labeled "Sensor Coverage %" for clarity — same numbers as before, just a clearer name.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Audit view: added a new "Sequence Readiness %" column next to Sensor Coverage %, showing how many of a piece of equipment\'s applicable control sequences are fully ready. Equipment types with no applicable sequences (like unit heaters or plumbing) show a neutral "N/A" instead of a misleading 0% or 100%.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.655',
     date: '2026-07-10',
     title: 'Audit Report visual cleanup',
