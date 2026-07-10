@@ -3836,6 +3836,10 @@ function _pricingComputeBudgetFitPlan(projId) {
 
 function _pricingOpenBudgetFitPreview(projId, btn) {
   _pricingCloseSettingsPopover(projId);
+  // cost-estimate-toolbar-2026-07-10: this action can now also be triggered from the standalone
+  // toolbar Budget popover (same "Fit to Budget…" button, shared markup) — close it too so it
+  // doesn't sit open behind this preview popover.
+  _pricingCloseBudgetPopover(projId);
   var plan = _pricingComputeBudgetFitPlan(projId);
   if (!plan) {
     if (typeof showToast === 'function') showToast('Set a Recurring Services Budget amount first.');
@@ -4014,9 +4018,10 @@ function _pricingCloseLegendPopover(projId) {
 }
 
 function _pricingOpenLegendPopover(projId, btn) {
-  // Close any open popover first (both kinds — only one popover open at a time)
+  // Close any open popover first (all three kinds — only one popover open at a time)
   _pricingCloseLegendPopover(projId);
   _pricingCloseSettingsPopover(projId);
+  _pricingCloseBudgetPopover(projId);
 
   var pop = document.createElement('div');
   pop.id = 'pricing-legend-popover-' + projId;
@@ -4097,6 +4102,76 @@ function _pricingOpenLegendPopover(projId, btn) {
   }, 10);
 }
 
+/* ── Standalone Budget popover (cost-estimate-toolbar-2026-07-10, discoverability fix) ────
+   Opened from the new always-visible "Budget" toolbar chip. Renders the exact same section
+   markup as Table Settings' Budget section (_pricingBuildBudgetSectionHTML) — same ids,
+   same _pricingUpdateBudget onchange wiring, same en_pricing_budget_{id} storage key, same
+   Fit-to-Budget action. This is a second entry point to the SAME control, not a fork: Budget
+   still also lives inside Table Settings for anyone already in that flow. Same open/close/
+   outside-click/positioning pattern as the Legend and Table Settings popovers above — own
+   tracker map so all three popovers' outside-click listeners stay independent. Any budget
+   field change re-renders the whole tab via _pricingUpdateBudget -> initCostEstimateTab,
+   which destroys this popover's DOM node the same way it already does to the Table Settings
+   popover (see the comment above _pricingCloseSettingsPopover) — expected, not a new bug.
+   ─────────────────────────────────────────────────────────────────────────── */
+var _pricingBudgetPopoverOutsideHandler = {};
+function _pricingCloseBudgetPopover(projId) {
+  var pop = document.getElementById('pricing-budget-popover-' + projId);
+  if (pop) pop.remove();
+  if (_pricingBudgetPopoverOutsideHandler[projId]) {
+    document.removeEventListener('click', _pricingBudgetPopoverOutsideHandler[projId]);
+    delete _pricingBudgetPopoverOutsideHandler[projId];
+  }
+}
+
+function _pricingOpenBudgetPopover(projId, btn) {
+  // Close any open popover first (all three kinds — only one popover open at a time)
+  _pricingCloseBudgetPopover(projId);
+  _pricingCloseSettingsPopover(projId);
+  _pricingCloseLegendPopover(projId);
+
+  var estimate = _pricingGetEstimate(projId);
+  var tier = estimate.tier || 'compliance';
+
+  var pop = document.createElement('div');
+  pop.id = 'pricing-budget-popover-' + projId;
+  pop.style.cssText = [
+    'position:absolute',
+    'background:var(--s2)',
+    'border:1px solid var(--border)',
+    'border-radius:6px',
+    'padding:10px 12px',
+    'z-index:800',
+    'min-width:220px',
+    'max-width:280px',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
+    'font-size:11px',
+  ].join(';');
+  pop.innerHTML = _pricingBuildBudgetSectionHTML(projId, tier);
+
+  // Position relative to the Budget button (same pattern as the other toolbar popovers)
+  var rect = btn.getBoundingClientRect();
+  var container = document.getElementById('ptab-cost-estimate-body-' + projId);
+  if (container) {
+    var cRect = container.getBoundingClientRect();
+    pop.style.top = rect.bottom - cRect.top + 4 + 'px';
+    pop.style.left = rect.left - cRect.left + 'px';
+    pop.style.position = 'absolute';
+    container.style.position = 'relative';
+    container.appendChild(pop);
+  }
+
+  setTimeout(function () {
+    function handler(e) {
+      if (!pop.contains(e.target) && e.target !== btn) {
+        _pricingCloseBudgetPopover(projId);
+      }
+    }
+    _pricingBudgetPopoverOutsideHandler[projId] = handler;
+    document.addEventListener('click', handler);
+  }, 10);
+}
+
 /* ── Column-visibility checklist HTML (b771dec6 3a) ───────────────────────
    Factored out of the old col-popover so _pricingOpenSettingsPopover can compose
    it as one section of the combined Table Settings popover. Same storage keys
@@ -4141,6 +4216,113 @@ function _pricingBuildColVisibilityHTML(projId) {
   return html;
 }
 
+/* ── Budget section HTML (174ad49a; factored out cost-estimate-toolbar-2026-07-10) ───────
+   Shared by the Table Settings popover (Section 1b, below) and the standalone toolbar Budget
+   popover (_pricingOpenBudgetPopover, below) — same _pricingGetBudget/_pricingUpdateBudget/
+   _pricingComputeBudgetTotal read/write path either way; this function only builds markup, it
+   does not fork budget logic. `tier` is needed because the Fit-to-Budget action only applies
+   while viewing Recommended. Do not duplicate this markup elsewhere — add a third caller here
+   instead of copy-pasting the block again.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingBuildBudgetSectionHTML(projId, tier) {
+  var budget = _pricingGetBudget(projId); // 174ad49a
+  var html =
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Budget</div>';
+  html +=
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Mode:' +
+    '<select id="pricing-budget-mode-' +
+    projId +
+    '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="_pricingUpdateBudget(' +
+    projId +
+    ",'mode',this.value)\">" +
+    '<option value="recurring"' +
+    (budget.mode === 'recurring' ? ' selected' : '') +
+    '>Recurring Services Budget</option>' +
+    '<option value="financing"' +
+    (budget.mode === 'financing' ? ' selected' : '') +
+    '>Project Financing</option>' +
+    '</select></label>';
+  html +=
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Amount:' +
+    '<span style="display:flex;gap:4px">' +
+    '<input type="number" min="0" step="1" id="pricing-budget-amount-' +
+    projId +
+    '" value="' +
+    (budget.amount != null ? budget.amount : '') +
+    '" placeholder="0"' +
+    ' style="width:76px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+    ' onchange="_pricingUpdateBudget(' +
+    projId +
+    ",'amount',parseFloat(this.value)||null)\">" +
+    '<select id="pricing-budget-denom-' +
+    projId +
+    '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="_pricingUpdateBudget(' +
+    projId +
+    ",'denomination',this.value)\">" +
+    ['lump', 'monthly', 'quarterly', 'annual']
+      .map(function (d) {
+        var lbl = d === 'lump' ? 'Lump sum' : d.charAt(0).toUpperCase() + d.slice(1);
+        return '<option value="' + d + '"' + (budget.denomination === d ? ' selected' : '') + '>' + lbl + '</option>';
+      })
+      .join('') +
+    '</select></span></label>';
+  if (budget.denomination !== 'lump') {
+    html +=
+      '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
+      'title="' +
+      (budget.mode === 'financing'
+        ? 'How many months the financing plan spans'
+        : 'How many months to compare the recurring budget against — a horizon you choose, not one this feature assumes') +
+      '">' +
+      (budget.mode === 'financing' ? 'Financing term (months):' : 'Compare over (months):') +
+      '<input type="number" min="1" step="1" id="pricing-budget-term-' +
+      projId +
+      '" value="' +
+      budget.termMonths +
+      '"' +
+      ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+      ' onchange="_pricingUpdateBudget(' +
+      projId +
+      ",'termMonths',parseInt(this.value,10)||12)\">" +
+      '</label>';
+  }
+  var _budgetComp = _pricingComputeBudgetTotal(budget);
+  if (_budgetComp) {
+    html +=
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:2px">' +
+      (budget.mode === 'financing' ? 'Affords: ' : 'Ceiling: ') +
+      _budgetComp.basisLabel +
+      '</div>';
+  }
+  // 174ad49a Phase 3: Fit-to-Budget action — Mode B only, and only meaningful while viewing
+  // Recommended (the tier the "measure list" refers to). Shown (not hidden) on other tiers with
+  // an explanatory note, so the control isn't a mystery the user can't find.
+  if (budget.mode === 'recurring' && _budgetComp) {
+    if (tier !== 'recommended') {
+      html +=
+        '<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:4px">Switch to the Recommended tier to use Fit to Budget.</div>';
+    } else if (budget.fitToBudget) {
+      html +=
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px">' +
+        '<span style="color:var(--accent);font-weight:700">Fit to Budget: ON (' +
+        (budget.fitExcludedIds || []).length +
+        ' excluded)</span>' +
+        '<button class="btn btn-ghost btn-sm" onclick="_pricingClearBudgetFit(\'' +
+        projId +
+        '\')" style="cursor:pointer">Clear</button>' +
+        '</div>';
+    } else {
+      html +=
+        '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenBudgetFitPreview(\'' +
+        projId +
+        '\',this)" style="cursor:pointer;margin-top:4px;width:100%">Fit to Budget…</button>';
+    }
+  }
+  return html;
+}
+
 /* ── Table Settings popover (b771dec6 3a) ─────────────────────────────────
    Renamed/extended from _pricingToggleColPopover. Replaces the old Notes-header
    gear icon (deleted — documented exception to ui-standards.md's gear-in-
@@ -4151,13 +4333,16 @@ function _pricingBuildColVisibilityHTML(projId) {
    appendChild pattern as the old col popover.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingOpenSettingsPopover(projId, btn) {
-  // Close any open popover first
+  // Close any open popover first (all three kinds — only one popover open at a time;
+  // cost-estimate-toolbar-2026-07-10 added the Legend/Budget closes for full symmetry with
+  // the other two open functions, which already close this one)
   _pricingCloseSettingsPopover(projId);
+  _pricingCloseLegendPopover(projId);
+  _pricingCloseBudgetPopover(projId);
 
   var cfg = _pricingGetConfig();
   var estimate = _pricingGetEstimate(projId);
   var tier = estimate.tier || 'compliance';
-  var budget = _pricingGetBudget(projId); // 174ad49a
 
   var pop = document.createElement('div');
   pop.id = 'pricing-settings-popover-' + projId;
@@ -4254,103 +4439,13 @@ function _pricingOpenSettingsPopover(projId, btn) {
   // Section 1b (174ad49a): Budget input — dual mode (Mode A "Project Financing" spreads a
   // one-time total over a term; Mode B "Recurring Services Budget" is a periodic ceiling the
   // measure list must fit inside), lump/annual/quarterly/monthly denominations, per Matt's
-  // 2026-07-03 spec. Lives in Table Settings (not the toolbar) per b771dec6 3a's rule that only
-  // Tiers/Buildings/Import Pricing CSV stay outside this popover.
+  // 2026-07-03 spec. cost-estimate-toolbar-2026-07-10: Budget also now has its own always-
+  // visible toolbar chip (_pricingOpenBudgetPopover) because this popover location alone wasn't
+  // discoverable — this copy stays here too so Budget is still reachable from Table Settings
+  // for anyone already in that flow. Markup factored into _pricingBuildBudgetSectionHTML so
+  // both copies share one source of truth (same ids/onchange/storage key).
   html += '<div style="border-top:1px solid var(--border);margin:8px 0 6px;padding-top:8px">';
-  html +=
-    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Budget</div>';
-  html +=
-    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
-    'Mode:' +
-    '<select id="pricing-budget-mode-' +
-    projId +
-    '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="_pricingUpdateBudget(' +
-    projId +
-    ",'mode',this.value)\">" +
-    '<option value="recurring"' +
-    (budget.mode === 'recurring' ? ' selected' : '') +
-    '>Recurring Services Budget</option>' +
-    '<option value="financing"' +
-    (budget.mode === 'financing' ? ' selected' : '') +
-    '>Project Financing</option>' +
-    '</select></label>';
-  html +=
-    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
-    'Amount:' +
-    '<span style="display:flex;gap:4px">' +
-    '<input type="number" min="0" step="1" id="pricing-budget-amount-' +
-    projId +
-    '" value="' +
-    (budget.amount != null ? budget.amount : '') +
-    '" placeholder="0"' +
-    ' style="width:76px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
-    ' onchange="_pricingUpdateBudget(' +
-    projId +
-    ",'amount',parseFloat(this.value)||null)\">" +
-    '<select id="pricing-budget-denom-' +
-    projId +
-    '" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px" onchange="_pricingUpdateBudget(' +
-    projId +
-    ",'denomination',this.value)\">" +
-    ['lump', 'monthly', 'quarterly', 'annual']
-      .map(function (d) {
-        var lbl = d === 'lump' ? 'Lump sum' : d.charAt(0).toUpperCase() + d.slice(1);
-        return '<option value="' + d + '"' + (budget.denomination === d ? ' selected' : '') + '>' + lbl + '</option>';
-      })
-      .join('') +
-    '</select></span></label>';
-  if (budget.denomination !== 'lump') {
-    html +=
-      '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
-      'title="' +
-      (budget.mode === 'financing'
-        ? 'How many months the financing plan spans'
-        : 'How many months to compare the recurring budget against — a horizon you choose, not one this feature assumes') +
-      '">' +
-      (budget.mode === 'financing' ? 'Financing term (months):' : 'Compare over (months):') +
-      '<input type="number" min="1" step="1" id="pricing-budget-term-' +
-      projId +
-      '" value="' +
-      budget.termMonths +
-      '"' +
-      ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
-      ' onchange="_pricingUpdateBudget(' +
-      projId +
-      ",'termMonths',parseInt(this.value,10)||12)\">" +
-      '</label>';
-  }
-  var _budgetComp = _pricingComputeBudgetTotal(budget);
-  if (_budgetComp) {
-    html +=
-      '<div style="font-size:10px;color:var(--text3);margin-bottom:2px">' +
-      (budget.mode === 'financing' ? 'Affords: ' : 'Ceiling: ') +
-      _budgetComp.basisLabel +
-      '</div>';
-  }
-  // 174ad49a Phase 3: Fit-to-Budget action — Mode B only, and only meaningful while viewing
-  // Recommended (the tier the "measure list" refers to). Shown (not hidden) on other tiers with
-  // an explanatory note, so the control isn't a mystery the user can't find.
-  if (budget.mode === 'recurring' && _budgetComp) {
-    if (tier !== 'recommended') {
-      html +=
-        '<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:4px">Switch to the Recommended tier to use Fit to Budget.</div>';
-    } else if (budget.fitToBudget) {
-      html +=
-        '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px">' +
-        '<span style="color:var(--accent);font-weight:700">Fit to Budget: ON (' +
-        (budget.fitExcludedIds || []).length +
-        ' excluded)</span>' +
-        '<button class="btn btn-ghost btn-sm" onclick="_pricingClearBudgetFit(\'' +
-        projId +
-        '\')" style="cursor:pointer">Clear</button>' +
-        '</div>';
-    } else {
-      html +=
-        '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenBudgetFitPreview(\'' +
-        projId +
-        '\',this)" style="cursor:pointer;margin-top:4px;width:100%">Fit to Budget…</button>';
-    }
-  }
+  html += _pricingBuildBudgetSectionHTML(projId, tier);
   html += '</div>';
 
   // Section 2: column-visibility checklist
@@ -4639,6 +4734,28 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     projId +
     '\',this)" title="What the icons and colors in this table mean" style="cursor:pointer">ⓘ Legend</button>';
 
+  // Budget toolbar chip (174ad49a discoverability fix, cost-estimate-toolbar-2026-07-10) — Budget
+  // used to live ONLY inside Table Settings (Section 1b, still there for the full Mode/Amount/
+  // Denomination/Term fields) with nothing in the toolbar hinting it existed. This button opens a
+  // dedicated small popover (_pricingOpenBudgetPopover) built from _pricingBuildBudgetSectionHTML —
+  // the exact same markup/onchange wiring as the Table Settings copy, same storage key, same
+  // Fit-to-Budget action, just surfaced. Label shows the current amount so the toolbar itself
+  // answers "is a budget set" without opening anything.
+  var _budgetForBtn = _pricingGetBudget(projId);
+  var _budgetBtnLabel =
+    _budgetForBtn.amount != null && !isNaN(_budgetForBtn.amount) && Number(_budgetForBtn.amount) > 0
+      ? _pricingFmt(Number(_budgetForBtn.amount)) +
+        ({ monthly: '/mo', quarterly: '/qtr', annual: '/yr', lump: '' }[_budgetForBtn.denomination] || '')
+      : 'Not set';
+  var budgetBtnHTML =
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenBudgetPopover(\'' +
+    projId +
+    '\',this)" title="Client budget — drives Recommended-tier measure selection and Fit to Budget" style="cursor:pointer">' +
+    (_budgetForBtn.amount == null ? '<span style="color:var(--warn)">⚠ </span>' : '') +
+    'Budget: ' +
+    _budgetBtnLabel +
+    '</button>';
+
   // Building filter dropdown — width:150px added (d5286981 Change 2) so a reserved-but-hidden
   // instance (Summary) always matches a visible instance's width regardless of how long building
   // names in this project happen to be (previously auto-sized to the widest <option> text).
@@ -4710,6 +4827,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     slot(importCsvHTML, rowFilterActive),
     slot(tableSettingsBtnHTML, rowFilterActive),
     slot(legendBtnHTML, rowFilterActive),
+    slot(budgetBtnHTML, rowFilterActive),
     // Tier toggle — 35742dd5 (Phase 2) established that the flex:1 spacer must sit AFTER Tier,
     // not before it, so Tier's left edge is just the natural width of the fixed left-side
     // content (now IDENTICAL on all 5 views) — never wrapped in slot(): this is the one control
@@ -4717,12 +4835,15 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     '<div style="flex:0 0 auto;display:flex;align-items:center">',
     _pricingTierToggleHTML(projId, tier),
     '</div>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="flex:1">' + middleHTML + '</span>',
-    '<div style="flex:0 0 auto;display:flex;align-items:center;gap:8px">',
+    // cost-estimate-toolbar-2026-07-10: Building/Sort moved out of the far-right flex:1-pushed
+    // group (Matt reported them stranded at the right edge of the toolbar) and into this left-
+    // side control group, immediately after Tier and BEFORE the "|" + flex:1 spacer below —
+    // keeps Tier's own preceding-content dependency (Import CSV/Table Settings/Legend/Budget,
+    // identical on every tier) unchanged, per ui-standards.md's Stable control placement rule.
     slot(bldgFilterHTML, rowFilterActive),
     slot(rowSortHTML, sortActive),
-    '</div>',
+    '<span style="color:var(--border2)">|</span>',
+    '<span style="flex:1">' + middleHTML + '</span>',
     '</div>',
   ].join('');
 }
