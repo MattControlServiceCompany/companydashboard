@@ -11263,7 +11263,7 @@ function collectASHRAE36Data(projId, reportDate) {
     // This field isn't rendered directly anywhere today (the chip helper independently
     // derives its word from `status`), kept in sync anyway so it can't drift if a future
     // caller starts reading it.
-    var statusLabel = composite >= 75 ? 'Fully Covered' : composite >= 50 ? 'Partially Covered' : 'Not Covered';
+    var statusLabel = composite >= 75 ? 'Fully Compliant' : composite >= 50 ? 'Partially Compliant' : 'Not Compliant';
     // Sensor counts for status chip display
     var totalSensorsInPlace = totalPointsMatched;
     var totalSensorsRequired = totalPointsRequired;
@@ -11568,7 +11568,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
 
 // ─── Status chip helper ────────────────────────────────────────────────────
 // status: 'green'|'amber'|'red'; inPlace/required: sensor counts (optional).
-// Renders "Fully Covered · 3/3 sensors" style label when counts are provided.
+// Renders "Fully Compliant · 3/3 sensors" style label when counts are provided.
 function _a36StatusChip(status, inPlace, required) {
   // `color` is computed for the caller's colored status bar (data-viz, kept — see the
   // `.rpt-a36-*` executive-summary/building rows that render `color` alongside this chip's
@@ -11577,13 +11577,14 @@ function _a36StatusChip(status, inPlace, required) {
   // before/after render, no visual change on this element. Left as-is, not re-touched.
   var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
   // Display-label rename (item ed465b3c, 2026-07-09, Matt's decision): Ready/Partial/Critical
-  // -> Fully Covered/Partially Covered/Not Covered. DISPLAY TEXT ONLY — the 'green'/'amber'/
+  // -> Fully Covered/Partially Covered/Not Covered (2026-07-09 rename #2, Matt's decision,
+  // supersedes v647): Covered -> Compliant. DISPLAY TEXT ONLY — the 'green'/'amber'/
   // 'red' status keys and every caller's >=75/>=50 threshold logic are untouched.
-  var word = status === 'green' ? 'Fully Covered' : status === 'amber' ? 'Partially Covered' : 'Not Covered';
+  var word = status === 'green' ? 'Fully Compliant' : status === 'amber' ? 'Partially Compliant' : 'Not Compliant';
   // Batch 3 item 2/3a: at 100% (inPlace === required, required > 0) the fraction is a
-  // tautology ("Fully Covered · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells
+  // tautology ("Fully Compliant · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells
   // the reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
-  // unchanged (e.g. "Partially Covered · 178/261 sensors", "Not Covered · 7/16 sensors").
+  // unchanged (e.g. "Partially Compliant · 178/261 sensors", "Not Compliant · 7/16 sensors").
   var isComplete = inPlace !== undefined && required !== undefined && required > 0 && inPlace === required;
   var label =
     inPlace !== undefined && required !== undefined && !isComplete
@@ -11788,9 +11789,76 @@ function rptPageASHRAE36Executive(n, d) {
   var tableTitle =
     '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building Compliance Status</div>';
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:#fff;background:var(--rpt-blue);text-align:left;white-space:normal;line-height:1.25';
+  // Column widths (2026-07-09, fix/report-wording-compliance-rows): explicit colgroup +
+  // table-layout:fixed added so column widths are deterministic instead of browser
+  // auto-layout. Auto-layout let long building names (e.g. "P25309 - Jo Co Arts and
+  // Heritage", "NC Sheriff's Operations Building", "Olathe Adult Detention Center") and the
+  // Status column's longer "Partially Compliant · 434/764 sensors" text both wrap to a 2nd
+  // line, breaking the "1 row = 1 line" invariant. Redistributed the 100% width from the
+  // narrow-content columns (Equipment/Sensor Coverage/Sequence Readiness are 2-3 char
+  // percentages or counts) and the Score column (whose bar had spare max-width, tightened
+  // below) toward Building and Status, the two columns that actually need the room.
+  // Tuned via headless render against the real JOCO dataset (2026-07-09): the first pass
+  // (28/8/9/9/16/30) fixed 20 of 21 wrapped rows but left the longest building name
+  // ("MedAct 1159 Sunflower Firestation-13", 37 chars) still wrapping. Took 3% from
+  // Equipment/Sensor/Sequence (narrow numeric/percent content, had slack) and 2% from Score
+  // (bar already tightened to a 60px ceiling, had slack) and gave all 5% to Building.
+  // Header-clip fix (2026-07-09, same branch, follow-up): the 7/8/8% widths above were sized
+  // for the DATA rows (2-3 char percentages) but left the HEADER labels ("Equipment", "Sensor
+  // Coverage", "Sequence Readiness") clipped — DOM-confirmed scrollWidth > clientWidth on all
+  // 3 <th> cells, with the neighboring th's own background painting over the overflow (each
+  // th has its own solid background, so there's no visible "leak", just cut-off letters).
+  // "Equipment" is a single unbreakable word (no space to wrap on) so it needs its column wide
+  // enough for the whole word on one line; "Sensor Coverage"/"Sequence Readiness" can wrap
+  // between the two words once white-space:normal is explicit (added to thStyle above,
+  // replacing an unset value that rendered the same as browser default but wasn't taking
+  // effect in this table-layout:fixed context) and the row grows a 2nd header line via
+  // `line-height` above; thead height already budgeted at 44px (see ROWS_BUDGET_FIRST comment
+  // above) which two 10px lines fit inside.
+  // First attempt took the full 5% from Status alone (30->25) — headless-verified via a
+  // Range.getClientRects() line-count probe (the only reliable "did this text actually wrap"
+  // check; scrollWidth==clientWidth is NOT reliable for a block/flex div that fills its
+  // parent, since it just reports the container's own box when content doesn't overflow it)
+  // that this REGRESSED one row: the portfolio's longest status string ("Partially Compliant
+  // · 2658/4032 sensors", natural width 173px) wrapped to 2 lines at Status's new 25%
+  // (164px avail). Re-measured Building's real slack the same way (force
+  // display:inline-block + white-space:nowrap, read scrollWidth): the longest building name
+  // ("MedAct 1159 Sunflower Firestation-13") only needs 186px natural width against 222px
+  // avail at the original 33% — 36px of genuine slack, contrary to the 2026-07-09 comment
+  // above claiming zero slack (that comment was about the auto-layout wrapping bug fixed by
+  // adding table-layout:fixed, not about remaining headroom once fixed-layout was in place).
+  // Final split: Building 33->30 (-3%, still 14px above its 186px need), Status 30->28 (-2%,
+  // still ~13px above its 173px need), Score untouched (already has a small pre-existing
+  // 3px overflow on the "100%" score-bar text, out of scope for this header-only fix — do not
+  // shrink Score further or that pre-existing issue gets worse). +5% total went to
+  // Equipment/Sensor/Sequence. Re-verified after rebalancing: 0 header overflow, 0 data-row
+  // line-wrap regressions (see dashboardlogic entry for the exact before/after numbers).
+  var colWidths = { building: 30, equipment: 10, sensor: 9, sequence: 9, score: 14, status: 28 };
+  var colgroup =
+    '<colgroup>' +
+    '<col style="width:' +
+    colWidths.building +
+    '%">' +
+    '<col style="width:' +
+    colWidths.equipment +
+    '%">' +
+    '<col style="width:' +
+    colWidths.sensor +
+    '%">' +
+    '<col style="width:' +
+    colWidths.sequence +
+    '%">' +
+    '<col style="width:' +
+    colWidths.score +
+    '%">' +
+    '<col style="width:' +
+    colWidths.status +
+    '%">' +
+    '</colgroup>';
   var tableOpenHead =
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:16px;table-layout:fixed">' +
+    colgroup +
     '<thead><tr>' +
     '<th style="' +
     thStyle +
@@ -11812,17 +11880,18 @@ function rptPageASHRAE36Executive(n, d) {
     '">Status</th>' +
     '</tr></thead>';
   // Batch 3 item 3/3b (copy-options.md Option A — RECOMMENDED): append one plain-language
-  // sentence per tier so a facility owner reading "Not Covered <50%" learns what that means
+  // sentence per tier so a facility owner reading "Not Compliant <50%" learns what that means
   // operationally, not just the number. Numeric footnote kept intact, meaning appended inline.
   // Labels renamed (item ed465b3c, 2026-07-09): Ready/Partial/Critical -> Fully Covered/
-  // Partially Covered/Not Covered — display text only; the underlying 'green'/'amber'/'red'
+  // Partially Covered/Not Covered, then (2026-07-09 rename #2, Matt's decision, supersedes
+  // v647) Covered -> Compliant — display text only; the underlying 'green'/'amber'/'red'
   // status keys and >=75/>=50 thresholds are unchanged (see _a36StatusChip).
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
     '<strong>Score</strong> = weighted composite (40% Sensor Coverage + 60% Sequence Readiness). ' +
-    '<strong>Status thresholds:</strong> Fully Covered ≥75% (meets the ASHRAE 36 baseline), Partially Covered 50–74% ' +
+    '<strong>Status thresholds:</strong> Fully Compliant ≥75% (meets the ASHRAE 36 baseline), Partially Compliant 50–74% ' +
     '(some sensors and sequences are in place, but work is needed before sequences can run reliably), ' +
-    'Not Covered <50% (the building lacks the sensors or programming needed to run ASHRAE 36 sequences at all).' +
+    'Not Compliant <50% (the building lacks the sensors or programming needed to run ASHRAE 36 sequences at all).' +
     '</div>';
 
   // Build a token per building row — type:'row', estH:52px
@@ -11850,11 +11919,17 @@ function rptPageASHRAE36Executive(n, d) {
   var ROW_BOX_MIN_H = 34;
   var _rowBoxStyle = 'min-height:' + ROW_BOX_MIN_H + 'px;display:flex;align-items:center';
   function _buildRowHTML(b) {
+    // Bar width (2026-07-09, fix/report-wording-compliance-rows): was 1:1 px-per-composite-%
+    // (max 100px, capped by an effectively-unreachable max-width:120px) — that's more bar
+    // than the Score column needs, at the expense of Building/Status which actually wrap.
+    // Scaled down to a 60px ceiling (still visually proportional) to free width for the
+    // colgroup redistribution above.
+    var barPx = Math.round(b.composite * 0.6);
     var bar =
       '<div style="display:flex;align-items:center;gap:4px">' +
       '<div style="width:' +
-      b.composite +
-      'px;max-width:120px;height:8px;background:' +
+      barPx +
+      'px;max-width:60px;height:8px;background:' +
       b.statusColor +
       ';border-radius:2px;min-width:2px"></div>' +
       '<span style="font-size:10px;color:var(--rpt-page-text)">' +
@@ -11987,34 +12062,37 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // decision ("all sequences, plain-language"). This table used to list ONLY missing-sensor
   // rows and blocked/partial sequence rows (a punch list, via buildComplianceRows /
   // buildRecommendedRows in pricing-estimator.js). It now lists EVERY ASHRAE Guideline 36
-  // sequence applicable to the equipment present in this portfolio, with a Ready/Partial/
-  // Critical status per sequence, so the reader sees the full compliance picture, not just
-  // gaps. Individual missing-sensor/hardware rows are NOT removed from the report overall —
-  // they still drive the Proposal's Scope of Work page (rptPageASHRAE36ProposalScope, which
-  // reads d.portfolio.topGaps) — only this Audit-report table's row source changed.
+  // sequence applicable to the equipment present in this portfolio, so the reader sees the
+  // full compliance picture, not just gaps. Individual missing-sensor/hardware rows are NOT
+  // removed from the report overall — they still drive the Proposal's Scope of Work page
+  // (rptPageASHRAE36ProposalScope, which reads d.portfolio.topGaps) — only this Audit-report
+  // table's row source changed.
+  //
+  // Correction (2026-07-09, Matt's decision): this table is INFORMATIONAL REFERENCE ONLY —
+  // it explains what each G36 sequence is, in plain English. It originally shipped with a
+  // per-sequence Ready/Partial/Critical STATUS column (same aggregation as the Building
+  // Compliance Status table), but Matt flagged that a per-project rollup status doesn't
+  // belong on a reference table describing what a sequence IS — that status lives on the
+  // Building Compliance Status table and Per-Building Detail instead. The status column and
+  // its underlying ready/partial/blocked aggregation were removed; only the applicability
+  // filter (does this sequence apply to any equipment in the portfolio?) remains.
   //
   // Source of truth for "every applicable sequence": EM_SEQUENCE_DEFS (equipment-matrix.js).
   // Per-equipment readiness: d.buildings[*].equipResults[*].seqReadiness, already computed in
   // collectASHRAE36Data() via emComputeSequenceReadiness() (status 'ready'|'partial'|
-  // 'blocked'|'na' per sequence per equipment instance). Here we aggregate across the whole
-  // portfolio: a sequence is included if it applies to at least one piece of equipment
-  // anywhere (status !== 'na'); the row's overall status is the % of applicable equipment
-  // instances that are 'ready' (>=75% green/Ready, >=50% amber/Partial, else red/Critical) —
-  // same thresholds already used for building-level composite status elsewhere in this file.
+  // 'blocked'|'na' per sequence per equipment instance). Here we only check whether a
+  // sequence applies to at least one piece of equipment anywhere (status !== 'na') to decide
+  // whether to list it — no status is computed or rendered.
   var rationaleTokens = [];
   try {
-    var seqAgg = {}; // seqKey -> { ready, partial, blocked, total }
+    var seqApplicable = {}; // seqKey -> true if it applies to at least one piece of equipment
     (d.buildings || []).forEach(function (b) {
       (b.equipResults || []).forEach(function (eq) {
         var sr = eq.seqReadiness || {};
         Object.keys(sr).forEach(function (seqKey) {
           var entry = sr[seqKey];
           if (!entry || entry.status === 'na') return;
-          if (!seqAgg[seqKey]) seqAgg[seqKey] = { ready: 0, partial: 0, blocked: 0, total: 0 };
-          seqAgg[seqKey].total++;
-          if (entry.status === 'ready') seqAgg[seqKey].ready++;
-          else if (entry.status === 'partial') seqAgg[seqKey].partial++;
-          else if (entry.status === 'blocked') seqAgg[seqKey].blocked++;
+          seqApplicable[seqKey] = true;
         });
       });
     });
@@ -12022,24 +12100,18 @@ function rptPageASHRAE36CostEstimate(n, d) {
     var seqDefsList =
       typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
     seqDefsList.forEach(function (seq) {
-      var agg = seqAgg[seq.key];
-      if (!agg || agg.total === 0) return; // not applicable to any equipment in this portfolio
-      var readyPct = Math.round((agg.ready / agg.total) * 100);
-      var seqStatus = readyPct >= 75 ? 'green' : readyPct >= 50 ? 'amber' : 'red';
+      if (!seqApplicable[seq.key]) return; // not applicable to any equipment in this portfolio
       var plainDesc = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[seq.key]) || '';
       var rowHTML =
         '<tr>' +
         '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-        'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:24%">' +
+        'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:26%">' +
         _esc(seq.label) +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-        'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:14%;white-space:nowrap">' +
+        'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:16%;white-space:nowrap">' +
         'ASHRAE 36 ' +
         _esc(seq.ashrae36 || '') +
-        '</td>' +
-        '<td style="padding:7px 10px;border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:12%">' +
-        _a36StatusChip(seqStatus) +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
         'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
@@ -12069,15 +12141,16 @@ function rptPageASHRAE36CostEstimate(n, d) {
     'text-transform:uppercase;letter-spacing:0.04em">' +
     SEQ_SECTION_TITLE +
     '</div>';
+  // Status column removed (2026-07-09, Matt's decision): this table is informational
+  // reference only (what each sequence IS, not a per-project readiness rollup) — see the
+  // rationaleTokens comment above. Widths redistributed across the remaining 3 columns.
   var _ratThead =
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:24%">Sequence</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:26%">Sequence</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:14%">ASHRAE 36 Spec</th>' +
-    '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:12%">Status</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:16%">ASHRAE 36 Spec</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Description</th>' +
     '</tr></thead><tbody>';
@@ -12323,9 +12396,12 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         notReadySeqs.push(_seqLabel(sk, sr[sk]));
       }
     }
-    // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered".
+    // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered" -> (rename
+    // #2, Matt's decision, supersedes v647) "Fully Compliant".
     var seqsCell =
-      notReadySeqs.length === 0 ? '<span style="color:var(--rpt-green)">Fully Covered</span>' : notReadySeqs.join(', ');
+      notReadySeqs.length === 0
+        ? '<span style="color:var(--rpt-green)">Fully Compliant</span>'
+        : notReadySeqs.join(', ');
     var rowBorder = 'border-bottom:1px solid var(--rpt-rule)';
     var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
 
@@ -12422,9 +12498,10 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
 
     var sensorsCell =
       sensorsSum === 0 ? '0 — Complete' : sensorsBreakdown ? sensorsSum + ' — ' + sensorsBreakdown : String(sensorsSum);
-    // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered".
+    // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered" -> (rename
+    // #2, Matt's decision, supersedes v647) "Fully Compliant".
     var seqsCell =
-      seqsSum === 0 ? '0 — Fully Covered' : seqsBreakdown ? seqsSum + ' — ' + seqsBreakdown : String(seqsSum);
+      seqsSum === 0 ? '0 — Fully Compliant' : seqsBreakdown ? seqsSum + ' — ' + seqsBreakdown : String(seqsSum);
 
     var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-rule)';
     tokens.push({
