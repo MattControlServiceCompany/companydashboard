@@ -8668,6 +8668,85 @@ function _withTimeout(promise, ms, label) {
     ),
   ]);
 }
+// Module-level (not nested in extractPDFText) so processPDF's separate OCR-retry
+// block (a sibling function, ~line 9509) can call recognizeWithTimeout too —
+// same reasoning as _withTimeout/PDFJS_AWAIT_TIMEOUT_MS above. See a00af2f4:
+// recognizeWithTimeout used to be a const local to extractPDFText, so processPDF's
+// retry block threw "recognizeWithTimeout is not defined" every time it ran; the
+// generic catch around the call swallowed the ReferenceError identically to a real
+// OCR failure, so the 3x/3.5x/4x retry-scale enhancement silently did nothing.
+// Timeout for individual recognize() calls (90 seconds) — prevents Tesseract hangs
+const OCR_TIMEOUT_MS = 90000;
+// Wall-clock cap across ALL pages/passes for one OCR phase — prevents an
+// unbounded worst case (many pages x many passes) from hanging forever.
+const OCR_TOTAL_BUDGET_MS = 4 * 60 * 1000; // 4 min
+// Helper to create a fresh worker with correct params.
+// Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
+const _createOCRWorker = async (loggerCb) => {
+  const w = await Tesseract.createWorker(
+    'eng',
+    1,
+    { logger: loggerCb || (() => {}) },
+    { load_system_dawg: '0', load_freq_dawg: '0' },
+  );
+  await w.setParameters({ preserve_interword_spaces: '1', user_defined_dpi: '300' });
+  return w;
+};
+// Budget-window start time for recognizeWithTimeout's OCR_TOTAL_BUDGET_MS check.
+// Module-level `let` (not a const closed over by one function) so both
+// extractPDFText's own OCR pass loop and processPDF's separate OCR-retry block
+// can each stamp their own fresh budget window right before they start OCR'ing —
+// the two phases run strictly sequentially per file (processPDF awaits
+// extractPDFText to fully finish before its retry block begins, never
+// concurrently), so a single shared mutable variable reassigned per-phase is
+// equivalent to each phase having its own local budget clock, with no race risk.
+let _ocrStartTime = 0;
+// On timeout: terminate the hung worker and create a fresh one.
+// Returns { result, newWorker } — newWorker is set only if the worker was replaced.
+const recognizeWithTimeout = async (w, canvas, params) => {
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+  }, OCR_TIMEOUT_MS);
+  let abortPoll = null;
+  const abortPromise = new Promise((_, reject) => {
+    abortPoll = setInterval(() => {
+      if (window._pdfAbort) reject(Object.assign(new Error('Aborted by user'), { _aborted: true }));
+      // Overshoot fix (70096fe4 review): OCR_TOTAL_BUDGET_MS checkpoints only run
+      // BETWEEN awaits, so they can't stop a recognize() call already in flight —
+      // a budget trip mid-call could previously overshoot the plan's "budget+30s"
+      // gate-(a) tolerance by up to the full 90s OCR_TIMEOUT_MS. Reuse this same
+      // 250ms poll (already proven safe for abort) so a budget trip interrupts an
+      // in-flight recognize() just as promptly as a user Cancel does.
+      else if (performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS)
+        reject(Object.assign(new Error('OCR budget exceeded mid-recognize'), { _budgetExceeded: true }));
+    }, 250); // poll every 250ms — cheap, imperceptible worst-case delay to Cancel/budget
+  });
+  try {
+    const result = await Promise.race([
+      w.recognize(canvas, params),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout after 90s')), OCR_TIMEOUT_MS)),
+      abortPromise,
+    ]);
+    clearTimeout(timer);
+    clearInterval(abortPoll);
+    return { result, newWorker: null };
+  } catch (err) {
+    clearTimeout(timer);
+    clearInterval(abortPoll);
+    if (err._aborted) throw err; // let caller distinguish abort from a real timeout/failure
+    if (timedOut) {
+      // Kill the hung worker — its queued recognize() call will never finish
+      try {
+        await w.terminate();
+      } catch (_) {}
+      // Create a fresh worker so the next call starts clean
+      const fresh = await _createOCRWorker();
+      throw Object.assign(err, { _replacementWorker: fresh });
+    }
+    throw err;
+  }
+};
 async function extractPDFText(ab, statusCb) {
   let pdf = null;
   try {
@@ -8903,75 +8982,18 @@ async function extractPDFText(ab, statusCb) {
           { scale: 1.5, psm: null, label: '1.5x retry' },
           { scale: 4.0, psm: null, label: '4x retry' },
         ];
-        // Timeout for individual recognize() calls (90 seconds) — prevents Tesseract hangs
-        const OCR_TIMEOUT_MS = 90000;
-        // Wall-clock cap across ALL pages/passes for one file — prevents an
-        // unbounded worst case (many pages x many passes) from hanging forever.
-        const OCR_TOTAL_BUDGET_MS = 4 * 60 * 1000; // 4 min
-        // Helper to create a fresh worker with correct params.
-        // Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
-        const _createOCRWorker = async (loggerCb) => {
-          const w = await Tesseract.createWorker(
-            'eng',
-            1,
-            { logger: loggerCb || (() => {}) },
-            { load_system_dawg: '0', load_freq_dawg: '0' },
-          );
-          await w.setParameters({ preserve_interword_spaces: '1', user_defined_dpi: '300' });
-          return w;
-        };
-        // On timeout: terminate the hung worker and create a fresh one.
-        // Returns { result, newWorker } — newWorker is set only if the worker was replaced.
-        const recognizeWithTimeout = async (w, canvas, params) => {
-          let timedOut = false;
-          const timer = setTimeout(() => {
-            timedOut = true;
-          }, OCR_TIMEOUT_MS);
-          let abortPoll = null;
-          const abortPromise = new Promise((_, reject) => {
-            abortPoll = setInterval(() => {
-              if (window._pdfAbort) reject(Object.assign(new Error('Aborted by user'), { _aborted: true }));
-              // Overshoot fix (70096fe4 review): OCR_TOTAL_BUDGET_MS checkpoints only run
-              // BETWEEN awaits, so they can't stop a recognize() call already in flight —
-              // a budget trip mid-call could previously overshoot the plan's "budget+30s"
-              // gate-(a) tolerance by up to the full 90s OCR_TIMEOUT_MS. Reuse this same
-              // 250ms poll (already proven safe for abort) so a budget trip interrupts an
-              // in-flight recognize() just as promptly as a user Cancel does.
-              else if (performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS)
-                reject(Object.assign(new Error('OCR budget exceeded mid-recognize'), { _budgetExceeded: true }));
-            }, 250); // poll every 250ms — cheap, imperceptible worst-case delay to Cancel/budget
-          });
-          try {
-            const result = await Promise.race([
-              w.recognize(canvas, params),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout after 90s')), OCR_TIMEOUT_MS)),
-              abortPromise,
-            ]);
-            clearTimeout(timer);
-            clearInterval(abortPoll);
-            return { result, newWorker: null };
-          } catch (err) {
-            clearTimeout(timer);
-            clearInterval(abortPoll);
-            if (err._aborted) throw err; // let caller distinguish abort from a real timeout/failure
-            if (timedOut) {
-              // Kill the hung worker — its queued recognize() call will never finish
-              try {
-                await w.terminate();
-              } catch (_) {}
-              // Create a fresh worker so the next call starts clean
-              const fresh = await _createOCRWorker();
-              throw Object.assign(err, { _replacementWorker: fresh });
-            }
-            throw err;
-          }
-        };
+        // OCR_TIMEOUT_MS, OCR_TOTAL_BUDGET_MS, _createOCRWorker, and recognizeWithTimeout
+        // are module-level now (see above extractPDFText's function boundary) so
+        // processPDF's OCR-retry block can call recognizeWithTimeout too — a00af2f4.
         // Track pass scores for debug output
         const passScoreLog = [];
 
         // Store all OCR pass texts for consensus re-extraction on mismatched values
         const allPassTexts = {};
-        const _ocrStartTime = performance.now();
+        // Stamp the module-level budget-window start for this OCR phase (see the
+        // `let _ocrStartTime` declaration above extractPDFText for why this is a
+        // reassignment, not a fresh const).
+        _ocrStartTime = performance.now();
         let _ocrBudgetExceeded = false;
         for (let idx = 0; idx < ocrNeeded.length; idx++) {
           if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
@@ -9660,6 +9682,12 @@ async function processPDF(file) {
                     for (let p = ps; p <= pe; p++) retryPages.add(p);
                   }
                 }
+                // Stamp a fresh budget-window start for this retry phase (a00af2f4) —
+                // recognizeWithTimeout's OCR_TOTAL_BUDGET_MS check reads the shared
+                // module-level _ocrStartTime; extractPDFText already returned by this
+                // point (processPDF awaits it above), so this phase gets its own
+                // 4-minute window rather than inheriting a stale/expired one.
+                _ocrStartTime = performance.now();
                 for (const scale of RETRY_SCALES) {
                   if (bestMissing === 0) break;
                   statusMsg(
