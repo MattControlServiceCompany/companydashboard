@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.650',
+    date: '2026-07-09',
+    title: 'Audit Report: compliance wording + table header fix',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department > Audit Report (ASHRAE Guideline 36): compliance status wording changed from "Covered" to "Compliant" (e.g. "Fully Compliant", "Partially Compliant") throughout the Building Compliance Status table and status chips, to match ASHRAE Guideline 36 compliance language.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department > Audit Report: the ASHRAE Guideline 36 Sequences reference table no longer shows a per-project Status column -- that table now focuses on explaining what each sequence is; project-level status still appears on the Building Compliance Status table and Per-Building Detail.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department > Audit Report: Building Compliance Status table column headers ("Equipment", "Sensor Coverage", "Sequence Readiness") no longer clip -- columns were widened and headers now wrap cleanly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.09.649',
     date: '2026-07-09',
     title: 'BAS Trends import: smarter point matching + auto-fill',

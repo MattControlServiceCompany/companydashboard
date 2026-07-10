@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.09.649'; // deployed 2026-07-09 (BAS Trends import: token-subset matcher fix + vocab expansion + Building/Equipment auto-fill)
+  var CH_VERSION = 'v2026.07.09.650'; // deployed 2026-07-09 (Audit Report: Covered->Compliant wording + Building Compliance Status header-clip fix)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
