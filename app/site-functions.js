@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.10.658',
+    date: '2026-07-10',
+    title: 'Audit Report no longer shows a false "Fully Compliant" for equipment it never checked',
+    items: [
+      {
+        type: 'fix',
+        text: 'The ASHRAE Guideline 36 Audit Report was labeling buildings and equipment categories "Fully Compliant" even when there were no applicable sequences to check at all (furnaces, heaters, zone terminals, and similar equipment types Guideline 36 does not publish sequences for). Those now read "Not Applicable" (building status) and "No Applicable Sequences" (equipment rows) instead of a misleading green pass. Affects 7 of 26 buildings in the report.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.657',
     date: '2026-07-10',
     title: 'Bill uploads now double-check the account before overwriting a saved bill',

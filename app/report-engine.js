@@ -11578,7 +11578,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
 // ─── Status chip helper ────────────────────────────────────────────────────
 // status: 'green'|'amber'|'red'; inPlace/required: sensor counts (optional).
 // Renders "Fully Compliant · 3/3 sensors" style label when counts are provided.
-function _a36StatusChip(status, inPlace, required) {
+function _a36StatusChip(status, inPlace, required, seqNA) {
   // `color` is computed for the caller's colored status bar (data-viz, kept — see the
   // `.rpt-a36-*` executive-summary/building rows that render `color` alongside this chip's
   // word). Batch 3 item 3c ("make chip WORD black") was already satisfied at this line —
@@ -11590,6 +11590,14 @@ function _a36StatusChip(status, inPlace, required) {
   // supersedes v647): Covered -> Compliant. DISPLAY TEXT ONLY — the 'green'/'amber'/
   // 'red' status keys and every caller's >=75/>=50 threshold logic are untouched.
   var word = status === 'green' ? 'Fully Compliant' : status === 'amber' ? 'Partially Compliant' : 'Not Compliant';
+  // 2026-07-10 fix (audit-report-na-rationale, wording-decision.md item 1): when the caller
+  // passes seqNA (true for a building whose seqPct is null -- zero equipment within Guideline
+  // 36's sequence scope), `status`/`composite` are driven entirely by sensor coverage with no
+  // sequence assessment behind them at all. "Fully Compliant" affirmatively (and falsely)
+  // claims a verified sequence pass that never happened, so this word must not render for that
+  // case. Neutral word only -- does not touch `status`, `color`, the composite score, or any
+  // other caller's threshold logic for buildings that DO have applicable sequences.
+  if (seqNA) word = 'Not Applicable';
   // Batch 3 item 2/3a: at 100% (inPlace === required, required > 0) the fraction is a
   // tautology ("Fully Compliant · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells
   // the reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
@@ -11981,7 +11989,7 @@ function rptPageASHRAE36Executive(n, d) {
       '<div style="' +
       _rowBoxStyle +
       '">' +
-      _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired) +
+      _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired, b.seqPct === null) +
       '</div></td>' +
       '</tr>'
     );
@@ -12316,7 +12324,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     '<div style="margin-bottom:4px">' +
     equipBreakdown +
     '</div>' +
-    _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired) +
+    _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired, b.seqPct === null) +
     '</div>' +
     '</div>';
 
@@ -12476,6 +12484,13 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var unitCount = catRows.length;
     var sensorsSum = 0;
     var seqsSum = 0;
+    // 2026-07-10 fix (audit-report-na-rationale): tracks whether ANY sequence in
+    // EM_SEQUENCE_DEFS was ever applicable to this equipment category (status !== 'na'
+    // for at least one entry across all rows). Categories like furnaces/heaters/zone
+    // terminals have EVERY sequence hit status:'na' via the equipTypes scope check
+    // (emComputeSequenceReadiness, app/equipment-matrix.js) -- Guideline 36 was never
+    // checked against them at all, which is a different fact from "checked and passed."
+    var hasApplicableSeq = false;
     // Frequency maps for top-type breakdown (Change B 2026-06-16)
     var mpFreq = {};
     var sqFreq = {};
@@ -12487,7 +12502,9 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
       });
       var sr = eq.seqReadiness || {};
       for (var sk in sr) {
-        if (sr.hasOwnProperty(sk) && (sr[sk].status === 'blocked' || sr[sk].status === 'partial')) {
+        if (!sr.hasOwnProperty(sk)) continue;
+        if (sr[sk].status !== 'na') hasApplicableSeq = true;
+        if (sr[sk].status === 'blocked' || sr[sk].status === 'partial') {
           seqsSum++;
           var slbl = _seqLabel(sk, sr[sk]);
           sqFreq[slbl] = (sqFreq[slbl] || 0) + 1;
@@ -12520,8 +12537,20 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
       sensorsSum === 0 ? '0 — Complete' : sensorsBreakdown ? sensorsSum + ' — ' + sensorsBreakdown : String(sensorsSum);
     // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered" -> (rename
     // #2, Matt's decision, supersedes v647) "Fully Compliant".
-    var seqsCell =
-      seqsSum === 0 ? '0 — Fully Compliant' : seqsBreakdown ? seqsSum + ' — ' + seqsBreakdown : String(seqsSum);
+    // 2026-07-10 fix (audit-report-na-rationale, wording-decision.md item 2): a category with
+    // ZERO applicable sequences (hasApplicableSeq false -- e.g. furnaces, heaters, zone
+    // terminals, which Guideline 36 has no published sequence for) was showing the identical
+    // "0 — Fully Compliant" text as a category that was genuinely assessed and found ready.
+    // That falsely implies a verified pass. Neutral wording per Matt's decision; does not
+    // touch seqsSum or the assessed-category branches below (byte-identical for real gaps and
+    // genuine passes).
+    var seqsCell = !hasApplicableSeq
+      ? 'No Applicable Sequences'
+      : seqsSum === 0
+        ? '0 — Fully Compliant'
+        : seqsBreakdown
+          ? seqsSum + ' — ' + seqsBreakdown
+          : String(seqsSum);
 
     // 2026-07-10 fix: near-black --rpt-border, same reasoning as _pushEquipRow's rowBorder above.
     var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-border)';
