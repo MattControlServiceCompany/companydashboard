@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.09.649',
+    date: '2026-07-09',
+    title: 'BAS Trends import: smarter point matching + auto-fill',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department > BAS Trends import: point matching now recognizes more point-name variations from WebCTRL trend exports, so fewer points are skipped as unrecognized during import.',
+      },
+      {
+        type: 'feature',
+        text: 'Energy Department > BAS Trends import: Building and Equipment fields now auto-fill from the imported WebCTRL export instead of requiring manual entry.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.09.648',
     date: '2026-07-09',
     title: 'Project tab bar scroll arrows + compact Equipment Matrix stat tiles',
