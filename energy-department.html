@@ -1888,7 +1888,7 @@
         --rpt-table-th-bg: #1a5276;
         --rpt-table-th-text: #ffffff;
         --rpt-table-th-border: #144a6a;
-        --rpt-table-td-border: #d0d0d0;
+        --rpt-table-td-border: var(--rpt-border);
         --rpt-table-stripe: #f8fafb;
         --rpt-table-tot-bg: #eef4f8;
         --rpt-table-tot-bdr: #1a5276;
@@ -1977,7 +1977,15 @@
         --rpt-variance: #c0392b; /* HDD/CDD variance warning color */
 
         /* -- General hairline rule (table row borders, SVG gauge tracks) -- */
-        --rpt-rule: #d9dde3; /* subtle blue-neutral, consistent with rpt-blue-light/rpt-bl-stat-border range */
+        --rpt-rule: #d9dde3; /* subtle blue-neutral, consistent with rpt-blue-light/rpt-bl-stat-border range.
+          NOTE: also used as a light background fill on several stat cards/rows (not just borders) —
+          do not darken this token itself, it would turn those fills near-black. */
+
+        /* report-standard.md Rule 4.2 --rpt-border (name TBD -> filled 2026-07-10, direct
+           feedback on the pale #d9dde3/#d0d0d0 grid lines being barely visible on a client
+           deliverable): well-defined near-black for table borders/dividers, matching the
+           border-color:#333 already shipped for .rpt-table-bl td. */
+        --rpt-border: #333333;
       }
 
       /* -- Overlay & Toolbar -- */
@@ -2069,8 +2077,18 @@
          previously scaled to the full 816px page width with no height cap, rendering at
          107.6px (1.12in) tall — report-standard.md's footer convention only requires branding
          + page number, not a 1.1in illustration (density investigation Finding 1). Capped to a
-         fixed 40px (~0.42in) box with object-fit:cover so the same wave art still shows (just a
-         slice of it), not stretched/distorted. */
+         fixed ~40px (~0.42in) box.
+         2026-07-10 fix: the object-fit:cover version of this fix looked correct in the live
+         preview but html2canvas 1.4.1 (the PDF export renderer) does not implement CSS
+         object-fit/object-position on <img> — it draws the bitmap stretched to the element's
+         box regardless, so every exported PDF got the wave squished vertically ~2.7x. Fixed at
+         the source instead: CSC_FOOTER_B64 (app/csv-import.js) is now PRE-CROPPED to
+         1699x85px (~19.99:1), already very close to this 816x40px box's own ~20.4:1 ratio, and
+         the <img> uses width:100%; height:auto (its own intrinsic ratio) instead of
+         object-fit — so the rendered box already matches the bitmap's proportions and
+         html2canvas's stretch-to-box behavior is a no-op (no distortion possible). The ~0.8px
+         difference between the two ratios is clipped by this container's overflow:hidden, not
+         stretched. */
       .rpt-footer {
         position: absolute;
         bottom: 0;
@@ -2082,8 +2100,7 @@
       }
       .rpt-footer img {
         width: 100%;
-        height: 100%;
-        object-fit: cover;
+        height: auto;
         display: block;
       }
       .rpt-footer-text {
