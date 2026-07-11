@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.11.661',
+    date: '2026-07-11',
+    title: 'Light mode — secondary text is now dark and readable',
+    items: [
+      {
+        type: 'fix',
+        text: 'Secondary/muted text in Light mode (timestamps, sub-labels, version tags, empty-state messages) was washed-out light grey and hard to read — it now renders in a dark, high-contrast color across the Dashboard, Service Department, and Energy Department pages. Dark mode is unchanged.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.10.660',
     date: '2026-07-10',
     title: 'Equipment Matrix — auto-matched points can now be corrected',
