@@ -12918,7 +12918,21 @@ async function deleteSavedBill(id) {
   showToast('Record deleted');
 }
 
-async function deleteAllSavedBills() {
+// NOTE: this file loads after core.js, so this is the version of the global
+// deleteAllSavedBills name that actually runs for BOTH callers:
+//   1. The standalone PDF/OCR page's own "Delete All" button — calls deleteAllSavedBills()
+//      with no argument, target = #savedBillsList.
+//   2. The embedded Projects-tab Utility Data -> Saved Bills panel's "Delete All" button
+//      (core.js renderProjSavedBills) — calls deleteAllSavedBills(projId), target =
+//      #ptab-savedbills-body-<projId> via renderProjSavedBills(projId).
+// core.js used to define its own deleteAllSavedBills(projId) that called
+// renderProjSavedBills(projId) correctly, but it was dead code — shadowed by this
+// parameterless function overwriting the global name once this script loaded. That left
+// the embedded panel calling THIS function (ignoring its projId argument) and re-rendering
+// the wrong, hidden standalone target, so the embedded panel never visually refreshed.
+// Fix: accept the optional projId and route the re-render to the correct target instead
+// of un-shadowing the dead core.js copy (which lacked this function's PDF/IndexedDB cleanup).
+async function deleteAllSavedBills(projId) {
   const bills = sget('en_pdf_bills', []) || [];
   const unassigned = bills.filter((b) => !b.projId);
   if (!unassigned.length) {
@@ -12937,7 +12951,11 @@ async function deleteAllSavedBills() {
   // Keep only assigned bills (those with a projId)
   const remaining = bills.filter((b) => !!b.projId);
   await sset('en_pdf_bills', remaining);
-  renderSavedBills();
+  if (projId != null && typeof renderProjSavedBills === 'function') {
+    renderProjSavedBills(projId);
+  } else {
+    renderSavedBills();
+  }
   updateBillCountBadge();
   showToast('All ' + unassigned.length + ' saved bill(s) deleted');
 }

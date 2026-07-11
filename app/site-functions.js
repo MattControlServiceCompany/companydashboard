@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.11.663',
+    date: '2026-07-11',
+    title: 'Saved Bills — "Delete All" now refreshes the panel you\'re actually viewing',
+    items: [
+      {
+        type: 'fix',
+        text: 'In a project\'s Saved Bills panel, clicking "Delete All" now correctly clears and refreshes that panel right away. Previously the panel stayed stale (showing the old bill count and buttons) until you reloaded the page, even though the bills were already deleted.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.11.662',
     date: '2026-07-11',
     title: 'Utility Data — deleting a bill no longer breaks the page',

@@ -3344,20 +3344,12 @@ async function deleteSavedBillFromProj(billId, projId) {
   renderProjSavedBills(projId);
 }
 
-function deleteAllSavedBills(projId) {
-  let bills = sget('en_pdf_bills', []) || [];
-  const unassigned = bills.filter((b) => !b.projId);
-  if (!unassigned.length) {
-    showToast('No unassigned bills to delete');
-    return;
-  }
-  if (!confirm('Delete all ' + unassigned.length + ' unassigned saved bills? This cannot be undone.')) return;
-  const unassignedIds = new Set(unassigned.map((b) => b.id));
-  bills = bills.filter((b) => !unassignedIds.has(b.id));
-  sset('en_pdf_bills', bills);
-  showToast(unassigned.length + ' bills deleted ✓');
-  renderProjSavedBills(projId);
-}
+// deleteAllSavedBills(projId) used to live here, but it was dead code: bill-analysis.js
+// loads after core.js and defines a global function with the same name, so that version
+// always won and this one never ran. The embedded panel's "Delete All" button
+// (see renderProjSavedBills below) now calls the bill-analysis.js version, which was
+// updated to accept the projId and re-render the correct embedded target itself. See
+// bill-analysis.js deleteAllSavedBills() for the current implementation.
 
 // Scan en_pdf_bills for records whose projId references a project that no longer exists.
 // Unassigns (sets projId = null) those records — NEVER deletes them.
