@@ -843,10 +843,17 @@ async function deleteBillRow(mid, rowId) {
       (n !== 1 ? 's' : '') +
       (n ? ' · ' + getDateRange(m.bills.slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start))) : '');
   }
-  // Full re-render after animation
+  // Full re-render after animation. Must target the SAME wrap the row was deleted from —
+  // renderUDDetail() with no argument defaults to the hidden standalone #udDetailWrap and
+  // overwrites window._udActiveWrap, silently switching the embedded Projects-tab panel's
+  // tracked context to the wrong (invisible) wrap. Every subsequent embedded action that
+  // resolves context via window._udActiveWrap (_syncEmbedUDContext, isEmbed checks, etc.)
+  // then breaks until a manual page refresh. Mirrors the isEmbed pattern already used by
+  // the sibling "delete all bills for meter" flow above and by udSelectMeter().
   setTimeout(() => {
     renderUDProjList();
-    renderUDDetail();
+    const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
+    renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
   }, 250);
   showToast('Bill period deleted');
 }
@@ -1437,7 +1444,7 @@ function showBillSplitPanel(mid, billId, evt) {
               <div style="display:flex;gap:8px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
                 <button class="btn btn-em btn-sm" onclick="saveBillSplitPanel('${mid}','${billId}')">Save Changes</button>
                 <button class="btn btn-ghost btn-sm" onclick="renderMeterWorkspace()">Cancel</button>
-                <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--red);border-color:var(--red)" onclick="if(confirm('Delete this billing period?')){deleteBillRow('${mid}','${billId}')}">Delete</button>
+                <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--red);border-color:var(--red)" onclick="deleteBillRow('${mid}','${billId}')">Delete</button>
               </div>
             </div>
             <div style="flex:1;display:flex;flex-direction:column;min-width:0">

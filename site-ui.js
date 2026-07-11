@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.11.661'; // deployed 2026-07-10 (fix: Audit Report visual pass — footer dedup, building heading, table borders, footer image squish fix)
+  var CH_VERSION = 'v2026.07.11.662'; // deployed 2026-07-10 (fix: Audit Report visual pass — footer dedup, building heading, table borders, footer image squish fix)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

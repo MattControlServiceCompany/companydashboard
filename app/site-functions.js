@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.11.662',
+    date: '2026-07-11',
+    title: 'Utility Data — deleting a bill no longer breaks the page',
+    items: [
+      {
+        type: 'fix',
+        text: 'In the project Utility Data view, deleting a utility bill no longer freezes the panel — you can immediately keep working on other bills without refreshing the page.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.11.661',
     date: '2026-07-11',
     title: 'Light mode — secondary text is now dark and readable',

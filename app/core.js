@@ -3312,8 +3312,14 @@ function renderProjSavedBills(projId) {
     ${contentHtml}`;
 }
 
-function deleteSavedBillFromProj(billId, projId) {
-  if (!confirm('Delete this saved bill? This cannot be undone.')) return;
+async function deleteSavedBillFromProj(billId, projId) {
+  // Uses the app's async confirmAsync() modal instead of native window.confirm().
+  // Native confirm() blocks the JS thread (and any pending setTimeout chains) until
+  // dismissed — if a bill row was just deleted in the embedded meter table right before
+  // this, deleteBillRow's delayed re-render (setTimeout 250ms) gets frozen mid-flight and
+  // resolves into the wrong (hidden, standalone) wrap once the native dialog closes,
+  // corrupting window._udActiveWrap and breaking the embedded panel until a page refresh.
+  if (!(await confirmAsync('Delete this saved bill? This cannot be undone.'))) return;
   let bills = sget('en_pdf_bills', []) || [];
   const sb = bills.find((b) => b.id === billId);
 
