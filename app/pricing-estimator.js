@@ -3224,8 +3224,9 @@ function _pricingTierToggleHTML(projId, currentTier) {
     );
   }
   return (
+    // 098fd49c: "Tier:" label removed — the active toggle button's own styling (filled accent
+    // background) already makes the current tier obvious without a redundant text label.
     '<div style="display:flex;gap:4px;align-items:center">' +
-    '<span style="font-size:11px;color:var(--text2);margin-right:2px">Tier:</span>' +
     btn('recommended', 'Recommended') +
     btn('compliance', 'Compliance') +
     btn('full-scope', 'Full Scope') +
@@ -4441,10 +4442,25 @@ function _pricingBuildBudgetSectionHTML(projId, tier) {
         '\')" style="cursor:pointer">Clear</button>' +
         '</div>';
     } else {
-      html +=
-        '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenBudgetFitPreview(\'' +
-        projId +
-        '\',this)" style="cursor:pointer;margin-top:4px;width:100%">Fit to Budget…</button>';
+      // 32878dc1: c82cc354 REV 2 made Recommended membership intrinsically budget-fit by
+      // construction — buildRecommendedRows already runs the same greedy-ceiling walk before
+      // any row reaches the table, so clicking "Fit to Budget…" here recomputes the SAME plan
+      // against a row set that's already fit and (on Recommended) will always come back with
+      // excludedCount 0. Compute the plan (read-only — nothing is written) so the copy reflects
+      // the CURRENT state instead of a hardcoded string: only offer the action button when it
+      // would actually exclude something (defensive — covers any future case where it wouldn't
+      // be a no-op); otherwise show the reviewer-suggested static line so it stops implying an
+      // action is needed (stages/c82cc354/review.md).
+      var _recFitPlan = _pricingComputeBudgetFitPlan(projId);
+      if (_recFitPlan && _recFitPlan.excludedCount > 0) {
+        html +=
+          '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenBudgetFitPreview(\'' +
+          projId +
+          '\',this)" style="cursor:pointer;margin-top:4px;width:100%">Fit to Budget…</button>';
+      } else {
+        html +=
+          '<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:4px">Recommended is already budget-fit.</div>';
+      }
     }
   }
   return html;
@@ -6016,9 +6032,18 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     if (hwRow.g36Section) _noteText12 += (_noteText12 ? ' \xb7 ' : '') + hwRow.g36Section;
     var _notePlaceholder = _noteText12 || 'Add note…';
     var _noteOverrides = estimate.noteOverrides || {};
-    // Combined row shares ONE note-override slot, keyed by the hw row's toggle key (stable,
-    // arbitrary choice — matches the "one control" pattern already used for the checkbox).
-    var _noteKey = hwToggleKey;
+    // Combined row shares ONE note-input, keyed by the hw row's toggle key by default (stable —
+    // matches the "one control" pattern already used for the checkbox). 2b8edc03: that default
+    // used to HIDE a pre-existing override stored under the sequence's key while merged (not
+    // lost — just invisible/uneditable until unmerged). Fall back to the sequence's key only
+    // when the hw key has no override of its own, so a sequence-side note is visible and
+    // editable while merged too; edits keep writing to whichever key already had content, so
+    // unmerging still shows the same value on the same row it always lived on.
+    var _noteKey = _noteOverrides[hwToggleKey]
+      ? hwToggleKey
+      : _noteOverrides[seqToggleKey]
+        ? seqToggleKey
+        : hwToggleKey;
     var _noteOverrideVal = _noteOverrides[_noteKey] || '';
     var _noteTitleAttr = _combinedTooltip
       ? ' title="' + _esc(_noteText12 ? _noteText12 + ' \xb7 ' + _combinedTooltip : _combinedTooltip) + '"'

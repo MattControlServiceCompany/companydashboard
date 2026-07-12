@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.11.664',
+    date: '2026-07-11',
+    title: 'Cost Estimate — cleaner toolbar, clearer budget messaging, merged-row notes',
+    items: [
+      {
+        type: 'change',
+        text: 'The Cost Estimate tier toggle no longer shows a redundant "Tier:" label — the highlighted button already makes the active tier obvious.',
+      },
+      {
+        type: 'fix',
+        text: 'On the Recommended tier, the "Fit to Budget…" button no longer shows when nothing needs to change — it now reads "Recommended is already budget-fit." instead of offering an action that would do nothing.',
+      },
+      {
+        type: 'fix',
+        text: 'Merged rows in Cost Estimate now correctly show a note that was entered on the sequence side, instead of hiding it until the row is unmerged.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.11.663',
     date: '2026-07-11',
     title: 'Saved Bills — "Delete All" now refreshes the panel you\'re actually viewing',
