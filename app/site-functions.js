@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.12.665',
+    date: '2026-07-12',
+    title: 'ASHRAE 36 Audit Report -- visual polish pass',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report: the footer wave graphic was squished -- it is now cropped and proportioned correctly on every page.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report: removed stray outline boxes around the Setpoint Review status labels, the CO2 setpoint callout, and the Point Inventory footnote -- these are now plain text, matching the rest of the report, and the footnote text is back to near-black instead of faded grey.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report: darkened the Executive Summary "Building Compliance Status" table gridlines so they match the deeper borders used in the rest of the report.',
+      },
+      {
+        type: 'change',
+        text: 'ASHRAE 36 Audit Report: Per-Building Detail table columns were rebalanced so the Sensors to Install / Sequences to Program cells wrap fewer lines -- no data was removed, the existing text just has more room to breathe.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.11.664',
     date: '2026-07-11',
     title: 'Cost Estimate — cleaner toolbar, clearer budget messaging, merged-row notes',

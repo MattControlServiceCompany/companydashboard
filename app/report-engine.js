@@ -11935,6 +11935,10 @@ function rptPageASHRAE36Executive(n, d) {
   // of optimistic.
   var ROW_BOX_MIN_H = 34;
   var _rowBoxStyle = 'min-height:' + ROW_BOX_MIN_H + 'px;display:flex;align-items:center';
+  // 2026-07-12 fix (item fb693f5c): row borders switched from the pale var(--rpt-rule)
+  // (#d9dde3) to the darker var(--rpt-border) (#333333) to match the Per-Building Detail
+  // table (rowBorder/tdBase, ~line 12433/12556) — the gridline-darkening pass in v655 only
+  // reached that later table, leaving this first table in the report visibly lighter.
   function _buildRowHTML(b) {
     // Bar width (2026-07-09, fix/report-wording-compliance-rows): was 1:1 px-per-composite-%
     // (max 100px, capped by an effectively-unreachable max-width:120px) — that's more bar
@@ -11955,37 +11959,37 @@ function rptPageASHRAE36Executive(n, d) {
       '</div>';
     return (
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-border)">' +
       '<div style="' +
       _rowBoxStyle +
       '">' +
       b.name +
       '</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:center">' +
       b.equipCount +
       '</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:center">' +
       b.pointPct +
       '%</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:center">' +
       (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
       '</div></td>' +
-      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-border)">' +
       '<div style="' +
       _rowBoxStyle +
       '">' +
       bar +
       '</div></td>' +
-      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-border)">' +
       '<div style="' +
       _rowBoxStyle +
       '">' +
@@ -12368,21 +12372,47 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
 
   // Table header HTML (reused on every chunk)
   // Change 2 (2026-06-16): 4-column summary table — one row per equipment type.
+  // 2026-07-12 fix (item ac1d9bac): Sensors to Install / Sequences to Program cells were
+  // wrapping 3-5 lines at the old 27%/27% widths. Equipment Type (short category labels,
+  // longest is "Fan-Powered Terminals") and Units (a bare integer) both had large unused
+  // width margins, so that slack was moved to the two content columns instead (36/10/27/27
+  // -> 24/6/34/36). Text itself is NOT truncated/nowrap-ellipsis'd — _topBreakdown already
+  // caps each cell at top-3 items + "+N more" (see _pushCatSummaryRow) so no data is hidden
+  // by this change, it just gives the existing text more room per line. colgroup +
+  // table-layout:fixed added so these percentages are deterministic instead of
+  // browser auto-layout (which could otherwise let content push columns around).
+  var colWidths = { equip: 24, units: 6, sensors: 34, seqs: 36 };
+  var colgroup =
+    '<colgroup>' +
+    '<col style="width:' +
+    colWidths.equip +
+    '%">' +
+    '<col style="width:' +
+    colWidths.units +
+    '%">' +
+    '<col style="width:' +
+    colWidths.sensors +
+    '%">' +
+    '<col style="width:' +
+    colWidths.seqs +
+    '%">' +
+    '</colgroup>';
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
     'border-bottom:2px solid var(--rpt-blue)';
   var tableHead =
+    colgroup +
     '<thead><tr>' +
     '<th style="' +
     thStyle +
-    ';width:36%">Equipment Type</th>' +
+    '">Equipment Type</th>' +
     '<th style="' +
     thStyle +
-    ';width:10%;text-align:center">Units</th>' +
+    ';text-align:center">Units</th>' +
     '<th style="' +
     thStyle +
-    ';width:27%;text-align:center">Sensors to Install</th>' +
+    ';text-align:center">Sensors to Install</th>' +
     '<th style="' +
     thStyle +
     ';text-align:center">Sequences to Program</th>' +
@@ -12752,7 +12782,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
     // last chunk) instead of a free-standing div appended after the table — no
     // free-floating rule sandwiching the total.
     var equipTable =
-      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">' +
       tableHead +
       '<tbody>' +
       tbodyRows +
@@ -12816,7 +12846,7 @@ function _a36BuildingBlockToken(d, building, showBuildingInfra) {
   // 2026-07-10 fix: the Total row is a real <tfoot> row inside the table instead of a
   // free-standing div appended after the table — no free-floating rule above the total.
   var equipTable =
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px">' +
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">' +
     c.tableHead +
     '<tbody>' +
     tbodyRows +
@@ -13137,24 +13167,17 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // Batch 3 item 4 (design-language pass extended to a flagged spot, per bolding-consistency-
   // audit.md Tier 7): this was the only spot in the ASHRAE-36 report pages using hardcoded hex
   // instead of the report's own CSS variable palette. NOT_SCHEDULED has no neutral/grey token
-  // in the palette and grey text is banned site-wide, so it now uses the same plain-black-text
-  // + var(--rpt-rule) border treatment used elsewhere in this pass (infraCallout, outcome cards).
+  // in the palette and grey text is banned site-wide, so it now uses plain-black/colored text.
+  // 2026-07-12 fix (items a0c2152/c121b992): the pill border+background treatment below was
+  // itself a defect — report-standard rule is plain colored text for inline status, NO border,
+  // NO fill. Border/background/padding/radius removed; text-only status labels.
   function _statusCell(status) {
     if (status === 'NEEDS_REVIEW') {
-      return (
-        '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-        'color:var(--rpt-orange);background:transparent;border:1px solid var(--rpt-orange)">Needs Review</span>'
-      );
+      return '<span style="font-size:9px;font-weight:700;color:var(--rpt-orange)">Needs Review</span>';
     } else if (status === 'NOT_SCHEDULED') {
-      return (
-        '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-        'color:var(--rpt-page-text);background:transparent;border:1px solid var(--rpt-rule)">Not Scheduled</span>'
-      );
+      return '<span style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">Not Scheduled</span>';
     }
-    return (
-      '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;' +
-      'color:var(--rpt-green);background:transparent;border:1px solid var(--rpt-green)">Matches</span>'
-    );
+    return '<span style="font-size:9px;font-weight:700;color:var(--rpt-green)">Matches</span>';
   }
 
   // ── Table chrome ─────────────────────────────────────────────────────────
@@ -13266,7 +13289,10 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var co2Note = '';
   if (!anyCO2InExport) {
     co2Note =
-      '<div class="rpt-a36-callout" style="margin-top:10px;border-top:1px solid var(--rpt-rule)">' +
+      // 2026-07-12 fix (items a0c2152/c121b992): border-top removed — .rpt-a36-callout is
+      // documented as "NO background. NO border-left. NO border. Just spacing." (see its CSS
+      // comment); this inline border-top violated that rule.
+      '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">CO₂ Setpoint Data Not Found in Export</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
       'DCV CO₂ setpoints (GL36 §3.1.1.3 / Table 3.1.1.3) were not present in the equipment matrix export for this project. ' +
@@ -13767,8 +13793,11 @@ function rptPageASHRAE36PointInventory(n, d) {
     '</tr>';
 
   // ── Footnote ──────────────────────────────────────────────────────────────
+  // 2026-07-12 fix (item 0ade8f29 + a0c2152/c121b992): opacity:0.7 faded the text to grey
+  // (banned site-wide — report-standard.md requires near-black, not faded) and border-top
+  // added an outline on plain prose text (also banned — plain text gets no border). Both removed.
   var footnote =
-    '<div style="font-size:9px;color:var(--rpt-page-text);opacity:0.7;line-height:1.5;border-top:1px solid var(--rpt-rule);padding-top:8px">' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;padding-top:8px">' +
     'Note: "Other BAS Points" counts are informational. They represent BAS objects that have been captured and logged but ' +
     'do not correspond to any ASHRAE Guideline 36 sensor or actuator category. ' +
     'These points do not contribute to and do not reduce the ASHRAE 36 Coverage percentages shown in this report.' +
