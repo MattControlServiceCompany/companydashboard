@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.13.666',
+    date: '2026-07-13',
+    title: 'ASHRAE 36 Audit Report -- footer fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report: the footer wave graphic was still being clipped by a hair at the bottom of every exported PDF page -- the footer box now sizes itself exactly to the graphic, so the full green wave shows on every page.',
+      },
+      {
+        type: 'change',
+        text: 'ASHRAE 36 Audit Report: removed the date from the report footer -- it was redundant next to the page number and has been dropped.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.12.665',
     date: '2026-07-12',
     title: 'ASHRAE 36 Audit Report -- visual polish pass',

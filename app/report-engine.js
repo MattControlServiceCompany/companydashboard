@@ -969,15 +969,13 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // Rule 2.2: rpt-pg-footer class on every page (including cover) for DOM check compliance.
   const footerImgHtml =
     '<div class="rpt-footer rpt-pg-footer"><img src="' + CSC_FOOTER_B64 + '" alt="CSC Footer"></div>';
-  // Rule 2.3: date exactly once per page, footer only. The header (.rpt-info) and
-  // cover subtitle already carry the client/location and never a date — do not
-  // duplicate the location here, just the date (or period label fallback).
-  const footerTextHtml =
-    '<div class="rpt-footer-text">' +
-    '<span>' +
-    (data ? (_fmtRptDate ? _fmtRptDate : data.period.label) : '') +
-    '</span>' +
-    '</div>';
+  // 2026-07-12 fix (item 118682b2, footer redundant text cleanup): date text removed
+  // from the footer entirely per Matt's request. "Page N of M" (footerImgHtml's sibling
+  // pagenum div, emitted separately below) is the only footer text that remains.
+  // _fmtRptDate (computed above) is now dead — nothing reads it anymore. Left the
+  // date-parsing block in place rather than deleting it, to keep this diff scoped to the
+  // footer only; safe to remove in a future cleanup pass if nothing else claims it.
+  const footerTextHtml = '';
   const footerLabelHtml =
     data && data.period
       ? '<div style="text-align:center;font-size:10px;color:var(--rpt-page-text);padding:4px 0 2px;position:absolute;bottom:' +
@@ -993,7 +991,8 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
 
   // Rule 2.3: interior header shows period range only, no date.
   // period.label is the range string (e.g. "Q2 2024" or "2024 Annual").
-  // The date is shown once in the footer via _fmtRptDate / period.label fallback above.
+  // 2026-07-12: the footer no longer shows a date at all (footerTextHtml above is now
+  // always ''), so no page in the report displays a date anywhere — this is intentional.
   const interiorRangeHtml = data && data.period && data.period.label ? data.period.label : '';
 
   if (isHero) {
