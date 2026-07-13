@@ -2335,15 +2335,27 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
 
         // Step 2: kWhConsumed = ReadDifference × MeterMultiplier (cascade)
         // Guard: don't cascade if the result is outside commercial range (0–2M kWh)
-        // or if the current value is reasonable and the cascade would change it by 10x+.
-        // Garbled multi-meter OCR can produce huge ReadDifference × Multiplier values
-        // that destroy correct charge-line-derived kWhConsumed.
+        // or if the current value is reasonable and the cascade would change it by 10x+
+        // in EITHER direction. A 10x SHRINK destroys data just as badly as a 10x
+        // inflation — the original one-sided ratio guard only blocked growth, which is
+        // exactly how a confirmed bug shipped: a 2-meter bill's correct summed
+        // kWhConsumed (958.4676) got silently overwritten by ReadDifference × Multiplier
+        // computed from meter-row-1 alone (399.5586), a 0.42x shrink the guard let through.
+        //
+        // Multi-meter bills (2+ rows summed by _meterCombined in energy-savings.js — see
+        // b._meterInfo) are a special case beyond the ratio guard: b.kWhConsumed there is
+        // already an authoritative SUM across N physical meters (each meter's own kWh
+        // Used column, summed). A single meter row's ReadDifference × Multiplier is not a
+        // valid cross-check against that sum — it's at best one of the N components — so
+        // the cascade must not run at all for these bills, not merely be ratio-guarded.
+        const _isMultiMeterKwh = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
         const cascadeDiff = pf(b.ReadDifference);
-        if (cascadeDiff > 0 && multNow > 0) {
+        if (!_isMultiMeterKwh && cascadeDiff > 0 && multNow > 0) {
           const expectedKwh = cascadeDiff * multNow;
           const curKwhForChain = pf(b.kWhConsumed);
           const _kwhSane = expectedKwh > 0 && expectedKwh < 2000000;
-          const _wouldClobber = curKwhForChain > 0 && expectedKwh / curKwhForChain > 10;
+          const _wouldClobber =
+            curKwhForChain > 0 && (expectedKwh / curKwhForChain > 10 || curKwhForChain / expectedKwh > 10);
           if (_kwhSane && !_wouldClobber && (!curKwhForChain || Math.abs(curKwhForChain - expectedKwh) > 1)) {
             b['_auto_corrected_kWhConsumed'] = {
               original: b.kWhConsumed,
