@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.13.667',
+    date: '2026-07-13',
+    title: 'Service Proposal & Board Summary -- page margins fixed',
+    items: [
+      {
+        type: 'fix',
+        text: 'Service Proposal cover page: content was running all the way to the edge of the page -- it now lines up with the margins used on every other page.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly/Annual Report Board Summary page: same edge-to-edge issue fixed -- content now sits inside the page margins like the rest of the report.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.13.666',
     date: '2026-07-13',
     title: 'ASHRAE 36 Audit Report -- footer fix',
