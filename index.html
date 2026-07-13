@@ -2510,7 +2510,73 @@
       }
 
       /* Backup / Restore / Reset */
-      function siteBackup() {
+      // Raw bill PDFs live in a SEPARATE IndexedDB database (en_pdf_store / files),
+      // written and read via pdfStore()/pdfLoad() in app/core.js. index.html does not
+      // load core.js, so these three helpers mirror that exact same DB name, object
+      // store name, and put/get contract — data written here is byte-for-byte
+      // compatible with what pdfLoad() reads on energy-department.html. Keep in sync
+      // with app/core.js's _pdfDB/_openPdfDB/pdfStore/pdfLoad if that contract changes.
+      var _pdfBackupDB = { db: null, NAME: 'en_pdf_store', STORE: 'files', VER: 1 };
+      function _pdfBackupOpenDB() {
+        if (_pdfBackupDB.db) return Promise.resolve(_pdfBackupDB.db);
+        return new Promise(function (resolve, reject) {
+          var req = indexedDB.open(_pdfBackupDB.NAME, _pdfBackupDB.VER);
+          req.onupgradeneeded = function () {
+            req.result.createObjectStore(_pdfBackupDB.STORE);
+          };
+          req.onsuccess = function () {
+            _pdfBackupDB.db = req.result;
+            resolve(_pdfBackupDB.db);
+          };
+          req.onerror = function () {
+            reject(req.error);
+          };
+        });
+      }
+      function _pdfBackupGetAll() {
+        return _pdfBackupOpenDB().then(function (db) {
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction(_pdfBackupDB.STORE, 'readonly');
+            var store = tx.objectStore(_pdfBackupDB.STORE);
+            var getAllReq = store.getAll();
+            var getKeysReq = store.getAllKeys();
+            var values, keys;
+            getAllReq.onsuccess = function () {
+              values = getAllReq.result;
+            };
+            getKeysReq.onsuccess = function () {
+              keys = getKeysReq.result;
+            };
+            tx.oncomplete = function () {
+              var out = {};
+              if (keys && values) {
+                keys.forEach(function (k, i) {
+                  out[k] = values[i];
+                });
+              }
+              resolve(out);
+            };
+            tx.onerror = function () {
+              reject(tx.error);
+            };
+          });
+        });
+      }
+      function _pdfBackupPut(id, base64) {
+        return _pdfBackupOpenDB().then(function (db) {
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction(_pdfBackupDB.STORE, 'readwrite');
+            tx.objectStore(_pdfBackupDB.STORE).put(base64, id);
+            tx.oncomplete = function () {
+              resolve(true);
+            };
+            tx.onerror = function () {
+              reject(tx.error);
+            };
+          });
+        });
+      }
+      async function siteBackup() {
         // Get all DB data (IndexedDB-backed)
         var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
         // Also grab any remaining localStorage keys (preferences, settings)
@@ -2522,6 +2588,16 @@
         // Merge — DB data takes precedence
         var allData = Object.assign({}, lsData, dbData);
         var data = allData;
+        // Raw bill PDFs live in the separate en_pdf_store IndexedDB database and are
+        // NOT covered by DB.getAll()/localStorage above — pull them in under their own
+        // top-level key so the backup format stays self-describing and old readers
+        // that don't know about it just see one extra key.
+        try {
+          data._pdfStore = await _pdfBackupGetAll();
+        } catch (e) {
+          console.warn('PDF store backup failed:', e);
+          data._pdfStore = {};
+        }
         var d = new Date();
         var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
         var filename = 'CompanyHub-localdatafile-' + ds + '.json';
@@ -2549,6 +2625,12 @@
         fr.onload = function (ev) {
           try {
             var data = JSON.parse(ev.target.result);
+            // Pull out the PDF store payload first (if present) so it doesn't get
+            // written into DB/localStorage as a regular key below. Old backups won't
+            // have this key — pdfPayload stays {} and the rest of the restore runs
+            // exactly as it did before this fix (backward compatible, no data loss).
+            var pdfPayload = data._pdfStore || {};
+            delete data._pdfStore;
             // Keys that must stay in localStorage (read synchronously before DB warms)
             var lsOnlyKeys = [
               'ch_settings',
@@ -2582,10 +2664,27 @@
                 DB.set(k, val);
               }
             });
-            if (typeof showToast === 'function') showToast('Restored — reloading...');
-            setTimeout(function () {
-              location.reload();
-            }, 1200);
+            // Restore raw bill PDFs into en_pdf_store via the same put() contract
+            // pdfStore() uses, then reload only after that write settles so the
+            // documents are actually there when the app comes back up.
+            var pdfIds = Object.keys(pdfPayload);
+            var pdfRestore = pdfIds.length
+              ? Promise.all(
+                  pdfIds.map(function (id) {
+                    return _pdfBackupPut(id, pdfPayload[id]);
+                  }),
+                )
+              : Promise.resolve();
+            pdfRestore
+              .catch(function (e) {
+                console.warn('PDF store restore failed:', e);
+              })
+              .then(function () {
+                if (typeof showToast === 'function') showToast('Restored — reloading...');
+                setTimeout(function () {
+                  location.reload();
+                }, 1200);
+              });
           } catch (err) {
             if (typeof showToast === 'function') showToast('Invalid backup file');
           }
