@@ -2265,6 +2265,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const startR = pf(b.StartRead);
         const multNow = pf(b.MeterMultiplier);
         const curDiff = pf(b.ReadDifference);
+        // Multi-meter bills (2+ rows, b._meterInfo.type === 'meter_change') have
+        // StartRead/EndRead/ReadDifference intentionally left null — none of them
+        // represent a single valid physical reading. Reuse the same guard the Step 2
+        // cascade below uses so the kWh/multiplier fallback a few lines down can't
+        // silently refill ReadDifference from kWhConsumed the instant it's nulled.
+        const _isMultiMeterKwh0 = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
 
         // Step 1: ReadDifference = EndRead - StartRead (authoritative)
         // For meter rollovers (endR < startR but near a boundary), compute the
@@ -2313,7 +2319,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               b.ReadDifference = computedDiff.toFixed(4);
             }
           }
-        } else if (!curDiff) {
+        } else if (!curDiff && !_isMultiMeterKwh0) {
           // No reads available — try kWh / multiplier fallback
           const kwhNow = pf(b.kWhConsumed);
           const kwhDerivedDiff = kwhNow > 0 && multNow > 0 ? kwhNow / multNow : null;
@@ -2528,10 +2534,18 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       }
       // 2. Cross-bill continuity recovery — copy a missing read from the
       //    neighbor when billing periods abut (within 5 days).
+      //    Multi-meter bills (b._meterInfo.type === 'meter_change', 2+ rows) have their
+      //    StartRead/EndRead intentionally nulled (energy-savings.js) because a single
+      //    reading spanning two physical meters isn't real. Adjacent monthly bills on the
+      //    same account almost always abut within 5 days, so without this guard this pass
+      //    silently refills the nulled fields from an unrelated neighbor bill every time.
+      const _isMultiMeterBill = (bill) =>
+        !!(bill && bill._meterInfo && bill._meterInfo.type === 'meter_change' && bill._meterInfo.rows >= 2);
       for (let i = 0; i < bills.length; i++) {
         const curr = bills[i];
         const prev = i > 0 ? bills[i - 1] : null;
         const next = i < bills.length - 1 ? bills[i + 1] : null;
+        if (_isMultiMeterBill(curr)) continue;
         if (!curr.StartRead && prev && sameAcct(curr, prev) && prev.EndRead) {
           if (dayDiff(prev.BillingPeriodEnd, curr.BillingPeriodStart) <= 5) {
             curr.StartRead = prev.EndRead;
@@ -2606,7 +2620,14 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // for gas/propane — leave the reverse arms below as-is (they only fire
           // when kC>0, which gas/propane won't have after this guard).
           const _isGasOrPropane = /gas|propane/i.test(b.Commodity || b.commodity || '');
-          if (!_isGasOrPropane && dR > 0 && mM > 0 && !kC) {
+          // Multi-meter bills (2+ rows summed by _meterCombined in energy-savings.js — see
+          // b._meterInfo) already carry an authoritative SUMMED kWhConsumed across N physical
+          // meters. A single row's ReadDifference × Multiplier is not a valid cross-check
+          // against that sum, so this pass must not touch kWhConsumed for these bills — same
+          // guard as Step 2's cascade above, applied here so this sibling pass can't
+          // reintroduce the same clobber bug (398.5586 overwriting the correct 958.4676).
+          const _isMultiMeterKwh2 = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
+          if (!_isGasOrPropane && !_isMultiMeterKwh2 && dR > 0 && mM > 0 && !kC) {
             const v = dR * mM;
             if (v > 0 && v < 2000000) {
               b.kWhConsumed = v.toFixed(4);
@@ -2616,11 +2637,14 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
               };
             }
-          } else if (!_isGasOrPropane && dR > 0 && mM > 0 && kC > 0) {
+          } else if (!_isGasOrPropane && !_isMultiMeterKwh2 && dR > 0 && mM > 0 && kC > 0) {
             const expected = dR * mM;
             const mismatch = Math.abs(kC - expected);
             const _expectedSane = expected > 0 && expected < 2000000;
-            const _wouldClobber2 = kC > 0 && expected / kC > 10;
+            // Symmetric guard — a 10x SHRINK destroys data just as badly as a 10x inflation.
+            // Matches Step 2's _wouldClobber above; the original one-sided version only
+            // blocked growth, which is exactly how the multi-meter clobber bug shipped.
+            const _wouldClobber2 = kC > 0 && (expected / kC > 10 || kC / expected > 10);
             if (_expectedSane && !_wouldClobber2 && mismatch > 1 && mismatch / expected > 0.001) {
               b['_auto_corrected_kWhConsumed'] = {
                 original: b.kWhConsumed,
@@ -2629,7 +2653,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               };
               b.kWhConsumed = expected.toFixed(4);
             }
-          } else if (kC > 0 && mM > 0 && !dR) {
+          } else if (!_isMultiMeterKwh2 && kC > 0 && mM > 0 && !dR) {
+            // Multi-meter bills have ReadDifference intentionally nulled (not a single
+            // valid physical reading — see Fix 3 in energy-savings.js). Without this guard
+            // this reverse-derivation immediately refills it from kWhConsumed / Multiplier.
             const v = kC / mM;
             b.ReadDifference = v.toFixed(4);
             b._auto_recovered_ReadDifference = {
