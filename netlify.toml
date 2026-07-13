@@ -1,0 +1,21 @@
+# Netlify deploy config for CompanyHub.
+# This is a static, no-build site — GitHub Pages already publishes the repo
+# root as-is, and Netlify mirrors that same behavior here.
+[build]
+  command = ""
+  publish = "."
+
+# NOTE: Deliberately NOT setting a Content-Security-Policy header here.
+# Every HTML page already sets its own CSP via a <meta http-equiv="Content-Security-Policy">
+# tag, and the policies differ per page (each page only allow-lists what it
+# actually needs). A header-level CSP set here would take precedence over/
+# combine restrictively with those per-page meta tags and could break the
+# app. If a site-wide CSP is ever wanted, it must be reconciled with every
+# page's existing meta tag first, not bolted on here.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
