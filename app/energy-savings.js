@@ -2504,14 +2504,24 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
       return { type: 'solar', rows: _meterRows.length, delivered: consumptionRow, received: generationRow };
     }
-    // Meter change: sum kWh and RKVA, take max KW, use overall start/end dates
+    // Meter change / multi-meter bill: sum kWh, RKVA (max), ReadDifference (sum);
+    // take max KW; use overall start/end dates.
+    // NOTE: StartRead/EndRead are intentionally NOT combined here. When 2+ meter
+    // rows are present (either a mid-cycle meter swap or two simultaneously-active
+    // meters on one account), the rows belong to physically different meters —
+    // "last row's EndRead minus first row's StartRead" is not a valid reading and
+    // must never be presented as one (see Meter1_/Meter2_ fields below for the
+    // real per-meter values). ReadDifference IS combined (sum of each row's own
+    // difference) because that's what genuinely represents total consumption.
     const first = _meterRows[0],
       last = _meterRows[_meterRows.length - 1];
     let totalKwh = 0,
+      totalDiff = 0,
       maxKw = 0,
       maxRkva = 0;
     for (const r of _meterRows) {
       totalKwh += pn(r[8]);
+      totalDiff += pn(r[6]);
       maxKw = Math.max(maxKw, pn(r[9]));
       maxRkva = Math.max(maxRkva, pn(r[10]));
     }
@@ -2520,8 +2530,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       rows: _meterRows.length,
       startDate: first[1],
       endDate: last[2],
-      startRead: first._fixedStartRead || first[5]?.replace(/,/g, ''),
-      endRead: last._fixedEndRead || last[4]?.replace(/,/g, ''),
+      startRead: null,
+      endRead: null,
+      readDifference: parseFloat(totalDiff.toFixed(4)),
       multiplier: first[7]?.replace(/,/g, ''),
       kwh: parseFloat(totalKwh.toFixed(4)),
       kw: maxKw.toFixed(4),
@@ -2990,6 +3001,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       .replace(/\s+[A-Za-z]$/, '')
       .trim();
   };
+  // Multi-meter bill: 2+ meter rows combined under type 'meter_change' (covers both a
+  // mid-cycle physical meter swap and two simultaneously-active meters on one account).
+  const _isMultiMeterChange = !!(_meterCombined && _meterCombined.type === 'meter_change');
   const result = {
     UtilityCompany: 'Evergy',
     CustomerName:
@@ -3017,19 +3031,24 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     NumberOfDays: numDays,
     MeterReadStart: _meterCombined?.startDate || meterRow?.[1] || _mlMeter?.startDate || null,
     MeterReadEnd: _meterCombined?.endDate || meterRow?.[2] || _mlMeter?.endDate || null,
-    StartRead:
-      _meterCombined?.startRead ||
-      meterRow?._fixedStartRead ||
-      meterRow?.[5]?.replace(/,/g, '') ||
-      _mlMeter?.startRead ||
-      null,
-    EndRead:
-      _meterCombined?.endRead ||
-      meterRow?._fixedEndRead ||
-      meterRow?.[4]?.replace(/,/g, '') ||
-      _mlMeter?.endRead ||
-      null,
-    ReadDifference: meterRow?.[6]?.replace(/,/g, '') || null,
+    // Multi-meter (type: 'meter_change', 2+ rows): a single StartRead/EndRead spanning
+    // different physical meters is not a real reading — leave null rather than mixing
+    // rows into a false identity. Per-meter values live in Meter1_/Meter2_ fields below.
+    StartRead: _isMultiMeterChange
+      ? null
+      : _meterCombined?.startRead ||
+        meterRow?._fixedStartRead ||
+        meterRow?.[5]?.replace(/,/g, '') ||
+        _mlMeter?.startRead ||
+        null,
+    EndRead: _isMultiMeterChange
+      ? null
+      : _meterCombined?.endRead ||
+        meterRow?._fixedEndRead ||
+        meterRow?.[4]?.replace(/,/g, '') ||
+        _mlMeter?.endRead ||
+        null,
+    ReadDifference: _isMultiMeterChange ? _meterCombined.readDifference : meterRow?.[6]?.replace(/,/g, '') || null,
     MeterMultiplier: _meterCombined?.multiplier || meterRow?.[7]?.replace(/,/g, '') || _mlMeter?.multiplier || null,
     kWhConsumed: adjKwh,
     ActualKW: _meterCombined?.kw || meterRow?.[9] || _mlMeter?.kwUsed || null,
