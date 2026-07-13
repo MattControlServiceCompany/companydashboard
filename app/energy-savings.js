@@ -3048,7 +3048,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         meterRow?.[4]?.replace(/,/g, '') ||
         _mlMeter?.endRead ||
         null,
-    ReadDifference: _isMultiMeterChange ? _meterCombined.readDifference : meterRow?.[6]?.replace(/,/g, '') || null,
+    // Multi-meter: ReadDifference is intentionally NOT combined here even though
+    // _meterCombined sums it. It's the sum of two independently-OCR'd "difference"
+    // columns, separate from kWhConsumed's sum of the "kWh used" column — the two sums
+    // will never quite agree (e.g. 958.3596 vs 958.4766), which reads as an unexplained
+    // mismatch to the user. Same treatment as StartRead/EndRead above: not a single valid
+    // physical reading, so leave null. Per-meter values live in Meter1_/Meter2_ fields.
+    ReadDifference: _isMultiMeterChange ? null : meterRow?.[6]?.replace(/,/g, '') || null,
     MeterMultiplier: _meterCombined?.multiplier || meterRow?.[7]?.replace(/,/g, '') || _mlMeter?.multiplier || null,
     kWhConsumed: adjKwh,
     ActualKW: _meterCombined?.kw || meterRow?.[9] || _mlMeter?.kwUsed || null,
