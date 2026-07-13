@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.13.668',
+    date: '2026-07-13',
+    title: 'Report footer -- full brand wave graphic restored',
+    items: [
+      {
+        type: 'fix',
+        text: 'Audit Report, Service Proposal, Quarterly/Annual Report, and Board Summary: the Control Service Company footer ribbon now shows its full blue and green wave bands on every page -- it had been rendering with the green half missing.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.13.667',
     date: '2026-07-13',
     title: 'Service Proposal & Board Summary -- page margins fixed',

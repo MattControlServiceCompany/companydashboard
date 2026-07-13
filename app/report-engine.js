@@ -11797,8 +11797,25 @@ function rptPageASHRAE36Executive(n, d) {
   _firstChromeH += 28; // tableTitle (~20px actual; 28 is safe overcount)
   _firstChromeH += 44; // thead — DOM-measured 42px (spec said 32, was wrong)
   _firstChromeH += 50; // tableFootnote — 3-line plain-language footnote, DOM-measured 45px actual; 50 for safety
-  var ROWS_BUDGET_FIRST = 894 - _firstChromeH - 30; // 30px safety margin
-  // Cont: contHdr ~35px + tableTitle ~28px + thead ~44px + footnote ~50px = 157px → 894-157-20 = 717px
+  // d5929df4 (2026-07-13): FIRST base trimmed 894 -> 862. Restoring CSC_FOOTER_B64 to the
+  // full 1699x224 crop (app/csv-import.js, this same commit — the 2026-07-10 regression had
+  // cropped it to 1699x85, silently deleting the green band) made the rendered footer image
+  // ~107.6px tall at 816px page width (DOM-measured: .rpt-footer top = 948.4px on a 1056px
+  // page, vs ~1015px top when the image was the broken 85px-tall crop). DOM-measured
+  // collision on live JOCO data (26 buildings) at the old base=894: page 2 of the Executive
+  // Summary rendered 13 rows whose content bottom (958.3px) sat 9.9px INTO the new footer's
+  // top edge (948.4px) — the last line of the table footnote was drawn on top of the wave
+  // graphic. A first attempt cut both FIRST and CONT bases by the full ~68px footer-height
+  // delta (894->826, 717->649), which over-corrected: it also shaved a row off the
+  // continuation page (which had ~425px of unused clearance and needed none of this), pushing
+  // Executive Summary from 2 pages to 3 and the whole Audit Report from 26 to 27 pages — the
+  // exact regression this task was told to avoid. Reverted CONT to its original 717 (verified
+  // via headless scan: continuation pages have 80-425px of spare clearance even before any
+  // trim) and shaved FIRST by only ~32px — just enough to drop the one row that was
+  // overflowing onto the already-existing continuation page. Re-verified via headless DOM
+  // scan of all 26 audit pages + 3 proposal pages: zero pages with negative clearance, page
+  // counts unchanged (26 audit / 3 proposal).
+  var ROWS_BUDGET_FIRST = 862 - _firstChromeH - 30; // 30px safety margin
   var ROWS_BUDGET_CONT = 717;
 
   // Shared table styles
