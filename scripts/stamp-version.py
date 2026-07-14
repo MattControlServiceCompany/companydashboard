@@ -44,13 +44,13 @@ HOSTS = {
 }
 
 # Which entry in HOSTS is authoritative for computing the next patch number
-# and is treated as a hard failure if unreachable. GitHub Pages IS PRODUCTION
-# TODAY (Netlify cutover has not happened) and has a known history of the
-# deploy step hanging/failing (~10 min hangs, failed 3x in a row — logged
-# backlog item), which is exactly the failure mode this check exists to catch.
-#
-# >>> FLIP THIS ONE LINE AT CUTOVER TIME <<< (and nothing else needs to change)
-PRODUCTION_HOST = "github_pages"
+# and is treated as a hard failure if unreachable. NETLIFY IS PRODUCTION
+# (cutover happened 2026-07-14, after GitHub flipping the repo private/public
+# took GitHub Pages dark while Netlify stayed up throughout). GitHub Pages
+# also has a known history of the deploy step hanging/failing (~10 min hangs,
+# failed 3x in a row — logged backlog item); it stays in HOSTS below so a
+# dark/lagging GitHub Pages is still reported as a WARNING, just not fatal.
+PRODUCTION_HOST = "netlify"
 
 SITE_UI_JS = REPO_ROOT / "site-ui.js"
 HTML_FILES = [
