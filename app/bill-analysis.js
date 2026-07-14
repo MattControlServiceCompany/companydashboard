@@ -1336,11 +1336,53 @@ function _gateA_evaluateCoverage() {
 // period (the Wood River symptom). The already-existing zero-bills case
 // (finalBills.length === 0) is caught upstream by both callers before this
 // runs and is NOT this gate's concern — this only catches the PARTIAL case.
+// REVIEW FIX (18b33d9f round 2, CRITICAL 1): a flat regex tally of the two
+// anchors double-counts every provider whose anchor repeats once per PAGE of
+// a multi-page bill — which is the NORMAL Evergy layout, not an edge case.
+// "Each Evergy page has a 'Billing Date: MM/DD/YYYY' and 'Account Number :
+// XXX' printed in its header." (energy-savings.js ~4790) and the Evergy
+// extractor's own PRIMARY bill-splitting strategy is built on exactly that
+// repetition (energy-savings.js ~4789-4849, "Billing Date + Account Number
+// per-page grouping"). A naive count tripped Gate B on every correctly
+// extracted multi-page Evergy bill. Fixed by reusing that same idea, kept
+// provider-agnostic: split the raw text into per-page chunks on the
+// %%PAGE_N%% markers extractPDFText always inserts, extract an identity key
+// per page (account number, else service address; plus a nearby billing/
+// statement/invoice date when present), and count UNIQUE keys — not raw
+// anchor occurrences. Pages carrying neither anchor don't contribute a key.
+// A page with an identity but no discoverable date collapses into the same
+// group as any other page sharing that identity with no date either — this
+// can UNDER-count in the rare case of two same-account bills with no
+// distinguishable date in the text, but that tradeoff is intentional: a gate
+// that cries wolf on routine input gets ignored, which is worse than
+// occasionally missing a genuinely ambiguous case.
 function _gateB_billCountCheck(rawText, billCount) {
   if (!rawText || billCount == null) return null;
-  const svcCount = (rawText.match(/Service\s*Address\s*:?/gi) || []).length;
-  const acctCount = (rawText.match(/Account\s*Number\s*:?/gi) || []).length;
-  const expected = Math.max(svcCount, acctCount);
+  const pageChunks = rawText.split(/%%PAGE_\d+%%/).slice(1);
+  // No page markers found (shouldn't happen — extractPDFText always inserts them,
+  // but degrade gracefully rather than mis-splitting on unfamiliar input shape).
+  const chunks = pageChunks.length ? pageChunks : [rawText];
+  // BUGFIX (found during round-2 re-verification): the captured digit run must
+  // NOT be allowed to cross a newline — [\d\s\-]{3,20} let the greedy middle
+  // run swallow a trailing "\n202" from the NEXT line's address ("202 Aquatic
+  // Dr...") when the account number was immediately followed by a line break,
+  // fabricating a bogus second "account" and false-tripping Gate B on a clean
+  // multi-page Evergy bill. Restrict to same-line whitespace only (space/tab).
+  const _acctRe = /Account\s*(?:Number)?\s*:?\s*(\d[\d \t\-]{3,20}\d)/i;
+  const _addrRe = /Service\s*Address\s*:?\s*([^\n]{5,60})/i;
+  const _dateRe = /(?:Billing|Statement|Invoice)\s*Date\s*:?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i;
+  const keys = new Set();
+  for (const chunk of chunks) {
+    const acctM = chunk.match(_acctRe);
+    const addrM = chunk.match(_addrRe);
+    if (!acctM && !addrM) continue; // page carries neither anchor — not bill-identifying
+    const acct = acctM ? acctM[1].replace(/[\s\-]/g, '') : '';
+    const addr = addrM ? addrM[1].trim().toLowerCase().replace(/\s+/g, ' ') : '';
+    const dateM = chunk.match(_dateRe);
+    const date = dateM ? dateM[1] : '';
+    keys.add((acct || addr) + '|' + date);
+  }
+  const expected = keys.size;
   if (expected <= billCount) return null;
   return {
     gate: 'B',
@@ -1353,7 +1395,7 @@ function _gateB_billCountCheck(rawText, billCount) {
       (billCount === 1 ? '' : 's') +
       '; ' +
       expected +
-      ' account anchor' +
+      ' distinct account/date group' +
       (expected === 1 ? '' : 's') +
       ' found in the text',
   };
@@ -1368,7 +1410,12 @@ function _gateB_billCountCheck(rawText, billCount) {
 function _applyExtractionGates(bills, gateA, gateB) {
   if (!bills) return;
   for (const b of bills) {
-    const reasons = [];
+    // Additive, not replacing (18b33d9f round 2, also-address: fail-open fix) —
+    // if _postExtractionVerify's catch block already stamped a
+    // "verification did not complete" reason onto this bill, that reason must
+    // survive even when gateA/gateB/gateC ALSO trip on top of it, so the exact
+    // failure is never silently dropped from what the user sees.
+    const reasons = Array.isArray(b._gateReasons) ? b._gateReasons.slice() : [];
     if (gateA) reasons.push(gateA.message);
     if (gateB) reasons.push(gateB.message);
     const gc = b._correction_pending_TotalCurrentCharges;
@@ -1396,6 +1443,95 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
   try {
     if (!bills.length) return { bills, historicalCache: {} };
     const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+
+    // ── GATE C/D shared decision (18b33d9f round 2, CRITICAL 2) ──────────────
+    // Moved up from inside the GENERAL VALIDATION block so BOTH that generic
+    // cross-provider path AND the Evergy-specific Stage 3 total-reconciliation
+    // path (below, ~line 1900) route their "should I trust compSum enough to
+    // overwrite TotalCurrentCharges" decision through the SAME function.
+    // Before this fix, Stage 3 wrote b.TotalCurrentCharges = compSum with NO
+    // percentage/dollar ceiling at all, and ran BEFORE GENERAL VALIDATION — so
+    // for Evergy (the dominant provider in this codebase) a Rockville-class
+    // 276% swing could already be committed by the time GENERAL VALIDATION's
+    // gate ever looked at the bill (compSum === total by then, nothing to see).
+    //
+    // GATE D — charge provenance: verify each field's dollar value actually
+    // appears within THIS BILL's own page range in the raw text — not only on
+    // a neighboring bill's page. This is the cross-bill contamination that
+    // produced ee7acc56 (Rockville: a value that lived on an adjacent page got
+    // summed into this bill's total). Mirrors the SHAPE of the Evergy
+    // lastBdIdx/_pfPageMarkers guard in energy-savings.js (each bill owns only
+    // its own page range).
+    const _valueAppearsInText = (val, text) => {
+      if (!(val > 0) || !text) return false;
+      const plain = val.toFixed(2);
+      const withCommas = Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(esc(plain) + '|' + esc(withCommas)).test(text);
+    };
+    // fieldValuePairs: [{field, value}] — the charge fields whose provenance should
+    // be checked. GENERAL VALIDATION passes only the fields that individually
+    // exceed the total ("violations"); Stage 3 has no single-field violation concept
+    // (its trigger is compSum-vs-total disagreement), so it passes every nonzero
+    // charge field instead — any of them could be the contaminated one.
+    const _chargeFieldsHaveProvenance = (b, fieldValuePairs) => {
+      if (!rawText || !fieldValuePairs.length) return true; // no evidence available — don't block
+      const pageStart = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
+      const pageEnd = b._pageEnd != null ? b._pageEnd : b._pageIndex != null ? b._pageIndex : null;
+      if (pageStart == null || pageEnd == null) return true; // no page info — can't verify, don't block
+      const markers = [...rawText.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({ page: parseInt(m[1]), idx: m.index }));
+      if (!markers.length) return true;
+      let ownText = '';
+      for (let i = 0; i < markers.length; i++) {
+        const pg = markers[i].page;
+        if (pg < pageStart || pg > pageEnd) continue;
+        const start = markers[i].idx;
+        const end = i + 1 < markers.length ? markers[i + 1].idx : rawText.length;
+        ownText += rawText.slice(start, end);
+      }
+      if (!ownText) return true; // couldn't isolate own-page text — don't block
+      for (const v of fieldValuePairs) {
+        const onOwnPage = _valueAppearsInText(v.value, ownText);
+        const onAnyPage = _valueAppearsInText(v.value, rawText);
+        // Only a confirmed foreign-page value (present elsewhere, absent on this
+        // bill's own pages) counts as contamination. A value we simply can't find
+        // anywhere (e.g. rounded/derived) is not evidence of contamination.
+        if (!onOwnPage && onAnyPage) return false;
+      }
+      return true;
+    };
+    // GATE C — correction magnitude: a correction above EITHER threshold is
+    // high-severity and must be held for user confirmation, not silently
+    // applied. Rockville: $7,710.81 -> $29,015.33 is a 276% swing that must
+    // NOT auto-apply and must NOT render as a green checkmark.
+    //   - Percentage floor: 15% (mirrors the dual %/$ condition pattern used
+    //     elsewhere in this file, e.g. the KGS gas-total check).
+    //   - Dollar floor SCALES with bill size (review "Also address" item):
+    //     Evergy fixtures routinely run $9k-$17k for a commercial account, so
+    //     a flat $500 floor held every legitimate ~5% correction on those
+    //     accounts (constant manual-review friction, exactly the "gate cries
+    //     wolf" failure mode). $500 or 8% of the original total, whichever is
+    //     greater — small/near-zero totals keep the $500 floor as a hard
+    //     minimum; large commercial totals get a floor that scales with them.
+    const _decideTotalCorrection = (b, origTotalStr, compSum, fieldValuePairs) => {
+      const origTotalNum = pf(origTotalStr);
+      const pctChange = origTotalNum > 0 ? (Math.abs(compSum - origTotalNum) / origTotalNum) * 100 : 100;
+      const dollarChange = Math.abs(compSum - origTotalNum);
+      const provenanceOk = _chargeFieldsHaveProvenance(b, fieldValuePairs);
+      const CORRECTION_PCT_THRESHOLD = 15; // %
+      const CORRECTION_DOLLAR_THRESHOLD = Math.max(500, origTotalNum * 0.08); // $
+      const isLargeCorrection = pctChange > CORRECTION_PCT_THRESHOLD || dollarChange > CORRECTION_DOLLAR_THRESHOLD;
+      return {
+        hold: !provenanceOk || isLargeCorrection,
+        origTotalNum,
+        pctChange,
+        dollarChange,
+        provenanceOk,
+        isLargeCorrection,
+        CORRECTION_PCT_THRESHOLD,
+        CORRECTION_DOLLAR_THRESHOLD,
+      };
+    };
 
     // Calculate NumberOfDays from billing period dates when not extracted
     for (const b of bills) {
@@ -1999,18 +2135,80 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             // Reconciled. Keep ocrTotal. No flag needed.
           } else {
             // Still disagree. Check if any per-charge rate mismatches remain
-            // (signal that compSum is still contaminated).
+            // (signal that compSum is still contaminated). Set by the
+            // three-way qty×rate=charge validator inside _extractEvergy
+            // (energy-savings.js ~3510, runs during extraction, before this
+            // function) — narrow but real, not dead code.
             const hasRateMismatch = Object.keys(b).some((k) => k.startsWith('_rate_mismatch_'));
             if (finalDelta > 0.5 && !hasRateMismatch && !subtotalCorroborates) {
               // compSum > ocrTotal, all per-charge math verifies → ocrTotal was
               // likely a page-1 summary that excluded some detail charges that
-              // extracted cleanly. Trust compSum.
-              b.TotalCurrentCharges = compSum.toFixed(2);
-              b._totalFromChargeSum = true;
-              b._totalSource =
-                'compSum (ocrTotal of $' +
-                ocrTotal.toFixed(2) +
-                ' appears to be an incomplete summary; no per-charge rate mismatches remain to cast doubt on compSum)';
+              // extracted cleanly.
+              //
+              // REVIEW FIX (18b33d9f round 2, CRITICAL 2): this write used to be
+              // UNCONDITIONAL — no magnitude/provenance ceiling at all — and ran
+              // BEFORE the GENERAL VALIDATION block further down, so for Evergy
+              // (the dominant provider) a Rockville-class swing could already be
+              // committed here, with GENERAL VALIDATION never even seeing it
+              // (compSum === total by the time it ran). Route through the SAME
+              // GATE C/D decision as the generic path instead of trusting compSum
+              // unconditionally.
+              const nonzeroCharges = CHARGE_FIELDS.filter((f) => pf(b[f]) > 0).map((f) => ({
+                field: f,
+                value: pf(b[f]),
+              }));
+              const decision = _decideTotalCorrection(b, b.TotalCurrentCharges, compSum, nonzeroCharges);
+              if (decision.hold) {
+                b._correction_pending_TotalCurrentCharges = {
+                  original: b.TotalCurrentCharges,
+                  proposedCorrection: compSum.toFixed(2),
+                  pctChange: decision.pctChange.toFixed(1),
+                  dollarChange: decision.dollarChange.toFixed(2),
+                  provenanceOk: decision.provenanceOk,
+                  reason:
+                    'Evergy Stage 3 reconciliation: charges sum to $' +
+                    compSum.toFixed(2) +
+                    ' vs OCR total $' +
+                    ocrTotal.toFixed(2) +
+                    ' — proposed correction to $' +
+                    compSum.toFixed(2) +
+                    (decision.provenanceOk
+                      ? ''
+                      : '. One or more charge values could not be confirmed on this bill’s own page(s) — possible cross-bill contamination.') +
+                    (decision.isLargeCorrection
+                      ? '. Correction magnitude ' +
+                        decision.pctChange.toFixed(1) +
+                        '% ($' +
+                        decision.dollarChange.toFixed(2) +
+                        ') exceeds the auto-apply threshold (' +
+                        decision.CORRECTION_PCT_THRESHOLD +
+                        '% / $' +
+                        decision.CORRECTION_DOLLAR_THRESHOLD.toFixed(2) +
+                        ') — held for manual confirmation.'
+                      : ''),
+                };
+                console.log(
+                  '[PostVerify][Gate C/D][Evergy Stage 3] Correction HELD PENDING: $' +
+                    ocrTotal.toFixed(2) +
+                    ' -> $' +
+                    compSum.toFixed(2) +
+                    ' (pct=' +
+                    decision.pctChange.toFixed(1) +
+                    '%, $=' +
+                    decision.dollarChange.toFixed(2) +
+                    ', provenanceOk=' +
+                    decision.provenanceOk +
+                    ')',
+                );
+              } else {
+                // Small, well-provenanced correction — trust compSum (unchanged prior behavior).
+                b.TotalCurrentCharges = compSum.toFixed(2);
+                b._totalFromChargeSum = true;
+                b._totalSource =
+                  'compSum (ocrTotal of $' +
+                  ocrTotal.toFixed(2) +
+                  ' appears to be an incomplete summary; no per-charge rate mismatches remain to cast doubt on compSum)';
+              }
             } else {
               // Can't confidently reconcile — flag for user, keep ocrTotal.
               b._sum_mismatch = {
@@ -3805,48 +4003,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     };
     const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
 
-    // GATE D — charge provenance (18b33d9f, precondition to the auto-correct below).
-    // Before trusting compSum enough to overwrite TotalCurrentCharges, verify each
-    // violating charge field's dollar value actually appears within THIS BILL's own
-    // page range in the raw text — not only on a neighboring bill's page. This is
-    // the cross-bill contamination that produced ee7acc56 (Rockville: a value that
-    // lived on an adjacent page got summed into this bill's total). Mirrors the
-    // SHAPE of the Evergy lastBdIdx/_pfPageMarkers guard in energy-savings.js
-    // (each bill owns only its own page range), applied here as a precondition to
-    // the GENERIC auto-correct that every provider flows through.
-    const _valueAppearsInText = (val, text) => {
-      if (!(val > 0) || !text) return false;
-      const plain = val.toFixed(2);
-      const withCommas = Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(esc(plain) + '|' + esc(withCommas)).test(text);
-    };
-    const _chargeFieldsHaveProvenance = (b, violations) => {
-      if (!rawText || !violations.length) return true; // no evidence available — don't block
-      const pageStart = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
-      const pageEnd = b._pageEnd != null ? b._pageEnd : b._pageIndex != null ? b._pageIndex : null;
-      if (pageStart == null || pageEnd == null) return true; // no page info — can't verify, don't block
-      const markers = [...rawText.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({ page: parseInt(m[1]), idx: m.index }));
-      if (!markers.length) return true;
-      let ownText = '';
-      for (let i = 0; i < markers.length; i++) {
-        const pg = markers[i].page;
-        if (pg < pageStart || pg > pageEnd) continue;
-        const start = markers[i].idx;
-        const end = i + 1 < markers.length ? markers[i + 1].idx : rawText.length;
-        ownText += rawText.slice(start, end);
-      }
-      if (!ownText) return true; // couldn't isolate own-page text — don't block
-      for (const v of violations) {
-        const onOwnPage = _valueAppearsInText(v.value, ownText);
-        const onAnyPage = _valueAppearsInText(v.value, rawText);
-        // Only a confirmed foreign-page value (present elsewhere, absent on this
-        // bill's own pages) counts as contamination. A value we simply can't find
-        // anywhere (e.g. rounded/derived) is not evidence of contamination.
-        if (!onOwnPage && onAnyPage) return false;
-      }
-      return true;
-    };
+    // GATE C/D (18b33d9f): _decideTotalCorrection / _chargeFieldsHaveProvenance are
+    // defined once, above, near the top of this function — shared with the Evergy
+    // Stage 3 total-reconciliation path so the two can't drift (round-2 fix).
 
     for (const b of bills) {
       const total = pf(b.TotalCurrentCharges);
@@ -3873,48 +4032,39 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       if (violations.length === 0) continue;
       if (compSum > total + 0.1) {
         const origTotal = b.TotalCurrentCharges;
-        const origTotalNum = pf(origTotal);
-        const pctChange = origTotalNum > 0 ? (Math.abs(compSum - origTotalNum) / origTotalNum) * 100 : 100;
-        const dollarChange = Math.abs(compSum - origTotalNum);
-        const provenanceOk = _chargeFieldsHaveProvenance(b, violations);
-        // GATE C — correction magnitude (18b33d9f). Mirrors the dual %/$ condition
-        // pattern used elsewhere in this file (e.g. the KGS gas-total check): a
-        // correction above EITHER threshold is high-severity and must be held for
-        // user confirmation, not silently applied. Rockville: $7,710.81 -> $29,015.33
-        // is a 276% swing that must NOT auto-apply and must NOT render as a green
-        // checkmark.
-        const CORRECTION_PCT_THRESHOLD = 15; // %
-        const CORRECTION_DOLLAR_THRESHOLD = 500; // $
-        const isLargeCorrection = pctChange > CORRECTION_PCT_THRESHOLD || dollarChange > CORRECTION_DOLLAR_THRESHOLD;
         const violationText = violations
           .map(function (vi) {
-            return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + origTotalNum.toFixed(2) + ')';
+            return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + pf(origTotal).toFixed(2) + ')';
           })
           .join('; ');
-        if (!provenanceOk || isLargeCorrection) {
+        // GATE C/D — correction magnitude + provenance (18b33d9f). Rockville:
+        // $7,710.81 -> $29,015.33 is a 276% swing that must NOT auto-apply and
+        // must NOT render as a green checkmark.
+        const decision = _decideTotalCorrection(b, origTotal, compSum, violations);
+        if (decision.hold) {
           // Hold pending — do NOT overwrite TotalCurrentCharges/TotalAmountDue.
           b._correction_pending_TotalCurrentCharges = {
             original: origTotal,
             proposedCorrection: compSum.toFixed(2),
-            pctChange: pctChange.toFixed(1),
-            dollarChange: dollarChange.toFixed(2),
-            provenanceOk,
+            pctChange: decision.pctChange.toFixed(1),
+            dollarChange: decision.dollarChange.toFixed(2),
+            provenanceOk: decision.provenanceOk,
             reason:
               violationText +
               ' — proposed correction to $' +
               compSum.toFixed(2) +
-              (provenanceOk
+              (decision.provenanceOk
                 ? ''
                 : '. One or more charge values could not be confirmed on this bill’s own page(s) — possible cross-bill contamination.') +
-              (isLargeCorrection
+              (decision.isLargeCorrection
                 ? '. Correction magnitude ' +
-                  pctChange.toFixed(1) +
+                  decision.pctChange.toFixed(1) +
                   '% ($' +
-                  dollarChange.toFixed(2) +
+                  decision.dollarChange.toFixed(2) +
                   ') exceeds the auto-apply threshold (' +
-                  CORRECTION_PCT_THRESHOLD +
+                  decision.CORRECTION_PCT_THRESHOLD +
                   '% / $' +
-                  CORRECTION_DOLLAR_THRESHOLD +
+                  decision.CORRECTION_DOLLAR_THRESHOLD.toFixed(2) +
                   ') — held for manual confirmation.'
                 : ''),
           };
@@ -3922,15 +4072,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             '[PostVerify][Gate C/D] Correction HELD PENDING for ' +
               comm +
               ': $' +
-              origTotalNum.toFixed(2) +
+              decision.origTotalNum.toFixed(2) +
               ' -> $' +
               compSum.toFixed(2) +
               ' (pct=' +
-              pctChange.toFixed(1) +
+              decision.pctChange.toFixed(1) +
               '%, $=' +
-              dollarChange.toFixed(2) +
+              decision.dollarChange.toFixed(2) +
               ', provenanceOk=' +
-              provenanceOk +
+              decision.provenanceOk +
               ')',
           );
         } else {
@@ -3943,7 +4093,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             reason: violationText + ' — recalculated from charge components: $' + compSum.toFixed(2),
           };
           console.log(
-            '[PostVerify] Total corrected for ' + comm + ': $' + origTotalNum.toFixed(2) + ' → $' + compSum.toFixed(2),
+            '[PostVerify] Total corrected for ' +
+              comm +
+              ': $' +
+              decision.origTotalNum.toFixed(2) +
+              ' → $' +
+              compSum.toFixed(2),
           );
         }
       } else {
@@ -3989,7 +4144,24 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     return { bills, historicalCache: _historicalCache };
   } catch (e) {
     console.warn('[PDF] _postExtractionVerify failed:', e.message);
-    return { bills, historicalCache: {} }; // Return bills unchanged if verification crashes
+    // FAIL-OPEN FIX (18b33d9f round 2, also-address): a throw anywhere in this
+    // function used to return the partially-mutated bills array with NO signal
+    // that verification didn't finish — Gate C/D may never have run (or ran
+    // only partway), so a bill could come back looking clean when it was never
+    // actually verified. Stamp every bill so _applyExtractionGates (which runs
+    // right after this, in both the queue and single-file paths) treats it as
+    // tripped regardless of whether gateA/gateB/gateC independently found
+    // anything — a gate that fails OPEN on an exception is false confidence,
+    // worse than a visible failure.
+    for (const b of bills) {
+      b._gateTripped = true;
+      b._gateReasons = (Array.isArray(b._gateReasons) ? b._gateReasons : []).concat(
+        'Post-extraction verification did not complete (' +
+          (e && e.message ? e.message : 'unknown error') +
+          ') — totals and corrections on this bill were not fully validated.',
+      );
+    }
+    return { bills, historicalCache: {} }; // Return bills unchanged (but gate-flagged) if verification crashes
   }
 }
 
@@ -8720,6 +8892,21 @@ async function overwriteDupBill() {
   const dup = (window._pdfDupMap || {})[billIdx];
   const bills = window._pdfMultiBills;
   if (!dup || !bills || !bills[billIdx]) return;
+  // REVIEW FIX (18b33d9f round 2, CRITICAL 3): this button fires immediately
+  // against the single bill being viewed (see comment above) — it is NOT
+  // gated behind the "Compare" modal the way the bulk _dupBulkAction() guard
+  // assumed reachability required. A gate-tripped + duplicate bill could be
+  // silently overwritten with no Save Anyway prompt and no gate reason shown.
+  // Same hard-stop pattern as _dupBulkAction.
+  if (bills[billIdx]._gateTripped && !window._pdfForceSaveGated) {
+    showToast(
+      'Held for review — ' +
+        (bills[billIdx]._gateReasons || []).join(' · ') +
+        '. Verify against the source PDF, then click Overwrite again to confirm.',
+    );
+    window._pdfForceSaveGated = true; // next click on this bill proceeds
+    return;
+  }
   dup.action = 'overwrite';
   closeDupModal();
   let ok = false;
@@ -8742,6 +8929,17 @@ async function mergeDupBill() {
   const dup = (window._pdfDupMap || {})[billIdx];
   const bills = window._pdfMultiBills;
   if (!dup || !bills || !bills[billIdx]) return;
+  // REVIEW FIX (18b33d9f round 2, CRITICAL 3): same hard-stop as overwriteDupBill
+  // above — this button also fires immediately, no modal review required.
+  if (bills[billIdx]._gateTripped && !window._pdfForceSaveGated) {
+    showToast(
+      'Held for review — ' +
+        (bills[billIdx]._gateReasons || []).join(' · ') +
+        '. Verify against the source PDF, then click Merge again to confirm.',
+    );
+    window._pdfForceSaveGated = true; // next click on this bill proceeds
+    return;
+  }
   dup.action = 'merge';
   closeDupModal();
   let ok = false;
