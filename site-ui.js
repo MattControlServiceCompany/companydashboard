@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.14.675'; // deployed 2026-07-13 (backup/restore now include raw bill PDFs, honest success/failure reporting, restore validates file before writing)
+  var CH_VERSION = 'v2026.07.14.679'; // deployed 2026-07-13 (backup/restore now include raw bill PDFs, honest success/failure reporting, restore validates file before writing)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

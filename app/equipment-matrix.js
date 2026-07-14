@@ -3593,6 +3593,7 @@ var _emAliasCachePid = null; // 0ca796a9: pid that _emAliasCache was built for
 var _emPointNameCache = new Map(); // Milestone 1: rawName -> colKey, page-lifetime memoization for emMapPointToColumn
 var _emSearchTimer = null; // Performance: debounce timer for search input
 var _emOpenDrawers = new Set(); // M4: per-equipment "All Points" drawer state, keyed by row.id
+var _emAllPointsOpen = new Set(); // 561fe067: Audit-view compliance detail panel's "All Points" section expand state, keyed by row.id
 // Performance (Quick Win 3): Dynamic-column frequency scan cache.
 // Keyed by "<pid>|<building>|<type>|<rowCount>" so it auto-invalidates when
 // the filter or dataset changes. Stores { freq: {ptKey: count}, keys: [...sorted] }.
@@ -3791,6 +3792,7 @@ function emRenderMatrix(container, data, pid) {
   _emShowAllDynCols = false;
   _emViewMode = 'audit';
   _emOpenDrawers = new Set();
+  _emAllPointsOpen = new Set();
   var savedZoom = parseInt(DB.get('en_em_zoom', '100'), 10);
   _emZoomLevel = savedZoom >= 50 && savedZoom <= 150 ? savedZoom : 100;
   emInjectMatrixCSS();
@@ -4855,6 +4857,150 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     '</div>';
 }
 
+/* ── emBuildAllPointsTableHtml (561fe067) ────────────────────────────────────
+   Combined ASHRAE + Other point list for a single equipment row: every raw
+   BAS point + its current value + (if mapped) its ASHRAE 36 column, in one
+   table. Display-only — never touches emComputeCompliance/emComputeAuditStats,
+   so it cannot change the ASHRAE 36 score, sensor-coverage %, or sequence-
+   readiness %.
+
+   ASHRAE-mapped points render an accent-filled badge (same style used
+   elsewhere for ASHRAE column identity). Unmapped/"Other" points render a
+   gray outline pill matching the Audit view's existing "Other BAS Points"
+   badge (dashboardlogic.md Phase D-2: var(--s2) bg / var(--text2) text /
+   var(--border) border) so the same visual language means "does not count
+   toward the score" everywhere in the app.
+
+   Shared by:
+   - Raw-view per-row "All Points" expand drawer (_buildOneRowHtml, inside
+     emRenderTable)
+   - Audit-view compliance detail panel's "All Points" section
+     (emShowComplianceDetail) — added so ASHRAE + Other points can be seen
+     together without switching panels (item 561fe067).             */
+var _emColLabelMap = null; // lazy col-key -> human label lookup, built once from EM_POINT_MAP
+function emColLabel(colKey) {
+  if (!colKey) return colKey;
+  if (!_emColLabelMap) {
+    _emColLabelMap = {};
+    for (var i = 0; i < EM_POINT_MAP.length; i++) {
+      var m = EM_POINT_MAP[i];
+      if (m.col && m.label && !_emColLabelMap[m.col]) _emColLabelMap[m.col] = m.label;
+    }
+  }
+  return _emColLabelMap[colKey] || colKey;
+}
+
+function emBuildAllPointsTableHtml(row) {
+  var html = '';
+  if (row.schema >= 2 && row.pointsRaw && Object.keys(row.pointsRaw).length > 0) {
+    var _apKeys = Object.keys(row.pointsRaw)
+      .slice()
+      .sort(function (a, b) {
+        return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
+      });
+    html +=
+      '<div style="font-weight:600;color:var(--text2);margin-bottom:4px">All BAS Points (' +
+      _apKeys.length +
+      ' captured)</div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">' +
+      '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:0 4px">Blue</span> = counts toward the ASHRAE 36 score. ' +
+      '<span style="background:var(--s2);border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--text2)">Other</span> = found on the equipment, not scored.' +
+      '</div>';
+    // 561fe067 overflow fix: Point Name wraps per ui-standards.md ("Label/description columns
+    // may use white-space:normal; word-break:break-word but must still have overflow:hidden") —
+    // arbitrary raw BAS point names can be long, so wrapping (not clipping/scrolling) is the
+    // documented remedy. The outer overflow-x:auto div is a belt-and-suspenders fallback only;
+    // it should not need to engage now that the long column wraps instead of pushing width.
+    html += '<div style="overflow-x:auto;max-width:100%">';
+    html +=
+      '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:100%;table-layout:fixed">';
+    html +=
+      '<colgroup><col style="width:46%"><col style="width:20%"><col style="width:34%"></colgroup>' +
+      '<thead><tr>' +
+      '<th style="padding:3px 10px 3px 0;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Point Name</th>' +
+      '<th style="padding:3px 10px 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
+      '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">ASHRAE Category</th>' +
+      '</tr></thead><tbody>';
+    var _apColCount = {};
+    for (var _aci = 0; _aci < _apKeys.length; _aci++) {
+      var _acMapped = emMapPointToColumn(_apKeys[_aci], null, row.category);
+      if (_acMapped) _apColCount[_acMapped] = (_apColCount[_acMapped] || 0) + 1;
+    }
+    for (var _ari = 0; _ari < _apKeys.length; _ari++) {
+      var _arKey = _apKeys[_ari];
+      var _arVal = row.pointsRaw[_arKey];
+      var _arMapped = emMapPointToColumn(_arKey, null, row.category);
+      var _arHasCollision = _arMapped && (_apColCount[_arMapped] || 0) > 1;
+      // Plain-language rule (ui-standards.md): show the human label ("Mixed Air Temp"), never the
+      // internal camelCase key ("mixedAirTemp"). Full key still available via title tooltip.
+      var _arLabel = _arMapped ? emColLabel(_arMapped) : '';
+      var _arBadge = _arMapped
+        ? '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:10px;' +
+          'display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom"' +
+          ' title="' +
+          emHtmlEsc(_arLabel) +
+          (_arHasCollision
+            ? ' — ' + _apColCount[_arMapped] + ' points map to this column; only one value is shown in the Audit view'
+            : '') +
+          '">' +
+          emHtmlEsc(_arLabel) +
+          '</span>' +
+          (_arHasCollision
+            ? '<span style="color:#f59e0b;margin-left:4px;cursor:default" title="Collision: ' +
+              _apColCount[_arMapped] +
+              ' points map here">&#x26A0;</span>'
+            : '')
+        : '<span style="background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:3px;padding:1px 5px;font-size:10px">Other</span>';
+      var _arValDisplay = _arVal === '' ? '<span style="color:var(--text3)">empty</span>' : emHtmlEsc(String(_arVal));
+      html +=
+        '<tr>' +
+        '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:normal;word-break:break-word;overflow:hidden;color:var(--text)" title="' +
+        emHtmlEsc(_arKey) +
+        '">' +
+        emHtmlEsc(_arKey) +
+        '</td>' +
+        '<td style="padding:2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text2)">' +
+        _arValDisplay +
+        '</td>' +
+        '<td style="padding:2px 0 2px 10px;border-bottom:1px solid var(--border);overflow:hidden">' +
+        _arBadge +
+        '</td>' +
+        '</tr>';
+    }
+    html += '</tbody></table></div>';
+  } else if (row.points && Object.keys(row.points).length > 0) {
+    html +=
+      '<div style="color:var(--text2);margin-bottom:8px"><em>Full point list available after re-importing this CSV.</em></div>';
+    var _legPts2 = row.points;
+    var _legKeys2 = Object.keys(_legPts2).slice().sort();
+    html += '<div style="overflow-x:auto;max-width:100%">'; // 561fe067 overflow fix — see note above
+    html += '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:100%">';
+    html +=
+      '<thead><tr>' +
+      '<th style="padding:3px 10px 3px 0;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Point / Column</th>' +
+      '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
+      '</tr></thead><tbody>';
+    for (var _lki2 = 0; _lki2 < _legKeys2.length; _lki2++) {
+      var _lk2 = _legKeys2[_lki2];
+      var _lv2 = _legPts2[_lk2];
+      if (_lv2 == null) continue;
+      html +=
+        '<tr>' +
+        '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)">' +
+        emHtmlEsc(_lk2) +
+        '</td>' +
+        '<td style="padding:2px 0 2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2)">' +
+        emHtmlEsc(String(_lv2)) +
+        '</td>' +
+        '</tr>';
+    }
+    html += '</tbody></table></div>';
+  } else {
+    html += '<span style="color:var(--text3)">No point data available for this equipment.</span>';
+  }
+  return html;
+}
+
 var _EM_GROUP_COLORS = {
   id: 'transparent',
   check: 'var(--text3)',
@@ -5853,94 +5999,7 @@ function emRenderTable(data, filters) {
     if (isDrawerOpen) {
       rowHtml += '<tr><td colspan="' + _emTotalColCount + '" style="padding:0;border-bottom:2px solid var(--accent)">';
       rowHtml += '<div style="padding:10px 16px;background:var(--s1);font-size:12px">';
-      if (row.schema >= 2 && row.pointsRaw && Object.keys(row.pointsRaw).length > 0) {
-        var _drRawKeys = Object.keys(row.pointsRaw)
-          .slice()
-          .sort(function (a, b) {
-            return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
-          });
-        rowHtml +=
-          '<div style="font-weight:600;color:var(--text2);margin-bottom:6px">All BAS Points (' +
-          _drRawKeys.length +
-          ' captured)</div>';
-        rowHtml += '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:auto">';
-        rowHtml +=
-          '<thead><tr>' +
-          '<th style="padding:3px 10px 3px 0;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Point Name</th>' +
-          '<th style="padding:3px 10px 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
-          '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Mapped Column</th>' +
-          '</tr></thead><tbody>';
-        var _drColCount = {};
-        for (var _dci = 0; _dci < _drRawKeys.length; _dci++) {
-          var _dcMapped = emMapPointToColumn(_drRawKeys[_dci], null, row.category);
-          if (_dcMapped) _drColCount[_dcMapped] = (_drColCount[_dcMapped] || 0) + 1;
-        }
-        for (var _dri = 0; _dri < _drRawKeys.length; _dri++) {
-          var _drKey = _drRawKeys[_dri];
-          var _drVal = row.pointsRaw[_drKey];
-          var _drMapped = emMapPointToColumn(_drKey, null, row.category);
-          var _drHasCollision = _drMapped && (_drColCount[_drMapped] || 0) > 1;
-          var _drBadge = _drMapped
-            ? '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:10px"' +
-              (_drHasCollision
-                ? ' title="' +
-                  _drColCount[_drMapped] +
-                  ' points map to this column — only one value is shown in the Audit view"'
-                : '') +
-              '>' +
-              emHtmlEsc(_drMapped) +
-              '</span>' +
-              (_drHasCollision
-                ? '<span style="color:#f59e0b;margin-left:4px;cursor:default" title="Collision: ' +
-                  _drColCount[_drMapped] +
-                  ' points map here">&#x26A0;</span>'
-                : '')
-            : '<span style="color:var(--text3)">—</span>';
-          var _drValDisplay =
-            _drVal === '' ? '<span style="color:var(--text3)">empty</span>' : emHtmlEsc(String(_drVal));
-          rowHtml +=
-            '<tr>' +
-            '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)">' +
-            emHtmlEsc(_drKey) +
-            '</td>' +
-            '<td style="padding:2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2)">' +
-            _drValDisplay +
-            '</td>' +
-            '<td style="padding:2px 0 2px 10px;border-bottom:1px solid var(--border)">' +
-            _drBadge +
-            '</td>' +
-            '</tr>';
-        }
-        rowHtml += '</tbody></table>';
-      } else if (row.points && Object.keys(row.points).length > 0) {
-        rowHtml +=
-          '<div style="color:var(--text2);margin-bottom:8px"><em>Full point list available after re-importing this CSV.</em></div>';
-        var _legPts = row.points;
-        var _legKeys = Object.keys(_legPts).slice().sort();
-        rowHtml += '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:auto">';
-        rowHtml +=
-          '<thead><tr>' +
-          '<th style="padding:3px 10px 3px 0;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Point / Column</th>' +
-          '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
-          '</tr></thead><tbody>';
-        for (var _lki = 0; _lki < _legKeys.length; _lki++) {
-          var _lk = _legKeys[_lki];
-          var _lv = _legPts[_lk];
-          if (_lv == null) continue;
-          rowHtml +=
-            '<tr>' +
-            '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)">' +
-            emHtmlEsc(_lk) +
-            '</td>' +
-            '<td style="padding:2px 0 2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2)">' +
-            emHtmlEsc(String(_lv)) +
-            '</td>' +
-            '</tr>';
-        }
-        rowHtml += '</tbody></table>';
-      } else {
-        rowHtml += '<span style="color:var(--text3)">No point data available for this equipment.</span>';
-      }
+      rowHtml += emBuildAllPointsTableHtml(row);
       rowHtml += '</div></td></tr>';
     }
     return rowHtml;
@@ -8085,6 +8144,34 @@ function emShowComplianceDetail(rowId) {
     spHtml += '</tbody></table></div>';
   }
 
+  // ── Section 4: All Points — ASHRAE + Other together (561fe067) ────────────
+  // Display-only: reuses the same combined point-list builder as the Raw-view
+  // "All Points" drawer (emBuildAllPointsTableHtml). Adding this section can
+  // never change c.coveragePct / emComputeCompliance / emComputeSequenceReadiness
+  // — it does not call any of those functions, it only reads row.pointsRaw /
+  // row.points for display.
+  var allPointsOpen = _emAllPointsOpen.has(rowId);
+  var safeRowIdJs = JSON.stringify(rowId);
+  var allPtsHtml =
+    '<div style="margin-bottom:16px">' +
+    '<div onclick="emToggleAllPointsInDetail(' +
+    safeRowIdJs +
+    ')" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;' +
+    'font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;' +
+    'margin-bottom:8px">' +
+    '<span>All Points (ASHRAE + Other)</span>' +
+    '<span style="font-size:11px;text-transform:none;letter-spacing:normal">' +
+    (allPointsOpen ? '&#9650; Hide' : '&#9660; Show') +
+    '</span>' +
+    '</div>';
+  if (allPointsOpen) {
+    allPtsHtml += emBuildAllPointsTableHtml(row);
+  } else {
+    allPtsHtml +=
+      '<div style="font-size:11px;color:var(--text3)">See every point on this equipment — ASHRAE-mapped and Other — in one list, without switching panels.</div>';
+  }
+  allPtsHtml += '</div>';
+
   // ── Assemble panel HTML ────────────────────────────────────────────────────
   var panelId = 'em-compliance-detail-panel';
   var existing = document.getElementById(panelId);
@@ -8113,12 +8200,26 @@ function emShowComplianceDetail(rowId) {
     covHtml +
     cfHtml +
     spHtml +
+    allPtsHtml +
     '</div>' +
     '</div>';
 
   var container = document.createElement('div');
   container.innerHTML = panelHtml;
   document.body.appendChild(container.firstChild);
+}
+
+/* ── emToggleAllPointsInDetail (561fe067) ────────────────────────────────────
+   Toggles the "All Points (ASHRAE + Other)" section inside the compliance
+   detail panel and re-renders that same panel. Display-only — does not touch
+   compliance/scoring state or the audit table.                             */
+function emToggleAllPointsInDetail(rowId) {
+  if (_emAllPointsOpen.has(rowId)) {
+    _emAllPointsOpen.delete(rowId);
+  } else {
+    _emAllPointsOpen.add(rowId);
+  }
+  emShowComplianceDetail(rowId);
 }
 
 /* ── emCloseComplianceDetail ─────────────────────────────────────────────────

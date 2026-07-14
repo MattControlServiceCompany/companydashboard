@@ -33,7 +33,7 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=675" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=679" rel="stylesheet" />
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
@@ -5543,6 +5543,18 @@
         border-right: none;
         padding: 0;
       }
+      /* BUG FIX (fix/buildings-panel-expand, 2026-07-14): .ud-collapse-tab straddles the
+         divider at left:-9px relative to .ud-detail-col. When the nav column collapses to
+         0px, .ud-detail-col's left edge moves flush to .ud-layout's own left edge, so that
+         same -9px offset now falls OUTSIDE .ud-layout's box — and .ud-layout has
+         overflow:hidden (required elsewhere to clip the bills table to its rounded corners).
+         Result: the only control that can re-expand the panel got clipped away with it,
+         trapping the user with no visible way back. Pull the tab back inside the clip
+         region (a couple px of margin so the rounded corner/border don't bite into it)
+         while collapsed only — the expanded straddle position is untouched. */
+      .ud-layout.nav-collapsed .ud-collapse-tab {
+        left: 2px;
+      }
       /* Collapse/expand tab — straddles the divider between nav and detail, vertically centered */
       .ud-collapse-tab {
         position: absolute;
@@ -7784,7 +7796,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=675" />
+    <link rel="stylesheet" href="feedback-widget.css?v=679" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -8261,7 +8273,22 @@
               </div>
               <!-- Right detail: project header + building header + meters -->
               <div class="ud-detail-col">
-                <div class="ud-collapse-tab" onclick="toggleUdNav('udLayout')" title="Toggle buildings panel">◀</div>
+                <div
+                  class="ud-collapse-tab"
+                  onclick="toggleUdNav('udLayout')"
+                  onkeydown="
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      toggleUdNav('udLayout');
+                    }
+                  "
+                  role="button"
+                  tabindex="0"
+                  title="Hide buildings"
+                  aria-label="Hide buildings"
+                >
+                  ◀
+                </div>
                 <!-- Project-level panels bar (shown when project selected, above building header) -->
                 <div
                   id="udProjPanelBar"
@@ -14855,47 +14882,47 @@
       crossorigin="anonymous"
     ></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=675"></script>
-    <script src="lib/formatting.js?v=675"></script>
-    <script src="lib/unit-conversion.js?v=675"></script>
-    <script src="lib/csv-parser.js?v=675"></script>
-    <script src="computations/rates.js?v=675"></script>
-    <script src="computations/regression.js?v=675"></script>
-    <script src="computations/normalization.js?v=675"></script>
-    <script src="computations/eui.js?v=675"></script>
-    <script src="computations/pollution.js?v=675"></script>
-    <script src="computations/csc.js?v=675"></script>
-    <script src="computations/savings.js?v=675"></script>
-    <script src="computations/anomaly-detection.js?v=675"></script>
-    <script src="lib/perf-table.js?v=675"></script>
-    <script src="lib/shared-charts.js?v=675"></script>
-    <script src="computations/report-data.js?v=675"></script>
-    <script src="computations/data-quality.js?v=675"></script>
-    <script src="extraction/pdf-engine.js?v=675"></script>
-    <script src="app/db.js?v=675"></script>
-    <script src="app/core.js?v=675"></script>
-    <script src="app/energy-savings.js?v=675"></script>
-    <script src="app/bill-analysis.js?v=675"></script>
-    <script src="extraction/bill-validation.js?v=675"></script>
-    <script src="app/district-calendar.js?v=675"></script>
-    <script src="app/utility-data.js?v=675"></script>
-    <script src="app/pipeline-diagram.js?v=675"></script>
-    <script src="app/csv-import.js?v=675"></script>
-    <script src="app/report-engine.js?v=675"></script>
-    <script src="app/report-preview.js?v=675"></script>
-    <script src="app/calculators.js?v=675"></script>
-    <script src="app/ecm-calculators.js?v=675"></script>
-    <script src="app/equipment-matrix.js?v=675"></script>
-    <script src="app/graphics-setpoints.js?v=675"></script>
-    <script src="app/budget.js?v=675"></script>
-    <script src="app/hours.js?v=675"></script>
-    <script src="app/scorecard.js?v=675"></script>
-    <script src="app/portal-export.js?v=675"></script>
-    <script src="app/bas-trends.js?v=675"></script>
-    <script src="app/bas-alarms.js?v=675"></script>
-    <script src="app/pricing-estimator.js?v=675"></script>
+    <script src="lib/date-helpers.js?v=679"></script>
+    <script src="lib/formatting.js?v=679"></script>
+    <script src="lib/unit-conversion.js?v=679"></script>
+    <script src="lib/csv-parser.js?v=679"></script>
+    <script src="computations/rates.js?v=679"></script>
+    <script src="computations/regression.js?v=679"></script>
+    <script src="computations/normalization.js?v=679"></script>
+    <script src="computations/eui.js?v=679"></script>
+    <script src="computations/pollution.js?v=679"></script>
+    <script src="computations/csc.js?v=679"></script>
+    <script src="computations/savings.js?v=679"></script>
+    <script src="computations/anomaly-detection.js?v=679"></script>
+    <script src="lib/perf-table.js?v=679"></script>
+    <script src="lib/shared-charts.js?v=679"></script>
+    <script src="computations/report-data.js?v=679"></script>
+    <script src="computations/data-quality.js?v=679"></script>
+    <script src="extraction/pdf-engine.js?v=679"></script>
+    <script src="app/db.js?v=679"></script>
+    <script src="app/core.js?v=679"></script>
+    <script src="app/energy-savings.js?v=679"></script>
+    <script src="app/bill-analysis.js?v=679"></script>
+    <script src="extraction/bill-validation.js?v=679"></script>
+    <script src="app/district-calendar.js?v=679"></script>
+    <script src="app/utility-data.js?v=679"></script>
+    <script src="app/pipeline-diagram.js?v=679"></script>
+    <script src="app/csv-import.js?v=679"></script>
+    <script src="app/report-engine.js?v=679"></script>
+    <script src="app/report-preview.js?v=679"></script>
+    <script src="app/calculators.js?v=679"></script>
+    <script src="app/ecm-calculators.js?v=679"></script>
+    <script src="app/equipment-matrix.js?v=679"></script>
+    <script src="app/graphics-setpoints.js?v=679"></script>
+    <script src="app/budget.js?v=679"></script>
+    <script src="app/hours.js?v=679"></script>
+    <script src="app/scorecard.js?v=679"></script>
+    <script src="app/portal-export.js?v=679"></script>
+    <script src="app/bas-trends.js?v=679"></script>
+    <script src="app/bas-alarms.js?v=679"></script>
+    <script src="app/pricing-estimator.js?v=679"></script>
 
-    <script src="app/site-functions.js?v=675"></script>
+    <script src="app/site-functions.js?v=679"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -15052,14 +15079,14 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=675"></script>
-    <script src="feedback-widget.js?v=675"></script>
+    <script src="app/tooltips-help.js?v=679"></script>
+    <script src="feedback-widget.js?v=679"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"
       integrity="sha384-reiVBUvj2HgLgCZalqLFSMBVD9LdtiwGyybRGCq2AfP8Rgebz5DxEnwKp4FpagKV"
       crossorigin="anonymous"
     ></script>
-    <script src="lib/rich-text.js?v=675"></script>
+    <script src="lib/rich-text.js?v=679"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {
