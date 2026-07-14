@@ -1477,6 +1477,44 @@ function _qtySelfVerifies(qty, rate, ocrCharge) {
   return qty > 0 && rate > 0 && ocrCharge > 0 && Math.abs(qty * rate - ocrCharge) <= _Q_SELFVERIFY_CENTS;
 }
 
+// Same self-verification check as _qtySelfVerifies, but for charge lines that may
+// span MULTIPLE rate tiers (a "changeover" bill — On-Peak + Tiered both present).
+// _rates.EnergyOnPeakCharge.rate is only the FIRST tier's rate (see
+// energy-savings.js ~3178-3188's `rate: allParts[0].rate`), while .qty is summed
+// across ALL tiers — so `qty * rate` is NOT a valid self-check on a genuine
+// multi-tier bill even when qty is exactly correct (it would spuriously fail and
+// trigger a bogus "correction" by subtraction). `.computed`, by contrast, is
+// summed PER-PART (`allParts.reduce((s, r) => s + r.computed, 0)`, each part's
+// own computed = that part's own qty × that part's own tier rate), so it is the
+// correct total to compare against the bill's printed charge regardless of how
+// many tiers the charge line spans. Mirrors the ECA witness's existing
+// `computedTotal = ecaR.parts.reduce((a, p) => a + p.qty * p.rate, 0)` pattern.
+function _chargeSelfVerifies(computedTotal, ocrCharge) {
+  return computedTotal > 0 && ocrCharge > 0 && Math.abs(computedTotal - ocrCharge) <= _Q_SELFVERIFY_CENTS;
+}
+
+// Sums a charge-line rate object's PER-PART computed amounts — each part's own
+// qty × that part's OWN tier rate — rather than the top-level `.rate` (first
+// tier only on a changeover bill) × total qty. Falls back gracefully per part
+// when a part lacks its own computed/rate (e.g. a single-tier charge line
+// where only the top-level rate was ever populated), so this is a strict
+// superset of the old qty*r.rate check on single-tier bills and only changes
+// behavior on genuine multi-part charge lines.
+function _chargeComputedTotal(r) {
+  if (!r) return 0;
+  if (r.parts && r.parts.length) {
+    return r.parts.reduce((s, p) => {
+      if (p.computed != null) return s + p.computed;
+      if (p.rate != null && p.qty != null) return s + p.qty * p.rate;
+      if (r.rate != null && p.qty != null) return s + p.qty * r.rate;
+      return s;
+    }, 0);
+  }
+  if (r.computed != null) return r.computed;
+  if (r.rate != null && r.qty != null) return r.qty * r.rate;
+  return 0;
+}
+
 // Buckets witnesses within _Q_BUCKET_TOL of each other (same bucketing pattern
 // already used for the pre-existing kWh charge-line consensus, tightened and
 // extended with self-verification weight). Sorted strongest-cluster-first.
@@ -1654,8 +1692,12 @@ function _gatherKwhWitnesses(b, pf) {
     const onQty = (onR.parts || []).reduce((a, p) => a + (p.qty || 0), 0);
     const offQty = (offR.parts || []).reduce((a, p) => a + (p.qty || 0), 0);
     if (onQty > 0 && offQty > 0) {
-      const onStrong = onR.rate > 0 && _qtySelfVerifies(onQty, onR.rate, pf(b.EnergyOnPeakCharge));
-      const offStrong = offR.rate > 0 && _qtySelfVerifies(offQty, offR.rate, pf(b.EnergyOffPeakCharge));
+      // Compare against each part's own computed total (see _chargeComputedTotal)
+      // rather than onR.rate * onQty — the latter uses only the FIRST tier's rate
+      // against the ALL-tier qty on a changeover bill, which spuriously fails
+      // verification even when the quantity is correct. See _chargeSelfVerifies.
+      const onStrong = _chargeSelfVerifies(_chargeComputedTotal(onR), pf(b.EnergyOnPeakCharge));
+      const offStrong = _chargeSelfVerifies(_chargeComputedTotal(offR), pf(b.EnergyOffPeakCharge));
       witnesses.push({ source: 'On+Off peak sum', value: onQty + offQty, strong: onStrong && offStrong });
     }
   }
@@ -1690,8 +1732,12 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
     offR && offR.parts && offR.parts.length ? offR.parts.reduce((a, p) => a + (p.qty || 0), 0) : 0;
   const onQty = onQtyFromRates > 0 ? onQtyFromRates : pf(b.OnPeakKWh);
   const offQty = offQtyFromRates > 0 ? offQtyFromRates : pf(b.OffPeakKWh);
-  const onVerified = !!(onR && onR.rate > 0 && _qtySelfVerifies(onQty, onR.rate, pf(b.EnergyOnPeakCharge)));
-  const offVerified = !!(offR && offR.rate > 0 && _qtySelfVerifies(offQty, offR.rate, pf(b.EnergyOffPeakCharge)));
+  // See _chargeSelfVerifies/_chargeComputedTotal: compare against the per-part
+  // computed total, not .rate * qty (first-tier rate only) — the latter
+  // spuriously fails on a genuine multi-tier changeover bill even when
+  // onQty/offQty are correct.
+  const onVerified = !!(onR && _chargeSelfVerifies(_chargeComputedTotal(onR), pf(b.EnergyOnPeakCharge)));
+  const offVerified = !!(offR && _chargeSelfVerifies(_chargeComputedTotal(offR), pf(b.EnergyOffPeakCharge)));
   const result = { onCorrection: null, offCorrection: null, gate: null };
 
   // ── SELF-HEAL: restore a field that upstream extraction (energy-savings.js's

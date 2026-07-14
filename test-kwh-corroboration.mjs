@@ -346,6 +346,56 @@ async function main() {
       'decideOnOff: neither leg verifies + total held — gate, never guess',
     );
   }
+  // ── FIRST-TIER-RATE TRAP (changeover bill) ──────────────────────────────
+  // On-Peak charge line spans TWO seasonal rate tiers (a "changeover" bill —
+  // On-Peak + Tiered both present, see energy-savings.js ~3178-3188). Its
+  // qty (250 = 150 + 100) is CORRECT and its printed charge ($13.50 = 150 ×
+  // $0.05 + 100 × $0.06) IS backed by the charge line — but the top-level
+  // `.rate` field is only the FIRST tier's rate ($0.05, per `allParts[0].rate`).
+  // A naive `qty * r.rate` self-check (250 × 0.05 = $12.50) would NOT match
+  // the printed $13.50 and spuriously mark OnPeak unverified even though the
+  // quantity is exactly right. kWhConsumed is (deliberately, for this test)
+  // corrupted to 760 instead of the true 750 (250 + 500), so the "already
+  // consistent" early-return does not mask the bug: with the old
+  // `qty * r.rate` check, OnPeak would spuriously fail to verify while
+  // OffPeak (single-tier, unaffected) verifies, and the code would derive
+  // OnPeakKWh = 760 − 500 = 260 by subtraction — silently overwriting the
+  // already-correct 250 with a wrong value derived from the corrupted total.
+  // The fix must verify OnPeak correctly (per-part computed sum vs printed
+  // charge) so BOTH legs verify individually, and — since they verify but
+  // don't sum to the (corrupted) kWhConsumed — GATE for manual review
+  // instead of guessing.
+  {
+    const changeover = {
+      OnPeakKWh: '250', // already correct — must NOT be "corrected"
+      OffPeakKWh: '500', // already correct — must NOT be "corrected"
+      EnergyOnPeakCharge: '13.50', // 150×$0.05 + 100×$0.06, NOT 250×$0.05 (=$12.50)
+      EnergyOffPeakCharge: '20.00', // 500×$0.04
+      _rates: {
+        EnergyOnPeakCharge: {
+          rate: 0.05, // first tier's rate only, per allParts[0].rate — the trap
+          parts: [
+            { qty: 150, rate: 0.05, computed: 7.5 },
+            { qty: 100, rate: 0.06, computed: 6.0 },
+          ],
+        },
+        EnergyOffPeakCharge: { rate: 0.04, parts: [{ qty: 500, rate: 0.04, computed: 20.0 }] },
+      },
+    };
+    const d = X.decideOnOffPeakKWh(changeover, pf, 760, false); // kWhConsumed deliberately wrong (should be 750)
+    assertTrue(
+      !d.onCorrection,
+      'decideOnOff: changeover trap — correct multi-tier OnPeak qty must NOT be overwritten by subtraction',
+    );
+    assertTrue(
+      !d.offCorrection,
+      'decideOnOff: changeover trap — correct OffPeak qty must NOT be overwritten either',
+    );
+    assertTrue(
+      !!d.gate,
+      'decideOnOff: changeover trap — both legs self-verify but disagree with the (corrupted) total — gate, don\'t guess',
+    );
+  }
 
   // ── ACCEPTANCE TEST: Matt's real 4-bill Louisburg April 2026 extraction ──
   const DEBUG_FILE = path.join(
