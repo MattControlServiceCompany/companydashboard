@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.14.676',
+    date: '2026-07-14',
+    title: 'Bill extraction now flags anything it is not sure about',
+    items: [
+      {
+        type: 'feature',
+        text: 'PDF and scanned bill extraction now refuses to quietly save a bill it is not confident in. If pages were skipped, fewer bills came out than expected, or a charge total needed a large correction, the bill is flagged with a clear red banner explaining what looked wrong.',
+      },
+      {
+        type: 'change',
+        text: 'A flagged bill is left unchecked in the save list, so "Save All" skips it automatically until you open it, review the warning, and confirm it yourself.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.13.671',
     date: '2026-07-13',
     title: 'Backup & Restore now protects your bill PDFs',
