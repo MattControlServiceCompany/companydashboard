@@ -1825,7 +1825,6 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
   return result;
 }
 
-
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
 async function _postExtractionVerify(bills, utilityName, rawText) {
