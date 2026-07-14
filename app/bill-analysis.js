@@ -1444,6 +1444,388 @@ function _applyExtractionGates(bills, gateA, gateB) {
   }
 }
 
+// ── kWh QUANTITY WITNESS CORROBORATION (2026-07-14, kWh corruption cascade fix) ──
+// Root cause (Louisburg April 2026 Evergy, Matt's real bills — see
+// docs/dashboardlogic.md 2026-07-14 entry): kWhConsumed / OnPeakKWh / OffPeakKWh
+// were each touched by MULTIPLE sequential correction steps below (meter-table
+// ReadDifference cascade, charge-line consensus, on/off identity subtraction),
+// each trusting only its OWN derivation and silently overwriting whatever an
+// earlier step had already decided — with no step aware of how much evidence
+// backed the value it was about to discard. A WEAK derivation (EndRead −
+// StartRead, no independent self-check) silently overwrote a value that TWO
+// independent charge lines (EER, PTS) had already self-verified against their
+// own printed dollar charges.
+//
+// Fix: gather ALL witnesses for a quantity ONCE, weight self-verified
+// ("STRONG": qty × rate == printed charge, within a cent) witnesses over
+// unverified ("WEAK") ones, decide ONCE, and mark the bill so later steps
+// (Step 1/2/3 below, and the "RE-VALIDATE" pass) treat it as diagnostic-only
+// instead of overwriting the decision. Genuine disagreement REFUSES (gate)
+// instead of guessing — mirrors _decideTotalCorrection()'s shape on
+// fix/extraction-refusal-gates (not yet merged) so the two compose: same
+// b._gateTripped / b._gateReasons contract, additive (never clobbers reasons
+// a dollar gate already wrote).
+const _Q_BUCKET_TOL = 0.005; // 0.5% — tight enough to separate a corrupted OCR
+// digit (Louisburg bill 2's kWh Used column was 0.88% off truth) from the
+// genuine <0.05% rounding noise between rate-derived and read-derived qty.
+const _Q_SELFVERIFY_CENTS = 0.01; // "qty × rate == printed charge, within a cent"
+const _QTY_CORRECTION_PCT_THRESHOLD = 5; // tighter than the $ gates' 15% — kWh
+// corrections are smaller-magnitude (Louisburg bill 4 was a 7.7% silent
+// corruption the dollar gates' thresholds would never have caught).
+
+function _qtySelfVerifies(qty, rate, ocrCharge) {
+  return qty > 0 && rate > 0 && ocrCharge > 0 && Math.abs(qty * rate - ocrCharge) <= _Q_SELFVERIFY_CENTS;
+}
+
+// Buckets witnesses within _Q_BUCKET_TOL of each other (same bucketing pattern
+// already used for the pre-existing kWh charge-line consensus, tightened and
+// extended with self-verification weight). Sorted strongest-cluster-first.
+function _qtyBuckets(witnesses) {
+  const buckets = [];
+  for (const w of witnesses) {
+    if (!(w.value > 0)) continue;
+    const bkt = buckets.find((b2) => Math.abs(b2.value - w.value) / w.value < _Q_BUCKET_TOL);
+    if (bkt) {
+      bkt.items.push(w);
+      if (w.strong) bkt.strongCount++;
+    } else {
+      buckets.push({ value: w.value, items: [w], strongCount: w.strong ? 1 : 0 });
+    }
+  }
+  buckets.sort((a, b2) => b2.strongCount - a.strongCount || b2.items.length - a.items.length);
+  return buckets;
+}
+
+// Mirrors _decideTotalCorrection()'s shape (fix/extraction-refusal-gates,
+// bill-analysis.js ~1523): { hold, apply, corrected, reason, ... }. hold=true
+// means "flag, do not mutate" (REFUSE); apply=true means "safe to correct".
+function _decideQuantityCorrection(fieldName, currentValue, witnesses) {
+  const buckets = _qtyBuckets(witnesses);
+  if (!buckets.length) return { hold: false, apply: false, corrected: null, reason: null, buckets };
+  const winner = buckets[0];
+  const runnerUp = buckets[1];
+  // Within the winning bucket, prefer the STRONG (self-verified) witnesses'
+  // own value over a WEAK witness that merely happened to anchor the bucket
+  // first — e.g. Louisburg bill 2's bucket contains ReadDifference×Multiplier
+  // (weak, 2282.4960) alongside EER/PTS (both strong, exactly 2282.5018); the
+  // corrected figure should be the self-verified one.
+  const strongInWinner = winner.items.filter((w) => w.strong);
+  winner.representative = strongInWinner.length
+    ? strongInWinner.reduce((a, w) => a + w.value, 0) / strongInWinner.length
+    : winner.value;
+  const curInWinner = currentValue > 0 && Math.abs(winner.value - currentValue) / winner.value < _Q_BUCKET_TOL;
+  if (curInWinner) {
+    // Current value already belongs to the strongest cluster — nothing to do.
+    // (Keeps the bill's own printed figure rather than substituting a
+    // near-identical derived one — e.g. Louisburg bill 4 keeps 1053.8400
+    // rather than being "corrected" to EER/PTS's 1053.8354.)
+    return { hold: false, apply: false, corrected: null, reason: null, buckets };
+  }
+  const pctChange = currentValue > 0 ? (Math.abs(winner.representative - currentValue) / currentValue) * 100 : 100;
+  // Ambiguous: top two buckets tie on strong-witness count AND total witness
+  // count (both >0) — no confident winner. Refuse rather than guess.
+  const tied =
+    runnerUp &&
+    winner.strongCount === runnerUp.strongCount &&
+    winner.items.length === runnerUp.items.length &&
+    winner.strongCount > 0;
+  if (tied) {
+    return {
+      hold: true,
+      apply: false,
+      corrected: null,
+      buckets,
+      pctChange,
+      reason:
+        fieldName +
+        ': witnesses disagree with no confident winner (' +
+        winner.items.map((w) => w.source + '=' + w.value.toFixed(4)).join(', ') +
+        ' vs ' +
+        runnerUp.items.map((w) => w.source + '=' + w.value.toFixed(4)).join(', ') +
+        ') — refusing to guess, verify against the source PDF',
+    };
+  }
+  if (winner.strongCount === 0) {
+    // No self-verified witness backs the correction — too weak to auto-apply.
+    return {
+      hold: true,
+      apply: false,
+      corrected: null,
+      buckets,
+      pctChange,
+      reason:
+        fieldName +
+        ': only unverified witnesses (' +
+        winner.items.map((w) => w.source).join(', ') +
+        ') disagree with the extracted value (' +
+        currentValue.toFixed(4) +
+        ') by ' +
+        pctChange.toFixed(1) +
+        '% — refusing to guess, verify against the source PDF',
+    };
+  }
+  if (pctChange > _QTY_CORRECTION_PCT_THRESHOLD) {
+    return {
+      hold: true,
+      apply: false,
+      corrected: winner.representative,
+      buckets,
+      pctChange,
+      reason:
+        fieldName +
+        ': self-verified witnesses (' +
+        winner.items
+          .filter((w) => w.strong)
+          .map((w) => w.source)
+          .join(', ') +
+        ') indicate ' +
+        winner.representative.toFixed(4) +
+        ', a ' +
+        pctChange.toFixed(1) +
+        '% change from the extracted ' +
+        currentValue.toFixed(4) +
+        ' — exceeds the ' +
+        _QTY_CORRECTION_PCT_THRESHOLD +
+        '% auto-apply threshold, held for manual confirmation',
+    };
+  }
+  return { hold: false, apply: true, corrected: winner.representative, buckets, pctChange, reason: null };
+}
+
+// Gathers every witness to kWhConsumed's true value. Called BEFORE the meter-
+// table ReadDifference/EndRead-StartRead cascade below mutates anything, so
+// witness (a)/(b) reflect the bill's ORIGINAL printed figures.
+function _gatherKwhWitnesses(b, pf) {
+  const witnesses = [];
+  const printedKwh = pf(b.kWhConsumed);
+  // (a) printed "kWh Used" meter-table column, as extracted (WEAK alone — no
+  // independent self-check — but see (b), which can promote it to STRONG).
+  if (printedKwh > 0) witnesses.push({ source: 'printed kWh Used', value: printedKwh, strong: false });
+  // (b) printed ReadDifference × MeterMultiplier. Uses the PRINTED
+  // ReadDifference column, NOT a recomputation from EndRead/StartRead —
+  // ReadDifference, MeterMultiplier and kWh Used are three INDEPENDENTLY
+  // OCR'd meter-table columns; if all three agree that is real corroboration.
+  // Louisburg bill 4: printed ReadDifference (13.1730) × Multiplier (80) =
+  // 1053.84 = printed kWh Used — agrees, so BOTH promoted to STRONG, while
+  // EndRead(1728.5289)/StartRead(1716.3659) were the actual OCR-garbled reads.
+  const rd = pf(b.ReadDifference);
+  const mult = pf(b.MeterMultiplier);
+  if (rd > 0 && mult > 0) {
+    const v = rd * mult;
+    const agreesWithPrinted = printedKwh > 0 && Math.abs(v - printedKwh) / v < 0.002;
+    witnesses.push({ source: 'ReadDifference×Multiplier', value: v, strong: agreesWithPrinted });
+    if (agreesWithPrinted && witnesses[0] && witnesses[0].source === 'printed kWh Used') witnesses[0].strong = true;
+  }
+  // (c) EndRead − StartRead × MeterMultiplier — WEAK: no independent
+  // self-check possible on raw meter reads. This is exactly the derivation
+  // that silently overwrote a correct kWh Used column in production
+  // (Louisburg bill 4: EndRead/StartRead OCR was wrong while the printed
+  // ReadDifference column was correct).
+  const endR = pf(b.EndRead);
+  const startR = pf(b.StartRead);
+  if (endR > 0 && startR > 0 && endR > startR && mult > 0) {
+    witnesses.push({ source: 'EndRead−StartRead×Multiplier', value: (endR - startR) * mult, strong: false });
+  }
+  // (d)/(e) EER/PTS charge-implied qty — STRONG only when it self-verifies
+  // against its OWN printed charge.
+  for (const key of ['EERCharge', 'PTSCharge']) {
+    const r = b._rates && b._rates[key];
+    if (!r || !r.parts || !r.parts.length) continue;
+    const qty = r.parts.reduce((a, p) => a + (p.qty || 0), 0);
+    if (!(qty > 0)) continue;
+    const strong = r.rate > 0 && _qtySelfVerifies(qty, r.rate, pf(b[key]));
+    witnesses.push({ source: key, value: qty, strong });
+  }
+  // (f) ECA-parts-sum-implied qty — only trust the sum when EVERY part has
+  // both qty and rate (a null-qty part, as on Louisburg bill 4, means the sum
+  // is a partial-period figure, not the full-period total).
+  const ecaR = b._rates && b._rates.ECACharge;
+  if (ecaR && ecaR.parts && ecaR.parts.length && ecaR.parts.every((p) => p.qty > 0 && p.rate > 0)) {
+    const qty = ecaR.parts.reduce((a, p) => a + p.qty, 0);
+    const computedTotal = ecaR.parts.reduce((a, p) => a + p.qty * p.rate, 0);
+    const strong = Math.abs(computedTotal - pf(b.ECACharge)) <= _Q_SELFVERIFY_CENTS;
+    witnesses.push({ source: 'ECACharge', value: qty, strong });
+  }
+  // (g) OnPeak + OffPeak charge-implied sum — STRONG only if BOTH legs
+  // self-verify individually (a single garbled leg must not promote the sum).
+  const onR = b._rates && b._rates.EnergyOnPeakCharge;
+  const offR = b._rates && b._rates.EnergyOffPeakCharge;
+  if (onR && offR) {
+    const onQty = (onR.parts || []).reduce((a, p) => a + (p.qty || 0), 0);
+    const offQty = (offR.parts || []).reduce((a, p) => a + (p.qty || 0), 0);
+    if (onQty > 0 && offQty > 0) {
+      const onStrong = onR.rate > 0 && _qtySelfVerifies(onQty, onR.rate, pf(b.EnergyOnPeakCharge));
+      const offStrong = offR.rate > 0 && _qtySelfVerifies(offQty, offR.rate, pf(b.EnergyOffPeakCharge));
+      witnesses.push({ source: 'On+Off peak sum', value: onQty + offQty, strong: onStrong && offStrong });
+    }
+  }
+  return witnesses;
+}
+
+// Decides OnPeakKWh/OffPeakKWh AFTER kWhConsumed has already been
+// corroborated. Each leg's OWN charge-line self-check (qty × rate == printed
+// EnergyOnPeakCharge/EnergyOffPeakCharge) outranks a subtraction-from-total
+// identity — promoting the pattern that already existed (as an after-the-fact
+// check) at energy-savings.js:3817-3841 and bill-analysis.js Step 3 into the
+// PRIMARY derivation, run once, here.
+//
+// Reads on/off qty from b._rates[...].parts (the ORIGINAL charge-line qty
+// captured once during extraction) rather than b.OnPeakKWh/b.OffPeakKWh —
+// those fields may ALREADY have been overwritten by energy-savings.js's own
+// identity fallback (its "OnPeakKWh + OffPeakKWh should equal kWhConsumed"
+// invariant check, which has the exact same blind-subtraction flaw this
+// function exists to replace). b._rates[...].parts.qty is untouched by that
+// fallback, so it's the one reliable source for "what did the bill actually
+// print here" even when the field has already been clobbered upstream.
+//
+// kwhHeld=true means the kWhConsumed witness decision itself was
+// inconclusive (gated, not applied) — deriving one leg from an unresolved
+// total would compound the uncertainty, so in that case this function may
+// only confirm-or-gate, never mutate.
+function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
+  const onR = b._rates && b._rates.EnergyOnPeakCharge;
+  const offR = b._rates && b._rates.EnergyOffPeakCharge;
+  const onQtyFromRates = onR && onR.parts && onR.parts.length ? onR.parts.reduce((a, p) => a + (p.qty || 0), 0) : 0;
+  const offQtyFromRates =
+    offR && offR.parts && offR.parts.length ? offR.parts.reduce((a, p) => a + (p.qty || 0), 0) : 0;
+  const onQty = onQtyFromRates > 0 ? onQtyFromRates : pf(b.OnPeakKWh);
+  const offQty = offQtyFromRates > 0 ? offQtyFromRates : pf(b.OffPeakKWh);
+  const onVerified = !!(onR && onR.rate > 0 && _qtySelfVerifies(onQty, onR.rate, pf(b.EnergyOnPeakCharge)));
+  const offVerified = !!(offR && offR.rate > 0 && _qtySelfVerifies(offQty, offR.rate, pf(b.EnergyOffPeakCharge)));
+  const result = { onCorrection: null, offCorrection: null, gate: null };
+
+  // ── SELF-HEAL: restore a field that upstream extraction (energy-savings.js's
+  // own on/off invariant check, which has the identical blind-subtraction
+  // flaw this function replaces) already overwrote with a guess, whenever the
+  // ORIGINAL charge-line qty self-verifies. Runs regardless of whether
+  // kWhConsumed itself is resolved — a self-verified charge-line figure is
+  // independent evidence of what the bill actually printed, and always
+  // outranks a value an earlier identity-subtraction fabricated.
+  const onFieldCur = pf(b.OnPeakKWh);
+  const offFieldCur = pf(b.OffPeakKWh);
+  if (onVerified && onFieldCur > 0 && Math.abs(onFieldCur - onQty) > 0.5) {
+    result.onCorrection = {
+      value: onQty,
+      reason:
+        'OnPeakKWh restored to its self-verified charge-line qty (' +
+        onQty.toFixed(4) +
+        ', verifies against its own $' +
+        pf(b.EnergyOnPeakCharge).toFixed(2) +
+        ' charge) — the extracted field (' +
+        onFieldCur.toFixed(4) +
+        ') had already been overwritten by an earlier identity-subtraction guess',
+    };
+  }
+  if (offVerified && offFieldCur > 0 && Math.abs(offFieldCur - offQty) > 0.5) {
+    result.offCorrection = {
+      value: offQty,
+      reason:
+        'OffPeakKWh restored to its self-verified charge-line qty (' +
+        offQty.toFixed(4) +
+        ', verifies against its own $' +
+        pf(b.EnergyOffPeakCharge).toFixed(2) +
+        ' charge) — the extracted field (' +
+        offFieldCur.toFixed(4) +
+        ') had already been overwritten by an earlier identity-subtraction guess',
+    };
+  }
+  if (result.onCorrection || result.offCorrection) {
+    // A restore already resolves this bill's on/off fields to their
+    // strongest evidence — don't also attempt a kWhConsumed-derived guess for
+    // the other leg in the same pass (avoids double-derivation).
+    return result;
+  }
+
+  if (!(kwhConsumed > 0)) return result;
+  if (onQty > 0 && offQty > 0 && Math.abs(onQty + offQty - kwhConsumed) <= 1) {
+    return result; // already consistent — leave both alone
+  }
+  if (kwhHeld) {
+    // kWhConsumed itself is unresolved — refuse to derive either leg from it.
+    if (onQty > 0 && offQty > 0) {
+      result.gate =
+        'OnPeakKWh (' +
+        onQty.toFixed(4) +
+        ') + OffPeakKWh (' +
+        offQty.toFixed(4) +
+        ') = ' +
+        (onQty + offQty).toFixed(4) +
+        ' but kWhConsumed (' +
+        kwhConsumed.toFixed(4) +
+        ') is itself unresolved — refusing to derive either leg from a disputed total, verify against the source PDF';
+    }
+    return result;
+  }
+  if (onVerified && !offVerified) {
+    const derivedOff = kwhConsumed - onQty;
+    if (derivedOff > 0 && Math.abs(derivedOff - offQty) > 0.5) {
+      result.offCorrection = {
+        value: derivedOff,
+        reason:
+          'OffPeakKWh derived from corroborated kWhConsumed (' +
+          kwhConsumed.toFixed(4) +
+          ') minus self-verified OnPeakKWh (' +
+          onQty.toFixed(4) +
+          ', verifies against its own $' +
+          pf(b.EnergyOnPeakCharge).toFixed(2) +
+          ' charge) = ' +
+          derivedOff.toFixed(4),
+      };
+    }
+    return result;
+  }
+  if (offVerified && !onVerified) {
+    const derivedOn = kwhConsumed - offQty;
+    if (derivedOn > 0 && Math.abs(derivedOn - onQty) > 0.5) {
+      result.onCorrection = {
+        value: derivedOn,
+        reason:
+          'OnPeakKWh derived from corroborated kWhConsumed (' +
+          kwhConsumed.toFixed(4) +
+          ') minus self-verified OffPeakKWh (' +
+          offQty.toFixed(4) +
+          ', verifies against its own $' +
+          pf(b.EnergyOffPeakCharge).toFixed(2) +
+          ' charge) = ' +
+          derivedOn.toFixed(4),
+      };
+    }
+    return result;
+  }
+  if (onVerified && offVerified) {
+    // Both self-verify individually but don't sum to kWhConsumed — the
+    // corroborated total is what's in question, not on/off. Flag, don't guess.
+    if (onQty > 0 && offQty > 0) {
+      result.gate =
+        'OnPeakKWh (' +
+        onQty.toFixed(4) +
+        ') and OffPeakKWh (' +
+        offQty.toFixed(4) +
+        ') both self-verify against their own charge lines but sum to ' +
+        (onQty + offQty).toFixed(4) +
+        ', not kWhConsumed (' +
+        kwhConsumed.toFixed(4) +
+        ') — verify against the source PDF';
+    }
+    return result;
+  }
+  // Neither self-verifies — too weak to pick a side confidently.
+  if (onQty > 0 && offQty > 0 && Math.abs(onQty + offQty - kwhConsumed) > 1) {
+    result.gate =
+      'OnPeakKWh (' +
+      onQty.toFixed(4) +
+      ') + OffPeakKWh (' +
+      offQty.toFixed(4) +
+      ') = ' +
+      (onQty + offQty).toFixed(4) +
+      ', not kWhConsumed (' +
+      kwhConsumed.toFixed(4) +
+      '), and neither self-verifies against its own charge line — refusing to guess, verify against the source PDF';
+  }
+  return result;
+}
+
+
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
 async function _postExtractionVerify(bills, utilityName, rawText) {
@@ -2272,49 +2654,57 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const m = Math.max(...r.parts.map((p) => p.qty || 0));
           return m > 0 ? m : null;
         };
-        // Collect implied kWh from each charge line that spans the full period
-        const kwhImplied = [];
-        for (const key of ['PTSCharge', 'EERCharge', 'ECACharge']) {
-          const q = getPartsQtySum(key);
-          if (q) kwhImplied.push({ source: key, value: q });
-        }
-        // Energy On+Off peak sum (both may exist; total = on + off)
-        const onQ = getPartsQtySum('EnergyOnPeakCharge') || 0;
-        const offQ = getPartsQtySum('EnergyOffPeakCharge') || 0;
-        if (onQ + offQ > 0) kwhImplied.push({ source: 'Energy On+Off', value: onQ + offQ });
-        // Find the mode (most common value within 2% tolerance) — gives a robust consensus
-        const consensusKwh = (() => {
-          if (kwhImplied.length < 2) return kwhImplied[0]?.value || null;
-          const buckets = [];
-          for (const item of kwhImplied) {
-            const bkt = buckets.find((b2) => Math.abs(b2.value - item.value) / item.value < 0.02);
-            if (bkt) {
-              bkt.count++;
-              bkt.sources.push(item.source);
-            } else {
-              buckets.push({ value: item.value, count: 1, sources: [item.source] });
-            }
+        // ── kWh QUANTITY CORROBORATION (single decision, replaces the former
+        // charge-line-only consensus below AND locks kWhConsumed so the
+        // meter-table ReadDifference cascade (Step 1/2) and the on/off-peak
+        // identity cascade (Step 3 + the later RE-VALIDATE pass) cannot
+        // silently overwrite it — see the corroboration functions above
+        // _postExtractionVerify for the full witness list and reasoning. ──
+        const kwhWitnesses = _gatherKwhWitnesses(b, pf);
+        if (kwhWitnesses.length) {
+          const curKwh0 = pf(b.kWhConsumed);
+          const kwhDecision = _decideQuantityCorrection('kWhConsumed', curKwh0, kwhWitnesses);
+          b._kwhConsumedLocked = true; // nothing downstream may overwrite kWhConsumed after this
+          if (kwhDecision.apply) {
+            const strongSources = kwhDecision.buckets[0].items
+              .filter((w) => w.strong)
+              .map((w) => w.source)
+              .join(', ');
+            b['_auto_corrected_kWhConsumed'] = {
+              original: b.kWhConsumed,
+              corrected: kwhDecision.corrected.toFixed(4),
+              reason: 'Corroborated from self-verified witnesses (' + strongSources + ')',
+            };
+            b.kWhConsumed = kwhDecision.corrected.toFixed(4);
+          } else if (kwhDecision.hold) {
+            b._gateTripped = true;
+            b._gateReasons = (Array.isArray(b._gateReasons) ? b._gateReasons : []).concat([kwhDecision.reason]);
           }
-          buckets.sort((a, b2) => b2.count - a.count);
-          return buckets[0].count >= 2 ? buckets[0].value : null;
-        })();
-        // Decide whether current kWhConsumed is suspect
-        const curKwh = pf(b.kWhConsumed);
-        const kwhOutOfRange = curKwh > 0 && (curKwh > 500000 || curKwh < 1);
-        const kwhOffFromConsensus = consensusKwh && curKwh > 0 && Math.abs(curKwh - consensusKwh) / consensusKwh > 0.05;
-        if (consensusKwh && (kwhOutOfRange || kwhOffFromConsensus || !curKwh)) {
-          b['_auto_corrected_kWhConsumed'] = {
-            original: b.kWhConsumed,
-            corrected: consensusKwh.toFixed(4),
-            reason:
-              'Cross-validated from charge line qty consensus (' +
-              kwhImplied
-                .filter((x) => Math.abs(x.value - consensusKwh) / consensusKwh < 0.02)
-                .map((x) => x.source)
-                .join(', ') +
-              ')',
-          };
-          b.kWhConsumed = consensusKwh.toFixed(4);
+          // On/Off-peak: decided AFTER kWhConsumed is locked, so both use the
+          // SAME corroborated total instead of a stale pre-correction value
+          // (the exact bug pattern in energy-savings.js:3742-3763).
+          const onoffDecision = _decideOnOffPeakKWh(b, pf, pf(b.kWhConsumed), kwhDecision.hold);
+          if (onoffDecision.onCorrection) {
+            b['_auto_corrected_OnPeakKWh'] = {
+              original: b.OnPeakKWh,
+              corrected: onoffDecision.onCorrection.value.toFixed(4),
+              reason: onoffDecision.onCorrection.reason,
+            };
+            b.OnPeakKWh = onoffDecision.onCorrection.value.toFixed(4);
+          }
+          if (onoffDecision.offCorrection) {
+            b['_auto_corrected_OffPeakKWh'] = {
+              original: b.OffPeakKWh,
+              corrected: onoffDecision.offCorrection.value.toFixed(4),
+              reason: onoffDecision.offCorrection.reason,
+            };
+            b.OffPeakKWh = onoffDecision.offCorrection.value.toFixed(4);
+          }
+          if (onoffDecision.gate) {
+            b._gateTripped = true;
+            b._gateReasons = (Array.isArray(b._gateReasons) ? b._gateReasons : []).concat([onoffDecision.gate]);
+          }
+          b._onOffPeakLocked = true;
         }
         // ActualKW recovery rule (Evergy LGS Secondary minimum 200 kW billed demand):
         //   BilledKW = max(ActualKW, 200)
@@ -2575,6 +2965,25 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // silently refill ReadDifference from kWhConsumed the instant it's nulled.
         const _isMultiMeterKwh0 = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
 
+        // kWh QUANTITY CORROBORATION GUARD: once kWhConsumed has been locked
+        // by the witness corroboration above, a ReadDifference recompute that
+        // would conflict with the locked total (computedDiff × Multiplier far
+        // from the corroborated kWhConsumed) is flagged diagnostically — NOT
+        // blocked. ReadDifference still recomputes from EndRead/StartRead as
+        // before (a real, independently-OCR'd bill like Louisburg bill 3 can
+        // have a genuine meter-read/kWh-scale mismatch — that's a PRE-EXISTING
+        // discrepancy the app already surfaces via _kwhCrossCheck, not
+        // evidence the ReadDifference recompute itself is wrong; blocking it
+        // caused ReadDifference to fall through to a worse kWh/Multiplier
+        // fallback in testing). What matters is that Step 2 below (gated on
+        // b._kwhConsumedLocked) can never let this recompute feed back into
+        // overwriting the already-corroborated kWhConsumed.
+        const _lockedKwhForDiff = b._kwhConsumedLocked ? pf(b.kWhConsumed) : 0;
+        const _diffConflictsWithLocked = (diffVal) =>
+          _lockedKwhForDiff > 0 &&
+          multNow > 0 &&
+          Math.abs(diffVal * multNow - _lockedKwhForDiff) / _lockedKwhForDiff > _Q_BUCKET_TOL;
+
         // Step 1: ReadDifference = EndRead - StartRead (authoritative)
         // For meter rollovers (endR < startR but near a boundary), compute the
         // wrap-around usage: boundary + 1 - startR + endR (Feature 0de6c188).
@@ -2585,6 +2994,13 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               const rolloverDiff = _rvB + 1 - startR + endR;
               if (rolloverDiff > 0 && rolloverDiff < _rvB) {
                 if (!curDiff || Math.abs(curDiff - rolloverDiff) > 0.005) {
+                  if (_diffConflictsWithLocked(rolloverDiff)) {
+                    b['_meterReadDiscrepancy_ReadDifference'] = {
+                      current: b.ReadDifference,
+                      wouldBe: rolloverDiff.toFixed(4),
+                      reason: 'Meter rollover recompute conflicts with corroborated kWhConsumed — informational only.',
+                    };
+                  }
                   b['_auto_corrected_ReadDifference'] = {
                     original: b.ReadDifference,
                     corrected: rolloverDiff.toFixed(4),
@@ -2614,6 +3030,22 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const computedDiff = endR - startR;
           if (computedDiff > 0 && computedDiff < 1000000) {
             if (!curDiff || Math.abs(curDiff - computedDiff) > 0.005) {
+              if (_diffConflictsWithLocked(computedDiff)) {
+                b['_meterReadDiscrepancy_ReadDifference'] = {
+                  current: b.ReadDifference,
+                  wouldBe: computedDiff.toFixed(4),
+                  reason:
+                    'EndRead (' +
+                    endR +
+                    ') − StartRead (' +
+                    startR +
+                    ') = ' +
+                    computedDiff.toFixed(4) +
+                    ' conflicts with the corroborated kWhConsumed (' +
+                    _lockedKwhForDiff.toFixed(4) +
+                    ') — informational only; kWhConsumed itself is protected (see Step 2 gate below).',
+                };
+              }
               b['_auto_corrected_ReadDifference'] = {
                 original: b.ReadDifference,
                 corrected: computedDiff.toFixed(4),
@@ -2659,7 +3091,26 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // the cascade must not run at all for these bills, not merely be ratio-guarded.
         const _isMultiMeterKwh = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
         const cascadeDiff = pf(b.ReadDifference);
-        if (!_isMultiMeterKwh && cascadeDiff > 0 && multNow > 0) {
+        // GATE (2026-07-14 kWh corroboration fix): kWhConsumed was already
+        // decided once, with weighted evidence, by the witness corroboration
+        // pass above. If it's locked, this cascade becomes diagnostic-only —
+        // this is the exact step that turned a 7.7%-off ReadDifference (itself
+        // corrupted downstream of Step 1) into a silent kWhConsumed overwrite
+        // on Louisburg bill 4 (1053.84 → 973.04), because the old 10x-ratio
+        // guard only blocks gross corruption, not a plausible-looking 7.7% one.
+        if (b._kwhConsumedLocked) {
+          const _lockedKwh2 = pf(b.kWhConsumed);
+          if (cascadeDiff > 0 && multNow > 0) {
+            const expectedKwh2 = cascadeDiff * multNow;
+            if (_lockedKwh2 > 0 && Math.abs(expectedKwh2 - _lockedKwh2) / _lockedKwh2 > _Q_BUCKET_TOL) {
+              b['_meterReadDiscrepancy_kWhConsumed'] = {
+                current: b.kWhConsumed,
+                readDifferenceTimesMultiplier: expectedKwh2.toFixed(4),
+                reason: 'Meter-table arithmetic disagrees with the corroborated kWhConsumed — flagged, not applied.',
+              };
+            }
+          }
+        } else if (!_isMultiMeterKwh && cascadeDiff > 0 && multNow > 0) {
           const expectedKwh = cascadeDiff * multNow;
           const curKwhForChain = pf(b.kWhConsumed);
           const _kwhSane = expectedKwh > 0 && expectedKwh < 2000000;
@@ -2682,35 +3133,42 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         }
 
         // Step 3: On-Peak kWh = kWhConsumed - Off-Peak kWh (cascade)
-        const chainKwh = pf(b.kWhConsumed);
-        const chainOffPk = pf(b.OffPeakKWh);
-        const chainOnPk = pf(b.OnPeakKWh);
-        if (chainKwh > 0 && chainOffPk > 0 && chainOnPk > 0) {
-          const expectedOnPk = chainKwh - chainOffPk;
-          if (expectedOnPk > 0 && Math.abs(chainOnPk - expectedOnPk) > 0.5) {
-            // Cross-check: does On-Peak charge / On-Peak rate agree?
-            const onRi = b._rates && b._rates.EnergyOnPeakCharge;
-            const onCharge = pf(b.EnergyOnPeakCharge);
-            let useExpected = true;
-            if (onRi && onRi.rate > 0 && onCharge > 0) {
-              const rateImplied = onCharge / onRi.rate;
-              if (Math.abs(rateImplied - chainOnPk) < Math.abs(rateImplied - expectedOnPk)) {
-                useExpected = false; // rate×qty agrees with current On-Peak, not the subtraction
+        // GATE: On/Off-peak was already decided once (with self-verification
+        // outranking subtraction) by the witness corroboration pass above.
+        // If locked, skip this cascade entirely — it's the exact step that
+        // (together with the RE-VALIDATE pass further down) re-derived a
+        // wrong On-Peak/Off-Peak split from a since-superseded kWhConsumed.
+        if (!b._onOffPeakLocked) {
+          const chainKwh = pf(b.kWhConsumed);
+          const chainOffPk = pf(b.OffPeakKWh);
+          const chainOnPk = pf(b.OnPeakKWh);
+          if (chainKwh > 0 && chainOffPk > 0 && chainOnPk > 0) {
+            const expectedOnPk = chainKwh - chainOffPk;
+            if (expectedOnPk > 0 && Math.abs(chainOnPk - expectedOnPk) > 0.5) {
+              // Cross-check: does On-Peak charge / On-Peak rate agree?
+              const onRi = b._rates && b._rates.EnergyOnPeakCharge;
+              const onCharge = pf(b.EnergyOnPeakCharge);
+              let useExpected = true;
+              if (onRi && onRi.rate > 0 && onCharge > 0) {
+                const rateImplied = onCharge / onRi.rate;
+                if (Math.abs(rateImplied - chainOnPk) < Math.abs(rateImplied - expectedOnPk)) {
+                  useExpected = false; // rate×qty agrees with current On-Peak, not the subtraction
+                }
               }
-            }
-            if (useExpected) {
-              b['_auto_corrected_OnPeakKWh'] = {
-                original: b.OnPeakKWh,
-                corrected: expectedOnPk.toFixed(4),
-                reason:
-                  'Cascaded: kWhConsumed (' +
-                  chainKwh.toFixed(4) +
-                  ') − OffPeakKWh (' +
-                  chainOffPk.toFixed(4) +
-                  ') = ' +
-                  expectedOnPk.toFixed(4),
-              };
-              b.OnPeakKWh = expectedOnPk.toFixed(4);
+              if (useExpected) {
+                b['_auto_corrected_OnPeakKWh'] = {
+                  original: b.OnPeakKWh,
+                  corrected: expectedOnPk.toFixed(4),
+                  reason:
+                    'Cascaded: kWhConsumed (' +
+                    chainKwh.toFixed(4) +
+                    ') − OffPeakKWh (' +
+                    chainOffPk.toFixed(4) +
+                    ') = ' +
+                    expectedOnPk.toFixed(4),
+                };
+                b.OnPeakKWh = expectedOnPk.toFixed(4);
+              }
             }
           }
         }
@@ -2948,7 +3406,23 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             // Matches Step 2's _wouldClobber above; the original one-sided version only
             // blocked growth, which is exactly how the multi-meter clobber bug shipped.
             const _wouldClobber2 = kC > 0 && (expected / kC > 10 || kC / expected > 10);
-            if (_expectedSane && !_wouldClobber2 && mismatch > 1 && mismatch / expected > 0.001) {
+            // GATE (2026-07-14 kWh corroboration fix): this sibling arithmetic-
+            // recovery pass ran the SAME ReadDifference×Multiplier cascade as
+            // Step 2 above, just scoped to multi-bill PDFs — and reintroduced
+            // the identical Louisburg bill 4 corruption (973.04 overwriting the
+            // corroborated 1053.84) even after Step 2 itself was gated. Once
+            // kWhConsumed is locked by the witness corroboration pass, this
+            // must be diagnostic-only too.
+            if (b._kwhConsumedLocked) {
+              if (_expectedSane && mismatch > 1 && mismatch / expected > 0.001) {
+                b['_meterReadDiscrepancy_kWhConsumed'] = b['_meterReadDiscrepancy_kWhConsumed'] || {
+                  current: b.kWhConsumed,
+                  readDifferenceTimesMultiplier: expected.toFixed(4),
+                  reason:
+                    'Cross-bill meter-table arithmetic disagrees with the corroborated kWhConsumed — flagged, not applied.',
+                };
+              }
+            } else if (_expectedSane && !_wouldClobber2 && mismatch > 1 && mismatch / expected > 0.001) {
               b['_auto_corrected_kWhConsumed'] = {
                 original: b.kWhConsumed,
                 corrected: expected.toFixed(4),
@@ -3318,11 +3792,19 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     }
 
     // ── RE-VALIDATE: OnPeakKWh + OffPeakKWh = kWhConsumed ──
-    // The extractor corrects On-Peak kWh early, but _postExtractionVerify may
-    // later change kWhConsumed (via charge-line consensus or meter-table identity).
-    // Re-check the identity and re-correct On-Peak/Off-Peak to match the final kWhConsumed.
+    // GATE (2026-07-14 kWh corroboration fix): this pass's unconditional
+    // subtraction fallback ("if (!fixed) { derivedOn = total - offPk; ...
+    // apply unconditionally }") is exactly what corrupted Louisburg bill 4 in
+    // production — when kWhConsumed itself was wrong, NEITHER charge-based
+    // re-derivation below can reconcile (both require the FULL identity to
+    // hold within $1, which fails whenever total is the actual error), so
+    // this always fell through to blind subtraction and overwrote an
+    // On-Peak kWh that verified almost exactly against its own printed
+    // charge (251.4974 vs rate-implied 251.3792). Skip entirely once the
+    // witness corroboration pass above has already decided On/Off-peak.
     if (utilityName === 'Evergy') {
       for (const b of bills) {
+        if (b._onOffPeakLocked) continue;
         const onPk = pf(b.OnPeakKWh);
         const offPk = pf(b.OffPeakKWh);
         const total = pf(b.kWhConsumed);
