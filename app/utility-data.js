@@ -3677,9 +3677,15 @@ function toggleUdNav(layoutId) {
   const layout = document.getElementById(layoutId);
   if (!layout) return;
   const isCollapsed = layout.classList.toggle('nav-collapsed');
-  // Flip the arrow on the collapse tab
+  // Flip the arrow and the tooltip/aria-label on the collapse tab so the control always
+  // describes the action it will perform next (fix/buildings-panel-expand, 2026-07-14).
   const tab = layout.querySelector('.ud-collapse-tab');
-  if (tab) tab.textContent = isCollapsed ? '▶' : '◀';
+  if (tab) {
+    tab.textContent = isCollapsed ? '▶' : '◀';
+    const label = isCollapsed ? 'Show buildings' : 'Hide buildings';
+    tab.title = label;
+    tab.setAttribute('aria-label', label);
+  }
 }
 
 function toggleNormTip(btn) {
