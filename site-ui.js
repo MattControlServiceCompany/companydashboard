@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.13.668'; // deployed 2026-07-10 (fix: Audit Report visual pass — footer dedup, building heading, table borders, footer image squish fix)
+  var CH_VERSION = 'v2026.07.13.669'; // deployed 2026-07-13 (fix P0: multi-meter Evergy bills silently saved 58% less kWh than the bill shows — StartRead/EndRead/ReadDifference now null for multi-meter bills)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
