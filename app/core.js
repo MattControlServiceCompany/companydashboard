@@ -1095,7 +1095,7 @@ function renderDetail(p) {
                 </div>
                 <!-- Right: meter detail -->
                 <div class="ud-detail-col">
-                  <div class="ud-collapse-tab" onclick="toggleUdNav('projUdLayout-${p.id}')" title="Toggle buildings panel">◀</div>
+                  <div class="ud-collapse-tab" onclick="toggleUdNav('projUdLayout-${p.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleUdNav('projUdLayout-${p.id}')}" role="button" tabindex="0" title="Hide buildings" aria-label="Hide buildings">◀</div>
                   <div id="proj-ud-detail-hdr-${p.id}" style="display:none;flex-shrink:0;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1);align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
                     <div>
                       <div id="proj-ud-hdr-title-${p.id}" style="font-size:15px;font-weight:700"></div>
