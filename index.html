@@ -723,6 +723,35 @@
         color: var(--teal);
         font-size: 14px;
       }
+      /* Loud, persistent variant for backup/restore PDF failures — no
+         auto-hide timer, must be dismissed explicitly (see _pdfNotice). */
+      .toast-error {
+        border-color: var(--red);
+        max-width: 420px;
+        align-items: flex-start;
+      }
+      .toast-error .t-ic {
+        color: var(--red);
+      }
+      #toastMsg {
+        flex: 1;
+        min-width: 0;
+      }
+      .toast-x {
+        background: none;
+        border: none;
+        color: inherit;
+        font-size: 14px;
+        cursor: pointer;
+        margin-left: 4px;
+        opacity: 0.7;
+        padding: 0;
+        line-height: 1;
+        flex-shrink: 0;
+      }
+      .toast-x:hover {
+        opacity: 1;
+      }
 
       /* ── SETTINGS MODAL ── */
       .settings-overlay {
@@ -2576,6 +2605,72 @@
           });
         });
       }
+      // ── Loud, honest backup/restore reporting ──────────────────────────
+      // showToast() is undefined in index.html's scope — site-ui.js (which
+      // defines it) is only ever fetch()'d here as plain text to read its
+      // version string a few lines down, never executed as a <script>. Every
+      // "if (typeof showToast === 'function') showToast(...)" call in this
+      // file was therefore a silent no-op — including the original 'Backup
+      // downloaded' / 'Restored — reloading...' messages. For a one-shot
+      // data migration that is exactly the failure mode that can't be
+      // tolerated, so backup/restore get their own small notice function
+      // built directly on the existing #toast markup instead of depending
+      // on a function that was never actually wired up.
+      function _pdfNotice(msg, isError) {
+        var el = document.getElementById('toast');
+        var msgEl = document.getElementById('toastMsg');
+        if (!el || !msgEl) {
+          if (isError) alert(msg);
+          return;
+        }
+        msgEl.textContent = msg;
+        var icEl = el.querySelector('.t-ic');
+        if (icEl) icEl.textContent = isError ? '⚠' : '✓';
+        clearTimeout(window._pdfToastTimer);
+        var existingX = el.querySelector('.toast-x');
+        if (existingX) existingX.remove();
+        if (isError) {
+          el.className = 'toast toast-show toast-error';
+          // Persistent — no auto-hide timer. A real backup/restore failure
+          // must never be missed because a generic toast auto-cleared
+          // itself while the user looked away.
+          var x = document.createElement('button');
+          x.className = 'toast-x';
+          x.setAttribute('aria-label', 'Dismiss');
+          x.textContent = '×';
+          x.onclick = function () {
+            el.className = 'toast';
+          };
+          el.appendChild(x);
+        } else {
+          el.className = 'toast toast-show';
+          window._pdfToastTimer = setTimeout(function () {
+            el.className = 'toast';
+          }, 5000);
+        }
+      }
+
+      // A restore reloads the page to pick up the restored data, which would
+      // wipe out any toast shown beforehand. processRestoreFile() stashes its
+      // result in sessionStorage right before reloading; this surfaces it
+      // once the page comes back so a PDF restore failure can't be lost in
+      // the reload.
+      (function () {
+        try {
+          var err = sessionStorage.getItem('ch_pdf_restore_error');
+          if (err) {
+            sessionStorage.removeItem('ch_pdf_restore_error');
+            _pdfNotice(err, true);
+            return;
+          }
+          var ok = sessionStorage.getItem('ch_pdf_restore_ok');
+          if (ok) {
+            sessionStorage.removeItem('ch_pdf_restore_ok');
+            _pdfNotice(ok, false);
+          }
+        } catch (e) {}
+      })();
+
       async function siteBackup() {
         // Get all DB data (IndexedDB-backed)
         var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
@@ -2592,12 +2687,26 @@
         // NOT covered by DB.getAll()/localStorage above — pull them in under their own
         // top-level key so the backup format stays self-describing and old readers
         // that don't know about it just see one extra key.
+        //
+        // This read must NEVER fail silently: a backup that claims success while
+        // actually containing zero bill PDFs (because the read threw) is worse
+        // than no backup at all — it tells the user their data is safe when the
+        // most irreplaceable part of it (656 original bill PDFs, no other copy)
+        // is missing. _pdfStoreMeta travels inside the file itself so a later
+        // restore can tell "no PDFs, none existed" apart from "no PDFs, the
+        // read failed" and refuse to pretend a truncated backup is complete.
+        var pdfOk = true;
+        var pdfErr = null;
         try {
           data._pdfStore = await _pdfBackupGetAll();
         } catch (e) {
           console.warn('PDF store backup failed:', e);
           data._pdfStore = {};
+          pdfOk = false;
+          pdfErr = (e && e.message) || String(e);
         }
+        var pdfCount = Object.keys(data._pdfStore).length;
+        data._pdfStoreMeta = { ok: pdfOk, count: pdfCount, error: pdfErr };
         var d = new Date();
         var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
         var filename = 'CompanyHub-localdatafile-' + ds + '.json';
@@ -2619,7 +2728,19 @@
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
         }, 1500);
-        if (typeof showToast === 'function') showToast('Backup downloaded');
+        if (pdfOk) {
+          _pdfNotice(
+            'Backup downloaded — ' + pdfCount + ' bill PDF' + (pdfCount === 1 ? '' : 's') + ' included',
+            false,
+          );
+        } else {
+          _pdfNotice(
+            'Backup downloaded, but bill PDFs FAILED to export (0 included). The rest of your data is in the file — your bill PDFs are NOT. Do not delete your original data source. (' +
+              pdfErr +
+              ')',
+            true,
+          );
+        }
       }
       function processRestoreFile(file) {
         if (!file) return;
@@ -2636,7 +2757,12 @@
             // have this key — pdfPayload stays {} and the rest of the restore runs
             // exactly as it did before this fix (backward compatible, no data loss).
             var pdfPayload = data._pdfStore || {};
+            // Present only on backups made after this fix — tells us whether the
+            // export's own PDF read succeeded (see siteBackup). Absent on older
+            // backup files, which is the normal/expected backward-compat case.
+            var pdfMeta = data._pdfStoreMeta || null;
             delete data._pdfStore;
+            delete data._pdfStoreMeta;
             // Keys that must stay in localStorage (read synchronously before DB warms)
             var lsOnlyKeys = [
               'ch_settings',
@@ -2673,24 +2799,61 @@
             // Restore raw bill PDFs into en_pdf_store via the same put() contract
             // pdfStore() uses, then reload only after that write settles so the
             // documents are actually there when the app comes back up.
+            //
+            // Promise.allSettled (not Promise.all/.catch) is deliberate: with
+            // Promise.all, one failed PDF out of 656 rejects the whole batch and
+            // .catch() swallowing that rejection meant EVERY outcome — full
+            // success, partial quota-exceeded failure, or total failure — showed
+            // the identical 'Restored — reloading...' toast. allSettled lets us
+            // count real successes vs failures and tell the user the truth.
             var pdfIds = Object.keys(pdfPayload);
-            var pdfRestore = pdfIds.length
-              ? Promise.all(
+            var pdfTotal = pdfIds.length;
+            var pdfRestore = pdfTotal
+              ? Promise.allSettled(
                   pdfIds.map(function (id) {
                     return _pdfBackupPut(id, pdfPayload[id]);
                   }),
                 )
-              : Promise.resolve();
-            pdfRestore
-              .catch(function (e) {
-                console.warn('PDF store restore failed:', e);
-              })
-              .then(function () {
-                if (typeof showToast === 'function') showToast('Restored — reloading...');
-                setTimeout(function () {
-                  location.reload();
-                }, 1200);
-              });
+              : Promise.resolve([]);
+            pdfRestore.then(function (results) {
+              var pdfOkCount = results.filter(function (r) {
+                return r.status === 'fulfilled';
+              }).length;
+              var pdfFailCount = pdfTotal - pdfOkCount;
+              var sourceWasBad = pdfMeta && pdfMeta.ok === false;
+              var msg, isErr;
+              if (pdfFailCount > 0) {
+                isErr = true;
+                msg =
+                  'Restored, but ' +
+                  pdfFailCount +
+                  ' of ' +
+                  pdfTotal +
+                  ' bill PDF' +
+                  (pdfTotal === 1 ? '' : 's') +
+                  ' FAILED to restore into this browser. Do NOT delete your old copy until this is resolved.';
+              } else if (sourceWasBad) {
+                isErr = true;
+                msg =
+                  "Restored, but this backup file's own bill PDF export failed when it was created — it never actually contained your bill PDFs. Do NOT delete your original data source.";
+              } else if (pdfTotal > 0) {
+                isErr = false;
+                msg = 'Restored — ' + pdfTotal + ' bill PDF' + (pdfTotal === 1 ? '' : 's') + ' restored';
+              } else {
+                isErr = false;
+                msg = 'Restored — reloading...';
+              }
+              // Reload is required to pick up restored data (unchanged from
+              // before this fix) — stash the result so it survives that reload
+              // instead of vanishing with the toast that shows it right now.
+              try {
+                sessionStorage.setItem(isErr ? 'ch_pdf_restore_error' : 'ch_pdf_restore_ok', msg);
+              } catch (e) {}
+              _pdfNotice(msg, isErr);
+              setTimeout(function () {
+                location.reload();
+              }, 1200);
+            });
           } catch (err) {
             if (typeof showToast === 'function') showToast('Invalid backup file');
           }
