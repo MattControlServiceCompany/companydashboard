@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.13.670'; // deployed 2026-07-13 (security: SRI-pinned 5 CDN scripts on energy-department.html + added netlify.toml with security headers)
+  var CH_VERSION = 'v2026.07.13.671'; // deployed 2026-07-13 (backup/restore now include raw bill PDFs, honest success/failure reporting, restore validates file before writing)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,25 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.07.13.671',
+      date: '2026-07-13',
+      title: 'Backup & Restore now protects your bill PDFs',
+      items: [
+        {
+          type: 'feature',
+          text: 'Home page sidebar -> Backup now includes your original bill PDFs, not just the extracted data -- restoring a backup gets everything back, including the source documents.',
+        },
+        {
+          type: 'fix',
+          text: 'Backup and Restore now tell you the truth: if something fails partway through, you will see a real error message instead of a false "success" -- and that message stays on screen even after the page reloads.',
+        },
+        {
+          type: 'change',
+          text: 'Restore now checks that the selected file is a real CompanyHub backup before touching anything -- picking the wrong file is rejected with no changes made, instead of silently overwriting your data.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.30.605',
       date: '2026-06-30',

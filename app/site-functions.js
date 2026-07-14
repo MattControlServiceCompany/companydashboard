@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.13.671',
+    date: '2026-07-13',
+    title: 'Backup & Restore now protects your bill PDFs',
+    items: [
+      {
+        type: 'feature',
+        text: 'Home page sidebar -> Backup now includes your original bill PDFs, not just the extracted data -- restoring a backup gets everything back, including the source documents.',
+      },
+      {
+        type: 'fix',
+        text: 'Backup and Restore now tell you the truth: if something fails partway through, you will see a real error message instead of a false "success" -- and that message stays on screen even after the page reloads.',
+      },
+      {
+        type: 'change',
+        text: 'Restore now checks that the selected file is a real CompanyHub backup before touching anything -- picking the wrong file is rejected with no changes made, instead of silently overwriting your data.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.13.670',
     date: '2026-07-13',
     title: 'Security hardening -- verified CDN libraries and locked-down hosting headers',
