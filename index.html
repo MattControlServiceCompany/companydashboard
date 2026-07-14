@@ -2745,7 +2745,7 @@
       function processRestoreFile(file) {
         if (!file) return;
         if (!file.name.toLowerCase().endsWith('.json')) {
-          if (typeof showToast === 'function') showToast('Please drop a .json backup file');
+          _pdfNotice('Please drop a .json backup file — restore requires a CompanyHub backup .json file.', true);
           return;
         }
         var fr = new FileReader();
@@ -2779,6 +2779,16 @@
               'ch_notifs',
             ];
             var useDB = typeof DB !== 'undefined' && DB.isReady();
+            // Counts keys actually applied to localStorage/DB below. DB.set() writes
+            // its in-memory cache synchronously (see app/db.js) even though the IDB
+            // commit is async, so as soon as this loop starts, each iteration is a
+            // real mutation — there is no way to "undo" it if a later key in the
+            // same file throws (e.g. localStorage quota). The catch block below uses
+            // this count to tell the difference between "nothing was touched" (safe
+            // to call the file simply invalid) and "some keys were already written
+            // before this failed" (existing data may be partially overwritten) —
+            // never assume the former without checking.
+            var keysWritten = 0;
             Object.keys(data).forEach(function (k) {
               var isLsKey = lsOnlyKeys.some(function (p) {
                 return k === p || k.indexOf(p) === 0;
@@ -2795,6 +2805,7 @@
                 }
                 DB.set(k, val);
               }
+              keysWritten++;
             });
             // Restore raw bill PDFs into en_pdf_store via the same put() contract
             // pdfStore() uses, then reload only after that write settles so the
@@ -2855,7 +2866,29 @@
               }, 1200);
             });
           } catch (err) {
-            if (typeof showToast === 'function') showToast('Invalid backup file');
+            var reason = (err && err.message) || String(err);
+            var msg;
+            // keysWritten is undefined if the throw happened before that variable's
+            // declaration was reached (JSON.parse failure, or the file parsing to
+            // something that isn't an object) — in that case nothing was written and
+            // it's honest to say so. If it's a number > 0, the forEach loop above had
+            // already applied that many keys to localStorage/DB before this file
+            // turned out to be bad, so existing data may be partially overwritten and
+            // that must be said plainly instead of reassuring the user it wasn't.
+            if (typeof keysWritten !== 'undefined' && keysWritten > 0) {
+              msg =
+                'Restore failed partway through (' +
+                reason +
+                '). ' +
+                keysWritten +
+                ' item(s) from this file were already written to this browser before the failure — your existing data may be partially overwritten. Do NOT delete your backup source. Check your data, and re-restore from a known-good backup if anything looks wrong.';
+            } else {
+              msg =
+                'Restore failed — this file is not a valid CompanyHub backup (' +
+                reason +
+                '). Your existing data was NOT changed.';
+            }
+            _pdfNotice(msg, true);
           }
         };
         fr.readAsText(file);
@@ -2881,7 +2914,7 @@
         if (window.DB && window.DB.clear) {
           await window.DB.clear();
         }
-        if (typeof showToast === 'function') showToast('Reset — reloading...');
+        _pdfNotice('Reset — reloading...', false);
         setTimeout(function () {
           location.reload();
         }, 1200);
