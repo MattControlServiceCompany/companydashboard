@@ -5182,8 +5182,8 @@ const UTILITY_RULES = [
 
       // ── ServiceAddress ──
       // Constellation site blocks look like:
-      //   "Baker University - 03044T0906"
-      //   "618 8th St, Baldwin City, KS 66006-6010"
+      //   "Example Customer - 00000X0000"
+      //   "123 Main St, Baldwin City, KS 66006-0000"
       // Capture the street line that follows the "Name - SiteID" line.
       //
       // C4 fix: siteText = invoiceHeader + prevTail + siteChunks[i]. The invoiceHeader
@@ -5337,7 +5337,7 @@ const UTILITY_RULES = [
     },
   },
   // ── End Constellation NewEnergy ─────────────────────────────────────────
-  // ── Wood River Energy (Gas Supplier — Spring Hill USD 230) ───────────────
+  // ── Wood River Energy (Gas Supplier — multi-site district account) ───────
   // One consolidated invoice covers 10 service addresses.
   // extractAll() splits into per-building records; aggregate totals are
   // cross-checked but not saved as a separate record.
@@ -5724,7 +5724,7 @@ const UTILITY_RULES = [
           InvoiceNumber,
           CustomerNumber,
           AccountNumber: CustomerNumber,
-          ServiceAddress: 'Spring Hill USD 230 (aggregate)',
+          ServiceAddress: 'Multi-Site District Account (aggregate)',
           BillingPeriodStart,
           BillingPeriodEnd,
           BillDate,
@@ -7630,7 +7630,7 @@ const UTILITY_RULES = [
   {
     name: 'City of Baldwin City',
     // Handles multi-account scanned PDF bills from City of Baldwin City, KS.
-    // Each PDF covers all Baker University accounts — one account per page.
+    // Each PDF covers all of this account holder's sub-accounts — one account per page.
     // Page 1 is typically an email notification — skip it.
     // Commodities: Electric (EL), Water (WA), Sewer (SW). No gas.
     // Verified against 2025-04, 2025-07, 2025-12, 2026-02, 2026-04 bill formats.
