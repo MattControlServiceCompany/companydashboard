@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.13.669'; // deployed 2026-07-13 (fix P0: multi-meter Evergy bills silently saved 58% less kWh than the bill shows — StartRead/EndRead/ReadDifference now null for multi-meter bills)
+  var CH_VERSION = 'v2026.07.13.670'; // deployed 2026-07-13 (security: SRI-pinned 5 CDN scripts on energy-department.html + added netlify.toml with security headers)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

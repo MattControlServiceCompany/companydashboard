@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.13.670',
+    date: '2026-07-13',
+    title: 'Security hardening -- verified CDN libraries and locked-down hosting headers',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department page now verifies the identity of 5 external code libraries it loads (PDF export, Excel export, image capture, and the notes editor) before running them -- protects against a compromised third-party file ever being served in place of the real one.',
+      },
+      {
+        type: 'change',
+        text: 'Added server-level security headers (clickjacking protection, MIME-type sniffing protection) to the production hosting configuration.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.13.668',
     date: '2026-07-13',
     title: 'Report footer -- full brand wave graphic restored',
