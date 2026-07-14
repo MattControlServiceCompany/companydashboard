@@ -2,18 +2,28 @@
 """
 stamp-version.py — Deploy-time version stamper for CompanyHub.
 
-Fetches the live CH_VERSION from GitHub Pages, computes the next
-integer patch number, rewrites site-ui.js CH_VERSION, and rewrites
-ALL ?v= tags in all four HTML files to the new integer.
+Fetches the live CH_VERSION from every deployed host, computes the next
+integer patch number from the PRODUCTION host's patch, rewrites site-ui.js
+CH_VERSION, and rewrites ALL ?v= tags in all four HTML files to the new
+integer.
+
+By default this checks BOTH GitHub Pages and Netlify, since both currently
+deploy from origin/main and their CH_VERSION values should always match —
+a divergence between them is itself a signal that one host's deploy
+silently failed or is lagging. Only the PRODUCTION host (see PRODUCTION_HOST
+below) is treated as a hard failure if unreachable; a stale/unreachable
+non-production host is reported as a warning, not a fatal error.
 
 Usage:
     python scripts/stamp-version.py
     python scripts/stamp-version.py --force-version 524   # offline fallback
+    python scripts/stamp-version.py --live-url <url>      # single-host override
 
 Exit 0 on success. Exit 1 with details on any failure.
 """
 
 import argparse
+import os
 import re
 import sys
 import urllib.request
@@ -25,9 +35,23 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LIVE_SITE_UI_URL = (
-    "https://MattControlServiceCompany.github.io/companydashboard/site-ui.js"
-)
+
+# All hosts this script checks by default. Both deploy from origin/main today,
+# so their CH_VERSION should always agree; a mismatch is worth surfacing.
+HOSTS = {
+    "github_pages": "https://MattControlServiceCompany.github.io/companydashboard/site-ui.js",
+    "netlify": "https://cscdashboard.netlify.app/site-ui.js",
+}
+
+# Which entry in HOSTS is authoritative for computing the next patch number
+# and is treated as a hard failure if unreachable. GitHub Pages IS PRODUCTION
+# TODAY (Netlify cutover has not happened) and has a known history of the
+# deploy step hanging/failing (~10 min hangs, failed 3x in a row — logged
+# backlog item), which is exactly the failure mode this check exists to catch.
+#
+# >>> FLIP THIS ONE LINE AT CUTOVER TIME <<< (and nothing else needs to change)
+PRODUCTION_HOST = "github_pages"
+
 SITE_UI_JS = REPO_ROOT / "site-ui.js"
 HTML_FILES = [
     REPO_ROOT / "energy-department.html",
@@ -46,37 +70,47 @@ VQ_PATTERN = re.compile(
 # ---------------------------------------------------------------------------
 
 
-def fetch_live_patch() -> int:
-    """Fetch the live site-ui.js from GitHub Pages and parse CH_VERSION."""
+class LiveFetchError(Exception):
+    """Raised when a single host's site-ui.js cannot be fetched or parsed."""
+
+
+def fetch_live_patch(live_url: str) -> int:
+    """Fetch site-ui.js from live_url and return its CH_VERSION patch integer.
+
+    Raises LiveFetchError on any network or parse failure. Callers decide
+    whether a given host's failure is fatal (production) or a warning
+    (non-production).
+    """
     try:
-        with urllib.request.urlopen(LIVE_SITE_UI_URL, timeout=10) as resp:
+        with urllib.request.urlopen(live_url, timeout=10) as resp:
             content = resp.read().decode("utf-8", errors="replace")
     except Exception as exc:
-        print(
-            f"ERROR: Could not fetch live site-ui.js from GitHub Pages.\n"
-            f"  URL: {LIVE_SITE_UI_URL}\n"
-            f"  Reason: {exc}\n"
-            f"\n"
-            f"If you are offline or GitHub Pages is down, use:\n"
-            f"  python scripts/stamp-version.py --force-version <patch_number>\n"
-            f"\n"
-            f"IMPORTANT: --force-version must be (current live patch) + 1.\n"
-            f"Check the live site for the current version before using this flag.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise LiveFetchError(f"fetch failed: {exc}") from exc
 
     # Parse: var CH_VERSION = 'v2026.06.11.520';
     m = re.search(r"CH_VERSION\s*=\s*['\"]v[\d.]+\.(\d+)['\"]", content)
     if not m:
-        print(
-            f"ERROR: Could not parse CH_VERSION from live site-ui.js.\n"
-            f"  Fetched content (first 200 chars): {content[:200]!r}",
-            file=sys.stderr,
+        raise LiveFetchError(
+            f"could not parse CH_VERSION (first 200 chars: {content[:200]!r})"
         )
-        sys.exit(1)
 
     return int(m.group(1))
+
+
+def check_live_hosts(hosts: dict) -> dict:
+    """Fetch CH_VERSION patch from each {label: url} host.
+
+    Returns {label: (patch_int_or_None, error_str_or_None)}.
+    Never raises — failures are captured per-host so callers can decide
+    which ones are fatal.
+    """
+    results = {}
+    for label, url in hosts.items():
+        try:
+            results[label] = (fetch_live_patch(url), None)
+        except LiveFetchError as exc:
+            results[label] = (None, str(exc))
+    return results
 
 
 def build_version_string(patch: int) -> str:
@@ -159,6 +193,17 @@ def main() -> None:
             "For offline use only — must equal (live patch + 1)."
         ),
     )
+    parser.add_argument(
+        "--live-url",
+        type=str,
+        metavar="URL",
+        help=(
+            "Skip the default both-hosts check (see HOSTS) and check ONLY "
+            "this single URL, treated as production. Defaults to the "
+            "CH_LIVE_SITE_UI_URL env var if set, else checks every host in "
+            f"HOSTS with {PRODUCTION_HOST!r} as production."
+        ),
+    )
     args = parser.parse_args()
 
     # Step 1: Determine new patch number
@@ -166,10 +211,69 @@ def main() -> None:
         new_patch = args.force_version
         print(f"[stamp-version] Using forced patch number: {new_patch}")
     else:
-        print(f"[stamp-version] Fetching live CH_VERSION from GitHub Pages...")
-        live_patch = fetch_live_patch()
-        new_patch = live_patch + 1
-        print(f"[stamp-version] Live patch: {live_patch} -> New patch: {new_patch}")
+        override_url = args.live_url or os.environ.get("CH_LIVE_SITE_UI_URL")
+        if override_url:
+            hosts_to_check = {"override": override_url}
+            production_label = "override"
+        else:
+            hosts_to_check = HOSTS
+            production_label = PRODUCTION_HOST
+
+        print(
+            f"[stamp-version] Checking live CH_VERSION on "
+            f"{len(hosts_to_check)} host(s)..."
+        )
+        results = check_live_hosts(hosts_to_check)
+        for label, url in hosts_to_check.items():
+            patch, err = results[label]
+            marker = " [PRODUCTION]" if label == production_label else ""
+            if err:
+                print(f"  [{label}{marker}] {url}\n      ERROR: {err}")
+            else:
+                print(f"  [{label}{marker}] {url}\n      CH_VERSION patch: {patch}")
+
+        prod_patch, prod_err = results[production_label]
+        if prod_err:
+            print(
+                f"\nERROR: Could not fetch live site-ui.js from the PRODUCTION "
+                f"host ({production_label}).\n"
+                f"  Reason: {prod_err}\n"
+                f"\n"
+                f"If this host is wrong, override it with:\n"
+                f"  python scripts/stamp-version.py --live-url <url>\n"
+                f"  (or set the CH_LIVE_SITE_UI_URL environment variable)\n"
+                f"\n"
+                f"If you are offline or production is down, use:\n"
+                f"  python scripts/stamp-version.py --force-version <patch_number>\n"
+                f"\n"
+                f"IMPORTANT: --force-version must be (current live patch) + 1.\n"
+                f"Check the live site for the current version before using this flag.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Non-production hosts are informational only: warn, don't fail.
+        for label, (patch, err) in results.items():
+            if label == production_label:
+                continue
+            if err:
+                print(
+                    f"WARNING: could not check non-production host [{label}]: {err}"
+                )
+            elif patch != prod_patch:
+                print(
+                    f"WARNING: non-production host [{label}] reports patch "
+                    f"{patch}, but production [{production_label}] reports "
+                    f"{prod_patch}. Both hosts deploy from origin/main and "
+                    f"should match — this likely means [{label}]'s deploy "
+                    f"silently failed or is lagging behind."
+                )
+
+        new_patch = prod_patch + 1
+        print(
+            f"[stamp-version] Production ({production_label}) patch: "
+            f"{prod_patch} -> New patch: {new_patch}"
+        )
 
     new_version = build_version_string(new_patch)
     print(f"[stamp-version] New version string: {new_version}")
