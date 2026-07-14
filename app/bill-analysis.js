@@ -1292,6 +1292,104 @@ function _analyzeWaterSewerParity(building) {
   }
 }
 
+// ── EXTRACTION REFUSAL GATES (18b33d9f) ──────────────────────────────────
+// Every stage of the extraction pipeline can partially fail and still
+// return a success-shaped result (Louisburg: 20/67 pages produced zero OCR
+// text; Wood River: parser silently returned partial site blocks; Rockville:
+// a total auto-corrected 276% and rendered as a green checkmark). These
+// functions are the SINGLE shared implementation of the four gates —
+// called from both the queue path (_extractSingleFileForQueue) and the
+// single-file path (processPDF) so the two can never drift the way
+// window._pdfOcrEmptyPages already had before this fix.
+//
+// GATE A — page coverage. Consumes the window._pdfPageCoverage report that
+// extractPDFText() now always attaches (see _finalizePageCoverage inside
+// extractPDFText). Trips when any page was skipped-budget, skipped-cap, or
+// came back ocr-empty — the exact class of defect that dropped 20 of 67
+// Louisburg pages with no visible signal.
+function _gateA_evaluateCoverage() {
+  const cov = window._pdfPageCoverage;
+  window._pdfPageCoverage = null; // consume once, same convention as _pdfOcrBudgetExceeded
+  if (!cov || !cov.summary) return null;
+  const badBudget = cov.summary['skipped-budget'] || 0;
+  const badCap = cov.summary['skipped-cap'] || 0;
+  const badEmpty = cov.summary['ocr-empty'] || 0;
+  const bad = badBudget + badCap + badEmpty;
+  if (bad === 0) return null;
+  const readOk = cov.totalPages - bad;
+  const parts = [];
+  if (badBudget) parts.push(badBudget + ' page(s) skipped — OCR budget exceeded');
+  if (badCap) parts.push(badCap + ' page(s) skipped — 200-page extraction cap');
+  if (badEmpty) parts.push(badEmpty + ' page(s) OCR-empty — no text recovered');
+  return {
+    gate: 'A',
+    pagesRead: readOk,
+    pagesTotal: cov.totalPages,
+    message: readOk + ' of ' + cov.totalPages + ' pages read — ' + parts.join('; '),
+  };
+}
+
+// GATE B — bill count. Counts provider anchors ("Service Address:" /
+// "Account Number:") in the RAW text — including anchors inside blocks that
+// FAILED to close into a bill — and compares to how many bills the rule
+// actually emitted. A shortfall means the parser silently dropped a billing
+// period (the Wood River symptom). The already-existing zero-bills case
+// (finalBills.length === 0) is caught upstream by both callers before this
+// runs and is NOT this gate's concern — this only catches the PARTIAL case.
+function _gateB_billCountCheck(rawText, billCount) {
+  if (!rawText || billCount == null) return null;
+  const svcCount = (rawText.match(/Service\s*Address\s*:?/gi) || []).length;
+  const acctCount = (rawText.match(/Account\s*Number\s*:?/gi) || []).length;
+  const expected = Math.max(svcCount, acctCount);
+  if (expected <= billCount) return null;
+  return {
+    gate: 'B',
+    expected,
+    actual: billCount,
+    message:
+      'This file produced ' +
+      billCount +
+      ' bill' +
+      (billCount === 1 ? '' : 's') +
+      '; ' +
+      expected +
+      ' account anchor' +
+      (expected === 1 ? '' : 's') +
+      ' found in the text',
+  };
+}
+
+// Applies GATE A + GATE B (file-level facts, passed in) and GATE C (per-bill —
+// already stamped onto the bill by _postExtractionVerify as
+// _correction_pending_TotalCurrentCharges, see Stage 3 below) to every bill
+// from this extraction. Sets b._gateTripped + b._gateReasons, which is the
+// ONLY thing the save paths and row rendering need to read. Implemented once;
+// called identically from both the queue and single-file paths.
+function _applyExtractionGates(bills, gateA, gateB) {
+  if (!bills) return;
+  for (const b of bills) {
+    const reasons = [];
+    if (gateA) reasons.push(gateA.message);
+    if (gateB) reasons.push(gateB.message);
+    const gc = b._correction_pending_TotalCurrentCharges;
+    if (gc) {
+      reasons.push(
+        'Total auto-corrected by ' +
+          gc.pctChange +
+          '% ($' +
+          gc.original +
+          ' → $' +
+          gc.proposedCorrection +
+          ') — verify against the source PDF',
+      );
+    }
+    if (reasons.length) {
+      b._gateTripped = true;
+      b._gateReasons = reasons;
+    }
+  }
+}
+
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
 async function _postExtractionVerify(bills, utilityName, rawText) {
@@ -3706,6 +3804,50 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       ],
     };
     const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
+
+    // GATE D — charge provenance (18b33d9f, precondition to the auto-correct below).
+    // Before trusting compSum enough to overwrite TotalCurrentCharges, verify each
+    // violating charge field's dollar value actually appears within THIS BILL's own
+    // page range in the raw text — not only on a neighboring bill's page. This is
+    // the cross-bill contamination that produced ee7acc56 (Rockville: a value that
+    // lived on an adjacent page got summed into this bill's total). Mirrors the
+    // SHAPE of the Evergy lastBdIdx/_pfPageMarkers guard in energy-savings.js
+    // (each bill owns only its own page range), applied here as a precondition to
+    // the GENERIC auto-correct that every provider flows through.
+    const _valueAppearsInText = (val, text) => {
+      if (!(val > 0) || !text) return false;
+      const plain = val.toFixed(2);
+      const withCommas = Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(esc(plain) + '|' + esc(withCommas)).test(text);
+    };
+    const _chargeFieldsHaveProvenance = (b, violations) => {
+      if (!rawText || !violations.length) return true; // no evidence available — don't block
+      const pageStart = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
+      const pageEnd = b._pageEnd != null ? b._pageEnd : b._pageIndex != null ? b._pageIndex : null;
+      if (pageStart == null || pageEnd == null) return true; // no page info — can't verify, don't block
+      const markers = [...rawText.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({ page: parseInt(m[1]), idx: m.index }));
+      if (!markers.length) return true;
+      let ownText = '';
+      for (let i = 0; i < markers.length; i++) {
+        const pg = markers[i].page;
+        if (pg < pageStart || pg > pageEnd) continue;
+        const start = markers[i].idx;
+        const end = i + 1 < markers.length ? markers[i + 1].idx : rawText.length;
+        ownText += rawText.slice(start, end);
+      }
+      if (!ownText) return true; // couldn't isolate own-page text — don't block
+      for (const v of violations) {
+        const onOwnPage = _valueAppearsInText(v.value, ownText);
+        const onAnyPage = _valueAppearsInText(v.value, rawText);
+        // Only a confirmed foreign-page value (present elsewhere, absent on this
+        // bill's own pages) counts as contamination. A value we simply can't find
+        // anywhere (e.g. rounded/derived) is not evidence of contamination.
+        if (!onOwnPage && onAnyPage) return false;
+      }
+      return true;
+    };
+
     for (const b of bills) {
       const total = pf(b.TotalCurrentCharges);
       if (total <= 0) continue;
@@ -3731,23 +3873,79 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       if (violations.length === 0) continue;
       if (compSum > total + 0.1) {
         const origTotal = b.TotalCurrentCharges;
-        b.TotalCurrentCharges = compSum.toFixed(2);
-        b.TotalAmountDue = compSum.toFixed(2);
-        b._auto_corrected_TotalCurrentCharges = {
-          original: origTotal,
-          corrected: compSum.toFixed(2),
-          reason:
-            violations
-              .map(function (vi) {
-                return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + pf(origTotal).toFixed(2) + ')';
-              })
-              .join('; ') +
-            ' — recalculated from charge components: $' +
-            compSum.toFixed(2),
-        };
-        console.log(
-          '[PostVerify] Total corrected for ' + comm + ': $' + pf(origTotal).toFixed(2) + ' → $' + compSum.toFixed(2),
-        );
+        const origTotalNum = pf(origTotal);
+        const pctChange = origTotalNum > 0 ? (Math.abs(compSum - origTotalNum) / origTotalNum) * 100 : 100;
+        const dollarChange = Math.abs(compSum - origTotalNum);
+        const provenanceOk = _chargeFieldsHaveProvenance(b, violations);
+        // GATE C — correction magnitude (18b33d9f). Mirrors the dual %/$ condition
+        // pattern used elsewhere in this file (e.g. the KGS gas-total check): a
+        // correction above EITHER threshold is high-severity and must be held for
+        // user confirmation, not silently applied. Rockville: $7,710.81 -> $29,015.33
+        // is a 276% swing that must NOT auto-apply and must NOT render as a green
+        // checkmark.
+        const CORRECTION_PCT_THRESHOLD = 15; // %
+        const CORRECTION_DOLLAR_THRESHOLD = 500; // $
+        const isLargeCorrection = pctChange > CORRECTION_PCT_THRESHOLD || dollarChange > CORRECTION_DOLLAR_THRESHOLD;
+        const violationText = violations
+          .map(function (vi) {
+            return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + origTotalNum.toFixed(2) + ')';
+          })
+          .join('; ');
+        if (!provenanceOk || isLargeCorrection) {
+          // Hold pending — do NOT overwrite TotalCurrentCharges/TotalAmountDue.
+          b._correction_pending_TotalCurrentCharges = {
+            original: origTotal,
+            proposedCorrection: compSum.toFixed(2),
+            pctChange: pctChange.toFixed(1),
+            dollarChange: dollarChange.toFixed(2),
+            provenanceOk,
+            reason:
+              violationText +
+              ' — proposed correction to $' +
+              compSum.toFixed(2) +
+              (provenanceOk
+                ? ''
+                : '. One or more charge values could not be confirmed on this bill’s own page(s) — possible cross-bill contamination.') +
+              (isLargeCorrection
+                ? '. Correction magnitude ' +
+                  pctChange.toFixed(1) +
+                  '% ($' +
+                  dollarChange.toFixed(2) +
+                  ') exceeds the auto-apply threshold (' +
+                  CORRECTION_PCT_THRESHOLD +
+                  '% / $' +
+                  CORRECTION_DOLLAR_THRESHOLD +
+                  ') — held for manual confirmation.'
+                : ''),
+          };
+          console.log(
+            '[PostVerify][Gate C/D] Correction HELD PENDING for ' +
+              comm +
+              ': $' +
+              origTotalNum.toFixed(2) +
+              ' -> $' +
+              compSum.toFixed(2) +
+              ' (pct=' +
+              pctChange.toFixed(1) +
+              '%, $=' +
+              dollarChange.toFixed(2) +
+              ', provenanceOk=' +
+              provenanceOk +
+              ')',
+          );
+        } else {
+          // Small, well-provenanced correction — keep existing auto-apply behavior.
+          b.TotalCurrentCharges = compSum.toFixed(2);
+          b.TotalAmountDue = compSum.toFixed(2);
+          b._auto_corrected_TotalCurrentCharges = {
+            original: origTotal,
+            corrected: compSum.toFixed(2),
+            reason: violationText + ' — recalculated from charge components: $' + compSum.toFixed(2),
+          };
+          console.log(
+            '[PostVerify] Total corrected for ' + comm + ': $' + origTotalNum.toFixed(2) + ' → $' + compSum.toFixed(2),
+          );
+        }
       } else {
         b._charge_exceeds_total = {
           total: total,
@@ -5812,6 +6010,7 @@ function clearQueue() {
   _queueGroupState = null; // Plan 7e0b9d15 §4: reset group state on clear
   window._pdfQueue = null;
   window._pdfQueueRows = null;
+  window._pdfForceSaveGated = false; // GATE WIRING (18b33d9f): don't leak an override into a new batch
   document.getElementById('pdfRightCol').style.display = '';
   const tabsBar = document.getElementById('queueTabsBar');
   if (tabsBar) tabsBar.remove();
@@ -6098,6 +6297,7 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         }
         const _budgetHit = window._pdfOcrBudgetExceeded;
         window._pdfOcrBudgetExceeded = null; // consume once
+        const _gateAResult = _gateA_evaluateCoverage(); // GATE A — consumes window._pdfPageCoverage once
 
         // Check specific local utilities first — their bills often appear in
         // multi-utility PDFs alongside Evergy, and Evergy's broader detection
@@ -6110,6 +6310,7 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         }
 
         let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+        const _gateBResult = _gateB_billCountCheck(text, bills.length); // GATE B
         const _queueUnmatchedPages = bills._unmatchedPages || [];
         // Bug b5951068: Instead of silently dropping bills that fail the key-field
         // filter, flag them with parseError:true so the user sees every billing
@@ -6191,6 +6392,11 @@ async function _extractSingleFileForQueue(file, fileIdx) {
             }
           });
         }
+
+        // GATE A/B/C wiring (18b33d9f): stamp every bill from this file with
+        // _gateTripped/_gateReasons so the save queue can default flagged rows
+        // to unchecked instead of relying on the user to notice a badge.
+        _applyExtractionGates(finalBills, _gateAResult, _gateBResult);
 
         // Run analysis for warnings (stored on each bill as _warnings)
         const analysisResults = await analyzeBillExtraction(finalBills, rule.name, undefined, statusCb);
@@ -6340,7 +6546,11 @@ function renderQueueResults() {
   q.results.forEach((r, ri) => {
     if (r.status === 'ok' && r.bills.length > 0) {
       r.bills.forEach((b, bi) => {
-        rows.push({ resultIdx: ri, billIdx: bi, bill: b, result: r, checked: true });
+        // GATE WIRING (18b33d9f): a bill that tripped GATE A/B/C defaults to
+        // UNCHECKED — the user must ACT (check the box) to save something the
+        // system flagged, instead of acting to prevent it. saveQueuedBills()
+        // still only reads row.checked, so this is the actual enforcement point.
+        rows.push({ resultIdx: ri, billIdx: bi, bill: b, result: r, checked: !b._gateTripped });
       });
     } else if (r.status === 'failed') {
       rows.push({ resultIdx: ri, billIdx: -1, bill: null, result: r, checked: false });
@@ -6578,6 +6788,14 @@ function renderQueueResults() {
         '<span style="color:#e55;font-weight:600;font-size:10px" title="' +
         _escHtml(row.bill._manualReviewLabel || 'Billing period could not be parsed — assign manually') +
         '">PARSE ERR</span>'
+      );
+    } else if (row.bill._gateTripped) {
+      // GATE WIRING (18b33d9f): visible even without hovering — see the inline
+      // reason line rendered under the charge amount in both table layouts.
+      return (
+        '<span style="color:var(--red);font-weight:700;font-size:10px" title="' +
+        _escHtml((row.bill._gateReasons || []).join(' \xb7 ')) +
+        '">&#9888; VERIFY</span>'
       );
     } else if (row.bill._manualReview) {
       return '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
@@ -6871,6 +7089,15 @@ function renderQueueResults() {
                 '</div>'
               : '';
 
+          // GATE WIRING (18b33d9f): always-visible reason line (not hover-only) so the
+          // user sees WHY this row is unchecked without needing to hover the badge.
+          const gateReasonTag =
+            b._gateTripped && b._gateReasons && b._gateReasons.length
+              ? '<div style="font-size:9px;color:var(--red);margin-bottom:2px;line-height:1.3">' +
+                _escHtml(b._gateReasons[0].length > 70 ? b._gateReasons[0].slice(0, 68) + '…' : b._gateReasons[0]) +
+                '</div>'
+              : '';
+
           return (
             '<div style="' +
             (periodRows.length > 1 ? 'border-top:1px dashed var(--border);padding-top:3px;margin-top:3px;' : '') +
@@ -6885,6 +7112,7 @@ function renderQueueResults() {
             '<div style="margin-bottom:2px">' +
             statusBadge +
             '</div>' +
+            gateReasonTag +
             (canCheck && rowIdx >= 0
               ? '<input type="checkbox" onchange="toggleQueueRow(' +
                 rowIdx +
@@ -6957,6 +7185,11 @@ function renderQueueResults() {
           '<span style="color:#e55;font-weight:600;font-size:10px" title="' +
           _escHtml(row.bill._manualReviewLabel || 'Billing period could not be parsed — assign manually') +
           '">PARSE ERR</span>';
+      } else if (row.bill._gateTripped) {
+        statusHtml =
+          '<span style="color:var(--red);font-weight:700;font-size:10px" title="' +
+          _escHtml((row.bill._gateReasons || []).join(' \xb7 ')) +
+          '">&#9888; VERIFY</span>';
       } else if (row.bill._manualReview) {
         statusHtml =
           '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
@@ -6996,6 +7229,13 @@ function renderQueueResults() {
           periodHtml = _escHtml(b.DeliveryDate);
         } else if (b.BillingPeriodStart || b.BillingPeriodEnd) {
           periodHtml = _escHtml((b.BillingPeriodStart || '?') + ' – ' + (b.BillingPeriodEnd || '?'));
+        }
+        // GATE WIRING (18b33d9f): always-visible reason line under the period.
+        if (b._gateTripped && b._gateReasons && b._gateReasons.length) {
+          periodHtml +=
+            '<div style="font-size:9px;color:var(--red);margin-top:2px;line-height:1.3">' +
+            _escHtml(b._gateReasons[0].length > 90 ? b._gateReasons[0].slice(0, 88) + '…' : b._gateReasons[0]) +
+            '</div>';
         }
       }
 
@@ -8084,6 +8324,28 @@ async function _dupBulkAction(action) {
     return;
   }
   const commFilter = window._pdfCommTab && window._pdfCommTab !== 'All' ? window._pdfCommTab : null;
+  // GATE WIRING (18b33d9f): this is a separate save entry point from savePDFAllBills
+  // (reachable via the duplicate-resolution banner's Skip/Overwrite/Merge All
+  // buttons) and was completely ungated before this fix. Same hard-stop pattern —
+  // window._pdfForceSaveGated overrides, set by the "Save Anyway" button.
+  if (!window._pdfForceSaveGated) {
+    const gatedIdx = [];
+    for (let gi = 0; gi < bills.length; gi++) {
+      if (commFilter && (bills[gi].Commodity || 'Other') !== commFilter) continue;
+      if (bills[gi]._gateTripped) gatedIdx.push(gi);
+    }
+    if (gatedIdx.length > 0) {
+      const reasons = [...new Set(gatedIdx.flatMap((gi) => bills[gi]._gateReasons || []))];
+      showToast(
+        gatedIdx.length +
+          ' bill(s) held for review — ' +
+          reasons[0] +
+          (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
+          '. Use "Save Anyway" (extraction badge area) to override.',
+      );
+      return;
+    }
+  }
   console.log(
     '[_dupBulkAction] bills:',
     bills.length,
@@ -8882,6 +9144,35 @@ async function extractPDFText(ab, statusCb) {
     );
     const maxPages = Math.min(pdf.numPages, 200);
 
+    // ── GATE A — page coverage report (18b33d9f) ──────────────────────────
+    // One status per PDF page, 1..pdf.numPages: 'native-text' | 'ocr-ok' |
+    // 'ocr-empty' | 'skipped-budget' | 'skipped-cap'. Replaces the old blind
+    // spot where a page skipped by the 200-page cap or by an OCR budget
+    // trip vanished with no record at all — window._pdfOcrEmptyPages only
+    // ever recorded pages that actually RAN OCR and scored blank.
+    // Pages beyond the 200-page cap are marked immediately; pages 1..maxPages
+    // are updated in place as Step 1 (native text) and Step 2 (OCR) run.
+    // `_finalizePageCoverage` is called from every exit point of this
+    // function (engine-load failure, normal return) so a report is always
+    // attached to window._pdfPageCoverage when this function produces text.
+    const _pageCoverage = new Array(pdf.numPages).fill(null);
+    for (let i = maxPages; i < pdf.numPages; i++) _pageCoverage[i] = 'skipped-cap';
+    const _finalizePageCoverage = () => {
+      for (let i = 0; i < _pageCoverage.length; i++) {
+        // Any page still null/'pending-ocr' means it was queued for OCR but
+        // the outer OCR loop broke (budget/abort) before its turn, or OCR
+        // never ran at all (engine failed to load / Tesseract unavailable).
+        if (_pageCoverage[i] === 'pending-ocr' || _pageCoverage[i] === null) _pageCoverage[i] = 'skipped-budget';
+      }
+      const summary = {};
+      for (const s of _pageCoverage) summary[s] = (summary[s] || 0) + 1;
+      window._pdfPageCoverage = {
+        totalPages: pdf.numPages,
+        pages: _pageCoverage.map((s, i) => ({ page: i + 1, status: s })),
+        summary,
+      };
+    };
+
     // ── Step 1: extract native text per page, track which pages have no text ──
     const pageTexts = [];
     const ocrNeeded = [];
@@ -8896,12 +9187,14 @@ async function extractPDFText(ab, statusCb) {
         // not a fatal error — one bad page shouldn't abort the whole extraction.
         pageTexts.push('');
         ocrNeeded.push(i);
+        _pageCoverage[i - 1] = 'pending-ocr';
         continue;
       }
       const items = c.items.filter((s) => s.str && s.str.trim());
       if (!items.length) {
         pageTexts.push('');
         ocrNeeded.push(i);
+        _pageCoverage[i - 1] = 'pending-ocr';
         continue;
       }
       items.sort((a, b) => {
@@ -8925,7 +9218,12 @@ async function extractPDFText(ab, statusCb) {
       const pageTxt = pageLines.join('\n');
       pageTexts.push(pageTxt);
       // If page has very little text (<40 chars), it's likely a scanned image page
-      if (pageTxt.trim().length < 40) ocrNeeded.push(i);
+      if (pageTxt.trim().length < 40) {
+        ocrNeeded.push(i);
+        _pageCoverage[i - 1] = 'pending-ocr';
+      } else {
+        _pageCoverage[i - 1] = 'native-text';
+      }
     }
 
     // ── Step 2: OCR any pages that had no/little native text ──
@@ -8964,6 +9262,8 @@ async function extractPDFText(ab, statusCb) {
         });
       } catch (workerErr) {
         if (statusCb) statusCb('OCR engine failed to load: ' + workerErr.message);
+        // GATE A: every page still queued for OCR never got a chance — record it.
+        _finalizePageCoverage();
         // Return whatever native text we got
         return pageTexts.join('\n').trim().length > 50 ? pageTexts.join('\n') : null;
       }
@@ -9113,6 +9413,17 @@ async function extractPDFText(ab, statusCb) {
         // reassignment, not a fresh const).
         _ocrStartTime = performance.now();
         let _ocrBudgetExceeded = false;
+        // Hoisted above the loop (was previously declared right before its one use at
+        // the bottom of the per-page block) so GATE A can stamp _pageCoverage at every
+        // exit point of a page's OCR processing, not just the normal end-of-iteration one.
+        const EMPTY_PAGE_MAX_CHARS = 30; // Tesseract returns at minimum whitespace/newlines
+        // GATE A helper: stamp this page's final coverage status the moment its OCR
+        // text is committed to pageTexts, regardless of WHY that commit happened
+        // (normal end-of-passes, abort, or budget trip) — the resulting text quality
+        // is what matters, not the exit reason. Called at every commit site below.
+        const _stampCoverage = (pn, txt) => {
+          _pageCoverage[pn - 1] = txt.trim().length <= EMPTY_PAGE_MAX_CHARS ? 'ocr-empty' : 'ocr-ok';
+        };
         for (let idx = 0; idx < ocrNeeded.length; idx++) {
           if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
@@ -9352,6 +9663,7 @@ async function extractPDFText(ab, statusCb) {
           // OCR'd, never throw away work that already succeeded.
           if (window._pdfAbort) {
             pageTexts[pgNum - 1] = bestText;
+            _stampCoverage(pgNum, bestText);
             break;
           }
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
@@ -9359,6 +9671,7 @@ async function extractPDFText(ab, statusCb) {
           }
           if (_ocrBudgetExceeded) {
             pageTexts[pgNum - 1] = bestText;
+            _stampCoverage(pgNum, bestText);
             break;
           }
           if (bestScore < ORIENT_SCORE_THRESHOLD) {
@@ -9434,6 +9747,7 @@ async function extractPDFText(ab, statusCb) {
           // including committing bestText-so-far before breaking (same reasoning).
           if (window._pdfAbort) {
             pageTexts[pgNum - 1] = bestText;
+            _stampCoverage(pgNum, bestText);
             break;
           }
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
@@ -9441,6 +9755,7 @@ async function extractPDFText(ab, statusCb) {
           }
           if (_ocrBudgetExceeded) {
             pageTexts[pgNum - 1] = bestText;
+            _stampCoverage(pgNum, bestText);
             break;
           }
           if (bestScore < BINARIZE_SCORE_THRESHOLD) {
@@ -9491,11 +9806,13 @@ async function extractPDFText(ab, statusCb) {
           }
           // ── end triggered passes ───────────────────────────────────────────────
           pageTexts[pgNum - 1] = bestText;
+          _stampCoverage(pgNum, bestText); // GATE A — normal end-of-iteration commit
           // ── Empty-page detection: if ALL passes returned near-empty text, flag it ──
           // A silent empty page causes the billing period on that page to be silently
           // dropped (extractAll finds no dates → no bill record emitted). We track
           // empty pages so processPDF can surface an explicit warning to the user.
-          const EMPTY_PAGE_MAX_CHARS = 30; // Tesseract returns at minimum whitespace/newlines
+          // EMPTY_PAGE_MAX_CHARS is now hoisted above the idx loop (GATE A, 18b33d9f)
+          // so _stampCoverage can share the same threshold — reused here, not redeclared.
           if (bestText.trim().length <= EMPTY_PAGE_MAX_CHARS) {
             if (!window._pdfOcrEmptyPages) window._pdfOcrEmptyPages = [];
             window._pdfOcrEmptyPages.push(pgNum);
@@ -9520,6 +9837,11 @@ async function extractPDFText(ab, statusCb) {
         }
       }
     }
+
+    // GATE A: attach the final page coverage report (covers the "OCR never ran at
+    // all" case too — ocrNeeded.length===0, or Tesseract undefined — since any page
+    // still 'pending-ocr'/null at this point is swept to 'skipped-budget').
+    _finalizePageCoverage();
 
     // Insert page markers so extractAll can track page ranges per bill
     const fullText = pageTexts.map((t, i) => '%%PAGE_' + (i + 1) + '%%\n' + t).join('\n');
@@ -9652,6 +9974,7 @@ async function processPDF(file) {
   document.getElementById('extractMethodBadge').style.display = 'none';
   window._pdfSourceFileName = file.name;
   window._pdfAbort = false;
+  window._pdfForceSaveGated = false; // GATE WIRING (18b33d9f): don't leak an override into a new file
   dz.innerHTML =
     '📄 ' +
     file.name +
@@ -9681,6 +10004,7 @@ async function processPDF(file) {
       } // Bug #134: honour cancel after extraction
       const _budgetHit = window._pdfOcrBudgetExceeded;
       window._pdfOcrBudgetExceeded = null; // consume once
+      const _gateAResult = _gateA_evaluateCoverage(); // GATE A — consumes window._pdfPageCoverage once
       // ── Empty-page warning: surface any pages that returned no OCR text ──
       // An empty page means the billing period on that page was silently dropped.
       // We flag it here so the user knows to re-run extraction or check the PDF.
@@ -9935,6 +10259,13 @@ async function processPDF(file) {
             }
           }
 
+          // GATE B — bill count (18b33d9f). Evaluated here (after the OCR-retry block
+          // above, which can replace `bills` wholesale) rather than immediately after
+          // `rule.extractAll(text)`, so a retry-recovered bill isn't falsely flagged.
+          // `text` is the original extractPDFText output and is never reassigned by
+          // the retry block, so anchor counts stay accurate.
+          const _gateBResult = _gateB_billCountCheck(text, bills.length);
+
           // ── POST-EXTRACTION VERIFICATION: use historical data + logic to fix issues ──
           // Bug b5951068: append parse-error rows (flagged above) so they're never lost.
           let finalBills = validBills.length > 0 ? validBills.concat(_singleDroppedBills || []) : bills;
@@ -10075,6 +10406,11 @@ async function processPDF(file) {
               }
             });
           }
+
+          // GATE A/B/C wiring (18b33d9f): stamp every bill from this file with
+          // _gateTripped/_gateReasons so the single-file save path can hold flagged
+          // bills for review instead of including them in "Save All" by default.
+          _applyExtractionGates(finalBills, _gateAResult, _gateBResult);
 
           const analysisResults = await analyzeBillExtraction(finalBills, rule.name, _pevCache, statusMsg);
           window._pdfBillWarnings = analysisResults;
@@ -10719,7 +11055,19 @@ function renderMultiBillUI(bills, box) {
         )
         .join('');
     }
-    badgeEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}</div>`;
+    // GATE WIRING (18b33d9f): "Save All" is blocked (see savePDFAllBills) while any
+    // bill in this file is gate-tripped and window._pdfForceSaveGated is not set.
+    // Surface that state here, non-collapsed, with an explicit override action.
+    const _gatedCount = bills.filter((b) => b._gateTripped).length;
+    let gateNotice = '';
+    if (_gatedCount > 0 && !window._pdfForceSaveGated) {
+      gateNotice =
+        `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
+        `&#9888; ${_gatedCount} of ${bills.length} bill(s) flagged for review and held out of "Save All" — verify against the source PDF. ` +
+        `<button onclick="window._pdfForceSaveGated=true;savePDFAllBills()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
+        `</div>`;
+    }
+    badgeEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
   }
   // The Month / Billing Periods header + duplicate banner are written to the frozen
   // #pdfPillsHdr (outside the scroll area) so they stay pinned at the top. The pills
@@ -10876,6 +11224,27 @@ async function savePDFAllBills(commodityFilter) {
     billIndices.push(i);
   }
   if (!billIndices.length) return;
+  // GATE WIRING (18b33d9f): savePDFAllBills has no per-bill checkbox UI (unlike the
+  // queue path), so the enforcement point here is a hard stop instead of a default-
+  // unchecked row. The user must explicitly click "Save Anyway" (sets
+  // window._pdfForceSaveGated) to proceed — acting to save something flagged,
+  // instead of acting to prevent it.
+  if (!window._pdfForceSaveGated) {
+    const gatedIdx = billIndices.filter((i) => allBills[i]._gateTripped);
+    if (gatedIdx.length > 0) {
+      const reasons = [...new Set(gatedIdx.flatMap((i) => allBills[i]._gateReasons || []))];
+      showToast(
+        gatedIdx.length +
+          ' of ' +
+          billIndices.length +
+          ' bill(s) held for review — ' +
+          reasons[0] +
+          (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
+          '. Click "Save Anyway" to override.',
+      );
+      return;
+    }
+  }
   const bills = allBills;
   let selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
   const dupMap = window._pdfDupMap || {};
@@ -12491,6 +12860,35 @@ function renderPDFFields(parsed, warnings) {
       </div>`
     : '';
 
+  // GATE C — correction held pending (18b33d9f). A large/unprovenanced auto-correct
+  // must render RED/alarm, not the collapsed green checkmark — the severity signal
+  // was inverted before this fix (guessing wrong looked calmer than admitting doubt).
+  const _pendingCorrection = parsed['_correction_pending_TotalCurrentCharges'];
+  const correctionPendingHtml = _pendingCorrection
+    ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
+        <span style="font-size:26px;line-height:1">&#9940;</span>
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">TOTAL CORRECTION HELD — ${_pendingCorrection.pctChange}% ($${_pendingCorrection.dollarChange}) — not applied</div>
+          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Total auto-corrected by ${_pendingCorrection.pctChange}% ($${Number(_pendingCorrection.original).toFixed(2)} → $${_pendingCorrection.proposedCorrection}) — verify against the source PDF. ${_pendingCorrection.reason}</div>
+        </div>
+      </div>`
+    : '';
+
+  // GATE A/B/C — extraction flagged for review (18b33d9f). Non-collapsed, always
+  // visible — the user must ACT (check the box) to save a flagged bill, instead of
+  // acting to prevent one from saving.
+  const _gateReasonsForBanner = parsed['_gateReasons'];
+  const gateBannerHtml =
+    Array.isArray(_gateReasonsForBanner) && _gateReasonsForBanner.length
+      ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
+        <span style="font-size:26px;line-height:1">&#9940;</span>
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">EXTRACTION FLAGGED FOR REVIEW — not auto-saved</div>
+          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">${_gateReasonsForBanner.join('<br>')}</div>
+        </div>
+      </div>`
+      : '';
+
   // Show auto-correction banner if any fields were corrected (rate×qty or OCR consensus)
   const correctedFields = Object.keys(parsed)
     .filter((k) => k.startsWith('_auto_corrected_'))
@@ -12726,7 +13124,7 @@ function renderPDFFields(parsed, warnings) {
               </button>
             </div>`
     : '';
-  elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${sumMismatchKgsHtml}${chargeExceedsTotalHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${manualAssignHtml}`;
+  elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${gateBannerHtml}${sumMismatchHtml}${sumMismatchKgsHtml}${chargeExceedsTotalHtml}${correctionPendingHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${manualAssignHtml}`;
   el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
   // ── Wire up change handlers: update data + recalculate total when user edits ──
@@ -14445,6 +14843,18 @@ function savePDFData() {
   const extracted = bills && bills[idx];
   if (!extracted || !extracted.UtilityCompany) {
     showToast('No extracted data to save');
+    return;
+  }
+  // GATE WIRING (18b33d9f): single-bill "Save" button — another independent save
+  // entry point (savePDFData), separate from savePDFAllBills/_dupBulkAction/
+  // saveQueuedBills. Same hard-stop + window._pdfForceSaveGated override pattern.
+  if (extracted._gateTripped && !window._pdfForceSaveGated) {
+    showToast(
+      'Held for review — ' +
+        (extracted._gateReasons || []).join(' · ') +
+        '. Verify against the source PDF, then click Save again to confirm.',
+    );
+    window._pdfForceSaveGated = true; // next click on the same displayed bill proceeds
     return;
   }
   const projId = parseInt(document.getElementById('pdfProjSel').value) || null;
