@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.14.680',
+    date: '2026-07-14',
+    title: 'ASHRAE 36 Audit Report: building readiness scores recalculated and relabeled',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department -> ASHRAE 36 Audit Report: the per-building score (previously "Compliance Status") is now calculated by weighting each piece of equipment by how many ASHRAE 36 requirements actually apply to it, instead of a fixed 40/60 split between sensors and sequences. As a result, several buildings now show a different score than before -- most moved up, but at least one building moved down. If you have shared or printed a report recently, re-check the current scores before relying on them.',
+      },
+      {
+        type: 'change',
+        text: 'The rating words changed from "Fully/Partially/Not Compliant" to "High/Partial/Low Readiness." ASHRAE Guideline 36 itself does not define a compliance score or pass/fail threshold -- this rating is Control Service Company\'s own readiness assessment, and the report now says so directly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.14.679',
     date: '2026-07-14',
     title: 'Equipment Matrix now shows all points together',
