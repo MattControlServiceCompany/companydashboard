@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.13.672',
+    date: '2026-07-13',
+    title: 'Service Department data display fixed',
+    items: [
+      {
+        type: 'fix',
+        text: 'Service Department: the Staff and Service Agreement tables could appear empty even though your data was intact -- fixed a page that was reading from the wrong data source after a background storage upgrade.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.13.671',
     date: '2026-07-13',
     title: 'Backup & Restore now protects your bill PDFs',
