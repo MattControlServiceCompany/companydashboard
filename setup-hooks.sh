@@ -155,6 +155,41 @@ fi
 # Per-commit version bumping is no longer required.
 
 echo -e "PII & Secrets scan: ${BOLD}PASSED${NC}"
+
+# --- CHECK 7: What's New (RELEASE_NOTES) wording gate ---
+# RELEASE_NOTES entries force-pop a modal in front of every user on their next
+# visit. Only run this when app/site-functions.js is staged AND its diff
+# actually touches the RELEASE_NOTES array, so unrelated commits are never
+# slowed down or blocked by it. See scripts/check_release_notes.py for the
+# full rule set and the documented gateOverride escape hatch.
+if echo "$STAGED_FILES" | grep -qx 'app/site-functions.js'; then
+    RN_DIFF_TOUCHED=$(git diff --cached -- app/site-functions.js | grep -c 'RELEASE_NOTES')
+    if [ "$RN_DIFF_TOUCHED" -gt 0 ]; then
+        echo ""
+        echo -e "${BOLD}Checking RELEASE_NOTES wording...${NC}"
+        if command -v python3 >/dev/null 2>&1; then
+            PYBIN=python3
+        else
+            PYBIN=python
+        fi
+        "$PYBIN" scripts/check_release_notes.py
+        RN_EXIT=$?
+        if [ $RN_EXIT -ne 0 ]; then
+            echo ""
+            echo -e "${RED}${BOLD}COMMIT BLOCKED${NC}"
+            echo -e "The newest RELEASE_NOTES entry in app/site-functions.js contains developer"
+            echo -e "language (see above). Rewrite it in plain, user-facing terms, delete it if"
+            echo -e "it describes a purely internal change, or add gateOverride: true +"
+            echo -e "gateOverrideReason: '...' to the entry for the rare legitimate exception."
+            echo -e ""
+            echo -e "${YELLOW}To bypass in an emergency (NOT recommended):${NC}"
+            echo -e "  git commit --no-verify"
+            echo ""
+            exit 1
+        fi
+    fi
+fi
+
 exit 0
 HOOKEOF
 

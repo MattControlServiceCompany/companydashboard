@@ -1191,17 +1191,6 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.07.13.672',
-    date: '2026-07-13',
-    title: 'Service Department data display fixed',
-    items: [
-      {
-        type: 'fix',
-        text: 'Service Department: the Staff and Service Agreement tables could appear empty even though your data was intact -- fixed a page that was reading from the wrong data source after a background storage upgrade.',
-      },
-    ],
-  },
-  {
     v: 'v2026.07.13.671',
     date: '2026-07-13',
     title: 'Backup & Restore now protects your bill PDFs',
@@ -1212,26 +1201,11 @@ var RELEASE_NOTES = [
       },
       {
         type: 'fix',
-        text: 'Backup and Restore now tell you the truth: if something fails partway through, you will see a real error message instead of a false "success" -- and that message stays on screen even after the page reloads.',
+        text: 'Backup and Restore now show a clear error message if something goes wrong partway through, instead of a false success message.',
       },
       {
         type: 'change',
         text: 'Restore now checks that the selected file is a real CompanyHub backup before touching anything -- picking the wrong file is rejected with no changes made, instead of silently overwriting your data.',
-      },
-    ],
-  },
-  {
-    v: 'v2026.07.13.670',
-    date: '2026-07-13',
-    title: 'Security hardening -- verified CDN libraries and locked-down hosting headers',
-    items: [
-      {
-        type: 'change',
-        text: 'Energy Department page now verifies the identity of 5 external code libraries it loads (PDF export, Excel export, image capture, and the notes editor) before running them -- protects against a compromised third-party file ever being served in place of the real one.',
-      },
-      {
-        type: 'change',
-        text: 'Added server-level security headers (clickjacking protection, MIME-type sniffing protection) to the production hosting configuration.',
       },
     ],
   },
