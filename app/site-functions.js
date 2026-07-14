@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.14.677',
+    date: '2026-07-14',
+    title: 'Fixed: buildings panel button was hidden after collapsing',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data: if you collapsed the buildings panel, the small button to bring it back was cut off and hard to see or click. It now shows fully -- click it, or select it and press Enter, to bring your buildings list back.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.14.676',
     date: '2026-07-14',
     title: 'Bill extraction now flags anything it is not sure about',
