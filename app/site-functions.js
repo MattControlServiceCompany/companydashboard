@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.14.678',
+    date: '2026-07-14',
+    title: 'Bill extraction now double-checks the numbers it read off the page',
+    items: [
+      {
+        type: 'fix',
+        text: "Energy Department bill extraction: fixed a bug where a bill's kWh could come out wrong if the printed usage numbers on the page did not add up. The extraction now cross-checks the usage amount against the charge lines on the bill and trusts whichever number the bill itself backs up.",
+      },
+      {
+        type: 'change',
+        text: "If a bill's numbers genuinely do not agree with each other, it is now flagged for you to review instead of being silently guessed at.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.14.677',
     date: '2026-07-14',
     title: 'Fixed: buildings panel button was hidden after collapsing',
