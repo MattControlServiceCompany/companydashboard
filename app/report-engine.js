@@ -10864,6 +10864,16 @@ var ASHRAE36_SECTIONS = {
   ],
 };
 
+// ─── ASHRAE 36 readiness score thresholds ─────────────────────────────────
+// fix/audit-report-scoring (2026-07-14, Matt's decision): single source of truth for the
+// two band cutoffs used everywhere a building/portfolio score is turned into a
+// green/amber/red status or a "High/Partial/Low Readiness" word. Every caller below reads
+// these constants instead of repeating the literals 75/50, and the methodology footnote
+// interpolates them directly so the printed thresholds can never drift from the code that
+// actually applies them.
+var ASHRAE36_READINESS_HIGH_THRESHOLD = 75; // score >= this => 'green' / "High Readiness"
+var ASHRAE36_READINESS_PARTIAL_THRESHOLD = 50; // score >= this (and < HIGH) => 'amber' / "Partial Readiness"; below => 'red' / "Low Readiness"
+
 // ─── collectASHRAE36Data ───────────────────────────────────────────────────
 /**
  * Reads equipment matrix data and computes compliance scores for all buildings.
@@ -11256,22 +11266,72 @@ function collectASHRAE36Data(projId, reportDate) {
       });
     });
 
-    // Calculate point and sequence coverage percentages
+    // Calculate point and sequence coverage percentages (diagnostic sub-scores, still shown
+    // as separate "Sensors"/"Sequences" gauges — these are unchanged by fix/audit-report-scoring).
     var pointPct = totalPointsRequired > 0 ? Math.round((totalPointsMatched / totalPointsRequired) * 100) : 0;
     // null means no applicable G36 sequences exist (e.g. FCU/heater-only building).
     // 0 means sequences exist but none are implemented — a real gap.
     var seqPct = totalSeqRequired > 0 ? Math.round((totalSeqMatched / totalSeqRequired) * 100) : null;
-    // When seqPct is null, base composite on sensor coverage only (no sequences to evaluate).
-    var composite = seqPct !== null ? Math.round(pointPct * 0.4 + seqPct * 0.6) : Math.round(pointPct);
+
+    // Requirement-weighted composite (fix/audit-report-scoring, 2026-07-14, Matt's decision).
+    // Replaces the old flat building-level blend `pointPct*0.4 + seqPct*0.6`, which weighted
+    // "sensor coverage" and "sequence readiness" by a fixed ratio regardless of how many actual
+    // ASHRAE 36 requirements either dimension represented for this building.
+    //
+    // Prior art: AI/_context/research/ashrae36-audit-test.js, exportForCompanyHub() — its
+    // overallScore is a weighted average across equipment types, weighted by applicableReqs
+    // per type (weightedSum += pct * applicable; overallScore = weightedSum / weightedCount).
+    // That script weights POINT requirements only (no sequence dimension existed there). This
+    // codebase already tracks sequence readiness per equipment unit too (emComputeSequenceReadiness,
+    // accumulated into totalSeqRequired/totalSeqMatched above), so "applicable requirements" here
+    // is extended to mean point requirements + non-N/A sequence requirements — both are things
+    // ASHRAE 36 actually asks of a piece of equipment. Matt's request ("weight by how much
+    // ASHRAE 36 actually asks of each equipment type... an AHU with 20 applicable requirements
+    // moves the score ~10x more than an exhaust fan with 2") is satisfied by either point-only or
+    // point+sequence weighting; combining both dimensions here also removes the old fixed
+    // 40/60 split, which was the second problem with the prior formula.
+    //
+    // Each equipment unit's applicable-requirement count is its natural weight. Because
+    // totalPointsRequired/totalPointsMatched and totalSeqRequired/totalSeqMatched are already
+    // summed across every equipment unit in this building (accumulated in the per-row loop
+    // above), the requirement-weighted building score reduces to a single combined ratio:
+    //   SUM over equipment of (unit met)        totalPointsMatched + totalSeqMatched
+    //   ----------------------------------  =  ---------------------------------------
+    //   SUM over equipment of (unit applicable)  totalPointsRequired + totalSeqRequired
+    // Equipment with zero applicable requirements (e.g. a unit heater with no G36 checklist)
+    // contributes 0/0 to these sums and so has NO effect on the ratio either way — it is never
+    // divided on its own, so there is no div-by-zero and no silent drag on the score (the
+    // universal-zero rule: 0 applicable requirements is valid data, not a missing-data case).
+    var totalReqsApplicable = totalPointsRequired + totalSeqRequired;
+    var totalReqsMet = totalPointsMatched + totalSeqMatched;
+    var composite = totalReqsApplicable > 0 ? Math.round((totalReqsMet / totalReqsApplicable) * 100) : 0;
 
     // Status band
-    var status = composite >= 75 ? 'green' : composite >= 50 ? 'amber' : 'red';
-    var statusColor = composite >= 75 ? 'var(--rpt-green)' : composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
-    // Display-label rename (item ed465b3c, 2026-07-09): matches _a36StatusChip's wording.
+    var status =
+      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
+        ? 'green'
+        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
+          ? 'amber'
+          : 'red';
+    var statusColor =
+      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
+        ? 'var(--rpt-green)'
+        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
+          ? 'var(--rpt-orange)'
+          : 'var(--rpt-red)';
+    // Display-label rename (item ed465b3c, 2026-07-09; re-worded again fix/audit-report-scoring,
+    // 2026-07-14, Matt's decision: ASHRAE 36 defines no composite score and no compliance
+    // threshold, so "Compliant" wording next to genuine §5.x citations falsely implies the
+    // standard blesses this bar. Matches _a36StatusChip's wording.
     // This field isn't rendered directly anywhere today (the chip helper independently
     // derives its word from `status`), kept in sync anyway so it can't drift if a future
     // caller starts reading it.
-    var statusLabel = composite >= 75 ? 'Fully Compliant' : composite >= 50 ? 'Partially Compliant' : 'Not Compliant';
+    var statusLabel =
+      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
+        ? 'High Readiness'
+        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
+          ? 'Partial Readiness'
+          : 'Low Readiness';
     // Sensor counts for status chip display
     var totalSensorsInPlace = totalPointsMatched;
     var totalSensorsRequired = totalPointsRequired;
@@ -11396,7 +11456,12 @@ function collectASHRAE36Data(projId, reportDate) {
   var redCount = buildingsData.filter(function (b) {
     return b.status === 'red';
   }).length;
-  var portfolioStatus = portfolioComposite >= 75 ? 'green' : portfolioComposite >= 50 ? 'amber' : 'red';
+  var portfolioStatus =
+    portfolioComposite >= ASHRAE36_READINESS_HIGH_THRESHOLD
+      ? 'green'
+      : portfolioComposite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
+        ? 'amber'
+        : 'red';
 
   // DCV readiness: count AHUs and VAV-type zones with/without a CO2 point.
   // Uses coveredPoints from real point data — no config flag dependency.
@@ -11576,7 +11641,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
 
 // ─── Status chip helper ────────────────────────────────────────────────────
 // status: 'green'|'amber'|'red'; inPlace/required: sensor counts (optional).
-// Renders "Fully Compliant · 3/3 sensors" style label when counts are provided.
+// Renders "High Readiness · 3/3 sensors" style label when counts are provided.
 function _a36StatusChip(status, inPlace, required, seqNA) {
   // `color` is computed for the caller's colored status bar (data-viz, kept — see the
   // `.rpt-a36-*` executive-summary/building rows that render `color` alongside this chip's
@@ -11586,21 +11651,30 @@ function _a36StatusChip(status, inPlace, required, seqNA) {
   var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
   // Display-label rename (item ed465b3c, 2026-07-09, Matt's decision): Ready/Partial/Critical
   // -> Fully Covered/Partially Covered/Not Covered (2026-07-09 rename #2, Matt's decision,
-  // supersedes v647): Covered -> Compliant. DISPLAY TEXT ONLY — the 'green'/'amber'/
-  // 'red' status keys and every caller's >=75/>=50 threshold logic are untouched.
-  var word = status === 'green' ? 'Fully Compliant' : status === 'amber' ? 'Partially Compliant' : 'Not Compliant';
+  // supersedes v647): Covered -> Compliant. Re-worded again (fix/audit-report-scoring,
+  // 2026-07-14, Matt's decision): "Compliant" implies ASHRAE 36 itself confers or defines a
+  // pass/fail verdict, which it does not (no composite score, no compliance threshold is
+  // published in the standard) -- this is CSC's own readiness assessment, so the word
+  // "Compliant" must not appear next to genuine ASHRAE §5.x citations. New words chosen to
+  // stay <= the old wording's length so the pixel-tuned column widths/row heights documented
+  // below and around the Building ASHRAE 36 Readiness table do not regress:
+  // "Fully Compliant" (15 chars) -> "High Readiness" (14), "Partially Compliant" (20) ->
+  // "Partial Readiness" (17), "Not Compliant" (13) -> "Low Readiness" (13). DISPLAY TEXT
+  // ONLY -- the 'green'/'amber'/'red' status keys and every caller's threshold logic
+  // (now ASHRAE36_READINESS_HIGH_THRESHOLD/ASHRAE36_READINESS_PARTIAL_THRESHOLD) are untouched.
+  var word = status === 'green' ? 'High Readiness' : status === 'amber' ? 'Partial Readiness' : 'Low Readiness';
   // 2026-07-10 fix (audit-report-na-rationale, wording-decision.md item 1): when the caller
   // passes seqNA (true for a building whose seqPct is null -- zero equipment within Guideline
   // 36's sequence scope), `status`/`composite` are driven entirely by sensor coverage with no
-  // sequence assessment behind them at all. "Fully Compliant" affirmatively (and falsely)
+  // sequence assessment behind them at all. "High Readiness" affirmatively (and falsely)
   // claims a verified sequence pass that never happened, so this word must not render for that
   // case. Neutral word only -- does not touch `status`, `color`, the composite score, or any
   // other caller's threshold logic for buildings that DO have applicable sequences.
   if (seqNA) word = 'Not Applicable';
   // Batch 3 item 2/3a: at 100% (inPlace === required, required > 0) the fraction is a
-  // tautology ("Fully Compliant · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells
+  // tautology ("High Readiness · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells
   // the reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
-  // unchanged (e.g. "Partially Compliant · 178/261 sensors", "Not Compliant · 7/16 sensors").
+  // unchanged (e.g. "Partial Readiness · 178/261 sensors", "Low Readiness · 7/16 sensors").
   var isComplete = inPlace !== undefined && required !== undefined && required > 0 && inPlace === required;
   var label =
     inPlace !== undefined && required !== undefined && !isComplete
@@ -11616,7 +11690,12 @@ function _a36StatusChip(status, inPlace, required, seqNA) {
  */
 function rptPageASHRAE36Cover(n, d) {
   var p = d.portfolio;
-  var color = p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
+  var color =
+    p.composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
+      ? 'var(--rpt-green)'
+      : p.composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
+        ? 'var(--rpt-orange)'
+        : 'var(--rpt-red)';
   // One-paragraph finding
   var finding =
     'To meet ASHRAE Guideline 36, <strong>' +
@@ -11662,7 +11741,7 @@ function rptPageASHRAE36Cover(n, d) {
     '</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
     "This report evaluates the facility's building automation system against ASHRAE Guideline 36 — the industry standard for high-performance HVAC control. " +
-    'It identifies the specific sensors to install and control sequences to program to bring the facility to Guideline 36 compliance. ' +
+    'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with Guideline 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
@@ -11820,7 +11899,7 @@ function rptPageASHRAE36Executive(n, d) {
 
   // Shared table styles
   var tableTitle =
-    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building Compliance Status</div>';
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
   var thStyle =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:#fff;background:var(--rpt-blue);text-align:left;white-space:normal;line-height:1.25';
   // Column widths (2026-07-09, fix/report-wording-compliance-rows): explicit colgroup +
@@ -11913,18 +11992,33 @@ function rptPageASHRAE36Executive(n, d) {
     '">Status</th>' +
     '</tr></thead>';
   // Batch 3 item 3/3b (copy-options.md Option A — RECOMMENDED): append one plain-language
-  // sentence per tier so a facility owner reading "Not Compliant <50%" learns what that means
+  // sentence per tier so a facility owner reading the score learns what that means
   // operationally, not just the number. Numeric footnote kept intact, meaning appended inline.
   // Labels renamed (item ed465b3c, 2026-07-09): Ready/Partial/Critical -> Fully Covered/
   // Partially Covered/Not Covered, then (2026-07-09 rename #2, Matt's decision, supersedes
-  // v647) Covered -> Compliant — display text only; the underlying 'green'/'amber'/'red'
-  // status keys and >=75/>=50 thresholds are unchanged (see _a36StatusChip).
+  // v647) Covered -> Compliant, then (fix/audit-report-scoring, 2026-07-14, Matt's decision)
+  // Compliant -> Readiness -- see _a36StatusChip for the full rationale (ASHRAE 36 defines no
+  // composite score or compliance threshold; this is CSC's own assessment built on its
+  // requirements). This footnote is rewritten to (a) describe the ACTUAL requirement-weighted
+  // computation instead of the retired 40/60 blend, (b) state plainly that the score is CSC's
+  // own assessment and that ASHRAE 36 itself defines no compliance score, and (c) interpolate
+  // the real threshold constants (ASHRAE36_READINESS_HIGH_THRESHOLD/_PARTIAL_THRESHOLD) instead
+  // of typed literals, so the printed numbers can never again drift from the code that applies
+  // them. The underlying 'green'/'amber'/'red' status keys are unchanged (see _a36StatusChip).
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
-    '<strong>Score</strong> = weighted composite (40% Sensor Coverage + 60% Sequence Readiness). ' +
-    '<strong>Status thresholds:</strong> Fully Compliant ≥75% (meets the ASHRAE 36 baseline), Partially Compliant 50–74% ' +
-    '(some sensors and sequences are in place, but work is needed before sequences can run reliably), ' +
-    'Not Compliant <50% (the building lacks the sensors or programming needed to run ASHRAE 36 sequences at all).' +
+    '<strong>Score</strong> is Control Service Company’s own readiness assessment, built on ASHRAE Guideline 36 requirements ' +
+    'and weighted by how many apply to each equipment type — ASHRAE 36 itself defines no composite score or compliance threshold. ' +
+    '<strong>Readiness bands:</strong> High ≥' +
+    ASHRAE36_READINESS_HIGH_THRESHOLD +
+    '% (meets the ASHRAE 36 baseline), Partial ' +
+    ASHRAE36_READINESS_PARTIAL_THRESHOLD +
+    '–' +
+    (ASHRAE36_READINESS_HIGH_THRESHOLD - 1) +
+    '% (some sensors and sequences are in place, but work is needed before sequences can run reliably), ' +
+    'Low <' +
+    ASHRAE36_READINESS_PARTIAL_THRESHOLD +
+    '% (the building lacks the sensors or programming needed to run ASHRAE 36 sequences at all).' +
     '</div>';
 
   // Build a token per building row — type:'row', estH:52px
@@ -12057,7 +12151,7 @@ function rptPageASHRAE36Executive(n, d) {
       var contHdr =
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Building Compliance Status — continued (' +
+        'Building ASHRAE 36 Readiness — continued (' +
         (chunkIndex + 1) +
         ' of ' +
         numChunks +
@@ -12110,7 +12204,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // per-sequence Ready/Partial/Critical STATUS column (same aggregation as the Building
   // Compliance Status table), but Matt flagged that a per-project rollup status doesn't
   // belong on a reference table describing what a sequence IS — that status lives on the
-  // Building Compliance Status table and Per-Building Detail instead. The status column and
+  // Building ASHRAE 36 Readiness table and Per-Building Detail instead. The status column and
   // its underlying ready/partial/blocked aggregation were removed; only the applicability
   // filter (does this sequence apply to any equipment in the portfolio?) remains.
   //
@@ -13402,7 +13496,12 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var p = d.portfolio;
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var color = p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
+  var color =
+    p.composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
+      ? 'var(--rpt-green)'
+      : p.composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
+        ? 'var(--rpt-orange)'
+        : 'var(--rpt-red)';
 
   var toc =
     '<div class="rpt-a36-callout" style="margin-bottom:16px;border-top:1px solid var(--rpt-rule)">' +
@@ -13416,11 +13515,14 @@ function rptPageASHRAE36ProposalCover(n, d) {
 
   var intro =
     '<div style="font-size:12px;color:var(--rpt-page-text);line-height:1.7;margin-bottom:16px">' +
-    'Based on our ASHRAE Guideline 36 compliance audit of <strong>' +
+    // Wording (fix/audit-report-scoring, 2026-07-14, Matt's decision): "compliance audit" /
+    // "compliance score" / "Guideline 36 compliance" reworded to "readiness" throughout --
+    // ASHRAE 36 defines no compliance score of its own; this is CSC's own assessment.
+    'Based on our ASHRAE Guideline 36 readiness assessment of <strong>' +
     d.project.name +
     '</strong>, ' +
     'Control Service Company is pleased to present this service proposal. ' +
-    'Our audit identified an overall compliance score of <strong style="color:' +
+    'Our assessment identified an overall readiness score of <strong style="color:' +
     color +
     '">' +
     p.composite +
@@ -13429,7 +13531,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     ' buildings and ' +
     p.totalEquip +
     ' equipment units. ' +
-    'This proposal outlines the programming and hardware upgrades needed to bring your facility to full Guideline 36 compliance, ' +
+    'This proposal outlines the programming and hardware upgrades needed to bring your facility into full alignment with Guideline 36, ' +
     'maximizing energy savings and occupant comfort.' +
     '</div>';
 
