@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.14.679',
+    date: '2026-07-14',
+    title: 'Equipment Matrix now shows all points together',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department -> Equipment Matrix: opening the compliance detail for a piece of equipment now shows a new "All Points (ASHRAE + Other)" section, so you can see every point the equipment reports -- the required points and the extra ones -- in one place instead of switching between separate views.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.14.678',
     date: '2026-07-14',
     title: 'Bill extraction now double-checks the numbers it read off the page',
