@@ -3,16 +3,18 @@
 stamp-version.py — Deploy-time version stamper for CompanyHub.
 
 Fetches the live CH_VERSION from every deployed host, computes the next
-integer patch number from the PRODUCTION host's patch, rewrites site-ui.js
-CH_VERSION, and rewrites ALL ?v= tags in all four HTML files to the new
-integer.
+integer patch number from the hosts' agreed-upon current patch, rewrites
+site-ui.js CH_VERSION, and rewrites ALL ?v= tags in all four HTML files to
+the new integer.
 
-By default this checks BOTH GitHub Pages and Netlify, since both currently
-deploy from origin/main and their CH_VERSION values should always match —
-a divergence between them is itself a signal that one host's deploy
-silently failed or is lagging. Only the PRODUCTION host (see PRODUCTION_HOST
-below) is treated as a hard failure if unreachable; a stale/unreachable
-non-production host is reported as a warning, not a fatal error.
+This checks BOTH GitHub Pages and Netlify (see HOSTS below). BOTH ARE
+PRODUCTION today — there has not been a deliberate cutover to a single
+host, both serve real users, and both must agree. Every host in HOSTS is
+treated as a hard failure if it is stale (serving a version other than the
+one this run just verified/stamped) or unreachable. A host mismatch is not
+a warning; it means one host's deploy silently failed, which is the exact
+bug class this script exists to catch, so it fails loudly and refuses to
+guess a new patch number until a human resolves the disagreement.
 
 Usage:
     python scripts/stamp-version.py
@@ -36,21 +38,23 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# All hosts this script checks by default. Both deploy from origin/main today,
-# so their CH_VERSION should always agree; a mismatch is worth surfacing.
+# All hosts this script checks. Both deploy from origin/main today, both are
+# public and serve real users, and BOTH ARE PRODUCTION — GitHub Pages is the
+# historical production host (bookmarks and client portal links point here);
+# Netlify auto-deploys from main and survived a recent GitHub Pages outage
+# (repo private/public flip took GitHub Pages dark on 2026-07-14 while
+# Netlify stayed up). No deliberate single-host cutover has happened. Until
+# one does, every host below is checked and every host is a hard failure if
+# stale or unreachable — there is no "spare" host that only warns.
+#
+# If a real single-host cutover happens later (i.e. one of these hosts is
+# formally retired), that is the point to reintroduce a single authoritative
+# host concept here — e.g. remove the retired entry from HOSTS entirely
+# rather than re-adding a soft-warn tier for it.
 HOSTS = {
     "github_pages": "https://MattControlServiceCompany.github.io/companydashboard/site-ui.js",
     "netlify": "https://cscdashboard.netlify.app/site-ui.js",
 }
-
-# Which entry in HOSTS is authoritative for computing the next patch number
-# and is treated as a hard failure if unreachable. NETLIFY IS PRODUCTION
-# (cutover happened 2026-07-14, after GitHub flipping the repo private/public
-# took GitHub Pages dark while Netlify stayed up throughout). GitHub Pages
-# also has a known history of the deploy step hanging/failing (~10 min hangs,
-# failed 3x in a row — logged backlog item); it stays in HOSTS below so a
-# dark/lagging GitHub Pages is still reported as a WARNING, just not fatal.
-PRODUCTION_HOST = "netlify"
 
 SITE_UI_JS = REPO_ROOT / "site-ui.js"
 HTML_FILES = [
@@ -198,10 +202,10 @@ def main() -> None:
         type=str,
         metavar="URL",
         help=(
-            "Skip the default both-hosts check (see HOSTS) and check ONLY "
-            "this single URL, treated as production. Defaults to the "
-            "CH_LIVE_SITE_UI_URL env var if set, else checks every host in "
-            f"HOSTS with {PRODUCTION_HOST!r} as production."
+            "Skip the default all-hosts check (see HOSTS) and check ONLY "
+            "this single URL. Defaults to the CH_LIVE_SITE_UI_URL env var "
+            "if set, else checks every host in HOSTS — all of which are "
+            "production and must agree."
         ),
     )
     args = parser.parse_args()
@@ -214,65 +218,83 @@ def main() -> None:
         override_url = args.live_url or os.environ.get("CH_LIVE_SITE_UI_URL")
         if override_url:
             hosts_to_check = {"override": override_url}
-            production_label = "override"
         else:
             hosts_to_check = HOSTS
-            production_label = PRODUCTION_HOST
 
         print(
             f"[stamp-version] Checking live CH_VERSION on "
-            f"{len(hosts_to_check)} host(s)..."
+            f"{len(hosts_to_check)} host(s) (all treated as production)..."
         )
         results = check_live_hosts(hosts_to_check)
         for label, url in hosts_to_check.items():
             patch, err = results[label]
-            marker = " [PRODUCTION]" if label == production_label else ""
             if err:
-                print(f"  [{label}{marker}] {url}\n      ERROR: {err}")
+                print(f"  [{label}] {url}\n      FAIL - ERROR: {err}")
             else:
-                print(f"  [{label}{marker}] {url}\n      CH_VERSION patch: {patch}")
+                print(f"  [{label}] {url}\n      CH_VERSION patch: {patch}")
 
-        prod_patch, prod_err = results[production_label]
-        if prod_err:
+        # Step 1a: Any unreachable/unparseable host is a hard failure. Every
+        # host in HOSTS is production — there is no non-fatal "warn only"
+        # tier. See the HOSTS comment above for why.
+        errored = [label for label, (patch, err) in results.items() if err]
+        if errored:
             print(
-                f"\nERROR: Could not fetch live site-ui.js from the PRODUCTION "
-                f"host ({production_label}).\n"
-                f"  Reason: {prod_err}\n"
+                f"\nERROR: {len(errored)} of {len(results)} host(s) could not "
+                f"be checked:",
+                file=sys.stderr,
+            )
+            for label in errored:
+                _, err = results[label]
+                print(f"  [{label}] {hosts_to_check[label]}: {err}", file=sys.stderr)
+            print(
+                f"\nEvery host in HOSTS is production and must be reachable "
+                f"and reporting a valid CH_VERSION before stamping a new "
+                f"version.\n"
                 f"\n"
-                f"If this host is wrong, override it with:\n"
+                f"To check a single host only, use:\n"
                 f"  python scripts/stamp-version.py --live-url <url>\n"
                 f"  (or set the CH_LIVE_SITE_UI_URL environment variable)\n"
                 f"\n"
-                f"If you are offline or production is down, use:\n"
+                f"If you are offline or all hosts are down, use:\n"
                 f"  python scripts/stamp-version.py --force-version <patch_number>\n"
                 f"\n"
                 f"IMPORTANT: --force-version must be (current live patch) + 1.\n"
-                f"Check the live site for the current version before using this flag.",
+                f"Check the live site(s) for the current version before using this flag.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        # Non-production hosts are informational only: warn, don't fail.
-        for label, (patch, err) in results.items():
-            if label == production_label:
-                continue
-            if err:
-                print(
-                    f"WARNING: could not check non-production host [{label}]: {err}"
-                )
-            elif patch != prod_patch:
-                print(
-                    f"WARNING: non-production host [{label}] reports patch "
-                    f"{patch}, but production [{production_label}] reports "
-                    f"{prod_patch}. Both hosts deploy from origin/main and "
-                    f"should match — this likely means [{label}]'s deploy "
-                    f"silently failed or is lagging behind."
-                )
+        # Step 1b: Every host was reachable. If they disagree with each
+        # other, that is its own distinct, loud failure — it means one
+        # host's deploy silently failed or is lagging behind another. Do
+        # NOT silently pick one side; a human must resolve it before a new
+        # patch number is computed, or a version could get reused/skipped.
+        patches = {label: patch for label, (patch, err) in results.items()}
+        distinct_patches = set(patches.values())
+        if len(distinct_patches) > 1:
+            print(
+                f"\nERROR: HOSTS DISAGREE ON THE LIVE VERSION — "
+                f"this means one host's deploy silently failed or is "
+                f"lagging behind another. Refusing to guess which host is "
+                f"correct.",
+                file=sys.stderr,
+            )
+            for label, patch in patches.items():
+                print(f"  [{label}] reports patch {patch}", file=sys.stderr)
+            print(
+                f"\nResolve the disagreement (re-deploy the lagging host, "
+                f"or investigate why it's stale) before re-running this "
+                f"script. To bypass and check a single host only, use:\n"
+                f"  python scripts/stamp-version.py --live-url <url>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-        new_patch = prod_patch + 1
+        agreed_patch = distinct_patches.pop()
+        new_patch = agreed_patch + 1
         print(
-            f"[stamp-version] Production ({production_label}) patch: "
-            f"{prod_patch} -> New patch: {new_patch}"
+            f"[stamp-version] All {len(hosts_to_check)} host(s) agree on "
+            f"patch: {agreed_patch} -> New patch: {new_patch}"
         )
 
     new_version = build_version_string(new_patch)
