@@ -1420,14 +1420,21 @@ function _applyExtractionGates(bills, gateA, gateB) {
     if (gateB) reasons.push(gateB.message);
     const gc = b._correction_pending_TotalCurrentCharges;
     if (gc) {
+      // REVIEW FIX (18b33d9f round 3, BLOCKING 1): gc is set ONLY when the
+      // correction was HELD — TotalCurrentCharges was deliberately left
+      // UNCHANGED, which is the entire point of the Critical-2 fix. The old
+      // wording ("Total auto-corrected by...") said the opposite of what
+      // happened: it told Matt the app already fixed it, in exactly the
+      // scenario where the app explicitly refused to touch the value and is
+      // waiting on him. Never say "corrected" here — say NOT applied.
       reasons.push(
-        'Total auto-corrected by ' +
-          gc.pctChange +
-          '% ($' +
+        'Total needs correction: $' +
           gc.original +
           ' → $' +
           gc.proposedCorrection +
-          ') — verify against the source PDF',
+          ' (' +
+          gc.pctChange +
+          '%) — NOT applied, verify against the source PDF and confirm',
       );
     }
     if (reasons.length) {
@@ -6182,7 +6189,9 @@ function clearQueue() {
   _queueGroupState = null; // Plan 7e0b9d15 §4: reset group state on clear
   window._pdfQueue = null;
   window._pdfQueueRows = null;
-  window._pdfForceSaveGated = false; // GATE WIRING (18b33d9f): don't leak an override into a new batch
+  // NOTE (18b33d9f round 3): the gate override is now per-bill
+  // (_gateOverrideConfirmed on each bill object), not a global flag, so there
+  // is nothing to reset here — fresh bills from the next batch never carry it.
   document.getElementById('pdfRightCol').style.display = '';
   const tabsBar = document.getElementById('queueTabsBar');
   if (tabsBar) tabsBar.remove();
@@ -8498,13 +8507,20 @@ async function _dupBulkAction(action) {
   const commFilter = window._pdfCommTab && window._pdfCommTab !== 'All' ? window._pdfCommTab : null;
   // GATE WIRING (18b33d9f): this is a separate save entry point from savePDFAllBills
   // (reachable via the duplicate-resolution banner's Skip/Overwrite/Merge All
-  // buttons) and was completely ungated before this fix. Same hard-stop pattern —
-  // window._pdfForceSaveGated overrides, set by the "Save Anyway" button.
-  if (!window._pdfForceSaveGated) {
+  // buttons) and was completely ungated before this fix.
+  // REVIEW FIX (18b33d9f round 3, BLOCKING 2): checks each bill's OWN
+  // _gateOverrideConfirmed flag, not a global window._pdfForceSaveGated — a
+  // global flag stayed true for the rest of the file after ONE confirmation
+  // and silently waived the gate for every OTHER gated bill on the next
+  // click, with zero confirmation shown for them. "Save Anyway" (extraction
+  // badge area) confirms every bill that is gate-tripped RIGHT NOW, then asks
+  // the user to click this action again — it does not pre-authorize any bill
+  // that becomes gated later.
+  {
     const gatedIdx = [];
     for (let gi = 0; gi < bills.length; gi++) {
       if (commFilter && (bills[gi].Commodity || 'Other') !== commFilter) continue;
-      if (bills[gi]._gateTripped) gatedIdx.push(gi);
+      if (bills[gi]._gateTripped && !bills[gi]._gateOverrideConfirmed) gatedIdx.push(gi);
     }
     if (gatedIdx.length > 0) {
       const reasons = [...new Set(gatedIdx.flatMap((gi) => bills[gi]._gateReasons || []))];
@@ -8513,7 +8529,7 @@ async function _dupBulkAction(action) {
           ' bill(s) held for review — ' +
           reasons[0] +
           (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
-          '. Use "Save Anyway" (extraction badge area) to override.',
+          '. Click "Save Anyway" (extraction badge area) to confirm, then click this action again.',
       );
       return;
     }
@@ -8898,13 +8914,18 @@ async function overwriteDupBill() {
   // assumed reachability required. A gate-tripped + duplicate bill could be
   // silently overwritten with no Save Anyway prompt and no gate reason shown.
   // Same hard-stop pattern as _dupBulkAction.
-  if (bills[billIdx]._gateTripped && !window._pdfForceSaveGated) {
+  // REVIEW FIX (18b33d9f round 3, BLOCKING 2): the override is stamped on
+  // THIS bill object only (_gateOverrideConfirmed), not a global flag — a
+  // global window._pdfForceSaveGated stayed true for the rest of the file
+  // after one confirmation, silently waiving the gate for every OTHER gated
+  // bill on the next click, with zero confirmation shown for them.
+  if (bills[billIdx]._gateTripped && !bills[billIdx]._gateOverrideConfirmed) {
     showToast(
       'Held for review — ' +
         (bills[billIdx]._gateReasons || []).join(' · ') +
         '. Verify against the source PDF, then click Overwrite again to confirm.',
     );
-    window._pdfForceSaveGated = true; // next click on this bill proceeds
+    bills[billIdx]._gateOverrideConfirmed = true; // next click on THIS bill only proceeds
     return;
   }
   dup.action = 'overwrite';
@@ -8931,13 +8952,15 @@ async function mergeDupBill() {
   if (!dup || !bills || !bills[billIdx]) return;
   // REVIEW FIX (18b33d9f round 2, CRITICAL 3): same hard-stop as overwriteDupBill
   // above — this button also fires immediately, no modal review required.
-  if (bills[billIdx]._gateTripped && !window._pdfForceSaveGated) {
+  // REVIEW FIX (18b33d9f round 3, BLOCKING 2): per-bill override, not global —
+  // see overwriteDupBill's comment above for why.
+  if (bills[billIdx]._gateTripped && !bills[billIdx]._gateOverrideConfirmed) {
     showToast(
       'Held for review — ' +
         (bills[billIdx]._gateReasons || []).join(' · ') +
         '. Verify against the source PDF, then click Merge again to confirm.',
     );
-    window._pdfForceSaveGated = true; // next click on this bill proceeds
+    bills[billIdx]._gateOverrideConfirmed = true; // next click on THIS bill only proceeds
     return;
   }
   dup.action = 'merge';
@@ -10172,7 +10195,9 @@ async function processPDF(file) {
   document.getElementById('extractMethodBadge').style.display = 'none';
   window._pdfSourceFileName = file.name;
   window._pdfAbort = false;
-  window._pdfForceSaveGated = false; // GATE WIRING (18b33d9f): don't leak an override into a new file
+  // NOTE (18b33d9f round 3): the gate override is now per-bill
+  // (_gateOverrideConfirmed on each bill object), not a global flag, so there
+  // is nothing to reset here — fresh bills from the next file never carry it.
   dz.innerHTML =
     '📄 ' +
     file.name +
@@ -11254,15 +11279,18 @@ function renderMultiBillUI(bills, box) {
         .join('');
     }
     // GATE WIRING (18b33d9f): "Save All" is blocked (see savePDFAllBills) while any
-    // bill in this file is gate-tripped and window._pdfForceSaveGated is not set.
+    // bill in this file is gate-tripped and not yet individually confirmed.
     // Surface that state here, non-collapsed, with an explicit override action.
-    const _gatedCount = bills.filter((b) => b._gateTripped).length;
+    // REVIEW FIX (18b33d9f round 3, BLOCKING 2): count only STILL-unconfirmed
+    // gated bills (per-bill _gateOverrideConfirmed, not a global flag) — see
+    // _confirmGatedBillsForSave() for what "Save Anyway" actually does.
+    const _unconfirmedGated = bills.filter((b) => b._gateTripped && !b._gateOverrideConfirmed);
     let gateNotice = '';
-    if (_gatedCount > 0 && !window._pdfForceSaveGated) {
+    if (_unconfirmedGated.length > 0) {
       gateNotice =
         `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
-        `&#9888; ${_gatedCount} of ${bills.length} bill(s) flagged for review and held out of "Save All" — verify against the source PDF. ` +
-        `<button onclick="window._pdfForceSaveGated=true;savePDFAllBills()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
+        `&#9888; ${_unconfirmedGated.length} of ${bills.length} bill(s) flagged for review and held out of "Save All" — verify against the source PDF. ` +
+        `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
         `</div>`;
     }
     badgeEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
@@ -11413,6 +11441,34 @@ function revertOCRConsensus(field) {
   const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
   renderPDFFields(b, billWarnings);
 }
+// "Save Anyway" handler (18b33d9f round 3, BLOCKING 2 fix). Confirms every
+// bill that is gate-tripped RIGHT NOW in window._pdfMultiBills — stamping
+// _gateOverrideConfirmed on each one individually, not a global flag — then
+// re-renders so the blocking notice clears and the user can click their
+// original Save/Overwrite/Merge/Skip action again. Deliberately does NOT
+// re-invoke a save action itself: this button is shared by savePDFAllBills
+// and _dupBulkAction's blocking notices, and guessing which one the user
+// wanted risks firing the wrong action. Confirm, then act is unambiguous.
+function _confirmGatedBillsForSave() {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills.length) return;
+  let n = 0;
+  bills.forEach((b) => {
+    if (b._gateTripped && !b._gateOverrideConfirmed) {
+      b._gateOverrideConfirmed = true;
+      n++;
+    }
+  });
+  const box = document.getElementById('pdfAIBox');
+  if (box) renderMultiBillUI(bills, box);
+  showToast(
+    n +
+      ' flagged bill' +
+      (n === 1 ? '' : 's') +
+      ' confirmed — click Save (or Overwrite/Merge/Skip All) again to proceed.',
+  );
+}
+
 async function savePDFAllBills(commodityFilter) {
   const allBills = window._pdfMultiBills;
   if (!allBills || !allBills.length) return;
@@ -11424,11 +11480,18 @@ async function savePDFAllBills(commodityFilter) {
   if (!billIndices.length) return;
   // GATE WIRING (18b33d9f): savePDFAllBills has no per-bill checkbox UI (unlike the
   // queue path), so the enforcement point here is a hard stop instead of a default-
-  // unchecked row. The user must explicitly click "Save Anyway" (sets
-  // window._pdfForceSaveGated) to proceed — acting to save something flagged,
-  // instead of acting to prevent it.
-  if (!window._pdfForceSaveGated) {
-    const gatedIdx = billIndices.filter((i) => allBills[i]._gateTripped);
+  // unchecked row. The user must explicitly click "Save Anyway" to proceed —
+  // acting to save something flagged, instead of acting to prevent it.
+  // REVIEW FIX (18b33d9f round 3, BLOCKING 2): checks each bill's OWN
+  // _gateOverrideConfirmed flag, not a global window._pdfForceSaveGated — a
+  // global flag stayed true for the rest of the file after ONE confirmation
+  // and silently waived the gate for every OTHER gated bill on the next
+  // click, with zero confirmation shown for them. "Save Anyway" confirms
+  // every bill that is gate-tripped RIGHT NOW (see the button's onclick,
+  // below) then re-invokes this function — it does not pre-authorize any
+  // bill that becomes gated later.
+  {
+    const gatedIdx = billIndices.filter((i) => allBills[i]._gateTripped && !allBills[i]._gateOverrideConfirmed);
     if (gatedIdx.length > 0) {
       const reasons = [...new Set(gatedIdx.flatMap((i) => allBills[i]._gateReasons || []))];
       showToast(
@@ -11438,7 +11501,7 @@ async function savePDFAllBills(commodityFilter) {
           ' bill(s) held for review — ' +
           reasons[0] +
           (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
-          '. Click "Save Anyway" to override.',
+          '. Click "Save Anyway" to confirm each, then Save again.',
       );
       return;
     }
@@ -13067,7 +13130,7 @@ function renderPDFFields(parsed, warnings) {
         <span style="font-size:26px;line-height:1">&#9940;</span>
         <div style="flex:1">
           <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">TOTAL CORRECTION HELD — ${_pendingCorrection.pctChange}% ($${_pendingCorrection.dollarChange}) — not applied</div>
-          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Total auto-corrected by ${_pendingCorrection.pctChange}% ($${Number(_pendingCorrection.original).toFixed(2)} → $${_pendingCorrection.proposedCorrection}) — verify against the source PDF. ${_pendingCorrection.reason}</div>
+          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Total needs correction: $${Number(_pendingCorrection.original).toFixed(2)} → $${_pendingCorrection.proposedCorrection} (${_pendingCorrection.pctChange}%) — NOT applied, verify against the source PDF and confirm. ${_pendingCorrection.reason}</div>
         </div>
       </div>`
     : '';
@@ -15045,14 +15108,18 @@ function savePDFData() {
   }
   // GATE WIRING (18b33d9f): single-bill "Save" button — another independent save
   // entry point (savePDFData), separate from savePDFAllBills/_dupBulkAction/
-  // saveQueuedBills. Same hard-stop + window._pdfForceSaveGated override pattern.
-  if (extracted._gateTripped && !window._pdfForceSaveGated) {
+  // saveQueuedBills.
+  // REVIEW FIX (18b33d9f round 3, BLOCKING 2): per-bill override
+  // (extracted._gateOverrideConfirmed), not a global flag — a global flag
+  // stayed true for the rest of the file after one confirmation and silently
+  // waived the gate for every OTHER gated bill with zero confirmation shown.
+  if (extracted._gateTripped && !extracted._gateOverrideConfirmed) {
     showToast(
       'Held for review — ' +
         (extracted._gateReasons || []).join(' · ') +
         '. Verify against the source PDF, then click Save again to confirm.',
     );
-    window._pdfForceSaveGated = true; // next click on the same displayed bill proceeds
+    extracted._gateOverrideConfirmed = true; // next click on THIS bill only proceeds
     return;
   }
   const projId = parseInt(document.getElementById('pdfProjSel').value) || null;
