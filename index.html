@@ -2707,6 +2707,11 @@
         }
         var pdfCount = Object.keys(data._pdfStore).length;
         data._pdfStoreMeta = { ok: pdfOk, count: pdfCount, error: pdfErr };
+        // Explicit positive marker so a future restore can identify this as a real
+        // CompanyHub backup without guessing from data keys at all (see the
+        // marker-key fallback in processRestoreFile, which still covers backups
+        // made before this line existed).
+        data._companyHubBackup = true;
         var d = new Date();
         var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
         var filename = 'CompanyHub-localdatafile-' + ds + '.json';
@@ -2752,6 +2757,51 @@
         fr.onload = function (ev) {
           try {
             var data = JSON.parse(ev.target.result);
+            // Reject anything that parses as valid JSON but isn't actually a
+            // CompanyHub backup BEFORE any key is written to DB/localStorage below.
+            // A bare {"hello":"world"} (or any unrelated .json) used to sail through
+            // this whole function, write every one of its top-level keys into live
+            // storage, and show "Restored — reloading..." with zero warning. This
+            // guard must run first so a bad file is rejected with NO writes at all,
+            // not caught halfway through the forEach loop.
+            //
+            // Marker keys, not a version field: real backups (including every one
+            // already sitting in Matt's Downloads folder from before this fix, e.g.
+            // 2026-07-05/06/13) have no version marker to check — inventing one would
+            // reject files that are perfectly good. Instead this checks for at least
+            // ONE of several keys that are core to how CompanyHub actually stores
+            // data and are present in every real backup inspected (old and new
+            // alike). Requiring only one (not all) survives future schema drift —
+            // if a key gets renamed or dropped, the others still catch it — while
+            // still being far too specific for an unrelated JSON file to satisfy
+            // by accident. New backups also carry an explicit _companyHubBackup
+            // marker (set in siteBackup) so future restores don't have to rely on
+            // guessing at data keys at all; old backups fall back to the key check.
+            var CH_BACKUP_MARKER_KEYS = [
+              'en_projects',
+              'ch_settings',
+              'ch_theme',
+              'ch_user',
+              'en_tasks',
+              'en_pricing_catalog',
+              'en_pricing_config',
+              'en_pricing_meta',
+            ];
+            var looksLikeBackup =
+              !!data &&
+              typeof data === 'object' &&
+              !Array.isArray(data) &&
+              (data._companyHubBackup === true ||
+                CH_BACKUP_MARKER_KEYS.some(function (k) {
+                  return Object.prototype.hasOwnProperty.call(data, k);
+                }));
+            if (!looksLikeBackup) {
+              throw new Error(
+                '"' +
+                  file.name +
+                  '" doesn\'t look like a CompanyHub backup — no recognized CompanyHub data was found in it',
+              );
+            }
             // Pull out the PDF store payload first (if present) so it doesn't get
             // written into DB/localStorage as a regular key below. Old backups won't
             // have this key — pdfPayload stays {} and the rest of the restore runs
