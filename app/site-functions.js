@@ -1191,6 +1191,47 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.14.678',
+    date: '2026-07-14',
+    title: 'Bill extraction now double-checks the numbers it read off the page',
+    items: [
+      {
+        type: 'fix',
+        text: "Energy Department bill extraction: fixed a bug where a bill's kWh could come out wrong if the printed usage numbers on the page did not add up. The extraction now cross-checks the usage amount against the charge lines on the bill and trusts whichever number the bill itself backs up.",
+      },
+      {
+        type: 'change',
+        text: "If a bill's numbers genuinely do not agree with each other, it is now flagged for you to review instead of being silently guessed at.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.07.14.677',
+    date: '2026-07-14',
+    title: 'Fixed: buildings panel button was hidden after collapsing',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data: if you collapsed the buildings panel, the small button to bring it back was cut off and hard to see or click. It now shows fully -- click it, or select it and press Enter, to bring your buildings list back.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.07.14.676',
+    date: '2026-07-14',
+    title: 'Bill extraction now flags anything it is not sure about',
+    items: [
+      {
+        type: 'feature',
+        text: 'PDF and scanned bill extraction now refuses to quietly save a bill it is not confident in. If pages were skipped, fewer bills came out than expected, or a charge total needed a large correction, the bill is flagged with a clear red banner explaining what looked wrong.',
+      },
+      {
+        type: 'change',
+        text: 'A flagged bill is left unchecked in the save list, so "Save All" skips it automatically until you open it, review the warning, and confirm it yourself.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.13.671',
     date: '2026-07-13',
     title: 'Backup & Restore now protects your bill PDFs',
