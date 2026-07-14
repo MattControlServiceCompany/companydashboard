@@ -193,7 +193,16 @@ function publishClientPortal(projId) {
   URL.revokeObjectURL(url);
 
   // ── 9. Show toast with instructions and client URL ───────────
-  const clientUrl = 'https://mattcontrolservicecompany.github.io/companydashboard/portal/?p=' + p.portalToken;
+  // Derive the app base path from the running page's own location so the
+  // link is correct whether served at root (Netlify) or under a subpath
+  // (GitHub Pages: /companydashboard/). Same split('/') idiom used
+  // elsewhere in the codebase for subpath-agnostic path handling
+  // (site-ui.js, app/site-functions.js) — here we keep everything
+  // EXCEPT the current page's own filename, rather than just the leaf.
+  const pathParts = location.pathname.split('/');
+  pathParts.pop(); // drop the current page's filename (e.g. energy-department.html)
+  const basePath = pathParts.join('/') + '/'; // '/' at root, '/companydashboard/' on GH Pages
+  const clientUrl = location.origin + basePath + 'portal/?p=' + p.portalToken;
   const githubUploadUrl = 'https://github.com/MattControlServiceCompany/companydashboard/upload/main/portal-data';
 
   const toastMsg =

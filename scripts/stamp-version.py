@@ -14,6 +14,7 @@ Exit 0 on success. Exit 1 with details on any failure.
 """
 
 import argparse
+import os
 import re
 import sys
 import urllib.request
@@ -25,9 +26,17 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LIVE_SITE_UI_URL = (
-    "https://MattControlServiceCompany.github.io/companydashboard/site-ui.js"
-)
+
+# Production host for the live version check. Netlify (cscdashboard.netlify.app)
+# is the production target as of the Netlify cutover; GitHub Pages is kept as
+# a documented fallback below. Override at runtime with --live-url or the
+# CH_LIVE_SITE_UI_URL env var so this never needs another code edit if the
+# production host changes again.
+DEFAULT_LIVE_SITE_UI_URL = "https://cscdashboard.netlify.app/site-ui.js"
+# Prior production host (retired on Netlify cutover) — kept for reference:
+#   https://MattControlServiceCompany.github.io/companydashboard/site-ui.js
+LIVE_SITE_UI_URL = os.environ.get("CH_LIVE_SITE_UI_URL", DEFAULT_LIVE_SITE_UI_URL)
+
 SITE_UI_JS = REPO_ROOT / "site-ui.js"
 HTML_FILES = [
     REPO_ROOT / "energy-department.html",
@@ -46,18 +55,22 @@ VQ_PATTERN = re.compile(
 # ---------------------------------------------------------------------------
 
 
-def fetch_live_patch() -> int:
-    """Fetch the live site-ui.js from GitHub Pages and parse CH_VERSION."""
+def fetch_live_patch(live_url: str) -> int:
+    """Fetch the live site-ui.js from the configured production host and parse CH_VERSION."""
     try:
-        with urllib.request.urlopen(LIVE_SITE_UI_URL, timeout=10) as resp:
+        with urllib.request.urlopen(live_url, timeout=10) as resp:
             content = resp.read().decode("utf-8", errors="replace")
     except Exception as exc:
         print(
-            f"ERROR: Could not fetch live site-ui.js from GitHub Pages.\n"
-            f"  URL: {LIVE_SITE_UI_URL}\n"
+            f"ERROR: Could not fetch live site-ui.js from the production host.\n"
+            f"  URL: {live_url}\n"
             f"  Reason: {exc}\n"
             f"\n"
-            f"If you are offline or GitHub Pages is down, use:\n"
+            f"If this host is wrong, override it with:\n"
+            f"  python scripts/stamp-version.py --live-url <url>\n"
+            f"  (or set the CH_LIVE_SITE_UI_URL environment variable)\n"
+            f"\n"
+            f"If you are offline or the production host is down, use:\n"
             f"  python scripts/stamp-version.py --force-version <patch_number>\n"
             f"\n"
             f"IMPORTANT: --force-version must be (current live patch) + 1.\n"
@@ -159,6 +172,16 @@ def main() -> None:
             "For offline use only — must equal (live patch + 1)."
         ),
     )
+    parser.add_argument(
+        "--live-url",
+        type=str,
+        metavar="URL",
+        help=(
+            "Override the production site-ui.js URL used for the live version "
+            f"check. Defaults to CH_LIVE_SITE_UI_URL env var if set, else "
+            f"{DEFAULT_LIVE_SITE_UI_URL!r}."
+        ),
+    )
     args = parser.parse_args()
 
     # Step 1: Determine new patch number
@@ -166,8 +189,9 @@ def main() -> None:
         new_patch = args.force_version
         print(f"[stamp-version] Using forced patch number: {new_patch}")
     else:
-        print(f"[stamp-version] Fetching live CH_VERSION from GitHub Pages...")
-        live_patch = fetch_live_patch()
+        live_url = args.live_url or LIVE_SITE_UI_URL
+        print(f"[stamp-version] Fetching live CH_VERSION from {live_url} ...")
+        live_patch = fetch_live_patch(live_url)
         new_patch = live_patch + 1
         print(f"[stamp-version] Live patch: {live_patch} -> New patch: {new_patch}")
 
