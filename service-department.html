@@ -2418,19 +2418,55 @@
       /* ═══════════════════════════════════
          SA DATA — 57 real records from CSV
       ═══════════════════════════════════ */
-      /* ── PERSISTENT STORAGE — delegates to window.Store so dataUpdated events fire ── */
+      /* ── PERSISTENT STORAGE ──
+         KEEP IN SYNC WITH app/core.js sset()/sget().
+         This page cannot load app/core.js directly — core.js declares
+         page-global bindings (currentUser, enterApp, signOut, init, etc.)
+         that collide with this file's own top-level declarations of the
+         same names, which would throw "Identifier has already been
+         declared" and break the whole page. So this is a deliberate,
+         synced copy — not a driveby duplicate. If you fix a bug in
+         core.js's sset()/sget(), port the fix here too (backlog 884908b8). */
       function sset(k, v) {
+        if (window.DB && window.DB.isReady()) {
+          return window.DB.set(k, v); // IDB — unlimited storage, returns a Promise
+        }
         if (window.Store) {
-          window.Store.set(k, v);
-          return;
+          return window.Store.set(k, v);
         }
         try {
           localStorage.setItem(k, JSON.stringify(v));
+          return Promise.resolve();
         } catch (e) {
-          console.warn('sset:', e);
+          console.warn('sset failed:', e);
+          return Promise.reject(e);
         }
       }
       function sget(k, fb) {
+        // READ-PATH: when the IndexedDB cache is warm, read from it first.
+        if (window.DB && window.DB.isReady()) {
+          const dbVal = window.DB.get(k);
+          if (dbVal !== null && dbVal !== undefined) return dbVal;
+          // Key not in IDB cache — try localStorage (covers keys written
+          // before DB was ready, or lsPreserveKeys-style keys).
+          try {
+            const r = localStorage.getItem(k);
+            if (r !== null) return JSON.parse(r);
+          } catch (e) {
+            /* fall through */
+          }
+          return fb;
+        }
+        // DB not ready yet — legacy path
+        if (window.Store) {
+          try {
+            const r = localStorage.getItem(k);
+            const d = r !== null ? JSON.parse(r) : null;
+            return d !== null ? d : fb !== undefined ? fb : [];
+          } catch (e) {
+            return fb !== undefined ? fb : [];
+          }
+        }
         try {
           const r = localStorage.getItem(k);
           return r !== null ? JSON.parse(r) : fb;
@@ -2524,6 +2560,10 @@
       let selectedSA = null;
       function populateTechFilter() {
         const sel = document.getElementById('techFilter');
+        // Idempotent: this can now run more than once (initial load + DB refresh
+        // after warmCache resolves — backlog 884908b8), so reset to the base
+        // "All Technicians" option before repopulating to avoid duplicates.
+        sel.innerHTML = '<option value="">All Technicians</option>';
         const techs = [...new Set(saData.map((s) => s.tech).filter((t) => t && t !== 'N/A'))].sort();
         techs.forEach((t) => {
           const o = document.createElement('option');
@@ -3598,10 +3638,31 @@
         if (sidebar && !sidebar.id) sidebar.id = 'appSidebar';
       }
 
+      /* Re-read persisted data from IndexedDB once DB.warmCache() resolves, then
+         re-render. saData/staffData/dispatchData are read via sget() at parse
+         time (script top, before app/db.js has even loaded), so on a browser
+         where the localStorage → IndexedDB migration has already run, that
+         first read can race ahead of the IDB cache warming and come back
+         empty. warmCache() always resolves (success or fallback), so this
+         covers both paths. Backlog 884908b8. */
+      function refreshDataFromDB() {
+        saData = sget('sv_saData', saData);
+        staffData = sget('sv_staffData', staffData);
+        dispatchData = sget('sv_dispatchData', dispatchData);
+        renderStaff();
+        updateStaffStats();
+        populateTechFilter();
+        renderSAList();
+        updatePMStats();
+        renderDispatch();
+        buildCalendar('staff', staffCalYear, staffCalMonth, staffSelDay, 'staffCalCard');
+        buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
+      }
+
       document.addEventListener('DOMContentLoaded', function () {
         buildMobileSidebarToggle();
         if (typeof DB !== 'undefined') {
-          DB.warmCache();
+          DB.warmCache().then(refreshDataFromDB);
         }
       });
     </script>
