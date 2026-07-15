@@ -9063,8 +9063,15 @@ async function _dupBulkAction(action) {
   // badge area) confirms every bill that is gate-tripped RIGHT NOW, then asks
   // the user to click this action again — it does not pre-authorize any bill
   // that becomes gated later.
+  // SKIP-ALL GATE EXEMPTION (backlog decision, approved): "Skip All"
+  // (action === 'skip') writes nothing to storage — there is no data-loss
+  // risk the gate exists to prevent, so building gatedIdxSet here (and thus
+  // triggering the held-for-review toast/summary below) is pure friction for
+  // a bill the user was never going to save. Only build the gate set for the
+  // WRITE actions (overwrite/merge) so Overwrite All / Save All continue to
+  // hold flagged bills exactly as before.
   const gatedIdxSet = new Set();
-  {
+  if (action !== 'skip') {
     const gatedIdx = [];
     for (let gi = 0; gi < bills.length; gi++) {
       if (commFilter && (bills[gi].Commodity || 'Other') !== commFilter) continue;
