@@ -6499,6 +6499,7 @@ function _showSaveSummary(entries) {
   if (!entries || !entries.length) return;
   const existing = document.getElementById('saveSummaryModal');
   if (existing) existing.remove();
+  const hasHeld = entries.some((e) => e.status === 'held');
   const rows = entries
     .map((e, i) => {
       const color =
@@ -6506,9 +6507,17 @@ function _showSaveSummary(entries) {
           ? '#22c55e'
           : e.status === 'skipped'
             ? 'var(--text3)'
-            : '#ef4444';
+            : e.status === 'held'
+              ? 'var(--amber)'
+              : '#ef4444';
       const icon =
-        e.status === 'saved' || e.status === 'updated' ? '&#10003;' : e.status === 'skipped' ? '&#9888;' : '&#10005;';
+        e.status === 'saved' || e.status === 'updated'
+          ? '&#10003;'
+          : e.status === 'skipped'
+            ? '&#9888;'
+            : e.status === 'held'
+              ? '&#9888;'
+              : '&#10005;';
       return (
         '<tr style="border-top:1px solid var(--border)">' +
         '<td style="padding:6px 12px;color:var(--text3);font-variant-numeric:tabular-nums">' +
@@ -6526,6 +6535,9 @@ function _showSaveSummary(entries) {
         '</td>' +
         '<td style="padding:6px 12px;color:var(--text2)">' +
         (e.destination || '—') +
+        (e.reason
+          ? '<div style="font-size:10px;color:var(--amber);margin-top:2px">' + _escHtml(e.reason) + '</div>'
+          : '') +
         '</td>' +
         '<td style="padding:6px 12px;color:var(--text3);font-size:10px">' +
         (e.method || '') +
@@ -6545,9 +6557,14 @@ function _showSaveSummary(entries) {
   modal.id = 'saveSummaryModal';
   modal.className = 'modal-bg open';
   modal.style.cssText = 'display:flex;align-items:center;justify-content:center';
-  modal.onclick = (ev) => {
-    if (ev.target === modal) modal.remove();
-  };
+  // Non-dismissible-by-backdrop-click when the batch held bills for review — the
+  // user must explicitly acknowledge (via the ✕ button) rather than risk an
+  // accidental stray click silently hiding the "N bills were NOT saved" notice.
+  modal.onclick = hasHeld
+    ? null
+    : (ev) => {
+        if (ev.target === modal) modal.remove();
+      };
   modal.innerHTML =
     '<div class="modal" style="width:760px;max-width:96vw;max-height:84vh;display:flex;flex-direction:column">' +
     '<div class="modal-hdr">' +
@@ -6559,6 +6576,9 @@ function _showSaveSummary(entries) {
     '<button class="modal-x" onclick="document.getElementById(\'saveSummaryModal\').remove()">&#10005;</button>' +
     '</div>' +
     '<div style="padding:8px 16px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">' +
+    (hasHeld
+      ? '<div style="margin-bottom:6px;padding:6px 10px;border-radius:6px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:var(--amber);font-weight:600">&#9888; Some bills were held for review and were NOT saved — see below.</div>'
+      : '') +
     summary +
     '</div>' +
     '<div class="modal-body" style="padding:0;overflow-y:auto;flex:1">' +
@@ -9043,22 +9063,25 @@ async function _dupBulkAction(action) {
   // badge area) confirms every bill that is gate-tripped RIGHT NOW, then asks
   // the user to click this action again — it does not pre-authorize any bill
   // that becomes gated later.
+  const gatedIdxSet = new Set();
   {
     const gatedIdx = [];
     for (let gi = 0; gi < bills.length; gi++) {
       if (commFilter && (bills[gi].Commodity || 'Other') !== commFilter) continue;
       if (bills[gi]._gateTripped && !bills[gi]._gateOverrideConfirmed) gatedIdx.push(gi);
     }
+    gatedIdx.forEach((gi) => gatedIdxSet.add(gi));
     if (gatedIdx.length > 0) {
       const reasons = [...new Set(gatedIdx.flatMap((gi) => bills[gi]._gateReasons || []))];
       showToast(
         gatedIdx.length +
-          ' bill(s) held for review — ' +
+          ' of ' +
+          bills.length +
+          ' bill(s) held for review (not saved) — ' +
           reasons[0] +
           (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
-          '. Click "Save Anyway" (extraction badge area) to confirm, then click this action again.',
+          '. The rest of the batch is being processed now.',
       );
-      return;
     }
   }
   console.log(
@@ -9128,9 +9151,52 @@ async function _dupBulkAction(action) {
   let saved = 0;
   let failed = 0;
   let skipped = 0;
+  let held = 0;
+  let alreadyProcessed = 0;
 
   for (let i = 0; i < bills.length; i++) {
     if (commFilter && (bills[i].Commodity || 'Other') !== commFilter) continue;
+    if (gatedIdxSet.has(i)) {
+      const period =
+        (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
+        ' → ' +
+        (bills[i].BillingPeriodEnd || bills[i].DeliveryDate || '?');
+      summaryEntries.push({
+        period,
+        status: 'held',
+        destination: 'Not saved — flagged for review',
+        method: 'gate',
+        reason: (bills[i]._gateReasons || []).join(' · '),
+      });
+      held++;
+      continue;
+    }
+    // IDEMPOTENCY GUARD (86669b5f): the sanctioned recovery flow after a partial
+    // save is "Save Anyway" (arms _gateOverrideConfirmed) then click Save/
+    // Overwrite/Merge/Skip All again. On that second click bills[] still
+    // contains bills already saved on the first click. _saveBillToMatchedMeter
+    // and _applyDupUpdate are idempotent (upsert-by-key), but
+    // _saveSinglePDFBill is NOT — it unconditionally pushes a fresh
+    // en_pdf_bills record every call. bills[i]._batchSaved is stamped true
+    // right after a bill is successfully saved (below) so a re-click here
+    // skips it instead of duplicating it.
+    if (bills[i]._batchSaved) {
+      alreadyProcessed++;
+      // NIT fix (86669b5f review round 2, item #4): savePDFAllBills already
+      // pushed a matching row for its own _batchSaved guard; this one didn't,
+      // so a recovery re-click's summary modal row count didn't match the
+      // toast count. Mirror savePDFAllBills's row shape for consistency.
+      summaryEntries.push({
+        period:
+          (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
+          ' → ' +
+          (bills[i].BillingPeriodEnd || bills[i].DeliveryDate || '?'),
+        status: 'updated',
+        destination: 'Already saved this session',
+        method: 'cache',
+      });
+      continue;
+    }
     const dup = dupMap[i];
     const period =
       (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
@@ -9192,6 +9258,7 @@ async function _dupBulkAction(action) {
         destination = dest;
         status = 'saved';
         saved++;
+        bills[i]._batchSaved = true;
       } else {
         status = 'failed';
         failed++;
@@ -9217,6 +9284,7 @@ async function _dupBulkAction(action) {
       if (ok) {
         status = 'saved';
         saved++;
+        bills[i]._batchSaved = true;
       } else {
         status = 'failed';
         failed++;
@@ -9243,6 +9311,8 @@ async function _dupBulkAction(action) {
   if (dupHandled) parts.push(dupHandled + ' ' + verb);
   if (saved) parts.push(saved + ' saved');
   if (skipped) parts.push(skipped + ' skipped');
+  if (alreadyProcessed) parts.push(alreadyProcessed + ' already saved');
+  if (held) parts.push(held + ' held for review');
   if (failed) parts.push(failed + ' failed');
   if (!parts.length) parts.push('nothing to do');
   const _blInherited3 = _inheritBaselinesForProject(selectedPid);
@@ -9257,7 +9327,14 @@ async function _dupBulkAction(action) {
   // where every bill in the batch ended up — no digging through meter bill lists
   // to reconstruct what happened.
   _showSaveSummary(summaryEntries);
-  window._pdfBillsSaved = true;
+  // FIX (86669b5f, blocking regression): _pdfBillsSaved arms two data-loss
+  // safety nets — the beforeunload warning (tooltips-help.js) and the
+  // navigate-away sessionStorage auto-save (core.js _saveExtractionState).
+  // Setting it unconditionally true here after a PARTIAL save would disarm
+  // both nets for the still-unsaved held bills, which exist only in memory —
+  // exactly the "silently lost on navigation" failure this fix exists to
+  // prevent. Only mark saved when nothing was held.
+  window._pdfBillsSaved = held === 0;
   if (udSelProjId && udSelBldgId) {
     renderUDDetail();
     renderUDProjList();
@@ -12017,21 +12094,20 @@ async function savePDFAllBills(commodityFilter) {
   // every bill that is gate-tripped RIGHT NOW (see the button's onclick,
   // below) then re-invokes this function — it does not pre-authorize any
   // bill that becomes gated later.
-  {
-    const gatedIdx = billIndices.filter((i) => allBills[i]._gateTripped && !allBills[i]._gateOverrideConfirmed);
-    if (gatedIdx.length > 0) {
-      const reasons = [...new Set(gatedIdx.flatMap((i) => allBills[i]._gateReasons || []))];
-      showToast(
-        gatedIdx.length +
-          ' of ' +
-          billIndices.length +
-          ' bill(s) held for review — ' +
-          reasons[0] +
-          (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
-          '. Click "Save Anyway" to confirm each, then Save again.',
-      );
-      return;
-    }
+  const gatedIdxSet = new Set(
+    billIndices.filter((i) => allBills[i]._gateTripped && !allBills[i]._gateOverrideConfirmed),
+  );
+  if (gatedIdxSet.size > 0) {
+    const reasons = [...new Set([...gatedIdxSet].flatMap((i) => allBills[i]._gateReasons || []))];
+    showToast(
+      gatedIdxSet.size +
+        ' of ' +
+        billIndices.length +
+        ' bill(s) held for review (not saved) — ' +
+        reasons[0] +
+        (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
+        '. The rest of the batch is being saved now.',
+    );
   }
   const bills = allBills;
   let selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
@@ -12040,6 +12116,7 @@ async function savePDFAllBills(commodityFilter) {
   let inferredPid = selectedPid;
   const unassignedIdx = [];
   for (const i of billIndices) {
+    if (gatedIdxSet.has(i)) continue;
     if (dupMap[i] && dupMap[i].action === 'skip') continue;
     const r = _resolveBillDestination(bills[i], dupMap[i], inferredPid);
     if (r.method === 'match' && !inferredPid) {
@@ -12065,17 +12142,47 @@ async function savePDFAllBills(commodityFilter) {
     skipped = 0,
     updated = 0,
     alreadyProcessed = 0,
-    failed = 0;
+    failed = 0,
+    held = 0;
   for (const i of billIndices) {
-    const dup = dupMap[i];
     const period =
       (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
       ' → ' +
       (bills[i].BillingPeriodEnd || bills[i].DeliveryDate || '?');
+    if (gatedIdxSet.has(i)) {
+      summaryEntries.push({
+        period,
+        status: 'held',
+        destination: 'Not saved — flagged for review',
+        method: 'gate',
+        reason: (bills[i]._gateReasons || []).join(' · '),
+      });
+      held++;
+      continue;
+    }
+    // IDEMPOTENCY GUARD (86669b5f) — see matching comment in _dupBulkAction.
+    // _saveSinglePDFBill is not idempotent (fresh en_pdf_bills record every
+    // call); bills[i]._batchSaved is stamped after a successful non-dup save
+    // (below) so re-running Save on the recovery click doesn't duplicate it.
+    if (bills[i]._batchSaved) {
+      alreadyProcessed++;
+      summaryEntries.push({ period, status: 'updated', destination: 'Already saved this session', method: 'cache' });
+      continue;
+    }
+    const dup = dupMap[i];
     const resolved = _resolveBillDestination(bills[i], dup, selectedPid);
     let status = null;
     let destination = resolved.destination;
+    let errText = '';
 
+    // SHOULD-FIX (86669b5f review round 2): this loop previously had NO
+    // try/catch around the save primitives, unlike _dupBulkAction (which
+    // wraps each in try/catch → status:'failed' + continue). Since
+    // savePDFAllBills is invoked bare from an onclick with no caller-side
+    // catch, an uncaught throw here aborted the WHOLE loop AND skipped the
+    // toast + _showSaveSummary entirely for every remaining bill — a silent
+    // failure with zero user feedback, the exact class of bug this fix exists
+    // to close. Mirrors _dupBulkAction's per-primitive try/catch pattern.
     if (dup && dup.action === 'processed') {
       alreadyProcessed++;
       status = 'updated';
@@ -12083,12 +12190,20 @@ async function savePDFAllBills(commodityFilter) {
       skipped++;
       status = 'skipped';
     } else if (dup && (dup.action === 'overwrite' || dup.action === 'merge' || dup.action === 'field-select')) {
-      const ok = await _applyDupUpdate(i, bills[i], dup);
+      let ok = false;
+      try {
+        ok = await _applyDupUpdate(i, bills[i], dup);
+      } catch (e) {
+        ok = false;
+        errText = e && e.message ? e.message : String(e);
+        console.error('[savePDFAllBills] _applyDupUpdate threw for bill', i, e);
+      }
       if (ok) {
         dup.action = 'processed';
         updated++;
         status = 'updated';
       } else {
+        // leave dup.action as the user's chosen action (unchanged) so a retry re-attempts it
         failed++;
         status = 'failed';
       }
@@ -12097,7 +12212,14 @@ async function savePDFAllBills(commodityFilter) {
       // overwrite was clobbering user-corrected data; merge only fills empty
       // fields so manual edits are preserved).
       dup.action = 'merge';
-      const ok = await _applyDupUpdate(i, bills[i], dup);
+      let ok = false;
+      try {
+        ok = await _applyDupUpdate(i, bills[i], dup);
+      } catch (e) {
+        ok = false;
+        errText = e && e.message ? e.message : String(e);
+        console.error('[savePDFAllBills] _applyDupUpdate threw for bill', i, e);
+      }
       if (ok) {
         dup.action = 'processed';
         updated++;
@@ -12109,32 +12231,53 @@ async function savePDFAllBills(commodityFilter) {
     } else if (resolved.method === 'match' && resolved.match) {
       // Non-duplicate with a meter match — save straight to the matched meter,
       // no project selection needed.
-      const dest = _saveBillToMatchedMeter(bills[i], resolved.match);
+      let dest = null;
+      try {
+        dest = _saveBillToMatchedMeter(bills[i], resolved.match);
+      } catch (e) {
+        errText = e && e.message ? e.message : String(e);
+        console.error('[savePDFAllBills] _saveBillToMatchedMeter threw for bill', i, e);
+      }
       if (dest) {
         destination = dest;
         saved++;
         status = 'saved';
+        bills[i]._batchSaved = true;
       } else {
         failed++;
         status = 'failed';
       }
     } else {
-      const ok = await _saveSinglePDFBill(bills[i], selectedPid);
+      let ok = false;
+      try {
+        ok = await _saveSinglePDFBill(bills[i], selectedPid);
+      } catch (e) {
+        ok = false;
+        errText = e && e.message ? e.message : String(e);
+        console.error('[savePDFAllBills] _saveSinglePDFBill threw for bill', i, e);
+      }
       if (ok) {
         saved++;
         status = 'saved';
+        bills[i]._batchSaved = true;
       } else {
         failed++;
         status = 'failed';
       }
     }
-    summaryEntries.push({ period, status, destination, method: resolved.method });
+    summaryEntries.push({
+      period,
+      status,
+      destination: status === 'failed' && errText ? destination + ' (' + errText + ')' : destination,
+      method: resolved.method,
+    });
   }
   const parts = [];
   if (saved) parts.push(saved + ' saved');
   if (updated) parts.push(updated + ' updated');
   if (alreadyProcessed) parts.push(alreadyProcessed + ' already processed');
   if (skipped) parts.push(skipped + ' skipped');
+  if (held) parts.push(held + ' held for review');
   if (failed) parts.push(failed + ' failed');
   const _blInherited2 = _inheritBaselinesForProject(selectedPid);
   const filterLabel = commodityFilter ? ' ' + commodityFilter : '';
@@ -12143,7 +12286,17 @@ async function savePDFAllBills(commodityFilter) {
     : '';
   showToast(parts.join(', ') + ' (' + billIndices.length + filterLabel + ' total)' + blMsg);
   _showSaveSummary(summaryEntries);
-  window._pdfBillsSaved = true;
+  // FIX (86669b5f, blocking regression): see matching comment in _dupBulkAction.
+  // Only mark saved when nothing was held — otherwise the beforeunload warning
+  // and the navigate-away sessionStorage auto-save both get disarmed for held
+  // bills that only exist in memory.
+  window._pdfBillsSaved = held === 0;
+  // Gap fix (86669b5f): savePDFAllBills previously did not refresh the pill
+  // list/extraction-badge banner after saving (unlike _dupBulkAction, which
+  // calls reRender() every loop iteration). Without this the held-bill banner
+  // and pill statuses stay stale until the user manually navigates a pill.
+  const _pdfAIBox = document.getElementById('pdfAIBox');
+  if (_pdfAIBox) renderMultiBillUI(bills, _pdfAIBox);
 }
 
 async function _applyDupUpdate(billIdx, extracted, dup) {
@@ -15377,153 +15530,190 @@ async function _saveSinglePDFBill(extracted, projId) {
       return c > 0 ? c.toFixed(2) : '';
     })(),
   };
-  if (proj) {
-    const udProj = getUDProj(proj.id);
-    const billComm = (extracted.Commodity || '').toLowerCase();
-    // First try: match by account or meter number (most precise)
-    const acctClean = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
-    const meterClean = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
-    let matched = false;
-    let targetMeter = null;
-    let targetBldg = null;
-    if (acctClean || meterClean) {
-      for (const b of udProj.buildings || []) {
-        for (const m of b.meters || []) {
-          const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
-          const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-          if (_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) {
-            const mComm = (m.commodity || '').toLowerCase();
-            if (billComm && mComm && billComm === mComm) {
-              targetMeter = m;
-              targetBldg = b;
-              matched = true;
-              break;
-            }
-            if (!targetMeter) {
-              targetMeter = m;
-              targetBldg = b;
+  // SHOULD-FIX (86669b5f review round 2, item #3): the en_pdf_bills record
+  // above (pdfBills.push + sset, just above) is ALREADY durably persisted by
+  // this point. Everything below is meter-assignment side-effect logic on
+  // top of that durable record. Pre-fix, an exception anywhere in this block
+  // propagated out of the whole function, so the caller's try/catch set
+  // ok=false — _batchSaved never got stamped — and a retry (the batch-save
+  // recovery flow this fix adds) would call _saveSinglePDFBill again and
+  // push a SECOND en_pdf_bills record for the same bill: a save-time
+  // exception recreating the exact duplicate this idempotency guard exists
+  // to prevent. Wrapping the meter-assignment block in its own try/catch
+  // means the function always reaches `return true` once the durable write
+  // above has succeeded, so the caller stamps _batchSaved and a retry is
+  // correctly skipped — no duplicate. On failure here the bill is NOT lost:
+  // it already durably exists in Saved Bills (en_pdf_bills, unassigned) and
+  // degrades to the SAME "assign manually from Saved Bills tab" fallback
+  // this function already uses below for the no-meter-match case — it does
+  // not strand the bill, only the automatic meter-assignment step.
+  try {
+    if (proj) {
+      const udProj = getUDProj(proj.id);
+      const billComm = (extracted.Commodity || '').toLowerCase();
+      // First try: match by account or meter number (most precise)
+      const acctClean = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
+      const meterClean = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
+      let matched = false;
+      let targetMeter = null;
+      let targetBldg = null;
+      if (acctClean || meterClean) {
+        for (const b of udProj.buildings || []) {
+          for (const m of b.meters || []) {
+            const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
+            const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
+            if (_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) {
+              const mComm = (m.commodity || '').toLowerCase();
+              if (billComm && mComm && billComm === mComm) {
+                targetMeter = m;
+                targetBldg = b;
+                matched = true;
+                break;
+              }
+              if (!targetMeter) {
+                targetMeter = m;
+                targetBldg = b;
+              }
             }
           }
+          if (matched) break;
         }
-        if (matched) break;
+        if (targetMeter && !matched) {
+          let mComm = (targetMeter.commodity || '').toLowerCase();
+          if (billComm && !mComm) {
+            targetMeter.commodity = extracted.Commodity;
+            mComm = billComm;
+          }
+          if (billComm && mComm && billComm !== mComm) {
+            const existM = (targetBldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm);
+            if (existM) {
+              targetMeter = existM;
+            } else {
+              const newM = {
+                id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+                commodity:
+                  extracted.Commodity ||
+                  (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge
+                    ? 'Gas'
+                    : extracted.GallonsDelivered || extracted.FuelType
+                      ? 'Propane'
+                      : 'Electric'),
+                provider: extracted.UtilityCompany || targetMeter.provider || '',
+                account: extracted.AccountNumber || targetMeter.account || '',
+                meter: '',
+                maddr: targetMeter.maddr || '',
+                inclusive: true,
+                bills: [],
+                billUnit: '',
+                displayUnit: '',
+              };
+              targetBldg.meters = targetBldg.meters || [];
+              targetBldg.meters.push(newM);
+              targetMeter = newM;
+            }
+          }
+          matched = true;
+        }
       }
-      if (targetMeter && !matched) {
-        let mComm = (targetMeter.commodity || '').toLowerCase();
-        if (billComm && !mComm) {
-          targetMeter.commodity = extracted.Commodity;
-          mComm = billComm;
-        }
-        if (billComm && mComm && billComm !== mComm) {
-          const existM = (targetBldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm);
-          if (existM) {
-            targetMeter = existM;
-          } else {
-            const newM = {
-              id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-              commodity:
-                extracted.Commodity ||
-                (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge
-                  ? 'Gas'
-                  : extracted.GallonsDelivered || extracted.FuelType
-                    ? 'Propane'
-                    : 'Electric'),
-              provider: extracted.UtilityCompany || targetMeter.provider || '',
-              account: extracted.AccountNumber || targetMeter.account || '',
-              meter: '',
-              maddr: targetMeter.maddr || '',
-              inclusive: true,
-              bills: [],
-              billUnit: '',
-              displayUnit: '',
-            };
-            targetBldg.meters = targetBldg.meters || [];
-            targetBldg.meters.push(newM);
-            targetMeter = newM;
+      // Bug 86d02961: If a fuzzy account match was used and the extracted account
+      // number is longer/different from the stored one (new bill format), update
+      // the meter's stored account so future extractions match directly.
+      if (matched && targetMeter && extracted.AccountNumber && targetMeter.account) {
+        const _extAcctN = extracted.AccountNumber.replace(/[\s\-]/g, '')
+          .replace(/^0+/, '')
+          .toLowerCase();
+        const _storedAcctN = targetMeter.account
+          .replace(/[\s\-]/g, '')
+          .replace(/^0+/, '')
+          .toLowerCase();
+        if (_extAcctN !== _storedAcctN && (_extAcctN.includes(_storedAcctN) || _storedAcctN.includes(_extAcctN))) {
+          // Prefer the longer/more-specific format (new format typically has prefix+suffix)
+          if (extracted.AccountNumber.length > targetMeter.account.length) {
+            console.log(
+              '[_saveSinglePDFBill] updating meter account',
+              targetMeter.account,
+              '→',
+              extracted.AccountNumber,
+            );
+            targetMeter.account = extracted.AccountNumber;
           }
         }
-        matched = true;
       }
-    }
-    // Bug 86d02961: If a fuzzy account match was used and the extracted account
-    // number is longer/different from the stored one (new bill format), update
-    // the meter's stored account so future extractions match directly.
-    if (matched && targetMeter && extracted.AccountNumber && targetMeter.account) {
-      const _extAcctN = extracted.AccountNumber.replace(/[\s\-]/g, '')
-        .replace(/^0+/, '')
-        .toLowerCase();
-      const _storedAcctN = targetMeter.account
-        .replace(/[\s\-]/g, '')
-        .replace(/^0+/, '')
-        .toLowerCase();
-      if (_extAcctN !== _storedAcctN && (_extAcctN.includes(_storedAcctN) || _storedAcctN.includes(_extAcctN))) {
-        // Prefer the longer/more-specific format (new format typically has prefix+suffix)
-        if (extracted.AccountNumber.length > targetMeter.account.length) {
-          console.log('[_saveSinglePDFBill] updating meter account', targetMeter.account, '→', extracted.AccountNumber);
-          targetMeter.account = extracted.AccountNumber;
-        }
-      }
-    }
-    if (matched && targetMeter) {
-      targetMeter.bills = targetMeter.bills || [];
-      const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
-      if (dup) {
-        Object.assign(dup, billRow);
-      } else {
-        targetMeter.bills.push(billRow);
-        targetMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
-      }
-      // Run validation on the saved bill to persist _flags
-      if (typeof runBillValidation === 'function') runBillValidation(targetMeter, dup || billRow);
-    }
-    // Second try: single matching commodity meter
-    if (!matched) {
-      const commodity = extracted.Commodity || (isGas ? 'Gas' : isPropane ? 'Propane' : 'Electric');
-      const commLower = commodity.toLowerCase();
-      const typeMeters = [];
-      (udProj.buildings || []).forEach((b) =>
-        (b.meters || []).forEach((m) => {
-          const mc = (m.commodity || '').toLowerCase();
-          if (mc === commLower || (isGas && (mc === 'gas' || mc === 'natural gas')) || (isPropane && mc === 'propane'))
-            typeMeters.push({ b, m });
-        }),
-      );
-      if (typeMeters.length === 1) {
-        const { b, m } = typeMeters[0];
-        m.bills = m.bills || [];
-        const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+      if (matched && targetMeter) {
+        targetMeter.bills = targetMeter.bills || [];
+        const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
         if (dup) {
           Object.assign(dup, billRow);
         } else {
-          m.bills.push(billRow);
-          m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+          targetMeter.bills.push(billRow);
+          targetMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
         }
         // Run validation on the saved bill to persist _flags
-        if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
-        matched = true;
+        if (typeof runBillValidation === 'function') runBillValidation(targetMeter, dup || billRow);
       }
-    }
-    if (!matched) {
-      // If the bill has an account or meter number, auto-create a meter so the
-      // bill lands in the right project automatically. Fall through to unassigned
-      // only if there is no identity information to create a meaningful meter.
-      const hasIdentity = !!(extracted.AccountNumber || extracted.MeterNumber);
-      if (hasIdentity) {
-        const created = _autoCreateMeterAndSaveBill(extracted, projId, billRow);
-        if (created) {
+      // Second try: single matching commodity meter
+      if (!matched) {
+        const commodity = extracted.Commodity || (isGas ? 'Gas' : isPropane ? 'Propane' : 'Electric');
+        const commLower = commodity.toLowerCase();
+        const typeMeters = [];
+        (udProj.buildings || []).forEach((b) =>
+          (b.meters || []).forEach((m) => {
+            const mc = (m.commodity || '').toLowerCase();
+            if (
+              mc === commLower ||
+              (isGas && (mc === 'gas' || mc === 'natural gas')) ||
+              (isPropane && mc === 'propane')
+            )
+              typeMeters.push({ b, m });
+          }),
+        );
+        if (typeMeters.length === 1) {
+          const { b, m } = typeMeters[0];
+          m.bills = m.bills || [];
+          const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+          if (dup) {
+            Object.assign(dup, billRow);
+          } else {
+            m.bills.push(billRow);
+            m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+          }
+          // Run validation on the saved bill to persist _flags
+          if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
           matched = true;
         }
       }
       if (!matched) {
-        console.log(
-          '[_saveSinglePDFBill] no meter match for',
-          extracted.AccountNumber,
-          extracted.Commodity,
-          '— saving to unassigned',
-        );
-        showToast('No meter match found — saved to Saved Bills. Assign from Saved Bills tab.');
+        // If the bill has an account or meter number, auto-create a meter so the
+        // bill lands in the right project automatically. Fall through to unassigned
+        // only if there is no identity information to create a meaningful meter.
+        const hasIdentity = !!(extracted.AccountNumber || extracted.MeterNumber);
+        if (hasIdentity) {
+          const created = _autoCreateMeterAndSaveBill(extracted, projId, billRow);
+          if (created) {
+            matched = true;
+          }
+        }
+        if (!matched) {
+          console.log(
+            '[_saveSinglePDFBill] no meter match for',
+            extracted.AccountNumber,
+            extracted.Commodity,
+            '— saving to unassigned',
+          );
+          showToast('No meter match found — saved to Saved Bills. Assign from Saved Bills tab.');
+        }
       }
+      if (matched) saveUtilityData();
     }
-    if (matched) saveUtilityData();
+  } catch (e) {
+    console.error(
+      '[_saveSinglePDFBill] meter-assignment block threw AFTER the en_pdf_bills record was already durably saved —' +
+        ' bill is safe in Saved Bills, only automatic meter assignment failed:',
+      e,
+    );
+    showToast(
+      'Bill saved to Saved Bills, but automatic meter assignment failed — assign it manually from the Saved Bills tab.',
+    );
   }
   updateBillCountBadge();
   if (totalCost > 0 && diff > 0.1 && !isGas && !isPropane) {
