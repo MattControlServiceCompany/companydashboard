@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.14.681'; // deployed 2026-07-13 (backup/restore now include raw bill PDFs, honest success/failure reporting, restore validates file before writing)
+  var CH_VERSION = 'v2026.07.14.682'; // deployed 2026-07-14 (Energy Department bill extraction guard against misclassifying electric bills as City-of-Louisburg gas)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

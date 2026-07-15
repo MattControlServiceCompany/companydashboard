@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.14.682',
+    date: '2026-07-14',
+    title: 'Energy Department: fixed electric bills being mislabeled as gas bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department bill extraction no longer mislabels some Evergy electric bills as City of Louisburg gas bills. A handful of electric bills were previously showing up with the wrong utility, wrong commodity, and garbage charge amounts after extraction -- those bills now come through correctly, or are left unmatched instead of being filed under the wrong company.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.14.681',
     date: '2026-07-14',
     title: 'Energy Department now tells you when a newer version is available',
