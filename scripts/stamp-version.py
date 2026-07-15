@@ -44,13 +44,14 @@ HOSTS = {
 }
 
 # Which entry in HOSTS is authoritative for computing the next patch number
-# and is treated as a hard failure if unreachable. NETLIFY IS PRODUCTION
-# (cutover happened 2026-07-14, after GitHub flipping the repo private/public
-# took GitHub Pages dark while Netlify stayed up throughout). GitHub Pages
-# also has a known history of the deploy step hanging/failing (~10 min hangs,
-# failed 3x in a row — logged backlog item); it stays in HOSTS below so a
-# dark/lagging GitHub Pages is still reported as a WARNING, just not fatal.
-PRODUCTION_HOST = "netlify"
+# and is treated as a hard failure if unreachable. GITHUB PAGES IS PRODUCTION
+# for routine `main` deploys (cutover 2026-07-15: Netlify was decoupled from
+# `main` — its dashboard Production branch is now `stable`, deployed only
+# from `stable`, and it no longer builds on pushes to `main`). GitHub Pages
+# is now the iteration/verification host; Netlify remains the STABLE host,
+# updated only via the `stable` branch. Netlify stays in HOSTS below so a
+# stale/lagging Netlify is still reported as a WARNING, just not fatal.
+PRODUCTION_HOST = "github_pages"
 
 SITE_UI_JS = REPO_ROOT / "site-ui.js"
 HTML_FILES = [
