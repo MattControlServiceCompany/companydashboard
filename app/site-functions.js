@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.15.684',
+    date: '2026-07-15',
+    title: 'Energy Department: "Skip All" on the bill duplicate screen no longer flags bills for review',
+    items: [
+      {
+        type: 'fix',
+        text: 'When you click "Skip All" on the bill duplicate/review screen, none of the skipped bills are saved -- so they no longer get held with an amber "N held for review" notice like a save action would. Skip All now just skips, with no confusing review prompt. "Overwrite All" and other actions that actually save data still hold flagged bills for review exactly as before.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.15.683',
     date: '2026-07-15',
     title: 'Energy Department: batch bill saves no longer block on a single flagged bill',
