@@ -6541,7 +6541,25 @@ const UTILITY_RULES = [
       if (isOldFormat) return this._extractOld(page);
       // LGS (Large Gas Service) billing detail — gas-only page with
       // rate schedule like "LGS Primary Voltage - 2LGSF"
-      if (/\bLGS\b/i.test(page) && /Billing\s*Detail/i.test(page) && /service\s*from/i.test(page))
+      //
+      // GUARD (bug 37d5fb0e, 2026-07-14): "LGS" here collides with Evergy's
+      // own "Large General Service" ELECTRIC rate class (2LGSE/2LGSF), and
+      // Evergy prints the identical "Billing Details - service from
+      // MM/DD/YYYY to MM/DD/YYYY" header on every bill it issues (see
+      // _EVG_BILLING_DETAILS / Evergy rule detect() above). Three genuine
+      // Evergy electric bills (LGS Secondary/Primary Voltage rate class)
+      // were claimed by this branch and emitted as "City of Louisburg" gas
+      // with garbage field values. Electric bills always carry kWh/kW
+      // charge lines and Evergy-specific charge codes (Demand/Facilities/
+      // TDC/ECA/EER/PTS/RkVA), none of which ever appear on a real
+      // City-of-Louisburg gas bill. Refuse the gas route when any of
+      // those electric signals are present so this rule can no longer
+      // claim an electric bill.
+      const _lgsLooksElectric =
+        /\bkWh\b|\bRKVA\s+Used\b|\bKW\s+Used\b|Demand\s+Ch[gq]|Facilities\s+Ch[gq]|TDC\s+Ch[gq]|ECA\s+Ch[gq]|EER\s+Ch[gq]|PTS\s+Ch[gq]|RkVA\s+Ch[gq]/i.test(
+          page,
+        );
+      if (/\bLGS\b/i.test(page) && /Billing\s*Detail/i.test(page) && /service\s*from/i.test(page) && !_lgsLooksElectric)
         return this._extractLGSDetail(page);
       if (
         /Billing\s*Detail|Bill(?:ing)?\s*(?:Detail|Summary)/i.test(page) &&
