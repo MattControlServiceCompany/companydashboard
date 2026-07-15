@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.15.683',
+    date: '2026-07-15',
+    title: 'Energy Department: batch bill saves no longer block on a single flagged bill',
+    items: [
+      {
+        type: 'fix',
+        text: 'When saving a batch of extracted PDF bills, one bill flagged for review (a duplicate, a data mismatch, etc.) used to block the ENTIRE batch from saving -- including bills that had nothing wrong with them. Now the clean bills in the batch save immediately, and only the flagged bills are held back with a clear "N held for review" notice so you can look at them before deciding what to do.',
+      },
+      {
+        type: 'fix',
+        text: 'The save summary now shows a distinct amber "held for review" status (with the reason) instead of lumping held bills in with actual save failures, and the summary window stays open until you close it if any bills were held -- so you can no longer accidentally click past the notice.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.14.682',
     date: '2026-07-14',
     title: 'Energy Department: fixed electric bills being mislabeled as gas bills',

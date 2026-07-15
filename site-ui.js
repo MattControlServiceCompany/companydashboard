@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.14.682'; // deployed 2026-07-14 (Energy Department bill extraction guard against misclassifying electric bills as City-of-Louisburg gas)
+  var CH_VERSION = 'v2026.07.15.683'; // deployed 2026-07-15 (Energy Department batch bill save: partial-save gate no longer blocks the whole batch on one flagged bill)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
