@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.14.681',
+    date: '2026-07-14',
+    title: 'Energy Department now tells you when a newer version is available',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department: if you leave a tab open and a new version is deployed while you are away, the page now shows a "Reload to update" banner when you come back to the tab (or every few minutes if it stays open in the background). Click Reload and it saves your current place before refreshing, so you never end up unknowingly running old code. You can also dismiss the banner if you want to keep working and reload later.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.14.680',
     date: '2026-07-14',
     title: 'ASHRAE 36 Audit Report: building readiness scores recalculated and relabeled',

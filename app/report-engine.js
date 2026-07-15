@@ -9662,6 +9662,30 @@ function initUtilityTool() {
   }
   renderUDProjList();
   renderUDDetail();
+  _checkForVersionUpdate();
+  // Issue e9f1157c round 2: the check above only fires once, right after page load,
+  // when the loaded bundle and the live server were necessarily in sync (they were
+  // just served together) — a mismatch can never be observed at that instant. The
+  // real bug scenario is a tab left open for hours while a deploy lands in the
+  // background. Re-run the same check whenever the tab regains focus (the moment
+  // the user would actually notice/care), plus a slow interval backstop for tabs
+  // that are never explicitly re-focused (e.g. a second monitor that's always visible).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') _checkForVersionUpdate();
+  });
+  setInterval(_checkForVersionUpdate, 5 * 60 * 1000);
+  // Restore any state saved before a version-triggered page reload (issue 066423b5)
+  _restorePageStateAfterVersionUpdate();
+}
+
+// Tracks a version the user has explicitly dismissed in THIS tab so re-checks
+// (visibilitychange/interval) don't keep re-nagging about the same release.
+let _chVersionDismissed = null;
+
+/* Fetch the live server's version and compare it to the version actually baked into
+   this tab's already-loaded code. Shared by the initial page-load check, the
+   visibilitychange re-check, and the interval backstop -- issue e9f1157c. */
+function _checkForVersionUpdate() {
   fetch('site-ui.js?nocache=' + Date.now())
     .then((r) => r.text())
     .then((t) => {
@@ -9679,19 +9703,72 @@ function initUtilityTool() {
         );
         el.textContent = fetchedVer + (_isCDP ? ' [CDP]' : '');
       }
-      // Issue 066423b5: compare to last-seen version; if changed, save page state
-      // so in-progress work survives any subsequent reload.
+      // Issue e9f1157c: the badge above always shows fetchedVer (the LIVE server
+      // version). That does NOT mean this tab is running that code — a tab left
+      // open across a deploy keeps executing whatever it loaded originally. Compare
+      // fetchedVer against loadedVer, the version actually baked into the code this
+      // tab already has in memory (RELEASE_NOTES[0].v ships inside app/site-functions.js,
+      // which loaded with this page's own cache-busted ?v= tag — see script tags near
+      // the bottom of energy-department.html). Fall back to storedVer (localStorage,
+      // shared across tabs) only if RELEASE_NOTES isn't available yet.
       const _CH_VER_KEY = 'ch_last_seen_version';
       const storedVer = localStorage.getItem(_CH_VER_KEY);
-      if (storedVer && storedVer !== fetchedVer) {
-        _savePageStateForVersionUpdate();
-        showToast('Site updated to ' + fetchedVer + ' — your in-progress work has been preserved');
+      const loadedVer = (typeof RELEASE_NOTES !== 'undefined' && RELEASE_NOTES[0] && RELEASE_NOTES[0].v) || storedVer;
+      if (loadedVer && loadedVer !== fetchedVer && fetchedVer !== _chVersionDismissed) {
+        // Do NOT auto-reload — a silent reload would destroy in-progress work
+        // (e.g. a mid-batch extraction review). Show a persistent, actionable
+        // control instead; the user decides when to reload.
+        _showVersionUpdateBanner(fetchedVer);
       }
       localStorage.setItem(_CH_VER_KEY, fetchedVer);
     })
     .catch(() => {});
-  // Restore any state saved before a version-triggered page reload (issue 066423b5)
-  _restorePageStateAfterVersionUpdate();
+}
+
+/* Persistent, actionable "Reload to update" control shown when this tab's already-
+   loaded code (loadedVer) no longer matches the live server (fetchedVer). Replaces
+   the old passive toast (issue e9f1157c) which told the user the site had updated
+   but gave them no way to actually get the new code short of guessing to hit F5.
+   Never auto-reloads — the user clicks to opt in, so in-progress work is never lost
+   without warning. Reuses the existing _savePageStateForVersionUpdate() /
+   _restorePageStateAfterVersionUpdate() plumbing (issue 066423b5) rather than
+   reinventing state preservation. */
+function _showVersionUpdateBanner(fetchedVer) {
+  if (document.getElementById('ch-ver-update-banner')) return; // already showing
+  const bar = document.createElement('div');
+  bar.id = 'ch-ver-update-banner';
+  bar.style.cssText =
+    // z-index 100000: intentionally above .report-overlay (99999, the full-screen
+    // report preview) so the banner is never hidden behind it -- higher than the
+    // documented --z-toast (9999) tier for that reason. See ui-standards.md z-index
+    // ladder; .report-overlay's 99999 already sits outside that ladder too.
+    'position:fixed;top:22px;left:50%;transform:translateX(-50%);z-index:100000;' +
+    'background:var(--s3);border:1px solid var(--accent);border-radius:10px;' +
+    'padding:11px 15px;font-size:12px;color:var(--text);display:flex;' +
+    'align-items:center;gap:10px;max-width:440px;box-shadow:0 4px 18px rgba(0,0,0,.35)';
+  const msg = document.createElement('span');
+  msg.textContent =
+    'A new version (' + fetchedVer + ') is available. Reload to update — your in-progress work will be preserved.';
+  const reloadBtn = document.createElement('button');
+  reloadBtn.className = 'btn btn-em btn-sm';
+  reloadBtn.textContent = 'Reload now';
+  reloadBtn.style.flexShrink = '0';
+  reloadBtn.onclick = function () {
+    _savePageStateForVersionUpdate();
+    location.reload();
+  };
+  const dismissBtn = document.createElement('button');
+  dismissBtn.className = 'toast-x';
+  dismissBtn.textContent = '✕';
+  dismissBtn.setAttribute('aria-label', 'Dismiss');
+  dismissBtn.onclick = function () {
+    _chVersionDismissed = fetchedVer; // don't re-nag about this same version in this tab
+    bar.remove();
+  };
+  bar.appendChild(msg);
+  bar.appendChild(reloadBtn);
+  bar.appendChild(dismissBtn);
+  document.body.appendChild(bar);
 }
 
 /* Save current page state to sessionStorage before a version-triggered reload.
