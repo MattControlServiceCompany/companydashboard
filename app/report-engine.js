@@ -10943,6 +10943,27 @@ var ASHRAE36_SECTIONS = {
     // rptPageASHRAE36CostEstimate). Numbers come from the SAME _pricingComputeSummaryData chain the
     // interactive Cost Estimate tab's Summary sub-tab uses, so the report matches the tool.
     { key: 'costEstimate', label: 'Cost Estimate (Priced Tiers)', group: 'Proposal', defaultOn: false },
+    // Selectable pricing detail sub-options. Independent flags following the buildingInfra
+    // precedent (an independent sub-flag that only takes effect when its parent section is on) —
+    // each only renders when the parent costEstimate box is ALSO checked (gated in
+    // generateASHRAE36ProposalHTML and again inside rptPageASHRAE36ProposalPricing). indent:true
+    // draws them visually nested under "Cost Estimate (Priced Tiers)" in the modal. Client-safe:
+    // final lineTotal / phase subtotals / measure names / clientSummary only — no cost build-up.
+    {
+      key: 'costEstimatePhaseSplit',
+      label: '  Hardware vs Programming subtotals',
+      group: 'Proposal',
+      defaultOn: true,
+      indent: true,
+    },
+    {
+      key: 'costEstimatePerBuilding',
+      label: '  Per-Building Pricing',
+      group: 'Proposal',
+      defaultOn: false,
+      indent: true,
+    },
+    { key: 'costEstimateItemized', label: '  Itemized Measures', group: 'Proposal', defaultOn: false, indent: true },
     { key: 'proposalOutcomes', label: 'Expected Outcomes', group: 'Proposal', defaultOn: true },
   ],
 };
@@ -13620,16 +13641,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
         ? 'var(--rpt-orange)'
         : 'var(--rpt-red)';
 
-  var toc =
-    '<div class="rpt-a36-callout" style="margin-bottom:16px;border-top:1px solid var(--rpt-rule)">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">Contents</div>' +
-    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:2">' +
-    '<div>1. Introduction &amp; Proposal Overview</div>' +
-    '<div>2. Scope of Work</div>' +
-    '<div>3. Expected Outcomes &amp; Timeline</div>' +
-    '</div>' +
-    '</div>';
-
   var intro =
     '<div style="font-size:12px;color:var(--rpt-page-text);line-height:1.7;margin-bottom:16px">' +
     // Wording (fix/audit-report-scoring, 2026-07-14, Matt's decision): "compliance audit" /
@@ -13663,7 +13674,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '</div>' +
     '<div style="height:2px;background:var(--rpt-blue);margin-bottom:20px"></div>' +
     intro +
-    toc +
     '<div style="font-size:10px;color:var(--rpt-page-text);border-top:1px solid var(--rpt-rule);padding-top:8px">' +
     'Prepared by Control Service Company &nbsp;&bull;&nbsp; Building Automation &amp; Energy Services' +
     '</div>' +
@@ -13914,8 +13924,16 @@ function _timelineStep(period, title, desc) {
  * @param {object} d - Data from collectASHRAE36Data()
  * @returns {Array<string>} single-element array of rptPage() HTML
  */
-function rptPageASHRAE36ProposalPricing(n, d) {
+function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+
+  // Selectable pricing-detail sub-options (independent flags, only reach this function because the
+  // parent costEstimate section is on — buildingInfra precedent). All default-off here; the caller
+  // decides. Each renders additional client-safe detail from the SAME summary chain below.
+  var o = opts || {};
+  var wantPhaseSplit = o.phaseSplit === true;
+  var wantPerBuilding = o.perBuilding === true;
+  var wantItemized = o.itemized === true;
 
   // Final client-facing dollar total only. null (no priced rows / no catalog) => caller shows a
   // client-safe fallback string instead of "$null"/"$NaN".
@@ -13929,14 +13947,18 @@ function rptPageASHRAE36ProposalPricing(n, d) {
   // labor/qty overrides) — identical to what the tool's Summary sub-tab reflects. If the user has
   // never opened the tab, _pricingGetEstimate returns the all-on default.
   var tt = null;
+  var summaryData = null; // full { buildings, tierTotals, perTier } — used by per-building / itemized
+  var estimateState = null; // row toggles etc. — used to keep the itemized list matched to the totals
   try {
     if (typeof _pricingGetEstimate === 'function' && typeof _pricingComputeSummaryData === 'function') {
-      var estimate = _pricingGetEstimate(d.project.id);
-      var summary = _pricingComputeSummaryData(d.project.id, estimate);
-      tt = summary && summary.tierTotals ? summary.tierTotals : null;
+      estimateState = _pricingGetEstimate(d.project.id);
+      summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
+      tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
     }
   } catch (e) {
     tt = null; // non-fatal — fall through to the unpriced fallback copy
+    summaryData = null;
+    estimateState = null;
   }
 
   // Column order Recommended | Compliance | Full Scope is a readability choice, NOT an assertion
@@ -14017,6 +14039,38 @@ function rptPageASHRAE36ProposalPricing(n, d) {
       .join('') +
     '</tr>';
 
+  // Phase split (sub-option costEstimatePhaseSplit) — folds Phase 1 (hardware/install) vs Phase 2
+  // (programming/commissioning) dollar SUBTOTALS into the SAME tier table, 0 added pages. Values
+  // come straight from tt[tier].phase1 / .phase2 (already computed, no new math). Dollar subtotals
+  // only — no hourly rate, no markup mechanics.
+  var phaseSplitRow = '';
+  if (wantPhaseSplit) {
+    var phaseCellStyle =
+      'padding:6px 10px 12px;font-size:9px;color:#000;text-align:center;line-height:1.7;' +
+      'border:1px solid var(--rpt-rule);border-top:none;vertical-align:top';
+    phaseSplitRow =
+      '<tr>' +
+      tierCols
+        .map(function (c) {
+          var p1 = tt && tt[c.key] ? _fmtUSD(tt[c.key].phase1) : null;
+          var p2 = tt && tt[c.key] ? _fmtUSD(tt[c.key].phase2) : null;
+          return (
+            '<td style="' +
+            phaseCellStyle +
+            '">' +
+            '<div><span style="font-weight:700">Hardware &amp; Installation:</span> ' +
+            (p1 || '—') +
+            '</div>' +
+            '<div><span style="font-weight:700">Programming &amp; Commissioning:</span> ' +
+            (p2 || '—') +
+            '</div>' +
+            '</td>'
+          );
+        })
+        .join('') +
+      '</tr>';
+  }
+
   var table =
     '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:16px">' +
     colgroup +
@@ -14026,6 +14080,7 @@ function rptPageASHRAE36ProposalPricing(n, d) {
     descRow +
     lblRow +
     amtRow +
+    phaseSplitRow +
     '</tbody></table>';
 
   // M&V / savings disclaimer — attached wherever estimates appear (verbatim SAVINGS_DISCLAIMER_TEXT).
@@ -14412,7 +14467,14 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // to happen") and Expected Outcomes ("why it matters"). Returns an Array — spread each page and
   // advance pageNum so downstream numbering stays correct.
   if (s.costEstimate === true) {
-    var pricingPages = rptPageASHRAE36ProposalPricing(pageNum, data);
+    // Selectable pricing-detail sub-options — each only takes effect because costEstimate is on
+    // here (independent-flag / parent-gates precedent, buildingInfra). Passed as a 3rd opts arg.
+    var pricingOpts = {
+      phaseSplit: s.costEstimatePhaseSplit === true,
+      perBuilding: s.costEstimatePerBuilding === true,
+      itemized: s.costEstimateItemized === true,
+    };
+    var pricingPages = rptPageASHRAE36ProposalPricing(pageNum, data, pricingOpts);
     pricingPages.forEach(function (pg) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
       pageNum++;
@@ -14467,7 +14529,9 @@ function openASHRAE36ReportModal(projId, type) {
       lastGroup = sec.group;
     }
     bodyHTML +=
-      '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">' +
+      '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer' +
+      (sec.indent ? ';margin-left:20px' : '') +
+      '">' +
       '<input type="checkbox" ' +
       (sec.defaultOn !== false ? 'checked' : '') +
       ' class="a36SecCheck" data-key="' +
