@@ -11765,7 +11765,7 @@ function _a36StatusChip(status, inPlace, required, seqNA) {
  * Cover page: three gauge rings (overall/sensor/sequence), one-paragraph finding.
  * Hero page — no interior header, uses CSC letterhead.
  */
-function rptPageASHRAE36Cover(n, d) {
+function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   var p = d.portfolio;
   var color =
     p.composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
@@ -11793,7 +11793,15 @@ function rptPageASHRAE36Cover(n, d) {
     ' building' +
     (p.totalBuildings !== 1 ? 's' : '') +
     '</strong>. ' +
-    'The sections that follow break this work down building by building and provide a prioritized list of recommended upgrades, each with its typical energy savings.';
+    // a562fd67: the cover's forward-looking promise must match whether the report actually
+    // includes per-building detail pages. perBuildingIncluded is passed true only when the
+    // Audit Report's "Per-Building Detail" section is on (s.building !== false at the call
+    // site). Defensive: only the strict-true branch promises "building by building"; any caller
+    // that omits the flag (e.g. the Proposal, which has no per-building breakdown at all) gets
+    // the portfolio-level aggregate sentence and never a false building-by-building promise.
+    (perBuildingIncluded === true
+      ? 'The sections that follow break this work down building by building and provide a prioritized list of recommended upgrades, each with its typical energy savings.'
+      : 'The sections that follow provide a prioritized list of recommended upgrades across the facilities in scope, each with its typical energy savings.');
 
   var gauges =
     '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 20px">' +
@@ -14075,7 +14083,8 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
   }
 
-  if (s.cover !== false) pages.push(_tagA36Section(rptPageASHRAE36Cover(pageNum++, data), 'cover'));
+  if (s.cover !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36Cover(pageNum++, data, s.building !== false), 'cover'));
   if (s.executive !== false) {
     var execPages = rptPageASHRAE36Executive(pageNum, data);
     execPages.forEach(function (pg) {
