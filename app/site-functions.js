@@ -1191,6 +1191,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.16.686',
+    date: '2026-07-16',
+    title: 'ASHRAE 36 Audit Report and Service Proposal fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix (Audit view): clicking "Other BAS Points" or "ASHRAE Points" now opens one panel showing ASHRAE 36 Points next to Other BAS Points.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report: building count corrected -- rooftop-unit (RTU) equipment is now counted, buildings that were missing now appear, and weather-station entries no longer show up as buildings.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report: cover text now matches the sections you include (no "building by building" wording when Per-Building Detail is turned off).',
+      },
+      {
+        type: 'feature',
+        text: 'ASHRAE 36 Service Proposal: new optional "Cost Estimate (Priced Tiers)" section -- a checkbox, off by default -- showing Recommended, Compliance, and Full Scope pricing.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.16.685',
     date: '2026-07-16',
     title: 'Fixed sign-in, Service Department loading, and a false PDF export error',
