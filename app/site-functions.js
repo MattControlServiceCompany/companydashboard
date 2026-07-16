@@ -655,6 +655,9 @@ async function siteResetData() {
   if (window.DB && window.DB.clear) {
     await window.DB.clear();
   }
+  if (typeof pdfClearAll === 'function') {
+    await pdfClearAll();
+  }
   if (typeof showToast === 'function') showToast('Reset — reloading...');
   setTimeout(function () {
     location.reload();

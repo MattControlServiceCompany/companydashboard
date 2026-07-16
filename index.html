@@ -2605,6 +2605,24 @@
           });
         });
       }
+      // Wipes every bill PDF from en_pdf_store. Mirrors app/core.js's
+      // pdfClearAll() — used by siteResetData() so "Reset Data" (which
+      // promises it erases ALL CompanyHub data "including bills") actually
+      // clears the PDF blob store, not just companyhub_store.
+      function _pdfBackupClearAll() {
+        return _pdfBackupOpenDB().then(function (db) {
+          return new Promise(function (resolve) {
+            var tx = db.transaction(_pdfBackupDB.STORE, 'readwrite');
+            tx.objectStore(_pdfBackupDB.STORE).clear();
+            tx.oncomplete = function () {
+              resolve(true);
+            };
+            tx.onerror = function () {
+              resolve(false);
+            };
+          });
+        });
+      }
       // ── Loud, honest backup/restore reporting ──────────────────────────
       // showToast() is undefined in index.html's scope — site-ui.js (which
       // defines it) is only ever fetch()'d here as plain text to read its
@@ -2964,6 +2982,9 @@
         if (window.DB && window.DB.clear) {
           await window.DB.clear();
         }
+        try {
+          await _pdfBackupClearAll();
+        } catch (e) {}
         _pdfNotice('Reset — reloading...', false);
         setTimeout(function () {
           location.reload();

@@ -124,6 +124,22 @@ async function pdfDelete(id) {
     return false;
   }
 }
+// Wipes every bill PDF from en_pdf_store. Used by siteResetData() — "Reset Data"
+// promises it erases ALL CompanyHub data "including bills", so the PDF blob
+// store must be cleared too, not just the companyhub_store IndexedDB.
+async function pdfClearAll() {
+  try {
+    const db = await _openPdfDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(_pdfDB.STORE, 'readwrite');
+      tx.objectStore(_pdfDB.STORE).clear();
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (e) {
+    return false;
+  }
+}
 
 window.addEventListener('pagehide', function () {
   _saveExtractionState();
