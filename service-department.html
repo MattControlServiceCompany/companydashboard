@@ -2006,17 +2006,6 @@
         window.location.href = 'index.html';
       }
 
-      // Auto-login if session exists
-      (function () {
-        try {
-          const s = sessionStorage.getItem('ch_user');
-          if (s) {
-            currentUser = JSON.parse(s);
-            enterApp();
-          }
-        } catch (e) {}
-      })();
-
       async function syncToOutlook() {
         showToast('Syncing to Outlook Calendar...');
         if (!msalApp || !currentUser?.isReal) {
@@ -2821,6 +2810,22 @@
       let pmCalYear = today_.getFullYear(),
         pmCalMonth = today_.getMonth(),
         pmSelDay = today_.getDate();
+
+      // Auto-login if session exists. Must run after all `let`/`const` declarations
+      // that enterApp() -> renderStaff()/renderSAList()/renderDispatch()/buildCalendar()
+      // depend on (staffData, staffFilter, saData, selectedSA, dispatchData, staffCal*/pmCal*)
+      // — otherwise those reads hit the temporal dead zone and throw (backlog 73864529).
+      (function () {
+        try {
+          const s = sessionStorage.getItem('ch_user');
+          if (s) {
+            currentUser = JSON.parse(s);
+            enterApp();
+          }
+        } catch (e) {
+          console.error('Auto-login failed:', e);
+        }
+      })();
 
       function buildCalendar(mode, year, month, selDay, containerId) {
         const container = document.getElementById(containerId);
