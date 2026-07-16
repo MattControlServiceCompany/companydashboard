@@ -10982,9 +10982,25 @@ function collectASHRAE36Data(projId, reportDate) {
   });
 
   // Auditable equipment categories (excludes 'other')
-  var AUDITABLE = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct', 'doas', 'fcu', 'zone', 'furnace', 'heater', 'ef'];
+  var AUDITABLE = [
+    'ahu',
+    'vav',
+    'fpb',
+    'ddvav',
+    'hwp',
+    'chwp',
+    'ct',
+    'doas',
+    'fcu',
+    'zone',
+    'furnace',
+    'heater',
+    'ef',
+    'rtu',
+  ];
   var CAT_LABELS = {
     ahu: 'Air Handling Unit',
+    rtu: 'Rooftop Unit',
     vav: 'VAV Terminal',
     fpb: 'Fan-Powered Terminal',
     ddvav: 'Dual-Duct Terminal',
@@ -11580,9 +11596,19 @@ function collectASHRAE36Data(projId, reportDate) {
   var _invTotalASHRAE = 0;
   var _invTotalOther = 0;
   var _invByBuilding = {}; // buildingName → { ashrae: N, other: N }
+  // 736eea4c: Point Inventory must reflect the SAME qualifying-building set the compliance
+  // sections use — not an independent, unfiltered pass over matData.rows (which leaked weather
+  // stubs like 'Johnson County' / 'New Century Complex' in as phantom buildings). buildingsData
+  // is already fully built above (single source of truth: a building qualifies only if it had at
+  // least one auditable row after self-heal + stub/non-equipment filtering).
+  var _a36QualifyingBuildings = {};
+  buildingsData.forEach(function (b) {
+    _a36QualifyingBuildings[b.name] = true;
+  });
   if (typeof emGetNormalizedPoints === 'function') {
     matData.rows.forEach(function (row) {
       var bName = row.building || 'Unknown Building';
+      if (!_a36QualifyingBuildings[bName]) return; // same building set as compliance sections — no independent filter
       if (!_invByBuilding[bName]) _invByBuilding[bName] = { ashrae: 0, other: 0 };
       var normPts = emGetNormalizedPoints(row);
       var normKeys = Object.keys(normPts);
