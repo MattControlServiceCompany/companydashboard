@@ -3365,6 +3365,44 @@
         };
         inp.click();
       }
+      // Raw bill PDFs live in a SEPARATE IndexedDB database (en_pdf_store / files),
+      // written and read via pdfStore()/pdfLoad() in app/core.js on the energy
+      // page. service-department.html does not load core.js, so this helper
+      // mirrors that exact same DB name, object store name, and clear contract
+      // so "Reset Data" here also wipes bill PDFs (same-origin IndexedDB is
+      // shared across all CompanyHub pages). Keep in sync with app/core.js's
+      // _pdfDB/_openPdfDB/pdfClearAll if that contract changes.
+      var _pdfBackupDB = { db: null, NAME: 'en_pdf_store', STORE: 'files', VER: 1 };
+      function _pdfBackupOpenDB() {
+        if (_pdfBackupDB.db) return Promise.resolve(_pdfBackupDB.db);
+        return new Promise(function (resolve, reject) {
+          var req = indexedDB.open(_pdfBackupDB.NAME, _pdfBackupDB.VER);
+          req.onupgradeneeded = function () {
+            req.result.createObjectStore(_pdfBackupDB.STORE);
+          };
+          req.onsuccess = function () {
+            _pdfBackupDB.db = req.result;
+            resolve(_pdfBackupDB.db);
+          };
+          req.onerror = function () {
+            reject(req.error);
+          };
+        });
+      }
+      function _pdfBackupClearAll() {
+        return _pdfBackupOpenDB().then(function (db) {
+          return new Promise(function (resolve) {
+            var tx = db.transaction(_pdfBackupDB.STORE, 'readwrite');
+            tx.objectStore(_pdfBackupDB.STORE).clear();
+            tx.oncomplete = function () {
+              resolve(true);
+            };
+            tx.onerror = function () {
+              resolve(false);
+            };
+          });
+        });
+      }
       async function siteResetData() {
         if (
           !confirm(
@@ -3377,6 +3415,9 @@
         if (window.DB && window.DB.clear) {
           await window.DB.clear();
         }
+        try {
+          await _pdfBackupClearAll();
+        } catch (e) {}
         if (typeof showToast === 'function') showToast('Reset — reloading...');
         setTimeout(function () {
           location.reload();
