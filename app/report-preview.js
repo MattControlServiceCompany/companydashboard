@@ -553,7 +553,7 @@ async function downloadReportPDF() {
 function _saveReportToHistory(config, filename) {
   if (!config || !config.projId) return;
   var key = 'en_report_history_' + config.projId;
-  var history = Store.get(key) || [];
+  var history = sget(key, []) || [];
   history.unshift({
     filename: filename,
     reportType: config.reportType,
@@ -562,7 +562,7 @@ function _saveReportToHistory(config, filename) {
     buildings: config.buildingIds,
   });
   if (history.length > 20) history = history.slice(0, 20);
-  Store.set(key, history);
+  sset(key, history);
 }
 
 // ── CROSS-WINDOW REFRESH (Issue 5) ──────────────────────────────────────────
