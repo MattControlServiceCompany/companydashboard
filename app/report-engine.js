@@ -10937,6 +10937,12 @@ var ASHRAE36_SECTIONS = {
   proposal: [
     { key: 'proposalCover', label: 'Cover Page', group: 'Proposal', defaultOn: true },
     { key: 'proposalScope', label: 'Scope of Work', group: 'Proposal', defaultOn: true },
+    // ebfca114 (Matt's decision): opt-in priced Cost Estimate page. Default OFF — the client PDF
+    // shows no dollar figures unless the user explicitly checks this box. Renders via
+    // rptPageASHRAE36ProposalPricing (a NEW function; NOT the Audit's zero-dollar glossary
+    // rptPageASHRAE36CostEstimate). Numbers come from the SAME _pricingComputeSummaryData chain the
+    // interactive Cost Estimate tab's Summary sub-tab uses, so the report matches the tool.
+    { key: 'costEstimate', label: 'Cost Estimate (Priced Tiers)', group: 'Proposal', defaultOn: false },
     { key: 'proposalOutcomes', label: 'Expected Outcomes', group: 'Proposal', defaultOn: true },
   ],
 };
@@ -13885,6 +13891,166 @@ function _timelineStep(period, title, desc) {
   );
 }
 
+// ─── rptPageASHRAE36ProposalPricing ──────────────────────────────────────────
+/**
+ * Cost Estimate page for the Service Proposal (opt-in, default OFF — item ebfca114).
+ *
+ * Renders a three-column Recommended / Compliance / Full Scope comparison with the final
+ * client-facing dollar total for each scope. The numbers come from the SAME call chain the
+ * interactive Cost Estimate tab's Summary sub-tab uses:
+ *   _pricingGetEstimate(projId)  ->  _pricingComputeSummaryData(projId, estimate)
+ * (mirrors pricing-estimator.js _pricingRenderSummaryTab, which does the identical two calls),
+ * so a byte-identical estimate produces byte-identical totals. NO new pricing math here.
+ *
+ * SAFETY (client PDF): prints ONLY the three final tier grand totals ($). It never prints any
+ * internal cost build-up — no hourly labor rate, no contract/net multiplier, no savingsRationale,
+ * no impact-tier tags. The three totals are INDEPENDENT numbers; no ordering between them is
+ * asserted (Recommended is NOT guaranteed <= Compliance in the underlying code). The M&V /
+ * savings disclaimer is attached wherever these estimates appear.
+ *
+ * Returns an ARRAY (always length 1 — 3 tiers x 1 total cannot overflow one 8.5x11 sheet) so the
+ * call site can spread it the same way the Audit's page functions are spread.
+ * @param {number} n - Page number
+ * @param {object} d - Data from collectASHRAE36Data()
+ * @returns {Array<string>} single-element array of rptPage() HTML
+ */
+function rptPageASHRAE36ProposalPricing(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+
+  // Final client-facing dollar total only. null (no priced rows / no catalog) => caller shows a
+  // client-safe fallback string instead of "$null"/"$NaN".
+  function _fmtUSD(v) {
+    if (v === null || v === undefined || isNaN(v)) return null;
+    return '$' + Math.round(v).toLocaleString('en-US');
+  }
+
+  // Pull the priced tier totals the interactive Cost Estimate tab shows for this project. Reads
+  // whatever estimate state is saved at en_pricing_estimate_{projId} (row toggles, manual prices,
+  // labor/qty overrides) — identical to what the tool's Summary sub-tab reflects. If the user has
+  // never opened the tab, _pricingGetEstimate returns the all-on default.
+  var tt = null;
+  try {
+    if (typeof _pricingGetEstimate === 'function' && typeof _pricingComputeSummaryData === 'function') {
+      var estimate = _pricingGetEstimate(d.project.id);
+      var summary = _pricingComputeSummaryData(d.project.id, estimate);
+      tt = summary && summary.tierTotals ? summary.tierTotals : null;
+    }
+  } catch (e) {
+    tt = null; // non-fatal — fall through to the unpriced fallback copy
+  }
+
+  // Column order Recommended | Compliance | Full Scope is a readability choice, NOT an assertion
+  // that the dollar totals ascend/descend in that order. DRAFT tier descriptions (pending Matt's
+  // review) — worded to be accurate regardless of whether a recurring budget is configured.
+  var tierCols = [
+    {
+      key: 'recommended',
+      label: 'Recommended',
+      desc: 'Highest-impact upgrades prioritized by return on investment.',
+    },
+    { key: 'compliance', label: 'Compliance', desc: 'Scope required to meet ASHRAE Guideline 36.' },
+    { key: 'full-scope', label: 'Full Scope', desc: 'All identified upgrades across the portfolio.' },
+  ];
+
+  var titleBlock =
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+    'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate</div>';
+
+  var intro =
+    '<div style="font-size:10px;color:#000;line-height:1.6;margin-bottom:16px">' +
+    'The options below present three scopes of work for this portfolio. Each figure is an ' +
+    'independent estimate of the total investment for that scope, provided to support planning and ' +
+    'budgeting. The scopes are defined differently and are not simple subsets of one another, so the ' +
+    'totals should be compared on their own terms rather than assumed to rank in any particular order.' +
+    '</div>';
+
+  // Table: 3 fixed columns, total width 684px (3 x 228). table-layout:fixed, black text, no colored
+  // fill boxes. Blue column headers match every other table in the report (canonical table standard).
+  var colgroup = '<colgroup><col style="width:228px"><col style="width:228px"><col style="width:228px"></colgroup>';
+
+  var thStyle =
+    'padding:8px 10px;font-size:11px;font-weight:700;color:#fff;background:var(--rpt-blue);' +
+    'text-align:center;border:1px solid var(--rpt-blue)';
+  var headRow =
+    '<tr>' +
+    tierCols
+      .map(function (c) {
+        return '<th style="' + thStyle + '">' + _esc(c.label) + '</th>';
+      })
+      .join('') +
+    '</tr>';
+
+  var descStyle =
+    'padding:8px 10px;font-size:10px;color:#000;line-height:1.5;text-align:center;' +
+    'border:1px solid var(--rpt-rule);vertical-align:top';
+  var descRow =
+    '<tr>' +
+    tierCols
+      .map(function (c) {
+        return '<td style="' + descStyle + '">' + _esc(c.desc) + '</td>';
+      })
+      .join('') +
+    '</tr>';
+
+  var lblStyle =
+    'padding:10px 10px 2px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;' +
+    'color:#000;text-align:center;border:1px solid var(--rpt-rule);border-bottom:none';
+  var lblRow =
+    '<tr>' +
+    tierCols
+      .map(function () {
+        return '<td style="' + lblStyle + '">Total Investment</td>';
+      })
+      .join('') +
+    '</tr>';
+
+  var amtStyle =
+    'padding:2px 10px 12px;font-size:18px;font-weight:700;color:#000;text-align:center;' +
+    'border:1px solid var(--rpt-rule);border-top:none';
+  var amtRow =
+    '<tr>' +
+    tierCols
+      .map(function (c) {
+        var g = tt && tt[c.key] ? _fmtUSD(tt[c.key].grand) : null;
+        return '<td style="' + amtStyle + '">' + (g || 'Available upon request') + '</td>';
+      })
+      .join('') +
+    '</tr>';
+
+  var table =
+    '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:16px">' +
+    colgroup +
+    '<thead>' +
+    headRow +
+    '</thead><tbody>' +
+    descRow +
+    lblRow +
+    amtRow +
+    '</tbody></table>';
+
+  // M&V / savings disclaimer — attached wherever estimates appear (verbatim SAVINGS_DISCLAIMER_TEXT).
+  var disc =
+    typeof SAVINGS_DISCLAIMER_TEXT !== 'undefined'
+      ? SAVINGS_DISCLAIMER_TEXT
+      : 'Estimates are not guarantees of performance. Post-installation measurement and verification (M&V) is required to confirm realized savings.';
+  var discBlock =
+    '<div style="font-size:9px;color:#000;line-height:1.5;margin-top:8px;padding-top:8px;' +
+    'border-top:1px solid var(--rpt-rule)">' +
+    '<span style="font-weight:700">Estimate &amp; Savings Disclaimer: </span>' +
+    _esc(disc) +
+    '</div>';
+
+  var bodyHTML = titleBlock + intro + table + discBlock;
+
+  // Single page (content is fixed-size and cannot overflow), returned as an array for spread-callers.
+  return [
+    rptPage(n, 'ASHRAE 36 Service Proposal — Cost Estimate', bodyHTML, {
+      data: fakeData,
+      label: 'Page ' + n + ' — Cost Estimate',
+    }),
+  ];
+}
+
 // ─── rptPageASHRAE36PointInventory ───────────────────────────────────────────
 /**
  * Point Inventory Completeness page.
@@ -14240,6 +14406,19 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
   if (s.proposalScope !== false)
     pages.push(_tagA36Section(rptPageASHRAE36ProposalScope(pageNum++, data), 'proposalScope'));
+
+  // ebfca114: opt-in priced Cost Estimate page (default OFF — strict === true opt-in, so an
+  // undefined/false section flag never renders it). Positioned between Scope of Work ("what needs
+  // to happen") and Expected Outcomes ("why it matters"). Returns an Array — spread each page and
+  // advance pageNum so downstream numbering stays correct.
+  if (s.costEstimate === true) {
+    var pricingPages = rptPageASHRAE36ProposalPricing(pageNum, data);
+    pricingPages.forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'costEstimate'));
+      pageNum++;
+    });
+  }
+
   if (s.proposalOutcomes !== false)
     pages.push(_tagA36Section(rptPageASHRAE36ProposalOutcomes(pageNum++, data), 'proposalOutcomes'));
 
