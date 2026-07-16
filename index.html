@@ -1828,7 +1828,7 @@
             </div>
           </div>
           <!-- [COMMENTED OUT] Sync to Outlook topbar button
-          <button class="sync-btn" onclick="showToast('Syncing to Outlook...')">
+          <button class="sync-btn" onclick="if (typeof showToast === 'function') showToast('Syncing to Outlook...')">
             <div class="ms-sq"><span></span><span></span><span></span><span></span></div>
             Sync to Outlook
           </button>
@@ -2288,7 +2288,7 @@
           enterApp();
         } catch (e) {
           if (M365.auth.clientId === 'YOUR_CLIENT_ID') {
-            showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
+            if (typeof showToast === 'function') showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
             setTimeout(loginDemo, 700);
           } else {
             btn.innerHTML = '⚠️ Login failed';
@@ -2316,7 +2316,7 @@
         if (msalApp && currentUser?.isReal) msalApp.logoutPopup().catch(() => {});
         document.getElementById('app').classList.remove('visible');
         document.getElementById('loginScreen').style.display = 'flex';
-        showToast('Signed out');
+        if (typeof showToast === 'function') showToast('Signed out');
       }
 
       // Auto-login if session exists
