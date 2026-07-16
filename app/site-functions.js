@@ -1194,6 +1194,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.16.687',
+    date: '2026-07-16',
+    title: 'Bill analysis safety net and a Reset Data fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department bill analysis: bills where the summed charge lines add up to far more than the printed total are now flagged for review instead of silently passing through unflagged.',
+      },
+      {
+        type: 'fix',
+        text: 'Dashboard sidebar, Service Department, and Energy Department: "Reset Data" now actually deletes stored bill PDFs along with everything else, matching what its confirmation warning has always said it does.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.16.686',
     date: '2026-07-16',
     title: 'ASHRAE 36 Audit Report and Service Proposal fixes',
