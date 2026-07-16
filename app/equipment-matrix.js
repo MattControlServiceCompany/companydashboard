@@ -7456,7 +7456,26 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     for (var apk = 0; apk < allPtKeysBas.length; apk++) {
       if (allPtKeysBas[apk].indexOf('auto_') !== 0) ashraeCount++;
     }
-    return '<td style="' + baseStyle + 'color:var(--text2)">' + (ashraeCount > 0 ? ashraeCount : '--') + '</td>';
+    if (ashraeCount === 0) {
+      return '<td style="' + baseStyle + 'color:var(--text3)">--</td>';
+    }
+    // Clickable: opens the combined "all points" panel (ASHRAE 36 points next to Other BAS
+    // points) via emShowAutoKeyDetail — same panel the Other BAS Points pill opens, so the user
+    // sees both lists together from whichever of the two adjacent columns they click. (3d6d7244)
+    var safeIdBas = String(row.id).replace(/'/g, "\\'");
+    return (
+      '<td style="' +
+      baseStyle +
+      'color:var(--text2);cursor:pointer" ' +
+      'onclick="emShowAutoKeyDetail(\'' +
+      safeIdBas +
+      '\')" ' +
+      'title="' +
+      ashraeCount +
+      ' ASHRAE 36 points. Click to view all BAS points (ASHRAE 36 + Other) together.">' +
+      ashraeCount +
+      '</td>'
+    );
   }
 
   // ── Other BAS Points (auto_ count + drill-down, Phase D-2) ──
@@ -8229,12 +8248,17 @@ function emCloseComplianceDetail() {
   if (panel) panel.parentNode.removeChild(panel);
 }
 
-/* ── emShowAutoKeyDetail (Phase D-2) ─────────────────────────────────────────
-   Opens a side panel listing all auto_col-keyed points for a single equipment
-   row. Reuses the same fixed-position slide-in panel pattern as
-   emShowComplianceDetail (same id, same z-index, same close button).
+/* ── emShowAutoKeyDetail (Phase D-2; combined-list 3d6d7244) ──────────────────
+   Opens a side panel listing ALL BAS points for a single equipment row — the
+   ASHRAE 36-mapped points next to the Other (unmapped auto_) points — using the
+   shared emBuildAllPointsTableHtml builder (the same combined table 561fe067
+   validated for the Sensor Coverage detail panel). Reuses the same
+   fixed-position slide-in panel pattern as emShowComplianceDetail (same id,
+   same z-index, same close button).
 
-   Called by clicking the "N" pill in the "Other BAS Points" audit column.   */
+   Called by clicking EITHER the "ASHRAE Points" cell or the "Other BAS Points"
+   pill in the Audit table — both open this same combined view so the user sees
+   ASHRAE Points next to Other BAS Points, expanded, without an extra click.   */
 function emShowAutoKeyDetail(rowId) {
   var pid = window._emActivePid || '';
   var data = emLoadMatrix(pid);
@@ -8251,77 +8275,35 @@ function emShowAutoKeyDetail(rowId) {
   var equipName = row.equipName || row.name || rowId;
   var normPts = emGetNormalizedPoints(row);
 
-  // Collect auto_col keys sorted alphabetically by label
-  var autoEntries = [];
+  // Count ASHRAE-mapped vs Other (auto_) points for the intro line. The full side-by-side
+  // table (blue = ASHRAE 36, "Other" = unmapped) is rendered by emBuildAllPointsTableHtml,
+  // the same combined builder used by the Sensor Coverage detail panel (561fe067).
+  var _ashraeCt = 0,
+    _otherCt = 0;
   for (var k in normPts) {
     if (!Object.prototype.hasOwnProperty.call(normPts, k)) continue;
-    if (k.indexOf('auto_') !== 0) continue;
-    // Find the original raw name by scanning row.points / row.pointsRaw for a name
-    // that would produce this auto_col key. If not found, fall back to emAutoColLabel(k).
-    // For display we use emAutoColLabel applied to the key itself (strip "auto_" prefix,
-    // restore word boundaries, which is approximate but readable).
-    var label = k.slice(5); // strip "auto_"
-    // Convert camelCase back to spaced words for display
-    label = label.replace(/([A-Z])/g, ' $1');
-    label = label.charAt(0).toUpperCase() + label.slice(1);
-    autoEntries.push({ key: k, label: label, value: normPts[k] });
+    if (k.indexOf('auto_') === 0) _otherCt++;
+    else _ashraeCt++;
   }
-  autoEntries.sort(function (a, b) {
-    return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
-  });
 
-  var count = autoEntries.length;
-
-  // Build list HTML
+  // Build list HTML — ASHRAE Points shown next to Other BAS Points, expanded by default.
   var listHtml =
     '<div style="margin-bottom:16px">' +
     '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;' +
-    'letter-spacing:0.05em;margin-bottom:8px">Other BAS Points (' +
-    count +
-    ')</div>' +
+    'letter-spacing:0.05em;margin-bottom:8px">All BAS Points</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">' +
-    'These ' +
-    count +
-    ' point' +
-    (count === 1 ? '' : 's') +
-    ' were found in the BAS export but have no ASHRAE 36 category mapping. ' +
-    'They are included in the total point count but do not affect coverage %.' +
+    '<strong>' +
+    _ashraeCt +
+    '</strong> ASHRAE 36 point' +
+    (_ashraeCt === 1 ? '' : 's') +
+    ' (counted toward coverage) shown next to <strong>' +
+    _otherCt +
+    '</strong> Other BAS point' +
+    (_otherCt === 1 ? '' : 's') +
+    ' (found on the equipment, not scored).' +
+    '</div>' +
+    emBuildAllPointsTableHtml(row) +
     '</div>';
-
-  if (autoEntries.length === 0) {
-    listHtml += '<div style="font-size:12px;color:var(--text3)">No unclassified points.</div>';
-  } else {
-    listHtml += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
-    listHtml +=
-      '<thead><tr>' +
-      '<th style="text-align:left;padding:4px 6px;background:var(--s1);border:1px solid var(--border);' +
-      'color:var(--text2);font-weight:600">Point Name</th>' +
-      '<th style="text-align:right;padding:4px 6px;background:var(--s1);border:1px solid var(--border);' +
-      'color:var(--text2);font-weight:600;width:80px">Value</th>' +
-      '</tr></thead><tbody>';
-    for (var ei = 0; ei < autoEntries.length; ei++) {
-      var e = autoEntries[ei];
-      var val = e.value != null ? String(e.value) : '';
-      var valDisp = val.length > 10 ? val.slice(0, 10) : val;
-      var rowBg = ei % 2 === 0 ? '' : 'background:var(--s2);';
-      listHtml +=
-        '<tr style="' +
-        rowBg +
-        '">' +
-        '<td style="padding:3px 6px;border:1px solid var(--border);color:var(--text)">' +
-        emHtmlEsc(e.label) +
-        '</td>' +
-        '<td style="padding:3px 6px;border:1px solid var(--border);color:var(--text2);' +
-        'text-align:right;font-family:monospace" title="' +
-        emHtmlEsc(val) +
-        '">' +
-        emHtmlEsc(valDisp) +
-        '</td>' +
-        '</tr>';
-    }
-    listHtml += '</tbody></table>';
-  }
-  listHtml += '</div>';
 
   // Assemble panel — reuse same id as compliance detail so only one panel is open at a time
   var panelId = 'em-compliance-detail-panel';
@@ -8340,7 +8322,7 @@ function emShowAutoKeyDetail(rowId) {
     '<div style="font-weight:700;font-size:13px;color:var(--text)">' +
     emHtmlEsc(equipName) +
     '</div>' +
-    '<div style="font-size:11px;color:var(--text3)">Other BAS Points &mdash; not ASHRAE 36 mapped</div>' +
+    '<div style="font-size:11px;color:var(--text3)">ASHRAE 36 Points &amp; Other BAS Points</div>' +
     '</div>' +
     '<button onclick="emCloseComplianceDetail()" style="background:none;border:none;font-size:18px;' +
     'cursor:pointer;color:var(--text2);padding:4px;line-height:1" title="Close">&times;</button>' +
