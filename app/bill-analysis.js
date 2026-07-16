@@ -4563,7 +4563,74 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           violations.push({ field: f, value: v });
         }
       }
-      if (violations.length === 0) continue;
+      if (violations.length === 0) {
+        // GATE C EXTENSION (fix/gate-compsum-blindspot, ee7acc56 follow-up): a
+        // bill whose COMPONENT SUM disagrees with the printed total by a
+        // magnitude large enough to trip Gate C (isLargeCorrection) was
+        // previously silently accepted whenever no SINGLE field individually
+        // exceeded the total — a silent-corruption blind spot worse than the
+        // gated ee7acc56 case, since it produced NO flag at all. Real example:
+        // "505 E Amity" — ~$19,228 summed components vs a $5,796 printed
+        // total, zero flag. Reuse the SAME magnitude thresholds as
+        // _decideTotalCorrection (15% / max($500, total*0.08)) so small,
+        // legitimate component-sum differences (rounding, taxes, normal
+        // multi-component sums) are never newly flagged — only route into
+        // the decision (and only ever HOLD, never silently auto-apply, since
+        // there is no single-field violation evidence to justify it).
+        if (compSum > total + 0.1) {
+          const origTotal = b.TotalCurrentCharges;
+          const decision = _decideTotalCorrection(b, origTotal, compSum, []);
+          if (decision.hold) {
+            b._correction_pending_TotalCurrentCharges = {
+              original: origTotal,
+              proposedCorrection: compSum.toFixed(2),
+              pctChange: decision.pctChange.toFixed(1),
+              dollarChange: decision.dollarChange.toFixed(2),
+              provenanceOk: decision.provenanceOk,
+              reason:
+                'Component sum ($' +
+                compSum.toFixed(2) +
+                ') exceeds printed total ($' +
+                pf(origTotal).toFixed(2) +
+                ') by ' +
+                decision.pctChange.toFixed(1) +
+                '% ($' +
+                decision.dollarChange.toFixed(2) +
+                ') with no single charge field individually over the total' +
+                (decision.provenanceOk
+                  ? ''
+                  : '. One or more charge values could not be confirmed on this bill’s own page(s) — possible cross-bill contamination.') +
+                ' — proposed correction to $' +
+                compSum.toFixed(2) +
+                '. Correction magnitude ' +
+                decision.pctChange.toFixed(1) +
+                '% ($' +
+                decision.dollarChange.toFixed(2) +
+                ') exceeds the auto-apply threshold (' +
+                decision.CORRECTION_PCT_THRESHOLD +
+                '% / $' +
+                decision.CORRECTION_DOLLAR_THRESHOLD.toFixed(2) +
+                ') — held for manual confirmation.',
+            };
+            console.log(
+              '[PostVerify][Gate C ext] Component-sum mismatch (no single-field violation) HELD PENDING for ' +
+                comm +
+                ': $' +
+                decision.origTotalNum.toFixed(2) +
+                ' -> $' +
+                compSum.toFixed(2) +
+                ' (pct=' +
+                decision.pctChange.toFixed(1) +
+                '%, $=' +
+                decision.dollarChange.toFixed(2) +
+                ', provenanceOk=' +
+                decision.provenanceOk +
+                ')',
+            );
+          }
+        }
+        continue;
+      }
       if (compSum > total + 0.1) {
         const origTotal = b.TotalCurrentCharges;
         const violationText = violations
