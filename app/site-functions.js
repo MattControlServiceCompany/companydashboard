@@ -1191,6 +1191,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.16.685',
+    date: '2026-07-16',
+    title: 'Fixed sign-in, Service Department loading, and a false PDF export error',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Microsoft sign-in button on the main Dashboard works again -- it was silently failing to fall back to demo mode when a real login could not complete.',
+      },
+      {
+        type: 'fix',
+        text: 'Service Department now loads reliably when you return to it in a tab where you were already signed in. Previously the Personnel table could come up completely blank with no error message.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed a bug where saving a generated report to your report history could throw an error and incorrectly show a "PDF export failed" message even though the PDF itself exported fine.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.15.684',
     date: '2026-07-15',
     title: 'Energy Department: "Skip All" on the bill duplicate screen no longer flags bills for review',
