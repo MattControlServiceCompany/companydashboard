@@ -3041,7 +3041,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       ) ||
       null,
     AccountNumber:
-      acctOverride || t.match(/Account\s+(?:Number\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') || null,
+      acctOverride ||
+      t.match(/Account\s+(?:Number\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
+      null,
     ServiceAddress: addrOverride || t.match(_EVG_ADDR)?.[1]?.trim() || null,
     RateSchedule: rateMatch?.[1] || null,
     BillingPeriodStart: bpMatch?.[1] || null,
@@ -4245,7 +4247,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
 const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
-const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/m;
+const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/m;
 const _EVG_ADDR =
   /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
@@ -4426,7 +4428,7 @@ const UTILITY_RULES = [
       const _acctForIdx = (idx) => {
         const pageText = _pageTextForIdx(idx);
         const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®]\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
         ];
         if (acctMatches.length === 0) return null;
         return acctMatches[0][1].replace(/\s/g, '');
@@ -4487,10 +4489,27 @@ const UTILITY_RULES = [
       for (const m of uniqueBills) {
         const prev = _merged.length ? _merged[_merged.length - 1] : null;
         const _sameAcct = !prev || !prev._acct || !m._acct || prev._acct === m._acct;
-        if (prev && _sameAcct && prev.end === m.end && _dayDelta(prev.start, m.start) <= 2) {
+        // A legitimate cover+detail merge always has exactly ONE side with its
+        // own "Billing Details" header immediately before it. If BOTH sides
+        // independently satisfy _hasBdBefore, they are two DIFFERENT bills
+        // (different buildings) that happen to share an end date and a
+        // near-start-date — not a cover/detail pair of the same bill. Block
+        // the merge in that case unless we have positive proof (both accounts
+        // resolved and equal) that they really are the same bill. See
+        // backlog 866c3e3b — without this guard a same-period collision
+        // between two buildings silently drops one of them.
+        const prevIsBd = prev ? _hasBdBefore(prev) : false;
+        const curIsBd = _hasBdBefore(m);
+        const _provenSameAcct = !!(prev && prev._acct && m._acct && prev._acct === m._acct);
+        const _distinctBillsCollision = prevIsBd && curIsBd && !_provenSameAcct;
+        if (
+          prev &&
+          _sameAcct &&
+          !_distinctBillsCollision &&
+          prev.end === m.end &&
+          _dayDelta(prev.start, m.start) <= 2
+        ) {
           _fuzzyMerges++;
-          const prevIsBd = _hasBdBefore(prev);
-          const curIsBd = _hasBdBefore(m);
           let winner;
           if (curIsBd && !prevIsBd) winner = m;
           else if (prevIsBd && !curIsBd) winner = prev;
@@ -4758,8 +4777,17 @@ const UTILITY_RULES = [
         t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)?.[1] ||
         t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i)?.[1] ||
         null;
+      // Only fall back to the whole-document `acct` (first account number
+      // found anywhere in the PDF) when this is genuinely a single-building
+      // document — every resolved uniqueBills entry shares one account. In a
+      // multi-building batch, a bill whose own per-page account failed to
+      // resolve must NOT inherit an unrelated building's account number —
+      // that silently mislabels it. Fall back to null (surfaces as "needs
+      // review") instead. See backlog 866c3e3b.
+      const _distinctResolvedAccts = new Set(uniqueBills.map((b) => b._acct).filter(Boolean));
+      const _isMultiAcctBatch = _distinctResolvedAccts.size > 1;
       const results = validSections.map((s, i) => {
-        const billAcct = (uniqueBills[i] && uniqueBills[i]._acct) || acct;
+        const billAcct = (uniqueBills[i] && uniqueBills[i]._acct) || (_isMultiAcctBatch ? null : acct);
         const billAddr = (uniqueBills[i] && uniqueBills[i]._addr) || addrM?.[1]?.trim() || null;
         const r = _extractEvergy(s, billAcct, billAddr);
         if (!r.CustomerName && fullCustName) r.CustomerName = fullCustName;
