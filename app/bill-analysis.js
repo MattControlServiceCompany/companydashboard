@@ -1742,6 +1742,26 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
   const offVerified = !!(offR && _chargeSelfVerifies(_chargeComputedTotal(offR), pf(b.EnergyOffPeakCharge)));
   const result = { onCorrection: null, offCorrection: null, gate: null };
 
+  // ── STRUCTURAL GUARD: a synthetic qty:null placeholder means the dollar side
+  // (xChg) found more On/Off-Peak charge lines than the qty side (xRate) could
+  // parse — i.e. a seasonal (Sum/Win) tier's kWh digits were too garbled to read,
+  // even though its dollar amount was legible (see energy-savings.js's
+  // reconciliation loop, ~3238-3279). onVerified/offVerified above have no way to
+  // detect this — a leg missing the SAME tier from both its qty parts and its
+  // dollar total will falsely self-verify. Refuse to derive from a leg with a
+  // known-incomplete tier rather than manufacture a wrong identity-subtraction
+  // value (b1c8a984, Rockville Elementary 09/28/2025-10/27/2025).
+  const onIncompleteTier = !!(onR && (onR.parts || []).some((p) => p.qty == null));
+  const offIncompleteTier = !!(offR && (offR.parts || []).some((p) => p.qty == null));
+  if (onIncompleteTier || offIncompleteTier) {
+    result.gate =
+      (onIncompleteTier ? 'OnPeakKWh' : 'OffPeakKWh') +
+      ': a seasonal (Sum/Win) tier kWh quantity could not be read from the bill (dollar amount was ' +
+      'legible, quantity digits were not) -- refusing to derive OnPeakKWh/OffPeakKWh from kWhConsumed ' +
+      'using the other leg, verify against the source PDF';
+    return result;
+  }
+
   // ── SELF-HEAL: restore a field that upstream extraction (energy-savings.js's
   // own on/off invariant check, which has the identical blind-subtraction
   // flaw this function replaces) already overwrote with a guess, whenever the

@@ -2755,8 +2755,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // After: On Pk Sum/Win + Off Pk Sum/Win.
   // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
   // tieredChg excludes On/Off Pk lines so there's no double-counting.
-  const onPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]');
-  const offPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]');
+  const onPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]', null, 'EnergyOnPeakCharge');
+  const offPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]', null, 'EnergyOffPeakCharge');
   const tieredChg = xChg('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
   // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
   // part on Louis Elementary's Oct 2025 bill prints as "EGA Chg", which
