@@ -1194,6 +1194,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.16.688',
+    date: '2026-07-16',
+    title: 'Evergy bill extraction fix',
+    items: [
+      {
+        type: 'fix',
+        text: "Bill Analysis: Evergy multi-bill PDFs no longer sum a neighboring account's charges into a bill's totals -- each account's bill amount now stays correctly isolated to its own account boundary.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.16.687',
     date: '2026-07-16',
     title: 'Bill analysis safety net and a Reset Data fix',
