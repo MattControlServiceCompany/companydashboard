@@ -1194,6 +1194,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.16.689',
+    date: '2026-07-16',
+    title: 'Service Proposal pricing detail',
+    items: [
+      {
+        type: 'change',
+        text: 'Service Proposal -- removed the static contents list from the cover.',
+      },
+      {
+        type: 'feature',
+        text: 'Service Proposal -- added optional pricing detail: Hardware vs. Programming subtotals, a per-building pricing table, and an itemized measure summary.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.16.688',
     date: '2026-07-16',
     title: 'Evergy bill extraction fix',
