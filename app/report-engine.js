@@ -14097,13 +14097,269 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var bodyHTML = titleBlock + intro + table + discBlock;
 
-  // Single page (content is fixed-size and cannot overflow), returned as an array for spread-callers.
-  return [
+  var resultPages = [
     rptPage(n, 'ASHRAE 36 Service Proposal — Cost Estimate', bodyHTML, {
       data: fakeData,
       label: 'Page ' + n + ' — Cost Estimate',
     }),
   ];
+  var nextPageNum = n + 1;
+
+  // ── Option 3: Per-building pricing breakdown (costEstimatePerBuilding) ─────────────────────────
+  // One row per building across the whole portfolio; each tier's building-level `total` already
+  // respects rowToggles (computed inside _pricingComputeSummaryData's sumRows). Bounded page count
+  // via _rptPaginateTokens (same pattern as rptPageASHRAE36PointInventory) — one row per building,
+  // not per line item, so this stays 1-2 pages even for JOCO-scale (27+ building) portfolios.
+  // SAFETY: prints only building name + the three tier dollar totals — no cost build-up.
+  function _buildPerBuildingPages(startN) {
+    var bld = (summaryData && summaryData.buildings) || [];
+    if (!bld.length) return [];
+
+    var pbColgroup =
+      '<colgroup><col style="width:228px"><col style="width:152px"><col style="width:152px"><col style="width:152px"></colgroup>';
+    var pbThStyle =
+      'padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
+      'color:#fff;background:var(--rpt-blue);text-align:left';
+    var pbThRight = pbThStyle.replace('text-align:left', 'text-align:right');
+    var pbTableHead =
+      '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
+      pbColgroup +
+      '<thead><tr>' +
+      '<th style="' +
+      pbThStyle +
+      '">Building</th>' +
+      '<th style="' +
+      pbThRight +
+      '">Recommended</th>' +
+      '<th style="' +
+      pbThRight +
+      '">Compliance</th>' +
+      '<th style="' +
+      pbThRight +
+      '">Full Scope</th>' +
+      '</tr></thead>';
+
+    function _rowHTML(b) {
+      var rec = b.tiers.recommended ? _fmtUSD(b.tiers.recommended.total) : null;
+      var comp = b.tiers.compliance ? _fmtUSD(b.tiers.compliance.total) : null;
+      var full = b.tiers['full-scope'] ? _fmtUSD(b.tiers['full-scope'].total) : null;
+      var td = 'padding:5px 8px;font-size:9px;color:#000;border-bottom:1px solid var(--rpt-rule)';
+      var tdR = td + ';text-align:right';
+      return (
+        '<tr>' +
+        '<td style="' +
+        td +
+        '">' +
+        _esc(b.building) +
+        '</td>' +
+        '<td style="' +
+        tdR +
+        '">' +
+        (rec || '—') +
+        '</td>' +
+        '<td style="' +
+        tdR +
+        '">' +
+        (comp || '—') +
+        '</td>' +
+        '<td style="' +
+        tdR +
+        '">' +
+        (full || '—') +
+        '</td>' +
+        '</tr>'
+      );
+    }
+
+    // estH 27: real headless-render measurement of this row shape (padding:5px 8px, font-size:9px,
+    // single line) came back ~24.5px average (JOCO's 28-building portfolio) — 22 underestimated it
+    // and produced an 86px page-9-style overflow risk on the itemized table below before this fix;
+    // 27 keeps a safety margin for longer building names that may wrap.
+    var tokens = bld.map(function (b) {
+      return { type: 'row', estH: 27, html: _rowHTML(b) };
+    });
+
+    var chunks = _rptPaginateTokens(tokens, 700, 803);
+    var numChunks = chunks.length;
+    var pages = [];
+
+    chunks.forEach(function (chunk, idx) {
+      var rowsHTML = chunk
+        .map(function (t) {
+          return t.html;
+        })
+        .join('');
+      var pbTable = pbTableHead + '<tbody>' + rowsHTML + '</tbody></table>';
+      var pbTitle =
+        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+        'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate — Per-Building Breakdown' +
+        (idx > 0 ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')' : '') +
+        '</div>';
+      var body = pbTitle + pbTable + (idx === numChunks - 1 ? discBlock : '');
+      var pageN = startN + idx;
+      pages.push(
+        rptPage(pageN, 'ASHRAE 36 Service Proposal — Cost Estimate', body, {
+          data: fakeData,
+          label: 'Page ' + pageN + ' — Cost Estimate (Per-Building)',
+        }),
+      );
+    });
+
+    return pages;
+  }
+
+  // ── Option 2: Itemized breakdown, SUMMARIZED across the portfolio (costEstimateItemized) ──────
+  // One row PER DISTINCT MEASURE per tier — qty and lineTotal are aggregated (summed) across every
+  // building carrying that same item, NOT one row per building-instance. This keeps the section to
+  // a few pages instead of recreating the "looks like a scope document" complaint (2026-06-08 PDF
+  // review Issue 6) with walls of near-duplicate rows. Each tier starts on its own fresh page and is
+  // independently paginated with _rptPaginateTokens if it runs long. Only rows actually counted in
+  // the grand total (rowToggles[key] !== false) are included, matching the totals shown above.
+  // SAFETY: prints only row.item, summed qty, summed lineTotal, and row.clientSummary — never
+  // unitPrice/listPrice/netPrice/contractPrice/sku/hrsPerUnit/savingsRationale.
+  function _buildItemizedPages(startN) {
+    if (!summaryData || !summaryData.perTier) return [];
+    var toggles = (estimateState && estimateState.rowToggles) || {};
+    var pages = [];
+    var pageN = startN;
+
+    tierCols.forEach(function (c) {
+      var rows = summaryData.perTier[c.key] || [];
+      var included = rows.filter(function (r) {
+        var key = r._baseId || r.id;
+        return toggles[key] !== false;
+      });
+      if (!included.length) return;
+
+      // Aggregate by item name: sum qty + lineTotal across every building/instance of that item.
+      var byItem = {};
+      var order = [];
+      included.forEach(function (r) {
+        var key = r.item || '(unnamed)';
+        if (!byItem[key]) {
+          byItem[key] = { item: r.item, qty: 0, lineTotal: 0, clientSummary: r.clientSummary || null };
+          order.push(key);
+        }
+        byItem[key].qty += r.qty || 0;
+        byItem[key].lineTotal += r.lineTotal || 0;
+      });
+      var agg = order.map(function (k) {
+        return byItem[k];
+      });
+
+      var itColgroup =
+        '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
+      var itThStyle =
+        'padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
+        'color:#fff;background:var(--rpt-blue);text-align:left';
+      var itThRight = itThStyle.replace('text-align:left', 'text-align:right');
+      var itTableHead =
+        '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
+        itColgroup +
+        '<thead><tr>' +
+        '<th style="' +
+        itThStyle +
+        '">Item</th>' +
+        '<th style="' +
+        itThRight +
+        '">Total Qty</th>' +
+        '<th style="' +
+        itThRight +
+        '">Price</th>' +
+        '</tr></thead>';
+
+      function _itemRowHTML(row) {
+        var td = 'padding:5px 8px;font-size:9px;color:#000;border-bottom:1px solid var(--rpt-rule);vertical-align:top';
+        var tdR = td + ';text-align:right';
+        var nameHTML =
+          '<div>' +
+          _esc(row.item || '') +
+          '</div>' +
+          (row.clientSummary
+            ? '<div style="font-size:8px;color:#333;margin-top:2px;line-height:1.4">' +
+              _esc(row.clientSummary) +
+              '</div>'
+            : '');
+        return (
+          '<tr>' +
+          '<td style="' +
+          td +
+          '">' +
+          nameHTML +
+          '</td>' +
+          '<td style="' +
+          tdR +
+          '">' +
+          (row.qty || 0).toLocaleString() +
+          '</td>' +
+          '<td style="' +
+          tdR +
+          '">' +
+          (_fmtUSD(row.lineTotal) || '—') +
+          '</td>' +
+          '</tr>'
+        );
+      }
+
+      // estH values measured via real headless render against JOCO (27-building portfolio): plain
+      // item/qty/price rows averaged ~24.5px (not 20 — that 4.5px/row underestimate accumulated
+      // across a 38-row Full Scope continuation page into an 86px page overflow), and rows with a
+      // clientSummary sub-line averaged ~48.9px (not 34). 30 / 60 below keep a safety margin for
+      // longer item names or multi-sentence clientSummary text that could wrap further. Both tiers'
+      // FIRST and CONT budgets are now equal (780) — a tier's own first page has the exact same
+      // chrome (title ~22.5px + thead ~25.5px + table margin-bottom ~12px ≈ 60px) as its
+      // continuation pages, so there was never a reason for the two to differ.
+      var tokens = agg.map(function (row) {
+        return { type: 'row', estH: row.clientSummary ? 60 : 30, html: _itemRowHTML(row) };
+      });
+
+      var chunks = _rptPaginateTokens(tokens, 780, 780);
+      var numChunks = chunks.length;
+
+      chunks.forEach(function (chunk, idx) {
+        var rowsHTML = chunk
+          .map(function (t) {
+            return t.html;
+          })
+          .join('');
+        var itTable = itTableHead + '<tbody>' + rowsHTML + '</tbody></table>';
+        var itTitle =
+          '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+          'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate — Itemized Measures — ' +
+          _esc(c.label) +
+          (idx > 0 ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')' : '') +
+          '</div>';
+        var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
+        pages.push(
+          rptPage(pageN, 'ASHRAE 36 Service Proposal — Cost Estimate', body, {
+            data: fakeData,
+            label: 'Page ' + pageN + ' — Itemized Measures (' + c.label + ')',
+          }),
+        );
+        pageN++;
+      });
+    });
+
+    return pages;
+  }
+
+  if (wantPerBuilding) {
+    var perBuildingPages = _buildPerBuildingPages(nextPageNum);
+    perBuildingPages.forEach(function (pg) {
+      resultPages.push(pg);
+      nextPageNum++;
+    });
+  }
+
+  if (wantItemized) {
+    var itemizedPages = _buildItemizedPages(nextPageNum);
+    itemizedPages.forEach(function (pg) {
+      resultPages.push(pg);
+      nextPageNum++;
+    });
+  }
+
+  return resultPages;
 }
 
 // ─── rptPageASHRAE36PointInventory ───────────────────────────────────────────
