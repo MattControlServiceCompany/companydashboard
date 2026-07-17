@@ -14034,7 +14034,13 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     tierCols
       .map(function (c) {
         var g = tt && tt[c.key] ? _fmtUSD(tt[c.key].grand) : null;
-        return '<td style="' + amtStyle + '">' + (g || 'Available upon request') + '</td>';
+        // noCatalog guard mirrors the interactive Cost Estimate tab's own footer
+        // (app/pricing-estimator.js:6314-6317 / 6291-6293): when no pricing catalog is imported,
+        // .grand is labor-only (Phase 2 only, hardware unpriced) — prefix "Labor: " so the total
+        // is never shown as an unqualified full-scope dollar figure.
+        var noCat = tt && tt[c.key] && tt[c.key].noCatalog;
+        var display = g ? (noCat ? 'Labor: ' + g : g) : 'Available upon request';
+        return '<td style="' + amtStyle + '">' + display + '</td>';
       })
       .join('') +
     '</tr>';
@@ -14052,14 +14058,22 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       '<tr>' +
       tierCols
         .map(function (c) {
-          var p1 = tt && tt[c.key] ? _fmtUSD(tt[c.key].phase1) : null;
+          // noCatalog guard mirrors the interactive Cost Estimate tab's own footer
+          // (app/pricing-estimator.js:6301-6306 / 6263-6267): phase1 is unpriced (not legitimately
+          // $0) whenever no pricing catalog is imported, so _fmtUSD(0) must never print here.
+          var noCat = tt && tt[c.key] && tt[c.key].noCatalog;
+          var p1 = noCat
+            ? '<span style="color:#666;font-weight:400">CSV needed</span>'
+            : tt && tt[c.key]
+              ? _fmtUSD(tt[c.key].phase1) || '—'
+              : '—';
           var p2 = tt && tt[c.key] ? _fmtUSD(tt[c.key].phase2) : null;
           return (
             '<td style="' +
             phaseCellStyle +
             '">' +
             '<div><span style="font-weight:700">Hardware &amp; Installation:</span> ' +
-            (p1 || '—') +
+            p1 +
             '</div>' +
             '<div><span style="font-weight:700">Programming &amp; Commissioning:</span> ' +
             (p2 || '—') +
