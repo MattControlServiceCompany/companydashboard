@@ -6732,7 +6732,10 @@ function _pricingComputeSummaryData(projId, estimate) {
     tierTotals[t.key] = _pricingComputeTotals(perTier[t.key], estimate);
   });
 
-  return { buildings: buildings, tierTotals: tierTotals };
+  // perTier exposed so the client proposal's optional "Itemized Measures" sub-option can
+  // aggregate measures across the portfolio without recomputing any pricing. Rows carry the
+  // final lineTotal / item name / clientSummary only; no cost build-up. (No new math here.)
+  return { buildings: buildings, tierTotals: tierTotals, perTier: perTier };
 }
 
 function _pricingRenderSummaryTab(projId, el, estimate) {
