@@ -1194,6 +1194,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.17.691',
+    date: '2026-07-17',
+    title: 'Audit Report setpoint review clarity',
+    items: [
+      {
+        type: 'change',
+        text: 'Audit Report -- the Setpoint Programming Review now notes how many buildings are excluded because their equipment has no zone-level setpoints, so the building count is never ambiguous.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.16.690',
     date: '2026-07-16',
     title: 'Evergy bill extraction fix',
