@@ -1194,6 +1194,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.16.690',
+    date: '2026-07-16',
+    title: 'Evergy bill extraction fix',
+    items: [
+      {
+        type: 'fix',
+        text: "Bill Analysis: Evergy multi-bill statements -- a second building's bill is no longer merged into or dropped from a neighboring account, and account numbers printed with an '=:' separator now read correctly.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.16.689',
     date: '2026-07-16',
     title: 'Service Proposal pricing detail',
