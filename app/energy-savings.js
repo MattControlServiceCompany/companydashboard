@@ -1865,24 +1865,42 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const bdRe = /Billing\s+Details\s*[-\u2013]\s*service\s+from/gi;
     let m;
     while ((m = bdRe.exec(t)) !== null) bdMarkers.push(m.index);
-    // Only scope if markers have DIFFERENT dates (different accounts).
-    // Same-date markers are sections of the same bill (e.g. rate changeover months).
+    // Only scope if markers belong to DIFFERENT bills. Historically that
+    // only meant "different dates" (rate-changeover same-bill sections
+    // share dates and must NOT be scoped apart). cf3f0b8d Fix B
+    // (defense-in-depth): also scope when dates MATCH but the ACCOUNT
+    // NUMBER differs \u2014 two different buildings whose billing periods
+    // happen to coincide can still end up concatenated into one section
+    // by an upstream page-partition mistake that the primary boundary
+    // guard (page-partition content check, ~line 4579) didn't catch (e.g.
+    // a different OCR account-line garble than the one that guard knows
+    // about). Without this, every xChg()/.match() call below would keep
+    // summing/matching across both buildings' charge lines. Same-date,
+    // same-or-unresolvable-account markers are still treated as one bill
+    // (unchanged behavior for the legitimate rate-changeover case).
     const _sf = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
     const bdDates = bdMarkers.map((idx) => {
       const dm = t.slice(idx, idx + 200).match(_sf);
       return dm ? dm[1] + '|' + dm[2] : null;
     });
     const uniqueDates = new Set(bdDates.filter(Boolean));
-    if (bdMarkers.length > 1 && uniqueDates.size > 1) {
-      const secStarts = bdMarkers.map((idx) => {
-        const before = t.slice(Math.max(0, idx - 500), idx);
-        // Find LAST "Customer Name" before this Billing Details (closest to it)
-        let cnIdx = -1;
-        const cnRe = /Customer\s*Name/gi;
-        let cm;
-        while ((cm = cnRe.exec(before)) !== null) cnIdx = cm.index;
-        return cnIdx >= 0 ? Math.max(0, idx - 500) + cnIdx : Math.max(0, idx - 200);
-      });
+    const secStarts = bdMarkers.map((idx) => {
+      const before = t.slice(Math.max(0, idx - 500), idx);
+      // Find LAST "Customer Name" before this Billing Details (closest to it)
+      let cnIdx = -1;
+      const cnRe = /Customer\s*Name/gi;
+      let cm;
+      while ((cm = cnRe.exec(before)) !== null) cnIdx = cm.index;
+      return cnIdx >= 0 ? Math.max(0, idx - 500) + cnIdx : Math.max(0, idx - 200);
+    });
+    const _acctHeaderRe = /[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s\u00a9\u00ae=]\s*[(\[\u00a9]?(\d[\d ]{4,18}\d)/;
+    const bdAccts = bdMarkers.map((idx, s) => {
+      const header = t.slice(secStarts[s], idx);
+      const am = header.match(_acctHeaderRe);
+      return am ? am[1].replace(/\s/g, '') : null;
+    });
+    const uniqueAccts = new Set(bdAccts.filter(Boolean));
+    if (bdMarkers.length > 1 && (uniqueDates.size > 1 || uniqueAccts.size > 1)) {
       for (let s = 0; s < bdMarkers.length; s++) {
         const header = t.slice(secStarts[s], bdMarkers[s]);
         if (header.includes(acctOverride)) {
@@ -4576,6 +4594,37 @@ const UTILITY_RULES = [
       // Net effect: each bill owns exactly its own bdPage plus (when
       // available) a cover page immediately before it. No bill ever
       // reaches into a neighbor's bdPage.
+      //
+      // CONTENT-AWARE COVER-PAGE GUARD (cf3f0b8d fix, Fix A) — the formula
+      // above only checks whether there is numeric "room" before the
+      // previous bill's own bdPage; it never inspects what the candidate
+      // cover page (bdPage - 1) actually contains. When a bill's OWN
+      // billing-details account line is OCR-garbled past what
+      // `_acctForIdx` tolerates (e.g. "Account Number =: 2885731561"),
+      // `_sameAcct` (line ~4471) treats the null account as a wildcard and
+      // fuzzy-merges that bill into an unrelated PREVIOUS building's entry
+      // with a matching billing period. The merge loser's bdPage is then
+      // never claimed by anyone (bdPage resolution picks the FIRST
+      // Billing-Details idx in the merge group, not the winner's own), so
+      // that page is "orphaned" — and this partition formula silently
+      // annexes it as the NEXT real bill's cover page, gluing an entirely
+      // different building's charge lines onto the next bill's section
+      // (root cause of cf3f0b8d: Rockville's BilledKWCharge/FacilitiesKW
+      // absorbing New HS's page 42). Guard: before granting `bdPage - 1` as
+      // cover, confirm that page does not itself carry a "Billing Details -
+      // service from" occurrence resolved to a DIFFERENT, non-null account
+      // than the bill being built. If it does, that page belongs to
+      // another bill and must not be silently absorbed — fall back to no
+      // cover room (`pageStart = bdPage`) for this bill instead.
+      const _pageHasForeignBd = (page, ownAcct) => {
+        if (!ownAcct) return false;
+        for (const m of sfMatches) {
+          if (_pfPageForIdx(m.idx) !== page) continue;
+          if (!_hasBdBefore(m)) continue;
+          if (m._acct && m._acct !== ownAcct) return true;
+        }
+        return false;
+      };
       if (_pageFirstOk) {
         for (let i = 0; i < uniqueBills.length; i++) {
           const bdPage = _pfBdPages[i];
@@ -4584,7 +4633,11 @@ const UTILITY_RULES = [
           if (i === 0) {
             pageStart = 1;
           } else {
-            pageStart = bdPage - 1 > prevBd ? bdPage - 1 : bdPage;
+            const _candidatePage = bdPage - 1;
+            const _ownAcct = uniqueBills[i]._acct || acct;
+            const _hasRoom = _candidatePage > prevBd;
+            const _foreignBd = _hasRoom && _pageHasForeignBd(_candidatePage, _ownAcct);
+            pageStart = _hasRoom && !_foreignBd ? _candidatePage : bdPage;
           }
           const pageEnd = i + 1 < uniqueBills.length ? bdPage : _pfMaxPage;
           // Guard against corrupt ranges.
