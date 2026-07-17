@@ -13550,6 +13550,23 @@ function rptPageASHRAE36SetpointReview(n, d) {
       '</div>';
   }
 
+  // ── Zone-equipment exclusion footnote (c041f1c7) ────────────────────────
+  var _totalScoredBuildings = d.buildings.length;
+  var _excludedCount = _totalScoredBuildings - bldgOrder.length;
+  var exclusionNote = '';
+  if (_excludedCount > 0) {
+    exclusionNote =
+      '<div class="rpt-a36-callout" style="margin-top:10px">' +
+      '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
+      'Only buildings with zone-level terminal equipment (VAV boxes, fan-powered boxes, fan coil units, and similar) are shown — these are the units ASHRAE Guideline 36’s zone setpoint standards apply to. ' +
+      _excludedCount +
+      ' of ' +
+      _totalScoredBuildings +
+      ' buildings are not included here because their HVAC equipment (rooftop units, heaters, exhaust fans, and similar) has no separate zone-level setpoints to review.' +
+      '</div>' +
+      '</div>';
+  }
+
   // ── Preamble ──────────────────────────────────────────────────────────────
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
@@ -13597,7 +13614,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     var pageN = n + chunkIndex;
     var bodyHTML;
     if (chunkIndex === 0) {
-      bodyHTML = preamble + totalsCallout + table + (chunkIndex === numChunks - 1 ? co2Note : '');
+      bodyHTML = preamble + totalsCallout + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
     } else {
       var contHdr =
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
@@ -13608,7 +13625,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
         numChunks +
         ')' +
         '</div>';
-      bodyHTML = contHdr + table + (chunkIndex === numChunks - 1 ? co2Note : '');
+      bodyHTML = contHdr + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
     }
 
     resultPages.push(
