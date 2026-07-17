@@ -13,6 +13,75 @@ const DB = (() => {
   // Used by the beforeunload guard to warn users if they navigate away mid-write.
   let _pendingWriteCount = 0;
 
+  // Per-key last-known server version, for the replication tail below.
+  // null/undefined = "never successfully PUT this key" -> treated as a
+  // believed-new insert on the next attempt.
+  const _replicaVersions = {};
+
+  // Keys that never sync to the backend in this slice: UI-preference keys
+  // (ch_*) that are deliberately local-only (see lsPreserveKeys in
+  // warmCache above), and the conflict archive itself (a local safety net,
+  // not something that needs its own server copy in this minimal slice).
+  function _shouldReplicate(key) {
+    if (key.indexOf('ch_') === 0) return false;
+    if (key === 'en_conflict_archive') return false;
+    return true;
+  }
+
+  function _replicateToBackend(key, value) {
+    if (typeof window === 'undefined') return;
+    if (localStorage.getItem('ch_backend_enabled') !== 'true') return;
+    if (!_shouldReplicate(key)) return;
+
+    const baseVersion = _replicaVersions[key] !== undefined ? _replicaVersions[key] : null;
+    const updatedBy = (window.ch_user && window.ch_user.email) || 'unknown';
+
+    fetch('/.netlify/functions/kv-sync', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key, value, baseVersion, updatedBy }),
+    })
+      .then((res) => res.json().then((body) => ({ status: res.status, body })))
+      .then(({ status, body }) => {
+        if (status === 200) {
+          _replicaVersions[key] = body.version;
+          return;
+        }
+        if (status === 409) {
+          // Minimal slice: archive the losing local write, notify, and move
+          // on. Does NOT block editing and does NOT auto-merge. The full
+          // blocking conflict modal (backend-migration-plan-2026-07-16.md
+          // §2b) — "Load theirs / Keep mine / Review side-by-side" — is
+          // explicitly a follow-up, not built here.
+          const archive = sget('en_conflict_archive', []);
+          archive.push({
+            key,
+            attemptedValue: value,
+            attemptedAt: new Date().toISOString(),
+            serverVersion: body.current && body.current.version,
+            serverUpdatedBy: body.current && body.current.updatedBy,
+            serverUpdatedAt: body.current && body.current.updatedAt,
+          });
+          sset('en_conflict_archive', archive);
+          // Advance local version tracking to the server's so the NEXT save
+          // attempt has a correct baseVersion instead of 409ing forever —
+          // this is the last-write-wins-on-retry gap named in the scope
+          // note above; acceptable only because the blocking modal that
+          // would prevent it is explicitly out of scope for this slice.
+          if (body.current) _replicaVersions[key] = body.current.version;
+          if (typeof showToast === 'function') {
+            showToast('Backend sync conflict on ' + key + ' — local copy archived, see en_conflict_archive.', 'error');
+          }
+        }
+      })
+      .catch((e) => {
+        // Backend unreachable (e.g. office firewall, throwaway site down,
+        // flag on but no Function deployed) — this must NEVER break the
+        // local save. Silent-ish by design; a console.warn is enough.
+        console.warn('[DB] Backend replication failed (local save unaffected):', key, e);
+      });
+  }
+
   function _open() {
     return new Promise((resolve, reject) => {
       if (_db) return resolve(_db);
@@ -209,6 +278,15 @@ const DB = (() => {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
     }
+
+    // --- Supabase backend replication tail (ch_backend_enabled kill switch) ---
+    // Fire-and-forget: never awaited here, never changes the timing or shape
+    // of this function's returned Promise (which callers already await for
+    // IDB-durability, not backend-durability). When the flag is off this is
+    // a single localStorage.getItem call — effectively free.
+    _replicateToBackend(key, value);
+    // --- end replication tail ---
+
     if (_usingFallback) {
       return new Promise((resolve, reject) => {
         try {
