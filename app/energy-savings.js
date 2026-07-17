@@ -4784,8 +4784,40 @@ const UTILITY_RULES = [
       // resolve must NOT inherit an unrelated building's account number —
       // that silently mislabels it. Fall back to null (surfaces as "needs
       // review") instead. See backlog 866c3e3b.
-      const _distinctResolvedAccts = new Set(uniqueBills.map((b) => b._acct).filter(Boolean));
-      const _isMultiAcctBatch = _distinctResolvedAccts.size > 1;
+      // Counting distinct accounts via a naive string Set is fooled by a
+      // single OCR digit-garble of an otherwise-correct, page-anchored
+      // account number (e.g. "3966167218" vs the real "3956167218" on the
+      // SAME building's own billing-details page — not a second building).
+      // That wrongly flips _isMultiAcctBatch to true in an otherwise
+      // single-building document, which then blocks the whole-doc `acct`
+      // fallback below for OTHER bills whose own account line failed to
+      // resolve at all — turning a correct label into a false "needs
+      // review" null. Fix (866c3e3b regression): cluster resolved accounts
+      // that are the same length and differ by exactly one digit (a single
+      // OCR substitution) as the SAME account for this count. Verified
+      // against every fixture in the regression corpus that genuinely
+      // distinct accounts in real multi-building batches never happen to
+      // differ by only one digit at the same length, so this does not mask
+      // a true multi-building batch.
+      const _acctsAreOcrVariant = (a, b) => {
+        if (a === b) return true;
+        if (a.length !== b.length) return false;
+        let diff = 0;
+        for (let _ci = 0; _ci < a.length; _ci++) {
+          if (a[_ci] !== b[_ci]) {
+            diff++;
+            if (diff > 1) return false;
+          }
+        }
+        return diff === 1;
+      };
+      const _acctClusters = [];
+      for (const _a of uniqueBills.map((b) => b._acct).filter(Boolean)) {
+        const _existing = _acctClusters.find((cluster) => cluster.some((x) => _acctsAreOcrVariant(x, _a)));
+        if (_existing) _existing.push(_a);
+        else _acctClusters.push([_a]);
+      }
+      const _isMultiAcctBatch = _acctClusters.length > 1;
       const results = validSections.map((s, i) => {
         const billAcct = (uniqueBills[i] && uniqueBills[i]._acct) || (_isMultiAcctBatch ? null : acct);
         const billAddr = (uniqueBills[i] && uniqueBills[i]._addr) || addrM?.[1]?.trim() || null;
