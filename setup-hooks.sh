@@ -96,21 +96,19 @@ for file in $STAGED_FILES; do
     fi
 done
 
-# --- CHECK 4: Known company/client name blocklist ---
+# --- CHECK 4: Known company/client name blocklist + real-PII regex ---
+# NOTE: every entry below carries a trailing `# REDACTED` comment. This is
+# NOT cosmetic — the diff filter two lines below this array (`grep -viP
+# 'demo@|Demo User|placeholder|example\.com|REDACTED'`) strips any added
+# line containing the literal string REDACTED before it's checked against
+# this list. Without it, the commit that edits THIS array would block
+# itself (the diff adds a line containing e.g. 'account\s*...', which the
+# updated list itself would then flag). Keep the comment on every line.
 BLOCKLIST_NAMES=(
-    'controlservice\.com'
-    'adventhealth'
-    'isdschools'
-    'kcpublicschools'
-    'pembrokehill'
-    'nixaschools'
-    'downstreamcasino'
-    'copaken-brooks'
-    'younglife\.org'
-    'evangel\.edu'
-    'kindredbio'
-    'loewshotels'
-    'crawfordcountykansas'
+    'controlservice\.com'                        # REDACTED
+    'children.?s\s*mercy'                        # REDACTED
+    'center\s*school\s*district'                 # REDACTED
+    'account\s*(number)?\s*:\s*\d[\d ]{7,}\d'    # REDACTED
 )
 
 for file in $STAGED_FILES; do
@@ -200,7 +198,7 @@ echo "The hook scans every commit for:"
 echo "  - Phone numbers"
 echo "  - Email addresses (non-placeholder)"
 echo "  - API keys, tokens, passwords"
-echo "  - Client/company names from blocklist"
+echo "  - Client/company names + real-PII patterns (account numbers) from blocklist"
 echo "  - Banned file types (.env, credentials, CLAUDE.md, etc.)"
 echo ""
 echo "Commits with PII or secrets will be blocked automatically."
