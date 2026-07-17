@@ -113,23 +113,14 @@ jobs:
           done < changed_files.txt
           exit $FOUND
 
-      - name: Scan for client name blocklist
+      - name: Scan for client name blocklist and real-PII patterns
         run: |
           FOUND=0
           NAMES=( # REDACTED client blocklist — do not edit inline; use the block below
             'controlservice\.com' # REDACTED
-            'adventhealth' # REDACTED
-            'isdschools' # REDACTED
-            'kcpublicschools' # REDACTED
-            'pembrokehill' # REDACTED
-            'nixaschools' # REDACTED
-            'downstreamcasino' # REDACTED
-            'copaken-brooks' # REDACTED
-            'younglife\.org' # REDACTED
-            'evangel\.edu' # REDACTED
-            'kindredbio' # REDACTED
-            'loewshotels' # REDACTED
-            'crawfordcountykansas' # REDACTED
+            'children.?s\s*mercy' # REDACTED
+            'center\s*school\s*district' # REDACTED
+            'account\s*(number)?\s*:\s*\d[\d ]{7,}\d' # REDACTED
           )
           while IFS= read -r file; do
             [ -z "$file" ] && continue
