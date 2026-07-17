@@ -154,6 +154,10 @@
   }
 
   function processRestoreFile(file) {
+    // DEAD CODE: this file is never <script src>'d by any page (only fetched as
+    // text to regex CH_VERSION — see index.html/service-department.html version
+    // label code). The live copies are app/site-functions.js, index.html, and
+    // service-department.html (own inline copies). Do not treat this as reachable.
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.json')) {
       if (typeof showToast === 'function') showToast('Please drop a .json backup file');
