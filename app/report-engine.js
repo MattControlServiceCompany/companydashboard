@@ -10154,7 +10154,7 @@ window.addEventListener('DOMContentLoaded', function () {
         {
           id: 1,
           title: 'Baseline Report Due',
-          detail: 'Advent Health baseline report is due in 2 days. Review M&V data before submitting.',
+          detail: 'Sample Regional Health System baseline report is due in 2 days. Review M&V data before submitting.',
           icon: '📋',
           time: new Date(Date.now() - 3600000).toISOString(),
         },
