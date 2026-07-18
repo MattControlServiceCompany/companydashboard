@@ -205,16 +205,26 @@ function publishClientPortal(projId) {
   const clientUrl = location.origin + basePath + 'portal/?p=' + p.portalToken;
   const githubUploadUrl = 'https://github.com/MattControlServiceCompany/companydashboard/upload/main/portal-data';
 
-  const toastMsg =
-    'Portal data downloaded as ' +
-    filename +
-    '. Upload to GitHub → portal-data/ to go live. Client URL copied to clipboard.';
+  // Guard: a client-facing URL only makes sense when this page itself is
+  // being served over http(s). Under file:// (local testing) location.origin
+  // / location.pathname produce a filesystem path, not a usable web link —
+  // don't claim success or copy that broken value to the clipboard.
+  const isWebProtocol = location.protocol === 'http:' || location.protocol === 'https:';
 
-  showToast(toastMsg);
+  if (!isWebProtocol) {
+    showToast('Portal links only work on the live site — publish from the hosted app, not a local file.', 'warning');
+  } else {
+    const toastMsg =
+      'Portal data downloaded as ' +
+      filename +
+      '. Upload to GitHub → portal-data/ to go live. Client URL copied to clipboard.';
 
-  // Copy client URL to clipboard (best-effort)
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(clientUrl).catch(() => {});
+    showToast(toastMsg);
+
+    // Copy client URL to clipboard (best-effort)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(clientUrl).catch(() => {});
+    }
   }
 
   // Refresh the project detail panel if visible to show the portal URL
