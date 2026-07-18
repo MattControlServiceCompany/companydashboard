@@ -5625,7 +5625,7 @@ const UTILITY_RULES = [
       // ── Block-based per-site extraction ──
       // Both embedded-text and OCR invoices place the Service Address label,
       // building name, and Acct/Meter value on the SAME line:
-      //   "Service Address: BofE - 101 E South St Acct/Meter: 560189/T920419C"
+      //   "Service Address: BofE - <REDACTED-ADDR> Acct/Meter: <REDACTED-METER>"
       // Each site ends with a Sub-Total line:
       //   "Sub-Total:   13.49   0.13   $56.45"
       // The first number after "Sub-Total:" is the MMbtu; the last dollar value
