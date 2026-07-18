@@ -4857,6 +4857,61 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     '</div>';
 }
 
+/* ── emUpdateStatsPillsForSummary ───────────────────────────────────────────
+   Replace the stats bar with Summary-mode pills when in Summary view.
+   Fix 485802f4: emRenderSummaryView never called any emUpdateStatsPillsFor*
+   function, so #em-stats-bar stayed frozen at whichever view (Audit/Raw) was
+   active before Summary was opened. Mirrors emUpdateStatsPillsForAudit's
+   exact 5-pill layout (Buildings, Equipment, Pt Coverage, Seq Ready, BAS
+   Points) so Summary and Audit read as visually consistent. `rows` must be
+   the ALL-BUILDINGS filtered set emRenderSummaryView already builds (goal
+   8c7dcc71: Summary always ignores the building filter).
+   BAS Points source: takes `totalBASPoints` as a caller-supplied param
+   (same pattern emUpdateStatsPillsForRaw already uses for the same reason)
+   instead of computing it from emComputeAuditStats(rows).totalBASPoints.
+   Do NOT change this to audit.totalBASPoints without reading item 3958ea20
+   first -- Audit's emComputeAuditStats() and Summary's #em-row-count use two
+   different counting formulas for the same rows; this function intentionally
+   keeps Summary's header pill and Summary's #em-row-count in agreement
+   rather than introducing a third number.                                */
+function emUpdateStatsPillsForSummary(rows, totalBASPoints) {
+  var bar = document.getElementById('em-stats-bar');
+  if (!bar) return;
+  emResetStatsBarLayout(bar); // undo Raw View's stacked/collapsible layout if it was active
+  var base = emCalcSummaryStats(rows);
+  var audit = emComputeAuditStats(rows);
+  var avgCov = audit.avgCoverage;
+  var covColor = avgCov >= 75 ? '#27ae60' : avgCov >= 50 ? '#e67e22' : '#c0392b';
+  var covPill =
+    '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+    '<div style="font-size:18px;font-weight:700;color:' +
+    covColor +
+    ';line-height:1">' +
+    avgCov +
+    '%</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Pt Coverage</div>' +
+    '</div>';
+  var seqPct = audit.seqReadinessPct;
+  var seqColor = seqPct >= 75 ? '#27ae60' : seqPct >= 50 ? '#e67e22' : '#c0392b';
+  var seqPill =
+    audit.seqApplicable > 0
+      ? '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+        '<div style="font-size:18px;font-weight:700;color:' +
+        seqColor +
+        ';line-height:1">' +
+        seqPct +
+        '%</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Seq Ready</div>' +
+        '</div>'
+      : '';
+  bar.innerHTML =
+    emStatPill('Buildings', base.buildings) +
+    emStatPill('Equipment', base.total) +
+    covPill +
+    seqPill +
+    (totalBASPoints ? emStatPill('BAS Points', totalBASPoints.toLocaleString()) : '');
+}
+
 /* ── emBuildAllPointsTableHtml (561fe067) ────────────────────────────────────
    Combined ASHRAE + Other point list for a single equipment row: every raw
    BAS point + its current value + (if mapped) its ASHRAE 36 column, in one
@@ -6404,16 +6459,28 @@ function emRenderSummaryView(data, filters) {
 
   // Update row count pill
   var countEl = document.getElementById('em-row-count');
+  var totalPts = 0,
+    filteredPts = 0;
+  for (var ii = 0; ii < rows.length; ii++) totalPts += Object.keys(rows[ii].points || {}).length;
+  for (var ii = 0; ii < filtered.length; ii++) filteredPts += Object.keys(filtered[ii].points || {}).length;
   if (countEl) {
-    var totalPts = 0,
-      filteredPts = 0;
-    for (var ii = 0; ii < rows.length; ii++) totalPts += Object.keys(rows[ii].points || {}).length;
-    for (var ii = 0; ii < filtered.length; ii++) filteredPts += Object.keys(filtered[ii].points || {}).length;
     countEl.textContent =
       filtered.length < rows.length
         ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' BAS Points'
         : totalPts.toLocaleString() + ' Total BAS Points';
   }
+
+  // Fix 485802f4: refresh the header stat-pill bar for Summary view. Previously
+  // emRenderSummaryView never touched #em-stats-bar, so it stayed frozen at
+  // whichever view (Audit/Raw) was active before Summary was opened. `filtered`
+  // is the all-buildings set (building filter already stripped above per
+  // 8c7dcc71), and `filteredPts` is the same BAS-points total #em-row-count
+  // just displayed, so the header pill and the row-count label always agree.
+  // This call runs BEFORE the drill-down routing check below, so it also
+  // covers the drilled-into-one-building case (see subtask 3 note below /
+  // emRenderBuildingDetailView, which has its own separate single-building
+  // stat line and intentionally does not touch #em-stats-bar).
+  emUpdateStatsPillsForSummary(filtered, filteredPts);
 
   // ── Drill-down routing ──
   if (_emDrillBuilding !== null) {
