@@ -1273,6 +1273,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.19.695',
+    date: '2026-07-19',
+    title: 'Backup & Export now includes all bill PDFs',
+    items: [
+      {
+        type: 'fix',
+        text: 'Backup & Export -- backups taken from the Energy Department and Service Department pages now include all your bill PDF images (they were previously left out of backups from those pages).',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.19.694',
     date: '2026-07-19',
     title: 'Home dashboard and EMS Leads reliability fixes',
