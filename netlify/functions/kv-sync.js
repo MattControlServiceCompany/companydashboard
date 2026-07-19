@@ -2,6 +2,7 @@
 //
 // Shared-backend replication endpoint for CompanyHub's kv store.
 // GET  ?manifest=1                         -> [{key, version, hash, deleted}] for every row (tiny)
+// GET  ?keys=a,b,c                         -> [{key, value, version, deleted}] for the given keys
 // GET  ?key=<key>                          -> current row or 404
 // PUT  {key, value, baseVersion}           -> atomic conditional write
 //
@@ -93,8 +94,9 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'GET') {
       const qs = event.queryStringParameters || {};
       if (qs.manifest !== undefined) return await handleManifest();
+      if (qs.keys !== undefined) return await handleBatchGet(qs.keys);
       const key = qs.key;
-      if (!key) return respond(400, { error: 'Missing ?key= or ?manifest=1' });
+      if (!key) return respond(400, { error: 'Missing ?key=, ?keys=, or ?manifest=1' });
       const row = await fetchRow(key);
       if (!row) return respond(404, { found: false });
       return respond(200, {
@@ -179,6 +181,27 @@ async function handleManifest() {
   return respond(
     200,
     rows.map((r) => ({ key: r.key, version: r.version, hash: r.hash, deleted: !!r.deleted })),
+  );
+}
+
+async function handleBatchGet(keysParam) {
+  const keys = String(keysParam || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+  if (!keys.length) return respond(400, { error: 'Empty ?keys=' });
+  const quoted = keys.map((k) => `"${k.replace(/"/g, '\\"')}"`).join(',');
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/kv?key=in.(${quoted})&select=key,value,version,deleted`, {
+    headers: pgHeaders(),
+  });
+  if (!res.ok) {
+    console.error('[kv-sync] batch fetch failed:', res.status);
+    return respond(502, { error: 'Batch fetch failed' });
+  }
+  const rows = await res.json();
+  return respond(
+    200,
+    rows.map((r) => ({ key: r.key, value: r.value, version: r.version, deleted: !!r.deleted })),
   );
 }
 
