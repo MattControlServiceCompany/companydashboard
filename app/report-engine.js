@@ -13700,9 +13700,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '</div>' +
     '<div style="height:2px;background:var(--rpt-blue);margin-bottom:20px"></div>' +
     intro +
-    '<div style="font-size:10px;color:var(--rpt-page-text);border-top:1px solid var(--rpt-rule);padding-top:8px">' +
-    'Prepared by Control Service Company &nbsp;&bull;&nbsp; Building Automation &amp; Energy Services' +
-    '</div>' +
     '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal — Cover', bodyHTML, {
