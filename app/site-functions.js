@@ -611,7 +611,8 @@ function processRestoreFile(file) {
           return k === p || k.indexOf(p) === 0;
         });
         if (isLsKey || !useDB) {
-          localStorage.setItem(k, data[k]);
+          var v = data[k];
+          localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
         } else {
           // DB.set expects a parsed value, but backup stores raw JSON strings for complex types
           var val = data[k];
