@@ -13656,8 +13656,97 @@ function rptPageASHRAE36SetpointReview(n, d) {
 /**
  * Proposal cover page with table of contents.
  */
-function rptPageASHRAE36ProposalCover(n, d) {
+// ─── _rptA36CoverPricingStrip ─────────────────────────────────────────────
+/**
+ * Compact 3-tier price-comparison summary for the ASHRAE-36 Proposal cover page
+ * (Matt's decision: "summary comparison on the cover only; full detailed table stays
+ * inside"). Reuses the SAME totals source as the full Cost Estimate table
+ * (rptPageASHRAE36ProposalPricing, ~line 13990) via _pricingGetEstimate /
+ * _pricingComputeSummaryData — never recomputes independently, so this strip can never
+ * disagree with the inner table. Returns '' if pricing data is unavailable.
+ *
+ * Caller gates this on the costEstimate section flag (see generateASHRAE36ProposalHTML)
+ * so client PDFs with dollars hidden (costEstimate defaults OFF) never show a summary here.
+ */
+function _rptA36CoverPricingStrip(d) {
+  var tt = null;
+  try {
+    if (typeof _pricingGetEstimate === 'function' && typeof _pricingComputeSummaryData === 'function') {
+      var estimateState = _pricingGetEstimate(d.project.id);
+      var summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
+      tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
+    }
+  } catch (e) {
+    tt = null;
+  }
+  if (!tt) return '';
+
+  function _fmtUSD(v) {
+    if (v === null || v === undefined || isNaN(v)) return null;
+    return '$' + Math.round(v).toLocaleString('en-US');
+  }
+
+  // Same 3 tiers / keys / order as rptPageASHRAE36ProposalPricing's tierCols.
+  var tierCols = [
+    { key: 'recommended', label: 'Recommended' },
+    { key: 'compliance', label: 'Compliance' },
+    { key: 'full-scope', label: 'Full Scope' },
+  ];
+
+  var anyPriced = tierCols.some(function (c) {
+    return tt[c.key] && _fmtUSD(tt[c.key].grand);
+  });
+  if (!anyPriced) return '';
+
+  var cells = tierCols
+    .map(function (c) {
+      var g = tt[c.key] ? _fmtUSD(tt[c.key].grand) : null;
+      var noCat = tt[c.key] && tt[c.key].noCatalog;
+      var display = g ? (noCat ? 'Labor: ' + g : g) : 'Available upon request';
+      var isRec = c.key === 'recommended';
+      var cellStyle =
+        'flex:1;text-align:center;padding:8px 6px;border-radius:4px;' +
+        (isRec
+          ? 'background:var(--rpt-blue);border:1px solid var(--rpt-blue)'
+          : 'background:#fff;border:1px solid var(--rpt-rule)');
+      var txtColor = isRec ? '#fff' : '#000';
+      return (
+        '<div style="' +
+        cellStyle +
+        '">' +
+        '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' +
+        txtColor +
+        ';margin-bottom:3px">' +
+        _esc(c.label) +
+        (isRec ? ' ★' : '') +
+        '</div>' +
+        '<div style="font-size:15px;font-weight:700;color:' +
+        txtColor +
+        '">' +
+        display +
+        '</div>' +
+        '</div>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div style="margin-bottom:16px">' +
+    '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;' +
+    'letter-spacing:0.04em;margin-bottom:6px">Investment Summary</div>' +
+    '<div style="display:flex;gap:8px">' +
+    cells +
+    '</div>' +
+    '<div style="font-size:8px;color:var(--rpt-page-text);margin-top:5px">' +
+    'See the Cost Estimate section for the full breakdown by scope.' +
+    '</div>' +
+    '</div>'
+  );
+}
+
+function rptPageASHRAE36ProposalCover(n, d, opts) {
   var p = d.portfolio;
+  var costEstOn = !!(opts && opts.costEstimateOn);
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var color =
@@ -13700,6 +13789,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '</div>' +
     '<div style="height:2px;background:var(--rpt-blue);margin-bottom:20px"></div>' +
     intro +
+    (costEstOn ? _rptA36CoverPricingStrip(d) : '') +
     '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal — Cover', bodyHTML, {
@@ -14751,7 +14841,12 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   }
 
   if (s.proposalCover !== false)
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
+    pages.push(
+      _tagA36Section(
+        rptPageASHRAE36ProposalCover(pageNum++, data, { costEstimateOn: s.costEstimate === true }),
+        'proposalCover',
+      ),
+    );
   if (s.proposalScope !== false)
     pages.push(_tagA36Section(rptPageASHRAE36ProposalScope(pageNum++, data), 'proposalScope'));
 
