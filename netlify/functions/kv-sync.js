@@ -57,6 +57,13 @@
 // — never hardcode emails here). Throws AuthError(401) for a missing/bad/
 // expired token, AuthError(403) for a valid-tenant token whose email is not
 // allow-listed.
+//
+// Phase 2 (get-auth-hardening): verifyAuth is now called ONCE at the very
+// top of the handler, before the GET/PUT branch, so the read endpoints
+// (?manifest=1, ?keys=a,b,c, ?key=<key>) require the SAME valid allowlisted
+// token as PUT — closing the read-endpoint gap where anyone reaching the
+// URL could read all company data with no auth. PUT no longer re-verifies
+// (handlePut takes the already-verified email as a parameter).
 
 const crypto = require('crypto');
 const zlib = require('zlib');
@@ -210,6 +217,13 @@ exports.handler = async (event) => {
   }
 
   try {
+    // Every request this Function serves — GET (manifest/batched/single) and
+    // PUT alike — requires a verified, allowlisted token. AuthError thrown
+    // here propagates to the catch below, which maps .statusCode (401/403)
+    // to the response. No branch below this line runs for an unauthenticated
+    // caller.
+    const { email: verifiedEmail } = await verifyAuth(event);
+
     if (event.httpMethod === 'GET') {
       const qs = event.queryStringParameters || {};
       if (qs.manifest !== undefined) return await handleManifest();
@@ -231,7 +245,7 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === 'PUT') {
-      return await handlePut(event);
+      return await handlePut(event, verifiedEmail);
     }
 
     return respond(405, { error: 'Method not allowed' });
@@ -243,7 +257,7 @@ exports.handler = async (event) => {
   }
 };
 
-async function handlePut(event) {
+async function handlePut(event, updatedBy) {
   let body;
   try {
     body = JSON.parse(getRawBody(event) || '{}');
@@ -257,10 +271,9 @@ async function handlePut(event) {
   if (!key) return respond(400, { error: 'Missing key' });
   if (!isTombstone && value === undefined) return respond(400, { error: 'Missing value' });
 
-  // Server-assigned identity — never trust `updatedBy` from the request body.
-  // AuthError thrown here propagates to the top-level catch, which maps its
-  // .statusCode (401/403) to the response.
-  const updatedBy = (await verifyAuth(event)).email;
+  // Server-assigned identity — never trust `updatedBy` from the request
+  // body. `updatedBy` here is the email already verified by the handler's
+  // single top-of-request verifyAuth() call, not re-derived from the body.
   const nowIso = new Date().toISOString();
 
   if (baseVersion === null || baseVersion === undefined) {
