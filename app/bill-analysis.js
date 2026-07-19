@@ -1993,15 +1993,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // building with its own account number.  Pages with garbled OCR account numbers
     // all cluster into the same "unknown" address group and the consensus logic was
     // overwriting their individual account numbers with the most-common one
-    // (407070400), merging ~16 different buildings under one identity.
+    // (<REDACTED-ACCT>), merging ~16 different buildings under one identity.
     // Account numbers must never be borrowed from other pages — use the page's own
     // value (P1-P5) or fall back to ServiceAddress as the identity key.
     //
     // FIX(2026-06-22): MeterNumber is ALSO EXCLUDED from address-based consensus.
     // Two DISTINCT gas meters can legitimately share one building/ServiceAddress
     // with DIFFERENT account AND meter numbers (e.g. the two Spring Hill Elementary
-    // meters 540295/02446156C and 567885/9445777C at "Elem - 300 S Webster St", and
-    // the two BofE meters 560189/T920419C and 560190/G0016134C). Address-grouped
+    // meters <REDACTED-METER> and <REDACTED-METER> at "<REDACTED-ADDR>", and
+    // the two BofE meters <REDACTED-METER> and <REDACTED-METER>). Address-grouped
     // "consensus" was a 1-of-2 coin flip that overwrote one meter's number with the
     // other's, collapsing two real meters into one identity and breaking/mis-routing
     // auto-match in findMeterMatch. Distinct meters sharing an address must NEVER be
@@ -6060,8 +6060,8 @@ async function confirmMultiBuildingSave() {
     // dup). The non-colliding push case is the MORE COMMON real-world trigger
     // (most re-uploaded bills land on a NEW period, not the exact one already
     // saved) and was originally left ungated here — confirmed empirically
-    // against the real Louisburg incident accounts (8980291458 vs
-    // 0669287870) during review. Only two things may pass this gate:
+    // against the real Louisburg incident accounts (Account A vs
+    // Account B) during review. Only two things may pass this gate:
     //   (a) billMatch.matchType === 'identity' (account/meter-number hit from
     //       findMeterMatch) AND the incoming bill's own AccountNumber
     //       reasonably agrees with the target meter's stored account, or

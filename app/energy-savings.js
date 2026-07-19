@@ -1999,7 +1999,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // "kWh/kW at $rate" text -- far beyond the 40-char GAP budget below --
   // even though both the qty and the rate are correctly OCR'd elsewhere in
   // the same 5-line window (confirmed on the EER line of the Evergy Maint
-  // Bldg bill, account 0669287870, April 2026 -- see dashboardlogic entry).
+  // Bldg bill, account <REDACTED-ACCT>, April 2026 -- see dashboardlogic entry).
   //
   // "Comparative Usage Information" itself is a STABLE, verbatim marker
   // (unmangled by OCR across every sample bill), unlike the row labels
@@ -4412,7 +4412,7 @@ const UTILITY_RULES = [
       // PAGE only (bounded by %%PAGE_N%% markers). Crossing page boundaries
       // picks up the wrong account when a multi-account PDF has identical
       // service dates. The regex tolerates OCR artifacts like ( or [ before
-      // digits (e.g. "(0669287870" seen in scanned bills).
+      // digits (e.g. "(<REDACTED-ACCT>" seen in scanned bills).
       const _pageBreakIdxs = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => m.index);
       const _pageTextForIdx = (idx) => {
         let pageStart = 0;
@@ -4619,7 +4619,7 @@ const UTILITY_RULES = [
       // previous bill's own bdPage; it never inspects what the candidate
       // cover page (bdPage - 1) actually contains. When a bill's OWN
       // billing-details account line is OCR-garbled past what
-      // `_acctForIdx` tolerates (e.g. "Account Number =: 2885731561"),
+      // `_acctForIdx` tolerates (e.g. "Account Number =: <REDACTED-ACCT>"),
       // `_sameAcct` (line ~4471) treats the null account as a wildcard and
       // fuzzy-merges that bill into an unrelated PREVIOUS building's entry
       // with a matching billing period. The merge loser's bdPage is then
@@ -4786,7 +4786,7 @@ const UTILITY_RULES = [
       // review") instead. See backlog 866c3e3b.
       // Counting distinct accounts via a naive string Set is fooled by a
       // single OCR digit-garble of an otherwise-correct, page-anchored
-      // account number (e.g. "3966167218" vs the real "3956167218" on the
+      // account number (e.g. "<REDACTED-ACCT-1>" vs the real "<REDACTED-ACCT-2>" on the
       // SAME building's own billing-details page — not a second building).
       // That wrongly flips _isMultiAcctBatch to true in an otherwise
       // single-building document, which then blocks the whole-doc `acct`
@@ -5257,10 +5257,10 @@ const UTILITY_RULES = [
       // all Baker campus buildings) > BG Account ID (invoice-level only).
       //
       // C2 fix: Use Customer ID (RG-XXXXXX) as the per-building unique key.
-      // All 14 Baker buildings share the same LDC Account (510000123 1562920 000),
+      // All 14 Baker buildings share the same LDC Account (<REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>),
       // so LDC Account alone cannot distinguish buildings. Customer ID is unique per
-      // building and appears in every site block. Format varies: "RG-233590" (with
-      // dash) or "RG43506046" (no dash, OCR misread on some pages) — normalize by
+      // building and appears in every site block. Format varies: "RG-<REDACTED-ACCT>" (with
+      // dash) or "RG<REDACTED-ACCT>" (no dash, OCR misread on some pages) — normalize by
       // keeping the raw match and stripping non-alphanumeric chars after "RG".
       //
       // IMPORTANT: the siteText passed to extract() is structured as:
@@ -5268,8 +5268,8 @@ const UTILITY_RULES = [
       // We must use the LAST Customer ID found in the text, not the first.
       const _custIdAll = [...t.matchAll(/Customer\s+ID:\s*(RG-?\d+)/gi)];
       const custIdM = _custIdAll.length > 0 ? _custIdAll[_custIdAll.length - 1] : null;
-      // C1 fix: capture full multi-segment LDC Account (e.g. "510000123 1562920 000").
-      // Old regex ([0-9]+) stopped at first space, capturing only "510000123".
+      // C1 fix: capture full multi-segment LDC Account (e.g. "<REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>").
+      // Old regex ([0-9]+) stopped at first space, capturing only "<REDACTED-ACCT-SEG1>".
       // New pattern allows digits + spaces up to 30 chars, then trim trailing spaces.
       // Similarly use the LAST match to get the per-site LDC Account (not the header's).
       const _ldcAll = [...t.matchAll(/LDC\s*Account:\s*([0-9][0-9 ]{5,30})/gi)];
@@ -5300,7 +5300,7 @@ const UTILITY_RULES = [
       // Capture the street line that follows the "Name - SiteID" line.
       //
       // C4 fix: siteText = invoiceHeader + prevTail + siteChunks[i]. The invoiceHeader
-      // contains the invoice-level billing address (e.g. "519 8th St") which appears
+      // contains the invoice-level billing address (e.g. "<REDACTED-ADDR>") which appears
       // before the current site's own address. Searching the full siteText with /im
       // always matched the header's address, giving all 14 sites the same address.
       // Fix: restrict the address search to the portion AFTER the LAST "Service for"
@@ -5625,7 +5625,7 @@ const UTILITY_RULES = [
       // ── Block-based per-site extraction ──
       // Both embedded-text and OCR invoices place the Service Address label,
       // building name, and Acct/Meter value on the SAME line:
-      //   "Service Address: BofE - 101 E South St Acct/Meter: 560189/T920419C"
+      //   "Service Address: BofE - <REDACTED-ADDR> Acct/Meter: <REDACTED-METER>"
       // Each site ends with a Sub-Total line:
       //   "Sub-Total:   13.49   0.13   $56.45"
       // The first number after "Sub-Total:" is the MMbtu; the last dollar value
@@ -6121,7 +6121,7 @@ const UTILITY_RULES = [
         }
 
         // === HEADER BLOCK ===
-        // Account Number: "Account Number    510000123 2051604 18"
+        // Account Number: "Account Number    <REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>"
         const accountM = activeT.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i);
         const AccountNumber = accountM ? accountM[1].replace(/\s+/g, ' ').trim() : null;
 
@@ -6370,7 +6370,7 @@ const UTILITY_RULES = [
             ?.trim() ||
           null,
         AccountNumber:
-          // KGS format: "Account Number    510000123 2051604 18" — spaces between digit groups
+          // KGS format: "Account Number    <REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>" — spaces between digit groups
           t.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i)?.[1]?.replace(/\s/g, '') ||
           t.match(/account[\s#:]*([0-9\-]{6,20})/i)?.[1] ||
           null,
@@ -7850,12 +7850,12 @@ const UTILITY_RULES = [
       // in reliability order and take the first valid 7-10 digit result.
       //
       // Pattern 1 (most reliable): bottom-stub "ACCOUNT #: <digits>"
-      //   OCR reliably renders this compact line: "ACCOUNT #: 408051900"
+      //   OCR reliably renders this compact line: "ACCOUNT #: <REDACTED-ACCT>"
       // Pattern 2: top-stub label + number on SAME line (clear scans):
-      //   "ACCOUNT NUMBER 408061800"
+      //   "ACCOUNT NUMBER <REDACTED-ACCT>"
       // Pattern 3: label + number on NEXT line (1-2 lines later, possibly
-      //   with OCR noise like "RIA | DWIN 406030500" between them):
-      //   "ACCOUNT NUMBER\n406040600" or "ACCOUNT NUMBER\nRIA|DWIN 406030500"
+      //   with OCR noise like "RIA | DWIN <REDACTED-ACCT-3>" between them):
+      //   "ACCOUNT NUMBER\n<REDACTED-ACCT-4>" or "ACCOUNT NUMBER\nRIA|DWIN <REDACTED-ACCT-3>"
       // Pattern 4: standalone 9-digit number that immediately follows OCR
       //   noise derived from garbled "BALDWIN" / "ALDWIN" text near the top
       //   of the right-hand column stub.
@@ -7905,7 +7905,7 @@ const UTILITY_RULES = [
 
       // ── Service address (from bottom stub) — extracted here so it can serve
       // as an identity fallback when the account number is unresolvable.
-      // "ADDRESS: 519 9TH ST" or "ADDRESS:  519 9TH ST"
+      // "ADDRESS: <REDACTED-ADDR>" or "ADDRESS:  <REDACTED-ADDR>"
       // Page 5 OCR renders the colon as semicolon: "ADDRESS; 6TH ST"
       // FIX(2026-06-02): Truncate at the FIRST date-like token or run of
       // numeric/amount columns that bleeds from adjacent columns into the
@@ -7927,7 +7927,7 @@ const UTILITY_RULES = [
       // Skip pages that have no account number AND no service address
       // (email/receipt pages that slipped through the page-1 guard).
       // FIX(2026-06-11): When OCR produces >10 garbled digits (e.g. "4o0e60s2400"
-      // → "40066052400"), P5 fails the 7-10 digit check and AccountNumber stays null.
+      // → "<REDACTED-ACCT>"), P5 fails the 7-10 digit check and AccountNumber stays null.
       // Such pages still have a readable service address; continue with AccountNumber=null
       // and key by address instead of returning null and losing the page's charges.
       if (!AccountNumber && !ServiceAddress) return null;
