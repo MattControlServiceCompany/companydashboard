@@ -198,9 +198,14 @@ async function handlePut(event) {
     if (insertRes.status === 201) {
       return respond(200, { version: 1, hash, deleted: false });
     }
-    // 409/23505 = unique_violation -> someone else inserted first.
-    const current = await fetchRow(key);
-    return respond(409, { conflict: true, current: rowToConflict(current) });
+    if (insertRes.status === 409) {
+      // unique_violation -> someone else inserted first.
+      const current = await fetchRow(key);
+      return respond(409, { conflict: true, current: rowToConflict(current) });
+    }
+    const errText = await safeText(insertRes);
+    console.error('[kv-sync] insert failed:', insertRes.status, errText.slice(0, 300));
+    return respond(502, { error: 'Backend insert failed' });
   }
 
   // Existing key: atomic conditional UPDATE via PostgREST filter.
@@ -239,6 +244,12 @@ async function handlePut(event) {
       body: JSON.stringify(patchBody),
     },
   );
+  if (!patchRes.ok) {
+    const errText = await safeText(patchRes);
+    console.error('[kv-sync] update failed:', patchRes.status, errText.slice(0, 300));
+    return respond(502, { error: 'Backend update failed' });
+  }
+
   const patched = await patchRes.json();
   if (Array.isArray(patched) && patched.length === 1) {
     if (body.explicitOverwrite === true && beforeRow) {
@@ -363,6 +374,14 @@ function rowToConflict(row) {
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   };
+}
+
+async function safeText(res) {
+  try {
+    return await res.text();
+  } catch (err) {
+    return '';
+  }
 }
 
 function respond(statusCode, body) {
