@@ -3351,6 +3351,27 @@
       }
       function processRestoreFile(file) {
         if (!file) return;
+        // 2a.4b — Restore-from-backup mass-writes every key through DB.set.
+        // With the replication tail live (ch_backend_mode === 'on') that's a
+        // 409-storm or a silent mass-overwrite of the other user's current
+        // server data — never a user's intent when they click "Restore".
+        // Default: block it outright
+        // (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4,
+        // task 2a.4b — "Default: block it"). Mode 'off'/'shadow' unaffected.
+        var _chBackendModeRestoreGuard = 'off';
+        try {
+          _chBackendModeRestoreGuard = localStorage.getItem('ch_backend_mode') || 'off';
+        } catch (e) {}
+        if (_chBackendModeRestoreGuard === 'on') {
+          if (typeof showToast === 'function') {
+            showToast(
+              'Restore from backup is disabled while sync is on, to protect the shared server data. Turn sync off in Settings to restore this device only, or contact your admin about the server-side rollback path.',
+              'error',
+              8000,
+            );
+          }
+          return;
+        }
         if (!file.name.toLowerCase().endsWith('.json')) {
           if (typeof showToast === 'function') showToast('Please drop a .json backup file');
           return;
@@ -3489,6 +3510,25 @@
           )
         )
           return;
+        // 2a.4b — Reset must NOT silently disable sync. localStorage.clear()
+        // below (and DB.clear()'s own localStorage.clear() fallback if
+        // IndexedDB is unavailable) would otherwise wipe ch_backend_mode
+        // along with everything else, turning sync off with no error and
+        // reloading into an empty local-only app instead of the intended
+        // "reset = re-hydrate from server"
+        // (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4,
+        // task 2a.4b). Capture the flag now, restore it AFTER every clear
+        // path below — warmCache()'s existing hydration step then does the
+        // full re-pull on reload for free (mode 'on' -> _hydrate() runs;
+        // mode 'off' unchanged).
+        var _chBackendModeReset = null;
+        var _chBackendEnabledReset = null;
+        try {
+          _chBackendModeReset = localStorage.getItem('ch_backend_mode');
+        } catch (e) {}
+        try {
+          _chBackendEnabledReset = localStorage.getItem('ch_backend_enabled');
+        } catch (e) {}
         localStorage.clear();
         sessionStorage.clear();
         if (window.DB && window.DB.clear) {
@@ -3496,6 +3536,10 @@
         }
         try {
           await _pdfBackupClearAll();
+        } catch (e) {}
+        try {
+          if (_chBackendModeReset !== null) localStorage.setItem('ch_backend_mode', _chBackendModeReset);
+          if (_chBackendEnabledReset !== null) localStorage.setItem('ch_backend_enabled', _chBackendEnabledReset);
         } catch (e) {}
         if (typeof showToast === 'function') showToast('Reset — reloading...');
         setTimeout(function () {
