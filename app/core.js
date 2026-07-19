@@ -6,22 +6,18 @@ async function claudePDF(prompt, b64, sys) {
   return 'AI features are not available — this app has no backend API connection.';
 }
 
-/* ── STORAGE — delegates to window.Store so dataUpdated events fire ── */
+/* ── STORAGE ── */
 // Returns a Promise that resolves when the IDB write commits (or immediately for
 // the localStorage fallback). Callers that need write durability can await this.
 //
 // Priority order:
 //   1. window.DB (IndexedDB — no size limit, available on all pages via db.js)
-//   2. window.Store (site-ui.js Store wrapper — only on pages that load site-ui.js)
-//   3. localStorage fallback — throws on QuotaExceededError so callers see failures
+//   2. localStorage fallback — throws on QuotaExceededError so callers see failures
 //
 // sget() already follows this same priority order (DB first). sset() must match.
 function sset(k, v) {
   if (window.DB && window.DB.isReady()) {
     return window.DB.set(k, v); // IDB — unlimited storage, returns a Promise
-  }
-  if (window.Store) {
-    return window.Store.set(k, v);
   }
   try {
     localStorage.setItem(k, JSON.stringify(v));
@@ -49,16 +45,7 @@ function sget(k, fb) {
     }
     return fb;
   }
-  // DB not ready yet — legacy path (same as before)
-  if (window.Store) {
-    try {
-      const r = localStorage.getItem(k);
-      const d = r !== null ? JSON.parse(r) : null;
-      return d !== null ? d : fb !== undefined ? fb : [];
-    } catch (e) {
-      return fb !== undefined ? fb : [];
-    }
-  }
+  // DB not ready yet — legacy localStorage path
   try {
     const r = localStorage.getItem(k);
     return r !== null ? JSON.parse(r) : fb;
