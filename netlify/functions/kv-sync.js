@@ -41,6 +41,12 @@
 // conflict-resolution overwrite — and a retention cap (last N per key AND
 // max age) keeps the free-tier DB bounded (finding F10).
 //
+// gzip: PUT bodies may arrive gzip-compressed (`Content-Encoding: gzip`).
+// The largest real kv value (an equipment-matrix key) is ~9MB raw, over
+// Netlify's ~6MB synchronous-Function body cap; gzip brings that value to
+// ~0.35MB (measured 2026-07-19, see phase2a-build-plan.md §6), so gzip alone
+// closes R5 for kv — no chunking protocol needed here.
+//
 // Auth: stub only in this slice (Entra JWT verification is Phase 1, later).
 // `verifyAuth(event)` is the ONE seam Phase 1 will change the body of —
 // every other line that needs the caller's identity calls it, never trusts
@@ -52,6 +58,7 @@
 // production URL before Phase 1 auth ships (R3).
 
 const crypto = require('crypto');
+const zlib = require('zlib');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
@@ -82,6 +89,21 @@ function getHeader(event, name) {
     if (k.toLowerCase() === lower) return event.headers[k];
   }
   return undefined;
+}
+
+// --- gzip-aware body reading (R5) -------------------------------------------
+// The largest real kv value (an equipment-matrix key) is ~9MB raw, over
+// Netlify's ~6MB synchronous-Function body cap. Measured 2026-07-19: gzip
+// compresses that same 9.03MB value to ~0.35MB (26x — highly repetitive
+// structure), well under the cap, so gzip alone closes R5 for kv — no
+// chunking protocol is needed here (see phase2a-build-plan.md §6).
+function getRawBody(event) {
+  const buf = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64') : Buffer.from(event.body || '', 'utf8');
+  const contentEncoding = getHeader(event, 'content-encoding') || '';
+  if (/gzip/i.test(contentEncoding)) {
+    return zlib.gunzipSync(buf).toString('utf8');
+  }
+  return buf.toString('utf8');
 }
 
 // --- canonical JSON + hash (F8) ---------------------------------------------
@@ -143,7 +165,12 @@ exports.handler = async (event) => {
 };
 
 async function handlePut(event) {
-  const body = JSON.parse(event.body || '{}');
+  let body;
+  try {
+    body = JSON.parse(getRawBody(event) || '{}');
+  } catch (err) {
+    return respond(400, { error: 'Invalid JSON body' });
+  }
   const { key, baseVersion } = body;
   const isTombstone = body.deleted === true;
   const value = body.value;
