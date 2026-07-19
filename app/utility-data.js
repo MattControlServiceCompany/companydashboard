@@ -24,6 +24,13 @@ const _openMeterIds = new Set(); // tracks which meter cards are expanded
 let _vcmActive = false; // Value Correction Mode toggle state (Update a3a423eb)
 let _vcmKeyHandler = null; // module-level ref so Cancel/Save can remove it
 
+// Phase 0.1 (2026-07-19): pid -> last-written serialized JSON snapshot, used by
+// saveUtilityData() to skip re-writing projects whose data hasn't changed since
+// the last save. Seeded from disk in loadUtilityData() so the very first save
+// after page load is already dirty-only. A pid with no entry here is always
+// treated as dirty (new project — must never be stranded unwritten).
+let _lastSavedSnapshot = {};
+
 // d2fe8e5e: tracks the most recently rendered Bills pane so the debounced
 // window resize listener below can re-run column layout in-place (no
 // reload) instead of leaving stale column widths/sticky offsets after the
@@ -59,7 +66,12 @@ function loadUtilityData() {
   // Load each project from its own key
   sget('en_projects', []).forEach(function (p) {
     const d = sget('en_utility_' + p.id, null);
-    if (d) utilityData[p.id] = d;
+    if (d) {
+      utilityData[p.id] = d;
+      // Seed the dirty-check snapshot from the on-disk value (Phase 0.1) so
+      // the first saveUtilityData() call after load doesn't rewrite every project.
+      _lastSavedSnapshot[p.id] = JSON.stringify(d);
+    }
   });
   // One-time migration: fix 2-digit year ISO dates (e.g. "24-03-15" → "2024-03-15")
   // produced by the old toISO function. Without this, date comparisons, sorting,
@@ -380,7 +392,12 @@ function loadUtilityData() {
   }
 }
 function saveUtilityData() {
-  // Write each project to its own localStorage key
+  // Write each project to its own localStorage key — but only projects whose
+  // serialized content actually changed since the last save (Phase 0.1,
+  // 2026-07-19: this used to unconditionally rewrite EVERY loaded project on
+  // EVERY call; under per-key CAS that manufactures spurious 409 conflicts
+  // the moment two users are on). Dirty detection is a snapshot/hash compare
+  // done entirely inside this function — no call site anywhere needs to change.
   Object.keys(utilityData).forEach(function (pid) {
     // Strip transient, runtime-only computed fields before persisting so a stale cache can never
     // be written to disk again (bcbc84e0). These are rebuilt on next render by getMeterSavings()/
@@ -394,7 +411,11 @@ function saveUtilityData() {
         delete m._unitSavByCalMo;
       });
     });
+    const _serialized = JSON.stringify(utilityData[pid]);
+    // No snapshot entry (new project) OR content changed — write it. Otherwise skip.
+    if (_lastSavedSnapshot[pid] === _serialized) return;
     sset('en_utility_' + pid, utilityData[pid]);
+    _lastSavedSnapshot[pid] = _serialized;
   });
   _refreshBldgPerfIfVisible();
 }
