@@ -1195,6 +1195,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.18.692',
+    date: '2026-07-18',
+    title: 'Backup restore, Equipment Matrix, and Client Portal fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Backup restore -- settings and login data that store more than plain text (objects, not just strings) now restore correctly instead of getting corrupted.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix -- the Summary view stat pills (building/zone/equipment counts) now refresh immediately when you switch into Summary view instead of showing stale numbers.',
+      },
+      {
+        type: 'fix',
+        text: 'Client Portal -- publishing a portal link when the page isn\'t loaded over a normal web address now shows a clear warning instead of a false "success" message and a broken copy-to-clipboard.',
+      },
+      {
+        type: 'change',
+        text: 'Service Department -- sample/placeholder text in demo notifications and the customer-name field now uses a generic example name.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.17.691',
     date: '2026-07-17',
     title: 'Audit Report setpoint review clarity',
