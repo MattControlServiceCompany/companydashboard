@@ -2,7 +2,7 @@
 //
 // Shared-backend replication endpoint for CompanyHub's kv store.
 // GET  ?key=<key>                          -> current row or 404
-// PUT  {key, value, baseVersion, updatedBy} -> atomic conditional write
+// PUT  {key, value, baseVersion}           -> atomic conditional write
 //
 // Conflict model: per-key optimistic concurrency, one integer `version`.
 // baseVersion === null means "I believe this key is new" -> plain insert.
@@ -12,10 +12,25 @@
 // server NEVER silently merges or overwrites — see backend-migration-plan
 // §2b. Last-write-wins is explicitly rejected.
 //
-// Auth: none in this slice (Entra JWT verification is Phase 1, later).
+// hash: every write (insert or update) computes SHA-256 of a canonical
+// (stable-key-sorted) JSON serialization of `value` and stores it in the
+// `hash` column at write time. This is what the (forthcoming) manifest
+// endpoint will return — the hash is NEVER recomputed from the raw jsonb
+// column at read time, because jsonb key ordering is not guaranteed stable
+// across reads/writes and would silently break manifest hash comparisons on
+// the client (finding F8).
+//
+// Auth: stub only in this slice (Entra JWT verification is Phase 1, later).
+// `verifyAuth(event)` is the ONE seam Phase 1 will change the body of —
+// every other line that needs the caller's identity calls it, never trusts
+// `updatedBy` from the request body (server-assigned identity, closes the
+// spoofing gap named in the migration plan §4/§11 task 1.2).
 // This function is reachable by anyone who can reach the deployed site's
 // URL — acceptable for this slice because the deployed site itself is a
-// throwaway/branch spike, not production. Revisit before any real cutover.
+// throwaway/branch spike, not production. Must not be deployed to a public
+// production URL before Phase 1 auth ships (R3).
+
+const crypto = require('crypto');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
@@ -30,6 +45,41 @@ function pgHeaders(extra) {
     },
     extra || {},
   );
+}
+
+// --- Auth stub seam (§4 of the migration plan) -----------------------------
+// Phase 1 swaps ONLY this function's body for real JWT verification
+// (JWKS, iss/tid/aud/exp, allowlist) — no other line in this file changes.
+function verifyAuth(event) {
+  return { email: getHeader(event, 'x-stub-user') || 'dev-stub@local' };
+}
+
+function getHeader(event, name) {
+  if (!event || !event.headers) return undefined;
+  const lower = name.toLowerCase();
+  for (const k of Object.keys(event.headers)) {
+    if (k.toLowerCase() === lower) return event.headers[k];
+  }
+  return undefined;
+}
+
+// --- canonical JSON + hash (F8) ---------------------------------------------
+function sortKeysDeep(value) {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value).sort()) out[k] = sortKeysDeep(value[k]);
+    return out;
+  }
+  return value;
+}
+
+function canonicalJSON(value) {
+  return JSON.stringify(sortKeysDeep(value));
+}
+
+function sha256Hex(str) {
+  return crypto.createHash('sha256').update(str, 'utf8').digest('hex');
 }
 
 exports.handler = async (event) => {
@@ -49,6 +99,8 @@ exports.handler = async (event) => {
         key: row.key,
         value: row.value,
         version: row.version,
+        hash: row.hash,
+        deleted: !!row.deleted,
         updatedBy: row.updated_by,
         updatedAt: row.updated_at,
       });
@@ -56,20 +108,23 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'PUT') {
       const body = JSON.parse(event.body || '{}');
-      const { key, value, baseVersion, updatedBy } = body;
+      const { key, value, baseVersion } = body;
       if (!key || value === undefined) return respond(400, { error: 'Missing key or value' });
+
+      // Server-assigned identity — never trust `updatedBy` from the request body.
+      const updatedBy = verifyAuth(event).email;
+      const nowIso = new Date().toISOString();
 
       if (baseVersion === null || baseVersion === undefined) {
         // Believed-new key: plain insert at version 1.
+        const hash = sha256Hex(canonicalJSON(value));
         const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/kv`, {
           method: 'POST',
           headers: pgHeaders({ Prefer: 'return=representation' }),
-          body: JSON.stringify([
-            { key, value, version: 1, updated_by: updatedBy || null, updated_at: new Date().toISOString() },
-          ]),
+          body: JSON.stringify([{ key, value, version: 1, hash, updated_by: updatedBy, updated_at: nowIso }]),
         });
         if (insertRes.status === 201) {
-          return respond(200, { version: 1 });
+          return respond(200, { version: 1, hash });
         }
         // 409/23505 = unique_violation -> someone else inserted first.
         const current = await fetchRow(key);
@@ -77,6 +132,7 @@ exports.handler = async (event) => {
       }
 
       // Existing key: atomic conditional UPDATE via PostgREST filter.
+      const hash = sha256Hex(canonicalJSON(value));
       const patchRes = await fetch(
         `${SUPABASE_URL}/rest/v1/kv?key=eq.${encodeURIComponent(key)}&version=eq.${baseVersion}`,
         {
@@ -84,15 +140,16 @@ exports.handler = async (event) => {
           headers: pgHeaders({ Prefer: 'return=representation' }),
           body: JSON.stringify({
             value,
+            hash,
             version: baseVersion + 1,
-            updated_by: updatedBy || null,
-            updated_at: new Date().toISOString(),
+            updated_by: updatedBy,
+            updated_at: nowIso,
           }),
         },
       );
       const patched = await patchRes.json();
       if (Array.isArray(patched) && patched.length === 1) {
-        return respond(200, { version: baseVersion + 1 });
+        return respond(200, { version: baseVersion + 1, hash });
       }
       // 0 rows matched -> version mismatch (or key missing). Conflict.
       const current = await fetchRow(key);
@@ -117,7 +174,14 @@ async function fetchRow(key) {
 
 function rowToConflict(row) {
   if (!row) return null;
-  return { value: row.value, version: row.version, updatedBy: row.updated_by, updatedAt: row.updated_at };
+  return {
+    value: row.value,
+    version: row.version,
+    hash: row.hash,
+    deleted: !!row.deleted,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
+  };
 }
 
 function respond(statusCode, body) {
