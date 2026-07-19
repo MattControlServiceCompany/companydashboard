@@ -88,7 +88,37 @@
       '.ch-archive-body{flex:1;min-height:0;overflow-y:auto;padding:10px 12px;}' +
       '.ch-archive-entry{background:var(--s3,#1e2438);border:1px solid var(--border,#333);' +
       'border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:var(--text,#fff);}' +
-      '.ch-archive-meta{color:var(--text2,#9aa3b8);font-size:11px;margin-bottom:6px;}';
+      '.ch-archive-meta{color:var(--text2,#9aa3b8);font-size:11px;margin-bottom:6px;}' +
+      // --- Phase 2a.7: sync-status panel (mode switch, per-key status, queue depth) ---
+      // Stacked in the SAME bottom-right corner as the pill (bottom:16) and the
+      // archive link (bottom:52), one more slot up (bottom:88) — a bottom-left
+      // resting position was tried first and rejected: it sat on top of the
+      // existing sidebar's Settings/Backup/Restore/Reset Data controls (found
+      // during this implementer's own visual verification screenshot).
+      '#ch-sync-status-btn{position:fixed;bottom:88px;right:16px;z-index:9998;' +
+      'background:var(--s3,#333);color:var(--text,#fff);border:1px solid var(--border,#555);' +
+      'border-radius:999px;padding:6px 14px;font-size:12px;font-family:inherit;cursor:pointer;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,.25);display:none;}' +
+      '#ch-sync-status-btn:hover{background:var(--s4,#3a4258);}' +
+      '#ch-sync-status-panel{position:fixed;top:0;left:0;bottom:0;width:360px;max-width:90vw;' +
+      'z-index:var(--z-modal,800);background:var(--s2,#181d2e);border-right:1px solid var(--border,#333);' +
+      'display:none;flex-direction:column;box-shadow:4px 0 20px rgba(0,0,0,.4);font-family:inherit;}' +
+      '#ch-sync-status-panel.ch-open{display:flex;}' +
+      '.ch-sync-status-body{display:flex;flex-direction:column;gap:12px;}' +
+      '.ch-sync-status-mode-row{padding-bottom:10px;border-bottom:1px solid var(--border,#333);}' +
+      '.ch-sync-status-label{color:var(--text,#fff);font-size:13px;font-weight:600;margin-bottom:8px;}' +
+      '.ch-sync-status-btn-row{display:flex;gap:6px;flex-wrap:wrap;}' +
+      '.ch-sync-status-queue{color:var(--text,#fff);font-size:13px;padding:8px 0;' +
+      'border-bottom:1px solid var(--border,#333);}' +
+      '.ch-sync-status-headline{font-size:14px;font-weight:700;margin-bottom:4px;}' +
+      '.ch-sync-status-headline.ch-sync-ok{color:var(--accent,#2563eb);}' +
+      '.ch-sync-status-headline.ch-sync-warn{color:var(--warn,#b45309);}' +
+      '.ch-sync-status-key{background:var(--s3,#1e2438);border:1px solid var(--border,#333);' +
+      'border-radius:6px;padding:8px 10px;margin-bottom:8px;}' +
+      '.ch-sync-status-key-name{font-size:13px;font-weight:600;color:var(--text,#fff);margin-bottom:2px;}' +
+      '.ch-sync-status-key-in-sync .ch-sync-status-key-name{color:var(--accent,#2563eb);}' +
+      '.ch-sync-status-key-diverged .ch-sync-status-key-name{color:var(--warn,#b45309);}' +
+      '.ch-sync-status-key-pending .ch-sync-status-key-name{color:var(--text2,#9aa3b8);}';
     document.head.appendChild(style);
   }
 
@@ -546,5 +576,252 @@
 
   window.addEventListener('dataUpdated', function (e) {
     if (e.detail && e.detail.key === 'en_conflict_archive') renderArchiveLink();
+  });
+
+  // =========================================================================
+  // Phase 2a.7 — Sync-status panel (phase2a-build-plan.md task 2a.7 /
+  // supabase-migration-plan-FINAL-2026-07-19.md §8's off|shadow|on flag).
+  // Self-contained in this file per the dispatch constraint — no HTML edits,
+  // no db.js changes; reads only the read-only accessors Pass B exposed:
+  // DB.getSyncStatus() (async — hits the manifest endpoint), DB.getQueueDepth(),
+  // DB.setBackendMode(mode). Opened from a small always-visible control placed
+  // in this same pill/banner area, bottom-left (opposite the pill/archive-link
+  // stack at bottom-right) so it never collides with them.
+  // =========================================================================
+  var _statusPanelOpen = false;
+
+  function _currentBackendMode() {
+    // db.js keeps `_backendMode()` private; this file only ever reads the
+    // same localStorage key it persists via DB.setBackendMode(), per the
+    // "upgrade ch_backend_enabled -> ch_backend_mode = off|shadow|on" rule
+    // in supabase-migration-plan-FINAL-2026-07-19.md §8.
+    try {
+      var v = localStorage.getItem('ch_backend_mode');
+      return v === 'off' || v === 'shadow' || v === 'on' ? v : 'off';
+    } catch (e) {
+      return 'off';
+    }
+  }
+
+  function _modeLabel(mode) {
+    if (mode === 'off') return 'Off (no syncing)';
+    if (mode === 'shadow') return 'Shadow (syncing quietly, for testing only)';
+    if (mode === 'on') return 'On (fully syncing)';
+    return String(mode);
+  }
+
+  // Per-key state, per task 2a.7: reads the local-vs-server hash comparison
+  // DB.getSyncStatus() already computed. A key with no local version-map
+  // entry yet (never hydrated/pushed from this machine) is "pending", not
+  // "diverged" — it has nothing to compare yet.
+  function _keyState(k) {
+    if (k.localHash == null && k.localVersion == null) return 'pending';
+    if (k.localHash && k.serverHash) return k.localHash === k.serverHash ? 'in-sync' : 'diverged';
+    return k.inSync ? 'in-sync' : 'diverged';
+  }
+
+  function _keyStateLabel(state) {
+    if (state === 'in-sync') return 'in sync';
+    if (state === 'diverged') return 'diverged (local≠server)';
+    return 'pending';
+  }
+
+  function renderSyncStatusButton() {
+    ensureStyles();
+    var el = ensureEl('ch-sync-status-btn');
+    el.textContent = 'Sync status';
+    el.style.display = 'block';
+    el.onclick = openSyncStatusPanel;
+  }
+
+  function _renderModeControl(container, currentMode) {
+    var row = document.createElement('div');
+    row.className = 'ch-sync-status-mode-row';
+    var label = document.createElement('div');
+    label.className = 'ch-sync-status-label';
+    label.textContent = 'Backend mode: ' + _modeLabel(currentMode);
+    row.appendChild(label);
+
+    // Admin-only control: the mode switcher itself is gated on auth being
+    // present (per dispatch instructions — Phase 1 isn't wired on this
+    // branch yet, so gate on a simple window.CH_AUTH presence check; it
+    // lights up automatically once Phase 1 lands, zero further changes here).
+    var hasAuth = typeof window !== 'undefined' && !!window.CH_AUTH;
+    if (hasAuth) {
+      var btnRow = document.createElement('div');
+      btnRow.className = 'ch-sync-status-btn-row';
+      ['off', 'shadow', 'on'].forEach(function (m) {
+        var btn = document.createElement('button');
+        btn.className = 'ch-conflict-btn ch-sync-mode-btn' + (m === currentMode ? ' ch-conflict-primary' : '');
+        btn.textContent = m;
+        btn.addEventListener('click', function () {
+          if (m === currentMode) return;
+          if (!window.DB || typeof window.DB.setBackendMode !== 'function') return;
+          window.DB.setBackendMode(m);
+          openSyncStatusPanel(); // re-render the whole panel against the new mode
+        });
+        btnRow.appendChild(btn);
+      });
+      row.appendChild(btnRow);
+    } else {
+      var note = document.createElement('div');
+      note.className = 'ch-conflict-meta';
+      note.textContent = 'Sign in required to change the sync mode.';
+      row.appendChild(note);
+    }
+    container.appendChild(row);
+  }
+
+  function _renderQueueDepth(container, depth) {
+    var row = document.createElement('div');
+    row.id = 'ch-sync-status-queue';
+    row.className = 'ch-sync-status-queue';
+    row.textContent =
+      depth > 0 ? depth + ' change' + (depth === 1 ? '' : 's') + ' waiting to sync' : 'No changes waiting to sync';
+    container.appendChild(row);
+  }
+
+  function _renderKeyList(container, status) {
+    var listWrap = document.createElement('div');
+    listWrap.id = 'ch-sync-status-keys';
+
+    if (status.mode === 'off') {
+      var offNote = document.createElement('div');
+      offNote.className = 'ch-conflict-meta';
+      offNote.textContent = 'Sync is off — nothing to compare against the server.';
+      listWrap.appendChild(offNote);
+      container.appendChild(listWrap);
+      return;
+    }
+    if (status.error) {
+      var errNote = document.createElement('div');
+      errNote.className = 'ch-conflict-meta';
+      errNote.textContent = 'Could not reach the server: ' + status.error;
+      listWrap.appendChild(errNote);
+      container.appendChild(listWrap);
+      return;
+    }
+
+    var keys = status.keys || [];
+    var counts = { 'in-sync': 0, diverged: 0, pending: 0 };
+    keys.forEach(function (k) {
+      counts[_keyState(k)]++;
+    });
+
+    var headline = document.createElement('div');
+    headline.id = 'ch-sync-status-headline';
+    headline.className = 'ch-sync-status-headline';
+    if (keys.length === 0) {
+      headline.textContent = 'No synced items yet';
+    } else if (counts.diverged === 0 && counts.pending === 0) {
+      headline.textContent = 'In sync ✓';
+      headline.classList.add('ch-sync-ok');
+    } else {
+      var parts = [];
+      if (counts.pending) parts.push(counts.pending + ' key' + (counts.pending === 1 ? '' : 's') + ' pending');
+      if (counts.diverged) parts.push(counts.diverged + ' diverged');
+      headline.textContent = parts.join(' / ');
+      headline.classList.add('ch-sync-warn');
+    }
+    listWrap.appendChild(headline);
+
+    keys.forEach(function (k) {
+      var state = _keyState(k);
+      var row = document.createElement('div');
+      row.className = 'ch-sync-status-key ch-sync-status-key-' + state;
+      var name = document.createElement('div');
+      name.className = 'ch-sync-status-key-name';
+      name.textContent = friendlyKeyName(k.key);
+      var meta = document.createElement('div');
+      meta.className = 'ch-conflict-meta';
+      meta.textContent =
+        k.key +
+        ' — ' +
+        _keyStateLabel(state) +
+        (k.deleted ? ' (deleted)' : '') +
+        ' — local v' +
+        (k.localVersion == null ? '—' : k.localVersion) +
+        ', server v' +
+        k.serverVersion;
+      row.appendChild(name);
+      row.appendChild(meta);
+      listWrap.appendChild(row);
+    });
+
+    container.appendChild(listWrap);
+  }
+
+  function openSyncStatusPanel() {
+    ensureStyles();
+    var panel = ensureEl('ch-sync-status-panel');
+    panel.innerHTML = '';
+    _statusPanelOpen = true;
+
+    var hdr = document.createElement('div');
+    hdr.className = 'ch-archive-hdr';
+    var title = document.createElement('span');
+    title.textContent = 'Sync status';
+    var closeBtn = document.createElement('span');
+    closeBtn.className = 'ch-archive-close';
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', function () {
+      panel.classList.remove('ch-open');
+      _statusPanelOpen = false;
+    });
+    hdr.appendChild(title);
+    hdr.appendChild(closeBtn);
+
+    var body = document.createElement('div');
+    body.className = 'ch-archive-body ch-sync-status-body';
+
+    var currentMode = _currentBackendMode();
+    _renderModeControl(body, currentMode);
+    _renderQueueDepth(body, window.DB && typeof window.DB.getQueueDepth === 'function' ? window.DB.getQueueDepth() : 0);
+
+    var loading = document.createElement('div');
+    loading.id = 'ch-sync-status-loading';
+    loading.className = 'ch-conflict-meta';
+    loading.textContent = 'Checking with the server…';
+    body.appendChild(loading);
+
+    panel.appendChild(hdr);
+    panel.appendChild(body);
+    panel.classList.add('ch-open');
+
+    if (window.DB && typeof window.DB.getSyncStatus === 'function') {
+      window.DB.getSyncStatus()
+        .then(function (status) {
+          if (!_statusPanelOpen) return; // panel was closed before the fetch resolved
+          if (loading.parentNode) loading.parentNode.removeChild(loading);
+          _renderKeyList(body, status);
+        })
+        .catch(function (e) {
+          if (loading.parentNode)
+            loading.textContent = 'Could not check sync status: ' + (e && e.message ? e.message : e);
+        });
+    } else if (loading.parentNode) {
+      loading.textContent = 'Sync status is unavailable on this page.';
+    }
+  }
+
+  // Live queue-depth updates (task 2a.7 point 3) — only touches the DOM when
+  // the panel is actually open, so this listener is a no-op the rest of the time.
+  window.addEventListener('syncQueueChanged', function (e) {
+    if (!_statusPanelOpen) return;
+    var depth =
+      e.detail && typeof e.detail.depth === 'number'
+        ? e.detail.depth
+        : window.DB && window.DB.getQueueDepth
+          ? window.DB.getQueueDepth()
+          : 0;
+    var el = document.getElementById('ch-sync-status-queue');
+    if (el) {
+      el.textContent =
+        depth > 0 ? depth + ' change' + (depth === 1 ? '' : 's') + ' waiting to sync' : 'No changes waiting to sync';
+    }
+  });
+
+  window.addEventListener('dbReady', function () {
+    renderSyncStatusButton();
   });
 })();
