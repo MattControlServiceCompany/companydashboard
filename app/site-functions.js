@@ -1195,6 +1195,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.19.693',
+    date: '2026-07-19',
+    title: 'ASHRAE 36 Executive Summary score-bar fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Executive Summary report -- the Score column progress bar no longer slightly overflows its cell when a building scores 100%.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.18.692',
     date: '2026-07-18',
     title: 'Backup restore, Equipment Matrix, and Client Portal fixes',

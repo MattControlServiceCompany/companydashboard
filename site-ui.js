@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.07.18.692'; // deployed 2026-07-15 (Energy Department batch bill save: partial-save gate no longer blocks the whole batch on one flagged bill)
+  var CH_VERSION = 'v2026.07.19.693'; // deployed 2026-07-15 (Energy Department batch bill save: partial-save gate no longer blocks the whole batch on one flagged bill)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
