@@ -6923,6 +6923,18 @@ async function exportReportToPDF() {
 
   showToast('Generating PDF... this may take a moment');
 
+  // Force ALL proposal-tier "Install & Programming Detail" panels open before capture
+  // (fix/proposal-tier-option-chooser, 2026-07-19). The exported PDF is a flat html2canvas
+  // raster per page — no click-to-expand interactivity survives export — so whichever tier(s)
+  // the user had collapsed in the live preview must still render fully expanded in the PDF.
+  // State is restored in `finally` so the interactive preview is unaffected by having exported.
+  const tierDetailPanels = document.querySelectorAll('#reportPages [id^="rpt-tier-detail-"]');
+  const tierDetailPriorDisplay = [];
+  tierDetailPanels.forEach((panel) => {
+    tierDetailPriorDisplay.push(panel.style.display);
+    panel.style.display = 'block';
+  });
+
   try {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true });
@@ -7030,6 +7042,10 @@ async function exportReportToPDF() {
     console.error('PDF export failed:', err);
     showToast('PDF export failed: ' + (err.message || 'Unknown error'), 'error');
   } finally {
+    // Restore tier-detail panels to their pre-export (interactive) collapsed/expanded state.
+    tierDetailPanels.forEach((panel, i) => {
+      panel.style.display = tierDetailPriorDisplay[i];
+    });
     // Restore button state
     if (exportBtn) {
       exportBtn.disabled = false;
@@ -14037,6 +14053,145 @@ function _timelineStep(period, title, desc) {
  * @param {object} d - Data from collectASHRAE36Data()
  * @returns {Array<string>} single-element array of rptPage() HTML
  */
+// ─── Tier detail expand/collapse (Interactive preview + PDF all-expanded) ────────────────
+/**
+ * _rptToggleTierDetail — click handler for the per-tier "Install & Programming Detail"
+ * affordance in the live #reportOverlay preview (rptPageASHRAE36ProposalPricing). Toggles the
+ * matching detail panel's visibility and flips the button's chevron/aria-expanded state.
+ * This interactivity lives ONLY in the live overlay DOM — the exported PDF is a flat
+ * html2canvas raster (no click survives export), so exportReportToPDF() force-expands every
+ * tier's panel before capture instead of relying on this function. See
+ * _rptA36TierDetailPanelHTML / _rptA36TierDetailToggleHTML below.
+ */
+function _rptToggleTierDetail(tierKey) {
+  var panel = document.getElementById('rpt-tier-detail-' + tierKey);
+  var btn = document.getElementById('rpt-tier-toggle-' + tierKey);
+  if (!panel) return;
+  var isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (btn) {
+    btn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+    var chev = btn.querySelector('.rpt-tier-chev');
+    if (chev) chev.textContent = isOpen ? '▸' : '▾'; // ▸ collapsed / ▾ expanded
+    var lbl = btn.querySelector('.rpt-tier-toggle-label');
+    if (lbl) lbl.textContent = isOpen ? 'Install & Programming Detail' : 'Hide Install & Programming Detail';
+  }
+}
+window._rptToggleTierDetail = _rptToggleTierDetail;
+
+/**
+ * _rptA36TierDetailToggleHTML — the clickable header/card affordance for one tier column.
+ * Collapsed by default (aria-expanded="false"); PDF export forces the sibling panel open but
+ * leaves this button's own label/chevron in their collapsed appearance since it is inert in a
+ * flat raster either way.
+ */
+function _rptA36TierDetailToggleHTML(key) {
+  return (
+    '<div id="rpt-tier-toggle-' +
+    key +
+    '" role="button" tabindex="0" aria-expanded="false" ' +
+    'onclick="_rptToggleTierDetail(\'' +
+    key +
+    '\')" ' +
+    "onkeydown=\"if(event.key==='Enter'||event.key===' '){event.preventDefault();_rptToggleTierDetail('" +
+    key +
+    '\')}" ' +
+    'style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;' +
+    'padding:6px 8px;border:1px solid var(--rpt-blue);border-radius:4px;background:#fff;' +
+    'font-size:9px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em">' +
+    '<span class="rpt-tier-chev">▸</span>' +
+    '<span class="rpt-tier-toggle-label">Install &amp; Programming Detail</span>' +
+    '</div>'
+  );
+}
+
+/**
+ * _rptA36TierDetailAggByPhase — groups one tier's priced rows by distinct item name for a given
+ * phase (1 = Hardware & Installation, 2 = Programming & Commissioning), summing qty/lineTotal
+ * across every building carrying that same item. Mirrors the aggregation
+ * rptPageASHRAE36ProposalPricing's own _buildItemizedPages() already uses (same dedupe-by-item,
+ * same rowToggles respect) — NO new pricing math, this only reshapes the SAME rows.
+ */
+function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
+  var included = rows.filter(function (r) {
+    var key = r._baseId || r.id;
+    return r.phase === phaseNum && toggles[key] !== false;
+  });
+  var byItem = {};
+  var order = [];
+  included.forEach(function (r) {
+    var key = r.item || '(unnamed)';
+    if (!byItem[key]) {
+      byItem[key] = { item: r.item, qty: 0, lineTotal: 0 };
+      order.push(key);
+    }
+    byItem[key].qty += r.qty || 0;
+    byItem[key].lineTotal += r.lineTotal || 0;
+  });
+  return order.map(function (k) {
+    return byItem[k];
+  });
+}
+
+/**
+ * _rptA36TierDetailPanelHTML — the collapsible content itself: a concise, HIGH-LEVEL breakdown
+ * of one tier's Hardware & Installation and Programming & Commissioning content. The two
+ * subtotal dollar figures are the SAME tt[key].phase1 / tt[key].phase2 values the phaseSplitRow
+ * above already prints (so the detail can never disagree with the tier table) — no new pricing
+ * math. Item bullets show name (+ aggregated qty) only; dollar amounts per item are added ONLY
+ * when the itemized sub-option (wantItemized) is already on, per spec ("high level, NOT full
+ * line-item itemization unless the itemized toggle is already on"). Starts hidden
+ * (display:none) — exportReportToPDF() forces every tier's panel open before html2canvas so
+ * nothing is hidden in the flat PDF.
+ */
+function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantItemized, fmtUSD) {
+  var rows = (summaryData && summaryData.perTier && summaryData.perTier[key]) || [];
+  var toggles = (estimateState && estimateState.rowToggles) || {};
+  var hw = _rptA36TierDetailAggByPhase(rows, 1, toggles);
+  var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
+  var noCat = !!(tt && tt[key] && tt[key].noCatalog);
+  var p1 = tt && tt[key] ? fmtUSD(tt[key].phase1) : null;
+  var p2 = tt && tt[key] ? fmtUSD(tt[key].phase2) : null;
+
+  function _sectionHTML(title, subtotalStr, noCatFlag, items) {
+    var subtotalHTML = noCatFlag
+      ? ' <span style="font-weight:400;color:#666">(CSV needed for pricing)</span>'
+      : subtotalStr
+        ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
+        : '';
+    var listHTML = items.length
+      ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:#000;line-height:1.6">' +
+        items
+          .map(function (it) {
+            var priceStr = wantItemized && fmtUSD(it.lineTotal) ? ' — ' + fmtUSD(it.lineTotal) : '';
+            var qtyStr = it.qty > 1 ? ' (x' + it.qty + ')' : '';
+            return '<li>' + _esc(it.item || '') + qtyStr + priceStr + '</li>';
+          })
+          .join('') +
+        '</ul>'
+      : '<div style="font-size:8.5px;color:#666;margin-top:2px">No items in this scope.</div>';
+    return (
+      '<div style="margin-bottom:8px">' +
+      '<div style="font-size:9px;font-weight:700;color:#000">' +
+      _esc(title) +
+      subtotalHTML +
+      '</div>' +
+      listHTML +
+      '</div>'
+    );
+  }
+
+  return (
+    '<div id="rpt-tier-detail-' +
+    key +
+    '" style="display:none;margin-top:6px;padding:8px 10px 2px;' +
+    'border:1px solid var(--rpt-rule);border-radius:4px;background:#fff;text-align:left">' +
+    _sectionHTML('Hardware & Installation', p1, noCat, hw) +
+    _sectionHTML('Programming & Commissioning', p2, false, lb) +
+    '</div>'
+  );
+}
+
 function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
@@ -14198,6 +14353,33 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       '</tr>';
   }
 
+  // Interactive tier detail (fix/proposal-tier-option-chooser, 2026-07-19): a click-to-expand
+  // "Install & Programming Detail" card per tier, collapsed by default in the live preview.
+  // Always rendered (independent of wantPhaseSplit/wantItemized — those only affect what's
+  // shown INSIDE the panel) whenever the tier totals were actually computed; if
+  // _pricingComputeSummaryData threw above, summaryData is null and this row is omitted rather
+  // than showing an empty/broken card. See _rptA36TierDetailPanelHTML /
+  // _rptA36TierDetailToggleHTML / _rptToggleTierDetail above.
+  var detailRow = '';
+  if (summaryData && summaryData.perTier) {
+    var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-rule);border-top:none;vertical-align:top';
+    detailRow =
+      '<tr>' +
+      tierCols
+        .map(function (c) {
+          return (
+            '<td style="' +
+            detailCellStyle +
+            '">' +
+            _rptA36TierDetailToggleHTML(c.key) +
+            _rptA36TierDetailPanelHTML(c.key, tt, summaryData, estimateState, wantItemized, _fmtUSD) +
+            '</td>'
+          );
+        })
+        .join('') +
+      '</tr>';
+  }
+
   var table =
     '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:16px">' +
     colgroup +
@@ -14208,6 +14390,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     lblRow +
     amtRow +
     phaseSplitRow +
+    detailRow +
     '</tbody></table>';
 
   // M&V / savings disclaimer — attached wherever estimates appear (verbatim SAVINGS_DISCLAIMER_TEXT).
