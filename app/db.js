@@ -308,6 +308,11 @@ const DB = (() => {
     const entry = _replicaVersions[key];
     const baseVersion = entry && typeof entry.version === 'number' ? entry.version : null;
     const bodyObj = isTombstone ? { key, deleted: true, baseVersion } : { key, value: payload.value, baseVersion };
+    // Phase 2b conflict-modal "Overwrite with mine" / "Restore my version"
+    // actions set this so kv-sync.js snapshots the row being replaced into
+    // kv_history BEFORE the overwrite lands (kv-sync.js handlePut, explicit
+    // deliberate overwrite only — never set on an ordinary write).
+    if (payload.explicitOverwrite === true) bodyObj.explicitOverwrite = true;
     const bodyStr = JSON.stringify(bodyObj);
     const gz = await _maybeGzipBody(bodyStr);
 
@@ -340,14 +345,87 @@ const DB = (() => {
     return { status: 'error', body: json, httpStatus: res.status };
   }
 
+  // --- Phase 2b: array-of-id keys eligible for the "Keep both" disjoint-
+  // additive union offer (integration #6). Every entry not listed here falls
+  // straight to the standard 3-button modal — no union is even attempted.
+  //
+  // NOTE (flagged, not guessed): en_projects and en_tasks are bare arrays of
+  // objects with a stable `.id` (core.js:786 `tasks.push({id: Date.now(), ...})`,
+  // similar for projects). en_dc_events is NOT a bare array — it is
+  // `{events, viewYear, viewMonth}` (district-calendar.js:144) and its dc
+  // events carry NO `id` field at all. Its getId below reuses the app's own
+  // dedup identity for a calendar event — `date + '|' + name` — exactly as
+  // district-calendar.js:234 (`addEvent`) already does when importing events,
+  // plus `type` for extra safety. `viewYear`/`viewMonth` are "which month is
+  // on screen" UI state, not data; the merge keeps the SERVER's values for
+  // those two fields — an arbitrary but low-stakes tie-break, called out here
+  // rather than silently decided.
+  const UNION_KEY_CONFIG = {
+    en_projects: {
+      getItems: (v) => (Array.isArray(v) ? v : null),
+      setItems: (_v, items) => items,
+      getId: (item) => item && item.id,
+    },
+    en_tasks: {
+      getItems: (v) => (Array.isArray(v) ? v : null),
+      setItems: (_v, items) => items,
+      getId: (item) => item && item.id,
+    },
+    en_dc_events: {
+      getItems: (v) => (v && Array.isArray(v.events) ? v.events : null),
+      setItems: (v, items) => Object.assign({}, v, { events: items }),
+      getId: (item) => item && item.date + '|' + item.name + '|' + item.type,
+    },
+  };
+
+  // Returns the merged value if `localValue`/`serverValue` are a pure
+  // disjoint-additive union (each side only ADDED new ids; every id present
+  // on both sides is byte-identical), else null (not eligible — fall back to
+  // the standard modal). No true three-way base snapshot exists client-side
+  // (only the two current states), so this is a conservative two-way
+  // heuristic: it only ever offers a union when the shared items match
+  // exactly, never when it would have to guess at an edit vs a removal.
+  function _computeDisjointUnion(key, localValue, serverValue) {
+    const cfg = UNION_KEY_CONFIG[key];
+    if (!cfg) return null;
+    const localItems = cfg.getItems(localValue);
+    const serverItems = cfg.getItems(serverValue);
+    if (!Array.isArray(localItems) || !Array.isArray(serverItems)) return null;
+
+    const serverById = new Map();
+    serverItems.forEach((it) => {
+      const id = cfg.getId(it);
+      if (id !== undefined && id !== null) serverById.set(id, it);
+    });
+
+    const localOnly = [];
+    for (const it of localItems) {
+      const id = cfg.getId(it);
+      if (id === undefined || id === null) continue;
+      if (!serverById.has(id)) {
+        localOnly.push(it);
+        continue;
+      }
+      // Shared id on both sides — must be byte-identical or this is a real
+      // edit conflict, not a pure addition. Bail to the standard modal.
+      const serverItem = serverById.get(id);
+      if (_canonicalJSON(it) !== _canonicalJSON(serverItem)) return null;
+    }
+    if (!localOnly.length) return null; // nothing new locally — no union to offer
+
+    const mergedItems = serverItems.concat(localOnly);
+    return cfg.setItems(serverValue, mergedItems);
+  }
+
   // --- Conflict handling (write-time 409) -----------------------------------
   async function _handleConflict(key, payload, body, mode) {
     const current = body && body.current;
     // Data-safety invariant: archive the losing local write BEFORE adopting
-    // the server version — never silently lose either side.
+    // the server version or opening any modal — never silently lose either
+    // side, and never let a modal button be clickable before this has run.
     _appendConflictArchive({
       key,
-      reason: 'write-conflict-server-wins',
+      reason: current && current.deleted ? 'write-conflict-tombstone' : 'write-conflict-server-wins',
       losingSide: 'local',
       losingValue: payload.deleted ? null : payload.value,
       losingDeleted: !!payload.deleted,
@@ -355,30 +433,184 @@ const DB = (() => {
       winningUpdatedBy: current && current.updatedBy,
       winningUpdatedAt: current && current.updatedAt,
     });
-    if (current) {
-      _replicaVersions[key] = { version: current.version, hash: current.hash || null };
-      _persistReplicaState();
-    }
-    if (typeof showToast === 'function') {
-      showToast('Backend sync conflict on ' + key + ' — local copy archived, see en_conflict_archive.', 'error');
-    }
-    if (mode === 'shadow' && current) {
+
+    if (mode === 'shadow') {
       // Integration #2 shadow behavior: auto-adopt the server version and
       // retry the PUT once, so the server keeps tracking edits through a
-      // rare collision instead of shadow silently getting stuck.
-      let retryResult;
-      try {
-        retryResult = await _sendKvPut(key, payload);
-      } catch (e) {
-        retryResult = { status: 'network-error' };
+      // rare collision instead of shadow silently getting stuck. Shadow mode
+      // never shows a modal — reads stay local-only in shadow, so there is
+      // no live page for a modal to interrupt.
+      if (current) {
+        _replicaVersions[key] = { version: current.version, hash: current.hash || null };
+        _persistReplicaState();
       }
-      if (retryResult.status === 'network-error' || retryResult.status === 'error') {
-        _enqueueWrite(key, payload);
+      if (typeof showToast === 'function') {
+        showToast('Backend sync conflict on ' + key + ' — local copy archived, see en_conflict_archive.', 'error');
       }
-      // 'ok' -> _sendKvPut already updated the version map.
-      // 'conflict' again -> leave as a logged conflict, no further retry
-      // (avoid a retry loop).
+      if (current) {
+        let retryResult;
+        try {
+          retryResult = await _sendKvPut(key, payload);
+        } catch (e) {
+          retryResult = { status: 'network-error' };
+        }
+        if (retryResult.status === 'network-error' || retryResult.status === 'error') {
+          _enqueueWrite(key, payload);
+        }
+        // 'ok' -> _sendKvPut already updated the version map.
+        // 'conflict' again -> leave as a logged conflict, no further retry
+        // (avoid a retry loop).
+      }
+      return;
     }
+
+    if (mode !== 'on') return; // 'off' never replicates, so never reaches here
+
+    if (!current) {
+      // Defensive: kv-sync.js's contract always returns `current` on a 409
+      // (see kv-sync.js rowToConflict) — this should not happen. Never hang
+      // the app on a malformed response; queue for a later retry instead.
+      console.warn('[DB] Conflict 409 with no current row — cannot show modal, queued for retry:', key);
+      _enqueueWrite(key, payload);
+      return;
+    }
+
+    await _presentConflictModal(key, payload, current);
+  }
+
+  // --- Phase 2b: blocking conflict modal (full/'on' mode only) --------------
+  async function _presentConflictModal(key, payload, current) {
+    const isTombstoneConflict = current.deleted === true && !payload.deleted;
+    let unionPreview = null;
+    if (!isTombstoneConflict && !payload.deleted && !current.deleted) {
+      unionPreview = _computeDisjointUnion(key, payload.value, current.value);
+    }
+    const localBase = _replicaVersions[key];
+
+    const descriptor = {
+      key,
+      local: { value: payload.deleted ? undefined : payload.value, deleted: !!payload.deleted },
+      server: {
+        value: current.value,
+        version: current.version,
+        deleted: !!current.deleted,
+        updatedBy: current.updatedBy,
+        updatedAt: current.updatedAt,
+      },
+      localBaseVersion: localBase && typeof localBase.version === 'number' ? localBase.version : null,
+      conflictClass: isTombstoneConflict ? 'tombstone' : unionPreview ? 'union-candidate' : 'standard',
+      unionPreview,
+      typedConfirmRequired: key.indexOf('en_utility_') === 0,
+    };
+
+    if (
+      typeof window === 'undefined' ||
+      !window.SyncConflictUI ||
+      typeof window.SyncConflictUI.showConflictModal !== 'function'
+    ) {
+      console.warn('[DB] SyncConflictUI unavailable — cannot present conflict modal, write left queued:', key);
+      _enqueueWrite(key, payload);
+      return;
+    }
+
+    let resolution;
+    try {
+      resolution = await window.SyncConflictUI.showConflictModal(descriptor);
+    } catch (e) {
+      console.warn('[DB] Conflict modal threw, leaving write queued:', key, e);
+      _enqueueWrite(key, payload);
+      return;
+    }
+
+    await _applyConflictResolution(key, payload, current, resolution);
+  }
+
+  // --- Phase 2b: execute the user's chosen conflict-modal resolution --------
+  async function _applyConflictResolution(key, payload, current, resolution) {
+    const action = resolution && resolution.action;
+
+    if (action === 'load-theirs' || action === 'save-copy' || action === 'discard-mine') {
+      // Local losing value was already archived before the modal opened.
+      // Adopt the server's current value/version as the new local truth.
+      if (current.deleted) {
+        await _rawDelete(key);
+        _replicaVersions[key] = { version: current.version, hash: current.hash || null, deleted: true };
+      } else {
+        await _rawSet(key, current.value);
+        _replicaVersions[key] = { version: current.version, hash: current.hash || null };
+      }
+      _persistReplicaState();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
+      }
+      if (typeof showToast === 'function') {
+        showToast('Loaded the latest saved version of this item.', 'info');
+      }
+      return;
+    }
+
+    if (action === 'overwrite-mine' || action === 'restore-mine') {
+      // Retry at the server's current version with explicitOverwrite so
+      // kv-sync.js snapshots the row being replaced into kv_history first.
+      _replicaVersions[key] = { version: current.version, hash: current.hash || null };
+      const retryPayload = Object.assign({}, payload, { explicitOverwrite: true });
+      let result;
+      try {
+        result = await _sendKvPut(key, retryPayload);
+      } catch (e) {
+        result = { status: 'network-error' };
+      }
+      if (result.status === 'ok') {
+        if (typeof showToast === 'function') {
+          showToast('Your version was saved, replacing the server copy.', 'info');
+        }
+        return;
+      }
+      if (result.status === 'conflict') {
+        // Someone changed it again in the meantime — fresh conflict.
+        await _handleConflict(key, payload, result.body, 'on');
+        return;
+      }
+      _enqueueWrite(key, retryPayload);
+      return;
+    }
+
+    if (action === 'keep-both') {
+      const unionValue = resolution.unionValue;
+      const cfg = UNION_KEY_CONFIG[key];
+      if (!cfg || !Array.isArray(cfg.getItems(unionValue))) {
+        console.warn('[DB] keep-both resolution missing a usable unionValue, falling back to load-theirs:', key);
+        await _applyConflictResolution(key, payload, current, { action: 'load-theirs' });
+        return;
+      }
+      await _rawSet(key, unionValue);
+      _replicaVersions[key] = { version: current.version, hash: current.hash || null };
+      const unionPayload = { value: unionValue };
+      let result;
+      try {
+        result = await _sendKvPut(key, unionPayload);
+      } catch (e) {
+        result = { status: 'network-error' };
+      }
+      if (result.status === 'ok') {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
+        }
+        if (typeof showToast === 'function') {
+          showToast('Merged both versions — nothing was lost.', 'info');
+        }
+        return;
+      }
+      if (result.status === 'conflict') {
+        await _handleConflict(key, unionPayload, result.body, 'on');
+        return;
+      }
+      _enqueueWrite(key, unionPayload);
+      return;
+    }
+
+    console.warn('[DB] Unknown conflict resolution action, leaving write queued:', key, action);
+    _enqueueWrite(key, payload);
   }
 
   // --- Live write replication tail (set()/remove() call this) --------------
@@ -1010,6 +1242,15 @@ const DB = (() => {
   function getQueueDepth() {
     return _syncQueue.length;
   }
+
+  // --- Phase 2b: conflict-archive viewer accessor ----------------------------
+  // Read-only convenience for app/sync-ui.js's archive panel — same data
+  // `sget('en_conflict_archive', [])` would return, just without requiring
+  // sync-ui.js to know about the sget/sset global naming convention.
+  function getConflictArchive() {
+    const v = _cache['en_conflict_archive'];
+    return Array.isArray(v) ? v : [];
+  }
   async function getSyncStatus() {
     const mode = _backendMode();
     if (mode === 'off') return { mode, keys: [], queueDepth: _syncQueue.length };
@@ -1064,6 +1305,7 @@ const DB = (() => {
     resetPendingWrites,
     getSyncStatus,
     getQueueDepth,
+    getConflictArchive,
     setBackendMode,
   };
 })();
