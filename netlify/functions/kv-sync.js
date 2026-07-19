@@ -5,6 +5,7 @@
 // GET  ?keys=a,b,c                         -> [{key, value, version, deleted}] for the given keys
 // GET  ?key=<key>                          -> current row or 404
 // PUT  {key, value, baseVersion}           -> atomic conditional write
+// PUT  {key, deleted:true, baseVersion}    -> atomic conditional tombstone (no `value`)
 //
 // Conflict model: per-key optimistic concurrency, one integer `version`.
 // baseVersion === null means "I believe this key is new" -> plain insert.
@@ -13,6 +14,16 @@
 // PATCH+filter. 0 rows affected -> 409 with the current server row. The
 // server NEVER silently merges or overwrites — see backend-migration-plan
 // §2b. Last-write-wins is explicitly rejected.
+//
+// Deletes are CAS-checked tombstones, never a physical row removal
+// (supabase-migration-plan-FINAL-2026-07-19.md §3, integration #1):
+// `PUT {key, deleted:true, baseVersion}` goes through the IDENTICAL CAS
+// UPDATE path as a normal write — it sets `deleted = true` and bumps
+// `version`, but the row is never deleted and `value`/`hash` are never
+// touched (so a later un-delete can restore the last real value). Any
+// normal (non-tombstone) PUT always sets `deleted = false`, so a fresh
+// CAS-PUT against a tombstoned key un-deletes it (the "Restore my version"
+// conflict-modal action, per §5 of the plan).
 //
 // hash: every write (insert or update) computes SHA-256 of a canonical
 // (stable-key-sorted) JSON serialization of `value` and stores it in the
@@ -112,53 +123,7 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === 'PUT') {
-      const body = JSON.parse(event.body || '{}');
-      const { key, value, baseVersion } = body;
-      if (!key || value === undefined) return respond(400, { error: 'Missing key or value' });
-
-      // Server-assigned identity — never trust `updatedBy` from the request body.
-      const updatedBy = verifyAuth(event).email;
-      const nowIso = new Date().toISOString();
-
-      if (baseVersion === null || baseVersion === undefined) {
-        // Believed-new key: plain insert at version 1.
-        const hash = sha256Hex(canonicalJSON(value));
-        const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/kv`, {
-          method: 'POST',
-          headers: pgHeaders({ Prefer: 'return=representation' }),
-          body: JSON.stringify([{ key, value, version: 1, hash, updated_by: updatedBy, updated_at: nowIso }]),
-        });
-        if (insertRes.status === 201) {
-          return respond(200, { version: 1, hash });
-        }
-        // 409/23505 = unique_violation -> someone else inserted first.
-        const current = await fetchRow(key);
-        return respond(409, { conflict: true, current: rowToConflict(current) });
-      }
-
-      // Existing key: atomic conditional UPDATE via PostgREST filter.
-      const hash = sha256Hex(canonicalJSON(value));
-      const patchRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/kv?key=eq.${encodeURIComponent(key)}&version=eq.${baseVersion}`,
-        {
-          method: 'PATCH',
-          headers: pgHeaders({ Prefer: 'return=representation' }),
-          body: JSON.stringify({
-            value,
-            hash,
-            version: baseVersion + 1,
-            updated_by: updatedBy,
-            updated_at: nowIso,
-          }),
-        },
-      );
-      const patched = await patchRes.json();
-      if (Array.isArray(patched) && patched.length === 1) {
-        return respond(200, { version: baseVersion + 1, hash });
-      }
-      // 0 rows matched -> version mismatch (or key missing). Conflict.
-      const current = await fetchRow(key);
-      return respond(409, { conflict: true, current: rowToConflict(current) });
+      return await handlePut(event);
     }
 
     return respond(405, { error: 'Method not allowed' });
@@ -168,6 +133,83 @@ exports.handler = async (event) => {
     return respond(500, { error: 'Internal error' });
   }
 };
+
+async function handlePut(event) {
+  const body = JSON.parse(event.body || '{}');
+  const { key, baseVersion } = body;
+  const isTombstone = body.deleted === true;
+  const value = body.value;
+
+  if (!key) return respond(400, { error: 'Missing key' });
+  if (!isTombstone && value === undefined) return respond(400, { error: 'Missing value' });
+
+  // Server-assigned identity — never trust `updatedBy` from the request body.
+  const updatedBy = verifyAuth(event).email;
+  const nowIso = new Date().toISOString();
+
+  if (baseVersion === null || baseVersion === undefined) {
+    if (isTombstone) {
+      return respond(400, { error: 'Cannot tombstone a key with no baseVersion — key must already exist' });
+    }
+    // Believed-new key: plain insert at version 1.
+    const hash = sha256Hex(canonicalJSON(value));
+    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/kv`, {
+      method: 'POST',
+      headers: pgHeaders({ Prefer: 'return=representation' }),
+      body: JSON.stringify([
+        { key, value, version: 1, hash, deleted: false, updated_by: updatedBy, updated_at: nowIso },
+      ]),
+    });
+    if (insertRes.status === 201) {
+      return respond(200, { version: 1, hash, deleted: false });
+    }
+    // 409/23505 = unique_violation -> someone else inserted first.
+    const current = await fetchRow(key);
+    return respond(409, { conflict: true, current: rowToConflict(current) });
+  }
+
+  // Existing key: atomic conditional UPDATE via PostgREST filter.
+  let patchBody;
+  let newHash = null;
+  if (isTombstone) {
+    // Tombstone (integration #1): the SAME CAS UPDATE path as a normal
+    // write, version-checked and never a physical row DELETE. `value`/
+    // `hash` are deliberately untouched so a later "Restore my version"
+    // can un-delete by simply writing a fresh non-tombstone value.
+    patchBody = { deleted: true, version: baseVersion + 1, updated_by: updatedBy, updated_at: nowIso };
+  } else {
+    newHash = sha256Hex(canonicalJSON(value));
+    // Any normal write un-deletes the key (deleted:false) — this is what
+    // backs the conflict modal's "Restore my version" action.
+    patchBody = {
+      value,
+      hash: newHash,
+      deleted: false,
+      version: baseVersion + 1,
+      updated_by: updatedBy,
+      updated_at: nowIso,
+    };
+  }
+
+  const patchRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/kv?key=eq.${encodeURIComponent(key)}&version=eq.${baseVersion}`,
+    {
+      method: 'PATCH',
+      headers: pgHeaders({ Prefer: 'return=representation' }),
+      body: JSON.stringify(patchBody),
+    },
+  );
+  const patched = await patchRes.json();
+  if (Array.isArray(patched) && patched.length === 1) {
+    return respond(200, { version: baseVersion + 1, hash: newHash, deleted: !!isTombstone });
+  }
+  // 0 rows matched -> version mismatch (or key missing/already-tombstoned
+  // at a different version). Conflict — a queued write replaying against a
+  // tombstoned key lands here too, which is what powers the delete-specific
+  // conflict-modal wording on the client (integration #1).
+  const current = await fetchRow(key);
+  return respond(409, { conflict: true, current: rowToConflict(current) });
+}
 
 async function handleManifest() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/kv?select=key,version,hash,deleted&order=key.asc`, {
