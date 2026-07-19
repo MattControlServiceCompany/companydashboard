@@ -1,6 +1,7 @@
 // netlify/functions/kv-sync.js
 //
 // Shared-backend replication endpoint for CompanyHub's kv store.
+// GET  ?manifest=1                         -> [{key, version, hash, deleted}] for every row (tiny)
 // GET  ?key=<key>                          -> current row or 404
 // PUT  {key, value, baseVersion}           -> atomic conditional write
 //
@@ -90,8 +91,10 @@ exports.handler = async (event) => {
 
   try {
     if (event.httpMethod === 'GET') {
-      const key = event.queryStringParameters && event.queryStringParameters.key;
-      if (!key) return respond(400, { error: 'Missing ?key=' });
+      const qs = event.queryStringParameters || {};
+      if (qs.manifest !== undefined) return await handleManifest();
+      const key = qs.key;
+      if (!key) return respond(400, { error: 'Missing ?key= or ?manifest=1' });
       const row = await fetchRow(key);
       if (!row) return respond(404, { found: false });
       return respond(200, {
@@ -163,6 +166,21 @@ exports.handler = async (event) => {
     return respond(500, { error: 'Internal error' });
   }
 };
+
+async function handleManifest() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/kv?select=key,version,hash,deleted&order=key.asc`, {
+    headers: pgHeaders(),
+  });
+  if (!res.ok) {
+    console.error('[kv-sync] manifest fetch failed:', res.status);
+    return respond(502, { error: 'Manifest fetch failed' });
+  }
+  const rows = await res.json();
+  return respond(
+    200,
+    rows.map((r) => ({ key: r.key, version: r.version, hash: r.hash, deleted: !!r.deleted })),
+  );
+}
 
 async function fetchRow(key) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/kv?key=eq.${encodeURIComponent(key)}&select=*`, {
