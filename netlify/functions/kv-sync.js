@@ -33,6 +33,14 @@
 // across reads/writes and would silently break manifest hash comparisons on
 // the client (finding F8).
 //
+// kv_history: on an EXPLICIT overwrite only (client sets `explicitOverwrite:
+// true` in the PUT body — i.e. the user chose "Overwrite with mine" in the
+// conflict modal), the row about to be replaced is snapshotted into
+// `kv_history` (key, value, version, updated_by, replaced_at) BEFORE the
+// overwrite lands. This does not run on every write — only on a flagged
+// conflict-resolution overwrite — and a retention cap (last N per key AND
+// max age) keeps the free-tier DB bounded (finding F10).
+//
 // Auth: stub only in this slice (Entra JWT verification is Phase 1, later).
 // `verifyAuth(event)` is the ONE seam Phase 1 will change the body of —
 // every other line that needs the caller's identity calls it, never trusts
@@ -169,8 +177,13 @@ async function handlePut(event) {
   }
 
   // Existing key: atomic conditional UPDATE via PostgREST filter.
+  // Fetch the pre-image first — needed both for a 409's `current` payload
+  // and (if this write is an explicit overwrite that succeeds) for the
+  // kv_history snapshot of exactly the row being replaced.
+  const beforeRow = await fetchRow(key);
+
   let patchBody;
-  let newHash = null;
+  let newHash = beforeRow ? beforeRow.hash : null;
   if (isTombstone) {
     // Tombstone (integration #1): the SAME CAS UPDATE path as a normal
     // write, version-checked and never a physical row DELETE. `value`/
@@ -201,6 +214,9 @@ async function handlePut(event) {
   );
   const patched = await patchRes.json();
   if (Array.isArray(patched) && patched.length === 1) {
+    if (body.explicitOverwrite === true && beforeRow) {
+      await snapshotHistory(beforeRow);
+    }
     return respond(200, { version: baseVersion + 1, hash: newHash, deleted: !!isTombstone });
   }
   // 0 rows matched -> version mismatch (or key missing/already-tombstoned
@@ -209,6 +225,61 @@ async function handlePut(event) {
   // conflict-modal wording on the client (integration #1).
   const current = await fetchRow(key);
   return respond(409, { conflict: true, current: rowToConflict(current) });
+}
+
+// --- kv_history snapshot-on-explicit-overwrite (§5, F10) -----------------------
+
+const HISTORY_MAX_PER_KEY = 20;
+const HISTORY_MAX_AGE_DAYS = 30;
+
+async function snapshotHistory(beforeRow) {
+  try {
+    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/kv_history`, {
+      method: 'POST',
+      headers: pgHeaders({ Prefer: 'return=minimal' }),
+      body: JSON.stringify([
+        {
+          key: beforeRow.key,
+          value: beforeRow.value,
+          version: beforeRow.version,
+          updated_by: beforeRow.updated_by,
+          replaced_at: new Date().toISOString(),
+        },
+      ]),
+    });
+    if (!insertRes.ok) {
+      console.error('[kv-sync] history snapshot insert failed:', insertRes.status);
+      return;
+    }
+    await enforceHistoryRetention(beforeRow.key);
+  } catch (err) {
+    // History bookkeeping must never fail the parent PUT.
+    console.error('[kv-sync] history snapshot error:', err && err.message);
+  }
+}
+
+async function enforceHistoryRetention(key) {
+  // Cap 1: keep only the most recent HISTORY_MAX_PER_KEY rows for this key.
+  const overflowRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/kv_history?key=eq.${encodeURIComponent(key)}&select=id&order=replaced_at.desc&offset=${HISTORY_MAX_PER_KEY}`,
+    { headers: pgHeaders() },
+  );
+  if (overflowRes.ok) {
+    const overflow = await overflowRes.json();
+    if (Array.isArray(overflow) && overflow.length) {
+      const ids = overflow.map((r) => r.id).join(',');
+      await fetch(`${SUPABASE_URL}/rest/v1/kv_history?id=in.(${ids})`, {
+        method: 'DELETE',
+        headers: pgHeaders(),
+      });
+    }
+  }
+  // Cap 2: age-based, across all keys — anything older than the retention window.
+  const cutoff = new Date(Date.now() - HISTORY_MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  await fetch(`${SUPABASE_URL}/rest/v1/kv_history?replaced_at=lt.${encodeURIComponent(cutoff)}`, {
+    method: 'DELETE',
+    headers: pgHeaders(),
+  });
 }
 
 async function handleManifest() {
