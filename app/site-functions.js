@@ -1195,6 +1195,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.19.694',
+    date: '2026-07-19',
+    title: 'Home dashboard and EMS Leads reliability fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Home dashboard -- the Upcoming Events panel now displays correctly instead of showing blank or stale data.',
+      },
+      {
+        type: 'fix',
+        text: 'EMS Leads -- entries now save and reload reliably instead of occasionally failing to persist.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.19.693',
     date: '2026-07-19',
     title: 'ASHRAE 36 Executive Summary score-bar fix',
