@@ -551,7 +551,43 @@ function siteApplyAccent(hex) {
 }
 
 /* Backup / Restore / Reset */
-function siteBackup() {
+// Raw bill PDFs live in the separate en_pdf_store IndexedDB database (opened
+// via core.js's _openPdfDB()/_pdfDB, which is already loaded on this page —
+// reuse it here rather than re-declaring _pdfDB, which would throw a
+// duplicate-const error). getAll()/getAllKeys() aren't exposed by core.js's
+// pdfStore()/pdfLoad() helpers, so this adds the one extra read core.js
+// doesn't provide. Mirrors index.html's _pdfBackupGetAll() exactly — keep in
+// sync if that contract changes.
+function _pdfBackupGetAll() {
+  return _openPdfDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(_pdfDB.STORE, 'readonly');
+      var store = tx.objectStore(_pdfDB.STORE);
+      var getAllReq = store.getAll();
+      var getKeysReq = store.getAllKeys();
+      var values, keys;
+      getAllReq.onsuccess = function () {
+        values = getAllReq.result;
+      };
+      getKeysReq.onsuccess = function () {
+        keys = getKeysReq.result;
+      };
+      tx.oncomplete = function () {
+        var out = {};
+        if (keys && values) {
+          keys.forEach(function (k, i) {
+            out[k] = values[i];
+          });
+        }
+        resolve(out);
+      };
+      tx.onerror = function () {
+        reject(tx.error);
+      };
+    });
+  });
+}
+async function siteBackup() {
   // Get all DB data (IndexedDB-backed)
   var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
   // Also grab any remaining localStorage keys (preferences, settings)
@@ -563,10 +599,41 @@ function siteBackup() {
   // Merge — DB data takes precedence
   var allData = Object.assign({}, lsData, dbData);
   var data = allData;
+  // Raw bill PDFs live in the separate en_pdf_store IndexedDB database and are
+  // NOT covered by DB.getAll()/localStorage above — pull them in under their own
+  // top-level key so the backup format stays self-describing and old readers
+  // that don't know about it just see one extra key.
+  //
+  // This read must NEVER fail silently: a backup that claims success while
+  // actually containing zero bill PDFs (because the read threw) is worse
+  // than no backup at all — it tells the user their data is safe when the
+  // most irreplaceable part of it is missing. _pdfStoreMeta travels inside
+  // the file itself so a later restore can tell "no PDFs, none existed"
+  // apart from "no PDFs, the read failed" and refuse to pretend a truncated
+  // backup is complete.
+  var pdfOk = true;
+  var pdfErr = null;
+  try {
+    data._pdfStore = await _pdfBackupGetAll();
+  } catch (e) {
+    console.warn('PDF store backup failed:', e);
+    data._pdfStore = {};
+    pdfOk = false;
+    pdfErr = (e && e.message) || String(e);
+  }
+  var pdfCount = Object.keys(data._pdfStore).length;
+  data._pdfStoreMeta = { ok: pdfOk, count: pdfCount, error: pdfErr };
+  // Explicit positive marker so a future restore can identify this as a real
+  // CompanyHub backup without guessing from data keys at all.
+  data._companyHubBackup = true;
   var d = new Date();
   var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   var filename = 'CompanyHub-localdatafile-' + ds + '.json';
-  var content = JSON.stringify(data, null, 2);
+  // Compact serialization — matches index.html's siteBackup() so all three
+  // backup buttons produce the same file shape (see index.html for the size
+  // rationale). Restore only calls JSON.parse(), which is unaffected by
+  // formatting.
+  var content = JSON.stringify(data);
   var blob = new Blob([content], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
@@ -578,7 +645,18 @@ function siteBackup() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 1500);
-  if (typeof showToast === 'function') showToast('Backup downloaded');
+  if (typeof showToast === 'function') {
+    if (pdfOk) {
+      showToast('Backup downloaded — ' + pdfCount + ' bill PDF' + (pdfCount === 1 ? '' : 's') + ' included');
+    } else {
+      showToast(
+        'Backup downloaded, but bill PDFs FAILED to export (0 included). The rest of your data is in the file — your bill PDFs are NOT. (' +
+          pdfErr +
+          ')',
+        'error',
+      );
+    }
+  }
 }
 function processRestoreFile(file) {
   if (!file) return;
