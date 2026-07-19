@@ -414,27 +414,42 @@ async function main() {
     bills = v.bills;
     await X.analyzeBillExtraction(bills, 'Evergy', v.historicalCache || {});
 
-    const byAcct = Object.fromEntries(bills.map((b) => [b.AccountNumber, b]));
+    assertTrue(bills.length === 4, 'ACCEPTANCE: extracted exactly 4 bills from the raw OCR text');
+    const [bill1, bill2, bill3, bill4] = bills;
+    // Shape assertion — replaces the implicit "AccountNumber extraction is still
+    // correct" coverage that real-account-number lookup keys used to provide for
+    // free. Non-PII: checks digit-count shape only, never compares to a real value.
+    for (const [n, b] of [
+      ['1', bill1],
+      ['2', bill2],
+      ['3', bill3],
+      ['4', bill4],
+    ]) {
+      assertTrue(
+        !!b && /^\d{10}$/.test(String(b.AccountNumber || '')),
+        'ACCEPTANCE bill' + n + ': AccountNumber has expected 10-digit shape',
+      );
+    }
     // Bill 1 — Maint Bldg (958.4676) — must be unaffected by this fix.
-    assertEqual(pf(byAcct['0669287870'].kWhConsumed), 958.4676, 'ACCEPTANCE bill1: kWhConsumed unchanged');
-    assertEqual(pf(byAcct['0669287870'].TotalCurrentCharges), 318.97, 'ACCEPTANCE bill1: dollar total unchanged');
+    assertEqual(pf(bill1.kWhConsumed), 958.4676, 'ACCEPTANCE bill1: kWhConsumed unchanged');
+    assertEqual(pf(bill1.TotalCurrentCharges), 318.97, 'ACCEPTANCE bill1: dollar total unchanged');
     // Bill 2 — the cross-corrupted On/Off-Peak bill.
-    assertEqual(pf(byAcct['2129690146'].kWhConsumed), 2282.5018, 'ACCEPTANCE bill2: kWhConsumed corroborated');
-    assertEqual(pf(byAcct['2129690146'].OnPeakKWh), 349.6962, 'ACCEPTANCE bill2: OnPeakKWh correct');
-    assertEqual(pf(byAcct['2129690146'].OffPeakKWh), 1932.8056, 'ACCEPTANCE bill2: OffPeakKWh correct (was 1912.7998)');
-    assertEqual(pf(byAcct['2129690146'].TotalCurrentCharges), 561.57, 'ACCEPTANCE bill2: dollar total unchanged');
+    assertEqual(pf(bill2.kWhConsumed), 2282.5018, 'ACCEPTANCE bill2: kWhConsumed corroborated');
+    assertEqual(pf(bill2.OnPeakKWh), 349.6962, 'ACCEPTANCE bill2: OnPeakKWh correct');
+    assertEqual(pf(bill2.OffPeakKWh), 1932.8056, 'ACCEPTANCE bill2: OffPeakKWh correct (was 1912.7998)');
+    assertEqual(pf(bill2.TotalCurrentCharges), 561.57, 'ACCEPTANCE bill2: dollar total unchanged');
     // Bill 3 — Louis Elementary (49636.144) — must be unaffected by this fix.
-    assertEqual(pf(byAcct['6699289683'].kWhConsumed), 49636.144, 'ACCEPTANCE bill3: kWhConsumed unchanged');
-    assertEqual(pf(byAcct['6699289683'].TotalCurrentCharges), 5718.13, 'ACCEPTANCE bill3: dollar total unchanged');
+    assertEqual(pf(bill3.kWhConsumed), 49636.144, 'ACCEPTANCE bill3: kWhConsumed unchanged');
+    assertEqual(pf(bill3.TotalCurrentCharges), 5718.13, 'ACCEPTANCE bill3: dollar total unchanged');
     // Bill 4 — the primary repro (kWhConsumed silently overwritten 1053.84 -> 973.04).
     assertEqual(
-      pf(byAcct['8980291458'].kWhConsumed),
+      pf(bill4.kWhConsumed),
       1053.84,
       'ACCEPTANCE bill4: kWhConsumed NOT overwritten to 973.04',
     );
-    assertEqual(pf(byAcct['8980291458'].OnPeakKWh), 251.4974, 'ACCEPTANCE bill4: OnPeakKWh unchanged');
-    assertEqual(pf(byAcct['8980291458'].OffPeakKWh), 802.3379, 'ACCEPTANCE bill4: OffPeakKWh unchanged');
-    assertEqual(pf(byAcct['8980291458'].TotalCurrentCharges), 414.17, 'ACCEPTANCE bill4: dollar total unchanged');
+    assertEqual(pf(bill4.OnPeakKWh), 251.4974, 'ACCEPTANCE bill4: OnPeakKWh unchanged');
+    assertEqual(pf(bill4.OffPeakKWh), 802.3379, 'ACCEPTANCE bill4: OffPeakKWh unchanged');
+    assertEqual(pf(bill4.TotalCurrentCharges), 414.17, 'ACCEPTANCE bill4: dollar total unchanged');
   } else {
     console.log('ACCEPTANCE TEST SKIPPED — debug file not present on this machine: ' + DEBUG_FILE);
   }
