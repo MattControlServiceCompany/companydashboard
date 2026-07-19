@@ -25,6 +25,7 @@
       integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU"
       crossorigin="anonymous"
     ></script>
+    <script src="app/ch-auth.js"></script>
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
@@ -1934,11 +1935,14 @@
       ═══════════════════════════════════ */
       const M365 = {
         auth: {
-          clientId: 'YOUR_CLIENT_ID',
-          authority: 'https://login.microsoftonline.com/YOUR_TENANT_ID',
+          clientId: '1dcf6406-c4c4-4664-94d0-50bcc2838c9d',
+          authority: 'https://login.microsoftonline.com/3a4273ad-6010-43d3-8bb9-45dfc3a5528d',
           redirectUri: window.location.href,
         },
-        cache: { cacheLocation: 'sessionStorage' },
+        // localStorage (not sessionStorage) so a session started here is
+        // usable when a new tab is opened directly to another department
+        // page (integration #5, supabase-migration-plan-FINAL-2026-07-19.md §4).
+        cache: { cacheLocation: 'localStorage' },
       };
       const SCOPES = ['User.Read', 'Calendars.ReadWrite'];
       let msalApp = null,
@@ -1972,13 +1976,12 @@
           sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
           enterApp();
         } catch (e) {
-          if (M365.auth.clientId === 'YOUR_CLIENT_ID') {
-            showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
-            setTimeout(loginDemo, 700);
-          } else {
-            btn.innerHTML = '⚠️ Login failed';
-            btn.disabled = false;
-          }
+          // Real Entra app is registered (Phase 1) — a failed login is a
+          // real failure, never a silent fallback into Demo mode. Demo mode
+          // is only ever entered via the explicit "Continue in Demo Mode"
+          // button (loginDemo()), and never carries the backend sync flag.
+          btn.innerHTML = '⚠️ Login failed';
+          btn.disabled = false;
         }
       }
 

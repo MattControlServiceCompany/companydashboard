@@ -47,21 +47,45 @@
 // ~0.35MB (measured 2026-07-19, see phase2a-build-plan.md §6), so gzip alone
 // closes R5 for kv — no chunking protocol needed here.
 //
-// Auth: stub only in this slice (Entra JWT verification is Phase 1, later).
-// `verifyAuth(event)` is the ONE seam Phase 1 will change the body of —
-// every other line that needs the caller's identity calls it, never trusts
-// `updatedBy` from the request body (server-assigned identity, closes the
-// spoofing gap named in the migration plan §4/§11 task 1.2).
-// This function is reachable by anyone who can reach the deployed site's
-// URL — acceptable for this slice because the deployed site itself is a
-// throwaway/branch spike, not production. Must not be deployed to a public
-// production URL before Phase 1 auth ships (R3).
+// Auth: Phase 1 — real Entra JWT verification (supabase-migration-plan-FINAL-2026-07-19.md §4).
+// `verifyAuth(event)` is the ONE seam that owns the caller's identity — every
+// other line that needs it calls this, never trusts `updatedBy` from the
+// request body (server-assigned identity, closes the spoofing gap named in
+// the migration plan §4/§11 task 1.2). Verifies signature + iss/tid + aud +
+// exp against the CSC Entra tenant via JWKS, then checks the token's email
+// against the `AUTHORIZED_USERS` allowlist (Netlify env var, comma-separated
+// — never hardcode emails here). Throws AuthError(401) for a missing/bad/
+// expired token, AuthError(403) for a valid-tenant token whose email is not
+// allow-listed.
 
 const crypto = require('crypto');
 const zlib = require('zlib');
+const { jwtVerify, createRemoteJWKSet } = require('jose');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+
+// Public Entra app-registration identifiers (safe to commit — see
+// AI/_context/temp/entra-ids.md). Not secrets.
+const ENTRA_TENANT_ID = '3a4273ad-6010-43d3-8bb9-45dfc3a5528d';
+const ENTRA_CLIENT_ID = '1dcf6406-c4c4-4664-94d0-50bcc2838c9d';
+const ENTRA_ISSUER = `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0`;
+// Entra can emit the custom-scope access token's `aud` as either the App ID
+// URI (`api://<clientId>`) or, depending on how the API/scope was exposed,
+// the bare client-id GUID — accept both (per task note: "verify both").
+const ENTRA_EXPECTED_AUDIENCES = [`api://${ENTRA_CLIENT_ID}`, ENTRA_CLIENT_ID];
+// Test-only seam: NEVER set in production. Lets unit tests point JWKS
+// fetches at a local mock server instead of login.microsoftonline.com.
+// Undefined in every real deploy -> falls through to the real Entra URL.
+const JWKS_URL =
+  process.env.CH_TEST_JWKS_URL || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/discovery/v2.0/keys`;
+
+// createRemoteJWKSet's returned function caches fetched keys internally and
+// is created once at module scope, so the cache persists across warm
+// Netlify Function invocations (only re-fetches on a cache-miss/cooldown
+// expiry or an unrecognized `kid`) — this satisfies the "cache JWKS across
+// warm invocations" requirement without any extra bookkeeping here.
+const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 
 function pgHeaders(extra) {
   // Never log this object or spread it into a response body/console.log.
@@ -75,11 +99,65 @@ function pgHeaders(extra) {
   );
 }
 
-// --- Auth stub seam (§4 of the migration plan) -----------------------------
-// Phase 1 swaps ONLY this function's body for real JWT verification
-// (JWKS, iss/tid/aud/exp, allowlist) — no other line in this file changes.
-function verifyAuth(event) {
-  return { email: getHeader(event, 'x-stub-user') || 'dev-stub@local' };
+// AuthError carries the HTTP status the caller should respond with —
+// 401 for a missing/unverifiable/expired token, 403 for a token that
+// verifies fine for the CSC tenant but whose email isn't allow-listed.
+class AuthError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = 'AuthError';
+    this.statusCode = statusCode;
+  }
+}
+
+function _authorizedUsers() {
+  return (process.env.AUTHORIZED_USERS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// --- Auth (§4 of the migration plan) ----------------------------------------
+// Real Entra JWT verification. Every other line that needs the caller's
+// identity calls this — never trusts `updatedBy` from the request body.
+async function verifyAuth(event) {
+  const authHeader = getHeader(event, 'authorization');
+  if (!authHeader || !/^Bearer\s+/i.test(authHeader)) {
+    throw new AuthError(401, 'Missing bearer token');
+  }
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token) throw new AuthError(401, 'Missing bearer token');
+
+  let payload;
+  try {
+    const result = await jwtVerify(token, JWKS, {
+      issuer: ENTRA_ISSUER,
+      audience: ENTRA_EXPECTED_AUDIENCES,
+    });
+    payload = result.payload;
+  } catch (err) {
+    // Covers bad signature, expired (exp), not-yet-valid (nbf), wrong
+    // issuer, and wrong audience — all "this is not a valid token for
+    // this API", which is a 401, not a 403.
+    throw new AuthError(401, 'Invalid or expired token');
+  }
+
+  // Belt-and-suspenders tenant check: v2.0 Entra access tokens also carry
+  // a `tid` claim equal to the directory (tenant) ID; the issuer URL
+  // already encodes the tenant, but verify both per the migration plan.
+  if (payload.tid && payload.tid !== ENTRA_TENANT_ID) {
+    throw new AuthError(401, 'Token is not from the expected tenant');
+  }
+
+  const email = (payload.preferred_username || payload.email || '').toLowerCase();
+  if (!email) throw new AuthError(401, 'Token has no email/preferred_username claim');
+
+  const allowlist = _authorizedUsers();
+  if (!allowlist.includes(email)) {
+    throw new AuthError(403, 'Not authorized');
+  }
+
+  return { email };
 }
 
 function getHeader(event, name) {
@@ -158,6 +236,7 @@ exports.handler = async (event) => {
 
     return respond(405, { error: 'Method not allowed' });
   } catch (err) {
+    if (err instanceof AuthError) return respond(err.statusCode, { error: err.message });
     // Log the error message only — never log headers/env.
     console.error('[kv-sync] error:', err && err.message);
     return respond(500, { error: 'Internal error' });
@@ -179,7 +258,9 @@ async function handlePut(event) {
   if (!isTombstone && value === undefined) return respond(400, { error: 'Missing value' });
 
   // Server-assigned identity — never trust `updatedBy` from the request body.
-  const updatedBy = verifyAuth(event).email;
+  // AuthError thrown here propagates to the top-level catch, which maps its
+  // .statusCode (401/403) to the response.
+  const updatedBy = (await verifyAuth(event)).email;
   const nowIso = new Date().toISOString();
 
   if (baseVersion === null || baseVersion === undefined) {
