@@ -3283,7 +3283,7 @@
 
         // Pull from service agreements (PM schedule dates)
         try {
-          var saData = JSON.parse(localStorage.getItem('sv_saData') || '[]');
+          var saData = typeof DB !== 'undefined' ? DB.get('sv_saData', []) : [];
           if (Array.isArray(saData)) {
             for (var i = 0; i < saData.length; i++) {
               var sa = saData[i];
@@ -3318,7 +3318,7 @@
 
         // Pull from energy projects (deadlines)
         try {
-          var projData = JSON.parse(localStorage.getItem('en_projects') || '[]');
+          var projData = typeof DB !== 'undefined' ? DB.get('en_projects', []) : [];
           if (Array.isArray(projData)) {
             for (var p = 0; p < projData.length; p++) {
               var proj = projData[p];
@@ -3478,6 +3478,10 @@
             } catch (e) {
               console.warn('tile refresh failed', e);
             }
+            // getUpcomingEvents() reads via DB.get(), which is empty until warmCache()
+            // resolves; the initial renderCalendar() call (on this same DOMContentLoaded
+            // event, registered earlier) fires before the cache is warm, so refresh here.
+            if (typeof renderCalendar === 'function') renderCalendar();
           });
         }
       });
