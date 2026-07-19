@@ -12079,9 +12079,11 @@ function rptPageASHRAE36Executive(n, d) {
   // above claiming zero slack (that comment was about the auto-layout wrapping bug fixed by
   // adding table-layout:fixed, not about remaining headroom once fixed-layout was in place).
   // Final split: Building 33->30 (-3%, still 14px above its 186px need), Status 30->28 (-2%,
-  // still ~13px above its 173px need), Score untouched (already has a small pre-existing
+  // still ~13px above its 173px need), Score untouched (at the time had a small pre-existing
   // 3px overflow on the "100%" score-bar text, out of scope for this header-only fix — do not
-  // shrink Score further or that pre-existing issue gets worse). +5% total went to
+  // shrink Score further or that pre-existing issue gets worse; fixed separately in item
+  // 6279e171, 2026-07-18, by capping the bar's px ceiling instead of touching this column's
+  // width — see _buildRowHTML). +5% total went to
   // Equipment/Sensor/Sequence. Re-verified after rebalancing: 0 header overflow, 0 data-row
   // line-wrap regressions (see dashboardlogic entry for the exact before/after numbers).
   var colWidths = { building: 30, equipment: 10, sensor: 9, sequence: 9, score: 14, status: 28 };
@@ -12193,12 +12195,19 @@ function rptPageASHRAE36Executive(n, d) {
     // than the Score column needs, at the expense of Building/Status which actually wrap.
     // Scaled down to a 60px ceiling (still visually proportional) to free width for the
     // colgroup redistribution above.
-    var barPx = Math.round(b.composite * 0.6);
+    // 2026-07-18 fix (item 6279e171): the 60px ceiling above collided with the "100%" label
+    // (4 chars, only string that long) — bar(60)+gap(4)+"100%"(~24px) = ~88px content inside
+    // the Score column's ~85px available width, a 3px DOM overflow that ONLY fires at
+    // composite===100 (the one point where both the bar's max width and the label's max
+    // char-count are hit simultaneously). Capped the ceiling at 56px instead of 60px — frees
+    // 4px, enough to close the gap — with no visible change below composite~93
+    // (round(93*0.6)=56 already, so only 93-100% bars get an imperceptibly shorter bar).
+    var barPx = Math.min(56, Math.round(b.composite * 0.6));
     var bar =
       '<div style="display:flex;align-items:center;gap:4px">' +
       '<div style="width:' +
       barPx +
-      'px;max-width:60px;height:8px;background:' +
+      'px;max-width:56px;height:8px;background:' +
       b.statusColor +
       ';border-radius:2px;min-width:2px"></div>' +
       '<span style="font-size:10px;color:var(--rpt-page-text)">' +
