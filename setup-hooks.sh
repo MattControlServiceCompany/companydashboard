@@ -192,9 +192,28 @@ exit 0
 HOOKEOF
 
 chmod +x "$HOOK_DIR/pre-commit"
-echo "Pre-commit hook installed successfully."
+
+echo "Installing pre-merge-commit hook..."
+
+cat > "$HOOK_DIR/pre-merge-commit" << 'HOOKEOF'
+#!/bin/bash
+# =============================================================================
+# PRE-MERGE-COMMIT HOOK — delegates to pre-commit
+# git does not fire pre-commit for `git merge --no-ff` (no pre-merge-commit
+# hook = no local scan on merge commits). This hook closes that gap by
+# reusing the pre-commit scanner as-is: its checks operate on `git diff
+# --cached`, which is index-vs-HEAD and already holds the merged tree at
+# pre-merge-commit time, so no logic is duplicated here.
+# =============================================================================
+exec "$(dirname "$0")/pre-commit"
+HOOKEOF
+
+chmod +x "$HOOK_DIR/pre-merge-commit"
+
+echo "Pre-commit and pre-merge-commit hooks installed successfully."
 echo ""
-echo "The hook scans every commit for:"
+echo "Both hooks scan every commit (including merge commits made with"
+echo "'git merge --no-ff') for:"
 echo "  - Phone numbers"
 echo "  - Email addresses (non-placeholder)"
 echo "  - API keys, tokens, passwords"
