@@ -6137,6 +6137,73 @@ async function confirmMultiBuildingSave() {
 }
 window.confirmMultiBuildingSave = confirmMultiBuildingSave;
 
+// ── PDF localStorage-fallback sweep (Phase 2a task 2a.8) ────────────────────
+// _ensureBatchPdfStored below falls back to raw localStorage when IndexedDB
+// (pdfStore) fails. Per supabase-migration-plan-FINAL-2026-07-19.md §3 special
+// case, anything parked in that fallback is invisible to BOTH kv-sync and the
+// future pdf-sync (Phase 2c) — a PDF that lands there and is never touched
+// again would sit stranded forever. This index + sweep guarantees every
+// fallback write gets a standing retry: any time the Saved Bills list renders
+// or a new batch extraction starts, we try to promote tracked keys back into
+// IndexedDB and, on success, remove them from localStorage. No-op (cheap) when
+// nothing is stranded, which is the common case.
+//
+// ch_-prefixed per sync-classification.js's blanket ch_ rule — this index is
+// pure local bookkeeping about THIS machine's IndexedDB availability and must
+// never sync itself; only the PDFs it drives back into pdfStore matter.
+const PDF_LS_FALLBACK_INDEX_KEY = 'ch_pdf_ls_fallback_v1';
+
+function _trackPdfLsFallback(key) {
+  try {
+    const idx = JSON.parse(localStorage.getItem(PDF_LS_FALLBACK_INDEX_KEY) || '[]');
+    if (!idx.includes(key)) {
+      idx.push(key);
+      localStorage.setItem(PDF_LS_FALLBACK_INDEX_KEY, JSON.stringify(idx));
+    }
+  } catch (e) {
+    console.warn('[_trackPdfLsFallback] failed to update fallback index:', e);
+  }
+}
+
+async function _sweepPdfLsFallback() {
+  let idx;
+  try {
+    idx = JSON.parse(localStorage.getItem(PDF_LS_FALLBACK_INDEX_KEY) || '[]');
+  } catch (e) {
+    idx = [];
+  }
+  if (!Array.isArray(idx) || !idx.length) return;
+  const remaining = [];
+  for (const key of idx) {
+    let b64 = null;
+    try {
+      b64 = localStorage.getItem(key);
+    } catch (e) {}
+    if (!b64) continue; // already gone (deleted elsewhere) — drop from index
+    let promoted = false;
+    try {
+      promoted = await pdfStore(key, b64);
+    } catch (e) {
+      promoted = false;
+    }
+    if (promoted) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {}
+      console.log('[_sweepPdfLsFallback] promoted stranded PDF from localStorage to IndexedDB:', key);
+    } else {
+      remaining.push(key); // still stuck — retry on the next sweep
+    }
+  }
+  try {
+    if (remaining.length) {
+      localStorage.setItem(PDF_LS_FALLBACK_INDEX_KEY, JSON.stringify(remaining));
+    } else {
+      localStorage.removeItem(PDF_LS_FALLBACK_INDEX_KEY);
+    }
+  } catch (e) {}
+}
+
 // Store the current extraction's source PDF once per session and tag every bill
 // in the batch with a shared key, so downstream save paths (_saveBillToMatchedMeter,
 // _applyDupUpdate's _copyPageRange, _saveSinglePDFBill) all reference the SAME
@@ -6152,7 +6219,10 @@ window.confirmMultiBuildingSave = confirmMultiBuildingSave;
 // every saved bill silently loses its PDF reference. The fallback writes the
 // base64 string directly via localStorage.setItem(key, pdfB64) (raw, not JSON)
 // so viewSavedPDF can retrieve it via localStorage.getItem(key). Subject to the
-// ~5MB per-origin localStorage quota.
+// ~5MB per-origin localStorage quota. Tracked via _trackPdfLsFallback so
+// _sweepPdfLsFallback can promote it back to IndexedDB later — see comment block
+// above; this key is never permanently stranded even if IndexedDB stays down
+// for one save and comes back for the next.
 async function _ensureBatchPdfStored(bills) {
   if (!bills || !bills.length) return null;
   const existingKey = bills[0]._pdfSharedKey;
@@ -6164,6 +6234,9 @@ async function _ensureBatchPdfStored(bills) {
     console.log('[_ensureBatchPdfStored] no pdfB64 — nothing to store');
     return null;
   }
+  // Retry-promote anything stranded from a previous IndexedDB outage before
+  // possibly adding a new fallback entry.
+  _sweepPdfLsFallback();
   const key = 'en_pdf_shared_' + Date.now();
   let stored = false;
   try {
@@ -6179,6 +6252,7 @@ async function _ensureBatchPdfStored(bills) {
     try {
       localStorage.setItem(key, pdfB64);
       stored = true;
+      _trackPdfLsFallback(key);
       console.warn('[_ensureBatchPdfStored] IndexedDB pdfStore failed, used localStorage fallback for', key);
       showToast('PDF saved to local fallback (IndexedDB unavailable on this machine)');
     } catch (e) {
@@ -14207,6 +14281,9 @@ function closeSavedBillsModal() {
 }
 
 function renderSavedBills() {
+  // Opportunistic retry-promote of any PDF stranded in the localStorage
+  // fallback (see _sweepPdfLsFallback) — fire-and-forget, doesn't block render.
+  _sweepPdfLsFallback();
   let bills = sget('en_pdf_bills', []) || [];
   // Remove bills that have already been assigned to a meter
   const origLen = bills.length;
