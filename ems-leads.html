@@ -2084,9 +2084,6 @@
         if (window.DB && window.DB.isReady()) {
           return window.DB.set(k, v); // IDB -- unlimited storage, returns a Promise
         }
-        if (window.Store) {
-          return window.Store.set(k, v);
-        }
         try {
           localStorage.setItem(k, JSON.stringify(v));
           return Promise.resolve();
@@ -2111,15 +2108,6 @@
           return fb;
         }
         // DB not ready yet -- legacy path
-        if (window.Store) {
-          try {
-            const r = localStorage.getItem(k);
-            const d = r !== null ? JSON.parse(r) : null;
-            return d !== null ? d : fb !== undefined ? fb : [];
-          } catch (e) {
-            return fb !== undefined ? fb : [];
-          }
-        }
         try {
           const r = localStorage.getItem(k);
           return r !== null ? JSON.parse(r) : fb;
