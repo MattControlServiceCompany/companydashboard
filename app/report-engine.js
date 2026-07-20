@@ -6923,6 +6923,18 @@ async function exportReportToPDF() {
 
   showToast('Generating PDF... this may take a moment');
 
+  // Force ALL proposal-tier "Install & Programming Detail" panels open before capture
+  // (fix/proposal-tier-option-chooser, 2026-07-19). The exported PDF is a flat html2canvas
+  // raster per page — no click-to-expand interactivity survives export — so whichever tier(s)
+  // the user had collapsed in the live preview must still render fully expanded in the PDF.
+  // State is restored in `finally` so the interactive preview is unaffected by having exported.
+  const tierDetailPanels = document.querySelectorAll('#reportPages [id^="rpt-tier-detail-"]');
+  const tierDetailPriorDisplay = [];
+  tierDetailPanels.forEach((panel) => {
+    tierDetailPriorDisplay.push(panel.style.display);
+    panel.style.display = 'block';
+  });
+
   try {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true });
@@ -7030,6 +7042,10 @@ async function exportReportToPDF() {
     console.error('PDF export failed:', err);
     showToast('PDF export failed: ' + (err.message || 'Unknown error'), 'error');
   } finally {
+    // Restore tier-detail panels to their pre-export (interactive) collapsed/expanded state.
+    tierDetailPanels.forEach((panel, i) => {
+      panel.style.display = tierDetailPriorDisplay[i];
+    });
     // Restore button state
     if (exportBtn) {
       exportBtn.disabled = false;
@@ -13656,8 +13672,97 @@ function rptPageASHRAE36SetpointReview(n, d) {
 /**
  * Proposal cover page with table of contents.
  */
-function rptPageASHRAE36ProposalCover(n, d) {
+// ─── _rptA36CoverPricingStrip ─────────────────────────────────────────────
+/**
+ * Compact 3-tier price-comparison summary for the ASHRAE-36 Proposal cover page
+ * (Matt's decision: "summary comparison on the cover only; full detailed table stays
+ * inside"). Reuses the SAME totals source as the full Cost Estimate table
+ * (rptPageASHRAE36ProposalPricing, ~line 13990) via _pricingGetEstimate /
+ * _pricingComputeSummaryData — never recomputes independently, so this strip can never
+ * disagree with the inner table. Returns '' if pricing data is unavailable.
+ *
+ * Caller gates this on the costEstimate section flag (see generateASHRAE36ProposalHTML)
+ * so client PDFs with dollars hidden (costEstimate defaults OFF) never show a summary here.
+ */
+function _rptA36CoverPricingStrip(d) {
+  var tt = null;
+  try {
+    if (typeof _pricingGetEstimate === 'function' && typeof _pricingComputeSummaryData === 'function') {
+      var estimateState = _pricingGetEstimate(d.project.id);
+      var summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
+      tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
+    }
+  } catch (e) {
+    tt = null;
+  }
+  if (!tt) return '';
+
+  function _fmtUSD(v) {
+    if (v === null || v === undefined || isNaN(v)) return null;
+    return '$' + Math.round(v).toLocaleString('en-US');
+  }
+
+  // Same 3 tiers / keys / order as rptPageASHRAE36ProposalPricing's tierCols.
+  var tierCols = [
+    { key: 'recommended', label: 'Recommended' },
+    { key: 'compliance', label: 'Compliance' },
+    { key: 'full-scope', label: 'Full Scope' },
+  ];
+
+  var anyPriced = tierCols.some(function (c) {
+    return tt[c.key] && _fmtUSD(tt[c.key].grand);
+  });
+  if (!anyPriced) return '';
+
+  var cells = tierCols
+    .map(function (c) {
+      var g = tt[c.key] ? _fmtUSD(tt[c.key].grand) : null;
+      var noCat = tt[c.key] && tt[c.key].noCatalog;
+      var display = g ? (noCat ? 'Labor: ' + g : g) : 'Available upon request';
+      var isRec = c.key === 'recommended';
+      var cellStyle =
+        'flex:1;text-align:center;padding:8px 6px;border-radius:4px;' +
+        (isRec
+          ? 'background:var(--rpt-blue);border:1px solid var(--rpt-blue)'
+          : 'background:#fff;border:1px solid var(--rpt-rule)');
+      var txtColor = isRec ? '#fff' : '#000';
+      return (
+        '<div style="' +
+        cellStyle +
+        '">' +
+        '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' +
+        txtColor +
+        ';margin-bottom:3px">' +
+        _esc(c.label) +
+        (isRec ? ' ★' : '') +
+        '</div>' +
+        '<div style="font-size:15px;font-weight:700;color:' +
+        txtColor +
+        '">' +
+        display +
+        '</div>' +
+        '</div>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div style="margin-bottom:16px">' +
+    '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;' +
+    'letter-spacing:0.04em;margin-bottom:6px">Investment Summary</div>' +
+    '<div style="display:flex;gap:8px">' +
+    cells +
+    '</div>' +
+    '<div style="font-size:8px;color:var(--rpt-page-text);margin-top:5px">' +
+    'See the Cost Estimate section for the full breakdown by scope.' +
+    '</div>' +
+    '</div>'
+  );
+}
+
+function rptPageASHRAE36ProposalCover(n, d, opts) {
   var p = d.portfolio;
+  var costEstOn = !!(opts && opts.costEstimateOn);
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var color =
@@ -13700,9 +13805,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '</div>' +
     '<div style="height:2px;background:var(--rpt-blue);margin-bottom:20px"></div>' +
     intro +
-    '<div style="font-size:10px;color:var(--rpt-page-text);border-top:1px solid var(--rpt-rule);padding-top:8px">' +
-    'Prepared by Control Service Company &nbsp;&bull;&nbsp; Building Automation &amp; Energy Services' +
-    '</div>' +
+    (costEstOn ? _rptA36CoverPricingStrip(d) : '') +
     '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal — Cover', bodyHTML, {
@@ -13950,6 +14053,145 @@ function _timelineStep(period, title, desc) {
  * @param {object} d - Data from collectASHRAE36Data()
  * @returns {Array<string>} single-element array of rptPage() HTML
  */
+// ─── Tier detail expand/collapse (Interactive preview + PDF all-expanded) ────────────────
+/**
+ * _rptToggleTierDetail — click handler for the per-tier "Install & Programming Detail"
+ * affordance in the live #reportOverlay preview (rptPageASHRAE36ProposalPricing). Toggles the
+ * matching detail panel's visibility and flips the button's chevron/aria-expanded state.
+ * This interactivity lives ONLY in the live overlay DOM — the exported PDF is a flat
+ * html2canvas raster (no click survives export), so exportReportToPDF() force-expands every
+ * tier's panel before capture instead of relying on this function. See
+ * _rptA36TierDetailPanelHTML / _rptA36TierDetailToggleHTML below.
+ */
+function _rptToggleTierDetail(tierKey) {
+  var panel = document.getElementById('rpt-tier-detail-' + tierKey);
+  var btn = document.getElementById('rpt-tier-toggle-' + tierKey);
+  if (!panel) return;
+  var isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (btn) {
+    btn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+    var chev = btn.querySelector('.rpt-tier-chev');
+    if (chev) chev.textContent = isOpen ? '▸' : '▾'; // ▸ collapsed / ▾ expanded
+    var lbl = btn.querySelector('.rpt-tier-toggle-label');
+    if (lbl) lbl.textContent = isOpen ? 'Install & Programming Detail' : 'Hide Install & Programming Detail';
+  }
+}
+window._rptToggleTierDetail = _rptToggleTierDetail;
+
+/**
+ * _rptA36TierDetailToggleHTML — the clickable header/card affordance for one tier column.
+ * Collapsed by default (aria-expanded="false"); PDF export forces the sibling panel open but
+ * leaves this button's own label/chevron in their collapsed appearance since it is inert in a
+ * flat raster either way.
+ */
+function _rptA36TierDetailToggleHTML(key) {
+  return (
+    '<div id="rpt-tier-toggle-' +
+    key +
+    '" role="button" tabindex="0" aria-expanded="false" ' +
+    'onclick="_rptToggleTierDetail(\'' +
+    key +
+    '\')" ' +
+    "onkeydown=\"if(event.key==='Enter'||event.key===' '){event.preventDefault();_rptToggleTierDetail('" +
+    key +
+    '\')}" ' +
+    'style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;' +
+    'padding:6px 8px;border:1px solid var(--rpt-blue);border-radius:4px;background:#fff;' +
+    'font-size:9px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em">' +
+    '<span class="rpt-tier-chev">▸</span>' +
+    '<span class="rpt-tier-toggle-label">Install &amp; Programming Detail</span>' +
+    '</div>'
+  );
+}
+
+/**
+ * _rptA36TierDetailAggByPhase — groups one tier's priced rows by distinct item name for a given
+ * phase (1 = Hardware & Installation, 2 = Programming & Commissioning), summing qty/lineTotal
+ * across every building carrying that same item. Mirrors the aggregation
+ * rptPageASHRAE36ProposalPricing's own _buildItemizedPages() already uses (same dedupe-by-item,
+ * same rowToggles respect) — NO new pricing math, this only reshapes the SAME rows.
+ */
+function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
+  var included = rows.filter(function (r) {
+    var key = r._baseId || r.id;
+    return r.phase === phaseNum && toggles[key] !== false;
+  });
+  var byItem = {};
+  var order = [];
+  included.forEach(function (r) {
+    var key = r.item || '(unnamed)';
+    if (!byItem[key]) {
+      byItem[key] = { item: r.item, qty: 0, lineTotal: 0 };
+      order.push(key);
+    }
+    byItem[key].qty += r.qty || 0;
+    byItem[key].lineTotal += r.lineTotal || 0;
+  });
+  return order.map(function (k) {
+    return byItem[k];
+  });
+}
+
+/**
+ * _rptA36TierDetailPanelHTML — the collapsible content itself: a concise, HIGH-LEVEL breakdown
+ * of one tier's Hardware & Installation and Programming & Commissioning content. The two
+ * subtotal dollar figures are the SAME tt[key].phase1 / tt[key].phase2 values the phaseSplitRow
+ * above already prints (so the detail can never disagree with the tier table) — no new pricing
+ * math. Item bullets show name (+ aggregated qty) only; dollar amounts per item are added ONLY
+ * when the itemized sub-option (wantItemized) is already on, per spec ("high level, NOT full
+ * line-item itemization unless the itemized toggle is already on"). Starts hidden
+ * (display:none) — exportReportToPDF() forces every tier's panel open before html2canvas so
+ * nothing is hidden in the flat PDF.
+ */
+function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantItemized, fmtUSD) {
+  var rows = (summaryData && summaryData.perTier && summaryData.perTier[key]) || [];
+  var toggles = (estimateState && estimateState.rowToggles) || {};
+  var hw = _rptA36TierDetailAggByPhase(rows, 1, toggles);
+  var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
+  var noCat = !!(tt && tt[key] && tt[key].noCatalog);
+  var p1 = tt && tt[key] ? fmtUSD(tt[key].phase1) : null;
+  var p2 = tt && tt[key] ? fmtUSD(tt[key].phase2) : null;
+
+  function _sectionHTML(title, subtotalStr, noCatFlag, items) {
+    var subtotalHTML = noCatFlag
+      ? ' <span style="font-weight:400;color:#666">(CSV needed for pricing)</span>'
+      : subtotalStr
+        ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
+        : '';
+    var listHTML = items.length
+      ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:#000;line-height:1.6">' +
+        items
+          .map(function (it) {
+            var priceStr = wantItemized && fmtUSD(it.lineTotal) ? ' — ' + fmtUSD(it.lineTotal) : '';
+            var qtyStr = it.qty > 1 ? ' (x' + it.qty + ')' : '';
+            return '<li>' + _esc(it.item || '') + qtyStr + priceStr + '</li>';
+          })
+          .join('') +
+        '</ul>'
+      : '<div style="font-size:8.5px;color:#666;margin-top:2px">No items in this scope.</div>';
+    return (
+      '<div style="margin-bottom:8px">' +
+      '<div style="font-size:9px;font-weight:700;color:#000">' +
+      _esc(title) +
+      subtotalHTML +
+      '</div>' +
+      listHTML +
+      '</div>'
+    );
+  }
+
+  return (
+    '<div id="rpt-tier-detail-' +
+    key +
+    '" style="display:none;margin-top:6px;padding:8px 10px 2px;' +
+    'border:1px solid var(--rpt-rule);border-radius:4px;background:#fff;text-align:left">' +
+    _sectionHTML('Hardware & Installation', p1, noCat, hw) +
+    _sectionHTML('Programming & Commissioning', p2, false, lb) +
+    '</div>'
+  );
+}
+
 function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
@@ -14111,6 +14353,33 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       '</tr>';
   }
 
+  // Interactive tier detail (fix/proposal-tier-option-chooser, 2026-07-19): a click-to-expand
+  // "Install & Programming Detail" card per tier, collapsed by default in the live preview.
+  // Always rendered (independent of wantPhaseSplit/wantItemized — those only affect what's
+  // shown INSIDE the panel) whenever the tier totals were actually computed; if
+  // _pricingComputeSummaryData threw above, summaryData is null and this row is omitted rather
+  // than showing an empty/broken card. See _rptA36TierDetailPanelHTML /
+  // _rptA36TierDetailToggleHTML / _rptToggleTierDetail above.
+  var detailRow = '';
+  if (summaryData && summaryData.perTier) {
+    var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-rule);border-top:none;vertical-align:top';
+    detailRow =
+      '<tr>' +
+      tierCols
+        .map(function (c) {
+          return (
+            '<td style="' +
+            detailCellStyle +
+            '">' +
+            _rptA36TierDetailToggleHTML(c.key) +
+            _rptA36TierDetailPanelHTML(c.key, tt, summaryData, estimateState, wantItemized, _fmtUSD) +
+            '</td>'
+          );
+        })
+        .join('') +
+      '</tr>';
+  }
+
   var table =
     '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:16px">' +
     colgroup +
@@ -14121,6 +14390,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     lblRow +
     amtRow +
     phaseSplitRow +
+    detailRow +
     '</tbody></table>';
 
   // M&V / savings disclaimer — attached wherever estimates appear (verbatim SAVINGS_DISCLAIMER_TEXT).
@@ -14135,7 +14405,42 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     _esc(disc) +
     '</div>';
 
-  var bodyHTML = titleBlock + intro + table + discBlock;
+  // Monthly Energy Management Service Agreement (2026-07-20) — client-facing not-to-exceed line.
+  // Sourced from the existing en_pricing_budget_{projId}.amount and the existing global
+  // en_pricing_config.hourlyRate (never hardcoded here) — same collector-reads-everything
+  // discipline as the tier totals above, just against the budget/config stores instead of the
+  // row-toggle estimate. Deliberately NAMES the $/hr rate to the client: this is a monthly
+  // allowance product, not a scoped tier total, so the tier-total-only convention (rate hidden,
+  // see the savingsRationale/clientSummary split elsewhere in this file) does not apply here.
+  // Guarded: renders nothing when no budget amount is configured for this project, so a project
+  // that has never used the Monthly Service Agreement feature sees zero change to this page.
+  var svcBlock = '';
+  try {
+    if (typeof _pricingGetBudget === 'function' && typeof _pricingGetConfig === 'function') {
+      var _svcBudget = _pricingGetBudget(d.project.id);
+      var _svcCfg = _pricingGetConfig();
+      if (_svcBudget && _svcBudget.amount != null && !isNaN(_svcBudget.amount) && Number(_svcBudget.amount) > 0) {
+        var _svcAllowanceStr = _fmtUSD(Number(_svcBudget.amount));
+        var _svcRate =
+          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 125);
+        svcBlock =
+          '<div style="font-size:10px;color:#000;line-height:1.6;margin-top:12px;padding:10px 12px;' +
+          'border:1px solid var(--rpt-rule)">' +
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
+          'margin-bottom:4px">Monthly Energy Management Service Agreement</div>' +
+          '<div>' +
+          _svcAllowanceStr +
+          '/month allowance at $' +
+          _svcRate +
+          '/hr (not-to-exceed)</div>' +
+          '</div>';
+      }
+    }
+  } catch (e) {
+    svcBlock = ''; // non-fatal — page renders without this block, same as the tt fallback above
+  }
+
+  var bodyHTML = titleBlock + intro + table + discBlock + svcBlock;
 
   var resultPages = [
     rptPage(n, 'ASHRAE 36 Service Proposal — Cost Estimate', bodyHTML, {
@@ -14754,7 +15059,12 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   }
 
   if (s.proposalCover !== false)
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
+    pages.push(
+      _tagA36Section(
+        rptPageASHRAE36ProposalCover(pageNum++, data, { costEstimateOn: s.costEstimate === true }),
+        'proposalCover',
+      ),
+    );
   if (s.proposalScope !== false)
     pages.push(_tagA36Section(rptPageASHRAE36ProposalScope(pageNum++, data), 'proposalScope'));
 

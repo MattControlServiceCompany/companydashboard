@@ -3,7 +3,11 @@
    Storage keys:
      en_pricing_catalog        — global SKU→{list,net,contract,computed_net,category,desc}
      en_pricing_meta           — global {importedAt,filename,skuCount}
-     en_pricing_config         — global {netMultiplier,contractPct,hourlyRate,priceBasis,perSequenceHours}
+     en_pricing_config         — global {netMultiplier,contractPct,hourlyRate,priceBasis,perSequenceHours,
+                                 installLaborRate,installHoursByPoint} (Deliverable E, 2026-07-19 —
+                                 installLaborRate/installHoursByPoint price the PHYSICAL install of
+                                 hardware gaps; hourlyRate/perSequenceHours remain BAS sequence-
+                                 PROGRAMMING labor, untouched)
      en_pricing_estimate_{id}  — per-project {rowToggles,manualPrices,laborOverrides,tier}
      en_pricing_budget_{id}    — per-project {mode,amount,denomination,termMonths,fitToBudget,
                                  fitExcludedIds,fitPrevToggleValues,fitAppliedAt} (174ad49a).
@@ -36,6 +40,100 @@ const COST_PER_SEQ_HOURS_DEFAULT = {
   demandCtrl: 2.0,
   vav_dcv: 0.5,
 };
+
+/* ── Physical install labor — Deliverable E (2026-07-19) ────────────────────
+   COST_LABOR_RATE_DEFAULT above ($125/hr) + COST_PER_SEQ_HOURS_DEFAULT price BAS sequence
+   PROGRAMMING labor only (Phase 2). Neither has ever priced the physical labor to mount/wire
+   a sensor, actuator, or valve — Phase 1 ("Hardware & Installation") was parts-cost only. This
+   block adds a SEPARATE $/hr rate + per-device-class hours so Phase 1 actually includes install
+   labor, without touching the programming-labor math above.
+   ─────────────────────────────────────────────────────────────────────────── */
+const COST_INSTALL_LABOR_RATE_DEFAULT = 195; // $/hr — physical install, distinct from the $125/hr
+// programming rate above.
+const INSTALL_HOURS_FALLBACK_DEFAULT = 2.0; // hrs — used for any point key with no entry in
+// POINT_KEY_INSTALL_CLASS below (keeps every future PRICE_POINT_MAP addition priced).
+
+/* Device-class install-hours library (Matt's field-verified defaults). One class can cover many
+   PRICE_POINT_MAP point keys/SKUs that carry materially the same install effort (e.g. every
+   immersion well-temp sensor — hwst/hwrt/chwst/chwrt/cwst/cwrt — installs the same way). */
+const INSTALL_HOURS_BY_DEVICE_CLASS_DEFAULT = {
+  spaceZoneSensor: 1.5,
+  ductTempRhSensor: 1.5,
+  ductStaticPressureSensor: 2.0,
+  immersionWellTempSensor: 2.0,
+  damperActuator: 2.5,
+  valveActuator: 3.0,
+  controlValveActuator: 5.0,
+  currentSwitchStatusRelay: 1.0,
+  diffPressureSwitch: 2.0,
+  unitaryDdcController: 3.5,
+  ahuPlantDdcController: 7.0,
+  flowBtuMeter: 5.0,
+  vfdIntegration: 5.0,
+  networkRouterGateway: 3.0,
+  thermostat: 1.0,
+};
+
+/* PRICE_POINT_MAP key → device class. Investigation finding (Deliverable E): en_pricing_catalog's
+   free-text `category` column (from the imported vendor CSV) is NOT a clean/controlled device-type
+   field — many catalogs omit it entirely (colCat<0 → ''), and where present it's whatever the
+   vendor happened to type. PRICE_POINT_MAP, however, already IS a clean 1:1 device-type taxonomy
+   (~30 canonical ASHRAE-36 point keys, each tied to exactly one defaultSku) — the same granularity
+   buildCatalogRows already uses for defaultSku/note/whyNeeded/g36Section. Mapping install-hours by
+   POINT KEY here (not by raw SKU or catalog category) reuses that existing taxonomy instead of
+   inventing a second one, and needs zero catalog/CSV schema change. Every point key that currently
+   produces a real (non-ioOnly) hardware-gap row is mapped; ioOnly point keys (dampCmd, sfStatus,
+   etc.) need no entry — they're $0/no-install by definition, guarded in buildCatalogRows.
+   ahuPlantDdcController/vfdIntegration/networkRouterGateway/thermostat classes have no
+   PRICE_POINT_MAP entry today (buildCatalogRows only generates sensor/actuator/valve/flow-station
+   GAP rows, never "replace the whole DDC controller"/VFD/gateway/stat) — defined for forward
+   compatibility only; not reachable via today's rows. Flagged for Matt, not guessed at. */
+const POINT_KEY_INSTALL_CLASS = {
+  sat: 'ductTempRhSensor',
+  rat: 'ductTempRhSensor',
+  mat: 'ductTempRhSensor',
+  oat: 'ductTempRhSensor',
+  dsp: 'ductStaticPressureSensor',
+  co2_ahu: 'ductTempRhSensor',
+  dat: 'ductTempRhSensor',
+  hwst: 'immersionWellTempSensor',
+  hwrt: 'immersionWellTempSensor',
+  chwst: 'immersionWellTempSensor',
+  chwrt: 'immersionWellTempSensor',
+  cwst: 'immersionWellTempSensor',
+  cwrt: 'immersionWellTempSensor',
+  hwdp: 'diffPressureSwitch',
+  chwdp: 'diffPressureSwitch',
+  oaWetBulb: 'ductTempRhSensor',
+  zoneTemp: 'spaceZoneSensor',
+  co2_zone: 'spaceZoneSensor',
+  oaDampCmd: 'damperActuator',
+  raDampCmd: 'damperActuator',
+  chwIsoValveCmd: 'valveActuator',
+  cwIsoValveCmd: 'valveActuator',
+  makeupValveCmd: 'valveActuator',
+  clgValve: 'controlValveActuator',
+  htgValve: 'controlValveActuator',
+  reheatValve: 'controlValveActuator',
+  discFlow: 'unitaryDdcController',
+  primaryFlow: 'unitaryDdcController',
+  freezeStat: 'currentSwitchStatusRelay',
+  oaFlow: 'flowBtuMeter',
+};
+
+/* Computed default install-hours per point key — resolved once so buildCatalogRows/every caller
+   doesn't re-walk the class indirection on every row. */
+const INSTALL_HOURS_BY_POINT_DEFAULT = (function () {
+  var out = {};
+  Object.keys(POINT_KEY_INSTALL_CLASS).forEach(function (pk) {
+    var cls = POINT_KEY_INSTALL_CLASS[pk];
+    out[pk] =
+      INSTALL_HOURS_BY_DEVICE_CLASS_DEFAULT[cls] != null
+        ? INSTALL_HOURS_BY_DEVICE_CLASS_DEFAULT[cls]
+        : INSTALL_HOURS_FALLBACK_DEFAULT;
+  });
+  return out;
+})();
 
 /* ── ROI Savings Impact Model — Phase 5 (2026-06-19)
    Sources:
@@ -510,6 +608,9 @@ function _pricingGetBudget(projId) {
     fitExcludedIds: [], // Phase 3: toggleKeys this feature (not the user) last turned off
     fitPrevToggleValues: {}, // Phase 3: toggleKey -> prior rowToggles value, for exact Clear/undo
     fitAppliedAt: null,
+    serviceHoursPerMonth: 36, // Monthly Service Agreement (2026-07-20): hours/month drawn against
+    // the monthly allowance (this.amount) at the shared global en_pricing_config.hourlyRate — see
+    // _pricingComputeMonthlyService, below. Editable per-project; 36 is Matt's JOCO default.
   };
   if (!stored) return dflt;
   return Object.assign({}, dflt, stored);
@@ -554,6 +655,37 @@ function _pricingComputeBudgetTotal(budget) {
   return {
     total: total,
     basisLabel: _pricingFmt(amount) + perLabel + ' × ' + term + ' mo = ' + _pricingFmt(total),
+  };
+}
+
+/* ── Monthly Service Agreement (2026-07-20) ───────────────────────────────────
+   JOCO's offering is a MONTHLY energy-management SERVICE-ALLOWANCE agreement: the client pays
+   monthly and draws down a monthly allowance at a labor rate for parts + install labor + all
+   other labor. This computes that monthly figure from the per-project serviceHoursPerMonth
+   budget field (default 36) × the shared global en_pricing_config.hourlyRate — NOT a new rate
+   field, and NOT the installLaborRate added for Phase 1 hardware rows — and compares it against
+   budget.amount as the not-to-exceed allowance. Purely additive/presentational: does not touch
+   _pricingComputeBudgetTotal, the Fit-to-Budget ceiling walk, or any tier-total math above.
+   Returns null when no budget.amount is set, same silent-until-configured convention as
+   _pricingComputeBudgetTotal, so untouched projects see no UI change from this feature.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeMonthlyService(projId) {
+  var budget = _pricingGetBudget(projId);
+  if (budget.amount == null || isNaN(budget.amount) || Number(budget.amount) <= 0) return null;
+  var cfg = _pricingGetConfig();
+  var hourlyRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
+  var hours = Number(budget.serviceHoursPerMonth);
+  if (!isFinite(hours) || hours <= 0) hours = 36;
+  var monthlyService = hours * hourlyRate;
+  var allowance = Number(budget.amount);
+  var diff = allowance - monthlyService; // positive = under cap, negative = over cap
+  return {
+    hours: hours,
+    hourlyRate: hourlyRate,
+    monthlyService: monthlyService,
+    allowance: allowance,
+    diff: diff,
+    underCap: monthlyService <= allowance,
   };
 }
 
@@ -1398,6 +1530,8 @@ function _pricingGetConfig() {
     priceBasis: 'contract',
     perSequenceHours: Object.assign({}, COST_PER_SEQ_HOURS_DEFAULT),
     fanFraction: FAN_FRACTION_DEFAULT, // Step 5: fan energy as % of total elec (CBECS 10–20%)
+    installLaborRate: COST_INSTALL_LABOR_RATE_DEFAULT, // Deliverable E — physical install $/hr
+    installHoursByPoint: Object.assign({}, INSTALL_HOURS_BY_POINT_DEFAULT), // Deliverable E
   };
   if (!stored) return dflt;
   // Merge defaults for any missing keys
@@ -1417,6 +1551,7 @@ function _pricingGetEstimate(projId) {
       rowToggles: {},
       manualPrices: {},
       laborOverrides: {},
+      installHoursOverrides: {}, // Deliverable E — per-point-key install-hours override, mirrors laborOverrides
       qtyOverrides: {},
       noteOverrides: {},
       tier: 'compliance',
@@ -1468,6 +1603,11 @@ function buildCatalogRows(projId) {
   var estimate = _pricingGetEstimate(projId);
   var rows = [];
   var rowIdx = 0;
+
+  // Deliverable E: install-labor inputs — same cfg object every other rate/hours lookup in this
+  // function reads, so a Table-Settings edit to either is picked up on the very next render.
+  var installHoursMap = cfg.installHoursByPoint || INSTALL_HOURS_BY_POINT_DEFAULT;
+  var installLaborRate = cfg.installLaborRate != null ? cfg.installLaborRate : COST_INSTALL_LABOR_RATE_DEFAULT;
 
   // Helper: get unit price from catalog for a given SKU and basis
   function getUnitPrice(sku) {
@@ -1679,6 +1819,25 @@ function buildCatalogRows(projId) {
         }
       }
 
+      // Deliverable E: physical install labor. Applies to every real (non-ioOnly) hardware gap —
+      // including noSku/SKU-missing rows, which don't have a resolvable parts price yet but still
+      // need a device physically installed once the user enters one (see _pricingComputeTotals's
+      // manual-price branch, which adds installLaborTotal back in at that point). ioOnly rows are
+      // existing controller I/O points, not new hardware, so they get 0 install hours/labor.
+      var _installHrsPerUnit = ioOnly
+        ? 0
+        : installHoursMap[gap.pointKey] != null
+          ? installHoursMap[gap.pointKey]
+          : INSTALL_HOURS_FALLBACK_DEFAULT;
+      var _installLaborTotal = ioOnly ? 0 : parseFloat((_installHrsPerUnit * gap.count * installLaborRate).toFixed(2));
+      var _partsUnitPrice = unitPrice; // raw parts-only unit price, pre-install (kept for the
+      var _partsLineTotal = lineTotal; // optimizer substitution path and for transparency/debug)
+      if (!ioOnly) {
+        unitPrice =
+          unitPrice != null ? parseFloat((unitPrice + _installHrsPerUnit * installLaborRate).toFixed(2)) : null;
+        lineTotal = lineTotal != null ? parseFloat((lineTotal + _installLaborTotal).toFixed(2)) : null;
+      }
+
       // Stamp list/net/contractPrice for the three-column display (FIX 2)
       var _catEntry = catalog && sku ? catalog[sku] : null;
       var _listPrice = _catEntry && _catEntry.list != null ? _catEntry.list : null;
@@ -1697,11 +1856,16 @@ function buildCatalogRows(projId) {
         engReview: engReview,
         noSku: noSku,
         ioOnly: ioOnly,
-        unitPrice: unitPrice,
+        unitPrice: unitPrice, // parts + install (Deliverable E)
+        partsUnitPrice: _partsUnitPrice, // raw parts-only, pre-install
+        partsLineTotal: _partsLineTotal, // raw parts-only, pre-install
+        installHours: _installHrsPerUnit,
+        installLaborRate: installLaborRate,
+        installLaborTotal: _installLaborTotal,
         listPrice: _listPrice,
         netPrice: _netPrice,
         contractPrice: _contractPrice,
-        lineTotal: lineTotal,
+        lineTotal: lineTotal, // parts + install (Deliverable E)
         note: mapEntry.note || '',
         whyNeeded: mapEntry.whyNeeded || '',
         whyNotHardware: mapEntry.whyNotHardware || '',
@@ -1971,7 +2135,10 @@ function _pricingComputeTotals(rows, estimate) {
     var _skuMissing = row.sku && hasCatalog && catalog && !catalog[row.sku];
     if (row.noSku || _skuMissing) {
       var manual = parseFloat(estimate.manualPrices[toggleKey]);
-      price = isNaN(manual) || manual === 0 ? null : manual * row.qty;
+      // Deliverable E: install labor is already known at build time (device count doesn't change
+      // just because the parts price was typed in manually) — fold it in once a real manual price
+      // makes this row priced at all. Stays null/pending exactly as before when no manual price yet.
+      price = isNaN(manual) || manual === 0 ? null : manual * row.qty + (row.installLaborTotal || 0);
     }
 
     if (price === null) {
@@ -2709,8 +2876,22 @@ function buildRecommendedRows(projId) {
           // Optimizer found a cheaper option
           rec.optimizerOriginalSku = rec.sku;
           rec.sku = cheaper.sku;
-          rec.unitPrice = cheaper.unitPrice;
-          rec.lineTotal = rec.qty > 0 ? parseFloat((cheaper.unitPrice * rec.qty).toFixed(2)) : null;
+          rec.partsUnitPrice = cheaper.unitPrice;
+          rec.partsLineTotal = rec.qty > 0 ? parseFloat((cheaper.unitPrice * rec.qty).toFixed(2)) : null;
+          // Deliverable E: re-add install labor on top of the substituted parts price. rec's
+          // installHours/installLaborRate/installLaborTotal were already stamped by
+          // buildCatalogRows (keyed by pointKey, not SKU — a cheaper SKU for the same device
+          // class needs the SAME install effort) and don't change with the SKU swap.
+          rec.unitPrice = parseFloat(
+            (
+              cheaper.unitPrice +
+              (rec.installHours || 0) * (rec.installLaborRate || COST_INSTALL_LABOR_RATE_DEFAULT)
+            ).toFixed(2),
+          );
+          rec.lineTotal =
+            rec.partsLineTotal != null
+              ? parseFloat((rec.partsLineTotal + (rec.installLaborTotal || 0)).toFixed(2))
+              : null;
           rec.optimized = true;
           _optimizerSubCount++;
           // Recompute three-column price fields for the substituted SKU (FIX 2)
@@ -3342,20 +3523,45 @@ var PRICING_TBL_COLS = [
 function _pricingApplyLaborOverrides(projId, rows) {
   var est = _pricingGetEstimate(projId);
   var overrides = est.laborOverrides || {};
+  var installOverrides = est.installHoursOverrides || {}; // Deliverable E, keyed by _pointKey — same
+  // "per device TYPE, not per row instance" design as laborOverrides/seqKey above.
   var cfg = _pricingGetConfig();
   var hourlyRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
   return rows.map(function (row) {
-    if (row.phase !== 2 || !row.seqKey) return row;
-    var overrideHrs = overrides[row.seqKey];
-    if (overrideHrs == null) return row; // no override → keep original
-    var hrs = parseFloat(overrideHrs);
-    if (isNaN(hrs) || hrs < 0) return row;
-    var cloned = Object.assign({}, row);
-    cloned.hrsPerUnit = hrs;
-    cloned.unitPrice = parseFloat((hrs * hourlyRate).toFixed(2));
-    cloned.lineTotal = parseFloat((hrs * row.qty * hourlyRate).toFixed(2));
-    cloned.note = ''; // hrs displayed in col 9 spinner; no static note needed (item 5a317ac7)
-    return cloned;
+    if (row.phase === 2 && row.seqKey) {
+      var overrideHrs = overrides[row.seqKey];
+      if (overrideHrs == null) return row; // no override → keep original
+      var hrs = parseFloat(overrideHrs);
+      if (isNaN(hrs) || hrs < 0) return row;
+      var cloned = Object.assign({}, row);
+      cloned.hrsPerUnit = hrs;
+      cloned.unitPrice = parseFloat((hrs * hourlyRate).toFixed(2));
+      cloned.lineTotal = parseFloat((hrs * row.qty * hourlyRate).toFixed(2));
+      cloned.note = ''; // hrs displayed in col 9 spinner; no static note needed (item 5a317ac7)
+      return cloned;
+    }
+    // Deliverable E: install-hours override for Phase 1 hardware rows. Recomputes on top of the
+    // row's own partsUnitPrice/partsLineTotal (raw parts, pre-install — stamped by buildCatalogRows
+    // and preserved through the optimizer substitution path) so an override never double-counts
+    // the DEFAULT install labor that's already baked into unitPrice/lineTotal.
+    if (row.phase === 1 && !row.ioOnly && row._pointKey) {
+      var overrideInstHrs = installOverrides[row._pointKey];
+      if (overrideInstHrs == null) return row;
+      var instHrs = parseFloat(overrideInstHrs);
+      if (isNaN(instHrs) || instHrs < 0) return row;
+      var instRate =
+        row.installLaborRate != null ? row.installLaborRate : cfg.installLaborRate || COST_INSTALL_LABOR_RATE_DEFAULT;
+      var newInstallTotal = parseFloat((instHrs * row.qty * instRate).toFixed(2));
+      var instCloned = Object.assign({}, row);
+      instCloned.installHours = instHrs;
+      instCloned.installLaborTotal = newInstallTotal;
+      instCloned.unitPrice =
+        row.partsUnitPrice != null ? parseFloat((row.partsUnitPrice + instHrs * instRate).toFixed(2)) : null;
+      instCloned.lineTotal =
+        row.partsLineTotal != null ? parseFloat((row.partsLineTotal + newInstallTotal).toFixed(2)) : null;
+      return instCloned;
+    }
+    return row;
   });
 }
 
@@ -3382,6 +3588,35 @@ function _pricingSeqHrsReset(projId, seqKey) {
     delete est.laborOverrides[seqKey];
   } else {
     est.laborOverrides = {};
+  }
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
+/* ── Save install-hours override for one device point key — Deliverable E, mirrors
+   _pricingSeqHrsChange above exactly (same per-TYPE-not-per-row storage design,
+   _pricingApplyLaborOverrides reads both maps side by side). ── */
+function _pricingInstallHrsChange(projId, pointKey, newHrsStr) {
+  var hrs = parseFloat(newHrsStr);
+  var est = _pricingGetEstimate(projId);
+  if (!est.installHoursOverrides) est.installHoursOverrides = {};
+  if (isNaN(hrs) || hrs < 0) {
+    delete est.installHoursOverrides[pointKey];
+  } else {
+    est.installHoursOverrides[pointKey] = hrs;
+  }
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
+/* ── Reset one (or all) install-hours overrides to default — mirrors _pricingSeqHrsReset ── */
+function _pricingInstallHrsReset(projId, pointKey) {
+  var est = _pricingGetEstimate(projId);
+  if (!est.installHoursOverrides) est.installHoursOverrides = {};
+  if (pointKey) {
+    delete est.installHoursOverrides[pointKey];
+  } else {
+    est.installHoursOverrides = {};
   }
   _pricingSetEstimate(projId, est);
   initCostEstimateTab(projId);
@@ -3424,6 +3659,17 @@ function _pricingApplyQtyOverrides(projId, rows) {
     // Recompute lineTotal with overridden qty (unitPrice is already set by labor/catalog logic)
     if (cloned.unitPrice != null) {
       cloned.lineTotal = parseFloat((cloned.unitPrice * qty).toFixed(2));
+    }
+    // Deliverable E: installLaborTotal/partsLineTotal scale with qty too — otherwise a qty
+    // override on a noSku row (unitPrice stays null until a manual price is typed in) would leave
+    // installLaborTotal computed against the OLD qty when _pricingComputeTotals's manual-price
+    // branch later reads it.
+    if (cloned.phase === 1 && !cloned.ioOnly && cloned.installHours != null) {
+      var _qtyOvInstRate = cloned.installLaborRate != null ? cloned.installLaborRate : COST_INSTALL_LABOR_RATE_DEFAULT;
+      cloned.installLaborTotal = parseFloat((cloned.installHours * qty * _qtyOvInstRate).toFixed(2));
+      if (cloned.partsUnitPrice != null) {
+        cloned.partsLineTotal = parseFloat((cloned.partsUnitPrice * qty).toFixed(2));
+      }
     }
     return cloned;
   });
@@ -4228,8 +4474,29 @@ function _pricingBuildRateSectionHTML(projId, cfg) {
     ",'hourlyRate',parseFloat(this.value))\">" +
     '<span style="font-size:10px;color:var(--text3)">$/hr</span>' +
     '</span></label>' +
-    '<div style="font-size:10px;color:var(--text3);line-height:1.4">' +
+    '<div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:8px">' +
     'Applied to every programming-labor row’s Hours to compute its Line Total (see the Rate column).' +
+    '</div>' +
+    /* Deliverable E: Install Rate — same shared-HTML/same-id-reused-across-two-popovers pattern
+       as the Hourly Rate block above (mirrors the 1476aedd precedent this comment describes).
+       Separate storage key (installLaborRate) from Hourly Rate's (hourlyRate) — physical install
+       labor vs. BAS sequence-programming labor are never the same $/hr. */
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    'Install Rate:' +
+    '<span style="display:flex;align-items:center;gap:4px">' +
+    '<input type="number" id="pricing-install-rate-' +
+    projId +
+    '" min="1" max="999" step="1" value="' +
+    (cfg.installLaborRate != null ? cfg.installLaborRate : COST_INSTALL_LABOR_RATE_DEFAULT) +
+    '"' +
+    ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
+    ' onchange="updatePricingConfig(' +
+    projId +
+    ",'installLaborRate',parseFloat(this.value))\">" +
+    '<span style="font-size:10px;color:var(--text3)">$/hr</span>' +
+    '</span></label>' +
+    '<div style="font-size:10px;color:var(--text3);line-height:1.4">' +
+    'Applied to every hardware row’s install hours (per device type — edit in the Hours column) to price physical installation, folded into Phase 1 "Hardware &amp; Installation".' +
     '</div>'
   );
 }
@@ -4463,6 +4730,49 @@ function _pricingBuildBudgetSectionHTML(projId, tier) {
       }
     }
   }
+  // ── Monthly Service Agreement (2026-07-20) ──────────────────────────────────────
+  // Additive block: editable hours/month, computed monthly figure (hours × shared global
+  // hourlyRate), the existing budget.amount shown as the not-to-exceed allowance, and an
+  // under/over indicator. Same silent-until-configured convention as the Ceiling/Affords line
+  // above — renders nothing until a budget.amount is set (_pricingComputeMonthlyService).
+  var _svc = _pricingComputeMonthlyService(projId);
+  if (_svc) {
+    var _svcMonthlyStr = '$' + Math.round(_svc.monthlyService).toLocaleString('en-US');
+    var _svcAllowanceStr = '$' + Math.round(_svc.allowance).toLocaleString('en-US');
+    var _svcDiffStr = '$' + Math.round(Math.abs(_svc.diff)).toLocaleString('en-US');
+    var _svcColor = _svc.underCap ? '#86efac' : 'var(--warn)';
+    html +=
+      '<div style="font-weight:700;color:var(--text2);margin:10px 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid var(--border);padding-top:8px">Monthly Service Agreement</div>' +
+      '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+      'Hours/month:' +
+      '<input type="number" min="0" step="0.5" id="pricing-budget-svchours-' +
+      projId +
+      '" value="' +
+      _svc.hours +
+      '"' +
+      ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+      ' onchange="_pricingUpdateBudget(' +
+      projId +
+      ",'serviceHoursPerMonth',parseFloat(this.value)||36)\">" +
+      '</label>' +
+      '<div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:2px">' +
+      _svcMonthlyStr +
+      '/month (' +
+      _svc.hours +
+      ' hrs × $' +
+      _svc.hourlyRate +
+      '/hr)' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:4px">' +
+      _svcAllowanceStr +
+      '/month allowance (not-to-exceed)' +
+      '</div>' +
+      '<div style="font-size:10px;font-weight:700;color:' +
+      _svcColor +
+      '">' +
+      (_svc.underCap ? _svcDiffStr + ' under cap' : _svcDiffStr + ' OVER cap') +
+      '</div>';
+  }
   return html;
 }
 
@@ -4551,7 +4861,8 @@ function _pricingOpenSettingsPopover(projId, btn) {
     ",'contractPct',parseFloat(this.value)/100)\">" +
     '</label>';
   html +=
-    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
+    'title="Programming/sequence labor $/hr — Phase 2">' +
     'Hourly Rate:' +
     '<input type="number" id="pricing-rate-' +
     projId +
@@ -4562,6 +4873,24 @@ function _pricingOpenSettingsPopover(projId, btn) {
     ' onchange="updatePricingConfig(' +
     projId +
     ",'hourlyRate',parseFloat(this.value))\">" +
+    '</label>';
+  html +=
+    /* Deliverable E: physical install labor $/hr — separate rate from Hourly Rate above (Phase 2
+       programming labor). Applied to every Phase-1 hardware row's install hours (per-device-type,
+       editable in the Hours column on hardware rows) to price physical installation, folded into
+       Phase 1 "Hardware & Installation". */
+    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
+    'title="Physical install labor $/hr — Phase 1 (Hardware & Installation)">' +
+    'Install Rate:' +
+    '<input type="number" id="pricing-install-rate-' +
+    projId +
+    '" min="1" max="999" step="1" value="' +
+    (cfg.installLaborRate != null ? cfg.installLaborRate : COST_INSTALL_LABOR_RATE_DEFAULT) +
+    '"' +
+    ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
+    ' onchange="updatePricingConfig(' +
+    projId +
+    ",'installLaborRate',parseFloat(this.value))\">" +
     '</label>';
   if (tier === 'recommended' || tier === 'both') {
     html +=
@@ -5317,6 +5646,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var toggleOn = estimate.rowToggles[toggleKey] !== false;
     var manualVal = estimate.manualPrices[toggleKey] || '';
     var laborOverrides = estimate.laborOverrides || {};
+    var installOverrides = estimate.installHoursOverrides || {}; // Deliverable E
 
     // Build per-column cell content
     var cells = [];
@@ -5568,6 +5898,48 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
             ' style="font-size:9px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
           : '') +
         '</div>';
+    } else if (row.phase === 1 && !row.ioOnly && row._pointKey) {
+      // Deliverable E: install-hours override input for hardware rows — same markup/onchange/
+      // override-detection/reset-button pattern as the phase-2 branch above, wired to
+      // _pricingInstallHrsChange/_pricingInstallHrsReset (installHoursOverrides, keyed by
+      // _pointKey — a device TYPE setting, same design as laborOverrides/seqKey).
+      var defaultInstHrs =
+        INSTALL_HOURS_BY_POINT_DEFAULT[row._pointKey] != null
+          ? INSTALL_HOURS_BY_POINT_DEFAULT[row._pointKey]
+          : INSTALL_HOURS_FALLBACK_DEFAULT;
+      var currentInstHrs =
+        installOverrides[row._pointKey] != null ? parseFloat(installOverrides[row._pointKey]) : row.installHours;
+      var isInstOverridden = installOverrides[row._pointKey] != null;
+      hoursContent =
+        '<div style="display:flex;align-items:center;gap:4px">' +
+        '<input type="number" min="0" step="0.25" value="' +
+        currentInstHrs +
+        '"' +
+        ' title="Install hours per unit (default: ' +
+        defaultInstHrs +
+        ')"' +
+        (isInstOverridden ? '' : ' class="ch-soft-input"') +
+        ' style="width:52px;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums' +
+        (isInstOverridden ? ';border:1px solid var(--accent)' : '') +
+        '"' +
+        ' onchange="_pricingInstallHrsChange(\'' +
+        projId +
+        "','" +
+        row._pointKey +
+        '\',this.value)">' +
+        '<span style="font-size:10px;color:var(--text3)">hrs</span>' +
+        (isInstOverridden
+          ? '<button onclick="_pricingInstallHrsReset(\'' +
+            projId +
+            "','" +
+            row._pointKey +
+            '\')"' +
+            ' title="Reset to default (' +
+            defaultInstHrs +
+            ' hrs)"' +
+            ' style="font-size:9px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
+          : '') +
+        '</div>';
     }
     cells.push(hoursContent);
 
@@ -5575,14 +5947,22 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // to this row's Hours to produce Line Total. Read-only (no input — the rate itself is edited
     // in Table Settings/the toolbar Rate chip, both of which write en_pricing_config.hourlyRate;
     // this cell never writes anything, so it cannot drift from the value _pricingApplyLaborOverrides
-    // already used to compute unitPrice/lineTotal upstream). Only phase-2 labor rows carry an
-    // hourly rate — hardware rows show the same em-dash placeholder Hours uses for non-labor rows.
+    // already used to compute unitPrice/lineTotal upstream). Phase-2 labor rows show the
+    // programming rate; Phase-1 hardware rows show the install rate (Deliverable E) — both read-
+    // only for the same reason. ioOnly rows show the same em-dash placeholder as non-priced rows.
     var rateContent = '<span style="color:var(--text3)">—</span>';
     if (row.phase === 2 && row.seqKey) {
       var _rowRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
       rateContent =
         '<span style="font-size:11px">' +
         _pricingFmt(_rowRate) +
+        '<span style="font-size:10px;color:var(--text3)">/hr</span></span>';
+    } else if (row.phase === 1 && !row.ioOnly && row._pointKey) {
+      var _instRowRate =
+        row.installLaborRate != null ? row.installLaborRate : cfg.installLaborRate || COST_INSTALL_LABOR_RATE_DEFAULT;
+      rateContent =
+        '<span style="font-size:11px">' +
+        _pricingFmt(_instRowRate) +
         '<span style="font-size:10px;color:var(--text3)">/hr</span></span>';
     }
     cells.push(rateContent);
@@ -5593,7 +5973,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       lineTotalContent = '<span style="color:var(--text3);font-size:10px">$0</span>';
     } else if (row.noSku) {
       var mv = parseFloat(estimate.manualPrices[toggleKey] || 0);
-      var lt = isNaN(mv) ? null : mv * row.qty;
+      // Deliverable E: fold install labor in once a real manual parts price has been entered —
+      // mirrors _pricingComputeTotals's manual-price branch exactly so this cell can never disagree
+      // with the totals footer/report.
+      var lt = isNaN(mv) || mv <= 0 ? null : mv * row.qty + (row.installLaborTotal || 0);
       lineTotalContent =
         lt !== null && lt > 0 ? _pricingFmt(lt) : '<span style="color:var(--warn);font-size:10px">⚠ Enter price</span>';
     } else {
