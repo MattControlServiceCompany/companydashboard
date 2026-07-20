@@ -99,6 +99,80 @@ const DB = (() => {
     return true;
   }
 
+  // --- Per-user-settings-sync (2026-07-20) — client-side key-prefixing -----
+  // A "per-user" key (app/sync-classification.js classifyKey() === 'per-user')
+  // replicates like any synced key, but the key SENT TO/READ FROM the backend
+  // is namespaced `${userId}::${localKey}` so two users editing the same
+  // browser (or the same account on two machines) never clobber each other's
+  // UI prefs. The LOCAL _cache/_replicaVersions always stay keyed by the
+  // plain `localKey` — every other reader in the app (sset/sget, DB.get) is
+  // completely unaware this exists. Same window.SyncClassification-missing
+  // fallback pattern as _shouldReplicate above: never treat a key as
+  // per-user if the classification lib didn't load (safe default = old
+  // synced/local-only behavior only).
+  function _isPerUserKey(key) {
+    if (
+      typeof window !== 'undefined' &&
+      window.SyncClassification &&
+      typeof window.SyncClassification.isPerUser === 'function'
+    ) {
+      return window.SyncClassification.isPerUser(key);
+    }
+    return false;
+  }
+  function _myUserId() {
+    if (typeof window !== 'undefined' && window.CH_AUTH && typeof window.CH_AUTH.getUserId === 'function') {
+      try {
+        return window.CH_AUTH.getUserId();
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+  // Resolves a LOCAL key to the key actually sent to/read from the backend.
+  // Returns the key unchanged for non-per-user keys. For a per-user key,
+  // returns `${userId}::${key}` when someone is signed in, or `null` when
+  // nobody is signed in — callers MUST treat `null` as "cannot sync this key
+  // right now" (behave local-only), and must NEVER fall back to sending the
+  // bare unprefixed key (that would leak/merge this pref across every user).
+  function _wireKey(key) {
+    if (!_isPerUserKey(key)) return key;
+    const uid = _myUserId();
+    if (!uid) return null;
+    return uid + '::' + key;
+  }
+  // Splits a manifest/wire key of the form `${uid}::${localKey}` back apart.
+  // Returns null if the key contains no '::' (not a per-user wire key).
+  function _splitWireKey(wireKey) {
+    const idx = typeof wireKey === 'string' ? wireKey.indexOf('::') : -1;
+    if (idx === -1) return null;
+    const uid = wireKey.slice(0, idx);
+    const localKey = wireKey.slice(idx + 2);
+    if (!uid || !localKey) return null;
+    return { uid, localKey };
+  }
+  // The SINGLE gate every manifest-walking loop (_hydrate/_pollManifestForChanges/
+  // getSyncStatus) funnels through. Returns `{ localKey }` if this manifest
+  // entry belongs to the current tab (either a normal synced key, or a
+  // per-user key namespaced to MY signed-in userId), or `null` if it must be
+  // skipped entirely — a per-user row belonging to a DIFFERENT user (never
+  // touch another user's local storage/version map/status), or a bare
+  // per-user-classified key with no owner prefix at all (defensive: never
+  // treat an unprefixed per-user key as a normal synced key — that would
+  // risk sharing one user's UI pref across everyone).
+  function _resolveManifestKey(mKey) {
+    const split = _splitWireKey(mKey);
+    if (split && _isPerUserKey(split.localKey)) {
+      const myUid = _myUserId();
+      if (!myUid || split.uid !== myUid) return null; // not mine (or nobody signed in) — never touch
+      return { localKey: split.localKey };
+    }
+    if (_isPerUserKey(mKey)) return null; // bare per-user key, no owner prefix — skip defensively
+    if (!_shouldReplicate(mKey)) return null;
+    return { localKey: mKey };
+  }
+
   // --- Auth stub seam (phase2a-build-plan.md §4) ---------------------------
   // Every kv-sync fetch routes through this ONE helper. Stub today; Phase 1
   // swaps only the window.CH_AUTH branch's real token in — zero call-site
@@ -303,11 +377,26 @@ const DB = (() => {
   // --- Core PUT sender — every write/delete/queue-replay/hydration-drift-
   // repush funnels through here. Returns a result descriptor, never throws
   // for ordinary network/HTTP failures (those come back as a status string).
+  // `key` here is ALWAYS the plain LOCAL key (every caller passes the same
+  // unprefixed name used for _cache/_replicaVersions) — this function is the
+  // one place that resolves it to the wire key (see _wireKey) for a per-user
+  // key. Never pass a pre-prefixed key in.
   async function _sendKvPut(key, payload) {
+    const wireKey = _wireKey(key);
+    if (wireKey === null) {
+      // Per-user key, nobody signed in — behave local-only: no fetch, no
+      // queueing (queue drain/hydration-drift retry paths that reach this
+      // fall through their existing "still failing, leave for next cycle"
+      // branch on any non-'ok'/non-'conflict' status, which is exactly the
+      // desired inert behavior here).
+      return { status: 'skipped-no-user' };
+    }
     const isTombstone = payload.deleted === true;
     const entry = _replicaVersions[key];
     const baseVersion = entry && typeof entry.version === 'number' ? entry.version : null;
-    const bodyObj = isTombstone ? { key, deleted: true, baseVersion } : { key, value: payload.value, baseVersion };
+    const bodyObj = isTombstone
+      ? { key: wireKey, deleted: true, baseVersion }
+      : { key: wireKey, value: payload.value, baseVersion };
     // Phase 2b conflict-modal "Overwrite with mine" / "Restore my version"
     // actions set this so kv-sync.js snapshots the row being replaced into
     // kv_history BEFORE the overwrite lands (kv-sync.js handlePut, explicit
@@ -618,6 +707,12 @@ const DB = (() => {
     const mode = _backendMode();
     if (mode === 'off') return;
     if (!_shouldReplicate(key)) return;
+    // Per-user key + nobody signed in: behave local-only. No fetch, no
+    // enqueue — this is the primary guard (INERTNESS: signed-out mirrors
+    // classify()==='local-only' exactly). _sendKvPut also re-checks this
+    // (via _wireKey returning null) as defense-in-depth for the queue-drain/
+    // hydration-drift-repush/conflict-retry paths that call it directly.
+    if (_isPerUserKey(key) && !_myUserId()) return;
     let result;
     try {
       result = await _sendKvPut(key, payload);
@@ -728,44 +823,57 @@ const DB = (() => {
       return;
     }
 
-    const routineFetchKeys = [];
-    const conflictCheckKeys = []; // manifest entries needing a hash-compare
-    const tombstoneKeys = []; // manifest entries to delete locally
+    const routineFetchKeys = []; // WIRE keys (manifest form) to batch-GET
+    const routineFetchLocalKey = {}; // wireKey -> localKey, for applying results
+    const conflictCheckKeys = []; // { m, localKey } needing a hash-compare
+    const tombstoneKeys = []; // { m, localKey } to delete locally
 
     for (const m of manifest) {
-      if (!_shouldReplicate(m.key)) continue; // defensive; manifest should only hold synced keys
-      // A pending local write for this key must not be clobbered by hydration.
-      if (_syncQueue.some((e) => e.key === m.key)) continue;
+      // Single gate: normal synced key -> localKey === m.key. Per-user key
+      // namespaced to ME -> localKey is the stripped name. Per-user key
+      // namespaced to ANYONE ELSE (or unrecognized) -> null, skip entirely —
+      // never touch _cache/_replicaVersions/_syncQueue for a row that isn't
+      // mine (this is the two-user isolation guarantee).
+      const resolved = _resolveManifestKey(m.key);
+      if (!resolved) continue;
+      const localKey = resolved.localKey;
 
-      const local = _replicaVersions[m.key];
+      // A pending local write for this LOCAL key must not be clobbered by hydration.
+      if (_syncQueue.some((e) => e.key === localKey)) continue;
+
+      const local = _replicaVersions[localKey];
       const localHasValidEntry = !!(local && typeof local.version === 'number');
 
       if (m.deleted) {
-        if (!localHasValidEntry || local.version < m.version) tombstoneKeys.push(m);
+        if (!localHasValidEntry || local.version < m.version) tombstoneKeys.push({ m, localKey });
         continue;
       }
 
       if (localHasValidEntry) {
-        if (m.version > local.version) routineFetchKeys.push(m.key);
+        if (m.version > local.version) {
+          routineFetchKeys.push(m.key);
+          routineFetchLocalKey[m.key] = localKey;
+        }
         // else: local already at/ahead of this version — leave alone.
-      } else if (_cache[m.key] === undefined) {
+      } else if (_cache[localKey] === undefined) {
         // Brand-new-to-this-machine key (blank machine / never seen before) —
         // routine pull, not a conflict.
         routineFetchKeys.push(m.key);
+        routineFetchLocalKey[m.key] = localKey;
       } else {
         // No entry, or stale/unknown entry, AND a local value already exists
         // — integration #3: potential local-newer-than-seed conflict, never
         // a blind pull.
-        conflictCheckKeys.push(m);
+        conflictCheckKeys.push({ m, localKey });
       }
     }
 
     // Apply tombstones — "delete locally, record the tombstone's version",
     // NEVER "absent from manifest -> delete" (that would delete a brand-new
     // un-synced local key; we only ever act on an EXPLICIT manifest entry).
-    for (const m of tombstoneKeys) {
-      await _rawDelete(m.key);
-      _replicaVersions[m.key] = { version: m.version, hash: m.hash || null, deleted: true };
+    for (const { m, localKey } of tombstoneKeys) {
+      await _rawDelete(localKey);
+      _replicaVersions[localKey] = { version: m.version, hash: m.hash || null, deleted: true };
     }
 
     // Routine fetch + apply (hash-compare-before-overwrite rule: this branch
@@ -774,50 +882,54 @@ const DB = (() => {
     if (routineFetchKeys.length) {
       let rows = [];
       try {
-        rows = await _batchGet(routineFetchKeys);
+        rows = await _batchGet(routineFetchKeys); // wire keys — the real backend primary keys
       } catch (e) {
         console.warn('[DB] Hydration: batched GET failed, skipping this batch:', e);
         rows = [];
       }
       for (const row of rows) {
-        if (_syncQueue.some((e) => e.key === row.key)) continue; // race guard, re-check
+        const localKey = routineFetchLocalKey[row.key] || row.key;
+        if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard, re-check
         if (row.deleted) {
-          await _rawDelete(row.key);
+          await _rawDelete(localKey);
         } else {
-          await _rawSet(row.key, row.value);
+          await _rawSet(localKey, row.value);
         }
         const manifestEntry = manifest.find((m) => m.key === row.key);
-        _replicaVersions[row.key] = { version: row.version, hash: manifestEntry ? manifestEntry.hash : null };
+        _replicaVersions[localKey] = { version: row.version, hash: manifestEntry ? manifestEntry.hash : null };
       }
     }
 
     // Hash-compare conflict check (integration #3 / R15 hydration-drift drill).
-    for (const m of conflictCheckKeys) {
-      const localValue = _cache[m.key];
+    for (const { m, localKey } of conflictCheckKeys) {
+      const localValue = _cache[localKey];
       let localHash;
       try {
         localHash = await _sha256Hex(_canonicalJSON(localValue));
       } catch (e) {
-        console.warn('[DB] Hydration: local hash compute failed for', m.key, e);
+        console.warn('[DB] Hydration: local hash compute failed for', localKey, e);
         continue;
       }
       if (localHash === m.hash) {
         // Same content, different provenance — adopt the version, no data change.
-        _replicaVersions[m.key] = { version: m.version, hash: m.hash };
+        _replicaVersions[localKey] = { version: m.version, hash: m.hash };
         continue;
       }
       // Genuine drift: local was edited after the export but before hydration
       // went live. Never silently clobber either side.
-      console.warn('[DB] Hydration drift detected — keeping local, archiving server value, re-pushing local:', m.key);
+      console.warn(
+        '[DB] Hydration drift detected — keeping local, archiving server value, re-pushing local:',
+        localKey,
+      );
       let serverValue = null;
       try {
-        const rows = await _batchGet([m.key]);
+        const rows = await _batchGet([m.key]); // m.key = wire key, the real GET key
         serverValue = rows && rows[0] ? rows[0].value : null;
       } catch (e) {
         // best-effort archive only
       }
       _appendConflictArchive({
-        key: m.key,
+        key: localKey,
         reason: 'hydration-drift-local-wins',
         losingSide: 'server',
         losingValue: serverValue,
@@ -828,20 +940,22 @@ const DB = (() => {
       // Auto-keep-local AND immediately CAS-PUT it, so neither copy is ever
       // silently discarded. Adopt the server's current version as our
       // baseVersion so the CAS-PUT targets the row we just read.
-      _replicaVersions[m.key] = { version: m.version, hash: m.hash };
+      _replicaVersions[localKey] = { version: m.version, hash: m.hash };
       let putResult;
       try {
-        putResult = await _sendKvPut(m.key, { value: localValue });
+        putResult = await _sendKvPut(localKey, { value: localValue }); // local key — _sendKvPut re-resolves the wire key
       } catch (e) {
         putResult = { status: 'network-error' };
       }
       if (putResult.status === 'conflict') {
         // Someone changed it again in between — normal conflict handling.
-        await _handleConflict(m.key, { value: localValue }, putResult.body, mode);
+        await _handleConflict(localKey, { value: localValue }, putResult.body, mode);
       } else if (putResult.status === 'network-error' || putResult.status === 'error') {
-        _enqueueWrite(m.key, { value: localValue });
+        _enqueueWrite(localKey, { value: localValue });
       }
       // 'ok' -> _sendKvPut already updated _replicaVersions.
+      // 'skipped-no-user' -> per-user key, signed out mid-session; leave as-is
+      // (matches _replicateWrite's inertness guarantee, never queued).
     }
 
     _persistReplicaState();
@@ -868,10 +982,12 @@ const DB = (() => {
     }
     const changedKeys = [];
     for (const m of manifest) {
-      if (!_shouldReplicate(m.key)) continue;
-      const local = _replicaVersions[m.key];
+      const resolved = _resolveManifestKey(m.key); // skips foreign per-user rows entirely
+      if (!resolved) continue;
+      const localKey = resolved.localKey;
+      const local = _replicaVersions[localKey];
       if (local && typeof local.version === 'number' && m.version > local.version) {
-        changedKeys.push(m.key);
+        changedKeys.push(localKey); // local (unprefixed) key — matches what sync-ui.js displays
       }
     }
     if (typeof window !== 'undefined') {
@@ -1260,20 +1376,24 @@ const DB = (() => {
     } catch (e) {
       return { mode, error: 'manifest fetch failed', keys: [], queueDepth: _syncQueue.length };
     }
-    const keys = manifest
-      .filter((m) => _shouldReplicate(m.key))
-      .map((m) => {
-        const local = _replicaVersions[m.key];
-        return {
-          key: m.key,
-          localVersion: local ? local.version : null,
-          localHash: local ? local.hash : null,
-          serverVersion: m.version,
-          serverHash: m.hash,
-          deleted: !!m.deleted,
-          inSync: !!(local && local.version === m.version),
-        };
+    const keys = [];
+    for (const m of manifest) {
+      // _resolveManifestKey skips any per-user row that isn't mine — the
+      // status panel must never expose another user's per-user key/values.
+      const resolved = _resolveManifestKey(m.key);
+      if (!resolved) continue;
+      const localKey = resolved.localKey;
+      const local = _replicaVersions[localKey];
+      keys.push({
+        key: localKey, // local (unprefixed) name — what sync-ui.js displays
+        localVersion: local ? local.version : null,
+        localHash: local ? local.hash : null,
+        serverVersion: m.version,
+        serverHash: m.hash,
+        deleted: !!m.deleted,
+        inSync: !!(local && local.version === m.version),
       });
+    }
     return { mode, keys, queueDepth: _syncQueue.length };
   }
 

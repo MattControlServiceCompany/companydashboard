@@ -173,10 +173,23 @@
     return _signedOut;
   }
 
+  // SYNCHRONOUS by design — mirrors getToken() above. Returns the stable
+  // per-user Entra identifier (`localAccountId`, i.e. the token's `oid` claim)
+  // for the currently signed-in MSAL account, or null if nobody is signed in.
+  // Deliberately NOT email/preferred_username — those can change (e.g. a
+  // mail rename) while localAccountId/oid is the durable per-user GUID.
+  // Consumed by app/db.js's per-user-settings-sync key-prefixing (`_wireKey`)
+  // — added 2026-07-20, per-user-settings-sync feature.
+  function getUserId() {
+    var acct = _account();
+    return acct && acct.localAccountId ? acct.localAccountId : null;
+  }
+
   window.CH_AUTH = {
     getToken: getToken,
     getTokenInteractive: getTokenInteractive,
     isSignedOut: isSignedOut,
+    getUserId: getUserId,
   };
 
   _startBackgroundRefresh();

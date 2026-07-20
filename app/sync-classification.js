@@ -1,18 +1,22 @@
 // app/sync-classification.js — the ONE classification map for every persisted key.
 //
 // Declares, for every key CompanyHub ever passes to DB.set()/DB.remove() (whether via
-// the sset()/sget() wrappers in app/core.js or a direct DB.set() call), whether that
-// key is SYNCED (server-authoritative once the Supabase backend ships) or LOCAL-ONLY
-// (never leaves this browser).
+// the sset()/sget() wrappers in app/core.js or a direct DB.set() call), which of
+// THREE buckets that key belongs to:
+//   - 'synced'    — server-authoritative shared data (both users edit the same row).
+//   - 'per-user'  — UI prefs/view/layout state that should follow the SIGNED-IN USER
+//                   (namespaced client-side by their Entra oid — see classifyKey()).
+//   - 'local-only' — never leaves this browser at all.
 //
-// Consumed by TWO future call sites (do not fork this into two lists):
-//   1. Phase 2a — the runtime `_shouldReplicate` guard inside app/db.js's DB.set()/
-//      DB.remove() replication tail.
+// Consumed by TWO call sites (do not fork this into two lists):
+//   1. Phase 2a — the runtime `_shouldReplicate`/`isPerUser` guards inside app/db.js's
+//      DB.set()/DB.remove() replication tail (app/db.js _shouldReplicate/_wireKey).
 //   2. Phase 3  — migrate-seed.js's skip list when classifying keys out of a
 //      siteBackup()/DB.getAll() export.
 //
-// Written per supabase-migration-plan-FINAL-2026-07-19.md §11 task 0.5, §1.3, §7.
-// This file does NOT wire into db.js or ship a <script> tag yet — that is Phase 2a.
+// Written per supabase-migration-plan-FINAL-2026-07-19.md §11 task 0.5, §1.3, §7,
+// extended 2026-07-20 for the per-user-settings-sync feature (client-side key
+// prefixing, no server/schema change — see app/db.js `_wireKey`).
 //
 // Works as a browser global (`window.SyncClassification`, matching the
 // `const X = (() => {...})(); window.X = X;` pattern used by app/db.js) AND as a
@@ -110,42 +114,12 @@ const SyncClassification = (() => {
     },
   ];
 
-  // ── LOCAL-ONLY — deliberately never synced ─────────────────────────────────
+  // ── LOCAL-ONLY — deliberately never synced (not even per-user) ─────────────
   const LOCAL_ONLY = [
-    {
-      pattern: 'ch_',
-      prefix: true,
-      note: 'blanket rule — ALL ch_* keys are per-user local prefs (theme, activeView, sidebar order, table col widths, etc.) — matches plan §1.3 exactly',
-    },
     {
       pattern: 'en_conflict_archive',
       prefix: false,
       note: 'reserved — not yet built (Phase 2b). Losing-value archive on 409, local-only by design.',
-    },
-    {
-      pattern: 'ch_replica_state',
-      prefix: false,
-      note: 'reserved — not yet built (Phase 2a). Per-key version-map bookkeeping, local-only by design. (Also caught by the blanket ch_ rule; listed explicitly per plan naming.)',
-    },
-    {
-      pattern: 'ch_sync_queue',
-      prefix: false,
-      note: 'reserved — not yet built (Phase 2a). Durable offline-write retry queue, local-only by design. (Also caught by the blanket ch_ rule; listed explicitly per plan naming.)',
-    },
-    {
-      pattern: 'en_bills_zoom_',
-      prefix: true,
-      note: 'bill-analysis.js UI zoom-level state, keyed per view. Pure UI state, not user data — made explicit so it no longer hits the default-unclassified warn path.',
-    },
-    {
-      pattern: 'en_perf_zoom',
-      prefix: false,
-      note: 'performance-chart UI zoom-level state. Pure UI state, not user data — made explicit so it no longer hits the default-unclassified warn path.',
-    },
-    {
-      pattern: 'en_sv_matrix_zoom_',
-      prefix: true,
-      note: 'savings-matrix UI zoom-level state, keyed per view. Pure UI state, not user data — made explicit so it no longer hits the default-unclassified warn path.',
     },
     {
       pattern: '_claude_bill_dump',
@@ -156,6 +130,36 @@ const SyncClassification = (() => {
       pattern: '_debug_propane_bills',
       prefix: false,
       note: 'debug/dev-tooling scratch key, not user data — made explicit so it no longer hits the default-unclassified warn path.',
+    },
+  ];
+
+  // ── CRITICAL — sync-engine-internal ch_ keys that MUST win over the ──────
+  // blanket per-user ch_ rule below. These are the ENGINE'S OWN bookkeeping
+  // (replica version map, offline retry queue, the on/off/shadow kill switch
+  // itself) — NOT a per-user UI preference. If any of these were classified
+  // 'per-user' instead of 'local-only', the engine would try to sync its own
+  // queue/replica-state/kill-switch per-user, which is nonsensical and would
+  // corrupt sync bookkeeping across devices/users. Checked BEFORE PER_USER in
+  // classifyKey() — order matters. Enumerated by reading every ch_ entry that
+  // was previously in LOCAL_ONLY/LOCAL_ONLY_OVERRIDES (this file, pre-2026-07-20)
+  // plus ch_backend_mode (db.js's own mode flag, read directly via
+  // localStorage — never routed through sset/DB.set today, excluded here
+  // defensively in case that ever changes).
+  const PER_USER_CH_ENGINE_EXCLUSIONS = [
+    {
+      pattern: 'ch_replica_state',
+      prefix: false,
+      note: 'db.js REPLICA_STATE_KEY — per-key version-map bookkeeping (write-through via _rawSet, bypasses replication entirely). Engine-internal, must never sync at all, per-user or otherwise.',
+    },
+    {
+      pattern: 'ch_sync_queue',
+      prefix: false,
+      note: 'db.js SYNC_QUEUE_KEY — durable offline-write retry queue (write-through via _rawSet, bypasses replication entirely). Engine-internal, must never sync at all.',
+    },
+    {
+      pattern: 'ch_backend_mode',
+      prefix: false,
+      note: 'db.js _backendMode()/setBackendMode() — the off|shadow|on kill switch itself. Read/written directly via localStorage today (never through sset/DB.set), excluded here as defense-in-depth so it can never accidentally sync per-user if that ever changes.',
     },
   ];
 
@@ -194,11 +198,6 @@ const SyncClassification = (() => {
       note: 'equipment-matrix.js:3890 — UI collapse-toggle state, not eqmatrix project data. Does not match en_eqmatrix_ prefix (different word: "en_em_").',
     },
     {
-      pattern: 'en_em_zoom',
-      prefix: false,
-      note: 'equipment-matrix.js:4217 — UI zoom-level state, same reasoning as above.',
-    },
-    {
       pattern: 'en_pdf_file_',
       prefix: true,
       note: "PDF blob key — routed through the SEPARATE en_pdf_store IndexedDB via pdfStore()/pdfLoad()/pdfDelete() (core.js _pdfDB), not through DB.set()/kv-sync. Handled by the future pdf-sync.js blob mechanism (plan §6), never by this kv classification. One read-only sget() fallback exists at bill-analysis.js:14449 (plan's own §3 special case, flagged for Phase 2a.8 sweep) — excluded here so a stray multi-MB base64 PDF string can never be routed through the 6MB kv-sync Function body limit.",
@@ -208,61 +207,140 @@ const SyncClassification = (() => {
       prefix: true,
       note: 'Same PDF-blob-store reasoning as en_pdf_file_ above (bill-analysis.js pdfKey construction).',
     },
+  ];
+
+  // ── PER-USER — UI prefs/view/layout state that should follow the SIGNED-IN ─
+  // USER across devices/browsers, namespaced client-side to their Entra oid
+  // (app/ch-auth.js getUserId()) so two users never clobber each other's prefs.
+  // Client-side key-prefixing only — no server/schema change (app/db.js
+  // `_wireKey()` prepends `${userId}::` to the key actually sent to the
+  // backend; the LOCAL _cache/_replicaVersions stay keyed by the plain name
+  // below, unchanged for every other reader in the app — see plan §"Approach").
+  //
+  // The `ch_` blanket below previously meant "local-only" (plan §1.3, pre-
+  // 2026-07-20). It is now the PER-USER default for general UI prefs (theme,
+  // activeView, sidebar/tab order, table col widths, etc.) — EXCEPT the
+  // sync-engine's own bookkeeping keys, which PER_USER_CH_ENGINE_EXCLUSIONS
+  // (checked first in classifyKey()) keeps local-only. Order matters — do not
+  // reorder classifyKey()'s checks.
+  const PER_USER = [
+    {
+      pattern: 'ch_',
+      prefix: true,
+      note: 'blanket rule — general ch_* UI prefs (theme, activeView, sidebar order, table col widths, etc.) follow the signed-in user. EXCLUDES ch_replica_state/ch_sync_queue/ch_backend_mode — see PER_USER_CH_ENGINE_EXCLUSIONS, checked before this rule in classifyKey().',
+    },
+    {
+      pattern: 'en_bills_zoom_',
+      prefix: true,
+      note: 'bill-analysis.js UI zoom-level state, keyed per view. Pure UI state — follows the signed-in user (moved from LOCAL_ONLY 2026-07-20).',
+    },
+    {
+      pattern: 'en_perf_zoom',
+      prefix: false,
+      note: 'performance-chart UI zoom-level state. Pure UI state — follows the signed-in user (moved from LOCAL_ONLY 2026-07-20).',
+    },
+    {
+      pattern: 'en_sv_matrix_zoom_',
+      prefix: true,
+      note: 'savings-matrix UI zoom-level state, keyed per view. Pure UI state — follows the signed-in user (moved from LOCAL_ONLY 2026-07-20).',
+    },
+    {
+      pattern: 'en_em_zoom',
+      prefix: false,
+      note: 'equipment-matrix.js:4217 — UI zoom-level state. Follows the signed-in user (moved from LOCAL_ONLY_OVERRIDES 2026-07-20).',
+    },
     {
       pattern: 'bills_view_state_',
       prefix: true,
-      note: 'FLAGGED: utility-data.js:2685 — bills table UI view-state, keyed by meter id, no ch_/en_ prefix (pre-existing naming inconsistency — this is the same class of data as ch_tbl_* elsewhere but was never given the ch_ prefix). Classified LOCAL-ONLY on content grounds (pure UI state, not user data); confirm with Matt.',
+      note: 'FLAGGED (pre-existing, see note history): utility-data.js:2685 — bills table UI view-state, keyed by meter id, no ch_/en_ prefix. Follows the signed-in user (moved from LOCAL_ONLY_OVERRIDES 2026-07-20).',
     },
     {
       pattern: 'bills_col_widths_',
       prefix: true,
-      note: 'FLAGGED: utility-data.js:2844 (remove), :3520/:3593 (storageKey) — column-width UI state, same reasoning as bills_view_state_ above.',
+      note: 'FLAGGED: utility-data.js:2844 (remove), :3520/:3593 (storageKey) — column-width UI state. Follows the signed-in user (moved from LOCAL_ONLY_OVERRIDES 2026-07-20).',
     },
     {
       pattern: 'ba_alarm_log_col_widths',
       prefix: false,
-      note: 'FLAGGED: bas-alarms.js:767 (BA_COL_KEY) — column-width UI state, same reasoning as bills_col_widths_ above. No en_/ch_ prefix.',
+      note: 'FLAGGED: bas-alarms.js:767 (BA_COL_KEY) — column-width UI state, no en_/ch_ prefix. Follows the signed-in user (moved from LOCAL_ONLY_OVERRIDES 2026-07-20).',
     },
   ];
 
   /**
-   * shouldReplicate(key) → boolean
-   * Predicate the future `_shouldReplicate` guard (Phase 2a, app/db.js) and the
-   * Phase 3 migrate-seed.js skip list both call. Order matters:
-   *   1. Explicit LOCAL_ONLY_OVERRIDES win over any broader SYNCED prefix match.
-   *   2. Blanket + explicit LOCAL_ONLY entries.
-   *   3. Weather cache — gated by the SYNC_WEATHER_CACHE toggle, not the SYNCED table.
-   *   4. SYNCED table.
-   *   5. Default: LOCAL-ONLY. An unrecognized key is never assumed safe to sync —
-   *      new keys must be added to this file explicitly. Logs a console.warn in
-   *      the browser so an unclassified key is loud, not silent.
+   * classifyKey(key) → 'synced' | 'per-user' | 'local-only'
+   * The single 3-state classifier. shouldReplicate()/isPerUser() below are
+   * both thin wrappers over this. Order matters:
+   *   1. LOCAL_ONLY_OVERRIDES — explicit en_/en_utility_ overrides that would
+   *      otherwise incidentally match a SYNCED prefix.
+   *   2. PER_USER_CH_ENGINE_EXCLUSIONS — sync-engine-internal ch_ bookkeeping
+   *      keys (replica state, sync queue, backend-mode kill switch). MUST be
+   *      checked before the PER_USER blanket ch_ rule (step 4) or the engine
+   *      would try to sync its own queue/replica-state/kill-switch per-user.
+   *   3. LOCAL_ONLY — remaining explicit local-only keys (conflict archive,
+   *      debug scratch).
+   *   4. PER_USER — the ch_ blanket + explicit UI-state keys (zoom levels,
+   *      column widths, view state).
+   *   5. Weather cache — gated by the SYNC_WEATHER_CACHE toggle, not the
+   *      SYNCED table.
+   *   6. SYNCED table.
+   *   7. Default: 'local-only'. An unrecognized key is never assumed safe to
+   *      sync (in any form) — new keys must be added to this file explicitly.
+   *      Logs a console.warn in the browser so an unclassified key is loud,
+   *      not silent.
    */
-  function shouldReplicate(key) {
-    if (typeof key !== 'string' || !key) return false;
+  function classifyKey(key) {
+    if (typeof key !== 'string' || !key) return 'local-only';
 
     for (const entry of LOCAL_ONLY_OVERRIDES) {
-      if (_matches(key, entry)) return false;
+      if (_matches(key, entry)) return 'local-only';
+    }
+    for (const entry of PER_USER_CH_ENGINE_EXCLUSIONS) {
+      if (_matches(key, entry)) return 'local-only';
     }
     for (const entry of LOCAL_ONLY) {
-      if (_matches(key, entry)) return false;
+      if (_matches(key, entry)) return 'local-only';
     }
-    if (key.indexOf('en_wdd_') === 0) return SYNC_WEATHER_CACHE;
+    for (const entry of PER_USER) {
+      if (_matches(key, entry)) return 'per-user';
+    }
+    if (key.indexOf('en_wdd_') === 0) return SYNC_WEATHER_CACHE ? 'synced' : 'local-only';
     for (const entry of SYNCED) {
       if (entry.pattern === 'en_wdd_') continue; // handled above, not via the table
-      if (_matches(key, entry)) return true;
+      if (_matches(key, entry)) return 'synced';
     }
 
     if (typeof console !== 'undefined' && console.warn) {
       console.warn('[SyncClassification] Unclassified key treated as LOCAL-ONLY (safe default):', key);
     }
-    return false;
+    return 'local-only';
+  }
+
+  /**
+   * shouldReplicate(key) → boolean
+   * = classifyKey(key) !== 'local-only'. Kept as the existing public entry
+   * point db.js/migrate-seed already call — behavior unchanged for the
+   * synced/local-only split; now also true for 'per-user' keys (which DO
+   * replicate, just namespaced — see app/db.js `_wireKey()`).
+   */
+  function shouldReplicate(key) {
+    return classifyKey(key) !== 'local-only';
+  }
+
+  /** isPerUser(key) → boolean = classifyKey(key) === 'per-user'. */
+  function isPerUser(key) {
+    return classifyKey(key) === 'per-user';
   }
 
   function _matches(key, entry) {
     return entry.prefix ? key.indexOf(entry.pattern) === 0 : key === entry.pattern;
   }
 
-  /** classify(key) → 'synced' | 'local-only' — human-readable form of shouldReplicate() for tooling/reports. */
+  /**
+   * classify(key) → 'synced' | 'local-only' — LEGACY 2-state view, kept for any
+   * existing caller. Collapses 'per-user' into 'synced' (both replicate) —
+   * new code that cares about the per-user distinction should call
+   * classifyKey() directly, not this.
+   */
   function classify(key) {
     return shouldReplicate(key) ? 'synced' : 'local-only';
   }
@@ -271,8 +349,12 @@ const SyncClassification = (() => {
     SYNCED,
     LOCAL_ONLY,
     LOCAL_ONLY_OVERRIDES,
+    PER_USER,
+    PER_USER_CH_ENGINE_EXCLUSIONS,
     SYNC_WEATHER_CACHE,
+    classifyKey,
     shouldReplicate,
+    isPerUser,
     classify,
   };
 })();
