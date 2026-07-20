@@ -1286,6 +1286,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.20.698',
+    date: '2026-07-20',
+    title: 'Cost Estimate & Service Proposal updates',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate: added physical install labor to Phase 1 (Hardware & Installation).',
+      },
+      {
+        type: 'feature',
+        text: 'Cost Estimate: new Monthly Service Agreement summary showing the monthly figure against your not-to-exceed allowance.',
+      },
+      {
+        type: 'feature',
+        text: 'Service Proposal: cover now shows a scope price-comparison summary, tiers have an expandable Install & Programming detail, and a Monthly Energy Management Service Agreement line was added.',
+      },
+      {
+        type: 'change',
+        text: 'Service Proposal: removed the redundant "Prepared by" byline from the cover.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.20.697',
     date: '2026-07-20',
     title: 'Behind-the-scenes groundwork',
