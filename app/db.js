@@ -130,6 +130,14 @@ const DB = (() => {
     }
     return null;
   }
+  // Tracks the identity as of the last processed chAuthStateChanged event (or
+  // module-load time, since app/ch-auth.js loads before app/db.js on every
+  // page — see the script-tag order in index/energy-department/service-
+  // department/ems-leads.html). The listener below (_handleAuthIdentityChange)
+  // only acts when this actually differs from the current _myUserId(), so a
+  // same-user silent-token-refresh success/failure (which also fires
+  // chAuthStateChanged) never triggers a needless clear.
+  let _lastKnownUserId = _myUserId();
   // Resolves a LOCAL key to the key actually sent to/read from the backend.
   // Returns the key unchanged for non-per-user keys. For a per-user key,
   // returns `${userId}::${key}` when someone is signed in, or `null` when
@@ -1000,6 +1008,62 @@ const DB = (() => {
     }
   }
 
+  // --- Per-user-settings-sync (2026-07-20 fix) — shared-browser identity
+  // switch. Before this fix, `_cache`/`_replicaVersions` stayed keyed by the
+  // plain (unprefixed) key across a sign-out/sign-in on the SAME browser, so
+  // a second Entra user inherited the FIRST user's leftover local per-user
+  // values, and the hydration-drift branch in _hydrate() could even auto-
+  // CAS-PUT that leftover value over the second user's real backend row
+  // (see the code comment at ~line 105 that first stated the goal this
+  // closes the gap on). ch-auth.js dispatches `chAuthStateChanged` on every
+  // sign-in/out; the listener registered near the bottom of this file wires
+  // it to _handleAuthIdentityChange below.
+  function _clearPerUserLocalState() {
+    const cleared = [];
+    Object.keys(_cache).forEach((k) => {
+      if (_isPerUserKey(k)) {
+        delete _cache[k];
+        cleared.push(k);
+      }
+    });
+    Object.keys(_replicaVersions).forEach((k) => {
+      if (_isPerUserKey(k)) delete _replicaVersions[k];
+    });
+    const queueHadPerUserEntries = _syncQueue.some((e) => _isPerUserKey(e.key));
+    if (queueHadPerUserEntries) {
+      // A pending write from the PREVIOUS user's session must never replay
+      // under the new user's wire-key prefix. _enqueueWrite only ever stores
+      // the LOCAL key (_sendKvPut re-resolves the wire key at send time), so
+      // an undropped entry here would silently push the old user's value
+      // into the new user's row on the next queue drain.
+      _syncQueue = _syncQueue.filter((e) => !_isPerUserKey(e.key));
+    }
+    if (cleared.length || queueHadPerUserEntries) {
+      _persistReplicaState();
+      _persistSyncQueue();
+    }
+    return cleared;
+  }
+
+  async function _handleAuthIdentityChange() {
+    const uid = _myUserId();
+    if (uid === _lastKnownUserId) return; // chAuthStateChanged fired but the signed-in identity didn't actually change
+    _lastKnownUserId = uid;
+    const cleared = _clearPerUserLocalState();
+    if (typeof window !== 'undefined' && cleared.length) {
+      window.dispatchEvent(new CustomEvent('dbPerUserStateCleared', { detail: { keys: cleared, userId: uid } }));
+    }
+    // Flag-off/shadow, or a sign-out (uid === null): clear only, stay inert —
+    // no network call. Only mode 'on' with someone actually signed in
+    // re-hydrates, so the newly-signed-in user's own per-user rows load.
+    if (_backendMode() !== 'on' || !uid) return;
+    try {
+      await _hydrate();
+    } catch (e) {
+      console.warn('[DB] Re-hydrate after identity change failed:', e);
+    }
+  }
+
   function _startBackgroundSync() {
     if (_backgroundTasksStarted) return;
     _backgroundTasksStarted = true;
@@ -1408,6 +1472,12 @@ const DB = (() => {
         e.returnValue = 'Data is still being saved. Leaving now may lose your import. Are you sure?';
       }
     });
+    // Per-user-settings-sync (2026-07-20 fix) — see _handleAuthIdentityChange
+    // above. Registered unconditionally (not gated on backend mode/warmCache
+    // completion) because app/ch-auth.js starts its background silent-refresh
+    // timer — and can fire chAuthStateChanged — immediately on its own load,
+    // which happens before app/db.js's warmCache()/_hydrate() resolve.
+    window.addEventListener('chAuthStateChanged', _handleAuthIdentityChange);
   }
 
   return {
