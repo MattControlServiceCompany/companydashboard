@@ -1245,6 +1245,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.20.696',
+    date: '2026-07-20',
+    title: 'Backup fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department and Service Department -- Backup/Export: fixed a crash that could hang the page when backing up with many saved bill PDFs. Your backup now saves reliably. (Your PDFs stay safe and will get their own dedicated export.)',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.19.695',
     date: '2026-07-19',
     title: 'Backup & Export now includes all bill PDFs',
