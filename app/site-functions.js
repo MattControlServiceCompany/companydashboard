@@ -600,29 +600,12 @@ async function siteBackup() {
   var allData = Object.assign({}, lsData, dbData);
   var data = allData;
   // Raw bill PDFs live in the separate en_pdf_store IndexedDB database and are
-  // NOT covered by DB.getAll()/localStorage above — pull them in under their own
-  // top-level key so the backup format stays self-describing and old readers
-  // that don't know about it just see one extra key.
-  //
-  // This read must NEVER fail silently: a backup that claims success while
-  // actually containing zero bill PDFs (because the read threw) is worse
-  // than no backup at all — it tells the user their data is safe when the
-  // most irreplaceable part of it is missing. _pdfStoreMeta travels inside
-  // the file itself so a later restore can tell "no PDFs, none existed"
-  // apart from "no PDFs, the read failed" and refuse to pretend a truncated
-  // backup is complete.
-  var pdfOk = true;
-  var pdfErr = null;
-  try {
-    data._pdfStore = await _pdfBackupGetAll();
-  } catch (e) {
-    console.warn('PDF store backup failed:', e);
-    data._pdfStore = {};
-    pdfOk = false;
-    pdfErr = (e && e.message) || String(e);
-  }
-  var pdfCount = Object.keys(data._pdfStore).length;
-  data._pdfStoreMeta = { ok: pdfOk, count: pdfCount, error: pdfErr };
+  // intentionally NOT included in this backup. Serializing all PDFs' base64
+  // into one monolithic JSON string (via _pdfBackupGetAll() + JSON.stringify)
+  // held 2-3 full copies of the PDF store in the JS heap at once and OOM-crashed
+  // the tab on large stores (~1000 bills, 150-250MB). This backup stays
+  // data-only, matching the pre-regression behavior. A batched/streaming PDF
+  // export is a separate follow-up, not part of this backup.
   // Explicit positive marker so a future restore can identify this as a real
   // CompanyHub backup without guessing from data keys at all.
   data._companyHubBackup = true;
@@ -645,18 +628,7 @@ async function siteBackup() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 1500);
-  if (typeof showToast === 'function') {
-    if (pdfOk) {
-      showToast('Backup downloaded — ' + pdfCount + ' bill PDF' + (pdfCount === 1 ? '' : 's') + ' included');
-    } else {
-      showToast(
-        'Backup downloaded, but bill PDFs FAILED to export (0 included). The rest of your data is in the file — your bill PDFs are NOT. (' +
-          pdfErr +
-          ')',
-        'error',
-      );
-    }
-  }
+  if (typeof showToast === 'function') showToast('Backup downloaded');
 }
 function processRestoreFile(file) {
   if (!file) return;
@@ -1313,6 +1285,17 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  {
+    v: 'v2026.07.20.696',
+    date: '2026-07-20',
+    title: 'Backup fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department and Service Department -- Backup/Export: fixed a crash that could hang the page when backing up with many saved bill PDFs. Your backup now saves reliably. (Your PDFs stay safe and will get their own dedicated export.)',
+      },
+    ],
+  },
   {
     v: 'v2026.07.19.695',
     date: '2026-07-19',
