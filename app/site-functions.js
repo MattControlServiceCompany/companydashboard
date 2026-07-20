@@ -1286,6 +1286,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.20.697',
+    date: '2026-07-20',
+    title: 'Behind-the-scenes groundwork',
+    items: [
+      {
+        type: 'change',
+        text: 'Behind-the-scenes groundwork for secure multi-user cloud sync. No change to how the app works today.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.20.696',
     date: '2026-07-20',
     title: 'Backup fix',
