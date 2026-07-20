@@ -48,6 +48,30 @@
   var _refreshTimer = null;
   var _initPromise = null;
 
+  // Mirrors app/db.js's _backendMode() EXACTLY (same localStorage key, same
+  // off-semantics: unset/'off'/anything-not-'shadow'-or-'on' => 'off',
+  // legacy 'ch_backend_enabled'==='true' => 'shadow'). Kept in sync manually
+  // — see db.js lines ~49-67. When the flag is off, this module must not
+  // make ANY network call on load (byte-for-byte inert requirement).
+  function _backendMode() {
+    if (typeof localStorage === 'undefined') return 'off';
+    var v;
+    try {
+      v = localStorage.getItem('ch_backend_mode');
+    } catch (e) {
+      return 'off';
+    }
+    if (v === 'off' || v === 'shadow' || v === 'on') return v;
+    var legacy;
+    try {
+      legacy = localStorage.getItem('ch_backend_enabled');
+    } catch (e) {
+      legacy = null;
+    }
+    if (legacy === 'true') return 'shadow';
+    return 'off';
+  }
+
   function _thisPageFile() {
     var path = window.location.pathname.split('/').pop();
     return path || 'index.html';
@@ -116,6 +140,7 @@
   }
 
   function _startBackgroundRefresh() {
+    if (_backendMode() === 'off') return; // kill switch — no MSAL/network on load
     if (_refreshTimer) return;
     _refreshSilent();
     _refreshTimer = setInterval(_refreshSilent, REFRESH_INTERVAL_MS);
