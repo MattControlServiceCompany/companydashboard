@@ -132,6 +132,31 @@ const SyncClassification = (() => {
       prefix: false,
       note: 'reserved — not yet built (Phase 2a). Durable offline-write retry queue, local-only by design. (Also caught by the blanket ch_ rule; listed explicitly per plan naming.)',
     },
+    {
+      pattern: 'en_bills_zoom_',
+      prefix: true,
+      note: 'bill-analysis.js UI zoom-level state, keyed per view. Pure UI state, not user data — made explicit so it no longer hits the default-unclassified warn path.',
+    },
+    {
+      pattern: 'en_perf_zoom',
+      prefix: false,
+      note: 'performance-chart UI zoom-level state. Pure UI state, not user data — made explicit so it no longer hits the default-unclassified warn path.',
+    },
+    {
+      pattern: 'en_sv_matrix_zoom_',
+      prefix: true,
+      note: 'savings-matrix UI zoom-level state, keyed per view. Pure UI state, not user data — made explicit so it no longer hits the default-unclassified warn path.',
+    },
+    {
+      pattern: '_claude_bill_dump',
+      prefix: false,
+      note: 'debug/dev-tooling scratch key, not user data — made explicit so it no longer hits the default-unclassified warn path.',
+    },
+    {
+      pattern: '_debug_propane_bills',
+      prefix: false,
+      note: 'debug/dev-tooling scratch key, not user data — made explicit so it no longer hits the default-unclassified warn path.',
+    },
   ];
 
   // ── Explicit overrides — checked BEFORE the SYNCED prefix table above. ─────
