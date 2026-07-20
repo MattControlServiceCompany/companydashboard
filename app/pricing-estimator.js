@@ -608,6 +608,9 @@ function _pricingGetBudget(projId) {
     fitExcludedIds: [], // Phase 3: toggleKeys this feature (not the user) last turned off
     fitPrevToggleValues: {}, // Phase 3: toggleKey -> prior rowToggles value, for exact Clear/undo
     fitAppliedAt: null,
+    serviceHoursPerMonth: 36, // Monthly Service Agreement (2026-07-20): hours/month drawn against
+    // the monthly allowance (this.amount) at the shared global en_pricing_config.hourlyRate — see
+    // _pricingComputeMonthlyService, below. Editable per-project; 36 is Matt's JOCO default.
   };
   if (!stored) return dflt;
   return Object.assign({}, dflt, stored);
@@ -652,6 +655,37 @@ function _pricingComputeBudgetTotal(budget) {
   return {
     total: total,
     basisLabel: _pricingFmt(amount) + perLabel + ' × ' + term + ' mo = ' + _pricingFmt(total),
+  };
+}
+
+/* ── Monthly Service Agreement (2026-07-20) ───────────────────────────────────
+   JOCO's offering is a MONTHLY energy-management SERVICE-ALLOWANCE agreement: the client pays
+   monthly and draws down a monthly allowance at a labor rate for parts + install labor + all
+   other labor. This computes that monthly figure from the per-project serviceHoursPerMonth
+   budget field (default 36) × the shared global en_pricing_config.hourlyRate — NOT a new rate
+   field, and NOT the installLaborRate added for Phase 1 hardware rows — and compares it against
+   budget.amount as the not-to-exceed allowance. Purely additive/presentational: does not touch
+   _pricingComputeBudgetTotal, the Fit-to-Budget ceiling walk, or any tier-total math above.
+   Returns null when no budget.amount is set, same silent-until-configured convention as
+   _pricingComputeBudgetTotal, so untouched projects see no UI change from this feature.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeMonthlyService(projId) {
+  var budget = _pricingGetBudget(projId);
+  if (budget.amount == null || isNaN(budget.amount) || Number(budget.amount) <= 0) return null;
+  var cfg = _pricingGetConfig();
+  var hourlyRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
+  var hours = Number(budget.serviceHoursPerMonth);
+  if (!isFinite(hours) || hours <= 0) hours = 36;
+  var monthlyService = hours * hourlyRate;
+  var allowance = Number(budget.amount);
+  var diff = allowance - monthlyService; // positive = under cap, negative = over cap
+  return {
+    hours: hours,
+    hourlyRate: hourlyRate,
+    monthlyService: monthlyService,
+    allowance: allowance,
+    diff: diff,
+    underCap: monthlyService <= allowance,
   };
 }
 
@@ -4695,6 +4729,49 @@ function _pricingBuildBudgetSectionHTML(projId, tier) {
           '<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:4px">Recommended is already budget-fit.</div>';
       }
     }
+  }
+  // ── Monthly Service Agreement (2026-07-20) ──────────────────────────────────────
+  // Additive block: editable hours/month, computed monthly figure (hours × shared global
+  // hourlyRate), the existing budget.amount shown as the not-to-exceed allowance, and an
+  // under/over indicator. Same silent-until-configured convention as the Ceiling/Affords line
+  // above — renders nothing until a budget.amount is set (_pricingComputeMonthlyService).
+  var _svc = _pricingComputeMonthlyService(projId);
+  if (_svc) {
+    var _svcMonthlyStr = '$' + Math.round(_svc.monthlyService).toLocaleString('en-US');
+    var _svcAllowanceStr = '$' + Math.round(_svc.allowance).toLocaleString('en-US');
+    var _svcDiffStr = '$' + Math.round(Math.abs(_svc.diff)).toLocaleString('en-US');
+    var _svcColor = _svc.underCap ? '#86efac' : 'var(--warn)';
+    html +=
+      '<div style="font-weight:700;color:var(--text2);margin:10px 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid var(--border);padding-top:8px">Monthly Service Agreement</div>' +
+      '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
+      'Hours/month:' +
+      '<input type="number" min="0" step="0.5" id="pricing-budget-svchours-' +
+      projId +
+      '" value="' +
+      _svc.hours +
+      '"' +
+      ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;text-align:right"' +
+      ' onchange="_pricingUpdateBudget(' +
+      projId +
+      ",'serviceHoursPerMonth',parseFloat(this.value)||36)\">" +
+      '</label>' +
+      '<div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:2px">' +
+      _svcMonthlyStr +
+      '/month (' +
+      _svc.hours +
+      ' hrs × $' +
+      _svc.hourlyRate +
+      '/hr)' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:4px">' +
+      _svcAllowanceStr +
+      '/month allowance (not-to-exceed)' +
+      '</div>' +
+      '<div style="font-size:10px;font-weight:700;color:' +
+      _svcColor +
+      '">' +
+      (_svc.underCap ? _svcDiffStr + ' under cap' : _svcDiffStr + ' OVER cap') +
+      '</div>';
   }
   return html;
 }

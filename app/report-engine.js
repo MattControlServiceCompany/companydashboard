@@ -14405,7 +14405,42 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     _esc(disc) +
     '</div>';
 
-  var bodyHTML = titleBlock + intro + table + discBlock;
+  // Monthly Energy Management Service Agreement (2026-07-20) — client-facing not-to-exceed line.
+  // Sourced from the existing en_pricing_budget_{projId}.amount and the existing global
+  // en_pricing_config.hourlyRate (never hardcoded here) — same collector-reads-everything
+  // discipline as the tier totals above, just against the budget/config stores instead of the
+  // row-toggle estimate. Deliberately NAMES the $/hr rate to the client: this is a monthly
+  // allowance product, not a scoped tier total, so the tier-total-only convention (rate hidden,
+  // see the savingsRationale/clientSummary split elsewhere in this file) does not apply here.
+  // Guarded: renders nothing when no budget amount is configured for this project, so a project
+  // that has never used the Monthly Service Agreement feature sees zero change to this page.
+  var svcBlock = '';
+  try {
+    if (typeof _pricingGetBudget === 'function' && typeof _pricingGetConfig === 'function') {
+      var _svcBudget = _pricingGetBudget(d.project.id);
+      var _svcCfg = _pricingGetConfig();
+      if (_svcBudget && _svcBudget.amount != null && !isNaN(_svcBudget.amount) && Number(_svcBudget.amount) > 0) {
+        var _svcAllowanceStr = _fmtUSD(Number(_svcBudget.amount));
+        var _svcRate =
+          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 125);
+        svcBlock =
+          '<div style="font-size:10px;color:#000;line-height:1.6;margin-top:12px;padding:10px 12px;' +
+          'border:1px solid var(--rpt-rule)">' +
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
+          'margin-bottom:4px">Monthly Energy Management Service Agreement</div>' +
+          '<div>' +
+          _svcAllowanceStr +
+          '/month allowance at $' +
+          _svcRate +
+          '/hr (not-to-exceed)</div>' +
+          '</div>';
+      }
+    }
+  } catch (e) {
+    svcBlock = ''; // non-fatal — page renders without this block, same as the tt fallback above
+  }
+
+  var bodyHTML = titleBlock + intro + table + discBlock + svcBlock;
 
   var resultPages = [
     rptPage(n, 'ASHRAE 36 Service Proposal — Cost Estimate', bodyHTML, {
