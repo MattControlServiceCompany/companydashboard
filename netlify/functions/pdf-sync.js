@@ -1,11 +1,11 @@
 // netlify/functions/pdf-sync.js
 //
 // Shared-backend replication endpoint for CompanyHub's PDF blob store.
-// Mirrors netlify/functions/kv-sync.js's auth stub (verifyAuth), error-
-// handling posture (502 = real backend failure, 409 = expected content
-// conflict, 400 = caller/protocol error), and Supabase service-key access
-// pattern -- see kv-sync.js's header for the full rationale; only
-// PDF-specific differences are re-explained below.
+// Mirrors netlify/functions/kv-sync.js's auth (verifyAuth, real Entra JWT
+// verification), error-handling posture (502 = real backend failure,
+// 409 = expected content conflict, 400 = caller/protocol error), and
+// Supabase service-key access pattern -- see kv-sync.js's header for the
+// full rationale; only PDF-specific differences are re-explained below.
 //
 // Per supabase-migration-plan-FINAL-2026-07-19.md §6 and phase2a-build-
 // plan.md §6 (R5): PDFs are content-addressed-ish and IMMUTABLE -- a key is
@@ -96,22 +96,70 @@
 //        limitation; no periodic sweep is built here (out of scope for
 //        this task, flagged in the implementer report).
 //
-// Auth: identical stub to kv-sync.js's verifyAuth(event) -- Phase 1 swaps
-// only that function's body later; every other line in this file is
-// unaffected. All PDF traffic must relay through this Function (the office
+// Auth (get-auth-hardening): real Entra JWT verification, identical logic
+// to kv-sync.js's verifyAuth(event) (jose, createRemoteJWKSet, iss/tid/aud/
+// exp against the CSC Entra tenant + AUTHORIZED_USERS allowlist). Phase 1
+// only swapped kv-sync.js's stub; this Function was left on the dev stub
+// until now -- this change closes that gap so GET and PUT (single-shot and
+// chunked) all require a valid allowlisted token, same 401/403 mapping as
+// kv-sync.js. All PDF traffic must relay through this Function (the office
 // firewall blocks direct signed URLs to *.supabase.co) -- there is no
 // direct-to-Storage path in the shipped app, only in the one-time bulk
 // migration script run from home (§6.4 of the migration plan).
-// Must NEVER be deployed to a public/production URL before Phase 1 auth
-// ships (R3, hard constraint) -- branch-deploy with dummy data only, or
-// local test.
+//
+// Provenance: verifyAuth's verified email is available to every handler as
+// `verifiedEmail`, but as noted above there is still no companion metadata
+// table/column in scope for this file to persist "who uploaded this PDF"
+// into (Supabase Storage's object REST API has no caller-writable metadata
+// column used here) -- that remains the same accepted, documented gap; the
+// email is simply no longer trusted from an unauthenticated caller.
 
 const crypto = require('crypto');
+const { jwtVerify, createRemoteJWKSet } = require('jose');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 const BUCKET = 'pdf_blobs';
+
+// Public Entra app-registration identifiers (safe to commit — see
+// AI/_context/temp/entra-ids.md). Not secrets. Identical to kv-sync.js.
+const ENTRA_TENANT_ID = '3a4273ad-6010-43d3-8bb9-45dfc3a5528d';
+const ENTRA_CLIENT_ID = '1dcf6406-c4c4-4664-94d0-50bcc2838c9d';
+const ENTRA_ISSUER = `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0`;
+// Entra can emit the custom-scope access token's `aud` as either the App ID
+// URI (`api://<clientId>`) or, depending on how the API/scope was exposed,
+// the bare client-id GUID — accept both (per task note: "verify both").
+const ENTRA_EXPECTED_AUDIENCES = [`api://${ENTRA_CLIENT_ID}`, ENTRA_CLIENT_ID];
+// Test-only seam: NEVER set in production. Lets unit tests point JWKS
+// fetches at a local mock server instead of login.microsoftonline.com.
+// Undefined in every real deploy -> falls through to the real Entra URL.
+const JWKS_URL =
+  process.env.CH_TEST_JWKS_URL || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/discovery/v2.0/keys`;
+
+// createRemoteJWKSet's returned function caches fetched keys internally and
+// is created once at module scope, so the cache persists across warm
+// Netlify Function invocations. Identical to kv-sync.js.
+const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
+
+// AuthError carries the HTTP status the caller should respond with —
+// 401 for a missing/unverifiable/expired token, 403 for a token that
+// verifies fine for the CSC tenant but whose email isn't allow-listed.
+// Identical to kv-sync.js.
+class AuthError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = 'AuthError';
+    this.statusCode = statusCode;
+  }
+}
+
+function _authorizedUsers() {
+  return (process.env.AUTHORIZED_USERS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
 
 // Raw-byte threshold: below this, GET/PUT are single-shot (no chunking
 // overhead) -- covers the common case (typical monthly bills ~0.4MB
@@ -124,11 +172,48 @@ const SINGLE_SHOT_LIMIT_BYTES = 4 * 1024 * 1024;
 // chunk, comfortably under the ~6MB cap with headroom for JSON overhead.
 const CHUNK_SIZE = 3 * 1024 * 1024;
 
-// --- Auth stub seam (mirrors kv-sync.js §4 of the migration plan) ----------
-// Phase 1 swaps ONLY this function's body for real JWT verification
-// (JWKS, iss/tid/aud/exp, allowlist) -- no other line in this file changes.
-function verifyAuth(event) {
-  return { email: getHeader(event, 'x-stub-user') || 'dev-stub@local' };
+// --- Auth (get-auth-hardening) -----------------------------------------
+// Real Entra JWT verification, identical logic to kv-sync.js's verifyAuth.
+// Every request this Function serves calls this — never trusts any
+// caller-supplied identity header.
+async function verifyAuth(event) {
+  const authHeader = getHeader(event, 'authorization');
+  if (!authHeader || !/^Bearer\s+/i.test(authHeader)) {
+    throw new AuthError(401, 'Missing bearer token');
+  }
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token) throw new AuthError(401, 'Missing bearer token');
+
+  let payload;
+  try {
+    const result = await jwtVerify(token, JWKS, {
+      issuer: ENTRA_ISSUER,
+      audience: ENTRA_EXPECTED_AUDIENCES,
+    });
+    payload = result.payload;
+  } catch (err) {
+    // Covers bad signature, expired (exp), not-yet-valid (nbf), wrong
+    // issuer, and wrong audience — all "this is not a valid token for
+    // this API", which is a 401, not a 403.
+    throw new AuthError(401, 'Invalid or expired token');
+  }
+
+  // Belt-and-suspenders tenant check: v2.0 Entra access tokens also carry
+  // a `tid` claim equal to the directory (tenant) ID; the issuer URL
+  // already encodes the tenant, but verify both per the migration plan.
+  if (payload.tid && payload.tid !== ENTRA_TENANT_ID) {
+    throw new AuthError(401, 'Token is not from the expected tenant');
+  }
+
+  const email = (payload.preferred_username || payload.email || '').toLowerCase();
+  if (!email) throw new AuthError(401, 'Token has no email/preferred_username claim');
+
+  const allowlist = _authorizedUsers();
+  if (!allowlist.includes(email)) {
+    throw new AuthError(403, 'Not authorized');
+  }
+
+  return { email };
 }
 
 function getHeader(event, name) {
@@ -141,8 +226,8 @@ function getHeader(event, name) {
 }
 
 // --- CORS/abuse posture (migration plan §4 item 5) --------------------------
-// Same posture kv-sync.js is expected to adopt in Phase 1: the Function
-// answers only its own origin; auth (still a stub here) is the real gate.
+// Same posture kv-sync.js adopted in Phase 1: the Function answers only
+// its own origin; real auth (verifyAuth, above) is the actual gate.
 // Soft check: if ALLOWED_ORIGIN is set AND the request carries an Origin
 // header that doesn't match, reject. No Origin header (server-to-server,
 // curl, Node test/migration scripts) or ALLOWED_ORIGIN unset (branch-
@@ -255,15 +340,19 @@ exports.handler = async (event) => {
   }
 
   try {
-    // Establishes the auth seam for every request (Phase 1 will make this
-    // actually reject); result is not persisted anywhere in this slice —
-    // see file header ("no companion metadata table in scope").
-    verifyAuth(event);
+    // Every request this Function serves — GET (single + chunked) and PUT
+    // (single-shot + chunked) alike — requires a verified, allowlisted
+    // token, checked BEFORE any GET/PUT branch runs. AuthError thrown here
+    // propagates to the catch below, which maps .statusCode (401/403) to
+    // the response; result is not persisted anywhere in this slice — see
+    // file header ("no companion metadata table in scope").
+    const { email: verifiedEmail } = await verifyAuth(event);
 
     if (event.httpMethod === 'GET') return await handleGet(event);
-    if (event.httpMethod === 'PUT') return await handlePut(event);
+    if (event.httpMethod === 'PUT') return await handlePut(event, verifiedEmail);
     return respond(405, { error: 'Method not allowed' });
   } catch (err) {
+    if (err instanceof AuthError) return respond(err.statusCode, { error: err.message });
     console.error('[pdf-sync] error:', err && err.message);
     return respond(500, { error: 'Internal error' });
   }
@@ -328,7 +417,14 @@ async function handleGet(event) {
   });
 }
 
-async function handlePut(event) {
+// `verifiedEmail` is the caller's identity from the handler's single
+// top-of-request verifyAuth() call (never re-derived from the body). It is
+// threaded through here for provenance, but as documented in the file
+// header there is still no companion metadata table/column in this file's
+// scope to persist "who uploaded this PDF" into — so it is currently
+// unused below. Kept as a parameter (rather than dropped) so a future
+// provenance column can be wired here without touching the auth call site.
+async function handlePut(event, verifiedEmail) {
   let body;
   try {
     const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : event.body || '{}';
