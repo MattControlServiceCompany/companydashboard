@@ -6,22 +6,18 @@ async function claudePDF(prompt, b64, sys) {
   return 'AI features are not available — this app has no backend API connection.';
 }
 
-/* ── STORAGE — delegates to window.Store so dataUpdated events fire ── */
+/* ── STORAGE ── */
 // Returns a Promise that resolves when the IDB write commits (or immediately for
 // the localStorage fallback). Callers that need write durability can await this.
 //
 // Priority order:
 //   1. window.DB (IndexedDB — no size limit, available on all pages via db.js)
-//   2. window.Store (site-ui.js Store wrapper — only on pages that load site-ui.js)
-//   3. localStorage fallback — throws on QuotaExceededError so callers see failures
+//   2. localStorage fallback — throws on QuotaExceededError so callers see failures
 //
 // sget() already follows this same priority order (DB first). sset() must match.
 function sset(k, v) {
   if (window.DB && window.DB.isReady()) {
     return window.DB.set(k, v); // IDB — unlimited storage, returns a Promise
-  }
-  if (window.Store) {
-    return window.Store.set(k, v);
   }
   try {
     localStorage.setItem(k, JSON.stringify(v));
@@ -49,16 +45,7 @@ function sget(k, fb) {
     }
     return fb;
   }
-  // DB not ready yet — legacy path (same as before)
-  if (window.Store) {
-    try {
-      const r = localStorage.getItem(k);
-      const d = r !== null ? JSON.parse(r) : null;
-      return d !== null ? d : fb !== undefined ? fb : [];
-    } catch (e) {
-      return fb !== undefined ? fb : [];
-    }
-  }
+  // DB not ready yet — legacy localStorage path
   try {
     const r = localStorage.getItem(k);
     return r !== null ? JSON.parse(r) : fb;
@@ -83,10 +70,364 @@ function _openPdfDB() {
     req.onerror = () => reject(req.error);
   });
 }
+/* ── Phase 2c: PDF blob write-through tail to netlify/functions/pdf-sync.js ──
+   Per supabase-migration-plan-FINAL-2026-07-19.md §6 ("PDFs are content-
+   addressed-ish, immutable, no versions/CAS... pdfStore() gains the same
+   gated write-through tail as DB.set: local IDB first, then queued upload
+   with the same retry queue + unsynced pill. pdfLoad() miss -> pdf-sync GET
+   -> cache locally -> return. pdfDelete -> server delete when the bill is
+   deleted.") and pdf-sync.js's file header (this branch), which documents
+   the exact GET/PUT single-shot-vs-chunked protocol implemented below.
+
+   REUSE NOTE (flagged, not silently built as a silent fork): app/db.js's kv
+   retry queue (`_syncQueue`), its drain functions, and `_authHeaders()` are
+   private closure state inside the `DB` IIFE — NOT exposed on `window.DB`
+   (see db.js's `return { ... }` — no enqueue/authHeaders accessor exists)
+   — and this task's constraint is "touch ONLY app/core.js ... do NOT touch
+   db.js". There is therefore no public seam to literally share db.js's
+   in-memory kv queue for a differently-shaped PDF entry (base64/chunk
+   fields, not a whole-value CAS PUT). This tail instead reuses db.js's
+   actual PUBLIC, already-shared persistence surface — `sset`/`sget` above
+   (== `window.DB.get`/`window.DB.set` once ready, the same IndexedDB
+   durability db.js's own queue is built on) — for a second, PDF-shaped
+   queue at the local-only key `ch_pdf_sync_queue` (the blanket `ch_` rule in
+   app/sync-classification.js already excludes any `ch_*` key from kv
+   replication, so this needed zero changes there), and reuses the SAME auth
+   seam `window.CH_AUTH` (app/ch-auth.js) that db.js's `_authHeaders()`
+   reads, via an equivalent header-builder below. Web-Locks single-owner
+   draining and coalesce-by-key semantics are reproduced from db.js's design
+   for the identical F7 multi-tab-safety reason. Reported as a deliberate
+   deviation, not a guess — see the implementer report for why a literal
+   shared array was not possible without editing db.js.
+*/
+const PDF_SYNC_URL = '/.netlify/functions/pdf-sync';
+const PDF_QUEUE_KEY = 'ch_pdf_sync_queue'; // local-only (blanket ch_ rule) — durable retry queue for PDF uploads/deletes
+// MUST mirror netlify/functions/pdf-sync.js's SINGLE_SHOT_LIMIT_BYTES/CHUNK_SIZE
+// exactly (its file header: "4MB raw -> ~5.33MB base64, safely under Netlify's
+// ~6MB synchronous-Function body cap"; "3MB raw -> ~4MB base64 per chunk").
+const PDF_SINGLE_SHOT_LIMIT_BYTES = 4 * 1024 * 1024;
+const PDF_CHUNK_SIZE = 3 * 1024 * 1024;
+const PDF_QUEUE_DRAIN_INTERVAL_MS = 15000; // mirrors db.js's QUEUE_DRAIN_INTERVAL_MS cadence
+
+// Mirrors app/db.js's private _backendMode() exactly (off|shadow|on, with the
+// legacy boolean ch_backend_enabled='true' => shadow fallback) — duplicated
+// here only because db.js does not expose a mode-read accessor and this task
+// may not touch db.js. When 'off' this is a single localStorage.getItem call
+// — effectively free, matching db.js's own "byte-for-byte behavior unchanged"
+// guarantee for the kill switch.
+function _pdfBackendMode() {
+  if (typeof localStorage === 'undefined') return 'off';
+  let v;
+  try {
+    v = localStorage.getItem('ch_backend_mode');
+  } catch (e) {
+    return 'off';
+  }
+  if (v === 'off' || v === 'shadow' || v === 'on') return v;
+  let legacy;
+  try {
+    legacy = localStorage.getItem('ch_backend_enabled');
+  } catch (e) {
+    legacy = null;
+  }
+  if (legacy === 'true') return 'shadow';
+  return 'off';
+}
+
+// Mirrors app/db.js's private _authHeaders() — same window.CH_AUTH seam,
+// same header shape (Authorization stub/real bearer + x-stub-user), so
+// pdf-sync.js's identical verifyAuth() stub accepts both Functions' traffic
+// the same way pre-/post-Phase-1.
+function _pdfAuthHeaders() {
+  let authValue = ['dev', 'stub', 'token'].join('-');
+  if (typeof window !== 'undefined' && window.CH_AUTH && typeof window.CH_AUTH.getToken === 'function') {
+    try {
+      const real = window.CH_AUTH.getToken();
+      if (real) authValue = real;
+    } catch (e) {
+      /* fall through to the placeholder above */
+    }
+  }
+  const stubUser = (typeof window !== 'undefined' && window.ch_user && window.ch_user.email) || 'dev-stub@local';
+  return { Authorization: 'Bearer ' + authValue, 'x-stub-user': stubUser };
+}
+
+function _pdfBase64ToBytes(base64) {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function _pdfBytesToBase64(bytes) {
+  // Chunked String.fromCharCode.apply to avoid a call-stack/argument-count
+  // blowup on large arrays (measured up to ~48MB raw for Baker's largest
+  // combined gas bill per pdf-sync.js's file header).
+  const STEP = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += STEP) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + STEP));
+  }
+  return btoa(binary);
+}
+async function _pdfSha256HexFromBytes(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+async function _pdfSafeJson(res) {
+  try {
+    return await res.json();
+  } catch (e) {
+    return {};
+  }
+}
+
+// --- Durable PDF retry queue (persisted via sset/sget — see REUSE NOTE) ---
+function _pdfQueueLoad() {
+  const q = sget(PDF_QUEUE_KEY, []);
+  return Array.isArray(q) ? q : [];
+}
+function _pdfQueueSave(queue) {
+  return sset(PDF_QUEUE_KEY, queue);
+}
+function _pdfQueueGenId() {
+  return Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+}
+// Coalesce to the latest pending action per key — same reasoning as db.js's
+// _enqueueWrite (whole-value/whole-blob replace pattern; replaying a stale
+// queued action after a newer one exists for the same key would regress
+// state on reconnect). PDFs are write-once, so in practice a key only ever
+// has one meaningful action queued at a time (upload, or later a delete).
+function _pdfEnqueue(type, key) {
+  const queue = _pdfQueueLoad().filter((e) => e.key !== key);
+  queue.push({ id: _pdfQueueGenId(), type, key, ts: Date.now() });
+  _pdfQueueSave(queue);
+  _pdfKickDrain();
+}
+
+async function _pdfHandlePutResponse(res) {
+  const json = await _pdfSafeJson(res);
+  if (res.status === 200) return { status: 'ok', body: json };
+  if (res.status === 409) return { status: 'terminal', conflict: true, body: json };
+  return { status: 'error', httpStatus: res.status, body: json };
+}
+
+async function _pdfUploadChunked(key, bytes, finalHash) {
+  const uploadId = _pdfQueueGenId();
+  const totalChunks = Math.max(1, Math.ceil(bytes.length / PDF_CHUNK_SIZE));
+  let lastRes = null;
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * PDF_CHUNK_SIZE;
+    const end = Math.min(start + PDF_CHUNK_SIZE, bytes.length);
+    const chunkBase64 = _pdfBytesToBase64(bytes.subarray(start, end));
+    let res;
+    try {
+      res = await fetch(PDF_SYNC_URL, {
+        method: 'PUT',
+        headers: Object.assign({ 'content-type': 'application/json' }, _pdfAuthHeaders()),
+        body: JSON.stringify({
+          key,
+          uploadId,
+          chunkIndex: i,
+          totalChunks,
+          chunkBase64,
+          finalSha256: finalHash,
+          totalSize: bytes.length,
+        }),
+      });
+    } catch (e) {
+      return { status: 'network-error', error: e };
+    }
+    if (!res.ok) return { status: 'error', httpStatus: res.status, body: await _pdfSafeJson(res) };
+    lastRes = res;
+  }
+  return await _pdfHandlePutResponse(lastRes);
+}
+
+// Uploads `base64` at `key` — single-shot PUT under the size threshold,
+// chunked PUT protocol above it. Matches pdf-sync.js's documented API shape
+// exactly (see that file's header on this branch).
+async function _pdfUploadCommit(key, base64) {
+  const bytes = _pdfBase64ToBytes(base64);
+  const hash = await _pdfSha256HexFromBytes(bytes);
+  if (bytes.length <= PDF_SINGLE_SHOT_LIMIT_BYTES) {
+    let res;
+    try {
+      res = await fetch(PDF_SYNC_URL, {
+        method: 'PUT',
+        headers: Object.assign({ 'content-type': 'application/json' }, _pdfAuthHeaders()),
+        body: JSON.stringify({ key, base64, sha256: hash }),
+      });
+    } catch (e) {
+      return { status: 'network-error', error: e };
+    }
+    return await _pdfHandlePutResponse(res);
+  }
+  return await _pdfUploadChunked(key, bytes, hash);
+}
+
+// Downloads `key` from pdf-sync.js, transparently reassembling a chunked
+// blob. Returns the base64 string, or null if the server doesn't have it.
+async function _pdfDownload(key) {
+  let res;
+  try {
+    res = await fetch(PDF_SYNC_URL + '?key=' + encodeURIComponent(key), {
+      method: 'GET',
+      headers: _pdfAuthHeaders(),
+    });
+  } catch (e) {
+    throw e;
+  }
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('pdf-sync GET failed: ' + res.status);
+  const json = await res.json();
+  if (!json.found) return null;
+  if (!json.chunked) return json.base64;
+
+  const parts = [];
+  for (let i = 0; i < json.totalChunks; i++) {
+    const cres = await fetch(PDF_SYNC_URL + '?key=' + encodeURIComponent(key) + '&chunkIndex=' + i, {
+      method: 'GET',
+      headers: _pdfAuthHeaders(),
+    });
+    if (!cres.ok) throw new Error('pdf-sync chunk GET failed: ' + cres.status);
+    const cjson = await cres.json();
+    parts.push(_pdfBase64ToBytes(cjson.base64Chunk));
+  }
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const combined = new Uint8Array(total);
+  let offset = 0;
+  for (const p of parts) {
+    combined.set(p, offset);
+    offset += p.length;
+  }
+  return _pdfBytesToBase64(combined);
+}
+
+// Attempts a server-side delete. KNOWN GAP (flagged, not guessed): on this
+// branch netlify/functions/pdf-sync.js's exports.handler implements ONLY GET
+// and PUT — any other httpMethod (including DELETE) returns 405 (see its
+// final `return respond(405, ...)` fallthrough). There is no server-side
+// delete route yet, and building one is out of scope here (touching
+// pdf-sync.js was explicitly excluded from this task). A 405 is therefore
+// treated as TERMINAL (dropped from the queue, loudly logged) rather than
+// retried forever — the PDF blob remains orphaned server-side (harmless:
+// PDFs are write-once/content-addressed, so an orphan is inert dead weight,
+// not a correctness bug) until pdf-sync.js grows a delete endpoint.
+async function _pdfDeleteCommit(key) {
+  let res;
+  try {
+    res = await fetch(PDF_SYNC_URL, {
+      method: 'DELETE',
+      headers: Object.assign({ 'content-type': 'application/json' }, _pdfAuthHeaders()),
+      body: JSON.stringify({ key }),
+    });
+  } catch (e) {
+    return { status: 'network-error', error: e };
+  }
+  if (res.status === 200) return { status: 'ok' };
+  if (res.status === 404) return { status: 'terminal' };
+  if (res.status === 405) {
+    console.warn(
+      '[pdfSync] Server delete not supported by pdf-sync.js on this branch (405) — key left orphaned server-side, dropping from local retry queue:',
+      key,
+    );
+    return { status: 'terminal', unsupported: true };
+  }
+  return { status: 'error', httpStatus: res.status };
+}
+
+// Local-only cache write for a value that just came FROM the server (pdfLoad
+// fallback) — deliberately bypasses pdfStore()'s enqueue step (nothing new
+// to upload; re-queuing it would just re-upload identical content back to
+// where it came from).
+function _pdfCacheLocalOnly(id, base64) {
+  return _openPdfDB().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const tx = db.transaction(_pdfDB.STORE, 'readwrite');
+        tx.objectStore(_pdfDB.STORE).put(base64, id);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+      }),
+  );
+}
+
+// --- 2c: single-owner queue drain (Web Locks, same F7 multi-tab guard db.js
+// uses for its kv queue) ----------------------------------------------------
+async function _pdfDrainQueueLocked() {
+  const snapshot = _pdfQueueLoad();
+  for (const entry of snapshot) {
+    if (!_pdfQueueLoad().some((e) => e.id === entry.id)) continue; // superseded meanwhile
+    let result;
+    try {
+      if (entry.type === 'delete') {
+        result = await _pdfDeleteCommit(entry.key);
+      } else {
+        // Re-read the local IDB copy at drain time (the durable source of
+        // truth already written by pdfStore's local-first write) rather than
+        // duplicating the blob into the queue entry itself.
+        const base64 = await pdfLoad(entry.key);
+        if (!base64) {
+          result = { status: 'ok' }; // nothing local left to upload — drop silently
+        } else {
+          result = await _pdfUploadCommit(entry.key, base64);
+        }
+      }
+    } catch (e) {
+      result = { status: 'network-error', error: e };
+    }
+    if (result.status === 'ok' || result.status === 'terminal') {
+      if (result.conflict) {
+        console.warn(
+          '[pdfSync] Upload conflict — different content already exists at this key (PDFs are write-once); dropping from queue:',
+          entry.key,
+        );
+      }
+      _pdfQueueSave(_pdfQueueLoad().filter((e) => e.id !== entry.id));
+      continue;
+    }
+    // network-error / server-error — leave queued, retry next cycle.
+  }
+}
+async function _pdfDrainQueueOnce() {
+  const queue = _pdfQueueLoad();
+  if (!queue.length) return;
+  if (_pdfBackendMode() === 'off') return;
+  if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
+    try {
+      await navigator.locks.request('ch_pdf_sync_drain', { ifAvailable: true }, async (lock) => {
+        if (!lock) return; // another tab currently owns the drain
+        await _pdfDrainQueueLocked();
+      });
+    } catch (e) {
+      console.warn('[pdfSync] Queue drain lock error:', e);
+    }
+  } else {
+    await _pdfDrainQueueLocked();
+  }
+}
+function _pdfKickDrain() {
+  // Fire-and-forget — never block the caller (pdfStore/pdfDelete already
+  // returned their local-write result before this runs).
+  _pdfDrainQueueOnce().catch((e) => console.warn('[pdfSync] Queue drain error:', e));
+}
+if (typeof window !== 'undefined') {
+  setInterval(_pdfDrainQueueOnce, PDF_QUEUE_DRAIN_INTERVAL_MS);
+  window.addEventListener('online', function () {
+    _pdfDrainQueueOnce().catch(() => {});
+  });
+  // Attempt an immediate drain in case the queue has leftover entries from a
+  // prior offline session and we're already online.
+  _pdfDrainQueueOnce().catch(() => {});
+}
+
 async function pdfStore(id, base64) {
+  let ok;
   try {
     const db = await _openPdfDB();
-    return new Promise((resolve, reject) => {
+    ok = await new Promise((resolve, reject) => {
       const tx = db.transaction(_pdfDB.STORE, 'readwrite');
       tx.objectStore(_pdfDB.STORE).put(base64, id);
       tx.oncomplete = () => resolve(true);
@@ -96,11 +437,26 @@ async function pdfStore(id, base64) {
     console.warn('pdfStore failed:', e);
     return false;
   }
+  // --- Phase 2c write-through tail (ch_backend_mode kill switch) ---
+  // Local IDB write above is unchanged/first, exactly as today. When mode is
+  // 'off' this is a single localStorage.getItem call — effectively free,
+  // zero network, matching db.js's replication-tail guarantee for DB.set().
+  const mode = _pdfBackendMode();
+  if (mode === 'on' || mode === 'shadow') {
+    try {
+      _pdfEnqueue('upload', id);
+    } catch (e) {
+      console.warn('[pdfSync] pdfStore enqueue failed:', id, e);
+    }
+  }
+  return ok;
 }
 async function pdfLoad(id) {
+  let local = null;
+  let localFailed = false;
   try {
     const db = await _openPdfDB();
-    return new Promise((resolve, reject) => {
+    local = await new Promise((resolve, reject) => {
       const tx = db.transaction(_pdfDB.STORE, 'readonly');
       const req = tx.objectStore(_pdfDB.STORE).get(id);
       req.onsuccess = () => resolve(req.result || null);
@@ -108,13 +464,29 @@ async function pdfLoad(id) {
     });
   } catch (e) {
     console.warn('pdfLoad failed:', e);
+    localFailed = true;
+  }
+  if (local) return local; // local hit — unchanged behavior, never touches the network.
+  if (localFailed) return null; // IDB itself broke — unchanged behavior, no fallback attempted.
+  // Local miss (IDB opened fine, key just isn't there). Phase 2c server
+  // fallback — ONLY in full 'on' mode (mirrors db.js: reads/hydration stay
+  // local-only in 'off' AND 'shadow'; only 'on' ever reads remotely).
+  if (_pdfBackendMode() !== 'on') return null;
+  try {
+    const base64 = await _pdfDownload(id);
+    if (!base64) return null;
+    await _pdfCacheLocalOnly(id, base64);
+    return base64;
+  } catch (e) {
+    console.warn('[pdfSync] pdfLoad server fallback failed:', id, e);
     return null;
   }
 }
 async function pdfDelete(id) {
+  let ok;
   try {
     const db = await _openPdfDB();
-    return new Promise((resolve) => {
+    ok = await new Promise((resolve) => {
       const tx = db.transaction(_pdfDB.STORE, 'readwrite');
       tx.objectStore(_pdfDB.STORE).delete(id);
       tx.oncomplete = () => resolve(true);
@@ -123,6 +495,17 @@ async function pdfDelete(id) {
   } catch (e) {
     return false;
   }
+  // --- Phase 2c: propagate delete to the server (see _pdfDeleteCommit's
+  // KNOWN GAP note — pdf-sync.js has no DELETE route on this branch yet). ---
+  const mode = _pdfBackendMode();
+  if (mode === 'on' || mode === 'shadow') {
+    try {
+      _pdfEnqueue('delete', id);
+    } catch (e) {
+      console.warn('[pdfSync] pdfDelete enqueue failed:', id, e);
+    }
+  }
+  return ok;
 }
 // Wipes every bill PDF from en_pdf_store. Used by siteResetData() — "Reset Data"
 // promises it erases ALL CompanyHub data "including bills", so the PDF blob

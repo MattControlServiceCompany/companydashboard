@@ -25,6 +25,7 @@
       integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU"
       crossorigin="anonymous"
     ></script>
+    <script src="app/ch-auth.js"></script>
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
@@ -1368,7 +1369,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=693" />
+    <link rel="stylesheet" href="feedback-widget.css?v=697" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -1934,11 +1935,14 @@
       ═══════════════════════════════════ */
       const M365 = {
         auth: {
-          clientId: 'YOUR_CLIENT_ID',
-          authority: 'https://login.microsoftonline.com/YOUR_TENANT_ID',
+          clientId: '1dcf6406-c4c4-4664-94d0-50bcc2838c9d',
+          authority: 'https://login.microsoftonline.com/3a4273ad-6010-43d3-8bb9-45dfc3a5528d',
           redirectUri: window.location.href,
         },
-        cache: { cacheLocation: 'sessionStorage' },
+        // localStorage (not sessionStorage) so a session started here is
+        // usable when a new tab is opened directly to another department
+        // page (integration #5, supabase-migration-plan-FINAL-2026-07-19.md §4).
+        cache: { cacheLocation: 'localStorage' },
       };
       const SCOPES = ['User.Read', 'Calendars.ReadWrite'];
       let msalApp = null,
@@ -1972,13 +1976,12 @@
           sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
           enterApp();
         } catch (e) {
-          if (M365.auth.clientId === 'YOUR_CLIENT_ID') {
-            showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
-            setTimeout(loginDemo, 700);
-          } else {
-            btn.innerHTML = '⚠️ Login failed';
-            btn.disabled = false;
-          }
+          // Real Entra app is registered (Phase 1) — a failed login is a
+          // real failure, never a silent fallback into Demo mode. Demo mode
+          // is only ever entered via the explicit "Continue in Demo Mode"
+          // button (loginDemo()), and never carries the backend sync flag.
+          btn.innerHTML = '⚠️ Login failed';
+          btn.disabled = false;
         }
       }
 
@@ -3275,7 +3278,7 @@
       }
 
       /* Backup / Restore / Reset */
-      function siteBackup() {
+      async function siteBackup() {
         // Get all DB data (IndexedDB-backed)
         var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
         // Also grab any remaining localStorage keys (preferences, settings)
@@ -3287,10 +3290,24 @@
         // Merge — DB data takes precedence
         var allData = Object.assign({}, lsData, dbData);
         var data = allData;
+        // Raw bill PDFs live in the separate en_pdf_store IndexedDB database and are
+        // intentionally NOT included in this backup. Serializing all PDFs' base64
+        // into one monolithic JSON string (via _pdfBackupGetAll() + JSON.stringify)
+        // held 2-3 full copies of the PDF store in the JS heap at once and OOM-crashed
+        // the tab on large stores (~1000 bills, 150-250MB). This backup stays
+        // data-only, matching the pre-regression behavior. A batched/streaming PDF
+        // export is a separate follow-up, not part of this backup.
+        // Explicit positive marker so a future restore can identify this as a real
+        // CompanyHub backup without guessing from data keys at all.
+        data._companyHubBackup = true;
         var d = new Date();
         var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
         var filename = 'CompanyHub-localdatafile-' + ds + '.json';
-        var content = JSON.stringify(data, null, 2);
+        // Compact serialization — matches index.html's siteBackup() so all three
+        // backup buttons produce the same file shape (see index.html for the size
+        // rationale). Restore only calls JSON.parse(), which is unaffected by
+        // formatting.
+        var content = JSON.stringify(data);
         var blob = new Blob([content], { type: 'application/json' });
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
@@ -3306,6 +3323,27 @@
       }
       function processRestoreFile(file) {
         if (!file) return;
+        // 2a.4b — Restore-from-backup mass-writes every key through DB.set.
+        // With the replication tail live (ch_backend_mode === 'on') that's a
+        // 409-storm or a silent mass-overwrite of the other user's current
+        // server data — never a user's intent when they click "Restore".
+        // Default: block it outright
+        // (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4,
+        // task 2a.4b — "Default: block it"). Mode 'off'/'shadow' unaffected.
+        var _chBackendModeRestoreGuard = 'off';
+        try {
+          _chBackendModeRestoreGuard = localStorage.getItem('ch_backend_mode') || 'off';
+        } catch (e) {}
+        if (_chBackendModeRestoreGuard === 'on') {
+          if (typeof showToast === 'function') {
+            showToast(
+              'Restore from backup is disabled while sync is on, to protect the shared server data. Turn sync off in Settings to restore this device only, or contact your admin about the server-side rollback path.',
+              'error',
+              8000,
+            );
+          }
+          return;
+        }
         if (!file.name.toLowerCase().endsWith('.json')) {
           if (typeof showToast === 'function') showToast('Please drop a .json backup file');
           return;
@@ -3369,10 +3407,11 @@
       }
       // Raw bill PDFs live in a SEPARATE IndexedDB database (en_pdf_store / files),
       // written and read via pdfStore()/pdfLoad() in app/core.js on the energy
-      // page. service-department.html does not load core.js, so this helper
-      // mirrors that exact same DB name, object store name, and clear contract
-      // so "Reset Data" here also wipes bill PDFs (same-origin IndexedDB is
-      // shared across all CompanyHub pages). Keep in sync with app/core.js's
+      // page. service-department.html does not load core.js, so these helpers
+      // mirror that exact same DB name, object store name, and get/clear
+      // contract so "Reset Data" here also wipes bill PDFs and siteBackup()
+      // here also includes them (same-origin IndexedDB is shared across all
+      // CompanyHub pages). Keep in sync with app/core.js's
       // _pdfDB/_openPdfDB/pdfClearAll if that contract changes.
       var _pdfBackupDB = { db: null, NAME: 'en_pdf_store', STORE: 'files', VER: 1 };
       function _pdfBackupOpenDB() {
@@ -3389,6 +3428,37 @@
           req.onerror = function () {
             reject(req.error);
           };
+        });
+      }
+      // Reads every stored PDF (id -> base64) for inclusion in siteBackup()'s
+      // exported JSON. Mirrors index.html's _pdfBackupGetAll() exactly.
+      function _pdfBackupGetAll() {
+        return _pdfBackupOpenDB().then(function (db) {
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction(_pdfBackupDB.STORE, 'readonly');
+            var store = tx.objectStore(_pdfBackupDB.STORE);
+            var getAllReq = store.getAll();
+            var getKeysReq = store.getAllKeys();
+            var values, keys;
+            getAllReq.onsuccess = function () {
+              values = getAllReq.result;
+            };
+            getKeysReq.onsuccess = function () {
+              keys = getKeysReq.result;
+            };
+            tx.oncomplete = function () {
+              var out = {};
+              if (keys && values) {
+                keys.forEach(function (k, i) {
+                  out[k] = values[i];
+                });
+              }
+              resolve(out);
+            };
+            tx.onerror = function () {
+              reject(tx.error);
+            };
+          });
         });
       }
       function _pdfBackupClearAll() {
@@ -3412,6 +3482,25 @@
           )
         )
           return;
+        // 2a.4b — Reset must NOT silently disable sync. localStorage.clear()
+        // below (and DB.clear()'s own localStorage.clear() fallback if
+        // IndexedDB is unavailable) would otherwise wipe ch_backend_mode
+        // along with everything else, turning sync off with no error and
+        // reloading into an empty local-only app instead of the intended
+        // "reset = re-hydrate from server"
+        // (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4,
+        // task 2a.4b). Capture the flag now, restore it AFTER every clear
+        // path below — warmCache()'s existing hydration step then does the
+        // full re-pull on reload for free (mode 'on' -> _hydrate() runs;
+        // mode 'off' unchanged).
+        var _chBackendModeReset = null;
+        var _chBackendEnabledReset = null;
+        try {
+          _chBackendModeReset = localStorage.getItem('ch_backend_mode');
+        } catch (e) {}
+        try {
+          _chBackendEnabledReset = localStorage.getItem('ch_backend_enabled');
+        } catch (e) {}
         localStorage.clear();
         sessionStorage.clear();
         if (window.DB && window.DB.clear) {
@@ -3419,6 +3508,10 @@
         }
         try {
           await _pdfBackupClearAll();
+        } catch (e) {}
+        try {
+          if (_chBackendModeReset !== null) localStorage.setItem('ch_backend_mode', _chBackendModeReset);
+          if (_chBackendEnabledReset !== null) localStorage.setItem('ch_backend_enabled', _chBackendEnabledReset);
         } catch (e) {}
         if (typeof showToast === 'function') showToast('Reset — reloading...');
         setTimeout(function () {
@@ -3714,7 +3807,9 @@
         }
       });
     </script>
-    <script src="app/db.js?v=693"></script>
-    <script src="feedback-widget.js?v=693"></script>
+    <script src="app/sync-classification.js?v=697"></script>
+    <script src="app/db.js?v=697"></script>
+    <script src="app/sync-ui.js?v=697"></script>
+    <script src="feedback-widget.js?v=697"></script>
   </body>
 </html>

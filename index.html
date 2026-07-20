@@ -25,6 +25,7 @@
       integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU"
       crossorigin="anonymous"
     ></script>
+    <script src="app/ch-auth.js"></script>
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
@@ -1789,7 +1790,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=693" />
+    <link rel="stylesheet" href="feedback-widget.css?v=697" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -2233,11 +2234,14 @@
       /* ── AUTH ── */
       const M365 = {
         auth: {
-          clientId: 'YOUR_CLIENT_ID',
-          authority: 'https://login.microsoftonline.com/YOUR_TENANT_ID',
+          clientId: '1dcf6406-c4c4-4664-94d0-50bcc2838c9d',
+          authority: 'https://login.microsoftonline.com/3a4273ad-6010-43d3-8bb9-45dfc3a5528d',
           redirectUri: window.location.origin + '/index.html',
         },
-        cache: { cacheLocation: 'sessionStorage' },
+        // localStorage (not sessionStorage) so a session started here is
+        // usable when a new tab is opened directly to another department
+        // page (integration #5, supabase-migration-plan-FINAL-2026-07-19.md §4).
+        cache: { cacheLocation: 'localStorage' },
       };
       const SCOPES = ['User.Read', 'Calendars.ReadWrite'];
       let msalApp = null,
@@ -2287,13 +2291,12 @@
           saveSession(currentUser);
           enterApp();
         } catch (e) {
-          if (M365.auth.clientId === 'YOUR_CLIENT_ID') {
-            if (typeof showToast === 'function') showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
-            setTimeout(loginDemo, 700);
-          } else {
-            btn.innerHTML = '⚠️ Login failed';
-            btn.disabled = false;
-          }
+          // Real Entra app is registered (Phase 1) — a failed login is a
+          // real failure, never a silent fallback into Demo mode. Demo mode
+          // is only ever entered via the explicit "Continue in Demo Mode"
+          // button (loginDemo()), and never carries the backend sync flag.
+          btn.innerHTML = '⚠️ Login failed';
+          btn.disabled = false;
         }
       }
       function enterApp() {
@@ -2702,29 +2705,12 @@
         var allData = Object.assign({}, lsData, dbData);
         var data = allData;
         // Raw bill PDFs live in the separate en_pdf_store IndexedDB database and are
-        // NOT covered by DB.getAll()/localStorage above — pull them in under their own
-        // top-level key so the backup format stays self-describing and old readers
-        // that don't know about it just see one extra key.
-        //
-        // This read must NEVER fail silently: a backup that claims success while
-        // actually containing zero bill PDFs (because the read threw) is worse
-        // than no backup at all — it tells the user their data is safe when the
-        // most irreplaceable part of it (656 original bill PDFs, no other copy)
-        // is missing. _pdfStoreMeta travels inside the file itself so a later
-        // restore can tell "no PDFs, none existed" apart from "no PDFs, the
-        // read failed" and refuse to pretend a truncated backup is complete.
-        var pdfOk = true;
-        var pdfErr = null;
-        try {
-          data._pdfStore = await _pdfBackupGetAll();
-        } catch (e) {
-          console.warn('PDF store backup failed:', e);
-          data._pdfStore = {};
-          pdfOk = false;
-          pdfErr = (e && e.message) || String(e);
-        }
-        var pdfCount = Object.keys(data._pdfStore).length;
-        data._pdfStoreMeta = { ok: pdfOk, count: pdfCount, error: pdfErr };
+        // intentionally NOT included in this backup. Serializing all PDFs' base64
+        // into one monolithic JSON string (via _pdfBackupGetAll() + JSON.stringify)
+        // held 2-3 full copies of the PDF store in the JS heap at once and OOM-crashed
+        // the tab on large stores (~1000 bills, 150-250MB). This backup stays
+        // data-only, matching the pre-regression behavior. A batched/streaming PDF
+        // export is a separate follow-up, not part of this backup.
         // Explicit positive marker so a future restore can identify this as a real
         // CompanyHub backup without guessing from data keys at all (see the
         // marker-key fallback in processRestoreFile, which still covers backups
@@ -2751,22 +2737,28 @@
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
         }, 1500);
-        if (pdfOk) {
-          _pdfNotice(
-            'Backup downloaded — ' + pdfCount + ' bill PDF' + (pdfCount === 1 ? '' : 's') + ' included',
-            false,
-          );
-        } else {
-          _pdfNotice(
-            'Backup downloaded, but bill PDFs FAILED to export (0 included). The rest of your data is in the file — your bill PDFs are NOT. Do not delete your original data source. (' +
-              pdfErr +
-              ')',
-            true,
-          );
-        }
+        _pdfNotice('Backup downloaded', false);
       }
       function processRestoreFile(file) {
         if (!file) return;
+        // 2a.4b — Restore-from-backup mass-writes every key through DB.set.
+        // With the replication tail live (ch_backend_mode === 'on') that's a
+        // 409-storm or a silent mass-overwrite of the other user's current
+        // server data — never a user's intent when they click "Restore".
+        // Default: block it outright
+        // (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4,
+        // task 2a.4b — "Default: block it"). Mode 'off'/'shadow' unaffected.
+        var _chBackendModeRestoreGuard = 'off';
+        try {
+          _chBackendModeRestoreGuard = localStorage.getItem('ch_backend_mode') || 'off';
+        } catch (e) {}
+        if (_chBackendModeRestoreGuard === 'on') {
+          _pdfNotice(
+            'Restore from backup is disabled while sync is on, to protect the shared server data. Turn sync off in Settings to restore this device only, or contact your admin about the server-side rollback path.',
+            true,
+          );
+          return;
+        }
         if (!file.name.toLowerCase().endsWith('.json')) {
           _pdfNotice('Please drop a .json backup file — restore requires a CompanyHub backup .json file.', true);
           return;
@@ -2978,6 +2970,25 @@
           )
         )
           return;
+        // 2a.4b — Reset must NOT silently disable sync. localStorage.clear()
+        // below (and DB.clear()'s own localStorage.clear() fallback if
+        // IndexedDB is unavailable) would otherwise wipe ch_backend_mode
+        // along with everything else, turning sync off with no error and
+        // reloading into an empty local-only app instead of the intended
+        // "reset = re-hydrate from server"
+        // (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4,
+        // task 2a.4b). Capture the flag now, restore it AFTER every clear
+        // path below — warmCache()'s existing hydration step then does the
+        // full re-pull on reload for free (mode 'on' -> _hydrate() runs;
+        // mode 'off' unchanged).
+        var _chBackendModeReset = null;
+        var _chBackendEnabledReset = null;
+        try {
+          _chBackendModeReset = localStorage.getItem('ch_backend_mode');
+        } catch (e) {}
+        try {
+          _chBackendEnabledReset = localStorage.getItem('ch_backend_enabled');
+        } catch (e) {}
         localStorage.clear();
         sessionStorage.clear();
         if (window.DB && window.DB.clear) {
@@ -2985,6 +2996,10 @@
         }
         try {
           await _pdfBackupClearAll();
+        } catch (e) {}
+        try {
+          if (_chBackendModeReset !== null) localStorage.setItem('ch_backend_mode', _chBackendModeReset);
+          if (_chBackendEnabledReset !== null) localStorage.setItem('ch_backend_enabled', _chBackendEnabledReset);
         } catch (e) {}
         _pdfNotice('Reset — reloading...', false);
         setTimeout(function () {
@@ -3283,7 +3298,7 @@
 
         // Pull from service agreements (PM schedule dates)
         try {
-          var saData = JSON.parse(localStorage.getItem('sv_saData') || '[]');
+          var saData = typeof DB !== 'undefined' ? DB.get('sv_saData', []) : [];
           if (Array.isArray(saData)) {
             for (var i = 0; i < saData.length; i++) {
               var sa = saData[i];
@@ -3318,7 +3333,7 @@
 
         // Pull from energy projects (deadlines)
         try {
-          var projData = JSON.parse(localStorage.getItem('en_projects') || '[]');
+          var projData = typeof DB !== 'undefined' ? DB.get('en_projects', []) : [];
           if (Array.isArray(projData)) {
             for (var p = 0; p < projData.length; p++) {
               var proj = projData[p];
@@ -3404,7 +3419,9 @@
         renderCalendar();
       });
     </script>
-    <script src="app/db.js?v=693"></script>
+    <script src="app/sync-classification.js?v=697"></script>
+    <script src="app/db.js?v=697"></script>
+    <script src="app/sync-ui.js?v=697"></script>
     <script>
       /* ── MOBILE SIDEBAR DRAWER ── */
       function buildMobileSidebarToggle() {
@@ -3478,10 +3495,14 @@
             } catch (e) {
               console.warn('tile refresh failed', e);
             }
+            // getUpcomingEvents() reads via DB.get(), which is empty until warmCache()
+            // resolves; the initial renderCalendar() call (on this same DOMContentLoaded
+            // event, registered earlier) fires before the cache is warm, so refresh here.
+            if (typeof renderCalendar === 'function') renderCalendar();
           });
         }
       });
     </script>
-    <script src="feedback-widget.js?v=693"></script>
+    <script src="feedback-widget.js?v=697"></script>
   </body>
 </html>

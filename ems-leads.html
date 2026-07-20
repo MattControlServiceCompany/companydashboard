@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net https://login.microsoftonline.com; worker-src 'self' blob:; frame-src 'self' https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — EMS Leads</title>
     <link
@@ -16,6 +16,12 @@
       href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"
+      integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU"
+      crossorigin="anonymous"
+    ></script>
+    <script src="app/ch-auth.js"></script>
     <style>
       /* â•â•â• TOKENS â•â•â• */
       :root {
@@ -1350,7 +1356,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=693" />
+    <link rel="stylesheet" href="feedback-widget.css?v=697" />
   </head>
   <body>
     <!-- TOPBAR -->
@@ -2072,15 +2078,60 @@
         { key: '', label: '— Skip —' },
       ];
 
+      /* PERSISTENT STORAGE (choke point) --
+         KEEP IN SYNC WITH app/core.js sset()/sget(). This page cannot load
+         app/core.js directly -- core.js declares page-global bindings
+         (currentUser, enterApp, signOut, init, projects, etc.) that would
+         collide with this file's own top-level declarations and break the
+         page. So this is a deliberate, synced copy -- not a driveby
+         duplicate. If you fix a bug in core.js's sset()/sget(), port the
+         fix here too. Backlog: supabase migration plan Phase 0.2. */
+      function sset(k, v) {
+        if (window.DB && window.DB.isReady()) {
+          return window.DB.set(k, v); // IDB -- unlimited storage, returns a Promise
+        }
+        try {
+          localStorage.setItem(k, JSON.stringify(v));
+          return Promise.resolve();
+        } catch (e) {
+          console.warn('sset failed:', e);
+          return Promise.reject(e);
+        }
+      }
+      function sget(k, fb) {
+        // READ-PATH: when the IndexedDB cache is warm, read from it first.
+        if (window.DB && window.DB.isReady()) {
+          const dbVal = window.DB.get(k);
+          if (dbVal !== null && dbVal !== undefined) return dbVal;
+          // Key not in IDB cache -- try localStorage (covers keys written
+          // before DB was ready).
+          try {
+            const r = localStorage.getItem(k);
+            if (r !== null) return JSON.parse(r);
+          } catch (e) {
+            /* fall through */
+          }
+          return fb;
+        }
+        // DB not ready yet -- legacy path
+        try {
+          const r = localStorage.getItem(k);
+          return r !== null ? JSON.parse(r) : fb;
+        } catch (e) {
+          return fb;
+        }
+      }
+
       function load() {
         try {
-          leads = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+          leads = sget(STORAGE_KEY, []);
+          if (!Array.isArray(leads)) leads = [];
         } catch (e) {
           leads = [];
         }
       }
       function save() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(leads));
+        sset(STORAGE_KEY, leads);
       }
       function genId() {
         return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -2089,11 +2140,22 @@
       /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    INIT
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+      /* First render must wait for DB.warmCache() to resolve -- reading
+         before it warms hits a cold in-memory cache and renders an empty
+         board even when leads already exist in IndexedDB. Falls back to a
+         synchronous load if DB never loads (e.g. script blocked). */
       window.addEventListener('DOMContentLoaded', () => {
-        load();
-        renderAll();
         // Drag-and-drop setup
         document.addEventListener('dragover', (e) => e.preventDefault());
+        if (window.DB && typeof DB.warmCache === 'function') {
+          DB.warmCache().then(() => {
+            load();
+            renderAll();
+          });
+        } else {
+          load();
+          renderAll();
+        }
       });
 
       function renderAll() {
@@ -2983,6 +3045,9 @@
         return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
     </script>
-    <script src="feedback-widget.js?v=693"></script>
+    <script src="app/sync-classification.js?v=697"></script>
+    <script src="app/db.js?v=697"></script>
+    <script src="app/sync-ui.js?v=697"></script>
+    <script src="feedback-widget.js?v=697"></script>
   </body>
 </html>

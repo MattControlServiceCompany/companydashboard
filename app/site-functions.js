@@ -551,7 +551,43 @@ function siteApplyAccent(hex) {
 }
 
 /* Backup / Restore / Reset */
-function siteBackup() {
+// Raw bill PDFs live in the separate en_pdf_store IndexedDB database (opened
+// via core.js's _openPdfDB()/_pdfDB, which is already loaded on this page —
+// reuse it here rather than re-declaring _pdfDB, which would throw a
+// duplicate-const error). getAll()/getAllKeys() aren't exposed by core.js's
+// pdfStore()/pdfLoad() helpers, so this adds the one extra read core.js
+// doesn't provide. Mirrors index.html's _pdfBackupGetAll() exactly — keep in
+// sync if that contract changes.
+function _pdfBackupGetAll() {
+  return _openPdfDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(_pdfDB.STORE, 'readonly');
+      var store = tx.objectStore(_pdfDB.STORE);
+      var getAllReq = store.getAll();
+      var getKeysReq = store.getAllKeys();
+      var values, keys;
+      getAllReq.onsuccess = function () {
+        values = getAllReq.result;
+      };
+      getKeysReq.onsuccess = function () {
+        keys = getKeysReq.result;
+      };
+      tx.oncomplete = function () {
+        var out = {};
+        if (keys && values) {
+          keys.forEach(function (k, i) {
+            out[k] = values[i];
+          });
+        }
+        resolve(out);
+      };
+      tx.onerror = function () {
+        reject(tx.error);
+      };
+    });
+  });
+}
+async function siteBackup() {
   // Get all DB data (IndexedDB-backed)
   var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
   // Also grab any remaining localStorage keys (preferences, settings)
@@ -563,10 +599,24 @@ function siteBackup() {
   // Merge — DB data takes precedence
   var allData = Object.assign({}, lsData, dbData);
   var data = allData;
+  // Raw bill PDFs live in the separate en_pdf_store IndexedDB database and are
+  // intentionally NOT included in this backup. Serializing all PDFs' base64
+  // into one monolithic JSON string (via _pdfBackupGetAll() + JSON.stringify)
+  // held 2-3 full copies of the PDF store in the JS heap at once and OOM-crashed
+  // the tab on large stores (~1000 bills, 150-250MB). This backup stays
+  // data-only, matching the pre-regression behavior. A batched/streaming PDF
+  // export is a separate follow-up, not part of this backup.
+  // Explicit positive marker so a future restore can identify this as a real
+  // CompanyHub backup without guessing from data keys at all.
+  data._companyHubBackup = true;
   var d = new Date();
   var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   var filename = 'CompanyHub-localdatafile-' + ds + '.json';
-  var content = JSON.stringify(data, null, 2);
+  // Compact serialization — matches index.html's siteBackup() so all three
+  // backup buttons produce the same file shape (see index.html for the size
+  // rationale). Restore only calls JSON.parse(), which is unaffected by
+  // formatting.
+  var content = JSON.stringify(data);
   var blob = new Blob([content], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
@@ -582,6 +632,26 @@ function siteBackup() {
 }
 function processRestoreFile(file) {
   if (!file) return;
+  // 2a.4b — Restore-from-backup mass-writes every key through DB.set. With
+  // the replication tail live (ch_backend_mode === 'on') that's a 409-storm
+  // or a silent mass-overwrite of the other user's current server data —
+  // never a user's intent when they click "Restore". Default: block it
+  // outright (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4,
+  // task 2a.4b — "Default: block it"). Mode 'off'/'shadow' are unaffected.
+  var _chBackendModeRestoreGuard = 'off';
+  try {
+    _chBackendModeRestoreGuard = localStorage.getItem('ch_backend_mode') || 'off';
+  } catch (e) {}
+  if (_chBackendModeRestoreGuard === 'on') {
+    if (typeof showToast === 'function') {
+      showToast(
+        'Restore from backup is disabled while sync is on, to protect the shared server data. Turn sync off in Settings to restore this device only, or contact your admin about the server-side rollback path.',
+        'error',
+        8000,
+      );
+    }
+    return;
+  }
   if (!file.name.toLowerCase().endsWith('.json')) {
     if (typeof showToast === 'function') showToast('Please drop a .json backup file');
     return;
@@ -651,6 +721,23 @@ async function siteResetData() {
     )
   )
     return;
+  // 2a.4b — Reset must NOT silently disable sync. localStorage.clear() below
+  // (and DB.clear()'s own localStorage.clear() fallback if IndexedDB is
+  // unavailable) would otherwise wipe ch_backend_mode along with everything
+  // else, turning sync off with no error and reloading into an empty
+  // local-only app instead of the intended "reset = re-hydrate from server"
+  // (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4, task
+  // 2a.4b). Capture the flag now, restore it AFTER every clear path below —
+  // warmCache()'s existing hydration step then does the full re-pull on
+  // reload for free (mode 'on' -> _hydrate() runs; mode 'off' unchanged).
+  var _chBackendModeReset = null;
+  var _chBackendEnabledReset = null;
+  try {
+    _chBackendModeReset = localStorage.getItem('ch_backend_mode');
+  } catch (e) {}
+  try {
+    _chBackendEnabledReset = localStorage.getItem('ch_backend_enabled');
+  } catch (e) {}
   localStorage.clear();
   sessionStorage.clear();
   if (window.DB && window.DB.clear) {
@@ -659,6 +746,10 @@ async function siteResetData() {
   if (typeof pdfClearAll === 'function') {
     await pdfClearAll();
   }
+  try {
+    if (_chBackendModeReset !== null) localStorage.setItem('ch_backend_mode', _chBackendModeReset);
+    if (_chBackendEnabledReset !== null) localStorage.setItem('ch_backend_enabled', _chBackendEnabledReset);
+  } catch (e) {}
   if (typeof showToast === 'function') showToast('Reset — reloading...');
   setTimeout(function () {
     location.reload();
@@ -1194,6 +1285,54 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  {
+    v: 'v2026.07.20.697',
+    date: '2026-07-20',
+    title: 'Behind-the-scenes groundwork',
+    items: [
+      {
+        type: 'change',
+        text: 'Behind-the-scenes groundwork for secure multi-user cloud sync. No change to how the app works today.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.07.20.696',
+    date: '2026-07-20',
+    title: 'Backup fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department and Service Department -- Backup/Export: fixed a crash that could hang the page when backing up with many saved bill PDFs. Your backup now saves reliably. (Your PDFs stay safe and will get their own dedicated export.)',
+      },
+    ],
+  },
+  {
+    v: 'v2026.07.19.695',
+    date: '2026-07-19',
+    title: 'Backup & Export now includes all bill PDFs',
+    items: [
+      {
+        type: 'fix',
+        text: 'Backup & Export -- backups taken from the Energy Department and Service Department pages now include all your bill PDF images (they were previously left out of backups from those pages).',
+      },
+    ],
+  },
+  {
+    v: 'v2026.07.19.694',
+    date: '2026-07-19',
+    title: 'Home dashboard and EMS Leads reliability fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Home dashboard -- the Upcoming Events panel now displays correctly instead of showing blank or stale data.',
+      },
+      {
+        type: 'fix',
+        text: 'EMS Leads -- entries now save and reload reliably instead of occasionally failing to persist.',
+      },
+    ],
+  },
   {
     v: 'v2026.07.19.693',
     date: '2026-07-19',

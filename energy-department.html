@@ -22,7 +22,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://login.microsoftonline.com; worker-src 'self' blob:; frame-src 'self' blob: https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — Energy Department</title>
     <link
@@ -33,7 +33,13 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=693" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=697" rel="stylesheet" />
+    <script
+      src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"
+      integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU"
+      crossorigin="anonymous"
+    ></script>
+    <script src="app/ch-auth.js"></script>
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
@@ -7796,7 +7802,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=693" />
+    <link rel="stylesheet" href="feedback-widget.css?v=697" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -14882,47 +14888,49 @@
       crossorigin="anonymous"
     ></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=693"></script>
-    <script src="lib/formatting.js?v=693"></script>
-    <script src="lib/unit-conversion.js?v=693"></script>
-    <script src="lib/csv-parser.js?v=693"></script>
-    <script src="computations/rates.js?v=693"></script>
-    <script src="computations/regression.js?v=693"></script>
-    <script src="computations/normalization.js?v=693"></script>
-    <script src="computations/eui.js?v=693"></script>
-    <script src="computations/pollution.js?v=693"></script>
-    <script src="computations/csc.js?v=693"></script>
-    <script src="computations/savings.js?v=693"></script>
-    <script src="computations/anomaly-detection.js?v=693"></script>
-    <script src="lib/perf-table.js?v=693"></script>
-    <script src="lib/shared-charts.js?v=693"></script>
-    <script src="computations/report-data.js?v=693"></script>
-    <script src="computations/data-quality.js?v=693"></script>
-    <script src="extraction/pdf-engine.js?v=693"></script>
-    <script src="app/db.js?v=693"></script>
-    <script src="app/core.js?v=693"></script>
-    <script src="app/energy-savings.js?v=693"></script>
-    <script src="app/bill-analysis.js?v=693"></script>
-    <script src="extraction/bill-validation.js?v=693"></script>
-    <script src="app/district-calendar.js?v=693"></script>
-    <script src="app/utility-data.js?v=693"></script>
-    <script src="app/pipeline-diagram.js?v=693"></script>
-    <script src="app/csv-import.js?v=693"></script>
-    <script src="app/report-engine.js?v=693"></script>
-    <script src="app/report-preview.js?v=693"></script>
-    <script src="app/calculators.js?v=693"></script>
-    <script src="app/ecm-calculators.js?v=693"></script>
-    <script src="app/equipment-matrix.js?v=693"></script>
-    <script src="app/graphics-setpoints.js?v=693"></script>
-    <script src="app/budget.js?v=693"></script>
-    <script src="app/hours.js?v=693"></script>
-    <script src="app/scorecard.js?v=693"></script>
-    <script src="app/portal-export.js?v=693"></script>
-    <script src="app/bas-trends.js?v=693"></script>
-    <script src="app/bas-alarms.js?v=693"></script>
-    <script src="app/pricing-estimator.js?v=693"></script>
+    <script src="lib/date-helpers.js?v=697"></script>
+    <script src="lib/formatting.js?v=697"></script>
+    <script src="lib/unit-conversion.js?v=697"></script>
+    <script src="lib/csv-parser.js?v=697"></script>
+    <script src="computations/rates.js?v=697"></script>
+    <script src="computations/regression.js?v=697"></script>
+    <script src="computations/normalization.js?v=697"></script>
+    <script src="computations/eui.js?v=697"></script>
+    <script src="computations/pollution.js?v=697"></script>
+    <script src="computations/csc.js?v=697"></script>
+    <script src="computations/savings.js?v=697"></script>
+    <script src="computations/anomaly-detection.js?v=697"></script>
+    <script src="lib/perf-table.js?v=697"></script>
+    <script src="lib/shared-charts.js?v=697"></script>
+    <script src="computations/report-data.js?v=697"></script>
+    <script src="computations/data-quality.js?v=697"></script>
+    <script src="extraction/pdf-engine.js?v=697"></script>
+    <script src="app/sync-classification.js?v=697"></script>
+    <script src="app/db.js?v=697"></script>
+    <script src="app/sync-ui.js?v=697"></script>
+    <script src="app/core.js?v=697"></script>
+    <script src="app/energy-savings.js?v=697"></script>
+    <script src="app/bill-analysis.js?v=697"></script>
+    <script src="extraction/bill-validation.js?v=697"></script>
+    <script src="app/district-calendar.js?v=697"></script>
+    <script src="app/utility-data.js?v=697"></script>
+    <script src="app/pipeline-diagram.js?v=697"></script>
+    <script src="app/csv-import.js?v=697"></script>
+    <script src="app/report-engine.js?v=697"></script>
+    <script src="app/report-preview.js?v=697"></script>
+    <script src="app/calculators.js?v=697"></script>
+    <script src="app/ecm-calculators.js?v=697"></script>
+    <script src="app/equipment-matrix.js?v=697"></script>
+    <script src="app/graphics-setpoints.js?v=697"></script>
+    <script src="app/budget.js?v=697"></script>
+    <script src="app/hours.js?v=697"></script>
+    <script src="app/scorecard.js?v=697"></script>
+    <script src="app/portal-export.js?v=697"></script>
+    <script src="app/bas-trends.js?v=697"></script>
+    <script src="app/bas-alarms.js?v=697"></script>
+    <script src="app/pricing-estimator.js?v=697"></script>
 
-    <script src="app/site-functions.js?v=693"></script>
+    <script src="app/site-functions.js?v=697"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -15079,14 +15087,14 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=693"></script>
-    <script src="feedback-widget.js?v=693"></script>
+    <script src="app/tooltips-help.js?v=697"></script>
+    <script src="feedback-widget.js?v=697"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"
       integrity="sha384-reiVBUvj2HgLgCZalqLFSMBVD9LdtiwGyybRGCq2AfP8Rgebz5DxEnwKp4FpagKV"
       crossorigin="anonymous"
     ></script>
-    <script src="lib/rich-text.js?v=693"></script>
+    <script src="lib/rich-text.js?v=697"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {
