@@ -7054,6 +7054,194 @@ async function exportReportToPDF() {
   }
 }
 
+/**
+ * _buildReportCssVarResolver — returns a `resolve(text)` function that replaces
+ * `var(--rpt-*)` references with their literal values, for use before handing markup to
+ * Microsoft Word's HTML renderer.
+ *
+ * WHY: Word's document-open HTML engine (used by the .doc/HTML export below) does not
+ * reliably resolve CSS custom properties. The `#report-styles` block defines every report
+ * color/font as a `:root { --rpt-*: ... }` token (by design — see the comment at the top of
+ * that block: "Never hardcode hex values in report CSS or JS templates"), so without this
+ * resolution step, headings/table borders/status colors would silently fall back to black
+ * in the exported Word doc even though the same tokens render correctly in the live
+ * browser preview and in the html2canvas PDF path (which rasterizes computed styles, so it
+ * never had this problem).
+ *
+ * IMPORTANT: `var(--rpt-*)` references appear in two places — the `#report-styles`
+ * stylesheet AND countless inline `style="..."` attributes generated directly in report
+ * page markup (e.g. buildBarChart() above passes color strings like
+ * `'var(--rpt-elec-bl)'` straight into an inline `background:` style). The returned
+ * `resolve()` function must be applied to BOTH the extracted CSS text and the page body
+ * HTML — resolving only the stylesheet leaves every inline-styled bar chart element
+ * unresolved.
+ *
+ * Handles one level of var-of-var chaining (e.g. `--rpt-table-td-border: var(--rpt-border);`)
+ * via a short fixed-point loop over the token map itself before returning the resolver.
+ */
+function _buildReportCssVarResolver(cssText) {
+  var vars = {};
+  var varDefRe = /--([a-zA-Z0-9-]+)\s*:\s*([^;]+);/g;
+  var m;
+  while ((m = varDefRe.exec(cssText))) {
+    vars[m[1]] = m[2].trim();
+  }
+  var varRefRe = /var\(\s*--([a-zA-Z0-9-]+)\s*(?:,\s*([^)]+))?\)/g;
+  function resolveOnce(val) {
+    return val.replace(varRefRe, function (whole, name, fallback) {
+      if (vars[name] !== undefined) return vars[name];
+      return fallback !== undefined ? fallback.trim() : whole;
+    });
+  }
+  for (var pass = 0; pass < 3; pass++) {
+    var changed = false;
+    Object.keys(vars).forEach(function (k) {
+      var resolved = resolveOnce(vars[k]);
+      if (resolved !== vars[k]) {
+        vars[k] = resolved;
+        changed = true;
+      }
+    });
+    if (!changed) break;
+  }
+  return resolveOnce;
+}
+
+/**
+ * exportReportToWord — additional export option alongside exportReportToPDF() (does not
+ * replace it). Produces a genuinely editable Microsoft Word document from the exact same
+ * `#reportPages .rpt-page` markup the PDF export captures, instead of a flattened
+ * html2canvas raster image.
+ *
+ * TECHNIQUE (client-side only, no library, no server, no paid API — matches this site's
+ * static/no-build-step architecture): Word recognizes an HTML document saved with a .doc
+ * extension and an `application/msword` MIME type, and opens it as a native editable
+ * document (real paragraphs/headings/tables), not an embedded image. This is the
+ * well-known "HTML-to-.doc" wrapper technique — no OOXML/.docx generation library needed.
+ * Reference: the `mso-application` / `xmlns:w="urn:schemas-microsoft-com:office:word"`
+ * namespace + `<!--[if gte mso 9]>` WordDocument directive below is what tells Word's
+ * document-open path to render the file as a Word document rather than a generic web page.
+ *
+ * Report pages here are pure HTML/CSS (div/table based bar charts — see buildBarChart()
+ * above — no <canvas> elements), so there is nothing that would only exist as a rasterized
+ * image; every heading/paragraph/table cell becomes a real editable Word element on open.
+ * Any embedded bill-image thumbnails (data-URL <img> tags) remain images, same as they
+ * would in any Word document containing a picture.
+ *
+ * Fidelity note: Word's HTML engine does not support flexbox, so div-based bar-chart
+ * layouts inside report pages may not render with pixel-perfect alignment in Word (same
+ * caveat applies to any flex-based layout). This is an accepted tradeoff per the task
+ * spec — the goal is genuinely editable content matching the underlying HTML, not
+ * PDF-identical visual fidelity.
+ */
+async function exportReportToWord() {
+  const data = window._currentReportData;
+  if (!data) {
+    showToast('No report data available');
+    return;
+  }
+
+  const pagesContainer = document.getElementById('reportPages');
+  const pages = pagesContainer ? pagesContainer.querySelectorAll('.rpt-page') : [];
+  if (!pages.length) {
+    showToast('No report pages to export');
+    return;
+  }
+
+  const toolbar = document.querySelector('.report-toolbar');
+  const wordBtn = toolbar ? toolbar.querySelector('[onclick*="exportReportToWord"]') : null;
+  const originalBtnText = wordBtn ? wordBtn.textContent : '';
+  if (wordBtn) {
+    wordBtn.disabled = true;
+    wordBtn.textContent = '⏳ Generating...';
+  }
+
+  showToast('Generating Word document...');
+
+  // Same tier-detail force-expand as exportReportToPDF() (see comment above that function):
+  // whichever tier(s) the user had collapsed in the live preview must still render fully
+  // expanded in the exported document. Restored in `finally`.
+  const tierDetailPanels = document.querySelectorAll('#reportPages [id^="rpt-tier-detail-"]');
+  const tierDetailPriorDisplay = [];
+  tierDetailPanels.forEach((panel) => {
+    tierDetailPriorDisplay.push(panel.style.display);
+    panel.style.display = 'block';
+  });
+
+  try {
+    const reportStylesEl = document.getElementById('report-styles');
+    const rawCss = reportStylesEl ? reportStylesEl.textContent : '';
+    const resolveVars = _buildReportCssVarResolver(rawCss);
+    const css = resolveVars(rawCss);
+
+    let rawBodyHtml = '';
+    pages.forEach((pageEl, i) => {
+      if (i > 0) {
+        // Word page-break marker recognized by the mso HTML-to-doc conversion.
+        rawBodyHtml += '<br clear="all" style="page-break-before:always" />';
+      }
+      rawBodyHtml += '<div class="rpt-page-word-wrap">' + pageEl.innerHTML + '</div>';
+    });
+    // Resolve var(--rpt-*) references embedded in inline style="" attributes throughout
+    // the page markup (see _buildReportCssVarResolver doc comment above) — not just the
+    // stylesheet text.
+    const bodyHtml = resolveVars(rawBodyHtml);
+
+    const client = data.project.client || data.project.name || 'Report';
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+    let filename;
+    if (data._ashrae) {
+      filename =
+        data._ashrae.type === 'proposal'
+          ? client + ' - Service Proposal ' + dateStr + '.doc'
+          : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.doc';
+    } else {
+      const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
+      filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.doc';
+    }
+
+    const wordDocHtml =
+      '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+      'xmlns:w="urn:schemas-microsoft-com:office:word" ' +
+      'xmlns="http://www.w3.org/TR/REC-html40">' +
+      '<head><meta charset="utf-8">' +
+      '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View>' +
+      '<w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->' +
+      '<style>' +
+      css +
+      ' body{background:#fff;margin:0;} .rpt-page-word-wrap{width:100%;}</style>' +
+      '<title>' +
+      client +
+      ' Report</title></head>' +
+      '<body>' +
+      bodyHtml +
+      '</body></html>';
+
+    const blob = new Blob(['﻿', wordDocHtml], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    showToast('Report exported to Word ✓');
+  } catch (err) {
+    console.error('Word export failed:', err);
+    showToast('Word export failed: ' + (err.message || 'Unknown error'), 'error');
+  } finally {
+    tierDetailPanels.forEach((panel, i) => {
+      panel.style.display = tierDetailPriorDisplay[i];
+    });
+    if (wordBtn) {
+      wordBtn.disabled = false;
+      wordBtn.textContent = originalBtnText || '📝 Export to Word';
+    }
+  }
+}
+
 /* -- BOARD EXECUTIVE SUMMARY PAGE -- */
 
 /**
