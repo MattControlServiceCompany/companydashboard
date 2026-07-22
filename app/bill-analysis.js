@@ -10005,6 +10005,174 @@ function binarizeCanvas(srcCanvas) {
 function _countOcrSignals(txt) {
   return (txt.match(/[\d$]/g) || []).length;
 }
+// _renderPageHQ: renders `pg` at `targetScale` for OCR, using a two-step process to
+// defeat pdf.js's own internal image-smoothing heuristic.
+//
+// Root cause (2026-07-22, Wood River Energy May/Sep/Oct 2025 invoice legibility):
+// pdf.js's CanvasGraphics sets `ctx.imageSmoothingEnabled` itself, immediately before
+// drawing each embedded raster image, via getImageSmoothingEnabled(transform, interpolate)
+// — see pdf.js display/canvas.js. When an image has no explicit PDF /Interpolate flag
+// (the normal case), that function DISABLES smoothing whenever the image is being
+// upscaled by more than ~1.33x, specifically to keep scanned-page zooms looking crisp
+// rather than blurry. Every one of this file's OCR render passes asks for scale 2x-4x
+// against bills that are often a single ~72 DPI "print to PDF" or copier-scanned raster
+// per page — a 2x-4x upscale — so pdf.js was ALWAYS disabling smoothing here, and
+// setting ctx.imageSmoothingEnabled/Quality on the context BEFORE calling pg.render()
+// had no effect, because pdf.js overwrites it during its own drawImage call inside
+// render(). (Confirmed by rendering the same source both ways and comparing Tesseract
+// output — see docs/dashboardlogic.md.)
+//
+// Fix: render once at scale 1 (no image upscaling occurs, so pdf.js's own smoothing
+// decision is irrelevant) into an intermediate canvas, then do a SEPARATE canvas-to-canvas
+// resize to targetScale ourselves via plain ctx.drawImage on a context WE control
+// (imageSmoothingQuality:'high'). pdf.js's render() is not involved in that second draw
+// at all, so its internal override cannot touch it.
+//
+// Safe to apply universally to every OCR-path render call in this file: OCR only ever
+// runs on pages that already failed native vector-text extraction (Step 1 of
+// extractPDFText), i.e. this function is only ever called for scanned/rasterized pages —
+// never for pages with real vector text, so there is no vector-quality regression risk.
+// _lanczosKernel / _lanczosResize: a from-scratch separable Lanczos-3 resize,
+// operating directly on ImageData rather than canvas's built-in drawImage scaling.
+//
+// Fix (2026-07-22): even with imageSmoothingQuality:'high', canvas's built-in resize
+// filter measurably under-performs a real Lanczos filter for small/faint scanned
+// invoice text — verified side-by-side on the same source image (Wood River Energy
+// Inv 452084, May 2025): several per-site dollar figures that canvas's 'high' filter
+// left unparseable (missing "$", missing decimal point, or digits merged with
+// neighboring columns) came through cleanly ($187.08, $242.61, etc. matching the
+// invoice's own printed values) once resized with this Lanczos-3 implementation
+// instead. Browsers do not expose a way to select a stronger built-in filter, so
+// this is implemented directly. Two-pass separable (horizontal then vertical) for
+// performance — full resize of a scanned page (612x792 source) takes well under a
+// second even at 4x-5x target scale, negligible next to the multi-second Tesseract
+// recognize() call that follows it.
+function _lanczosKernel(x, a) {
+  if (x === 0) return 1;
+  if (x <= -a || x >= a) return 0;
+  const px = Math.PI * x;
+  return (a * Math.sin(px) * Math.sin(px / a)) / (px * px);
+}
+function _lanczosResize(srcCanvas, dstW, dstH, a) {
+  a = a || 3;
+  const srcW = srcCanvas.width,
+    srcH = srcCanvas.height;
+  const sctx = srcCanvas.getContext('2d');
+  const src = sctx.getImageData(0, 0, srcW, srcH).data;
+  // Horizontal pass: srcW x srcH -> dstW x srcH
+  const scaleX = dstW / srcW;
+  const filterScaleX = Math.max(1, 1 / scaleX); // widen kernel support when downscaling
+  const tmp = new Float32Array(dstW * srcH * 4);
+  for (let ox = 0; ox < dstW; ox++) {
+    const srcX = (ox + 0.5) / scaleX - 0.5;
+    const left = Math.floor(srcX - a * filterScaleX);
+    const right = Math.ceil(srcX + a * filterScaleX);
+    const weights = [];
+    let wsum = 0;
+    for (let sx = left; sx <= right; sx++) {
+      const w = _lanczosKernel((srcX - sx) / filterScaleX, a);
+      weights.push(w);
+      wsum += w;
+    }
+    if (wsum === 0) wsum = 1;
+    for (let oy = 0; oy < srcH; oy++) {
+      let r = 0,
+        g = 0,
+        b = 0,
+        al = 0;
+      let wi = 0;
+      for (let sx = left; sx <= right; sx++) {
+        const cx = Math.min(srcW - 1, Math.max(0, sx));
+        const idx = (oy * srcW + cx) * 4;
+        const w = weights[wi++];
+        r += src[idx] * w;
+        g += src[idx + 1] * w;
+        b += src[idx + 2] * w;
+        al += src[idx + 3] * w;
+      }
+      const tIdx = (oy * dstW + ox) * 4;
+      tmp[tIdx] = r / wsum;
+      tmp[tIdx + 1] = g / wsum;
+      tmp[tIdx + 2] = b / wsum;
+      tmp[tIdx + 3] = al / wsum;
+    }
+  }
+  // Vertical pass: dstW x srcH -> dstW x dstH
+  const scaleY = dstH / srcH;
+  const filterScaleY = Math.max(1, 1 / scaleY);
+  const out = new Uint8ClampedArray(dstW * dstH * 4);
+  for (let oy = 0; oy < dstH; oy++) {
+    const srcY = (oy + 0.5) / scaleY - 0.5;
+    const top = Math.floor(srcY - a * filterScaleY);
+    const bottom = Math.ceil(srcY + a * filterScaleY);
+    const weights = [];
+    let wsum = 0;
+    for (let sy = top; sy <= bottom; sy++) {
+      const w = _lanczosKernel((srcY - sy) / filterScaleY, a);
+      weights.push(w);
+      wsum += w;
+    }
+    if (wsum === 0) wsum = 1;
+    for (let ox = 0; ox < dstW; ox++) {
+      let r = 0,
+        g = 0,
+        b = 0,
+        al = 0;
+      let wi = 0;
+      for (let sy = top; sy <= bottom; sy++) {
+        const cy = Math.min(srcH - 1, Math.max(0, sy));
+        const tIdx = (cy * dstW + ox) * 4;
+        const w = weights[wi++];
+        r += tmp[tIdx] * w;
+        g += tmp[tIdx + 1] * w;
+        b += tmp[tIdx + 2] * w;
+        al += tmp[tIdx + 3] * w;
+      }
+      const oIdx = (oy * dstW + ox) * 4;
+      out[oIdx] = r / wsum;
+      out[oIdx + 1] = g / wsum;
+      out[oIdx + 2] = b / wsum;
+      out[oIdx + 3] = al / wsum;
+    }
+  }
+  const dst = document.createElement('canvas');
+  dst.width = dstW;
+  dst.height = dstH;
+  dst.getContext('2d').putImageData(new ImageData(out, dstW, dstH), 0, 0);
+  return dst;
+}
+async function _renderPageHQ(pg, targetScale) {
+  const vp1 = pg.getViewport({ scale: 1 });
+  const rawCanvas = document.createElement('canvas');
+  rawCanvas.width = Math.max(1, Math.round(vp1.width));
+  rawCanvas.height = Math.max(1, Math.round(vp1.height));
+  const rawCtx = rawCanvas.getContext('2d');
+  await pg.render({ canvasContext: rawCtx, viewport: vp1 }).promise;
+  const targetVp = pg.getViewport({ scale: targetScale });
+  const dstW = Math.max(1, Math.round(targetVp.width));
+  const dstH = Math.max(1, Math.round(targetVp.height));
+  // Fix (2026-07-22): use the from-scratch Lanczos-3 resize above instead of a plain
+  // ctx.drawImage upscale — see _lanczosResize's doc comment for the measured quality
+  // difference. Falls back to the previous drawImage approach if anything throws
+  // (e.g. a future browser blocks large ImageData reads) so a resize failure degrades
+  // gracefully rather than breaking OCR entirely.
+  let outCanvas;
+  try {
+    outCanvas = _lanczosResize(rawCanvas, dstW, dstH, 3);
+  } catch (_lanczosErr) {
+    outCanvas = document.createElement('canvas');
+    outCanvas.width = dstW;
+    outCanvas.height = dstH;
+    const outCtx = outCanvas.getContext('2d');
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = 'high';
+    outCtx.drawImage(rawCanvas, 0, 0, rawCanvas.width, rawCanvas.height, 0, 0, dstW, dstH);
+  }
+  // Release the intermediate canvas's backing store immediately — only outCanvas is kept.
+  rawCanvas.width = 0;
+  rawCanvas.height = 0;
+  return outCanvas;
+}
 // ── end OCR helpers ───────────────────────────────────────────────────────────
 // Generous timeout wrapper for un-timed pdfjs awaits (getDocument/getPage/
 // getTextContent/render are normally sub-second to low-single-digit seconds
@@ -10255,6 +10423,21 @@ async function extractPDFText(ab, statusCb) {
             { rx: /Account\s+Number/i, w: 1 },
             { rx: /Billing\s+Date/i, w: 1 },
           ],
+          // Fix (2026-07-22): Wood River Energy invoices previously had NO entry here,
+          // so every OCR pass scored ~0 under generic-only signals (WRE bills have no
+          // "Account Number"/"Billing Date" text) — the multi-pass "best score" picker
+          // could not tell an accurately-OCR'd pass from a garbled one and effectively
+          // chose at random among near-tied low scores. Added real WRE-specific signals
+          // so scorePage can actually reward passes that read the per-site table cleanly.
+          woodriver: [
+            { rx: /woodriverenergy\.com/i, w: 2 },
+            { rx: /Production\s+Month/i, w: 1 },
+            { rx: /Service\s+Address/i, w: 1 },
+            { rx: /Sub-?Total/i, w: 1 },
+            { rx: /Acct\/?Meter/i, w: 1 },
+            { rx: /Index\s*\(?\s*F?[O0]M\s*\)?/i, w: 1 },
+            { rx: /Total\s+Current\s+Charges/i, w: 1 },
+          ],
           constellation: [
             { rx: /constellation/i, w: 1 },
             { rx: /account\s*id:\s*bg-\d+/i, w: 2 },
@@ -10295,6 +10478,16 @@ async function extractPDFText(ab, statusCb) {
         const _detectProvider = (txt) => {
           if (/service\s+from[:\s]\s*\d{2}\/\d{2}/i.test(txt) || (/Customer\s+Ch/i.test(txt) && /ECA\s+Ch/i.test(txt)))
             return 'evergy';
+          // Fix (2026-07-22): must be checked BEFORE constellation — constellation's
+          // /MMBtu/i signal alone would otherwise misclassify every Wood River Energy
+          // page (WRE's "Mmbtu" column header also matches that regex case-insensitively),
+          // permanently locking WRE pages onto the wrong (near-zero-signal) scoring set.
+          if (
+            /woodriverenergy\.com/i.test(txt) ||
+            /WoodRiver\s*Energy/i.test(txt) ||
+            (/Production\s+Month/i.test(txt) && /Sub-?Total/i.test(txt))
+          )
+            return 'woodriver';
           if (/constellation/i.test(txt) || /account\s*id:\s*bg-\d+/i.test(txt) || /MMBtu/i.test(txt))
             return 'constellation';
           if (/kansas\s+gas\s+service/i.test(txt) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(txt)) return 'kgs';
@@ -10433,16 +10626,15 @@ async function extractPDFText(ab, statusCb) {
                   cfg.label +
                   ')...',
               );
-            let pg, vp, canvas, ctx;
+            let pg, canvas;
             try {
               pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              vp = pg.getViewport({ scale: cfg.scale });
-              canvas = document.createElement('canvas');
-              canvas.width = vp.width;
-              canvas.height = vp.height;
-              ctx = canvas.getContext('2d');
-              await _withTimeout(
-                pg.render({ canvasContext: ctx, viewport: vp }).promise,
+              // Fix (2026-07-22): _renderPageHQ (see its doc comment above) — a plain
+              // scale-based pg.render() at 2x-4x has pdf.js's own internal smoothing
+              // override disable antialiasing for low-DPI scanned bills, degrading OCR
+              // input quality. Two-step high-quality resize fixes this.
+              canvas = await _withTimeout(
+                _renderPageHQ(pg, cfg.scale),
                 PDFJS_AWAIT_TIMEOUT_MS,
                 'render(' + pgNum + ')',
               );
@@ -10495,7 +10687,6 @@ async function extractPDFText(ab, statusCb) {
               canvas.height = 0;
               canvas = null;
             }
-            ctx = null;
             if (pg && pg.cleanup) pg.cleanup();
             // Early exit after pass 0 (2.5x) if this is a cover page — no meter data to gain from more passes
             if (pass === 0 && isCoverPage(bestText)) break;
@@ -10555,16 +10746,13 @@ async function extractPDFText(ab, statusCb) {
                     cfg.label +
                     ')...',
                 );
-              let pg, vp, canvas, ctx;
+              let pg, canvas;
               try {
                 pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-                vp = pg.getViewport({ scale: cfg.scale });
-                canvas = document.createElement('canvas');
-                canvas.width = vp.width;
-                canvas.height = vp.height;
-                ctx = canvas.getContext('2d');
-                await _withTimeout(
-                  pg.render({ canvasContext: ctx, viewport: vp }).promise,
+                // Fix (2026-07-22): see _renderPageHQ doc comment above — defeats pdf.js's
+                // own internal smoothing override for low-DPI scanned source pages.
+                canvas = await _withTimeout(
+                  _renderPageHQ(pg, cfg.scale),
                   PDFJS_AWAIT_TIMEOUT_MS,
                   'render(' + pgNum + ')',
                 );
@@ -10615,7 +10803,6 @@ async function extractPDFText(ab, statusCb) {
                 canvas.height = 0;
                 canvas = null;
               }
-              ctx = null;
               if (pg && pg.cleanup) pg.cleanup();
             }
           }
@@ -10652,16 +10839,8 @@ async function extractPDFText(ab, statusCb) {
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
               pgO = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              const vpO = pgO.getViewport({ scale: 2.5 });
-              canvasO = document.createElement('canvas');
-              canvasO.width = vpO.width;
-              canvasO.height = vpO.height;
-              const ctxO = canvasO.getContext('2d');
-              await _withTimeout(
-                pgO.render({ canvasContext: ctxO, viewport: vpO }).promise,
-                PDFJS_AWAIT_TIMEOUT_MS,
-                'render(' + pgNum + ')',
-              );
+              // Fix (2026-07-22): see _renderPageHQ doc comment above.
+              canvasO = await _withTimeout(_renderPageHQ(pgO, 2.5), PDFJS_AWAIT_TIMEOUT_MS, 'render(' + pgNum + ')');
               // Crop top 20% strip for a fast orientation probe
               const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
               const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
@@ -10736,16 +10915,8 @@ async function extractPDFText(ab, statusCb) {
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
               pgB = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              const vpB = pgB.getViewport({ scale: 2.5 });
-              canvasB = document.createElement('canvas');
-              canvasB.width = vpB.width;
-              canvasB.height = vpB.height;
-              const ctxB = canvasB.getContext('2d');
-              await _withTimeout(
-                pgB.render({ canvasContext: ctxB, viewport: vpB }).promise,
-                PDFJS_AWAIT_TIMEOUT_MS,
-                'render(' + pgNum + ')',
-              );
+              // Fix (2026-07-22): see _renderPageHQ doc comment above.
+              canvasB = await _withTimeout(_renderPageHQ(pgB, 2.5), PDFJS_AWAIT_TIMEOUT_MS, 'render(' + pgNum + ')');
               binCanvas = binarizeCanvas(canvasB);
               const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
               const binText = binResult.data.text;
@@ -11127,16 +11298,14 @@ async function processPDF(file) {
                       retryTexts.push(pageTexts[i - 1] || '');
                       continue;
                     }
-                    let pg, vp, canvas, ctx;
+                    let pg, canvas;
                     try {
                       pg = await _withTimeout(pdf2.getPage(i), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + i + ')');
-                      vp = pg.getViewport({ scale });
-                      canvas = document.createElement('canvas');
-                      canvas.width = vp.width;
-                      canvas.height = vp.height;
-                      ctx = canvas.getContext('2d');
-                      await _withTimeout(
-                        pg.render({ canvasContext: ctx, viewport: vp }).promise,
+                      // Fix (2026-07-22): see _renderPageHQ doc comment above — same
+                      // low-DPI upscale quality issue applies to this separate
+                      // processPDF retry-scale render path.
+                      canvas = await _withTimeout(
+                        _renderPageHQ(pg, scale),
                         PDFJS_AWAIT_TIMEOUT_MS,
                         'render(' + i + ')',
                       );
@@ -11149,7 +11318,6 @@ async function processPDF(file) {
                         canvas.height = 0;
                         canvas = null;
                       }
-                      ctx = null;
                       if (pg && pg.cleanup) pg.cleanup();
                       continue;
                     }
@@ -11166,7 +11334,6 @@ async function processPDF(file) {
                     canvas.width = 0;
                     canvas.height = 0;
                     canvas = null;
-                    ctx = null;
                     if (pg.cleanup) pg.cleanup();
                   }
                   const retryFull = retryTexts.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');

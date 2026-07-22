@@ -5643,157 +5643,284 @@ const UTILITY_RULES = [
       const hasSWEGlobal = /Special\s+Weather\s+Event/i.test(t);
 
       // ── Block parser ──
-      const _lines = t.split(/\r?\n/);
-      const siteBlocks = []; // [{ServiceAddress, AccountNumber, MeterNumber, mmbtu, dollar}]
-      let _curAddr = null;
-      let _curAcct = null;
-      let _curMeter = null;
-      let _inSites = false; // true once we pass the header section
-      // Per-site charge component accumulators (reset on each new Service Address)
-      let _curTriggerCharge = null;
-      let _curIndexCharge = null;
-      let _curSWECharge = null;
-      // Per-component MMBtu quantities (fix 8a271dae — needed for per-component rate display)
-      let _curTriggerMMbtu = null;
-      let _curIndexMMbtu = null;
-      // Per-component printed rates (source-faithful — from the Rate column of each charge line)
-      let _curTriggerRate = null;
-      let _curIndexRate = null;
+      // Fix (2026-07-22, Wood River per-site OCR consensus): factored the parsing
+      // loop into a function of `text` (was inline against `t` only) so it can be
+      // re-run against ALTERNATE OCR passes below to recover sites the PRIMARY
+      // (highest-scoring) pass garbled. See the consensus merge step after
+      // `siteBlocks` is built. Behavior against `t` alone is unchanged.
+      function _parseWRESiteBlocks(text) {
+        const _lines = text.split(/\r?\n/);
+        const blocks = []; // [{ServiceAddress, AccountNumber, MeterNumber, mmbtu, dollar}]
+        let _cur = null; // the currently-open site block object
+        let _inSites = false; // true once we pass the header section
 
-      for (let i = 0; i < _lines.length; i++) {
-        const ln = _lines[i];
+        for (let i = 0; i < _lines.length; i++) {
+          const ln = _lines[i];
 
-        // Stop at invoice summary line
-        if (/Total\s+Natural\s+Gas/i.test(ln)) break;
+          // Stop at invoice summary line
+          if (/Total\s+Natural\s+Gas/i.test(ln)) break;
 
-        // Detect "Service Address:" line — opens a new site block.
-        // The building name and Acct/Meter appear on the SAME line in all formats.
-        if (/Service\s+Address\s*:/i.test(ln)) {
-          _inSites = true;
-          // Reset per-site charge component accumulators
-          _curTriggerCharge = null;
-          _curIndexCharge = null;
-          _curSWECharge = null;
-          _curTriggerMMbtu = null;
-          _curIndexMMbtu = null;
-          _curTriggerRate = null;
-          _curIndexRate = null;
-          // Extract building name (text between "Service Address:" and "Acct/Meter:")
-          const _saM = ln.match(
-            /Service\s+Address\s*:\s*(.+?)\s+Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
-          );
-          if (_saM) {
-            _curAddr = _saM[1].trim();
-            _curAcct = _saM[2].trim();
-            _curMeter = _saM[3].trim();
-          } else {
-            // Fallback: no Acct/Meter on same line (shouldn't happen but be safe)
-            const _saOnly = ln.match(/Service\s+Address\s*:\s*(.+)/i);
-            _curAddr = _saOnly ? _saOnly[1].trim() : null;
-            _curAcct = null;
-            _curMeter = null;
+          // Detect "Service Address:" line — opens a new site block.
+          // The building name and Acct/Meter appear on the SAME line in all formats.
+          // Fix (2026-07-22, Wood River May/Sep/Oct 2025 legibility): same punctuation-
+          // corruption tolerance as the Sub-Total fix above — OCR misread this line's
+          // colon as a period on Inv 452084's High Schl site ("Service Address.  High
+          // Schl..."), which with the old strict-colon regex meant that site's block
+          // never opened at all (not even a stub), silently shrinking the whole
+          // downstream site array by one and shifting every later site's position.
+          if (/Service\s+Address\s*[:;,.]?/i.test(ln)) {
+            _inSites = true;
+            // Extract building name (text between "Service Address:" and "Acct/Meter:")
+            const _saM = ln.match(
+              /Service\s+Address\s*[:;,.]?\s*(.+?)\s+Acct\/Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
+            );
+            let _addr, _acct, _meter;
+            if (_saM) {
+              _addr = _saM[1].trim();
+              _acct = _saM[2].trim();
+              _meter = _saM[3].trim();
+            } else {
+              // Fallback: no Acct/Meter on same line (shouldn't happen but be safe)
+              const _saOnly = ln.match(/Service\s+Address\s*[:;,.]?\s*(.+)/i);
+              _addr = _saOnly ? _saOnly[1].trim() : null;
+              _acct = null;
+              _meter = null;
+            }
+            // Fix (2026-07-22, per-site OCR consensus): push the block IMMEDIATELY on
+            // open rather than only when a Sub-Total line later closes it. This keeps
+            // every site's POSITION in `blocks` stable (the Nth "Service Address:" is
+            // always blocks[N]) even when a site's Sub-Total/Index line is too OCR-
+            // garbled to parse — previously such a site was silently omitted from
+            // `blocks` entirely, which (a) shifted every later site's array index
+            // (breaking any positional cross-pass comparison) and (b) meant the site's
+            // charge was just gone with no trace, rather than present-but-null and
+            // recoverable via the fallbacks below / the consensus merge that follows.
+            _cur = {
+              ServiceAddress: _addr,
+              AccountNumber: _acct,
+              MeterNumber: _meter,
+              mmbtu: null,
+              dollar: null,
+              triggerCharge: null,
+              indexCharge: null,
+              sweCharge: null,
+              triggerMMbtu: null,
+              indexMMbtu: null,
+              triggerRate: null,
+              indexRate: null,
+            };
+            blocks.push(_cur);
+            continue;
           }
-          continue;
-        }
 
-        // Inline Acct/Meter on a line after Service Address (safety fallback)
-        if (_inSites && _curAddr && !_curAcct && /Acct\/Meter\s*:/i.test(ln)) {
-          const _amM = ln.match(/Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i);
-          if (_amM) {
-            _curAcct = _amM[1].trim();
-            _curMeter = _amM[2].trim();
+          // Inline Acct/Meter on a line after Service Address (safety fallback)
+          if (_inSites && _cur && !_cur.AccountNumber && /Acct\/Meter\s*:/i.test(ln)) {
+            const _amM = ln.match(/Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i);
+            if (_amM) {
+              _cur.AccountNumber = _amM[1].trim();
+              _cur.MeterNumber = _amM[2].trim();
+            }
+            continue;
           }
-          continue;
-        }
 
-        // Trigger - Fixed charge component line.
-        // Format: "Trigger - Fixed   6.24   0.07   $5.2650   $33.22"
-        // First number after label = per-component MMBtu; last dollar amount = charge.
-        // Rate column ($5.2650) appears between fuel column and the final $ charge.
-        if (_inSites && /Trigger\s*-?\s*Fixed/i.test(ln)) {
-          // Fix (2026-07-22): accept OCR comma→period corrupted form ($1.337.90) the
-          // same way the Sub-Total line already does, and restore it via _wreFixOcrDollar.
-          // Without this, any Trigger charge >= $1,000 silently parsed as null, causing
-          // _wreTriggerCharge to stay null and the per-site Sum Mismatch banner to fire
-          // even though GasCharge/TotalCurrentCharges themselves were correct.
-          const _trigDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
-          if (_trigDollarM) _curTriggerCharge = parseFloat(_wreFixOcrDollar(_trigDollarM[1]).replace(/,/g, ''));
-          const _trigMmbtuM = ln.match(/Trigger\s*-?\s*Fixed\s+([\d,]+\.?\d*)/i);
-          if (_trigMmbtuM) _curTriggerMMbtu = parseFloat(_trigMmbtuM[1].replace(/,/g, ''));
-          // Capture printed rate — second-to-last $ value on the line (Rate column)
-          const _trigRateMs = ln.match(/\$([\d,]+\.\d{4})/g);
-          if (_trigRateMs && _trigRateMs.length >= 1) {
-            _curTriggerRate = _trigRateMs[_trigRateMs.length - 1].replace(/^\$/, '');
+          // Trigger - Fixed charge component line.
+          // Format: "Trigger - Fixed   6.24   0.07   $5.2650   $33.22"
+          // First number after label = per-component MMBtu; last dollar amount = charge.
+          // Rate column ($5.2650) appears between fuel column and the final $ charge.
+          if (_inSites && _cur && /Trigger\s*-?\s*Fixed/i.test(ln)) {
+            // Fix (2026-07-22): accept OCR comma→period corrupted form ($1.337.90) the
+            // same way the Sub-Total line already does, and restore it via _wreFixOcrDollar.
+            // Without this, any Trigger charge >= $1,000 silently parsed as null, causing
+            // _wreTriggerCharge to stay null and the per-site Sum Mismatch banner to fire
+            // even though GasCharge/TotalCurrentCharges themselves were correct.
+            const _trigDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+            if (_trigDollarM) _cur.triggerCharge = parseFloat(_wreFixOcrDollar(_trigDollarM[1]).replace(/,/g, ''));
+            const _trigMmbtuM = ln.match(/Trigger\s*-?\s*Fixed\s+([\d,]+\.?\d*)/i);
+            if (_trigMmbtuM) _cur.triggerMMbtu = parseFloat(_trigMmbtuM[1].replace(/,/g, ''));
+            // Capture printed rate — second-to-last $ value on the line (Rate column)
+            const _trigRateMs = ln.match(/\$([\d,]+\.\d{4})/g);
+            if (_trigRateMs && _trigRateMs.length >= 1) {
+              _cur.triggerRate = _trigRateMs[_trigRateMs.length - 1].replace(/^\$/, '');
+            }
+            continue;
           }
-          continue;
-        }
 
-        // Index (FOM) charge component line.
-        // Format: "Index (FOM)   3.34   0.04   $5.0550   $17.09"
-        // OCR variants: "IndexbOM)  60.03  0.67  $5.0550  $306.84" — tolerate garbled parens/O vs 0
-        // First number after label = per-component MMBtu; last dollar amount = charge.
-        // Rate column ($5.0550) appears between fuel column and the final $ charge.
-        if (_inSites && /Index[\s(b]*(?:FOM|0M|OM)/i.test(ln)) {
-          // Fix (2026-07-22): same OCR comma→period corruption fix as the Trigger line
-          // above — Index charges are frequently >= $1,000 (e.g. "$1,337.90" misread as
-          // "$1.337.90"), which the old plain-comma regex silently failed to match.
-          const _idxDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
-          if (_idxDollarM) _curIndexCharge = parseFloat(_wreFixOcrDollar(_idxDollarM[1]).replace(/,/g, ''));
-          const _idxMmbtuM = ln.match(/Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]+([\d,]+\.?\d*)/i);
-          if (_idxMmbtuM) _curIndexMMbtu = parseFloat(_idxMmbtuM[1].replace(/,/g, ''));
-          // Capture printed rate — last 4-decimal $ value before the 2-decimal charge
-          const _idxRateMs = ln.match(/\$([\d,]+\.\d{4})/g);
-          if (_idxRateMs && _idxRateMs.length >= 1) {
-            _curIndexRate = _idxRateMs[_idxRateMs.length - 1].replace(/^\$/, '');
+          // Index (FOM) charge component line.
+          // Format: "Index (FOM)   3.34   0.04   $5.0550   $17.09"
+          // OCR variants: "IndexbOM)  60.03  0.67  $5.0550  $306.84" — tolerate garbled parens/O vs 0
+          // First number after label = per-component MMBtu; last dollar amount = charge.
+          // Rate column ($5.0550) appears between fuel column and the final $ charge.
+          if (_inSites && _cur && /Index[\s(b]*(?:FOM|0M|OM)/i.test(ln)) {
+            // Fix (2026-07-22): same OCR comma→period corruption fix as the Trigger line
+            // above — Index charges are frequently >= $1,000 (e.g. "$1,337.90" misread as
+            // "$1.337.90"), which the old plain-comma regex silently failed to match.
+            const _idxDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+            if (_idxDollarM) _cur.indexCharge = parseFloat(_wreFixOcrDollar(_idxDollarM[1]).replace(/,/g, ''));
+            const _idxMmbtuM = ln.match(/Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]+([\d,]+\.?\d*)/i);
+            if (_idxMmbtuM) _cur.indexMMbtu = parseFloat(_idxMmbtuM[1].replace(/,/g, ''));
+            // Capture printed rate — last 4-decimal $ value before the 2-decimal charge
+            const _idxRateMs = ln.match(/\$([\d,]+\.\d{4})/g);
+            if (_idxRateMs && _idxRateMs.length >= 1) {
+              _cur.indexRate = _idxRateMs[_idxRateMs.length - 1].replace(/^\$/, '');
+            }
+            continue;
           }
-          continue;
-        }
 
-        // Special Weather Event charge component line (present only on some invoices).
-        // Format: "Special Weather Event  -2.98  -0.03  $-20.8065  $62.63"
-        // The dollar charge is POSITIVE (surcharge), despite negative MMbtu/rate columns.
-        if (_inSites && /Special\s+Weather\s+Event/i.test(ln)) {
-          // Fix (2026-07-22): same OCR comma→period corruption fix as Trigger/Index above,
-          // applied here too since SWE surcharges can also exceed $1,000 (e.g. JAN 26 invoice).
-          const _sweDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
-          if (_sweDollarM) _curSWECharge = parseFloat(_wreFixOcrDollar(_sweDollarM[1]).replace(/,/g, ''));
-          continue;
-        }
-
-        // Sub-Total line — closes the current site block.
-        // Format: "Sub-Total:   13.49   0.13   $56.45"  (embedded)
-        //         "Sub-Total:                                   9.58   0.11   $50.31" (OCR with wide spaces)
-        // Fix 3: dollar value may have OCR comma→period corruption.
-        if (/^\s*Sub-?Total\s*:/i.test(ln)) {
-          // First number after the colon = MMbtu
-          const _mmbtuM = ln.match(/Sub-?Total\s*:\s*([\d,]+\.?\d*)/i);
-          // Last dollar value on the line = site charge.
-          // Accept both clean form ($1,425.42) and OCR-corrupted form ($1.425.42).
-          const _dollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
-          if (_mmbtuM && _dollarM) {
-            const _rawDollar = _dollarM[1];
-            const _fixedDollar = _wreFixOcrDollar(_rawDollar);
-            siteBlocks.push({
-              ServiceAddress: _curAddr,
-              AccountNumber: _curAcct,
-              MeterNumber: _curMeter,
-              mmbtu: parseFloat(_mmbtuM[1].replace(/,/g, '')),
-              dollar: _fixedDollar,
-              triggerCharge: _curTriggerCharge,
-              indexCharge: _curIndexCharge,
-              sweCharge: _curSWECharge,
-              triggerMMbtu: _curTriggerMMbtu,
-              indexMMbtu: _curIndexMMbtu,
-              triggerRate: _curTriggerRate,
-              indexRate: _curIndexRate,
-            });
+          // Special Weather Event charge component line (present only on some invoices).
+          // Format: "Special Weather Event  -2.98  -0.03  $-20.8065  $62.63"
+          // The dollar charge is POSITIVE (surcharge), despite negative MMbtu/rate columns.
+          if (_inSites && _cur && /Special\s+Weather\s+Event/i.test(ln)) {
+            // Fix (2026-07-22): same OCR comma→period corruption fix as Trigger/Index above,
+            // applied here too since SWE surcharges can also exceed $1,000 (e.g. JAN 26 invoice).
+            const _sweDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+            if (_sweDollarM) _cur.sweCharge = parseFloat(_wreFixOcrDollar(_sweDollarM[1]).replace(/,/g, ''));
+            continue;
           }
-          // Do NOT reset _curAddr/_curAcct here — next "Service Address:" line will overwrite.
-          continue;
+
+          // Sub-Total line — closes the current site block.
+          // Format: "Sub-Total:   13.49   0.13   $56.45"  (embedded)
+          //         "Sub-Total:                                   9.58   0.11   $50.31" (OCR with wide spaces)
+          // Fix 3: dollar value may have OCR comma→period corruption.
+          // Fix (2026-07-22, Wood River May/Sep/Oct 2025 legibility): the closing colon
+          // after "Sub-Total" is frequently misread by OCR as a period, semicolon, or
+          // comma ("Sub-Total.", "Sub-Total;", "Sub Total,"), and the dash between the
+          // words is sometimes dropped entirely ("Sub Total:"). Requiring a literal
+          // colon (and only a single optional dash) silently dropped ~70% of a real
+          // invoice's per-site totals even after the render-quality fix above — verified
+          // against Inv 452084 (May 2025): only 3/10 Sub-Total lines matched the old
+          // strict pattern, 8/10 matched once punctuation was tolerated. Widened to accept
+          // any of :;,. as the closing punctuation (or none) and 0-2 chars (space/dash/
+          // period) between "Sub" and "Total".
+          if (_cur && /^\s*Sub[\s.\-]{0,2}Total\s*[:;,.]?/i.test(ln)) {
+            // First number after the colon = MMbtu
+            const _mmbtuM = ln.match(/Sub[\s.\-]{0,2}Total\s*[:;,.]?\s*([\d,]+\.?\d*)/i);
+            // Last dollar value on the line = site charge.
+            // Accept both clean form ($1,425.42) and OCR-corrupted form ($1.425.42).
+            const _dollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+            if (_mmbtuM) _cur.mmbtu = parseFloat(_mmbtuM[1].replace(/,/g, ''));
+            if (_dollarM) _cur.dollar = _wreFixOcrDollar(_dollarM[1]);
+            // Do NOT clear _cur here — a stray non-closing line before the next
+            // "Service Address:" should not lose the block; the next open replaces it.
+            continue;
+          }
         }
+
+        // Fix (2026-07-22): fallback when the Sub-Total line's OWN dollar figure never
+        // parses (that specific line's OCR corruption goes beyond punctuation — e.g. the
+        // "$" sign itself is dropped), but a component charge line for the SAME site
+        // (Index/Trigger/SWE) DID capture a valid "$"-anchored dollar. Sub-Total is
+        // defined as the sum of the component charge lines printed directly above it on
+        // every invoice on file — this is not a guessed value, it's the same figure
+        // already correctly read from a different row of the same site block.
+        for (const b of blocks) {
+          if (b.dollar == null) {
+            const parts = [b.triggerCharge, b.indexCharge, b.sweCharge].filter((v) => v != null);
+            if (parts.length > 0) {
+              b.dollar = parts.reduce((s, v) => s + v, 0).toFixed(2);
+              b._dollarFromComponents = true;
+            }
+          }
+          if (b.mmbtu == null) {
+            const mparts = [b.triggerMMbtu, b.indexMMbtu].filter((v) => v != null);
+            if (mparts.length > 0) b.mmbtu = mparts.reduce((s, v) => s + v, 0);
+          }
+        }
+
+        return blocks;
       }
 
+      const siteBlocks = _parseWRESiteBlocks(t);
       console.log('[WRE] Block parser: siteBlocks=' + siteBlocks.length);
+
+      // ── Per-site OCR consensus recovery (2026-07-22) ──
+      // `t` is ONE whole-page OCR pass chosen by keyword score — but that single
+      // pass can still garble an individual site's Sub-Total line badly enough that
+      // NO site block gets produced for it at all (verified: WRE Inv 452084 May 2025
+      // — the "High Schl" site's Index/Sub-Total row was dropped or lost its "$" in
+      // every one of the 9 render scale/PSM combinations tried for the winning page).
+      // window._pdfOcrPasses already holds every OCR pass's full text (computed during
+      // extractPDFText — zero extra OCR cost to reuse here). Each pass reads the same
+      // physical page top-to-bottom, so the Nth "Service Address:" block lines up
+      // positionally across passes even when one pass drops a row. For any site whose
+      // dollar total didn't come through in the primary parse, try every other pass's
+      // parse of the SAME page at the SAME position and take the first one that has a
+      // valid (still "$"-anchored, never guessed) dollar figure.
+      if (typeof window !== 'undefined' && window._pdfOcrPasses && siteBlocks.some((b) => b.dollar == null)) {
+        const _altTexts = [];
+        for (const _passes of Object.values(window._pdfOcrPasses)) {
+          for (const _p of _passes) {
+            if (_p.text && _p.text !== t && !_altTexts.includes(_p.text)) _altTexts.push(_p.text);
+          }
+        }
+        if (_altTexts.length > 0) {
+          // Fix (2026-07-22): positional (index) matching across passes is only safe
+          // once confirmed the two blocks are actually the SAME site — a different
+          // pass can drop/add a block elsewhere on the page, shifting every later
+          // index, and blindly trusting position silently copies the WRONG site's
+          // dollar onto this one (confirmed by testing: an early version of this merge
+          // with no address check pulled a later site's $390.99 onto an earlier site
+          // that should have read $2.63). Requiring the alt pass to have the exact same
+          // total block count turned out too strict — most alt passes differ by 1-2
+          // blocks due to unrelated OCR noise elsewhere on the page, so almost nothing
+          // ever qualified. The address check below is the real safety net and does not
+          // depend on matching array lengths, so the count requirement is dropped.
+          // Addresses must match: normalize each to an alphanumeric-only lowercase key
+          // and require it to be non-empty and identical (or one a prefix of the other)
+          // on BOTH sides — if EITHER side's address is too garbled to produce a usable
+          // key, skip that pairing rather than guess.
+          const _addrKey = (s) =>
+            (s || '')
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, '')
+              .slice(0, 8);
+          const _altBlocksList = [];
+          for (const _altText of _altTexts) {
+            try {
+              _altBlocksList.push(_parseWRESiteBlocks(_altText));
+            } catch (_e) {
+              /* alt pass parse failed — skip it */
+            }
+          }
+          for (let _idx = 0; _idx < siteBlocks.length; _idx++) {
+            if (siteBlocks[_idx].dollar != null) continue; // already have a real value
+            const _primaryKey = _addrKey(siteBlocks[_idx].ServiceAddress);
+            if (_primaryKey.length < 4) continue; // primary address too garbled to verify against — skip
+            for (const _altBlocks of _altBlocksList) {
+              // Fix (2026-07-22): EXACT index only — no positional window search.
+              // This invoice format can legitimately repeat the SAME building name at
+              // multiple site blocks (e.g. "Elem - 300 S Webster St" appears twice, once
+              // per meter) — the only thing that distinguishes those entries is the
+              // meter number, which OCR corrupts too unreliably to use as a key. A
+              // window search (tried and reverted) matched on address text alone and
+              // pulled site N+1's value onto site N in exactly this repeated-name case.
+              // Exact-index + address-still-must-match is the safe combination: it only
+              // ever accepts a value from the position that ACTUALLY reads top-to-bottom
+              // as "the same site" in an alt pass with compatible block ordering.
+              const _cand = _altBlocks[_idx];
+              if (_cand && _cand.dollar != null) {
+                const _candKey = _addrKey(_cand.ServiceAddress);
+                if (_candKey.length < 4 || _candKey !== _primaryKey) continue;
+              } else {
+                continue;
+              }
+              if (!_cand) continue;
+              siteBlocks[_idx].dollar = _cand.dollar;
+              siteBlocks[_idx]._consensusRecovered = true;
+              if (siteBlocks[_idx].mmbtu == null) siteBlocks[_idx].mmbtu = _cand.mmbtu;
+              if (siteBlocks[_idx].indexCharge == null) siteBlocks[_idx].indexCharge = _cand.indexCharge;
+              if (siteBlocks[_idx].triggerCharge == null) siteBlocks[_idx].triggerCharge = _cand.triggerCharge;
+              if (siteBlocks[_idx].sweCharge == null) siteBlocks[_idx].sweCharge = _cand.sweCharge;
+              if (!siteBlocks[_idx].ServiceAddress) siteBlocks[_idx].ServiceAddress = _cand.ServiceAddress;
+              break;
+            }
+          }
+          console.log(
+            '[WRE] Consensus recovery: ' +
+              siteBlocks.filter((b) => b._consensusRecovered).length +
+              ' site(s) recovered from alternate OCR passes',
+          );
+        }
+      }
 
       const results = [];
       for (let i = 0; i < siteBlocks.length; i++) {
