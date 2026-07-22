@@ -1444,9 +1444,16 @@ const PRICE_POINT_MAP = {
     defaultSku: 'ZS2-HC-ALC',
     qtyRule: 'comboZone', // de-dup: if zoneTemp also missing, ZS2-HC-ALC covers both
     flags: [],
-    note: 'Zone CO2+temp combo — replaces separate zoneTemp+CO2 if both missing',
+    // ZS2-HC-ALC is the actual physical device: the base ZS2-ALC zone wall sensor with the "H"
+    // (Humidity) + "C" (CO2) options added — one sensor, one install, reading zone temperature,
+    // relative humidity, AND CO2 together. Investigation 2026-07-22 (Matt's feedback: the Cost
+    // Estimate read as disconnected sensor line items with no combined Temp/Hum/CO2 zone sensor):
+    // this SKU was ALREADY the combo charged whenever both zoneTemp and CO2 are gaps on the same
+    // zone (see the combo de-dup logic in buildCatalogRows) — this is a label/description fix to
+    // match what the hardware already is, not a new part number or a pricing change.
+    note: 'Zone Temp/Humidity/CO2 sensor — one physical device, replaces separate zone temp + CO2 sensors when both are missing',
     whyNeeded:
-      'Measures occupancy through air quality, allowing the system to reduce outdoor air when rooms are empty.',
+      'One wall sensor reads zone temperature, relative humidity, and CO2 in a single install — the temperature feedback zone control requires, plus the occupancy signal for demand-controlled ventilation.',
     g36Section: '§5.6.7',
   },
   /* ── AHU actuators ── */
@@ -2269,7 +2276,10 @@ function _pricingPointLabel(pointKey) {
     oat: 'Outdoor Air Temp',
     dsp: 'Duct Static Pressure',
     co2_ahu: 'CO2 (AHU Duct)',
-    co2_zone: 'CO2 (Zone)',
+    // Renamed 2026-07-22 (Matt): the "CO2 (Zone)" label hid that this line item is the combined
+    // ZS2-HC-ALC temp+humidity+CO2 zone sensor whenever the combo fires — see the PRICE_POINT_MAP
+    // co2_zone entry above for the hardware-identity investigation behind this rename.
+    co2_zone: 'Zone Temp/Humidity/CO2 Sensor',
     dat: 'Discharge Air Temp',
     hwst: 'HW Supply Temp',
     hwrt: 'HW Return Temp',
@@ -2337,10 +2347,10 @@ function _pricingPointType(pointKey, mapEntry) {
   if (mapEntry.flags.indexOf('noSku') !== -1) return 'Manual';
   // Categorize by SKU prefix / point type
   var sku = mapEntry.defaultSku || '';
-  // Distinguish ZS2 variants: ZS2-HC-ALC is combo CO2+temp; ZS2-ALC is temp-only
-  if (sku === 'ZS2-HC-ALC') return 'CO2/Zone';
+  // Distinguish ZS2 variants: ZS2-HC-ALC is the combo Temp/Humidity/CO2 sensor; ZS2-ALC is temp-only
+  if (sku === 'ZS2-HC-ALC') return 'Temp/Hum/CO2';
   if (sku === 'ZS2-ALC') return 'Zone Temp';
-  if (sku.startsWith('ZS2')) return 'CO2/Zone'; // catch-all for future ZS2 variants
+  if (sku.startsWith('ZS2')) return 'Temp/Hum/CO2'; // catch-all for future ZS2 variants
   if (sku.startsWith('N1-DCD') || pointKey.indexOf('co2') !== -1) return 'CO2';
   if (sku.startsWith('N1-') || sku.startsWith('N2-')) return 'Sensor';
   if (sku.startsWith('AF') || sku.startsWith('AM') || sku.startsWith('AFRB')) return 'Actuator';
@@ -3663,17 +3673,6 @@ function _pricingTierToggleHTML(projId, currentTier) {
     btn('compliance', 'Compliance') +
     btn('full-scope', 'Full Scope') +
     btn('both', 'Compare') +
-    // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): "Summary" — NOT a data-filtering tier
-    // like the four above (it doesn't change which rows qualify). It's a presentation-only
-    // sub-tab that aggregates the per-building totals the other three tiers already compute
-    // (see _pricingRenderSummaryTab). Stored in the same `estimate.tier` slot for simplicity —
-    // reuses the existing toggle-button/active-state/persistence mechanism — but consumers that
-    // branch on tier for ROW-BUILDING purposes (buildRecommendedRows/buildComplianceRows/
-    // buildFullScopeRows selection) never see 'summary' because initCostEstimateTab short-
-    // circuits into the summary render path before reaching that branch. Existing tier keys
-    // ('recommended'/'compliance'/'full-scope'/'both') are unchanged; this is purely additive.
-    '<span style="color:var(--border2);margin:0 2px">|</span>' +
-    btn('summary', 'Summary') +
     '</div>'
   );
 }
@@ -5400,10 +5399,15 @@ function _pricingApplyColWidths(projId) {
    between Summary and the other 4 tiers — reproducing a subtler version of the exact bug this
    item exists to fix. Self-deriving these three values, identically on every tier including
    Summary, closes that gap.
+
+   2026-07-22 update: the "Summary" sub-tab described above was REMOVED entirely (Matt: "The
+   Cost Estimate per building I do not like and it honestly gives no information. Just remove
+   completely.") — see the removed _pricingRenderSummaryTab. `opts.middleHTML` (below) replaces
+   Summary's old caption slot as a generic reserved-elastic-space passthrough any caller may use
+   (e.g. the Compliance/Full-Scope condensed-view toggle — see _pricingRenderCondensedTab).
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingBuildToolbarHTML(projId, tier, opts) {
   opts = opts || {};
-  var isSummary = tier === 'summary';
   var isRecommended = tier === 'recommended';
   var catalog = sget('en_pricing_catalog', null);
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
@@ -5418,7 +5422,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
   var allBuildings = opts.allBuildings || [];
   var filterBldg = _pricingBldgFilter[projId] || '';
 
-  var rowFilterActive = !isSummary; // Import CSV, Table Settings, Legend, Building filter
+  var rowFilterActive = true; // Import CSV, Table Settings, Legend, Building filter — always on now that Summary (the one tier that hid these) is removed
   var sortActive = isRecommended; // Sort: Recommended-only, unchanged from the existing rule
 
   // visibility:hidden (not display:none) reserves the exact layout box so sibling controls never
@@ -5553,16 +5557,13 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     '>Best equipment return first</option>' +
     '</select></label>';
 
-  // d5286981: Summary's caption sits INSIDE the existing flex:1 spacer (not a separate element)
-  // — empty string on every other tier, preserving today's visual output exactly there. Because
-  // the spacer is the ELASTIC region between the fixed-width "before Tier" group and the
-  // fixed-width "after spacer" group, putting content here cannot move either neighbor; it only
-  // consumes some of the spacer's free space. Wording is the plain-language rewrite of the old
-  // "Building Totals — all buildings, across all tiers" ("tiers" is jargon; "pricing options" is
-  // the term the Tier toggle's own visible button labels already use).
-  var middleHTML = isSummary
-    ? '<span style="font-size:12px;font-weight:700;color:var(--text2)">Building totals — every building, across all pricing options</span>'
-    : '';
+  // 2026-07-22: generic reserved-elastic-space slot (formerly Summary's caption only — Summary
+  // is removed). Content sits INSIDE the existing flex:1 spacer (not a separate element) — empty
+  // string unless the caller passes opts.middleHTML, preserving today's visual output exactly on
+  // every tier that doesn't use it. Because the spacer is the ELASTIC region between the
+  // fixed-width "before Tier" group and the fixed-width "after spacer" group, putting content
+  // here cannot move either neighbor; it only consumes some of the spacer's free space.
+  var middleHTML = opts.middleHTML || '';
 
   return [
     '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
@@ -5591,6 +5592,445 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
   ].join('');
 }
 
+/* ── Condensed view toggle persistence (Task 1c, 2026-07-22) ─────────────────────────────────
+   `estimate.condensedTier` is a per-project { compliance: bool, 'full-scope': bool } map; a
+   missing/undefined entry means "condensed" (the new default) — only an explicit `false` means
+   the user asked to see the full per-building itemization. Mirrors the read-with-`|| {}`-guard
+   convention every other post-hoc estimate field in this file uses (installHoursOverrides,
+   qtyOverrides, ...) so existing saved estimates from before this change need no migration.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingSetCondensedView(projId, tier, condensed) {
+  var est = _pricingGetEstimate(projId);
+  est.condensedTier = est.condensedTier || {};
+  est.condensedTier[tier] = !!condensed;
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
+function _pricingCondensedToggleHTML(projId, tier, isCondensed) {
+  return isCondensed
+    ? '<button class="btn btn-ghost btn-sm" onclick="_pricingSetCondensedView(\'' +
+        projId +
+        "','" +
+        tier +
+        '\',false)" title="Show every row, one per building, with full edit controls" ' +
+        'style="cursor:pointer">Show Full Itemization (by building)</button>'
+    : '<button class="btn btn-ghost btn-sm" onclick="_pricingSetCondensedView(\'' +
+        projId +
+        "','" +
+        tier +
+        '\',true)" title="Collapse back to one row per item, summed across all buildings" ' +
+        'style="cursor:pointer">Show Condensed Summary</button>';
+}
+
+/* ── Condensed-view row aggregation (Task 1c, 2026-07-22) ─────────────────────────────────────
+   Groups a tier's rows by distinct item name PER PHASE (1=Hardware & Installation, 2=Programming
+   & Commissioning), summing qty/lineTotal across every building carrying that same item — the
+   exact same aggregate-by-item-name shape report-engine.js's _rptA36TierDetailAggByPhase already
+   uses for the Proposal's collapsible detail panel, so a reader sees the identical grouping in
+   both places. unitPrice is DERIVED (lineTotal/qty), never a separately-tracked field, so
+   qty × unitPrice always foots exactly to lineTotal — this is a read-only summary, no new
+   pricing math, no changes to the underlying row objects.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeCondensedRows(rows, estimate) {
+  var toggles = (estimate && estimate.rowToggles) || {};
+  function agg(phaseNum) {
+    var byItem = {};
+    var order = [];
+    rows.forEach(function (r) {
+      if (r.phase !== phaseNum) return;
+      var toggleKey = r._baseId || r.id;
+      if (toggles[toggleKey] === false) return;
+      var name = r.item || '(unnamed)';
+      if (!byItem[name]) {
+        byItem[name] = { item: name, qty: 0, lineTotal: 0, buildings: {}, hasAnyPrice: false };
+        order.push(name);
+      }
+      byItem[name].qty += r.qty || 0;
+      if (r.lineTotal != null) {
+        byItem[name].lineTotal += r.lineTotal;
+        byItem[name].hasAnyPrice = true;
+      }
+      if (r.building) byItem[name].buildings[r.building] = true;
+    });
+    return order.map(function (k) {
+      var it = byItem[k];
+      return {
+        item: it.item,
+        qty: it.qty,
+        buildingCount: Object.keys(it.buildings).length,
+        lineTotal: it.hasAnyPrice ? it.lineTotal : null,
+        unitPrice: it.hasAnyPrice && it.qty > 0 ? it.lineTotal / it.qty : null,
+      };
+    });
+  }
+  return { hw: agg(1), lb: agg(2) };
+}
+
+/* ── Condensed tab render (Task 1c, 2026-07-22) ────────────────────────────────────────────────
+   Read-only grouped-summary render for Compliance/Full-Scope (see the initCostEstimateTab
+   short-circuit above). Self-contained (mirrors the removed _pricingRenderSummaryTab's own
+   self-containment) — recomputes rows/building filter independently rather than threading state
+   through the big shared render path, since this view has none of that path's per-row edit
+   affordances (no toggle checkboxes, manual-price inputs, hours overrides, column resize/hide,
+   sort). Building filter + toolbar controls still apply (same _pricingBldgFilter module state,
+   same _pricingBuildToolbarHTML), so switching Condensed <-> Full Itemization mid-filter is
+   seamless. Grand total footer reuses _pricingComputeTotals on the SAME filtered row set the
+   full table would use — cannot disagree with the full view or the tier's own totals.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingRenderCondensedTab(projId, el, estimate, tier) {
+  var builder = tier === 'full-scope' ? buildFullScopeRows : buildComplianceRows;
+  var baseRows = builder(projId);
+  baseRows = _pricingApplyLaborOverrides(projId, baseRows);
+  baseRows = _pricingApplyQtyOverrides(projId, baseRows);
+
+  var allBuildings = [];
+  var bSetAll = {};
+  baseRows.forEach(function (r) {
+    if (r.building && !bSetAll[r.building]) {
+      bSetAll[r.building] = true;
+      allBuildings.push(r.building);
+    }
+  });
+
+  var filterBldg = _pricingBldgFilter[projId] || '';
+  var filteredRows = filterBldg
+    ? baseRows.filter(function (r) {
+        return r.building === filterBldg;
+      })
+    : baseRows;
+
+  var totals = _pricingComputeTotals(filteredRows, estimate);
+  var agg = _pricingComputeCondensedRows(filteredRows, estimate);
+  var itemCount = agg.hw.length + agg.lb.length;
+
+  var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, {
+    allBuildings: allBuildings,
+    middleHTML:
+      '<span style="font-size:11px;color:var(--text2)">Condensed — ' +
+      itemCount +
+      ' item' +
+      (itemCount !== 1 ? 's' : '') +
+      ' grouped across ' +
+      allBuildings.length +
+      ' building' +
+      (allBuildings.length !== 1 ? 's' : '') +
+      '</span> ' +
+      _pricingCondensedToggleHTML(projId, tier, true),
+  });
+
+  var thBase =
+    'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;border-bottom:1px solid var(--border2)';
+  var tdBase =
+    'padding:6px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);' +
+    'font-variant-numeric:tabular-nums';
+
+  function section(title, items) {
+    if (!items.length) return '';
+    var head =
+      '<tr>' +
+      '<th style="' +
+      thBase +
+      ';text-align:left">Item</th>' +
+      '<th style="' +
+      thBase +
+      ';text-align:right">Qty</th>' +
+      '<th style="' +
+      thBase +
+      ';text-align:right">Unit Price</th>' +
+      '<th style="' +
+      thBase +
+      ';text-align:center" title="Number of buildings this item is needed at">Buildings</th>' +
+      '<th style="' +
+      thBase +
+      ';text-align:right">Line Total</th>' +
+      '</tr>';
+    var body = items
+      .map(function (it) {
+        return (
+          '<tr>' +
+          '<td style="' +
+          tdBase +
+          ';white-space:normal;word-break:break-word;color:var(--text)">' +
+          _pricingEscText(it.item) +
+          '</td>' +
+          '<td style="' +
+          tdBase +
+          ';text-align:right">' +
+          it.qty +
+          '</td>' +
+          '<td style="' +
+          tdBase +
+          ';text-align:right">' +
+          (it.unitPrice != null ? _pricingFmt(it.unitPrice) : '—') +
+          '</td>' +
+          '<td style="' +
+          tdBase +
+          ';text-align:center">' +
+          it.buildingCount +
+          '</td>' +
+          '<td style="' +
+          tdBase +
+          ';text-align:right;font-weight:700">' +
+          (it.lineTotal != null ? _pricingFmt(it.lineTotal) : '—') +
+          '</td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+    var sum = items.reduce(function (s, it) {
+      return s + (it.lineTotal || 0);
+    }, 0);
+    var foot =
+      '<tr><td colspan="4" style="padding:6px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">Subtotal</td>' +
+      '<td style="padding:6px 10px;text-align:right;font-weight:700;background:var(--s1);border-top:2px solid var(--border2);font-variant-numeric:tabular-nums">' +
+      _pricingFmt(sum) +
+      '</td></tr>';
+    return (
+      '<div style="margin:0 14px 14px">' +
+      '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">' +
+      _pricingEscText(title) +
+      '</div>' +
+      '<div class="ch-tbl-outer" style="margin:0"><div class="ch-tbl-scroll" style="overflow:auto">' +
+      '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%">' +
+      '<thead>' +
+      head +
+      '</thead><tbody>' +
+      body +
+      '</tbody><tfoot>' +
+      foot +
+      '</tfoot>' +
+      '</table></div></div></div>'
+    );
+  }
+
+  var emptyState = itemCount
+    ? ''
+    : '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">No items in this scope.</div>';
+
+  el.innerHTML = [
+    '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
+    toolbarHTML,
+    '<div class="ch-panel-body" style="flex:1;min-height:220px;overflow:auto;padding-top:10px">',
+    section('Hardware & Installation', agg.hw),
+    section('Programming & Commissioning', agg.lb),
+    emptyState,
+    '</div>',
+    '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
+    _pricingTierLabelHTML(tier),
+    '<span style="color:var(--border2)">|</span>',
+    '<span style="font-size:12px;font-weight:700;color:var(--text2)">Grand Total:</span>',
+    '<span style="font-size:14px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">' +
+      (totals.grand !== null
+        ? _pricingFmt(totals.grand)
+        : '<span style="color:var(--text3);font-size:11px;font-weight:400">' +
+          (totals.noCatalog ? 'Import pricing CSV' : '—') +
+          '</span>') +
+      '</span>',
+    '</div>',
+    '</div>',
+  ].join('');
+}
+
+/* ── Recommended tier 3-phase implementation timeline (Task 2, 2026-07-22) ────────────────────
+   Matt's ask: a calendar-phase rollout plan for the RECOMMENDED tier specifically — Phase 1
+   Aug-Dec 2026, Phase 2 all of CY2027, Phase 3 all of CY2028 — with each phase's dollar figure
+   ALLOCATED FROM (never added on top of) the tier's existing grand total, so the 3 phases always
+   sum exactly to that total. No calendar-phase concept existed anywhere in this file before this
+   — the pre-existing row `phase:1`/`phase:2` fields mean Hardware-install vs Labor-programming
+   (a WITHIN-a-year categorization), which this is unrelated to and purely additive alongside.
+
+   Allocation rule: buildRecommendedRows() already emits rows building-by-building in a stable
+   "natural/source" rollout order (see the 0ae36950 comment above that function). This treats
+   that as the sequence a phased deployment would actually follow — one building's hardware AND
+   programming installed/commissioned together in the same calendar window, never split across
+   phases — and walks the buildings in that order, cutting into 3 CONTIGUOUS groups once each
+   group's cumulative dollar total crosses that phase's 1/3 share of the grand total. Splitting by
+   cumulative DOLLARS (not building count) keeps a portfolio with a few expensive buildings from
+   producing one lopsided phase. Each phase's total comes from _pricingComputeTotals run on that
+   phase's OWN row subset — the same totals function every other tier total in this file uses —
+   so the 3 phase totals are guaranteed by construction (a strict partition of the same rows) to
+   sum to the SAME grand total _pricingComputeTotals(allRows) returns; any final sub-cent rounding
+   drift is folded into the last non-empty phase so the displayed figures always foot exactly.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeRecommendedTimeline(projId) {
+  var estimate = _pricingGetEstimate(projId);
+  var rows = buildRecommendedRows(projId);
+  rows = _pricingApplyLaborOverrides(projId, rows);
+  rows = _pricingApplyQtyOverrides(projId, rows);
+  if (!rows.length) return null;
+
+  var grandTotals = _pricingComputeTotals(rows, estimate);
+  if (grandTotals.grand === null) return null; // nothing priced yet — same silent-until-priced convention as the rest of this file
+
+  var order = [];
+  var byBldg = {};
+  rows.forEach(function (r) {
+    var b = r.building || '(Unassigned)';
+    if (!byBldg[b]) {
+      byBldg[b] = [];
+      order.push(b);
+    }
+    byBldg[b].push(r);
+  });
+
+  var bldgInfo = order.map(function (b) {
+    var t = _pricingComputeTotals(byBldg[b], estimate);
+    return { building: b, rows: byBldg[b], total: t.grand || 0 };
+  });
+
+  var grand = grandTotals.grand;
+  var third = grand / 3;
+
+  var phases = [
+    { rows: [], buildings: [], total: 0 },
+    { rows: [], buildings: [], total: 0 },
+    { rows: [], buildings: [], total: 0 },
+  ];
+  var running = 0;
+  var phaseIdx = 0;
+  bldgInfo.forEach(function (b) {
+    // Advance once the RUNNING total (before this building) has already crossed that phase's
+    // 1/3 share — keeps each phase's building group contiguous in rollout order.
+    if (phaseIdx < 2 && third > 0 && running >= third * (phaseIdx + 1)) phaseIdx++;
+    phases[phaseIdx].rows = phases[phaseIdx].rows.concat(b.rows);
+    phases[phaseIdx].buildings.push(b.building);
+    phases[phaseIdx].total += b.total;
+    running += b.total;
+  });
+
+  var defs = [
+    { label: 'Phase 1', dateRange: 'Aug 2026 – Dec 2026' },
+    { label: 'Phase 2', dateRange: 'Jan 2027 – Dec 2027' },
+    { label: 'Phase 3', dateRange: 'Jan 2028 – Dec 2028' },
+  ];
+
+  var out = phases.map(function (p, i) {
+    return {
+      label: defs[i].label,
+      dateRange: defs[i].dateRange,
+      buildings: p.buildings,
+      total: Math.round(p.total * 100) / 100,
+    };
+  });
+
+  var sumOut = out.reduce(function (s, p) {
+    return s + p.total;
+  }, 0);
+  var drift = Math.round((grand - sumOut) * 100) / 100;
+  if (drift !== 0) {
+    for (var i = out.length - 1; i >= 0; i--) {
+      if (out[i].buildings.length) {
+        out[i].total = Math.round((out[i].total + drift) * 100) / 100;
+        break;
+      }
+    }
+  }
+
+  return { phases: out, grandTotal: grand };
+}
+
+/* ── Recommended tier timeline table (Task 2, 2026-07-22) ──────────────────────────────────────
+   Renders _pricingComputeRecommendedTimeline as a plain table (Phase, Date Range, Scope Summary,
+   Cost) — no boxes/cards, following the site's ch-tbl conventions (same --s1 header / grid-line
+   cell pattern as _pricingLaborBreakdownHTML immediately below this). Returns '' when the
+   Recommended tier has no priced rows yet, same silent-until-priced convention used throughout
+   this file.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingRecommendedTimelineHTML(projId) {
+  var tl = _pricingComputeRecommendedTimeline(projId);
+  if (!tl) return '';
+
+  var thBase =
+    'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;border-bottom:1px solid var(--border2)';
+  var tdBase =
+    'padding:8px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);' +
+    'font-variant-numeric:tabular-nums;vertical-align:top';
+
+  var headerCells =
+    '<th style="' +
+    thBase +
+    ';text-align:left">Phase</th>' +
+    '<th style="' +
+    thBase +
+    ';text-align:left">Date Range</th>' +
+    '<th style="' +
+    thBase +
+    ';text-align:left">Scope Summary</th>' +
+    '<th style="' +
+    thBase +
+    ';text-align:right">Cost</th>';
+
+  var bodyRows = tl.phases
+    .map(function (p) {
+      var scope = p.buildings.length
+        ? p.buildings.length +
+          ' building' +
+          (p.buildings.length !== 1 ? 's' : '') +
+          ': ' +
+          p.buildings.map(_pricingEscText).join(', ')
+        : 'No additional scope';
+      return (
+        '<tr>' +
+        '<td style="' +
+        tdBase +
+        ';font-weight:700;color:var(--text)">' +
+        _pricingEscText(p.label) +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';white-space:nowrap;color:var(--text2)">' +
+        _pricingEscText(p.dateRange) +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';white-space:normal;word-break:break-word;color:var(--text2)">' +
+        scope +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';text-align:right;font-weight:700;color:var(--text)">' +
+        _pricingFmt(p.total) +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  // Bounded max-height + its own overflow:auto scroll region (same "multi-zone-scroll" pattern
+  // ui-standards.md documents for the Top ROI card and _pricingLaborBreakdownHTML immediately
+  // above) — without this, an unbounded table stacked as a flex-shrink:0 sibling under the
+  // fixed-height, overflow:hidden `.ch-panel` gets silently CLIPPED past the panel's bottom edge
+  // (verified: `.ch-panel` scrollHeight 965 vs clientHeight 815 before this fix — Phase 2/Phase 3/
+  // Total rows were invisible with no way to scroll to them). 220px comfortably shows all 4 rows
+  // (3 phases + total) for a typical portfolio; a longer building list just scrolls within this
+  // box instead of pushing the whole panel past its layout budget.
+  return (
+    '<div style="margin:10px 14px 0;flex-shrink:0">' +
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:11px;text-transform:uppercase;' +
+    'letter-spacing:0.5px">Recommended Tier — Phased Implementation Timeline</div>' +
+    '<div class="ch-tbl-outer" style="margin:0 0 10px;max-height:220px;display:flex;flex-direction:column">' +
+    '<div class="ch-tbl-scroll" style="overflow:auto">' +
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%">' +
+    '<thead><tr>' +
+    headerCells +
+    '</tr></thead>' +
+    '<tbody>' +
+    bodyRows +
+    '</tbody>' +
+    '<tfoot><tr><td colspan="3" style="padding:8px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">Total</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-weight:700;background:var(--s1);border-top:2px solid var(--border2);font-variant-numeric:tabular-nums">' +
+    _pricingFmt(tl.grandTotal) +
+    '</td></tr></tfoot>' +
+    '</table>' +
+    '</div>' +
+    '</div>' +
+    '</div>'
+  );
+}
+
 /* ── Phase 4: save Phase 3 version of initCostEstimateTab ─────────────────── */
 var _initCostEstimateTabPhase3 = initCostEstimateTab;
 
@@ -5616,17 +6056,28 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var estimate = _pricingGetEstimate(projId);
   var tier = estimate.tier || 'compliance';
 
-  // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): "Summary" is a presentation-only sub-tab,
-  // not a row-filtering tier — it aggregates the SAME per-building totals the three real tiers
-  // (Recommended/Compliance/Full Scope) already compute (see _pricingRenderSummaryTab). Short-
-  // circuit here, before any of the row-building/column-state logic below runs, so 'summary'
-  // never reaches the buildRecommendedRows/buildComplianceRows/buildFullScopeRows selection or
-  // any hidden-cols/width/sort state meant for the data table. rowToggles/manualPrices/
-  // laborOverrides/qtyOverrides/column widths/hidden-cols all live on `estimate`/per-projId
-  // storage independent of which tier is active, so switching Summary <-> any other tier and
-  // back round-trips that state for free — nothing here needs to save/restore it.
-  if (tier === 'summary') {
-    _pricingRenderSummaryTab(projId, el, estimate);
+  // 2026-07-22: "Summary" (the per-building aggregate sub-tab, formerly rendered by
+  // _pricingRenderSummaryTab) was REMOVED entirely per Matt's explicit request ("The Cost
+  // Estimate per building I do not like and it honestly gives no information. Just remove
+  // completely."). Any project with a PRE-EXISTING saved `tier: 'summary'` (from before this
+  // change) falls back to Compliance here rather than reaching a tier value none of the toggle
+  // buttons / row-builder branches below recognize.
+  if (tier === 'summary') tier = 'compliance';
+
+  // 2026-07-22 (Task 1c — "Compliance and Full Scope is huge"): Compliance/Full-Scope default to
+  // a CONDENSED grouped-summary view (one row per distinct item, aggregated across every
+  // building, qty/unit-price/line-total all visible) instead of the full per-building/per-row
+  // table — same "collapse repetitive rows, itemize on demand" pattern already used by the
+  // Proposal's collapsible Install & Programming Detail panel (report-engine.js
+  // _rptA36TierDetailPanelHTML). The full editable per-building table is unchanged and still one
+  // click away via the toggle rendered inside _pricingRenderCondensedTab. Recommended/Compare are
+  // NOT condensed by default — Recommended is already a small budget-fit selection; Compare needs
+  // the side-by-side per-row view to be useful. `estimate.condensedTier[tier] === false` is the
+  // explicit "user chose full itemization" escape hatch — undefined/missing defaults to condensed.
+  var _condensedApplicable = tier === 'compliance' || tier === 'full-scope';
+  var _condensedOn = _condensedApplicable && !(estimate.condensedTier && estimate.condensedTier[tier] === false);
+  if (_condensedOn) {
+    _pricingRenderCondensedTab(projId, el, estimate, tier);
     return;
   }
 
@@ -5876,9 +6327,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }
 
   // d5286981: toolbar HTML assembly now delegates to the shared _pricingBuildToolbarHTML
-  // (defined above initCostEstimateTab) so every Cost Estimate view — including Summary via
-  // _pricingRenderSummaryTab — renders the toolbar's shared controls (Import CSV, Table
-  // Settings, Legend, Tier toggle, Building filter, Sort) at the exact same screen position.
+  // (defined above initCostEstimateTab) so every Cost Estimate view — including the (removed)
+  // Summary sub-tab — renders the toolbar's shared controls (Import CSV, Table Settings, Legend,
+  // Tier toggle, Building filter, Sort) at the exact same screen position.
   // Previously this block built its own inline toolbarHTML array (Import CSV/status/Settings/
   // Legend, Tier toggle, spacer, Building filter, Recommended-only Sort) — that fixed left-side
   // content differed from Summary's much shorter title-span toolbar, shifting the Tier toggle's
@@ -5887,7 +6338,19 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // 35742dd5 Phase-2 spacer-placement history this extraction preserves verbatim, and for why
   // hasCatalog/importStatus/filterBldg are re-derived INSIDE that function now rather than
   // passed in (only `allBuildings` remains tier-dependent enough to need passing).
-  var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, { allBuildings: allBuildings });
+  // 2026-07-22 (Task 1c): when the user has explicitly opted OUT of the condensed view for
+  // Compliance/Full-Scope (est.condensedTier[tier] === false — the only way this full render
+  // path runs for those two tiers at all), surface a "Show Condensed Summary" button here so
+  // there's a way BACK to condensed without it, the user would be stuck on full itemization
+  // forever once opted out, since condensedTier is a persisted per-project preference.
+  var _condensedToggleBackHTML =
+    (tier === 'compliance' || tier === 'full-scope') && estimate.condensedTier && estimate.condensedTier[tier] === false
+      ? _pricingCondensedToggleHTML(projId, tier, false)
+      : '';
+  var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, {
+    allBuildings: allBuildings,
+    middleHTML: _condensedToggleBackHTML,
+  });
 
   // ── 8. Render row function (Phase 4: adds hours-override input for labor rows)
   var recRowIdxByBase = isBothMode ? _buildBothModeIndex(recRows || []) : {};
@@ -6831,12 +7294,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
       // Phase 6 (5ff6c401, cost-estimate-ux-2026-07-06): the building group-header <tr>
       // (building name + subtotal, "— $X est.") that used to render here is REMOVED — the data
-      // table now renders buildings' rows back-to-back with no divider row. Building totals live
-      // in their own "Summary" sub-tab instead (see _pricingRenderSummaryTab), which computes its
-      // own per-building/per-tier totals independently (across all three tiers, not just the
-      // currently active one), so the bHw1/bLab2/bTotal/recBTotal calc that used to feed this
-      // <tr> is no longer needed here and was removed with it (nothing else in this scope reads
-      // those vars — verified by grep before removal).
+      // table now renders buildings' rows back-to-back with no divider row. Building totals then
+      // moved to a "Summary" sub-tab (_pricingRenderSummaryTab), which was ITSELF removed
+      // 2026-07-22 per Matt's explicit request ("gives no information") — there is no per-building
+      // dollar breakdown anywhere in this tool anymore by design; only the condensed-view's
+      // per-item "Buildings" COUNT column (_pricingComputeCondensedRows) shows building context.
+      // The bHw1/bLab2/bTotal/recBTotal calc that used to feed this <tr> is not needed here
+      // (nothing else in this scope reads those vars — verified by grep before removal).
       //
       // b771dec6 5a/5b (Finding 7): Phase divider rows removed — hardware sensors and their
       // blocking sequences now render as merged same-row lines where paired, in a single
@@ -7228,6 +7692,30 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // used by the Top ROI card (ui-standards.md "Cost Estimate tab — Top ROI card + pricing table").
   var laborBreakdownHTML = _pricingLaborBreakdownHTML(projId);
 
+  // Task 2 (2026-07-22): Recommended-tier-only phased implementation timeline (Aug-Dec 2026 /
+  // CY2027 / CY2028). Same silent-until-priced convention as the labor breakdown above — renders
+  // '' until the Recommended tier has at least one priced row. Not shown for 'both' (Compare) —
+  // that view is about comparing tiers side-by-side, not planning one tier's rollout.
+  var timelineHTML = tier === 'recommended' ? _pricingRecommendedTimelineHTML(projId) : '';
+
+  // 2026-07-22 fix: laborBreakdownHTML + timelineHTML were each individually flex-shrink:0
+  // siblings under the fixed-height, overflow:hidden `.ch-panel` — stacking BOTH (a project with
+  // real sequences/budget AND a priced Recommended tier) could push their combined height past
+  // whatever slack remained after the toolbar/table/footer, silently CLIPPING the bottom of the
+  // timeline table with no way to scroll to it (verified: `.ch-panel` scrollHeight 959 vs
+  // clientHeight 815 before this fix). Wrapping both in one flex:1/min-height:0/overflow:auto
+  // container — a sibling of `.ch-panel-body` (also flex:1, with its own min-height:220 floor
+  // that wins first) — means this combined "extra info" region absorbs whatever slack is left and
+  // scrolls internally if it doesn't fit, instead of anything above it being invisibly cut off.
+  // Each table's own bounded max-height/scroll (240px / 220px) is unchanged.
+  var extraInfoHTML =
+    laborBreakdownHTML || timelineHTML
+      ? '<div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column">' +
+        laborBreakdownHTML +
+        timelineHTML +
+        '</div>'
+      : '';
+
   el.innerHTML = [
     '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
     toolbarHTML,
@@ -7261,7 +7749,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<div id="pricing-footer-' + projId + '">',
     footerHTML,
     '</div>',
-    laborBreakdownHTML,
+    extraInfoHTML,
     '</div>',
   ].join('');
 
@@ -7275,45 +7763,17 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   PHASE 6 — "Summary" sub-tab (5ff6c401, cost-estimate-ux-2026-07-06)
-   User decision (recorded on item 5ff6c401, overrides plan.md's original "in-tab collapsible
-   panel" default): Building Totals is its own SEPARATE sub-tab, a peer of Recommended/
-   Compliance/Full Scope/Compare in the same Tier toggle — not a panel nested inside one of them.
-   Presentation-only: computes NOTHING new. For each of the three real tiers it calls the exact
-   same builder (buildRecommendedRows/buildComplianceRows/buildFullScopeRows) + the exact same
-   _pricingApplyLaborOverrides/_pricingApplyQtyOverrides pipeline + the exact same per-building
-   toggle-aware reduce() the old (now-removed) in-table group-header row used
-   (`estimate.rowToggles[r._baseId||r.id] !== false ? s + (r.lineTotal||0) : s`) — byte-identical
-   math, just aggregated across all three tiers and displayed in its own table instead of once
-   per active tier as a <tr> divider. Always shows ALL buildings (ignores the Building filter —
-   that filter is a per-tier data-table control, not meaningful here) including buildings that
-   only carry Full-Scope-only content (e.g. the FDD add-on's pseudo-building "WebCTRL System",
-   which has no Compliance/Recommended rows — see buildFullScopeRows) per the "Summary views
-   include ALL buildings" rule.
+   _pricingComputeSummaryData — per-building / per-tier aggregate data
+   Formerly also fed a "Summary" sub-tab UI (5ff6c401, 2026-07-06) that rendered this data as its
+   own peer tab next to Recommended/Compliance/Full Scope/Compare. That UI (_pricingRenderSummaryTab,
+   plus its _pricingSummaryEsc/_pricingSummaryBldgCellHTML helpers) was REMOVED 2026-07-22 per
+   Matt's explicit request ("The Cost Estimate per building I do not like and it honestly gives no
+   information. Just remove completely.") — see the removed "Summary" tier button in
+   _pricingTierToggleHTML and the tier==='summary' fallback in initCostEstimateTab.
+   This function itself is UNCHANGED and still load-bearing: report-engine.js's
+   rptPageASHRAE36ProposalPricing (both the cover Investment Summary strip and the Cost Estimate
+   page's tier-detail panels) calls it directly — do not delete it.
    ══════════════════════════════════════════════════════════════════════════════ */
-function _pricingSummaryEsc(s) {
-  return String(s || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// Building-name cell: same ellipsis-clip + title-tooltip pattern Phase 5 established for the
-// data table's Building column (_pricingClipSpanMaxW) — this table has only one text column
-// competing for width, so a fixed generous max-width (well above the data table's 90px minWidth)
-// is used instead of a per-column resize state (this table has no resizable columns).
-function _pricingSummaryBldgCellHTML(name) {
-  return (
-    '<span style="display:inline-block;vertical-align:middle;max-width:260px;overflow:hidden;' +
-    'text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:var(--text)" title="' +
-    _pricingSummaryEsc(name) +
-    '">' +
-    _pricingSummaryEsc(name) +
-    '</span>'
-  );
-}
-
 // Aggregates per-building / per-tier totals. Returns:
 //   { buildings: [{ building, tiers: { recommended: {items,hw,lb,total}, compliance: {...},
 //                    'full-scope': {...} } }, ...],
@@ -7380,134 +7840,6 @@ function _pricingComputeSummaryData(projId, estimate) {
   return { buildings: buildings, tierTotals: tierTotals, perTier: perTier };
 }
 
-function _pricingRenderSummaryTab(projId, el, estimate) {
-  var data = _pricingComputeSummaryData(projId, estimate);
-  var _summaryBudget = _pricingGetBudget(projId); // 174ad49a Phase 2
-  var tierCols = [
-    { key: 'compliance', label: 'Compliance' },
-    { key: 'recommended', label: 'Recommended' },
-    { key: 'full-scope', label: 'Full Scope' },
-  ];
-
-  // d5286981: shared toolbar builder — see _pricingBuildToolbarHTML's header comment. Summary
-  // passes no opts (Import CSV/Table Settings/Legend/Building filter/Sort are all reserved-but-
-  // hidden here), so the Tier toggle renders at the exact same screen position it does on the
-  // other 4 views. Replaces the old inline title-span/spacer/tier-toggle-only toolbarHTML, which
-  // had different fixed-width content before the Tier toggle than the other 4 views — the
-  // origin bug for this item (ui-standards.md "Stable control placement rule").
-  var toolbarHTML = _pricingBuildToolbarHTML(projId, 'summary');
-
-  var theadCells =
-    '<th style="' +
-    'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;' +
-    'padding:8px 10px;white-space:nowrap;position:sticky;top:0;text-align:left;border-right:1px solid var(--border);border-bottom:2px solid var(--border2)">Building</th>';
-  tierCols.forEach(function (t) {
-    theadCells +=
-      '<th colspan="3" style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;' +
-      'letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;text-align:center;' +
-      'border-left:2px solid var(--border2);border-bottom:1px solid var(--border)">' +
-      t.label +
-      '</th>';
-  });
-  var theadSubCells =
-    '<th style="background:var(--s1);border-right:1px solid var(--border);border-bottom:2px solid var(--border2)"></th>';
-  tierCols.forEach(function (t) {
-    ['Items', 'Hardware $', 'Total $'].forEach(function (sub, i) {
-      theadSubCells +=
-        '<th style="background:var(--s1);color:var(--text3);font-size:9px;font-weight:700;text-transform:uppercase;' +
-        'padding:6px 8px;white-space:nowrap;position:sticky;top:24px;text-align:right;' +
-        (i === 0 ? 'border-left:2px solid var(--border2);' : '') +
-        'border-bottom:2px solid var(--border2)">' +
-        sub +
-        '</th>';
-    });
-  });
-
-  var bodyRows = '';
-  if (data.buildings.length === 0) {
-    bodyRows =
-      '<tr><td colspan="' +
-      (1 + tierCols.length * 3) +
-      '" style="text-align:center;padding:40px;color:var(--text3);font-size:13px">No buildings found. Run the Equipment Matrix audit first.</td></tr>';
-  } else {
-    data.buildings.forEach(function (b) {
-      var row =
-        '<td style="overflow:hidden;padding:6px 10px;border-right:1px solid var(--border2);border-bottom:1px solid var(--border2)">' +
-        _pricingSummaryBldgCellHTML(b.building) +
-        '</td>';
-      tierCols.forEach(function (t) {
-        var d = b.tiers[t.key];
-        row +=
-          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text2);' +
-          'padding:6px 8px;border-bottom:1px solid var(--border2);border-left:2px solid var(--border2)">' +
-          d.items +
-          '</td>' +
-          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--border2)">' +
-          (d.hw > 0 ? _pricingFmt(d.hw) : '<span style="color:var(--text3)">—</span>') +
-          '</td>' +
-          '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;padding:6px 8px;border-bottom:1px solid var(--border2)">' +
-          (d.total > 0 ? _pricingFmt(d.total) : '<span style="color:var(--text3)">—</span>') +
-          '</td>';
-      });
-      bodyRows += '<tr>' + row + '</tr>';
-    });
-  }
-
-  // Grand-total footer row — cross-checks against each tier's own footer Grand Total
-  // (_pricingComputeTotals output), NOT a re-sum of the rows above, so a discrepancy between
-  // "sum of buildings shown" and "the real tier total" (e.g. a row with no `building` field)
-  // would be visible rather than silently hidden.
-  var grandRow =
-    '<td style="padding:6px 10px;font-weight:700;color:var(--text);background:var(--s2);border-right:1px solid var(--border2);border-top:2px solid var(--border2)">Grand Total</td>';
-  tierCols.forEach(function (t) {
-    var tt = data.tierTotals[t.key];
-    grandRow +=
-      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text2);' +
-      'padding:6px 8px;background:var(--s2);border-top:2px solid var(--border2);border-left:2px solid var(--border2)">' +
-      tt.included +
-      ' / ' +
-      tt.total +
-      '</td>' +
-      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;background:var(--s2);border-top:2px solid var(--border2)">' +
-      (tt.grand !== null ? _pricingFmt(tt.phase1) : '<span style="color:var(--text3)">—</span>') +
-      '</td>' +
-      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;color:var(--em);' +
-      'background:var(--s2);border-top:2px solid var(--border2)">' +
-      (tt.grand !== null ? _pricingFmt(tt.grand) : '<span style="color:var(--text3)">—</span>') +
-      '</td>';
-  });
-
-  el.innerHTML = [
-    '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
-    toolbarHTML,
-    '<div class="ch-panel-body" style="flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
-    '<div class="ch-tbl-outer" style="margin:0;flex:1;min-height:220px;display:flex;flex-direction:column;overflow:hidden">',
-    '<div class="ch-tbl-scroll" style="flex:1;min-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px">',
-    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;min-width:600px">',
-    '<thead>',
-    '<tr>' + theadCells + '</tr>',
-    '<tr>' + theadSubCells + '</tr>',
-    '</thead>',
-    '<tbody>',
-    bodyRows,
-    '<tr>' + grandRow + '</tr>',
-    '</tbody>',
-    '</table>',
-    '</div>',
-    '</div>',
-    '</div>',
-    '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
-    '<span style="font-size:11px;color:var(--text3)">Reuses the exact per-row totals each tier’s own table computes — no new pricing math. Switch tiers above to see the item-level breakdown behind any number.</span>',
-    tierCols
-      .map(function (t) {
-        return _pricingBudgetVsTotalHTML(_summaryBudget, data.tierTotals[t.key].grand, t.label);
-      })
-      .join(''),
-    '</div>',
-    '</div>',
-  ].join('');
-}
-
 /* ── Phase 4: patch _pricingRefreshFooter to apply labor overrides ──────── */
 (function () {
   var _origRefreshFooter = _pricingRefreshFooter;
@@ -7516,11 +7848,9 @@ function _pricingRenderSummaryTab(projId, el, estimate) {
     var tier = est.tier || 'compliance';
 
     // Secondary fix: Both/full-scope modes have footers that cannot be reproduced
-    // here cheaply. Delegate to full re-render to keep them consistent.
-    // Phase 6 (5ff6c401): 'summary' has no footer element in this partial-refresh sense at all
-    // (its own render path builds a different footer) — delegate defensively even though no
-    // checkbox/override control exists on the Summary sub-tab today to trigger this call.
-    if (tier === 'both' || tier === 'full-scope' || tier === 'summary') {
+    // here cheaply. Delegate to full re-render to keep them consistent. ('summary' removed
+    // 2026-07-22 — see initCostEstimateTab's tier==='summary' fallback.)
+    if (tier === 'both' || tier === 'full-scope') {
       initCostEstimateTab(projId);
       return;
     }

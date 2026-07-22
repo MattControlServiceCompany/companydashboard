@@ -10972,16 +10972,13 @@ var ASHRAE36_SECTIONS = {
       defaultOn: true,
       indent: true,
     },
-    {
-      key: 'costEstimatePerBuilding',
-      label: '  Per-Building Pricing',
-      group: 'Proposal',
-      defaultOn: false,
-      indent: true,
-    },
     { key: 'costEstimateItemized', label: '  Itemized Measures', group: 'Proposal', defaultOn: false, indent: true },
     // 'Expected Outcomes' toggle removed 2026-07-22 along with rptPageASHRAE36ProposalOutcomes —
     // the page it controlled no longer exists, so the checkbox was deleted rather than left dead.
+    // 'Per-Building Pricing' (costEstimatePerBuilding) toggle removed 2026-07-22 along with
+    // _buildPerBuildingPages, per Matt's explicit request ("The Cost Estimate per building I do
+    // not like and it honestly gives no information. Just remove completely.") — see the removal
+    // note in rptPageASHRAE36ProposalPricing.
   ],
 };
 
@@ -14120,6 +14117,10 @@ function _rptA36TierDetailToggleHTML(key) {
  * across every building carrying that same item. Mirrors the aggregation
  * rptPageASHRAE36ProposalPricing's own _buildItemizedPages() already uses (same dedupe-by-item,
  * same rowToggles respect) — NO new pricing math, this only reshapes the SAME rows.
+ * unitPrice (2026-07-22, Task 1a) is DERIVED here (lineTotal/qty), never a separately tracked
+ * field, so qty × unitPrice always foots exactly to lineTotal — added because Matt flagged
+ * aggregated lines like "Supply Air Temp x46 $14,449" as reading like a mystery number with no
+ * visible unit cost; _rptA36TierDetailPanelHTML below now prints the multiplication explicitly.
  */
 function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
   var included = rows.filter(function (r) {
@@ -14138,7 +14139,9 @@ function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
     byItem[key].lineTotal += r.lineTotal || 0;
   });
   return order.map(function (k) {
-    return byItem[k];
+    var it = byItem[k];
+    it.unitPrice = it.qty > 0 ? it.lineTotal / it.qty : null;
+    return it;
   });
 }
 
@@ -14149,7 +14152,10 @@ function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
  * above already prints (so the detail can never disagree with the tier table) — no new pricing
  * math. Item bullets show name (+ aggregated qty) only; dollar amounts per item are added ONLY
  * when the itemized sub-option (wantItemized) is already on, per spec ("high level, NOT full
- * line-item itemization unless the itemized toggle is already on"). Starts hidden
+ * line-item itemization unless the itemized toggle is already on"). When priced, the qty × unit
+ * price = total multiplication is printed explicitly (2026-07-22, Task 1a — Matt: "Supply Air
+ * Temp x46 $14,449" read as a mystery number with no visible unit cost) so a reader can verify
+ * the total themselves instead of taking a bare dollar figure on faith. Starts hidden
  * (display:none) — exportReportToPDF() forces every tier's panel open before html2canvas so
  * nothing is hidden in the flat PDF.
  */
@@ -14172,9 +14178,16 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
       ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:#000;line-height:1.6">' +
         items
           .map(function (it) {
-            var priceStr = wantItemized && fmtUSD(it.lineTotal) ? ' — ' + fmtUSD(it.lineTotal) : '';
-            var qtyStr = it.qty > 1 ? ' (x' + it.qty + ')' : '';
-            return '<li>' + _esc(it.item || '') + qtyStr + priceStr + '</li>';
+            var priceStr = '';
+            if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
+              priceStr =
+                it.qty > 1 && it.unitPrice != null && fmtUSD(it.unitPrice)
+                  ? ' — ' + it.qty + ' × ' + fmtUSD(it.unitPrice) + ' = ' + fmtUSD(it.lineTotal)
+                  : ' — ' + fmtUSD(it.lineTotal);
+            } else if (it.qty > 1) {
+              priceStr = ' (qty ' + it.qty + ')';
+            }
+            return '<li>' + _esc(it.item || '') + priceStr + '</li>';
           })
           .join('') +
         '</ul>'
@@ -14201,6 +14214,113 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   );
 }
 
+/**
+ * _rptA36RecommendedTimelineHTML — Task 2 (2026-07-22): a plain table (Phase, Date Range, Scope
+ * Summary, Cost) — no boxes/cards, per the site's no-boxes-in-client-documents standard — showing
+ * the Recommended tier's calendar-phase rollout plan: Phase 1 Aug-Dec 2026, Phase 2 all of CY2027,
+ * Phase 3 all of CY2028. Reuses _pricingComputeRecommendedTimeline (app/pricing-estimator.js) —
+ * the SAME computation the interactive Cost Estimate tab's Recommended view renders via
+ * _pricingRecommendedTimelineHTML — so the report can never disagree with the tool, and the 3
+ * phase costs are guaranteed (by that function's own construction) to sum exactly to the
+ * Recommended tier's existing grand total. Guarded/silent (returns '') when that function isn't
+ * available or returns null (nothing priced yet), same convention as discBlock/svcBlock.
+ */
+function _rptA36RecommendedTimelineHTML(d) {
+  if (typeof _pricingComputeRecommendedTimeline !== 'function') return '';
+  var tl;
+  try {
+    tl = _pricingComputeRecommendedTimeline(d.project.id);
+  } catch (e) {
+    return '';
+  }
+  if (!tl) return '';
+
+  function _fmtUSD2(v) {
+    return '$' + Math.round(v).toLocaleString('en-US');
+  }
+
+  var colgroup =
+    '<colgroup><col style="width:90px"><col style="width:150px"><col style="width:314px"><col style="width:130px"></colgroup>';
+  var thStyle =
+    'padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
+    'color:#fff;background:var(--rpt-blue);text-align:left';
+  var thRight = thStyle.replace('text-align:left', 'text-align:right');
+  var tdStyle = 'padding:6px 8px;font-size:9px;color:#000;border-bottom:1px solid var(--rpt-rule);vertical-align:top';
+  var tdRight = tdStyle + ';text-align:right';
+
+  var rowsHTML = tl.phases
+    .map(function (p) {
+      var scope = p.buildings.length
+        ? p.buildings.length +
+          ' building' +
+          (p.buildings.length !== 1 ? 's' : '') +
+          ': ' +
+          p.buildings.map(_esc).join(', ')
+        : 'No additional scope';
+      return (
+        '<tr>' +
+        '<td style="' +
+        tdStyle +
+        ';font-weight:700">' +
+        _esc(p.label) +
+        '</td>' +
+        '<td style="' +
+        tdStyle +
+        '">' +
+        _esc(p.dateRange) +
+        '</td>' +
+        '<td style="' +
+        tdStyle +
+        '">' +
+        scope +
+        '</td>' +
+        '<td style="' +
+        tdRight +
+        ';font-weight:700">' +
+        _fmtUSD2(p.total) +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  var totalRow =
+    '<tr>' +
+    '<td colspan="3" style="padding:6px 8px;font-size:9px;font-weight:700;border-top:2px solid var(--rpt-blue)">Total</td>' +
+    '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border-top:2px solid var(--rpt-blue)">' +
+    _fmtUSD2(tl.grandTotal) +
+    '</td>' +
+    '</tr>';
+
+  return (
+    '<div style="margin-top:16px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+    'text-transform:uppercase;letter-spacing:0.04em">Recommended Tier — Phased Implementation Timeline</div>' +
+    '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
+    colgroup +
+    '<thead><tr>' +
+    '<th style="' +
+    thStyle +
+    '">Phase</th>' +
+    '<th style="' +
+    thStyle +
+    '">Date Range</th>' +
+    '<th style="' +
+    thStyle +
+    '">Scope Summary</th>' +
+    '<th style="' +
+    thRight +
+    '">Cost</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    rowsHTML +
+    totalRow +
+    '</tbody>' +
+    '</table>' +
+    '</div>'
+  );
+}
+
 function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
@@ -14209,7 +14329,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // decides. Each renders additional client-safe detail from the SAME summary chain below.
   var o = opts || {};
   var wantPhaseSplit = o.phaseSplit === true;
-  var wantPerBuilding = o.perBuilding === true;
+  // 'perBuilding' sub-option + _buildPerBuildingPages removed 2026-07-22 (Matt: "The Cost
+  // Estimate per building I do not like and it honestly gives no information. Just remove
+  // completely.") — see the removal note further down this function, at the former call site.
   var wantItemized = o.itemized === true;
 
   // Final client-facing dollar total only. null (no priced rows / no catalog) => caller shows a
@@ -14449,7 +14571,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     svcBlock = ''; // non-fatal — page renders without this block, same as the tt fallback above
   }
 
-  var bodyHTML = titleBlock + intro + table + discBlock + svcBlock;
+  // Recommended-tier phased implementation timeline (Task 2, 2026-07-22) — Aug-Dec 2026 / CY2027 /
+  // CY2028, allocated from (never added on top of) the Recommended tier's existing grand total.
+  // Guarded/silent-until-priced, same as discBlock/svcBlock above.
+  var timelineBlock = _rptA36RecommendedTimelineHTML(d);
+
+  var bodyHTML = titleBlock + intro + table + timelineBlock + discBlock + svcBlock;
 
   var resultPages = [
     rptPage(n, 'ASHRAE 36 Service Proposal — Cost Estimate', bodyHTML, {
@@ -14459,108 +14586,13 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   ];
   var nextPageNum = n + 1;
 
-  // ── Option 3: Per-building pricing breakdown (costEstimatePerBuilding) ─────────────────────────
-  // One row per building across the whole portfolio; each tier's building-level `total` already
-  // respects rowToggles (computed inside _pricingComputeSummaryData's sumRows). Bounded page count
-  // via _rptPaginateTokens (same pattern as rptPageASHRAE36PointInventory) — one row per building,
-  // not per line item, so this stays 1-2 pages even for JOCO-scale (27+ building) portfolios.
-  // SAFETY: prints only building name + the three tier dollar totals — no cost build-up.
-  function _buildPerBuildingPages(startN) {
-    var bld = (summaryData && summaryData.buildings) || [];
-    if (!bld.length) return [];
-
-    var pbColgroup =
-      '<colgroup><col style="width:228px"><col style="width:152px"><col style="width:152px"><col style="width:152px"></colgroup>';
-    var pbThStyle =
-      'padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
-      'color:#fff;background:var(--rpt-blue);text-align:left';
-    var pbThRight = pbThStyle.replace('text-align:left', 'text-align:right');
-    var pbTableHead =
-      '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
-      pbColgroup +
-      '<thead><tr>' +
-      '<th style="' +
-      pbThStyle +
-      '">Building</th>' +
-      '<th style="' +
-      pbThRight +
-      '">Recommended</th>' +
-      '<th style="' +
-      pbThRight +
-      '">Compliance</th>' +
-      '<th style="' +
-      pbThRight +
-      '">Full Scope</th>' +
-      '</tr></thead>';
-
-    function _rowHTML(b) {
-      var rec = b.tiers.recommended ? _fmtUSD(b.tiers.recommended.total) : null;
-      var comp = b.tiers.compliance ? _fmtUSD(b.tiers.compliance.total) : null;
-      var full = b.tiers['full-scope'] ? _fmtUSD(b.tiers['full-scope'].total) : null;
-      var td = 'padding:5px 8px;font-size:9px;color:#000;border-bottom:1px solid var(--rpt-rule)';
-      var tdR = td + ';text-align:right';
-      return (
-        '<tr>' +
-        '<td style="' +
-        td +
-        '">' +
-        _esc(b.building) +
-        '</td>' +
-        '<td style="' +
-        tdR +
-        '">' +
-        (rec || '—') +
-        '</td>' +
-        '<td style="' +
-        tdR +
-        '">' +
-        (comp || '—') +
-        '</td>' +
-        '<td style="' +
-        tdR +
-        '">' +
-        (full || '—') +
-        '</td>' +
-        '</tr>'
-      );
-    }
-
-    // estH 27: real headless-render measurement of this row shape (padding:5px 8px, font-size:9px,
-    // single line) came back ~24.5px average (JOCO's 28-building portfolio) — 22 underestimated it
-    // and produced an 86px page-9-style overflow risk on the itemized table below before this fix;
-    // 27 keeps a safety margin for longer building names that may wrap.
-    var tokens = bld.map(function (b) {
-      return { type: 'row', estH: 27, html: _rowHTML(b) };
-    });
-
-    var chunks = _rptPaginateTokens(tokens, 700, 803);
-    var numChunks = chunks.length;
-    var pages = [];
-
-    chunks.forEach(function (chunk, idx) {
-      var rowsHTML = chunk
-        .map(function (t) {
-          return t.html;
-        })
-        .join('');
-      var pbTable = pbTableHead + '<tbody>' + rowsHTML + '</tbody></table>';
-      var pbTitle =
-        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-        'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate — Per-Building Breakdown' +
-        (idx > 0 ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')' : '') +
-        '</div>';
-      var body = pbTitle + pbTable + (idx === numChunks - 1 ? discBlock : '');
-      var pageN = startN + idx;
-      pages.push(
-        rptPage(pageN, 'ASHRAE 36 Service Proposal — Cost Estimate', body, {
-          data: fakeData,
-          label: 'Page ' + pageN + ' — Cost Estimate (Per-Building)',
-        }),
-      );
-    });
-
-    return pages;
-  }
+  // ── "Per-building pricing breakdown" (costEstimatePerBuilding) REMOVED 2026-07-22 ─────────────
+  // Matt's explicit request: "The Cost Estimate per building I do not like and it honestly gives
+  // no information. Just remove completely." Removed: the _buildPerBuildingPages function (one
+  // row per building × 3 tier totals, no other context), its call site below, the wantPerBuilding
+  // flag above, the costEstimatePerBuilding settings checkbox (ASHRAE36_SECTIONS.proposal), and
+  // the perBuilding opt passed from generateASHRAE36ProposalHTML. The overall Cost Estimate page,
+  // tier totals, and the new Recommended-tier timeline table above are unaffected.
 
   // ── Option 2: Itemized breakdown, SUMMARIZED across the portfolio (costEstimateItemized) ──────
   // One row PER DISTINCT MEASURE per tier — qty and lineTotal are aggregated (summed) across every
@@ -14695,14 +14727,6 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     });
 
     return pages;
-  }
-
-  if (wantPerBuilding) {
-    var perBuildingPages = _buildPerBuildingPages(nextPageNum);
-    perBuildingPages.forEach(function (pg) {
-      resultPages.push(pg);
-      nextPageNum++;
-    });
   }
 
   if (wantItemized) {
@@ -15086,7 +15110,6 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     // here (independent-flag / parent-gates precedent, buildingInfra). Passed as a 3rd opts arg.
     var pricingOpts = {
       phaseSplit: s.costEstimatePhaseSplit === true,
-      perBuilding: s.costEstimatePerBuilding === true,
       itemized: s.costEstimateItemized === true,
     };
     var pricingPages = rptPageASHRAE36ProposalPricing(pageNum, data, pricingOpts);
