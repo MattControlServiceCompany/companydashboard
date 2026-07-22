@@ -10980,7 +10980,8 @@ var ASHRAE36_SECTIONS = {
       indent: true,
     },
     { key: 'costEstimateItemized', label: '  Itemized Measures', group: 'Proposal', defaultOn: false, indent: true },
-    { key: 'proposalOutcomes', label: 'Expected Outcomes', group: 'Proposal', defaultOn: true },
+    // 'Expected Outcomes' toggle removed 2026-07-22 along with rptPageASHRAE36ProposalOutcomes —
+    // the page it controlled no longer exists, so the checkbox was deleted rather than left dead.
   ],
 };
 
@@ -13702,44 +13703,110 @@ function _rptA36CoverPricingStrip(d) {
     return '$' + Math.round(v).toLocaleString('en-US');
   }
 
-  // Same 3 tiers / keys / order as rptPageASHRAE36ProposalPricing's tierCols.
-  var tierCols = [
-    { key: 'recommended', label: 'Recommended' },
-    { key: 'compliance', label: 'Compliance' },
-    { key: 'full-scope', label: 'Full Scope' },
+  // 2026-07-22 redesign (no-boxes-in-reports standard): tiers stacked vertically as plain
+  // heading + paragraph, not side-by-side cards. Same 3 tiers / keys / order as
+  // rptPageASHRAE36ProposalPricing's tierCols — numbers still come ONLY from the shared
+  // _pricingGetEstimate/_pricingComputeSummaryData chain above, no new pricing math.
+  var tierDefs = [
+    {
+      key: 'recommended',
+      label: 'Recommended',
+      isRec: true,
+      desc: function (amtStr, svcSentence) {
+        return (
+          'Installs the hardware points needed to close Guideline 36 gaps and programs the full set of ' +
+          'cost-optimized energy sequences — supply air and duct pressure reset, economizer control, optimal ' +
+          'start/stop, and equipment lead/lag rotation. ' +
+          (amtStr ? 'Total one-time investment for this scope is <strong>' + amtStr + '</strong>. ' : '') +
+          svcSentence +
+          'Because these sequences directly target the largest controllable HVAC energy uses — fan speed, ' +
+          'mechanical cooling run time, and equipment cycling — this tier is expected to return the most energy ' +
+          'savings per dollar invested of the three scopes.'
+        );
+      },
+    },
+    {
+      key: 'compliance',
+      label: 'Compliance',
+      isRec: false,
+      desc: function (amtStr, svcSentence) {
+        return (
+          'Installs only the hardware points required to close Guideline 36 gaps and programs the sequences ' +
+          'classified as safety-critical (e.g. freeze protection, minimum ventilation) — it does not add the ' +
+          'optimization sequences (temperature/pressure reset, economizer, optimal start) that generate ongoing ' +
+          'energy savings. ' +
+          (amtStr ? 'Total one-time investment for this scope is <strong>' + amtStr + '</strong>. ' : '') +
+          svcSentence +
+          'This tier establishes monitoring and code-required control only, making it the right starting point ' +
+          'where budget is the primary constraint — the Recommended or Full Scope sequences can be added in a ' +
+          'later phase under the same service agreement once budget allows.'
+        );
+      },
+    },
+    {
+      key: 'full-scope',
+      label: 'Full Scope',
+      isRec: false,
+      desc: function (amtStr, svcSentence) {
+        return (
+          'Builds out every applicable Guideline 36 sequence across every piece of equipment in the portfolio ' +
+          'and adds building-wide Fault Detection &amp; Diagnostics (FDD) reporting; hardware is priced at ' +
+          'full/standard spec rather than the Recommended tier’s cost-optimized substitutions. ' +
+          (amtStr ? 'Total one-time investment for this scope is <strong>' + amtStr + '</strong>. ' : '') +
+          svcSentence +
+          'This is the highest up-front investment of the three tiers, but it delivers full-portfolio coverage ' +
+          'and the earliest access to FDD-driven fault alerts, so equipment problems that waste energy or shorten ' +
+          'equipment life are caught automatically instead of during periodic manual review.'
+        );
+      },
+    },
   ];
 
-  var anyPriced = tierCols.some(function (c) {
-    return tt[c.key] && _fmtUSD(tt[c.key].grand);
+  var anyPriced = tierDefs.some(function (t) {
+    return tt[t.key] && _fmtUSD(tt[t.key].grand);
   });
   if (!anyPriced) return '';
 
-  var cells = tierCols
-    .map(function (c) {
-      var g = tt[c.key] ? _fmtUSD(tt[c.key].grand) : null;
-      var noCat = tt[c.key] && tt[c.key].noCatalog;
-      var display = g ? (noCat ? 'Labor: ' + g : g) : 'Available upon request';
-      var isRec = c.key === 'recommended';
-      var cellStyle =
-        'flex:1;text-align:center;padding:8px 6px;border-radius:4px;' +
-        (isRec
-          ? 'background:var(--rpt-blue);border:1px solid var(--rpt-blue)'
-          : 'background:#fff;border:1px solid var(--rpt-rule)');
-      var txtColor = isRec ? '#fff' : '#000';
+  // Monthly Energy Management Service Agreement sentence — SAME guarded budget/config chain
+  // rptPageASHRAE36ProposalPricing's svcBlock uses (en_pricing_budget_{projId}.amount,
+  // en_pricing_config.hourlyRate). No new math: identical read, so a project with no configured
+  // monthly allowance simply omits this sentence rather than showing a fabricated number.
+  var svcSentence = '';
+  try {
+    if (typeof _pricingGetBudget === 'function' && typeof _pricingGetConfig === 'function') {
+      var _svcBudget = _pricingGetBudget(d.project.id);
+      var _svcCfg = _pricingGetConfig();
+      if (_svcBudget && _svcBudget.amount != null && !isNaN(_svcBudget.amount) && Number(_svcBudget.amount) > 0) {
+        var _svcRate =
+          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 125);
+        svcSentence =
+          'Ongoing programming refinement and support after commissioning draws on your existing Monthly Energy ' +
+          'Management Service Agreement (' +
+          _fmtUSD(Number(_svcBudget.amount)) +
+          '/month allowance at $' +
+          _svcRate +
+          '/hr, not-to-exceed) rather than a separate invoice. ';
+      }
+    }
+  } catch (e) {
+    svcSentence = '';
+  }
+
+  var rows = tierDefs
+    .map(function (t) {
+      var g = tt[t.key] ? _fmtUSD(tt[t.key].grand) : null;
+      var noCat = tt[t.key] && tt[t.key].noCatalog;
+      var amtStr = g ? (noCat ? 'Labor: ' + g : g) : null;
+      var headline =
+        t.label + (t.isRec ? ' (Recommended)' : '') + (amtStr ? ' — ' + amtStr : ' — Available upon request');
       return (
-        '<div style="' +
-        cellStyle +
-        '">' +
-        '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' +
-        txtColor +
-        ';margin-bottom:3px">' +
-        _esc(c.label) +
-        (isRec ? ' ★' : '') +
+        '<div style="margin-bottom:12px">' +
+        '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);border-bottom:2px solid var(--rpt-rule);' +
+        'padding-bottom:3px;margin-bottom:5px">' +
+        _esc(headline) +
         '</div>' +
-        '<div style="font-size:15px;font-weight:700;color:' +
-        txtColor +
-        '">' +
-        display +
+        '<div style="font-size:10.5px;color:var(--rpt-page-text);line-height:1.6">' +
+        t.desc(amtStr, svcSentence) +
         '</div>' +
         '</div>'
       );
@@ -13747,15 +13814,10 @@ function _rptA36CoverPricingStrip(d) {
     .join('');
 
   return (
-    '<div style="margin-bottom:16px">' +
+    '<div style="margin-bottom:8px">' +
     '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;' +
-    'letter-spacing:0.04em;margin-bottom:6px">Investment Summary</div>' +
-    '<div style="display:flex;gap:8px">' +
-    cells +
-    '</div>' +
-    '<div style="font-size:8px;color:var(--rpt-page-text);margin-top:5px">' +
-    'See the Cost Estimate section for the full breakdown by scope.' +
-    '</div>' +
+    'letter-spacing:0.04em;margin-bottom:8px">Investment Summary</div>' +
+    rows +
     '</div>'
   );
 }
@@ -13833,11 +13895,48 @@ function rptPageASHRAE36ProposalScope(n, d) {
           return s.key;
         })
       : [];
-  var phase1Gaps = p.topGaps.filter(function (g) {
-    return SEQUENCE_KEYS.indexOf(g.key) === -1;
-  });
+  // Zone cooling/heating setpoint checks are locally controlled by the unit itself — this
+  // proposal is monitoring-only, so a "point" implying CSC controls the setpoint is misleading.
+  // Excluded here (proposal scope list only); not touched at the shared portfolio.topGaps source
+  // so the Audit report's Recommendations page (which also reads topGaps) is unaffected.
+  var SETPOINT_KEYS = ['zoneCoolSp', 'zoneHtgSp', 'coolSP', 'htgSP'];
+  // Damper actuator points (OA/RA/zone/dual-duct) belong to the same physical control
+  // measure per unit — a client-facing scope summary should show them as one combined line,
+  // not one row per actuator. Consolidated below via _consolidateDamperGaps.
+  var DAMPER_KEYS = ['oaDampCmd', 'raDampCmd', 'dampCmd', 'coldDampCmd', 'hotDampCmd'];
+
+  function _consolidateDamperGaps(gaps) {
+    var damperGaps = gaps.filter(function (g) {
+      return DAMPER_KEYS.indexOf(g.key) !== -1;
+    });
+    if (damperGaps.length <= 1) return gaps; // nothing to consolidate
+    var otherGaps = gaps.filter(function (g) {
+      return DAMPER_KEYS.indexOf(g.key) === -1;
+    });
+    var totalCount = damperGaps.reduce(function (s, g) {
+      return s + g.count;
+    }, 0);
+    var merged = {
+      key: 'damperConsolidated',
+      count: totalCount,
+      desc: {
+        short: 'Damper actuator control (outdoor air / return air / zone)',
+        impact: 'Required for economizer and zone airflow control',
+        plain:
+          'Provides modulating damper control for outdoor air intake, return air balancing, and zone airflow ' +
+          'delivery — required for economizer operation and to meet zone ventilation and temperature targets.',
+      },
+    };
+    return otherGaps.concat([merged]);
+  }
+
+  var phase1Gaps = _consolidateDamperGaps(
+    p.topGaps.filter(function (g) {
+      return SEQUENCE_KEYS.indexOf(g.key) === -1 && SETPOINT_KEYS.indexOf(g.key) === -1;
+    }),
+  );
   var phase2Gaps = p.topGaps.filter(function (g) {
-    return SEQUENCE_KEYS.indexOf(g.key) !== -1;
+    return SEQUENCE_KEYS.indexOf(g.key) !== -1 && SETPOINT_KEYS.indexOf(g.key) === -1;
   });
 
   // DCV/CO2 scope row — populated from portfolio.dcv counts (excluded from topGaps).
@@ -13898,8 +13997,10 @@ function rptPageASHRAE36ProposalScope(n, d) {
         thStyle +
         '">Typical Savings</th></tr></thead>' +
         '<tbody>' +
-        phase1Gaps.map(scopeRow).join('') +
+        // DCV/CO2 sensors lead the Phase 1 list — easy install, high-value data, per Matt's
+        // decision (was appended last; now rendered first).
         dcvScopeRow +
+        phase1Gaps.map(scopeRow).join('') +
         '</tbody></table>'
       : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No hardware gaps identified — all required sensors and actuators appear to be present.</div>';
 
@@ -13918,8 +14019,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
     : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No sequence programming gaps identified — all key ASHRAE 36 sequences appear to be active.</div>';
 
   // Batch 3 item 4 (design-language pass extended to a flagged spot, per bolding-consistency-
-  // audit.md finding #2): same "more human / less colored fill" treatment already applied to
-  // _proposalOutcomeCard one page later in this same document — colored border + colored
+  // audit.md finding #2): "more human / less colored fill" treatment — colored border + colored
   // title (var(--rpt-blue) and hardcoded #7c3aed purple) → var(--rpt-rule) border + black title.
   var bodyHTML =
     '<div style="margin-bottom:14px">' +
@@ -13937,97 +14037,6 @@ function rptPageASHRAE36ProposalScope(n, d) {
     data: fakeData,
     label: 'Page ' + n + ' — Scope of Work',
   });
-}
-
-// ─── rptPageASHRAE36ProposalOutcomes ──────────────────────────────────────
-/**
- * Benefits, timeline, and next step for the proposal.
- */
-function rptPageASHRAE36ProposalOutcomes(n, d) {
-  var p = d.portfolio;
-  // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
-  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-
-  var outcomes =
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">' +
-    _proposalOutcomeCard(
-      'Energy Cost Reduction',
-      'ASHRAE 36 sequences reduce HVAC energy use compared to conventional control strategies, primarily through fan speed optimization, temperature reset, and economizer improvements.',
-      'var(--rpt-green)',
-    ) +
-    _proposalOutcomeCard(
-      'Improved Occupant Comfort',
-      'Reset sequences and demand control ventilation deliver the right conditions when spaces are occupied and reduce over-conditioning during unoccupied periods.',
-      'var(--rpt-blue)',
-    ) +
-    _proposalOutcomeCard(
-      'Longer Equipment Life',
-      'Lead/lag rotation and demand-based staging reduce runtime on individual pieces of equipment, extending service life and reducing maintenance frequency.',
-      '#7c3aed',
-    ) +
-    _proposalOutcomeCard(
-      'Code Compliance',
-      'ASHRAE Guideline 36 sequences support compliance with ASHRAE 90.1 and 62.1 requirements for energy efficiency and ventilation — increasingly required by local authorities.',
-      'var(--rpt-orange)',
-    ) +
-    '</div>';
-
-  var timeline =
-    '<div class="rpt-a36-callout" style="margin-bottom:14px;border-top:1px solid var(--rpt-rule)">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">Typical Implementation Timeline</div>' +
-    '<div style="display:flex;gap:0">' +
-    _timelineStep(
-      'Weeks 1–4',
-      'Hardware Installation',
-      'Sensor and actuator installation with minimal operational impact',
-    ) +
-    _timelineStep('Weeks 5–8', 'Programming', 'BAS sequence programming and initial testing') +
-    _timelineStep(
-      'Weeks 9–10',
-      'Commissioning',
-      'Functional testing and savings verification with occupied conditions',
-    ) +
-    '</div>' +
-    '</div>';
-
-  var bodyHTML = outcomes + timeline;
-  return rptPage(n, 'ASHRAE 36 Proposal — Expected Outcomes', bodyHTML, {
-    data: fakeData,
-    label: 'Page ' + n + ' — Expected Outcomes',
-  });
-}
-
-function _proposalOutcomeCard(title, body, color) {
-  // 2026-07 design-language pass (Batch 3 item 3c): uniform var(--rpt-rule) border on all
-  // four sides (was a colored 3px top accent) + black bold title (was colored to match the
-  // accent). `color` is still accepted/passed by call sites but intentionally unused here —
-  // matches the same "keep the data, drop the color" pattern used by _a36StatusChip.
-  return (
-    '<div style="border:1px solid var(--rpt-rule);border-radius:4px;padding:10px 12px">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">' +
-    title +
-    '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
-    body +
-    '</div>' +
-    '</div>'
-  );
-}
-
-function _timelineStep(period, title, desc) {
-  return (
-    '<div style="flex:1;text-align:center;padding:6px 4px">' +
-    '<div style="font-size:9px;color:var(--rpt-blue);font-weight:700;margin-bottom:2px">' +
-    period +
-    '</div>' +
-    '<div style="font-size:10px;font-weight:700;color:var(--rpt-page-text);margin-bottom:2px">' +
-    title +
-    '</div>' +
-    '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.4">' +
-    desc +
-    '</div>' +
-    '</div>'
-  );
 }
 
 // ─── rptPageASHRAE36ProposalPricing ──────────────────────────────────────────
@@ -15069,9 +15078,9 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalScope(pageNum++, data), 'proposalScope'));
 
   // ebfca114: opt-in priced Cost Estimate page (default OFF — strict === true opt-in, so an
-  // undefined/false section flag never renders it). Positioned between Scope of Work ("what needs
-  // to happen") and Expected Outcomes ("why it matters"). Returns an Array — spread each page and
-  // advance pageNum so downstream numbering stays correct.
+  // undefined/false section flag never renders it). Positioned after Scope of Work ("what needs
+  // to happen"), now the last Proposal page since Expected Outcomes was removed (2026-07-22).
+  // Returns an Array — spread each page and advance pageNum so downstream numbering stays correct.
   if (s.costEstimate === true) {
     // Selectable pricing-detail sub-options — each only takes effect because costEstimate is on
     // here (independent-flag / parent-gates precedent, buildingInfra). Passed as a 3rd opts arg.
@@ -15087,8 +15096,9 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     });
   }
 
-  if (s.proposalOutcomes !== false)
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalOutcomes(pageNum++, data), 'proposalOutcomes'));
+  // 2026-07-22: Expected Outcomes page removed entirely (rptPageASHRAE36ProposalOutcomes,
+  // _proposalOutcomeCard, _timelineStep deleted, plus its 'proposalOutcomes' settings checkbox)
+  // — not replaced with anything.
 
   // Rule 2.4 (Plan B): bake page numbers at generation time.
   return _injectPageNumbers(pages.join('\n'));
