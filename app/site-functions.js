@@ -1286,6 +1286,53 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.22.699',
+    date: '2026-07-22',
+    title: 'Cost Estimate overhaul, Service Proposal redesign & Wood River OCR fix',
+    items: [
+      {
+        type: 'feature',
+        text: 'Cost Estimate: the monthly EM service figure now breaks down into a labor table (program/sequence setup, alarm configuration, report setup, utility bill entry, ongoing monitoring) so you can see what the monthly hours actually cover, tapering to steady-state monitoring after month 3.',
+      },
+      {
+        type: 'change',
+        text: "Cost Estimate: DCV (demand-control ventilation) now sorts to the top of the Recommended tier's measure list — it's an easy, low-cost install with high-value payoff.",
+      },
+      {
+        type: 'change',
+        text: 'Cost Estimate: hardware/programming line items now show quantity x unit price = total instead of a bare total; the combined Temp/Humidity/CO2 zone sensor now has a clear label instead of just "CO2 (Zone)".',
+      },
+      {
+        type: 'feature',
+        text: 'Cost Estimate: Compliance and Full Scope tiers now default to a condensed summary grouped by item (with building count), with a one-click toggle back to the full per-building itemization.',
+      },
+      {
+        type: 'feature',
+        text: 'Cost Estimate: the Recommended tier now shows a 3-phase rollout timeline (Aug-Dec 2026 / 2027 / 2028) with the cost allocated across phases.',
+      },
+      {
+        type: 'change',
+        text: 'Cost Estimate: removed the per-building "Summary" tab and the Proposal\'s "Per-Building Pricing" option — they gave no useful information.',
+      },
+      {
+        type: 'change',
+        text: "Service Proposal: the cover page's Investment Summary now shows each tier (Recommended/Compliance/Full Scope) as a plain-text block with real dollar totals and ROI context, instead of side-by-side colored cards.",
+      },
+      {
+        type: 'change',
+        text: 'Service Proposal: the scope list now leads with DCV/CO2 sensing, drops the monitoring-only zone setpoint line, and combines multiple damper-actuator points into one scope line.',
+      },
+      {
+        type: 'change',
+        text: 'Service Proposal: removed the Expected Outcomes page and the internal cross-reference sentence to the Cost Estimate section.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed a bug affecting OCR accuracy on every scanned bill: image upscaling during text recognition was silently skipping smoothing, which hurt digit accuracy on faint/low-DPI scans. This also fixed several previously-unreadable dollar amounts on Wood River Energy gas bills.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.20.698',
     date: '2026-07-20',
     title: 'Cost Estimate & Service Proposal updates',
