@@ -5711,8 +5711,13 @@ const UTILITY_RULES = [
         // First number after label = per-component MMBtu; last dollar amount = charge.
         // Rate column ($5.2650) appears between fuel column and the final $ charge.
         if (_inSites && /Trigger\s*-?\s*Fixed/i.test(ln)) {
-          const _trigDollarM = ln.match(/\$([\d,]+\.\d{2})\s*$/);
-          if (_trigDollarM) _curTriggerCharge = parseFloat(_trigDollarM[1].replace(/,/g, ''));
+          // Fix (2026-07-22): accept OCR comma→period corrupted form ($1.337.90) the
+          // same way the Sub-Total line already does, and restore it via _wreFixOcrDollar.
+          // Without this, any Trigger charge >= $1,000 silently parsed as null, causing
+          // _wreTriggerCharge to stay null and the per-site Sum Mismatch banner to fire
+          // even though GasCharge/TotalCurrentCharges themselves were correct.
+          const _trigDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+          if (_trigDollarM) _curTriggerCharge = parseFloat(_wreFixOcrDollar(_trigDollarM[1]).replace(/,/g, ''));
           const _trigMmbtuM = ln.match(/Trigger\s*-?\s*Fixed\s+([\d,]+\.?\d*)/i);
           if (_trigMmbtuM) _curTriggerMMbtu = parseFloat(_trigMmbtuM[1].replace(/,/g, ''));
           // Capture printed rate — second-to-last $ value on the line (Rate column)
@@ -5729,8 +5734,11 @@ const UTILITY_RULES = [
         // First number after label = per-component MMBtu; last dollar amount = charge.
         // Rate column ($5.0550) appears between fuel column and the final $ charge.
         if (_inSites && /Index[\s(b]*(?:FOM|0M|OM)/i.test(ln)) {
-          const _idxDollarM = ln.match(/\$([\d,]+\.\d{2})\s*$/);
-          if (_idxDollarM) _curIndexCharge = parseFloat(_idxDollarM[1].replace(/,/g, ''));
+          // Fix (2026-07-22): same OCR comma→period corruption fix as the Trigger line
+          // above — Index charges are frequently >= $1,000 (e.g. "$1,337.90" misread as
+          // "$1.337.90"), which the old plain-comma regex silently failed to match.
+          const _idxDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+          if (_idxDollarM) _curIndexCharge = parseFloat(_wreFixOcrDollar(_idxDollarM[1]).replace(/,/g, ''));
           const _idxMmbtuM = ln.match(/Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]+([\d,]+\.?\d*)/i);
           if (_idxMmbtuM) _curIndexMMbtu = parseFloat(_idxMmbtuM[1].replace(/,/g, ''));
           // Capture printed rate — last 4-decimal $ value before the 2-decimal charge
@@ -5745,8 +5753,10 @@ const UTILITY_RULES = [
         // Format: "Special Weather Event  -2.98  -0.03  $-20.8065  $62.63"
         // The dollar charge is POSITIVE (surcharge), despite negative MMbtu/rate columns.
         if (_inSites && /Special\s+Weather\s+Event/i.test(ln)) {
-          const _sweDollarM = ln.match(/\$([\d,]+\.\d{2})\s*$/);
-          if (_sweDollarM) _curSWECharge = parseFloat(_sweDollarM[1].replace(/,/g, ''));
+          // Fix (2026-07-22): same OCR comma→period corruption fix as Trigger/Index above,
+          // applied here too since SWE surcharges can also exceed $1,000 (e.g. JAN 26 invoice).
+          const _sweDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+          if (_sweDollarM) _curSWECharge = parseFloat(_wreFixOcrDollar(_sweDollarM[1]).replace(/,/g, ''));
           continue;
         }
 
