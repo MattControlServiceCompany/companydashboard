@@ -1286,6 +1286,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.22.700',
+    date: '2026-07-22',
+    title: 'Editable Word export for reports',
+    items: [
+      {
+        type: 'feature',
+        text: "Energy Department reports: added an \"Export to Word\" button next to Export to PDF on the report toolbar. The PDF export is flattened (an image of each page) -- the new Word export downloads the same report as a real, editable .doc file with actual text and tables you can select and edit, not a picture.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.22.699',
     date: '2026-07-22',
     title: 'Cost Estimate overhaul, Service Proposal redesign & Wood River OCR fix',
