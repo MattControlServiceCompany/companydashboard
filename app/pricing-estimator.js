@@ -223,7 +223,13 @@ const SEQUENCE_SAVINGS_IMPACT = {
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
   demandCtrl: {
-    tier: 'med-high',
+    // 2026-07-22: promoted from 'med-high' to 'high' — DCV is an easy/low-cost install that
+    // gives high-value information (occupancy-driven ventilation data) and should be the
+    // top-priority Recommended-tier measure. See also the DCV-first tiebreak added to
+    // _pricingSortRecommendedRows (below), which guarantees this regardless of weight/cost
+    // score math so DCV always sorts ahead of every other measure, not just ahead of the
+    // med-high bucket.
+    tier: 'high',
     type: 'savings',
     weight: 2.5,
     nominalCostTier: 2,
@@ -239,7 +245,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
     sourceType: SAVINGS_SOURCE_LITERATURE,
   },
   vav_dcv: {
-    tier: 'med-high',
+    // 2026-07-22: promoted from 'med-high' to 'high' — see demandCtrl comment above.
+    tier: 'high',
     type: 'savings',
     weight: 2.5,
     nominalCostTier: 2,
@@ -689,6 +696,242 @@ function _pricingComputeMonthlyService(projId) {
   };
 }
 
+/* ── Does this project have utility bills on file? (2026-07-22) ──────────────────────────────
+   Utility bill data lives per-project at en_utility_{projId} → {buildings:[{meters:[{bills:[]}]}]}
+   (same source _pricingGetProjectAnnualElec reads, above) — NOT en_pdf_bills, which is the
+   global PDF-import staging array keyed by bill.projId before a bill is committed to a meter.
+   Checked here (not just electricity, any commodity) purely to decide whether "Utility Bill Data
+   Entry" belongs in the monthly labor breakdown below — this performs no calculation of its own.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingProjectHasUtilityBills(projId) {
+  var utilData = typeof sget === 'function' ? sget('en_utility_' + projId, null) : null;
+  if (!utilData || !utilData.buildings) return false;
+  return utilData.buildings.some(function (b) {
+    return (b.meters || []).some(function (m) {
+      return (m.bills || []).length > 0;
+    });
+  });
+}
+
+/* ── Monthly Service Labor Breakdown (2026-07-22) ─────────────────────────────────────────────
+   Additive detail underneath _pricingComputeMonthlyService: WHY the monthly EM service hours are
+   needed, not just the flat hours×rate total. Matt's ask: the flat number hides real setup work
+   (BAS program/sequence commissioning, alarm configuration, report setup, and — when the client
+   hand-provides them — utility bill data entry) that is heaviest in the first few months and tapers
+   to steady-state monitoring. This function computes that ramp; it NEVER changes the monthly total
+   itself (still hours×hourlyRate from _pricingComputeMonthlyService/the not-to-exceed allowance
+   comparison) — every month's category hours are made to SUM to that same total, so the cap logic
+   above is untouched. Purely presentational data prep for _pricingLaborBreakdownHTML, below.
+
+   Ramp model (simple 4-step taper, not a complex schedule, per Matt's ask):
+     Month 1      — 100% of the "setup pool" (sequence programming + alarms + reports + bill entry)
+     Month 2      —  60% of the setup pool
+     Month 3      —  30% of the setup pool
+     Month 4+     —   0% (steady state) — entire month is Ongoing Monitoring & Optimization
+   Whatever hours the setup pool doesn't use in a given month falls to "Ongoing Monitoring &
+   Optimization" so every month's category hours always sum to exactly the monthly total (if the
+   setup pool would exceed the monthly total in Month 1, it is scaled down to fit — the flat total
+   is always the ceiling, never the categories).
+
+   Program & Sequence Setup hours reuse COST_PER_SEQ_HOURS_DEFAULT (the same per-sequence hour
+   defaults Phase 2 programming-labor rows use) and one line per distinct BAS sequence this project
+   actually needs commissioned (from buildCatalogRows — the tier-agnostic full universe of phase-2
+   sequence rows for the project, not just Compliance's safety-only subset).
+
+   Utility Bill Data Entry only appears when the project has bill data on file
+   (_pricingProjectHasUtilityBills) — a project with no bills doesn't need this line.
+
+   Returns null when _pricingComputeMonthlyService returns null (no budget.amount set — same
+   silent-until-configured convention as the rest of this feature).
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeMonthlyLaborBreakdown(projId) {
+  var svc = _pricingComputeMonthlyService(projId);
+  if (!svc) return null;
+  var totalHours = svc.hours;
+
+  // Program & Sequence Setup — one line per distinct BAS sequence this project needs commissioned.
+  var catalogRows = buildCatalogRows(projId);
+  var seqSeen = {};
+  var seqItems = [];
+  catalogRows.forEach(function (r) {
+    if (r.phase !== 2 || !r.seqKey || seqSeen[r.seqKey]) return;
+    seqSeen[r.seqKey] = true;
+    var hrs = COST_PER_SEQ_HOURS_DEFAULT[r.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[r.seqKey] : 2.0;
+    seqItems.push({ label: r.item || r.seqKey, hours: hrs });
+  });
+  var seqTotalHours = seqItems.reduce(function (s, i) {
+    return s + i.hours;
+  }, 0);
+
+  var ALARM_SETUP_HOURS_DEFAULT = 4;
+  var REPORT_SETUP_HOURS_DEFAULT = 3;
+  var hasBills = _pricingProjectHasUtilityBills(projId);
+  var BILL_ENTRY_HOURS_DEFAULT = hasBills ? 3 : 0;
+
+  var setupPoolHours =
+    seqTotalHours + ALARM_SETUP_HOURS_DEFAULT + REPORT_SETUP_HOURS_DEFAULT + BILL_ENTRY_HOURS_DEFAULT;
+
+  function roundHrs(n) {
+    return Math.round(n * 100) / 100;
+  }
+
+  // rampFraction: how much of the setup pool applies in a given month (1=Month1 … 4=Month4+).
+  function rampFraction(monthIdx) {
+    if (monthIdx === 1) return 1.0;
+    if (monthIdx === 2) return 0.6;
+    if (monthIdx === 3) return 0.3;
+    return 0; // Month 4+ — steady state, setup pool fully tapered off
+  }
+
+  function buildMonthRows(monthIdx) {
+    var out = [];
+    var frac = rampFraction(monthIdx);
+    var setupHoursUsed = 0;
+    if (frac > 0 && setupPoolHours > 0) {
+      // Never let the setup pool exceed the flat monthly total — scale the whole pool down
+      // proportionally if it would (keeps every month's categories summing to the same cap).
+      var effFrac = setupPoolHours * frac > totalHours ? totalHours / setupPoolHours : frac;
+      if (seqItems.length) {
+        seqItems.forEach(function (item) {
+          var hrs = roundHrs(item.hours * effFrac);
+          if (hrs > 0) out.push({ category: 'Program & Sequence Setup — ' + item.label, hours: hrs });
+        });
+      }
+      var alarmHrs = roundHrs(ALARM_SETUP_HOURS_DEFAULT * effFrac);
+      if (alarmHrs > 0) out.push({ category: 'Alarm Configuration', hours: alarmHrs });
+      var reportHrs = roundHrs(REPORT_SETUP_HOURS_DEFAULT * effFrac);
+      if (reportHrs > 0) out.push({ category: 'Report Setup', hours: reportHrs });
+      if (hasBills) {
+        var billHrs = roundHrs(BILL_ENTRY_HOURS_DEFAULT * effFrac);
+        if (billHrs > 0) out.push({ category: 'Utility Bill Data Entry', hours: billHrs });
+      }
+      setupHoursUsed = out.reduce(function (s, r) {
+        return s + r.hours;
+      }, 0);
+    }
+    var ongoingHrs = roundHrs(Math.max(0, totalHours - setupHoursUsed));
+    if (ongoingHrs > 0) out.push({ category: 'Ongoing Monitoring & Optimization', hours: ongoingHrs });
+    return out;
+  }
+
+  var months = [
+    { label: 'Month 1', rows: buildMonthRows(1) },
+    { label: 'Month 2', rows: buildMonthRows(2) },
+    { label: 'Month 3', rows: buildMonthRows(3) },
+    { label: 'Month 4+ (steady state)', rows: buildMonthRows(4) },
+  ];
+
+  return { totalHoursPerMonth: totalHours, months: months, hasSequences: seqItems.length > 0, hasBills: hasBills };
+}
+
+/* ── Monthly Labor Breakdown table (2026-07-22) ───────────────────────────────────────────────
+   Renders _pricingComputeMonthlyLaborBreakdown as a category-by-month matrix table, following the
+   site's ch-tbl conventions (ch-tbl-outer/ch-tbl-scroll wrapper, --s1 header, grid-line cells,
+   right-aligned numeric columns, tabular-nums) instead of an ad-hoc box/card — matches the site's
+   no-boxes-in-reports convention applied to this in-app section as well, per the task spec.
+   Returns '' (renders nothing) when no budget.amount is configured, same silent-until-configured
+   convention as the rest of the Monthly Service Agreement feature.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingLaborBreakdownHTML(projId) {
+  var bd = _pricingComputeMonthlyLaborBreakdown(projId);
+  if (!bd) return '';
+
+  // Column order = first-seen order across the 4 months (setup categories appear early, Ongoing
+  // Monitoring & Optimization always appears — every month sums to the same monthly total).
+  var catOrder = [];
+  var catSeen = {};
+  bd.months.forEach(function (m) {
+    m.rows.forEach(function (r) {
+      if (!catSeen[r.category]) {
+        catSeen[r.category] = true;
+        catOrder.push(r.category);
+      }
+    });
+  });
+
+  var thBase =
+    'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;border-bottom:1px solid var(--border2)';
+  var tdBase =
+    'padding:6px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);' +
+    'font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis';
+
+  var headerCells =
+    '<th style="' +
+    thBase +
+    ';text-align:left">Labor Category</th>' +
+    bd.months
+      .map(function (m) {
+        return '<th style="' + thBase + ';text-align:right">' + _pricingEscText(m.label) + '</th>';
+      })
+      .join('');
+
+  var bodyRows = catOrder
+    .map(function (cat) {
+      var cells = bd.months
+        .map(function (m) {
+          var found = m.rows.filter(function (r) {
+            return r.category === cat;
+          })[0];
+          return (
+            '<td style="' +
+            tdBase +
+            ';text-align:right;white-space:nowrap">' +
+            (found ? found.hours + ' hrs' : '—') +
+            '</td>'
+          );
+        })
+        .join('');
+      return (
+        '<tr><td style="' +
+        tdBase +
+        ';white-space:normal;word-break:break-word;color:var(--text)">' +
+        _pricingEscText(cat) +
+        '</td>' +
+        cells +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  var totalCells = bd.months
+    .map(function (m) {
+      var sum = m.rows.reduce(function (s, r) {
+        return s + r.hours;
+      }, 0);
+      return (
+        '<td style="padding:6px 10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;' +
+        'border-top:2px solid var(--border2)">' +
+        Math.round(sum * 100) / 100 +
+        ' hrs</td>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div style="margin:10px 14px 0;flex-shrink:0">' +
+    '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:11px;text-transform:uppercase;' +
+    'letter-spacing:0.5px">Monthly Service Hours — Why These Hours Are Needed</div>' +
+    '<div class="ch-tbl-outer" style="margin:0 0 10px;max-height:240px;display:flex;flex-direction:column">' +
+    '<div class="ch-tbl-scroll" style="overflow:auto">' +
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%">' +
+    '<thead><tr>' +
+    headerCells +
+    '</tr></thead>' +
+    '<tbody>' +
+    bodyRows +
+    '</tbody>' +
+    '<tfoot><tr><td style="padding:6px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">' +
+    'Total hrs/month</td>' +
+    totalCells +
+    '</tr></tfoot>' +
+    '</table>' +
+    '</div>' +
+    '</div>' +
+    '</div>'
+  );
+}
+
 /* ── Budget-vs-total indicator (174ad49a Phase 2) ─────────────────────────────
    Presentation only — compares a tier's ALREADY-COMPUTED grand total (from
    _pricingComputeTotals, read by the caller) against the budget entry. Touches no
@@ -858,6 +1101,14 @@ var _SAVINGS_TIER_ORDER = { high: 0, 'med-high': 1, med: 2, 'low-med': 3, enable
 
 function _pricingSortRecommendedRows(rows) {
   return rows.slice().sort(function (a, b) {
+    // 2026-07-22: DCV promotion — demandCtrl/vav_dcv must sort to the very top of the
+    // Recommended list, ahead of every other measure (not merely ahead of its own tier
+    // bucket). An explicit tiebreak here guarantees that outcome regardless of how the
+    // weight/effectiveCostTier score below happens to rank against other 'high' tier
+    // measures (e.g. ahu_dsp_reset/ahu_sat_reset score higher on that formula alone).
+    var aDcv = a.seqKey === 'demandCtrl' || a.seqKey === 'vav_dcv' ? 1 : 0;
+    var bDcv = b.seqKey === 'demandCtrl' || b.seqKey === 'vav_dcv' ? 1 : 0;
+    if (aDcv !== bDcv) return bDcv - aDcv;
     // Primary: tier group
     var ao = _SAVINGS_TIER_ORDER[a.savingsImpact] != null ? _SAVINGS_TIER_ORDER[a.savingsImpact] : 99;
     var bo = _SAVINGS_TIER_ORDER[b.savingsImpact] != null ? _SAVINGS_TIER_ORDER[b.savingsImpact] : 99;
@@ -6970,6 +7221,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
   }
 
+  // 2026-07-22: Monthly labor breakdown — same silent-until-configured convention as the rest of
+  // the Monthly Service Agreement feature (returns '' until budget.amount is set). Placed as its
+  // own flex-shrink:0 sibling after the footer, its own bounded-height scroll region (max-height:
+  // 240px inside _pricingLaborBreakdownHTML), same documented multi-zone-scroll pattern already
+  // used by the Top ROI card (ui-standards.md "Cost Estimate tab — Top ROI card + pricing table").
+  var laborBreakdownHTML = _pricingLaborBreakdownHTML(projId);
+
   el.innerHTML = [
     '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
     toolbarHTML,
@@ -7003,6 +7261,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     '<div id="pricing-footer-' + projId + '">',
     footerHTML,
     '</div>',
+    laborBreakdownHTML,
     '</div>',
   ].join('');
 
