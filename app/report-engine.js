@@ -12020,7 +12020,7 @@ function _a36StatusChip(status, inPlace, required, seqNA) {
   // claims a verified sequence pass that never happened, so this word must not render for that
   // case. Neutral word only -- does not touch `status`, `color`, the composite score, or any
   // other caller's threshold logic for buildings that DO have applicable sequences.
-  if (seqNA) word = 'Not Applicable';
+  if (seqNA) word = 'No Scope Required';
   // Batch 3 item 2/3a: at 100% (inPlace === required, required > 0) the fraction is a
   // tautology ("High Readiness · 22/22 sensors" — 100% + a fraction that's obviously 1:1 tells
   // the reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
@@ -12093,7 +12093,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div style="padding:20px 48px 16px">' +
     '<div style="text-align:center;margin-bottom:0">' +
     '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
-    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:16px">' +
+    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:12px">' +
     d.project.name +
     '</div>' +
     '</div>' +
@@ -12106,7 +12106,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div class="rpt-a36-callout" style="font-size:12px;line-height:1.6;color:var(--rpt-page-text)">' +
     finding +
     '</div>' +
-    '<div style="display:flex;gap:16px;margin-top:16px">' +
+    '<div style="display:flex;gap:16px;margin-top:12px">' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
     p.totalMissingHardwarePoints +
@@ -12259,7 +12259,7 @@ function rptPageASHRAE36Executive(n, d) {
   var tableTitle =
     '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:#fff;background:var(--rpt-blue);text-align:left;white-space:normal;line-height:1.25';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:#fff;background:var(--rpt-blue);text-align:left;white-space:normal;line-height:1.25;border:1px solid var(--rpt-border)';
   // Column widths (2026-07-09, fix/report-wording-compliance-rows): explicit colgroup +
   // table-layout:fixed added so column widths are deterministic instead of browser
   // auto-layout. Auto-layout let long building names (e.g. "P25309 - Jo Co Arts and
@@ -12329,7 +12329,7 @@ function rptPageASHRAE36Executive(n, d) {
     '%">' +
     '</colgroup>';
   var tableOpenHead =
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:16px;table-layout:fixed">' +
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:12px;table-layout:fixed">' +
     colgroup +
     '<thead><tr>' +
     '<th style="' +
@@ -12366,7 +12366,7 @@ function rptPageASHRAE36Executive(n, d) {
   // of typed literals, so the printed numbers can never again drift from the code that applies
   // them. The underlying 'green'/'amber'/'red' status keys are unchanged (see _a36StatusChip).
   var tableFootnote =
-    '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:16px;line-height:1.5">' +
+    '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:12px;line-height:1.5">' +
     '<strong>Score</strong> is Control Service Company’s own readiness assessment, built on ASHRAE Guideline 36 requirements ' +
     'and weighted by how many apply to each equipment type — ASHRAE 36 itself defines no composite score or compliance threshold. ' +
     '<strong>Readiness bands:</strong> High ≥' +
@@ -12436,37 +12436,37 @@ function rptPageASHRAE36Executive(n, d) {
       '</div>';
     return (
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       '<div style="' +
       _rowBoxStyle +
       '">' +
       b.name +
       '</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-border);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:center">' +
       b.equipCount +
       '</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-border);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:center">' +
       b.pointPct +
       '%</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-border);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:center">' +
       (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
       '</div></td>' +
-      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;border:1px solid var(--rpt-border)">' +
       '<div style="' +
       _rowBoxStyle +
       '">' +
       bar +
       '</div></td>' +
-      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;border:1px solid var(--rpt-border)">' +
       '<div style="' +
       _rowBoxStyle +
       '">' +
@@ -12603,16 +12603,16 @@ function rptPageASHRAE36CostEstimate(n, d) {
       var rowHTML =
         '<tr>' +
         '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-        'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:26%">' +
+        'border:1px solid var(--rpt-border);vertical-align:top;width:26%">' +
         _esc(seq.label) +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-        'border-bottom:1px solid var(--rpt-rule);vertical-align:top;width:16%;white-space:nowrap">' +
+        'border:1px solid var(--rpt-border);vertical-align:top;width:16%;white-space:nowrap">' +
         'ASHRAE 36 ' +
         _esc(seq.ashrae36 || '') +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-        'border-bottom:1px solid var(--rpt-rule);line-height:1.5;vertical-align:top">' +
+        'border:1px solid var(--rpt-border);line-height:1.5;vertical-align:top">' +
         _esc(plainDesc) +
         '</td>' +
         '</tr>';
@@ -12646,11 +12646,11 @@ function rptPageASHRAE36CostEstimate(n, d) {
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:26%">Sequence</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:26%;border:1px solid var(--rpt-border)">Sequence</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:16%">ASHRAE 36 Spec</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:16%;border:1px solid var(--rpt-border)">ASHRAE 36 Spec</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left">Description</th>' +
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)">Description</th>' +
     '</tr></thead><tbody>';
   var _ratTclose = '</tbody></table>';
 
@@ -12772,7 +12772,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     .join('');
 
   var gauges =
-    '<div style="display:flex;gap:20px;margin-bottom:12px;align-items:center">' +
+    '<div style="display:flex;gap:14px;margin-bottom:12px;align-items:center">' +
     '<div style="text-align:center">' +
     _a36GaugeSVG(b.composite, b.statusColor, 'Overall', 70) +
     '</div>' +
@@ -12877,7 +12877,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
-    'border-bottom:2px solid var(--rpt-blue)';
+    'border:1px solid var(--rpt-border)';
   var tableHead =
     colgroup +
     '<thead><tr>' +
@@ -12937,7 +12937,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     // use the near-black --rpt-border token for row separators instead. Scoped to this
     // Per-Building Detail table only (not a global --rpt-rule change, which also backs
     // several stat-card fills elsewhere in the report).
-    var rowBorder = 'border-bottom:1px solid var(--rpt-border)';
+    var rowBorder = 'border:1px solid var(--rpt-border)';
     var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
 
     // Pixel-height estimate for this row (used by chunk pagination below).
@@ -13060,7 +13060,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
           : String(seqsSum);
 
     // 2026-07-10 fix: near-black --rpt-border, same reasoning as _pushEquipRow's rowBorder above.
-    var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-border)';
+    var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
     tokens.push({
       type: 'row',
       estH: sensorsSum > 0 || seqsSum > 0 ? 34 : 26,
@@ -13169,7 +13169,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px">' +
     '<div style="font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (BAS Export)</div>' +
-    '<div style="display:flex;gap:24px">' +
+    '<div style="display:flex;gap:16px">' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
     '<span style="font-weight:600">Dedicated BAS power monitoring:</span> ' +
     (b.hasPowerMonitoring
@@ -13335,7 +13335,7 @@ function _a36BuildingBlockToken(d, building, showBuildingInfra) {
   // next when several share a page — 2026-07-10 fix: a free-standing rule directly under the
   // Total row violated the "rules only as part of a table's structure" rule; margin-bottom
   // alone is enough separation between blocks.
-  var blockHTML = '<div style="margin-bottom:24px">' + innerHTML + '</div>';
+  var blockHTML = '<div style="margin-bottom:12px">' + innerHTML + '</div>';
 
   // estH: same chrome estimate used by rptPageASHRAE36Building's ROWS_BUDGET_FIRST derivation
   // (gauges ~100px + intro ~35px + thead ~30px) + summed row heights + summary line (~30px) +
@@ -13373,10 +13373,10 @@ function rptPageASHRAE36Recommendations(n, d) {
           : affectedList.join(', ');
       return (
         '<tr>' +
-        '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+        '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border:1px solid var(--rpt-border);vertical-align:top">' +
         (idx + 1) +
         '</td>' +
-        '<td style="padding:6px 8px;border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+        '<td style="padding:6px 8px;border:1px solid var(--rpt-border);vertical-align:top">' +
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
         (desc.short || gap.key) +
         '</div>' +
@@ -13384,10 +13384,10 @@ function rptPageASHRAE36Recommendations(n, d) {
         (desc.plain || '') +
         '</div>' +
         '</td>' +
-        '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule);vertical-align:top;white-space:nowrap">' +
+        '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border);vertical-align:top;white-space:nowrap">' +
         (desc.impact || '—') +
         '</td>' +
-        '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+        '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top">' +
         gap.count +
         ' units' +
         // Batch 3 item 4: opacity:0.7 grey text removed (grey text on a client deliverable is
@@ -13414,20 +13414,20 @@ function rptPageASHRAE36Recommendations(n, d) {
     var recCount = p.topGaps.length; // DCV row gets the next sequential number
     dcvRow =
       '<tr>' +
-      '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+      '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border:1px solid var(--rpt-border);vertical-align:top">' +
       (recCount + 1) +
       '</td>' +
-      '<td style="padding:6px 8px;border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+      '<td style="padding:6px 8px;border:1px solid var(--rpt-border);vertical-align:top">' +
       '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">Add CO₂ sensors — enable demand control ventilation</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
       (dcvDesc.plain ||
         'CO₂ sensors measure occupancy indirectly and allow the BAS to reduce outdoor air intake when spaces are unoccupied. Without them, these units ventilate at full design rates around the clock.') +
       '</div>' +
       '</td>' +
-      '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule);vertical-align:top;white-space:nowrap">' +
+      '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border);vertical-align:top;white-space:nowrap">' +
       (dcvDesc.impact || 'Avoids conditioning air for empty rooms') +
       '</td>' +
-      '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+      '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top">' +
       dcvUnitStr +
       '</td>' +
       '</tr>';
@@ -13436,7 +13436,7 @@ function rptPageASHRAE36Recommendations(n, d) {
   var thStyle =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
   var table =
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:12px">' +
     '<thead><tr>' +
     '<th style="' +
     thStyle +
@@ -13661,7 +13661,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
-    'white-space:normal;word-wrap:break-word;line-height:1.3';
+    'white-space:normal;word-wrap:break-word;line-height:1.3;border:1px solid var(--rpt-border)';
   var thStyleC = thStyle + ';text-align:center';
 
   var tableHead =
@@ -13694,7 +13694,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     '">Status</th>' +
     '</tr></thead>';
 
-  var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:middle;border-bottom:1px solid var(--rpt-rule)';
+  var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
   var tdCenter = tdBase + ';text-align:center';
 
   // ── Build one HTML row per building ──────────────────────────────────────
@@ -14038,7 +14038,7 @@ function rptPageASHRAE36ProposalCover(n, d, opts) {
         : 'var(--rpt-red)';
 
   var intro =
-    '<div style="font-size:12px;color:var(--rpt-page-text);line-height:1.7;margin-bottom:16px">' +
+    '<div style="font-size:12px;color:var(--rpt-page-text);line-height:1.7;margin-bottom:12px">' +
     // Wording (fix/audit-report-scoring, 2026-07-14, Matt's decision): "compliance audit" /
     // "compliance score" / "Guideline 36 compliance" reworded to "readiness" throughout --
     // ASHRAE 36 defines no compliance score of its own; this is CSC's own assessment.
@@ -14063,12 +14063,12 @@ function rptPageASHRAE36ProposalCover(n, d, opts) {
     '<div style="padding:16px 48px">' +
     '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE Guideline 36</div>' +
     '<div style="font-size:17px;font-weight:600;color:var(--rpt-page-text);margin-bottom:4px">BAS Programming &amp; Upgrade Proposal</div>' +
-    '<div style="font-size:13px;color:var(--rpt-page-text);margin-bottom:20px">' +
+    '<div style="font-size:13px;color:var(--rpt-page-text);margin-bottom:14px">' +
     d.project.name +
     ' &nbsp;|&nbsp; ' +
     d.date +
     '</div>' +
-    '<div style="height:2px;background:var(--rpt-blue);margin-bottom:20px"></div>' +
+    '<div style="height:2px;background:var(--rpt-blue);margin-bottom:14px"></div>' +
     intro +
     (costEstOn ? _rptA36CoverPricingStrip(d) : '') +
     '</div>';
@@ -14156,14 +14156,14 @@ function rptPageASHRAE36ProposalScope(n, d) {
     var _dcvScopeStr = _dcvScopeParts.join(', ');
     dcvScopeRow =
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       'Carbon Dioxide (CO₂) sensors for demand-controlled ventilation' +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       _dcvScopeStr +
       ' affected' +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border)">' +
       'Avoids conditioning air for empty rooms' +
       '</td>' +
       '</tr>';
@@ -14173,13 +14173,13 @@ function rptPageASHRAE36ProposalScope(n, d) {
     var desc = gap.desc || {};
     return (
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       (desc.short || gap.key) +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       gap.count +
       ' units affected</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border)">' +
       (desc.impact || '—') +
       '</td>' +
       '</tr>'
@@ -14187,7 +14187,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
   }
 
   var thStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)';
 
   var ph1HTML =
     phase1Gaps.length || dcvScopeRow
@@ -14292,10 +14292,13 @@ function _rptToggleTierDetail(tierKey) {
 window._rptToggleTierDetail = _rptToggleTierDetail;
 
 /**
- * _rptA36TierDetailToggleHTML — the clickable header/card affordance for one tier column.
+ * _rptA36TierDetailToggleHTML — the clickable header affordance for one tier column.
  * Collapsed by default (aria-expanded="false"); PDF export forces the sibling panel open but
- * leaves this button's own label/chevron in their collapsed appearance since it is inert in a
- * flat raster either way.
+ * leaves this button's own label/chevron in their collapsed appearance since it is inert in the
+ * exported document either way.
+ * Design-language pass (report-export-fixes, 2026-07-22): dropped the bordered/border-radius/
+ * white-fill button treatment (box styling banned in client reports, rule 4.3) — plain colored
+ * text link, no box, matching every other inline affordance in this report.
  */
 function _rptA36TierDetailToggleHTML(key) {
   return (
@@ -14309,7 +14312,7 @@ function _rptA36TierDetailToggleHTML(key) {
     key +
     '\')}" ' +
     'style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;' +
-    'padding:6px 8px;border:1px solid var(--rpt-blue);border-radius:4px;background:#fff;' +
+    'padding:4px 0;' +
     'font-size:9px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em">' +
     '<span class="rpt-tier-chev">▸</span>' +
     '<span class="rpt-tier-toggle-label">Install &amp; Programming Detail</span>' +
@@ -14375,13 +14378,16 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   var p2 = tt && tt[key] ? fmtUSD(tt[key].phase2) : null;
 
   function _sectionHTML(title, subtotalStr, noCatFlag, items) {
+    // Grey (#666) removed (report-standard rule: grey text is banned in client documents) —
+    // de-emphasis now comes from font-weight/size only, same convention used elsewhere in this
+    // report (e.g. the footnote below this table).
     var subtotalHTML = noCatFlag
-      ? ' <span style="font-weight:400;color:#666">(CSV needed for pricing)</span>'
+      ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
       : subtotalStr
         ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
         : '';
     var listHTML = items.length
-      ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:#000;line-height:1.6">' +
+      ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:var(--rpt-page-text);line-height:1.6">' +
         items
           .map(function (it) {
             var priceStr = '';
@@ -14397,10 +14403,10 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
           })
           .join('') +
         '</ul>'
-      : '<div style="font-size:8.5px;color:#666;margin-top:2px">No items in this scope.</div>';
+      : '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:2px">No items in this scope.</div>';
     return (
-      '<div style="margin-bottom:8px">' +
-      '<div style="font-size:9px;font-weight:700;color:#000">' +
+      '<div style="margin-bottom:6px">' +
+      '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">' +
       _esc(title) +
       subtotalHTML +
       '</div>' +
@@ -14409,11 +14415,15 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     );
   }
 
+  // Design-language pass (report-export-fixes, 2026-07-22): dropped the bordered/rounded/
+  // white-fill card treatment (box styling banned in client reports, rule 4.3) — plain spacing
+  // with a single thin top divider, same "whitespace + thin border only" convention as
+  // .rpt-a36-callout and the disclaimer block below this table.
   return (
     '<div id="rpt-tier-detail-' +
     key +
-    '" style="display:none;margin-top:6px;padding:8px 10px 2px;' +
-    'border:1px solid var(--rpt-rule);border-radius:4px;background:#fff;text-align:left">' +
+    '" style="display:none;margin-top:6px;padding-top:6px;' +
+    'border-top:1px solid var(--rpt-rule);text-align:left">' +
     _sectionHTML('Hardware & Installation', p1, noCat, hw) +
     _sectionHTML('Programming & Commissioning', p2, false, lb) +
     '</div>'
@@ -14449,9 +14459,9 @@ function _rptA36RecommendedTimelineHTML(d) {
     '<colgroup><col style="width:90px"><col style="width:150px"><col style="width:314px"><col style="width:130px"></colgroup>';
   var thStyle =
     'padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
-    'color:#fff;background:var(--rpt-blue);text-align:left';
+    'color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)';
   var thRight = thStyle.replace('text-align:left', 'text-align:right');
-  var tdStyle = 'padding:6px 8px;font-size:9px;color:#000;border-bottom:1px solid var(--rpt-rule);vertical-align:top';
+  var tdStyle = 'padding:6px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-border);vertical-align:top';
   var tdRight = tdStyle + ';text-align:right';
 
   var rowsHTML = tl.phases
@@ -14492,14 +14502,14 @@ function _rptA36RecommendedTimelineHTML(d) {
 
   var totalRow =
     '<tr>' +
-    '<td colspan="3" style="padding:6px 8px;font-size:9px;font-weight:700;border-top:2px solid var(--rpt-blue)">Total</td>' +
-    '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border-top:2px solid var(--rpt-blue)">' +
+    '<td colspan="3" style="padding:6px 8px;font-size:9px;font-weight:700;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-blue)">Total</td>' +
+    '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-blue)">' +
     _fmtUSD2(tl.grandTotal) +
     '</td>' +
     '</tr>';
 
   return (
-    '<div style="margin-top:16px">' +
+    '<div style="margin-top:12px">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
     'text-transform:uppercase;letter-spacing:0.04em">Recommended Tier — Phased Implementation Timeline</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
@@ -14584,7 +14594,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate</div>';
 
   var intro =
-    '<div style="font-size:10px;color:#000;line-height:1.6;margin-bottom:16px">' +
+    '<div style="font-size:10px;color:#000;line-height:1.6;margin-bottom:12px">' +
     'The options below present three scopes of work for this portfolio. Each figure is an ' +
     'independent estimate of the total investment for that scope, provided to support planning and ' +
     'budgeting. The scopes are defined differently and are not simple subsets of one another, so the ' +
@@ -14619,9 +14629,14 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       .join('') +
     '</tr>';
 
+  // Full grid on every cell (report-export-fixes, 2026-07-22): the border-bottom:none/
+  // border-top:none omissions previously here merged Total Investment/amount/phase-split/
+  // detail rows into one seamless block per tier column — exactly the ad-hoc partial-border
+  // pattern banned elsewhere in this report (rule 2, "real bordered grid table, not ad-hoc
+  // lines"). Every cell in this table now carries a full 1px border on all 4 sides.
   var lblStyle =
     'padding:10px 10px 2px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;' +
-    'color:#000;text-align:center;border:1px solid var(--rpt-rule);border-bottom:none';
+    'color:#000;text-align:center;border:1px solid var(--rpt-rule)';
   var lblRow =
     '<tr>' +
     tierCols
@@ -14633,7 +14648,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var amtStyle =
     'padding:2px 10px 12px;font-size:18px;font-weight:700;color:#000;text-align:center;' +
-    'border:1px solid var(--rpt-rule);border-top:none';
+    'border:1px solid var(--rpt-rule)';
   var amtRow =
     '<tr>' +
     tierCols
@@ -14658,7 +14673,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   if (wantPhaseSplit) {
     var phaseCellStyle =
       'padding:6px 10px 12px;font-size:9px;color:#000;text-align:center;line-height:1.7;' +
-      'border:1px solid var(--rpt-rule);border-top:none;vertical-align:top';
+      'border:1px solid var(--rpt-rule);vertical-align:top';
     phaseSplitRow =
       '<tr>' +
       tierCols
@@ -14668,7 +14683,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           // $0) whenever no pricing catalog is imported, so _fmtUSD(0) must never print here.
           var noCat = tt && tt[c.key] && tt[c.key].noCatalog;
           var p1 = noCat
-            ? '<span style="color:#666;font-weight:400">CSV needed</span>'
+            ? '<span style="color:#000;font-weight:400">CSV needed</span>'
             : tt && tt[c.key]
               ? _fmtUSD(tt[c.key].phase1) || '—'
               : '—';
@@ -14746,7 +14761,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var detailRow = '';
   if (summaryData && summaryData.perTier && detailFitsInline) {
-    var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-rule);border-top:none;vertical-align:top';
+    var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-rule);vertical-align:top';
     detailRow =
       '<tr>' +
       tierCols
@@ -14764,7 +14779,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       '</tr>';
   } else if (summaryData && summaryData.perTier && !detailFitsInline) {
     var detailNoteStyle =
-      'padding:10px;font-size:9px;color:#000;font-style:italic;border:1px solid var(--rpt-rule);border-top:none;text-align:center';
+      'padding:10px;font-size:9px;color:#000;font-style:italic;border:1px solid var(--rpt-rule);text-align:center';
     detailRow =
       '<tr><td colspan="3" style="' +
       detailNoteStyle +
@@ -14772,7 +14787,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   }
 
   var table =
-    '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:16px">' +
+    '<table style="width:684px;max-width:684px;border-collapse:collapse;table-layout:fixed;margin-bottom:12px">' +
     colgroup +
     '<thead>' +
     headRow +
@@ -14814,9 +14829,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         var _svcAllowanceStr = _fmtUSD(Number(_svcBudget.amount));
         var _svcRate =
           _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 125);
+        // Design-language pass (report-export-fixes, 2026-07-22): dropped the full bordered-
+        // rectangle treatment (reads as a box/card, banned in client reports) — uses the same
+        // .rpt-a36-callout "just spacing, no border" convention as every other explanatory
+        // text block on this and the Audit Report's pages.
         svcBlock =
-          '<div style="font-size:10px;color:#000;line-height:1.6;margin-top:12px;padding:10px 12px;' +
-          'border:1px solid var(--rpt-rule)">' +
+          '<div class="rpt-a36-callout" style="font-size:10px;color:#000;line-height:1.6;margin-top:12px">' +
           '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
           'margin-bottom:4px">Monthly Energy Management Service Agreement</div>' +
           '<div>' +
@@ -14897,7 +14915,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
         'padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
-        'color:#fff;background:var(--rpt-blue);text-align:left';
+        'color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)';
       var itThRight = itThStyle.replace('text-align:left', 'text-align:right');
       var itTableHead =
         '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
@@ -14915,14 +14933,14 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         '</tr></thead>';
 
       function _itemRowHTML(row) {
-        var td = 'padding:5px 8px;font-size:9px;color:#000;border-bottom:1px solid var(--rpt-rule);vertical-align:top';
+        var td = 'padding:5px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-border);vertical-align:top';
         var tdR = td + ';text-align:right';
         var nameHTML =
           '<div>' +
           _esc(row.item || '') +
           '</div>' +
           (row.clientSummary
-            ? '<div style="font-size:8px;color:#333;margin-top:2px;line-height:1.4">' +
+            ? '<div style="font-size:8px;color:var(--rpt-page-text);margin-top:2px;line-height:1.4">' +
               _esc(row.clientSummary) +
               '</div>'
             : '');
@@ -15028,8 +15046,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     }
 
     function sectionTitleHTML(title, subtotalStr, noCatFlag) {
+      // Grey (#666) removed here too (report-standard rule: grey text is banned) — matches the
+      // same fix already applied to _rptA36TierDetailPanelHTML's _sectionHTML above.
       var subtotalHTML = noCatFlag
-        ? ' <span style="font-weight:400;color:#666">(CSV needed for pricing)</span>'
+        ? ' <span style="font-weight:400;color:#000">(CSV needed for pricing)</span>'
         : subtotalStr
           ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
           : '';
@@ -15129,42 +15149,49 @@ function rptPageASHRAE36PointInventory(n, d) {
   // ── Summary header block ──────────────────────────────────────────────────
   var totalPct = inv.totalAll > 0 ? Math.round((inv.totalASHRAE / inv.totalAll) * 100) : 0;
 
+  // Design-language pass (report-export-fixes, 2026-07-22): these were filled
+  // background:var(--rpt-rule)/border-radius:6px stat "cards" — the same box/tile styling
+  // banned everywhere else in this report (rule 4.3, no colored fill boxes). Rebuilt using the
+  // SAME border-only, transparent-fill `.rpt-a36-stat-card` class the Audit Report cover page
+  // already uses for its own stat row (rptPageASHRAE36Cover, ~line 12110), so this page matches
+  // the report's one established stat-display convention instead of inventing a second one.
+  // Density: gap 24->14, margin-bottom 20->12, card padding 14px 16px->8px 10px.
   var summaryBlock =
-    '<div style="display:flex;gap:24px;margin-bottom:20px;flex-wrap:wrap">' +
+    '<div style="display:flex;gap:14px;margin-bottom:12px;flex-wrap:wrap">' +
     // Card 1: Total points inventoried
-    '<div style="flex:1;min-width:120px;background:var(--rpt-rule);border-radius:6px;padding:14px 16px;text-align:center">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-page-text)">' +
+    '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-page-text)">' +
     inv.totalAll.toLocaleString() +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:4px">Total BAS Points Inventoried</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Total BAS Points Inventoried</div>' +
     '</div>' +
     // Card 2: ASHRAE-mapped points
-    '<div style="flex:1;min-width:120px;background:var(--rpt-rule);border-radius:6px;padding:14px 16px;text-align:center">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue)">' +
+    '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
     inv.totalASHRAE.toLocaleString() +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:4px">ASHRAE 36 Mapped Points</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">ASHRAE 36 Mapped Points</div>' +
     '</div>' +
     // Card 3: Other BAS points
-    '<div style="flex:1;min-width:120px;background:var(--rpt-rule);border-radius:6px;padding:14px 16px;text-align:center">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-page-text)">' +
+    '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-page-text)">' +
     inv.totalOther.toLocaleString() +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:4px">Other BAS Points Inventoried</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Other BAS Points Inventoried</div>' +
     '</div>' +
     // Card 4: ASHRAE coverage of total inventory
-    '<div style="flex:1;min-width:120px;background:var(--rpt-rule);border-radius:6px;padding:14px 16px;text-align:center">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue)">' +
+    '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
     totalPct +
     '%' +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:4px">Points Mapped to ASHRAE 36</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Points Mapped to ASHRAE 36</div>' +
     '</div>' +
     '</div>';
 
   // ── Narrative ─────────────────────────────────────────────────────────────
   var narrative =
-    '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:16px">' +
+    '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
     'This inventory covers every BAS data object exported from the building automation system for this project. ' +
     'Of the ' +
     inv.totalAll.toLocaleString() +
@@ -15181,11 +15208,11 @@ function rptPageASHRAE36PointInventory(n, d) {
   // ── Per-building table ────────────────────────────────────────────────────
   var thBase =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)';
   var thRight = thBase + ';text-align:right';
 
   var tableHead =
-    '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:16px;table-layout:fixed">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px;table-layout:fixed">' +
     '<thead><tr>' +
     '<th style="' +
     thBase +
@@ -15209,19 +15236,19 @@ function rptPageASHRAE36PointInventory(n, d) {
     var bPct = bTotal > 0 ? Math.round((b.ashrae / bTotal) * 100) : 0;
     return (
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       b.name +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
       bTotal.toLocaleString() +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border:1px solid var(--rpt-border);text-align:right">' +
       b.ashrae.toLocaleString() +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
       b.other.toLocaleString() +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border-bottom:1px solid var(--rpt-rule);text-align:right">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border:1px solid var(--rpt-border);text-align:right">' +
       bPct +
       '%' +
       '</td>' +
@@ -15231,19 +15258,22 @@ function rptPageASHRAE36PointInventory(n, d) {
 
   // Totals row — pushed as the final token so it stays attached to the last building row
   // whenever possible (see pagination note below).
+  // Full 1px grid border on every cell (matches every data row above it, per the full-grid
+  // table standard) plus a 2px top accent — the same canonical totals-row treatment used by
+  // rptPageASHRAE36Building's summaryRowHtml/.rpt-table tr.rpt-tot elsewhere in this file.
   var totalsRowHTML =
     '<tr style="background:var(--rpt-rule)">' +
-    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text)">Total</td>' +
-    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:right">' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-border)">Total</td>' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:right;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-border)">' +
     inv.totalAll.toLocaleString() +
     '</td>' +
-    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-blue);text-align:right">' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-blue);text-align:right;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-border)">' +
     inv.totalASHRAE.toLocaleString() +
     '</td>' +
-    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:right">' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:right;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-border)">' +
     inv.totalOther.toLocaleString() +
     '</td>' +
-    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-blue);text-align:right">' +
+    '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-blue);text-align:right;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-border)">' +
     totalPct +
     '%' +
     '</td>' +
