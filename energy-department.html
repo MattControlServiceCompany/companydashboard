@@ -2860,6 +2860,109 @@
       }
     </style>
 
+    <!--
+      REPORT PRINT-TO-PDF STYLESHEET (2026-07-22, fix/report-not-copyable)
+      Matt: "The PDF is still not copyable like I would like." exportReportToPDF() used to
+      rasterize each .rpt-page into a JPEG via html2canvas then place those images in a jsPDF
+      doc — zero real text, nothing selectable/searchable. Replaced with the browser's native
+      print-to-PDF path (window.print() scoped to #reportOverlay via the rules below, see
+      exportReportToPDF() in app/report-engine.js). Chrome's "Save as PDF" print destination
+      produces a genuinely text-based PDF straight from the live DOM/SVG — every heading,
+      table cell, and paragraph is a real selectable/copyable/searchable text object, and the
+      inline-SVG bar charts (buildBarChart() etc. in report-engine.js — no <canvas> elements
+      anywhere in report pages, confirmed in the exportReportToWord() doc comment above) come
+      out as real vector paths instead of a bitmap.
+      .rpt-page is already authored at exactly 816x1056px — 8.5in x 11in at the CSS-spec-fixed
+      96px/inch ratio — so it maps onto a Letter @page with zero rescaling needed; this
+      stylesheet only needs to (a) hide everything in the app except the open report overlay,
+      (b) strip the dark overlay/toolbar chrome the live preview uses, and (c) turn each
+      .rpt-page into its own physical printed page via break-after, reusing the *same* page
+      markup/CSS the on-screen preview and the old raster export both used — no template
+      rewrite. This covers every report type #reportPages renders (Audit Report, Service
+      Proposal, quarterly/annual Savings Report) since they all share the same .rpt-page/
+      .rpt-pl/.report-pages markup produced by rptPage() in app/report-engine.js.
+    -->
+    <style>
+      @media print {
+        /* html/body are height:100%/overflow:hidden by default (clips every page to one
+           viewport height — needed for the app's own internal-scroll UI shell). That same
+           clipping silently truncated the printed report to whatever fit in one screen's
+           worth of height (confirmed empirically: without this override, a 27-page report
+           printed as a single, mostly-blank PDF page). Print needs normal document flow so
+           the browser's own paginator can carry overflowing content onto additional pages. */
+        html,
+        body {
+          height: auto !important;
+          overflow: visible !important;
+        }
+        /* Force background colors (table header bands, KPI card fills, etc.) to print
+           regardless of whether the user has ticked "Background graphics" in their browser's
+           print dialog — without this, the report's color scheme (rpt-table-th-bg, etc.)
+           would silently disappear from the PDF even though the layout/text is unaffected. */
+        #reportOverlay,
+        #reportOverlay * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        /* Hide the entire app shell — only the open report overlay should ever print. */
+        body > *:not(#reportOverlay) {
+          display: none !important;
+        }
+        #reportOverlay {
+          position: static !important;
+          inset: auto !important;
+          display: block !important;
+          background: #fff !important;
+          z-index: auto !important;
+        }
+        /* Dark-UI toolbar (Close/Save/Export buttons) and the on-screen "PAGE X OF Y" labels
+           above each page are preview-only chrome — never part of the printed report design. */
+        .report-toolbar,
+        .rpt-pl {
+          display: none !important;
+        }
+        .report-pages {
+          display: block !important;
+          overflow: visible !important;
+          padding: 0 !important;
+          gap: 0 !important;
+        }
+        @page {
+          size: 8.5in 11in;
+          margin: 0;
+        }
+        .rpt-page {
+          margin: 0 !important;
+          box-shadow: none !important;
+          break-after: page;
+          page-break-after: always;
+        }
+        .rpt-page:last-child {
+          break-after: auto;
+          page-break-after: auto;
+        }
+        /* Keep table rows/headers intact across a page boundary on the rare page whose
+           content overflows the 1056px design height (see rptPage() row-budget comments in
+           app/report-engine.js) — the normal case is every table already fits on one
+           .rpt-page, this is a safety net, not the primary pagination mechanism. */
+        .rpt-table {
+          break-inside: auto;
+        }
+        .rpt-table thead {
+          display: table-header-group;
+        }
+        .rpt-table tr {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        .rpt-body h2,
+        .rpt-body h3 {
+          break-after: avoid;
+          page-break-after: avoid;
+        }
+      }
+    </style>
+
     <style>
       html,
       body {

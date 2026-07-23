@@ -6906,6 +6906,34 @@ function deleteReport(entryId) {
   showToast('Report deleted');
 }
 
+/**
+ * exportReportToPDF — 2026-07-22 rewrite (fix/report-not-copyable). Matt: "The PDF is still
+ * not copyable like I would like."
+ *
+ * OLD BEHAVIOR: rasterized each `#reportPages .rpt-page` into a JPEG via html2canvas, then
+ * placed those images into a jsPDF document. The resulting PDF contained zero real text —
+ * every character was baked into a bitmap, so nothing was selectable, copyable, or
+ * searchable, regardless of how good it looked.
+ *
+ * NEW BEHAVIOR: uses the browser's own native print-to-PDF path (window.print(), same
+ * mechanism as the "🖨 Print" button on the BAS scorecard — see app/scorecard.js). The
+ * `@media print` rules added alongside `#report-styles` in energy-department.html scope
+ * printing to just the open report overlay, strip the dark preview chrome, and turn each
+ * `.rpt-page` into its own physical page via `break-after: page`. Choosing "Save as PDF" as
+ * the destination in the print dialog produces a genuinely text-based PDF straight from the
+ * live DOM — every heading/paragraph/table cell is real selectable/searchable text, and the
+ * inline-SVG bar charts render as real vector paths instead of a raster image. This covers
+ * every report type `#reportPages` renders (Audit Report, Service Proposal, quarterly/annual
+ * Savings Report) since they all share the same `.rpt-page` markup.
+ *
+ * TRADEOFF (accepted per task spec): the user now sees the browser's print dialog and must
+ * choose "Save as PDF" instead of getting an instant silent download. This is a completely
+ * standard, universally-understood flow, so the button keeps its existing "Export to PDF"
+ * label — the outcome (a PDF of this report) is unchanged, only the interaction is.
+ *
+ * `document.title` is temporarily set to the same filename the old jsPDF path used (minus
+ * extension) so Chrome's "Save as PDF" dialog suggests the same filename by default.
+ */
 async function exportReportToPDF() {
   const data = window._currentReportData;
   if (!data) {
@@ -6919,22 +6947,10 @@ async function exportReportToPDF() {
     return;
   }
 
-  // Show loading state on button
-  const toolbar = document.querySelector('.report-toolbar');
-  const exportBtn = toolbar ? toolbar.querySelector('[onclick*="exportReportToPDF"]') : null;
-  const originalBtnText = exportBtn ? exportBtn.textContent : '';
-  if (exportBtn) {
-    exportBtn.disabled = true;
-    exportBtn.textContent = '? Generating...';
-  }
-
-  showToast('Generating PDF... this may take a moment');
-
-  // Force ALL proposal-tier "Install & Programming Detail" panels open before capture
-  // (fix/proposal-tier-option-chooser, 2026-07-19). The exported PDF is a flat html2canvas
-  // raster per page — no click-to-expand interactivity survives export — so whichever tier(s)
-  // the user had collapsed in the live preview must still render fully expanded in the PDF.
-  // State is restored in `finally` so the interactive preview is unaffected by having exported.
+  // Force ALL proposal-tier "Install & Programming Detail" panels open before printing
+  // (fix/proposal-tier-option-chooser, 2026-07-19). Nothing in the printed output is
+  // interactive — so whichever tier(s) the user had collapsed in the live preview must still
+  // render fully expanded. State is restored below so the interactive preview is unaffected.
   const tierDetailPanels = document.querySelectorAll('#reportPages [id^="rpt-tier-detail-"]');
   const tierDetailPriorDisplay = [];
   tierDetailPanels.forEach((panel) => {
@@ -6942,122 +6958,45 @@ async function exportReportToPDF() {
     panel.style.display = 'block';
   });
 
-  try {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true });
-    const pageW = 612,
-      pageH = 792; // Letter size in points
+  // Same filename convention the old jsPDF path used, minus the extension — used only to
+  // seed the browser's "Save as PDF" filename suggestion via document.title.
+  const client = data.project.client || data.project.name || 'Report';
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+  let filename;
+  if (data._ashrae) {
+    filename =
+      data._ashrae.type === 'proposal'
+        ? client + ' - Service Proposal ' + dateStr
+        : client + ' - ASHRAE 36 Audit Report ' + dateStr;
+  } else {
+    const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
+    filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr;
+  }
+  const originalTitle = document.title;
+  document.title = filename;
 
-    const margin = { top: 36, bottom: 36, left: 36, right: 36 }; // 36pt = 0.5in (unit: pt per jsPDF config)
-    const contentW = pageW - margin.left - margin.right;
-    const contentH = pageH - margin.top - margin.bottom;
-
-    // Track whether we've started the PDF (first page is pre-created by jsPDF constructor).
-    let pdfStarted = false;
-
-    for (let i = 0; i < pages.length; i++) {
-      const pageEl = pages[i];
-
-      try {
-        // Fix A (2026-06-18, items 9f80ea0f/346e8add): one-HTML-page → one-PDF-page.
-        // Each .rpt-page is captured at exactly 1056px (the design target height) and
-        // placed as a single image on one PDF page.  The old canvas-slice loop is gone;
-        // it was slicing through rows whenever a page's canvas exceeded the slice height.
-        //
-        // Fix A2 (2026-06-23, item 9f80ea0f): capture actual scrollHeight instead of
-        // hardcoded 1056px so overflow pages are never silently clipped.
-        // .rpt-page uses min-height:1056px + overflow:visible — content that extends past
-        // 1056px is fully visible in the preview but was clipped in the PDF.
-        // Solution: capture Math.max(1056, scrollHeight) and let imageH_pt scale it to
-        // fit the PDF content width at the same aspect ratio.  Normal pages (<=1056px)
-        // render identically to before.  Overflow pages are scaled to fit — no clipping.
-        const captureH = Math.max(1056, pageEl.scrollHeight);
-        if (captureH > 1056) {
-          console.info(
-            'rpt-page',
-            i + 1,
-            'scrollHeight',
-            pageEl.scrollHeight,
-            '> 1056 — capturing full height',
-            captureH,
-          );
-        }
-
-        const canvas = await html2canvas(pageEl, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          width: 816,
-          height: captureH,
-        });
-
-        // One image per PDF page.  For a normal page: canvas = 1632 × 2112 px (at scale=2),
-        // imageH_pt = (2112 / 1632) * 540 = 698.8 pt — fits within 720 pt content height.
-        // For an overflow page: canvas is taller; imageH_pt scales proportionally beyond
-        // 720 pt so all content is preserved (slight overflow of PDF content area is
-        // acceptable — no data loss, paginator keeps pages within 1050-1100px in practice).
-        const imgData = canvas.toDataURL('image/jpeg', 0.92);
-        const imageH_pt = (canvas.height / canvas.width) * contentW;
-
-        if (pdfStarted) {
-          doc.addPage();
-        } else {
-          pdfStarted = true;
-        }
-
-        doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, imageH_pt);
-
-        // Dispose full canvas to release GPU memory between pages (prevents OOM on 70+ page exports)
-        canvas.width = 0;
-        canvas.height = 0;
-        await new Promise(function (r) {
-          setTimeout(r, 0);
-        }); // yield one tick for GC/GPU reclaim
-      } catch (e) {
-        console.error('Failed to render page ' + (i + 1), e);
-        if (pdfStarted) {
-          doc.addPage();
-        } else {
-          pdfStarted = true;
-        }
-        doc.setFontSize(12);
-        doc.text('Page ' + (i + 1) + ' failed to render', margin.left, margin.top + 20);
-      }
-    }
-
-    // Generate filename
-    const client = data.project.client || data.project.name || 'Report';
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
-    let filename;
-    if (data._ashrae) {
-      // ASHRAE 36 reports: use report type to produce distinct, collision-free names
-      if (data._ashrae.type === 'proposal') {
-        filename = client + ' - Service Proposal ' + dateStr + '.pdf';
-      } else {
-        filename = client + ' - ASHRAE 36 Audit Report ' + dateStr + '.pdf';
-      }
-    } else {
-      const period = (data.period && data.period.label) || '';
-      const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.pdf';
-    }
-
-    doc.save(filename);
-    showToast('Report exported to PDF ?');
-  } catch (err) {
-    console.error('PDF export failed:', err);
-    showToast('PDF export failed: ' + (err.message || 'Unknown error'), 'error');
-  } finally {
-    // Restore tier-detail panels to their pre-export (interactive) collapsed/expanded state.
+  let restored = false;
+  const restore = () => {
+    if (restored) return;
+    restored = true;
     tierDetailPanels.forEach((panel, i) => {
       panel.style.display = tierDetailPriorDisplay[i];
     });
-    // Restore button state
-    if (exportBtn) {
-      exportBtn.disabled = false;
-      exportBtn.textContent = originalBtnText || '📄 Export to PDF';
-    }
+    document.title = originalTitle;
+    window.removeEventListener('afterprint', restore);
+  };
+
+  // afterprint covers browsers/OSes where window.print() returns before the dialog closes;
+  // the direct call below covers the common desktop case where it blocks until dismissed.
+  // `restored` guards against double-restore when both fire.
+  window.addEventListener('afterprint', restore);
+
+  showToast('Opening print dialog — choose "Save as PDF" to export this report');
+
+  try {
+    window.print();
+  } finally {
+    restore();
   }
 }
 
