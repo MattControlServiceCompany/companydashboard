@@ -976,9 +976,16 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // date-parsing block in place rather than deleting it, to keep this diff scoped to the
   // footer only; safe to remove in a future cleanup pass if nothing else claims it.
   const footerTextHtml = '';
+  // class="rpt-footer-label" added (2026-07-22, Word export fix) alongside the existing inline
+  // position:absolute style — inert everywhere today (no stylesheet rule targets it yet), but
+  // gives exportReportToWord()'s Word-only CSS override a selector to force this element back
+  // into normal document flow with !important (inline style otherwise always wins over an
+  // external rule of equal/lower specificity). See exportReportToWord() for why: Word's HTML
+  // engine does not support position:absolute the way browsers do, so this footer label was
+  // rendering at the wrong spot / overlapping body content in the Word export.
   const footerLabelHtml =
     data && data.period
-      ? '<div style="text-align:center;font-size:10px;color:var(--rpt-page-text);padding:4px 0 2px;position:absolute;bottom:' +
+      ? '<div class="rpt-footer-label" style="text-align:center;font-size:10px;color:var(--rpt-page-text);padding:4px 0 2px;position:absolute;bottom:' +
         '45px' +
         ';left:0;right:0">' +
         (data.period.type === 'quarterly'
@@ -7185,7 +7192,27 @@ async function exportReportToWord() {
     // Resolve var(--rpt-*) references embedded in inline style="" attributes throughout
     // the page markup (see _buildReportCssVarResolver doc comment above) — not just the
     // stylesheet text.
-    const bodyHtml = resolveVars(rawBodyHtml);
+    let bodyHtml = resolveVars(rawBodyHtml);
+
+    // Word image-sizing fix (2026-07-22, measured via PyMuPDF image-bbox extraction on Word's
+    // own SaveAs-PDF output): NEITHER the CSS `width:100%` the live/PDF path uses NOR an
+    // `!important` fixed-px override in wordOnlyCss's stylesheet (see below) changed Word's
+    // rendered image size at all — Word's HTML-import path sizes these two report images from
+    // something other than CSS (most likely the embedded JPEG's own DPI metadata), so they were
+    // rendered at native intrinsic pixel size (918x218 / 1699x224) regardless, overflowing the
+    // page. The one technique Word's HTML-import reliably honors is classic HTML width/height
+    // ATTRIBUTES (not CSS) on <img> — this regex adds them. bodyHtml here is markup generated
+    // entirely by this file's own rptPage()/footerImgHtml template strings (never user input),
+    // so a narrow, literal substitution is safe. 816px = this report's exact page width;
+    // heights are each image's own native aspect ratio scaled to that width.
+    bodyHtml = bodyHtml.replace(
+      /<img src="([^"]*)" alt="CSC Letterhead" class="csc-header-img"[^>]*>/g,
+      '<img src="$1" alt="CSC Letterhead" class="csc-header-img" width="816" height="194">',
+    );
+    bodyHtml = bodyHtml.replace(
+      /<img src="([^"]*)" alt="CSC Footer">/g,
+      '<img src="$1" alt="CSC Footer" width="816" height="108">',
+    );
 
     const client = data.project.client || data.project.name || 'Report';
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
@@ -7200,6 +7227,54 @@ async function exportReportToWord() {
       filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.doc';
     }
 
+    // Word-only page setup + chrome overrides (2026-07-22 fix, Matt: "the word files footer
+    // and headers and other formatting did not translate correctly... text is running off all
+    // of the pages at the bottom").
+    //
+    // ROOT CAUSE 1 (header/footer + overall layout "completely different" from the PDF):
+    // .rpt-page is designed at 816x1056px (8.5in x 11in at 96dpi — an exact match for a Letter
+    // page with ZERO margins). Word's HTML-open path, left unconfigured, defaults to a normal
+    // 1in-margin Letter page (only 624px/6.5in of usable width) — every 816px-wide element
+    // (the CSC letterhead image, tables, etc.) therefore ran off the right edge of Word's
+    // actual printable area, which is also why the Word doc reflowed so differently from the
+    // 816px-wide PDF render. `@page Section1` below (the standard WordprocessingML HTML
+    // page-setup directive — see the mso-application namespace comment on _buildReportCssVarResolver
+    // above) sets Word's own page size/margins to match the report's design pixel-for-pixel, so
+    // the 816px page content now fits Word's printable area exactly with no shrink/overflow.
+    //
+    // ROOT CAUSE 2 (footer/header not rendering correctly in Word): .rpt-footer,
+    // .rpt-footer-text, .rpt-pg-footer-pagenum, and .rpt-footer-label (see rptPage() above) are
+    // all position:absolute, pinned to the bottom of the live/PDF page via a positioned
+    // ancestor. Word's HTML engine does not support CSS position:absolute the way browsers do
+    // (it is silently dropped or mis-anchored), which is why the footer graphic/page-number/
+    // period-label were overlapping body content instead of sitting at the bottom of each page.
+    // Word documents paginate on their own (there is no "bottom of THIS page" concept for an
+    // absolutely-positioned element spanning what Word may render as several physical pages
+    // once real content reflows at Word's narrower/no-longer-816px-assumed metrics), so the
+    // fix for Word specifically is to let this chrome render in NORMAL FLOW at the end of each
+    // page's content instead — an accepted fidelity tradeoff already documented above
+    // (Word is not pixel-identical to the PDF raster); PDF/live-preview are UNCHANGED since this
+    // override lives only in this function's own injected <style>, never in #report-styles.
+    // ROOT CAUSE 3 (letterhead/footer graphic running off the right edge — measured via
+    // PyMuPDF image bbox extraction on Word's own SaveAs-PDF output, 2026-07-22): Word's HTML
+    // engine does not scale <img width:100%> to its containing block the way browsers do — it
+    // renders the CSC_HEADER_B64 / CSC_FOOTER_B64 images at their NATIVE INTRINSIC pixel size
+    // (918px and 1699px respectively, converted 1px:0.75pt) regardless of the percentage width,
+    // which is what actually pushed content off the right edge of the page (confirmed: rendered
+    // image bbox widths of 688.5pt / 1274.25pt against a 612pt-wide page — exactly
+    // 918px/1699px x 0.75, i.e. width:100% was silently ignored). Word DOES reliably honor an
+    // explicit PIXEL width on <img>, so the two report images get a fixed-px override here
+    // (816px = this report's exact page width) instead of the percentage width the live
+    // preview/PDF path keeps unchanged.
+    const wordOnlyCss =
+      '@page Section1 {size:8.5in 11in; margin:0in 0in 0in 0in; mso-header-margin:0in; ' +
+      'mso-footer-margin:0in; mso-paper-source:0;} ' +
+      'div.Section1 {page:Section1;} ' +
+      '.rpt-footer, .rpt-footer-text, .rpt-pg-footer-pagenum, .rpt-footer-label {' +
+      'position:static !important; bottom:auto !important; left:auto !important; ' +
+      'right:auto !important; top:auto !important; margin-top:6px;} ' +
+      '.csc-header-img, .rpt-footer img {width:816px !important; max-width:816px !important; height:auto !important;}';
+
     const wordDocHtml =
       '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
       'xmlns:w="urn:schemas-microsoft-com:office:word" ' +
@@ -7209,12 +7284,16 @@ async function exportReportToWord() {
       '<w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->' +
       '<style>' +
       css +
-      ' body{background:#fff;margin:0;} .rpt-page-word-wrap{width:100%;}</style>' +
+      ' body{background:#fff;margin:0;} .rpt-page-word-wrap{width:100%;} ' +
+      wordOnlyCss +
+      '</style>' +
       '<title>' +
       client +
       ' Report</title></head>' +
       '<body>' +
+      '<div class="Section1">' +
       bodyHtml +
+      '</div>' +
       '</body></html>';
 
     const blob = new Blob(['﻿', wordDocHtml], { type: 'application/msword' });
@@ -14679,8 +14758,55 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // _pricingComputeSummaryData threw above, summaryData is null and this row is omitted rather
   // than showing an empty/broken card. See _rptA36TierDetailPanelHTML /
   // _rptA36TierDetailToggleHTML / _rptToggleTierDetail above.
-  var detailRow = '';
+  //
+  // OVERFLOW FIX (2026-07-22, Matt: "the text is running off all of the pages at the bottom" —
+  // report-export-fixes task): this page previously rendered the detail panel INLINE in the
+  // single-page 3-column table unconditionally, on the documented assumption ("3 tiers x 1
+  // total cannot overflow one 8.5x11 sheet" — see this function's header comment) that predates
+  // the 2026-07-19 click-to-expand panel and the 2026-07-22 itemized qty x unit price additions.
+  // exportReportToPDF()/exportReportToWord() force EVERY tier's panel open (display:block)
+  // before capture — for a large portfolio (e.g. JOCO's Full Scope tier: 80+ distinct
+  // hardware/programming items) that blew the page's real height to several times 1056px.
+  // .rpt-page itself never clips (min-height + overflow:visible), but exportReportToPDF()'s
+  // html2canvas->jsPDF step draws one image per PDF page sized to the page's full scrollHeight
+  // WITHOUT clamping that image's height to the physical page height — so once a page's real
+  // content exceeds roughly one printable page's worth of height, the excess is hard-clipped at
+  // the PDF page's physical bottom edge and lost. Fix: measure the worst-case tier's combined
+  // Hardware+Programming bullet count BEFORE building the table; if it's small enough to safely
+  // fit inline (the common case — unchanged behavior, same interactive toggle UX Matt asked for
+  // 2026-07-19), keep the existing single-page 3-column row. Otherwise, replace the inline panel
+  // with a one-line pointer and move ALL THREE tiers' full detail onto dedicated, auto-paginated
+  // continuation pages built by _buildTierDetailPages() below (same _rptPaginateTokens
+  // height-budget chunking this file's _buildItemizedPages() already uses successfully) — so the
+  // .rpt-page count grows instead of any single page's content overflowing its own boundary.
+  // 24 (raised from an initial conservative 16, 2026-07-22): empirically, the chrome ABOVE the
+  // detail row (title/intro/tier table/phaseSplit/timeline/disclaimer/service-agreement block —
+  // see the "after3" verification screenshot for a fully-loaded example) comfortably fits in the
+  // TOP HALF of the 1056px page even with every optional block shown, leaving ~450-500px of
+  // headroom; at ~14px/bullet + ~80px panel chrome, 24 combined items uses ~416px — safely
+  // within that headroom, and far below the ~1197px scrollHeight where exportReportToPDF's
+  // per-page image would actually start clipping against the physical PDF page edge (see the
+  // comment above the detailRow/detailNoteRow branch below for that derivation). Small/medium
+  // real portfolios (a handful of buildings) stay on the original interactive inline path;
+  // large multi-building portfolios (JOCO's Full Scope tier: 80+ items) still correctly move to
+  // _buildTierDetailPages() continuation pages.
+  var DETAIL_INLINE_ROW_LIMIT = 24; // combined Hardware+Programming bullet count considered safe inline
+  var detailFitsInline = true;
   if (summaryData && summaryData.perTier) {
+    var _toggles0 = (estimateState && estimateState.rowToggles) || {};
+    var _maxTierRows = 0;
+    tierCols.forEach(function (c) {
+      var _rows = summaryData.perTier[c.key] || [];
+      var _n =
+        _rptA36TierDetailAggByPhase(_rows, 1, _toggles0).length +
+        _rptA36TierDetailAggByPhase(_rows, 2, _toggles0).length;
+      if (_n > _maxTierRows) _maxTierRows = _n;
+    });
+    detailFitsInline = _maxTierRows <= DETAIL_INLINE_ROW_LIMIT;
+  }
+
+  var detailRow = '';
+  if (summaryData && summaryData.perTier && detailFitsInline) {
     var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-rule);border-top:none;vertical-align:top';
     detailRow =
       '<tr>' +
@@ -14697,6 +14823,13 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         })
         .join('') +
       '</tr>';
+  } else if (summaryData && summaryData.perTier && !detailFitsInline) {
+    var detailNoteStyle =
+      'padding:10px;font-size:9px;color:#000;font-style:italic;border:1px solid var(--rpt-rule);border-top:none;text-align:center';
+    detailRow =
+      '<tr><td colspan="3" style="' +
+      detailNoteStyle +
+      '">Full Install &amp; Programming Detail for each scope is provided on the following pages.</td></tr>';
   }
 
   var table =
@@ -14915,6 +15048,119 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     });
 
     return pages;
+  }
+
+  // ── Overflow fix continuation pages (2026-07-22) ── _buildTierDetailPages() ──────────────────
+  // Built only when detailFitsInline (computed above, before the table) is false — i.e. the
+  // portfolio is large enough that forcing all 3 tiers' Install & Programming Detail panels open
+  // (as export always does) would overflow a single page. Mirrors _buildItemizedPages()'s proven
+  // _rptPaginateTokens chunking pattern above, but for the "high-level" Hardware+Programming
+  // bullet content _rptA36TierDetailPanelHTML() renders inline for small portfolios — same data
+  // (_rptA36TierDetailAggByPhase), just laid out full-width across as many pages as needed
+  // instead of squeezed into one 3-column table row. wantItemized still controls whether each
+  // bullet shows its priced qty x unit price = total breakdown (same rule the inline panel uses).
+  function _buildTierDetailPages(startN) {
+    if (!summaryData || !summaryData.perTier) return [];
+    var toggles = (estimateState && estimateState.rowToggles) || {};
+    var pages = [];
+    var pageN = startN;
+
+    function bulletHTML(it) {
+      var priceStr = '';
+      if (wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
+        priceStr =
+          it.qty > 1 && it.unitPrice != null && _fmtUSD(it.unitPrice)
+            ? ' — ' + it.qty + ' × ' + _fmtUSD(it.unitPrice) + ' = ' + _fmtUSD(it.lineTotal)
+            : ' — ' + _fmtUSD(it.lineTotal);
+      } else if (it.qty > 1) {
+        priceStr = ' (qty ' + it.qty + ')';
+      }
+      // Self-contained fragment (no wrapping <ul>/<table> required) so _rptPaginateTokens can
+      // split the token stream at any row boundary without ever leaving an unclosed tag —
+      // same "each token is one complete, independently valid HTML fragment" rule
+      // _buildItemizedPages() above follows with its <tr>...</tr> rows.
+      return (
+        '<div style="font-size:9px;color:#000;line-height:1.7;padding-left:14px;position:relative">' +
+        '<span style="position:absolute;left:0">&#8226;</span>' +
+        _esc(it.item || '') +
+        priceStr +
+        '</div>'
+      );
+    }
+
+    function sectionTitleHTML(title, subtotalStr, noCatFlag) {
+      var subtotalHTML = noCatFlag
+        ? ' <span style="font-weight:400;color:#666">(CSV needed for pricing)</span>'
+        : subtotalStr
+          ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
+          : '';
+      return (
+        '<div style="font-size:10px;font-weight:700;color:#000;margin:10px 0 3px">' +
+        _esc(title) +
+        subtotalHTML +
+        '</div>'
+      );
+    }
+
+    tierCols.forEach(function (c) {
+      var rows = summaryData.perTier[c.key] || [];
+      var hw = _rptA36TierDetailAggByPhase(rows, 1, toggles);
+      var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
+      if (!hw.length && !lb.length) return;
+
+      var tt_ = tt && tt[c.key] ? tt[c.key] : null;
+      var noCat = !!(tt_ && tt_.noCatalog);
+      var p1 = tt_ ? _fmtUSD(tt_.phase1) : null;
+      var p2 = tt_ ? _fmtUSD(tt_.phase2) : null;
+
+      var tokens = [];
+      if (hw.length) {
+        tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Hardware & Installation', p1, noCat) });
+        hw.forEach(function (it) {
+          tokens.push({ type: 'row', estH: 15, html: bulletHTML(it) });
+        });
+      }
+      if (lb.length) {
+        tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Programming & Commissioning', p2, false) });
+        lb.forEach(function (it) {
+          tokens.push({ type: 'row', estH: 15, html: bulletHTML(it) });
+        });
+      }
+
+      var chunks = _rptPaginateTokens(tokens, 900, 900);
+      var numChunks = chunks.length;
+
+      chunks.forEach(function (chunk, idx) {
+        var rowsHTML = chunk
+          .map(function (t) {
+            return t.html;
+          })
+          .join('');
+        var pageTitle =
+          '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+          'text-transform:uppercase;letter-spacing:0.04em">Install &amp; Programming Detail — ' +
+          _esc(c.label) +
+          (idx > 0 ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')' : '') +
+          '</div>';
+        pages.push(
+          rptPage(pageN, 'ASHRAE 36 Service Proposal — Cost Estimate', pageTitle + rowsHTML, {
+            data: fakeData,
+            label: 'Page ' + pageN + ' — Install & Programming Detail (' + c.label + ')',
+          }),
+        );
+        pageN++;
+      });
+    });
+
+    return pages;
+  }
+
+  if (!detailFitsInline) {
+    var tierDetailPages = _buildTierDetailPages(nextPageNum);
+    tierDetailPages.forEach(function (pg) {
+      resultPages.push(pg);
+      nextPageNum++;
+    });
   }
 
   if (wantItemized) {
