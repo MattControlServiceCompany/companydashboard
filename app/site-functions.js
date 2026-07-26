@@ -587,6 +587,297 @@ function _pdfBackupGetAll() {
     });
   });
 }
+
+/* ── Batched/chunked PDF export (backlog 729d274b) ───────────────────────
+ * SEPARATE and OPTIONAL from siteBackup()'s data-only export below — never
+ * runs on the same code path. Streams every bill PDF out of en_pdf_store in
+ * small size-capped batches instead of the single monolithic
+ * JSON.stringify(_pdfBackupGetAll()) that OOM-crashed the tab on ~1000
+ * bills/150-250MB (see ed645bbd, reverted in c20e4d3/ef6468f — that
+ * mechanism held 2-3 full copies of the whole PDF store in the JS heap at
+ * once via store.getAll()).
+ *
+ * Three things make this safe where the old approach wasn't:
+ *   1. _pdfExportCursor() reads the object store with openCursor(), ONE row
+ *      at a time — unlike getAll(), the browser's IDB implementation never
+ *      materializes the whole store as one in-memory array.
+ *   2. Each batch is capped at PDF_EXPORT_BATCH_CHARS of base64 text and is
+ *      downloaded as its own file, then the batch object is discarded
+ *      (reassigned to {}) before the cursor advances.
+ *   3. Batches are downloaded ONE AT A TIME with a real gap between them
+ *      (see queueDownload below) instead of firing every ~350ms regardless
+ *      of whether the previous file finished saving — headless measurement
+ *      (HeapProfiler.collectGarbage before each sample, so garbage awaiting
+ *      collection isn't mistaken for live memory) showed that firing
+ *      downloads faster than the browser's download pipeline can actually
+ *      flush them to disk lets several batches' Blobs stay live
+ *      SIMULTANEOUSLY, defeating the point of small batches. Pacing by
+ *      elapsed time (not just a fixed short delay) keeps only ~1 batch's
+ *      Blob genuinely live at once, so peak live memory is bounded by ONE
+ *      batch (~8MB of base64 text, or one PDF's own size if it alone
+ *      exceeds the cap), never the whole store.
+ *
+ * Real corpus measured 2026-07-26 (investigation for this task): the actual
+ * client bill PDFs on disk (OneDrive "Projects-OneDrive", per-client
+ * "Utility Bills" folders, 191 files) average ~2.1MB raw with a max of
+ * ~50.6MB raw (Baker's largest combined multi-meter/multi-year gas bill) —
+ * consistent with netlify/functions/pdf-sync.js's own header comment, which
+ * separately measured "up to 64.33MB base64" for the same building's bill.
+ * That one real file is the reason batches are sized by BYTES, not a fixed
+ * PDF count — a fixed "~50 at a time" batch could accidentally combine
+ * several multi-MB files, or still be dwarfed by one outlier, and that
+ * outlier will always be its own large download no matter how batching
+ * works — there is no way to shrink a single PDF's own required bytes.
+ */
+var PDF_EXPORT_BATCH_CHARS = 8 * 1024 * 1024; // ~8MB of base64 text per output file (smaller than the diagnostic 20MB target — see pacing note above)
+
+// Cheap — reads only the KEYS (ids), never the base64 values, so this is
+// negligible memory regardless of store size.
+function _pdfExportAllKeys() {
+  return _openPdfDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(_pdfDB.STORE, 'readonly');
+      var req = tx.objectStore(_pdfDB.STORE).getAllKeys();
+      req.onsuccess = function () {
+        resolve(req.result || []);
+      };
+      req.onerror = function () {
+        reject(req.error);
+      };
+    });
+  });
+}
+
+// Reads exactly ONE PDF's base64 value. Deliberately NOT a cursor: an
+// earlier version of this function used store.openCursor() and called
+// cursor.continue() synchronously for every row so it could build ALL
+// batches back-to-back as fast as IDB could read them, while downloads were
+// paced separately — headless measurement showed this let every batch for
+// the whole store end up alive simultaneously (as pending closures queued
+// ahead of the download pacing), which defeated the entire point of
+// batching. Fetching one id at a time via get() lets the caller (below)
+// AWAIT each batch's full download before fetching the next id — real
+// backpressure, not just a per-batch size cap.
+function _pdfExportGetOne(id) {
+  return _openPdfDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(_pdfDB.STORE, 'readonly');
+      var req = tx.objectStore(_pdfDB.STORE).get(id);
+      req.onsuccess = function () {
+        resolve(req.result);
+      };
+      req.onerror = function () {
+        reject(req.error);
+      };
+    });
+  });
+}
+
+// Downloads exactly ONE batch as its own file. Called once per batch, never
+// accumulated — the caller discards `items` immediately after this returns.
+// Returns a Promise that resolves only once the Blob/object URL has been
+// revoked — the caller (queueDownload) awaits this before starting the NEXT
+// batch, which is what actually keeps only ~1 batch's Blob live at a time
+// (see the header comment above PDF_EXPORT_BATCH_CHARS for why this matters
+// more than the per-batch size cap alone).
+function _pdfExportDownloadBatch(items, partNum, dateStr) {
+  return new Promise(function (resolve) {
+    var payload = {
+      _companyHubPdfExport: true,
+      part: partNum,
+      count: Object.keys(items).length,
+      items: items,
+    };
+    var content = JSON.stringify(payload);
+    var blob = new Blob([content], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var filename = 'CompanyHub-PDFs-' + dateStr + '-part' + String(partNum).padStart(3, '0') + '.json';
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      resolve();
+    }, 1500);
+  });
+}
+
+async function sitePdfExport() {
+  var ids = [];
+  try {
+    ids = await _pdfExportAllKeys();
+  } catch (e) {
+    ids = [];
+  }
+  var total = ids.length;
+  if (!total) {
+    if (typeof showToast === 'function') showToast('No bill PDFs to export');
+    return;
+  }
+  if (typeof showToast === 'function') {
+    showToast('Exporting ' + total + ' bill PDF' + (total === 1 ? '' : 's') + ' — this downloads one or more files.');
+  }
+
+  var d = new Date();
+  var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+
+  var batch = {};
+  var batchChars = 0;
+  var partNum = 0;
+  var exportedCount = 0;
+
+  // AWAITED, not fire-and-forget — this is the real backpressure mechanism.
+  // Fetching the next PDF's base64 (the loop below) does not happen until
+  // the current batch has been fully downloaded (its Blob revoked), so at
+  // most ~1 batch's worth of base64 text is ever live at once, regardless
+  // of total store size. See the header comment above PDF_EXPORT_BATCH_CHARS.
+  async function flush() {
+    if (!Object.keys(batch).length) return;
+    partNum++;
+    var items = batch;
+    var pNum = partNum;
+    exportedCount += Object.keys(items).length;
+    batch = {};
+    batchChars = 0;
+    await _pdfExportDownloadBatch(items, pNum, ds);
+  }
+
+  try {
+    for (var i = 0; i < ids.length; i++) {
+      var base64 = await _pdfExportGetOne(ids[i]);
+      var len = (base64 && base64.length) || 0;
+      if (batchChars > 0 && batchChars + len > PDF_EXPORT_BATCH_CHARS) {
+        await flush();
+      }
+      batch[ids[i]] = base64;
+      batchChars += len;
+    }
+    await flush();
+  } catch (e) {
+    console.warn('PDF export failed:', e);
+    if (typeof showToast === 'function') {
+      showToast(
+        'PDF export failed partway through (' +
+          exportedCount +
+          ' exported before the error). ' +
+          ((e && e.message) || e),
+        'error',
+      );
+    }
+    return;
+  }
+  var msg =
+    'Exported ' +
+    exportedCount +
+    ' bill PDF' +
+    (exportedCount === 1 ? '' : 's') +
+    ' across ' +
+    partNum +
+    ' file' +
+    (partNum === 1 ? '' : 's') +
+    '. Keep all part files together — you will select all of them at once to import.';
+  if (typeof showToast === 'function') showToast(msg);
+}
+
+function sitePdfImportPick() {
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.json';
+  inp.multiple = true;
+  inp.onchange = function (e) {
+    processPdfImportFiles(e.target.files);
+  };
+  inp.click();
+}
+
+// Restores PDFs from one or more files produced by sitePdfExport(). Reads
+// and writes ONE FILE AT A TIME (not all selected files' contents at once)
+// so import memory stays bounded the same way export's memory does.
+async function processPdfImportFiles(fileList) {
+  var files = Array.prototype.slice.call(fileList || []);
+  if (!files.length) return;
+  var totalOk = 0,
+    totalFail = 0,
+    totalSeen = 0,
+    rejectedFiles = [];
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    var text;
+    try {
+      text = await file.text();
+    } catch (e) {
+      rejectedFiles.push(file.name);
+      continue;
+    }
+    var data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      rejectedFiles.push(file.name);
+      continue;
+    }
+    text = null; // release the raw text string before writing items below
+    if (!data || data._companyHubPdfExport !== true || !data.items) {
+      rejectedFiles.push(file.name);
+      continue;
+    }
+    var ids = Object.keys(data.items);
+    totalSeen += ids.length;
+    for (var j = 0; j < ids.length; j++) {
+      try {
+        // Reuse the real production write path (core.js's pdfStore(), which
+        // is always loaded here on the energy page) rather than a bespoke
+        // put — this also enqueues the PDF for backend upload if sync is on.
+        await pdfStore(ids[j], data.items[ids[j]]);
+        totalOk++;
+      } catch (e) {
+        totalFail++;
+      }
+    }
+    data = null; // release this file's parsed items before moving to the next file
+  }
+  var msg;
+  var isErr = false;
+  if (rejectedFiles.length && totalSeen === 0) {
+    isErr = true;
+    msg =
+      'No valid CompanyHub PDF-export files found in your selection (' +
+      rejectedFiles.length +
+      ' file' +
+      (rejectedFiles.length === 1 ? '' : 's') +
+      ' skipped).';
+  } else {
+    msg =
+      'Imported ' +
+      totalOk +
+      ' of ' +
+      totalSeen +
+      ' bill PDF' +
+      (totalSeen === 1 ? '' : 's') +
+      ' from ' +
+      files.length +
+      ' file' +
+      (files.length === 1 ? '' : 's') +
+      '.';
+    if (rejectedFiles.length) {
+      msg +=
+        ' (' +
+        rejectedFiles.length +
+        ' selected file' +
+        (rejectedFiles.length === 1 ? '' : 's') +
+        ' skipped — not a PDF-export file.)';
+    }
+    if (totalFail) {
+      isErr = true;
+      msg += ' ' + totalFail + ' failed to write.';
+    }
+  }
+  if (typeof showToast === 'function') showToast(msg, isErr ? 'error' : undefined);
+}
+
 async function siteBackup() {
   // Get all DB data (IndexedDB-backed)
   var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
@@ -7215,6 +7506,8 @@ window.__siteUI = {
   backupData: siteBackup,
   restoreData: siteRestore,
   resetData: siteResetData,
+  exportPdfs: sitePdfExport,
+  importPdfs: sitePdfImportPick,
   checkDefaultLogin: siteCheckDefaultLogin,
   applyAccentColor: siteApplyAccent,
   openReleaseNotes: openReleaseNotes,
