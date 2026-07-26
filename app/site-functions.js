@@ -1286,6 +1286,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.26.705',
+    date: '2026-07-26',
+    title: 'Replaced "Total Investment" wording with "Estimated Cost" on client-facing documents',
+    items: [
+      {
+        type: 'change',
+        text: 'Service Proposal, Audit Report, and the Cost Estimate tab (all pricing tiers) no longer use the phrase "Total Investment" -- it now reads "Estimated Cost" throughout, including the summary heading (now "Cost Summary") and the cost-per-tier callouts (now "The estimated cost for this scope is $X").',
+      },
+      {
+        type: 'change',
+        text: 'Wording about payback and comparisons across the three pricing tiers now says "cost-effectiveness" and "per dollar spent" instead of "return on investment" and "per dollar invested" -- no numbers changed, wording only.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.26.704',
     date: '2026-07-26',
     title: 'Fixed client name and legacy page styling on the Service Proposal',
