@@ -1286,6 +1286,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.26.703',
+    date: '2026-07-26',
+    title: 'Renamed the Commissioning project phase and reworded internal AI helper prompts',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department project Phase dropdown: the "Commissioning" option is now called "Start-Up & Testing" -- CSC doesn\'t perform commissioning as a service, so the phase name now matches the actual work. Any existing project already set to the old "Commissioning" phase carries over automatically to the new label, nothing needs to be re-selected.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department meeting-agenda template: the "commissioning work" line item now reads "new-equipment start-up work."',
+      },
+      {
+        type: 'change',
+        text: 'District Calendar AI drawing/spec-review helpers: prompts reworded to drop "commissioning" language (e.g. the Division 25 spec category is now "Start-up and functional testing requirements") -- no change to what the helpers check for, just the wording.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.26.702',
     date: '2026-07-26',
     title: 'Removed commissioning wording from client-facing reports',
