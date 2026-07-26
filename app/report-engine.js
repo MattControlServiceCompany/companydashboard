@@ -14524,7 +14524,7 @@ function _rptA36CoverPricingStrip(d) {
         var _svcRate =
           _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 125);
         svcSentence =
-          'Ongoing programming refinement and support after commissioning draws on your existing Monthly Energy ' +
+          'Ongoing programming refinement and support draws on your existing Monthly Energy ' +
           'Management Service Agreement (' +
           _fmtUSD(Number(_svcBudget.amount)) +
           '/month allowance at $' +
@@ -14783,7 +14783,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<li>Supply air temperature optimization</li>' +
     '<li>Fan energy optimization</li>' +
     '<li>Supporting sensor infrastructure upgrades</li>' +
-    '<li>BAS programming and commissioning</li>' +
+    '<li>BAS programming</li>' +
     '<li>Continuous operational improvement</li>' +
     '</ul>';
 
@@ -14891,21 +14891,21 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
       sat: 'supply air temperature optimization',
       sensor: 'supporting sensor infrastructure upgrades',
       fan: 'fan energy optimization',
-      bas: 'BAS programming and commissioning',
+      bas: 'BAS programming',
     },
     {
       dcv: 'expanded DCV deployments',
       sat: 'expanded supply air temperature optimization',
       sensor: 'additional sensor deployments',
       fan: 'fan energy optimization',
-      bas: 'BAS programming and commissioning',
+      bas: 'BAS programming',
     },
     {
       dcv: 'final DCV sensor deployment',
       sat: 'remaining supply air temperature optimization',
       sensor: 'remaining sensor deployment',
       fan: 'remaining fan optimization',
-      bas: 'ongoing BAS programming and commissioning',
+      bas: 'ongoing BAS programming',
     },
   ];
   var DCV_SEQ = { demandCtrl: true, vav_dcv: true };
@@ -15325,7 +15325,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
     '</div>' +
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2 — BAS Sequence Programming</div>' +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming and commissioning of ASHRAE Guideline 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming of ASHRAE Guideline 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
     ph2HTML +
     '</div>';
 
@@ -15518,7 +15518,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     '" style="display:none;margin-top:6px;padding-top:6px;' +
     'border-top:1px solid var(--rpt-rule);text-align:left">' +
     _sectionHTML('Hardware & Installation', p1, noCat, hw) +
-    _sectionHTML('Programming & Commissioning', p2, false, lb) +
+    _sectionHTML('Programming', p2, false, lb) +
     '</div>'
   );
 }
@@ -15788,7 +15788,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
             '<div><span style="font-weight:700">Hardware &amp; Installation:</span> ' +
             p1 +
             '</div>' +
-            '<div><span style="font-weight:700">Programming &amp; Commissioning:</span> ' +
+            '<div><span style="font-weight:700">Programming:</span> ' +
             (p2 || '—') +
             '</div>' +
             '</td>'
@@ -16173,7 +16173,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         });
       }
       if (lb.length) {
-        tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Programming & Commissioning', p2, false) });
+        tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Programming', p2, false) });
         lb.forEach(function (it) {
           tokens.push({ type: 'row', estH: 15, html: bulletHTML(it) });
         });

@@ -5814,7 +5814,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
     toolbarHTML,
     '<div class="ch-panel-body" style="flex:1;min-height:220px;overflow:auto;padding-top:10px">',
     section('Hardware & Installation', agg.hw),
-    section('Programming & Commissioning', agg.lb),
+    section('Programming', agg.lb),
     emptyState,
     '</div>',
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
