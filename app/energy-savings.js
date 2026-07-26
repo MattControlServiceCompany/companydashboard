@@ -1569,7 +1569,11 @@ function editProj(id) {
   document.getElementById('mp-status').value = p.status || 'planning';
   document.getElementById('mp-baselineComparison').value = p.baselineComparison || 'normalized';
   updateBaselineDesc();
-  document.getElementById('mp-phase').value = p.phase || '';
+  // Legacy migration (2026-07-26): the "Commissioning" phase option was renamed to
+  // "Start-Up & Testing" (wording cleanup, no service-scope change). Map any project saved
+  // with the old value so the dropdown still shows the equivalent selection instead of going
+  // blank -- a blank select would silently wipe the field back to '' on the next Save Project.
+  document.getElementById('mp-phase').value = p.phase === 'Commissioning' ? 'Start-Up & Testing' : p.phase || '';
   document.getElementById('mp-priority').value = p.priority || 'normal';
   // Load contacts — support legacy single-contact projects too
   if (p.contacts && p.contacts.length) {

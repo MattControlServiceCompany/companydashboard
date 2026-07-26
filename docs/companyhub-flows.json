@@ -152,7 +152,7 @@
           "functions": ["openProjModal()", "saveProject()", "deleteProject(projId)", "renderProjectsList()", "renderProjNav()"],
           "storageKeys": ["en_projects"],
           "modalId": "#projModal",
-          "fields": ["Project Name", "Client/Owner", "Building Address", "Project Type", "Status (Planning/Active/On Hold/Complete)", "Phase (Audit/Design/Bidding/Construction/Commissioning/M&V/EMS/Closeout)", "Project Manager", "Field Technician", "SA#", "Contract Value", "Estimated Savings $/yr", "Baseline Comparison (Normalized/Actual)", "Utility Escalation %", "CSC Compensation %", "Start Date", "Target End Date", "Progress %", "Priority", "Description", "Tags"]
+          "fields": ["Project Name", "Client/Owner", "Building Address", "Project Type", "Status (Planning/Active/On Hold/Complete)", "Phase (Audit/Design/Bidding/Construction/Start-Up & Testing/M&V/EMS/Closeout)", "Project Manager", "Field Technician", "SA#", "Contract Value", "Estimated Savings $/yr", "Baseline Comparison (Normalized/Actual)", "Utility Escalation %", "CSC Compensation %", "Start Date", "Target End Date", "Progress %", "Priority", "Description", "Tags"]
         },
         {
           "id": "building-mgmt",

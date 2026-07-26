@@ -2424,7 +2424,7 @@ function getDefaultTemplate() {
         text: 'Building & Equipment Updates',
         subItems: [
           'Equipment status: chillers, boilers, AHUs, pumps, VFDs.',
-          'Recent repairs, replacements, or commissioning work.',
+          'Recent repairs, replacements, or new-equipment start-up work.',
           'Pending equipment orders, delivery and install dates.',
           'Any new or deferred capital needs identified.',
         ],

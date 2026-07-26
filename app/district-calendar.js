@@ -1371,7 +1371,7 @@ async function handleDrawingUpload(e) {
   reader.onload = async (ev) => {
     const b64 = ev.target.result.split(',')[1];
     const result = await claudePDF(
-      'Analyze this construction drawing. Identify all equipment tags, system types, control points, equipment schedules, notes, and information relevant to controls programming or commissioning.',
+      'Analyze this construction drawing. Identify all equipment tags, system types, control points, equipment schedules, notes, and information relevant to controls programming or system start-up.',
       b64,
       'You are an expert controls engineer analyzing mechanical and electrical construction drawings.',
     );
@@ -1391,7 +1391,7 @@ async function writeSpec() {
   }
   out.textContent = 'Generating specification...';
   const result = await claude(
-    `Write a complete Division 25 controls spec for:\nProject: ${document.getElementById('sp-proj').value || '[Project]'}\nOwner: ${document.getElementById('sp-owner').value || '[Owner]'}\nBuilding: ${document.getElementById('sp-bldg').value || '[Building]'}\nBAS: ${document.getElementById('sp-bas').value}\nSystems: ${systems}\nNotes: ${document.getElementById('sp-notes').value || 'None'}\n\nInclude for each system: Sequences, Control Points, Setpoints, Alarms, Commissioning requirements.`,
+    `Write a complete Division 25 controls spec for:\nProject: ${document.getElementById('sp-proj').value || '[Project]'}\nOwner: ${document.getElementById('sp-owner').value || '[Owner]'}\nBuilding: ${document.getElementById('sp-bldg').value || '[Building]'}\nBAS: ${document.getElementById('sp-bas').value}\nSystems: ${systems}\nNotes: ${document.getElementById('sp-notes').value || 'None'}\n\nInclude for each system: Sequences, Control Points, Setpoints, Alarms, Start-up and functional testing requirements.`,
     'You are an expert controls engineer writing Division 25 specifications.',
   );
   out.textContent = result;
@@ -1506,7 +1506,7 @@ async function runWC(mode) {
     const out = document.getElementById('wc-w-out');
     out.textContent = 'Writing logic...';
     out.textContent = await claude(
-      `Write WebCTRL logic for a ${document.getElementById('wc-w-sys').value}.\n\nSequence: ${desc}\n\n${document.getElementById('wc-w-pts').value ? 'Points: ' + document.getElementById('wc-w-pts').value : ''}\n\nProvide complete logic, control points list, setpoints, alarms, commissioning checklist.`,
+      `Write WebCTRL logic for a ${document.getElementById('wc-w-sys').value}.\n\nSequence: ${desc}\n\n${document.getElementById('wc-w-pts').value ? 'Points: ' + document.getElementById('wc-w-pts').value : ''}\n\nProvide complete logic, control points list, setpoints, alarms, start-up and testing checklist.`,
       SYS,
     );
   }
