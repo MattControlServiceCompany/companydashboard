@@ -1286,6 +1286,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.26.704',
+    date: '2026-07-26',
+    title: 'Fixed client name and legacy page styling on the Service Proposal',
+    items: [
+      {
+        type: 'fix',
+        text: 'Service Proposal: headings and body text now read "Johnson County BAS" and "...the Johnson County building portfolio" instead of spelling out the full legal client name ("Johnson County, Kansas") mid-sentence. The full name is unchanged everywhere else, including the Audit Report.',
+      },
+      {
+        type: 'fix',
+        text: 'Service Proposal: the optional detailed Scope and Cost Estimate pages (shown when itemized pricing is included) no longer have filled dark-blue table headers -- they now match the plain heading style used on the rest of the proposal.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.26.703',
     date: '2026-07-26',
     title: 'Renamed the Commissioning project phase and reworded internal AI helper prompts',
