@@ -1286,6 +1286,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.26.702',
+    date: '2026-07-26',
+    title: 'Removed commissioning wording from client-facing reports',
+    items: [
+      {
+        type: 'change',
+        text: 'Service Proposal, Audit Report, and Cost Estimate no longer mention "commissioning" anywhere in the wording clients see -- CSC doesn\'t perform commissioning as a service, so references to it have been removed or reworded (e.g. "BAS programming and commissioning" now reads "BAS programming").',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.26.701',
     date: '2026-07-26',
     title: 'Service Proposal redesign, fixed Word export, and Audit Report sequence table fix',
