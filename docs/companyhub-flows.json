@@ -120,12 +120,15 @@
         {
           "id": "backup-restore",
           "name": "Backup / Restore / Reset",
-          "description": "Full localStorage export to JSON file, restore from JSON, and reset all data. Buttons in sidebar bottom.",
-          "functions": ["siteBackup()", "siteRestore()", "processRestoreFile(file)", "siteResetData()"],
+          "description": "Full localStorage export to JSON file (data-only, no bill PDFs), restore from JSON, and reset all data. Buttons in sidebar bottom. A separate, optional 'Export PDFs' / 'Import PDFs' pair of buttons (backlog 729d274b) streams bill PDFs out of the en_pdf_store IndexedDB in small batched files, never on the same code path as the data-only backup.",
+          "functions": ["siteBackup()", "siteRestore()", "processRestoreFile(file)", "siteResetData()", "sitePdfExport()", "sitePdfImportPick()", "processPdfImportFiles(fileList)"],
           "details": {
             "backupFilename": "CompanyHub-localdatafile-YYYYMMDD.json",
             "restoreValidation": "Must be .json file",
-            "resetBehavior": "Clears both localStorage AND sessionStorage, reloads page"
+            "resetBehavior": "Clears both localStorage AND sessionStorage, reloads page",
+            "pdfExportFilename": "CompanyHub-PDFs-YYYYMMDD-partNNN.json",
+            "pdfExportBatching": "~8MB of base64 text per file, one PDF's own base64 becomes a solo batch if it alone exceeds the cap; sitePdfExport() awaits each batch's full download (Blob revoked) before fetching the next PDF from IndexedDB, bounding peak live memory to ~1 batch regardless of total store size",
+            "pdfImport": "Multi-file picker; user selects all part files from one export together; each file is read/written one at a time"
           }
         },
         {

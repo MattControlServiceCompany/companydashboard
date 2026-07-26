@@ -311,13 +311,24 @@ var FLOWS = [
     ]
   },
   {
-    id: 'backup', name: 'Backup / Restore', desc: 'Export or import all localStorage data as JSON',
+    id: 'backup', name: 'Backup / Restore', desc: 'Export or import all localStorage data as JSON (data-only, no bill PDFs)',
     path: ['user','index','siteui','ls'],
     steps: [
       { from:'user', to:'index', label:'User clicks Backup button', detail:'Available on any page via sidebar.' },
-      { from:'index', to:'siteui', label:'siteBackup() serializes localStorage', detail:'All ch_*, sv_*, en_*, ems_* keys.' },
+      { from:'index', to:'siteui', label:'siteBackup() serializes localStorage', detail:'All ch_*, sv_*, en_*, ems_* keys. Deliberately excludes en_pdf_store (see pdf-export flow) -- the v695 PDF-inclusion here OOM-crashed the tab, reverted 2026-07-20.' },
       { from:'siteui', to:'ls', label:'Read all localStorage keys', detail:'Serialized to single JSON object.' },
       { from:'ls', to:'user', label:'Download CompanyHub-localdatafile-YYYYMMDD.json', detail:'Browser downloads file.' },
+    ]
+  },
+  {
+    id: 'pdf-export', name: 'Export / Import PDFs (batched)', desc: 'Separate, optional streamed export of bill PDFs from IndexedDB, batched to avoid the OOM the old approach hit',
+    path: ['user','energy','idb'],
+    steps: [
+      { from:'user', to:'energy', label:'User clicks Export PDFs button', detail:'Sidebar, separate from Backup. Available on index.html, energy-department.html, service-department.html (backlog 729d274b).' },
+      { from:'energy', to:'idb', label:'_pdfExportAllKeys() reads keys only', detail:'Cheap -- no base64 values loaded yet.' },
+      { from:'idb', to:'energy', label:'_pdfExportGetOne(id) fetches ONE PDF at a time', detail:'sitePdfExport() awaits each ~8MB batch\'s full download (Blob revoked) before fetching the next id -- real backpressure, peak live memory ~1 batch, not the whole store.' },
+      { from:'energy', to:'user', label:'Downloads CompanyHub-PDFs-YYYYMMDD-partNNN.json (one or more files)', detail:'One outlier PDF whose own base64 exceeds the batch cap becomes its own solo file.' },
+      { from:'user', to:'energy', label:'Import: user selects all part files at once', detail:'processPdfImportFiles() reads/writes one file at a time; writes go through pdfStore() (energy page, real prod path) or _pdfBackupPut() (index.html/service-department.html).' },
     ]
   },
   {
