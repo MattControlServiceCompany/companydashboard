@@ -15681,15 +15681,25 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
 }
 
 /**
- * _rptA36RecommendedTimelineHTML — Task 2 (2026-07-22): a plain table (Phase, Date Range, Scope
- * Summary, Cost) — no boxes/cards, per the site's no-boxes-in-client-documents standard — showing
- * the Recommended tier's calendar-phase rollout plan: Phase 1 Aug-Dec 2026, Phase 2 all of CY2027,
- * Phase 3 all of CY2028. Reuses _pricingComputeRecommendedTimeline (app/pricing-estimator.js) —
- * the SAME computation the interactive Cost Estimate tab's Recommended view renders via
- * _pricingRecommendedTimelineHTML — so the report can never disagree with the tool, and the 3
- * phase costs are guaranteed (by that function's own construction) to sum exactly to the
- * Recommended tier's existing grand total. Guarded/silent (returns '') when that function isn't
- * available or returns null (nothing priced yet), same convention as discBlock/svcBlock.
+ * _rptA36RecommendedTimelineHTML — Task 2 (2026-07-22); rebuilt 2026-07-26
+ * (fix/phase-cost-budget-model): a plain table (Phase, Date Range, Scope Summary, Phase Service
+ * Allowance, Priced Measures This Phase) — no boxes/cards, per the site's no-boxes-in-client-
+ * documents standard — showing the Recommended tier's calendar-phase rollout plan: Phase 1
+ * Aug-Dec 2026, Phase 2 all of CY2027, Phase 3 all of CY2028. Reuses
+ * _pricingComputeRecommendedTimeline (app/pricing-estimator.js) — the SAME computation the
+ * interactive Cost Estimate tab's Recommended view renders via _pricingRecommendedTimelineHTML —
+ * so the report can never disagree with the tool. Guarded/silent (returns '') when that function
+ * isn't available or returns null (nothing priced yet), same convention as discBlock/svcBlock.
+ *
+ * Two distinct dollar columns (task item 4 — never let one "Total" silently mean two different
+ * things once they stop being identical by construction): "Phase Service Allowance" is the
+ * calendar cost of the monthly service allowance for that phase's date range (allowanceTotal —
+ * the number Matt asked to see, e.g. Phase 1 $31,250/Phase 2 $75,000/Phase 3 $75,000, program
+ * total $181,250). "Priced Measures This Phase" is the pre-existing dollar cost of the
+ * hardware/sequence rows assigned to that phase (measuresTotal, e.g. summing to the Recommended
+ * tier's ~$74,826 total shown on the pricing table above this block). Falls back to showing
+ * measuresTotal in both columns with a "(budget not configured)" note when no budget.amount is
+ * set, so the column is never blank/—.
  */
 function _rptA36RecommendedTimelineHTML(d) {
   if (typeof _pricingComputeRecommendedTimeline !== 'function') return '';
@@ -15701,12 +15711,15 @@ function _rptA36RecommendedTimelineHTML(d) {
   }
   if (!tl) return '';
 
+  var hasBudget = tl.programAllowanceTotal != null;
+
   function _fmtUSD2(v) {
     return '$' + Math.round(v).toLocaleString('en-US');
   }
 
   var colgroup =
-    '<colgroup><col style="width:90px"><col style="width:150px"><col style="width:314px"><col style="width:130px"></colgroup>';
+    '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:224px">' +
+    '<col style="width:140px"><col style="width:140px"></colgroup>';
   // Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling): dropped the
   // filled dark-blue header (color:#fff on background:var(--rpt-blue)) to match pages 1-3's
   // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
@@ -15726,6 +15739,9 @@ function _rptA36RecommendedTimelineHTML(d) {
           ': ' +
           p.buildings.map(_esc).join(', ')
         : 'No additional scope';
+      var allowanceCell = hasBudget
+        ? _fmtUSD2(p.allowanceTotal)
+        : _fmtUSD2(p.measuresTotal) + ' <span style="font-weight:400;color:#666">(budget not configured)</span>';
       return (
         '<tr>' +
         '<td style="' +
@@ -15746,20 +15762,43 @@ function _rptA36RecommendedTimelineHTML(d) {
         '<td style="' +
         tdRight +
         ';font-weight:700">' +
-        _fmtUSD2(p.total) +
+        allowanceCell +
+        '</td>' +
+        '<td style="' +
+        tdRight +
+        '">' +
+        _fmtUSD2(p.measuresTotal) +
         '</td>' +
         '</tr>'
       );
     })
     .join('');
 
+  var footAllowanceTotal = hasBudget ? tl.programAllowanceTotal : tl.measuresGrandTotal;
+
   var totalRow =
     '<tr>' +
-    '<td colspan="3" style="padding:6px 8px;font-size:9px;font-weight:700;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">Total</td>' +
+    '<td colspan="3" style="padding:6px 8px;font-size:9px;font-weight:700;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">' +
+    (hasBudget ? 'Program Total (Service Allowance)' : 'Total (budget not configured)') +
+    '</td>' +
     '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">' +
-    _fmtUSD2(tl.grandTotal) +
+    _fmtUSD2(footAllowanceTotal) +
+    '</td>' +
+    '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">' +
+    _fmtUSD2(tl.measuresGrandTotal) +
     '</td>' +
     '</tr>';
+
+  // Neutral, client-safe transparency note (no internal "over/under cap" alarm language) — the
+  // Phase Service Allowance already funds ongoing EM services for that period, in addition to the
+  // priced measures shown in the adjacent column.
+  var laborNote = hasBudget
+    ? '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:4px;font-style:italic">' +
+      'Phase Service Allowance includes ongoing Energy Management Services labor for that period ' +
+      '(program setup, alarm configuration, trend configuration, and monitoring) in addition to the ' +
+      'priced measures shown above.' +
+      '</div>'
+    : '';
 
   return (
     '<div style="margin-top:12px">' +
@@ -15779,13 +15818,17 @@ function _rptA36RecommendedTimelineHTML(d) {
     '">Scope Summary</th>' +
     '<th style="' +
     thRight +
-    '">Cost</th>' +
+    '">Phase Service Allowance</th>' +
+    '<th style="' +
+    thRight +
+    '">Priced Measures This Phase</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rowsHTML +
     totalRow +
     '</tbody>' +
     '</table>' +
+    laborNote +
     '</div>'
   );
 }

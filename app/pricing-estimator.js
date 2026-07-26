@@ -713,18 +713,20 @@ function _pricingProjectHasUtilityBills(projId) {
   });
 }
 
-/* ── Monthly Service Labor Breakdown (2026-07-22) ─────────────────────────────────────────────
+/* ── Monthly Service Labor Breakdown (2026-07-22; trend category added 2026-07-26) ────────────
    Additive detail underneath _pricingComputeMonthlyService: WHY the monthly EM service hours are
    needed, not just the flat hours×rate total. Matt's ask: the flat number hides real setup work
-   (BAS program/sequence commissioning, alarm configuration, report setup, and — when the client
-   hand-provides them — utility bill data entry) that is heaviest in the first few months and tapers
-   to steady-state monitoring. This function computes that ramp; it NEVER changes the monthly total
-   itself (still hours×hourlyRate from _pricingComputeMonthlyService/the not-to-exceed allowance
-   comparison) — every month's category hours are made to SUM to that same total, so the cap logic
-   above is untouched. Purely presentational data prep for _pricingLaborBreakdownHTML, below.
+   (BAS program/sequence setup, alarm configuration, report setup, trend/graphics setup, and —
+   when the client hand-provides them — utility bill data entry) that is heaviest in the first few
+   months and tapers to steady-state monitoring. This function computes that ramp; it NEVER
+   changes the monthly total itself (still hours×hourlyRate from _pricingComputeMonthlyService/the
+   not-to-exceed allowance comparison) — every month's category hours are made to SUM to that same
+   total, so the cap logic above is untouched. Purely presentational data prep for
+   _pricingLaborBreakdownHTML, below.
 
    Ramp model (simple 4-step taper, not a complex schedule, per Matt's ask):
-     Month 1      — 100% of the "setup pool" (sequence programming + alarms + reports + bill entry)
+     Month 1      — 100% of the "setup pool" (sequence programming + alarms + reports + trends +
+                    bill entry)
      Month 2      —  60% of the setup pool
      Month 3      —  30% of the setup pool
      Month 4+     —   0% (steady state) — entire month is Ongoing Monitoring & Optimization
@@ -740,6 +742,21 @@ function _pricingProjectHasUtilityBills(projId) {
 
    Utility Bill Data Entry only appears when the project has bill data on file
    (_pricingProjectHasUtilityBills) — a project with no bills doesn't need this line.
+
+   Trend Setup & Configuration (2026-07-26, task: "we also need to build in time for setting up
+   trends and other changes like that"): a grep for "trend" across this file/report-engine.js
+   before this change found ZERO labor category for it — Alarm Configuration/Report Setup/Bill
+   Entry/Ongoing Monitoring were the only named categories, so this was a genuinely missing setup
+   task, not a duplicate. Added as its own line, same shape as Alarm Configuration/Report Setup
+   (flat TREND_SETUP_HOURS_DEFAULT, unconditional — every project needs BAS trend logs/graphics
+   set up, same as alarms/reports, not conditional on bill data like Utility Bill Data Entry is).
+   Scoped to ONLY trends, per the task's explicit instruction not to invent categories beyond what
+   was asked — one adjacent candidate was considered and NOT added: BAS graphics/dashboard page
+   setup (distinct from trend LOGS — graphics are the visual layout, trends are the historical
+   data collection) looks like a plausible sibling gap but Matt did not name it and there is no
+   existing per-project "graphics needed" signal in this codebase to size it from (unlike
+   sequences, which have a real per-project count from buildCatalogRows) — flagged in the
+   implementer report for a future explicit decision rather than silently added here.
 
    Returns null when _pricingComputeMonthlyService returns null (no budget.amount set — same
    silent-until-configured convention as the rest of this feature).
@@ -765,11 +782,16 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
 
   var ALARM_SETUP_HOURS_DEFAULT = 4;
   var REPORT_SETUP_HOURS_DEFAULT = 3;
+  var TREND_SETUP_HOURS_DEFAULT = 3; // 2026-07-26: BAS trend log setup — see comment block above
   var hasBills = _pricingProjectHasUtilityBills(projId);
   var BILL_ENTRY_HOURS_DEFAULT = hasBills ? 3 : 0;
 
   var setupPoolHours =
-    seqTotalHours + ALARM_SETUP_HOURS_DEFAULT + REPORT_SETUP_HOURS_DEFAULT + BILL_ENTRY_HOURS_DEFAULT;
+    seqTotalHours +
+    ALARM_SETUP_HOURS_DEFAULT +
+    REPORT_SETUP_HOURS_DEFAULT +
+    TREND_SETUP_HOURS_DEFAULT +
+    BILL_ENTRY_HOURS_DEFAULT;
 
   function roundHrs(n) {
     return Math.round(n * 100) / 100;
@@ -801,6 +823,8 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
       if (alarmHrs > 0) out.push({ category: 'Alarm Configuration', hours: alarmHrs });
       var reportHrs = roundHrs(REPORT_SETUP_HOURS_DEFAULT * effFrac);
       if (reportHrs > 0) out.push({ category: 'Report Setup', hours: reportHrs });
+      var trendHrs = roundHrs(TREND_SETUP_HOURS_DEFAULT * effFrac);
+      if (trendHrs > 0) out.push({ category: 'Trend Setup & Configuration', hours: trendHrs });
       if (hasBills) {
         var billHrs = roundHrs(BILL_ENTRY_HOURS_DEFAULT * effFrac);
         if (billHrs > 0) out.push({ category: 'Utility Bill Data Entry', hours: billHrs });
@@ -3238,6 +3262,28 @@ function buildRecommendedRows(projId) {
 
   var budget = _pricingGetBudget(projId);
   var comp = _pricingComputeBudgetTotal(budget);
+  // 2026-07-26 (fix/phase-cost-budget-model) — INVESTIGATED, NOT CHANGED, documenting why:
+  // comp.total uses budget.termMonths (defaults to 12), not the TRUE program horizon
+  // (_pricingRecommendedProgramMonths() — 29 months). Two alternate ceilings were tried here and
+  // both broke on real JOCO numbers, so this membership ceiling is UNCHANGED from before this
+  // task — only the calendar-phase COST DISPLAY (_pricingComputeProgramCostModel /
+  // _pricingComputeRecommendedTimeline, below) was fixed, not tier membership:
+  //   1. Widening the ceiling to the raw 29-month allowance total ($181,250) let measures alone
+  //      balloon to consume the WHOLE allowance ($181,206 fit) — before any of the EM labor that
+  //      draws against the SAME dollars was even counted. Confirmed against real JOCO data.
+  //   2. Netting the FULL EM-labor total out of that ceiling ($181,250 − $177,480 = $3,770)
+  //      collapsed Recommended-tier membership from 78 rows/$74,826 to 7 rows/$3,740 — but this
+  //      DOUBLE-SUBTRACTS: _pricingComputeMonthlyLaborBreakdown's "Program & Sequence Setup"
+  //      category (shipped 2026-07-22) reuses the SAME COST_PER_SEQ_HOURS_DEFAULT hours already
+  //      priced into every phase-2 row's Programming cost inside `comp`'s own candidate pool —
+  //      so subtracting the full EM-labor total here subtracts those programming hours a SECOND
+  //      time from the money available to buy them. That's a real, pre-existing architecture
+  //      overlap between "EM service labor" and "measures programming labor," not something this
+  //      task can safely resolve by picking a ceiling number — it needs a pricing/business
+  //      decision (are Program & Sequence Setup hours part of the monthly service, part of the
+  //      measures price, or split — and if split, how). Flagged in the implementer report rather
+  //      than silently forced either direction; membership stays on the pre-existing 12-month
+  //      ceiling until that decision is made.
   var keepUnitToggleKeys = {};
   if (comp && budget.mode === 'recurring') {
     // Budget entered: ranked prefix that fits the ceiling — the shipped v631
@@ -5833,26 +5879,161 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
   ].join('');
 }
 
-/* ── Recommended tier 3-phase implementation timeline (Task 2, 2026-07-22) ────────────────────
-   Matt's ask: a calendar-phase rollout plan for the RECOMMENDED tier specifically — Phase 1
-   Aug-Dec 2026, Phase 2 all of CY2027, Phase 3 all of CY2028 — with each phase's dollar figure
-   ALLOCATED FROM (never added on top of) the tier's existing grand total, so the 3 phases always
-   sum exactly to that total. No calendar-phase concept existed anywhere in this file before this
-   — the pre-existing row `phase:1`/`phase:2` fields mean Hardware-install vs Labor-programming
-   (a WITHIN-a-year categorization), which this is unrelated to and purely additive alongside.
+/* ── Calendar-phase date definitions (2026-07-26 fix/phase-cost-budget-model) ──────────────────
+   The Recommended tier's 3-phase rollout calendar: Phase 1 Aug 1 – Dec 31 2026, Phase 2 all of
+   CY2027, Phase 3 all of CY2028. Only the start/end [year, month] pairs are literal (Matt's
+   actual program dates) — the months-in-phase count and the "Aug 2026 – Dec 2026" display label
+   are DERIVED from those two endpoints, never a separately hand-typed 5/12/12 number, so editing
+   a date here changes the downstream cost math and the label text together (task requirement:
+   "Derive the month counts from the phase date ranges, don't hardcode 5/12/12").
+   ─────────────────────────────────────────────────────────────────────────── */
+var _PRICING_PHASE_DATE_RANGES = [
+  { label: 'Phase 1', start: [2026, 8], end: [2026, 12] },
+  { label: 'Phase 2', start: [2027, 1], end: [2027, 12] },
+  { label: 'Phase 3', start: [2028, 1], end: [2028, 12] },
+];
+var _PRICING_MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function _pricingMonthsBetween(startYear, startMonth, endYear, endMonth) {
+  // Inclusive whole-month count, e.g. Aug 2026 -> Dec 2026 = 5 (Aug, Sep, Oct, Nov, Dec).
+  return (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
+}
+function _pricingPhaseDateDefs() {
+  return _PRICING_PHASE_DATE_RANGES.map(function (p) {
+    var months = _pricingMonthsBetween(p.start[0], p.start[1], p.end[0], p.end[1]);
+    var dateRange =
+      _PRICING_MONTH_ABBR[p.start[1] - 1] +
+      ' ' +
+      p.start[0] +
+      ' – ' +
+      _PRICING_MONTH_ABBR[p.end[1] - 1] +
+      ' ' +
+      p.end[0];
+    return { label: p.label, months: months, dateRange: dateRange };
+  });
+}
+// Total calendar months across the whole 3-phase program (29 for the current Aug 2026 – Dec 2028
+// dates) — used to widen the Fit-to-Budget membership ceiling in buildRecommendedRows, above, to
+// the program's TRUE horizon instead of budget.termMonths (which defaults to 12).
+function _pricingRecommendedProgramMonths() {
+  return _pricingPhaseDateDefs().reduce(function (s, p) {
+    return s + p.months;
+  }, 0);
+}
 
-   Allocation rule: buildRecommendedRows() already emits rows building-by-building in a stable
-   "natural/source" rollout order (see the 0ae36950 comment above that function). This treats
-   that as the sequence a phased deployment would actually follow — one building's hardware AND
-   programming installed/commissioned together in the same calendar window, never split across
-   phases — and walks the buildings in that order, cutting into 3 CONTIGUOUS groups once each
-   group's cumulative dollar total crosses that phase's 1/3 share of the grand total. Splitting by
-   cumulative DOLLARS (not building count) keeps a portfolio with a few expensive buildings from
-   producing one lopsided phase. Each phase's total comes from _pricingComputeTotals run on that
-   phase's OWN row subset — the same totals function every other tier total in this file uses —
-   so the 3 phase totals are guaranteed by construction (a strict partition of the same rows) to
-   sum to the SAME grand total _pricingComputeTotals(allRows) returns; any final sub-cent rounding
-   drift is folded into the last non-empty phase so the displayed figures always foot exactly.
+/* ── Monthly allowance $/mo, independent of term (2026-07-26) ─────────────────────────────────
+   _pricingComputeBudgetTotal (above) converts a budget entry into "the total this budget affords
+   over its configured term" — useful for the general Budget-vs-Total feature (174ad49a), but the
+   calendar-phase cost model below needs the underlying $/MONTH figure on its own, decoupled from
+   termMonths (the phase calendar supplies its own month counts). Returns null for a 'lump'
+   denomination (no natural monthly figure) or when no amount is set — same silent convention as
+   every other function in this budget feature.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingMonthlyAllowanceAmount(budget) {
+  if (!budget || budget.amount == null || isNaN(budget.amount) || Number(budget.amount) <= 0) return null;
+  if (budget.denomination === 'lump') return null;
+  var monthsPerPeriod = { monthly: 1, quarterly: 3, annual: 12 }[budget.denomination] || 1;
+  return Number(budget.amount) / monthsPerPeriod;
+}
+
+/* ── Calendar-phase cost model (2026-07-26 fix/phase-cost-budget-model) ────────────────────────
+   Matt's complaint: "$74.xk is not the amount we should be showing. It should be the cost for
+   August 1, 2026 - December 31st, 2026 as Phase 1 shows, then Phase 2 should show the full 2027
+   annual cost." The OLD phase "Cost" column was a dollar-cumulative SLICE of the Recommended
+   tier's priced-MEASURES total (itself fit against a 12-month budget ceiling) stretched across a
+   29-calendar-month rollout — never the actual calendar-period cost of the monthly service
+   allowance. This computes the real calendar cost: months-in-phase (from _pricingPhaseDateDefs)
+   x the monthly allowance (_pricingMonthlyAllowanceAmount) — e.g. JOCO $6,250/mo: Phase 1 (5 mo)
+   = $31,250, Phase 2/3 (12 mo each) = $75,000, program total (29 mo) = $181,250.
+
+   Also surfaces, per phase, the Ongoing Energy Management Services labor cost that draws against
+   the SAME monthly allowance (_pricingComputeMonthlyService — hours/month x hourlyRate, constant
+   every month because _pricingComputeMonthlyLaborBreakdown's category hours always sum to the
+   same monthly cap) so callers can show that measures do NOT get 100% of the allowance — some of
+   every month's dollars are already committed to EM labor before a single dollar of
+   hardware/programming is spent. `measuresAvailable` = allowanceTotal − emLaborTotal, floored at
+   0; `overCommitted` flags when EM labor alone would exceed that phase's calendar allowance.
+
+   Returns null when no budget.amount is configured (same silent-until-configured convention as
+   the rest of this feature) — callers fall back to the pre-existing measures-total-only view.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingComputeProgramCostModel(projId) {
+  var budget = _pricingGetBudget(projId);
+  var monthlyAllowance = _pricingMonthlyAllowanceAmount(budget);
+  if (monthlyAllowance == null) return null;
+  var svc = _pricingComputeMonthlyService(projId); // {hours, hourlyRate, monthlyService, allowance, diff, underCap}
+  var emMonthlyCost = svc ? svc.monthlyService : 0;
+
+  var phases = _pricingPhaseDateDefs().map(function (p) {
+    var allowanceTotal = Math.round(p.months * monthlyAllowance * 100) / 100;
+    var emLaborTotal = Math.round(p.months * emMonthlyCost * 100) / 100;
+    var measuresAvailable = Math.round(Math.max(0, allowanceTotal - emLaborTotal) * 100) / 100;
+    return {
+      label: p.label,
+      dateRange: p.dateRange,
+      months: p.months,
+      allowanceTotal: allowanceTotal,
+      emLaborTotal: emLaborTotal,
+      measuresAvailable: measuresAvailable,
+      overCommitted: emLaborTotal > allowanceTotal,
+    };
+  });
+
+  var programMonths = phases.reduce(function (s, p) {
+    return s + p.months;
+  }, 0);
+  var programAllowanceTotal =
+    Math.round(
+      phases.reduce(function (s, p) {
+        return s + p.allowanceTotal;
+      }, 0) * 100,
+    ) / 100;
+  var programEmLaborTotal =
+    Math.round(
+      phases.reduce(function (s, p) {
+        return s + p.emLaborTotal;
+      }, 0) * 100,
+    ) / 100;
+
+  return {
+    monthlyAllowance: monthlyAllowance,
+    emMonthlyCost: emMonthlyCost,
+    phases: phases,
+    programMonths: programMonths,
+    programAllowanceTotal: programAllowanceTotal,
+    programEmLaborTotal: programEmLaborTotal,
+  };
+}
+
+/* ── Recommended tier 3-phase implementation timeline (Task 2, 2026-07-22; rebuilt 2026-07-26
+   fix/phase-cost-budget-model) ────────────────────────────────────────────────────────────────
+   Matt's ask: a calendar-phase rollout plan for the RECOMMENDED tier specifically — Phase 1
+   Aug-Dec 2026, Phase 2 all of CY2027, Phase 3 all of CY2028. No calendar-phase concept existed
+   anywhere in this file before this — the pre-existing row `phase:1`/`phase:2` fields mean
+   Hardware-install vs Labor-programming (a WITHIN-a-year categorization), unrelated to this.
+
+   Two DIFFERENT dollar figures are now tracked per phase, deliberately, because they answer two
+   different questions (see item 4 of the task spec — "give them clear, distinct labels so no
+   reader thinks they contradict"):
+     - `allowanceTotal` — the CALENDAR cost of the monthly service allowance for this phase's date
+       range (months x monthly allowance). This is the number Matt asked for ("the cost for
+       Aug 1 - Dec 31 2026"). Comes from _pricingComputeProgramCostModel; null if no budget.amount
+       is configured.
+     - `measuresTotal` — the priced dollar total of the hardware/sequence rows actually assigned to
+       this phase (the pre-existing "cost of the stuff being installed" figure, still computed via
+       _pricingComputeTotals on this phase's own row subset, still drift-folded to foot exactly to
+       measuresGrandTotal). This is NOT the same number as allowanceTotal and is never presented as
+       if it were — see _pricingRecommendedTimelineHTML/_rptA36RecommendedTimelineHTML below for
+       how each is labeled.
+
+   Row/building assignment rule: buildRecommendedRows() emits rows building-by-building in a
+   stable "natural/source" rollout order (see the 0ae36950 comment above that function). This
+   walks buildings in that order and cuts into 3 CONTIGUOUS groups by cumulative MEASURES dollars,
+   advancing to the next phase once the running measures total crosses that phase's OWN
+   allowanceTotal share (task: "assign measures per phase against that phase's own budget envelope
+   rather than slicing one flat total into thirds") — Phase 1's smaller 5-month/$31,250 envelope
+   fills first, then Phase 2's larger $75,000 envelope, etc. When no budget is configured
+   (allowanceTotal unavailable for any phase), falls back to an even 1/3-of-measures-grand split
+   (the pre-existing behavior) so the timeline still renders something coherent.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingComputeRecommendedTimeline(projId) {
   var estimate = _pricingGetEstimate(projId);
@@ -5881,7 +6062,24 @@ function _pricingComputeRecommendedTimeline(projId) {
   });
 
   var grand = grandTotals.grand;
-  var third = grand / 3;
+  var defs = _pricingPhaseDateDefs();
+  var costModel = _pricingComputeProgramCostModel(projId); // null when no budget.amount configured
+
+  // Cumulative cutpoints buildings are measured against while walking rollout order. Uses each
+  // phase's OWN envelope for MEASURES specifically — measuresAvailable (the calendar allowance
+  // net of that phase's own EM labor cost), not the gross allowanceTotal — when a budget is
+  // configured, since allowanceTotal includes dollars already committed to EM labor and is not
+  // itself an envelope for hardware/programming measures (task item 2: "assign measures per phase
+  // against that phase's own budget envelope"). Otherwise falls back to an even
+  // 1/3-of-measures-grand split (pre-existing behavior, still needed for the no-budget case).
+  var phaseShare = defs.map(function (d, i) {
+    return costModel ? costModel.phases[i].measuresAvailable : grand / 3;
+  });
+  var cumCutpoint = [];
+  phaseShare.reduce(function (running, share, i) {
+    cumCutpoint[i] = running + share;
+    return cumCutpoint[i];
+  }, 0);
 
   var phases = [
     { rows: [], buildings: [], total: 0 },
@@ -5891,62 +6089,88 @@ function _pricingComputeRecommendedTimeline(projId) {
   var running = 0;
   var phaseIdx = 0;
   bldgInfo.forEach(function (b) {
-    // Advance once the RUNNING total (before this building) has already crossed that phase's
-    // 1/3 share — keeps each phase's building group contiguous in rollout order.
-    if (phaseIdx < 2 && third > 0 && running >= third * (phaseIdx + 1)) phaseIdx++;
+    // Advance once the RUNNING measures total (before this building) has already crossed that
+    // phase's own cumulative allowance/measures-share cutpoint — keeps each phase's building
+    // group contiguous in rollout order.
+    if (phaseIdx < 2 && cumCutpoint[phaseIdx] > 0 && running >= cumCutpoint[phaseIdx]) phaseIdx++;
     phases[phaseIdx].rows = phases[phaseIdx].rows.concat(b.rows);
     phases[phaseIdx].buildings.push(b.building);
     phases[phaseIdx].total += b.total;
     running += b.total;
   });
 
-  var defs = [
-    { label: 'Phase 1', dateRange: 'Aug 2026 – Dec 2026' },
-    { label: 'Phase 2', dateRange: 'Jan 2027 – Dec 2027' },
-    { label: 'Phase 3', dateRange: 'Jan 2028 – Dec 2028' },
-  ];
-
   var out = phases.map(function (p, i) {
+    var cm = costModel ? costModel.phases[i] : null;
     return {
       label: defs[i].label,
       dateRange: defs[i].dateRange,
+      months: defs[i].months,
       buildings: p.buildings,
       // rows (2026-07-26, Service Proposal rebuild): exposes the raw priced rows backing this
-      // phase so callers can derive a live "what's included" summary (e.g. which sequence types /
-      // hardware categories actually fall in this phase) without re-deriving the phase split
-      // themselves. Purely additive — existing callers (_pricingRecommendedTimelineHTML) never
-      // read this field, so this cannot change any previously rendered output.
+      // phase so callers can derive a live "what's included" summary without re-deriving the
+      // phase split themselves.
       rows: p.rows,
-      total: Math.round(p.total * 100) / 100,
+      // measuresTotal (renamed from `total` 2026-07-26 — see item 4 above): priced dollar cost of
+      // the rows assigned to this phase, drift-folded below to foot to measuresGrandTotal.
+      measuresTotal: Math.round(p.total * 100) / 100,
+      // allowanceTotal (new 2026-07-26): the calendar cost of the service allowance for this
+      // phase's date range — the number Matt asked to see as "the cost for [date range]". null
+      // when no budget.amount is configured.
+      allowanceTotal: cm ? cm.allowanceTotal : null,
+      emLaborTotal: cm ? cm.emLaborTotal : null,
+      measuresAvailable: cm ? cm.measuresAvailable : null,
+      overCommitted: cm ? cm.overCommitted : false,
     };
   });
 
-  var sumOut = out.reduce(function (s, p) {
-    return s + p.total;
+  var sumMeasures = out.reduce(function (s, p) {
+    return s + p.measuresTotal;
   }, 0);
-  var drift = Math.round((grand - sumOut) * 100) / 100;
+  var drift = Math.round((grand - sumMeasures) * 100) / 100;
   if (drift !== 0) {
     for (var i = out.length - 1; i >= 0; i--) {
       if (out[i].buildings.length) {
-        out[i].total = Math.round((out[i].total + drift) * 100) / 100;
+        out[i].measuresTotal = Math.round((out[i].measuresTotal + drift) * 100) / 100;
         break;
       }
     }
   }
 
-  return { phases: out, grandTotal: grand };
+  return {
+    phases: out,
+    measuresGrandTotal: grand, // renamed from `grandTotal` 2026-07-26 — the priced-measures total (old $74,826-style figure)
+    programAllowanceTotal: costModel ? costModel.programAllowanceTotal : null, // NEW headline figure — sum of calendar phase costs (e.g. $181,250)
+    programEmLaborTotal: costModel ? costModel.programEmLaborTotal : null,
+    programMonths: _pricingRecommendedProgramMonths(),
+    monthlyAllowance: costModel ? costModel.monthlyAllowance : null,
+  };
 }
 
-/* ── Recommended tier timeline table (Task 2, 2026-07-22) ──────────────────────────────────────
-   Renders _pricingComputeRecommendedTimeline as a plain table (Phase, Date Range, Scope Summary,
-   Cost) — no boxes/cards, following the site's ch-tbl conventions (same --s1 header / grid-line
-   cell pattern as _pricingLaborBreakdownHTML immediately below this). Returns '' when the
-   Recommended tier has no priced rows yet, same silent-until-priced convention used throughout
-   this file.
+/* ── Recommended tier timeline table (Task 2, 2026-07-22; rebuilt 2026-07-26
+   fix/phase-cost-budget-model) ─────────────────────────────────────────────────────────────────
+   Renders _pricingComputeRecommendedTimeline as a plain table — no boxes/cards, following the
+   site's ch-tbl conventions (same --s1 header / grid-line cell pattern as
+   _pricingLaborBreakdownHTML immediately below this). Returns '' when the Recommended tier has no
+   priced rows yet, same silent-until-priced convention used throughout this file.
+
+   Two distinct dollar columns, per item 4 of the task spec (never let one "Total" row silently
+   mean two different things):
+     - "Phase Service Allowance" = the calendar cost of the monthly service allowance for that
+       phase's date range (allowanceTotal — the number Matt asked for). Falls back to the priced
+       measures total with an explicit "(no budget configured)" suffix when no budget.amount is
+       set, so the column never silently goes blank/— for an unconfigured project.
+     - "Priced Measures This Phase" = the dollar cost of the hardware/sequence rows assigned to
+       this phase (measuresTotal — the pre-existing figure), always shown so a reader can see both
+       numbers side by side and is never left assuming they're the same thing.
+   A caption line beneath the table surfaces the EM-labor-vs-measures split (verify requirement:
+   "prove measures don't consume the whole allowance") using emLaborTotal/measuresAvailable from
+   the compute function — silent (omitted) when no budget is configured.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingRecommendedTimelineHTML(projId) {
   var tl = _pricingComputeRecommendedTimeline(projId);
   if (!tl) return '';
+
+  var hasBudget = tl.programAllowanceTotal != null;
 
   var thBase =
     'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;' +
@@ -5967,7 +6191,10 @@ function _pricingRecommendedTimelineHTML(projId) {
     ';text-align:left">Scope Summary</th>' +
     '<th style="' +
     thBase +
-    ';text-align:right">Cost</th>';
+    ';text-align:right">Phase Service Allowance</th>' +
+    '<th style="' +
+    thBase +
+    ';text-align:right">Priced Measures This Phase</th>';
 
   var bodyRows = tl.phases
     .map(function (p) {
@@ -5978,6 +6205,10 @@ function _pricingRecommendedTimelineHTML(projId) {
           ': ' +
           p.buildings.map(_pricingEscText).join(', ')
         : 'No additional scope';
+      var allowanceCell = hasBudget
+        ? _pricingFmt(p.allowanceTotal)
+        : _pricingFmt(p.measuresTotal) +
+          ' <span style="font-weight:400;color:var(--text3);font-size:10px">(no budget configured)</span>';
       return (
         '<tr>' +
         '<td style="' +
@@ -5998,12 +6229,49 @@ function _pricingRecommendedTimelineHTML(projId) {
         '<td style="' +
         tdBase +
         ';text-align:right;font-weight:700;color:var(--text)">' +
-        _pricingFmt(p.total) +
+        allowanceCell +
+        '</td>' +
+        '<td style="' +
+        tdBase +
+        ';text-align:right;color:var(--text2)">' +
+        _pricingFmt(p.measuresTotal) +
         '</td>' +
         '</tr>'
       );
     })
     .join('');
+
+  var footTotalAllowance = hasBudget ? tl.programAllowanceTotal : tl.measuresGrandTotal;
+
+  // EM-labor-vs-measures caption (task verify requirement: prove measures don't consume the
+  // whole allowance) — silent when no budget is configured (same convention as the rest of this
+  // feature).
+  var laborCaption = '';
+  if (hasBudget) {
+    var anyOverCommitted = tl.phases.some(function (p) {
+      return p.overCommitted;
+    });
+    laborCaption =
+      '<div style="font-size:10.5px;color:var(--text3);margin:6px 14px 0;line-height:1.5">' +
+      'Phase Service Allowance already includes Ongoing Energy Management Services labor for that ' +
+      'period (' +
+      tl.phases
+        .map(function (p) {
+          return _pricingEscText(p.label) + ': ' + _pricingFmt(p.emLaborTotal);
+        })
+        .join(' · ') +
+      ') — the dollar amount left over for hardware/programming measures after that labor is ' +
+      tl.phases
+        .map(function (p) {
+          return _pricingEscText(p.label) + ': ' + _pricingFmt(p.measuresAvailable);
+        })
+        .join(' · ') +
+      '.' +
+      (anyOverCommitted
+        ? ' <span style="color:var(--warn);font-weight:700">Note: EM labor alone exceeds the calendar allowance in at least one phase.</span>'
+        : '') +
+      '</div>';
+  }
 
   // Bounded max-height + its own overflow:auto scroll region (same "multi-zone-scroll" pattern
   // ui-standards.md documents for the Top ROI card and _pricingLaborBreakdownHTML immediately
@@ -6017,7 +6285,7 @@ function _pricingRecommendedTimelineHTML(projId) {
     '<div style="margin:10px 14px 0;flex-shrink:0">' +
     '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:11px;text-transform:uppercase;' +
     'letter-spacing:0.5px">Recommended Tier — Phased Implementation Timeline</div>' +
-    '<div class="ch-tbl-outer" style="margin:0 0 10px;max-height:220px;display:flex;flex-direction:column">' +
+    '<div class="ch-tbl-outer" style="margin:0 0 4px;max-height:220px;display:flex;flex-direction:column">' +
     '<div class="ch-tbl-scroll" style="overflow:auto">' +
     '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%">' +
     '<thead><tr>' +
@@ -6026,12 +6294,18 @@ function _pricingRecommendedTimelineHTML(projId) {
     '<tbody>' +
     bodyRows +
     '</tbody>' +
-    '<tfoot><tr><td colspan="3" style="padding:8px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">Total</td>' +
+    '<tfoot><tr><td colspan="3" style="padding:8px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">' +
+    (hasBudget ? 'Program Total (Service Allowance)' : 'Total (no budget configured)') +
+    '</td>' +
     '<td style="padding:8px 10px;text-align:right;font-weight:700;background:var(--s1);border-top:2px solid var(--border2);font-variant-numeric:tabular-nums">' +
-    _pricingFmt(tl.grandTotal) +
+    _pricingFmt(footTotalAllowance) +
+    '</td>' +
+    '<td style="padding:8px 10px;text-align:right;font-weight:700;background:var(--s1);border-top:2px solid var(--border2);font-variant-numeric:tabular-nums;color:var(--text2)">' +
+    _pricingFmt(tl.measuresGrandTotal) +
     '</td></tr></tfoot>' +
     '</table>' +
     '</div>' +
+    laborCaption +
     '</div>' +
     '</div>'
   );
