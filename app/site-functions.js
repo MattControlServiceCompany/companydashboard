@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.26.706',
+    date: '2026-07-26',
+    title: 'Bill PDFs can now be backed up and restored in batches',
+    items: [
+      {
+        type: 'feature',
+        text: 'Home, Energy Department, and Service Department pages each have new "Export PDFs" and "Import PDFs" buttons in the sidebar. Export PDFs saves all stored bill PDFs to your computer in a handful of files instead of one giant file, so it no longer freezes or crashes the browser tab on large bill collections. Import PDFs reads those files back in and restores the PDFs to their matching bills.',
+      },
+      {
+        type: 'change',
+        text: 'Regular data backup and restore (the existing "Backup" / "Restore" buttons) are unchanged -- they still save your numbers and records without PDFs. Use the new Export/Import PDFs buttons separately when you need the actual bill documents included.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.26.705',
     date: '2026-07-26',
     title: 'Replaced "Total Investment" wording with "Estimated Cost" on client-facing documents',
