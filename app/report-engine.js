@@ -944,6 +944,15 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   const data = options.data;
   const isHero = options.hero === true;
   const pageLabel = options.label || 'Page ' + pageNum;
+  // noPageNum / hideIntHdr (2026-07-26, Service Proposal rebuild): additive opt-in flags, both
+  // default false so every existing caller (Audit report, Financial report, etc.) renders exactly
+  // as before. Matt's hand-built Word proposal target has NO page number in its footer (wave
+  // graphic only) and continuation pages carry no title/client-name chrome bar at all — just body
+  // content starting at the top margin. noPageNum omits the .rpt-pg-footer-pagenum div entirely
+  // (so _injectPageNumbers' total-count regex simply never matches it); hideIntHdr omits the
+  // .rpt-int-hdr title bar on non-hero pages.
+  const noPageNum = options.noPageNum === true;
+  const hideIntHdr = options.hideIntHdr === true;
 
   var _fmtRptDate = '';
   if (data && data.period && data.period.reportDate) {
@@ -1018,7 +1027,9 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       footerTextHtml +
       footerLabelHtml +
       footerImgHtml +
-      '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
+      (noPageNum
+        ? ''
+        : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>') +
       '</div>'
     );
   }
@@ -1030,22 +1041,26 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '<div class="rpt-page" data-page="' +
     pageNum +
     '">' +
-    '<div class="rpt-int-hdr">' +
-    '<div class="rpt-pg-title">' +
-    title +
-    '</div>' +
-    '<div class="rpt-info">' +
-    (data ? data.project.client : '') +
-    (interiorRangeHtml ? '<br>' + interiorRangeHtml : '') +
-    '</div>' +
-    '</div>' +
+    (hideIntHdr
+      ? ''
+      : '<div class="rpt-int-hdr">' +
+        '<div class="rpt-pg-title">' +
+        title +
+        '</div>' +
+        '<div class="rpt-info">' +
+        (data ? data.project.client : '') +
+        (interiorRangeHtml ? '<br>' + interiorRangeHtml : '') +
+        '</div>' +
+        '</div>') +
     '<div class="rpt-body">' +
     bodyHTML +
     '</div>' +
     footerTextHtml +
     footerLabelHtml +
     footerImgHtml +
-    '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
+    (noPageNum
+      ? ''
+      : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>') +
     '</div>'
   );
 }
@@ -11577,8 +11592,19 @@ var ASHRAE36_SECTIONS = {
     { key: 'pointInventory', label: 'Point Inventory Completeness', group: 'Report', defaultOn: true },
   ],
   proposal: [
-    { key: 'proposalCover', label: 'Cover Page', group: 'Proposal', defaultOn: true },
-    { key: 'proposalScope', label: 'Scope of Work', group: 'Proposal', defaultOn: true },
+    // 2026-07-26 rebuild (spec: AI/_context/specs/joco-service-proposal-target-2026-07-23.md):
+    // Matt's hand-built Word target is a 3-page Title/Exec Summary/Findings + Recommended Program
+    // + Phase table + Long-Term Vision document — replacing the old 9-page cover+scope+pricing
+    // shape. 'proposalCover' now renders page 1 of that structure (still the toggle key so
+    // existing stored preferences don't dangle); 'proposalPhaseTable' and 'proposalVision' are
+    // pages 2 and 3, new keys, default ON since they're integral to the new default shape.
+    { key: 'proposalCover', label: 'Proposal Summary (Title, Findings, Program)', group: 'Proposal', defaultOn: true },
+    { key: 'proposalPhaseTable', label: 'Recommended Program — Phase Table', group: 'Proposal', defaultOn: true },
+    { key: 'proposalVision', label: 'Implementation Plan & Long-Term Vision', group: 'Proposal', defaultOn: true },
+    // Legacy detailed Scope of Work page (Phase 1 Hardware / Phase 2 Sequences tables) — kept and
+    // NOT deleted (hard constraint: don't destroy existing capability) but flipped to opt-in
+    // (default OFF) now that it's no longer part of the default proposal shape.
+    { key: 'proposalScope', label: 'Detailed Scope of Work (legacy)', group: 'Proposal', defaultOn: false },
     // ebfca114 (Matt's decision): opt-in priced Cost Estimate page. Default OFF — the client PDF
     // shows no dollar figures unless the user explicitly checks this box. Renders via
     // rptPageASHRAE36ProposalPricing (a NEW function; NOT the Audit's zero-dollar glossary
@@ -14540,58 +14566,610 @@ function _rptA36CoverPricingStrip(d) {
   );
 }
 
-function rptPageASHRAE36ProposalCover(n, d, opts) {
+/**
+ * _rptA36AssessmentFindingsData — pulls the two client-facing tier totals the Assessment
+ * Findings table needs: "Full ASHRAE 36 Compliance Implementation" (the existing Compliance tier
+ * grand total) and "Full Energy Scope of Work Implementation" (the existing Full Scope tier grand
+ * total). These are RENAMED LABELS FOR THE PROPOSAL ONLY — the underlying tier keys/logic
+ * ('compliance', 'full-scope') and their labels everywhere else (Cost Estimate tab, the opt-in
+ * rptPageASHRAE36ProposalPricing page) are untouched. Same _pricingGetEstimate /
+ * _pricingComputeSummaryData chain every other pricing-derived number in this file uses — no new
+ * pricing math. Returns fmt strings or null (never $0/NaN/undefined) so callers can omit gracefully.
+ */
+function _rptA36AssessmentFindingsData(d) {
+  var out = { complianceFmt: null, fullScopeFmt: null };
+  try {
+    if (typeof _pricingGetEstimate === 'function' && typeof _pricingComputeSummaryData === 'function') {
+      var estimateState = _pricingGetEstimate(d.project.id);
+      var summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
+      var tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
+      function _fmtUSD(v) {
+        if (v === null || v === undefined || isNaN(v)) return null;
+        return '$' + Math.round(v).toLocaleString('en-US');
+      }
+      if (tt && tt.compliance) out.complianceFmt = _fmtUSD(tt.compliance.grand);
+      if (tt && tt['full-scope']) out.fullScopeFmt = _fmtUSD(tt['full-scope'].grand);
+    }
+  } catch (e) {
+    /* leave both null — caller renders the graceful fallback */
+  }
+  return out;
+}
+
+/**
+ * rptPageASHRAE36ProposalCover — Page 1 of the rebuilt Service Proposal (2026-07-26 rebuild,
+ * spec: AI/_context/specs/joco-service-proposal-target-2026-07-23.md). Matches Matt's hand-built
+ * Word target page 1: Title block, Executive Summary, Assessment Findings (+ 2-row cost table +
+ * Matt's requested "what's included" clarification — Word comment "Clarify what is included" on
+ * the Full Energy Scope of Work row), Recommended Optimization Program (paragraph + monthly
+ * allowance + 6 bullets), Why This Approach (5 bullets). Plain headings/tables only — zero
+ * shaded/filled bands, zero boxes/cards (hard constraint, w:shd fill count = 0 in the target
+ * .docx). hero:true keeps the CSC letterhead; noPageNum:true matches the target's page-number-
+ * free footer.
+ *
+ * The old 3-tier "Investment Summary" strip (_rptA36CoverPricingStrip) is NOT called from here
+ * anymore — the target has no such block; it pivots straight from the 2-row findings table to the
+ * monthly allowance. _rptA36CoverPricingStrip itself is left intact (unused) rather than deleted,
+ * per the "do not destroy existing capability" constraint.
+ */
+function rptPageASHRAE36ProposalCover(n, d) {
   var p = d.portfolio;
-  var costEstOn = !!(opts && opts.costEstimateOn);
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var color =
-    p.composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-      ? 'var(--rpt-green)'
-      : p.composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-        ? 'var(--rpt-orange)'
-        : 'var(--rpt-red)';
+
+  function esc(s) {
+    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
+  }
+
+  // Density pass (2026-07-26, page-1 clip fix): tightened from 12/5 margin, 1.55 line-height to
+  // fit all 5 "Why This Approach" bullets above the wave footer without shrinking type past a
+  // readable 10.5px/16.5px floor — see dashboardlogic.md 2026-07-26 entry for the before/after
+  // px-past-footer measurements this was tuned against.
+  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
+  var BODY = 'font-size:10.5px;color:var(--rpt-page-text);line-height:1.38';
+  var UL = 'margin:2px 0 0;padding-left:16px;font-size:10.5px;color:var(--rpt-page-text);line-height:1.38';
+
+  // ── Title block ─────────────────────────────────────────────────────────
+  var title =
+    '<div style="text-align:center;margin-bottom:6px">' +
+    '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">' +
+    esc(d.project.name) +
+    ' BAS</div>' +
+    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Optimization Program</div>' +
+    '</div>';
+
+  // ── Executive Summary ───────────────────────────────────────────────────
+  var execSummary =
+    '<div style="' +
+    HEAD +
+    '">Executive Summary</div>' +
+    '<div style="' +
+    BODY +
+    '">Control Service Company completed an ASHRAE 36 readiness assessment across the ' +
+    esc(d.project.name) +
+    ' building portfolio. The assessment identified an overall readiness score of ' +
+    p.composite +
+    '% across ' +
+    Number(p.totalBuildings).toLocaleString() +
+    ' buildings and ' +
+    Number(p.totalEquip).toLocaleString() +
+    ' equipment units. The assessment found significant opportunities to improve HVAC energy ' +
+    'performance, ventilation control, occupant comfort, and overall BAS operational consistency ' +
+    'through targeted controls upgrades and optimization strategies.</div>';
+
+  // ── Assessment Findings ─────────────────────────────────────────────────
+  var af = _rptA36AssessmentFindingsData(d);
+  var findingsPara =
+    af.complianceFmt && af.fullScopeFmt
+      ? 'The assessment identified approximately ' +
+        af.complianceFmt +
+        ' in improvements necessary to address identified ASHRAE 36 compliance gaps across the ' +
+        'portfolio and approximately ' +
+        af.fullScopeFmt +
+        ' to implement the full energy scope of work across all assessed facilities.'
+      : 'The assessment identified improvements necessary to address ASHRAE 36 compliance gaps across ' +
+        'the portfolio, as well as a broader energy-focused scope of work across all assessed ' +
+        'facilities. Cost estimates below will populate once pricing data has been imported for this project.';
+
+  var tblBorder = '1px solid var(--rpt-rule)';
+  var thPlain =
+    'padding:4px 10px;font-size:10.5px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:' + tblBorder;
+  var tdPlain = 'padding:4px 10px;font-size:10.5px;color:var(--rpt-page-text);text-align:left;border:' + tblBorder;
+  var findingsTable =
+    '<table style="width:100%;border-collapse:collapse;margin-top:5px;margin-bottom:5px">' +
+    '<colgroup><col><col style="width:150px"></colgroup>' +
+    '<thead><tr><th style="' +
+    thPlain +
+    '">Assessment Findings Program Option</th><th style="' +
+    thPlain +
+    '">Estimated Cost</th></tr></thead>' +
+    '<tbody>' +
+    '<tr><td style="' +
+    tdPlain +
+    '">Full ASHRAE 36 Compliance Implementation</td><td style="' +
+    tdPlain +
+    '">' +
+    (af.complianceFmt || '&mdash;') +
+    '</td></tr>' +
+    '<tr><td style="' +
+    tdPlain +
+    '">Full Energy Scope of Work Implementation</td><td style="' +
+    tdPlain +
+    '">' +
+    (af.fullScopeFmt || '&mdash;') +
+    '</td></tr>' +
+    '</tbody></table>';
+
+  // "What's included" clarification (Matt's Word comment on the Full Energy Scope of Work row:
+  // "Clarify what is included" + "We need to explain in more detail"). Grounded in the actual
+  // tier-build logic (buildComplianceRows/buildFullScopeRows, pricing-estimator.js): Compliance =
+  // every Phase-1 required hardware gap + only 'safety'-classified Phase-2 sequences (currently
+  // freeze protection); Full Scope = every hardware gap + every applicable sequence across every
+  // piece of equipment, plus optional beyond-compliance points and portfolio-wide FDD. Not
+  // invented marketing copy — this is what those two builders actually assemble.
+  var whatsIncluded =
+    '<div style="' +
+    BODY +
+    '">' +
+    '<strong>Full ASHRAE 36 Compliance Implementation</strong> installs the sensor and actuator ' +
+    'hardware ASHRAE Guideline 36 requires, plus programming for safety-critical sequences (e.g. ' +
+    'freeze protection). It does not include energy-optimization sequences such as supply air ' +
+    'temperature reset, duct static pressure reset, demand-controlled ventilation, or economizer ' +
+    'control, and does not include Fault Detection &amp; Diagnostics (FDD) reporting.' +
+    '</div>' +
+    '<div style="' +
+    BODY +
+    ';margin-top:4px">' +
+    '<strong>Full Energy Scope of Work Implementation</strong> includes everything in the ' +
+    'Compliance option, plus every applicable Guideline 36 optimization sequence across every ' +
+    'piece of equipment in the portfolio, plus portfolio-wide Fault Detection &amp; Diagnostics ' +
+    '(FDD) reporting.' +
+    '</div>';
+
+  var assessmentFindings =
+    '<div style="' +
+    HEAD +
+    '">Assessment Findings</div>' +
+    '<div style="' +
+    BODY +
+    '">' +
+    findingsPara +
+    '</div>' +
+    findingsTable +
+    whatsIncluded;
+
+  // ── Recommended Optimization Program (first heading) ───────────────────
+  var budgetFmt = null;
+  try {
+    if (typeof _pricingGetBudget === 'function') {
+      var _b = _pricingGetBudget(d.project.id);
+      if (_b && _b.amount != null && !isNaN(_b.amount) && Number(_b.amount) > 0) {
+        budgetFmt = '$' + Math.round(Number(_b.amount)).toLocaleString('en-US');
+      }
+    }
+  } catch (e) {
+    budgetFmt = null;
+  }
+
+  var monthlyAllowanceBlock = budgetFmt
+    ? '<div style="' +
+      BODY +
+      ';font-weight:700;margin-top:5px">Monthly Allowance for the following: Parts, materials, ' +
+      'on-site labor hours and labor hours</div>' +
+      '<div style="' +
+      BODY +
+      '">' +
+      budgetFmt +
+      ' per Month</div>'
+    : '';
+
+  var recProgram1 =
+    '<div style="' +
+    HEAD +
+    '">Recommended Optimization Program</div>' +
+    '<div style="' +
+    BODY +
+    '">Rather than pursuing a large one-time capital project, Control Service Company recommends ' +
+    'a phased optimization program focused on the highest-value opportunities first. This approach ' +
+    'allows ' +
+    esc(d.project.name) +
+    ' to improve building performance using a predictable monthly budget while continuously ' +
+    'expanding optimization efforts over time.</div>' +
+    monthlyAllowanceBlock +
+    '<ul style="' +
+    UL +
+    ';margin-top:4px">' +
+    '<li>Demand-controlled ventilation improvements</li>' +
+    '<li>Supply air temperature optimization</li>' +
+    '<li>Fan energy optimization</li>' +
+    '<li>Supporting sensor infrastructure upgrades</li>' +
+    '<li>BAS programming and commissioning</li>' +
+    '<li>Continuous operational improvement</li>' +
+    '</ul>';
+
+  // ── Why This Approach ───────────────────────────────────────────────────
+  var whyThisApproach =
+    '<div style="' +
+    HEAD +
+    '">Why This Approach</div>' +
+    '<ul style="' +
+    UL +
+    '">' +
+    '<li>Addresses the highest-priority opportunities identified during the assessment.</li>' +
+    '<li>Improves comfort, ventilation, and energy performance.</li>' +
+    '<li>Avoids the need for a large capital expenditure.</li>' +
+    '<li>Allows implementation to align with budget planning cycles.</li>' +
+    '<li>Creates a sustainable long-term optimization strategy.</li>' +
+    '</ul>';
+
+  var bodyHTML =
+    '<div style="padding:4px 48px 2px">' +
+    title +
+    execSummary +
+    assessmentFindings +
+    recProgram1 +
+    whyThisApproach +
+    '</div>';
+
+  return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
+    hero: true,
+    noPageNum: true,
+    data: fakeData,
+    label: 'Page ' + n + ' — Proposal Summary',
+  });
+}
+
+/**
+ * rptPageASHRAE36ProposalPhaseTable — Page 2 of the rebuilt Service Proposal. Matches the target's
+ * second "Recommended Optimization Program" heading + paragraph, then the transposed phase table
+ * (rows = Included Improvements / Facilities Included / Expected Results, columns = Phase 1/2/3).
+ * Facilities Included and Included Improvements are LIVE-DERIVED from
+ * _pricingComputeRecommendedTimeline (pricing-estimator.js) — the same phase split the interactive
+ * Cost Estimate tab's Recommended timeline table uses — never hardcoded building names or scope
+ * text. Expected Results is generic phase-position narrative (foundation -> expansion ->
+ * completion) that names no client-specific fact, matching the target's own wording verbatim.
+ * Returns '' content gracefully (a single "not yet available" page) if no priced timeline exists
+ * yet for this project (i.e. pricing hasn't been configured) rather than showing empty cells.
+ */
+function rptPageASHRAE36ProposalPhaseTable(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+
+  function esc(s) {
+    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
+  }
+
+  var budgetFmt = null;
+  try {
+    if (typeof _pricingGetBudget === 'function') {
+      var _b = _pricingGetBudget(d.project.id);
+      if (_b && _b.amount != null && !isNaN(_b.amount) && Number(_b.amount) > 0) {
+        budgetFmt = '$' + Math.round(Number(_b.amount)).toLocaleString('en-US');
+      }
+    }
+  } catch (e) {
+    budgetFmt = null;
+  }
 
   var intro =
-    '<div style="font-size:12px;color:var(--rpt-page-text);line-height:1.7;margin-bottom:12px">' +
-    // Wording (fix/audit-report-scoring, 2026-07-14, Matt's decision): "compliance audit" /
-    // "compliance score" / "Guideline 36 compliance" reworded to "readiness" throughout --
-    // ASHRAE 36 defines no compliance score of its own; this is CSC's own assessment.
-    'Based on our ASHRAE Guideline 36 readiness assessment of <strong>' +
-    d.project.name +
-    '</strong>, ' +
-    'Control Service Company is pleased to present this service proposal. ' +
-    'Our assessment identified an overall readiness score of <strong style="color:' +
-    color +
+    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 5px">Recommended Optimization Program</div>' +
+    '<div style="font-size:10.5px;color:var(--rpt-page-text);line-height:1.55;margin-bottom:10px">' +
+    'Based on the ASHRAE Guideline 36 assessment findings, Control Service Company recommends a ' +
+    'phased optimization program' +
+    (budgetFmt ? ' funded through a planned budget of approximately ' + budgetFmt + ' per month,' : '') +
+    ' focused on the highest-value opportunities across the portfolio.' +
+    '</div>';
+
+  var tl = null;
+  try {
+    if (typeof _pricingComputeRecommendedTimeline === 'function') tl = _pricingComputeRecommendedTimeline(d.project.id);
+  } catch (e) {
+    tl = null;
+  }
+
+  if (!tl || !tl.phases || !tl.phases.length) {
+    var fallback =
+      '<div style="font-size:10.5px;color:var(--rpt-page-text);padding:10px 0">' +
+      'A phased facility rollout will populate here once pricing data has been imported and priced ' +
+      'for this project.' +
+      '</div>';
+    return rptPage(n, 'ASHRAE 36 Proposal', '<div style="padding:8px 48px 4px">' + intro + fallback + '</div>', {
+      hero: false,
+      hideIntHdr: true,
+      noPageNum: true,
+      data: fakeData,
+      label: 'Page ' + n + ' — Recommended Optimization Program',
+    });
+  }
+
+  // ── "Included Improvements" bucket categorization (live-derived from the phase's own priced
+  // rows — never hardcoded per-phase text). Buckets mirror the same measure families the
+  // Executive Summary/Recommended-Program bullets above already name (DCV, supply air
+  // temperature optimization, fan energy optimization, sensor infrastructure, BAS programming).
+  var PHASE_VERBS = [
+    {
+      dcv: 'DCV sensors and programming',
+      sat: 'supply air temperature optimization',
+      sensor: 'supporting sensor infrastructure upgrades',
+      fan: 'fan energy optimization',
+      bas: 'BAS programming and commissioning',
+    },
+    {
+      dcv: 'expanded DCV deployments',
+      sat: 'expanded supply air temperature optimization',
+      sensor: 'additional sensor deployments',
+      fan: 'fan energy optimization',
+      bas: 'BAS programming and commissioning',
+    },
+    {
+      dcv: 'final DCV sensor deployment',
+      sat: 'remaining supply air temperature optimization',
+      sensor: 'remaining sensor deployment',
+      fan: 'remaining fan optimization',
+      bas: 'ongoing BAS programming and commissioning',
+    },
+  ];
+  var DCV_SEQ = { demandCtrl: true, vav_dcv: true };
+  var FAN_SEQ = { ahu_dsp_reset: true, ahu_rf_control: true };
+
+  function improvementsForPhase(rows, idx) {
+    rows = rows || [];
+    var verbs = PHASE_VERBS[idx] || PHASE_VERBS[0];
+    var hasDCV = false,
+      hasSAT = false,
+      hasFan = false,
+      hasSensor = false,
+      hasBAS = false;
+    rows.forEach(function (r) {
+      if (r.phase === 1) {
+        hasSensor = true;
+        if (r._pointKey === 'co2') hasDCV = true;
+      } else if (r.phase === 2) {
+        hasBAS = true;
+        if (r.seqKey && DCV_SEQ[r.seqKey]) hasDCV = true;
+        else if (r.seqKey === 'ahu_sat_reset') hasSAT = true;
+        else if (r.seqKey && FAN_SEQ[r.seqKey]) hasFan = true;
+      }
+    });
+    var parts = [];
+    if (hasDCV) parts.push(verbs.dcv);
+    if (hasSAT) parts.push(verbs.sat);
+    if (hasSensor) parts.push(verbs.sensor);
+    if (hasFan) parts.push(verbs.fan);
+    if (hasBAS) parts.push(verbs.bas);
+    return parts.length ? parts.join('; ') + '.' : 'Continued optimization of previously implemented measures.';
+  }
+
+  var EXPECTED_RESULTS = [
+    'Improved ventilation, sequences that just need to be programmed, higher HVAC efficiency, and ' +
+      'the foundation for future improvements.',
+    'Portfolio expansion, additional savings opportunities, and improved operational consistency.',
+    'Completion of initial strategy, increased Guideline 36 alignment, and continued comfort and ' +
+      'performance gains.',
+  ];
+
+  var thStyle =
+    'padding:8px 10px;font-size:10.5px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
+    'border:1px solid var(--rpt-rule)';
+  var lblStyle =
+    'padding:8px 10px;font-size:10.5px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
+    'vertical-align:top;border:1px solid var(--rpt-rule)';
+  var cellStyle =
+    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
+    'line-height:1.5;border:1px solid var(--rpt-rule)';
+
+  var headRow =
+    '<tr><th style="' +
+    thStyle +
+    '">Phase</th>' +
+    tl.phases
+      .map(function (p) {
+        return '<th style="' + thStyle + '">' + esc(p.label) + '</th>';
+      })
+      .join('') +
+    '</tr>';
+
+  var improvementsRow =
+    '<tr><td style="' +
+    lblStyle +
+    '">Included Improvements</td>' +
+    tl.phases
+      .map(function (p, i) {
+        return '<td style="' + cellStyle + '">' + esc(improvementsForPhase(p.rows, i)) + '</td>';
+      })
+      .join('') +
+    '</tr>';
+
+  var facilitiesRow =
+    '<tr><td style="' +
+    lblStyle +
+    '">Facilities Included</td>' +
+    tl.phases
+      .map(function (p) {
+        var txt = p.buildings && p.buildings.length ? p.buildings.map(esc).join('; ') + '.' : 'None assigned.';
+        return '<td style="' + cellStyle + '">' + txt + '</td>';
+      })
+      .join('') +
+    '</tr>';
+
+  var resultsRow =
+    '<tr><td style="' +
+    lblStyle +
+    '">Expected Results</td>' +
+    tl.phases
+      .map(function (p, i) {
+        return '<td style="' + cellStyle + '">' + esc(EXPECTED_RESULTS[i] || '') + '</td>';
+      })
+      .join('') +
+    '</tr>';
+
+  var colgroup =
+    '<colgroup><col style="width:140px">' +
+    tl.phases
+      .map(function () {
+        return '<col>';
+      })
+      .join('') +
+    '</colgroup>';
+
+  var table =
+    '<table style="width:100%;border-collapse:collapse">' +
+    colgroup +
+    '<thead>' +
+    headRow +
+    '</thead>' +
+    '<tbody>' +
+    improvementsRow +
+    facilitiesRow +
+    resultsRow +
+    '</tbody>' +
+    '</table>';
+
+  var bodyHTML = '<div style="padding:8px 48px 4px">' + intro + table + '</div>';
+
+  return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
+    hero: false,
+    hideIntHdr: true,
+    noPageNum: true,
+    data: fakeData,
+    label: 'Page ' + n + ' — Recommended Optimization Program',
+  });
+}
+
+/**
+ * rptPageASHRAE36ProposalVision — Page 3 of the rebuilt Service Proposal: Implementation Plan &
+ * Long-Term Vision (Phase/Schedule table, live from the same _pricingComputeRecommendedTimeline
+ * phase labels/date ranges as page 2's table), Long-Term Program Vision, Expected Outcomes,
+ * Disclaimer. Bullet/paragraph text is verbatim from the target spec — none of it references a
+ * client-specific fact, so no live derivation is needed for this page beyond the schedule table.
+ */
+function rptPageASHRAE36ProposalVision(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+
+  function esc(s) {
+    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
+  }
+
+  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 5px';
+  var BODY = 'font-size:10.5px;color:var(--rpt-page-text);line-height:1.55';
+  var UL = 'margin:3px 0 0;padding-left:16px;font-size:10.5px;color:var(--rpt-page-text);line-height:1.55';
+
+  var tl = null;
+  try {
+    if (typeof _pricingComputeRecommendedTimeline === 'function') tl = _pricingComputeRecommendedTimeline(d.project.id);
+  } catch (e) {
+    tl = null;
+  }
+
+  var thPlain =
+    'padding:6px 10px;font-size:10.5px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
+  var tdPlain =
+    'padding:6px 10px;font-size:10.5px;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
+
+  var implTable = '';
+  if (tl && tl.phases && tl.phases.length) {
+    implTable =
+      '<div style="' +
+      HEAD +
+      '">Implementation Plan &amp; Long-Term Vision</div>' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:4px">' +
+      '<colgroup><col style="width:140px"><col></colgroup>' +
+      '<thead><tr><th style="' +
+      thPlain +
+      '">Phase</th><th style="' +
+      thPlain +
+      '">Schedule</th></tr></thead><tbody>' +
+      tl.phases
+        .map(function (p) {
+          return (
+            '<tr><td style="' +
+            tdPlain +
+            '">' +
+            esc(p.label) +
+            '</td><td style="' +
+            tdPlain +
+            '">' +
+            esc(p.dateRange) +
+            '</td></tr>'
+          );
+        })
+        .join('') +
+      '</tbody></table>';
+  } else {
+    implTable =
+      '<div style="' +
+      HEAD +
+      '">Implementation Plan &amp; Long-Term Vision</div>' +
+      '<div style="' +
+      BODY +
+      '">A calendar-phase schedule will populate here once pricing data has been imported and ' +
+      'priced for this project.</div>';
+  }
+
+  var longTermVision =
+    '<div style="' +
+    HEAD +
+    '">Long-Term Program Vision</div>' +
+    '<div style="' +
+    BODY +
+    '">The objective of the Recommended Optimization Program is not simply to complete a one-time ' +
+    'project. The objective is to continuously improve HVAC performance, increase energy ' +
+    'efficiency, improve occupant comfort, and progressively increase ASHRAE 36 alignments across ' +
+    'the ' +
+    esc(d.project.name) +
+    ' portfolio.</div>' +
+    '<div style="' +
+    BODY +
+    ';margin-top:6px">As buildings and systems are optimized, future opportunities may include:</div>' +
+    '<ul style="' +
+    UL +
     '">' +
-    p.composite +
-    '%</strong> across ' +
-    p.totalBuildings +
-    ' buildings and ' +
-    p.totalEquip +
-    ' equipment units. ' +
-    'This proposal outlines the programming and hardware upgrades needed to bring your facility into full alignment with Guideline 36, ' +
-    'maximizing energy savings and occupant comfort.' +
+    '<li>Additional ASHRAE 36 sequence implementation</li>' +
+    '<li>Enhanced fault detection and diagnostics</li>' +
+    '<li>Advanced energy optimization strategies</li>' +
+    '<li>Additional sensor deployments</li>' +
+    '<li>Extended analytics and performance reporting</li>' +
+    '<li>Ongoing programming refinements</li>' +
+    '</ul>' +
+    '<div style="' +
+    BODY +
+    ';margin-top:6px">These future improvements can be prioritized and implemented as part of the ' +
+    'ongoing optimization program based on operational needs, budget priorities, and observed ' +
+    'building performance.</div>';
+
+  var expectedOutcomes =
+    '<div style="' +
+    HEAD +
+    '">Expected Outcomes</div>' +
+    '<ul style="' +
+    UL +
+    '">' +
+    '<li>Improved occupant comfort</li>' +
+    '<li>Improved ventilation management</li>' +
+    '<li>Reduced HVAC energy consumption</li>' +
+    '<li>Improved operational consistency across facilities</li>' +
+    '<li>Increased visibility into system performance</li>' +
+    '<li>Greater alignment with ASHRAE Guideline 36 best practices</li>' +
+    '</ul>';
+
+  var disclaimer =
+    '<div style="' +
+    HEAD +
+    '">Disclaimer</div>' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;font-style:italic">' +
+    'Energy savings estimates are based on published research studies and engineering calculations ' +
+    'representing typical applications. Actual savings depend on equipment condition, occupancy ' +
+    'patterns, utility rates, weather conditions, operational practices, and implementation quality.' +
     '</div>';
 
   var bodyHTML =
-    '<div style="padding:16px 48px">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE Guideline 36</div>' +
-    '<div style="font-size:17px;font-weight:600;color:var(--rpt-page-text);margin-bottom:4px">BAS Programming &amp; Upgrade Proposal</div>' +
-    '<div style="font-size:13px;color:var(--rpt-page-text);margin-bottom:14px">' +
-    d.project.name +
-    ' &nbsp;|&nbsp; ' +
-    d.date +
-    '</div>' +
-    '<div style="height:2px;background:var(--rpt-blue);margin-bottom:14px"></div>' +
-    intro +
-    (costEstOn ? _rptA36CoverPricingStrip(d) : '') +
-    '</div>';
+    '<div style="padding:8px 48px 4px">' + implTable + longTermVision + expectedOutcomes + disclaimer + '</div>';
 
-  return rptPage(n, 'ASHRAE 36 Proposal — Cover', bodyHTML, {
-    hero: true,
+  return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
+    hero: false,
+    hideIntHdr: true,
+    noPageNum: true,
     data: fakeData,
-    label: 'Page ' + n + ' — Proposal Cover',
+    label: 'Page ' + n + ' — Long-Term Vision',
   });
 }
 
@@ -16009,14 +16587,17 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     return html.replace(/<div class="rpt-page([^"]*)"/, '<div class="rpt-page$1" data-section="' + key + '"');
   }
 
+  // 2026-07-26 rebuild: default 3-page shape (proposalCover=page1, proposalPhaseTable=page2,
+  // proposalVision=page3) — see the ASHRAE36_SECTIONS.proposal comment above for rationale.
   if (s.proposalCover !== false)
-    pages.push(
-      _tagA36Section(
-        rptPageASHRAE36ProposalCover(pageNum++, data, { costEstimateOn: s.costEstimate === true }),
-        'proposalCover',
-      ),
-    );
-  if (s.proposalScope !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
+  if (s.proposalPhaseTable !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalPhaseTable(pageNum++, data), 'proposalPhaseTable'));
+  if (s.proposalVision !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalVision(pageNum++, data), 'proposalVision'));
+
+  // Legacy detailed Scope of Work page — now opt-in (default OFF), kept for capability parity.
+  if (s.proposalScope === true)
     pages.push(_tagA36Section(rptPageASHRAE36ProposalScope(pageNum++, data), 'proposalScope'));
 
   // ebfca114: opt-in priced Cost Estimate page (default OFF — strict === true opt-in, so an

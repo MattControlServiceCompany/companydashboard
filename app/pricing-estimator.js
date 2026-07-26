@@ -5911,6 +5911,12 @@ function _pricingComputeRecommendedTimeline(projId) {
       label: defs[i].label,
       dateRange: defs[i].dateRange,
       buildings: p.buildings,
+      // rows (2026-07-26, Service Proposal rebuild): exposes the raw priced rows backing this
+      // phase so callers can derive a live "what's included" summary (e.g. which sequence types /
+      // hardware categories actually fall in this phase) without re-deriving the phase split
+      // themselves. Purely additive — existing callers (_pricingRecommendedTimelineHTML) never
+      // read this field, so this cannot change any previously rendered output.
+      rows: p.rows,
       total: Math.round(p.total * 100) / 100,
     };
   });
