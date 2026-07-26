@@ -12033,6 +12033,79 @@ function _a36StatusChip(status, inPlace, required, seqNA) {
   return '<span style="font-size:10px;color:var(--rpt-page-text)">' + label + '</span>';
 }
 
+/**
+ * _a36SeqRequiredSensorLabels(seq) — client-facing "Requires: …" sub-line for the
+ * ASHRAE Guideline 36 Sequences reference table (rptPageASHRAE36CostEstimate).
+ *
+ * Source of truth is seq.requiredCats (EM_SEQUENCE_DEFS, equipment-matrix.js) — the same
+ * complete, authoritative point-category list this table's caller already uses to compute
+ * per-equipment sequence readiness (emComputeSequenceReadiness). Deliberately NOT
+ * app/pricing-estimator.js's SEQUENCE_BLOCKING_SENSORS, which is a narrower "does this block
+ * the cost-tier discount" subset. If a sequence only defines requiredCatsByType (e.g.
+ * vav_damper_writeback's ddvav-specific coldDampCmd/hotDampCmd), the union of those per-type
+ * lists is used since this table is a general reference, not tied to one equipment instance.
+ *
+ * Category keys are resolved to plain-language labels via _pricingPointLabel
+ * (pricing-estimator.js) first, falling back to the matching EM_POINT_CATEGORIES category's
+ * `label` (equipment-matrix.js) for the few keys _pricingPointLabel doesn't cover (rfEnable,
+ * rfSpeedCmd, co2) — never a raw unresolved point key rendered to a client report.
+ *
+ * Defensive by design: returns '' (never throws) if seq is falsy, has no required categories,
+ * or EM_SEQUENCE_DEFS/EM_POINT_CATEGORIES/_pricingPointLabel aren't available. Call site
+ * already guards on a falsy return (renders no "Requires:" sub-line).
+ *
+ * @param {object} seq - one entry from EM_SEQUENCE_DEFS
+ * @returns {string} comma-separated plain-language sensor/point labels, or ''
+ */
+function _a36SeqRequiredSensorLabels(seq) {
+  try {
+    if (!seq) return '';
+    var cats = Array.isArray(seq.requiredCats) ? seq.requiredCats.slice() : [];
+    if (!cats.length && seq.requiredCatsByType && typeof seq.requiredCatsByType === 'object') {
+      var seenCat = {};
+      Object.keys(seq.requiredCatsByType).forEach(function (t) {
+        (seq.requiredCatsByType[t] || []).forEach(function (c) {
+          if (!seenCat[c]) {
+            seenCat[c] = true;
+            cats.push(c);
+          }
+        });
+      });
+    }
+    if (!cats.length) return '';
+
+    var labels = [];
+    var seenLabel = {};
+    cats.forEach(function (catKey) {
+      var lbl = '';
+      if (typeof _pricingPointLabel === 'function') {
+        var pl = _pricingPointLabel(catKey);
+        if (pl && pl !== catKey) lbl = pl;
+      }
+      if (!lbl && typeof EM_POINT_CATEGORIES !== 'undefined' && EM_POINT_CATEGORIES) {
+        var equipKeys = Object.keys(EM_POINT_CATEGORIES);
+        for (var i = 0; i < equipKeys.length && !lbl; i++) {
+          var catArr = EM_POINT_CATEGORIES[equipKeys[i]] || [];
+          for (var j = 0; j < catArr.length; j++) {
+            if (catArr[j] && catArr[j].key === catKey && catArr[j].label) {
+              lbl = catArr[j].label;
+              break;
+            }
+          }
+        }
+      }
+      if (!lbl) lbl = catKey; // last-resort fallback — should not normally happen
+      if (!seenLabel[lbl]) {
+        seenLabel[lbl] = true;
+        labels.push(lbl);
+      }
+    });
+    return labels.join(', ');
+  } catch (e) {
+    return '';
+  }
+}
+
 // ─── rptPageASHRAE36Cover ─────────────────────────────────────────────────
 /**
  * Cover page: three gauge rings (overall/sensor/sequence), one-paragraph finding.
@@ -12600,11 +12673,29 @@ function rptPageASHRAE36CostEstimate(n, d) {
     seqDefsList.forEach(function (seq) {
       if (!seqApplicable[seq.key]) return; // not applicable to any equipment in this portfolio
       var plainDesc = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[seq.key]) || '';
+      // 2026-07-23 (Matt's request): show which BAS points/sensors this sequence needs, directly
+      // under the sequence name. Required-point source is EM_SEQUENCE_DEFS[*].requiredCats (this
+      // same file, equipment-matrix.js) — NOT app/pricing-estimator.js's SEQUENCE_BLOCKING_SENSORS,
+      // which is a narrower "does this block the cost-tier discount" subset (6 of 17 sequences
+      // have an empty array there even though they do require points — see rationale in the
+      // dashboardlogic.md entry for this change). requiredCats is the complete, already-authoritative
+      // list this same table already uses to compute per-equipment sequence readiness
+      // (emComputeSequenceReadiness). Labels come from _pricingPointLabel (pricing-estimator.js)
+      // first, falling back to the EM_POINT_CATEGORIES category definition (equipment-matrix.js)
+      // for the handful of keys _pricingPointLabel doesn't have (rfEnable, rfSpeedCmd, co2) —
+      // never a raw unresolved point key.
+      var sensorLine = _a36SeqRequiredSensorLabels(seq);
       var rowHTML =
         '<tr>' +
         '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);vertical-align:top;width:26%">' +
         _esc(seq.label) +
+        (sensorLine
+          ? '<div style="font-size:9px;font-weight:400;color:var(--rpt-page-text);margin-top:3px;line-height:1.4">' +
+            'Requires: ' +
+            _esc(sensorLine) +
+            '</div>'
+          : '') +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);vertical-align:top;width:16%;white-space:nowrap">' +
@@ -12616,10 +12707,14 @@ function rptPageASHRAE36CostEstimate(n, d) {
         _esc(plainDesc) +
         '</td>' +
         '</tr>';
-      // estH: DOM-measured 40–65px per row (avg ~55px); 60px for safety on wrapping text
-      rationaleTokens.push({ type: 'row', html: rowHTML, estH: 60 });
+      // estH: DOM-measured 40–65px per row (avg ~55px); 60px for safety on wrapping text.
+      // Bumped to 82 (2026-07-23) to cover the added "Requires:" sensor sub-line, which can wrap
+      // to 2-3 lines in the narrow 26%-width sequence-name column for sequences with 3 required
+      // sensors (e.g. ahu_sat_reset, hwp_staging) — re-verified against rendered output below.
+      rationaleTokens.push({ type: 'row', html: rowHTML, estH: sensorLine ? 82 : 60 });
     });
   } catch (e) {
+    console.error('rptPageASHRAE36CostEstimate: sequence-glossary table build failed', e);
     rationaleTokens = []; // non-fatal — omit block if anything throws
   }
 
