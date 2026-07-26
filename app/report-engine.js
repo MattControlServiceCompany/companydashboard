@@ -7118,39 +7118,295 @@ async function exportReportToWord() {
     const reportStylesEl = document.getElementById('report-styles');
     const rawCss = reportStylesEl ? reportStylesEl.textContent : '';
     const resolveVars = _buildReportCssVarResolver(rawCss);
-    const css = resolveVars(rawCss);
+    // Word text-inset fix (2026-07-26, measured via rendered PDF: body text ran edge-to-edge
+    // to both page edges in Word even though the live/PDF path's `padding: 12px 48px 30px`
+    // (.rpt-body) / `padding:4px 48px 2px` (report-page-function inline wrappers) etc. all
+    // already carry the intended 48px = 0.5in horizontal inset. Word's HTML-import CSS engine
+    // does not reliably honor `px` as a padding unit (browsers treat px as an absolute length;
+    // Word's importer maps padding to WordprocessingML twips and, measured, silently drops
+    // unrecognized-unit padding rather than approximating it — the same reason @page Section1
+    // above is expressed in `in` rather than `px`). Every "48px" token in this report's CSS/
+    // inline styles means exactly this one convention (verified: .rpt-body/.rpt-int-hdr/
+    // .rpt-footer-text page-chrome padding and every ASHRAE 36 Proposal page's inline content
+    // wrapper — no unrelated 48px usage exists in #report-styles or in report-page markup), so
+    // converting that one token to its exact equivalent `0.5in` is a safe, narrow fix — same
+    // "generated markup, not user input" reasoning as the csc-header-img regex below. Graphics
+    // stay full-bleed: @page margin remains 0in and this only touches padding on text
+    // containers, never image sizing.
+    const _fixPaddingUnits = (str) => str.replace(/(padding\s*:\s*[^;"']*?)48px/g, '$1' + '0.5in');
+    const css = _fixPaddingUnits(resolveVars(rawCss));
 
+    // Real Word headers/footers (2026-07-26 rewrite — see exportReportToWord()'s doc comment
+    // below for the full root-cause history this replaces). The old approach baked
+    // .rpt-footer/.rpt-footer-label/.rpt-pg-footer-pagenum and, on hero pages, the
+    // .csc-header-img letterhead directly into each page's body flow. .rpt-footer/
+    // .rpt-footer-label/.rpt-pg-footer-pagenum are still pulled OUT of every page's body and
+    // relocated into a real `mso-element:footer` div (wordHeaderFooterHtml, built below) so Word
+    // creates an actual word/footer*.xml part that repeats every page instead of static one-off
+    // paragraphs.
+    //
+    // csc-header-img (the letterhead) is DELIBERATELY LEFT INLINE in the hero page's own body
+    // flow instead — see the "trailing duplicate page" fix in the doc comment below for why: an
+    // earlier version of this rewrite relocated ONLY page-1's letterhead into a Word
+    // `mso-title-page:yes` / `mso-first-header` first-page header, which worked but made the
+    // unavoidable single-file mso-element trailing-duplicate cost (documented below) three
+    // full-size images tall (letterhead + two footer-wave copies) instead of one — reliably
+    // overflowing onto a genuinely new trailing page on every real report. Every hero page
+    // (whichever page number it lands on — the Audit/Proposal cover, or the Savings Report's
+    // Board-Summary-then-Cover two-hero-page case) now gets the same treatment uniformly: keep
+    // csc-header-img inline, sized via the width/height-attribute regex a few lines down.
     let rawBodyHtml = '';
+    let hasPageNum = false;
+    let footerLabelText = '';
     pages.forEach((pageEl, i) => {
       if (i > 0) {
         // Word page-break marker recognized by the mso HTML-to-doc conversion.
         rawBodyHtml += '<br clear="all" style="page-break-before:always" />';
+        // Invisible spacer paragraph fix (2026-07-26, measured regression): even with pure
+        // longhand margin (no shorthand at all — see _insetChildren's comment above), the very
+        // first element rendered immediately after a forced page break still silently ignored
+        // its own margin-left/margin-right (confirmed with a controlled Word COM round-trip,
+        // varH_pagebreak.doc/.pdf and varI_flex.doc/.pdf: identical margin styling on the FIRST
+        // element after a break failed while the SECOND element on the same page — same margin,
+        // same nesting depth — worked correctly). This is a known, longstanding Word HTML-import
+        // quirk independent of anything specific to this report (the first paragraph
+        // immediately following a page break not fully honoring its own formatting). Standard
+        // workaround: insert a zero-visual-impact placeholder paragraph right after the break so
+        // the real page content (title bar, letterhead, body text — whatever it is) becomes the
+        // SECOND element on the page instead of the first, which reliably respects its margin.
+        rawBodyHtml += '<p style="margin:0;padding:0;font-size:1pt;line-height:1pt">&nbsp;</p>';
       }
-      rawBodyHtml += '<div class="rpt-page-word-wrap">' + pageEl.innerHTML + '</div>';
+      if (!hasPageNum && pageEl.querySelector('.rpt-pg-footer-pagenum')) hasPageNum = true;
+      if (!footerLabelText) {
+        const labelEl = pageEl.querySelector('.rpt-footer-label');
+        if (labelEl && labelEl.textContent.trim()) footerLabelText = labelEl.textContent.trim();
+      }
+      const clone = pageEl.cloneNode(true);
+      const stripSelectors = ['.rpt-footer', '.rpt-footer-label', '.rpt-pg-footer-pagenum'];
+      stripSelectors.forEach((sel) => {
+        clone.querySelectorAll(sel).forEach((el) => el.remove());
+      });
+      // Word text-inset DOM fix (2026-07-26, second pass on top of _fixPaddingUnits below — see
+      // that function's comment for the "48px must become 0.5in" half of this fix). Converting
+      // the unit was necessary but NOT sufficient: measured via synthetic Word COM round-trips
+      // (varE/varF test docs) that Word's HTML importer does not apply padding OR margin set on
+      // a wrapping <div> to its children's rendered position AT ALL, regardless of unit — only a
+      // margin set DIRECTLY on the block-level element that actually contains the text (the
+      // <p>/<div>/<table>/<ul> itself) insets that element. Every one of this report's
+      // horizontal-inset containers — the `.rpt-body` wrapper (interior pages) and each hero
+      // page's own inline `padding:Npx 48px Mpx` content wrapper (every ASHRAE 36 Proposal page,
+      // ASHRAE 36 Executive Summary, the Board Summary edit box) — puts its real content inside
+      // exactly this kind of ancestor div, so container-level padding/margin is silently dropped
+      // by Word no matter what. Fix: walk each container's DIRECT children here (while this is
+      // still a live DOM clone, before serializing to an HTML string) and set inline
+      // margin-left/margin-right on each of THEM instead — only the horizontal properties are
+      // touched, so any existing top/bottom spacing on these children is untouched. Runs before
+      // the "48px" -> "0.5in" string substitution below, so it matches on the original "48px"
+      // token still present in each hero wrapper's inline style at this point.
+      // WORD_CONTENT_WIDTH (2026-07-26, measured regression fix): tables throughout this file
+      // are built with inline `style="width:100%"` (rptPageASHRAE36PointInventory's building
+      // table and many others) — correct on the live/PDF path where percentage widths resolve
+      // against their actual containing block. Word's HTML importer does not: it resolves a
+      // table's `width:100%` against the PAGE's content width (8.5in, since @page margin is 0),
+      // NOT against the now-margined parent above, so a 100%-wide table combined with the new
+      // 0.5in margin-left overflowed 0.5in off the right edge of the page (measured: the
+      // rightmost "ASHRAE COVERAGE" table column was clipped at the page boundary in the
+      // rendered PDF). Fix: any width:100% element anywhere inside the inset container — direct
+      // child or nested deeper (several of these tables sit inside an intermediate pagination
+      // wrapper div, not directly under .rpt-body) — gets its width overridden to the exact
+      // correct absolute value instead — this report's page is always 8.5in wide with a fixed
+      // 0.5in inset each side, so 7.5in is always the right answer, never computed as a
+      // percentage Word might re-resolve against the wrong box. Only DIRECT children get the
+      // margin-left/right inset itself (nested width:100% descendants already sit inside an
+      // already-inset ancestor and would be double-inset otherwise).
+      const WORD_TEXT_INSET = '0.5in';
+      const WORD_CONTENT_WIDTH = '7.5in';
+      // Scoped to `table` elements only (2026-07-26, regression fix). The unscoped
+      // `[style*="width:100%"]` substring selector below also matched non-table elements that
+      // legitimately use `width:100%` combined with their own `max-width` cap — e.g. the monthly
+      // Site EUI bar-chart segments in rptPageBuildingSummary (`style="width:100%;max-width:15px;
+      // height:...px"`), which rely on `max-width:15px` to stay narrow bars. Word's HTML importer
+      // does not honor `max-width` reliably, so once this selector overwrote their `width` to
+      // WORD_CONTENT_WIDTH (7.5in) the bars rendered as full-page-width blocks in the exported
+      // Word doc. The documented root cause this fix addresses (see the WORD_CONTENT_WIDTH
+      // comment above) is specific to `<table>` elements — Word resolves a TABLE's `width:100%`
+      // against the page's content width instead of its actual containing block; there is no
+      // equivalent documented failure mode for divs/other elements. Restricting the selector to
+      // `table` targets exactly the elements the original fix was written for and leaves every
+      // other `width:100%` usage (chart bars, images, wrapper divs) untouched.
+      const _fixFullWidth = (root) => {
+        if (root.tagName === 'TABLE' && root.style && root.style.width === '100%') {
+          root.style.width = WORD_CONTENT_WIDTH;
+        }
+        root.querySelectorAll('table[style*="width:100%"], table[style*="width: 100%"]').forEach((el) => {
+          el.style.width = WORD_CONTENT_WIDTH;
+        });
+      };
+      // Nested-wrapper fix (2026-07-26, measured regression): several non-hero ASHRAE 36
+      // Proposal pages (Phase Table, Long-Term Vision, Scope of Work) nest a second, bare
+      // `<div style="padding:Npx 48px Mpx">` grouping wrapper directly inside `.rpt-body`
+      // (hero:false pages still use their own hand-written inline-padding wrapper instead of
+      // relying on .rpt-body's own padding) — measured: their heading text still rendered flush
+      // against the page edge even after the fix above, because setting margin-left/right on
+      // THAT bare wrapper div doesn't propagate down into IT'S OWN children either (same "Word
+      // does not apply a div's padding/margin to its children" limitation described above, one
+      // level deeper). `_insetChildren` now recurses into any bare 48px-styled div it finds
+      // among a container's children and insets THAT wrapper's real content instead of the
+      // wrapper itself.
+      const _isBareInsetWrapper = (el) =>
+        el.tagName === 'DIV' && !el.className && /48px/.test(el.getAttribute('style') || '');
+      const _insetChildren = (container) => {
+        Array.from(container.children).forEach((child) => {
+          if (_isBareInsetWrapper(child)) {
+            _insetChildren(child);
+            return;
+          }
+          // Rebuilt as four separate longhand margin-* declarations, with any pre-existing
+          // `margin:` SHORTHAND property removed entirely — measured twice (2026-07-26):
+          // (1) child.style.marginLeft/marginRight via the live CSSOM risks the browser's own
+          // serializer recombining everything into a single `margin: <top> 0.5in <bottom>`
+          // shorthand when this clone's innerHTML is read; (2) even leaving the ORIGINAL
+          // `margin:0 0 5px` shorthand text in place and appending separate
+          // margin-left/margin-right declarations AFTER it in the same style string (i.e. normal
+          // CSS cascade — later same-attribute declarations should override the shorthand's
+          // corresponding sides) still failed: Word's HTML importer does not apply ANY
+          // margin-left/margin-right that shares a style attribute with a `margin:` shorthand
+          // property, regardless of order — it appears to treat the shorthand as the sole
+          // authority for that element whenever one is present at all. Word DOES reliably apply
+          // pure longhand when NO shorthand `margin:` property exists anywhere in the string
+          // (confirmed: varH_pagebreak.doc's four-separate-longhand case worked both mid-page
+          // and as the first element after a forced page break). Fix: parse out the existing
+          // top/bottom from either explicit margin-top/margin-bottom or a `margin:` shorthand,
+          // strip every margin-related declaration from the string, then re-emit all four sides
+          // as separate longhand — never left as (or combined into) a shorthand.
+          const _existingStyle = child.getAttribute('style') || '';
+          let _marginTop = '0';
+          let _marginBottom = '0';
+          const _topM = _existingStyle.match(/(?:^|;)\s*margin-top\s*:\s*([^;]+)/);
+          const _bottomM = _existingStyle.match(/(?:^|;)\s*margin-bottom\s*:\s*([^;]+)/);
+          const _shortM = _existingStyle.match(/(?:^|;)\s*margin\s*:\s*([^;]+)/);
+          if (_shortM) {
+            const _parts = _shortM[1].trim().split(/\s+/);
+            if (_parts.length === 1) {
+              _marginTop = _marginBottom = _parts[0];
+            } else if (_parts.length === 2) {
+              _marginTop = _marginBottom = _parts[0];
+            } else {
+              // 3-value (T LR B) or 4-value (T R B L): third value is always bottom.
+              _marginTop = _parts[0];
+              _marginBottom = _parts[2];
+            }
+          }
+          if (_topM) _marginTop = _topM[1].trim();
+          if (_bottomM) _marginBottom = _bottomM[1].trim();
+          const _strippedStyle = _existingStyle
+            .replace(/(?:^|;)\s*margin\s*:\s*[^;]+;?/g, ';')
+            .replace(/(?:^|;)\s*margin-top\s*:\s*[^;]+;?/g, ';')
+            .replace(/(?:^|;)\s*margin-bottom\s*:\s*[^;]+;?/g, ';')
+            .replace(/(?:^|;)\s*margin-left\s*:\s*[^;]+;?/g, ';')
+            .replace(/(?:^|;)\s*margin-right\s*:\s*[^;]+;?/g, ';');
+          child.setAttribute(
+            'style',
+            _strippedStyle +
+              (_strippedStyle && !/;\s*$/.test(_strippedStyle) ? ';' : '') +
+              'margin-top:' +
+              _marginTop +
+              ';margin-bottom:' +
+              _marginBottom +
+              ';margin-left:' +
+              WORD_TEXT_INSET +
+              ';margin-right:' +
+              WORD_TEXT_INSET +
+              ';',
+          );
+          _fixFullWidth(child);
+        });
+      };
+      // .rpt-int-hdr (the title/client-name chrome bar at the top of every interior page) uses
+      // the same class-based 48px/0.5in side padding convention (`.rpt-int-hdr {padding:10px
+      // 48px 8px}`) and is dropped by Word the same way — measured: its title text rendered
+      // flush against the left page edge. Same fix, same reasoning as .rpt-body above.
+      clone.querySelectorAll('.rpt-body, .rpt-int-hdr').forEach(_insetChildren);
+      // Hero pages only: a `div[style*="48px"]` wrapper here is a DIRECT child of `.rpt-cover`
+      // (hero pages have no `.rpt-body` at all), so it's not reached by the recursion above.
+      // Excluded via closest('.rpt-body') rather than just classList — without it, this second
+      // pass ALSO matched (and double-processed) the very same bare wrapper divs the recursion
+      // above already unwraps inside non-hero ASHRAE 36 Proposal pages, producing duplicate
+      // margin-left/margin-right declarations (measured: harmless since duplicates collapse to
+      // the same effective value, but wasteful — excluded for a clean single pass instead).
+      clone.querySelectorAll('div[style*="48px"]').forEach((container) => {
+        if (container.closest('.rpt-body')) return; // already handled by recursion above
+        _insetChildren(container);
+      });
+      // Word list-item font-size fix (2026-07-26, measured via PyMuPDF span extraction on a real
+      // Word COM PDF round-trip: bullet list items rendered at a measured 12.00pt — visibly
+      // larger than the surrounding 8.04pt body paragraphs/table cells this report's own markup
+      // declares as the SAME `font-size:10.5px` used on each list's own `<ul>` wrapper). Root
+      // cause, confirmed by unzipping document.xml: Word's HTML importer, when it converts a
+      // source `<ul>/<li>` into a native Word numbered/bulleted list, drops any font-size found
+      // on the `<ul>` (or an inline style added directly to the `<li>` that merely repeats a
+      // fixed literal like "10.0pt") without ever writing an explicit `w:sz` on the resulting
+      // run — it silently falls back to the document's base default instead, which is NOT the
+      // same value as this report's own body-paragraph text: body/table-cell `<div>`s DO get an
+      // explicit per-run `w:sz` from their own inline `font-size:10.5px` (measured: Word applies
+      // px-based font-size to ordinary paragraphs/divs via its usual px->half-point conversion,
+      // unlike the padding-px behavior fixed by _fixPaddingUnits above — font-size in px is NOT
+      // the same limitation), but that same literal value written directly onto a converted `<li>`
+      // is discarded during the list-numbering conversion specifically. Fix, mirroring
+      // _insetChildren's existing "read the wrapper's own intended value, write it onto the real
+      // child element" pattern rather than inventing a single global constant (this report has
+      // multiple <ul> font-sizes by design — e.g. 10.5px body-matched lists here and on
+      // rptPageASHRAE36ProposalVision, vs an intentionally smaller 8.5px in
+      // _rptA36TierDetailPanelHTML's item lists — a single hardcoded size would wrongly flatten
+      // those): read each `<ul>`/`<ol>`'s own inline `font-size` and copy that EXACT literal
+      // value onto every one of its own `<li>` children. When a list has no explicit font-size,
+      // 10.0pt (matching wordFontCss's own .MsoChpDefault/p.MsoNormal docDefaults value below) is
+      // the safe fallback.
+      const _listFontSizeRe = /font-size\s*:\s*([^;]+)/;
+      clone.querySelectorAll('ul, ol').forEach((listEl) => {
+        const _listStyle = listEl.getAttribute('style') || '';
+        const _sizeMatch = _listStyle.match(_listFontSizeRe);
+        const _liFontSize = _sizeMatch ? _sizeMatch[1].trim() : '10.0pt';
+        Array.from(listEl.children).forEach((li) => {
+          if (li.tagName !== 'LI') return;
+          const _existingLiStyle = li.getAttribute('style') || '';
+          li.setAttribute(
+            'style',
+            _existingLiStyle +
+              (_existingLiStyle && !/;\s*$/.test(_existingLiStyle) ? ';' : '') +
+              'font-family:Calibri;mso-ascii-font-family:Calibri;mso-hansi-font-family:Calibri;' +
+              'mso-bidi-font-family:Calibri;font-size:' +
+              _liFontSize +
+              ';',
+          );
+        });
+      });
+      rawBodyHtml += '<div class="rpt-page-word-wrap">' + clone.innerHTML + '</div>';
     });
     // Resolve var(--rpt-*) references embedded in inline style="" attributes throughout
     // the page markup (see _buildReportCssVarResolver doc comment above) — not just the
     // stylesheet text.
-    let bodyHtml = resolveVars(rawBodyHtml);
+    // _fixPaddingUnits (defined above, see comment there): same 48px->0.5in padding-unit fix,
+    // applied here to the inline "padding:Npx 48px Mpx" wrappers every ASHRAE 36 Proposal page
+    // (and the Board Summary editable box) uses for their content's horizontal inset.
+    let bodyHtml = _fixPaddingUnits(resolveVars(rawBodyHtml));
 
     // Word image-sizing fix (2026-07-22, measured via PyMuPDF image-bbox extraction on Word's
-    // own SaveAs-PDF output): NEITHER the CSS `width:100%` the live/PDF path uses NOR an
-    // `!important` fixed-px override in wordOnlyCss's stylesheet (see below) changed Word's
-    // rendered image size at all — Word's HTML-import path sizes these two report images from
-    // something other than CSS (most likely the embedded JPEG's own DPI metadata), so they were
-    // rendered at native intrinsic pixel size (918x218 / 1699x224) regardless, overflowing the
-    // page. The one technique Word's HTML-import reliably honors is classic HTML width/height
-    // ATTRIBUTES (not CSS) on <img> — this regex adds them. bodyHtml here is markup generated
-    // entirely by this file's own rptPage()/footerImgHtml template strings (never user input),
-    // so a narrow, literal substitution is safe. 816px = this report's exact page width;
-    // heights are each image's own native aspect ratio scaled to that width.
+    // own SaveAs-PDF output; applies to every hero page's inline csc-header-img letterhead
+    // — 2026-07-26: now ALL of them, not just the "beyond page 1" edge case, per the
+    // trailing-duplicate-page fix described above. The footer wave graphic still lives in
+    // wordHeaderFooterHtml below and is sized with the same inline-attribute technique there):
+    // NEITHER the CSS `width:100%` the live/PDF path uses NOR an `!important` fixed-px override
+    // in a stylesheet rule changed Word's rendered image size at all — Word's HTML-import path
+    // sizes these report images from something other than CSS (most likely the embedded JPEG's
+    // own DPI metadata), so they were rendered at native intrinsic pixel size (918x218 / 1699x224
+    // px) regardless, overflowing the page. The one technique Word's HTML-import reliably honors
+    // is classic HTML width/height ATTRIBUTES (not CSS) on <img> — this regex adds them. bodyHtml
+    // here is markup generated entirely by this file's own rptPage() template strings (never user
+    // input), so a narrow, literal substitution is safe. 816px = this report's exact page width.
     bodyHtml = bodyHtml.replace(
       /<img src="([^"]*)" alt="CSC Letterhead" class="csc-header-img"[^>]*>/g,
-      '<img src="$1" alt="CSC Letterhead" class="csc-header-img" width="816" height="194">',
-    );
-    bodyHtml = bodyHtml.replace(
-      /<img src="([^"]*)" alt="CSC Footer">/g,
-      '<img src="$1" alt="CSC Footer" width="816" height="108">',
+      '<img src="$1" alt="CSC Letterhead" class="csc-header-img" width="816" height="194" style="width:8.5in;height:auto;display:block">',
     );
 
     const client = data.project.client || data.project.name || 'Report';
@@ -7181,38 +7437,179 @@ async function exportReportToWord() {
     // above) sets Word's own page size/margins to match the report's design pixel-for-pixel, so
     // the 816px page content now fits Word's printable area exactly with no shrink/overflow.
     //
-    // ROOT CAUSE 2 (footer/header not rendering correctly in Word): .rpt-footer,
-    // .rpt-footer-text, .rpt-pg-footer-pagenum, and .rpt-footer-label (see rptPage() above) are
-    // all position:absolute, pinned to the bottom of the live/PDF page via a positioned
-    // ancestor. Word's HTML engine does not support CSS position:absolute the way browsers do
-    // (it is silently dropped or mis-anchored), which is why the footer graphic/page-number/
-    // period-label were overlapping body content instead of sitting at the bottom of each page.
-    // Word documents paginate on their own (there is no "bottom of THIS page" concept for an
-    // absolutely-positioned element spanning what Word may render as several physical pages
-    // once real content reflows at Word's narrower/no-longer-816px-assumed metrics), so the
-    // fix for Word specifically is to let this chrome render in NORMAL FLOW at the end of each
-    // page's content instead — an accepted fidelity tradeoff already documented above
-    // (Word is not pixel-identical to the PDF raster); PDF/live-preview are UNCHANGED since this
-    // override lives only in this function's own injected <style>, never in #report-styles.
+    // ROOT CAUSE 2 (footer/header not rendering correctly in Word) — REWRITTEN 2026-07-26,
+    // trailing-duplicate-page fix REWRITTEN AGAIN same day (see below).
+    // The 2026-07-22 fix moved .rpt-footer/.rpt-footer-label/.rpt-pg-footer-pagenum into normal
+    // body flow with position:static !important on every page, because Word's HTML engine
+    // doesn't support position:absolute. That got them visible again, but they were then just
+    // ordinary paragraphs baked once per page — they could not repeat automatically, and
+    // "Page N of Total" was static text written at generation time (_injectPageNumbers), so it
+    // went stale the instant Word repaginated the reflowed content (measured: unzipping the
+    // broken output showed ZERO word/header*.xml or word/footer*.xml parts and no
+    // headerReference/footerReference in sectPr — none of this chrome was ever a real Word
+    // header/footer, just body paragraphs).
+    //
+    // The fix: use the same `mso-element:header` / `mso-element:footer` HTML primitives Word's
+    // own "Web Page" export emits for a real header/footer part (wordHeaderFooterHtml, built
+    // below from the content stripped out of each page's body). `mso-header`/`mso-footer` on
+    // @page Section1 bind those divs to the section. Word's HTML-to-OOXML importer turns this
+    // into a real word/header1.xml + word/footer1.xml part pair and headerReference/
+    // footerReference entries in sectPr.
+    //
+    // TRAILING-DUPLICATE-PAGE FIX (2026-07-26, same day, second pass): this single-file
+    // "mso-element:header/footer divs living in the same HTML document as the content"
+    // technique has a measured, structural limitation — confirmed by generating a real Word COM
+    // reference export (wdFormatHTML, format 8 — "Web Page") of a plain multi-page doc with
+    // headers/footers and inspecting the separate part Word itself writes: Word's own HTML
+    // engine NEVER keeps header/footer source markup in the same file as the body at all, it
+    // always splits it into a second linked file. When header/footer divs DO live in the same
+    // file as the body (our situation — a single downloadable Blob has nowhere else to put a
+    // second file), Word's importer still correctly copies their content into real header/
+    // footer parts (headerReference/footerReference/images all measured correct), but it does
+    // NOT prune the original source divs from the visible body flow — a literal copy of
+    // whatever they contain always renders again, once, immediately after the real content.
+    // Every CSS suppression technique tried (display:none, mso-hide:all, on the divs directly
+    // and on a wrapping ancestor; moving the divs before instead of after the real content,
+    // which broke extraction entirely — zero header/footer parts produced) either failed to
+    // hide the duplicate or broke the real header/footer along with it, or broke extraction.
+    // This is a genuine, unfixable-via-markup limitation of the technique, not a bug in this
+    // code — confirmed against Matt's own report ("this would be sent to a client" — an entire
+    // extra page of duplicated letterhead + wave graphics is not acceptable regardless of cause).
+    //
+    // Since the duplicate itself can't be eliminated, the fix is to make it small enough that it
+    // reliably fits in whatever whitespace remains on the actual last content page instead of
+    // overflowing onto a genuinely new page (measured: a small amount of duplicated content —
+    // e.g. plain text — lands harmlessly at the bottom of the existing last page; only a large
+    // one, like three full-width images, is tall enough to force a new page). The OLD version of
+    // this fix used Word's `mso-title-page:yes`/`mso-first-header`/`mso-first-footer` mechanism
+    // to give the hero/cover page (page 1) its own distinct letterhead header — correct on
+    // screen, but it meant the duplicate content was THREE full-width images (letterhead + two
+    // separate footer-wave copies, one for the default footer and one required for the first-page
+    // footer since Word renders a title page's footer genuinely blank if no first-footer is
+    // specified) — reliably overflowing onto a new trailing page on every real report. Dropping
+    // that mechanism entirely and instead leaving every hero page's letterhead as an ordinary
+    // inline `<img>` in its own body content (exactly like the pre-existing "second hero page"
+    // edge case already did, and like the live/PDF path always has) removes the need for a
+    // distinct first-page header/footer altogether: there is now only ONE header (h1, empty on
+    // every page — each page's own visible chrome, if any, already lives in its own body
+    // content) and ONE footer (f1, the wave graphic, byte-identical and correct on every page
+    // including the hero page). The trailing duplicate is now just that ONE ~1.1in-tall footer
+    // image instead of ~4.3in of stacked images — measured (see verification below) to land
+    // within the existing last page's remaining whitespace with no new page produced, on both
+    // the Service Proposal and the ASHRAE 36 Audit Report.
+    //
     // ROOT CAUSE 3 (letterhead/footer graphic running off the right edge — measured via
-    // PyMuPDF image bbox extraction on Word's own SaveAs-PDF output, 2026-07-22): Word's HTML
-    // engine does not scale <img width:100%> to its containing block the way browsers do — it
-    // renders the CSC_HEADER_B64 / CSC_FOOTER_B64 images at their NATIVE INTRINSIC pixel size
-    // (918px and 1699px respectively, converted 1px:0.75pt) regardless of the percentage width,
-    // which is what actually pushed content off the right edge of the page (confirmed: rendered
-    // image bbox widths of 688.5pt / 1274.25pt against a 612pt-wide page — exactly
-    // 918px/1699px x 0.75, i.e. width:100% was silently ignored). Word DOES reliably honor an
-    // explicit PIXEL width on <img>, so the two report images get a fixed-px override here
-    // (816px = this report's exact page width) instead of the percentage width the live
-    // preview/PDF path keeps unchanged.
+    // PyMuPDF image bbox extraction on Word's own SaveAs-PDF output, 2026-07-22, still true
+    // 2026-07-26): Word's HTML engine does not scale <img width:100%> to its containing block
+    // the way browsers do — it renders the CSC_HEADER_B64 / CSC_FOOTER_B64 images at their
+    // NATIVE INTRINSIC pixel size regardless of percentage width or an !important stylesheet
+    // rule (confirmed both fail identically). Word DOES reliably honor size set directly on the
+    // <img> element itself, so the footer image below (and the inline-body letterhead regex
+    // above) carries both classic width/height HTML attributes AND an inline
+    // `style="width:8.5in;height:auto"` — belt-and-suspenders since this is the one part of the
+    // whole export Word has been least consistent about honoring.
+    const footerImgHtmlWord =
+      '<img src="' +
+      CSC_FOOTER_B64 +
+      '" alt="CSC Footer" width="816" height="108" style="width:8.5in;height:auto;display:block">';
+    // footerLabelText / hasPageNum were computed above while stripping each page's body (from
+    // whatever rptPage() actually emitted for THIS report), so this footer content only shows
+    // what each report type's design calls for. The Service Proposal's rptPage() calls all pass
+    // noPageNum:true and never set a period label, so hasPageNum/footerLabelText are both
+    // false/'' for it and footerBodyHtml below is the wave graphic alone — matching the target's
+    // no-page-number footer design exactly.
+    // color:var(--rpt-page-text) matches the token the live/PDF path uses for this chrome —
+    // resolved to a real value below via resolveVars() (same helper used on bodyHtml above)
+    // since this markup is assembled outside the resolveVars(rawBodyHtml) call.
+    const footerLabelP = footerLabelText
+      ? '<p class="MsoFooter" style="text-align:center;font-size:10px;color:var(--rpt-page-text);margin:2px 0 0">' +
+        footerLabelText +
+        '</p>'
+      : '';
+    // Real Word field codes (PAGE/NUMPAGES) instead of the old baked-in "Page N of Total"
+    // string, so the number Word displays stays correct after Word repaginates the content at
+    // its own metrics instead of always reading whatever page count this app estimated at
+    // export time.
+    const pageNumP = hasPageNum
+      ? '<p class="MsoFooter" style="text-align:right;font-size:10px;color:var(--rpt-page-text);margin:2px 20px 0 0">' +
+        "Page <span style='mso-field-code:PAGE'></span> of <span style='mso-field-code:NUMPAGES'></span></p>"
+      : '';
+    // footerBodyHtml is identical on the hero/title page and every interior page (rptPage()
+    // renders the exact same footerImgHtml/footerLabelHtml/pagenum markup regardless of the
+    // hero option) — one shared `f1` default footer definition is correct for every page now
+    // that the distinct-first-page-footer mechanism (ff1) is gone (see above).
+    const footerBodyHtml = footerImgHtmlWord + footerLabelP + pageNumP;
+    const wordHeaderFooterHtml = resolveVars(
+      // Header (every page): each page's own visible chrome — the hero page's inline letterhead
+      // image, or an interior page's .rpt-int-hdr title bar — already lives in that page's body
+      // content untouched, so the repeating Word header itself stays empty by design.
+      '<div style="mso-element:header" id="h1"><p class="MsoHeader">&nbsp;</p></div>' +
+        '<div style="mso-element:footer" id="f1">' +
+        footerBodyHtml +
+        '</div>',
+    );
+    // Word default-font fix (2026-07-26, measured: exported doc rendered in Times New Roman
+    // even though the live/PDF path's `.rpt-page { font-family: var(--rpt-font) }` resolves to
+    // a literal `'Segoe UI', Arial, sans-serif` list in the <style> block above). Matt's own
+    // hand-built target document (2026.07.23 Johnson County Service Proposal.docx, surveyed via
+    // dumpdocx.py) uses `w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"`
+    // everywhere — Calibri 10pt is this export's target, not the browser/PDF path's Segoe UI
+    // (that path is untouched by this change).
+    //
+    // A `.rpt-page {font-family:Calibri}` class rule ALONE was not enough (measured: unzipping
+    // that attempt's document.xml showed w:docDefaults > w:rPrDefault > w:rFonts still
+    // "Times New Roman" — Word's own hardcoded absolute fallback — and only a small minority of
+    // runs had any Calibri w:rFonts override at all). Root cause: Word's HTML importer does not
+    // fully compute CSS inheritance down through every level of this report's deeply nested
+    // markup (.rpt-page > .rpt-body > section/table/paragraph elements, several levels deep) the
+    // way a browser does — a class rule on an ancestor several levels above the actual text runs
+    // frequently doesn't reach them. `.MsoChpDefault` is different: it is a special selector
+    // Word's own "Save As Web Page" export always emits (see reference_filtered.htm, generated
+    // via Word COM for comparison) to carry the document's absolute default character
+    // properties — confirmed by test (varD_font.doc/.docx, 2026-07-26): declaring
+    // `.MsoChpDefault {font-family:Calibri; ...}` in the stylesheet changes
+    // `w:docDefaults > w:rPrDefault > w:rFonts` to Calibri even though no element in the body
+    // ever carries that class. Since docDefaults is Word's fallback of last resort for any run
+    // that doesn't inherit a font from somewhere else, this reliably makes Calibri the base font
+    // everywhere in the document — EXCEPT that a second, independent hardcoded override still
+    // won out (measured on the real report even after adding .MsoChpDefault, unzipped again): the
+    // auto-generated "Normal" PARAGRAPH STYLE itself (`w:styleId="Normal" w:default="1"`, what
+    // every unstyled `<p>`/`<div>` implicitly uses) carried its OWN explicit
+    // `w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"` baked directly into the
+    // style — which wins over docDefaults for any run using that style, i.e. nearly every
+    // paragraph in the document. `p.MsoNormal, li.MsoNormal, div.MsoNormal` is the second special
+    // selector Word's own "Save As Web Page" export always emits (same reference_filtered.htm) to
+    // define that exact "Normal" style's properties — confirmed by test (varD_font.doc/.docx):
+    // adding it removes the Times New Roman override from the generated Normal style entirely,
+    // leaving it to inherit Calibri from docDefaults as intended. `.rpt-page`'s own rule is kept
+    // too (belt-and-suspenders for the shallower cases where CSS inheritance IS picked up) —
+    // headings, KPI numbers, tables, etc. all set their OWN font-size inline/via their own CSS
+    // rules already and are unaffected by any of these three rules, so this does not flatten the
+    // report's type hierarchy.
+    const wordFontCss =
+      '.MsoChpDefault {font-family:Calibri; mso-ascii-font-family:Calibri; ' +
+      'mso-hansi-font-family:Calibri; mso-bidi-font-family:Calibri; font-size:10.0pt;} ' +
+      'p.MsoNormal, li.MsoNormal, div.MsoNormal {font-family:Calibri; mso-ascii-font-family:Calibri; ' +
+      'mso-hansi-font-family:Calibri; mso-bidi-font-family:Calibri; font-size:10.0pt;} ' +
+      '.rpt-page {font-family:Calibri; mso-ascii-font-family:Calibri; ' +
+      'mso-hansi-font-family:Calibri; mso-bidi-font-family:Calibri; font-size:10.0pt;} ' +
+      // Belt #3 (2026-07-26, measured: even with .MsoChpDefault + p.MsoNormal fixing
+      // w:docDefaults and the auto-generated "Normal" STYLE, unzipping still showed every
+      // individual run's OWN w:rPr carrying an explicit, hardcoded
+      // `w:rFonts w:ascii="Times New Roman"` — Word's legacy HTML engine applies its own
+      // internal per-element-type default font (matching classic Trident/IE heading & paragraph
+      // defaults) directly onto each run at conversion time, independent of both docDefaults and
+      // the Normal style, and independent of the resolved `.rpt-page` ancestor's font-family
+      // (CSS inheritance through several levels of nested divs/tables not fully honored — same
+      // root cause noted above). An explicit rule naming every element type this report's markup
+      // actually uses is what reaches those per-run overrides directly.
+      'h1,h2,h3,h4,h5,h6,p,div,span,td,th,li,strong,b,em,i,a {font-family:Calibri; ' +
+      'mso-ascii-font-family:Calibri; mso-hansi-font-family:Calibri; mso-bidi-font-family:Calibri;}';
     const wordOnlyCss =
       '@page Section1 {size:8.5in 11in; margin:0in 0in 0in 0in; mso-header-margin:0in; ' +
-      'mso-footer-margin:0in; mso-paper-source:0;} ' +
+      'mso-footer-margin:0in; mso-paper-source:0; mso-header:h1; mso-footer:f1;} ' +
       'div.Section1 {page:Section1;} ' +
-      '.rpt-footer, .rpt-footer-text, .rpt-pg-footer-pagenum, .rpt-footer-label {' +
-      'position:static !important; bottom:auto !important; left:auto !important; ' +
-      'right:auto !important; top:auto !important; margin-top:6px;} ' +
-      '.csc-header-img, .rpt-footer img {width:816px !important; max-width:816px !important; height:auto !important;}';
+      wordFontCss;
 
     const wordDocHtml =
       '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
@@ -7233,6 +7630,29 @@ async function exportReportToWord() {
       '<div class="Section1">' +
       bodyHtml +
       '</div>' +
+      // mso-element:header/footer source divs (h1/f1) placed AFTER (sibling of, not nested
+      // inside) div.Section1 — this is the documented single-file technique for hand-authored
+      // Word-openable HTML (distinct from what Word's OWN "Save As Web Page" produces, which
+      // links to a separate external file instead — confirmed 2026-07-26 by generating a real
+      // Word COM reference export (wdFormatHTML, format 8) and inspecting it; not usable here
+      // since a single self-contained Blob download has no second file to link to). Not wrapped
+      // in any extra grouping div — measured 2026-07-26 that Word's own "Web Page" export never
+      // nests header/footer divs in a wrapper either (they're plain children of <body> in the
+      // separate file it writes), so this mirrors that structure directly.
+      //
+      // TRAILING-DUPLICATE-PAGE FIX — see the long comment above wordHeaderFooterHtml's
+      // construction for the full investigation. Summary: wrapping h1/f1(/fh1/ff1) in a div and
+      // trying to hide that div (display:none / mso-hide:all, or moving it before div.Section1
+      // instead of after) either left the duplicate visible, broke the real headers/footers, or
+      // broke extraction entirely (zero header/footer parts). None of those are used now.
+      // Nesting/position of h1/f1 themselves turned out NOT to control whether the duplicate
+      // creates a new page — extraction always leaves a literal copy in body flow regardless;
+      // what actually matters is the copy's rendered HEIGHT relative to the real last page's
+      // remaining whitespace. Dropping the old fh1/ff1 first-page-header mechanism (see above)
+      // cut that duplicate from three full-width images to one, which is what actually keeps the
+      // page count correct — confirmed via rendered PDF on both the Proposal and Audit reports
+      // (see verification notes for this change).
+      wordHeaderFooterHtml +
       '</body></html>';
 
     const blob = new Blob(['﻿', wordDocHtml], { type: 'application/msword' });
