@@ -598,24 +598,23 @@ function _pdfBackupGetAll() {
  * once via store.getAll()).
  *
  * Three things make this safe where the old approach wasn't:
- *   1. _pdfExportCursor() reads the object store with openCursor(), ONE row
- *      at a time — unlike getAll(), the browser's IDB implementation never
- *      materializes the whole store as one in-memory array.
+ *   1. _pdfExportAllKeys() reads only KEYS (ids), never values — cheap
+ *      regardless of store size.
  *   2. Each batch is capped at PDF_EXPORT_BATCH_CHARS of base64 text and is
  *      downloaded as its own file, then the batch object is discarded
- *      (reassigned to {}) before the cursor advances.
- *   3. Batches are downloaded ONE AT A TIME with a real gap between them
- *      (see queueDownload below) instead of firing every ~350ms regardless
- *      of whether the previous file finished saving — headless measurement
- *      (HeapProfiler.collectGarbage before each sample, so garbage awaiting
- *      collection isn't mistaken for live memory) showed that firing
- *      downloads faster than the browser's download pipeline can actually
- *      flush them to disk lets several batches' Blobs stay live
- *      SIMULTANEOUSLY, defeating the point of small batches. Pacing by
- *      elapsed time (not just a fixed short delay) keeps only ~1 batch's
- *      Blob genuinely live at once, so peak live memory is bounded by ONE
- *      batch (~8MB of base64 text, or one PDF's own size if it alone
- *      exceeds the cap), never the whole store.
+ *      (reassigned to {}).
+ *   3. sitePdfExport() fetches ONE PDF's base64 at a time via
+ *      _pdfExportGetOne() and AWAITS the full download of the current batch
+ *      (Blob revoked) before fetching the next id — real backpressure. An
+ *      earlier version of this code used a cursor that read every row as
+ *      fast as IDB could go while downloads were paced separately;
+ *      headless measurement (forcing GC before each memory sample, so
+ *      garbage awaiting collection wasn't mistaken for live memory) showed
+ *      that let every batch for the whole store end up alive
+ *      simultaneously, defeating the point of batching. With real
+ *      backpressure, peak live memory is bounded by ONE batch (~8MB of
+ *      base64 text, or one PDF's own size if it alone exceeds the cap),
+ *      never the whole store.
  *
  * Real corpus measured 2026-07-26 (investigation for this task): the actual
  * client bill PDFs on disk (OneDrive "Projects-OneDrive", per-client
@@ -676,10 +675,10 @@ function _pdfExportGetOne(id) {
 // Downloads exactly ONE batch as its own file. Called once per batch, never
 // accumulated — the caller discards `items` immediately after this returns.
 // Returns a Promise that resolves only once the Blob/object URL has been
-// revoked — the caller (queueDownload) awaits this before starting the NEXT
-// batch, which is what actually keeps only ~1 batch's Blob live at a time
-// (see the header comment above PDF_EXPORT_BATCH_CHARS for why this matters
-// more than the per-batch size cap alone).
+// revoked — sitePdfExport()'s flush() awaits this before fetching the next
+// PDF, which is the real backpressure mechanism (see the header comment
+// above PDF_EXPORT_BATCH_CHARS for why this matters more than the per-batch
+// size cap alone).
 function _pdfExportDownloadBatch(items, partNum, dateStr) {
   return new Promise(function (resolve) {
     var payload = {
