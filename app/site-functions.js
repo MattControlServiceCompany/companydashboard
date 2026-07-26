@@ -1286,13 +1286,36 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.26.701',
+    date: '2026-07-26',
+    title: 'Service Proposal redesign, fixed Word export, and Audit Report sequence table fix',
+    items: [
+      {
+        type: 'feature',
+        text: 'Service Proposal now matches the polished 3-page format: a Title/Findings/Recommended Program summary, a Phase Table showing the recommended rollout, and a Long-Term Vision page — replacing the older, longer layout.',
+      },
+      {
+        type: 'fix',
+        text: 'Word export now has real letterhead headers and footers that repeat on every page, correctly sized images, consistent fonts throughout, and proper text margins — the previous export had oversized graphics and fonts that reverted to the wrong typeface.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report: the ASHRAE 36 Sequences reference table was silently coming up empty on some reports; it now always shows the full list along with which sensors/points each sequence requires.',
+      },
+      {
+        type: 'change',
+        text: "PDF export from reports is now generated through the browser's native print function, so the text in the downloaded PDF is selectable and searchable instead of being a flattened image.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.22.700',
     date: '2026-07-22',
     title: 'Editable Word export for reports',
     items: [
       {
         type: 'feature',
-        text: "Energy Department reports: added an \"Export to Word\" button next to Export to PDF on the report toolbar. The PDF export is flattened (an image of each page) -- the new Word export downloads the same report as a real, editable .doc file with actual text and tables you can select and edit, not a picture.",
+        text: 'Energy Department reports: added an "Export to Word" button next to Export to PDF on the report toolbar. The PDF export is flattened (an image of each page) -- the new Word export downloads the same report as a real, editable .doc file with actual text and tables you can select and edit, not a picture.',
       },
     ],
   },
