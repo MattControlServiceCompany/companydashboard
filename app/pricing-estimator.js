@@ -7777,7 +7777,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
    information. Just remove completely.") — see the removed "Summary" tier button in
    _pricingTierToggleHTML and the tier==='summary' fallback in initCostEstimateTab.
    This function itself is UNCHANGED and still load-bearing: report-engine.js's
-   rptPageASHRAE36ProposalPricing (both the cover Investment Summary strip and the Cost Estimate
+   rptPageASHRAE36ProposalPricing (both the cover Cost Summary strip and the Cost Estimate
    page's tier-detail panels) calls it directly — do not delete it.
    ══════════════════════════════════════════════════════════════════════════════ */
 // Aggregates per-building / per-tier totals. Returns:

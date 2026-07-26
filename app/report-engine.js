@@ -14461,11 +14461,11 @@ function _rptA36CoverPricingStrip(d) {
           'Installs the hardware points needed to close Guideline 36 gaps and programs the full set of ' +
           'cost-optimized energy sequences — supply air and duct pressure reset, economizer control, optimal ' +
           'start/stop, and equipment lead/lag rotation. ' +
-          (amtStr ? 'Total one-time investment for this scope is <strong>' + amtStr + '</strong>. ' : '') +
+          (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
           svcSentence +
           'Because these sequences directly target the largest controllable HVAC energy uses — fan speed, ' +
           'mechanical cooling run time, and equipment cycling — this tier is expected to return the most energy ' +
-          'savings per dollar invested of the three scopes.'
+          'savings per dollar spent of the three scopes.'
         );
       },
     },
@@ -14479,7 +14479,7 @@ function _rptA36CoverPricingStrip(d) {
           'classified as safety-critical (e.g. freeze protection, minimum ventilation) — it does not add the ' +
           'optimization sequences (temperature/pressure reset, economizer, optimal start) that generate ongoing ' +
           'energy savings. ' +
-          (amtStr ? 'Total one-time investment for this scope is <strong>' + amtStr + '</strong>. ' : '') +
+          (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
           svcSentence +
           'This tier establishes monitoring and code-required control only, making it the right starting point ' +
           'where budget is the primary constraint — the Recommended or Full Scope sequences can be added in a ' +
@@ -14496,9 +14496,9 @@ function _rptA36CoverPricingStrip(d) {
           'Builds out every applicable Guideline 36 sequence across every piece of equipment in the portfolio ' +
           'and adds building-wide Fault Detection &amp; Diagnostics (FDD) reporting; hardware is priced at ' +
           'full/standard spec rather than the Recommended tier’s cost-optimized substitutions. ' +
-          (amtStr ? 'Total one-time investment for this scope is <strong>' + amtStr + '</strong>. ' : '') +
+          (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
           svcSentence +
-          'This is the highest up-front investment of the three tiers, but it delivers full-portfolio coverage ' +
+          'This is the highest-cost of the three tiers, but it delivers full-portfolio coverage ' +
           'and the earliest access to FDD-driven fault alerts, so equipment problems that waste energy or shorten ' +
           'equipment life are caught automatically instead of during periodic manual review.'
         );
@@ -14560,7 +14560,7 @@ function _rptA36CoverPricingStrip(d) {
   return (
     '<div style="margin-bottom:8px">' +
     '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;' +
-    'letter-spacing:0.04em;margin-bottom:8px">Investment Summary</div>' +
+    'letter-spacing:0.04em;margin-bottom:8px">Cost Summary</div>' +
     rows +
     '</div>'
   );
@@ -14752,7 +14752,7 @@ function _rptProposalDisplayClientName(fullName) {
  * .docx). hero:true keeps the CSC letterhead; noPageNum:true matches the target's page-number-
  * free footer.
  *
- * The old 3-tier "Investment Summary" strip (_rptA36CoverPricingStrip) is NOT called from here
+ * The old 3-tier "Cost Summary" strip (_rptA36CoverPricingStrip) is NOT called from here
  * anymore — the target has no such block; it pivots straight from the 2-row findings table to the
  * monthly allowance. _rptA36CoverPricingStrip itself is left intact (unused) rather than deleted,
  * per the "do not destroy existing capability" constraint.
@@ -15836,7 +15836,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     {
       key: 'recommended',
       label: 'Recommended',
-      desc: 'Highest-impact upgrades prioritized by return on investment.',
+      desc: 'Highest-impact upgrades prioritized by cost-effectiveness.',
     },
     { key: 'compliance', label: 'Compliance', desc: 'Scope required to meet ASHRAE Guideline 36.' },
     { key: 'full-scope', label: 'Full Scope', desc: 'All identified upgrades across the portfolio.' },
@@ -15849,7 +15849,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var intro =
     '<div style="font-size:10px;color:#000;line-height:1.6;margin-bottom:12px">' +
     'The options below present three scopes of work for this portfolio. Each figure is an ' +
-    'independent estimate of the total investment for that scope, provided to support planning and ' +
+    'independent estimate of the total cost for that scope, provided to support planning and ' +
     'budgeting. The scopes are defined differently and are not simple subsets of one another, so the ' +
     'totals should be compared on their own terms rather than assumed to rank in any particular order.' +
     '</div>';
@@ -15886,7 +15886,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '</tr>';
 
   // Full grid on every cell (report-export-fixes, 2026-07-22): the border-bottom:none/
-  // border-top:none omissions previously here merged Total Investment/amount/phase-split/
+  // border-top:none omissions previously here merged Estimated Cost/amount/phase-split/
   // detail rows into one seamless block per tier column — exactly the ad-hoc partial-border
   // pattern banned elsewhere in this report (rule 2, "real bordered grid table, not ad-hoc
   // lines"). Every cell in this table now carries a full 1px border on all 4 sides.
@@ -15897,7 +15897,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<tr>' +
     tierCols
       .map(function () {
-        return '<td style="' + lblStyle + '">Total Investment</td>';
+        return '<td style="' + lblStyle + '">Estimated Cost</td>';
       })
       .join('') +
     '</tr>';
