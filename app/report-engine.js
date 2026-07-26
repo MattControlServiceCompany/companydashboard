@@ -14596,6 +14596,151 @@ function _rptA36AssessmentFindingsData(d) {
   return out;
 }
 
+// US state full names + 2-letter postal abbreviations. Used ONLY by
+// _rptProposalDisplayClientName below to recognize a trailing ", <State>" suffix on a stored
+// client name. This is an explicit allow-list match, NOT a bare "split on the last comma" —
+// a client legitimately named "Smith, Jones & Co." must render untouched. If you're tempted to
+// simplify this later, re-read AI/_context/specs/joco-service-proposal-target-2026-07-23.md
+// first: a bare comma-split is exactly the shortcut that would break that case.
+var _RPT_US_STATE_NAMES = [
+  'Alabama',
+  'Alaska',
+  'Arizona',
+  'Arkansas',
+  'California',
+  'Colorado',
+  'Connecticut',
+  'Delaware',
+  'Florida',
+  'Georgia',
+  'Hawaii',
+  'Idaho',
+  'Illinois',
+  'Indiana',
+  'Iowa',
+  'Kansas',
+  'Kentucky',
+  'Louisiana',
+  'Maine',
+  'Maryland',
+  'Massachusetts',
+  'Michigan',
+  'Minnesota',
+  'Mississippi',
+  'Missouri',
+  'Montana',
+  'Nebraska',
+  'Nevada',
+  'New Hampshire',
+  'New Jersey',
+  'New Mexico',
+  'New York',
+  'North Carolina',
+  'North Dakota',
+  'Ohio',
+  'Oklahoma',
+  'Oregon',
+  'Pennsylvania',
+  'Rhode Island',
+  'South Carolina',
+  'South Dakota',
+  'Tennessee',
+  'Texas',
+  'Utah',
+  'Vermont',
+  'Virginia',
+  'Washington',
+  'West Virginia',
+  'Wisconsin',
+  'Wyoming',
+  'District of Columbia',
+];
+var _RPT_US_STATE_ABBR = [
+  'AL',
+  'AK',
+  'AZ',
+  'AR',
+  'CA',
+  'CO',
+  'CT',
+  'DE',
+  'FL',
+  'GA',
+  'HI',
+  'ID',
+  'IL',
+  'IN',
+  'IA',
+  'KS',
+  'KY',
+  'LA',
+  'ME',
+  'MD',
+  'MA',
+  'MI',
+  'MN',
+  'MS',
+  'MO',
+  'MT',
+  'NE',
+  'NV',
+  'NH',
+  'NJ',
+  'NM',
+  'NY',
+  'NC',
+  'ND',
+  'OH',
+  'OK',
+  'OR',
+  'PA',
+  'RI',
+  'SC',
+  'SD',
+  'TN',
+  'TX',
+  'UT',
+  'VT',
+  'VA',
+  'WA',
+  'WV',
+  'WI',
+  'WY',
+  'DC',
+];
+var _RPT_US_STATE_NAME_SET = {};
+_RPT_US_STATE_NAMES.forEach(function (s) {
+  _RPT_US_STATE_NAME_SET[s.toLowerCase()] = true;
+});
+var _RPT_US_STATE_ABBR_SET = {};
+_RPT_US_STATE_ABBR.forEach(function (s) {
+  _RPT_US_STATE_ABBR_SET[s.toUpperCase()] = true;
+});
+
+/**
+ * _rptProposalDisplayClientName — Service-Proposal-only prose display name. Strips a trailing
+ * ", <US state>" suffix (full name OR 2-letter abbreviation, matched against the explicit lists
+ * above) from a stored client name, e.g. "Johnson County, Kansas" -> "Johnson County". Does NOT
+ * touch the stored project/client name anywhere else — this is purely a rendering choice for the
+ * handful of mid-sentence prose lines in the Proposal (title, Executive Summary, Recommended
+ * Optimization Program, Long-Term Program Vision) that read awkwardly with the full legal name
+ * inline. Falls back to the original string unchanged whenever the suffix after the last comma
+ * is NOT a recognized state (e.g. "Smith, Jones & Co." stays untouched) or when there's no comma
+ * at all. See joco-service-proposal-target-2026-07-23.md for the audit that found this bug.
+ */
+function _rptProposalDisplayClientName(fullName) {
+  var name = String(fullName == null ? '' : fullName).trim();
+  if (!name) return name;
+  var lastComma = name.lastIndexOf(',');
+  if (lastComma === -1) return name;
+  var prefix = name.slice(0, lastComma).trim();
+  var suffix = name.slice(lastComma + 1).trim();
+  if (!prefix || !suffix) return name;
+  var isState =
+    _RPT_US_STATE_NAME_SET[suffix.toLowerCase()] === true || _RPT_US_STATE_ABBR_SET[suffix.toUpperCase()] === true;
+  return isState ? prefix : name;
+}
+
 /**
  * rptPageASHRAE36ProposalCover — Page 1 of the rebuilt Service Proposal (2026-07-26 rebuild,
  * spec: AI/_context/specs/joco-service-proposal-target-2026-07-23.md). Matches Matt's hand-built
@@ -14616,6 +14761,10 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var p = d.portfolio;
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  // Prose-only display name (e.g. "Johnson County, Kansas" -> "Johnson County") — see
+  // _rptProposalDisplayClientName above. d.project.name (the stored client/project name) itself
+  // is untouched; only the mid-sentence renders on this page use the shortened form.
+  var displayClient = _rptProposalDisplayClientName(d.project.name);
 
   function esc(s) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
@@ -14633,7 +14782,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var title =
     '<div style="text-align:center;margin-bottom:6px">' +
     '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">' +
-    esc(d.project.name) +
+    esc(displayClient) +
     ' BAS</div>' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Optimization Program</div>' +
     '</div>';
@@ -14646,7 +14795,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<div style="' +
     BODY +
     '">Control Service Company completed an ASHRAE 36 readiness assessment across the ' +
-    esc(d.project.name) +
+    esc(displayClient) +
     ' building portfolio. The assessment identified an overall readiness score of ' +
     p.composite +
     '% across ' +
@@ -14772,7 +14921,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '">Rather than pursuing a large one-time capital project, Control Service Company recommends ' +
     'a phased optimization program focused on the highest-value opportunities first. This approach ' +
     'allows ' +
-    esc(d.project.name) +
+    esc(displayClient) +
     ' to improve building performance using a predictable monthly budget while continuously ' +
     'expanding optimization efforts over time.</div>' +
     monthlyAllowanceBlock +
@@ -15044,6 +15193,8 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
  */
 function rptPageASHRAE36ProposalVision(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  // Prose-only display name — see _rptProposalDisplayClientName above rptPageASHRAE36ProposalCover.
+  var displayClient = _rptProposalDisplayClientName(d.project.name);
 
   function esc(s) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
@@ -15115,7 +15266,7 @@ function rptPageASHRAE36ProposalVision(n, d) {
     'project. The objective is to continuously improve HVAC performance, increase energy ' +
     'efficiency, improve occupant comfort, and progressively increase ASHRAE 36 alignments across ' +
     'the ' +
-    esc(d.project.name) +
+    esc(displayClient) +
     ' portfolio.</div>' +
     '<div style="' +
     BODY +
@@ -15249,14 +15400,14 @@ function rptPageASHRAE36ProposalScope(n, d) {
     var _dcvScopeStr = _dcvScopeParts.join(', ');
     dcvScopeRow =
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule)">' +
       'Carbon Dioxide (CO₂) sensors for demand-controlled ventilation' +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule)">' +
       _dcvScopeStr +
       ' affected' +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-rule)">' +
       'Avoids conditioning air for empty rooms' +
       '</td>' +
       '</tr>';
@@ -15266,21 +15417,27 @@ function rptPageASHRAE36ProposalScope(n, d) {
     var desc = gap.desc || {};
     return (
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule)">' +
       (desc.short || gap.key) +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule)">' +
       gap.count +
       ' units affected</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-rule)">' +
       (desc.impact || '—') +
       '</td>' +
       '</tr>'
     );
   }
 
+  // Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling): these were
+  // dark-blue filled header rows (color:#fff on background:var(--rpt-blue)) — the opt-in legacy
+  // Scope/Pricing pages used a different table-header treatment than the rebuilt default pages
+  // 1-3, so a document with all sections on looked like two reports stapled together. Restyled to
+  // match pages 1-3's thPlain convention (rptPageASHRAE36ProposalCover): plain bold text, thin
+  // var(--rpt-rule) border, no fill. Content/values unchanged — styling only.
   var thStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)';
+    'padding:5px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
 
   var ph1HTML =
     phase1Gaps.length || dcvScopeRow
@@ -15550,11 +15707,14 @@ function _rptA36RecommendedTimelineHTML(d) {
 
   var colgroup =
     '<colgroup><col style="width:90px"><col style="width:150px"><col style="width:314px"><col style="width:130px"></colgroup>';
+  // Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling): dropped the
+  // filled dark-blue header (color:#fff on background:var(--rpt-blue)) to match pages 1-3's
+  // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
+  // thStyle. Styling only; no content/values changed.
   var thStyle =
-    'padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
-    'color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)';
+    'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
   var thRight = thStyle.replace('text-align:left', 'text-align:right');
-  var tdStyle = 'padding:6px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-border);vertical-align:top';
+  var tdStyle = 'padding:6px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-rule);vertical-align:top';
   var tdRight = tdStyle + ';text-align:right';
 
   var rowsHTML = tl.phases
@@ -15595,8 +15755,8 @@ function _rptA36RecommendedTimelineHTML(d) {
 
   var totalRow =
     '<tr>' +
-    '<td colspan="3" style="padding:6px 8px;font-size:9px;font-weight:700;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-blue)">Total</td>' +
-    '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-blue)">' +
+    '<td colspan="3" style="padding:6px 8px;font-size:9px;font-weight:700;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">Total</td>' +
+    '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">' +
     _fmtUSD2(tl.grandTotal) +
     '</td>' +
     '</tr>';
@@ -15695,12 +15855,15 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '</div>';
 
   // Table: 3 fixed columns, total width 684px (3 x 228). table-layout:fixed, black text, no colored
-  // fill boxes. Blue column headers match every other table in the report (canonical table standard).
+  // fill boxes. Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling):
+  // header row was previously filled dark-blue with white text — restyled to match pages 1-3's
+  // plain/thin-bordered convention (rptPageASHRAE36ProposalCover's thPlain): no fill, page-text
+  // color, thin var(--rpt-rule) border.
   var colgroup = '<colgroup><col style="width:228px"><col style="width:228px"><col style="width:228px"></colgroup>';
 
   var thStyle =
-    'padding:8px 10px;font-size:11px;font-weight:700;color:#fff;background:var(--rpt-blue);' +
-    'text-align:center;border:1px solid var(--rpt-blue)';
+    'padding:8px 10px;font-size:11px;font-weight:700;color:var(--rpt-page-text);' +
+    'text-align:center;border:1px solid var(--rpt-rule)';
   var headRow =
     '<tr>' +
     tierCols
@@ -16007,8 +16170,8 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var itColgroup =
         '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
-        'padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
-        'color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)';
+        'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;' +
+        'border:1px solid var(--rpt-rule)';
       var itThRight = itThStyle.replace('text-align:left', 'text-align:right');
       var itTableHead =
         '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
@@ -16026,7 +16189,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         '</tr></thead>';
 
       function _itemRowHTML(row) {
-        var td = 'padding:5px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-border);vertical-align:top';
+        var td = 'padding:5px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-rule);vertical-align:top';
         var tdR = td + ';text-align:right';
         var nameHTML =
           '<div>' +
