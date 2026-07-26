@@ -40,6 +40,78 @@ const DB = (() => {
   let _queueIdCounter = 0;
   let _backgroundTasksStarted = false;
 
+  // --- Per-user-settings-sync hardening (2026-07-26) — Finding 1 -----------
+  // (adversarial review 2026-07-25/26). These keys are deliberately kept OUT
+  // of DB.set()/_wireKey (see migrateFromLocalStorage()/_finishWarmCache()
+  // below) — some are read synchronously pre-paint, before IndexedDB is even
+  // open (ch_theme — index.html/service-department.html/energy-department.html's
+  // inline pre-paint <script>), and app/report-engine.js has its own raw
+  // read/write sites for ch_notifs (out of scope for this branch — the
+  // report-engine.js/pricing-estimator.js files are off-limits here). Because
+  // none of them ever round-trip through DB.set(), _wireKey() never
+  // namespaces them and the ordinary per-user _cache/_replicaVersions sweep
+  // in _clearPerUserLocalState() never touched them before this fix — so on
+  // a shared browser they silently carried one signed-in user's values over
+  // to the next. This is the single source of truth for that key list — it
+  // previously existed as two independently-hand-maintained inline arrays
+  // (lsPreserveKeys in migrateFromLocalStorage(), _lsRepairKeys in
+  // _finishWarmCache()) that had drifted into exact duplicates of each
+  // other; both now reference this constant instead.
+  const RAW_PER_USER_LOCAL_KEYS = [
+    'ch_activeView',
+    'ch_settings',
+    'ch_theme',
+    'ch_sidebar_collapsed',
+    'ch_seen_version',
+    'ch_user',
+    'ch_projTabOrder',
+    'ch_sidebarOrder',
+    'ch_dismissed_tips',
+    'ch_qs_seen',
+    'ch_toast_duration',
+    'ch_last_seen_version',
+    'ch_notifs',
+  ];
+  // ch_user is INTENTIONALLY EXCLUDED from the clear-on-identity-switch sweep
+  // in _clearPerUserLocalState() below, even though it is read/written raw
+  // like the rest of RAW_PER_USER_LOCAL_KEYS. It is the app's own "who is
+  // signed in right now" marker (index.html/service-department.html
+  // saveSession()/loadSession()), always freshly overwritten by the sign-in
+  // flow itself BEFORE any of this identity-change detection runs (a real
+  // login sets it synchronously at the moment of sign-in, well before the
+  // next chAuthStateChanged event or warmCache() cycle observes the switch)
+  // — and the existing signOut()'s clearSession() already removes it on an
+  // explicit sign-out. Force-deleting it here would instead risk logging the
+  // CURRENT (correct) user out on their very next refresh, which is strictly
+  // worse than the risk it would guard against: ch_user has zero effect on
+  // which backend row a write lands in (that is controlled entirely by
+  // CH_AUTH.getUserId()/the Entra oid — see app/ch-auth.js — not by this
+  // app-level display-name/session marker).
+  const RAW_PER_USER_CH_USER_KEY = 'ch_user';
+
+  // Dynamic-suffix "per-user" families ALSO written via raw localStorage only
+  // (site-functions.js setTableZoom(), ~line 7279-7291), never DB.set() —
+  // the same Finding-1 gap as RAW_PER_USER_LOCAL_KEYS above, just keyed by a
+  // fixed prefix plus a variable project/meter id suffix instead of one fixed
+  // name, so they need a localStorage scan rather than a direct key lookup.
+  const RAW_PER_USER_ZOOM_PREFIXES = ['en_bills_zoom_', 'en_sv_matrix_zoom_'];
+  const RAW_PER_USER_ZOOM_EXACT = ['en_perf_zoom'];
+  function _isRawZoomKey(key) {
+    if (RAW_PER_USER_ZOOM_EXACT.indexOf(key) !== -1) return true;
+    return RAW_PER_USER_ZOOM_PREFIXES.some((p) => key.indexOf(p) === 0);
+  }
+
+  // Local-only bookkeeping (write-through via _rawSet, same pattern as
+  // ch_replica_state/ch_sync_queue — MUST be excluded from PER_USER
+  // classification, see app/sync-classification.js
+  // PER_USER_CH_ENGINE_EXCLUSIONS). Records which signed-in identity's
+  // per-user local state is currently reflected in this browser's durable
+  // IDB store, so a HARD REFRESH after an identity switch can be detected
+  // too (Finding 2) — _handleAuthIdentityChange alone only catches a LIVE
+  // sign-out/sign-in inside the same tab session (Matt always hard-refreshes,
+  // per feedback_user_always_hard_refreshes.md).
+  const LOCAL_IDENTITY_KEY = 'ch_local_identity';
+
   // --- Backend mode (upgrades the old boolean ch_backend_enabled flag) ----
   // off    = today's app, no network (byte-identical to pre-2a behavior).
   // shadow = writes replicate (CAS), reads stay local, hydration OFF,
@@ -1021,14 +1093,51 @@ const DB = (() => {
   function _clearPerUserLocalState() {
     const cleared = [];
     Object.keys(_cache).forEach((k) => {
-      if (_isPerUserKey(k)) {
-        delete _cache[k];
-        cleared.push(k);
+      if (_isPerUserKey(k)) cleared.push(k);
+    });
+    // --- Finding 1 (adversarial review 2026-07-25/26) -----------------------
+    // Force the raw-localStorage-only per-user keys onto this same clear list
+    // explicitly, rather than relying on them coincidentally already being
+    // present in _cache. (They usually ARE present too — a stale byproduct of
+    // the one-time migrateFromLocalStorage() copy — but the fix must not
+    // depend on that coincidence; see RAW_PER_USER_LOCAL_KEYS above.)
+    RAW_PER_USER_LOCAL_KEYS.forEach((k) => {
+      if (k === RAW_PER_USER_CH_USER_KEY) return; // never force-cleared — see comment above the constant
+      if (cleared.indexOf(k) === -1) cleared.push(k);
+    });
+    // Dynamic-suffix zoom-level families (setTableZoom) — scan for whichever
+    // suffixed keys actually exist in this browser (project/meter ids vary).
+    if (typeof localStorage !== 'undefined') {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && _isRawZoomKey(k) && cleared.indexOf(k) === -1) cleared.push(k);
+        }
+      } catch (e) {
+        console.warn('[DB] Finding-1 zoom-key scan failed:', e);
+      }
+    }
+
+    cleared.forEach((k) => {
+      delete _cache[k];
+      delete _replicaVersions[k];
+      // --- Finding 2 --- durable delete, not just the in-memory cache.
+      // warmCache() does an unconditional store.getAll() on every load and
+      // would otherwise silently repopulate _cache with the previous user's
+      // value on the very next refresh.
+      _rawDelete(k);
+      // --- Finding 1 --- also remove the raw-localStorage copy directly (a
+      // no-op for the ordinary DB-routed per-user keys, which were never in
+      // localStorage to begin with).
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.removeItem(k);
+        } catch (e) {
+          console.warn('[DB] Failed to clear raw localStorage key on identity switch:', k, e);
+        }
       }
     });
-    Object.keys(_replicaVersions).forEach((k) => {
-      if (_isPerUserKey(k)) delete _replicaVersions[k];
-    });
+
     const queueHadPerUserEntries = _syncQueue.some((e) => _isPerUserKey(e.key));
     if (queueHadPerUserEntries) {
       // A pending write from the PREVIOUS user's session must never replay
@@ -1050,6 +1159,10 @@ const DB = (() => {
     if (uid === _lastKnownUserId) return; // chAuthStateChanged fired but the signed-in identity didn't actually change
     _lastKnownUserId = uid;
     const cleared = _clearPerUserLocalState();
+    // Finding 2 — persist the new owner durably so a hard refresh right after
+    // this switch (warmCache() -> _checkDurableIdentityMarker() below) sees
+    // the state is already clean for `uid` and does not need to clear again.
+    _rawSet(LOCAL_IDENTITY_KEY, uid || '');
     if (typeof window !== 'undefined' && cleared.length) {
       window.dispatchEvent(new CustomEvent('dbPerUserStateCleared', { detail: { keys: cleared, userId: uid } }));
     }
@@ -1062,6 +1175,52 @@ const DB = (() => {
     } catch (e) {
       console.warn('[DB] Re-hydrate after identity change failed:', e);
     }
+  }
+
+  // --- Finding 2 (adversarial review 2026-07-25/26) -------------------------
+  // Catches the hard-refresh case that _handleAuthIdentityChange (a LIVE
+  // chAuthStateChanged listener) cannot: on a fresh page load, _lastKnownUserId
+  // re-initializes to the ALREADY-current identity at module-parse time (see
+  // the `let _lastKnownUserId = _myUserId();` line above), so no in-memory
+  // "change" is ever observed there. This instead compares the newly-resolved
+  // identity against a marker durably persisted in the same IDB store the
+  // per-user state itself lives in (LOCAL_IDENTITY_KEY), so the comparison
+  // survives the refresh. Called once per warmCache() (both the normal and
+  // IDB-fallback paths) — gated on backend mode being engaged at all per the
+  // hard constraint: byte-identical app behavior, zero new IDB writes, while
+  // ch_backend_mode is 'off'.
+  function _checkDurableIdentityMarker() {
+    if (_backendMode() === 'off') return [];
+    let currentUid;
+    try {
+      currentUid = _myUserId();
+    } catch (e) {
+      currentUid = null;
+    }
+    const lastUid = _cache[LOCAL_IDENTITY_KEY];
+    const priorKnown = typeof lastUid === 'string' && lastUid ? lastUid : null;
+    let cleared = [];
+    // Only clear when the last-known owner and the newly-resolved identity
+    // are BOTH concretely known and differ — never on a signed-out/unknown
+    // transition in either direction (that would risk clearing a legitimate
+    // no-identity/demo user's own data — see the "no-identity" test — or
+    // punishing a temporary silent-refresh failure as if it were a real
+    // switch).
+    if (priorKnown && currentUid && priorKnown !== currentUid) {
+      cleared = _clearPerUserLocalState();
+      _lastKnownUserId = currentUid;
+      if (typeof window !== 'undefined' && cleared.length) {
+        window.dispatchEvent(
+          new CustomEvent('dbPerUserStateCleared', {
+            detail: { keys: cleared, userId: currentUid, reason: 'durable-marker-mismatch' },
+          }),
+        );
+      }
+    }
+    if (currentUid !== priorKnown) {
+      _rawSet(LOCAL_IDENTITY_KEY, currentUid || '');
+    }
+    return cleared;
   }
 
   function _startBackgroundSync() {
@@ -1136,21 +1295,9 @@ const DB = (() => {
     // Keys that must stay in localStorage for synchronous reads before IndexedDB warms up.
     // These are read by the pre-paint script and init() before DB.warmCache() resolves.
     // Keep in sync with the lsOnlyKeys list in app/site-functions.js.
-    var lsPreserveKeys = [
-      'ch_activeView',
-      'ch_settings',
-      'ch_theme',
-      'ch_sidebar_collapsed',
-      'ch_seen_version',
-      'ch_user',
-      'ch_projTabOrder',
-      'ch_sidebarOrder',
-      'ch_dismissed_tips',
-      'ch_qs_seen',
-      'ch_toast_duration',
-      'ch_last_seen_version',
-      'ch_notifs',
-    ];
+    // (Single source of truth: RAW_PER_USER_LOCAL_KEYS, module-scope above —
+    // this used to be its own independently-hand-maintained copy.)
+    var lsPreserveKeys = RAW_PER_USER_LOCAL_KEYS;
     var preserved = {};
     lsPreserveKeys.forEach(function (k) {
       var v = localStorage.getItem(k);
@@ -1175,21 +1322,11 @@ const DB = (() => {
     // Hotfix: restore lsPreserveKeys that the IDB migration may have wiped.
     // Runs on every page load (not guarded by migration flag) but is cheap —
     // just a few localStorage.getItem checks against the already-warm cache.
-    var _lsRepairKeys = [
-      'ch_activeView',
-      'ch_settings',
-      'ch_theme',
-      'ch_sidebar_collapsed',
-      'ch_seen_version',
-      'ch_user',
-      'ch_projTabOrder',
-      'ch_sidebarOrder',
-      'ch_dismissed_tips',
-      'ch_qs_seen',
-      'ch_toast_duration',
-      'ch_last_seen_version',
-      'ch_notifs',
-    ];
+    // (Single source of truth: RAW_PER_USER_LOCAL_KEYS, module-scope above.
+    // Note this repair is a no-op for any key _clearPerUserLocalState() just
+    // cleared THIS cycle — that also deletes _cache[k], so val below is
+    // undefined and nothing gets restored, which is the point of Finding 1.)
+    var _lsRepairKeys = RAW_PER_USER_LOCAL_KEYS;
     _lsRepairKeys.forEach(function (k) {
       if (localStorage.getItem(k) === null) {
         var val = _cache[k];
@@ -1242,6 +1379,15 @@ const DB = (() => {
       _loadReplicaState();
       _loadSyncQueue();
 
+      // Finding 2 (adversarial review 2026-07-25/26): detect an identity
+      // switch that happened since this browser's last page load (the
+      // hard-refresh case _handleAuthIdentityChange's live listener cannot
+      // catch on its own) BEFORE _hydrate() runs, so a real switch clears
+      // stale per-user state first and then hydration (mode 'on') pulls the
+      // newly-signed-in user's own rows down immediately, same as the live
+      // in-tab switch path.
+      _checkDurableIdentityMarker();
+
       // 2a.2: hydration — flag-gated (no-op unless mode === 'on'), internally
       // time-bounded (~3-5s) so a dead/slow backend never blocks first render.
       try {
@@ -1265,6 +1411,7 @@ const DB = (() => {
       }
       _loadReplicaState();
       _loadSyncQueue();
+      _checkDurableIdentityMarker(); // Finding 2 — same hard-refresh check as the primary IDB path above
       try {
         await _hydrate();
       } catch (e2) {

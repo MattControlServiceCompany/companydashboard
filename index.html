@@ -2277,6 +2277,15 @@
           msalApp = new msal.PublicClientApplication(M365);
           await msalApp.initialize();
           const r = await msalApp.loginPopup({ scopes: SCOPES });
+          try {
+            // Finding 3 hardening (per-user-settings-sync adversarial review
+            // 2026-07-25/26) — this PCA instance and app/ch-auth.js's separate
+            // kv.sync-scoped PCA instance share the same MSAL cache
+            // (clientId + cacheLocation:'localStorage'). Marking the account
+            // active here means ch-auth.js's getUserId() resolves to THIS
+            // signed-in user rather than guessing via getAllAccounts()[0].
+            msalApp.setActiveAccount(r.account);
+          } catch (e) {}
           currentUser = {
             name: r.account.name || r.account.username,
             email: r.account.username,

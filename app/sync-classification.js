@@ -161,6 +161,11 @@ const SyncClassification = (() => {
       prefix: false,
       note: 'db.js _backendMode()/setBackendMode() — the off|shadow|on kill switch itself. Read/written directly via localStorage today (never through sset/DB.set), excluded here as defense-in-depth so it can never accidentally sync per-user if that ever changes.',
     },
+    {
+      pattern: 'ch_local_identity',
+      prefix: false,
+      note: "per-user-settings-sync hardening (2026-07-26, Finding 2) — db.js LOCAL_IDENTITY_KEY, a durable marker of which signed-in identity this browser's per-user local state currently belongs to (write-through via _rawSet, bypasses replication entirely, same as ch_replica_state/ch_sync_queue above). Engine-internal bookkeeping, must never sync at all.",
+    },
   ];
 
   // ── Explicit overrides — checked BEFORE the SYNCED prefix table above. ─────
