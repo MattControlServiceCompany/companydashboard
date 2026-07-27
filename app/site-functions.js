@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.27.708',
+    date: '2026-07-27',
+    title: 'Service Proposal now presents the Recommended option as the ongoing monthly program it is',
+    items: [
+      {
+        type: 'change',
+        text: 'On the Service Proposal page, the Recommended option no longer shows a one-time dollar total next to Compliance and Full Scope. It now shows the monthly service program amount (e.g. "Monthly Program - $6,250 per Month"), since Recommended is an ongoing monthly service allowance, not a one-time purchase. Compliance and Full Scope are unchanged -- they are genuine one-time capital options.',
+      },
+      {
+        type: 'change',
+        text: 'The phased schedule table on the Service Proposal now shows Phase, Date Range, Included Improvements, and Facilities Included for each period through 2028, with no dollar figures -- it is a plan of what work happens when, not a price breakdown. A footnote clarifies that ongoing Energy Management Services run throughout the program in addition to the listed improvements.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.27.707',
     date: '2026-07-27',
     title: 'Recommended-tier phased program now priced against the real calendar, not a 12-month ceiling',
