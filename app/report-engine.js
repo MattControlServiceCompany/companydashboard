@@ -15913,12 +15913,19 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
     'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate</div>';
 
+  // Rewritten 2026-07-27 (coordinator review of the monthly-framing fix): the prior copy said
+  // "Each figure is an independent estimate of the total cost for that scope... totals should be
+  // compared on their own terms" — accurate when all three columns were one-time totals, but the
+  // amount row above no longer prints a total for Recommended, so that language directly
+  // contradicted what the table now shows. Rewritten to state the real distinction up front:
+  // Compliance/Full Scope are one-time capital projects with a total cost; Recommended is an
+  // ongoing monthly program with no total, delivered over the phased schedule below.
   var intro =
     '<div style="font-size:10px;color:#000;line-height:1.6;margin-bottom:12px">' +
-    'The options below present three scopes of work for this portfolio. Each figure is an ' +
-    'independent estimate of the total cost for that scope, provided to support planning and ' +
-    'budgeting. The scopes are defined differently and are not simple subsets of one another, so the ' +
-    'totals should be compared on their own terms rather than assumed to rank in any particular order.' +
+    'The options below present three ways to address the assessment findings. Compliance and Full ' +
+    'Scope are one-time capital projects, and each shows a total project cost. Recommended is ' +
+    'different: it is an ongoing monthly program, not a project with a total cost. Its scope is ' +
+    'delivered over time — see the phased schedule below for what is included and when.' +
     '</div>';
 
   // Table: 3 fixed columns, total width 684px (3 x 228). table-layout:fixed, black text, no colored
@@ -16128,10 +16135,17 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   } else if (summaryData && summaryData.perTier && !detailFitsInline) {
     var detailNoteStyle =
       'padding:10px;font-size:9px;color:#000;font-style:italic;border:1px solid var(--rpt-rule);text-align:center';
+    // Reworded 2026-07-27 (coordinator review): the bare "detail for each scope" line let a
+    // reader assume all three tiers' continuation pages are the same kind of thing (priced
+    // detail). Recommended's continuation pages (item 6/7 above, _buildTierDetailPages/
+    // _buildItemizedPages) no longer carry any price — only scope/quantity — so this note now
+    // says so explicitly instead of implying parity with Compliance/Full Scope's priced detail.
     detailRow =
       '<tr><td colspan="3" style="' +
       detailNoteStyle +
-      '">Full Install &amp; Programming Detail for each scope is provided on the following pages.</td></tr>';
+      '">Full Install &amp; Programming Detail for each scope is provided on the following pages. ' +
+      'Compliance and Full Scope detail includes pricing; Recommended detail lists scope and ' +
+      'quantities only, funded through the monthly program allowance.</td></tr>';
   }
 
   var table =
