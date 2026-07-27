@@ -14885,6 +14885,18 @@ function _rptProposalDisplayClientName(fullName) {
  * anymore — the target has no such block; it pivots straight from the findings narrative to the
  * monthly allowance. _rptA36CoverPricingStrip itself is left intact (unused) rather than deleted,
  * per the "do not destroy existing capability" constraint.
+ *
+ * 2026-07-27 (second pass, client review of the removed-table layout): "Page 1 makes no sense
+ * from a readers standpoint... wildly different numbers and there is a ton of white space...
+ * explain what each one gets you... put it in ROI terms." The Assessment Findings section was
+ * rewritten so a reader who reads only its first paragraph understands both the scope (the two
+ * investment levels) and the monthly-cost mechanism, followed by stacked (never side-by-side,
+ * never boxed) per-tier explanations, then an ROI paragraph in Recommended Optimization Program
+ * grounded in _pricingComputeProgramCostModel (pricing-estimator.js) tying the monthly figure to
+ * the phased program total. The former "Full ASHRAE 36 Compliance Implementation" tier label was
+ * also corrected here — Guideline 36 is fundamentally a sequences-of-operation spec, so a tier
+ * that excludes the optimization sequences cannot honestly be called full compliance; see the
+ * tierBlocks comment inside the function body for the corrected name/description.
  */
 function rptPageASHRAE36ProposalCover(n, d) {
   var p = d.portfolio;
@@ -14936,43 +14948,73 @@ function rptPageASHRAE36ProposalCover(n, d) {
     'through targeted controls upgrades and optimization strategies.</div>';
 
   // ── Assessment Findings ─────────────────────────────────────────────────
+  // 2026-07-27 (client review — page 1 redesign, verbatim: "Like those are wildly different
+  // numbers and there is a ton of white space. Why not use all of that white space and explain
+  // what each one gets you... Explain it as if they read that 1 paragraph they could understand
+  // what the scope of work is and how the monthly cost works. Put it in ROI terms also."):
+  // findingsPara below is the single-paragraph comprehension bar he set — it states both dollar
+  // figures AND ties them to the monthly-allowance mechanism in one pass, so a reader who reads
+  // only this paragraph already understands the scope and the funding model. The stacked
+  // tierBlocks below it then explain, in plain language, what each figure actually buys (no side
+  // by side layout, no bordered/boxed containers — plain headings + prose only per
+  // feedback_no_boxes_in_reports).
   var af = _rptA36AssessmentFindingsData(d);
   var findingsPara =
     af.complianceFmt && af.fullScopeFmt
-      ? 'The assessment identified approximately ' +
+      ? 'The assessment identified two levels of investment to bring the ' +
+        esc(displayClient) +
+        ' portfolio toward full ASHRAE Guideline 36 alignment: approximately ' +
         af.complianceFmt +
-        ' in improvements necessary to address identified ASHRAE 36 compliance gaps across the ' +
-        'portfolio and approximately ' +
+        ' for the required instrumentation and safety programming described below, and ' +
+        'approximately ' +
         af.fullScopeFmt +
-        ' to implement the full energy scope of work across all assessed facilities.'
+        ' to additionally implement every Guideline 36 optimization sequence and portfolio-wide ' +
+        'fault detection across the full portfolio. Rather than fund either figure as a single ' +
+        'capital project, Control Service Company recommends implementing this same scope through ' +
+        'the Recommended Optimization Program described below — a monthly service allowance that ' +
+        'turns a large one-time expense into a predictable operating cost, funding continuous, ' +
+        'prioritized progress toward both totals over time.'
       : 'The assessment identified improvements necessary to address ASHRAE 36 compliance gaps across ' +
         'the portfolio, as well as a broader energy-focused scope of work across all assessed ' +
         'facilities. Cost estimates below will populate once pricing data has been imported for this project.';
 
-  // "What's included" clarification (Matt's Word comment on the Full Energy Scope of Work row:
-  // "Clarify what is included" + "We need to explain in more detail"). Grounded in the actual
-  // tier-build logic (buildComplianceRows/buildFullScopeRows, pricing-estimator.js): Compliance =
-  // every Phase-1 required hardware gap + only 'safety'-classified Phase-2 sequences (currently
-  // freeze protection); Full Scope = every hardware gap + every applicable sequence across every
-  // piece of equipment, plus optional beyond-compliance points and portfolio-wide FDD. Not
-  // invented marketing copy — this is what those two builders actually assemble.
-  var whatsIncluded =
+  // "What each level gets you" — REWRITTEN 2026-07-27 per the client's factual correction (a
+  // controls professional): ASHRAE Guideline 36 is fundamentally a specification of sequences of
+  // operation, so a tier that excludes the optimization sequences (SAT reset, DSP reset, DCV,
+  // economizer control, FDD) cannot honestly be labeled "Full ASHRAE 36 Compliance" — that old
+  // label overstated what buildComplianceRows (pricing-estimator.js) actually prices: every
+  // Phase-1 required hardware gap plus ONLY 'safety'-classified Phase-2 sequences (currently
+  // freeze protection only — see SEQUENCE_SAVINGS_IMPACT). Renamed to describe what it actually
+  // delivers (instrumentation + safety programming), and the description now says plainly that
+  // this layer alone does NOT achieve full Guideline 36 compliance. The second tier
+  // (buildFullScopeRows) genuinely does include every applicable sequence + FDD across every
+  // piece of equipment, so "Full Guideline 36 Optimization" remains an accurate label for it.
+  var tierBlocks =
     '<div style="' +
     BODY +
-    '">' +
-    '<strong>Full ASHRAE 36 Compliance Implementation</strong> installs the sensor and actuator ' +
-    'hardware ASHRAE Guideline 36 requires, plus programming for safety-critical sequences (e.g. ' +
-    'freeze protection). It does not include energy-optimization sequences such as supply air ' +
-    'temperature reset, duct static pressure reset, demand-controlled ventilation, or economizer ' +
-    'control, and does not include Fault Detection &amp; Diagnostics (FDD) reporting.' +
+    ';font-weight:700;margin-top:6px">Required Instrumentation &amp; Safety Programming' +
+    (af.complianceFmt ? ' — approximately ' + af.complianceFmt : '') +
     '</div>' +
     '<div style="' +
     BODY +
-    ';margin-top:4px">' +
-    '<strong>Full Energy Scope of Work Implementation</strong> includes everything in the ' +
-    'Compliance option, plus every applicable Guideline 36 optimization sequence across every ' +
-    'piece of equipment in the portfolio, plus portfolio-wide Fault Detection &amp; Diagnostics ' +
-    '(FDD) reporting.' +
+    '">This level installs the sensor and actuator hardware ASHRAE Guideline 36 requires at every ' +
+    'piece of equipment, plus programming for safety-critical sequences such as freeze protection. ' +
+    'It is the instrumentation layer the optimization sequences below depend on — on its own, it ' +
+    'does not include supply air temperature reset, duct static pressure reset, demand-controlled ' +
+    'ventilation, economizer control, or Fault Detection &amp; Diagnostics (FDD), so it does not by ' +
+    'itself achieve full Guideline 36 compliance.' +
+    '</div>' +
+    '<div style="' +
+    BODY +
+    ';font-weight:700;margin-top:6px">Full Guideline 36 Optimization' +
+    (af.fullScopeFmt ? ' — approximately ' + af.fullScopeFmt : '') +
+    '</div>' +
+    '<div style="' +
+    BODY +
+    '">This level includes everything above, plus every applicable Guideline 36 optimization ' +
+    'sequence at every piece of equipment, plus portfolio-wide Fault Detection &amp; Diagnostics ' +
+    '(FDD) reporting — the complete scope required to reach full Guideline 36 alignment across the ' +
+    'portfolio.' +
     '</div>';
 
   var assessmentFindings =
@@ -14984,7 +15026,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '">' +
     findingsPara +
     '</div>' +
-    whatsIncluded;
+    tierBlocks;
 
   // ── Recommended Optimization Program (first heading) ───────────────────
   var budgetFmt = null;
@@ -15003,7 +15045,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     ? '<div style="' +
       BODY +
       ';font-weight:700;margin-top:5px">Monthly Allowance for the following: Parts, materials, ' +
-      'on-site labor hours and labor hours</div>' +
+      'and on-site labor hours</div>' +
       '<div style="' +
       BODY +
       '">' +
@@ -15011,18 +15053,83 @@ function rptPageASHRAE36ProposalCover(n, d) {
       ' per Month</div>'
     : '';
 
+  // ROI-in-mechanics paragraph (2026-07-27): grounded in _pricingComputeProgramCostModel
+  // (pricing-estimator.js) — the SAME calendar-phase model that drives the Recommended timeline
+  // shown on the next page. Never invented: any missing input (no budget configured, no
+  // recommended-tier pricing yet) falls back to a shorter version of the paragraph rather than
+  // stating a number that wasn't actually computed — same silent-until-configured convention used
+  // throughout this file (see budgetFmt/af above).
+  var programCostModel = null;
+  try {
+    if (typeof _pricingComputeProgramCostModel === 'function') {
+      programCostModel = _pricingComputeProgramCostModel(d.project.id);
+    }
+  } catch (e) {
+    programCostModel = null;
+  }
+  var programTotalFmt = null,
+    programRangeFmt = null,
+    programMonths = null;
+  if (
+    programCostModel &&
+    programCostModel.phases &&
+    programCostModel.phases.length &&
+    programCostModel.programAllowanceTotal
+  ) {
+    programTotalFmt = '$' + Math.round(programCostModel.programAllowanceTotal).toLocaleString('en-US');
+    var _firstPh = programCostModel.phases[0];
+    var _lastPh = programCostModel.phases[programCostModel.phases.length - 1];
+    programRangeFmt = _firstPh.dateRange.split(' – ')[0] + ' – ' + _lastPh.dateRange.split(' – ')[1];
+    programMonths = programCostModel.programMonths;
+  }
+
+  var recIntro;
+  if (budgetFmt && programTotalFmt) {
+    recIntro =
+      'Rather than pursuing either investment level above as a single capital project, Control ' +
+      'Service Company recommends a phased optimization program funded through a predictable ' +
+      'monthly service allowance. At ' +
+      budgetFmt +
+      ' per month, the program funds approximately ' +
+      programTotalFmt +
+      ' over its initial ' +
+      programMonths +
+      '-month phased rollout (' +
+      programRangeFmt +
+      ') — enough to implement the highest-return measures first (see the phased schedule on the ' +
+      'following page), while also covering ongoing energy management labor from the same monthly ' +
+      'figure. Each phase is fully funded as it is completed, so ' +
+      esc(displayClient) +
+      ' is never asked to approve a large capital expenditure up front, and the allowance can ' +
+      'continue beyond the initial rollout to progressively work through the remaining Full ' +
+      'Guideline 36 Optimization scope over time.';
+  } else if (budgetFmt) {
+    recIntro =
+      'Rather than pursuing either investment level above as a single capital project, Control ' +
+      'Service Company recommends a phased optimization program funded through a predictable ' +
+      'monthly service allowance of ' +
+      budgetFmt +
+      ' per month — turning a large one-time expense into a manageable operating cost that funds ' +
+      'continuous, prioritized progress toward both totals above.';
+  } else {
+    recIntro =
+      'Rather than pursuing a large one-time capital project, Control Service Company recommends a ' +
+      'phased optimization program focused on the highest-value opportunities first. This approach ' +
+      'allows ' +
+      esc(displayClient) +
+      ' to improve building performance using a predictable monthly budget while continuously ' +
+      'expanding optimization efforts over time.';
+  }
+
   var recProgram1 =
     '<div style="' +
     HEAD +
     '">Recommended Optimization Program</div>' +
     '<div style="' +
     BODY +
-    '">Rather than pursuing a large one-time capital project, Control Service Company recommends ' +
-    'a phased optimization program focused on the highest-value opportunities first. This approach ' +
-    'allows ' +
-    esc(displayClient) +
-    ' to improve building performance using a predictable monthly budget while continuously ' +
-    'expanding optimization efforts over time.</div>' +
+    '">' +
+    recIntro +
+    '</div>' +
     monthlyAllowanceBlock +
     '<ul style="' +
     UL +
@@ -15313,9 +15420,13 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
 /**
  * rptPageASHRAE36ProposalVision — Page 3 of the rebuilt Service Proposal: Implementation Plan &
  * Long-Term Vision (Phase/Schedule table, live from the same _pricingComputeRecommendedTimeline
- * phase labels/date ranges as page 2's table), Long-Term Program Vision, Expected Outcomes,
- * Disclaimer. Bullet/paragraph text is verbatim from the target spec — none of it references a
- * client-specific fact, so no live derivation is needed for this page beyond the schedule table.
+ * phase labels/date ranges as page 2's table), Long-Term Program Vision, Disclaimer. Bullet/
+ * paragraph text is verbatim from the target spec — none of it references a client-specific fact,
+ * so no live derivation is needed for this page beyond the schedule table.
+ *
+ * 2026-07-27: the Expected Outcomes bullet-list section that used to sit between Long-Term
+ * Program Vision and Disclaimer was removed at the client's explicit direction ("Just get rid of
+ * the entire Expected Outcomes page. No questions.").
  */
 function rptPageASHRAE36ProposalVision(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
@@ -15413,20 +15524,12 @@ function rptPageASHRAE36ProposalVision(n, d) {
     'ongoing optimization program based on operational needs, budget priorities, and observed ' +
     'building performance.</div>';
 
-  var expectedOutcomes =
-    '<div style="' +
-    HEAD +
-    '">Expected Outcomes</div>' +
-    '<ul style="' +
-    UL +
-    '">' +
-    '<li>Improved occupant comfort</li>' +
-    '<li>Improved ventilation management</li>' +
-    '<li>Reduced HVAC energy consumption</li>' +
-    '<li>Improved operational consistency across facilities</li>' +
-    '<li>Increased visibility into system performance</li>' +
-    '<li>Greater alignment with ASHRAE Guideline 36 best practices</li>' +
-    '</ul>';
+  // Expected Outcomes section REMOVED 2026-07-27 (client review, verbatim: "Just get rid of the
+  // entire Expected Outcomes page. No questions."). Was previously a bullet-list section inside
+  // this page (rptPageASHRAE36ProposalVision), not a standalone page — the earlier standalone
+  // rptPageASHRAE36ProposalOutcomes page function was already removed on 2026-07-22 (see the
+  // header comment above rptPageASHRAE36ProposalPhaseTable). Not preserved as an opt-in section,
+  // per the client's explicit instruction.
 
   var disclaimer =
     '<div style="' +
@@ -15438,8 +15541,7 @@ function rptPageASHRAE36ProposalVision(n, d) {
     'patterns, utility rates, weather conditions, operational practices, and implementation quality.' +
     '</div>';
 
-  var bodyHTML =
-    '<div style="padding:8px 48px 4px">' + implTable + longTermVision + expectedOutcomes + disclaimer + '</div>';
+  var bodyHTML = '<div style="padding:8px 48px 4px">' + implTable + longTermVision + disclaimer + '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
