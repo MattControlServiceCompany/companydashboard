@@ -15791,12 +15791,16 @@ function _rptA36RecommendedTimelineHTML(d) {
 
   // Neutral, client-safe transparency note (no internal "over/under cap" alarm language) — the
   // Phase Service Allowance already funds ongoing EM services for that period, in addition to the
-  // priced measures shown in the adjacent column.
+  // priced measures shown in the adjacent column. 2026-07-26 (fix-phase-cost-budget-model): "program
+  // setup" removed from this sentence — BAS program/sequence setup is one-time project labor priced
+  // as "Programming" inside Priced Measures This Phase, not part of the recurring EM service the
+  // allowance line below funds. Listing it here would have implied it was billed against this
+  // allowance in addition to the measures total, double-counting the same hours in the reader's eyes.
   var laborNote = hasBudget
     ? '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:4px;font-style:italic">' +
       'Phase Service Allowance includes ongoing Energy Management Services labor for that period ' +
-      '(program setup, alarm configuration, trend configuration, and monitoring) in addition to the ' +
-      'priced measures shown above.' +
+      '(alarm configuration, report setup, trend configuration, utility bill data entry, and ongoing ' +
+      'monitoring) in addition to the priced measures shown above.' +
       '</div>'
     : '';
 

@@ -713,50 +713,58 @@ function _pricingProjectHasUtilityBills(projId) {
   });
 }
 
-/* ── Monthly Service Labor Breakdown (2026-07-22; trend category added 2026-07-26) ────────────
-   Additive detail underneath _pricingComputeMonthlyService: WHY the monthly EM service hours are
-   needed, not just the flat hours×rate total. Matt's ask: the flat number hides real setup work
-   (BAS program/sequence setup, alarm configuration, report setup, trend/graphics setup, and —
-   when the client hand-provides them — utility bill data entry) that is heaviest in the first few
-   months and tapers to steady-state monitoring. This function computes that ramp; it NEVER
-   changes the monthly total itself (still hours×hourlyRate from _pricingComputeMonthlyService/the
-   not-to-exceed allowance comparison) — every month's category hours are made to SUM to that same
-   total, so the cap logic above is untouched. Purely presentational data prep for
-   _pricingLaborBreakdownHTML, below.
+/* ── Monthly Recurring EM Service Labor Breakdown (2026-07-22; trend category added 2026-07-26;
+   REBUILT 2026-07-26 fix-phase-cost-budget-model to stop double-counting Program & Sequence Setup
+   and stop force-filling the whole allowance) ────────────────────────────────────────────────────
+   WHY this exists: Matt's ask was to show WHY the monthly EM service hours are needed, not just a
+   flat hours×rate total — real setup work (alarm configuration, report setup, trend/graphics
+   setup, and — when the client hand-provides them — utility bill data entry) that is heaviest in
+   the first few months and tapers to steady-state monitoring.
 
-   Ramp model (simple 4-step taper, not a complex schedule, per Matt's ask):
-     Month 1      — 100% of the "setup pool" (sequence programming + alarms + reports + trends +
-                    bill entry)
+   REBUILD REASON (2026-07-26, Matt: "get the allowance model working and correct"): the prior
+   version had two defects, both fixed here:
+     (a) "Ongoing Monitoring & Optimization" was a REMAINDER category — `totalHours (36) −
+         setupHoursUsed` — which forced every month's categories to sum to exactly the flat
+         36-hr/mo total by construction, regardless of what work was actually needed. That left
+         ~$22/mo of a $6,250 allowance for parts after 36hrs×$173/hr. 36 hrs is
+         `budget.serviceHoursPerMonth`, the all-labor-no-parts EXTREME used by
+         _pricingComputeMonthlyService's not-to-exceed headline — it was never meant to be a floor
+         every month must hit. Fixed: Ongoing Monitoring & Optimization is now a DEFINED flat
+         allocation (ONGOING_MONITORING_HOURS_DEFAULT, same shape as the other *_DEFAULT constants
+         below), present every month, never scaled to fill anything.
+     (b) "Program & Sequence Setup" reused COST_PER_SEQ_HOURS_DEFAULT — the EXACT SAME per-sequence
+         hours buildCatalogRows' phase-2 rows already price as "Programming" inside the measures
+         total (see _pricingComputeProgramCostModel below, which nets this breakdown's total against
+         the SAME calendar allowance the measures total draws from). Keeping it here meant those
+         programming hours were priced twice against the same dollars. Fixed: Program & Sequence
+         Setup is REMOVED from this function entirely — it is one-time PROJECT work, already priced
+         as "Programming" line items inside the measures total, not part of the RECURRING monthly
+         EM service. Documented in my-knowledge-base/wiki/joco-monthly-allowance-vs-em-labor-
+         overlap.md (that overlap is now resolved by this removal — see the update note there).
+
+   This function now answers a narrower, correct question: "what RECURRING monthly labor must
+   happen regardless of which measures get funded?" — Alarm Configuration, Report Setup, Trend
+   Setup & Configuration, Utility Bill Data Entry (conditional on bills on file), and Ongoing
+   Monitoring & Optimization. It is READ BY _pricingComputeProgramCostModel to compute
+   `emLaborTotal`/`measuresAvailable` per phase — no longer purely presentational; the monthly
+   totals it returns now flow into real dollar math, so they intentionally do NOT sum to a fixed
+   cap anymore (Month 1 is highest, Month 4+ is lowest — see the per-month figures in the function
+   below). This is deliberate — the old "sums-to-36-every-month" invariant WAS the double-count/
+   fill-the-allowance bug and has been removed on purpose.
+
+   Ramp model (simple 4-step taper, unchanged from the original, per Matt's ask — still applies
+   only to the SETUP categories, not to Ongoing Monitoring which is now constant every month):
+     Month 1      — 100% of the "setup pool" (alarms + reports + trends + bill entry)
      Month 2      —  60% of the setup pool
      Month 3      —  30% of the setup pool
-     Month 4+     —   0% (steady state) — entire month is Ongoing Monitoring & Optimization
-   Whatever hours the setup pool doesn't use in a given month falls to "Ongoing Monitoring &
-   Optimization" so every month's category hours always sum to exactly the monthly total (if the
-   setup pool would exceed the monthly total in Month 1, it is scaled down to fit — the flat total
-   is always the ceiling, never the categories).
-
-   Program & Sequence Setup hours reuse COST_PER_SEQ_HOURS_DEFAULT (the same per-sequence hour
-   defaults Phase 2 programming-labor rows use) and one line per distinct BAS sequence this project
-   actually needs commissioned (from buildCatalogRows — the tier-agnostic full universe of phase-2
-   sequence rows for the project, not just Compliance's safety-only subset).
+     Month 4+     —   0% (steady state) — only Ongoing Monitoring & Optimization remains
 
    Utility Bill Data Entry only appears when the project has bill data on file
    (_pricingProjectHasUtilityBills) — a project with no bills doesn't need this line.
 
    Trend Setup & Configuration (2026-07-26, task: "we also need to build in time for setting up
-   trends and other changes like that"): a grep for "trend" across this file/report-engine.js
-   before this change found ZERO labor category for it — Alarm Configuration/Report Setup/Bill
-   Entry/Ongoing Monitoring were the only named categories, so this was a genuinely missing setup
-   task, not a duplicate. Added as its own line, same shape as Alarm Configuration/Report Setup
-   (flat TREND_SETUP_HOURS_DEFAULT, unconditional — every project needs BAS trend logs/graphics
-   set up, same as alarms/reports, not conditional on bill data like Utility Bill Data Entry is).
-   Scoped to ONLY trends, per the task's explicit instruction not to invent categories beyond what
-   was asked — one adjacent candidate was considered and NOT added: BAS graphics/dashboard page
-   setup (distinct from trend LOGS — graphics are the visual layout, trends are the historical
-   data collection) looks like a plausible sibling gap but Matt did not name it and there is no
-   existing per-project "graphics needed" signal in this codebase to size it from (unlike
-   sequences, which have a real per-project count from buildCatalogRows) — flagged in the
-   implementer report for a future explicit decision rather than silently added here.
+   trends and other changes like that") — unchanged from its 2026-07-26 addition, still flat
+   TREND_SETUP_HOURS_DEFAULT, unconditional.
 
    Returns null when _pricingComputeMonthlyService returns null (no budget.amount set — same
    silent-until-configured convention as the rest of this feature).
@@ -764,34 +772,23 @@ function _pricingProjectHasUtilityBills(projId) {
 function _pricingComputeMonthlyLaborBreakdown(projId) {
   var svc = _pricingComputeMonthlyService(projId);
   if (!svc) return null;
-  var totalHours = svc.hours;
-
-  // Program & Sequence Setup — one line per distinct BAS sequence this project needs commissioned.
-  var catalogRows = buildCatalogRows(projId);
-  var seqSeen = {};
-  var seqItems = [];
-  catalogRows.forEach(function (r) {
-    if (r.phase !== 2 || !r.seqKey || seqSeen[r.seqKey]) return;
-    seqSeen[r.seqKey] = true;
-    var hrs = COST_PER_SEQ_HOURS_DEFAULT[r.seqKey] != null ? COST_PER_SEQ_HOURS_DEFAULT[r.seqKey] : 2.0;
-    seqItems.push({ label: r.item || r.seqKey, hours: hrs });
-  });
-  var seqTotalHours = seqItems.reduce(function (s, i) {
-    return s + i.hours;
-  }, 0);
+  var hourlyRate = svc.hourlyRate;
 
   var ALARM_SETUP_HOURS_DEFAULT = 4;
   var REPORT_SETUP_HOURS_DEFAULT = 3;
   var TREND_SETUP_HOURS_DEFAULT = 3; // 2026-07-26: BAS trend log setup — see comment block above
   var hasBills = _pricingProjectHasUtilityBills(projId);
   var BILL_ENTRY_HOURS_DEFAULT = hasBills ? 3 : 0;
+  // Ongoing Monitoring & Optimization (2026-07-26 rebuild): a DEFINED recurring monthly
+  // allocation — present in every month, same magnitude-of-constant pattern as the setup
+  // categories above (not derived, not scaled to fill anything). This is the number a future
+  // pricing decision may want to tune per-portfolio-size; flagged as a default, not a
+  // config-editable field yet (matches how Alarm/Report/Trend/Bill Entry hours are also
+  // uneditable *_DEFAULT constants today).
+  var ONGOING_MONITORING_HOURS_DEFAULT = 8;
 
   var setupPoolHours =
-    seqTotalHours +
-    ALARM_SETUP_HOURS_DEFAULT +
-    REPORT_SETUP_HOURS_DEFAULT +
-    TREND_SETUP_HOURS_DEFAULT +
-    BILL_ENTRY_HOURS_DEFAULT;
+    ALARM_SETUP_HOURS_DEFAULT + REPORT_SETUP_HOURS_DEFAULT + TREND_SETUP_HOURS_DEFAULT + BILL_ENTRY_HOURS_DEFAULT;
 
   function roundHrs(n) {
     return Math.round(n * 100) / 100;
@@ -808,33 +805,20 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   function buildMonthRows(monthIdx) {
     var out = [];
     var frac = rampFraction(monthIdx);
-    var setupHoursUsed = 0;
-    if (frac > 0 && setupPoolHours > 0) {
-      // Never let the setup pool exceed the flat monthly total — scale the whole pool down
-      // proportionally if it would (keeps every month's categories summing to the same cap).
-      var effFrac = setupPoolHours * frac > totalHours ? totalHours / setupPoolHours : frac;
-      if (seqItems.length) {
-        seqItems.forEach(function (item) {
-          var hrs = roundHrs(item.hours * effFrac);
-          if (hrs > 0) out.push({ category: 'Program & Sequence Setup — ' + item.label, hours: hrs });
-        });
-      }
-      var alarmHrs = roundHrs(ALARM_SETUP_HOURS_DEFAULT * effFrac);
+    if (frac > 0) {
+      var alarmHrs = roundHrs(ALARM_SETUP_HOURS_DEFAULT * frac);
       if (alarmHrs > 0) out.push({ category: 'Alarm Configuration', hours: alarmHrs });
-      var reportHrs = roundHrs(REPORT_SETUP_HOURS_DEFAULT * effFrac);
+      var reportHrs = roundHrs(REPORT_SETUP_HOURS_DEFAULT * frac);
       if (reportHrs > 0) out.push({ category: 'Report Setup', hours: reportHrs });
-      var trendHrs = roundHrs(TREND_SETUP_HOURS_DEFAULT * effFrac);
+      var trendHrs = roundHrs(TREND_SETUP_HOURS_DEFAULT * frac);
       if (trendHrs > 0) out.push({ category: 'Trend Setup & Configuration', hours: trendHrs });
       if (hasBills) {
-        var billHrs = roundHrs(BILL_ENTRY_HOURS_DEFAULT * effFrac);
+        var billHrs = roundHrs(BILL_ENTRY_HOURS_DEFAULT * frac);
         if (billHrs > 0) out.push({ category: 'Utility Bill Data Entry', hours: billHrs });
       }
-      setupHoursUsed = out.reduce(function (s, r) {
-        return s + r.hours;
-      }, 0);
     }
-    var ongoingHrs = roundHrs(Math.max(0, totalHours - setupHoursUsed));
-    if (ongoingHrs > 0) out.push({ category: 'Ongoing Monitoring & Optimization', hours: ongoingHrs });
+    // Constant every month — NOT a remainder. This is what fixes defect (a).
+    out.push({ category: 'Ongoing Monitoring & Optimization', hours: ONGOING_MONITORING_HOURS_DEFAULT });
     return out;
   }
 
@@ -845,7 +829,29 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
     { label: 'Month 4+ (steady state)', rows: buildMonthRows(4) },
   ];
 
-  return { totalHoursPerMonth: totalHours, months: months, hasSequences: seqItems.length > 0, hasBills: hasBills };
+  return {
+    hourlyRate: hourlyRate,
+    setupPoolHours: setupPoolHours,
+    ongoingMonitoringHours: ONGOING_MONITORING_HOURS_DEFAULT,
+    months: months,
+    hasBills: hasBills,
+  };
+}
+
+/* ── Recurring EM labor hours for one absolute calendar month of the program (2026-07-26) ─────
+   _pricingComputeMonthlyLaborBreakdown buckets by "months since engagement start" (1/2/3/4+
+   steady-state) — this resolves an ABSOLUTE month index (1 = the program's first calendar month,
+   climbing across phase boundaries) to that bucket so _pricingComputeProgramCostModel can sum
+   real per-month recurring-labor dollars across a whole phase (which may span the Month-1..3 ramp
+   AND steady-state months, e.g. Phase 1 = program months 1-5).
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingRecurringEMLaborHoursForMonth(bd, absoluteMonthIdx) {
+  if (!bd) return 0;
+  var idx = Math.min(Math.max(absoluteMonthIdx, 1), 4); // bucket index into bd.months (1,2,3,4=steady)
+  var monthRows = bd.months[idx - 1].rows;
+  return monthRows.reduce(function (s, r) {
+    return s + r.hours;
+  }, 0);
 }
 
 /* ── Monthly Labor Breakdown table (2026-07-22) ───────────────────────────────────────────────
@@ -3284,6 +3290,15 @@ function buildRecommendedRows(projId) {
   //      measures price, or split — and if split, how). Flagged in the implementer report rather
   //      than silently forced either direction; membership stays on the pre-existing 12-month
   //      ceiling until that decision is made.
+  //   UPDATE (2026-07-26, later same branch): the root cause of point 2's double-subtraction —
+  //   _pricingComputeMonthlyLaborBreakdown including Program & Sequence Setup hours — has been
+  //   FIXED AT THE SOURCE (that category was removed from the recurring EM labor breakdown
+  //   entirely; see that function's header comment and _pricingComputeProgramCostModel, both
+  //   rebuilt same day). That fix only changed the calendar-phase COST DISPLAY math (item 2's
+  //   allowanceTotal/emLaborTotal/measuresAvailable columns) — this membership ceiling
+  //   (`comp`/`_pricingGreedyPrefix`, budget.termMonths-based) is still UNCHANGED and still out of
+  //   scope; a future pass COULD revisit netting the calendar allowance against this ceiling now
+  //   that the double-count is gone, but that is a separate decision this task did not make.
   var keepUnitToggleKeys = {};
   if (comp && budget.mode === 'recurring') {
     // Budget entered: ranked prefix that fits the ceiling — the shipped v631
@@ -5935,7 +5950,10 @@ function _pricingMonthlyAllowanceAmount(budget) {
   return Number(budget.amount) / monthsPerPeriod;
 }
 
-/* ── Calendar-phase cost model (2026-07-26 fix/phase-cost-budget-model) ────────────────────────
+/* ── Calendar-phase cost model (2026-07-26 fix/phase-cost-budget-model; REBUILT 2026-07-26 same
+   branch, later commit, to stop double-counting programming labor and stop force-filling the
+   allowance — see _pricingComputeMonthlyLaborBreakdown's header comment for the full defect
+   writeup) ────────────────────────────────────────────────────────────────────────────────────
    Matt's complaint: "$74.xk is not the amount we should be showing. It should be the cost for
    August 1, 2026 - December 31st, 2026 as Phase 1 shows, then Phase 2 should show the full 2027
    annual cost." The OLD phase "Cost" column was a dollar-cumulative SLICE of the Recommended
@@ -5943,15 +5961,22 @@ function _pricingMonthlyAllowanceAmount(budget) {
    29-calendar-month rollout — never the actual calendar-period cost of the monthly service
    allowance. This computes the real calendar cost: months-in-phase (from _pricingPhaseDateDefs)
    x the monthly allowance (_pricingMonthlyAllowanceAmount) — e.g. JOCO $6,250/mo: Phase 1 (5 mo)
-   = $31,250, Phase 2/3 (12 mo each) = $75,000, program total (29 mo) = $181,250.
+   = $31,250, Phase 2/3 (12 mo each) = $75,000, program total (29 mo) = $181,250. This part was
+   already correct and is UNCHANGED by the 2026-07-26 rebuild below.
 
-   Also surfaces, per phase, the Ongoing Energy Management Services labor cost that draws against
-   the SAME monthly allowance (_pricingComputeMonthlyService — hours/month x hourlyRate, constant
-   every month because _pricingComputeMonthlyLaborBreakdown's category hours always sum to the
-   same monthly cap) so callers can show that measures do NOT get 100% of the allowance — some of
-   every month's dollars are already committed to EM labor before a single dollar of
-   hardware/programming is spent. `measuresAvailable` = allowanceTotal − emLaborTotal, floored at
-   0; `overCommitted` flags when EM labor alone would exceed that phase's calendar allowance.
+   Also surfaces, per phase, the RECURRING EM labor cost that draws against the SAME monthly
+   allowance — REBUILT to sum real per-calendar-month dollars from
+   _pricingRecurringEMLaborHoursForMonth/_pricingComputeMonthlyLaborBreakdown (Alarm/Report/Trend/
+   Bill Entry ramped over the first 3 months + a constant Ongoing Monitoring allocation), NOT the
+   flat `hours/month x hourlyRate` `_pricingComputeMonthlyService` headline (that figure —
+   `budget.serviceHoursPerMonth`, e.g. 36 hrs — is the all-labor-no-parts EXTREME shown in the
+   "Monthly Service Agreement" widget, never a fixed monthly floor; using it here is exactly what
+   consumed ~99.6% of the allowance before this rebuild). Program & Sequence Setup hours are
+   deliberately EXCLUDED from this recurring figure — they are one-time project labor already
+   priced as "Programming" line items inside the measures total this same function nets against,
+   so including them here would double-count the same dollars (see wiki: joco-monthly-allowance-
+   vs-em-labor-overlap.md). `measuresAvailable` = allowanceTotal − emLaborTotal, floored at 0;
+   `overCommitted` flags when EM labor alone would exceed that phase's calendar allowance.
 
    Returns null when no budget.amount is configured (same silent-until-configured convention as
    the rest of this feature) — callers fall back to the pre-existing measures-total-only view.
@@ -5960,12 +5985,23 @@ function _pricingComputeProgramCostModel(projId) {
   var budget = _pricingGetBudget(projId);
   var monthlyAllowance = _pricingMonthlyAllowanceAmount(budget);
   if (monthlyAllowance == null) return null;
-  var svc = _pricingComputeMonthlyService(projId); // {hours, hourlyRate, monthlyService, allowance, diff, underCap}
-  var emMonthlyCost = svc ? svc.monthlyService : 0;
+  var svc = _pricingComputeMonthlyService(projId); // {hours, hourlyRate, monthlyService, allowance, diff, underCap} — used here only for hourlyRate
+  var hourlyRate = svc
+    ? svc.hourlyRate
+    : typeof _pricingGetConfig === 'function'
+      ? _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT
+      : COST_LABOR_RATE_DEFAULT;
+  var bd = _pricingComputeMonthlyLaborBreakdown(projId); // recurring EM labor breakdown — Program & Sequence Setup deliberately excluded (priced in measures instead)
 
+  var absoluteMonth = 0; // climbs across phase boundaries so the Month-1..3 ramp only ever applies once, at the true start of the program
   var phases = _pricingPhaseDateDefs().map(function (p) {
     var allowanceTotal = Math.round(p.months * monthlyAllowance * 100) / 100;
-    var emLaborTotal = Math.round(p.months * emMonthlyCost * 100) / 100;
+    var emLaborHours = 0;
+    for (var i = 0; i < p.months; i++) {
+      absoluteMonth++;
+      emLaborHours += _pricingRecurringEMLaborHoursForMonth(bd, absoluteMonth);
+    }
+    var emLaborTotal = Math.round(emLaborHours * hourlyRate * 100) / 100;
     var measuresAvailable = Math.round(Math.max(0, allowanceTotal - emLaborTotal) * 100) / 100;
     return {
       label: p.label,
@@ -5996,7 +6032,10 @@ function _pricingComputeProgramCostModel(projId) {
 
   return {
     monthlyAllowance: monthlyAllowance,
-    emMonthlyCost: emMonthlyCost,
+    // emMonthlyCost: informational only (no external caller reads it as of this rebuild — grepped
+    // before changing) — steady-state (Month 4+) recurring EM labor $/mo, i.e. the number this
+    // model settles to once the Month 1-3 setup ramp has tapered off.
+    emMonthlyCost: bd ? Math.round(_pricingRecurringEMLaborHoursForMonth(bd, 4) * hourlyRate * 100) / 100 : 0,
     phases: phases,
     programMonths: programMonths,
     programAllowanceTotal: programAllowanceTotal,
