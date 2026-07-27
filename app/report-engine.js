@@ -14980,6 +14980,70 @@ function rptPageASHRAE36ProposalCover(n, d) {
  * Returns '' content gracefully (a single "not yet available" page) if no priced timeline exists
  * yet for this project (i.e. pricing hasn't been configured) rather than showing empty cells.
  */
+/**
+ * _rptA36PhaseImprovementsText — "Included Improvements" bucket categorization (live-derived from
+ * a phase's own priced rows — never hardcoded per-phase text). Buckets mirror the same measure
+ * families the Executive Summary/Recommended-Program bullets already name (DCV, supply air
+ * temperature optimization, fan energy optimization, sensor infrastructure, BAS programming).
+ * Extracted 2026-07-27 (Matt's monthly-framing correction) so BOTH the Phase Table page
+ * (rptPageASHRAE36ProposalPhaseTable) and the Cost Estimate page's phase timeline
+ * (_rptA36RecommendedTimelineHTML) describe each phase's work with the SAME derivation — no
+ * separate hardcoded copy that could drift between the two tables.
+ */
+var _RPT_A36_PHASE_VERBS = [
+  {
+    dcv: 'DCV sensors and programming',
+    sat: 'supply air temperature optimization',
+    sensor: 'supporting sensor infrastructure upgrades',
+    fan: 'fan energy optimization',
+    bas: 'BAS programming',
+  },
+  {
+    dcv: 'expanded DCV deployments',
+    sat: 'expanded supply air temperature optimization',
+    sensor: 'additional sensor deployments',
+    fan: 'fan energy optimization',
+    bas: 'BAS programming',
+  },
+  {
+    dcv: 'final DCV sensor deployment',
+    sat: 'remaining supply air temperature optimization',
+    sensor: 'remaining sensor deployment',
+    fan: 'remaining fan optimization',
+    bas: 'ongoing BAS programming',
+  },
+];
+var _RPT_A36_DCV_SEQ = { demandCtrl: true, vav_dcv: true };
+var _RPT_A36_FAN_SEQ = { ahu_dsp_reset: true, ahu_rf_control: true };
+
+function _rptA36PhaseImprovementsText(rows, idx) {
+  rows = rows || [];
+  var verbs = _RPT_A36_PHASE_VERBS[idx] || _RPT_A36_PHASE_VERBS[0];
+  var hasDCV = false,
+    hasSAT = false,
+    hasFan = false,
+    hasSensor = false,
+    hasBAS = false;
+  rows.forEach(function (r) {
+    if (r.phase === 1) {
+      hasSensor = true;
+      if (r._pointKey === 'co2') hasDCV = true;
+    } else if (r.phase === 2) {
+      hasBAS = true;
+      if (r.seqKey && _RPT_A36_DCV_SEQ[r.seqKey]) hasDCV = true;
+      else if (r.seqKey === 'ahu_sat_reset') hasSAT = true;
+      else if (r.seqKey && _RPT_A36_FAN_SEQ[r.seqKey]) hasFan = true;
+    }
+  });
+  var parts = [];
+  if (hasDCV) parts.push(verbs.dcv);
+  if (hasSAT) parts.push(verbs.sat);
+  if (hasSensor) parts.push(verbs.sensor);
+  if (hasFan) parts.push(verbs.fan);
+  if (hasBAS) parts.push(verbs.bas);
+  return parts.length ? parts.join('; ') + '.' : 'Continued optimization of previously implemented measures.';
+}
+
 function rptPageASHRAE36ProposalPhaseTable(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
@@ -15030,63 +15094,9 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
     });
   }
 
-  // ── "Included Improvements" bucket categorization (live-derived from the phase's own priced
-  // rows — never hardcoded per-phase text). Buckets mirror the same measure families the
-  // Executive Summary/Recommended-Program bullets above already name (DCV, supply air
-  // temperature optimization, fan energy optimization, sensor infrastructure, BAS programming).
-  var PHASE_VERBS = [
-    {
-      dcv: 'DCV sensors and programming',
-      sat: 'supply air temperature optimization',
-      sensor: 'supporting sensor infrastructure upgrades',
-      fan: 'fan energy optimization',
-      bas: 'BAS programming',
-    },
-    {
-      dcv: 'expanded DCV deployments',
-      sat: 'expanded supply air temperature optimization',
-      sensor: 'additional sensor deployments',
-      fan: 'fan energy optimization',
-      bas: 'BAS programming',
-    },
-    {
-      dcv: 'final DCV sensor deployment',
-      sat: 'remaining supply air temperature optimization',
-      sensor: 'remaining sensor deployment',
-      fan: 'remaining fan optimization',
-      bas: 'ongoing BAS programming',
-    },
-  ];
-  var DCV_SEQ = { demandCtrl: true, vav_dcv: true };
-  var FAN_SEQ = { ahu_dsp_reset: true, ahu_rf_control: true };
-
-  function improvementsForPhase(rows, idx) {
-    rows = rows || [];
-    var verbs = PHASE_VERBS[idx] || PHASE_VERBS[0];
-    var hasDCV = false,
-      hasSAT = false,
-      hasFan = false,
-      hasSensor = false,
-      hasBAS = false;
-    rows.forEach(function (r) {
-      if (r.phase === 1) {
-        hasSensor = true;
-        if (r._pointKey === 'co2') hasDCV = true;
-      } else if (r.phase === 2) {
-        hasBAS = true;
-        if (r.seqKey && DCV_SEQ[r.seqKey]) hasDCV = true;
-        else if (r.seqKey === 'ahu_sat_reset') hasSAT = true;
-        else if (r.seqKey && FAN_SEQ[r.seqKey]) hasFan = true;
-      }
-    });
-    var parts = [];
-    if (hasDCV) parts.push(verbs.dcv);
-    if (hasSAT) parts.push(verbs.sat);
-    if (hasSensor) parts.push(verbs.sensor);
-    if (hasFan) parts.push(verbs.fan);
-    if (hasBAS) parts.push(verbs.bas);
-    return parts.length ? parts.join('; ') + '.' : 'Continued optimization of previously implemented measures.';
-  }
+  // "Included Improvements" text now comes from the shared _rptA36PhaseImprovementsText helper
+  // (extracted 2026-07-27) so this page and the Cost Estimate page's phase timeline never drift.
+  var improvementsForPhase = _rptA36PhaseImprovementsText;
 
   var EXPECTED_RESULTS = [
     'Improved ventilation, sequences that just need to be programmed, higher HVAC efficiency, and ' +
@@ -15629,9 +15639,15 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   var toggles = (estimateState && estimateState.rowToggles) || {};
   var hw = _rptA36TierDetailAggByPhase(rows, 1, toggles);
   var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
-  var noCat = !!(tt && tt[key] && tt[key].noCatalog);
-  var p1 = tt && tt[key] ? fmtUSD(tt[key].phase1) : null;
-  var p2 = tt && tt[key] ? fmtUSD(tt[key].phase2) : null;
+  // Recommended (2026-07-27, Matt's correction): never show a Hardware/Programming dollar
+  // subtotal or per-item price for this tier — those numbers are subtotals of the same one-time
+  // lump total the amount row above no longer prints for Recommended. Item names/qty still list
+  // (so a reader still sees WHAT is included), just never priced individually here.
+  var noDollarTier = key === 'recommended';
+  var noCat = !noDollarTier && !!(tt && tt[key] && tt[key].noCatalog);
+  var p1 = !noDollarTier && tt && tt[key] ? fmtUSD(tt[key].phase1) : null;
+  var p2 = !noDollarTier && tt && tt[key] ? fmtUSD(tt[key].phase2) : null;
+  if (noDollarTier) wantItemized = false;
 
   function _sectionHTML(title, subtotalStr, noCatFlag, items) {
     // Grey (#666) removed (report-standard rule: grey text is banned in client documents) —
@@ -15675,11 +15691,18 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   // white-fill card treatment (box styling banned in client reports, rule 4.3) — plain spacing
   // with a single thin top divider, same "whitespace + thin border only" convention as
   // .rpt-a36-callout and the disclaimer block below this table.
+  var recNote = noDollarTier
+    ? '<div style="font-size:8.5px;color:var(--rpt-page-text);font-style:italic;margin-bottom:4px">' +
+      'Delivered as part of the monthly program allowance shown above — not billed separately.' +
+      '</div>'
+    : '';
+
   return (
     '<div id="rpt-tier-detail-' +
     key +
     '" style="display:none;margin-top:6px;padding-top:6px;' +
     'border-top:1px solid var(--rpt-rule);text-align:left">' +
+    recNote +
     _sectionHTML('Hardware & Installation', p1, noCat, hw) +
     _sectionHTML('Programming', p2, false, lb) +
     '</div>'
@@ -15687,25 +15710,25 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
 }
 
 /**
- * _rptA36RecommendedTimelineHTML — Task 2 (2026-07-22); rebuilt 2026-07-26
- * (fix/phase-cost-budget-model): a plain table (Phase, Date Range, Scope Summary, Phase Service
- * Allowance, Priced Measures This Phase) — no boxes/cards, per the site's no-boxes-in-client-
- * documents standard — showing the Recommended tier's calendar-phase rollout plan: Phase 1
- * Aug-Dec 2026, Phase 2 all of CY2027, Phase 3 all of CY2028. Reuses
- * _pricingComputeRecommendedTimeline (app/pricing-estimator.js) — the SAME computation the
- * interactive Cost Estimate tab's Recommended view renders via _pricingRecommendedTimelineHTML —
- * so the report can never disagree with the tool. Guarded/silent (returns '') when that function
- * isn't available or returns null (nothing priced yet), same convention as discBlock/svcBlock.
- *
- * Two distinct dollar columns (task item 4 — never let one "Total" silently mean two different
- * things once they stop being identical by construction): "Phase Service Allowance" is the
- * calendar cost of the monthly service allowance for that phase's date range (allowanceTotal —
- * the number Matt asked to see, e.g. Phase 1 $31,250/Phase 2 $75,000/Phase 3 $75,000, program
- * total $181,250). "Priced Measures This Phase" is the pre-existing dollar cost of the
- * hardware/sequence rows assigned to that phase (measuresTotal, e.g. summing to the Recommended
- * tier's ~$74,826 total shown on the pricing table above this block). Falls back to showing
- * measuresTotal in both columns with a "(budget not configured)" note when no budget.amount is
- * set, so the column is never blank/—.
+ * _rptA36RecommendedTimelineHTML — Task 2 (2026-07-22); rebuilt 2026-07-26 (fix/phase-cost-
+ * budget-model); REFRAMED 2026-07-27 (Matt's correction: "stop thinking of the recommended as a
+ * 1 time cost... here is the timeline through 2028 and what parts/programming will happen during
+ * that time"). This table used to carry two dollar columns (Phase Service Allowance, Priced
+ * Measures This Phase) that, read side by side, reconstructed the exact one-time lump-sum framing
+ * Matt is rejecting — a reader could add them up into a project total again even after the amount
+ * row above stopped showing one. Matt's own hand-built target document (spec:
+ * AI/_context/specs/joco-service-proposal-target-2026-07-23.md, Table 2 and Table 3) carries NO
+ * dollar figures anywhere in its phase tables — the $6,250/month figure is stated exactly once, in
+ * the Recommended Optimization Program paragraph. This rebuild follows that: a plain schedule of
+ * WORK (Phase / Date Range / Included Improvements / Facilities Included) — no boxes/cards, no
+ * dollars, no footer total. "Included Improvements" reuses the SAME _rptA36PhaseImprovementsText
+ * helper the Phase Table page (rptPageASHRAE36ProposalPhaseTable) already uses, so the two tables
+ * can never disagree about what a phase contains. Reuses _pricingComputeRecommendedTimeline
+ * (app/pricing-estimator.js) — the SAME computation the interactive Cost Estimate tab's Recommended
+ * view renders via _pricingRecommendedTimelineHTML (which is UNCHANGED — that tab is Matt's
+ * internal planning tool and keeps its phase envelope/measures-total/labor breakdown columns).
+ * Guarded/silent (returns '') when the computation isn't available or returns null (nothing priced
+ * yet), same convention as discBlock/svcBlock.
  */
 function _rptA36RecommendedTimelineHTML(d) {
   if (typeof _pricingComputeRecommendedTimeline !== 'function') return '';
@@ -15717,43 +15740,30 @@ function _rptA36RecommendedTimelineHTML(d) {
   }
   if (!tl) return '';
 
-  var hasBudget = tl.programAllowanceTotal != null;
-
-  function _fmtUSD2(v) {
-    return '$' + Math.round(v).toLocaleString('en-US');
-  }
-
   var colgroup =
-    '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:224px">' +
-    '<col style="width:140px"><col style="width:140px"></colgroup>';
+    '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:262px">' +
+    '<col style="width:242px"></colgroup>';
   // Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling): dropped the
   // filled dark-blue header (color:#fff on background:var(--rpt-blue)) to match pages 1-3's
   // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
   // thStyle. Styling only; no content/values changed.
   var thStyle =
     'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
-  var thRight = thStyle.replace('text-align:left', 'text-align:right');
   var tdStyle = 'padding:6px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-rule);vertical-align:top';
-  var tdRight = tdStyle + ';text-align:right';
 
   var rowsHTML = tl.phases
-    .map(function (p) {
-      // Scope Summary fallback (2026-07-26 row-level rebuild, matches pricing-estimator.js'
+    .map(function (p, idx) {
+      // Facilities Included fallback (2026-07-26 row-level rebuild, matches pricing-estimator.js'
       // _pricingRecommendedTimelineHTML): a phase can legitimately end up with zero
       // buildings/rows when its measures envelope is $0 (EM labor alone consumes the whole
-      // calendar allowance) — never a bare "No additional scope" beside an unexplained $0.
-      var scope = p.buildings.length
-        ? p.buildings.length +
-          ' building' +
-          (p.buildings.length !== 1 ? 's' : '') +
-          ': ' +
-          p.buildings.map(_esc).join(', ')
+      // calendar allowance) — never a bare "None" beside an unexplained gap.
+      var facilities = p.buildings.length
+        ? p.buildings.map(_esc).join('; ') + '.'
         : p.overCommitted
-          ? "Ongoing Energy Management Services labor only — this period's allowance is fully committed to recurring service."
-          : 'Ongoing Energy Management Services only — no additional hardware or programming measures scheduled this period.';
-      var allowanceCell = hasBudget
-        ? _fmtUSD2(p.allowanceTotal)
-        : _fmtUSD2(p.measuresTotal) + ' <span style="font-weight:400;color:#666">(budget not configured)</span>';
+          ? "Ongoing Energy Management Services only for this period — this phase's allowance is fully committed to recurring service."
+          : 'Ongoing Energy Management Services only for this period.';
+      var improvements =
+        typeof _rptA36PhaseImprovementsText === 'function' ? _rptA36PhaseImprovementsText(p.rows, idx) : '';
       return (
         '<tr>' +
         '<td style="' +
@@ -15769,57 +15779,33 @@ function _rptA36RecommendedTimelineHTML(d) {
         '<td style="' +
         tdStyle +
         '">' +
-        scope +
+        _esc(improvements) +
         '</td>' +
         '<td style="' +
-        tdRight +
-        ';font-weight:700">' +
-        allowanceCell +
-        '</td>' +
-        '<td style="' +
-        tdRight +
+        tdStyle +
         '">' +
-        _fmtUSD2(p.measuresTotal) +
+        facilities +
         '</td>' +
         '</tr>'
       );
     })
     .join('');
 
-  var footAllowanceTotal = hasBudget ? tl.programAllowanceTotal : tl.measuresGrandTotal;
-
-  var totalRow =
-    '<tr>' +
-    '<td colspan="3" style="padding:6px 8px;font-size:9px;font-weight:700;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">' +
-    (hasBudget ? 'Program Total (Service Allowance)' : 'Total (budget not configured)') +
-    '</td>' +
-    '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">' +
-    _fmtUSD2(footAllowanceTotal) +
-    '</td>' +
-    '<td style="padding:6px 8px;font-size:9px;font-weight:700;text-align:right;border:1px solid var(--rpt-rule);border-top:2px solid var(--rpt-blue)">' +
-    _fmtUSD2(tl.measuresGrandTotal) +
-    '</td>' +
-    '</tr>';
-
-  // Neutral, client-safe transparency note (no internal "over/under cap" alarm language) — the
-  // Phase Service Allowance already funds ongoing EM services for that period, in addition to the
-  // priced measures shown in the adjacent column. 2026-07-26 (fix-phase-cost-budget-model): "program
-  // setup" removed from this sentence — BAS program/sequence setup is one-time project labor priced
-  // as "Programming" inside Priced Measures This Phase, not part of the recurring EM service the
-  // allowance line below funds. Listing it here would have implied it was billed against this
-  // allowance in addition to the measures total, double-counting the same hours in the reader's eyes.
-  var laborNote = hasBudget
-    ? '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:4px;font-style:italic">' +
-      'Phase Service Allowance includes ongoing Energy Management Services labor for that period ' +
-      '(alarm configuration, report setup, trend configuration, utility bill data entry, and ongoing ' +
-      'monitoring) in addition to the priced measures shown above.' +
-      '</div>'
-    : '';
+  // Client-safe transparency note — no dollar figures (2026-07-27 reframe). Ongoing Energy
+  // Management Services labor is delivered throughout the program in addition to the improvements
+  // listed above; the monthly cost of the whole program is already stated once in the Recommended
+  // Optimization Program section above, so it is intentionally not repeated here.
+  var laborNote =
+    '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:4px;font-style:italic">' +
+    'Continuous Energy Management Services — alarm configuration, report setup, trend ' +
+    'configuration, utility bill data entry, and ongoing monitoring — are provided throughout the ' +
+    'program in addition to the improvements listed above.' +
+    '</div>';
 
   return (
     '<div style="margin-top:12px">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-    'text-transform:uppercase;letter-spacing:0.04em">Recommended Tier — Phased Implementation Timeline</div>' +
+    'text-transform:uppercase;letter-spacing:0.04em">Recommended Program — Phased Implementation Schedule</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
     colgroup +
     '<thead><tr>' +
@@ -15831,17 +15817,13 @@ function _rptA36RecommendedTimelineHTML(d) {
     '">Date Range</th>' +
     '<th style="' +
     thStyle +
-    '">Scope Summary</th>' +
+    '">Included Improvements</th>' +
     '<th style="' +
-    thRight +
-    '">Phase Service Allowance</th>' +
-    '<th style="' +
-    thRight +
-    '">Priced Measures This Phase</th>' +
+    thStyle +
+    '">Facilities Included</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rowsHTML +
-    totalRow +
     '</tbody>' +
     '</table>' +
     laborNote +
@@ -15888,14 +15870,40 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     estimateState = null;
   }
 
+  // Monthly service allowance (Matt's correction, 2026-07-27: "stop thinking of the recommended
+  // as a 1 time cost. This is our monthly ongoing cost"). Same _pricingGetBudget(projId) call the
+  // Proposal cover page and svcBlock below already use — no new math, just read earlier so amtRow
+  // can use it.
+  var budgetFmt = null;
+  try {
+    if (typeof _pricingGetBudget === 'function') {
+      var _pB = _pricingGetBudget(d.project.id);
+      if (_pB && _pB.amount != null && !isNaN(_pB.amount) && Number(_pB.amount) > 0) {
+        budgetFmt = '$' + Math.round(Number(_pB.amount)).toLocaleString('en-US');
+      }
+    }
+  } catch (e) {
+    budgetFmt = null;
+  }
+
   // Column order Recommended | Compliance | Full Scope is a readability choice, NOT an assertion
   // that the dollar totals ascend/descend in that order. DRAFT tier descriptions (pending Matt's
   // review) — worded to be accurate regardless of whether a recurring budget is configured.
+  //
+  // NO_DOLLAR_TIER (2026-07-27, Matt's correction): Compliance and Full Scope are one-time capital
+  // options — a single project total is the correct way to show them. Recommended is NOT a capital
+  // option; it is the ongoing monthly service allowance program (matches Matt's hand-built target
+  // doc, spec: AI/_context/specs/joco-service-proposal-target-2026-07-23.md, which states the
+  // recommendation as "$6,250 per Month", never as a lump project total). Every place below that
+  // would otherwise print a one-time dollar figure for the 'recommended' key is gated on this
+  // constant instead, so the monthly framing can never drift out of sync across the amount row,
+  // phase-split row, and detail panels.
+  var NO_DOLLAR_TIER = 'recommended';
   var tierCols = [
     {
       key: 'recommended',
       label: 'Recommended',
-      desc: 'Highest-impact upgrades prioritized by cost-effectiveness.',
+      desc: 'An ongoing monthly program funding the highest-impact opportunities first — not a one-time project cost.',
     },
     { key: 'compliance', label: 'Compliance', desc: 'Scope required to meet ASHRAE Guideline 36.' },
     { key: 'full-scope', label: 'Full Scope', desc: 'All identified upgrades across the portfolio.' },
@@ -15955,8 +15963,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var lblRow =
     '<tr>' +
     tierCols
-      .map(function () {
-        return '<td style="' + lblStyle + '">Estimated Cost</td>';
+      .map(function (c) {
+        return (
+          '<td style="' + lblStyle + '">' + (c.key === NO_DOLLAR_TIER ? 'Monthly Program' : 'Estimated Cost') + '</td>'
+        );
       })
       .join('') +
     '</tr>';
@@ -15968,6 +15978,15 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<tr>' +
     tierCols
       .map(function (c) {
+        // Recommended (2026-07-27, Matt's correction): never print the tier's grand total as a
+        // one-time figure — show the monthly service allowance instead, same budgetFmt the
+        // Proposal cover page's "$6,250 per Month" line and svcBlock below both read from
+        // _pricingGetBudget. Compliance/Full Scope are unaffected — still their one-time grand
+        // totals, unchanged math.
+        if (c.key === NO_DOLLAR_TIER) {
+          var recDisplay = budgetFmt ? budgetFmt + ' per Month' : 'Available upon request';
+          return '<td style="' + amtStyle + '">' + recDisplay + '</td>';
+        }
         var g = tt && tt[c.key] ? _fmtUSD(tt[c.key].grand) : null;
         // noCatalog guard mirrors the interactive Cost Estimate tab's own footer
         // (app/pricing-estimator.js:6314-6317 / 6291-6293): when no pricing catalog is imported,
@@ -15993,6 +16012,20 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       '<tr>' +
       tierCols
         .map(function (c) {
+          // Recommended (2026-07-27, Matt's correction): a Hardware/Programming dollar split is
+          // just the same one-time total broken into two numbers — printing it here would recreate
+          // the exact lump-sum framing the amount row above was just fixed to avoid. Point the
+          // reader at the phased schedule instead of any dollar figure.
+          if (c.key === NO_DOLLAR_TIER) {
+            return (
+              '<td style="' +
+              phaseCellStyle +
+              '">' +
+              '<div style="font-weight:400">Funded from the monthly program allowance above — see ' +
+              'the phased implementation schedule below for what is delivered and when.</div>' +
+              '</td>'
+            );
+          }
           // noCatalog guard mirrors the interactive Cost Estimate tab's own footer
           // (app/pricing-estimator.js:6301-6306 / 6263-6267): phase1 is unpriced (not legitimately
           // $0) whenever no pricing catalog is imported, so _fmtUSD(0) must never print here.
@@ -16226,8 +16259,14 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         return byItem[k];
       });
 
-      var itColgroup =
-        '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
+      // Recommended (2026-07-27, Matt's correction): a per-item "Price" column here is just the
+      // same one-time lump total broken into rows — the amount row on the summary table above no
+      // longer prints that total for Recommended, so this itemized page must not silently rebuild
+      // it. Item + Qty still list what is included; no dollar column/col for this tier.
+      var _isNoDollarCol = c.key === NO_DOLLAR_TIER;
+      var itColgroup = _isNoDollarCol
+        ? '<colgroup><col style="width:534px"><col style="width:150px"></colgroup>'
+        : '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
         'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;' +
         'border:1px solid var(--rpt-rule)';
@@ -16242,9 +16281,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         '<th style="' +
         itThRight +
         '">Total Qty</th>' +
-        '<th style="' +
-        itThRight +
-        '">Price</th>' +
+        (_isNoDollarCol ? '' : '<th style="' + itThRight + '">Price</th>') +
         '</tr></thead>';
 
       function _itemRowHTML(row) {
@@ -16271,11 +16308,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '">' +
           (row.qty || 0).toLocaleString() +
           '</td>' +
-          '<td style="' +
-          tdR +
-          '">' +
-          (_fmtUSD(row.lineTotal) || '—') +
-          '</td>' +
+          (_isNoDollarCol ? '' : '<td style="' + tdR + '">' + (_fmtUSD(row.lineTotal) || '—') + '</td>') +
           '</tr>'
         );
       }
@@ -16337,9 +16370,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     var pages = [];
     var pageN = startN;
 
-    function bulletHTML(it) {
+    function bulletHTML(it, showPrice) {
       var priceStr = '';
-      if (wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
+      if (showPrice && wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
         priceStr =
           it.qty > 1 && it.unitPrice != null && _fmtUSD(it.unitPrice)
             ? ' — ' + it.qty + ' × ' + _fmtUSD(it.unitPrice) + ' = ' + _fmtUSD(it.lineTotal)
@@ -16382,22 +16415,36 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
       if (!hw.length && !lb.length) return;
 
-      var tt_ = tt && tt[c.key] ? tt[c.key] : null;
+      // Recommended (2026-07-27, Matt's correction): same no-lump-sum rule as the inline panel
+      // (_rptA36TierDetailPanelHTML) and the itemized pages above — never print a Hardware/
+      // Programming subtotal or a per-item price for this tier.
+      var noDollar = c.key === NO_DOLLAR_TIER;
+      var tt_ = !noDollar && tt && tt[c.key] ? tt[c.key] : null;
       var noCat = !!(tt_ && tt_.noCatalog);
       var p1 = tt_ ? _fmtUSD(tt_.phase1) : null;
       var p2 = tt_ ? _fmtUSD(tt_.phase2) : null;
 
       var tokens = [];
+      if (noDollar) {
+        tokens.push({
+          type: 'row',
+          estH: 20,
+          html:
+            '<div style="font-size:8.5px;color:#000;font-style:italic;margin:6px 0 4px">' +
+            'Delivered as part of the monthly program allowance shown above — not billed separately.' +
+            '</div>',
+        });
+      }
       if (hw.length) {
         tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Hardware & Installation', p1, noCat) });
         hw.forEach(function (it) {
-          tokens.push({ type: 'row', estH: 15, html: bulletHTML(it) });
+          tokens.push({ type: 'row', estH: 15, html: bulletHTML(it, !noDollar) });
         });
       }
       if (lb.length) {
         tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Programming', p2, false) });
         lb.forEach(function (it) {
-          tokens.push({ type: 'row', estH: 15, html: bulletHTML(it) });
+          tokens.push({ type: 'row', estH: 15, html: bulletHTML(it, !noDollar) });
         });
       }
 
