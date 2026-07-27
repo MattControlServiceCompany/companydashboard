@@ -934,6 +934,104 @@ function _rptPaginateTokens(tokens, firstPageBudget, contPageBudget) {
 }
 
 /**
+ * _rptPaginateTokensBalanced — bin-packs an ORDERED list of tokens into same-order,
+ * contiguous, single-capacity chunks (item order is never changed), like _rptPaginateTokens,
+ * but chooses breakpoints to minimize the SPARSEST page instead of just greedily filling the
+ * current page and moving on (fix/65ce578b, 2026-07-27, item c6c94355 -- "MedAct 53 Gardner
+ * alone on a ~20%-full page while an adjacent page packs two comparably-small buildings with
+ * room to spare"). _rptPaginateTokens's plain greedy ("next fit": always add the next token if
+ * it fits, otherwise close the page") already achieves the FEWEST POSSIBLE pages for an
+ * order-preserving contiguous partition -- that is provably optimal and unchanged here — but
+ * next-fit can still land on a needlessly lopsided split among ties for that same minimum page
+ * count (e.g. one page at 89% full next to one at 38% full, when a different split of the exact
+ * same buildings among the exact same number of pages would land at 89%/50%). This function
+ * computes, via dynamic programming over the same token list, the SAME minimum page count K,
+ * then picks the K-page split that minimizes the worst (sparsest) page's leftover space. Same
+ * hard cap as before (a page's content never exceeds `cap`, so nothing can clip); only the
+ * choice of WHERE to split changes. O(n^2 * K) -- trivial for a few dozen buildings, run once
+ * per report render, not per frame.
+ * @param {Array} tokens - token objects with {html, estH} (same shape as _rptPaginateTokens)
+ * @param {number} cap - single page-capacity budget (buildings use the same budget for the
+ *   first page and every continuation page, so there is no separate first/cont split here)
+ * @returns {Array<Array>} array of chunks; each chunk is an array of tokens, same order
+ */
+function _rptPaginateTokensBalanced(tokens, cap) {
+  var n = tokens.length;
+  if (n === 0) return [];
+
+  var h = tokens.map(function (t) {
+    return t && t.estH ? t.estH : 20;
+  });
+  var pre = [0];
+  var i;
+  for (i = 0; i < n; i++) pre.push(pre[i] + h[i]);
+  function segSum(j, k) {
+    return pre[k] - pre[j];
+  }
+  // A lone token is always allowed even if it alone exceeds cap -- matches
+  // _rptPaginateTokens's own "always include at least one token per chunk" safety net, so an
+  // oversized single token (which should never reach this function -- callers only feed it
+  // blocks already confirmed <= cap -- but defensively kept here too) can never make the whole
+  // partition infeasible.
+  function fits(j, k) {
+    if (k - j <= 1) return true;
+    return segSum(j, k) <= cap;
+  }
+
+  var INF = Infinity;
+  var j, k;
+
+  // Pass 1: minimum number of pages (same count _rptPaginateTokens's greedy already achieves --
+  // provably optimal for this order-preserving contiguous-partition problem).
+  var minPages = new Array(n + 1).fill(INF);
+  minPages[0] = 0;
+  for (i = 1; i <= n; i++) {
+    for (j = i - 1; j >= 0; j--) {
+      if (!fits(j, i)) break; // segment sums only grow as j decreases; once infeasible, stop
+      if (minPages[j] + 1 < minPages[i]) minPages[i] = minPages[j] + 1;
+    }
+  }
+  var K = minPages[n];
+  if (K === INF) return [tokens]; // defensive fallback; should be unreachable (fits() above
+  // always allows a lone token, so K is always finite)
+
+  // Pass 2: among all partitions using exactly K pages, minimize the worst (largest) leftover
+  // space on any single page.
+  var dp = [];
+  var choice = [];
+  for (k = 0; k <= K; k++) {
+    dp.push(new Array(n + 1).fill(INF));
+    choice.push(new Array(n + 1).fill(-1));
+  }
+  dp[0][0] = 0;
+  for (k = 1; k <= K; k++) {
+    for (i = 1; i <= n; i++) {
+      for (j = i - 1; j >= 0; j--) {
+        if (!fits(j, i)) break;
+        if (dp[k - 1][j] === INF) continue;
+        var slack = Math.max(0, cap - segSum(j, i));
+        var val = Math.max(dp[k - 1][j], slack);
+        if (val < dp[k][i]) {
+          dp[k][i] = val;
+          choice[k][i] = j;
+        }
+      }
+    }
+  }
+
+  var chunks = [];
+  var idx = n;
+  var kk = K;
+  while (kk > 0) {
+    var jj = choice[kk][idx];
+    chunks.unshift(tokens.slice(jj, idx));
+    idx = jj;
+    kk--;
+  }
+  return chunks;
+}
+
+/**
  * rptPage — wraps a single report page with header, body, and footer.
  * @param {number} pageNum - Page number for the data-page attribute
  * @param {string} title - Title shown in the interior page header
@@ -12777,8 +12875,12 @@ function rptPageASHRAE36Executive(n, d) {
   // Shared table styles
   var tableTitle =
     '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
+  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header (color:#fff on
+  // background:var(--rpt-blue)) to match the Proposal's plain/thin-bordered convention
+  // (rptPageASHRAE36ProposalCover's thPlain) -- no fill, near-black text, same border. Styling
+  // only; no content/values changed.
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:#fff;background:var(--rpt-blue);text-align:left;white-space:normal;line-height:1.25;border:1px solid var(--rpt-border)';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:var(--rpt-page-text);text-align:left;white-space:normal;line-height:1.25;border:1px solid var(--rpt-border)';
   // Column widths (2026-07-09, fix/report-wording-compliance-rows): explicit colgroup +
   // table-layout:fixed added so column widths are deterministic instead of browser
   // auto-layout. Auto-layout let long building names (e.g. "P25309 - Jo Co Arts and
@@ -13183,15 +13285,17 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // Status column removed (2026-07-09, Matt's decision): this table is informational
   // reference only (what each sequence IS, not a per-project readiness rollup) — see the
   // rationaleTokens comment above. Widths redistributed across the remaining 3 columns.
+  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
+  // Proposal's plain/thin-bordered convention. Styling only.
   var _ratThead =
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:26%;border:1px solid var(--rpt-border)">Sequence</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:26%;border:1px solid var(--rpt-border)">Sequence</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;width:16%;border:1px solid var(--rpt-border)">ASHRAE 36 Spec</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:16%;border:1px solid var(--rpt-border)">ASHRAE 36 Spec</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)">Description</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)">Description</th>' +
     '</tr></thead><tbody>';
   var _ratTclose = '</tbody></table>';
 
@@ -13285,8 +13389,16 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   }
 
   // Coverage gauges (first page only)
+  // fix/dec468f4 (2026-07-27): 'rtu' was missing from this map -- AUDITABLE and CAT_LABELS
+  // (both above, ~line 11678/11694) already include 'rtu' ('Rooftop Unit'), but this SEPARATE
+  // plural-label map (used only by this function's equipment-breakdown chips and the
+  // Per-Building Detail summary table's Equipment Type column) did not, so any building with
+  // RTU equipment fell through the `CAT_LABELS_PLURAL[cat] || cat` fallback and printed the raw
+  // lowercase category key "rtu" instead of a real equipment name -- the only raw type code
+  // missing from this map (every other AUDITABLE key already had an entry).
   var CAT_LABELS_PLURAL = {
     ahu: 'Air Handlers',
+    rtu: 'Rooftop Units',
     vav: 'VAV Terminals',
     fpb: 'Fan-Powered Terminals',
     ddvav: 'Dual-Duct Terminals',
@@ -13415,9 +13527,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     colWidths.seqs +
     '%">' +
     '</colgroup>';
+  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
+  // Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;' +
     'border:1px solid var(--rpt-border)';
   var tableHead =
     colgroup +
@@ -13676,8 +13790,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // canonical totals-row treatment (.rpt-table tr.rpt-tot td: border-top 2px solid
   // --rpt-table-tot-bdr, background --rpt-table-tot-bg) inlined here since this
   // table doesn't carry the .rpt-table class.
+  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the shaded total-row fill
+  // (background:var(--rpt-table-tot-bg)), matching the Proposal's convention of no shaded rows
+  // -- the bold text + top rule alone already signal "this is the total." Styling only.
   var summaryRowHtml =
-    '<tfoot><tr style="background:var(--rpt-table-tot-bg)">' +
+    '<tfoot><tr>' +
     '<td colspan="4" style="padding:6px 8px;font-size:11px;color:var(--rpt-page-text);' +
     'border-top:2px solid var(--rpt-table-tot-bdr)">' +
     '<strong>Total for ' +
@@ -13974,8 +14091,12 @@ function rptPageASHRAE36Recommendations(n, d) {
       '</tr>';
   }
 
+  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header (color:#fff on
+  // background:var(--rpt-blue)); added the same thin border every data cell in this table
+  // already carries (var(--rpt-border)) since removing the fill left the header with no
+  // border at all. Matches the Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
   var table =
     '<table style="width:100%;border-collapse:collapse;margin-bottom:12px">' +
     '<thead><tr>' +
@@ -14199,9 +14320,11 @@ function rptPageASHRAE36SetpointReview(n, d) {
   }
 
   // ── Table chrome ─────────────────────────────────────────────────────────
+  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
+  // Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;' +
     'white-space:normal;word-wrap:break-word;line-height:1.3;border:1px solid var(--rpt-border)';
   var thStyleC = thStyle + ';text-align:center';
 
@@ -15041,7 +15164,18 @@ function _rptA36PhaseImprovementsText(rows, idx) {
   if (hasSensor) parts.push(verbs.sensor);
   if (hasFan) parts.push(verbs.fan);
   if (hasBAS) parts.push(verbs.bas);
-  return parts.length ? parts.join('; ') + '.' : 'Continued optimization of previously implemented measures.';
+  if (!parts.length) return 'Continued optimization of previously implemented measures.';
+  var sentence = parts.join('; ') + '.';
+  // Capitalization fix (fix/65ce578b, 2026-07-27): _RPT_A36_PHASE_VERBS' Phase 2/3 entries are
+  // lowercase mid-sentence fragments (e.g. 'expanded DCV deployments', 'final DCV sensor
+  // deployment') meant to be joined with others, but whichever bucket flag fires FIRST (in the
+  // fixed dcv/sat/sensor/fan/bas check order above) becomes the sentence's actual first word --
+  // for JOCO's real data that's almost always the dcv bucket, rendering "expanded DCV..."/"final
+  // DCV..." lowercase at the start of the Phase 2/3 "Included Improvements" cell. Capitalizing
+  // here (on the assembled sentence, not a hardcoded bucket string) fixes the first word
+  // regardless of which bucket ends up first, so it can never regress if the bucket order above
+  // changes later.
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 
 function rptPageASHRAE36ProposalPhaseTable(n, d) {
@@ -15663,7 +15797,15 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
         items
           .map(function (it) {
             var priceStr = '';
-            if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
+            // fix/65ce578b (2026-07-27): a real, computed $0 (ioOnly rows -- existing controller
+            // I/O points that need no new hardware, see pricing-estimator.js's ioOnly branch)
+            // was rendering as "N × $0 = $0" / a bare "$0" -- banned per the no-$0-in-client-
+            // output rule. These are real scope the client should still see (Matt: "do not
+            // silently drop scope"), so the row/item stays; only the misleading $0 math is
+            // replaced with a plain-English "no additional cost" label.
+            if (wantItemized && it.lineTotal === 0) {
+              priceStr = it.qty > 1 ? ' — ' + it.qty + ' units, no additional cost' : ' — no additional cost';
+            } else if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
               priceStr =
                 it.qty > 1 && it.unitPrice != null && fmtUSD(it.unitPrice)
                   ? ' — ' + it.qty + ' × ' + fmtUSD(it.unitPrice) + ' = ' + fmtUSD(it.lineTotal)
@@ -16322,7 +16464,17 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '">' +
           (row.qty || 0).toLocaleString() +
           '</td>' +
-          (_isNoDollarCol ? '' : '<td style="' + tdR + '">' + (_fmtUSD(row.lineTotal) || '—') + '</td>') +
+          // fix/65ce578b (2026-07-27): a real, computed $0 (ioOnly rows -- existing controller
+          // I/O points needing no new hardware) must not print as a bare "$0" (banned per the
+          // no-$0-in-client-output rule). Row stays (real scope the client should see); only the
+          // price cell's text changes to a plain-English label.
+          (_isNoDollarCol
+            ? ''
+            : '<td style="' +
+              tdR +
+              '">' +
+              (row.lineTotal === 0 ? 'No additional cost' : _fmtUSD(row.lineTotal) || '—') +
+              '</td>') +
           '</tr>'
         );
       }
@@ -16386,7 +16538,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
     function bulletHTML(it, showPrice) {
       var priceStr = '';
-      if (showPrice && wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
+      // fix/65ce578b (2026-07-27): same $0/no-catalog-price fix as _rptA36TierDetailPanelHTML's
+      // _sectionHTML above -- a real, computed $0 (ioOnly rows) must not render as "N × $0 = $0"
+      // / a bare "$0". Row stays (real scope the client should see); only the price text changes.
+      if (showPrice && wantItemized && it.lineTotal === 0) {
+        priceStr = it.qty > 1 ? ' — ' + it.qty + ' units, no additional cost' : ' — no additional cost';
+      } else if (showPrice && wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
         priceStr =
           it.qty > 1 && it.unitPrice != null && _fmtUSD(it.unitPrice)
             ? ' — ' + it.qty + ' × ' + _fmtUSD(it.unitPrice) + ' = ' + _fmtUSD(it.lineTotal)
@@ -16582,9 +16739,11 @@ function rptPageASHRAE36PointInventory(n, d) {
     '</div>';
 
   // ── Per-building table ────────────────────────────────────────────────────
+  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
+  // Proposal's plain/thin-bordered convention. Styling only.
   var thBase =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left;border:1px solid var(--rpt-border)';
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
   var thRight = thBase + ';text-align:right';
 
   var tableHead =
@@ -16637,8 +16796,11 @@ function rptPageASHRAE36PointInventory(n, d) {
   // Full 1px grid border on every cell (matches every data row above it, per the full-grid
   // table standard) plus a 2px top accent — the same canonical totals-row treatment used by
   // rptPageASHRAE36Building's summaryRowHtml/.rpt-table tr.rpt-tot elsewhere in this file.
+  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the shaded total-row fill
+  // (background:var(--rpt-rule)), matching the Proposal's convention of no shaded rows -- the
+  // bold text + 2px top rule alone already signal "this is the total." Styling only.
   var totalsRowHTML =
-    '<tr style="background:var(--rpt-rule)">' +
+    '<tr>' +
     '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-border)">Total</td>' +
     '<td style="padding:6px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:right;border:1px solid var(--rpt-border);border-top:2px solid var(--rpt-border)">' +
     inv.totalAll.toLocaleString() +
@@ -16791,7 +16953,11 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
 
     function _flushPendingBuildingBlocks() {
       if (!_pendingBlocks.length) return;
-      var _chunks = _rptPaginateTokens(_pendingBlocks, BUILDING_PAGE_BUDGET, BUILDING_PAGE_BUDGET);
+      // fix/65ce578b (2026-07-27): switched from the plain greedy _rptPaginateTokens to
+      // _rptPaginateTokensBalanced (defined above) -- same page count, same hard per-page cap
+      // (nothing can clip), but chooses breakpoints to avoid one page landing far sparser than
+      // its neighbors (see that function's own comment for the full rationale/proof).
+      var _chunks = _rptPaginateTokensBalanced(_pendingBlocks, BUILDING_PAGE_BUDGET);
       _chunks.forEach(function (chunk) {
         var bodyHTML = chunk
           .map(function (t) {
