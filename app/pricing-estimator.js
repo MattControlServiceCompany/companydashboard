@@ -836,9 +836,32 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   var MEETING_HOURS_DEFAULT = 2; // 2026-07-27: Monthly Client Review Meeting — carved out of the 16
   var REBATE_ASSISTANCE_HOURS_DEFAULT = 2; // 2026-07-27: Utility Rebate Assistance — carved out of the 16
   var TRAINING_DOCS_HOURS_DEFAULT = 2; // 2026-07-27: Staff Training & Documentation — carved out of the 16
-  var ONGOING_MONITORING_HOURS_DEFAULT =
-    RECURRING_EM_LABOR_HOURS_DEFAULT -
-    (MEETING_HOURS_DEFAULT + REBATE_ASSISTANCE_HOURS_DEFAULT + TRAINING_DOCS_HOURS_DEFAULT); // 10 hrs/mo — the residual of the 16, NOT an independent number
+  // 2026-07-27 review fix: the subtraction below has no floor on its own — if the three named
+  // categories are ever raised (e.g. a contract change taking Training to 6 hrs) or a 5th category
+  // is added to this bucket, their sum can reach or exceed the 16-hr bucket and the naive
+  // subtraction goes to zero or NEGATIVE. A negative "Ongoing Monitoring & Optimization" hours
+  // figure must never reach a client-facing table or the real dollar math in
+  // _pricingComputeProgramCostModel (it would understate labor and overstate the improvement
+  // budget on a document going to a county) — so this is Math.max(0, ...)'d AND, when the floor
+  // actually engages, loudly logged (never silently swallowed — the floor hides a real
+  // over-commitment: the named categories demanding more hours than the bucket contains, which is
+  // exactly the kind of thing a human needs to see and fix, not have quietly clamped away).
+  var _namedCarveoutHours = MEETING_HOURS_DEFAULT + REBATE_ASSISTANCE_HOURS_DEFAULT + TRAINING_DOCS_HOURS_DEFAULT;
+  var _ongoingMonitoringRaw = RECURRING_EM_LABOR_HOURS_DEFAULT - _namedCarveoutHours;
+  if (_ongoingMonitoringRaw < 0) {
+    console.error(
+      '[_pricingComputeMonthlyLaborBreakdown] Recurring EM labor bucket OVER-COMMITTED: ' +
+        RECURRING_EM_LABOR_HOURS_DEFAULT +
+        ' hr/mo bucket vs. ' +
+        _namedCarveoutHours +
+        ' hr/mo of named categories (Meeting+Rebate+Training) — overflow of ' +
+        -_ongoingMonitoringRaw +
+        ' hr/mo. Ongoing Monitoring & Optimization floored to 0 hrs/mo instead of going negative. ' +
+        'This means the named recurring categories alone now exceed the client-directed bucket — ' +
+        'review the bucket size or the named category hours, this is not a display bug to ignore.',
+    );
+  }
+  var ONGOING_MONITORING_HOURS_DEFAULT = Math.max(0, _ongoingMonitoringRaw); // residual of the 16, NOT an independent number — floored, never negative
 
   // Utility Bill Data Entry — OUTSIDE the 16-hr bucket, additive on top of it (see the OPEN
   // QUESTION note in the header comment above — this has NOT been asked of the client either way).
@@ -873,7 +896,12 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
     }
     // RECURRING — present at full value every month, Month 1 through steady state. NOT scaled by
     // the setup ramp, NOT a remainder that fills any target total (see comment block above).
-    out.push({ category: 'Ongoing Monitoring & Optimization', hours: ONGOING_MONITORING_HOURS_DEFAULT });
+    // Guarded with the same `> 0` check the SETUP rows above use — if the floor above ever
+    // engages (bucket over-committed), a zeroed category disappears from the table instead of
+    // printing a nonsense "0 hrs" row; the console.error above is what surfaces the real problem.
+    if (ONGOING_MONITORING_HOURS_DEFAULT > 0) {
+      out.push({ category: 'Ongoing Monitoring & Optimization', hours: ONGOING_MONITORING_HOURS_DEFAULT });
+    }
     if (hasBills) {
       out.push({ category: 'Utility Bill Data Entry', hours: BILL_ENTRY_HOURS_DEFAULT });
     }
