@@ -6093,15 +6093,24 @@ function _pricingComputeProgramCostModel(projId) {
        if it were — see _pricingRecommendedTimelineHTML/_rptA36RecommendedTimelineHTML below for
        how each is labeled.
 
-   Row/building assignment rule: buildRecommendedRows() emits rows building-by-building in a
-   stable "natural/source" rollout order (see the 0ae36950 comment above that function). This
-   walks buildings in that order and cuts into 3 CONTIGUOUS groups by cumulative MEASURES dollars,
-   advancing to the next phase once the running measures total crosses that phase's OWN
-   allowanceTotal share (task: "assign measures per phase against that phase's own budget envelope
-   rather than slicing one flat total into thirds") — Phase 1's smaller 5-month/$31,250 envelope
-   fills first, then Phase 2's larger $75,000 envelope, etc. When no budget is configured
-   (allowanceTotal unavailable for any phase), falls back to an even 1/3-of-measures-grand split
-   (the pre-existing behavior) so the timeline still renders something coherent.
+   Row assignment rule (REBUILT 2026-07-26, same branch, later commit — see "over budget phase"
+   defect writeup below): buildRecommendedRows() emits rows building-by-building in a stable
+   "natural/source" rollout order (see the 0ae36950 comment above that function). This walks
+   INDIVIDUAL PRICED ROWS (not whole buildings) in that order, advancing to the next phase once
+   the running measures total crosses that phase's OWN measures envelope (task: "assign measures
+   per phase against that phase's own budget envelope rather than slicing one flat total into
+   thirds") — Phase 1's smaller 5-month envelope fills first, then Phase 2's larger envelope, etc.
+   Because assignment happens at row granularity, a single large building's rows can legitimately
+   land in two (or three) consecutive phases when its total exceeds one phase's envelope — e.g. a
+   $47.6k building against a $21k Phase 1 envelope now correctly splits into "$21k of it in Phase
+   1, the remainder in Phase 2" instead of forcing the WHOLE building into one phase and blowing
+   that phase's allowance 2x+ over. Rows for the same building stay contiguous in the output
+   EXCEPT exactly at a phase boundary that falls inside that building's own row list — never
+   scattered arbitrarily. `phases[i].buildings` collects each building name at most once per
+   phase (a building can legitimately appear in more than one phase's list — that IS the fix).
+   When no budget is configured (envelope unavailable for any phase), falls back to an even
+   1/3-of-measures-grand split (the pre-existing behavior) so the timeline still renders something
+   coherent.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingComputeRecommendedTimeline(projId) {
   var estimate = _pricingGetEstimate(projId);
@@ -6113,6 +6122,9 @@ function _pricingComputeRecommendedTimeline(projId) {
   var grandTotals = _pricingComputeTotals(rows, estimate);
   if (grandTotals.grand === null) return null; // nothing priced yet — same silent-until-priced convention as the rest of this file
 
+  // Stable building-by-building grouping (buildRecommendedRows' own "natural/source" rollout
+  // order — see the 0ae36950 comment above that function) — the per-building bin-pack-with-carry
+  // walk below processes one building's own row list at a time in this order.
   var order = [];
   var byBldg = {};
   rows.forEach(function (r) {
@@ -6124,47 +6136,79 @@ function _pricingComputeRecommendedTimeline(projId) {
     byBldg[b].push(r);
   });
 
-  var bldgInfo = order.map(function (b) {
-    var t = _pricingComputeTotals(byBldg[b], estimate);
-    return { building: b, rows: byBldg[b], total: t.grand || 0 };
-  });
-
   var grand = grandTotals.grand;
   var defs = _pricingPhaseDateDefs();
   var costModel = _pricingComputeProgramCostModel(projId); // null when no budget.amount configured
 
-  // Cumulative cutpoints buildings are measured against while walking rollout order. Uses each
-  // phase's OWN envelope for MEASURES specifically — measuresAvailable (the calendar allowance
-  // net of that phase's own EM labor cost), not the gross allowanceTotal — when a budget is
-  // configured, since allowanceTotal includes dollars already committed to EM labor and is not
-  // itself an envelope for hardware/programming measures (task item 2: "assign measures per phase
-  // against that phase's own budget envelope"). Otherwise falls back to an even
+  // Each phase's OWN envelope for MEASURES specifically — measuresAvailable (the calendar
+  // allowance net of that phase's own EM labor cost), not the gross allowanceTotal — when a
+  // budget is configured, since allowanceTotal includes dollars already committed to EM labor and
+  // is not itself an envelope for hardware/programming measures (task item 2: "assign measures
+  // per phase against that phase's own budget envelope"). Otherwise falls back to an even
   // 1/3-of-measures-grand split (pre-existing behavior, still needed for the no-budget case).
+  // NON-cumulative deliberately (2026-07-26 bin-pack rebuild): each phase is checked against ITS
+  // OWN phaseShare[i], never a running cumulative ceiling — a cumulative ceiling let unused slack
+  // in an earlier phase silently roll forward and inflate a LATER phase's admission budget (Phase
+  // 1 finishing $6.7k under its envelope let Phase 2 over-admit by the same ~$6.7k under a
+  // cumulative check), which is exactly the kind of silent cross-phase borrowing the invariant
+  // forbids.
   var phaseShare = defs.map(function (d, i) {
     return costModel ? costModel.phases[i].measuresAvailable : grand / 3;
   });
-  var cumCutpoint = [];
-  phaseShare.reduce(function (running, share, i) {
-    cumCutpoint[i] = running + share;
-    return cumCutpoint[i];
-  }, 0);
 
   var phases = [
     { rows: [], buildings: [], total: 0 },
     { rows: [], buildings: [], total: 0 },
     { rows: [], buildings: [], total: 0 },
   ];
-  var running = 0;
-  var phaseIdx = 0;
-  bldgInfo.forEach(function (b) {
-    // Advance once the RUNNING measures total (before this building) has already crossed that
-    // phase's own cumulative allowance/measures-share cutpoint — keeps each phase's building
-    // group contiguous in rollout order.
-    if (phaseIdx < 2 && cumCutpoint[phaseIdx] > 0 && running >= cumCutpoint[phaseIdx]) phaseIdx++;
-    phases[phaseIdx].rows = phases[phaseIdx].rows.concat(b.rows);
-    phases[phaseIdx].buildings.push(b.building);
-    phases[phaseIdx].total += b.total;
-    running += b.total;
+  // Row-level walk with per-building deferral (2026-07-26, replaces the whole-building walk that
+  // shipped in the same-day rebuild above — see defect writeup: Phase 1's building, the
+  // Courthouse alone, priced at $47,610.60 against a $21,043 measures envelope, so NO
+  // whole-building assignment could ever fit it and the phase blew its allowance by 2x+).
+  // Two refinements were needed beyond plain row-level splitting, both found by re-running the
+  // actual JOCO numbers after each attempt:
+  //   1. A single ROW can still be bigger than a phase's whole envelope (Courthouse's `vav_dcv`
+  //      sequence — DCV programming priced across ~385 VAV boxes as ONE line item — is $33,302.50,
+  //      bigger than Phase 1's entire $21,043). So a row that doesn't fit is DEFERRED (not
+  //      force-included) and retried against the next phase's own envelope, never reaching into a
+  //      DIFFERENT building's rows to backfill the gap — a building's own rows still land as a
+  //      contiguous block except exactly where a boundary falls inside its own list.
+  //   2. `phaseIdx` is reset to 0 for EVERY building (not carried forward once a prior building
+  //      forced an advance) — otherwise a phase that finishes under its envelope (e.g. Phase 1
+  //      landing $6.7k under after Courthouse's overflow) stays permanently "closed" to every
+  //      later building even though it still has room, and that unclaimed room piles up as extra
+  //      overflow in Phase 3 (the last-resort bucket) instead of being used. Resetting per building
+  //      lets the NEXT-highest-ROI building's rows fill that leftover room first — still the
+  //      existing ROI-ranked priority order, just not stranding usable budget. Within one
+  //      building's own row list the walk still only ever moves forward (never back down to an
+  //      earlier phase for that SAME building's later rows), so nothing scatters arbitrarily.
+  // This guarantees measuresTotal never exceeds measuresAvailable except in the mathematically
+  // unavoidable case where total remaining demand exceeds total remaining capacity across every
+  // phase combined — at that point rows land in the LAST phase (envelope Infinity, nothing left
+  // to defer to), and that is reported, not silently forced to look like it fit.
+  order.forEach(function (b) {
+    var pending = byBldg[b].map(function (r) {
+      return { row: r, total: _pricingComputeTotals([r], estimate).grand || 0 };
+    });
+    var phaseIdx = 0; // reset per building — see refinement 2 above
+    while (pending.length) {
+      var envelope = phaseIdx < 2 ? phaseShare[phaseIdx] : Infinity;
+      var stillPending = [];
+      pending.forEach(function (item) {
+        if (phaseIdx === 2 || phases[phaseIdx].total + item.total <= envelope) {
+          phases[phaseIdx].rows.push(item.row);
+          if (phases[phaseIdx].buildings.indexOf(b) === -1) phases[phaseIdx].buildings.push(b);
+          phases[phaseIdx].total += item.total;
+        } else {
+          stillPending.push(item);
+        }
+      });
+      pending = stillPending;
+      if (pending.length) {
+        if (phaseIdx < 2) phaseIdx++;
+        else break; // unreachable safety net — phaseIdx 2 uses an Infinity envelope, so pending always empties above
+      }
+    }
   });
 
   var out = phases.map(function (p, i) {
@@ -6266,13 +6310,20 @@ function _pricingRecommendedTimelineHTML(projId) {
 
   var bodyRows = tl.phases
     .map(function (p) {
+      // Scope Summary fallback (2026-07-26 row-level rebuild): a phase can legitimately end up
+      // with zero buildings/rows when its measures envelope is $0 (EM labor alone consumes the
+      // whole calendar allowance, p.overCommitted) — never render a bare "No additional scope"
+      // next to a $0 figure with no explanation (task constraint: no unexplained $0 in
+      // client-facing output). Says WHERE the allowance went instead.
       var scope = p.buildings.length
         ? p.buildings.length +
           ' building' +
           (p.buildings.length !== 1 ? 's' : '') +
           ': ' +
           p.buildings.map(_pricingEscText).join(', ')
-        : 'No additional scope';
+        : p.overCommitted
+          ? "Ongoing Energy Management Services labor only — this period's allowance is fully committed to recurring service."
+          : 'Ongoing Energy Management Services only — no additional hardware or programming measures scheduled this period.';
       var allowanceCell = hasBudget
         ? _pricingFmt(p.allowanceTotal)
         : _pricingFmt(p.measuresTotal) +

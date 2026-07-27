@@ -15134,7 +15134,13 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
     '">Facilities Included</td>' +
     tl.phases
       .map(function (p) {
-        var txt = p.buildings && p.buildings.length ? p.buildings.map(esc).join('; ') + '.' : 'None assigned.';
+        // 2026-07-26 row-level rebuild: a phase can legitimately carry zero buildings when its
+        // measures envelope is $0 (recurring EM labor consumes the whole calendar allowance for
+        // that period) — say so instead of a bare "None assigned." next to no other explanation.
+        var txt =
+          p.buildings && p.buildings.length
+            ? p.buildings.map(esc).join('; ') + '.'
+            : 'Ongoing Energy Management Services only for this period.';
         return '<td style="' + cellStyle + '">' + txt + '</td>';
       })
       .join('') +
@@ -15732,13 +15738,19 @@ function _rptA36RecommendedTimelineHTML(d) {
 
   var rowsHTML = tl.phases
     .map(function (p) {
+      // Scope Summary fallback (2026-07-26 row-level rebuild, matches pricing-estimator.js'
+      // _pricingRecommendedTimelineHTML): a phase can legitimately end up with zero
+      // buildings/rows when its measures envelope is $0 (EM labor alone consumes the whole
+      // calendar allowance) — never a bare "No additional scope" beside an unexplained $0.
       var scope = p.buildings.length
         ? p.buildings.length +
           ' building' +
           (p.buildings.length !== 1 ? 's' : '') +
           ': ' +
           p.buildings.map(_esc).join(', ')
-        : 'No additional scope';
+        : p.overCommitted
+          ? "Ongoing Energy Management Services labor only — this period's allowance is fully committed to recurring service."
+          : 'Ongoing Energy Management Services only — no additional hardware or programming measures scheduled this period.';
       var allowanceCell = hasBudget
         ? _fmtUSD2(p.allowanceTotal)
         : _fmtUSD2(p.measuresTotal) + ' <span style="font-weight:400;color:#666">(budget not configured)</span>';
