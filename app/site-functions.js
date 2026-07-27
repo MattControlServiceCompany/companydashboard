@@ -1576,6 +1576,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.27.709',
+    date: '2026-07-27',
+    title: 'Audit Report tables now match the clean, plain style used on the Proposal',
+    items: [
+      {
+        type: 'change',
+        text: 'On the Audit Report, table headers and total rows across the building and summary tables no longer have heavy colored fills -- they now use the same plain black-on-white convention as the Service Proposal, so the report looks consistent across both documents.',
+      },
+      {
+        type: 'fix',
+        text: 'The equipment category "rtu" now displays as "Rooftop Units" throughout the Audit Report instead of the lowercase abbreviation.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report pages with only a small amount of content per building no longer leave large empty gaps -- pages are now packed more evenly while keeping the same total page count.',
+      },
+      {
+        type: 'fix',
+        text: 'The Phase 2 and Phase 3 improvement descriptions on the Audit Report now start with a capital letter.',
+      },
+      {
+        type: 'fix',
+        text: 'Line items that cost nothing extra no longer show as "$0 = $0" on the Audit Report -- they now read "no additional cost".',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.27.708',
     date: '2026-07-27',
     title: 'Service Proposal now presents the Recommended option as the ongoing monthly program it is',
