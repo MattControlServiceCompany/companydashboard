@@ -6122,12 +6122,11 @@ function _pricingComputeProgramCostModel(projId) {
         building's rows at a time): each round offers every still-pending unit, in ROI order, to
         the CURRENT phase's own envelope; a unit too big to fit is deferred to the next round
         (next phase) — never bumping a smaller, lower-ranked unit that DOES fit out of the way.
-        phaseIdx only advances forward; Phase 3's envelope is Infinity so nothing is ever
-        permanently stranded. This guarantees measuresTotal never exceeds measuresAvailable except
-        in the mathematically unavoidable case where total remaining demand exceeds total
-        remaining capacity across every phase combined — reported, never silently forced to fit.
-        Ranking at UNIT (not raw-row) granularity also keeps a sequence and the hardware it needs
-        together in the same phase — a measure is never sold half-installed across two phases.
+        phaseIdx only advances forward; Phase 3's envelope is treated as Infinity DURING THIS PASS
+        ONLY so nothing is ever permanently stranded before the repair pass (step 6) gets a chance
+        to redistribute it against Phase 3's real envelope. Ranking at UNIT (not raw-row)
+        granularity also keeps a sequence and the hardware it needs together in the same phase — a
+        measure is never sold half-installed across two phases.
      4. A building can now legitimately appear in more than one phase's list far more often than
         before (its measures are scattered across the ROI ranking, not walked as one contiguous
         block) — `phases[i].buildings` still collects each building name at most once per phase.
@@ -6135,9 +6134,29 @@ function _pricingComputeProgramCostModel(projId) {
         building-grouped/hw-before-seq order (via `naturalRank`) so ROI decides WHICH phase a row
         lands in, but a phase's row list still reads coherently instead of as a scattered ROI-pick
         jumble (task constraint).
+     6. REPAIR PASS (added 2026-07-27, same branch — the single-pass greedy above has no
+        backtracking, so it strands whatever slack is left in an earlier phase once a later phase
+        runs over: on real JOCO data Phase 1 finished +$138.20 under, Phase 2 +$59.70 under, Phase
+        3 -$168.50 OVER, and the smallest unit anywhere ($259.50) is bigger than either individual
+        gap, so no single relocate could ever close it). After the greedy walk, every phase over
+        its OWN real envelope (not the Infinity placeholder step 3 used for phase index 2) is
+        repaired by (a) relocating its smallest unit to any other phase with enough slack to
+        absorb it outright, then (b) if that doesn't resolve it, the least-ROI-disruptive pairwise
+        swap with a unit in any other phase that brings both phases' totals back within their own
+        envelopes. Repeated pass over pass (a relocate/swap in one phase can free up the slack a
+        DIFFERENT phase's own repair needs) until no phase is over or a full pass finds no
+        improving move, capped at `REPAIR_MAX_PASSES` (scales with unit count, not a flat
+        constant) so it can't loop unboundedly on a larger portfolio. Every relocate/swap is
+        logged (`repairs` on the return value) and checked for ROI inversion (a lower-scored unit
+        ending up in an earlier phase than a higher-scored one it swapped with) — inversions are
+        reported, never silently hidden. If total portfolio demand exceeds total portfolio
+        capacity, or no relocate/swap exists that satisfies both phases' envelopes, the residual
+        overage is left in place and is still visible in the invariant check — this pass never
+        forces a fit that isn't real.
    When no budget is configured (envelope unavailable for any phase), falls back to an even
    1/3-of-measures-grand split (the pre-existing behavior) so the timeline still renders something
-   coherent.
+   coherent — the repair pass runs against that same even split too, since it operates on
+   `phaseShare` regardless of where it came from.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingComputeRecommendedTimeline(projId) {
   var estimate = _pricingGetEstimate(projId);
@@ -6219,11 +6238,11 @@ function _pricingComputeRecommendedTimeline(projId) {
     return b.score - a.score;
   });
 
-  var phases = [
-    { rows: [], buildings: [], total: 0 },
-    { rows: [], buildings: [], total: 0 },
-    { rows: [], buildings: [], total: 0 },
-  ];
+  // phaseUnits: UNIT-granularity working set for the greedy walk + repair pass below (kept
+  // separate from the final `phases` rows/buildings/total view, which is derived once at the end
+  // — see step 6 of the header comment). Tracking whole units (never individual rows) here is
+  // what keeps a sequence and the hardware it needs together through every relocate/swap.
+  var phaseUnits = [[], [], []];
   // Multi-round greedy first-fit walk over the GLOBAL ROI-ranked unit list — see step 3 of the
   // header comment above. Replaces the prior per-building walk (preserved in git history) with the
   // same bin-pack-with-carry mechanics, just operating on ranked units across the whole portfolio
@@ -6233,14 +6252,12 @@ function _pricingComputeRecommendedTimeline(projId) {
   var phaseIdx = 0;
   while (pending.length) {
     var envelope = phaseIdx < 2 ? phaseShare[phaseIdx] : Infinity;
+    var runningTotal = 0;
     var stillPending = [];
     pending.forEach(function (item) {
-      if (phaseIdx === 2 || phases[phaseIdx].total + item.total <= envelope) {
-        item.rows.forEach(function (r) {
-          phases[phaseIdx].rows.push(r);
-        });
-        if (phases[phaseIdx].buildings.indexOf(item.building) === -1) phases[phaseIdx].buildings.push(item.building);
-        phases[phaseIdx].total += item.total;
+      if (phaseIdx === 2 || runningTotal + item.total <= envelope) {
+        phaseUnits[phaseIdx].push(item);
+        runningTotal += item.total;
       } else {
         stillPending.push(item);
       }
@@ -6251,6 +6268,165 @@ function _pricingComputeRecommendedTimeline(projId) {
       else break; // unreachable safety net — phaseIdx 2 uses an Infinity envelope, so pending always empties above
     }
   }
+
+  // ── Repair pass — step 6 of the header comment above ──────────────────────────────────────
+  // realEnvelope: the TRUE per-phase envelope, including phase index 2 (the greedy walk above
+  // used Infinity there deliberately so nothing was permanently stranded before this pass runs).
+  var realEnvelope = phaseShare.slice();
+  var repairLog = []; // every relocate/swap actually performed — surfaced on the return value for verification/reporting, not rendered anywhere
+  // REPAIR_MAX_PASSES: scales with portfolio size (6 full relocate-then-swap passes per unit,
+  // floored at 50) instead of a flat constant tuned to JOCO's ~49-unit portfolio, so this can't
+  // loop unboundedly on a much larger one. Each pass itself does O(unitsInPhase^2) work across at
+  // most 3 phases, so total work stays polynomial in unit count.
+  var REPAIR_MAX_PASSES = Math.max(50, units.length * 6);
+  var _repairPhaseTotal = function (i) {
+    return phaseUnits[i].reduce(function (s, u) {
+      return s + u.total;
+    }, 0);
+  };
+  var repairPass = 0;
+  var repairStalled = false;
+  while (!repairStalled && repairPass < REPAIR_MAX_PASSES) {
+    repairPass++;
+    repairStalled = true;
+    for (var pi = 0; pi < phaseUnits.length; pi++) {
+      var overage = Math.round((_repairPhaseTotal(pi) - realEnvelope[pi]) * 100) / 100;
+      if (overage <= 0.005) continue; // at/under envelope already (penny epsilon)
+
+      // (a) relocate — try this phase's own units smallest-total-first (least disruptive move)
+      var ordered = phaseUnits[pi].slice().sort(function (a, b) {
+        return a.total - b.total;
+      });
+      var didRelocate = false;
+      for (var ci = 0; ci < ordered.length && !didRelocate; ci++) {
+        var cand = ordered[ci];
+        for (var pj = 0; pj < phaseUnits.length; pj++) {
+          if (pj === pi) continue;
+          var slackJ = realEnvelope[pj] - _repairPhaseTotal(pj);
+          if (cand.total <= slackJ + 0.005) {
+            phaseUnits[pi].splice(phaseUnits[pi].indexOf(cand), 1);
+            phaseUnits[pj].push(cand);
+            repairLog.push({
+              type: 'relocate',
+              rowIds: cand.rows.map(function (r) {
+                return r.id;
+              }),
+              building: cand.building,
+              score: cand.score,
+              total: cand.total,
+              from: pi,
+              to: pj,
+            });
+            didRelocate = true;
+            repairStalled = false;
+            break;
+          }
+        }
+      }
+      if (didRelocate) continue;
+
+      // (b) swap — search every other phase's units for a valid pair. A single 2-phase swap can
+      // only fully resolve pi's overage when the RECEIVING phase's own slack is >= pi's entire
+      // overage (slack(pj) >= overage(pi)) — algebraically, u.total - v.total must sit in
+      // [overage(pi), slack(pj)] simultaneously, which is only possible when slack(pj) is that
+      // big. When NO phase individually holds enough slack (e.g. JOCO: Phase 1 slack $138.20 and
+      // Phase 2 slack $59.70 are each smaller than Phase 3's $168.50 overage), fully resolving in
+      // ONE swap is mathematically impossible no matter which units are chosen — this is a
+      // property of the envelope numbers, not of this algorithm's search depth. In that case the
+      // best available move is a swap that reduces pi's overage as much as slack(pj) allows
+      // WITHOUT fully closing it (v.total >= u.total − slack(pj)), so a SECOND swap against a
+      // DIFFERENT phase on a later pass can close what's left — chaining slack across phases the
+      // way a single 2-party swap cannot.
+      // Candidates are ranked in tiers, evaluated in this order (task's explicit instructions,
+      // in priority order): (1) fully resolves pi this step > only makes partial progress;
+      // (2) does NOT invert ROI order (the unit ending up in the earlier-indexed phase scores >=
+      // the unit ending up in the later-indexed phase) > DOES invert — an inverting swap is only
+      // ever taken when every non-inverting candidate in the same resolve-tier was exhausted,
+      // i.e. inversion is used strictly to satisfy the envelopes, never merely to minimize
+      // disruption; (3) within the same (resolves, non-inverting) group: least ROI-score
+      // disruption for a fully-resolving swap, or the largest overage reduction for a
+      // partial-progress swap (ties broken by least disruption).
+      var candidates = [];
+      for (var pj2 = 0; pj2 < phaseUnits.length; pj2++) {
+        if (pj2 === pi) continue;
+        for (var ui = 0; ui < phaseUnits[pi].length; ui++) {
+          var u = phaseUnits[pi][ui];
+          for (var vi = 0; vi < phaseUnits[pj2].length; vi++) {
+            var v = phaseUnits[pj2][vi];
+            if (v.total >= u.total) continue; // swap must actually reduce phase pi's total
+            var newPiTotal = _repairPhaseTotal(pi) - u.total + v.total;
+            var newPjTotal = _repairPhaseTotal(pj2) - v.total + u.total;
+            if (newPjTotal > realEnvelope[pj2] + 0.005) continue; // never push the OTHER phase over its own envelope
+            var earlierPhaseC = Math.min(pi, pj2);
+            var scoreInEarlier = pi === earlierPhaseC ? v.score : u.score; // after the swap, u leaves pi/enters pj2 and v leaves pj2/enters pi
+            var scoreInLater = pi === earlierPhaseC ? u.score : v.score;
+            candidates.push({
+              u: u,
+              v: v,
+              from: pi,
+              to: pj2,
+              resolves: newPiTotal <= realEnvelope[pi] + 0.005,
+              inverted: scoreInEarlier < scoreInLater,
+              disruption: Math.abs(u.score - v.score),
+              reduction: u.total - v.total,
+            });
+          }
+        }
+      }
+      candidates.sort(function (a, b) {
+        if (a.resolves !== b.resolves) return a.resolves ? -1 : 1; // fully-resolving swaps first
+        if (a.inverted !== b.inverted) return a.inverted ? 1 : -1; // non-inverting swaps first, within the same resolve tier
+        return a.resolves ? a.disruption - b.disruption : b.reduction - a.reduction;
+      });
+      var best = candidates.length ? candidates[0] : null;
+      if (best) {
+        phaseUnits[best.from].splice(phaseUnits[best.from].indexOf(best.u), 1);
+        phaseUnits[best.to].splice(phaseUnits[best.to].indexOf(best.v), 1);
+        phaseUnits[best.from].push(best.v);
+        phaseUnits[best.to].push(best.u);
+        // Inversion (already computed above, before the swap was chosen — whichever unit ends up
+        // in the EARLIER-indexed calendar phase should score >= the unit ending up in the
+        // LATER-indexed phase; the sort above already deprioritized inverting candidates whenever
+        // a non-inverting one existed in the same resolve tier, so `best.inverted === true` here
+        // means every non-inverting option was exhausted, i.e. this inversion WAS strictly
+        // required to satisfy the envelopes) — logged, never hidden.
+        repairLog.push({
+          type: 'swap',
+          outRowIds: best.u.rows.map(function (r) {
+            return r.id;
+          }),
+          outBuilding: best.u.building,
+          outScore: best.u.score,
+          outTotal: best.u.total,
+          inRowIds: best.v.rows.map(function (r) {
+            return r.id;
+          }),
+          inBuilding: best.v.building,
+          inScore: best.v.score,
+          inTotal: best.v.total,
+          phaseA: best.from,
+          phaseB: best.to,
+          inverted: best.inverted,
+        });
+        repairStalled = false;
+      }
+    }
+  }
+
+  // Flatten the repaired unit assignment into the rows/buildings/total shape the rest of this
+  // function (and every downstream caller) expects — buildings is rebuilt from `naturalRank` order
+  // immediately below, so an unsorted dedup pass here is fine.
+  var phases = phaseUnits.map(function (list) {
+    var p = { rows: [], buildings: [], total: 0 };
+    list.forEach(function (item) {
+      item.rows.forEach(function (r) {
+        p.rows.push(r);
+      });
+      if (p.buildings.indexOf(item.building) === -1) p.buildings.push(item.building);
+      p.total += item.total;
+    });
+    return p;
+  });
 
   // Restore coherent within-phase presentation order (step 5 above) — ROI decided WHICH phase a
   // row lands in; this restores buildRecommendedRows' own building-grouped/hw-before-seq order for
@@ -6314,6 +6490,11 @@ function _pricingComputeRecommendedTimeline(projId) {
     programEmLaborTotal: costModel ? costModel.programEmLaborTotal : null,
     programMonths: _pricingRecommendedProgramMonths(),
     monthlyAllowance: costModel ? costModel.monthlyAllowance : null,
+    // repairs/repairPasses (2026-07-27, this task): diagnostic-only — the relocate/swap log and
+    // pass count from step 6's repair pass above. Not read by any render function; exists so
+    // verification tooling can inspect what the repair pass actually did without re-deriving it.
+    repairs: repairLog,
+    repairPasses: repairPass,
   };
 }
 
