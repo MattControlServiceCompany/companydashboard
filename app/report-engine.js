@@ -14867,16 +14867,22 @@ function _rptProposalDisplayClientName(fullName) {
 /**
  * rptPageASHRAE36ProposalCover — Page 1 of the rebuilt Service Proposal (2026-07-26 rebuild,
  * spec: AI/_context/specs/joco-service-proposal-target-2026-07-23.md). Matches Matt's hand-built
- * Word target page 1: Title block, Executive Summary, Assessment Findings (+ 2-row cost table +
- * Matt's requested "what's included" clarification — Word comment "Clarify what is included" on
- * the Full Energy Scope of Work row), Recommended Optimization Program (paragraph + monthly
- * allowance + 6 bullets), Why This Approach (5 bullets). Plain headings/tables only — zero
- * shaded/filled bands, zero boxes/cards (hard constraint, w:shd fill count = 0 in the target
- * .docx). hero:true keeps the CSC letterhead; noPageNum:true matches the target's page-number-
- * free footer.
+ * Word target page 1: Title block, Executive Summary, Assessment Findings (narrative paragraph
+ * stating both dollar figures in prose + Matt's requested "what's included" clarification — Word
+ * comment "Clarify what is included" on the Full Energy Scope of Work row), Recommended
+ * Optimization Program (paragraph + monthly allowance + 6 bullets), Why This Approach (5
+ * bullets). Plain headings/tables only — zero shaded/filled bands, zero boxes/cards (hard
+ * constraint, w:shd fill count = 0 in the target .docx). hero:true keeps the CSC letterhead;
+ * noPageNum:true matches the target's page-number-free footer.
+ *
+ * 2026-07-27: the 2-row "Assessment Findings Program Option / Estimated Cost" table that used to
+ * sit between the narrative paragraph and the "what's included" paragraphs was removed at the
+ * client's explicit direction ("Yes, remove the full table."). The narrative paragraph above still
+ * states both dollar figures in prose and still draws them from _rptA36AssessmentFindingsData(d),
+ * which remains the sole source for those two numbers on this page.
  *
  * The old 3-tier "Cost Summary" strip (_rptA36CoverPricingStrip) is NOT called from here
- * anymore — the target has no such block; it pivots straight from the 2-row findings table to the
+ * anymore — the target has no such block; it pivots straight from the findings narrative to the
  * monthly allowance. _rptA36CoverPricingStrip itself is left intact (unused) rather than deleted,
  * per the "do not destroy existing capability" constraint.
  */
@@ -14943,35 +14949,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
         'the portfolio, as well as a broader energy-focused scope of work across all assessed ' +
         'facilities. Cost estimates below will populate once pricing data has been imported for this project.';
 
-  var tblBorder = '1px solid var(--rpt-rule)';
-  var thPlain =
-    'padding:4px 10px;font-size:10.5px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:' + tblBorder;
-  var tdPlain = 'padding:4px 10px;font-size:10.5px;color:var(--rpt-page-text);text-align:left;border:' + tblBorder;
-  var findingsTable =
-    '<table style="width:100%;border-collapse:collapse;margin-top:5px;margin-bottom:5px">' +
-    '<colgroup><col><col style="width:150px"></colgroup>' +
-    '<thead><tr><th style="' +
-    thPlain +
-    '">Assessment Findings Program Option</th><th style="' +
-    thPlain +
-    '">Estimated Cost</th></tr></thead>' +
-    '<tbody>' +
-    '<tr><td style="' +
-    tdPlain +
-    '">Full ASHRAE 36 Compliance Implementation</td><td style="' +
-    tdPlain +
-    '">' +
-    (af.complianceFmt || '&mdash;') +
-    '</td></tr>' +
-    '<tr><td style="' +
-    tdPlain +
-    '">Full Energy Scope of Work Implementation</td><td style="' +
-    tdPlain +
-    '">' +
-    (af.fullScopeFmt || '&mdash;') +
-    '</td></tr>' +
-    '</tbody></table>';
-
   // "What's included" clarification (Matt's Word comment on the Full Energy Scope of Work row:
   // "Clarify what is included" + "We need to explain in more detail"). Grounded in the actual
   // tier-build logic (buildComplianceRows/buildFullScopeRows, pricing-estimator.js): Compliance =
@@ -15007,7 +14984,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '">' +
     findingsPara +
     '</div>' +
-    findingsTable +
     whatsIncluded;
 
   // ── Recommended Optimization Program (first heading) ───────────────────
