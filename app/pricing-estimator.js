@@ -972,9 +972,33 @@ function _pricingLaborBreakdownHTML(projId) {
    _pricingTierLabelHTML/_pricingAdvisoryLineHTML above are shared, not copied.
    contextLabel (optional) prefixes the mode label — used by Compare/Summary where
    more than one total is visible in the same footer (e.g. "vs Recommended").
+
+   ceilingOverride (2026-07-26, fix-phase-cost-budget-model — buildRecommendedRows ceiling netting):
+   when the caller is showing the RECOMMENDED tier's own total, this widget must compare against
+   the SAME ceiling buildRecommendedRows() actually fit membership against — the program-wide
+   net-of-labor measures budget (_pricingComputeProgramCostModel(projId).programMeasuresAvailable) —
+   not the generic budget.amount x termMonths figure _pricingComputeBudgetTotal returns. Those two
+   numbers diverged the moment the membership ceiling was netted against real EM labor: comparing a
+   correctly-funded Recommended scope against the OLD term-based figure would show a false "OVER
+   budget" alarm here, directly contradicting the accurate Phase Service Allowance timeline table
+   rendered right below it. Callers pass null (or omit) for every non-Recommended context
+   (Compliance/Full Scope were never fit to any budget ceiling, so the generic term-based
+   comparison is still the right — if informal — reference point for them, unchanged from before).
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingBudgetVsTotalHTML(budget, grandTotal, contextLabel) {
-  var comp = _pricingComputeBudgetTotal(budget);
+function _pricingBudgetVsTotalHTML(budget, grandTotal, contextLabel, ceilingOverride) {
+  var comp;
+  if (ceilingOverride != null && isFinite(ceilingOverride) && ceilingOverride > 0) {
+    comp = {
+      total: ceilingOverride,
+      basisLabel:
+        _pricingFmt(ceilingOverride) +
+        ' program measures budget (net of EM labor, ' +
+        _pricingRecommendedProgramMonths() +
+        ' mo)',
+    };
+  } else {
+    comp = _pricingComputeBudgetTotal(budget);
+  }
   if (!comp || grandTotal == null) return '';
   var modeLabel =
     (contextLabel ? contextLabel + ' — ' : '') + (budget.mode === 'financing' ? 'Financing' : 'Recurring budget');
@@ -3268,43 +3292,35 @@ function buildRecommendedRows(projId) {
 
   var budget = _pricingGetBudget(projId);
   var comp = _pricingComputeBudgetTotal(budget);
-  // 2026-07-26 (fix/phase-cost-budget-model) — INVESTIGATED, NOT CHANGED, documenting why:
-  // comp.total uses budget.termMonths (defaults to 12), not the TRUE program horizon
-  // (_pricingRecommendedProgramMonths() — 29 months). Two alternate ceilings were tried here and
-  // both broke on real JOCO numbers, so this membership ceiling is UNCHANGED from before this
-  // task — only the calendar-phase COST DISPLAY (_pricingComputeProgramCostModel /
-  // _pricingComputeRecommendedTimeline, below) was fixed, not tier membership:
-  //   1. Widening the ceiling to the raw 29-month allowance total ($181,250) let measures alone
-  //      balloon to consume the WHOLE allowance ($181,206 fit) — before any of the EM labor that
-  //      draws against the SAME dollars was even counted. Confirmed against real JOCO data.
-  //   2. Netting the FULL EM-labor total out of that ceiling ($181,250 − $177,480 = $3,770)
-  //      collapsed Recommended-tier membership from 78 rows/$74,826 to 7 rows/$3,740 — but this
-  //      DOUBLE-SUBTRACTS: _pricingComputeMonthlyLaborBreakdown's "Program & Sequence Setup"
-  //      category (shipped 2026-07-22) reuses the SAME COST_PER_SEQ_HOURS_DEFAULT hours already
-  //      priced into every phase-2 row's Programming cost inside `comp`'s own candidate pool —
-  //      so subtracting the full EM-labor total here subtracts those programming hours a SECOND
-  //      time from the money available to buy them. That's a real, pre-existing architecture
-  //      overlap between "EM service labor" and "measures programming labor," not something this
-  //      task can safely resolve by picking a ceiling number — it needs a pricing/business
-  //      decision (are Program & Sequence Setup hours part of the monthly service, part of the
-  //      measures price, or split — and if split, how). Flagged in the implementer report rather
-  //      than silently forced either direction; membership stays on the pre-existing 12-month
-  //      ceiling until that decision is made.
-  //   UPDATE (2026-07-26, later same branch): the root cause of point 2's double-subtraction —
-  //   _pricingComputeMonthlyLaborBreakdown including Program & Sequence Setup hours — has been
-  //   FIXED AT THE SOURCE (that category was removed from the recurring EM labor breakdown
-  //   entirely; see that function's header comment and _pricingComputeProgramCostModel, both
-  //   rebuilt same day). That fix only changed the calendar-phase COST DISPLAY math (item 2's
-  //   allowanceTotal/emLaborTotal/measuresAvailable columns) — this membership ceiling
-  //   (`comp`/`_pricingGreedyPrefix`, budget.termMonths-based) is still UNCHANGED and still out of
-  //   scope; a future pass COULD revisit netting the calendar allowance against this ceiling now
-  //   that the double-count is gone, but that is a separate decision this task did not make.
+  // 2026-07-26 (fix/phase-cost-budget-model) — RESOLVED, ceiling now netted against real EM labor.
+  // History: comp.total (budget.termMonths-based, defaults to 12 → $75,000 for JOCO) was left
+  // UNCHANGED through two earlier passes because both alternate ceilings tried then broke on real
+  // JOCO numbers:
+  //   1. Widening to the raw 29-month program allowance ($181,250, no netting): measures alone
+  //      consumed 99.98% of the WHOLE allowance before a dollar of EM labor was even counted.
+  //   2. Netting the FULL EM-labor total out of that same raw ceiling ($181,250 − $177,480 =
+  //      $3,770): collapsed membership to 7 rows/$3,740 — but DOUBLE-SUBTRACTED, because
+  //      `_pricingComputeMonthlyLaborBreakdown`'s old "Program & Sequence Setup" category reused
+  //      the SAME COST_PER_SEQ_HOURS_DEFAULT hours already priced into every phase-2 row's
+  //      Programming cost inside this same candidate pool.
+  //   That double-count is now FIXED AT THE SOURCE (Program & Sequence Setup was removed from the
+  //   recurring EM labor breakdown entirely — see _pricingComputeMonthlyLaborBreakdown's header
+  //   comment) — so netting is safe now. Ceiling below is the PROGRAM-WIDE net-of-labor measures
+  //   budget (`_pricingComputeProgramCostModel(projId).programMeasuresAvailable`) — every figure it
+  //   derives from (budget.amount, the phase date ranges, and the recurring labor constants) is
+  //   already stored/derived elsewhere; nothing here is a new hardcoded number. Falls back to the
+  //   old `comp.total` (budget.termMonths-based) ceiling only when the calendar cost model can't be
+  //   computed (e.g. a 'lump' denomination, which has no natural monthly figure to net against) —
+  //   same recurring-mode branch as before, just a different derivation of the ceiling inside it.
+  var costModelForCeiling = _pricingComputeProgramCostModel(projId);
   var keepUnitToggleKeys = {};
   if (comp && budget.mode === 'recurring') {
-    // Budget entered: ranked prefix that fits the ceiling — the shipped v631
-    // Fit-to-Budget greedy engine, reused verbatim as the membership rule
-    // (pricing-estimator.js:536-558 conversion; NOT re-derived here).
-    var _fitPlan = _pricingGreedyPrefix(units, comp.total);
+    // Budget entered: ranked prefix that fits the ceiling — the shipped v631 Fit-to-Budget greedy
+    // engine, reused verbatim as the membership rule (pricing-estimator.js:536-558 conversion; NOT
+    // re-derived here). Ceiling = program-wide measures budget net of recurring EM labor when the
+    // calendar cost model is available; otherwise the pre-existing term-based total.
+    var _ceiling = costModelForCeiling ? costModelForCeiling.programMeasuresAvailable : comp.total;
+    var _fitPlan = _pricingGreedyPrefix(units, _ceiling);
     _fitPlan.keepKeys.forEach(function (k) {
       keepUnitToggleKeys[k] = true;
     });
@@ -6029,6 +6045,18 @@ function _pricingComputeProgramCostModel(projId) {
         return s + p.emLaborTotal;
       }, 0) * 100,
     ) / 100;
+  // programMeasuresAvailable (2026-07-26, buildRecommendedRows netting): sum of each phase's own
+  // measuresAvailable (allowanceTotal − that phase's emLaborTotal, floored at 0) — NOT
+  // programAllowanceTotal − programEmLaborTotal computed at the program level, so a phase that is
+  // over-committed (emLaborTotal > allowanceTotal, floored to 0 measures) never lets its shortfall
+  // be silently offset by a DIFFERENT phase's surplus. Used by buildRecommendedRows as the
+  // Recommended-tier Fit-to-Budget membership ceiling.
+  var programMeasuresAvailable =
+    Math.round(
+      phases.reduce(function (s, p) {
+        return s + p.measuresAvailable;
+      }, 0) * 100,
+    ) / 100;
 
   return {
     monthlyAllowance: monthlyAllowance,
@@ -6040,6 +6068,7 @@ function _pricingComputeProgramCostModel(projId) {
     programMonths: programMonths,
     programAllowanceTotal: programAllowanceTotal,
     programEmLaborTotal: programEmLaborTotal,
+    programMeasuresAvailable: programMeasuresAvailable,
   };
 }
 
@@ -7815,8 +7844,22 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // compares against Recommended, the tier the original budget complaint was about).
   var _budgetForFooter = _pricingGetBudget(projId);
   var _budgetCompareTotal = isBothMode ? (recTotals ? recTotals.grand : null) : totals.grand;
+  // 2026-07-26 ceiling-netting fix: this footer's total IS the Recommended tier's total whenever
+  // tier==='recommended' OR isBothMode ('vs Recommended' always compares recTotals) — in both
+  // cases it must be compared against the SAME ceiling buildRecommendedRows() actually used (see
+  // _pricingBudgetVsTotalHTML's header comment), not the generic term-based figure.
+  var _recCeilingOverride = null;
+  if ((tier === 'recommended' || isBothMode) && _budgetForFooter.mode === 'recurring') {
+    var _recCostModelForFooter = _pricingComputeProgramCostModel(projId);
+    if (_recCostModelForFooter) _recCeilingOverride = _recCostModelForFooter.programMeasuresAvailable;
+  }
   footerParts.push(
-    _pricingBudgetVsTotalHTML(_budgetForFooter, _budgetCompareTotal, isBothMode ? 'vs Recommended' : ''),
+    _pricingBudgetVsTotalHTML(
+      _budgetForFooter,
+      _budgetCompareTotal,
+      isBothMode ? 'vs Recommended' : '',
+      _recCeilingOverride,
+    ),
   );
 
   footerParts.push('</div>');
@@ -8247,7 +8290,21 @@ function _pricingComputeSummaryData(projId, estimate) {
       '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
       '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatParts.join(' · ') + '</span>',
       tier === 'recommended' ? _pricingAdvisoryLineHTML(_anySavingsShown) : '', // 45ceb14f: was missing entirely
-      _pricingBudgetVsTotalHTML(_pricingGetBudget(projId), totals.grand, ''), // 174ad49a Phase 2
+      // 2026-07-26 ceiling-netting fix: same override as the full-render footer above — tier here
+      // is always 'compliance' or 'recommended' (see the guard comment a few lines up), so only
+      // 'recommended' needs the program-wide net-of-labor ceiling swapped in.
+      _pricingBudgetVsTotalHTML(
+        _pricingGetBudget(projId),
+        totals.grand,
+        '',
+        (function () {
+          if (tier !== 'recommended') return null;
+          var _b = _pricingGetBudget(projId);
+          if (_b.mode !== 'recurring') return null;
+          var _cm = _pricingComputeProgramCostModel(projId);
+          return _cm ? _cm.programMeasuresAvailable : null;
+        })(),
+      ), // 174ad49a Phase 2
       '</div>',
     ].join('');
   };
