@@ -6073,7 +6073,7 @@ function _pricingComputeProgramCostModel(projId) {
 }
 
 /* ── Recommended tier 3-phase implementation timeline (Task 2, 2026-07-22; rebuilt 2026-07-26
-   fix/phase-cost-budget-model) ────────────────────────────────────────────────────────────────
+   fix/phase-cost-budget-model; rebuilt AGAIN 2026-07-26 same branch — global ROI ranking) ───────
    Matt's ask: a calendar-phase rollout plan for the RECOMMENDED tier specifically — Phase 1
    Aug-Dec 2026, Phase 2 all of CY2027, Phase 3 all of CY2028. No calendar-phase concept existed
    anywhere in this file before this — the pre-existing row `phase:1`/`phase:2` fields mean
@@ -6093,21 +6093,48 @@ function _pricingComputeProgramCostModel(projId) {
        if it were — see _pricingRecommendedTimelineHTML/_rptA36RecommendedTimelineHTML below for
        how each is labeled.
 
-   Row assignment rule (REBUILT 2026-07-26, same branch, later commit — see "over budget phase"
-   defect writeup below): buildRecommendedRows() emits rows building-by-building in a stable
-   "natural/source" rollout order (see the 0ae36950 comment above that function). This walks
-   INDIVIDUAL PRICED ROWS (not whole buildings) in that order, advancing to the next phase once
-   the running measures total crosses that phase's OWN measures envelope (task: "assign measures
-   per phase against that phase's own budget envelope rather than slicing one flat total into
-   thirds") — Phase 1's smaller 5-month envelope fills first, then Phase 2's larger envelope, etc.
-   Because assignment happens at row granularity, a single large building's rows can legitimately
-   land in two (or three) consecutive phases when its total exceeds one phase's envelope — e.g. a
-   $47.6k building against a $21k Phase 1 envelope now correctly splits into "$21k of it in Phase
-   1, the remainder in Phase 2" instead of forcing the WHOLE building into one phase and blowing
-   that phase's allowance 2x+ over. Rows for the same building stay contiguous in the output
-   EXCEPT exactly at a phase boundary that falls inside that building's own row list — never
-   scattered arbitrarily. `phases[i].buildings` collects each building name at most once per
-   phase (a building can legitimately appear in more than one phase's list — that IS the fix).
+   Row assignment rule (REBUILT 2026-07-26, same branch — Matt: "Why not make phase 1 based on best
+   ROI instead of building?" He's right, and it matches the proposal's own copy: "Rather than
+   pursuing a large one-time capital project, Control Service Company recommends a phased
+   optimization program focused on the highest-value opportunities first." The PRIOR version of
+   this function (see the row-level-walk defect writeup preserved in git history) walked
+   buildRecommendedRows()' building-by-building "natural/source" order — Phase 1 got whatever
+   happened to be in the first buildings encountered, not the best-return measures in the
+   portfolio, directly contradicting that promise.
+
+   New rule: rank every priced row across the WHOLE portfolio by ROI, then fill Phase 1 with the
+   best-scoring measures regardless of building, Phase 2 the next tier, Phase 3 the rest — each
+   phase still bounded by its own measures envelope (allowance − that phase's own recurring EM
+   labor). Concretely:
+     1. buildRecommendedRows() membership IS unit membership — Step 2/3 of that function's own
+        header comment: every surviving row is either the sequence half or a claimed-hardware half
+        of a unit _pricingBuildRoiUnits() built and kept via the Fit-to-Budget ranking. So
+        re-running _pricingBuildRoiUnits() against THIS function's own (override-applied) `rows`
+        recovers the identical hw+seq bundles with nothing left unclaimed — verified by the
+        `leftover` safety net below, which would non-silently pick up any row that ISN'T a unit
+        member (defensive; expected to be a no-op on every real project).
+     2. Each unit is scored by _pricingEquipRowScore(seqRow) — the SAME return-per-dollar ranking
+        buildRecommendedRows() already uses for tier membership (do not invent a second scoring
+        scheme). Units are sorted best-score-first ACROSS THE WHOLE PORTFOLIO, not grouped by
+        building.
+     3. A single multi-round greedy first-fit walk (same bin-pack-with-carry mechanics the prior
+        per-building version used, just operating on the global ranked list instead of one
+        building's rows at a time): each round offers every still-pending unit, in ROI order, to
+        the CURRENT phase's own envelope; a unit too big to fit is deferred to the next round
+        (next phase) — never bumping a smaller, lower-ranked unit that DOES fit out of the way.
+        phaseIdx only advances forward; Phase 3's envelope is Infinity so nothing is ever
+        permanently stranded. This guarantees measuresTotal never exceeds measuresAvailable except
+        in the mathematically unavoidable case where total remaining demand exceeds total
+        remaining capacity across every phase combined — reported, never silently forced to fit.
+        Ranking at UNIT (not raw-row) granularity also keeps a sequence and the hardware it needs
+        together in the same phase — a measure is never sold half-installed across two phases.
+     4. A building can now legitimately appear in more than one phase's list far more often than
+        before (its measures are scattered across the ROI ranking, not walked as one contiguous
+        block) — `phases[i].buildings` still collects each building name at most once per phase.
+     5. Presentation order within a phase is then RESTORED to buildRecommendedRows' own natural
+        building-grouped/hw-before-seq order (via `naturalRank`) so ROI decides WHICH phase a row
+        lands in, but a phase's row list still reads coherently instead of as a scattered ROI-pick
+        jumble (task constraint).
    When no budget is configured (envelope unavailable for any phase), falls back to an even
    1/3-of-measures-grand split (the pre-existing behavior) so the timeline still renders something
    coherent.
@@ -6122,18 +6149,13 @@ function _pricingComputeRecommendedTimeline(projId) {
   var grandTotals = _pricingComputeTotals(rows, estimate);
   if (grandTotals.grand === null) return null; // nothing priced yet — same silent-until-priced convention as the rest of this file
 
-  // Stable building-by-building grouping (buildRecommendedRows' own "natural/source" rollout
-  // order — see the 0ae36950 comment above that function) — the per-building bin-pack-with-carry
-  // walk below processes one building's own row list at a time in this order.
-  var order = [];
-  var byBldg = {};
-  rows.forEach(function (r) {
-    var b = r.building || '(Unassigned)';
-    if (!byBldg[b]) {
-      byBldg[b] = [];
-      order.push(b);
-    }
-    byBldg[b].push(r);
+  // naturalRank: buildRecommendedRows' own natural/source row order (building-grouped,
+  // hw-before-seq — see the 0ae36950 comment above that function) — used ONLY to restore a
+  // coherent within-phase presentation order after ROI ranking decides phase membership (step 5
+  // above), never to decide which phase a row lands in.
+  var naturalRank = {};
+  rows.forEach(function (r, i) {
+    naturalRank[r.id] = i;
   });
 
   var grand = grandTotals.grand;
@@ -6156,59 +6178,96 @@ function _pricingComputeRecommendedTimeline(projId) {
     return costModel ? costModel.phases[i].measuresAvailable : grand / 3;
   });
 
+  // ── Global ROI-ranked units ────────────────────────────────────────────────────────────────
+  // _pricingBuildRoiUnits (the SAME pairing/scoring engine buildRecommendedRows uses for tier
+  // membership) bundles every savings-type sequence with the hardware it needs into one unit
+  // scored by _pricingEquipRowScore. Re-run here against this function's own override-applied
+  // `rows` — see step 1 of the header comment above for why this recovers the identical bundles
+  // buildRecommendedRows already committed to.
+  var units = _pricingBuildRoiUnits(rows).map(function (u) {
+    var unitRows = u.hwRows.concat([u.seqRow]);
+    return {
+      rows: unitRows,
+      building: u.seqRow.building,
+      score: u.score,
+      total: _pricingComputeTotals(unitRows, estimate).grand || 0,
+    };
+  });
+  // Defensive safety net (expected no-op — see step 1 above): if any row from `rows` is NOT a
+  // member of any unit _pricingBuildRoiUnits formed (should never happen given buildRecommendedRows'
+  // own membership rule, but a silently-dropped row would violate the "nothing dropped" constraint),
+  // fold it in as its own single-row unit, scored the same way the 'equipment' flat-sort mode
+  // scores unpaired rows, rather than losing it from the timeline entirely.
+  var claimedIds = {};
+  units.forEach(function (u) {
+    u.rows.forEach(function (r) {
+      claimedIds[r.id] = true;
+    });
+  });
+  rows.forEach(function (r) {
+    if (claimedIds[r.id]) return;
+    units.push({
+      rows: [r],
+      building: r.building,
+      score: _pricingEquipRowScore(r),
+      total: _pricingComputeTotals([r], estimate).grand || 0,
+    });
+  });
+  // Stable sort (Array.prototype.sort is stable per spec/all modern engines) — best ROI first;
+  // ties keep buildRecommendedRows' natural order rather than an arbitrary re-shuffle.
+  units.sort(function (a, b) {
+    return b.score - a.score;
+  });
+
   var phases = [
     { rows: [], buildings: [], total: 0 },
     { rows: [], buildings: [], total: 0 },
     { rows: [], buildings: [], total: 0 },
   ];
-  // Row-level walk with per-building deferral (2026-07-26, replaces the whole-building walk that
-  // shipped in the same-day rebuild above — see defect writeup: Phase 1's building, the
-  // Courthouse alone, priced at $47,610.60 against a $21,043 measures envelope, so NO
-  // whole-building assignment could ever fit it and the phase blew its allowance by 2x+).
-  // Two refinements were needed beyond plain row-level splitting, both found by re-running the
-  // actual JOCO numbers after each attempt:
-  //   1. A single ROW can still be bigger than a phase's whole envelope (Courthouse's `vav_dcv`
-  //      sequence — DCV programming priced across ~385 VAV boxes as ONE line item — is $33,302.50,
-  //      bigger than Phase 1's entire $21,043). So a row that doesn't fit is DEFERRED (not
-  //      force-included) and retried against the next phase's own envelope, never reaching into a
-  //      DIFFERENT building's rows to backfill the gap — a building's own rows still land as a
-  //      contiguous block except exactly where a boundary falls inside its own list.
-  //   2. `phaseIdx` is reset to 0 for EVERY building (not carried forward once a prior building
-  //      forced an advance) — otherwise a phase that finishes under its envelope (e.g. Phase 1
-  //      landing $6.7k under after Courthouse's overflow) stays permanently "closed" to every
-  //      later building even though it still has room, and that unclaimed room piles up as extra
-  //      overflow in Phase 3 (the last-resort bucket) instead of being used. Resetting per building
-  //      lets the NEXT-highest-ROI building's rows fill that leftover room first — still the
-  //      existing ROI-ranked priority order, just not stranding usable budget. Within one
-  //      building's own row list the walk still only ever moves forward (never back down to an
-  //      earlier phase for that SAME building's later rows), so nothing scatters arbitrarily.
-  // This guarantees measuresTotal never exceeds measuresAvailable except in the mathematically
-  // unavoidable case where total remaining demand exceeds total remaining capacity across every
-  // phase combined — at that point rows land in the LAST phase (envelope Infinity, nothing left
-  // to defer to), and that is reported, not silently forced to look like it fit.
-  order.forEach(function (b) {
-    var pending = byBldg[b].map(function (r) {
-      return { row: r, total: _pricingComputeTotals([r], estimate).grand || 0 };
-    });
-    var phaseIdx = 0; // reset per building — see refinement 2 above
-    while (pending.length) {
-      var envelope = phaseIdx < 2 ? phaseShare[phaseIdx] : Infinity;
-      var stillPending = [];
-      pending.forEach(function (item) {
-        if (phaseIdx === 2 || phases[phaseIdx].total + item.total <= envelope) {
-          phases[phaseIdx].rows.push(item.row);
-          if (phases[phaseIdx].buildings.indexOf(b) === -1) phases[phaseIdx].buildings.push(b);
-          phases[phaseIdx].total += item.total;
-        } else {
-          stillPending.push(item);
-        }
-      });
-      pending = stillPending;
-      if (pending.length) {
-        if (phaseIdx < 2) phaseIdx++;
-        else break; // unreachable safety net — phaseIdx 2 uses an Infinity envelope, so pending always empties above
+  // Multi-round greedy first-fit walk over the GLOBAL ROI-ranked unit list — see step 3 of the
+  // header comment above. Replaces the prior per-building walk (preserved in git history) with the
+  // same bin-pack-with-carry mechanics, just operating on ranked units across the whole portfolio
+  // instead of one building's rows at a time; there is no "per building" boundary to reset
+  // phaseIdx against anymore — phaseIdx only ever advances forward.
+  var pending = units;
+  var phaseIdx = 0;
+  while (pending.length) {
+    var envelope = phaseIdx < 2 ? phaseShare[phaseIdx] : Infinity;
+    var stillPending = [];
+    pending.forEach(function (item) {
+      if (phaseIdx === 2 || phases[phaseIdx].total + item.total <= envelope) {
+        item.rows.forEach(function (r) {
+          phases[phaseIdx].rows.push(r);
+        });
+        if (phases[phaseIdx].buildings.indexOf(item.building) === -1) phases[phaseIdx].buildings.push(item.building);
+        phases[phaseIdx].total += item.total;
+      } else {
+        stillPending.push(item);
       }
+    });
+    pending = stillPending;
+    if (pending.length) {
+      if (phaseIdx < 2) phaseIdx++;
+      else break; // unreachable safety net — phaseIdx 2 uses an Infinity envelope, so pending always empties above
     }
+  }
+
+  // Restore coherent within-phase presentation order (step 5 above) — ROI decided WHICH phase a
+  // row lands in; this restores buildRecommendedRows' own building-grouped/hw-before-seq order for
+  // the rows that actually landed in phase i, and derives `buildings` from that same restored
+  // order instead of the scattered ROI pick-order buildings were first encountered in.
+  phases.forEach(function (p) {
+    p.rows.sort(function (a, b) {
+      return naturalRank[a.id] - naturalRank[b.id];
+    });
+    var seen = {};
+    p.buildings = [];
+    p.rows.forEach(function (r) {
+      if (r.building && !seen[r.building]) {
+        seen[r.building] = true;
+        p.buildings.push(r.building);
+      }
+    });
   });
 
   var out = phases.map(function (p, i) {
