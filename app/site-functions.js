@@ -1576,6 +1576,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.27.707',
+    date: '2026-07-27',
+    title: 'Recommended-tier phased program now priced against the real calendar, not a 12-month ceiling',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Cost Estimate tab and in the Service Proposal, each Recommended-tier phase now shows the real service-allowance cost for its own calendar period (Phase 1: Aug-Dec 2026, Phase 2: 2027, Phase 3: 2028), instead of a single 12-month budget being sliced across the whole multi-year program. As a result, the Recommended-tier total is now $137,798 (previously $74,826) -- the old number understated the program because it capped 29 months of work at a 12-month allowance. The Compliance and Full Scope tiers, and the tier ordering, are unchanged.',
+      },
+      {
+        type: 'change',
+        text: 'Work in the Recommended-tier phased program is now scheduled best-return-first across the entire portfolio of buildings, rather than one building at a time. This means a single building can now have work split across more than one phase if that produces better overall payback timing.',
+      },
+      {
+        type: 'feature',
+        text: 'Added a "Trend Setup & Configuration" line to the monthly service labor breakdown on the Cost Estimate tab, covering the time to configure new equipment trends.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.26.706',
     date: '2026-07-26',
     title: 'Bill PDFs can now be backed up and restored in batches',
