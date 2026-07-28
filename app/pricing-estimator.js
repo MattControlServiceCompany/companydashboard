@@ -715,56 +715,100 @@ function _pricingProjectHasUtilityBills(projId) {
 
 /* ── Monthly Recurring EM Service Labor Breakdown (2026-07-22; trend category added 2026-07-26;
    REBUILT 2026-07-26 fix-phase-cost-budget-model to stop double-counting Program & Sequence Setup
-   and stop force-filling the whole allowance) ────────────────────────────────────────────────────
+   and stop force-filling the whole allowance; REBUILT AGAIN 2026-07-27
+   fix/em-labor-model-completeness to reflect everything the SIGNED agreement actually commits CSC
+   to doing every month, not just setup-type work; CORRECTED same day, same branch, per Matt's
+   direct client-correction: "I think the 16 hours should include the meetings, rebates and
+   training") ───────────────────────────────────────────────────────────────────────────────────
    WHY this exists: Matt's ask was to show WHY the monthly EM service hours are needed, not just a
    flat hours×rate total — real setup work (alarm configuration, report setup, trend/graphics
    setup, and — when the client hand-provides them — utility bill data entry) that is heaviest in
-   the first few months and tapers to steady-state monitoring.
+   the first few months and tapers to steady-state monitoring, PLUS the recurring contractual
+   commitments below that exist for the life of the agreement, not just the ramp-in period.
 
-   REBUILD REASON (2026-07-26, Matt: "get the allowance model working and correct"): the prior
-   version had two defects, both fixed here:
-     (a) "Ongoing Monitoring & Optimization" was a REMAINDER category — `totalHours (36) −
-         setupHoursUsed` — which forced every month's categories to sum to exactly the flat
-         36-hr/mo total by construction, regardless of what work was actually needed. That left
-         ~$22/mo of a $6,250 allowance for parts after 36hrs×$173/hr. 36 hrs is
-         `budget.serviceHoursPerMonth`, the all-labor-no-parts EXTREME used by
-         _pricingComputeMonthlyService's not-to-exceed headline — it was never meant to be a floor
-         every month must hit. Fixed: Ongoing Monitoring & Optimization is now a DEFINED flat
-         allocation (ONGOING_MONITORING_HOURS_DEFAULT, same shape as the other *_DEFAULT constants
-         below), present every month, never scaled to fill anything.
-     (b) "Program & Sequence Setup" reused COST_PER_SEQ_HOURS_DEFAULT — the EXACT SAME per-sequence
-         hours buildCatalogRows' phase-2 rows already price as "Programming" inside the measures
-         total (see _pricingComputeProgramCostModel below, which nets this breakdown's total against
-         the SAME calendar allowance the measures total draws from). Keeping it here meant those
-         programming hours were priced twice against the same dollars. Fixed: Program & Sequence
-         Setup is REMOVED from this function entirely — it is one-time PROJECT work, already priced
-         as "Programming" line items inside the measures total, not part of the RECURRING monthly
-         EM service. Documented in my-knowledge-base/wiki/joco-monthly-allowance-vs-em-labor-
-         overlap.md (that overlap is now resolved by this removal — see the update note there).
+   2026-07-27 REBUILD REASON (task: "rebuild the EM Services monthly labor model… reflects what the
+   SIGNED agreement actually commits CSC to doing every month"): the 2026-07-26 rebuild fixed the
+   double-count/fill-the-allowance defects, but a follow-up investigation (grep for "meeting",
+   "rebate", "training" → zero hits) found the recurring side of the model was still incomplete: at
+   steady state (Month 4+) only Ongoing Monitoring & Optimization (8 hrs) was counted, while three
+   contract-mandated recurring commitments were entirely absent, and Utility Bill Data Entry was
+   wrongly modeled as a SETUP category that tapers to zero even though bills arrive every month for
+   the life of the agreement. Every category below is now explicitly tagged SETUP (ramps to zero
+   over 3 months, one-time work) or RECURRING (flat, every month, forever):
 
-   This function now answers a narrower, correct question: "what RECURRING monthly labor must
-   happen regardless of which measures get funded?" — Alarm Configuration, Report Setup, Trend
-   Setup & Configuration, Utility Bill Data Entry (conditional on bills on file), and Ongoing
-   Monitoring & Optimization. It is READ BY _pricingComputeProgramCostModel to compute
-   `emLaborTotal`/`measuresAvailable` per phase — no longer purely presentational; the monthly
-   totals it returns now flow into real dollar math, so they intentionally do NOT sum to a fixed
-   cap anymore (Month 1 is highest, Month 4+ is lowest — see the per-month figures in the function
-   below). This is deliberate — the old "sums-to-36-every-month" invariant WAS the double-count/
-   fill-the-allowance bug and has been removed on purpose.
+     SETUP (ramped, unchanged from the 2026-07-26 rebuild):
+       - Alarm Configuration (ALARM_SETUP_HOURS_DEFAULT)
+       - Report Setup (REPORT_SETUP_HOURS_DEFAULT)
+       - Trend Setup & Configuration (TREND_SETUP_HOURS_DEFAULT)
 
-   Ramp model (simple 4-step taper, unchanged from the original, per Matt's ask — still applies
-   only to the SETUP categories, not to Ongoing Monitoring which is now constant every month):
-     Month 1      — 100% of the "setup pool" (alarms + reports + trends + bill entry)
+     RECURRING, ALL DRAWN FROM ONE 16-HR/MONTH BUCKET (correction, same day): the initial
+     2026-07-27 version priced Ongoing Monitoring & Optimization at a flat 16 hrs/month IN ADDITION
+     TO Monthly Client Review Meeting/Utility Rebate Assistance/Staff Training & Documentation (2
+     hrs each), for 22 recurring hrs/month total. Matt corrected this: "I think the 16 hours should
+     include the meetings, rebates and training" — the client's "16 hours/month of ongoing
+     monitoring for 27 buildings" direction is the ENTIRE recurring EM-labor bucket, not monitoring
+     work on top of it. RECURRING_EM_LABOR_HOURS_DEFAULT (=16) is now the single source of truth;
+     Ongoing Monitoring & Optimization is whatever remains of that 16 after subtracting the three
+     named categories below — it is NEVER an independent constant, so a future 5th recurring
+     category added under this bucket automatically shrinks monitoring instead of silently
+     inflating the recurring total past 16:
+       - Monthly Client Review Meeting — 2 hrs/mo (1 hr meeting + 1 hr prep). Contract: "Monthly
+         hourly scheduled meetings to review utility usage, costs, and feedback from the data
+         analytics."
+       - Utility Rebate Assistance — 2 hrs/mo (bursty work — rebate applications cluster around
+         utility program deadlines — averaged to a flat monthly figure here since this breakdown has
+         no per-event modeling). Contract explicitly: this time "shall be billed at the applicable
+         labor rate and applied against the available labor hours under the Allowance."
+       - Staff Training & Documentation — 2 hrs/mo. Contract: "Training to Client staff… updated
+         documentation and quick-reference guides."
+       - Ongoing Monitoring & Optimization — DERIVED, = RECURRING_EM_LABOR_HOURS_DEFAULT (16) minus
+         the three above (6) = 10 hrs/mo. Client direction: "Use 16 hours/month of ongoing
+         monitoring for 27 buildings" — read together with the correction above, "ongoing
+         monitoring" is the residual of the 16-hr bucket after the three named carve-outs, not a
+         separate 16-hr line of its own.
+
+     OUTSIDE the 16-hr bucket, still its own separate RECURRING line (unchanged, NOT part of this
+     correction — OPEN QUESTION, see note below):
+       - Utility Bill Data Entry — MOVED (2026-07-27, unchanged by this correction) from the SETUP
+         pool to RECURRING. Bills are not a one-time setup task; a new bill arrives every billing
+         cycle for as long as the agreement runs, so this must recur every month (conditional on
+         the project having bills on file), never taper to zero. Still 3 hrs/mo, additive on top of
+         the 16-hr bucket, per Matt's explicit instruction on the correction: "leave it OUTSIDE the
+         16, conditional on hasBills as you have it now. The client named only the three categories
+         above [meetings/rebates/training]." OPEN QUESTION, NOT a settled decision: whether Utility
+         Bill Data Entry should also eventually be absorbed into (or excluded from) the same 16-hr
+         bucket has NOT been asked of the client — Johnson County has zero bills on file today, so
+         this changes nothing for the live numbers either way, but do not silently fold it into the
+         16 (or otherwise change its treatment) without Matt confirming that with the client first.
+
+     Considered and NOT added as separate line items (no contract text beyond the quotes above was
+     available to this rebuild to size them independently — flagged for Matt to confirm): a
+     standalone "Alarm Response" line beyond Alarm Configuration setup, a standalone "Monthly Report
+     Generation/Review" line beyond Report Setup, and a standalone "Trend Review & Analysis" line
+     beyond Trend Setup & Configuration. Reasoning: the client's own explicit direction sizing the
+     recurring EM-labor bucket at 16 hrs/month "for 27 buildings" reads as a portfolio-wide
+     operational bucket — the ongoing act of watching alarms, reviewing trends, and keeping reports
+     current IS what "ongoing monitoring" (the residual of that bucket) means once the one-time
+     setup work is done. Inventing separate hour figures for those three without a contract quote to
+     size them against would be exactly the kind of unverified number this rebuild was meant to
+     eliminate. If Matt has contract language that specifically breaks these out with their own hour
+     commitments, that should be supplied and this function revisited — do not silently split the 16
+     hrs into further sub-buckets without that text.
+
+   This function is READ BY _pricingComputeProgramCostModel to compute `emLaborTotal`/
+   `measuresAvailable` per phase — the monthly totals it returns flow into real dollar math and
+   intentionally do NOT sum to a fixed cap (Month 1 is highest due to the setup ramp, Month 4+ is
+   the true recurring steady-state floor — see the per-month figures in the function below).
+
+   Ramp model (simple 4-step taper, unchanged — applies ONLY to the three SETUP categories; every
+   RECURRING category above is present at full value in every month, Month 1 through steady state):
+     Month 1      — 100% of the "setup pool" (Alarm Configuration + Report Setup + Trend Setup)
      Month 2      —  60% of the setup pool
      Month 3      —  30% of the setup pool
-     Month 4+     —   0% (steady state) — only Ongoing Monitoring & Optimization remains
+     Month 4+     —   0% (steady state) — only the RECURRING categories remain
 
    Utility Bill Data Entry only appears when the project has bill data on file
-   (_pricingProjectHasUtilityBills) — a project with no bills doesn't need this line.
-
-   Trend Setup & Configuration (2026-07-26, task: "we also need to build in time for setting up
-   trends and other changes like that") — unchanged from its 2026-07-26 addition, still flat
-   TREND_SETUP_HOURS_DEFAULT, unconditional.
+   (_pricingProjectHasUtilityBills) — a project with no bills doesn't need this line, in any month.
 
    Returns null when _pricingComputeMonthlyService returns null (no budget.amount set — same
    silent-until-configured convention as the rest of this feature).
@@ -774,21 +818,58 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   if (!svc) return null;
   var hourlyRate = svc.hourlyRate;
 
+  // ── SETUP categories (ramp to zero over 3 months — one-time project work) ──
   var ALARM_SETUP_HOURS_DEFAULT = 4;
   var REPORT_SETUP_HOURS_DEFAULT = 3;
   var TREND_SETUP_HOURS_DEFAULT = 3; // 2026-07-26: BAS trend log setup — see comment block above
-  var hasBills = _pricingProjectHasUtilityBills(projId);
-  var BILL_ENTRY_HOURS_DEFAULT = hasBills ? 3 : 0;
-  // Ongoing Monitoring & Optimization (2026-07-26 rebuild): a DEFINED recurring monthly
-  // allocation — present in every month, same magnitude-of-constant pattern as the setup
-  // categories above (not derived, not scaled to fill anything). This is the number a future
-  // pricing decision may want to tune per-portfolio-size; flagged as a default, not a
-  // config-editable field yet (matches how Alarm/Report/Trend/Bill Entry hours are also
-  // uneditable *_DEFAULT constants today).
-  var ONGOING_MONITORING_HOURS_DEFAULT = 8;
 
-  var setupPoolHours =
-    ALARM_SETUP_HOURS_DEFAULT + REPORT_SETUP_HOURS_DEFAULT + TREND_SETUP_HOURS_DEFAULT + BILL_ENTRY_HOURS_DEFAULT;
+  // ── RECURRING categories (flat every month, including steady state — see comment block above
+  //    for the contract quote / client direction backing each figure) ──
+  //
+  // RECURRING_EM_LABOR_HOURS_DEFAULT is the single source of truth for the client-directed 16-hr
+  // recurring bucket (2026-07-27 correction: "I think the 16 hours should include the meetings,
+  // rebates and training" — Meeting/Rebate/Training come OUT OF the 16, not on top of it).
+  // Ongoing Monitoring & Optimization below is DERIVED by subtraction, never its own independent
+  // constant, so adding a 5th recurring category here automatically shrinks monitoring instead of
+  // silently letting the recurring total drift past 16.
+  var RECURRING_EM_LABOR_HOURS_DEFAULT = 16;
+  var MEETING_HOURS_DEFAULT = 2; // 2026-07-27: Monthly Client Review Meeting — carved out of the 16
+  var REBATE_ASSISTANCE_HOURS_DEFAULT = 2; // 2026-07-27: Utility Rebate Assistance — carved out of the 16
+  var TRAINING_DOCS_HOURS_DEFAULT = 2; // 2026-07-27: Staff Training & Documentation — carved out of the 16
+  // 2026-07-27 review fix: the subtraction below has no floor on its own — if the three named
+  // categories are ever raised (e.g. a contract change taking Training to 6 hrs) or a 5th category
+  // is added to this bucket, their sum can reach or exceed the 16-hr bucket and the naive
+  // subtraction goes to zero or NEGATIVE. A negative "Ongoing Monitoring & Optimization" hours
+  // figure must never reach a client-facing table or the real dollar math in
+  // _pricingComputeProgramCostModel (it would understate labor and overstate the improvement
+  // budget on a document going to a county) — so this is Math.max(0, ...)'d AND, when the floor
+  // actually engages, loudly logged (never silently swallowed — the floor hides a real
+  // over-commitment: the named categories demanding more hours than the bucket contains, which is
+  // exactly the kind of thing a human needs to see and fix, not have quietly clamped away).
+  var _namedCarveoutHours = MEETING_HOURS_DEFAULT + REBATE_ASSISTANCE_HOURS_DEFAULT + TRAINING_DOCS_HOURS_DEFAULT;
+  var _ongoingMonitoringRaw = RECURRING_EM_LABOR_HOURS_DEFAULT - _namedCarveoutHours;
+  if (_ongoingMonitoringRaw < 0) {
+    console.error(
+      '[_pricingComputeMonthlyLaborBreakdown] Recurring EM labor bucket OVER-COMMITTED: ' +
+        RECURRING_EM_LABOR_HOURS_DEFAULT +
+        ' hr/mo bucket vs. ' +
+        _namedCarveoutHours +
+        ' hr/mo of named categories (Meeting+Rebate+Training) — overflow of ' +
+        -_ongoingMonitoringRaw +
+        ' hr/mo. Ongoing Monitoring & Optimization floored to 0 hrs/mo instead of going negative. ' +
+        'This means the named recurring categories alone now exceed the client-directed bucket — ' +
+        'review the bucket size or the named category hours, this is not a display bug to ignore.',
+    );
+  }
+  var ONGOING_MONITORING_HOURS_DEFAULT = Math.max(0, _ongoingMonitoringRaw); // residual of the 16, NOT an independent number — floored, never negative
+
+  // Utility Bill Data Entry — OUTSIDE the 16-hr bucket, additive on top of it (see the OPEN
+  // QUESTION note in the header comment above — this has NOT been asked of the client either way).
+  var hasBills = _pricingProjectHasUtilityBills(projId);
+  var BILL_ENTRY_HOURS_DEFAULT = hasBills ? 3 : 0; // 2026-07-27: moved SETUP → RECURRING
+
+  var setupPoolHours = ALARM_SETUP_HOURS_DEFAULT + REPORT_SETUP_HOURS_DEFAULT + TREND_SETUP_HOURS_DEFAULT;
+  var recurringPoolHours = RECURRING_EM_LABOR_HOURS_DEFAULT + BILL_ENTRY_HOURS_DEFAULT; // the 16-hr bucket + Bill Entry outside it
 
   function roundHrs(n) {
     return Math.round(n * 100) / 100;
@@ -812,13 +893,21 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
       if (reportHrs > 0) out.push({ category: 'Report Setup', hours: reportHrs });
       var trendHrs = roundHrs(TREND_SETUP_HOURS_DEFAULT * frac);
       if (trendHrs > 0) out.push({ category: 'Trend Setup & Configuration', hours: trendHrs });
-      if (hasBills) {
-        var billHrs = roundHrs(BILL_ENTRY_HOURS_DEFAULT * frac);
-        if (billHrs > 0) out.push({ category: 'Utility Bill Data Entry', hours: billHrs });
-      }
     }
-    // Constant every month — NOT a remainder. This is what fixes defect (a).
-    out.push({ category: 'Ongoing Monitoring & Optimization', hours: ONGOING_MONITORING_HOURS_DEFAULT });
+    // RECURRING — present at full value every month, Month 1 through steady state. NOT scaled by
+    // the setup ramp, NOT a remainder that fills any target total (see comment block above).
+    // Guarded with the same `> 0` check the SETUP rows above use — if the floor above ever
+    // engages (bucket over-committed), a zeroed category disappears from the table instead of
+    // printing a nonsense "0 hrs" row; the console.error above is what surfaces the real problem.
+    if (ONGOING_MONITORING_HOURS_DEFAULT > 0) {
+      out.push({ category: 'Ongoing Monitoring & Optimization', hours: ONGOING_MONITORING_HOURS_DEFAULT });
+    }
+    if (hasBills) {
+      out.push({ category: 'Utility Bill Data Entry', hours: BILL_ENTRY_HOURS_DEFAULT });
+    }
+    out.push({ category: 'Monthly Client Review Meeting', hours: MEETING_HOURS_DEFAULT });
+    out.push({ category: 'Utility Rebate Assistance', hours: REBATE_ASSISTANCE_HOURS_DEFAULT });
+    out.push({ category: 'Staff Training & Documentation', hours: TRAINING_DOCS_HOURS_DEFAULT });
     return out;
   }
 
@@ -832,6 +921,7 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   return {
     hourlyRate: hourlyRate,
     setupPoolHours: setupPoolHours,
+    recurringPoolHours: recurringPoolHours,
     ongoingMonitoringHours: ONGOING_MONITORING_HOURS_DEFAULT,
     months: months,
     hasBills: hasBills,
