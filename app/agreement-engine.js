@@ -287,7 +287,18 @@ var _AGR_BODY = 'font-size:10.5px;color:var(--rpt-page-text);line-height:1.42';
 var _AGR_UL = 'margin:2px 0 4px;padding-left:18px;font-size:10.5px;color:var(--rpt-page-text);line-height:1.42';
 var _AGR_SUBHEAD = 'font-size:10.5px;font-weight:700;color:var(--rpt-page-text);margin:6px 0 2px';
 
-// ─── Page 1: Cover (hero) — Title + Recital ───────────────────────────────────────────────────
+// ─── Page 1: Title + Recital + Scope (building list) ──────────────────────────────────────────
+// 2026-07-28 fidelity fix (feature/energy-services-agreement): the Word original's page 1 is ONE
+// page carrying the title, recital, AND the building scope list — not two separate pages. This
+// function used to be a standalone hero/full-width-letterhead splash page (title + recital only),
+// with the building list on its own following page (rptPageAgreementRecitalsScope, now folded in
+// below). Merging them recovers the extra page the fidelity assessment flagged (6 pages generated
+// vs. the Word original's 5) — no clause text, numbers, or bindings changed, only which physical
+// page wraps them. hero:true/full-width letterhead replaced with smallHeaderImg (the SAME
+// CSC_HEADER_B64 asset, inset at normal content width instead of stretched page-edge-to-edge) to
+// match his page 1's smaller top-left-logo/right-aligned-tagline header, per
+// joco-energy-services-agreement-base-2026-07-23.md's page-setup section (titlePg first-page
+// header, image only, no text bar) and the base PNG/PDF renders.
 function rptPageAgreementCover(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var esc = _agreementEsc;
@@ -315,22 +326,10 @@ function rptPageAgreementCover(n, d) {
     esc(d.templateLabel) +
     '</div>';
 
-  return rptPage(n, 'Energy Management Services Agreement', title + recital + templateNote, {
-    data: fakeData,
-    hero: true,
-    noPageNum: true,
-  });
-}
-
-// ─── Page 2: Recitals/Scope — building list ───────────────────────────────────────────────────
-function rptPageAgreementRecitalsScope(n, d) {
-  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var esc = _agreementEsc;
-
-  var heading =
+  var scopeHeading =
     '<div style="' +
     _AGR_BODY +
-    '" contenteditable="true">The following buildings are included in the scope of this agreement:</div>';
+    ';margin-top:14px" contenteditable="true">The following buildings are included in the scope of this agreement:</div>';
 
   var listItems = d.buildings
     .map(function (b) {
@@ -338,13 +337,18 @@ function rptPageAgreementRecitalsScope(n, d) {
     })
     .join('');
 
-  var list = d.buildings.length
+  var scopeList = d.buildings.length
     ? '<ol style="' + _AGR_UL + '" contenteditable="true">' + listItems + '</ol>'
     : '<div style="' +
       _AGR_BODY +
       ';font-style:italic;color:var(--rpt-orange)">No buildings are currently entered for this project — add buildings under the Utility Data tab so this list can populate.</div>';
 
-  return rptPage(n, 'Energy Management Services Agreement', heading + list, { data: fakeData });
+  return rptPage(n, 'Energy Management Services Agreement', title + recital + templateNote + scopeHeading + scopeList, {
+    data: fakeData,
+    hero: false,
+    hideIntHdr: true,
+    smallHeaderImg: true,
+  });
 }
 
 // ─── Commercial-terms renderers ────────────────────────────────────────────────────────────────
@@ -627,7 +631,10 @@ function rptPageAgreementCommercialTerms(n, d) {
     r.utilityRebate +
     '</div>';
 
-  return rptPage(n, 'Energy Management Services Agreement', services + compensation, { data: fakeData });
+  return rptPage(n, 'Energy Management Services Agreement', services + compensation, {
+    data: fakeData,
+    hideIntHdr: true,
+  });
 }
 
 // ─── Page 4: Term and Termination ──────────────────────────────────────────────────────────────
@@ -711,6 +718,7 @@ function rptPageAgreementTermTermination(n, d) {
 
   return rptPage(n, 'Energy Management Services Agreement', termHeading + renewal + earlyTermination + termination, {
     data: fakeData,
+    hideIntHdr: true,
   });
 }
 
@@ -805,10 +813,10 @@ function rptPageAgreementGeneralProvisions(n, d) {
     _AGR_BODY +
     '" contenteditable="true">This Agreement may be executed in any number of counterparts, each of which shall be deemed to be an original and all of which taken together shall constitute one Agreement. To evidence the fact that it has executed this Agreement, a party may send a copy of its executed counterpart to the other party by electronic transmission (including, without limitation, via email or facsimile) and the signature transmitted by such transmission shall be deemed to be that party&rsquo;s original signature for all purposes.</div>';
 
-  return rptPage(n, 'Energy Management Services Agreement', html, { data: fakeData });
+  return rptPage(n, 'Energy Management Services Agreement', html, { data: fakeData, hideIntHdr: true });
 }
 
-// ─── Page 6: Signature Block ───────────────────────────────────────────────────────────────────
+// ─── Page 5: Signature Block ───────────────────────────────────────────────────────────────────
 function rptPageAgreementSignatureBlock(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var esc = _agreementEsc;
@@ -832,7 +840,17 @@ function rptPageAgreementSignatureBlock(n, d) {
     esc(d.legalClientName) +
     '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;By: _____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: _____________</div>';
 
-  return rptPage(n, 'Energy Management Services Agreement', html, { data: fakeData, noPageNum: false });
+  // Signature page matches the Word original's own last page: same small logo/tagline letterhead
+  // as page 1 (titlePg's "first" header applies per-section, and this page is the sole page of the
+  // document's second section per joco-energy-services-agreement-base-2026-07-23.md's page-setup
+  // section), no report title bar, and — verified directly against the base PDF's text layer
+  // (page 5 carries a "5" run in the same footer position as pages 1-4) — a page number IS shown,
+  // so noPageNum is intentionally left at its default (false) here.
+  return rptPage(n, 'Energy Management Services Agreement', html, {
+    data: fakeData,
+    hideIntHdr: true,
+    smallHeaderImg: true,
+  });
 }
 
 // ─── generateAgreementHTML ─────────────────────────────────────────────────────────────────────
@@ -846,8 +864,10 @@ function generateAgreementHTML(projId, templateType, opts) {
 
   var pages = [];
   var pageNum = 1;
+  // 2026-07-28 fidelity fix: the building scope list is now rendered ON rptPageAgreementCover
+  // itself (title + recital + scope list all share the Word original's one physical page 1) —
+  // see that function's header comment. No separate 'agreementScope' page/section exists anymore.
   pages.push(_tagAgreementSection(rptPageAgreementCover(pageNum++, d), 'agreementCover'));
-  pages.push(_tagAgreementSection(rptPageAgreementRecitalsScope(pageNum++, d), 'agreementScope'));
   pages.push(_tagAgreementSection(rptPageAgreementCommercialTerms(pageNum++, d), 'agreementCommercialTerms'));
   pages.push(_tagAgreementSection(rptPageAgreementTermTermination(pageNum++, d), 'agreementTermTermination'));
   pages.push(_tagAgreementSection(rptPageAgreementGeneralProvisions(pageNum++, d), 'agreementGeneralProvisions'));
