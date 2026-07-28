@@ -4,10 +4,14 @@
      en_pricing_catalog        — global SKU→{list,net,contract,computed_net,category,desc}
      en_pricing_meta           — global {importedAt,filename,skuCount}
      en_pricing_config         — global {netMultiplier,contractPct,hourlyRate,priceBasis,perSequenceHours,
-                                 installLaborRate,installHoursByPoint} (Deliverable E, 2026-07-19 —
-                                 installLaborRate/installHoursByPoint price the PHYSICAL install of
-                                 hardware gaps; hourlyRate/perSequenceHours remain BAS sequence-
-                                 PROGRAMMING labor, untouched)
+                                 installHoursByPoint} (Deliverable E, 2026-07-19 — installHoursByPoint
+                                 prices the PHYSICAL install hours of hardware gaps; hourlyRate is now
+                                 the SINGLE $/hr rate for ALL labor — programming AND physical install
+                                 — per Matt 2026-07-28 ("we need to be using the $173/hr for all labor
+                                 costs not just EM"). A separate installLaborRate field/default (195)
+                                 existed 2026-07-19→2026-07-28 and is now removed; any project with a
+                                 stale stored installLaborRate value simply has it ignored — nothing
+                                 reads that key anymore, hourlyRate is the one source of truth)
      en_pricing_estimate_{id}  — per-project {rowToggles,manualPrices,laborOverrides,tier}
      en_pricing_budget_{id}    — per-project {mode,amount,denomination,termMonths,fitToBudget,
                                  fitExcludedIds,fitPrevToggleValues,fitAppliedAt} (174ad49a).
@@ -41,15 +45,18 @@ const COST_PER_SEQ_HOURS_DEFAULT = {
   vav_dcv: 0.5,
 };
 
-/* ── Physical install labor — Deliverable E (2026-07-19) ────────────────────
-   COST_LABOR_RATE_DEFAULT above ($125/hr) + COST_PER_SEQ_HOURS_DEFAULT price BAS sequence
-   PROGRAMMING labor only (Phase 2). Neither has ever priced the physical labor to mount/wire
-   a sensor, actuator, or valve — Phase 1 ("Hardware & Installation") was parts-cost only. This
-   block adds a SEPARATE $/hr rate + per-device-class hours so Phase 1 actually includes install
-   labor, without touching the programming-labor math above.
+/* ── Physical install labor — Deliverable E (2026-07-19), unified rate (2026-07-28) ─────────
+   COST_LABOR_RATE_DEFAULT above + COST_PER_SEQ_HOURS_DEFAULT price BAS sequence PROGRAMMING
+   labor (Phase 2). Neither had ever priced the physical labor to mount/wire a sensor, actuator,
+   or valve — Phase 1 ("Hardware & Installation") was parts-cost only. This block adds
+   per-device-class install HOURS so Phase 1 actually includes install labor.
+   RATE (2026-07-28): install labor used to carry its own separate $195/hr default
+   (COST_INSTALL_LABOR_RATE_DEFAULT, removed here) that never tracked the project's Hourly Rate
+   field — so a project set to $173/hr (Cost Estimate tab) still priced install hours at $195/hr.
+   Matt: "we need to be using the $173/hr for all labor costs not just EM." Install hours are now
+   priced at the SAME shared hourlyRate as programming labor (COST_LABOR_RATE_DEFAULT fallback) —
+   one rate, one source, everywhere below that used to read the separate install rate.
    ─────────────────────────────────────────────────────────────────────────── */
-const COST_INSTALL_LABOR_RATE_DEFAULT = 195; // $/hr — physical install, distinct from the $125/hr
-// programming rate above.
 const INSTALL_HOURS_FALLBACK_DEFAULT = 2.0; // hrs — used for any point key with no entry in
 // POINT_KEY_INSTALL_CLASS below (keeps every future PRICE_POINT_MAP addition priced).
 
@@ -719,9 +726,10 @@ function _pricingComputeBudgetTotal(budget) {
    JOCO's offering is a MONTHLY energy-management SERVICE-ALLOWANCE agreement: the client pays
    monthly and draws down a monthly allowance at a labor rate for parts + install labor + all
    other labor. This computes that monthly figure from the per-project serviceHoursPerMonth
-   budget field (default 36) × the shared global en_pricing_config.hourlyRate — NOT a new rate
-   field, and NOT the installLaborRate added for Phase 1 hardware rows — and compares it against
-   budget.amount as the not-to-exceed allowance. Purely additive/presentational: does not touch
+   budget field (default 36) × the shared global en_pricing_config.hourlyRate — the SAME rate
+   Phase 1 hardware install-labor rows now use too (2026-07-28, unified labor rate; there is no
+   longer a separate install rate) — and compares it against budget.amount as the not-to-exceed
+   allowance. Purely additive/presentational: does not touch
    _pricingComputeBudgetTotal, the Fit-to-Budget ceiling walk, or any tier-total math above.
    Returns null when no budget.amount is set, same silent-until-configured convention as
    _pricingComputeBudgetTotal, so untouched projects see no UI change from this feature.
@@ -2302,7 +2310,10 @@ function _pricingGetConfig() {
     priceBasis: 'contract',
     perSequenceHours: Object.assign({}, COST_PER_SEQ_HOURS_DEFAULT),
     fanFraction: FAN_FRACTION_DEFAULT, // Step 5: fan energy as % of total elec (CBECS 10–20%)
-    installLaborRate: COST_INSTALL_LABOR_RATE_DEFAULT, // Deliverable E — physical install $/hr
+    // installLaborRate removed (2026-07-28, unified labor rate) — install labor now reads the
+    // same hourlyRate above as programming labor. A stale installLaborRate key left over in an
+    // existing project's stored en_pricing_config from before this change is harmless — nothing
+    // reads it anymore.
     installHoursByPoint: Object.assign({}, INSTALL_HOURS_BY_POINT_DEFAULT), // Deliverable E
   };
   if (!stored) return dflt;
@@ -2525,8 +2536,11 @@ function buildCatalogRows(projId) {
 
   // Deliverable E: install-labor inputs — same cfg object every other rate/hours lookup in this
   // function reads, so a Table-Settings edit to either is picked up on the very next render.
+  // Unified labor rate (2026-07-28): install labor now prices at the SAME shared hourlyRate as
+  // programming labor — no separate installLaborRate source anymore (Matt: "$173/hr for all
+  // labor costs not just EM").
   var installHoursMap = cfg.installHoursByPoint || INSTALL_HOURS_BY_POINT_DEFAULT;
-  var installLaborRate = cfg.installLaborRate != null ? cfg.installLaborRate : COST_INSTALL_LABOR_RATE_DEFAULT;
+  var installLaborRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
 
   // Helper: get unit price from catalog for a given SKU and basis
   function getUnitPrice(sku) {
@@ -3919,7 +3933,7 @@ function buildRecommendedRows(projId) {
           rec.unitPrice = parseFloat(
             (
               cheaper.unitPrice +
-              (rec.installHours || 0) * (rec.installLaborRate || COST_INSTALL_LABOR_RATE_DEFAULT)
+              (rec.installHours || 0) * (rec.installLaborRate || cfg.hourlyRate || COST_LABOR_RATE_DEFAULT)
             ).toFixed(2),
           );
           rec.lineTotal =
@@ -4624,8 +4638,7 @@ function _pricingApplyLaborOverrides(projId, rows) {
       if (overrideInstHrs == null) return row;
       var instHrs = parseFloat(overrideInstHrs);
       if (isNaN(instHrs) || instHrs < 0) return row;
-      var instRate =
-        row.installLaborRate != null ? row.installLaborRate : cfg.installLaborRate || COST_INSTALL_LABOR_RATE_DEFAULT;
+      var instRate = row.installLaborRate != null ? row.installLaborRate : cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
       var newInstallTotal = parseFloat((instHrs * row.qty * instRate).toFixed(2));
       var instCloned = Object.assign({}, row);
       instCloned.installHours = instHrs;
@@ -4740,7 +4753,7 @@ function _pricingApplyQtyOverrides(projId, rows) {
     // installLaborTotal computed against the OLD qty when _pricingComputeTotals's manual-price
     // branch later reads it.
     if (cloned.phase === 1 && !cloned.ioOnly && cloned.installHours != null) {
-      var _qtyOvInstRate = cloned.installLaborRate != null ? cloned.installLaborRate : COST_INSTALL_LABOR_RATE_DEFAULT;
+      var _qtyOvInstRate = cloned.installLaborRate != null ? cloned.installLaborRate : COST_LABOR_RATE_DEFAULT;
       cloned.installLaborTotal = parseFloat((cloned.installHours * qty * _qtyOvInstRate).toFixed(2));
       if (cloned.partsUnitPrice != null) {
         cloned.partsLineTotal = parseFloat((cloned.partsUnitPrice * qty).toFixed(2));
@@ -5657,29 +5670,8 @@ function _pricingBuildRateSectionHTML(projId, cfg) {
     ",'hourlyRate',parseFloat(this.value))\">" +
     '<span style="font-size:10px;color:var(--text3)">$/hr</span>' +
     '</span></label>' +
-    '<div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:8px">' +
-    'Applied to every programming-labor row’s Hours to compute its Line Total (see the Rate column).' +
-    '</div>' +
-    /* Deliverable E: Install Rate — same shared-HTML/same-id-reused-across-two-popovers pattern
-       as the Hourly Rate block above (mirrors the 1476aedd precedent this comment describes).
-       Separate storage key (installLaborRate) from Hourly Rate's (hourlyRate) — physical install
-       labor vs. BAS sequence-programming labor are never the same $/hr. */
-    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
-    'Install Rate:' +
-    '<span style="display:flex;align-items:center;gap:4px">' +
-    '<input type="number" id="pricing-install-rate-' +
-    projId +
-    '" min="1" max="999" step="1" value="' +
-    (cfg.installLaborRate != null ? cfg.installLaborRate : COST_INSTALL_LABOR_RATE_DEFAULT) +
-    '"' +
-    ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
-    ' onchange="updatePricingConfig(' +
-    projId +
-    ",'installLaborRate',parseFloat(this.value))\">" +
-    '<span style="font-size:10px;color:var(--text3)">$/hr</span>' +
-    '</span></label>' +
     '<div style="font-size:10px;color:var(--text3);line-height:1.4">' +
-    'Applied to every hardware row’s install hours (per device type — edit in the Hours column) to price physical installation, folded into Phase 1 "Hardware &amp; Installation".' +
+    'Single rate for ALL labor — programming-labor row Hours (see the Rate column) AND every hardware row’s physical install hours (per device type — edit in the Hours column), folded into Phase 1 "Hardware &amp; Installation". Unified 2026-07-28 (was two separate rates).' +
     '</div>'
   );
 }
@@ -6044,8 +6036,13 @@ function _pricingOpenSettingsPopover(projId, btn) {
     ",'contractPct',parseFloat(this.value)/100)\">" +
     '</label>';
   html +=
+    /* Unified labor rate (2026-07-28): single Hourly Rate for ALL labor — programming/sequence
+       (Phase 2) AND physical install hours on every Phase-1 hardware row (per-device-type,
+       editable in the Hours column), folded into Phase 1 "Hardware & Installation". Was two
+       separate rates (Hourly Rate + Install Rate) 2026-07-19→2026-07-28; Matt: "we need to be
+       using the $173/hr for all labor costs not just EM." */
     '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
-    'title="Programming/sequence labor $/hr — Phase 2">' +
+    'title="Labor $/hr — applies to programming/sequence Hours (Phase 2) AND physical install Hours (Phase 1)">' +
     'Hourly Rate:' +
     '<input type="number" id="pricing-rate-' +
     projId +
@@ -6056,24 +6053,6 @@ function _pricingOpenSettingsPopover(projId, btn) {
     ' onchange="updatePricingConfig(' +
     projId +
     ",'hourlyRate',parseFloat(this.value))\">" +
-    '</label>';
-  html +=
-    /* Deliverable E: physical install labor $/hr — separate rate from Hourly Rate above (Phase 2
-       programming labor). Applied to every Phase-1 hardware row's install hours (per-device-type,
-       editable in the Hours column on hardware rows) to price physical installation, folded into
-       Phase 1 "Hardware & Installation". */
-    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
-    'title="Physical install labor $/hr — Phase 1 (Hardware & Installation)">' +
-    'Install Rate:' +
-    '<input type="number" id="pricing-install-rate-' +
-    projId +
-    '" min="1" max="999" step="1" value="' +
-    (cfg.installLaborRate != null ? cfg.installLaborRate : COST_INSTALL_LABOR_RATE_DEFAULT) +
-    '"' +
-    ' style="width:52px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
-    ' onchange="updatePricingConfig(' +
-    projId +
-    ",'installLaborRate',parseFloat(this.value))\">" +
     '</label>';
   if (tier === 'recommended' || tier === 'both') {
     html +=
@@ -8351,9 +8330,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // to this row's Hours to produce Line Total. Read-only (no input — the rate itself is edited
     // in Table Settings/the toolbar Rate chip, both of which write en_pricing_config.hourlyRate;
     // this cell never writes anything, so it cannot drift from the value _pricingApplyLaborOverrides
-    // already used to compute unitPrice/lineTotal upstream). Phase-2 labor rows show the
-    // programming rate; Phase-1 hardware rows show the install rate (Deliverable E) — both read-
-    // only for the same reason. ioOnly rows show the same em-dash placeholder as non-priced rows.
+    // already used to compute unitPrice/lineTotal upstream). Phase-2 labor rows AND Phase-1
+    // hardware rows now show the SAME unified rate (2026-07-28) — both read-only for the same
+    // reason. ioOnly rows show the same em-dash placeholder as non-priced rows.
     var rateContent = '<span style="color:var(--text3)">—</span>';
     if (row.phase === 2 && row.seqKey) {
       var _rowRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
@@ -8362,8 +8341,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         _pricingFmt(_rowRate) +
         '<span style="font-size:10px;color:var(--text3)">/hr</span></span>';
     } else if (row.phase === 1 && !row.ioOnly && row._pointKey) {
-      var _instRowRate =
-        row.installLaborRate != null ? row.installLaborRate : cfg.installLaborRate || COST_INSTALL_LABOR_RATE_DEFAULT;
+      var _instRowRate = row.installLaborRate != null ? row.installLaborRate : cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
       rateContent =
         '<span style="font-size:11px">' +
         _pricingFmt(_instRowRate) +
