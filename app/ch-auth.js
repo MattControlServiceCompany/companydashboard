@@ -101,11 +101,50 @@
     return _initPromise;
   }
 
+  // Finding 3 (adversarial review 2026-07-25/26): getAllAccounts()[0] is
+  // "whichever account MSAL happened to cache first", not "whoever is at the
+  // keyboard" — the MSAL cache is deliberately SHARED across both PCA
+  // instances (see module header) and across every account that has ever
+  // signed in on this browser. Once two real users have signed in here, [0]
+  // is not reliable, and _wireKey() could stamp a write with the wrong
+  // user's oid. setActiveAccount() (called by the sign-in flows in
+  // index.html/service-department.html and by this module's own
+  // getTokenInteractive()/single-account-fallback below) persists an explicit
+  // "who is active" marker in the SAME shared browserStorage (confirmed by
+  // reading msal-browser@2.38.3's BrowserCacheManager.setActiveAccount/
+  // getActiveAccount — both go through the same configured cacheLocation),
+  // so getActiveAccount() here sees it regardless of which PCA instance set
+  // it.
   function _account() {
     var app = _getMsalApp();
     if (!app) return null;
-    var accts = app.getAllAccounts();
-    return accts && accts.length ? accts[0] : null;
+    var active = null;
+    try {
+      active = app.getActiveAccount();
+    } catch (e) {
+      active = null;
+    }
+    if (active) return active;
+    // No active account tracked yet (e.g. a session that predates this fix,
+    // or a fresh cache that was never given an explicit active account).
+    // Fall back to a single cached account ONLY when unambiguous — never
+    // guess between two or more candidates; treat that as "unknown" instead
+    // of silently picking one (that guess is exactly what this fix removes).
+    var accts;
+    try {
+      accts = app.getAllAccounts();
+    } catch (e) {
+      accts = [];
+    }
+    if (accts && accts.length === 1) {
+      try {
+        app.setActiveAccount(accts[0]); // make the resolution sticky going forward
+      } catch (e) {
+        /* non-fatal — resolution still succeeds this call */
+      }
+      return accts[0];
+    }
+    return null; // 0 accounts, or 2+ with none marked active — unknown, not a guess
   }
 
   function _setSignedOut(signedOut) {
@@ -155,6 +194,13 @@
       await _init();
       var result = await app.acquireTokenPopup({ scopes: [KV_SYNC_SCOPE] });
       _cachedToken = result && result.accessToken ? result.accessToken : null;
+      if (result && result.account) {
+        try {
+          app.setActiveAccount(result.account); // Finding 3 — keep both PCA instances consistent
+        } catch (e) {
+          /* non-fatal */
+        }
+      }
       _setSignedOut(!_cachedToken);
       return _cachedToken;
     } catch (e) {
@@ -173,10 +219,23 @@
     return _signedOut;
   }
 
+  // SYNCHRONOUS by design — mirrors getToken() above. Returns the stable
+  // per-user Entra identifier (`localAccountId`, i.e. the token's `oid` claim)
+  // for the currently signed-in MSAL account, or null if nobody is signed in.
+  // Deliberately NOT email/preferred_username — those can change (e.g. a
+  // mail rename) while localAccountId/oid is the durable per-user GUID.
+  // Consumed by app/db.js's per-user-settings-sync key-prefixing (`_wireKey`)
+  // — added 2026-07-20, per-user-settings-sync feature.
+  function getUserId() {
+    var acct = _account();
+    return acct && acct.localAccountId ? acct.localAccountId : null;
+  }
+
   window.CH_AUTH = {
     getToken: getToken,
     getTokenInteractive: getTokenInteractive,
     isSignedOut: isSignedOut,
+    getUserId: getUserId,
   };
 
   _startBackgroundRefresh();

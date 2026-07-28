@@ -40,6 +40,78 @@ const DB = (() => {
   let _queueIdCounter = 0;
   let _backgroundTasksStarted = false;
 
+  // --- Per-user-settings-sync hardening (2026-07-26) — Finding 1 -----------
+  // (adversarial review 2026-07-25/26). These keys are deliberately kept OUT
+  // of DB.set()/_wireKey (see migrateFromLocalStorage()/_finishWarmCache()
+  // below) — some are read synchronously pre-paint, before IndexedDB is even
+  // open (ch_theme — index.html/service-department.html/energy-department.html's
+  // inline pre-paint <script>), and app/report-engine.js has its own raw
+  // read/write sites for ch_notifs (out of scope for this branch — the
+  // report-engine.js/pricing-estimator.js files are off-limits here). Because
+  // none of them ever round-trip through DB.set(), _wireKey() never
+  // namespaces them and the ordinary per-user _cache/_replicaVersions sweep
+  // in _clearPerUserLocalState() never touched them before this fix — so on
+  // a shared browser they silently carried one signed-in user's values over
+  // to the next. This is the single source of truth for that key list — it
+  // previously existed as two independently-hand-maintained inline arrays
+  // (lsPreserveKeys in migrateFromLocalStorage(), _lsRepairKeys in
+  // _finishWarmCache()) that had drifted into exact duplicates of each
+  // other; both now reference this constant instead.
+  const RAW_PER_USER_LOCAL_KEYS = [
+    'ch_activeView',
+    'ch_settings',
+    'ch_theme',
+    'ch_sidebar_collapsed',
+    'ch_seen_version',
+    'ch_user',
+    'ch_projTabOrder',
+    'ch_sidebarOrder',
+    'ch_dismissed_tips',
+    'ch_qs_seen',
+    'ch_toast_duration',
+    'ch_last_seen_version',
+    'ch_notifs',
+  ];
+  // ch_user is INTENTIONALLY EXCLUDED from the clear-on-identity-switch sweep
+  // in _clearPerUserLocalState() below, even though it is read/written raw
+  // like the rest of RAW_PER_USER_LOCAL_KEYS. It is the app's own "who is
+  // signed in right now" marker (index.html/service-department.html
+  // saveSession()/loadSession()), always freshly overwritten by the sign-in
+  // flow itself BEFORE any of this identity-change detection runs (a real
+  // login sets it synchronously at the moment of sign-in, well before the
+  // next chAuthStateChanged event or warmCache() cycle observes the switch)
+  // — and the existing signOut()'s clearSession() already removes it on an
+  // explicit sign-out. Force-deleting it here would instead risk logging the
+  // CURRENT (correct) user out on their very next refresh, which is strictly
+  // worse than the risk it would guard against: ch_user has zero effect on
+  // which backend row a write lands in (that is controlled entirely by
+  // CH_AUTH.getUserId()/the Entra oid — see app/ch-auth.js — not by this
+  // app-level display-name/session marker).
+  const RAW_PER_USER_CH_USER_KEY = 'ch_user';
+
+  // Dynamic-suffix "per-user" families ALSO written via raw localStorage only
+  // (site-functions.js setTableZoom(), ~line 7279-7291), never DB.set() —
+  // the same Finding-1 gap as RAW_PER_USER_LOCAL_KEYS above, just keyed by a
+  // fixed prefix plus a variable project/meter id suffix instead of one fixed
+  // name, so they need a localStorage scan rather than a direct key lookup.
+  const RAW_PER_USER_ZOOM_PREFIXES = ['en_bills_zoom_', 'en_sv_matrix_zoom_'];
+  const RAW_PER_USER_ZOOM_EXACT = ['en_perf_zoom'];
+  function _isRawZoomKey(key) {
+    if (RAW_PER_USER_ZOOM_EXACT.indexOf(key) !== -1) return true;
+    return RAW_PER_USER_ZOOM_PREFIXES.some((p) => key.indexOf(p) === 0);
+  }
+
+  // Local-only bookkeeping (write-through via _rawSet, same pattern as
+  // ch_replica_state/ch_sync_queue — MUST be excluded from PER_USER
+  // classification, see app/sync-classification.js
+  // PER_USER_CH_ENGINE_EXCLUSIONS). Records which signed-in identity's
+  // per-user local state is currently reflected in this browser's durable
+  // IDB store, so a HARD REFRESH after an identity switch can be detected
+  // too (Finding 2) — _handleAuthIdentityChange alone only catches a LIVE
+  // sign-out/sign-in inside the same tab session (Matt always hard-refreshes,
+  // per feedback_user_always_hard_refreshes.md).
+  const LOCAL_IDENTITY_KEY = 'ch_local_identity';
+
   // --- Backend mode (upgrades the old boolean ch_backend_enabled flag) ----
   // off    = today's app, no network (byte-identical to pre-2a behavior).
   // shadow = writes replicate (CAS), reads stay local, hydration OFF,
@@ -97,6 +169,88 @@ const DB = (() => {
     if (key.indexOf('ch_') === 0) return false;
     if (key === 'en_conflict_archive') return false;
     return true;
+  }
+
+  // --- Per-user-settings-sync (2026-07-20) — client-side key-prefixing -----
+  // A "per-user" key (app/sync-classification.js classifyKey() === 'per-user')
+  // replicates like any synced key, but the key SENT TO/READ FROM the backend
+  // is namespaced `${userId}::${localKey}` so two users editing the same
+  // browser (or the same account on two machines) never clobber each other's
+  // UI prefs. The LOCAL _cache/_replicaVersions always stay keyed by the
+  // plain `localKey` — every other reader in the app (sset/sget, DB.get) is
+  // completely unaware this exists. Same window.SyncClassification-missing
+  // fallback pattern as _shouldReplicate above: never treat a key as
+  // per-user if the classification lib didn't load (safe default = old
+  // synced/local-only behavior only).
+  function _isPerUserKey(key) {
+    if (
+      typeof window !== 'undefined' &&
+      window.SyncClassification &&
+      typeof window.SyncClassification.isPerUser === 'function'
+    ) {
+      return window.SyncClassification.isPerUser(key);
+    }
+    return false;
+  }
+  function _myUserId() {
+    if (typeof window !== 'undefined' && window.CH_AUTH && typeof window.CH_AUTH.getUserId === 'function') {
+      try {
+        return window.CH_AUTH.getUserId();
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+  // Tracks the identity as of the last processed chAuthStateChanged event (or
+  // module-load time, since app/ch-auth.js loads before app/db.js on every
+  // page — see the script-tag order in index/energy-department/service-
+  // department/ems-leads.html). The listener below (_handleAuthIdentityChange)
+  // only acts when this actually differs from the current _myUserId(), so a
+  // same-user silent-token-refresh success/failure (which also fires
+  // chAuthStateChanged) never triggers a needless clear.
+  let _lastKnownUserId = _myUserId();
+  // Resolves a LOCAL key to the key actually sent to/read from the backend.
+  // Returns the key unchanged for non-per-user keys. For a per-user key,
+  // returns `${userId}::${key}` when someone is signed in, or `null` when
+  // nobody is signed in — callers MUST treat `null` as "cannot sync this key
+  // right now" (behave local-only), and must NEVER fall back to sending the
+  // bare unprefixed key (that would leak/merge this pref across every user).
+  function _wireKey(key) {
+    if (!_isPerUserKey(key)) return key;
+    const uid = _myUserId();
+    if (!uid) return null;
+    return uid + '::' + key;
+  }
+  // Splits a manifest/wire key of the form `${uid}::${localKey}` back apart.
+  // Returns null if the key contains no '::' (not a per-user wire key).
+  function _splitWireKey(wireKey) {
+    const idx = typeof wireKey === 'string' ? wireKey.indexOf('::') : -1;
+    if (idx === -1) return null;
+    const uid = wireKey.slice(0, idx);
+    const localKey = wireKey.slice(idx + 2);
+    if (!uid || !localKey) return null;
+    return { uid, localKey };
+  }
+  // The SINGLE gate every manifest-walking loop (_hydrate/_pollManifestForChanges/
+  // getSyncStatus) funnels through. Returns `{ localKey }` if this manifest
+  // entry belongs to the current tab (either a normal synced key, or a
+  // per-user key namespaced to MY signed-in userId), or `null` if it must be
+  // skipped entirely — a per-user row belonging to a DIFFERENT user (never
+  // touch another user's local storage/version map/status), or a bare
+  // per-user-classified key with no owner prefix at all (defensive: never
+  // treat an unprefixed per-user key as a normal synced key — that would
+  // risk sharing one user's UI pref across everyone).
+  function _resolveManifestKey(mKey) {
+    const split = _splitWireKey(mKey);
+    if (split && _isPerUserKey(split.localKey)) {
+      const myUid = _myUserId();
+      if (!myUid || split.uid !== myUid) return null; // not mine (or nobody signed in) — never touch
+      return { localKey: split.localKey };
+    }
+    if (_isPerUserKey(mKey)) return null; // bare per-user key, no owner prefix — skip defensively
+    if (!_shouldReplicate(mKey)) return null;
+    return { localKey: mKey };
   }
 
   // --- Auth stub seam (phase2a-build-plan.md §4) ---------------------------
@@ -303,11 +457,26 @@ const DB = (() => {
   // --- Core PUT sender — every write/delete/queue-replay/hydration-drift-
   // repush funnels through here. Returns a result descriptor, never throws
   // for ordinary network/HTTP failures (those come back as a status string).
+  // `key` here is ALWAYS the plain LOCAL key (every caller passes the same
+  // unprefixed name used for _cache/_replicaVersions) — this function is the
+  // one place that resolves it to the wire key (see _wireKey) for a per-user
+  // key. Never pass a pre-prefixed key in.
   async function _sendKvPut(key, payload) {
+    const wireKey = _wireKey(key);
+    if (wireKey === null) {
+      // Per-user key, nobody signed in — behave local-only: no fetch, no
+      // queueing (queue drain/hydration-drift retry paths that reach this
+      // fall through their existing "still failing, leave for next cycle"
+      // branch on any non-'ok'/non-'conflict' status, which is exactly the
+      // desired inert behavior here).
+      return { status: 'skipped-no-user' };
+    }
     const isTombstone = payload.deleted === true;
     const entry = _replicaVersions[key];
     const baseVersion = entry && typeof entry.version === 'number' ? entry.version : null;
-    const bodyObj = isTombstone ? { key, deleted: true, baseVersion } : { key, value: payload.value, baseVersion };
+    const bodyObj = isTombstone
+      ? { key: wireKey, deleted: true, baseVersion }
+      : { key: wireKey, value: payload.value, baseVersion };
     // Phase 2b conflict-modal "Overwrite with mine" / "Restore my version"
     // actions set this so kv-sync.js snapshots the row being replaced into
     // kv_history BEFORE the overwrite lands (kv-sync.js handlePut, explicit
@@ -618,6 +787,12 @@ const DB = (() => {
     const mode = _backendMode();
     if (mode === 'off') return;
     if (!_shouldReplicate(key)) return;
+    // Per-user key + nobody signed in: behave local-only. No fetch, no
+    // enqueue — this is the primary guard (INERTNESS: signed-out mirrors
+    // classify()==='local-only' exactly). _sendKvPut also re-checks this
+    // (via _wireKey returning null) as defense-in-depth for the queue-drain/
+    // hydration-drift-repush/conflict-retry paths that call it directly.
+    if (_isPerUserKey(key) && !_myUserId()) return;
     let result;
     try {
       result = await _sendKvPut(key, payload);
@@ -728,44 +903,57 @@ const DB = (() => {
       return;
     }
 
-    const routineFetchKeys = [];
-    const conflictCheckKeys = []; // manifest entries needing a hash-compare
-    const tombstoneKeys = []; // manifest entries to delete locally
+    const routineFetchKeys = []; // WIRE keys (manifest form) to batch-GET
+    const routineFetchLocalKey = {}; // wireKey -> localKey, for applying results
+    const conflictCheckKeys = []; // { m, localKey } needing a hash-compare
+    const tombstoneKeys = []; // { m, localKey } to delete locally
 
     for (const m of manifest) {
-      if (!_shouldReplicate(m.key)) continue; // defensive; manifest should only hold synced keys
-      // A pending local write for this key must not be clobbered by hydration.
-      if (_syncQueue.some((e) => e.key === m.key)) continue;
+      // Single gate: normal synced key -> localKey === m.key. Per-user key
+      // namespaced to ME -> localKey is the stripped name. Per-user key
+      // namespaced to ANYONE ELSE (or unrecognized) -> null, skip entirely —
+      // never touch _cache/_replicaVersions/_syncQueue for a row that isn't
+      // mine (this is the two-user isolation guarantee).
+      const resolved = _resolveManifestKey(m.key);
+      if (!resolved) continue;
+      const localKey = resolved.localKey;
 
-      const local = _replicaVersions[m.key];
+      // A pending local write for this LOCAL key must not be clobbered by hydration.
+      if (_syncQueue.some((e) => e.key === localKey)) continue;
+
+      const local = _replicaVersions[localKey];
       const localHasValidEntry = !!(local && typeof local.version === 'number');
 
       if (m.deleted) {
-        if (!localHasValidEntry || local.version < m.version) tombstoneKeys.push(m);
+        if (!localHasValidEntry || local.version < m.version) tombstoneKeys.push({ m, localKey });
         continue;
       }
 
       if (localHasValidEntry) {
-        if (m.version > local.version) routineFetchKeys.push(m.key);
+        if (m.version > local.version) {
+          routineFetchKeys.push(m.key);
+          routineFetchLocalKey[m.key] = localKey;
+        }
         // else: local already at/ahead of this version — leave alone.
-      } else if (_cache[m.key] === undefined) {
+      } else if (_cache[localKey] === undefined) {
         // Brand-new-to-this-machine key (blank machine / never seen before) —
         // routine pull, not a conflict.
         routineFetchKeys.push(m.key);
+        routineFetchLocalKey[m.key] = localKey;
       } else {
         // No entry, or stale/unknown entry, AND a local value already exists
         // — integration #3: potential local-newer-than-seed conflict, never
         // a blind pull.
-        conflictCheckKeys.push(m);
+        conflictCheckKeys.push({ m, localKey });
       }
     }
 
     // Apply tombstones — "delete locally, record the tombstone's version",
     // NEVER "absent from manifest -> delete" (that would delete a brand-new
     // un-synced local key; we only ever act on an EXPLICIT manifest entry).
-    for (const m of tombstoneKeys) {
-      await _rawDelete(m.key);
-      _replicaVersions[m.key] = { version: m.version, hash: m.hash || null, deleted: true };
+    for (const { m, localKey } of tombstoneKeys) {
+      await _rawDelete(localKey);
+      _replicaVersions[localKey] = { version: m.version, hash: m.hash || null, deleted: true };
     }
 
     // Routine fetch + apply (hash-compare-before-overwrite rule: this branch
@@ -774,50 +962,54 @@ const DB = (() => {
     if (routineFetchKeys.length) {
       let rows = [];
       try {
-        rows = await _batchGet(routineFetchKeys);
+        rows = await _batchGet(routineFetchKeys); // wire keys — the real backend primary keys
       } catch (e) {
         console.warn('[DB] Hydration: batched GET failed, skipping this batch:', e);
         rows = [];
       }
       for (const row of rows) {
-        if (_syncQueue.some((e) => e.key === row.key)) continue; // race guard, re-check
+        const localKey = routineFetchLocalKey[row.key] || row.key;
+        if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard, re-check
         if (row.deleted) {
-          await _rawDelete(row.key);
+          await _rawDelete(localKey);
         } else {
-          await _rawSet(row.key, row.value);
+          await _rawSet(localKey, row.value);
         }
         const manifestEntry = manifest.find((m) => m.key === row.key);
-        _replicaVersions[row.key] = { version: row.version, hash: manifestEntry ? manifestEntry.hash : null };
+        _replicaVersions[localKey] = { version: row.version, hash: manifestEntry ? manifestEntry.hash : null };
       }
     }
 
     // Hash-compare conflict check (integration #3 / R15 hydration-drift drill).
-    for (const m of conflictCheckKeys) {
-      const localValue = _cache[m.key];
+    for (const { m, localKey } of conflictCheckKeys) {
+      const localValue = _cache[localKey];
       let localHash;
       try {
         localHash = await _sha256Hex(_canonicalJSON(localValue));
       } catch (e) {
-        console.warn('[DB] Hydration: local hash compute failed for', m.key, e);
+        console.warn('[DB] Hydration: local hash compute failed for', localKey, e);
         continue;
       }
       if (localHash === m.hash) {
         // Same content, different provenance — adopt the version, no data change.
-        _replicaVersions[m.key] = { version: m.version, hash: m.hash };
+        _replicaVersions[localKey] = { version: m.version, hash: m.hash };
         continue;
       }
       // Genuine drift: local was edited after the export but before hydration
       // went live. Never silently clobber either side.
-      console.warn('[DB] Hydration drift detected — keeping local, archiving server value, re-pushing local:', m.key);
+      console.warn(
+        '[DB] Hydration drift detected — keeping local, archiving server value, re-pushing local:',
+        localKey,
+      );
       let serverValue = null;
       try {
-        const rows = await _batchGet([m.key]);
+        const rows = await _batchGet([m.key]); // m.key = wire key, the real GET key
         serverValue = rows && rows[0] ? rows[0].value : null;
       } catch (e) {
         // best-effort archive only
       }
       _appendConflictArchive({
-        key: m.key,
+        key: localKey,
         reason: 'hydration-drift-local-wins',
         losingSide: 'server',
         losingValue: serverValue,
@@ -828,20 +1020,22 @@ const DB = (() => {
       // Auto-keep-local AND immediately CAS-PUT it, so neither copy is ever
       // silently discarded. Adopt the server's current version as our
       // baseVersion so the CAS-PUT targets the row we just read.
-      _replicaVersions[m.key] = { version: m.version, hash: m.hash };
+      _replicaVersions[localKey] = { version: m.version, hash: m.hash };
       let putResult;
       try {
-        putResult = await _sendKvPut(m.key, { value: localValue });
+        putResult = await _sendKvPut(localKey, { value: localValue }); // local key — _sendKvPut re-resolves the wire key
       } catch (e) {
         putResult = { status: 'network-error' };
       }
       if (putResult.status === 'conflict') {
         // Someone changed it again in between — normal conflict handling.
-        await _handleConflict(m.key, { value: localValue }, putResult.body, mode);
+        await _handleConflict(localKey, { value: localValue }, putResult.body, mode);
       } else if (putResult.status === 'network-error' || putResult.status === 'error') {
-        _enqueueWrite(m.key, { value: localValue });
+        _enqueueWrite(localKey, { value: localValue });
       }
       // 'ok' -> _sendKvPut already updated _replicaVersions.
+      // 'skipped-no-user' -> per-user key, signed out mid-session; leave as-is
+      // (matches _replicateWrite's inertness guarantee, never queued).
     }
 
     _persistReplicaState();
@@ -868,10 +1062,12 @@ const DB = (() => {
     }
     const changedKeys = [];
     for (const m of manifest) {
-      if (!_shouldReplicate(m.key)) continue;
-      const local = _replicaVersions[m.key];
+      const resolved = _resolveManifestKey(m.key); // skips foreign per-user rows entirely
+      if (!resolved) continue;
+      const localKey = resolved.localKey;
+      const local = _replicaVersions[localKey];
       if (local && typeof local.version === 'number' && m.version > local.version) {
-        changedKeys.push(m.key);
+        changedKeys.push(localKey); // local (unprefixed) key — matches what sync-ui.js displays
       }
     }
     if (typeof window !== 'undefined') {
@@ -882,6 +1078,149 @@ const DB = (() => {
         window.dispatchEvent(new CustomEvent('remoteChange', { detail: { keys: changedKeys } }));
       }
     }
+  }
+
+  // --- Per-user-settings-sync (2026-07-20 fix) — shared-browser identity
+  // switch. Before this fix, `_cache`/`_replicaVersions` stayed keyed by the
+  // plain (unprefixed) key across a sign-out/sign-in on the SAME browser, so
+  // a second Entra user inherited the FIRST user's leftover local per-user
+  // values, and the hydration-drift branch in _hydrate() could even auto-
+  // CAS-PUT that leftover value over the second user's real backend row
+  // (see the code comment at ~line 105 that first stated the goal this
+  // closes the gap on). ch-auth.js dispatches `chAuthStateChanged` on every
+  // sign-in/out; the listener registered near the bottom of this file wires
+  // it to _handleAuthIdentityChange below.
+  function _clearPerUserLocalState() {
+    const cleared = [];
+    Object.keys(_cache).forEach((k) => {
+      if (_isPerUserKey(k)) cleared.push(k);
+    });
+    // --- Finding 1 (adversarial review 2026-07-25/26) -----------------------
+    // Force the raw-localStorage-only per-user keys onto this same clear list
+    // explicitly, rather than relying on them coincidentally already being
+    // present in _cache. (They usually ARE present too — a stale byproduct of
+    // the one-time migrateFromLocalStorage() copy — but the fix must not
+    // depend on that coincidence; see RAW_PER_USER_LOCAL_KEYS above.)
+    RAW_PER_USER_LOCAL_KEYS.forEach((k) => {
+      if (k === RAW_PER_USER_CH_USER_KEY) return; // never force-cleared — see comment above the constant
+      if (cleared.indexOf(k) === -1) cleared.push(k);
+    });
+    // Dynamic-suffix zoom-level families (setTableZoom) — scan for whichever
+    // suffixed keys actually exist in this browser (project/meter ids vary).
+    if (typeof localStorage !== 'undefined') {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && _isRawZoomKey(k) && cleared.indexOf(k) === -1) cleared.push(k);
+        }
+      } catch (e) {
+        console.warn('[DB] Finding-1 zoom-key scan failed:', e);
+      }
+    }
+
+    cleared.forEach((k) => {
+      delete _cache[k];
+      delete _replicaVersions[k];
+      // --- Finding 2 --- durable delete, not just the in-memory cache.
+      // warmCache() does an unconditional store.getAll() on every load and
+      // would otherwise silently repopulate _cache with the previous user's
+      // value on the very next refresh.
+      _rawDelete(k);
+      // --- Finding 1 --- also remove the raw-localStorage copy directly (a
+      // no-op for the ordinary DB-routed per-user keys, which were never in
+      // localStorage to begin with).
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.removeItem(k);
+        } catch (e) {
+          console.warn('[DB] Failed to clear raw localStorage key on identity switch:', k, e);
+        }
+      }
+    });
+
+    const queueHadPerUserEntries = _syncQueue.some((e) => _isPerUserKey(e.key));
+    if (queueHadPerUserEntries) {
+      // A pending write from the PREVIOUS user's session must never replay
+      // under the new user's wire-key prefix. _enqueueWrite only ever stores
+      // the LOCAL key (_sendKvPut re-resolves the wire key at send time), so
+      // an undropped entry here would silently push the old user's value
+      // into the new user's row on the next queue drain.
+      _syncQueue = _syncQueue.filter((e) => !_isPerUserKey(e.key));
+    }
+    if (cleared.length || queueHadPerUserEntries) {
+      _persistReplicaState();
+      _persistSyncQueue();
+    }
+    return cleared;
+  }
+
+  async function _handleAuthIdentityChange() {
+    const uid = _myUserId();
+    if (uid === _lastKnownUserId) return; // chAuthStateChanged fired but the signed-in identity didn't actually change
+    _lastKnownUserId = uid;
+    const cleared = _clearPerUserLocalState();
+    // Finding 2 — persist the new owner durably so a hard refresh right after
+    // this switch (warmCache() -> _checkDurableIdentityMarker() below) sees
+    // the state is already clean for `uid` and does not need to clear again.
+    _rawSet(LOCAL_IDENTITY_KEY, uid || '');
+    if (typeof window !== 'undefined' && cleared.length) {
+      window.dispatchEvent(new CustomEvent('dbPerUserStateCleared', { detail: { keys: cleared, userId: uid } }));
+    }
+    // Flag-off/shadow, or a sign-out (uid === null): clear only, stay inert —
+    // no network call. Only mode 'on' with someone actually signed in
+    // re-hydrates, so the newly-signed-in user's own per-user rows load.
+    if (_backendMode() !== 'on' || !uid) return;
+    try {
+      await _hydrate();
+    } catch (e) {
+      console.warn('[DB] Re-hydrate after identity change failed:', e);
+    }
+  }
+
+  // --- Finding 2 (adversarial review 2026-07-25/26) -------------------------
+  // Catches the hard-refresh case that _handleAuthIdentityChange (a LIVE
+  // chAuthStateChanged listener) cannot: on a fresh page load, _lastKnownUserId
+  // re-initializes to the ALREADY-current identity at module-parse time (see
+  // the `let _lastKnownUserId = _myUserId();` line above), so no in-memory
+  // "change" is ever observed there. This instead compares the newly-resolved
+  // identity against a marker durably persisted in the same IDB store the
+  // per-user state itself lives in (LOCAL_IDENTITY_KEY), so the comparison
+  // survives the refresh. Called once per warmCache() (both the normal and
+  // IDB-fallback paths) — gated on backend mode being engaged at all per the
+  // hard constraint: byte-identical app behavior, zero new IDB writes, while
+  // ch_backend_mode is 'off'.
+  function _checkDurableIdentityMarker() {
+    if (_backendMode() === 'off') return [];
+    let currentUid;
+    try {
+      currentUid = _myUserId();
+    } catch (e) {
+      currentUid = null;
+    }
+    const lastUid = _cache[LOCAL_IDENTITY_KEY];
+    const priorKnown = typeof lastUid === 'string' && lastUid ? lastUid : null;
+    let cleared = [];
+    // Only clear when the last-known owner and the newly-resolved identity
+    // are BOTH concretely known and differ — never on a signed-out/unknown
+    // transition in either direction (that would risk clearing a legitimate
+    // no-identity/demo user's own data — see the "no-identity" test — or
+    // punishing a temporary silent-refresh failure as if it were a real
+    // switch).
+    if (priorKnown && currentUid && priorKnown !== currentUid) {
+      cleared = _clearPerUserLocalState();
+      _lastKnownUserId = currentUid;
+      if (typeof window !== 'undefined' && cleared.length) {
+        window.dispatchEvent(
+          new CustomEvent('dbPerUserStateCleared', {
+            detail: { keys: cleared, userId: currentUid, reason: 'durable-marker-mismatch' },
+          }),
+        );
+      }
+    }
+    if (currentUid !== priorKnown) {
+      _rawSet(LOCAL_IDENTITY_KEY, currentUid || '');
+    }
+    return cleared;
   }
 
   function _startBackgroundSync() {
@@ -956,21 +1295,9 @@ const DB = (() => {
     // Keys that must stay in localStorage for synchronous reads before IndexedDB warms up.
     // These are read by the pre-paint script and init() before DB.warmCache() resolves.
     // Keep in sync with the lsOnlyKeys list in app/site-functions.js.
-    var lsPreserveKeys = [
-      'ch_activeView',
-      'ch_settings',
-      'ch_theme',
-      'ch_sidebar_collapsed',
-      'ch_seen_version',
-      'ch_user',
-      'ch_projTabOrder',
-      'ch_sidebarOrder',
-      'ch_dismissed_tips',
-      'ch_qs_seen',
-      'ch_toast_duration',
-      'ch_last_seen_version',
-      'ch_notifs',
-    ];
+    // (Single source of truth: RAW_PER_USER_LOCAL_KEYS, module-scope above —
+    // this used to be its own independently-hand-maintained copy.)
+    var lsPreserveKeys = RAW_PER_USER_LOCAL_KEYS;
     var preserved = {};
     lsPreserveKeys.forEach(function (k) {
       var v = localStorage.getItem(k);
@@ -995,21 +1322,11 @@ const DB = (() => {
     // Hotfix: restore lsPreserveKeys that the IDB migration may have wiped.
     // Runs on every page load (not guarded by migration flag) but is cheap —
     // just a few localStorage.getItem checks against the already-warm cache.
-    var _lsRepairKeys = [
-      'ch_activeView',
-      'ch_settings',
-      'ch_theme',
-      'ch_sidebar_collapsed',
-      'ch_seen_version',
-      'ch_user',
-      'ch_projTabOrder',
-      'ch_sidebarOrder',
-      'ch_dismissed_tips',
-      'ch_qs_seen',
-      'ch_toast_duration',
-      'ch_last_seen_version',
-      'ch_notifs',
-    ];
+    // (Single source of truth: RAW_PER_USER_LOCAL_KEYS, module-scope above.
+    // Note this repair is a no-op for any key _clearPerUserLocalState() just
+    // cleared THIS cycle — that also deletes _cache[k], so val below is
+    // undefined and nothing gets restored, which is the point of Finding 1.)
+    var _lsRepairKeys = RAW_PER_USER_LOCAL_KEYS;
     _lsRepairKeys.forEach(function (k) {
       if (localStorage.getItem(k) === null) {
         var val = _cache[k];
@@ -1062,6 +1379,15 @@ const DB = (() => {
       _loadReplicaState();
       _loadSyncQueue();
 
+      // Finding 2 (adversarial review 2026-07-25/26): detect an identity
+      // switch that happened since this browser's last page load (the
+      // hard-refresh case _handleAuthIdentityChange's live listener cannot
+      // catch on its own) BEFORE _hydrate() runs, so a real switch clears
+      // stale per-user state first and then hydration (mode 'on') pulls the
+      // newly-signed-in user's own rows down immediately, same as the live
+      // in-tab switch path.
+      _checkDurableIdentityMarker();
+
       // 2a.2: hydration — flag-gated (no-op unless mode === 'on'), internally
       // time-bounded (~3-5s) so a dead/slow backend never blocks first render.
       try {
@@ -1085,6 +1411,7 @@ const DB = (() => {
       }
       _loadReplicaState();
       _loadSyncQueue();
+      _checkDurableIdentityMarker(); // Finding 2 — same hard-refresh check as the primary IDB path above
       try {
         await _hydrate();
       } catch (e2) {
@@ -1260,20 +1587,24 @@ const DB = (() => {
     } catch (e) {
       return { mode, error: 'manifest fetch failed', keys: [], queueDepth: _syncQueue.length };
     }
-    const keys = manifest
-      .filter((m) => _shouldReplicate(m.key))
-      .map((m) => {
-        const local = _replicaVersions[m.key];
-        return {
-          key: m.key,
-          localVersion: local ? local.version : null,
-          localHash: local ? local.hash : null,
-          serverVersion: m.version,
-          serverHash: m.hash,
-          deleted: !!m.deleted,
-          inSync: !!(local && local.version === m.version),
-        };
+    const keys = [];
+    for (const m of manifest) {
+      // _resolveManifestKey skips any per-user row that isn't mine — the
+      // status panel must never expose another user's per-user key/values.
+      const resolved = _resolveManifestKey(m.key);
+      if (!resolved) continue;
+      const localKey = resolved.localKey;
+      const local = _replicaVersions[localKey];
+      keys.push({
+        key: localKey, // local (unprefixed) name — what sync-ui.js displays
+        localVersion: local ? local.version : null,
+        localHash: local ? local.hash : null,
+        serverVersion: m.version,
+        serverHash: m.hash,
+        deleted: !!m.deleted,
+        inSync: !!(local && local.version === m.version),
       });
+    }
     return { mode, keys, queueDepth: _syncQueue.length };
   }
 
@@ -1288,6 +1619,12 @@ const DB = (() => {
         e.returnValue = 'Data is still being saved. Leaving now may lose your import. Are you sure?';
       }
     });
+    // Per-user-settings-sync (2026-07-20 fix) — see _handleAuthIdentityChange
+    // above. Registered unconditionally (not gated on backend mode/warmCache
+    // completion) because app/ch-auth.js starts its background silent-refresh
+    // timer — and can fire chAuthStateChanged — immediately on its own load,
+    // which happens before app/db.js's warmCache()/_hydrate() resolve.
+    window.addEventListener('chAuthStateChanged', _handleAuthIdentityChange);
   }
 
   return {
