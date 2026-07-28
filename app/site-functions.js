@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.28.716',
+    date: '2026-07-28',
+    title: 'Cost Estimate now matches zone sensors to what is already installed',
+    items: [
+      {
+        type: 'change',
+        text: 'Cost Estimate: zone sensors are now selected based on the features a zone\'s existing points show it already has, so a replacement is never specified with fewer capabilities than what is already installed.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.28.715',
     date: '2026-07-28',
     title: 'Cost Estimate monthly service hours now fully include bill data entry',
