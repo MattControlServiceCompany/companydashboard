@@ -1141,6 +1141,13 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     );
   }
 
+  // Layer isolation (feature/report-layer-isolation-and-theme, 2026-07-28): .rpt-body is the
+  // fixed-height content layer (see .rpt-body / .rpt-body-flush / .rpt-body-small-hdr in
+  // energy-department.html's #report-styles). Its top offset depends on which header variant
+  // this page renders — these three cases are the only combinations any caller uses (grep-
+  // verified: smallHeaderImg is always paired with hideIntHdr:true).
+  const bodyModifierClass = smallHeaderImg ? ' rpt-body-small-hdr' : hideIntHdr ? ' rpt-body-flush' : '';
+
   return (
     '<div class="rpt-pl">' +
     pageLabel +
@@ -1149,7 +1156,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     pageNum +
     '">' +
     (smallHeaderImg
-      ? '<div style="padding:14px 48px 6px"><img src="' +
+      ? '<div class="rpt-small-hdr" style="padding:14px 48px 6px"><img src="' +
         CSC_HEADER_B64 +
         '" alt="CSC Letterhead" style="width:100%;display:block"></div>'
       : '') +
@@ -1164,7 +1171,9 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
         (interiorRangeHtml ? '<br>' + interiorRangeHtml : '') +
         '</div>' +
         '</div>') +
-    '<div class="rpt-body">' +
+    '<div class="rpt-body' +
+    bodyModifierClass +
+    '">' +
     bodyHTML +
     '</div>' +
     footerTextHtml +
@@ -6199,7 +6208,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
       })
       .join('');
     meterTables +=
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>' +
       '<table class="rpt-table" style="font-size:10px;margin-bottom:6px">' +
@@ -6286,7 +6295,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     if (!metersWithCoeffs.length && !metersWithBlOnly.length) return;
 
     calcHTML +=
-      '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>';
 
@@ -6395,7 +6404,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           // Baseline reference row — show predicted only, mark Actual/Saved as BL reference
           totBl += predicted;
           rows +=
-            '<tr style="background:#f5f5f5;color:var(--rpt-page-text)">' +
+            '<tr style="background:var(--rpt-chart-bg);color:var(--rpt-page-text)">' +
             '<td>' +
             moName +
             ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span>' +
@@ -6510,7 +6519,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         var days = ym ? _daysInMonth(ym) : 30;
         var wx = wxByYm[ym] || {};
         rows +=
-          '<tr style="background:#f5f5f5;color:var(--rpt-page-text)">' +
+          '<tr style="background:var(--rpt-chart-bg);color:var(--rpt-page-text)">' +
           '<td>' +
           moName +
           ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span>' +
@@ -6616,7 +6625,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
       totCddBl += cddBl;
       totCddCur += cddCur;
     }
-    var rowStyle = ip ? '' : 'color:var(--rpt-page-text);background:#f8f8f8';
+    var rowStyle = ip ? '' : 'color:var(--rpt-page-text);background:var(--rpt-chart-bg)';
     var hddVal = ip ? hddCur : hddBl;
     var cddVal = ip ? cddCur : cddBl;
     var badge = ip
@@ -6886,7 +6895,7 @@ function rptPageAppendixBills(n, d, appLetter) {
           allBillImages +=
             '<div style="display:inline-block;margin:4px 6px 4px 0;border:1px solid var(--rpt-divider);border-radius:3px;overflow:hidden"><img src="' +
             bill.pdfImage +
-            '" style="height:120px;width:auto;display:block"><div style="font-size:9px;color:var(--rpt-page-text);padding:2px 4px;background:#f8f8f8;text-align:center">' +
+            '" style="height:120px;width:auto;display:block"><div style="font-size:9px;color:var(--rpt-page-text);padding:2px 4px;background:var(--rpt-chart-bg);text-align:center">' +
             bill.building +
             ' · ' +
             bill.commodity +
@@ -6896,7 +6905,7 @@ function rptPageAppendixBills(n, d, appLetter) {
         }
       });
       sections +=
-        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">' +
         moLabel +
         '</div>' +
         '<table class="rpt-table" style="font-size:10px;margin-bottom:6px">' +
@@ -16236,7 +16245,8 @@ function _rptA36RecommendedTimelineHTML(d) {
   // thStyle. Styling only; no content/values changed.
   var thStyle =
     'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
-  var tdStyle = 'padding:6px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-rule);vertical-align:top';
+  var tdStyle =
+    'padding:6px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule);vertical-align:top';
 
   var rowsHTML = tl.phases
     .map(function (p, idx) {
@@ -16406,7 +16416,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // Compliance/Full Scope are one-time capital projects with a total cost; Recommended is an
   // ongoing monthly program with no total, delivered over the phased schedule below.
   var intro =
-    '<div style="font-size:10px;color:#000;line-height:1.6;margin-bottom:12px">' +
+    '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
     'The options below present three ways to address the assessment findings. Compliance and Full ' +
     'Scope are one-time capital projects, and each shows a total project cost. Recommended is ' +
     'different: it is an ongoing monthly program, not a project with a total cost. Its scope is ' +
@@ -16433,7 +16443,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '</tr>';
 
   var descStyle =
-    'padding:8px 10px;font-size:10px;color:#000;line-height:1.5;text-align:center;' +
+    'padding:8px 10px;font-size:10px;color:var(--rpt-page-text);line-height:1.5;text-align:center;' +
     'border:1px solid var(--rpt-rule);vertical-align:top';
   var descRow =
     '<tr>' +
@@ -16451,7 +16461,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // lines"). Every cell in this table now carries a full 1px border on all 4 sides.
   var lblStyle =
     'padding:10px 10px 2px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;' +
-    'color:#000;text-align:center;border:1px solid var(--rpt-rule)';
+    'color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-rule)';
   var lblRow =
     '<tr>' +
     tierCols
@@ -16464,7 +16474,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '</tr>';
 
   var amtStyle =
-    'padding:2px 10px 12px;font-size:18px;font-weight:700;color:#000;text-align:center;' +
+    'padding:2px 10px 12px;font-size:18px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
     'border:1px solid var(--rpt-rule)';
   var amtRow =
     '<tr>' +
@@ -16498,7 +16508,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var phaseSplitRow = '';
   if (wantPhaseSplit) {
     var phaseCellStyle =
-      'padding:6px 10px 12px;font-size:9px;color:#000;text-align:center;line-height:1.7;' +
+      'padding:6px 10px 12px;font-size:9px;color:var(--rpt-page-text);text-align:center;line-height:1.7;' +
       'border:1px solid var(--rpt-rule);vertical-align:top';
     phaseSplitRow =
       '<tr>' +
@@ -16523,7 +16533,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           // $0) whenever no pricing catalog is imported, so _fmtUSD(0) must never print here.
           var noCat = tt && tt[c.key] && tt[c.key].noCatalog;
           var p1 = noCat
-            ? '<span style="color:#000;font-weight:400">CSV needed</span>'
+            ? '<span style="color:var(--rpt-page-text);font-weight:400">CSV needed</span>'
             : tt && tt[c.key]
               ? _fmtUSD(tt[c.key].phase1) || '—'
               : '—';
@@ -16627,7 +16637,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       '</tr>';
   } else if (summaryData && summaryData.perTier && !detailFitsInline) {
     var detailNoteStyle =
-      'padding:10px;font-size:9px;color:#000;font-style:italic;border:1px solid var(--rpt-rule);text-align:center';
+      'padding:10px;font-size:9px;color:var(--rpt-page-text);font-style:italic;border:1px solid var(--rpt-rule);text-align:center';
     // Reworded 2026-07-27 (coordinator review): the bare "detail for each scope" line let a
     // reader assume all three tiers' continuation pages are the same kind of thing (priced
     // detail). Recommended's continuation pages (item 6/7 above, _buildTierDetailPages/
@@ -16660,7 +16670,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       ? SAVINGS_DISCLAIMER_TEXT
       : 'Estimates are not guarantees of performance. Post-installation measurement and verification (M&V) is required to confirm realized savings.';
   var discBlock =
-    '<div style="font-size:9px;color:#000;line-height:1.5;margin-top:8px;padding-top:8px;' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;margin-top:8px;padding-top:8px;' +
     'border-top:1px solid var(--rpt-rule)">' +
     '<span style="font-weight:700">Estimate &amp; Savings Disclaimer: </span>' +
     _esc(disc) +
@@ -16689,7 +16699,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // .rpt-a36-callout "just spacing, no border" convention as every other explanatory
         // text block on this and the Audit Report's pages.
         svcBlock =
-          '<div class="rpt-a36-callout" style="font-size:10px;color:#000;line-height:1.6;margin-top:12px">' +
+          '<div class="rpt-a36-callout" style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-top:12px">' +
           '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
           'margin-bottom:4px">Monthly Energy Management Service Agreement</div>' +
           '<div>' +
@@ -16820,7 +16830,8 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         '</tr></thead>';
 
       function _itemRowHTML(row) {
-        var td = 'padding:5px 8px;font-size:9px;color:#000;border:1px solid var(--rpt-rule);vertical-align:top';
+        var td =
+          'padding:5px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule);vertical-align:top';
         var tdR = td + ';text-align:right';
         var nameHTML =
           '<div>' +
@@ -16925,7 +16936,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         priceStr = ' (qty ' + c.qty + ')';
       }
       return (
-        '<div style="font-size:9px;color:#000;line-height:1.7;padding-left:14px;position:relative">' +
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
         _esc(c.label) +
         priceStr +
@@ -16935,7 +16946,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
     function ioOnlySummaryHTML(agg) {
       return (
-        '<div style="font-size:9px;color:#000;line-height:1.7;padding-left:14px;position:relative">' +
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
         'Existing control points requiring programming only — ' +
         agg.ioOnlyQty +
@@ -16964,7 +16975,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // same "each token is one complete, independently valid HTML fragment" rule
       // _buildItemizedPages() above follows with its <tr>...</tr> rows.
       return (
-        '<div style="font-size:9px;color:#000;line-height:1.7;padding-left:14px;position:relative">' +
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
         _esc(it.item || '') +
         priceStr +
@@ -16976,12 +16987,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // Grey (#666) removed here too (report-standard rule: grey text is banned) — matches the
       // same fix already applied to _rptA36TierDetailPanelHTML's _sectionHTML above.
       var subtotalHTML = noCatFlag
-        ? ' <span style="font-weight:400;color:#000">(CSV needed for pricing)</span>'
+        ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
         : subtotalStr
           ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
           : '';
       return (
-        '<div style="font-size:10px;font-weight:700;color:#000;margin:10px 0 3px">' +
+        '<div style="font-size:10px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 3px">' +
         _esc(title) +
         subtotalHTML +
         '</div>'
@@ -17010,7 +17021,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           type: 'row',
           estH: 20,
           html:
-            '<div style="font-size:8.5px;color:#000;font-style:italic;margin:6px 0 4px">' +
+            '<div style="font-size:8.5px;color:var(--rpt-page-text);font-style:italic;margin:6px 0 4px">' +
             'Delivered as part of the monthly program allowance shown above — not billed separately.' +
             '</div>',
         });
