@@ -56,6 +56,7 @@ const SyncClassification = (() => {
       note: 'TWO distinct literal forms found in the wild, both covered by this one prefix: the bare global key "en_report_history" (report-engine.js:6813/6830/6897) and the per-project "en_report_history_<projId>" (report-preview.js:555/565) — these are NOT the same key, but both are report-history data and both should sync.',
     },
     { pattern: 'en_report_templates_', prefix: true, note: 'report-engine.js: en_report_templates_<projId>' },
+    { pattern: 'en_agreement_', prefix: true, note: 'agreement-engine.js: config_<pid>, overrides_<pid>' },
     { pattern: 'en_tasks', prefix: false, note: 'core.js: 3 write sites, csv-import.js: 1' },
     {
       pattern: 'en_dc_events',

@@ -158,6 +158,16 @@
           "fields": ["Project Name", "Client/Owner", "Building Address", "Project Type", "Status (Planning/Active/On Hold/Complete)", "Phase (Audit/Design/Bidding/Construction/Start-Up & Testing/M&V/EMS/Closeout)", "Project Manager", "Field Technician", "SA#", "Contract Value", "Estimated Savings $/yr", "Baseline Comparison (Normalized/Actual)", "Utility Escalation %", "CSC Compensation %", "Start Date", "Target End Date", "Progress %", "Priority", "Description", "Tags"]
         },
         {
+          "id": "energy-services-agreement",
+          "name": "Energy Management Services Agreement Generator",
+          "description": "Generates a Word/PDF-exportable Energy Management Services Agreement matching the JOCO source contract, from live project data. Four commercial-terms templates (Monthly Allowance, Profit Sharing, EPC Flat Cost, One-Time Cost) sharing one boilerplate body (recitals, scope, general provisions, signature block). contenteditable but not persisted (matches every other report/proposal in this app) — only the modal's own config (template type, escalation rate, minimum spend, profit-share split) is saved.",
+          "functions": ["collectAgreementData(projId, templateType, opts)", "generateAgreementHTML(projId, templateType, opts)", "openAgreementReportModal(projId)", "generateAgreementPreview()", "_agreementGetConfig(projId)", "_agreementSetConfig(projId, updates)"],
+          "storageKeys": ["en_agreement_config_<projId>"],
+          "modalId": "#agreementReportModal",
+          "file": "app/agreement-engine.js",
+          "fields": ["Effective Date", "Commercial Terms Template (radio)", "Annual Escalation Rate % (default 4, unconfirmed until checked)", "Minimum Monthly Spend $ (default 2768, unconfirmed until checked)", "Profit-Share Split % (Profit Sharing template only)"]
+        },
+        {
           "id": "building-mgmt",
           "name": "Building Management",
           "description": "Multi-building per project. Each building has a name, address, square footage, and ZIP code (for weather data matching).",

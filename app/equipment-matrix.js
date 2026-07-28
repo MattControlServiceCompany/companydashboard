@@ -4190,7 +4190,10 @@ function emRenderToolbar(data, pid, projBadge) {
         '\',\'audit\')" style="height:28px;font-size:11px;background:var(--rpt-blue,#1e40af);color:#fff;border-color:transparent">Audit Report</button>' +
         '<button class="btn btn-sm" onclick="openASHRAE36ReportModal(\'' +
         pid +
-        '\',\'proposal\')" style="height:28px;font-size:11px;background:#7c3aed;color:#fff;border-color:transparent">Service Proposal</button>'
+        '\',\'proposal\')" style="height:28px;font-size:11px;background:#7c3aed;color:#fff;border-color:transparent">Service Proposal</button>' +
+        '<button class="btn btn-sm btn-em" onclick="openAgreementReportModal(\'' +
+        pid +
+        '\')" style="height:28px;font-size:11px">Energy Services Agreement</button>'
       : '') +
     '<span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 4px;vertical-align:middle"></span>' +
     '<div style="display:inline-flex;align-items:center;gap:2px">' +

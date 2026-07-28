@@ -7076,7 +7076,9 @@ async function exportReportToPDF() {
   const client = data.project.client || data.project.name || 'Report';
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
   let filename;
-  if (data._ashrae) {
+  if (data._agreement) {
+    filename = client + ' - Energy Management Services Agreement ' + dateStr;
+  } else if (data._ashrae) {
     filename =
       data._ashrae.type === 'proposal'
         ? client + ' - Service Proposal ' + dateStr
@@ -7525,7 +7527,9 @@ async function exportReportToWord() {
     const client = data.project.client || data.project.name || 'Report';
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
     let filename;
-    if (data._ashrae) {
+    if (data._agreement) {
+      filename = client + ' - Energy Management Services Agreement ' + dateStr + '.doc';
+    } else if (data._ashrae) {
       filename =
         data._ashrae.type === 'proposal'
           ? client + ' - Service Proposal ' + dateStr + '.doc'
