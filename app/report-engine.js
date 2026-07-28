@@ -1036,7 +1036,7 @@ function _rptPaginateTokensBalanced(tokens, cap) {
  * @param {number} pageNum - Page number for the data-page attribute
  * @param {string} title - Title shown in the interior page header
  * @param {string} bodyHTML - Inner HTML content for the page body
- * @param {object} options - { data, hero, label }
+ * @param {object} options - { data, hero, label, noPageNum, hideIntHdr, smallHeaderImg }
  */
 function rptPage(pageNum, title, bodyHTML, options = {}) {
   const data = options.data;
@@ -1051,6 +1051,15 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // .rpt-int-hdr title bar on non-hero pages.
   const noPageNum = options.noPageNum === true;
   const hideIntHdr = options.hideIntHdr === true;
+  // smallHeaderImg (2026-07-28, Energy Management Services Agreement fidelity fix): additive
+  // opt-in flag, default false, so every existing caller renders exactly as before. The JOCO
+  // Agreement's Word original places the SAME CSC_HEADER_B64 letterhead graphic (also used
+  // full-bleed on hero pages) at its normal content width — inset within the standard 48px/0.5in
+  // side margin, not stretched edge-to-edge across the whole page box — on its first page and its
+  // signature page only. Non-hero pages have no letterhead-image slot at all today (only
+  // .rpt-int-hdr's text bar), so this flag adds one without touching hero's own full-width
+  // treatment or any other caller's markup.
+  const smallHeaderImg = options.smallHeaderImg === true;
 
   var _fmtRptDate = '';
   if (data && data.period && data.period.reportDate) {
@@ -1139,6 +1148,11 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '<div class="rpt-page" data-page="' +
     pageNum +
     '">' +
+    (smallHeaderImg
+      ? '<div style="padding:14px 48px 6px"><img src="' +
+        CSC_HEADER_B64 +
+        '" alt="CSC Letterhead" style="width:100%;display:block"></div>'
+      : '') +
     (hideIntHdr
       ? ''
       : '<div class="rpt-int-hdr">' +
@@ -7076,7 +7090,9 @@ async function exportReportToPDF() {
   const client = data.project.client || data.project.name || 'Report';
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
   let filename;
-  if (data._ashrae) {
+  if (data._agreement) {
+    filename = client + ' - Energy Management Services Agreement ' + dateStr;
+  } else if (data._ashrae) {
     filename =
       data._ashrae.type === 'proposal'
         ? client + ' - Service Proposal ' + dateStr
@@ -7525,7 +7541,9 @@ async function exportReportToWord() {
     const client = data.project.client || data.project.name || 'Report';
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
     let filename;
-    if (data._ashrae) {
+    if (data._agreement) {
+      filename = client + ' - Energy Management Services Agreement ' + dateStr + '.doc';
+    } else if (data._ashrae) {
       filename =
         data._ashrae.type === 'proposal'
           ? client + ' - Service Proposal ' + dateStr + '.doc'
