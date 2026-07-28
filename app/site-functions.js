@@ -1576,13 +1576,40 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.28.717',
+    date: '2026-07-28',
+    title: 'Report pages hold their layout under long content; Cost Estimate catches over-budget months',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department reports (Audit, Proposal, Agreement, Annual): the footer and page number no longer drift down the page when a section runs long. Each report page now holds a fixed size so its header/footer stay put no matter how much content is on the page.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department reports: remaining boxed/card-style callouts (KPI boxes, status cards, chart boxes, appendix headings) were converted to plain text and table styling to match the rest of the report.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department Cost Estimate: the phase budget check now catches a phase going over its allowance from priced measures/parts, not just labor hours — a case that was previously missed.',
+      },
+      {
+        type: 'feature',
+        text: 'Energy Department Cost Estimate: added a per-month budget check, so a single month that blows past the monthly allowance is now flagged even when the phase total still looks fine, shown with a highlighted cell and warning tag.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department Cost Estimate: monthly labor-hour figures are now always whole hours, rounded up, for a cleaner and more conservative estimate.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.28.716',
     date: '2026-07-28',
     title: 'Cost Estimate now matches zone sensors to what is already installed',
     items: [
       {
         type: 'change',
-        text: 'Cost Estimate: zone sensors are now selected based on the features a zone\'s existing points show it already has, so a replacement is never specified with fewer capabilities than what is already installed.',
+        text: "Cost Estimate: zone sensors are now selected based on the features a zone's existing points show it already has, so a replacement is never specified with fewer capabilities than what is already installed.",
       },
     ],
   },
