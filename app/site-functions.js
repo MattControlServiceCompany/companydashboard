@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.28.714',
+    date: '2026-07-28',
+    title: 'Fixed the update notice that stayed on screen',
+    items: [
+      {
+        type: 'fix',
+        text: 'Fixed the update notice that kept appearing on every page even when you were already running the newest version.',
+      },
+      {
+        type: 'change',
+        text: "The What's New list now also includes the three most recent updates that were previously missing.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.28.713',
     date: '2026-07-28',
     title: 'Energy Services Management Agreement covers all 27 buildings and renews automatically',
