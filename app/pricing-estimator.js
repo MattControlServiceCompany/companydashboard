@@ -3634,10 +3634,6 @@ function initCostEstimateTab(projId) {
     '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
       (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
       '</span>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-      (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
-      '</span>',
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
     '<span style="font-size:11px;color:var(--text3)">' + _p2CaveatLine + '</span>',
@@ -3817,10 +3813,6 @@ function _pricingRefreshFooter(projId) {
     '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
     '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
       (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
-      '</span>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-      (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
       '</span>',
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
@@ -6761,8 +6753,9 @@ function _pricingComputeCondensedRows(rows, estimate) {
    affordances (no toggle checkboxes, manual-price inputs, hours overrides, column resize/hide,
    sort). Building filter + toolbar controls still apply (same _pricingBldgFilter module state,
    same _pricingBuildToolbarHTML), so switching Condensed <-> Full Itemization mid-filter is
-   seamless. Grand total footer reuses _pricingComputeTotals on the SAME filtered row set the
-   full table would use — cannot disagree with the full view or the tier's own totals.
+   seamless. 2026-07-28: footer "Grand Total" removed — this is a monthly ongoing
+   service-allowance, not a capital project with a one-time total; each section (Hardware &
+   Installation / Programming) still shows its own Subtotal row in the table itself.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingRenderCondensedTab(projId, el, estimate, tier) {
   var builder = tier === 'full-scope' ? buildFullScopeRows : buildComplianceRows;
@@ -6786,7 +6779,6 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
       })
     : baseRows;
 
-  var totals = _pricingComputeTotals(filteredRows, estimate);
   var agg = _pricingComputeCondensedRows(filteredRows, estimate);
   var itemCount = agg.hw.length + agg.lb.length;
 
@@ -6905,15 +6897,6 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
     '</div>',
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
     _pricingTierLabelHTML(tier),
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:12px;font-weight:700;color:var(--text2)">Grand Total:</span>',
-    '<span style="font-size:14px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">' +
-      (totals.grand !== null
-        ? _pricingFmt(totals.grand)
-        : '<span style="color:var(--text3);font-size:11px;font-weight:400">' +
-          (totals.noCatalog ? 'Import pricing CSV' : '—') +
-          '</span>') +
-      '</span>',
     '</div>',
     '</div>',
   ].join('');
@@ -8517,7 +8500,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         _pricingFmt(_rowRate) +
         '<span style="font-size:10px;color:var(--text3)">/hr</span></span>';
     } else if (row.phase === 1 && !row.ioOnly && row._pointKey) {
-      var _instRowRate = row.installLaborRate != null ? row.installLaborRate : cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
+      var _instRowRate =
+        row.installLaborRate != null ? row.installLaborRate : cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
       rateContent =
         '<span style="font-size:11px">' +
         _pricingFmt(_instRowRate) +
@@ -9231,13 +9215,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
         (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
         '</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Total: ' +
-        (totals.grand !== null
-          ? totals.noCatalog
-            ? 'Labor: ' + _pricingFmt(totals.grand)
-            : _pricingFmt(totals.grand)
-          : '—') +
-        '</span>',
       '<span style="color:var(--border2)">|</span>',
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Recommended — Hardware: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
@@ -9246,13 +9223,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Programming: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
         (recTotals.grand !== null ? _pricingFmt(recTotals.phase2) : '—') +
-        '</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">Total: ' +
-        (recTotals.grand !== null
-          ? recTotals.noCatalog
-            ? 'Labor: ' + _pricingFmt(recTotals.grand)
-            : _pricingFmt(recTotals.grand)
-          : '—') +
         '</span>',
     );
   } else {
@@ -9268,14 +9238,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
         (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
-        '</span>',
-      '<span style="color:var(--border2)">|</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-        (totals.grand !== null
-          ? totals.noCatalog
-            ? 'Labor: ' + _pricingFmt(totals.grand)
-            : _pricingFmt(totals.grand)
-          : '—') +
         '</span>',
     );
   }
@@ -9791,14 +9753,6 @@ function _pricingComputeSummaryData(projId, estimate) {
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
         (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
-        '</span>',
-      '<span style="color:var(--border2)">|</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-        (totals.grand !== null
-          ? totals.noCatalog
-            ? 'Labor: ' + _pricingFmt(totals.grand)
-            : _pricingFmt(totals.grand)
-          : '—') +
         '</span>',
       filterNote,
       '<span style="flex:1"></span>',
