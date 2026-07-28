@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.28.715',
+    date: '2026-07-28',
+    title: 'Cost Estimate monthly service hours now fully include bill data entry',
+    items: [
+      {
+        type: 'change',
+        text: 'Cost Estimate: monthly service hours now total 16 hours, with utility bill data entry included in that total rather than added on top. This frees more of the monthly allowance for equipment improvements, and more measures are now funded in each phase.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.28.714',
     date: '2026-07-28',
     title: 'Fixed the update notice that stayed on screen',
