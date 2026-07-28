@@ -1787,6 +1787,28 @@ const PRICE_POINT_MAP = {
       'Provides the occupancy signal (CO2 ppm) for demand-controlled ventilation without replacing an already-working zone temperature sensor.',
     g36Section: '§5.6.7',
   },
+  // occSensor (2026-07-28, fix/zone-sku-from-existing-points): fixes the dormant PRICE_POINT_MAP
+  // hole for the 'occSensor' category — the IDENTICAL dead-code shape as the co2 bug fixed
+  // 2026-07-27 (see the P0 FIX comment in buildCatalogRows below). occSensor becomes a genuine
+  // hardware gap only when a user explicitly flags a VAV/DD-VAV unit hasOccSensor:true
+  // (EM_EQUIP_CONFIG_FLAGS, default:false — Matt: "occupancy sensor is not usually something
+  // recommended unless they already have it or want it") AND no occupancy point was matched.
+  // Before this entry existed, that gap hit PRICE_POINT_MAP's `if (!mapEntry) return;` guard in
+  // buildCatalogRows and silently vanished from every tier — same failure mode as the co2 bug,
+  // just gated behind a manual per-unit flag so it never fired on real (unedited) JOCO data.
+  // ZS2-M-ALC (verified present in en_pricing_catalog: list $610, desc 'Std Temp Motion ALC') is
+  // the cheapest catalog device carrying an occupancy/motion sensor — engReview flagged because
+  // the zone's existing wall sensor (already accounted for by its own zoneTemp/co2_zone gap row,
+  // if any) may or may not be the same physical unit being augmented with occupancy.
+  occSensor: {
+    defaultSku: 'ZS2-M-ALC',
+    qtyRule: 'perUnit',
+    flags: ['engReview'],
+    note: 'Occupancy/motion sensor — verify against existing zone wall sensor before ordering',
+    whyNeeded:
+      'Occupancy sensing lets the zone controller use unoccupied setback more aggressively than a schedule alone, cutting reheat and fan energy when a scheduled-occupied room is actually empty.',
+    g36Section: '§3.1.5',
+  },
   /* ── AHU actuators ── */
   oaDampCmd: {
     defaultSku: 'AFB24-MFT-06-A',
@@ -2237,6 +2259,95 @@ function _pricingIsMonitoringOnlyZoneUnit(eq) {
   return !!(missing.coolSP && missing.htgSP);
 }
 
+/* ── _pricingDetectZoneFeatures(eq) — fix/zone-sku-from-existing-points (2026-07-28) ─────────
+   Reads eq.compliance.coveredPoints — the SAME already-computed point-match list
+   buildOptionalPointRows already trusts as its source of truth for "is this category present
+   on this equipment" (see that function's header comment) — and reports which zone-sensor
+   features the zone's EXISTING points reveal. This does NOT re-implement point matching; it
+   only reads emComputeCompliance's output, which is now reachable here because
+   EM_POINT_CATEGORIES.vav/fpb/ddvav were widened (equipment-matrix.js, same commit) to track
+   zoneHumidity/coolAdj/htgAdj as non-required categories. Before that widening, these raw BAS
+   points existed in the data (EM_POINT_MAP already routes them — see 'zoneRelativeHumidity',
+   'zoneCoolAdjust', 'zoneHtgAdjust' cats) but had no vav/fpb/ddvav category definition to match
+   against, so coveredPoints never included them for these three equipment types.
+   Returns { humidity, setpointAdjust, occupancy } — all booleans, all evidence-based (never a
+   default/guess). occSensor is already tracked as a category on vav/ddvav (not fpb, which has
+   no hasOccSensor config flag today — out of scope here).
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingDetectZoneFeatures(eq) {
+  var covered = {};
+  ((eq && eq.compliance && eq.compliance.coveredPoints) || []).forEach(function (cp) {
+    covered[cp.categoryKey] = true;
+  });
+  return {
+    humidity: !!covered.zoneHumidity,
+    setpointAdjust: !!(covered.coolAdj || covered.htgAdj),
+    occupancy: !!covered.occSensor,
+  };
+}
+
+/* ── _pricingSelectZoneSensorSku(needCO2, features) — fix/zone-sku-from-existing-points ──────
+   Picks a replacement zone sensor SKU from DETECTED existing-point evidence instead of a fixed
+   default (Matt, 2026-07-28: "The points have to tell you which one they have existing. But
+   yes, if you absolutely have to use the one you recommend[, use] Temp + occupant LED override
+   + setpoint slide + CO2/Humidity ... occupancy sensor is not usually something recommended
+   unless they already have it or want it").
+
+   needCO2 — true only for the co2_zone COMBO gap (zoneTemp AND co2 both missing on the same
+     zone): CO2 hardware is being installed as part of THIS gap, not detected evidence, so it is
+     a requirement, not a feature to weigh. false for the zoneTemp-only gap (co2 already present
+     via a separate/working device — nothing here replaces or duplicates that).
+   features.humidity/setpointAdjust — real evidence from _pricingDetectZoneFeatures: the zone's
+     OTHER points (not the one being replaced) already show these BAS-exposed capabilities.
+   features.occupancy — real evidence the zone already has a matched occupancy/motion point.
+     Per Matt, this is the ONLY thing that ever escalates to the motion-bearing SKU — it is never
+     added speculatively "because it would be better."
+
+   Catalog ladder actually used here (verified against en_pricing_catalog, list price):
+     ZS2-ALC $155        temp only
+     ZS2PL-ALC $183      temp + occupant LED override + setpoint slide
+     ZS2-H-ALC $654      temp + humidity
+     ZS2-HC-ALC $1,473   temp + humidity + CO2
+     ZS2PL-HC-ALC $1,517 temp + humidity + CO2 + override + setpoint slide  (Matt's fallback)
+     ZS2P-CM-ALC $1,645  + CO2 + motion (occupancy) — opt-in only, never a default upgrade
+
+   No catalog SKU offers CO2 or humidity bundled WITHOUT the other (Viconics ships them as one
+   "H+C" option together), so any branch that needs CO2 or humidity lands on the HC tier — the
+   extra bundled feature (e.g. CO2 tagging along when only humidity evidence exists) is "better,
+   never worse," matching the plan's explicit rule, not a fabricated upsell.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingSelectZoneSensorSku(needCO2, features) {
+  var f = features || {};
+
+  // Occupancy is opt-in only: never selected unless the zone's points already show it.
+  if (f.occupancy) return 'ZS2P-CM-ALC';
+
+  if (needCO2) {
+    // co2_zone combo: CO2 (and therefore humidity, bundled) is being installed regardless of
+    // what else the zone's other points reveal. When the zone's OTHER points reveal nothing
+    // beyond the temp/CO2 gap itself (the common case — a zone missing both temp and CO2
+    // usually has no live wall-sensor points at all), Matt's explicit fallback applies: use the
+    // richer ZS2PL-HC-ALC, not the bare ZS2-HC-ALC. This also correctly covers the case where
+    // setpointAdjust evidence DOES exist (ZS2PL-HC-ALC already carries it), so there is no
+    // separate branch for f.setpointAdjust here — it can never demand less than this SKU already
+    // provides.
+    return 'ZS2PL-HC-ALC';
+  }
+
+  // zoneTemp-only gap (CO2 already present via a separate device) — genuine feature evidence
+  // exists here (this is not the "nothing revealed" case), so pick the cheapest SKU that is
+  // AT LEAST what the zone's other points show, never a default.
+  if (f.humidity) {
+    // No catalog SKU offers temp + humidity + setpoint-adjust without also bundling CO2, so
+    // setpointAdjust evidence on top of humidity still resolves to the HC tier.
+    return f.setpointAdjust ? 'ZS2PL-HC-ALC' : 'ZS2-H-ALC';
+  }
+  if (f.setpointAdjust) return 'ZS2PL-ALC';
+
+  // No evidence of anything beyond temp — cheapest SKU that matches what was actually detected.
+  return 'ZS2-ALC';
+}
+
 /* ── buildComplianceRows(projId) — spec §8, §3, §5 ─────────────────────────
    Produces the full row list for the Compliance tier from collectASHRAE36Data.
    Returns array of row objects:
@@ -2420,20 +2531,36 @@ function buildCatalogRows(projId) {
         }
 
         // co2_zone + zoneTemp combo: if BOTH are missing on the same zone,
-        // one ZS2-HC-ALC covers both — de-dup qty
+        // one combo zone sensor covers both — de-dup qty. Which SKU: fix/zone-sku-from-
+        // existing-points (2026-07-28) — derived per zone from the zone's OTHER existing points
+        // (_pricingDetectZoneFeatures/_pricingSelectZoneSensorSku above) instead of a single fixed
+        // ZS2-HC-ALC default. The grouping key now includes the resolved SKU so zones on the same
+        // building+category that detect different feature sets land in separate priced rows.
         if (effectiveKey === 'co2_zone' || effectiveKey === 'zoneTemp') {
           var eqMissing = perEquipMissing[eq.id] ? perEquipMissing[eq.id].keys : {};
           if (effectiveKey === 'co2_zone' && eqMissing['zoneTemp'] && eqMissing['co2']) {
-            // Both missing: charge ZS2-HC-ALC once (covers both), skip separate zoneTemp
-            var comboKey = 'co2_zone__' + cat;
-            if (!hardwareGaps[comboKey])
+            // Both missing: charge one combo sensor once (covers both), skip separate zoneTemp
+            var _comboFeatures = _pricingDetectZoneFeatures(eq);
+            var _comboSku = _pricingSelectZoneSensorSku(true, _comboFeatures);
+            var comboKey = 'co2_zone__' + cat + '__' + _comboSku;
+            if (!hardwareGaps[comboKey]) {
+              var _comboBaseEntry = PRICE_POINT_MAP['co2_zone'];
               hardwareGaps[comboKey] = {
                 pointKey: 'co2_zone',
                 equipType: cat,
                 catLabel: catLabel,
                 count: 0,
-                mapEntry: PRICE_POINT_MAP['co2_zone'],
+                // Shallow clone: same flags/whyNeeded/g36Section as the base co2_zone mapEntry,
+                // defaultSku swapped to the per-zone-detected SKU.
+                mapEntry: Object.assign({}, _comboBaseEntry, {
+                  defaultSku: _comboSku,
+                  note:
+                    _comboSku === 'ZS2P-CM-ALC'
+                      ? 'Zone Temp/Humidity/CO2/Motion sensor — zone points show an existing occupancy sensor'
+                      : _comboBaseEntry.note,
+                }),
               };
+            }
             hardwareGaps[comboKey].count++;
             // Mark zoneTemp as "covered by combo" so we skip it in zoneTemp pass
             if (!hardwareGaps['zoneTemp__' + cat + '__comboed'])
@@ -2467,16 +2594,25 @@ function buildCatalogRows(projId) {
             var eqMissingZ = perEquipMissing[eq.id] ? perEquipMissing[eq.id].keys : {};
             // If co2 is also missing → this zone is handled in the co2_zone pass (combo)
             if (eqMissingZ['co2']) return;
-            // Otherwise: standalone zoneTemp
-            var ztKey = 'zoneTemp__' + cat;
-            if (!hardwareGaps[ztKey])
+            // Otherwise: standalone zoneTemp gap — CO2 already present via a separate/working
+            // device (not being replaced here). fix/zone-sku-from-existing-points (2026-07-28):
+            // derive the replacement SKU from the zone's OTHER detected points (humidity,
+            // setpoint adjust, occupancy) instead of the fixed ZS2-ALC default.
+            var _ztFeatures = _pricingDetectZoneFeatures(eq);
+            var _ztSku = _pricingSelectZoneSensorSku(false, _ztFeatures);
+            var ztKey = 'zoneTemp__' + cat + '__' + _ztSku;
+            if (!hardwareGaps[ztKey]) {
+              var _ztBaseEntry = PRICE_POINT_MAP['zoneTemp'];
               hardwareGaps[ztKey] = {
                 pointKey: 'zoneTemp',
                 equipType: cat,
                 catLabel: catLabel,
                 count: 0,
-                mapEntry: PRICE_POINT_MAP['zoneTemp'],
+                // Shallow clone: same flags/whyNeeded/g36Section(ByCategory) as the base zoneTemp
+                // mapEntry, defaultSku swapped to the per-zone-detected SKU.
+                mapEntry: Object.assign({}, _ztBaseEntry, { defaultSku: _ztSku }),
               };
+            }
             hardwareGaps[ztKey].count++;
             return;
           }
@@ -2831,8 +2967,14 @@ function _pricingPointType(pointKey, mapEntry) {
   if (mapEntry.flags.indexOf('noSku') !== -1) return 'Manual';
   // Categorize by SKU prefix / point type
   var sku = mapEntry.defaultSku || '';
-  // Distinguish ZS2 variants: ZS2-HC-ALC is the combo Temp/Humidity/CO2 sensor; ZS2-ALC is temp-only
+  // Distinguish ZS2 variants — fix/zone-sku-from-existing-points (2026-07-28) widened SKU
+  // selection beyond the original ZS2-ALC/ZS2-HC-ALC pair, so these are named explicitly rather
+  // than falling through to the (less accurate) ZS2 catch-all below.
+  if (sku === 'ZS2P-CM-ALC') return 'Temp/Hum/CO2/Motion';
+  if (sku === 'ZS2PL-HC-ALC') return 'Temp/Hum/CO2 + Override';
   if (sku === 'ZS2-HC-ALC') return 'Temp/Hum/CO2';
+  if (sku === 'ZS2-H-ALC') return 'Temp/Humidity';
+  if (sku === 'ZS2PL-ALC') return 'Zone Temp + Override';
   if (sku === 'ZS2-ALC') return 'Zone Temp';
   if (sku.startsWith('ZS2')) return 'Temp/Hum/CO2'; // catch-all for future ZS2 variants
   if (sku.startsWith('N1-DCD') || pointKey.indexOf('co2') !== -1) return 'CO2';
