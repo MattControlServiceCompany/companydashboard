@@ -15959,33 +15959,151 @@ function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
 }
 
 /**
+ * _RPT_A36_DEVICE_CLASS_LABEL — client-facing category names for the Hardware & Installation
+ * device-class taxonomy already defined in pricing-estimator.js (POINT_KEY_INSTALL_CLASS /
+ * INSTALL_HOURS_BY_DEVICE_CLASS_DEFAULT — Deliverable E, 2026-07-19). Reused here (not a new
+ * taxonomy) purely to LABEL each existing class for a client reader; no new categorization logic,
+ * no pricing math. Any pointKey not present in POINT_KEY_INSTALL_CLASS falls back to "Other
+ * Hardware" in _rptA36HardwareCategoryAgg below (forward-compatible with future catalog entries).
+ */
+var _RPT_A36_DEVICE_CLASS_LABEL = {
+  spaceZoneSensor: 'Zone Sensors (Temperature/Humidity/CO2)',
+  ductTempRhSensor: 'Duct Temperature Sensors',
+  ductStaticPressureSensor: 'Duct Static Pressure Sensors',
+  immersionWellTempSensor: 'Hydronic Temperature Sensors',
+  damperActuator: 'Outdoor/Return Air Damper Actuators',
+  valveActuator: 'Valve Actuators',
+  controlValveActuator: 'Control Valve Actuators',
+  currentSwitchStatusRelay: 'Status Sensing Relays',
+  diffPressureSwitch: 'Differential Pressure Sensors',
+  unitaryDdcController: 'Zone Controllers',
+  ahuPlantDdcController: 'AHU/Plant Controllers',
+  flowBtuMeter: 'Flow Meters',
+  vfdIntegration: 'Variable Frequency Drive Integration',
+  networkRouterGateway: 'Network Gateways',
+  thermostat: 'Thermostats',
+};
+
+/**
+ * _rptA36HardwareCategoryAgg — condenses one tier's Phase 1 (Hardware & Installation) rows into a
+ * short, client-readable list: one line per device CATEGORY (qty + dollar subtotal), plus a single
+ * summary line for every existing-controller I/O point that needs only programming exposure (no
+ * new hardware, $0 by definition — see the ioOnly flag set in buildCatalogRows/pricing-estimator.js).
+ * Added 2026-07-27 (Matt, repeat complaint: "the Cost Estimate section still needs a lot of work...
+ * too much detail" + "The Compliance and Full Scope is huge!") — replaces the prior one-bullet-per-
+ * distinct-item-name list (still available via _rptA36TierDetailAggByPhase, used unchanged for the
+ * Programming section, which was never the length complaint) with categories a client can act on:
+ * "a client needs the scope and the total, not every row" (task spec). NO new pricing math — every
+ * dollar figure here is a sum of the SAME row.lineTotal values the prior bullet list totaled, just
+ * grouped by category instead of by item name.
+ */
+function _rptA36HardwareCategoryAgg(rows, toggles) {
+  var included = rows.filter(function (r) {
+    var key = r._baseId || r.id;
+    return r.phase === 1 && toggles[key] !== false;
+  });
+  var byCat = {};
+  var order = [];
+  var ioOnlyQty = 0;
+  var ioOnlyCount = 0;
+  included.forEach(function (r) {
+    if (r.ioOnly) {
+      ioOnlyQty += r.qty || 0;
+      ioOnlyCount++;
+      return;
+    }
+    var cls = (typeof POINT_KEY_INSTALL_CLASS !== 'undefined' && POINT_KEY_INSTALL_CLASS[r._pointKey]) || null;
+    var label = (cls && _RPT_A36_DEVICE_CLASS_LABEL[cls]) || 'Other Hardware';
+    if (!byCat[label]) {
+      byCat[label] = { label: label, qty: 0, lineTotal: 0 };
+      order.push(label);
+    }
+    byCat[label].qty += r.qty || 0;
+    byCat[label].lineTotal += r.lineTotal || 0;
+  });
+  var categories = order
+    .map(function (k) {
+      return byCat[k];
+    })
+    .sort(function (a, b) {
+      return b.lineTotal - a.lineTotal;
+    });
+  return { categories: categories, ioOnlyQty: ioOnlyQty, ioOnlyCount: ioOnlyCount };
+}
+
+/**
  * _rptA36TierDetailPanelHTML — the collapsible content itself: a concise, HIGH-LEVEL breakdown
  * of one tier's Hardware & Installation and Programming & Commissioning content. The two
  * subtotal dollar figures are the SAME tt[key].phase1 / tt[key].phase2 values the phaseSplitRow
  * above already prints (so the detail can never disagree with the tier table) — no new pricing
- * math. Item bullets show name (+ aggregated qty) only; dollar amounts per item are added ONLY
- * when the itemized sub-option (wantItemized) is already on, per spec ("high level, NOT full
- * line-item itemization unless the itemized toggle is already on"). When priced, the qty × unit
- * price = total multiplication is printed explicitly (2026-07-22, Task 1a — Matt: "Supply Air
- * Temp x46 $14,449" read as a mystery number with no visible unit cost) so a reader can verify
- * the total themselves instead of taking a bare dollar figure on faith. Starts hidden
- * (display:none) — exportReportToPDF() forces every tier's panel open before html2canvas so
- * nothing is hidden in the flat PDF.
+ * math. Programming still lists one row per sequence (already category-level — a handful of rows,
+ * never the length complaint). Hardware & Installation (2026-07-27 rework — Matt, repeat
+ * complaint: "too much detail" + "The Compliance and Full Scope is huge!") now groups by DEVICE
+ * CATEGORY via _rptA36HardwareCategoryAgg instead of one bullet per distinct item name — a
+ * portfolio with 40+ distinct hardware line items previously produced 40+ bullets; it now produces
+ * one line per category (a handful) plus one summary line for every existing-controller I/O point
+ * needing only programming exposure. Starts hidden (display:none) — exportReportToPDF() forces
+ * every tier's panel open before html2canvas so nothing is hidden in the flat PDF.
  */
 function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantItemized, fmtUSD) {
   var rows = (summaryData && summaryData.perTier && summaryData.perTier[key]) || [];
   var toggles = (estimateState && estimateState.rowToggles) || {};
-  var hw = _rptA36TierDetailAggByPhase(rows, 1, toggles);
+  var hwAgg = _rptA36HardwareCategoryAgg(rows, toggles);
   var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
   // Recommended (2026-07-27, Matt's correction): never show a Hardware/Programming dollar
   // subtotal or per-item price for this tier — those numbers are subtotals of the same one-time
-  // lump total the amount row above no longer prints for Recommended. Item names/qty still list
-  // (so a reader still sees WHAT is included), just never priced individually here.
+  // lump total the amount row above no longer prints for Recommended. Category/item names still
+  // list (so a reader still sees WHAT is included), just never priced individually here.
   var noDollarTier = key === 'recommended';
   var noCat = !noDollarTier && !!(tt && tt[key] && tt[key].noCatalog);
   var p1 = !noDollarTier && tt && tt[key] ? fmtUSD(tt[key].phase1) : null;
   var p2 = !noDollarTier && tt && tt[key] ? fmtUSD(tt[key].phase2) : null;
   if (noDollarTier) wantItemized = false;
+
+  function _sectionHTMLCategories(subtotalStr, noCatFlag, agg) {
+    var subtotalHTML = noCatFlag
+      ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
+      : subtotalStr
+        ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
+        : '';
+    var catLines = agg.categories.map(function (c) {
+      var priceStr = '';
+      // Same no-bare-$0 rule as every other price cell in this report (fix/65ce578b, 2026-07-27):
+      // a category whose only members are ioOnly/unpriced (null coerced to 0 when summed) must
+      // read as "no additional cost", never a literal "$0".
+      if (wantItemized && c.lineTotal === 0) {
+        priceStr = ' — ' + c.qty + ' units, no additional cost';
+      } else if (wantItemized && c.lineTotal != null && fmtUSD(c.lineTotal)) {
+        priceStr = ' — ' + c.qty + ' units — ' + fmtUSD(c.lineTotal);
+      } else if (c.qty > 1) {
+        priceStr = ' (qty ' + c.qty + ')';
+      }
+      return '<li>' + _esc(c.label) + priceStr + '</li>';
+    });
+    // Single summary line for every existing-controller I/O point (ioOnly, real scope, $0
+    // hardware — see buildCatalogRows) instead of enumerating each one separately.
+    if (agg.ioOnlyCount > 0) {
+      catLines.push(
+        '<li>Existing control points requiring programming only — ' +
+          agg.ioOnlyQty +
+          ' points, no additional cost</li>',
+      );
+    }
+    var listHTML = catLines.length
+      ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:var(--rpt-page-text);line-height:1.6">' +
+        catLines.join('') +
+        '</ul>'
+      : '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:2px">No items in this scope.</div>';
+    return (
+      '<div style="margin-bottom:6px">' +
+      '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">' +
+      'Hardware &amp; Installation' +
+      subtotalHTML +
+      '</div>' +
+      listHTML +
+      '</div>'
+    );
+  }
 
   function _sectionHTML(title, subtotalStr, noCatFlag, items) {
     // Grey (#666) removed (report-standard rule: grey text is banned in client documents) —
@@ -16049,7 +16167,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     '" style="display:none;margin-top:6px;padding-top:6px;' +
     'border-top:1px solid var(--rpt-rule);text-align:left">' +
     recNote +
-    _sectionHTML('Hardware & Installation', p1, noCat, hw) +
+    _sectionHTMLCategories(p1, noCat, hwAgg) +
     _sectionHTML('Programming', p2, false, lb) +
     '</div>'
   );
@@ -16443,15 +16561,23 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // real portfolios (a handful of buildings) stay on the original interactive inline path;
   // large multi-building portfolios (JOCO's Full Scope tier: 80+ items) still correctly move to
   // _buildTierDetailPages() continuation pages.
-  var DETAIL_INLINE_ROW_LIMIT = 24; // combined Hardware+Programming bullet count considered safe inline
+  // 24 combined Hardware-category-rows + Programming-sequence-rows still considered safe inline.
+  // Hardware now counts CATEGORIES (+1 for the ioOnly summary line when present), not one row per
+  // distinct item name (2026-07-27 category-summarization rework, same branch as
+  // _rptA36HardwareCategoryAgg) — a portfolio that used to need 40+ hardware bullets now needs a
+  // handful of category rows, so real portfolios stay on the inline path far more often; the
+  // continuation-page fallback below still exists for anything that doesn't fit.
+  var DETAIL_INLINE_ROW_LIMIT = 24; // combined Hardware+Programming row count considered safe inline
   var detailFitsInline = true;
   if (summaryData && summaryData.perTier) {
     var _toggles0 = (estimateState && estimateState.rowToggles) || {};
     var _maxTierRows = 0;
     tierCols.forEach(function (c) {
       var _rows = summaryData.perTier[c.key] || [];
+      var _hwAgg0 = _rptA36HardwareCategoryAgg(_rows, _toggles0);
       var _n =
-        _rptA36TierDetailAggByPhase(_rows, 1, _toggles0).length +
+        _hwAgg0.categories.length +
+        (_hwAgg0.ioOnlyCount > 0 ? 1 : 0) +
         _rptA36TierDetailAggByPhase(_rows, 2, _toggles0).length;
       if (_n > _maxTierRows) _maxTierRows = _n;
     });
@@ -16601,21 +16727,49 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       });
       if (!included.length) return;
 
-      // Aggregate by item name: sum qty + lineTotal across every building/instance of that item.
+      // Hardware & Installation rows (phase 1) are CATEGORY-summarized here too (2026-07-27,
+      // same rework as _rptA36HardwareCategoryAgg used by the Install & Programming Detail
+      // pages above — Matt, repeat complaint: "too much detail" / "Compliance and Full Scope is
+      // huge"). A category has no single clientSummary sentence (it can span several distinct
+      // items with different savings rationale), so the category rows carry no sub-line here —
+      // Programming (phase 2) rows below are UNCHANGED: still one row per sequence with its
+      // clientSummary sentence, since that list was never the length complaint (a handful of
+      // sequences, not dozens of hardware line items).
+      var hwAgg = _rptA36HardwareCategoryAgg(rows, toggles);
+      var hwCategoryRows = hwAgg.categories.map(function (cat) {
+        return { item: cat.label, qty: cat.qty, lineTotal: cat.lineTotal, clientSummary: null, _isCategory: true };
+      });
+      if (hwAgg.ioOnlyCount > 0) {
+        hwCategoryRows.push({
+          item: 'Existing control points requiring programming only',
+          qty: hwAgg.ioOnlyQty,
+          lineTotal: 0,
+          clientSummary: null,
+          _isCategory: true,
+        });
+      }
+
       var byItem = {};
       var order = [];
-      included.forEach(function (r) {
-        var key = r.item || '(unnamed)';
-        if (!byItem[key]) {
-          byItem[key] = { item: r.item, qty: 0, lineTotal: 0, clientSummary: r.clientSummary || null };
-          order.push(key);
-        }
-        byItem[key].qty += r.qty || 0;
-        byItem[key].lineTotal += r.lineTotal || 0;
-      });
-      var agg = order.map(function (k) {
+      included
+        .filter(function (r) {
+          return r.phase === 2;
+        })
+        .forEach(function (r) {
+          var key = r.item || '(unnamed)';
+          if (!byItem[key]) {
+            byItem[key] = { item: r.item, qty: 0, lineTotal: 0, clientSummary: r.clientSummary || null };
+            order.push(key);
+          }
+          byItem[key].qty += r.qty || 0;
+          byItem[key].lineTotal += r.lineTotal || 0;
+        });
+      var programmingRows = order.map(function (k) {
         return byItem[k];
       });
+
+      var agg = hwCategoryRows.concat(programmingRows);
+      if (!agg.length) return;
 
       // Recommended (2026-07-27, Matt's correction): a per-item "Price" column here is just the
       // same one-time lump total broken into rows — the amount row on the summary table above no
@@ -16723,20 +16877,49 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     return pages;
   }
 
-  // ── Overflow fix continuation pages (2026-07-22) ── _buildTierDetailPages() ──────────────────
-  // Built only when detailFitsInline (computed above, before the table) is false — i.e. the
-  // portfolio is large enough that forcing all 3 tiers' Install & Programming Detail panels open
-  // (as export always does) would overflow a single page. Mirrors _buildItemizedPages()'s proven
-  // _rptPaginateTokens chunking pattern above, but for the "high-level" Hardware+Programming
-  // bullet content _rptA36TierDetailPanelHTML() renders inline for small portfolios — same data
-  // (_rptA36TierDetailAggByPhase), just laid out full-width across as many pages as needed
-  // instead of squeezed into one 3-column table row. wantItemized still controls whether each
-  // bullet shows its priced qty x unit price = total breakdown (same rule the inline panel uses).
+  // ── Overflow fix continuation pages (2026-07-22; category-summarized 2026-07-27) ──
+  // _buildTierDetailPages() ── Built only when detailFitsInline (computed above, before the
+  // table) is false. Mirrors _buildItemizedPages()'s proven _rptPaginateTokens chunking pattern,
+  // but Hardware & Installation now groups by device CATEGORY (_rptA36HardwareCategoryAgg) instead
+  // of one bullet per distinct item name — same rework as _rptA36TierDetailPanelHTML above, same
+  // reasoning (Matt: "too much detail" / "Compliance and Full Scope is huge"). Programming still
+  // lists one row per sequence (already category-level). wantItemized still controls whether each
+  // hardware category shows its qty + dollar subtotal (same rule the inline panel uses).
   function _buildTierDetailPages(startN) {
     if (!summaryData || !summaryData.perTier) return [];
     var toggles = (estimateState && estimateState.rowToggles) || {};
     var pages = [];
     var pageN = startN;
+
+    function categoryBulletHTML(c, showPrice) {
+      var priceStr = '';
+      // Same no-bare-$0 rule as _sectionHTMLCategories above.
+      if (showPrice && wantItemized && c.lineTotal === 0) {
+        priceStr = ' — ' + c.qty + ' units, no additional cost';
+      } else if (showPrice && wantItemized && c.lineTotal != null && _fmtUSD(c.lineTotal)) {
+        priceStr = ' — ' + c.qty + ' units — ' + _fmtUSD(c.lineTotal);
+      } else if (c.qty > 1) {
+        priceStr = ' (qty ' + c.qty + ')';
+      }
+      return (
+        '<div style="font-size:9px;color:#000;line-height:1.7;padding-left:14px;position:relative">' +
+        '<span style="position:absolute;left:0">&#8226;</span>' +
+        _esc(c.label) +
+        priceStr +
+        '</div>'
+      );
+    }
+
+    function ioOnlySummaryHTML(agg) {
+      return (
+        '<div style="font-size:9px;color:#000;line-height:1.7;padding-left:14px;position:relative">' +
+        '<span style="position:absolute;left:0">&#8226;</span>' +
+        'Existing control points requiring programming only — ' +
+        agg.ioOnlyQty +
+        ' points, no additional cost' +
+        '</div>'
+      );
+    }
 
     function bulletHTML(it, showPrice) {
       var priceStr = '';
@@ -16784,9 +16967,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
     tierCols.forEach(function (c) {
       var rows = summaryData.perTier[c.key] || [];
-      var hw = _rptA36TierDetailAggByPhase(rows, 1, toggles);
+      var hwAgg = _rptA36HardwareCategoryAgg(rows, toggles);
       var lb = _rptA36TierDetailAggByPhase(rows, 2, toggles);
-      if (!hw.length && !lb.length) return;
+      var hasHw = hwAgg.categories.length > 0 || hwAgg.ioOnlyCount > 0;
+      if (!hasHw && !lb.length) return;
 
       // Recommended (2026-07-27, Matt's correction): same no-lump-sum rule as the inline panel
       // (_rptA36TierDetailPanelHTML) and the itemized pages above — never print a Hardware/
@@ -16808,11 +16992,14 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
             '</div>',
         });
       }
-      if (hw.length) {
+      if (hasHw) {
         tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Hardware & Installation', p1, noCat) });
-        hw.forEach(function (it) {
-          tokens.push({ type: 'row', estH: 15, html: bulletHTML(it, !noDollar) });
+        hwAgg.categories.forEach(function (c2) {
+          tokens.push({ type: 'row', estH: 15, html: categoryBulletHTML(c2, !noDollar) });
         });
+        if (hwAgg.ioOnlyCount > 0) {
+          tokens.push({ type: 'row', estH: 15, html: ioOnlySummaryHTML(hwAgg) });
+        }
       }
       if (lb.length) {
         tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Programming', p2, false) });
