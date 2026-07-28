@@ -1992,6 +1992,26 @@
            deliverable): well-defined near-black for table borders/dividers, matching the
            border-color:#333 already shipped for .rpt-table-bl td. */
         --rpt-border: #333333;
+
+        /* -- Page geometry / furniture-layer tokens (feature/report-layer-isolation-and-theme) --
+           Every .rpt-page is built from three independent layers so content can never move,
+           resize, or detach the header/footer chrome:
+             1. Page box     — .rpt-page itself: fixed 816x1056px (8.5in x 11in @96dpi), flex-shrink:0.
+             2. Furniture    — .rpt-int-hdr / .rpt-small-hdr / hero letterhead / .rpt-footer /
+                                .rpt-footer-label / .rpt-pg-footer-pagenum: position:absolute against
+                                the page box, sized by these fixed-height tokens, never in content flow.
+             3. Content      — .rpt-body: position:absolute, top/bottom driven by these same tokens, so
+                                its box height is fixed regardless of what's inside it. overflow:visible
+                                so any content taller than its region remains visible (spills past the
+                                fixed box) instead of silently growing the page or being clipped away —
+                                that spillover is what getBoundingClientRect() overflow checks detect. */
+        --rpt-page-w: 816px;
+        --rpt-page-h: 1056px;
+        --rpt-pad-x: 48px;
+        --rpt-hdr-h: 60px; /* .rpt-int-hdr chrome bar (title + client/period) */
+        --rpt-hero-hdr-h: 196px; /* full-bleed hero letterhead (816x194 image + 2px clearance) */
+        --rpt-small-hdr-h: 195px; /* inset letterhead used with smallHeaderImg (Agreement pages) */
+        --rpt-ftr-h: 72px; /* footer wave image + footer label + page number, combined */
       }
 
       /* -- Overlay & Toolbar -- */
@@ -2056,24 +2076,31 @@
         text-transform: uppercase;
       }
 
-      /* -- Individual Page -- */
+      /* -- Individual Page --
+         feature/report-layer-isolation-and-theme (2026-07-28): rebuilt as a fixed-size box.
+         Previously this used min-height:1056px, which let the box grow taller than 1056px
+         whenever body content overflowed — and since the footer/page-number are
+         position:absolute against THIS element, they tracked the grown box's bottom edge
+         instead of staying pinned at the true 11in mark. That's why a change to body content
+         could silently drag the footer down the page. height (not min-height) + flex-shrink:0
+         make this box's own dimensions immune to its content: overflowing content still
+         paints (overflow:visible — never clipped, never truncated) but can no longer resize
+         or reposition this box, so nothing anchored to it (the furniture layer) can move. */
       .rpt-page {
-        width: 816px;
-        min-height: 1056px;
+        width: var(--rpt-page-w);
+        height: var(--rpt-page-h);
+        flex-shrink: 0;
         background: var(--rpt-page-bg);
         box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
         position: relative;
-        /* overflow:hidden removed — was clipping content taller than 1056px; long sections now
-           extend the page box rather than being cut off. Footer elements use position:absolute
-           so they remain at the bottom of the 1056px min-height box. */
         overflow: visible;
         color: var(--rpt-page-text);
         font-family: var(--rpt-font);
         font-size: 13px;
         line-height: 1.5;
-        /* Horizontal padding removed — body/header now carry their own 48px (0.5in) side padding
-           so letterhead and footer images remain full-width edge-to-edge. */
-        padding: 12px 0;
+        /* Padding removed — every layer (furniture + content) now positions itself against this
+           fixed box explicitly, via the tokens above, instead of relying on page-level padding. */
+        padding: 0;
         box-sizing: border-box;
       }
       /* Page number now rendered by JS via .rpt-pg-footer-pagenum */
@@ -2131,13 +2158,37 @@
         right: 0;
       }
 
-      /* -- Interior Page Header -- */
+      /* -- Interior Page Header --
+         Furniture layer: position:absolute against .rpt-page, fixed height, never in the
+         content flow — .rpt-body starts below it at a fixed offset (--rpt-hdr-h), so nothing
+         the header's own text does (title length, client-name wrap) can push body content,
+         and nothing body content does can push the header. */
       .rpt-int-hdr {
-        padding: 10px 48px 8px;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: var(--rpt-hdr-h);
+        box-sizing: border-box;
+        padding: 10px var(--rpt-pad-x) 8px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         border-bottom: 1px solid var(--rpt-divider);
+        background: var(--rpt-page-bg);
+        z-index: 2;
+      }
+      /* Inset letterhead used with smallHeaderImg (Agreement first/signature pages) — same
+         furniture treatment as .rpt-int-hdr: fixed height, absolutely positioned, out of flow. */
+      .rpt-small-hdr {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: var(--rpt-small-hdr-h);
+        box-sizing: border-box;
+        background: var(--rpt-page-bg);
+        z-index: 2;
       }
       .rpt-pg-title {
         font-size: 19px;
@@ -2160,13 +2211,61 @@
         text-align: right;
       }
 
-      /* -- Page Body -- */
+      /* -- Hero / Cover Page Letterhead (furniture) --
+         Full-bleed letterhead image on hero (.rpt-cover) pages. rptPage() emits this <img> as the
+         first child of .rpt-page.rpt-cover, always immediately followed by exactly one wrapper div
+         holding the rest of the page's content (rptPageCover's .rpt-hero, rptPageASHRAE36Cover's
+         bare inset div, rptPageBoardSummary's contenteditable wrapper — see app/report-engine.js).
+         Furniture treatment: position:absolute, fixed height, out of flow. The adjacent-sibling
+         selector below reserves that same height as a top offset on whatever content div follows
+         it, without requiring a new wrapper class in the JS templates (kept intentionally generic
+         so it works across all hero-page content shapes). */
+      .rpt-page.rpt-cover > .csc-header-img {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        height: var(--rpt-hero-hdr-h);
+        object-fit: contain;
+        z-index: 2;
+      }
+      .rpt-page.rpt-cover > .csc-header-img + * {
+        display: block;
+        margin-top: var(--rpt-hero-hdr-h);
+      }
+
+      /* -- Page Body (content layer) --
+         feature/report-layer-isolation-and-theme (2026-07-28): position:absolute with top AND
+         bottom both set gives this box a FIXED height (page height minus the furniture zones)
+         regardless of what's inside it — the box can never grow to accommodate overflowing
+         content, and overflow:visible means overflowing content still paints (spills past the
+         box) rather than being clipped, so it stays visible/detectable via
+         getBoundingClientRect().bottom vs the footer's own (now-fixed) top. Default top offset
+         assumes the standard .rpt-int-hdr chrome bar is present; the modifier classes below
+         cover the other two header variants rptPage() can render (see options.hideIntHdr /
+         options.smallHeaderImg in app/report-engine.js — always mutually exclusive combos). */
       .rpt-body {
-        /* 48px sides = 0.5in, aligned with .rpt-int-hdr and .rpt-footer-text padding.
-           Bottom padding reduced 80px -> 30px (feat/audit-report-reframe-density,
-           2026-07-09, density Finding 1): the footer graphic shrank from 107.6px to 40px, so
-           the old 80px clearance was reserving far more space than the slimmer footer needs. */
-        padding: 12px 48px 30px;
+        position: absolute;
+        top: var(--rpt-hdr-h);
+        left: 0;
+        right: 0;
+        bottom: var(--rpt-ftr-h);
+        box-sizing: border-box;
+        overflow: visible;
+        z-index: 1;
+        /* 48px sides = 0.5in, aligned with .rpt-int-hdr and .rpt-footer-text padding. */
+        padding: 12px var(--rpt-pad-x) 8px;
+      }
+      /* hideIntHdr:true, smallHeaderImg:false — no header chrome at all (continuation pages,
+         e.g. ASHRAE 36 Proposal phase/vision pages); content starts at the page's own top inset. */
+      .rpt-body.rpt-body-flush {
+        top: 12px;
+      }
+      /* hideIntHdr:true, smallHeaderImg:true — inset letterhead only (Agreement first/signature
+         pages); content starts below the letterhead's reserved zone. */
+      .rpt-body.rpt-body-small-hdr {
+        top: var(--rpt-small-hdr-h);
       }
 
       /* -- Section Headings -- */
@@ -2269,7 +2368,7 @@
         letter-spacing: 0.3px;
       }
       .rpt-table-bl td {
-        border-color: #333;
+        border-color: var(--rpt-border);
         color: var(--rpt-page-text);
         font-size: 10px;
       }
@@ -2379,10 +2478,8 @@
         gap: 6px;
         margin: 6px 0;
       }
+      /* No box/card treatment (feature/report-layer-isolation-and-theme, 2026-07-28). */
       .rpt-kpi {
-        background: transparent;
-        border: 1px solid var(--rpt-blue-light);
-        border-radius: 2px;
         padding: 8px;
         text-align: center;
       }
@@ -2518,19 +2615,12 @@
         gap: 6px;
         margin: 6px 0;
       }
+      /* No box/card treatment (feature/report-layer-isolation-and-theme, 2026-07-28) — reports
+         are headings, tables, and text; status is conveyed by the value/label color below, not
+         a bordered tile. */
       .rpt-status-card {
-        border-radius: 2px;
         padding: 8px;
         text-align: center;
-        border: 1px solid;
-      }
-      .rpt-status-card.rpt-ok {
-        background: transparent;
-        border-color: var(--rpt-ok-border);
-      }
-      .rpt-status-card.rpt-warn {
-        background: transparent;
-        border-color: var(--rpt-warn-border);
       }
       .rpt-status-card .rpt-sc-name {
         font-size: 11px;
@@ -2615,11 +2705,10 @@
       }
 
       /* -- Chart Container -- */
+      /* No box/card treatment (feature/report-layer-isolation-and-theme, 2026-07-28) — a chart
+         reads as a figure with a caption, not a filled/bordered tile. */
       .rpt-chart-box {
-        background: var(--rpt-chart-bg);
-        border: 1px solid var(--rpt-divider);
-        border-radius: 2px;
-        padding: 8px;
+        padding: 8px 0;
         margin: 4px 0;
         position: relative;
       }
@@ -2637,10 +2726,8 @@
         gap: 5px;
         margin: 6px 0;
       }
+      /* No box/card treatment (feature/report-layer-isolation-and-theme, 2026-07-28). */
       .rpt-env-card {
-        background: var(--rpt-env-bg);
-        border: 1px solid var(--rpt-env-border);
-        border-radius: 2px;
         padding: 6px;
         text-align: center;
       }
@@ -2859,14 +2946,18 @@
         margin: 6px 0;
       }
 
-      /* -- ASHRAE 36 Stat Cards (cover scope-of-work cards only) --
-         Clean full border, white/transparent fill. NO left-border accent. */
+      /* -- ASHRAE 36 Cover scope-of-work stats --
+         No box/card treatment (feature/report-layer-isolation-and-theme, 2026-07-28,
+         supersedes the earlier "clean full border" compromise below) — plain numbers with a
+         label underneath, separated only by a thin rule between columns, matching
+         .rpt-bl-stats elsewhere in this report. */
       .rpt-a36-stat-card {
-        background: transparent;
-        border: 1px solid var(--rpt-rule);
-        border-radius: 3px;
         text-align: center;
         padding: 10px 12px;
+        border-right: 1px solid var(--rpt-rule);
+      }
+      .rpt-a36-stat-card:last-child {
+        border-right: none;
       }
     </style>
 
@@ -2950,6 +3041,42 @@
         .rpt-page:last-child {
           break-after: auto;
           page-break-after: auto;
+        }
+        /* Layer isolation (feature/report-layer-isolation-and-theme, 2026-07-28): the base
+           (screen-preview) rules above turn .rpt-page into a fixed-height box with position:
+           absolute furniture/content layers, so the on-screen footer/header can never be
+           dragged out of place by content overflow. Native print pagination works differently:
+           the "rare page whose content overflows the 1056px design height" comment below
+           relies on .rpt-page being allowed to grow taller than 1056px in normal flow so the
+           browser's own paginator can carry the overflow onto a second physical page mid-table
+           (via break-inside:avoid on <tr>). A fixed-height, position:absolute box can't do
+           that — its content is clipped at a fixed region instead of flowing across a page
+           boundary. These overrides restore the pre-existing min-height/normal-flow behavior
+           for print only, so exportReportToPDF()'s window.print() path (see report-engine.js)
+           is completely unaffected by this change; only the interactive on-screen preview gets
+           the new fixed-box/immune-furniture behavior. */
+        .rpt-page {
+          height: auto !important;
+          min-height: var(--rpt-page-h) !important;
+        }
+        .rpt-int-hdr,
+        .rpt-small-hdr {
+          position: static !important;
+          height: auto !important;
+        }
+        .rpt-body {
+          position: static !important;
+          top: auto !important;
+          bottom: auto !important;
+          height: auto !important;
+          padding: 12px var(--rpt-pad-x) 30px !important;
+        }
+        .rpt-page.rpt-cover > .csc-header-img {
+          position: static !important;
+          height: auto !important;
+        }
+        .rpt-page.rpt-cover > .csc-header-img + * {
+          margin-top: 0 !important;
         }
         /* Keep table rows/headers intact across a page boundary on the rare page whose
            content overflows the 1056px design height (see rptPage() row-budget comments in
