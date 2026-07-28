@@ -696,12 +696,14 @@ function _pricingComputeMonthlyService(projId) {
   };
 }
 
-/* ── Does this project have utility bills on file? (2026-07-22) ──────────────────────────────
+/* ── Does this project have utility bills on file? (2026-07-22; NO LONGER called by the monthly
+   labor breakdown as of 2026-07-27 fix/labor-bill-entry-and-audit-verification — Utility Bill Data
+   Entry hours now derive from building count, not this gate, since the contract commits CSC to this
+   work every month regardless of what's currently loaded into this project's database. Left intact
+   as a general-purpose utility in case another caller needs it.) ──────────────────────────────────
    Utility bill data lives per-project at en_utility_{projId} → {buildings:[{meters:[{bills:[]}]}]}
    (same source _pricingGetProjectAnnualElec reads, above) — NOT en_pdf_bills, which is the
    global PDF-import staging array keyed by bill.projId before a bill is committed to a meter.
-   Checked here (not just electricity, any commodity) purely to decide whether "Utility Bill Data
-   Entry" belongs in the monthly labor breakdown below — this performs no calculation of its own.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingProjectHasUtilityBills(projId) {
   var utilData = typeof sget === 'function' ? sget('en_utility_' + projId, null) : null;
@@ -713,13 +715,37 @@ function _pricingProjectHasUtilityBills(projId) {
   });
 }
 
+/* ── Real, campus-wide-excluded building count for a project (2026-07-27
+   fix/labor-bill-entry-and-audit-verification) ───────────────────────────────────────────────────
+   Single source of truth for "how many buildings does this project actually have" as far as the
+   monthly labor model is concerned — reuses `collectASHRAE36Data`, the EXACT function
+   `buildCatalogRows`/`buildFullScopeRows` above already call to build the cost estimate itself, so
+   this can never drift from the 27-building figure shown anywhere else in the proposal that is fed
+   by that same source. Campus-wide/non-building entries are excluded the same way that function
+   already excludes them: collectASHRAE36Data (report-engine.js) groups equipment rows by building,
+   then only pushes a building into `ashData.buildings` if it has at least one AUDITABLE-category
+   row (`auditableRows.length` guard) — a "building" whose only rows are bare sensors, weather feeds,
+   or non-equipment stubs never enters the list, so this never blindly counts raw building-name rows.
+   Returns 0 (not null) when no equipment/ASHRAE data exists yet for the project, so callers can
+   multiply by it directly without an extra null-check — 0 buildings correctly yields 0 hours for
+   any per-building line item.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingGetBuildingCount(projId) {
+  if (typeof collectASHRAE36Data !== 'function') return 0;
+  var ashData = collectASHRAE36Data(projId);
+  if (!ashData || !ashData.buildings) return 0;
+  return ashData.buildings.length;
+}
+
 /* ── Monthly Recurring EM Service Labor Breakdown (2026-07-22; trend category added 2026-07-26;
    REBUILT 2026-07-26 fix-phase-cost-budget-model to stop double-counting Program & Sequence Setup
    and stop force-filling the whole allowance; REBUILT AGAIN 2026-07-27
    fix/em-labor-model-completeness to reflect everything the SIGNED agreement actually commits CSC
    to doing every month, not just setup-type work; CORRECTED same day, same branch, per Matt's
    direct client-correction: "I think the 16 hours should include the meetings, rebates and
-   training") ───────────────────────────────────────────────────────────────────────────────────
+   training"; EXTENDED 2026-07-27 fix/labor-bill-entry-and-audit-verification — Utility Bill Data
+   Entry now derives from real building count instead of a flat gated constant, and a Month-1-only
+   Audit Report verification/polish block was added) ──────────────────────────────────────────────
    WHY this exists: Matt's ask was to show WHY the monthly EM service hours are needed, not just a
    flat hours×rate total — real setup work (alarm configuration, report setup, trend/graphics
    setup, and — when the client hand-provides them — utility bill data entry) that is heaviest in
@@ -767,19 +793,37 @@ function _pricingProjectHasUtilityBills(projId) {
          monitoring" is the residual of the 16-hr bucket after the three named carve-outs, not a
          separate 16-hr line of its own.
 
-     OUTSIDE the 16-hr bucket, still its own separate RECURRING line (unchanged, NOT part of this
-     correction — OPEN QUESTION, see note below):
-       - Utility Bill Data Entry — MOVED (2026-07-27, unchanged by this correction) from the SETUP
-         pool to RECURRING. Bills are not a one-time setup task; a new bill arrives every billing
-         cycle for as long as the agreement runs, so this must recur every month (conditional on
-         the project having bills on file), never taper to zero. Still 3 hrs/mo, additive on top of
-         the 16-hr bucket, per Matt's explicit instruction on the correction: "leave it OUTSIDE the
-         16, conditional on hasBills as you have it now. The client named only the three categories
-         above [meetings/rebates/training]." OPEN QUESTION, NOT a settled decision: whether Utility
-         Bill Data Entry should also eventually be absorbed into (or excluded from) the same 16-hr
-         bucket has NOT been asked of the client — Johnson County has zero bills on file today, so
-         this changes nothing for the live numbers either way, but do not silently fold it into the
-         16 (or otherwise change its treatment) without Matt confirming that with the client first.
+     OUTSIDE the 16-hr bucket, still its own separate RECURRING line — RE-DERIVED 2026-07-27
+     fix/labor-bill-entry-and-audit-verification (see note below; this replaces the flat-3hr,
+     hasBills-gated version from the same-day correction above):
+       - Utility Bill Data Entry — client: "Utility bills becoming labor hours should be able to
+         easily estimate based on number of buildings." The PRIOR version was wrong two ways: (1) a
+         flat 3 hrs/mo that never scaled with portfolio size, sized off nothing in particular, and
+         (2) gated on `_pricingProjectHasUtilityBills` — i.e. it showed ZERO for Johnson County
+         today purely because no bills happen to be loaded into this database yet, even though the
+         signed agreement commits CSC to this work every month regardless of what's currently on
+         file. The labor exists because of the CONTRACT, not the current state of the app's data —
+         same reasoning already applied to every other RECURRING category in this bucket. The
+         `hasBills` gate is REMOVED entirely; this line now always appears (when the project has any
+         building data to size it from) and scales with `_pricingGetBuildingCount(projId)` — the
+         SAME building count `buildCatalogRows` above already reads from `collectASHRAE36Data`, so
+         this can never drift from the building count shown anywhere else fed by that same source
+         (27 for Johnson County today), and campus-wide/non-equipment "buildings" are excluded the
+         same way that function already excludes them (a building with zero AUDITABLE equipment rows
+         never enters `ashData.buildings` in the first place — see collectASHRAE36Data's
+         `auditableRows.length` guard in report-engine.js). Rate:
+         BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT = 0.25 hrs/building/mo (15 min — retrieval, entry, and
+         a sanity check of that one building's bills), a single named constant so it is tunable in
+         one place. At 27 buildings that is 6.75 hrs/mo. This is NOT folded into the 16-hr bucket and
+         does NOT shrink Ongoing Monitoring to absorb it — Matt was explicit the client needs to see
+         the real number and decide, not have it smoothed away: 16 + 6.75 = 22.75 recurring hrs/mo
+         (~$3,936/mo at $173/hr), ~63% of the $6,250/mo allowance BEFORE any hardware/measures dollar
+         is spent — close to a ratio Matt already pushed back on once, so this must stay visible, not
+         quietly absorbed. OPEN QUESTION, still not settled: whether meters/utility-accounts would be
+         a materially better basis than raw building count (e.g. a building with 3 meters plausibly
+         takes more entry time than a building with 1) — not adopted here because meter/account data
+         is not reliably present across projects the way the building list already is; revisit if
+         Matt confirms per-meter billing data is consistently available.
 
      Considered and NOT added as separate line items (no contract text beyond the quotes above was
      available to this rebuild to size them independently — flagged for Matt to confirm): a
@@ -795,20 +839,65 @@ function _pricingProjectHasUtilityBills(projId) {
      commitments, that should be supplied and this function revisited — do not silently split the 16
      hrs into further sub-buckets without that text.
 
+   MONTH 1 ONLY, added 2026-07-27 fix/labor-bill-entry-and-audit-verification (NOT ramped like the
+   three SETUP categories above — present at full value in Month 1 and ABSENT in every other month,
+   including Month 2/3 of the same ramp): Audit Report verification and client-ready polish. Client,
+   re: the generated Audit Report: "It is not 100% polished. The output files still have inconsistent
+   layout and formatting… so yes we do need to build in time for verification." He wants this labor
+   budgeted explicitly, delivered in Phase 1's first month (August 2026) since that's when the Audit
+   Report is generated and handed over. Two separate visible line items, both sized off the real
+   document rather than guessed:
+     - Report page-count basis: report-engine.js's Audit Report renders one .rpt-page per building
+       in the buildingSummaries section (the section that dominates the document's page count — see
+       the `s.buildingSummaries` branch a few hundred lines into that file), so building count is a
+       defensible proxy for page count: 27 buildings ≈ 27 pages today, matching the "roughly 27
+       pages" figure Matt gave. Reuses the SAME `_pricingGetBuildingCount(projId)` this function now
+       uses for Bill Entry above — one source of truth, not a second building count that could drift
+       from the first.
+     - Report Verification & Quality Review — AUDIT_VERIFY_MINUTES_PER_PAGE_DEFAULT = 10 min/page:
+       reading the generated output page-by-page against the source equipment/compliance data (27
+       buildings, ~1,584 equipment units across them — i.e. real per-building compliance tables, not
+       a skim) and correcting errors. 10 min/page is a careful-but-not-exhaustive cross-check pace
+       for a data-heavy compliance page, not a proofread. At 27 pages: 4.5 hrs.
+     - Final Formatting & Polish — AUDIT_FORMAT_MINUTES_PER_PAGE_DEFAULT = 4 min/page: layout
+       consistency, spacing, and presentation pass across the same page count, done AFTER
+       verification finds the content errors — a visual/layout skim is materially faster per page
+       than a data cross-check, hence the lower per-page rate. At 27 pages: 1.8 hrs.
+     Both are named constants (minutes/page), never a single lump-sum guess, so they scale
+     automatically if the portfolio's building/page count changes and stay auditable if Matt wants a
+     different per-page rate.
+   Adding ~6.3 hrs ($1,089.90 at $173/hr) in Month 1 ON TOP OF Month 1's existing SETUP ramp +
+   RECURRING bucket pushes Month 1 hours/dollars well past the $6,250/mo allowance on its own — this
+   is EXPECTED per Matt, not a bug: "Phase 1 spans five months with a $31,250 envelope, so the
+   phase-level math should absorb it." Verified this actually holds: `_pricingComputeProgramCostModel`
+   already sums `_pricingRecurringEMLaborHoursForMonth` across every calendar month IN THE PHASE
+   before computing that phase's `emLaborTotal`/`measuresAvailable` (never compares a single month's
+   cost against the monthly allowance in isolation), and `measuresAvailable` is
+   `Math.max(0, allowanceTotal - emLaborTotal)` — floored at 0, never negative, with an explicit
+   `overCommitted` flag (non-silent) when a phase's EM labor alone exceeds that phase's calendar
+   allowance. No per-month cap assumption exists anywhere in that path.
+
    This function is READ BY _pricingComputeProgramCostModel to compute `emLaborTotal`/
    `measuresAvailable` per phase — the monthly totals it returns flow into real dollar math and
-   intentionally do NOT sum to a fixed cap (Month 1 is highest due to the setup ramp, Month 4+ is
-   the true recurring steady-state floor — see the per-month figures in the function below).
+   intentionally do NOT sum to a fixed cap (Month 1 is now the highest by a wide margin, due to the
+   setup ramp AND the Month-1-only Audit Report block above; Month 4+ is the true recurring
+   steady-state floor — see the per-month figures in the function below).
 
-   Ramp model (simple 4-step taper, unchanged — applies ONLY to the three SETUP categories; every
-   RECURRING category above is present at full value in every month, Month 1 through steady state):
+   Ramp model (simple 4-step taper — applies ONLY to the three SETUP categories; every RECURRING
+   category above is present at full value in every month, Month 1 through steady state; the Audit
+   Report block above is a THIRD, separate shape — full value in Month 1 only, zero afterward, never
+   ramped):
      Month 1      — 100% of the "setup pool" (Alarm Configuration + Report Setup + Trend Setup)
+                    + the Month-1-only Audit Report verification/polish block
      Month 2      —  60% of the setup pool
      Month 3      —  30% of the setup pool
      Month 4+     —   0% (steady state) — only the RECURRING categories remain
 
-   Utility Bill Data Entry only appears when the project has bill data on file
-   (_pricingProjectHasUtilityBills) — a project with no bills doesn't need this line, in any month.
+   Utility Bill Data Entry now appears in every month a building count can be derived for the
+   project (see the RECURRING section above) — it is NO LONGER gated on
+   `_pricingProjectHasUtilityBills`; that gate produced a false zero for any project (e.g. Johnson
+   County today) that simply hasn't had bills entered into this database yet, even though the
+   contract commits to this work regardless.
 
    Returns null when _pricingComputeMonthlyService returns null (no budget.amount set — same
    silent-until-configured convention as the rest of this feature).
@@ -817,6 +906,10 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   var svc = _pricingComputeMonthlyService(projId);
   if (!svc) return null;
   var hourlyRate = svc.hourlyRate;
+
+  function roundHrs(n) {
+    return Math.round(n * 100) / 100;
+  }
 
   // ── SETUP categories (ramp to zero over 3 months — one-time project work) ──
   var ALARM_SETUP_HOURS_DEFAULT = 4;
@@ -863,17 +956,30 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   }
   var ONGOING_MONITORING_HOURS_DEFAULT = Math.max(0, _ongoingMonitoringRaw); // residual of the 16, NOT an independent number — floored, never negative
 
-  // Utility Bill Data Entry — OUTSIDE the 16-hr bucket, additive on top of it (see the OPEN
-  // QUESTION note in the header comment above — this has NOT been asked of the client either way).
-  var hasBills = _pricingProjectHasUtilityBills(projId);
-  var BILL_ENTRY_HOURS_DEFAULT = hasBills ? 3 : 0; // 2026-07-27: moved SETUP → RECURRING
+  // Utility Bill Data Entry — OUTSIDE the 16-hr bucket, additive on top of it. RE-DERIVED
+  // 2026-07-27 fix/labor-bill-entry-and-audit-verification: no longer a flat constant gated on
+  // `_pricingProjectHasUtilityBills` (see the header comment above for the full reasoning) — now
+  // scales with the project's real, campus-wide-excluded building count so it can never drift from
+  // the building count shown elsewhere in the proposal, and is never falsely zeroed just because no
+  // bills happen to be loaded into this database yet.
+  var BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT = 0.25; // 15 min/building/mo — retrieval + entry + sanity check
+  var buildingCount = _pricingGetBuildingCount(projId);
+  var BILL_ENTRY_HOURS_DEFAULT = roundHrs(buildingCount * BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT);
+
+  // Month-1-only Audit Report verification & polish (2026-07-27
+  // fix/labor-bill-entry-and-audit-verification — see the header comment above for the full client
+  // quote and reasoning). Sized off the same building count, used here as a page-count proxy
+  // (report-engine.js's Audit Report renders one page per building in its dominant
+  // buildingSummaries section — 27 buildings ≈ 27 pages today).
+  var AUDIT_VERIFY_MINUTES_PER_PAGE_DEFAULT = 10; // data cross-check against source, per page
+  var AUDIT_FORMAT_MINUTES_PER_PAGE_DEFAULT = 4; // layout/spacing polish pass, per page
+  var auditReportPageEstimate = buildingCount;
+  var AUDIT_VERIFY_HOURS_DEFAULT = roundHrs((auditReportPageEstimate * AUDIT_VERIFY_MINUTES_PER_PAGE_DEFAULT) / 60);
+  var AUDIT_FORMAT_HOURS_DEFAULT = roundHrs((auditReportPageEstimate * AUDIT_FORMAT_MINUTES_PER_PAGE_DEFAULT) / 60);
 
   var setupPoolHours = ALARM_SETUP_HOURS_DEFAULT + REPORT_SETUP_HOURS_DEFAULT + TREND_SETUP_HOURS_DEFAULT;
   var recurringPoolHours = RECURRING_EM_LABOR_HOURS_DEFAULT + BILL_ENTRY_HOURS_DEFAULT; // the 16-hr bucket + Bill Entry outside it
-
-  function roundHrs(n) {
-    return Math.round(n * 100) / 100;
-  }
+  var month1OnlyPoolHours = AUDIT_VERIFY_HOURS_DEFAULT + AUDIT_FORMAT_HOURS_DEFAULT; // Audit Report block — Month 1 only, never ramped
 
   // rampFraction: how much of the setup pool applies in a given month (1=Month1 … 4=Month4+).
   function rampFraction(monthIdx) {
@@ -894,6 +1000,17 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
       var trendHrs = roundHrs(TREND_SETUP_HOURS_DEFAULT * frac);
       if (trendHrs > 0) out.push({ category: 'Trend Setup & Configuration', hours: trendHrs });
     }
+    // MONTH-1-ONLY — Audit Report verification & polish. Deliberately NOT run through
+    // rampFraction (never 60%/30% in Month 2/3) — this is one-time delivery work tied to when the
+    // Audit Report is generated and handed over (Phase 1's first month), not a taper.
+    if (monthIdx === 1) {
+      if (AUDIT_VERIFY_HOURS_DEFAULT > 0) {
+        out.push({ category: 'Audit Report Verification & Quality Review', hours: AUDIT_VERIFY_HOURS_DEFAULT });
+      }
+      if (AUDIT_FORMAT_HOURS_DEFAULT > 0) {
+        out.push({ category: 'Audit Report Final Formatting & Polish', hours: AUDIT_FORMAT_HOURS_DEFAULT });
+      }
+    }
     // RECURRING — present at full value every month, Month 1 through steady state. NOT scaled by
     // the setup ramp, NOT a remainder that fills any target total (see comment block above).
     // Guarded with the same `> 0` check the SETUP rows above use — if the floor above ever
@@ -902,7 +1019,10 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
     if (ONGOING_MONITORING_HOURS_DEFAULT > 0) {
       out.push({ category: 'Ongoing Monitoring & Optimization', hours: ONGOING_MONITORING_HOURS_DEFAULT });
     }
-    if (hasBills) {
+    // Utility Bill Data Entry — no longer gated on hasBills (see header comment + constant setup
+    // above); guarded only by `> 0` so a project with zero derivable buildings (no equipment/ASHRAE
+    // data loaded at all) doesn't print a nonsense "0 hrs" row.
+    if (BILL_ENTRY_HOURS_DEFAULT > 0) {
       out.push({ category: 'Utility Bill Data Entry', hours: BILL_ENTRY_HOURS_DEFAULT });
     }
     out.push({ category: 'Monthly Client Review Meeting', hours: MEETING_HOURS_DEFAULT });
@@ -922,9 +1042,10 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
     hourlyRate: hourlyRate,
     setupPoolHours: setupPoolHours,
     recurringPoolHours: recurringPoolHours,
+    month1OnlyPoolHours: month1OnlyPoolHours, // Audit Report verification/polish — Month 1 only, see header comment
     ongoingMonitoringHours: ONGOING_MONITORING_HOURS_DEFAULT,
+    buildingCount: buildingCount, // 2026-07-27: single source of truth this breakdown derives Bill Entry + Audit Report hours from
     months: months,
-    hasBills: hasBills,
   };
 }
 
