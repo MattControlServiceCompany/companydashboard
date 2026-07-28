@@ -2143,6 +2143,16 @@
         font-size: 19px;
         font-weight: 700;
         letter-spacing: -0.5px;
+        /* fix/report-formatting-consistency (2026-07-27): interior page titles previously had no
+           color declared here and silently inherited .rpt-page's black (var(--rpt-page-text)),
+           while every cover/hero title (rptPageASHRAE36Cover, rptPageCover's .rpt-hero-main h1,
+           etc.) is explicitly var(--rpt-blue) — the exact "one shade of blue for all report
+           titles" gap Matt flagged. This is the ONLY title-color rule needed: rptPage() is the
+           shared template behind every report type (Audit, Proposal, Board Summary, quarterly/
+           annual, appendices), so this one line makes every interior page title in every report
+           consistent with its own cover title, using the same existing --rpt-blue token (no new
+           hex introduced). */
+        color: var(--rpt-blue);
       }
       .rpt-info {
         font-size: 10px;
