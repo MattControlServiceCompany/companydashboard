@@ -526,6 +526,42 @@ const SEQUENCE_BLOCKING_SENSORS = {
   ahu_freeze_prot: [],
 };
 
+/* ── _HW_ROW_KEY_ALIASES ────────────────────────────────────────────────────────────────────
+   Pre-existing bug found by this branch's new unit-atomicity check (2026-07-28,
+   fix/roi-no-hardware-first-per-unit — see _pricingBuildRoiUnits), NOT introduced by this
+   branch: a phase-1 hardware row's `_pointKey` does not always literally equal the blocking-
+   sensor key named above, because buildCatalogRows re-prices/re-groups a handful of point keys
+   into a DIFFERENT catalog bucket for correct SKU selection or display consolidation:
+     - 'co2_zone': the 2026-07-27 CO2 SKU correction (see dashboardlogic.md addendum) routes a
+       zone missing ONLY co2 (zoneTemp already present — the common case, ~749 of 776 real JOCO
+       instances) to 'co2_zone_standalone' (SKU N1-AQX-C-A), not 'co2_zone' (the combo SKU, only
+       used when zoneTemp is ALSO missing). SEQUENCE_BLOCKING_SENSORS.vav_dcv still names the
+       original 'co2_zone' key.
+     - 'oaDampCmd'/'raDampCmd': the damper-actuator consolidation (2026-07-27) merges both into a
+       single 'damperPositionControl' hardware row. SEQUENCE_BLOCKING_SENSORS.ahu_min_oa still
+       names the original 'oaDampCmd' key.
+   Effect before this alias map: _pricingPairHwSeq could never find a matching hardware row for
+   vav_dcv (standalone case) or ahu_min_oa, so a unit needing hardware for either sequence always
+   claimed hwRows=[] — silently under-costing the unit AND (pre-this-branch) always landing
+   _effectiveCostTier=1 at the old building-level gapPointKeys check, which used the SAME
+   mismatched key. Real-data impact: vav_dcv is a `priorityBonus` sequence at the center of this
+   task's own worked example, so this was corrected as part of making Change 1/2 correct, not as
+   an unrelated fix — flagged explicitly rather than silently folded in. Used only for matching a
+   hardware row to the blocking-sensor requirement that generated it; does not change
+   SEQUENCE_BLOCKING_SENSORS, PRICE_POINT_MAP, or any pricing/labor math. ── */
+var _HW_ROW_KEY_ALIASES = {
+  co2_zone: ['co2_zone', 'co2_zone_standalone'],
+  oaDampCmd: ['oaDampCmd', 'damperPositionControl'],
+  raDampCmd: ['raDampCmd', 'damperPositionControl'],
+};
+function _hwRowKeyMatchesBlocking(hwPointKey, blockingKeys) {
+  for (var i = 0; i < blockingKeys.length; i++) {
+    var accepted = _HW_ROW_KEY_ALIASES[blockingKeys[i]] || [blockingKeys[i]];
+    if (accepted.indexOf(hwPointKey) !== -1) return true;
+  }
+  return false;
+}
+
 /* ── Step 5: $ savings range data per sequence (2026-06-19)
    energyBasis: 'fan' = annualElec × fanFraction × [low..high]
                 'elec' = annualElec × [low..high]
@@ -1568,11 +1604,25 @@ var _SAVINGS_TIER_ORDER = { high: 0, 'med-high': 1, med: 2, 'low-med': 3, enable
 
 function _pricingSortRecommendedRows(rows) {
   return rows.slice().sort(function (a, b) {
-    // 2026-07-22: DCV promotion — demandCtrl/vav_dcv must sort to the very top of the
-    // Recommended list, ahead of every other measure (not merely ahead of its own tier
-    // bucket). An explicit tiebreak here guarantees that outcome regardless of how the
-    // weight/effectiveCostTier score below happens to rank against other 'high' tier
-    // measures (e.g. ahu_dsp_reset/ahu_sat_reset score higher on that formula alone).
+    // 2026-07-28 (fix/roi-no-hardware-first-per-unit) — PRIMARY key, ahead of the DCV tiebreak
+    // below. Matt: "I know I told you to prioritize DCV but we really should be prioritizing
+    // sequences that don't require installing sensors first." This REVISES the 2026-07-22 DCV
+    // promotion immediately below: DCV still wins every tie it's eligible for, but ONLY within
+    // its own hardware-readiness group now — a DCV row that still needs its CO2 sensor installed
+    // (_hwGroup 'gap') must never display ahead of a no-hardware-required row (_hwGroup 'ready')
+    // of any other measure. Reads the SAME rec._hwGroup buildCatalogRows stamps per unit and
+    // _pricingSortUnitsNoHwFirst already uses for MEMBERSHIP ranking (see that function's header
+    // comment) — this is the DISPLAY-order counterpart; the two must never silently disagree.
+    // Missing _hwGroup (only possible on the defensive "no impactDef" fallback path) is treated
+    // as needing hardware (never silently ranked as if it were the easy case).
+    var aHw = a._hwGroup === 'ready' ? 0 : 1;
+    var bHw = b._hwGroup === 'ready' ? 0 : 1;
+    if (aHw !== bHw) return aHw - bHw;
+    // 2026-07-22: DCV promotion — demandCtrl/vav_dcv must sort to the top of its hardware-
+    // readiness group (see primary key above), ahead of every other measure IN THAT GROUP (not
+    // merely ahead of its own tier bucket). An explicit tiebreak here guarantees that outcome
+    // regardless of how the weight/effectiveCostTier score below happens to rank against other
+    // 'high' tier measures (e.g. ahu_dsp_reset/ahu_sat_reset score higher on that formula alone).
     var aDcv = a.seqKey === 'demandCtrl' || a.seqKey === 'vav_dcv' ? 1 : 0;
     var bDcv = b.seqKey === 'demandCtrl' || b.seqKey === 'vav_dcv' ? 1 : 0;
     if (aDcv !== bDcv) return bDcv - aDcv;
@@ -2904,10 +2954,32 @@ function buildCatalogRows(projId) {
     // --- Phase 2: Sequence labor rows ---
     // Count non-'na' blocked/partial sequences per key across all equipment in this building
     // Track blocked vs partial breakdown for Qty clarity (FIX 3)
-    var seqCounts = {}; // seqKey → count of blocked/partial instances
-    var seqBlocked = {}; // seqKey → count of blocked-only instances
-    var seqPartial = {}; // seqKey → count of partial-only instances
-    var seqApplicable = {}; // seqKey → count of non-'na' instances (denominator)
+    //
+    // 2026-07-28 (fix/roi-no-hardware-first-per-unit) — per Matt: "we really should be
+    // prioritizing sequences that don't require installing sensors first" (this REVISES the
+    // earlier DCV priority-bonus direction, not the priorityBonus value itself — see
+    // SEQUENCE_SAVINGS_IMPACT.demandCtrl's comment). Root cause this fixes: cost tier used to be
+    // decided per BUILDING (see the old buildRecommendedRows comment this replaced) — a building
+    // with 25 AHUs on an `ahu_dsp_reset` opportunity, 18 of which already have the duct static
+    // pressure sensor and 7 of which don't, scored the ENTIRE 25-unit row at the expensive tier,
+    // ranking 18 programming-only units as if they needed hardware. Every blocked/partial
+    // instance is now classified per EQUIPMENT UNIT (using the same per-unit missingPoints data
+    // already gathered above as `perEquipMissing`) into 'ready' (every SEQUENCE_BLOCKING_SENSORS
+    // key for this seqKey is already present on THIS unit — programming-only) or 'gap' (this
+    // unit is still missing at least one blocking sensor — hardware install required). Two
+    // counters per group so the row-generation loop below can emit up to two rows per seqKey
+    // instead of one row that silently mixes both groups' cost tiers. Sequences with no blocking
+    // sensors at all (SEQUENCE_BLOCKING_SENSORS[seqKey] === []) always land in 'ready' — same as
+    // the old effectiveCostTier=1 shortcut for those.
+    var seqCounts = {}; // seqKey → { ready: n, gap: n } — count of blocked/partial instances per hw-readiness group
+    var seqBlocked = {}; // seqKey → { ready: n, gap: n } — count of blocked-only instances
+    var seqPartial = {}; // seqKey → { ready: n, gap: n } — count of partial-only instances
+    var seqApplicable = {}; // seqKey → count of non-'na' instances (denominator, both groups combined)
+
+    function _bumpSeqGroupCount(map, seqKey, group) {
+      if (!map[seqKey]) map[seqKey] = { ready: 0, gap: 0 };
+      map[seqKey][group]++;
+    }
 
     // 2026-07-27: uses the SAME filtered `equipResults` as the hardware-gap pass above, so a
     // monitoring-only unit (excluded above) never contributes sequence-programming labor either —
@@ -2916,18 +2988,33 @@ function buildCatalogRows(projId) {
     // control path to act on it.
     equipResults.forEach(function (eq) {
       if (!eq.seqReadiness) return;
+      var eqMissing = (perEquipMissing[eq.id] && perEquipMissing[eq.id].keys) || {};
       Object.keys(eq.seqReadiness).forEach(function (seqKey) {
         var entry = eq.seqReadiness[seqKey];
         if (entry.status === 'na') return;
         // Count all non-na as applicable (denominator)
         seqApplicable[seqKey] = (seqApplicable[seqKey] || 0) + 1;
-        if (entry.status === 'blocked') {
-          seqCounts[seqKey] = (seqCounts[seqKey] || 0) + 1;
-          seqBlocked[seqKey] = (seqBlocked[seqKey] || 0) + 1;
-        } else if (entry.status === 'partial') {
-          seqCounts[seqKey] = (seqCounts[seqKey] || 0) + 1;
-          seqPartial[seqKey] = (seqPartial[seqKey] || 0) + 1;
-        }
+        if (entry.status !== 'blocked' && entry.status !== 'partial') return;
+
+        // Per-UNIT hardware-readiness classification — see header comment above. `eqMissing`
+        // stores the RAW mp.categoryKey (pre co2_ahu/co2_zone remap), so co2_ahu/co2_zone
+        // blocking keys need the same category-based remap buildCatalogRows' hardware-gap pass
+        // applies, checked against this unit's own category (not the building's).
+        var blocking = SEQUENCE_BLOCKING_SENSORS[seqKey] || [];
+        var needsHw = blocking.some(function (sk) {
+          if (sk === 'co2_ahu' || sk === 'co2_zone') {
+            var zoneTypes = ['vav', 'fpb', 'ddvav', 'zone'];
+            var isZoneCat = zoneTypes.indexOf(eq.category) !== -1;
+            if ((sk === 'co2_zone') !== isZoneCat) return false; // wrong category for this blocking key
+            return !!eqMissing.co2;
+          }
+          return !!eqMissing[sk];
+        });
+        var group = needsHw ? 'gap' : 'ready';
+
+        _bumpSeqGroupCount(seqCounts, seqKey, group);
+        if (entry.status === 'blocked') _bumpSeqGroupCount(seqBlocked, seqKey, group);
+        else _bumpSeqGroupCount(seqPartial, seqKey, group);
       });
     });
 
@@ -2943,59 +3030,68 @@ function buildCatalogRows(projId) {
       });
     }
 
+    // 2026-07-28 (fix/roi-no-hardware-first-per-unit): up to TWO rows per seqKey now — one per
+    // hw-readiness group (see counting pass above) — instead of one row mixing both groups. Total
+    // labor $ for a seqKey is unchanged (ready-count + gap-count === the old single count), only
+    // the split changes; each split row carries its own group's blocked/partial breakdown and a
+    // new `_hwGroup` field ('ready' | 'gap') consumed by buildRecommendedRows (cost-tier stamping)
+    // and _pricingPairHwSeq (hardware claiming — a 'ready' row never claims a hardware gap row).
     Object.keys(seqCounts).forEach(function (seqKey) {
-      var count = seqCounts[seqKey];
-      if (count <= 0) return;
-      var hrs = perSeqHours[seqKey] != null ? perSeqHours[seqKey] : 2.0;
-      var label = seqLabels[seqKey] || seqKey;
-      // DCV label override per spec §2A note
-      if (seqKey === 'demandCtrl' || seqKey === 'vav_dcv') label += ' (CO2/DCV Programming)';
-      var lineHours = count * hrs;
-      var lineTotal = parseFloat((lineHours * hourlyRate).toFixed(2));
+      ['ready', 'gap'].forEach(function (group) {
+        var count = seqCounts[seqKey][group];
+        if (!count || count <= 0) return;
+        var hrs = perSeqHours[seqKey] != null ? perSeqHours[seqKey] : 2.0;
+        var label = seqLabels[seqKey] || seqKey;
+        // DCV label override per spec §2A note
+        if (seqKey === 'demandCtrl' || seqKey === 'vav_dcv') label += ' (CO2/DCV Programming)';
+        var lineHours = count * hrs;
+        var lineTotal = parseFloat((lineHours * hourlyRate).toFixed(2));
 
-      // FIX 3: Equipment label — show "N of M [type]" or "N [type]" if all applicable
-      var applicable = seqApplicable[seqKey] || count;
-      var seqTypeLabel = label.replace(/ \(CO2\/DCV Programming\)$/, ''); // strip suffix for the label
-      var eqLabel2;
-      if (count === applicable) {
-        eqLabel2 = count + ' ' + seqTypeLabel + (count !== 1 ? 's' : '');
-      } else {
-        eqLabel2 = count + ' of ' + applicable + ' ' + seqTypeLabel + (applicable !== 1 ? 's' : '');
-      }
+        // FIX 3: Equipment label — show "N of M [type]" or "N [type]" if all applicable
+        var applicable = seqApplicable[seqKey] || count;
+        var seqTypeLabel = label.replace(/ \(CO2\/DCV Programming\)$/, ''); // strip suffix for the label
+        var eqLabel2;
+        if (count === applicable) {
+          eqLabel2 = count + ' ' + seqTypeLabel + (count !== 1 ? 's' : '');
+        } else {
+          eqLabel2 = count + ' of ' + applicable + ' ' + seqTypeLabel + (applicable !== 1 ? 's' : '');
+        }
 
-      // Item 5a317ac7: blocked/partial breakdown folded into Equipment label (not Note).
-      // hrs × $rate/hr was redundant with col 9 (hours spinner) and is removed entirely.
-      var blockedN = seqBlocked[seqKey] || 0;
-      var partialN = seqPartial[seqKey] || 0;
-      var statusBreakdown = '';
-      if (blockedN > 0 && partialN > 0) {
-        statusBreakdown = ' (' + blockedN + ' blocked, ' + partialN + ' partial)';
-      } else if (blockedN > 0) {
-        statusBreakdown = ' (' + blockedN + ' blocked)';
-      } else if (partialN > 0) {
-        statusBreakdown = ' (' + partialN + ' partial)';
-      }
+        // Item 5a317ac7: blocked/partial breakdown folded into Equipment label (not Note).
+        // hrs × $rate/hr was redundant with col 9 (hours spinner) and is removed entirely.
+        var blockedN = (seqBlocked[seqKey] && seqBlocked[seqKey][group]) || 0;
+        var partialN = (seqPartial[seqKey] && seqPartial[seqKey][group]) || 0;
+        var statusBreakdown = '';
+        if (blockedN > 0 && partialN > 0) {
+          statusBreakdown = ' (' + blockedN + ' blocked, ' + partialN + ' partial)';
+        } else if (blockedN > 0) {
+          statusBreakdown = ' (' + blockedN + ' blocked)';
+        } else if (partialN > 0) {
+          statusBreakdown = ' (' + partialN + ' partial)';
+        }
 
-      rows.push({
-        id: 'seq_' + bName + '_' + seqKey + '_' + rowIdx++,
-        building: bName,
-        item: label,
-        type: 'Sequence',
-        equipment: eqLabel2 + statusBreakdown,
-        qty: count,
-        sku: null,
-        engReview: false,
-        noSku: false,
-        ioOnly: false,
-        unitPrice: parseFloat((hrs * hourlyRate).toFixed(2)),
-        listPrice: null,
-        netPrice: null,
-        contractPrice: null,
-        lineTotal: lineTotal,
-        note: '', // phase-2 rows have no static note; free-text override via est.noteOverrides
-        phase: 2,
-        seqKey: seqKey,
-        hrsPerUnit: hrs,
+        rows.push({
+          id: 'seq_' + bName + '_' + seqKey + '_' + group + '_' + rowIdx++,
+          building: bName,
+          item: label,
+          type: 'Sequence',
+          equipment: eqLabel2 + statusBreakdown,
+          qty: count,
+          sku: null,
+          engReview: false,
+          noSku: false,
+          ioOnly: false,
+          unitPrice: parseFloat((hrs * hourlyRate).toFixed(2)),
+          listPrice: null,
+          netPrice: null,
+          contractPrice: null,
+          lineTotal: lineTotal,
+          note: '', // phase-2 rows have no static note; free-text override via est.noteOverrides
+          phase: 2,
+          seqKey: seqKey,
+          hrsPerUnit: hrs,
+          _hwGroup: group,
+        });
       });
     });
   });
@@ -3884,11 +3980,12 @@ function _pricingFindCheapestSku(pointKey, catalog, cfg) {
       enabler/safety/null-impact sequences never form a unit and can never
       appear in Recommended.
    3. Ceiling = _pricingComputeBudgetTotal(budget) when a recurring budget is
-      set — membership is the ranked (_pricingEquipRowScore, best ROI-per-
-      dollar first) greedy prefix that fits (_pricingGreedyPrefix, the
-      shipped v631 Fit-to-Budget engine, reused verbatim). No budget (or Mode
-      A financing, or an invalid term) → membership = HIGH-impact units only
-      (Matt's specified fallback).
+      set — membership is the ranked (2026-07-28: no-hardware-required units
+      first, _pricingEquipRowScore/best ROI-per-dollar as the tie-break within
+      each group — see _pricingSortUnitsNoHwFirst) greedy prefix that fits
+      (_pricingGreedyPrefix, the shipped v631 Fit-to-Budget engine, reused
+      verbatim). No budget (or Mode A financing, or an invalid term) →
+      membership = HIGH-impact units only (Matt's specified fallback).
    4. Kept rows (sequence + its claimed hardware) are returned in the
       existing building-grouped / phase-sorted order.
    ─────────────────────────────────────────────────────────────────────────── */
@@ -3971,30 +4068,18 @@ function buildRecommendedRows(projId) {
         rec._savingsWeight = impactDef.weight;
         rec._enablesLabel = impactDef.enablesLabel || null;
 
-        // Dynamic effectiveCostTier: if all blocking sensors for this sequence are
-        // already covered in the equipment matrix → effectiveCostTier=1 (programming only).
-        // We approximate "covered" by checking if phase-1 hardware rows for those sensors
-        // exist in catRows (i.e., they AREN'T in the gap list — gaps = missing sensors).
-        // Since buildCatalogRows only adds rows for MISSING points, if a blocking sensor
-        // key has NO row in catRows for this building, it is already covered.
-        var blocking = SEQUENCE_BLOCKING_SENSORS[rec.seqKey] || [];
+        // Dynamic effectiveCostTier — 2026-07-28 (fix/roi-no-hardware-first-per-unit): now read
+        // directly from the PER-UNIT hw-readiness group buildCatalogRows already computed
+        // (rec._hwGroup: 'ready' = every blocking sensor this seqKey needs is already present on
+        // every unit this row represents, 'gap' = at least one unit still needs hardware) instead
+        // of re-deriving it from a building-wide scan of catRows' hardware-gap rows. The old scan
+        // flagged an ENTIRE building's row as "needs hardware" the moment ANY ONE unit in that
+        // building lacked the sensor — e.g. Courthouse ahu_dsp_reset: 18 of 25 AHUs already have
+        // the duct static pressure sensor, but the whole 25-unit row scored at the expensive tier.
+        // buildCatalogRows now emits a separate row per group, so this is just a direct read.
+        // Default to nominalTier (not 1) if _hwGroup is ever missing — never silently under-price.
         var nominalTier = impactDef.nominalCostTier || 2;
-        if (blocking.length === 0) {
-          // No blocking sensors — programming only
-          rec._effectiveCostTier = 1;
-        } else {
-          // Check if any blocking sensor is still a gap (has a phase-1 row in catRows for this building)
-          var gapPointKeys = {};
-          catRows.forEach(function (cr) {
-            if (cr.phase === 1 && cr.building === rec.building && cr._pointKey) {
-              gapPointKeys[cr._pointKey] = true;
-            }
-          });
-          var anyBlocked = blocking.some(function (sk) {
-            return gapPointKeys[sk];
-          });
-          rec._effectiveCostTier = anyBlocked ? nominalTier : 1;
-        }
+        rec._effectiveCostTier = rec._hwGroup === 'ready' ? 1 : nominalTier;
       } else {
         // No impact definition — leave unlabeled
         rec.savingsImpact = null;
@@ -5023,11 +5108,21 @@ function _pricingPairHwSeq(hw, lb) {
   var claimedSeqIds = {};
   var pairedSeqByHwId = {};
   lb.forEach(function (seqRow) {
+    // 2026-07-28 (fix/roi-no-hardware-first-per-unit): a 'ready' split row's units already have
+    // every blocking sensor this seqKey needs (see buildCatalogRows' _hwGroup stamping) — it must
+    // never claim a hardware gap row that belongs to this building's separate 'gap' split row for
+    // the same seqKey. Without this guard, row order inside `lb` (ready row is generated before
+    // the gap row for the same seqKey) would let the ready row claim the shared building-level
+    // hardware gap row first, leaving the gap row — the one that actually needs it — unpaired.
+    if (seqRow._hwGroup === 'ready') return;
     var blocking = (seqRow.seqKey && SEQUENCE_BLOCKING_SENSORS[seqRow.seqKey]) || [];
     if (!blocking.length) return; // no blocking sensors → standalone
     hw.forEach(function (_hwCandidate) {
       if (claimedHwIds[_hwCandidate.id]) return; // already claimed by another sequence
-      if (_hwCandidate._pointKey && blocking.indexOf(_hwCandidate._pointKey) !== -1) {
+      // _hwRowKeyMatchesBlocking (see _HW_ROW_KEY_ALIASES above) — a hardware row's _pointKey can
+      // differ from the blocking-sensor key that requires it (co2_zone_standalone/
+      // damperPositionControl re-pricing splits) — not a plain equality check.
+      if (_hwCandidate._pointKey && _hwRowKeyMatchesBlocking(_hwCandidate._pointKey, blocking)) {
         claimedHwIds[_hwCandidate.id] = true;
         claimedSeqIds[seqRow.id] = true;
         pairedSeqByHwId[_hwCandidate.id] = seqRow;
@@ -5100,6 +5195,23 @@ function _pricingBuildRoiUnits(rows) {
         toggleKeys.push(hwRow._baseId || hwRow.id);
       });
 
+      // Unit-atomicity invariant (2026-07-28, fix/roi-no-hardware-first-per-unit) — a sequence
+      // is never supposed to be sold without the hardware it needs (header comment above). This
+      // was always true implicitly but had no guard; now that Change 2 sorts on "needs hardware"
+      // as a primary key, a silent violation here (a 'gap'-group row with real blocking sensors
+      // but zero claimed hardware) would make a unit LOOK like a no-hardware unit and jump the
+      // queue incorrectly. Non-fatal — logs so it's visible without breaking rendering.
+      var _seqBlocking = (seqRow.seqKey && SEQUENCE_BLOCKING_SENSORS[seqRow.seqKey]) || [];
+      if (seqRow._hwGroup === 'gap' && _seqBlocking.length > 0 && claimedHw.length === 0) {
+        console.warn(
+          '[pricing-estimator] unit atomicity violation: ' +
+            seqRow.building +
+            '/' +
+            seqRow.seqKey +
+            ' is flagged as needing hardware but claimed none',
+        );
+      }
+
       units.push({
         toggleKeys: toggleKeys,
         cost: cost,
@@ -5112,6 +5224,66 @@ function _pricingBuildRoiUnits(rows) {
     // they are not membership candidates for Recommended/Fit-to-Budget.
   });
   return units;
+}
+
+/* ── _pricingUnitNeedsHardware(u) / _pricingSortUnitsNoHwFirst(units) ─────────────────────────
+   Change 2 (2026-07-28, fix/roi-no-hardware-first-per-unit) — Matt: "I know I told you to
+   prioritize DCV but we really should be prioritizing sequences that don't require installing
+   sensors first." This REVISES the earlier DCV priority-bonus direction, not the priorityBonus
+   value itself (left at 1.75 — it still correctly orders DCV WITHIN each hardware-readiness
+   group; see SEQUENCE_SAVINGS_IMPACT.demandCtrl's comment).
+
+   Problem the old single-key sort had: _pricingEquipRowScore is priorityBonus + weight /
+   effectiveCostTier. A DCV unit that STILL needs its CO2 sensor (1.75 + 2.5/2 = 3.0) could tie a
+   programming-only duct-static-reset unit (0 + 3/1 = 3.0) — exactly the ordering Matt is
+   rejecting. Tuning the bonus/divisor further to force a particular ordering was explicitly
+   ruled out (plan: "Do NOT implement this by inflating a bonus or tuning a divisor... Make it an
+   explicit two-key sort"). This is that explicit two-key sort: hardware-need is the PRIMARY key
+   (no-hardware-required units always sort before hardware-required units, as a whole group), ROI
+   score (_pricingEquipRowScore, unchanged) is the SECONDARY key within each group.
+
+   Implementation note: the two groups are sorted+diversified INDEPENDENTLY, then concatenated
+   (no-hardware group first) — never re-merged into one score-sorted array. If they were merged
+   and diversified as one list, a same-score tie that happens to straddle the group boundary
+   (e.g. a hardware-needing DCV unit at 3.0 next to a no-hardware duct-static unit also at 3.0)
+   would look like one contiguous tie group to _pricingDiversifyTiedUnits (which only checks
+   score, not hw-need) and its family round-robin could shuffle a hardware-needing unit ahead of
+   a no-hardware one, silently reintroducing the exact ordering this change removes. Splitting
+   first makes that impossible: no unit in the hardware-required group can ever precede any unit
+   in the no-hardware group, regardless of score.
+
+   `u.hwRows` (the _pricingBuildRoiUnits unit shape) is authoritative for "needs hardware" — a
+   'ready'-group seqRow (buildCatalogRows' per-unit split, Change 1) never claims a hardware row
+   (see _pricingPairHwSeq), so hwRows.length > 0 exactly captures "this unit's atomic bundle
+   includes an unclaimed sensor to install". The remapped unit shape used by
+   _pricingComputeRecommendedTimeline (`{rows: [...], score, ...}`, no `hwRows` field) is handled
+   via its `rows` array instead: `rows.some(r => r.phase === 1)` — true for any unit whose bundle
+   contains a hardware row, including the defensive single-row leftover-fold-in units.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingUnitNeedsHardware(u) {
+  if (u.hwRows) return u.hwRows.length > 0;
+  if (u.rows) {
+    return u.rows.some(function (r) {
+      return r.phase === 1;
+    });
+  }
+  return false;
+}
+
+function _pricingSortUnitsNoHwFirst(units) {
+  var noHw = [];
+  var needsHw = [];
+  units.forEach(function (u) {
+    (_pricingUnitNeedsHardware(u) ? needsHw : noHw).push(u);
+  });
+  var byScoreDesc = function (a, b) {
+    return b.score - a.score;
+  };
+  noHw.sort(byScoreDesc);
+  needsHw.sort(byScoreDesc);
+  // _pricingDiversifyTiedUnits runs PER GROUP (see header comment) so the family round-robin can
+  // never cross the no-hardware/needs-hardware boundary.
+  return _pricingDiversifyTiedUnits(noHw).concat(_pricingDiversifyTiedUnits(needsHw));
 }
 
 /* ── _pricingGreedyPrefix(units, ceiling) ────────────────────────────────────
@@ -5133,12 +5305,14 @@ function _pricingBuildRoiUnits(rows) {
    MEMBERSHIP walk (not just phase placement) fill the whole ceiling with the larger pool before
    ever reaching the smaller one — real-data verification found exactly this on JOCO before this
    line was added. See _pricingDiversifyTiedUnits' header comment for the full diagnosis.
+
+   2026-07-28 (fix/roi-no-hardware-first-per-unit): sort/diversify replaced with
+   _pricingSortUnitsNoHwFirst — see its header comment. No-hardware units now fill the ceiling
+   before any hardware-needing unit is offered, at every ceiling size (Recommended-tier
+   membership AND any smaller Fit-to-Budget ceiling a caller passes in).
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingGreedyPrefix(units, ceiling) {
-  var sorted = units.slice().sort(function (a, b) {
-    return b.score - a.score;
-  });
-  sorted = _pricingDiversifyTiedUnits(sorted);
+  var sorted = _pricingSortUnitsNoHwFirst(units);
 
   var running = 0;
   var keepKeys = [];
@@ -6937,9 +7111,10 @@ function _pricingComputeProgramCostModel(projId) {
    happened to be in the first buildings encountered, not the best-return measures in the
    portfolio, directly contradicting that promise.
 
-   New rule: rank every priced row across the WHOLE portfolio by ROI, then fill Phase 1 with the
-   best-scoring measures regardless of building, Phase 2 the next tier, Phase 3 the rest — each
-   phase still bounded by its own measures envelope (allowance − that phase's own recurring EM
+   New rule: rank every priced row across the WHOLE portfolio (2026-07-28: no-hardware-required
+   units first, then by ROI within each group — see _pricingSortUnitsNoHwFirst), then fill Phase 1
+   with the best-ranked measures regardless of building, Phase 2 the next tier, Phase 3 the rest —
+   each phase still bounded by its own measures envelope (allowance − that phase's own recurring EM
    labor). Concretely:
      1. buildRecommendedRows() membership IS unit membership — Step 2/3 of that function's own
         header comment: every surviving row is either the sequence half or a claimed-hardware half
@@ -7087,17 +7262,18 @@ function _pricingComputeRecommendedTimeline(projId) {
       total: _pricingComputeTotals([r], estimate).grand || 0,
     });
   });
-  // Stable sort (Array.prototype.sort is stable per spec/all modern engines) — best ROI first;
-  // ties keep buildRecommendedRows' natural order rather than an arbitrary re-shuffle.
-  units.sort(function (a, b) {
-    return b.score - a.score;
-  });
+  // 2026-07-28 (fix/roi-no-hardware-first-per-unit): no-hardware-first primary key, ROI score
+  // (stable sort, best first) secondary key within each group — see _pricingSortUnitsNoHwFirst's
+  // header comment for the full rationale (this REVISES the pure ROI-score ordering DCV's
+  // priorityBonus previously relied on, per Matt: "we really should be prioritizing sequences
+  // that don't require installing sensors first").
   // Bug 2744e688 (2026-07-27): measure-family diversity tie-break — reorders ONLY within
   // exactly-tied score groups so an already-represented family (e.g. 19 tied ahu_sat_reset units)
   // never crowds an equally-scored sibling family (e.g. 5 tied ahu_dsp_reset/fan-energy units) out
   // of the phase it would otherwise fit. See _pricingDiversifyTiedUnits' header comment for the
-  // full diagnosis/design. Never changes cross-score ranking.
-  units = _pricingDiversifyTiedUnits(units);
+  // full diagnosis/design. Never changes cross-score ranking; now run separately within each
+  // hardware-readiness group (see _pricingSortUnitsNoHwFirst) so it can never cross that boundary.
+  units = _pricingSortUnitsNoHwFirst(units);
 
   // phaseUnits: UNIT-granularity working set for the greedy walk + repair pass below (kept
   // separate from the final `phases` rows/buildings/total view, which is derived once at the end
@@ -8923,18 +9099,37 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         if (pairedSeq) {
           _flatItems.push({
             score: _pricingEquipRowScore(pairedSeq),
+            hwGroup: pairedSeq._hwGroup, // 2026-07-28 (fix/roi-no-hardware-first-per-unit)
             html: renderMergedRow(row, pairedSeq, isBothMode, matchedRec, hidden),
           });
         } else {
-          _flatItems.push({ score: _pricingEquipRowScore(row), html: renderRow(row, isBothMode, matchedRec, hidden) });
+          // A standalone (unpaired) hardware row IS the hardware install — always the 'gap'
+          // side regardless of _hwGroup (which this row type never carries; see the fallback
+          // below), same as the merged/lb cases.
+          _flatItems.push({
+            score: _pricingEquipRowScore(row),
+            hwGroup: 'gap',
+            html: renderRow(row, isBothMode, matchedRec, hidden),
+          });
         }
       });
       lb.forEach(function (row) {
         if (claimedSeqIds[row.id]) return; // already rendered combined with its paired hw row
-        _flatItems.push({ score: _pricingEquipRowScore(row), html: renderRow(row, isBothMode, null, hidden) });
+        _flatItems.push({
+          score: _pricingEquipRowScore(row),
+          hwGroup: row._hwGroup,
+          html: renderRow(row, isBothMode, null, hidden),
+        });
       });
     });
+    // 2026-07-28 (fix/roi-no-hardware-first-per-unit) — same primary/secondary discipline as
+    // _pricingSortRecommendedRows/_pricingSortUnitsNoHwFirst: no-hardware-required rows first
+    // (hwGroup 'ready'), ROI score as the secondary/tie-break within each group. Missing hwGroup
+    // (standalone hw rows, defensive fallback) treated as needing hardware, never as the easy case.
     _flatItems.sort(function (a, b) {
+      var aHw = a.hwGroup === 'ready' ? 0 : 1;
+      var bHw = b.hwGroup === 'ready' ? 0 : 1;
+      if (aHw !== bHw) return aHw - bHw;
       return b.score - a.score;
     });
     tableBodyHTML = _flatItems
