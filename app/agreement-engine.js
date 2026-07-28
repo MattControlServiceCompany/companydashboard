@@ -191,11 +191,17 @@ function collectAgreementData(projId, templateType, opts) {
   if (templateType) cfg.templateType = templateType;
   if (AGREEMENT_TEMPLATE_TYPES.indexOf(cfg.templateType) === -1) cfg.templateType = 'monthlyAllowance';
 
-  // Buildings covered — live from the project's own building list (utility-data.js). This is the
-  // authoritative source the blueprint calls for: "the building list should come from the project,
-  // which resolves 24-vs-27 on its own" rather than either document's own (differing) counts.
-  var buildings = (typeof getUDBldgs === 'function' ? getUDBldgs(projId) : []).map(function (b) {
-    return b.name || b.id;
+  // Buildings covered — Johnson County has no Utility Data and never will (standing client
+  // instruction, not a bug), so getUDBldgs always returns empty for this client and the Agreement
+  // could never list a single building. Source from the Equipment Matrix instead, via
+  // collectASHRAE36Data — the SAME function and campus-wide/weather exclusion logic
+  // pricing-estimator.js's _pricingGetBuildingCount already relies on (auditableRows.length guard
+  // drops rows like the "Johnson County"/"New Century Complex" Weather-only stubs), so this can
+  // never drift from the building count shown elsewhere in the app. See
+  // _pricingGetBuildingCount (pricing-estimator.js) for the full rationale.
+  var ashData = typeof collectASHRAE36Data === 'function' ? collectASHRAE36Data(projId) : null;
+  var buildings = (ashData && ashData.buildings ? ashData.buildings : []).map(function (b) {
+    return b.name;
   });
 
   // Equipment count — computed and exposed on `d` per the blueprint's live-data-binding table, but
@@ -256,6 +262,18 @@ function collectAgreementData(projId, templateType, opts) {
     initialTermEndLabel = _AGREEMENT_MONTHS[p1End[1] - 1] + ' ' + lastDay + ord + ', ' + p1End[0];
   }
 
+  // First Renewal Date — the day after the Initial Term ends (Matt confirmed 2026-07-28: the Term
+  // renews automatically for successive one-year terms, and escalation is keyed to that renewal
+  // date rather than the Effective Date anniversary — the program runs Aug 2026 - Dec 2028, so an
+  // Effective-Date-anniversary trigger would fire mid-term and never align with a renewal). Derived
+  // from the SAME p1End used above (January 1 of the year following the Initial Term's end year),
+  // not hardcoded, so it tracks the live phase schedule exactly like initialTermEndLabel does.
+  var renewalDateLabel = null;
+  if (typeof _PRICING_PHASE_DATE_RANGES !== 'undefined' && _PRICING_PHASE_DATE_RANGES.length) {
+    var _p1EndForRenewal = _PRICING_PHASE_DATE_RANGES[0].end; // [year, month]
+    renewalDateLabel = 'January 1, ' + (_p1EndForRenewal[0] + 1);
+  }
+
   return {
     project: { id: proj.id, name: clientName, client: clientName },
     templateType: cfg.templateType,
@@ -269,6 +287,7 @@ function collectAgreementData(projId, templateType, opts) {
     allowanceAmount: budget ? budget.amount : null,
     monthlyService: monthlyService,
     initialTermEndLabel: initialTermEndLabel, // e.g. "Dec 2026" -> formatted below per-clause
+    renewalDateLabel: renewalDateLabel, // e.g. "January 1, 2027" — first renewal / escalation date
     effectiveDate: effDate,
     lumpTotal: lumpTotal,
     escalationRate: cfg.escalationRate,
@@ -418,9 +437,15 @@ var _agreementCommercialRenderers = {
       utilityRebate:
         'Contractor shall assist with the application of any applicable utility rebates as part of this Agreement. Time expended performing such services shall be billed at the applicable labor rate and applied against the available labor hours under the Allowance.',
       hasRenewalEscalation: true,
+      // Matt confirmed 2026-07-28: the Term expires December 31, 2026 but renews automatically for
+      // successive one-year terms — this replaces the prior fixed-expiration reading, which
+      // conflicted with the Renewal Term/escalation clause below (a program running Aug 2026 -
+      // Dec 2028 needs the Agreement to still be in force when the second 4% increase fires).
       initialTermText:
         'This Agreement shall remain in effect until ' +
-        (d.initialTermEndLabel ? esc(d.initialTermEndLabel) + '.' : '[program end date not yet available].'),
+        (d.initialTermEndLabel
+          ? esc(d.initialTermEndLabel) + ', renewing automatically for successive one-year terms.'
+          : '[program end date not yet available], renewing automatically for successive one-year terms.'),
       earlyTerminationNoticeDays: 60,
       earlyTerminationReimbursement: false,
     };
@@ -670,17 +695,18 @@ function rptPageAgreementTermTermination(n, d) {
   var _romanNumerals = ['i', 'ii', 'iii', 'iv', 'v'];
   var _termRomanIdx = 1; // "i. Term:" already used index 0 above
 
-  // Escalation basis/compounding (Matt confirmed 2026-07-28): fixed annually, applied to BOTH the
-  // Allowance and the hourly labor rate stated in Section 1.1 — not CPI-indexed. The JOCO source
-  // sentence this replaces was itself incomplete ("...shall renew with an annual escalation rate
-  // of" — see Word comment #2 / base spec defect #2), so there was no existing template language
-  // establishing an anniversary-vs-calendar-year basis to defer to. Basis chosen here (anniversary
-  // of the Effective Date, i.e. contract year rather than calendar year) matches the ONLY existing
-  // escalation-math convention already in this codebase — rptPageContractProjection's per-contract-
-  // "yr" loop (report-engine.js, `Math.pow(1 + escalation / 100, yr - 1)`) — which is also
-  // contract-year-indexed, not calendar-year-indexed. Compounding is annual (each year's increase
-  // applies to the prior year's already-escalated amount, not the original base), the normal
-  // reading of "4% fixed annually" and consistent with that same Math.pow compounding formula.
+  // Escalation basis/compounding (Matt confirmed 2026-07-28, REVISED same day per his direct
+  // correction): the Term (see initialTermText above) expires December 31, 2026 but renews
+  // automatically for successive one-year terms, so escalation must be keyed to that RENEWAL date
+  // (January 1 of each renewal year), not an Effective-Date anniversary — the prior anniversary-of-
+  // Effective-Date basis was incoherent against a program that runs Aug 2026 - Dec 2028: the
+  // Agreement's own stated term would have already lapsed before a second anniversary-based
+  // increase could ever fire. Applied to BOTH the Allowance and the hourly labor rate stated in
+  // Section 1.1 — not CPI-indexed. Compounding is annual (each year's increase applies to the prior
+  // year's already-escalated amount, not the original base) — 4% on Jan 1 2027, then another 4% on
+  // Jan 1 2028, consistent with rptPageContractProjection's existing `Math.pow(1 + escalation/100,
+  // yr - 1)` contract-year compounding convention (report-engine.js), the only other escalation-math
+  // precedent in this codebase.
   var renewal = r.hasRenewalEscalation
     ? '<div style="' +
       _AGR_SUBHEAD +
@@ -689,11 +715,12 @@ function rptPageAgreementTermTermination(n, d) {
       '. Renewal Term:</div>' +
       '<div style="' +
       _AGR_BODY +
-      '" contenteditable="true">1. Beginning on the first anniversary of the Effective Date, and on each ' +
-      'anniversary thereafter for the duration of this Agreement, the Allowance and the hourly labor rate ' +
+      '" contenteditable="true">1. Beginning on the first renewal date' +
+      (d.renewalDateLabel ? ' (' + d.renewalDateLabel + ')' : '') +
+      ', and on each renewal thereafter, the Allowance and the hourly labor rate ' +
       'described in Section 1.1 shall each increase by a fixed escalation rate of ' +
       d.escalationRate +
-      '% over the amount then in effect for the immediately preceding contract year, compounding annually.' +
+      '% over the amount then in effect immediately prior to that renewal, compounding annually.' +
       _agreementUnconfirmedFlag(d.escalationConfirmed) +
       '</div>'
     : '';
