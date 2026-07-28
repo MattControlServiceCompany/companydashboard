@@ -107,6 +107,9 @@ const POINT_KEY_INSTALL_CLASS = {
   oaWetBulb: 'ductTempRhSensor',
   zoneTemp: 'spaceZoneSensor',
   co2_zone: 'spaceZoneSensor',
+  // co2_zone_standalone (2026-07-28): standalone CO2-only zone sensor — same wall-mount install
+  // effort as the other zone-sensor classes above.
+  co2_zone_standalone: 'spaceZoneSensor',
   oaDampCmd: 'damperActuator',
   raDampCmd: 'damperActuator',
   // damperPositionControl (2026-07-27): consolidated OA+RA damper row — same install class/hours
@@ -1647,6 +1650,22 @@ const PRICE_POINT_MAP = {
       'One wall sensor reads zone temperature, relative humidity, and CO2 in a single install — the temperature feedback zone control requires, plus the occupancy signal for demand-controlled ventilation.',
     g36Section: '§5.6.7',
   },
+  // co2_zone_standalone (2026-07-28, audit-finding correction): a STANDALONE zone CO2 room sensor
+  // for the case where the zone's temperature sensor is ALREADY present and only CO2 is missing —
+  // 658 of 685 real zone-side CO2 gaps in the JOCO portfolio are this case. Before this entry
+  // existed, buildCatalogRows fell through to the co2_zone COMBO entry above (ZS2-HC-ALC) for these
+  // too, which prices replacing a working temperature sensor just to add CO2 — a real overcharge.
+  // N1-AQX-C-A is a real, distinct catalog SKU (verified present: list $914, contract $365.60 at
+  // COST_CONTRACT_PCT=0.4) — a dedicated CO2-only room sensor, not a temp/humidity/CO2 combo.
+  co2_zone_standalone: {
+    defaultSku: 'N1-AQX-C-A',
+    qtyRule: 'perUnit',
+    flags: [],
+    note: 'Standalone CO2 room sensor — zone already has a working temp sensor',
+    whyNeeded:
+      'Provides the occupancy signal (CO2 ppm) for demand-controlled ventilation without replacing an already-working zone temperature sensor.',
+    g36Section: '§5.6.7',
+  },
   /* ── AHU actuators ── */
   oaDampCmd: {
     defaultSku: 'AFB24-MFT-06-A',
@@ -2301,6 +2320,28 @@ function buildCatalogRows(projId) {
             hardwareGaps['zoneTemp__' + cat + '__comboed'].count++;
             return;
           }
+          // CO2-only gap (zoneTemp already present) — P0 correction (2026-07-28, audit finding):
+          // 658 of 685 real zone-side CO2 gaps in the JOCO portfolio are this case (temp sensor
+          // already installed, only CO2 missing). Before this branch existed, these fell through
+          // to the general case below and were priced with the co2_zone COMBO mapEntry
+          // (ZS2-HC-ALC, $589.20 contract) — replacing a working temperature sensor to add CO2,
+          // a real overcharge (+$150K-ish portfolio-wide vs. pricing the correct part). The catalog
+          // already carries the right standalone part for exactly this case (see
+          // 'co2_zone_standalone' in PRICE_POINT_MAP, below) — a CO2-only room sensor, no temp
+          // sensor replacement.
+          if (effectiveKey === 'co2_zone' && !eqMissing['zoneTemp']) {
+            var standaloneKey = 'co2_zone_standalone__' + cat;
+            if (!hardwareGaps[standaloneKey])
+              hardwareGaps[standaloneKey] = {
+                pointKey: 'co2_zone_standalone',
+                equipType: cat,
+                catLabel: catLabel,
+                count: 0,
+                mapEntry: PRICE_POINT_MAP['co2_zone_standalone'],
+              };
+            hardwareGaps[standaloneKey].count++;
+            return;
+          }
           if (effectiveKey === 'zoneTemp') {
             var eqMissingZ = perEquipMissing[eq.id] ? perEquipMissing[eq.id].keys : {};
             // If co2 is also missing → this zone is handled in the co2_zone pass (combo)
@@ -2596,6 +2637,9 @@ function _pricingPointLabel(pointKey) {
     // ZS2-HC-ALC temp+humidity+CO2 zone sensor whenever the combo fires — see the PRICE_POINT_MAP
     // co2_zone entry above for the hardware-identity investigation behind this rename.
     co2_zone: 'Zone Temp/Humidity/CO2 Sensor',
+    // 2026-07-28: standalone CO2-only sensor (zone already has a working temp sensor) — distinct
+    // from co2_zone above (the combo replacement) so a reader can't confuse the two SKUs/prices.
+    co2_zone_standalone: 'CO2 (Zone, Standalone)',
     dat: 'Discharge Air Temp',
     hwst: 'HW Supply Temp',
     hwrt: 'HW Return Temp',
@@ -3810,6 +3854,28 @@ function buildOptionalPointRows(projId) {
             };
           }
           optionalGaps[key2].count = 1;
+          return;
+        }
+
+        // co2_zone standalone-vs-combo split (2026-07-28) — mirrors buildCatalogRows' combo dedup
+        // (search 'CO2-only gap' there for the full writeup). This function's `coveredKeys` (built
+        // above from eq.compliance.coveredPoints) already reports whether zoneTemp is present on
+        // this equipment REGARDLESS of whether zoneTemp itself is a required or optional category
+        // for this type, so it's the correct signal here too: zoneTemp covered => temp sensor
+        // already installed => CO2-only gap => standalone sensor, not the temp+CO2 combo replacement.
+        if (effectiveKey === 'co2_zone' && coveredKeys['zoneTemp']) {
+          var standaloneOptKey = 'co2_zone_standalone__' + cat;
+          var standaloneCatLabel = _pricingCatLabel(cat);
+          if (!optionalGaps[standaloneOptKey]) {
+            optionalGaps[standaloneOptKey] = {
+              pointKey: 'co2_zone_standalone',
+              equipType: cat,
+              catLabel: standaloneCatLabel,
+              count: 0,
+              mapEntry: PRICE_POINT_MAP['co2_zone_standalone'],
+            };
+          }
+          optionalGaps[standaloneOptKey].count++;
           return;
         }
 
