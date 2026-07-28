@@ -1576,6 +1576,59 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.28.713',
+    date: '2026-07-28',
+    title: 'Energy Services Management Agreement covers all 27 buildings and renews automatically',
+    items: [
+      {
+        type: 'change',
+        text: 'The Energy Services Management Agreement now lists all 27 Johnson County buildings in its scope of work.',
+      },
+      {
+        type: 'change',
+        text: 'The agreement term now renews automatically each year, with the 4% escalation applying on each January 1 renewal.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.07.28.712',
+    date: '2026-07-28',
+    title: 'Energy Services Management Agreement now includes annual escalation language',
+    items: [
+      {
+        type: 'change',
+        text: 'The Energy Services Management Agreement now states a 4% annual escalation on both the monthly allowance and the hourly labor rate.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.07.28.711',
+    date: '2026-07-28',
+    title: 'Service Proposal, Audit Report, and Cost Estimate improvements',
+    items: [
+      {
+        type: 'change',
+        text: 'Service Proposal: removed the Assessment Findings cost table and condensed the report to two pages.',
+      },
+      {
+        type: 'fix',
+        text: 'Service Proposal: corrected carbon dioxide sensor pricing.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report: buildings no longer repeat across phases in the phase table.',
+      },
+      {
+        type: 'change',
+        text: 'Cost Estimate: condensed the report from fifteen pages down to eleven.',
+      },
+      {
+        type: 'fix',
+        text: 'Report titles now use one consistent color across all pages.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.28.710',
     date: '2026-07-28',
     title: 'Internal settings-sync hardening (no visible change)',
