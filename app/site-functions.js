@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.28.710',
+    date: '2026-07-28',
+    title: 'Internal settings-sync hardening (no visible change)',
+    items: [
+      {
+        type: 'change',
+        text: 'Behind-the-scenes hardening of the per-user settings sync groundwork -- more reliable clearing of stale local data when switching accounts on a shared browser, better protection of raw stored keys, and more reliable detection of which account is active. This feature is not turned on yet, so there is nothing new to see on any page today.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.27.709',
     date: '2026-07-27',
     title: 'Audit Report tables now match the clean, plain style used on the Proposal',
