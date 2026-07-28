@@ -917,15 +917,31 @@ function _pricingGetBuildingCount(projId) {
      automatically if the portfolio's building/page count changes and stay auditable if Matt wants a
      different per-page rate.
    Adding ~6.3 hrs ($1,089.90 at $173/hr) in Month 1 ON TOP OF Month 1's existing SETUP ramp +
-   RECURRING bucket pushes Month 1 hours/dollars well past the $6,250/mo allowance on its own — this
-   is EXPECTED per Matt, not a bug: "Phase 1 spans five months with a $31,250 envelope, so the
-   phase-level math should absorb it." Verified this actually holds: `_pricingComputeProgramCostModel`
-   already sums `_pricingRecurringEMLaborHoursForMonth` across every calendar month IN THE PHASE
+   RECURRING bucket pushed Month 1 hours/dollars well past the $6,250/mo allowance on its own before
+   the fix/bill-entry-inside-recurring branch reduced the RECURRING bucket to 16 hrs — Month 1 fits
+   under cap again today (see the 2026-07-28 addendum immediately below), but this paragraph is left
+   intact as the historical record of why a per-month check (added that same day) exists at all: the
+   phase-level math ALONE can look fine in aggregate while hiding a single over-cap month, which is
+   exactly what happened here once.
+
+   2026-07-28 ADDENDUM (comprehensive-monthly-cap task — supersedes the "No per-month cap assumption
+   exists anywhere in that path" sentence that used to close this paragraph, which is no longer
+   true): this function's returned `months[i]` entries now carry `laborCost`/`monthlyAllowance`/
+   `overCap`/`overageAmount` — a genuine per-month check (EM labor for that month vs. the monthly
+   allowance), surfaced non-silently in `_pricingLaborBreakdownHTML` (var(--warn) cell + caption),
+   not just a console.error. This IS a labor-only check by construction — see that field's own
+   comment block, just above where `months` is built, for why measures/parts dollars are never
+   resolved to month granularity anywhere in this file, and why that's a real, documented
+   limitation rather than a fabricated split. `_pricingComputeProgramCostModel`
+   still sums `_pricingRecurringEMLaborHoursForMonth` across every calendar month IN THE PHASE
    before computing that phase's `emLaborTotal`/`measuresAvailable` (never compares a single month's
-   cost against the monthly allowance in isolation), and `measuresAvailable` is
+   cost against the monthly allowance in isolation on its own), and `measuresAvailable` is
    `Math.max(0, allowanceTotal - emLaborTotal)` — floored at 0, never negative, with an explicit
-   `overCommitted` flag (non-silent) when a phase's EM labor alone exceeds that phase's calendar
-   allowance. No per-month cap assumption exists anywhere in that path.
+   `overCommitted` flag (non-silent) when a phase's EM labor ALONE exceeds that phase's calendar
+   allowance — this remains a labor-only, phase-granularity flag on THIS return value; the true
+   comprehensive (labor + priced measures) over-commit check now lives on
+   `_pricingComputeRecommendedTimeline`'s returned `phases[i].overCommitted`, computed once real
+   measures dollars are assigned per phase — see that function's header comment.
 
    This function is READ BY _pricingComputeProgramCostModel to compute `emLaborTotal`/
    `measuresAvailable` per phase — the monthly totals it returns flow into real dollar math and
@@ -957,8 +973,18 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   if (!svc) return null;
   var hourlyRate = svc.hourlyRate;
 
-  function roundHrs(n) {
-    return Math.round(n * 100) / 100;
+  // 2026-07-28 (coordinator instruction, Matt verbatim: "why would you not estimate with whole
+  // numbers only?"): every labor-hour figure this function produces must be a WHOLE number, not
+  // just at display but at the point it's computed — a displayed whole number hiding a fractional
+  // value underneath would make the dollar math (hours x hourlyRate) not match what's shown.
+  // Rounding DIRECTION is UP (ceil) everywhere, per Matt's direct follow-up answer ("Always round
+  // up") — never round down a labor estimate (never promise less time than the work needs), and
+  // never round-to-nearest for some categories and up for others; ceil is applied uniformly to
+  // every category below. The underlying per-unit rates (0.25 hrs/building, minutes/page, ramp
+  // percentages) are UNCHANGED — this rounds the RESULT of applying those rates, not the rates
+  // themselves.
+  function ceilHrs(n) {
+    return Math.ceil(n);
   }
 
   // ── SETUP categories (ramp to zero over 3 months — one-time project work) ──
@@ -992,7 +1018,10 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   // loaded into this database yet.
   var BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT = 0.25; // 15 min/building/mo — retrieval + entry + sanity check
   var buildingCount = _pricingGetBuildingCount(projId);
-  var BILL_ENTRY_HOURS_DEFAULT = roundHrs(buildingCount * BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT);
+  // 2026-07-28: ceil'd to a whole hour (was 6.75 for 27 buildings at 0.25 hrs/building — see header
+  // comment above). Rounding UP here also means the named-carve-out subtraction below (which
+  // includes this figure) never leaves a fractional Ongoing Monitoring remainder.
+  var BILL_ENTRY_HOURS_DEFAULT = ceilHrs(buildingCount * BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT);
 
   // 2026-07-27 review fix, still true after the 2026-07-28 change: the subtraction below has no
   // floor on its own — if the named categories (now including Bill Entry) are ever raised, or the
@@ -1032,8 +1061,9 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   var AUDIT_VERIFY_MINUTES_PER_PAGE_DEFAULT = 10; // data cross-check against source, per page
   var AUDIT_FORMAT_MINUTES_PER_PAGE_DEFAULT = 4; // layout/spacing polish pass, per page
   var auditReportPageEstimate = buildingCount;
-  var AUDIT_VERIFY_HOURS_DEFAULT = roundHrs((auditReportPageEstimate * AUDIT_VERIFY_MINUTES_PER_PAGE_DEFAULT) / 60);
-  var AUDIT_FORMAT_HOURS_DEFAULT = roundHrs((auditReportPageEstimate * AUDIT_FORMAT_MINUTES_PER_PAGE_DEFAULT) / 60);
+  // 2026-07-28: ceil'd to whole hours (was 4.5/1.8 for 27 pages — see header comment above).
+  var AUDIT_VERIFY_HOURS_DEFAULT = ceilHrs((auditReportPageEstimate * AUDIT_VERIFY_MINUTES_PER_PAGE_DEFAULT) / 60);
+  var AUDIT_FORMAT_HOURS_DEFAULT = ceilHrs((auditReportPageEstimate * AUDIT_FORMAT_MINUTES_PER_PAGE_DEFAULT) / 60);
 
   var setupPoolHours = ALARM_SETUP_HOURS_DEFAULT + REPORT_SETUP_HOURS_DEFAULT + TREND_SETUP_HOURS_DEFAULT;
   var recurringPoolHours = RECURRING_EM_LABOR_HOURS_DEFAULT; // 2026-07-28: Bill Entry now INSIDE the 16-hr bucket, no longer additive on top of it
@@ -1051,11 +1081,13 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
     var out = [];
     var frac = rampFraction(monthIdx);
     if (frac > 0) {
-      var alarmHrs = roundHrs(ALARM_SETUP_HOURS_DEFAULT * frac);
+      // 2026-07-28: ceil'd to whole hours — the 60%/30% ramp steps (e.g. 4 x 0.6 = 2.4) would
+      // otherwise be the largest source of fractional hours in this table (see header comment).
+      var alarmHrs = ceilHrs(ALARM_SETUP_HOURS_DEFAULT * frac);
       if (alarmHrs > 0) out.push({ category: 'Alarm Configuration', hours: alarmHrs });
-      var reportHrs = roundHrs(REPORT_SETUP_HOURS_DEFAULT * frac);
+      var reportHrs = ceilHrs(REPORT_SETUP_HOURS_DEFAULT * frac);
       if (reportHrs > 0) out.push({ category: 'Report Setup', hours: reportHrs });
-      var trendHrs = roundHrs(TREND_SETUP_HOURS_DEFAULT * frac);
+      var trendHrs = ceilHrs(TREND_SETUP_HOURS_DEFAULT * frac);
       if (trendHrs > 0) out.push({ category: 'Trend Setup & Configuration', hours: trendHrs });
     }
     // MONTH-1-ONLY — Audit Report verification & polish. Deliberately NOT run through
@@ -1089,12 +1121,72 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
     return out;
   }
 
+  // 2026-07-28 (comprehensive-monthly-cap task, item 2 — "Enforce the cap per month, not only per
+  // phase"): monthlyAllowance uses _pricingMonthlyAllowanceAmount (the same denomination-normalized
+  // $/mo figure the calendar-phase model below uses), NOT svc.allowance (which is budget.amount
+  // taken as-is regardless of denomination — correct for JOCO today since its budget is already
+  // 'monthly', but would silently compare an annual/quarterly figure against a month's labor for a
+  // differently-configured project). Null when no budget.amount is configured — same
+  // silent-until-configured convention as the rest of this feature; laborCost/overCap/overageAmount
+  // are omitted from each month in that case (nothing to compare against).
+  var _budgetForCap = _pricingGetBudget(projId);
+  var _monthlyAllowanceForCap = _pricingMonthlyAllowanceAmount(_budgetForCap);
+
+  // KNOWN GRANULARITY LIMIT (documented, not silently assumed away): this per-month check is
+  // EM LABOR ONLY — hardware/programming "measures" dollars are never resolved below phase
+  // granularity anywhere in this file (a phase can span 5-12 calendar months; there is no
+  // month-by-month measures schedule to check against, and inventing an even split across a
+  // phase's months would be a fabricated number, not a real one). This is still a real,
+  // non-fabricated comprehensive check for what it covers: if EM labor ALONE in a given month
+  // already exceeds the monthly allowance, that month is over-cap regardless of what parts are
+  // bought that month (labor-only is the floor, not the ceiling, of what a month can cost) — this
+  // is exactly the Month-1 defect Matt flagged (39.05 hrs against a 36-hr/$6,250 cap, before any
+  // parts). The complementary, TRUE labor+measures comprehensive check lives at PHASE granularity
+  // in _pricingComputeRecommendedTimeline/_pricingComputeProgramCostModel below, where real priced
+  // measures dollars are actually assigned.
+  function buildMonthEntry(label, monthIdx) {
+    var rows = buildMonthRows(monthIdx);
+    var laborHours = rows.reduce(function (s, r) {
+      return s + r.hours;
+    }, 0);
+    var m = { label: label, rows: rows, laborHours: laborHours };
+    if (_monthlyAllowanceForCap != null) {
+      var laborCost = Math.round(laborHours * hourlyRate * 100) / 100;
+      m.laborCost = laborCost;
+      m.monthlyAllowance = _monthlyAllowanceForCap;
+      m.overCap = laborCost > _monthlyAllowanceForCap;
+      m.overageAmount = m.overCap ? Math.round((laborCost - _monthlyAllowanceForCap) * 100) / 100 : 0;
+      if (m.overCap) {
+        console.error(
+          '[_pricingComputeMonthlyLaborBreakdown] MONTHLY CAP EXCEEDED (labor alone, before any parts): ' +
+            label +
+            ' — ' +
+            laborHours +
+            ' hrs x $' +
+            hourlyRate +
+            '/hr = $' +
+            laborCost +
+            ' vs $' +
+            _monthlyAllowanceForCap +
+            '/mo allowance, over by $' +
+            m.overageAmount +
+            '. Surfaced in the Cost Estimate UI, not silently fixed — see _pricingLaborBreakdownHTML.',
+        );
+      }
+    }
+    return m;
+  }
+
   var months = [
-    { label: 'Month 1', rows: buildMonthRows(1) },
-    { label: 'Month 2', rows: buildMonthRows(2) },
-    { label: 'Month 3', rows: buildMonthRows(3) },
-    { label: 'Month 4+ (steady state)', rows: buildMonthRows(4) },
+    buildMonthEntry('Month 1', 1),
+    buildMonthEntry('Month 2', 2),
+    buildMonthEntry('Month 3', 3),
+    buildMonthEntry('Month 4+ (steady state)', 4),
   ];
+
+  var anyMonthOverCap = months.some(function (m) {
+    return m.overCap;
+  });
 
   return {
     hourlyRate: hourlyRate,
@@ -1103,6 +1195,8 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
     month1OnlyPoolHours: month1OnlyPoolHours, // Audit Report verification/polish — Month 1 only, see header comment
     ongoingMonitoringHours: ONGOING_MONITORING_HOURS_DEFAULT,
     buildingCount: buildingCount, // 2026-07-27: single source of truth this breakdown derives Bill Entry + Audit Report hours from
+    monthlyAllowance: _monthlyAllowanceForCap, // 2026-07-28: null when no budget.amount configured
+    anyMonthOverCap: anyMonthOverCap, // 2026-07-28: true if ANY month's labor-alone cost exceeds monthlyAllowance
     months: months,
   };
 }
@@ -1193,19 +1287,60 @@ function _pricingLaborBreakdownHTML(projId) {
     })
     .join('');
 
+  // 2026-07-28 (comprehensive-monthly-cap task, item 3 — "Surface violations loudly and visibly…
+  // a console.error alone is not enough; this is a client-facing document"): a month whose labor
+  // ALONE exceeds the monthly allowance (bd.months[i].overCap, computed in
+  // _pricingComputeMonthlyLaborBreakdown) gets its Total-hrs/month cell rendered in var(--warn) with
+  // an inline "OVER CAP" tag — same warn-color convention _pricingRecommendedTimelineHTML already
+  // uses for the phase-level over-commit note below, so the two "this exceeds the allowance"
+  // signals in this file look consistent to a reader who sees both.
   var totalCells = bd.months
     .map(function (m) {
       var sum = m.rows.reduce(function (s, r) {
         return s + r.hours;
       }, 0);
+      var overCell = m.overCap;
       return (
         '<td style="padding:6px 10px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;' +
-        'border-top:2px solid var(--border2)">' +
+        'border-top:2px solid var(--border2)' +
+        (overCell ? ';color:var(--warn)' : '') +
+        '">' +
         Math.round(sum * 100) / 100 +
-        ' hrs</td>'
+        ' hrs' +
+        (overCell ? ' <span style="font-size:9px;font-weight:700">OVER CAP</span>' : '') +
+        '</td>'
       );
     })
     .join('');
+
+  // Caption (silent/omitted when no month is over cap — same silent-until-violated convention used
+  // elsewhere in this file): names every over-cap month with its labor-only dollar figure and the
+  // overage, so the violation is legible without opening devtools console.
+  var capCaption = '';
+  if (bd.anyMonthOverCap) {
+    var overMonths = bd.months.filter(function (m) {
+      return m.overCap;
+    });
+    capCaption =
+      '<div style="font-size:10.5px;color:var(--warn);font-weight:700;margin:6px 14px 0;line-height:1.5">' +
+      'Monthly cap exceeded (EM labor alone, before any parts/materials): ' +
+      overMonths
+        .map(function (m) {
+          return (
+            _pricingEscText(m.label) +
+            ' — ' +
+            _pricingFmt(m.laborCost) +
+            ' vs. ' +
+            _pricingFmt(m.monthlyAllowance) +
+            '/mo allowance (over by ' +
+            _pricingFmt(m.overageAmount) +
+            ')'
+          );
+        })
+        .join(' · ') +
+      '.' +
+      '</div>';
+  }
 
   return (
     '<div style="margin:10px 14px 0;flex-shrink:0">' +
@@ -1226,6 +1361,7 @@ function _pricingLaborBreakdownHTML(projId) {
     '</tr></tfoot>' +
     '</table>' +
     '</div>' +
+    capCaption +
     '</div>' +
     '</div>'
   );
@@ -6735,6 +6871,26 @@ function _pricingComputeProgramCostModel(projId) {
    1/3-of-measures-grand split (the pre-existing behavior) so the timeline still renders something
    coherent — the repair pass runs against that same even split too, since it operates on
    `phaseShare` regardless of where it came from.
+
+   2026-07-28 ADDENDUM (comprehensive-monthly-cap task — Matt verbatim: "Why would you check labor
+   only when this is a monthly allowance for all parts and labor?… Quit trying to check only one
+   thing, this is a comprehensive cost estimate and should be checked that way."): the repair pass
+   above (step 6) is a best-effort bin-pack — its own header comment already says plainly that a
+   residual overage can be "left in place" when no relocate/swap can close it. Before this task,
+   NOTHING downstream ever looked at that residual: the phase-level `overCommitted` flag returned
+   below compared EM labor alone (`emLaborTotal`) against `allowanceTotal`, never `measuresTotal` —
+   so a phase whose priced measures alone blew through `measuresAvailable` reported `overCommitted:
+   false`. Measured on real Johnson County data at the commit this branch forked from (e3a5538):
+   Phase 3 priced measures $41,945 against a $41,784 `measuresAvailable` envelope, $161 over, with
+   `overCommitted` still `false`. Fixed below: `overCommitted` is now computed AFTER the drift-fold
+   (so it reflects each phase's FINAL `measuresTotal`) as `(emLaborTotal + measuresTotal) >
+   allowanceTotal` — every dollar this phase actually draws against the allowance, not just the
+   labor slice. The old labor-only signal is preserved as `emLaborOverCommitted` (read only by the
+   facilitiesText fallback-copy branch above, which is answering a different, narrower question —
+   see that field's own comment). Surfaced non-silently in `_pricingRecommendedTimelineHTML`
+   (var(--warn) cell + caption naming every over-allowance phase and its overage) — never fixed by
+   silently trimming/deferring measures out of an over-allowance phase; a genuine overage stays
+   visible so Matt can act on it, per this task's explicit instruction not to hide the symptom.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingComputeRecommendedTimeline(projId) {
   var estimate = _pricingGetEstimate(projId);
@@ -7144,7 +7300,15 @@ function _pricingComputeRecommendedTimeline(projId) {
       allowanceTotal: cm ? cm.allowanceTotal : null,
       emLaborTotal: cm ? cm.emLaborTotal : null,
       measuresAvailable: cm ? cm.measuresAvailable : null,
-      overCommitted: cm ? cm.overCommitted : false,
+      // emLaborOverCommitted (renamed 2026-07-28 from `overCommitted` — see comprehensive-monthly-
+      // cap task): the OLD labor-only signal (EM labor alone > allowanceTotal), preserved under its
+      // own name only because the fallback-copy branch above (facilitiesText, "labor only — this
+      // period's allowance is fully committed to recurring service") reads costModel's own
+      // per-phase `overCommitted` directly (not this field) to answer a narrower question — whether
+      // a phase has zero buildings because EM labor alone ate the whole allowance. Not read as the
+      // "is this phase over budget" signal anywhere anymore; `overCommitted` below (computed after
+      // the drift-fold, once measuresTotal is final) is that signal now.
+      emLaborOverCommitted: cm ? cm.overCommitted : false,
     };
   });
 
@@ -7164,6 +7328,51 @@ function _pricingComputeRecommendedTimeline(projId) {
       }
     }
   }
+
+  // 2026-07-28 (comprehensive-monthly-cap task, item 1 — Matt verbatim: "Why would you check labor
+  // only when this is a monthly allowance for all parts and labor?… Quit trying to check only one
+  // thing, this is a comprehensive cost estimate and should be checked that way."): THE
+  // comprehensive over-commit check. Runs AFTER the drift-fold above so it evaluates each phase's
+  // FINAL measuresTotal (drift-folding can shift the last-with-rows phase's measuresTotal by a few
+  // cents to a few dollars — checking before the fold could miss/misreport a violation on that
+  // phase). totalCommitted = emLaborTotal + measuresTotal — every dollar this phase actually draws
+  // against the allowance, parts AND labor together, never labor alone. Measured defect this
+  // replaced, on real Johnson County data at the commit this branch forked from (e3a5538, projId
+  // 1779664753271): Phase 3 priced $41,945.00 in measures against a $41,784.00 measuresAvailable
+  // envelope — $161.00 over — with the old labor-only `overCommitted` still reporting `false`,
+  // because measuresTotal was never part of that comparison. (The dispatch that opened this task
+  // cited a larger $5,531.50 example from an earlier pricing-data snapshot; this is the actual
+  // figure measured on the current e3a5538 data — real numbers change as the underlying priced
+  // rows change, the defect itself does not.)
+  out.forEach(function (p) {
+    if (p.allowanceTotal == null) {
+      p.totalCommitted = null;
+      p.overCommitted = false;
+      p.overageAmount = 0;
+      return;
+    }
+    var totalCommitted = Math.round(((p.emLaborTotal || 0) + p.measuresTotal) * 100) / 100;
+    p.totalCommitted = totalCommitted;
+    p.overCommitted = totalCommitted > p.allowanceTotal;
+    p.overageAmount = p.overCommitted ? Math.round((totalCommitted - p.allowanceTotal) * 100) / 100 : 0;
+    if (p.overCommitted) {
+      console.error(
+        '[_pricingComputeRecommendedTimeline] PHASE OVER ALLOWANCE (labor + measures combined): ' +
+          p.label +
+          ' — EM labor ' +
+          _pricingFmt(p.emLaborTotal) +
+          ' + priced measures ' +
+          _pricingFmt(p.measuresTotal) +
+          ' = ' +
+          _pricingFmt(totalCommitted) +
+          ' committed vs. ' +
+          _pricingFmt(p.allowanceTotal) +
+          ' calendar allowance, over by ' +
+          _pricingFmt(p.overageAmount) +
+          '. Surfaced in the Cost Estimate UI, not silently trimmed — see _pricingRecommendedTimelineHTML.',
+      );
+    }
+  });
 
   return {
     phases: out,
@@ -7243,6 +7452,19 @@ function _pricingRecommendedTimelineHTML(projId) {
         ? _pricingFmt(p.allowanceTotal)
         : _pricingFmt(p.measuresTotal) +
           ' <span style="font-weight:400;color:var(--text3);font-size:10px">(no budget configured)</span>';
+      // 2026-07-28 (comprehensive-monthly-cap task, item 3 — surface violations loudly/visibly in
+      // the Cost Estimate UI, not just console.error): p.overCommitted is now the COMPREHENSIVE
+      // check (labor + measures combined vs. allowanceTotal — see
+      // _pricingComputeRecommendedTimeline). No new box/card — same var(--warn) text-color +
+      // inline tag convention already used for the monthly cap cells in
+      // _pricingLaborBreakdownHTML, applied to the existing "Priced Measures This Phase" cell.
+      var measuresCell =
+        _pricingFmt(p.measuresTotal) +
+        (p.overCommitted
+          ? ' <span style="font-size:9px;font-weight:700;color:var(--warn)">OVER ALLOWANCE by ' +
+            _pricingFmt(p.overageAmount) +
+            '</span>'
+          : '');
       return (
         '<tr>' +
         '<td style="' +
@@ -7267,8 +7489,10 @@ function _pricingRecommendedTimelineHTML(projId) {
         '</td>' +
         '<td style="' +
         tdBase +
-        ';text-align:right;color:var(--text2)">' +
-        _pricingFmt(p.measuresTotal) +
+        ';text-align:right;' +
+        (p.overCommitted ? 'color:var(--warn);font-weight:700' : 'color:var(--text2)') +
+        '">' +
+        measuresCell +
         '</td>' +
         '</tr>'
       );
@@ -7282,9 +7506,13 @@ function _pricingRecommendedTimelineHTML(projId) {
   // feature).
   var laborCaption = '';
   if (hasBudget) {
-    var anyOverCommitted = tl.phases.some(function (p) {
+    var overCommittedPhases = tl.phases.filter(function (p) {
       return p.overCommitted;
     });
+    // 2026-07-28: wording corrected — p.overCommitted is the COMPREHENSIVE check (EM labor +
+    // priced measures together vs. allowanceTotal), not a labor-only signal, so the note naming a
+    // violation must say what actually exceeded the allowance, not just "EM labor alone" (that was
+    // the exact defect this task fixed — see _pricingComputeRecommendedTimeline's header comment).
     laborCaption =
       '<div style="font-size:10.5px;color:var(--text3);margin:6px 14px 0;line-height:1.5">' +
       'Phase Service Allowance already includes Ongoing Energy Management Services labor for that ' +
@@ -7301,8 +7529,14 @@ function _pricingRecommendedTimelineHTML(projId) {
         })
         .join(' · ') +
       '.' +
-      (anyOverCommitted
-        ? ' <span style="color:var(--warn);font-weight:700">Note: EM labor alone exceeds the calendar allowance in at least one phase.</span>'
+      (overCommittedPhases.length
+        ? ' <span style="color:var(--warn);font-weight:700">Over allowance (labor + measures combined): ' +
+          overCommittedPhases
+            .map(function (p) {
+              return _pricingEscText(p.label) + ' by ' + _pricingFmt(p.overageAmount);
+            })
+            .join(' · ') +
+          '.</span>'
         : '') +
       '</div>';
   }
