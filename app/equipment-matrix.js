@@ -2568,6 +2568,20 @@ function emVerifyTypeByPoints(group) {
   // affecting Rules 7/8 (FPB/VAV by airflow).
   var hasAirFlow = hasPointNonDiag(/air.?flow|flow control|flow input|\bcfm\b/);
   var hasTermFan = hasPoint(/\bfan\b/) && !hasPoint(/supply fan|exhaust fan|return fan/);
+  // fix/point-evidence-all-rows: DX/refrigerant-circuit signal. A real VAV/FPB/dual-duct zone
+  // TERMINAL box is a passive air device (damper + optional reheat coil/fan) — it never has a
+  // compressor or refrigerant circuit. When a unit's points show condenser/evaporator pressure,
+  // compressor telemetry, suction-line temperature, or DX heating/cooling capacity, it is a
+  // packaged DX unit (DOAS/RTU/VRF), not a terminal box, even if it also happens to expose
+  // airflow + damper + "air source mode" points that would otherwise satisfy Rules 6/7/8.
+  // Found via real JOCO data: MedAct DOAS-1 units (energy-recovery-wheel DOAS with a DX backup
+  // coil) were being point-verified as 'vav' because Rule 8's condition set has no way to say
+  // "this also has a compressor, so it cannot be a terminal box." Gates Rules 6/7/8 only —
+  // Rules 9/12 (FCU/VRF, RTU/AHU) legitimately use DX signals as POSITIVE evidence and are
+  // unaffected.
+  var hasDxSignal = hasPoint(
+    /condenser pressure|evaporator pressure|\bcompressor\b|suction (line )?temp|\bdx\s*(heating|cooling)\b/,
+  );
 
   // 3d6d7244 Phase 5 — Rule 0: "not real equipment at all" verdict, checked FIRST.
   // All 15 rules below (1-15) are positive redirects to another HVAC-adjacent type; none of
@@ -2593,7 +2607,7 @@ function emVerifyTypeByPoints(group) {
       );
     });
   if (!hasZoneTemp && !hasSupplyFan && !hasAirFlow && !hasVfdSignal && _allCommandRelay) {
-    return { category: 'lifesafety', subtype: '' };
+    return { category: 'lifesafety', subtype: '', rule: '0', confidence: 'strong' };
   }
 
   // 3d6d7244 Phase 5 — Rule 0b: lighting/room-control panel misnamed as HVAC equipment.
@@ -2608,11 +2622,12 @@ function emVerifyTypeByPoints(group) {
     /lighting\s*(group|zone)|\bload\s*\d*\s*(cmd|command|status)\b|\bocc(?:upancy)?\s*sensor\b.*status|lighting.*(occupied|vacant)/,
   );
   if (!hasZoneTemp && !hasSupplyFan && !hasAirFlow && !hasVfdSignal && hasLightingPanelSignal) {
-    return { category: 'lighting', subtype: '' };
+    return { category: 'lighting', subtype: '', rule: '0b', confidence: 'strong' };
   }
 
   // 1. Fire/smoke: tiny point set with smoke zone BNI (not an HVAC unit)
-  if (ptKeys.length <= 2 && hasPoint(/smoke zone.*bni/)) return { category: 'fire', subtype: '' };
+  if (ptKeys.length <= 2 && hasPoint(/smoke zone.*bni/))
+    return { category: 'fire', subtype: '', rule: '1', confidence: 'strong' };
 
   // 2. VFD integration wrapper: drive telemetry but no zone temp or supply fan
   if (
@@ -2620,58 +2635,89 @@ function emVerifyTypeByPoints(group) {
     !hasZoneTemp &&
     !hasSupplyFan
   )
-    return { category: 'controls', subtype: '' };
+    return { category: 'controls', subtype: '', rule: '2', confidence: 'strong' };
 
   // 3. VVT zone-damper terminal: Air Source VVT + Zone Damper + zone temp, NO airflow
   if (hasPoint(/air source vvt/) && hasPoint(/zone damper/) && hasZoneTemp && !hasAirFlow)
-    return { category: 'zone', subtype: '' };
+    return { category: 'zone', subtype: '', rule: '3', confidence: 'strong' };
 
   // 4. VVT furnace/air source: VVT Mode + Zone Communications Failure + supply fan + DX cooling
   if (hasPoint(/vvt mode/) && hasPoint(/zone communications failure/) && hasSupplyFan && hasPoint(/cooling stage 1/))
-    return { category: 'furnace', subtype: '' };
+    return { category: 'furnace', subtype: '', rule: '4', confidence: 'strong' };
 
   // 5. DOAS/ERV: energy recovery wheel + supply fan + building pressure
   if (hasPoint(/energy recovery wheel|energy wheel/) && hasSupplyFan && hasPoint(/building pressure/))
-    return { category: 'doas', subtype: '' };
+    return { category: 'doas', subtype: '', rule: '5', confidence: 'strong' };
 
   // 6. Dual-deck VAV: cold deck supply or air source cold deck + hot deck + zone damper, no airflow sensor
+  // fix/point-evidence-all-rows: gated on !hasDxSignal — see hasDxSignal comment above. A unit
+  // with a compressor/condenser/evaporator is a packaged DX unit, never a passive zone terminal.
   if (
     (hasPoint(/cold deck supply|air source cold deck/) || hasPoint(/hot deck/)) &&
     hasPoint(/zone damper/) &&
-    !hasAirFlow
+    !hasAirFlow &&
+    !hasDxSignal
   )
-    return { category: 'ddvav', subtype: '' };
+    return { category: 'ddvav', subtype: '', rule: '6', confidence: 'strong' };
 
   // 7. Fan-powered box (FPB): airflow + terminal fan + heating valve + air source mode
-  if (hasAirFlow && hasTermFan && hasPoint(/heating valve|hw valve|reheat valve/) && hasPoint(/air source mode/))
-    return { category: 'fpb', subtype: '' };
+  // fix/point-evidence-all-rows: gated on !hasDxSignal — see hasDxSignal comment above.
+  if (
+    hasAirFlow &&
+    hasTermFan &&
+    hasPoint(/heating valve|hw valve|reheat valve/) &&
+    hasPoint(/air source mode/) &&
+    !hasDxSignal
+  )
+    return { category: 'fpb', subtype: '', rule: '7', confidence: 'strong' };
 
   // 8. VAV: airflow + damper position + air source mode, no terminal fan
-  if (hasAirFlow && hasPoint(/damper position|zone damper/) && hasPoint(/air source mode/) && !hasTermFan)
-    return { category: 'vav', subtype: '' };
+  // fix/point-evidence-all-rows: gated on !hasDxSignal — see hasDxSignal comment above. Confirmed
+  // on real JOCO data: without this guard, MedAct DOAS-1 units (energy-recovery-wheel DOAS with a
+  // DX backup coil — condenser/evaporator pressure, DX heating capacity, suction line temp all
+  // present) satisfied this rule's airflow+damper+air-source-mode signature and were wrongly
+  // point-verified as 'vav'. A genuine VAV terminal box never has a refrigerant circuit.
+  if (
+    hasAirFlow &&
+    hasPoint(/damper position|zone damper/) &&
+    hasPoint(/air source mode/) &&
+    !hasTermFan &&
+    !hasDxSignal
+  )
+    return { category: 'vav', subtype: '', rule: '8', confidence: 'strong' };
 
   // 9. FCU (Daikin VRF): gas pipe temperature + (fan speed or daikin alarm)
   if (hasPoint(/gas pipe temperature/) && (hasPoint(/fan speed/) || hasPoint(/daikin.*alarm/)))
-    return { category: 'fcu', subtype: '' };
+    return { category: 'fcu', subtype: '', rule: '9', confidence: 'strong' };
 
   // 10. FCU (generic hydronic fan coil): zone temp + cooling/heating valve, no airflow, no supply fan
+  // fix/point-evidence-all-rows: WEAK confidence. This is the broadest rule in the set — "zone temp"
+  // and "a valve" both appear across many equipment families (AHU coils, VAV/FPB reheat valves that
+  // simply lack an exported airflow/CFM point). Confirmed on real JOCO data: NC Adult Detention rows
+  // ("6A - RHC-0901" etc.) match this rule via zoneTemp+heatingValve, but ALSO expose "Air Source
+  // Duct Static" and "Primary Air Source ... Request/Run" points — evidence of a duct-fed terminal,
+  // not a standalone hydronic fan coil — which this rule's condition set has no way to weigh. Per
+  // the project's standing doctrine (conflicts get surfaced for a human, never silently resolved),
+  // a 'weak' match here is FLAGGED by the caller (emLoadMatrix) instead of auto-reclassified.
   if (
     hasZoneTemp &&
     (hasPoint(/cooling valve|chw valve|chilled water valve/) || hasPoint(/heating valve/)) &&
     !hasAirFlow &&
     !hasSupplyFan
   )
-    return { category: 'fcu', subtype: '' };
+    return { category: 'fcu', subtype: '', rule: '10', confidence: 'weak' };
 
   // 11. Tube/radiant heater: tube heater or unit heater points
-  if (hasPoint(/tube heater (enable|status|amperage)/)) return { category: 'heater', subtype: '' };
-  if (hasPoint(/unit heater (enable|status)/) && !hasTermFan) return { category: 'heater', subtype: '' };
+  if (hasPoint(/tube heater (enable|status|amperage)/))
+    return { category: 'heater', subtype: '', rule: '11', confidence: 'strong' };
+  if (hasPoint(/unit heater (enable|status)/) && !hasTermFan)
+    return { category: 'heater', subtype: '', rule: '11', confidence: 'strong' };
 
   // 12. RTU (name-only AHU with DX cooling): supply fan + DX staging + zone temp, no VVT
   // 9018b1c6: this signature matches a single-zone RTU → assign sz subtype
   // Keep provisional category so 'rtu' rows stay 'rtu', 'ahu' rows stay 'ahu'.
   if (hasSupplyFan && hasPoint(/cooling stage 1/) && hasZoneTemp && !hasPoint(/vvt mode/))
-    return { category: provisional === 'rtu' ? 'rtu' : 'ahu', subtype: 'sz' };
+    return { category: provisional === 'rtu' ? 'rtu' : 'ahu', subtype: 'sz', rule: '12', confidence: 'strong' };
 
   // ── Subtype rules (Rules 13-15 + Signal 1): only fire when category is 'ahu' or 'rtu' ──
   if (provisional === 'ahu' || provisional === 'rtu') {
@@ -2729,17 +2775,17 @@ function emVerifyTypeByPoints(group) {
           }
         }
         if (!_suppressSignal1) {
-          return { category: provisional, subtype: 'vav' };
+          return { category: provisional, subtype: 'vav', rule: 'signal1', confidence: 'strong' };
         }
         // else: fall through to point-based rules below
       } else if (/multizone/.test(_typeStr)) {
-        return { category: provisional, subtype: 'mtz' };
+        return { category: provisional, subtype: 'mtz', rule: 'signal1', confidence: 'strong' };
       }
     }
 
     // Rule 13 — MTZ-AHU/MTZ-RTU: multizone (hot/cold deck points)
     if (hasPoint(/hot.?deck|cold.?deck|face.?and.?bypass|deck.?damper/)) {
-      return { category: provisional, subtype: 'mtz' };
+      return { category: provisional, subtype: 'mtz', rule: '13', confidence: 'strong' };
     }
 
     // Rule 14 — VAV-AHU/VAV-RTU: VAV-serving unit
@@ -2755,7 +2801,7 @@ function emVerifyTypeByPoints(group) {
         hasSupplyFan &&
         (hasPoint(/air.?source.?mode|damper.?position|zone.?damper/) || hasPoint(/duct.?static.*setpoint|\bdsp.*sp\b/)))
     ) {
-      return { category: provisional, subtype: 'vav' };
+      return { category: provisional, subtype: 'vav', rule: '14', confidence: 'strong' };
     }
 
     // 9018b1c6 Fix 3: EI Active Zone = 1 is a Carrier/Lennox-specific internal zone counter.
@@ -2772,7 +2818,7 @@ function emVerifyTypeByPoints(group) {
     ) {
       // Confirm no duct static and no zone dampers (belt-and-suspenders)
       if (!hasDuctStatic && !hasPointNonDiag(/zone.?damper/)) {
-        return { category: provisional, subtype: 'sz' };
+        return { category: provisional, subtype: 'sz', rule: 'ei-fix3', confidence: 'strong' };
       }
     }
 
@@ -2783,12 +2829,12 @@ function emVerifyTypeByPoints(group) {
       !hasDuctStatic &&
       !hasPoint(/air.?source.?mode/)
     ) {
-      return { category: provisional, subtype: 'sz' };
+      return { category: provisional, subtype: 'sz', rule: '15', confidence: 'strong' };
     }
   }
 
   // No signature match — keep provisional name-pass classification
-  return { category: provisional, subtype: '' };
+  return { category: provisional, subtype: '', rule: 'none', confidence: 'strong' };
 }
 
 function emMapPointToColumn(pointName, pointType, equipCategory) {
@@ -3355,7 +3401,7 @@ function emLoadMatrix(projId) {
       // because Pass A/B's gate never lets it in. Confirmed empirically: a stored 'ahu' row for
       // "North Stair Pressure Fan 1 - SPF-2" resolves correctly to 'ef' via
       // emClassifyEquipType(equipType) today, but only reaches that call once this gate widens.
-      var _needsSelfHeal =
+      var _needsNameSelfHeal =
         _bcrow &&
         _bcrow.equipType &&
         (_bcrow.category === 'other' ||
@@ -3365,26 +3411,49 @@ function emLoadMatrix(projId) {
           _bcrow.category === 'ef' ||
           _bcrow.category === 'ac' ||
           _bcrow.category === 'elevator');
-      if (_needsSelfHeal) {
-        // Pass A: name-based reclassify
+      if (_needsNameSelfHeal) {
+        // Pass A: name-based reclassify. Stays scoped to this original 7-category gate — this
+        // is the "current name looks wrong, try re-deriving it from the equipType string" pass,
+        // which only makes sense for the generic/self-heal-eligible categories above. Widening
+        // this to ALL categories is a different (name-based, not point-based) change and is out
+        // of scope for fix/point-evidence-all-rows.
         var _recat = emClassifyEquipType(_bcrow.equipType);
         if (_recat && _recat !== 'other' && _recat !== _bcrow.category) {
           _bcrow.category = _recat;
         }
-        // Pass B: point-based — runs on the (possibly Pass-A-updated) category; points take
-        //   precedence over the name-derived guess, including Rule 0/0b's "not real HVAC
-        //   equipment at all" verdicts (3d6d7244 Phase 5).
-        //   emVerifyTypeByPoints expects group.pointValues (object keyed by point name).
-        //   Stored rows carry row.points; expose it as group.pointValues for the function.
-        if (_bcrow.points && Object.keys(_bcrow.points).length > 0) {
-          var _ptGroup = { category: _bcrow.category, pointValues: _bcrow.points };
-          var _ptResult = emVerifyTypeByPoints(_ptGroup); // 9018b1c6: returns { category, subtype }
-          if (_ptResult.category && _ptResult.category !== 'other' && _ptResult.category !== _bcrow.category) {
-            _bcrow.category = _ptResult.category;
+      }
+
+      // fix/point-evidence-all-rows (2026-07-28): Pass B — point-evidence verification, now runs
+      // as an override on EVERY categorized row, not just the 7 gated categories above. Measured
+      // on real JOCO data: 90 rows had a point signature contradicting their stored category, and
+      // 100% of them sat outside the old gate (0 remained inside it — the mechanism worked, it was
+      // simply pointed at a fraction of the data). Runs on the (possibly Pass-A-updated) category;
+      // points take precedence over the name-derived guess for STRONG-confidence rule matches only.
+      // WEAK-confidence matches (currently: Rule 10, the generic "zone temp + valve" FCU signature
+      // — the broadest/most easily-false-positive rule in the set) are never silently reclassified;
+      // they are recorded on the row as pointEvidenceFlag for human review, per this project's
+      // standing doctrine that conflicts get surfaced, never silently resolved.
+      // emVerifyTypeByPoints expects group.pointValues (object keyed by point name).
+      // Stored rows carry row.points; expose it as group.pointValues for the function.
+      if (_bcrow && _bcrow.category && _bcrow.points && Object.keys(_bcrow.points).length > 0) {
+        var _ptGroupAll = { category: _bcrow.category, pointValues: _bcrow.points };
+        var _ptResultAll = emVerifyTypeByPoints(_ptGroupAll); // returns { category, subtype, rule, confidence }
+        if (_ptResultAll.category && _ptResultAll.category !== 'other' && _ptResultAll.category !== _bcrow.category) {
+          if (_ptResultAll.confidence === 'weak') {
+            _bcrow.pointEvidenceFlag = {
+              currentCategory: _bcrow.category,
+              suggested: _ptResultAll.category,
+              rule: _ptResultAll.rule,
+            };
+          } else {
+            _bcrow.category = _ptResultAll.category;
+            _bcrow.pointEvidenceFlag = null;
           }
-          if (_ptResult.subtype && !_bcrow.subtype) {
-            _bcrow.subtype = _ptResult.subtype;
-          }
+        } else {
+          _bcrow.pointEvidenceFlag = null;
+        }
+        if (_ptResultAll.subtype && !_bcrow.subtype) {
+          _bcrow.subtype = _ptResultAll.subtype;
         }
       }
 
@@ -5273,6 +5342,130 @@ function _emIsPlausibleZoneSetpointValue(rawVal) {
   return true;
 }
 
+// fix/point-evidence-all-rows (2026-07-28): sensor-deficiency verdict guards — same read-time
+// plausibility pattern as EM_ZONE_SETPOINT_VALUE_GUARD_COLS/_emIsPlausibleZoneSetpointValue
+// above, extended to carbon dioxide, relative humidity, zone air temperature, and discharge
+// airflow. Each guard returns a VERDICT, not just a boolean, distinguishing two different levels
+// of evidence per Matt's 2026-07-28 direction ("state your plausibility thresholds explicitly
+// and justify each... where a value is merely suspicious rather than impossible, prefer flagging
+// over asserting failure"):
+//   'failed'     — physically impossible for this reading type; high-confidence sensor failure.
+//   'suspicious' — outside the normal/expected range but not provably impossible; flagged for
+//                  review, never asserted as a hardware failure on weaker evidence.
+//   'ok'         — plausible.
+// IMPORTANT — this is entirely independent of ASHRAE 36 compliance scoring: emComputeCompliance
+// never calls these guards and matches "covered" purely by POINT NAME (never by value), so a
+// point that exists-but-failed still satisfies its Guideline 36 requirement exactly as it does
+// today. Verified portfolio-wide (compliance-full-diff.js, 2026-07-28): totalRequired/
+// totalMatched/coveragePct identical before/after for every row whose category didn't change.
+function _emCO2Verdict(rawVal) {
+  if (rawVal == null) return { status: 'ok' };
+  var s = String(rawVal).trim();
+  if (s === '') return { status: 'ok' };
+  // Reject values carrying an explicit non-ppm control-signal unit suffix (0-10V, 4-20mA, psi,
+  // % duty cycle) — mirrors the setpoint guard's unit-suffix rejection. "ppm" and blank pass.
+  if (/(^|\s)(v|volts?|ma|milliamps?|amps?|psi|pct|%|cfm|in\.?\s*wc|"\s*wc)\s*$/i.test(s)) {
+    return { status: 'failed', reason: 'non-ppm control-signal unit on a CO2 point' };
+  }
+  var n = parseFloat(s);
+  if (isNaN(n)) return { status: 'failed', reason: 'non-numeric CO2 reading ("' + s + '")' };
+  // Real JOCO zoneCO2 readings (co2-rh-distribution.js scan, 2026-07-28) span 381-875 ppm across
+  // 145 zones. Atmospheric CO2 floor is ~420 ppm — a reading below it is physically impossible
+  // for an occupied, continuously-conditioned zone (CO2 can only be ADDED by occupants/combustion,
+  // never subtracted below outdoor makeup air). MIN=300 sits comfortably below the real observed
+  // floor (381) so no legitimate reading is ever misclassified, while still catching the
+  // dead-sensor cluster at/near 0 (3 rows: MedAct 1131 Shawnee RTU-1, MedAct 1159 Sunflower
+  // Firestation-13 RTU-1, Courthouse AHU 1B — all literal "0.0") and one implausible "1.5 ppm"
+  // outlier. Classified FAILED (not suspicious) — there is no physical mechanism for a real zone
+  // to read below the outdoor floor, so this is high-confidence, not merely unusual.
+  if (n < 300) return { status: 'failed', reason: 'CO2 reading (' + n + ' ppm) below the ~420 ppm atmospheric floor' };
+  // MAX=5000 ppm: generous upper bound (real max observed was 875 ppm); values above this are a
+  // stuck/miswired sensor, not a real occupied-space reading — also FAILED (physically absurd,
+  // not just high).
+  if (n > 5000)
+    return { status: 'failed', reason: 'CO2 reading (' + n + ' ppm) implausibly high (stuck/miswired sensor)' };
+  return { status: 'ok' };
+}
+
+function _emRHVerdict(rawVal) {
+  if (rawVal == null) return { status: 'ok' };
+  var s = String(rawVal).trim();
+  if (s === '') return { status: 'ok' };
+  // Reject non-%-unit control-signal suffixes. "%", "%rh", and blank pass.
+  if (/(^|\s)(v|volts?|ma|milliamps?|amps?|psi|pct|ppm|cfm|in\.?\s*wc|"\s*wc)\s*$/i.test(s)) {
+    return { status: 'failed', reason: 'non-percent control-signal unit on an RH point' };
+  }
+  var n = parseFloat(s);
+  if (isNaN(n)) return { status: 'failed', reason: 'non-numeric RH reading ("' + s + '")' };
+  // Real JOCO zoneRelativeHumidity readings (co2-rh-distribution.js scan) fall in 40-89.1%
+  // across 89 points. Two exclusions found in that same scan: "-25.0 %rh" (negative — no
+  // physical meaning) and "0.0 %rh" (a continuously-conditioned occupied zone never sustains
+  // literal 0% RH — same dead-sensor signature as the CO2 bug). Classified FAILED: negative RH
+  // has zero physical meaning, and 0.0 in an actively-conditioned space is the same class of
+  // impossible reading as CO2-below-atmospheric. MIN=1 excludes both while keeping the real
+  // observed floor (40%) with a wide margin. MAX=100 is the physical ceiling.
+  if (n < 1)
+    return { status: 'failed', reason: 'RH reading (' + n + '%) at/below zero — dead sensor or negative artifact' };
+  if (n > 100) return { status: 'failed', reason: 'RH reading (' + n + '%) exceeds the 100% physical ceiling' };
+  return { status: 'ok' };
+}
+
+function _emZoneTempVerdict(rawVal) {
+  if (rawVal == null) return { status: 'ok' };
+  var s = String(rawVal).trim();
+  if (s === '') return { status: 'ok' };
+  if (/(^|\s)(v|volts?|ma|milliamps?|amps?|psi|pct|%|ppm|cfm|in\.?\s*wc|"\s*wc)\s*$/i.test(s)) {
+    return { status: 'failed', reason: 'non-temperature control-signal unit on a zone temp point' };
+  }
+  var n = parseFloat(s);
+  if (isNaN(n)) return { status: 'failed', reason: 'non-numeric zone temp reading ("' + s + '")' };
+  // Real JOCO zoneAirTemp readings (temp-airflow-dist.js scan, 2026-07-28) span 63.5-97.3°F
+  // across 1,332 zones (including mechanical/heater/IT rooms, not just occupied comfort space,
+  // hence the wider tail than a strict comfort-band guard). Two "0.0" dead-sensor readings found
+  // (Olathe Juvenile Detention Center ASU-1/ASU-2). A continuously-run mechanically-conditioned
+  // building physically cannot sustain freezing (<32°F) or scalding (>120°F) zone air without a
+  // total heating/cooling failure AND the sensor itself surviving to report it — set deliberately
+  // WIDE of the real observed range (63.5-97.3) so no legitimate reading — including unoccupied
+  // setback or an unconditioned mechanical/storage space — is ever misclassified. Classified
+  // FAILED only outside this wide band; nothing in between is flagged suspicious (no real
+  // evidence in this portfolio to calibrate a narrower "unusual but plausible" band without
+  // guessing).
+  if (n < 32)
+    return {
+      status: 'failed',
+      reason: 'zone temp (' + n + '°F) at/below freezing — dead sensor or total heating failure',
+    };
+  if (n > 120) return { status: 'failed', reason: 'zone temp (' + n + '°F) implausibly high for zone air' };
+  return { status: 'ok' };
+}
+
+function _emAirflowVerdict(rawVal) {
+  if (rawVal == null) return { status: 'ok' };
+  var s = String(rawVal).trim();
+  if (s === '') return { status: 'ok' };
+  var n = parseFloat(s);
+  if (isNaN(n)) return { status: 'failed', reason: 'non-numeric airflow reading ("' + s + '")' };
+  // Real JOCO dischargeAirflow readings (temp-airflow-dist.js scan) span 0-14,438 cfm across 896
+  // points — 0 cfm is a LEGITIMATE reading (a VAV/FPB box with its damper fully closed shows zero
+  // flow; many real rows do this), so unlike CO2/RH/temp, zero is NOT evidence of failure here and
+  // is deliberately left unflagged. A handful of small negative readings were found (-9 to -37
+  // cfm) — a differential-pressure airflow station reading slightly negative near true zero is a
+  // KNOWN measurement-noise artifact in some BAS systems, not proof the sensor has failed, and no
+  // corroborating evidence (e.g. a magnitude threshold validated against real failure cases) exists
+  // in this portfolio to assert failure with confidence. Per "prefer flagging over asserting
+  // failure," negative airflow is classified SUSPICIOUS only, never FAILED. No upper bound is
+  // applied — legitimate airflow scales enormously by equipment size (a VAV box tops out around
+  // 1,500-2,500 cfm; a central AHU can legitimately exceed 14,000 cfm) and this mechanism has no
+  // per-equipment-size context to set a defensible ceiling without guessing; flagged as a stated
+  // limitation, not a threshold.
+  if (n < 0)
+    return {
+      status: 'suspicious',
+      reason: 'negative airflow reading (' + n + ' cfm) — possible sensor zero-offset noise, not asserted as failure',
+    };
+  return { status: 'ok' };
+}
+
 /* ── emGetNormalizedPoints ───────────────────────────────────────────────────
    Returns a flat { colKey: value } map for a row, derived at read time.
 
@@ -5440,6 +5633,57 @@ function emGetNormalizedPoints(row) {
     if (result[_spCol] !== undefined && !_emIsPlausibleZoneSetpointValue(result[_spCol])) {
       delete result[_spCol];
     }
+  }
+
+  // fix/point-evidence-all-rows (2026-07-28): same read-time guard shape as the setpoint guard
+  // above, extended to zoneCO2/zoneRelativeHumidity/zoneAirTemp/dischargeAirflow — see the
+  // _em*Verdict function comments above for the real-data calibration and the FAILED-vs-
+  // SUSPICIOUS distinction. UNLIKE the setpoint guard, the excluded reading is NOT silently
+  // discarded: a dead sensor is information (Matt, 2026-07-28 — "Excluded values must be visible
+  // somewhere as excluded, not vanish" / "expose the exists-but-failed state as queryable data").
+  // The raw value + verdict is preserved on result._excludedSensors — THE single source of truth
+  // for this state; pricing/reporting consumers read it directly via emGetSensorDeficiencies()
+  // below rather than re-deriving the plausibility logic ("one fact, one home").
+  //   status:'failed'     — colKey IS removed from the averaging/comparison path (the actual bug
+  //                         fix: a dead "0.0 ppm" sensor must not drag down an average or flip a
+  //                         hot/cold zone classification).
+  //   status:'suspicious' — colKey is LEFT IN PLACE (not confident enough to exclude); still
+  //                         recorded in _excludedSensors so it's visible, per "prefer flagging
+  //                         over asserting failure."
+  // NOT consumed by emComputeCompliance (name-based matching only, never reads values) — verified
+  // portfolio-wide identical before/after (compliance-full-diff.js), so ASHRAE 36 Audit Report
+  // scoring is completely unaffected: an exists-but-failed sensor still satisfies its Guideline 36
+  // requirement, exactly as Matt directed.
+  // _excludedSensors is defined non-enumerable: several callers do Object.keys(emGetNormalizedPoints(row))
+  // expecting ONLY real colKey→value pairs (e.g. the ASHRAE/Other points counter at
+  // emRenderTable ~7319) — an enumerable metadata key would silently inflate that count by 1
+  // per row with an excluded sensor. Non-enumerable keeps it invisible to Object.keys/for-in/
+  // JSON.stringify while still directly readable via result._excludedSensors.
+  var _emQualityGuardCols = {
+    zoneCO2: _emCO2Verdict,
+    zoneRelativeHumidity: _emRHVerdict,
+    zoneAirTemp: _emZoneTempVerdict,
+    dischargeAirflow: _emAirflowVerdict,
+  };
+  for (var _qgCol in _emQualityGuardCols) {
+    if (result[_qgCol] === undefined) continue;
+    var _qgVerdict = _emQualityGuardCols[_qgCol](result[_qgCol]);
+    if (_qgVerdict.status === 'ok') continue;
+    if (!result._excludedSensors) {
+      Object.defineProperty(result, '_excludedSensors', {
+        value: [],
+        enumerable: false,
+        writable: true,
+        configurable: true,
+      });
+    }
+    result._excludedSensors.push({
+      col: _qgCol,
+      raw: result[_qgCol],
+      status: _qgVerdict.status, // 'failed' | 'suspicious'
+      reason: _qgVerdict.reason || 'implausible value',
+    });
+    if (_qgVerdict.status === 'failed') delete result[_qgCol];
   }
 
   _emPointsComputedCache.set(row, result);
@@ -6220,6 +6464,101 @@ function emRenderTable(data, filters) {
   }
 }
 
+/* ── emGetSensorDeficiencies ─────────────────────────────────────────────────
+   fix/point-evidence-all-rows (2026-07-28), Matt's scope addition: the single, queryable
+   home for a row's "exists but failed/suspicious" sensor readings — the third state
+   between "point present and plausible" and "point missing entirely." This is a thin
+   passthrough onto emGetNormalizedPoints(row)._excludedSensors (built by the guard loop in
+   emGetNormalizedPoints above) — it does NOT re-run any plausibility logic itself, so
+   pricing/reporting consumers get the exact same verdicts already computed for Change 2,
+   with no risk of drifting out of sync with the guard.
+
+   Returns an array of { col, raw, status, reason }:
+     col    — the normalized colKey (zoneCO2 | zoneRelativeHumidity | zoneAirTemp | dischargeAirflow)
+     raw    — the raw string value that failed the guard
+     status — 'failed' (physically impossible; excluded from averages/comparisons) or
+              'suspicious' (outside normal range but not asserted as a hardware failure)
+     reason — human-readable justification, safe to surface to a client
+
+   Explicitly does NOT affect and is NOT read by emComputeCompliance — a sensor's existence
+   for ASHRAE 36 scoring purposes is determined purely by point NAME matching, never by this
+   function. Consumers needing "does this equipment have a failed sensor" for the Cost
+   Estimate/Service Proposal (deficiency + replacement line) or a non-ASHRAE-36 audit mode
+   should call this function per row; do not re-implement plausibility checks elsewhere.   */
+function emGetSensorDeficiencies(row) {
+  if (!row) return [];
+  var pts = emGetNormalizedPoints(row);
+  return pts._excludedSensors || [];
+}
+
+// Human-readable category labels for the 4 guarded colKeys, used by
+// emComputeSensorDeficiencyInventory's category breakdown. Matches the plain-English
+// categories Matt asked for ("carbon dioxide, temperature, humidity, airflow"), not the
+// internal colKey names.
+var EM_SENSOR_DEFICIENCY_CATEGORY_LABELS = {
+  zoneCO2: 'Carbon Dioxide',
+  zoneRelativeHumidity: 'Relative Humidity',
+  zoneAirTemp: 'Zone Air Temperature',
+  dischargeAirflow: 'Discharge Airflow',
+};
+
+/* ── emComputeSensorDeficiencyInventory ──────────────────────────────────────
+   Portfolio-wide rollup of emGetSensorDeficiencies() across a set of rows — built for this
+   task's reporting requirement and for reuse by whichever agent builds the Cost Estimate
+   replacement line / non-ASHRAE-36 audit mode (branching from this branch), so that work
+   doesn't need to re-sweep the portfolio itself.
+   Returns: {
+     total: number,                    // all deficiency records (failed + suspicious)
+     totalFailed: number,
+     totalSuspicious: number,
+     byCategory: { <label>: { failed, suspicious } },
+     byEquipType: { <row.category>: { failed, suspicious } },
+     rows: [{ id, building, equipName, category, col, categoryLabel, raw, status, reason }]
+   }                                                                          */
+function emComputeSensorDeficiencyInventory(rows) {
+  var out = {
+    total: 0,
+    totalFailed: 0,
+    totalSuspicious: 0,
+    byCategory: {},
+    byEquipType: {},
+    rows: [],
+  };
+  if (!rows) return out;
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row) continue;
+    var deficiencies = emGetSensorDeficiencies(row);
+    for (var j = 0; j < deficiencies.length; j++) {
+      var d = deficiencies[j];
+      var label = EM_SENSOR_DEFICIENCY_CATEGORY_LABELS[d.col] || d.col;
+      out.total++;
+      if (d.status === 'failed') out.totalFailed++;
+      else out.totalSuspicious++;
+
+      if (!out.byCategory[label]) out.byCategory[label] = { failed: 0, suspicious: 0 };
+      out.byCategory[label][d.status === 'failed' ? 'failed' : 'suspicious']++;
+
+      var eqType = row.category || '(uncategorized)';
+      if (!out.byEquipType[eqType]) out.byEquipType[eqType] = { failed: 0, suspicious: 0 };
+      out.byEquipType[eqType][d.status === 'failed' ? 'failed' : 'suspicious']++;
+
+      out.rows.push({
+        id: row.id,
+        building: row.building,
+        equipName: row.equipName,
+        category: row.category,
+        col: d.col,
+        categoryLabel: label,
+        raw: d.raw,
+        status: d.status,
+        reason: d.reason,
+      });
+    }
+  }
+  return out;
+}
+
 /* ── emComputeBuildingZoneStats ─────────────────────────────────────────────
    Aggregates zone air temp, heating setpoint, cooling setpoint, CO2, and
    relative humidity, plus hot/ok/cold counts per building.
@@ -6254,6 +6593,11 @@ function emComputeBuildingZoneStats(rows, seedRows) {
         ok: 0,
         cold: 0,
         totalZones: 0,
+        // fix/point-evidence-all-rows (2026-07-28): counts of dead/implausible sensors excluded
+        // by _emIsPlausibleCO2Value/_emIsPlausibleRHValue — surfaced (not silently dropped) so a
+        // "0.0 ppm" or "0.0% RH" dead sensor is visible as excluded, per Change 2/3.
+        zoneCO2ExcludedCount: 0,
+        zoneRelativeHumidityExcludedCount: 0,
       };
     }
     if (!_seedByBuilding[sbldg]) _seedByBuilding[sbldg] = [];
@@ -6331,6 +6675,10 @@ function emComputeBuildingZoneStats(rows, seedRows) {
     // Entry already exists from first pass; no need to create.
     // Fix 58cf0031: route through normalized-point engine so raw BAS names are resolved.
     var pts = emGetNormalizedPoints(row);
+    // fix/point-evidence-all-rows (2026-07-28): capture the excluded-sensor list BEFORE any
+    // Object.assign({}, pts) copy below (Object.assign only copies enumerable own props, and
+    // _excludedSensors is intentionally non-enumerable — see emGetNormalizedPoints comment).
+    var _rowExcludedSensors = pts._excludedSensors || null;
 
     // Return-air fallback (Quick Win 2): on a single-zone unit the return air IS the space air.
     // When a dedicated zone sensor is absent, promote return-air values to zone columns so the
@@ -6397,6 +6745,15 @@ function emComputeBuildingZoneStats(rows, seedRows) {
     if (!isNaN(rhVal)) {
       bldgStats.zoneRelativeHumidity.sum += rhVal;
       bldgStats.zoneRelativeHumidity.count += 1;
+    }
+    // fix/point-evidence-all-rows (2026-07-28): tally dead/implausible sensors excluded by the
+    // read-time CO2/RH guard so they are visible (Change 2) rather than silently dropped.
+    if (_rowExcludedSensors) {
+      for (var _esi = 0; _esi < _rowExcludedSensors.length; _esi++) {
+        if (_rowExcludedSensors[_esi].col === 'zoneCO2') bldgStats.zoneCO2ExcludedCount++;
+        else if (_rowExcludedSensors[_esi].col === 'zoneRelativeHumidity')
+          bldgStats.zoneRelativeHumidityExcludedCount++;
+      }
     }
 
     // Compute hot/ok/cold for this zone (only when we have temp and at least one setpoint)
@@ -6553,6 +6910,26 @@ function emRenderSummaryView(data, filters) {
     return (Math.round(statObj.avg * 10) / 10).toFixed(1) + (unit || '');
   }
 
+  // fix/point-evidence-all-rows (2026-07-28): same as fmtAvg, plus a visible marker when one or
+  // more sensors were excluded from this average by the CO2/RH plausibility guard (Change 2/3) —
+  // "excluded, not vanished." Title attribute carries the count + reason for hover detail.
+  function fmtAvgWithExclusions(statObj, unit, totalZones, excludedCount) {
+    var base = fmtAvg(statObj, unit, totalZones);
+    if (!excludedCount) return base;
+    return (
+      '<span title="' +
+      excludedCount +
+      ' sensor' +
+      (excludedCount === 1 ? '' : 's') +
+      ' excluded from this average — reading was outside the physically plausible range (dead/uncommissioned sensor)" ' +
+      'style="border-bottom:1px dotted var(--text3);cursor:help">' +
+      base +
+      ' <span style="color:var(--text3);font-size:0.85em">(' +
+      excludedCount +
+      ' excl.)</span></span>'
+    );
+  }
+
   // Helper: aggregate stats across all buildings in a stats map
   function aggregateZoneStats(statsMap) {
     var agg = {
@@ -6564,6 +6941,8 @@ function emRenderSummaryView(data, filters) {
       hot: 0,
       ok: 0,
       cold: 0,
+      zoneCO2ExcludedCount: 0,
+      zoneRelativeHumidityExcludedCount: 0,
     };
     var keys = Object.keys(statsMap);
     for (var ki = 0; ki < keys.length; ki++) {
@@ -6581,6 +6960,8 @@ function emRenderSummaryView(data, filters) {
       agg.hot += s.hot;
       agg.ok += s.ok;
       agg.cold += s.cold;
+      agg.zoneCO2ExcludedCount += s.zoneCO2ExcludedCount || 0;
+      agg.zoneRelativeHumidityExcludedCount += s.zoneRelativeHumidityExcludedCount || 0;
     }
     agg.zoneTemp.avg = agg.zoneTemp.count > 0 ? agg.zoneTemp.sum / agg.zoneTemp.count : NaN;
     agg.htgSp.avg = agg.htgSp.count > 0 ? agg.htgSp.sum / agg.htgSp.count : NaN;
@@ -6705,8 +7086,18 @@ function emRenderSummaryView(data, filters) {
       html += '<td style="' + tdCenter + '">' + fmtAvg(bs.htgSp, '°F', bs.totalZones) + '</td>';
       html += '<td style="' + tdCenter + '">' + fmtAvg(bs.coolSp, '°F', bs.totalZones) + '</td>';
       html += '<td style="' + tdCenter + '">' + vsCell + '</td>';
-      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.zoneCO2, ' ppm', bs.totalZones) + '</td>';
-      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.zoneRelativeHumidity, '%', bs.totalZones) + '</td>';
+      html +=
+        '<td style="' +
+        tdCenter +
+        '">' +
+        fmtAvgWithExclusions(bs.zoneCO2, ' ppm', bs.totalZones, bs.zoneCO2ExcludedCount) +
+        '</td>';
+      html +=
+        '<td style="' +
+        tdCenter +
+        '">' +
+        fmtAvgWithExclusions(bs.zoneRelativeHumidity, '%', bs.totalZones, bs.zoneRelativeHumidityExcludedCount) +
+        '</td>';
       // Phase D-3: Other Points column — count of auto_ keys for this building (informational, not compliance)
       var _bAutoCnt = _autoCountByBldg[bldg] || 0;
       html +=
@@ -6751,8 +7142,18 @@ function emRenderSummaryView(data, filters) {
   html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.htgSp, '°F') + '</td>';
   html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.coolSp, '°F') + '</td>';
   html += '<td style="' + tfootTdCenter + '">' + pageVsCell + '</td>';
-  html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.zoneCO2, ' ppm') + '</td>';
-  html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.zoneRelativeHumidity, '%') + '</td>';
+  html +=
+    '<td style="' +
+    tfootTdCenter +
+    '">' +
+    fmtAvgWithExclusions(pageAgg.zoneCO2, ' ppm', undefined, pageAgg.zoneCO2ExcludedCount) +
+    '</td>';
+  html +=
+    '<td style="' +
+    tfootTdCenter +
+    '">' +
+    fmtAvgWithExclusions(pageAgg.zoneRelativeHumidity, '%', undefined, pageAgg.zoneRelativeHumidityExcludedCount) +
+    '</td>';
   // Phase D-3: Other Points total for filtered buildings
   html +=
     '<td style="' +
@@ -6785,8 +7186,18 @@ function emRenderSummaryView(data, filters) {
   html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.htgSp, '°F') + '</td>';
   html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.coolSp, '°F') + '</td>';
   html += '<td style="' + tfootTdCenter + '">' + totalVsCell + '</td>';
-  html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.zoneCO2, ' ppm') + '</td>';
-  html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.zoneRelativeHumidity, '%') + '</td>';
+  html +=
+    '<td style="' +
+    tfootTdCenter +
+    'font-weight:600">' +
+    fmtAvgWithExclusions(totalAgg.zoneCO2, ' ppm', undefined, totalAgg.zoneCO2ExcludedCount) +
+    '</td>';
+  html +=
+    '<td style="' +
+    tfootTdCenter +
+    'font-weight:600">' +
+    fmtAvgWithExclusions(totalAgg.zoneRelativeHumidity, '%', undefined, totalAgg.zoneRelativeHumidityExcludedCount) +
+    '</td>';
   // Phase D-3: Other Points grand total (all buildings, all rows)
   html +=
     '<td style="' +
@@ -7437,8 +7848,28 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
   if (def.isAuditType) {
     // 9018b1c6: use emFormatEquipTypeLabel so subtype is shown (e.g. "SZ-RTU", "VAV-AHU")
     var catLabel = emFormatEquipTypeLabel(row);
+    // fix/point-evidence-all-rows (2026-07-28): surface pointEvidenceFlag (a weak-confidence
+    // point-signature contradiction that was flagged for human review instead of silently
+    // reclassified — see emVerifyTypeByPoints Rule 10 comment) as a visible marker, per this
+    // project's standing doctrine that conflicts get surfaced, never silently resolved.
+    var _flagMarkup = '';
+    if (row.pointEvidenceFlag) {
+      var _flagCatLabel = EM_CATEGORY_LABELS[row.pointEvidenceFlag.suggested] || row.pointEvidenceFlag.suggested;
+      _flagMarkup =
+        ' <span title="Point signature suggests ' +
+        emHtmlEsc(_flagCatLabel) +
+        ' instead of ' +
+        emHtmlEsc(catLabel) +
+        ' — evidence was not strong enough to auto-reclassify, flagged for review" ' +
+        'style="border-bottom:1px dotted var(--text3);cursor:help;color:var(--text3)">(?)</span>';
+    }
     return (
-      '<td style="' + baseStyle + 'text-align:left;font-size:10px;color:var(--text2)">' + emHtmlEsc(catLabel) + '</td>'
+      '<td style="' +
+      baseStyle +
+      'text-align:left;font-size:10px;color:var(--text2)">' +
+      emHtmlEsc(catLabel) +
+      _flagMarkup +
+      '</td>'
     );
   }
 
