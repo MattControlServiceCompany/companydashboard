@@ -54,6 +54,7 @@ HOSTS = {
 PRODUCTION_HOST = "github_pages"
 
 SITE_UI_JS = REPO_ROOT / "site-ui.js"
+SITE_FUNCTIONS_JS = REPO_ROOT / "app" / "site-functions.js"
 HTML_FILES = [
     REPO_ROOT / "energy-department.html",
     REPO_ROOT / "index.html",
@@ -112,6 +113,28 @@ def check_live_hosts(hosts: dict) -> dict:
         except LiveFetchError as exc:
             results[label] = (None, str(exc))
     return results
+
+
+def get_release_notes_top_version() -> str:
+    """Return RELEASE_NOTES[0].v from app/site-functions.js, or None if not found.
+
+    This is the hand-maintained changelog that app/report-engine.js compares
+    against the live-fetched CH_VERSION to decide whether to show the
+    "update available" banner. If this value falls behind CH_VERSION, the
+    banner fires permanently and cannot be cleared client-side (see
+    fix/release-notes-version-pairing, 2026-07-28).
+    """
+    if not SITE_FUNCTIONS_JS.exists():
+        return None
+    text = SITE_FUNCTIONS_JS.read_text(encoding="utf-8")
+    m = re.search(r"var\s+RELEASE_NOTES\s*=\s*\[", text)
+    if not m:
+        return None
+    # First v: '...' occurrence after the RELEASE_NOTES[ opening is entry [0].
+    m2 = re.search(r"v:\s*['\"](v[\d.]+)['\"]", text[m.end():])
+    if not m2:
+        return None
+    return m2.group(1)
 
 
 def build_version_string(patch: int) -> str:
@@ -278,6 +301,51 @@ def main() -> None:
 
     new_version = build_version_string(new_patch)
     print(f"[stamp-version] New version string: {new_version}")
+
+    # Step 1.5: Gate — RELEASE_NOTES[0].v in app/site-functions.js MUST equal
+    # the version being stamped. app/report-engine.js's update-banner check
+    # compares RELEASE_NOTES[0].v (loadedVer) against the live-fetched
+    # CH_VERSION (fetchedVer). If they are allowed to drift, the "update
+    # available" banner fires permanently and cannot be cleared client-side.
+    # This happened twice (v711 and v712 shipped with no release-note entry)
+    # before this gate was added. Do not weaken this to a warning.
+    print(f"[stamp-version] Checking RELEASE_NOTES[0].v in app/site-functions.js...")
+    top_note_version = get_release_notes_top_version()
+    if top_note_version is None:
+        print(
+            f"\nERROR: Could not find RELEASE_NOTES[0].v in "
+            f"{SITE_FUNCTIONS_JS}.\n"
+            f"  Expected to find: var RELEASE_NOTES = [ {{ v: 'v...', ... }}\n"
+            f"\n"
+            f"ACTION REQUIRED: Add a RELEASE_NOTES entry for {new_version} at "
+            f"the TOP of the RELEASE_NOTES array in app/site-functions.js "
+            f"(newest first), then re-run this script.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if top_note_version != new_version:
+        print(
+            f"\nERROR: RELEASE_NOTES[0].v ({top_note_version}) does not match "
+            f"the version being stamped ({new_version}).\n"
+            f"\n"
+            f"Every stamped version MUST have a matching RELEASE_NOTES entry. "
+            f"Without one, app/report-engine.js's update-check compares the "
+            f"stale RELEASE_NOTES[0].v against the new live CH_VERSION, "
+            f"decides an update is permanently available, and shows the "
+            f"'update available' banner on every page load, tab focus, and "
+            f"5-minute interval forever -- with no way to clear it client-side.\n"
+            f"\n"
+            f"ACTION REQUIRED: Before re-running this script, add a new entry "
+            f"to the TOP of the RELEASE_NOTES array in app/site-functions.js "
+            f"(~line 1577) with:\n"
+            f"    v: '{new_version}',\n"
+            f"  describing what changed in this deploy, in plain user-facing "
+            f"language, naming the page(s) affected. Then re-run "
+            f"scripts/stamp-version.py.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(f"[stamp-version] OK -- RELEASE_NOTES[0].v matches {new_version}")
 
     # Step 2: Rewrite site-ui.js
     print(f"[stamp-version] Rewriting site-ui.js CH_VERSION...")
