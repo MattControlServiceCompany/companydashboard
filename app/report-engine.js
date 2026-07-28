@@ -15144,13 +15144,14 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
     '">Facilities Included</td>' +
     tl.phases
       .map(function (p) {
-        // 2026-07-26 row-level rebuild: a phase can legitimately carry zero buildings when its
-        // measures envelope is $0 (recurring EM labor consumes the whole calendar allowance for
-        // that period) — say so instead of a bare "None assigned." next to no other explanation.
-        var txt =
-          p.buildings && p.buildings.length
-            ? p.buildings.map(esc).join('; ') + '.'
-            : 'Ongoing Energy Management Services only for this period.';
+        // Bug 3306c189 (2026-07-27): reads the shared `facilitiesText` field computed once in
+        // _pricingComputeRecommendedTimeline (pricing-estimator.js) — a building is named ONCE, in
+        // the earliest phase it has work, with later-phase continuation described in that same
+        // sentence rather than the building's bare name being repeated in every later phase's
+        // column (previously Phase 2 listed 21 buildings, Phase 3 listed 13, heavily overlapping,
+        // vs. the client's own base document's 5/9/8 with no repeats). Already includes the
+        // "no additional facilities this period" fallback text.
+        var txt = esc(p.facilitiesText || '');
         return '<td style="' + cellStyle + '">' + txt + '</td>';
       })
       .join('') +
@@ -15753,15 +15754,13 @@ function _rptA36RecommendedTimelineHTML(d) {
 
   var rowsHTML = tl.phases
     .map(function (p, idx) {
-      // Facilities Included fallback (2026-07-26 row-level rebuild, matches pricing-estimator.js'
-      // _pricingRecommendedTimelineHTML): a phase can legitimately end up with zero
-      // buildings/rows when its measures envelope is $0 (EM labor alone consumes the whole
-      // calendar allowance) — never a bare "None" beside an unexplained gap.
-      var facilities = p.buildings.length
-        ? p.buildings.map(_esc).join('; ') + '.'
-        : p.overCommitted
-          ? "Ongoing Energy Management Services only for this period — this phase's allowance is fully committed to recurring service."
-          : 'Ongoing Energy Management Services only for this period.';
+      // Facilities Included (Bug 3306c189, 2026-07-27): reads the shared `facilitiesText` field
+      // computed once in _pricingComputeRecommendedTimeline — dedups each building to its earliest
+      // phase and describes later-phase continuation instead of repeating the bare name in every
+      // phase it has a row (matches the fix applied to rptPageASHRAE36ProposalPhaseTable's
+      // facilitiesRow and pricing-estimator.js's own _pricingRecommendedTimelineHTML, so all three
+      // "Facilities Included"/Scope Summary surfaces agree). Already includes the fallback text.
+      var facilities = _esc(p.facilitiesText || '');
       var improvements =
         typeof _rptA36PhaseImprovementsText === 'function' ? _rptA36PhaseImprovementsText(p.rows, idx) : '';
       return (

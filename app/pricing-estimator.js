@@ -109,6 +109,9 @@ const POINT_KEY_INSTALL_CLASS = {
   co2_zone: 'spaceZoneSensor',
   oaDampCmd: 'damperActuator',
   raDampCmd: 'damperActuator',
+  // damperPositionControl (2026-07-27): consolidated OA+RA damper row — same install class/hours
+  // as either individual key (same physical actuator part).
+  damperPositionControl: 'damperActuator',
   chwIsoValveCmd: 'valveActuator',
   cwIsoValveCmd: 'valveActuator',
   makeupValveCmd: 'valveActuator',
@@ -229,6 +232,46 @@ const SEQUENCE_SAVINGS_IMPACT = {
     // _pricingSortRecommendedRows (below), which guarantees this regardless of weight/cost
     // score math so DCV always sorts ahead of every other measure, not just ahead of the
     // med-high bucket.
+    //
+    // 2026-07-27 (Matt, twice in one message): "DCV should be top priority since its an easy
+    // install and gives us good information" / "DCV should be highest priority." This was NOT yet
+    // true for the ROI ranking that actually decides PHASE membership/order
+    // (_pricingEquipRowScore, read by _pricingBuildRoiUnits/_pricingComputeRecommendedTimeline) —
+    // only the Recommended-tier TABLE DISPLAY sort had a DCV-first override. A real JOCO vav_dcv
+    // unit measured as low as score 1.25 (weight 2.5 / effectiveCostTier 2, when its CO2 sensor is
+    // still a hardware gap) against ahu_sat_reset/ahu_dsp_reset's 3 — nowhere close to "highest".
+    //
+    // `priorityBonus` (read only by _pricingEquipRowScore, below) expresses WHY DCV outranks
+    // higher-weight measures: it is a flat premium for install ease + diagnostic value, the two
+    // reasons Matt gave — properties the weight/effectiveCostTier ratio alone cannot capture (that
+    // ratio only prices $ savings against $ cost, not "how easy" or "how useful the data is").
+    //
+    // Sizing, REVISED after real-data verification (2026-07-27, same day/branch): the first attempt
+    // used bonus=2, which made DCV's WORST case (weight 2.5 / costTier 2 = 1.25 + 2 = 3.25) exceed
+    // dsp/sat-reset's max (weight 3 / costTier 1 = 3) outright — not merely tied. On real JOCO data
+    // this had a second-order effect nobody asked for: because DCV strictly outranked dsp/sat-reset
+    // (no longer TIED with them), the ~750-unit DCV candidate pool no longer competed in the same
+    // tie group _pricingDiversifyTiedUnits round-robins — it simply out-ranked the ~24-unit
+    // dsp/sat-reset pool everywhere, so the Fit-to-Budget greedy prefix (_pricingGreedyPrefix, used
+    // by buildRecommendedRows for tier MEMBERSHIP, not just phase placement) filled the entire
+    // ~$97k Recommended-tier budget with DCV before ever reaching a single dsp/sat-reset unit —
+    // fan-energy optimization (this task's original Bug 2744e688) disappeared from the Recommended
+    // tier ENTIRELY, not just from one phase. That is a worse outcome than the bug being fixed and
+    // directly contradicts the client's own base document ("remaining ventilation and fan
+    // optimization" in Phase 3).
+    //
+    // Fix: bonus=1.75, sized so DCV's WORST case lands at EXACTLY 3.0 — TYING dsp/sat-reset's max,
+    // never exceeding it in the worst case (DCV instances that are cheaper — CO2 sensor already
+    // covered, effectiveCostTier 1 — still score 4.25, genuinely ahead, which is correct: an easy
+    // win should outrank a harder one). Because DCV now ties into the SAME score group as
+    // dsp/sat-reset instead of a strictly-higher one, _pricingDiversifyTiedUnits' round-robin
+    // (extended to _pricingGreedyPrefix too — see that function) applies to DCV alongside them:
+    // DCV is listed first in the round-robin's family order (see _pricingDiversifyTiedUnits),
+    // so it wins every round's first pick — "highest priority" within the tie — but the round-robin
+    // still guarantees dsp/sat-reset get admitted too as rounds continue, rather than being frozen
+    // out entirely. This is the "compose, don't fight" resolution: DCV is preferred at every
+    // opportunity, but a finite, ROI-scored set of other high-tier measures still gets a seat.
+    priorityBonus: 1.75,
     tier: 'high',
     type: 'savings',
     weight: 2.5,
@@ -246,6 +289,10 @@ const SEQUENCE_SAVINGS_IMPACT = {
   },
   vav_dcv: {
     // 2026-07-22: promoted from 'med-high' to 'high' — see demandCtrl comment above.
+    // 2026-07-27: priorityBonus — see the full rationale (and the revised 1.75 sizing after
+    // real-data verification) in demandCtrl's comment block above; same reasoning applies
+    // identically at zone level.
+    priorityBonus: 1.75,
     tier: 'high',
     type: 'savings',
     weight: 2.5,
@@ -1625,6 +1672,23 @@ const PRICE_POINT_MAP = {
       'Verify: the AHU may already have a modulating damper actuator (then this is a point-exposure/programming gap) vs genuinely needing a new actuator.',
     g36Section: '§5.16',
   },
+  // damperPositionControl: consolidated report/summary line item for oaDampCmd + raDampCmd (Matt,
+  // 2026-07-27: "Why would you split up damper position control? Don't do that in these kind of
+  // reports and summaries.") — same SKU/price/install-hours as either individual key (they're the
+  // same physical actuator part), just grouped under one label so a building missing both OA and
+  // RA damper control shows ONE "damper actuators" line instead of two identically-priced rows.
+  // See the merge logic in buildCatalogRows (search 'Damper Position Control consolidation').
+  damperPositionControl: {
+    defaultSku: 'AFB24-MFT-06-A',
+    qtyRule: 'perUnit',
+    flags: ['engReview'],
+    note: '180 in-lb spring-return — verify torque',
+    whyNeeded:
+      'Controls outdoor air and return air damper position together for economizer operation and free-cooling airflow balance; without it, economizer operation is not possible.',
+    whyNotHardware:
+      'Verify: the AHU may already have modulating damper actuators (then this is a point-exposure/programming gap) vs genuinely needing new actuators.',
+    g36Section: '§5.16',
+  },
   /* ── VAV/FPB/DDVAV actuators ──
      dampCmd / coldDampCmd / hotDampCmd are classified ioOnly (Phase 2 programming, $0 hardware).
      Rationale: VAV/VVT terminal boxes have integral factory-installed actuators commanded over
@@ -1975,6 +2039,64 @@ function _pricingSetRoiOpen(projId, open) {
   _pricingSetEstimate(projId, est);
 }
 
+/* ── _pricingIsMonitoringOnlyZoneUnit(eq) ─────────────────────────────────────────────────────
+   2026-07-27 (Matt, repeated — see the buildCatalogRows/buildOptionalPointRows call sites for the
+   "we talked about this already" investigation note): "The units not having Zone cooling/heating
+   setpoint still makes no sense and should not be included, we talked about this already, those
+   are most likely locally controlled units and it's monitoring only."
+
+   Signal used: eq.compliance.missingPoints containing BOTH 'coolSP' AND 'htgSP' — the SAME
+   required-category-gap data buildCatalogRows already reads for every other hardware row (not a
+   new detection mechanism, not a heuristic over free-text notes). Verified against EM_POINT_
+   CATEGORIES (equipment-matrix.js): coolSP/htgSP are `required: true` for vav/fpb/ddvav/furnace/
+   zone (the equip types this predicate actually fires for in practice — 'zone' terminal boxes) and
+   `required: false` for fcu and a couple of other types, so those never populate missingPoints for
+   these keys and this predicate never fires a false-positive exclusion for them; it only ever
+   excludes equipment where the zone setpoint really is a required-but-absent point.
+
+   A unit missing BOTH is a unit you cannot write a setpoint to at all — it is locally controlled
+   (a local stat) and monitoring-only for BAS purposes; no zone-level ASHRAE-36 sequence
+   (vav_zone_temp, vav_reheat, vav_dcv, damper write-back) can legitimately be sold for it, and
+   installing new zone sensors for it would price hardware nobody can act on. Excluding it happens
+   ONE LEVEL UP from any single hardware/sequence key — the equipment is dropped entirely from
+   buildCatalogRows'/buildOptionalPointRows' per-building equipment list before any row is
+   generated, so this interacts cleanly with the CO2 remap fix (2026-07-27, same branch): a
+   monitoring-only unit that also happens to be missing CO2 gets NEITHER a CO2 hardware row NOR DCV
+   programming labor, rather than one fix pricing hardware the other fix would have excluded, or
+   vice versa — there is one filter, applied once, before both row-generation passes read the
+   equipment list.
+
+   PRIOR-FIX CHECK (per task instruction to determine whether "we talked about this already" was
+   ever acted on): grepped this file's git history and the current source for any existing gate on
+   coolSP/htgSP absence prior to this change — none exists. buildCatalogRows/buildRecommendedRows
+   priced vav_zone_temp programming (and every other zone-level sequence) for these units
+   unconditionally before this fix. This is a NEW fix, not a regression of a prior one — the
+   "already talked about this" was 8ea3ca72 (2026-07-09), which is a DIFFERENT, narrower decision:
+   it removed coolSP/htgSP from vav_zone_temp's own SEQUENCE READINESS requiredCats/keyCats in
+   equipment-matrix.js (the Equipment Matrix audit view) specifically to stop a false "Not Ready"
+   for ~219 of 719 VAV rows on Carrier VVT terminals, where the zone setpoint genuinely lives at
+   the VVT master controller rather than exposed per-terminal — those terminals ARE still
+   BAS-controlled (the master writes the setpoint), just not exposed at the granularity this
+   equipment-matrix.js field tracks. That decision is intentionally left untouched here (this
+   predicate does not read or change eq.seqReadiness/emComputeSequenceReadiness at all) so the
+   Equipment Matrix audit view keeps its VVT fix. This predicate operates one layer up, in the
+   PRICING/PROPOSAL generators only, using the raw missingPoints hardware-gap signal — a unit could
+   in principle be a VVT terminal (audit view: vav_zone_temp shows "Ready") while ALSO genuinely
+   lacking both coolSP and htgSP hardware-gap entries for other reasons; Matt's literal instruction
+   is scoped to "not having zone cooling/heating setpoint", so this predicate follows that literally
+   rather than trying to infer VVT-vs-local-stat from data this codebase does not capture. Flagged
+   for Matt: if some of the excluded units turn out to be VVT terminals rather than local stats, the
+   predicate may need a VVT-aware carve-out — not assumed here since no such signal exists in the
+   real data today.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingIsMonitoringOnlyZoneUnit(eq) {
+  var missing = {};
+  ((eq && eq.compliance && eq.compliance.missingPoints) || []).forEach(function (mp) {
+    missing[mp.categoryKey] = true;
+  });
+  return !!(missing.coolSP && missing.htgSP);
+}
+
 /* ── buildComplianceRows(projId) — spec §8, §3, §5 ─────────────────────────
    Produces the full row list for the Compliance tier from collectASHRAE36Data.
    Returns array of row objects:
@@ -2040,6 +2162,13 @@ function buildCatalogRows(projId) {
 
   ashData.buildings.forEach(function (bldgData) {
     var bName = bldgData.name;
+    // Monitoring-only zone unit exclusion (2026-07-27) — see _pricingIsMonitoringOnlyZoneUnit's
+    // header comment for the full rationale/citation. Filtered ONCE, before any row generation, so
+    // it applies uniformly to hardware gaps, equipment-count labels, AND sequence-programming rows
+    // below (a monitoring-only unit contributes NOTHING to buildCatalogRows' output at all).
+    var equipResults = bldgData.equipResults.filter(function (eq) {
+      return !_pricingIsMonitoringOnlyZoneUnit(eq);
+    });
     // Map: pointKey → { equipType → { count, catLabel, engIds } }
     var hardwareGaps = {}; // pointKey → { equipType, count, catLabel, equipIds }
     var oatDeDupDone = false;
@@ -2049,7 +2178,7 @@ function buildCatalogRows(projId) {
     // equipId → set of missing required point keys
     var perEquipMissing = {};
 
-    bldgData.equipResults.forEach(function (eq) {
+    equipResults.forEach(function (eq) {
       var cat = eq.category;
       var eqId = eq.id;
       var missingKeys = {};
@@ -2065,25 +2194,30 @@ function buildCatalogRows(projId) {
     // For oaWetBulb: 1 per building
 
     // First pass: accumulate all missing required points per equipment
-    bldgData.equipResults.forEach(function (eq) {
+    equipResults.forEach(function (eq) {
       var cat = eq.category;
       var catLabel = _pricingCatLabel(cat);
       eq.compliance.missingPoints.forEach(function (mp) {
         var pointKey = mp.categoryKey;
-        var mapEntry = PRICE_POINT_MAP[pointKey];
-        if (!mapEntry) return; // no mapping → skip
-
-        // Skip I/O-only here (handled separately for display)
-        // Actually include them so we can show the $0 rows
-
-        // For co2: distinguish AHU duct CO2 from zone CO2 using category
+        // P0 FIX (2026-07-27, fix/phase-table-diversity-and-grouping): For co2, distinguish AHU
+        // duct CO2 from zone CO2 using category — this remap MUST run before the PRICE_POINT_MAP
+        // lookup below. PRICE_POINT_MAP has no bare 'co2' entry (only co2_ahu/co2_zone), so looking
+        // up 'co2' directly always returned undefined and hit the `if (!mapEntry) return;` guard
+        // before this remap ever ran — every co2 gap on every project silently vanished from every
+        // tier (Catalog/Compliance/Full Scope) while DCV programming labor (which reads
+        // eq.seqReadiness, a completely separate code path) was still priced, so DCV programming
+        // was being sold with zero CO2 hardware ever budgeted for it. On real JOCO data: 754 of 899
+        // VAV/AHU units are missing co2, 0 CO2 hardware rows existed in any tier before this fix.
         var effectiveKey = pointKey;
         if (pointKey === 'co2') {
           var zoneTypes = ['vav', 'fpb', 'ddvav', 'zone'];
           effectiveKey = zoneTypes.indexOf(cat) !== -1 ? 'co2_zone' : 'co2_ahu';
-          mapEntry = PRICE_POINT_MAP[effectiveKey];
-          if (!mapEntry) return;
         }
+        var mapEntry = PRICE_POINT_MAP[effectiveKey];
+        if (!mapEntry) return; // no mapping → skip
+
+        // Skip I/O-only here (handled separately for display)
+        // Actually include them so we can show the $0 rows
 
         // oat de-dup: 1 per building
         if (effectiveKey === 'oat') {
@@ -2116,6 +2250,32 @@ function buildCatalogRows(projId) {
               mapEntry: mapEntry,
             };
           hardwareGaps[key2].count = 1;
+          return;
+        }
+
+        // Damper Position Control consolidation (2026-07-27, fix/phase-table-diversity-and-
+        // grouping — Matt: "Why would you split up damper position control? Don't do that in
+        // these kind of reports and summaries."). oaDampCmd (OA Damper Actuator) and raDampCmd (RA
+        // Damper Actuator) are the same physical actuator SKU/price, both needed for one
+        // conceptual measure — economizer damper position control on one AHU — but were
+        // previously grouped/priced as two separate line items (same as zoneTemp+co2_zone below
+        // are merged for the same reason: one retrofit, one line item). Merges into a single
+        // 'damperPositionControl' bucket per building+equipType, SUMMING both counts (no dollar
+        // change — every physical actuator gap is still counted once) so the report shows "N
+        // damper actuators" instead of an "OA Damper Actuator" row and a same-priced "RA Damper
+        // Actuator" row side by side.
+        if (effectiveKey === 'oaDampCmd' || effectiveKey === 'raDampCmd') {
+          var dampKey = 'damperPositionControl__' + cat;
+          if (!hardwareGaps[dampKey]) {
+            hardwareGaps[dampKey] = {
+              pointKey: 'damperPositionControl',
+              equipType: cat,
+              catLabel: catLabel,
+              count: 0,
+              mapEntry: PRICE_POINT_MAP['damperPositionControl'],
+            };
+          }
+          hardwareGaps[dampKey].count++;
           return;
         }
 
@@ -2177,7 +2337,7 @@ function buildCatalogRows(projId) {
 
     // Build row objects from accumulated gaps
     var bldgEquipCount = {}; // category → total equip count in building
-    bldgData.equipResults.forEach(function (eq) {
+    equipResults.forEach(function (eq) {
       bldgEquipCount[eq.category] = (bldgEquipCount[eq.category] || 0) + 1;
     });
 
@@ -2201,7 +2361,14 @@ function buildCatalogRows(projId) {
       // If gap === total (all units missing the point), use the shorter "N FCUs" form.
       var totalForCat = bldgEquipCount[gap.equipType] || gap.count;
       var eqLabel;
-      if (gap.equipType === 'building') {
+      if (gap.pointKey === 'damperPositionControl') {
+        // 2026-07-27: the merged OA+RA damper bucket sums TWO different point keys (one physical
+        // actuator each) — its count is an actuator count, not a fraction of equipment in the
+        // building, so "N of M [equip]" would misleadingly compare an actuator total against an
+        // equipment count (e.g. 2 AHUs each missing both dampers reads as count=4, not "4 of 2
+        // AHUs"). State it directly as an actuator count instead.
+        eqLabel = gap.count + ' damper actuator' + (gap.count !== 1 ? 's' : '');
+      } else if (gap.equipType === 'building') {
         eqLabel = '1 building';
       } else if (gap.count === totalForCat) {
         eqLabel = gap.count + ' ' + gap.catLabel + (gap.count !== 1 ? 's' : '');
@@ -2286,7 +2453,12 @@ function buildCatalogRows(projId) {
     var seqPartial = {}; // seqKey → count of partial-only instances
     var seqApplicable = {}; // seqKey → count of non-'na' instances (denominator)
 
-    bldgData.equipResults.forEach(function (eq) {
+    // 2026-07-27: uses the SAME filtered `equipResults` as the hardware-gap pass above, so a
+    // monitoring-only unit (excluded above) never contributes sequence-programming labor either —
+    // e.g. it can no longer be counted as a vav_dcv/DCV-programming "blocked/partial" instance,
+    // which is exactly the outcome that would otherwise price DCV programming with no zone
+    // control path to act on it.
+    equipResults.forEach(function (eq) {
       if (!eq.seqReadiness) return;
       Object.keys(eq.seqReadiness).forEach(function (seqKey) {
         var entry = eq.seqReadiness[seqKey];
@@ -2437,6 +2609,9 @@ function _pricingPointLabel(pointKey) {
     zoneTemp: 'Zone Temp',
     oaDampCmd: 'OA Damper Actuator',
     raDampCmd: 'RA Damper Actuator',
+    // damperPositionControl: consolidated OA+RA damper actuator line item (2026-07-27) — see the
+    // PRICE_POINT_MAP entry of the same name for the full rationale.
+    damperPositionControl: 'Damper Position Control (OA/RA Actuators)',
     dampCmd: 'Damper Actuator',
     coldDampCmd: 'Cold Deck Damper',
     hotDampCmd: 'Hot Deck Damper',
@@ -3140,6 +3315,9 @@ var OPTIMIZER_SKIP_KEYS = {
   reheatValve: true,
   oaDampCmd: true,
   raDampCmd: true,
+  // damperPositionControl (2026-07-27): the consolidated OA+RA damper row's _pointKey — same
+  // skip rationale as oaDampCmd/raDampCmd above (torque/spring-return safety, never auto-swapped).
+  damperPositionControl: true,
   discFlow: true,
   primaryFlow: true,
 };
@@ -3546,11 +3724,17 @@ function buildOptionalPointRows(projId) {
 
   ashData.buildings.forEach(function (bldgData) {
     var bName = bldgData.name;
+    // Monitoring-only zone unit exclusion (2026-07-27) — same filter/rationale as buildCatalogRows
+    // (see _pricingIsMonitoringOnlyZoneUnit's header comment). Optional (beyond-compliance) points
+    // are no more sellable for a unit with no zone setpoint write path than required ones are.
+    var equipResults = bldgData.equipResults.filter(function (eq) {
+      return !_pricingIsMonitoringOnlyZoneUnit(eq);
+    });
     var optionalGaps = {}; // gKey -> {pointKey, equipType, catLabel, count, mapEntry}
     var oatDeDupDone = false;
     var oaWetBulbDeDupDone = false;
 
-    bldgData.equipResults.forEach(function (eq) {
+    equipResults.forEach(function (eq) {
       var cat = eq.category;
       var catDefs = EM_POINT_CATEGORIES[cat];
       if (!catDefs) return;
@@ -3584,16 +3768,17 @@ function buildOptionalPointRows(projId) {
         }
 
         var pointKey = def.key;
-        var mapEntry = PRICE_POINT_MAP[pointKey];
-        if (!mapEntry) return; // unmapped — EXCLUDED, no catalogued hardware (spec §5)
-
+        // P0 FIX (2026-07-27) — same defect as buildCatalogRows above (search 'P0 FIX' there for
+        // the full writeup): the co2 -> co2_zone/co2_ahu remap must run BEFORE the PRICE_POINT_MAP
+        // lookup, since PRICE_POINT_MAP has no bare 'co2' entry. This function's `if (!mapEntry)
+        // return` guard was previously reached first, silently excluding every optional-co2 gap.
         var effectiveKey = pointKey;
         if (pointKey === 'co2') {
           var zoneTypes = ['vav', 'fpb', 'ddvav', 'zone'];
           effectiveKey = zoneTypes.indexOf(cat) !== -1 ? 'co2_zone' : 'co2_ahu';
-          mapEntry = PRICE_POINT_MAP[effectiveKey];
-          if (!mapEntry) return;
         }
+        var mapEntry = PRICE_POINT_MAP[effectiveKey];
+        if (!mapEntry) return; // unmapped — EXCLUDED, no catalogued hardware (spec §5)
 
         if (effectiveKey === 'oat') {
           if (oatDeDupDone) return;
@@ -3644,7 +3829,7 @@ function buildOptionalPointRows(projId) {
     });
 
     var bldgEquipCount = {};
-    bldgData.equipResults.forEach(function (eq) {
+    equipResults.forEach(function (eq) {
       bldgEquipCount[eq.category] = (bldgEquipCount[eq.category] || 0) + 1;
     });
 
@@ -4317,7 +4502,20 @@ function _pricingEquipRowScore(row) {
   // score them below any real sequence (whose minimum possible score is 0) so they sink to
   // the bottom of the 'equipment' ranked list rather than the top.
   if (row.phase !== 2) return -1;
-  return (row._savingsWeight || 0) / Math.max(row._effectiveCostTier || 1, 1);
+  // 2026-07-27 (Matt: "DCV should be highest priority", stated twice) — priorityBonus is an
+  // explicit, data-driven premium (defined per-measure in SEQUENCE_SAVINGS_IMPACT, not a
+  // hardcoded seqKey check here) added on top of the raw weight/effectiveCostTier ROI ratio. It
+  // expresses factors that ratio cannot: install ease and diagnostic value, for measures where
+  // that is genuinely true (today: DCV only — see demandCtrl's comment block for the full
+  // rationale and the worst-case-still-wins math). A measure with no priorityBonus field behaves
+  // exactly as before (bonus defaults to 0). This is read by every caller of this function —
+  // Recommended-tier Fit-to-Budget membership (_pricingGreedyPrefix via _pricingBuildRoiUnits) AND
+  // the calendar-phase packer (_pricingComputeRecommendedTimeline) — so DCV ranks first in both
+  // "does it make the tier" and "which phase does it land in", not just in table display order.
+  var _impactDef =
+    row.seqKey && typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT[row.seqKey] : null;
+  var _priorityBonus = (_impactDef && _impactDef.priorityBonus) || 0;
+  return _priorityBonus + (row._savingsWeight || 0) / Math.max(row._effectiveCostTier || 1, 1);
 }
 
 /* ── Pair phase-1 hardware rows with the phase-2 sequence row they block, within ONE
@@ -4441,11 +4639,20 @@ function _pricingBuildRoiUnits(rows) {
    higher-ranked one was skipped. Returns kept/excluded toggle keys, the kept
    running total, and the kept unit objects themselves (rows can be recovered
    from unit.seqRow/unit.hwRows without re-deriving toggle keys).
+
+   2026-07-27 (fix/phase-table-diversity-and-grouping): runs the SAME measure-family diversity
+   tie-break the calendar-phase packer uses (_pricingDiversifyTiedUnits) before the greedy walk
+   below. Without this, a family that ties on score with a much larger candidate pool (e.g. DCV
+   tied with dsp/sat-reset after the 2026-07-27 priorityBonus fix) could still have the greedy
+   MEMBERSHIP walk (not just phase placement) fill the whole ceiling with the larger pool before
+   ever reaching the smaller one — real-data verification found exactly this on JOCO before this
+   line was added. See _pricingDiversifyTiedUnits' header comment for the full diagnosis.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingGreedyPrefix(units, ceiling) {
   var sorted = units.slice().sort(function (a, b) {
     return b.score - a.score;
   });
+  sorted = _pricingDiversifyTiedUnits(sorted);
 
   var running = 0;
   var keepKeys = [];
@@ -4462,6 +4669,92 @@ function _pricingGreedyPrefix(units, ceiling) {
   });
 
   return { keepKeys: keepKeys, excludeKeys: excludeKeys, total: running, keptUnits: keptUnits };
+}
+
+/* ── _pricingDiversifyTiedUnits(sortedUnits) ─────────────────────────────────────────────────
+   Bug 2744e688 (2026-07-27, fix/phase-table-diversity-and-grouping): measure-family diversity
+   tie-break for the calendar-phase packer (_pricingComputeRecommendedTimeline).
+
+   Diagnosis (already established, not re-derived here): 24 real JOCO units tie at score 3 — 19
+   ahu_sat_reset + 5 ahu_dsp_reset (both 'high' tier, weight 3, effectiveCostTier 1 — see
+   SEQUENCE_SAVINGS_IMPACT above). Because Array#sort is stable, a plain score-desc sort left every
+   sat-reset unit ahead of every dsp-reset unit within that tie (sat-reset units simply occur first
+   in buildRecommendedRows' natural building order). The greedy first-fit walk then offered all 19
+   sat-reset units to Phase 1 before ever reaching a dsp-reset unit, so Phase 1's 5-month envelope
+   was exhausted by sat-reset alone — none of the 5 fan (dsp-reset) line items ($432.50-$1,730 each)
+   ever got a chance to compete for the remaining slack, even though they scored identically. The
+   same starvation pattern then propagated: whatever didn't fit Phase 1 fed Phase 2 next, in the
+   SAME lopsided order, so fan energy was also starved out of Phase 3 ("remaining ventilation and
+   fan optimization" per the client's base document).
+
+   Fix: within a contiguous run of EXACTLY-tied scores (post score-desc sort), reorder by
+   round-robin across seqKey ("measure family") — round 1 offers the first not-yet-offered unit of
+   EVERY distinct family in the tie group (in their original relative order), round 2 offers the
+   second of each, etc. This guarantees at least one instance of every tied family is offered to the
+   greedy walk before a SECOND instance of any other tied family, so a family that fits the
+   envelope even once is never crowded out purely by volume of an equally-scored sibling family.
+
+   Constraints preserved:
+     - Cross-score ranking is untouched — this function never reorders across a score boundary, so
+       a higher-scoring unit can never be displaced by a lower-scoring one (only same-score units
+       are ever reordered relative to each other).
+     - This changes OFFER ORDER only, not the envelope/fit test — a family that genuinely cannot
+       fit a phase (even offered first) still does not land there; nothing is force-fit by evicting
+       better-scoring work.
+
+   2026-07-27 (same day, DCV-priority composability fix): within a tie group, families carrying a
+   SEQUENCE_SAVINGS_IMPACT.priorityBonus (today: demandCtrl/vav_dcv — see those entries' comments)
+   are moved to the FRONT of the round-robin order, so they win every round's first pick — "highest
+   priority" expressed WITHIN the tie, not by strictly outranking the tie into its own bracket
+   (which was tried first and starved every other tied family out of Fit-to-Budget membership
+   entirely — see the priorityBonus sizing note on demandCtrl). A priority family still only gets
+   ONE extra pick per round, same as everyone else — round 2 still reaches every family that has a
+   second instance — so this composes with (does not replace) the round-robin fairness for the
+   remaining tied families. Generalizes automatically: any future measure flagged with
+   priorityBonus gets the same front-of-round-robin treatment, no seqKey-specific branch here.
+   ─────────────────────────────────────────────────────────────────────────── */
+function _pricingDiversifyTiedUnits(sortedUnits) {
+  var out = [];
+  var i = 0;
+  while (i < sortedUnits.length) {
+    var j = i;
+    while (j < sortedUnits.length && Math.abs(sortedUnits[j].score - sortedUnits[i].score) < 0.0001) j++;
+    var tieGroup = sortedUnits.slice(i, j);
+    if (tieGroup.length <= 1) {
+      out.push(tieGroup[0]);
+    } else {
+      var byFamily = {};
+      var familyOrder = [];
+      var priorityFamilies = [];
+      tieGroup.forEach(function (u) {
+        var fam = (u.seqRow && u.seqRow.seqKey) || '__none__';
+        if (!byFamily[fam]) {
+          byFamily[fam] = [];
+          var impactDef = typeof SEQUENCE_SAVINGS_IMPACT !== 'undefined' ? SEQUENCE_SAVINGS_IMPACT[fam] : null;
+          if (impactDef && impactDef.priorityBonus) {
+            priorityFamilies.push(fam);
+          } else {
+            familyOrder.push(fam);
+          }
+        }
+        byFamily[fam].push(u);
+      });
+      // Priority families (DCV today) first, in their own relative order, then everyone else in
+      // first-seen order — see the header comment above for why.
+      familyOrder = priorityFamilies.concat(familyOrder);
+      var maxLen = 0;
+      familyOrder.forEach(function (fam) {
+        if (byFamily[fam].length > maxLen) maxLen = byFamily[fam].length;
+      });
+      for (var r = 0; r < maxLen; r++) {
+        familyOrder.forEach(function (fam) {
+          if (byFamily[fam][r]) out.push(byFamily[fam][r]);
+        });
+      }
+    }
+    i = j;
+  }
+  return out;
 }
 
 /* ── Fit-to-Budget plan (174ad49a Phase 3, Mode B only) ───────────────────────
@@ -6327,6 +6620,12 @@ function _pricingComputeRecommendedTimeline(projId) {
   units.sort(function (a, b) {
     return b.score - a.score;
   });
+  // Bug 2744e688 (2026-07-27): measure-family diversity tie-break — reorders ONLY within
+  // exactly-tied score groups so an already-represented family (e.g. 19 tied ahu_sat_reset units)
+  // never crowds an equally-scored sibling family (e.g. 5 tied ahu_dsp_reset/fan-energy units) out
+  // of the phase it would otherwise fit. See _pricingDiversifyTiedUnits' header comment for the
+  // full diagnosis/design. Never changes cross-score ranking.
+  units = _pricingDiversifyTiedUnits(units);
 
   // phaseUnits: UNIT-granularity working set for the greedy walk + repair pass below (kept
   // separate from the final `phases` rows/buildings/total view, which is derived once at the end
@@ -6536,13 +6835,107 @@ function _pricingComputeRecommendedTimeline(projId) {
     });
   });
 
+  // ── Bug 3306c189 (2026-07-27): building dedup / cross-phase description ──────────────────────
+  // Point 4 of the header comment above is real and intentional — a building can legitimately have
+  // measures scattered across phases (a sensor in one phase, the sequence depending on it in a
+  // later one) — but every phase's `buildings` array previously listed EVERY building with ANY row
+  // that phase independently, so a building with work in 2-3 phases was named 2-3 times in the
+  // Proposal's "Facilities Included" row/column with no indication of what each occurrence meant
+  // (Phase 2 showed 21 buildings, Phase 3 showed 13, heavily overlapping — the client's own base
+  // document lists each building exactly once: 5, then 9, then 8).
+  //
+  // Fix is presentation-only — the optimization/phase assignment above is untouched. Each building
+  // is named ONCE, in the earliest phase it has work; that occurrence is annotated with which
+  // later phase(s) its work continues into (never silently hidden — just not repeated as a bare
+  // duplicate name). A phase whose only building involvement is "continuing" work from an earlier
+  // phase gets its own sentence naming those buildings and where they were introduced, so it never
+  // reads as if nothing is happening there.
+  //
+  // bldgPhaseIndices: building name -> ascending array of every phase index (0/1/2) that has at
+  // least one row for that building, derived from the SAME final p.rows/p.buildings computed above
+  // (post repair-pass, post natural-order restore) — not a re-derivation of phase membership.
+  var bldgPhaseIndices = {};
+  phases.forEach(function (p, i) {
+    p.buildings.forEach(function (bName) {
+      (bldgPhaseIndices[bName] = bldgPhaseIndices[bName] || []).push(i);
+    });
+  });
+  phases.forEach(function (p, i) {
+    var _cmForFallback = costModel ? costModel.phases[i] : null;
+    var newNames = p.buildings.filter(function (bName) {
+      return bldgPhaseIndices[bName][0] === i;
+    });
+    var continuingNames = p.buildings.filter(function (bName) {
+      return bldgPhaseIndices[bName][0] !== i;
+    });
+    // Dedup: `buildings` now names a building ONLY in its earliest phase — never again later.
+    p.buildings = newNames;
+
+    var pieces = [];
+    if (newNames.length) {
+      var annotated = newNames.map(function (bName) {
+        var laterLabels = bldgPhaseIndices[bName]
+          .slice(1)
+          .map(function (pi) {
+            return defs[pi] ? defs[pi].label : null;
+          })
+          .filter(Boolean);
+        return laterLabels.length ? bName + ' (continues in ' + laterLabels.join(', ') + ')' : bName;
+      });
+      pieces.push(annotated.join('; ') + '.');
+    }
+    if (continuingNames.length) {
+      var byOrigin = {};
+      var originOrder = [];
+      continuingNames.forEach(function (bName) {
+        var originIdx = bldgPhaseIndices[bName][0];
+        if (!byOrigin[originIdx]) {
+          byOrigin[originIdx] = [];
+          originOrder.push(originIdx);
+        }
+        byOrigin[originIdx].push(bName);
+      });
+      originOrder.sort(function (a, b) {
+        return a - b;
+      });
+      originOrder.forEach(function (originIdx) {
+        var originLabel = defs[originIdx] ? defs[originIdx].label : 'Phase ' + (originIdx + 1);
+        pieces.push(
+          'Continued work at facilities introduced in ' + originLabel + ': ' + byOrigin[originIdx].join(', ') + '.',
+        );
+      });
+    }
+    if (!pieces.length) {
+      pieces.push(
+        _cmForFallback && _cmForFallback.overCommitted
+          ? "Ongoing Energy Management Services labor only — this period's allowance is fully committed to recurring service."
+          : 'Ongoing Energy Management Services only for this period.',
+      );
+    }
+    // facilitiesText: single ready-to-display plain-text string (no HTML) — every "Facilities
+    // Included" render site (report-engine.js's Phase Table page AND Cost Estimate page,
+    // pricing-estimator.js's own Recommended timeline table) reads this ONE field instead of each
+    // independently re-deriving a dedup/fallback string from the raw `buildings` array, so the
+    // wording can never drift between the 3 places it's shown.
+    p.facilitiesText = pieces.join(' ');
+  });
+
   var out = phases.map(function (p, i) {
     var cm = costModel ? costModel.phases[i] : null;
     return {
       label: defs[i].label,
       dateRange: defs[i].dateRange,
       months: defs[i].months,
+      // buildings (Bug 3306c189, 2026-07-27): deduped — a building name appears here ONLY in the
+      // earliest phase it has work, so this can legitimately be empty for a later phase whose
+      // buildings were all already introduced earlier (that phase still has real `rows`/
+      // `measuresTotal` — see `facilitiesText` below for the client-facing description of that
+      // continuing work). Callers should prefer `facilitiesText` over re-deriving a summary from
+      // this array.
       buildings: p.buildings,
+      // facilitiesText (Bug 3306c189): ready-to-display plain-text "Facilities Included" string —
+      // see the dedup/cross-phase-description block above this map for the full derivation.
+      facilitiesText: p.facilitiesText,
       // rows (2026-07-26, Service Proposal rebuild): exposes the raw priced rows backing this
       // phase so callers can derive a live "what's included" summary without re-deriving the
       // phase split themselves.
@@ -6566,7 +6959,11 @@ function _pricingComputeRecommendedTimeline(projId) {
   var drift = Math.round((grand - sumMeasures) * 100) / 100;
   if (drift !== 0) {
     for (var i = out.length - 1; i >= 0; i--) {
-      if (out[i].buildings.length) {
+      // Bug 3306c189 fix note: this used to check `out[i].buildings.length`, which broke once
+      // `buildings` became deduped (a phase can have real rows/measuresTotal but zero NEWLY-named
+      // buildings if every building in it was already introduced earlier) — check the actual row
+      // membership instead, which is unaffected by the dedup.
+      if (out[i].rows.length) {
         out[i].measuresTotal = Math.round((out[i].measuresTotal + drift) * 100) / 100;
         break;
       }
@@ -6640,20 +7037,13 @@ function _pricingRecommendedTimelineHTML(projId) {
 
   var bodyRows = tl.phases
     .map(function (p) {
-      // Scope Summary fallback (2026-07-26 row-level rebuild): a phase can legitimately end up
-      // with zero buildings/rows when its measures envelope is $0 (EM labor alone consumes the
-      // whole calendar allowance, p.overCommitted) — never render a bare "No additional scope"
-      // next to a $0 figure with no explanation (task constraint: no unexplained $0 in
-      // client-facing output). Says WHERE the allowance went instead.
-      var scope = p.buildings.length
-        ? p.buildings.length +
-          ' building' +
-          (p.buildings.length !== 1 ? 's' : '') +
-          ': ' +
-          p.buildings.map(_pricingEscText).join(', ')
-        : p.overCommitted
-          ? "Ongoing Energy Management Services labor only — this period's allowance is fully committed to recurring service."
-          : 'Ongoing Energy Management Services only — no additional hardware or programming measures scheduled this period.';
+      // Scope Summary (Bug 3306c189, 2026-07-27): reads the shared `facilitiesText` field computed
+      // once in _pricingComputeRecommendedTimeline (dedup — a building is named only in its
+      // earliest phase, with later-phase continuation described rather than repeated) instead of
+      // re-deriving a "N buildings: ..." string from the raw (now-deduped) `buildings` array here,
+      // which would otherwise undercount buildings with real work this phase that were merely
+      // introduced earlier. Already includes the "no additional scope this period" fallback text.
+      var scope = _pricingEscText(p.facilitiesText);
       var allowanceCell = hasBudget
         ? _pricingFmt(p.allowanceTotal)
         : _pricingFmt(p.measuresTotal) +
