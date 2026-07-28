@@ -12873,8 +12873,13 @@ function rptPageASHRAE36Executive(n, d) {
   var ROWS_BUDGET_CONT = 717;
 
   // Shared table styles
+  // fix/report-formatting-consistency (2026-07-27): font-size was 13px, a lone outlier against
+  // every other instance of this same bold/uppercase/blue table-intro heading convention (Board
+  // Summary's "Contract Progress"/"Period Savings"/"Monthly Savings" headings and this report's
+  // own "ASHRAE Guideline 36 Sequences" heading are all 11px) — dropped to 11px to match the
+  // dominant convention. Text/content unchanged.
   var tableTitle =
-    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header (color:#fff on
   // background:var(--rpt-blue)) to match the Proposal's plain/thin-bordered convention
   // (rptPageASHRAE36ProposalCover's thPlain) -- no fill, near-black text, same border. Styling
