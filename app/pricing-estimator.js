@@ -970,26 +970,42 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   //    for the contract quote / client direction backing each figure) ──
   //
   // RECURRING_EM_LABOR_HOURS_DEFAULT is the single source of truth for the client-directed 16-hr
-  // recurring bucket (2026-07-27 correction: "I think the 16 hours should include the meetings,
-  // rebates and training" — Meeting/Rebate/Training come OUT OF the 16, not on top of it).
-  // Ongoing Monitoring & Optimization below is DERIVED by subtraction, never its own independent
-  // constant, so adding a 5th recurring category here automatically shrinks monitoring instead of
-  // silently letting the recurring total drift past 16.
+  // recurring bucket. 2026-07-28 correction (Matt, direct client confirmation): "utility bill data
+  // entry goes INSIDE the 16-hour monthly recurring bucket, not on top of it. 16 hours is the
+  // ENTIRE recurring allowance." Meeting/Rebate/Training/Bill Entry all come OUT OF the 16, not on
+  // top of it. Ongoing Monitoring & Optimization below is DERIVED by subtraction, never its own
+  // independent constant, so adding (or growing) a named category here automatically shrinks
+  // monitoring instead of silently letting the recurring total drift past 16.
   var RECURRING_EM_LABOR_HOURS_DEFAULT = 16;
   var MEETING_HOURS_DEFAULT = 2; // 2026-07-27: Monthly Client Review Meeting — carved out of the 16
   var REBATE_ASSISTANCE_HOURS_DEFAULT = 2; // 2026-07-27: Utility Rebate Assistance — carved out of the 16
   var TRAINING_DOCS_HOURS_DEFAULT = 2; // 2026-07-27: Staff Training & Documentation — carved out of the 16
-  // 2026-07-27 review fix: the subtraction below has no floor on its own — if the three named
-  // categories are ever raised (e.g. a contract change taking Training to 6 hrs) or a 5th category
-  // is added to this bucket, their sum can reach or exceed the 16-hr bucket and the naive
-  // subtraction goes to zero or NEGATIVE. A negative "Ongoing Monitoring & Optimization" hours
-  // figure must never reach a client-facing table or the real dollar math in
+
+  // Utility Bill Data Entry — 2026-07-28: MOVED INSIDE the 16-hr recurring bucket (Matt: "16 hours
+  // is the ENTIRE recurring allowance"). Previously this was additive on top of the 16-hr bucket
+  // (2026-07-27); it now participates in the same subtraction-from-16 that Meeting/Rebate/Training
+  // already used, so adding it shrinks Ongoing Monitoring rather than pushing the recurring total
+  // past 16. Still scales with the project's real, campus-wide-excluded building count
+  // (`_pricingGetBuildingCount`) — computed here, before the carve-out subtraction below, because it
+  // must now be part of that subtraction — so it can never drift from the building count shown
+  // elsewhere in the proposal, and is never falsely zeroed just because no bills happen to be
+  // loaded into this database yet.
+  var BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT = 0.25; // 15 min/building/mo — retrieval + entry + sanity check
+  var buildingCount = _pricingGetBuildingCount(projId);
+  var BILL_ENTRY_HOURS_DEFAULT = roundHrs(buildingCount * BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT);
+
+  // 2026-07-27 review fix, still true after the 2026-07-28 change: the subtraction below has no
+  // floor on its own — if the named categories (now including Bill Entry) are ever raised, or the
+  // project's building count grows enough, their sum can reach or exceed the 16-hr bucket and the
+  // naive subtraction goes to zero or NEGATIVE. A negative "Ongoing Monitoring & Optimization"
+  // hours figure must never reach a client-facing table or the real dollar math in
   // _pricingComputeProgramCostModel (it would understate labor and overstate the improvement
   // budget on a document going to a county) — so this is Math.max(0, ...)'d AND, when the floor
   // actually engages, loudly logged (never silently swallowed — the floor hides a real
   // over-commitment: the named categories demanding more hours than the bucket contains, which is
   // exactly the kind of thing a human needs to see and fix, not have quietly clamped away).
-  var _namedCarveoutHours = MEETING_HOURS_DEFAULT + REBATE_ASSISTANCE_HOURS_DEFAULT + TRAINING_DOCS_HOURS_DEFAULT;
+  var _namedCarveoutHours =
+    MEETING_HOURS_DEFAULT + REBATE_ASSISTANCE_HOURS_DEFAULT + TRAINING_DOCS_HOURS_DEFAULT + BILL_ENTRY_HOURS_DEFAULT;
   var _ongoingMonitoringRaw = RECURRING_EM_LABOR_HOURS_DEFAULT - _namedCarveoutHours;
   if (_ongoingMonitoringRaw < 0) {
     console.error(
@@ -997,7 +1013,7 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
         RECURRING_EM_LABOR_HOURS_DEFAULT +
         ' hr/mo bucket vs. ' +
         _namedCarveoutHours +
-        ' hr/mo of named categories (Meeting+Rebate+Training) — overflow of ' +
+        ' hr/mo of named categories (Meeting+Rebate+Training+Bill Entry) — overflow of ' +
         -_ongoingMonitoringRaw +
         ' hr/mo. Ongoing Monitoring & Optimization floored to 0 hrs/mo instead of going negative. ' +
         'This means the named recurring categories alone now exceed the client-directed bucket — ' +
@@ -1006,21 +1022,13 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   }
   var ONGOING_MONITORING_HOURS_DEFAULT = Math.max(0, _ongoingMonitoringRaw); // residual of the 16, NOT an independent number — floored, never negative
 
-  // Utility Bill Data Entry — OUTSIDE the 16-hr bucket, additive on top of it. RE-DERIVED
-  // 2026-07-27 fix/labor-bill-entry-and-audit-verification: no longer a flat constant gated on
-  // `_pricingProjectHasUtilityBills` (see the header comment above for the full reasoning) — now
-  // scales with the project's real, campus-wide-excluded building count so it can never drift from
-  // the building count shown elsewhere in the proposal, and is never falsely zeroed just because no
-  // bills happen to be loaded into this database yet.
-  var BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT = 0.25; // 15 min/building/mo — retrieval + entry + sanity check
-  var buildingCount = _pricingGetBuildingCount(projId);
-  var BILL_ENTRY_HOURS_DEFAULT = roundHrs(buildingCount * BILL_ENTRY_HOURS_PER_BUILDING_DEFAULT);
-
   // Month-1-only Audit Report verification & polish (2026-07-27
   // fix/labor-bill-entry-and-audit-verification — see the header comment above for the full client
   // quote and reasoning). Sized off the same building count, used here as a page-count proxy
   // (report-engine.js's Audit Report renders one page per building in its dominant
-  // buildingSummaries section — 27 buildings ≈ 27 pages today).
+  // buildingSummaries section — 27 buildings ≈ 27 pages today). Unaffected by the 2026-07-28
+  // bill-entry-inside-the-16 change — this is its own separate one-time shape, not part of the
+  // recurring bucket.
   var AUDIT_VERIFY_MINUTES_PER_PAGE_DEFAULT = 10; // data cross-check against source, per page
   var AUDIT_FORMAT_MINUTES_PER_PAGE_DEFAULT = 4; // layout/spacing polish pass, per page
   var auditReportPageEstimate = buildingCount;
@@ -1028,7 +1036,7 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   var AUDIT_FORMAT_HOURS_DEFAULT = roundHrs((auditReportPageEstimate * AUDIT_FORMAT_MINUTES_PER_PAGE_DEFAULT) / 60);
 
   var setupPoolHours = ALARM_SETUP_HOURS_DEFAULT + REPORT_SETUP_HOURS_DEFAULT + TREND_SETUP_HOURS_DEFAULT;
-  var recurringPoolHours = RECURRING_EM_LABOR_HOURS_DEFAULT + BILL_ENTRY_HOURS_DEFAULT; // the 16-hr bucket + Bill Entry outside it
+  var recurringPoolHours = RECURRING_EM_LABOR_HOURS_DEFAULT; // 2026-07-28: Bill Entry now INSIDE the 16-hr bucket, no longer additive on top of it
   var month1OnlyPoolHours = AUDIT_VERIFY_HOURS_DEFAULT + AUDIT_FORMAT_HOURS_DEFAULT; // Audit Report block — Month 1 only, never ramped
 
   // rampFraction: how much of the setup pool applies in a given month (1=Month1 … 4=Month4+).
