@@ -670,6 +670,17 @@ function rptPageAgreementTermTermination(n, d) {
   var _romanNumerals = ['i', 'ii', 'iii', 'iv', 'v'];
   var _termRomanIdx = 1; // "i. Term:" already used index 0 above
 
+  // Escalation basis/compounding (Matt confirmed 2026-07-28): fixed annually, applied to BOTH the
+  // Allowance and the hourly labor rate stated in Section 1.1 — not CPI-indexed. The JOCO source
+  // sentence this replaces was itself incomplete ("...shall renew with an annual escalation rate
+  // of" — see Word comment #2 / base spec defect #2), so there was no existing template language
+  // establishing an anniversary-vs-calendar-year basis to defer to. Basis chosen here (anniversary
+  // of the Effective Date, i.e. contract year rather than calendar year) matches the ONLY existing
+  // escalation-math convention already in this codebase — rptPageContractProjection's per-contract-
+  // "yr" loop (report-engine.js, `Math.pow(1 + escalation / 100, yr - 1)`) — which is also
+  // contract-year-indexed, not calendar-year-indexed. Compounding is annual (each year's increase
+  // applies to the prior year's already-escalated amount, not the original base), the normal
+  // reading of "4% fixed annually" and consistent with that same Math.pow compounding formula.
   var renewal = r.hasRenewalEscalation
     ? '<div style="' +
       _AGR_SUBHEAD +
@@ -678,9 +689,11 @@ function rptPageAgreementTermTermination(n, d) {
       '. Renewal Term:</div>' +
       '<div style="' +
       _AGR_BODY +
-      '" contenteditable="true">1. This Agreement shall renew with an annual escalation rate of ' +
+      '" contenteditable="true">1. Beginning on the first anniversary of the Effective Date, and on each ' +
+      'anniversary thereafter for the duration of this Agreement, the Allowance and the hourly labor rate ' +
+      'described in Section 1.1 shall each increase by a fixed escalation rate of ' +
       d.escalationRate +
-      '% applied to the Allowance amount described in Section 1.1.' +
+      '% over the amount then in effect for the immediately preceding contract year, compounding annually.' +
       _agreementUnconfirmedFlag(d.escalationConfirmed) +
       '</div>'
     : '';
