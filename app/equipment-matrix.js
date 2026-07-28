@@ -12876,6 +12876,62 @@ var EM_POINT_CATEGORIES = {
         'current dewpoint',
       ],
     },
+    // fix/zone-sku-from-existing-points (2026-07-28): humidity + local setpoint-adjust as
+    // NON-REQUIRED categories. required:false — these NEVER affect ASHRAE compliance scoring
+    // or coverage % (same guarantee as every other required:false entry above). They exist so
+    // emComputeCompliance's coveredPoints (already computed per zone) can report whether a
+    // VAV zone's EXISTING wall sensor has humidity and/or a local setpoint-adjust dial —
+    // pricing-estimator.js reads this to pick a replacement zone sensor SKU that matches or
+    // exceeds what's already there instead of a fixed default (Matt, 2026-07-28: "The points
+    // have to tell you which one they have existing").
+    // zoneHumidity mirrors EM_POINT_CATEGORIES.zone's zoneHumidity entry exactly (same label/
+    // ashrae36Name/patterns/aliases) except ashrae36Section, which follows this array's own
+    // §5.6 convention instead of zone's 'VVT Zone' label. Deliberately placed AFTER oaRh/
+    // oaDewpoint above (unlike the zone template, where it sits earlier in the array) so a
+    // genuine "Outdoor Air Relative Humidity" point on a VAV controller matches oaRh first —
+    // Tier 3 regex matching is first-category-wins by array order (emNormalizePointInner),
+    // and zoneHumidity's broad /\bhumidity\b/i pattern would otherwise shadow oaRh's more
+    // specific OA patterns and falsely mark the zone as having its own humidity sensor.
+    // coolAdj/htgAdj mirror the existing ahu/mau entries of the same name/patterns/aliases.
+    {
+      key: 'zoneHumidity',
+      label: 'Zone Humidity',
+      required: false,
+      ashrae36Name: 'Zone Relative Humidity',
+      ashrae36Section: '5.6',
+      patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i, /ambient.?humidity/i],
+      aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity', 'ambient humidity'],
+    },
+    {
+      key: 'coolAdj',
+      label: 'Cooling Setpoint Adjust',
+      required: false,
+      ashrae36Name: 'Cooling Setpoint Adjustment',
+      ashrae36Section: '5.6',
+      patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i, /cool setpoint adj/i],
+      aliases: [
+        'cooling setpoint adjust',
+        'clg setpoint adj',
+        'cooling set point adjust',
+        'cool setpoint adj',
+        'setpoint / cooling setpoint adjust',
+      ],
+    },
+    {
+      key: 'htgAdj',
+      label: 'Heating Setpoint Adjust',
+      required: false,
+      ashrae36Name: 'Heating Setpoint Adjustment',
+      ashrae36Section: '5.6',
+      patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i, /heat setpoint adj/i],
+      aliases: [
+        'heating setpoint adjust',
+        'htg setpoint adj',
+        'heating set point adjust',
+        'heat setpoint adj',
+        'setpoint / heating setpoint adjust',
+      ],
+    },
     // ── Third-pass rescue: cross-system points primary-cat'd to vav (non-ASHRAE) ──
     // These are VAV-context hvacSubObject. Named exclusions cannot be used because many
     // are Bucket-A in ahu context; placing here (vav-only) preserves ahu Bucket-A.
@@ -13233,6 +13289,48 @@ var EM_POINT_CATEGORIES = {
       patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
       aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
     },
+    // fix/zone-sku-from-existing-points (2026-07-28): humidity + local setpoint-adjust as
+    // NON-REQUIRED categories — same rationale/placement-after-oaRh reasoning as the vav array
+    // above (search 'fix/zone-sku-from-existing-points' there for the full writeup).
+    {
+      key: 'zoneHumidity',
+      label: 'Zone Humidity',
+      required: false,
+      ashrae36Name: 'Zone Relative Humidity',
+      ashrae36Section: '5.7',
+      patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i, /ambient.?humidity/i],
+      aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity', 'ambient humidity'],
+    },
+    {
+      key: 'coolAdj',
+      label: 'Cooling Setpoint Adjust',
+      required: false,
+      ashrae36Name: 'Cooling Setpoint Adjustment',
+      ashrae36Section: '5.7',
+      patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i, /cool setpoint adj/i],
+      aliases: [
+        'cooling setpoint adjust',
+        'clg setpoint adj',
+        'cooling set point adjust',
+        'cool setpoint adj',
+        'setpoint / cooling setpoint adjust',
+      ],
+    },
+    {
+      key: 'htgAdj',
+      label: 'Heating Setpoint Adjust',
+      required: false,
+      ashrae36Name: 'Heating Setpoint Adjustment',
+      ashrae36Section: '5.7',
+      patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i, /heat setpoint adj/i],
+      aliases: [
+        'heating setpoint adjust',
+        'htg setpoint adj',
+        'heating set point adjust',
+        'heat setpoint adj',
+        'setpoint / heating setpoint adjust',
+      ],
+    },
     // 2026-06-30: VVT zone coordination / status broadcast points (nonAshrae) ──────
     // Same set as vav. fpb.fanStatus already has 'air source status' as alias — not repeated here.
     {
@@ -13480,6 +13578,48 @@ var EM_POINT_CATEGORIES = {
         'motion sensor',
         'pir sensor',
         'occupancySensor', // Phase 4: Engine 1 col key alias for enriched-CSV import path
+      ],
+    },
+    // fix/zone-sku-from-existing-points (2026-07-28): humidity + local setpoint-adjust as
+    // NON-REQUIRED categories — same rationale/placement-after-oaRh reasoning as the vav array
+    // above (search 'fix/zone-sku-from-existing-points' there for the full writeup).
+    {
+      key: 'zoneHumidity',
+      label: 'Zone Humidity',
+      required: false,
+      ashrae36Name: 'Zone Relative Humidity',
+      ashrae36Section: '5.13',
+      patterns: [/zone.?humidity/i, /zone.?r\.?h/i, /space.?humidity/i, /\bhumidity\b/i, /ambient.?humidity/i],
+      aliases: ['zone humidity', 'zone rh', 'space humidity', 'humidity', 'ambient humidity'],
+    },
+    {
+      key: 'coolAdj',
+      label: 'Cooling Setpoint Adjust',
+      required: false,
+      ashrae36Name: 'Cooling Setpoint Adjustment',
+      ashrae36Section: '5.13',
+      patterns: [/cooling setpoint adjust/i, /clg setpoint adj/i, /cooling set point adjust/i, /cool setpoint adj/i],
+      aliases: [
+        'cooling setpoint adjust',
+        'clg setpoint adj',
+        'cooling set point adjust',
+        'cool setpoint adj',
+        'setpoint / cooling setpoint adjust',
+      ],
+    },
+    {
+      key: 'htgAdj',
+      label: 'Heating Setpoint Adjust',
+      required: false,
+      ashrae36Name: 'Heating Setpoint Adjustment',
+      ashrae36Section: '5.13',
+      patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i, /heat setpoint adj/i],
+      aliases: [
+        'heating setpoint adjust',
+        'htg setpoint adj',
+        'heating set point adjust',
+        'heat setpoint adj',
+        'setpoint / heating setpoint adjust',
       ],
     },
     // ── Third-pass rescue: DDVAV-specific non-ASHRAE points ──────────────────
