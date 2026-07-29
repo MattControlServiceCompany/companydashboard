@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.725',
+    date: '2026-07-29',
+    title: 'Service Proposal cover names the document; Cost Estimate timeline table fits the page',
+    items: [
+      {
+        type: 'change',
+        text: 'The Service Proposal cover page now identifies the document as a Service Proposal, matching the wording used everywhere else in the report.',
+      },
+      {
+        type: 'fix',
+        text: 'On the Cost Estimate, the Phased Implementation Sequence table no longer runs off the bottom of the page for larger portfolios. The per-phase building list was removed from this table; it remains available in the interactive Cost Estimate view.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.724',
     date: '2026-07-29',
     title: 'Equipment Matrix and Audit Report stop flagging by-design gaps as deficiencies',
