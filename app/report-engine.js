@@ -13542,8 +13542,15 @@ function rptPageASHRAE36Executive(n, d) {
 
     var bodyHTML;
     if (chunkIndex === 0) {
-      // First page: callouts + titled table + footnote
-      bodyHTML = dcvCallout + callout + tableTitle + table + tableFootnote;
+      // First page: callouts + titled table + footnote. 2026-07-29 fix (Matt: "why does it not
+      // say 1 of 2 like the next page shows continued (2 of 2)?") — the continuation page below
+      // has always shown "— continued (N of numChunks)", but the first page's tableTitle (a
+      // fixed string built above, before numChunks was known) never carried the matching
+      // "(1 of N)" for its own page. Same fix pattern applied to every other paginated section
+      // with this asymmetry (see 2026-07-29 dashboardlogic.md entry for the full list).
+      var firstPageTableTitle =
+        numChunks > 1 ? tableTitle.replace('</div>', ' (1 of ' + numChunks + ')</div>') : tableTitle;
+      bodyHTML = dcvCallout + callout + firstPageTableTitle + table + tableFootnote;
     } else {
       // Continuation page: minimal header + table + footnote
       var contHdr =
@@ -14368,8 +14375,15 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
       }
     }
 
+    // 2026-07-29 fix (Matt: "why does it not say 1 of 2..."): page 1 of a multi-page building has
+    // no title-suffix of its own today (the continuation's contHdr div above already reads "b.name
+    // — continued (2 of 2)"). Appending the same "(N of numChunks)" fraction to the .rpt-int-hdr
+    // title bar (rptPage()'s own title param, present on every page including page 1) fixes the
+    // asymmetry consistently instead of only patching the continuation's already-correct text.
+    var pageTitleWithFraction =
+      'ASHRAE 36 Audit Report — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit Report — ' + b.name, bodyHTML, {
+      rptPage(pageN, pageTitleWithFraction, bodyHTML, {
         data: fakeData,
         label:
           'Page ' + pageN + ' — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
@@ -14946,8 +14960,14 @@ function rptPageASHRAE36SetpointReview(n, d) {
       bodyHTML = contHdr + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
     }
 
+    // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry as Building ASHRAE 36
+    // Readiness/Per-Building Detail above): append the fraction to the .rpt-int-hdr title bar so
+    // page 1 carries its own "(1 of N)" alongside the continuation's existing "(N of N)".
+    var _setpointTitle =
+      'ASHRAE 36 Audit Report — Setpoint Programming Review' +
+      (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit Report — Setpoint Programming Review', bodyHTML, {
+      rptPage(pageN, _setpointTitle, bodyHTML, {
         data: fakeData,
         label:
           'Page ' +
@@ -17424,11 +17444,18 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           })
           .join('');
         var itTable = itTableHead + '<tbody>' + rowsHTML + '</tbody></table>';
+        // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry — see Building ASHRAE 36
+        // Readiness above): page 1 gets its own "(1 of N)" instead of only continuation pages
+        // carrying a fraction.
         var itTitle =
           '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
           'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate — Itemized Measures — ' +
           _esc(c.label) +
-          (idx > 0 ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')' : '') +
+          (numChunks > 1
+            ? idx > 0
+              ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')'
+              : ' (1 of ' + numChunks + ')'
+            : '') +
           '</div>';
         var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
         pages.push(
@@ -17589,11 +17616,18 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
             return t.html;
           })
           .join('');
+        // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry — see Building ASHRAE 36
+        // Readiness above): page 1 gets its own "(1 of N)" instead of only continuation pages
+        // carrying a fraction.
         var pageTitle =
           '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
           'text-transform:uppercase;letter-spacing:0.04em">Install &amp; Programming Detail — ' +
           _esc(c.label) +
-          (idx > 0 ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')' : '') +
+          (numChunks > 1
+            ? idx > 0
+              ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')'
+              : ' (1 of ' + numChunks + ')'
+            : '') +
           '</div>';
         pages.push(
           rptPage(pageN, 'ASHRAE 36 Service Proposal — Cost Estimate', pageTitle + rowsHTML, {
@@ -17840,8 +17874,13 @@ function rptPageASHRAE36PointInventory(n, d) {
       bodyHTML = contHdr + table + (chunkIndex === numChunks - 1 ? footnote : '');
     }
 
+    // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry — see Building ASHRAE 36
+    // Readiness above): append the fraction to the .rpt-int-hdr title bar for page 1 too.
+    var _pointInvTitle =
+      'ASHRAE 36 Audit Report — Point Inventory' +
+      (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit Report — Point Inventory', bodyHTML, {
+      rptPage(pageN, _pointInvTitle, bodyHTML, {
         data: fakeData,
         label:
           'Page ' +
