@@ -1576,9 +1576,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.721',
+    date: '2026-07-29',
+    title: 'ASHRAE 36 Audit Report cover now matches priced scope; Service Proposal pages numbered again',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report cover page: the sensor and sequence counts now match the scope actually priced in the report (1,311 sensors / 1,313 sequences) instead of an inflated raw equipment count (previously 4,049 sensors / 1,764 sequences) that overstated what is being proposed.',
+      },
+      {
+        type: 'fix',
+        text: 'Service Proposal: every page now shows a page number again ("Page X of Y") in the footer. Numbers had been missing on all pages.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report and Proposal: multi-page sections (Building ASHRAE 36 Readiness, Setpoint Programming Review, Point Inventory Completeness, Per-Building Detail, and Cost Estimate\'s Itemized Measures / Install & Programming Detail) now show "(1 of N)" on their first page, matching the "(2 of N)" label that already appeared on later pages of the same section.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.720',
     date: '2026-07-29',
-    title: 'Cost Estimate tab: no more Grand Total; sensor investigation time now priced; phase schedule runs until everything is scheduled',
+    title:
+      'Cost Estimate tab: no more Grand Total; sensor investigation time now priced; phase schedule runs until everything is scheduled',
     items: [
       {
         type: 'change',
