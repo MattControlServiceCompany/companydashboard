@@ -15728,6 +15728,55 @@ function _rptA36PhaseImprovementsText(rows, idx) {
 }
 
 /**
+ * _rptA36PhaseSeqCategoryNames — client-readable names of every distinct priced sequence category
+ * (ASHRAE 36 "measure family") actually assigned to a given phase's rows. Added 2026-07-29 (Matt,
+ * verbatim: "Name the categories in the phase table. But make it look good.") — measured problem:
+ * the Cost Estimate prices 14 distinct sequence categories across the full scope ($336,572 total),
+ * but the Phase table's "Included Improvements" row previously only ever named DCV explicitly
+ * (via the row.label ' (CO2/DCV Programming)' suffix elsewhere in pricing-estimator.js); every
+ * other priced category was invisible to the client behind the generic PHASE_IMPROVEMENTS
+ * narrative below.
+ * Source of truth: EM_SEQUENCE_DEFS[*].label (equipment-matrix.js) — NEVER a hardcoded name list,
+ * so a future sequence def addition/rename is picked up automatically here with zero changes.
+ * Names are emitted in EM_SEQUENCE_DEFS' own declared order (AHU -> VAV -> HWP -> CHWP -> DCV),
+ * which reads as a natural "system family" grouping rather than row/discovery order.
+ * Collision fix: hwp_supply_reset/chwp_supply_reset, hwp_pump_dp_reset/chwp_pump_dp_reset, and
+ * hwp_staging/chwp_staging each share an IDENTICAL label in EM_SEQUENCE_DEFS (e.g. both say
+ * "Supply Temperature Reset") because the def only names the sequence, not which plant loop it
+ * belongs to. Disambiguated by deriving the loop from the seqKey's own hwp_/chwp_ prefix (matching
+ * the existing "Hot Water Plant"/"Chilled Water Plant" naming convention already used elsewhere in
+ * this file, e.g. CAT_LABELS above) — NOT a hardcoded per-key lookup, so it can never drift out of
+ * sync with EM_SEQUENCE_DEFS if a def's label wording changes later.
+ * rows param: a phase's own tl.phases[i].rows (see _pricingComputeRecommendedTimeline) — filters
+ * to r.phase === 2 (the PRICED-ROW "sequence/programming" sub-type, distinct from the table's own
+ * Phase 1/2/3 columns) && r.seqKey, per the row-classification convention documented throughout
+ * pricing-estimator.js (row.phase 1 = hardware, row.phase 2 = sequence programming).
+ */
+function _rptA36PhaseSeqCategoryNames(rows) {
+  rows = rows || [];
+  var seen = {};
+  rows.forEach(function (r) {
+    if (r.phase === 2 && r.seqKey) seen[r.seqKey] = true;
+  });
+  var names = [];
+  if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+    EM_SEQUENCE_DEFS.forEach(function (sd) {
+      if (!seen[sd.key]) return;
+      var label = sd.label;
+      if (sd.key.indexOf('hwp_') === 0) label = 'Hot Water ' + label;
+      else if (sd.key.indexOf('chwp_') === 0) label = 'Chilled Water ' + label;
+      names.push(label);
+    });
+  }
+  return names;
+}
+// SEQ_CAT_DISPLAY_CAP: max category names shown per phase cell before truncating to a truthful
+// "and N more" (never silent) — dense 8.5x11 print constraint, not a data limit. Real JOCO data
+// (2026-07-29, projId 1779664753271) tops out at 6 categories in Phase 1, well under this cap —
+// verified in the render, not assumed.
+var SEQ_CAT_DISPLAY_CAP = 8;
+
+/**
  * _rptA36PhaseTableInnerHTML — content-only builder for the Recommended Optimization Program
  * intro paragraph + Phase table (extracted 2026-07-27, page-2/3 merge, so the standalone page
  * function below and the merged Phase+Vision page share IDENTICAL content-building logic rather
@@ -15844,13 +15893,36 @@ function _rptA36PhaseTableInnerHTML(d) {
       .join('') +
     '</tr>';
 
+  // catListStyle: nested sub-block inside the Included Improvements cell naming the actual priced
+  // sequence categories for that phase (see _rptA36PhaseSeqCategoryNames' header comment above for
+  // the full rationale). Left-aligned + smaller than the parent cell's centered narrative text so
+  // it reads as a compact reference list, not competing prose; a top rule (var(--rpt-rule), the
+  // same token the table's own borders use — no new hardcoded color) separates it from the
+  // narrative sentence without introducing a box/card (standing rule: no boxes in reports).
+  var catListStyle =
+    'margin-top:6px;padding-top:5px;border-top:1px solid var(--rpt-rule);font-size:8.5px;' +
+    'color:var(--rpt-page-text);text-align:left;line-height:1.4';
+
   var improvementsRow =
     '<tr><td style="' +
     lblStyle +
     '">Included Improvements</td>' +
     tl.phases
       .map(function (p, i) {
-        return '<td style="' + cellStyle + '">' + esc(PHASE_IMPROVEMENTS[i] || '') + '</td>';
+        var catNames = _rptA36PhaseSeqCategoryNames(p.rows);
+        var catHTML = '';
+        if (catNames.length) {
+          var shown = catNames.slice(0, SEQ_CAT_DISPLAY_CAP);
+          var moreCount = catNames.length - shown.length;
+          var listText = shown.map(esc).join(', ') + (moreCount > 0 ? ', and ' + moreCount + ' more' : '');
+          catHTML =
+            '<div style="' +
+            catListStyle +
+            '"><span style="font-weight:700">Sequences programmed: </span>' +
+            listText +
+            '</div>';
+        }
+        return '<td style="' + cellStyle + '">' + esc(PHASE_IMPROVEMENTS[i] || '') + catHTML + '</td>';
       })
       .join('') +
     '</tr>';
