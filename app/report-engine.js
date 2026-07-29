@@ -13042,12 +13042,13 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       _a36ConsolidatedSequences = _a36SeqSum;
     }
   }
-  var color =
-    p.composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-      ? 'var(--rpt-green)'
-      : p.composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-        ? 'var(--rpt-orange)'
-        : 'var(--rpt-red)';
+  // Cover gauge color (2026-07-29, Matt: "make the Composite Score gauge be the CSC blue and
+  // then have the Sensor Coverage and Sequence Readiness be the CSC green" -- was threshold
+  // red/orange/green per ASHRAE36_READINESS_HIGH/PARTIAL_THRESHOLD; the building-level status
+  // (green/amber/red) is still shown via _a36StatusChip / the Score bar on the Building
+  // Compliance Status table below, so this brand-color swap on the cover's summary gauge does
+  // not remove that per-building signal from the report.
+  var color = 'var(--rpt-blue)';
   // One-paragraph finding — REORDERED 2026-07-29 (Matt's direct instruction: "always make reports
   // a story instead of just text... Buildings Assessed, HVAC Systems Audited, Sequences to
   // Program and then Sensors to Install in that order so it tells the story of what happened in
@@ -13089,10 +13090,10 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     _a36GaugeSVG(p.composite, color, 'Overall', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.pointPct, 'var(--rpt-blue)', 'Sensors', 110, true) +
+    _a36GaugeSVG(p.pointPct, 'var(--rpt-green)', 'Sensors', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.seqPct, '#7c3aed', 'Sequences', 110, true) +
+    _a36GaugeSVG(p.seqPct, 'var(--rpt-green)', 'Sequences', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
     '</div>';
 
@@ -13846,17 +13847,23 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     })
     .join('');
 
+  // Per-building gauge colors (2026-07-29, same brand-color pass as the cover page's Composite
+  // Score/Sensor Coverage/Sequence Readiness gauges, ~line 13045 above): Overall -> CSC blue,
+  // Sensors/Sequences -> CSC green. b.statusColor (red/amber/green threshold) is left defined
+  // and still drives the Score bar in the Building Compliance Status table and the
+  // _a36StatusChip badge right below these gauges, so the per-building status signal is not
+  // lost — only this gauge's own fill now matches the report-wide brand-color scheme.
   var gauges =
     '<div style="display:flex;gap:14px;margin-bottom:12px;align-items:center">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.composite, b.statusColor, 'Overall', 70) +
+    _a36GaugeSVG(b.composite, 'var(--rpt-blue)', 'Overall', 70) +
     '</div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.pointPct, 'var(--rpt-blue)', 'Sensors', 70) +
+    _a36GaugeSVG(b.pointPct, 'var(--rpt-green)', 'Sensors', 70) +
     '</div>' +
     '<div style="text-align:center">' +
     (b.seqPct !== null
-      ? _a36GaugeSVG(b.seqPct, '#7c3aed', 'Sequences', 70)
+      ? _a36GaugeSVG(b.seqPct, 'var(--rpt-green)', 'Sequences', 70)
       : '<svg width="70" height="77.7" viewBox="0 0 70 77.7" style="display:block">' +
         '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
         // Grey text on a client deliverable is banned (same rule already applied to the
@@ -15780,8 +15787,7 @@ function _rptA36PhaseTableInnerHTML(d) {
     'Improved ventilation, sequences that just need to be programmed, higher HVAC efficiency, and ' +
       'the foundation for future improvements.',
     'Portfolio expansion, additional savings opportunities, and improved operational consistency.',
-    'Completion of initial strategy, increased ASHRAE 36 alignment, and continued comfort and ' +
-      'performance gains.',
+    'Completion of initial strategy, increased ASHRAE 36 alignment, and continued comfort and ' + 'performance gains.',
   ];
 
   var thStyle =
