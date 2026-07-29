@@ -3489,18 +3489,27 @@
         applyAccentColor: siteApplyAccent,
       };
 
-      fetch('site-ui.js?nocache=' + Date.now())
-        .then(function (r) {
-          return r.text();
-        })
-        .then(function (t) {
-          var m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
-          if (m) {
-            var el = document.getElementById('sb-version');
-            if (el) el.textContent = m[1];
-          }
-        })
-        .catch(function () {});
+      // Issue e9f1157c / Matt report 2026-07-29: paint the version badge from the
+      // version actually LOADED by this page, not a live fetch() of the server's
+      // site-ui.js -- a fetch jumps to the new number the instant a deploy lands,
+      // even though this tab is still running the old code (no reload, no click).
+      // This page doesn't load app/site-functions.js (RELEASE_NOTES isn't
+      // available here), so the locally-loaded version is read from the ?v= tag
+      // already baked into this page's own <script src> tags at deploy-stamp time
+      // (scripts/stamp-version.py rewrites all of them together, so any one is
+      // representative of what HTML/JS this page itself shipped with).
+      // NOTE: this page has no update-detection/reload-banner logic today (unlike
+      // energy-department.html's app/report-engine.js) -- that was out of scope
+      // for this fix; only the badge source changed.
+      // Deferred to DOMContentLoaded: the <script src="app/sync-classification.js...">
+      // tag this reads lives later in the document and isn't in the DOM yet at the
+      // point this inline script executes during parsing.
+      document.addEventListener('DOMContentLoaded', function () {
+        var vScript = document.querySelector('script[src*="sync-classification.js"]');
+        var m = vScript && vScript.getAttribute('src').match(/\?v=(\d+)/);
+        var el = document.getElementById('sb-version');
+        if (el && m) el.textContent = 'v' + m[1];
+      });
 
       /* ── CALENDAR WIDGET ── */
       var calYear, calMonth;

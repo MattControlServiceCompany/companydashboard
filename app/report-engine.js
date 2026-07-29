@@ -10780,6 +10780,21 @@ function _checkForVersionUpdate() {
       const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
       if (!m) return;
       const fetchedVer = m[1];
+      // Issue e9f1157c / Matt report 2026-07-29: the badge must show loadedVer (the
+      // version actually baked into the code this tab already has in memory), never
+      // fetchedVer (the LIVE server version). A tab left open across a deploy keeps
+      // executing whatever it loaded originally -- painting fetchedVer made the badge
+      // jump to the new number instantly on deploy, with no click and no reload,
+      // before the tab was running any of that code. loadedVer comes from
+      // RELEASE_NOTES[0].v, which ships inside app/site-functions.js and loaded with
+      // this page's own cache-busted ?v= tag (see script tags near the bottom of
+      // energy-department.html). Fall back to storedVer (localStorage, shared across
+      // tabs) only if RELEASE_NOTES isn't available yet. fetchedVer is used SOLELY
+      // for update detection (the comparison below) and the reload banner -- never
+      // to paint "what am I running".
+      const _CH_VER_KEY = 'ch_last_seen_version';
+      const storedVer = localStorage.getItem(_CH_VER_KEY);
+      const loadedVer = (typeof RELEASE_NOTES !== 'undefined' && RELEASE_NOTES[0] && RELEASE_NOTES[0].v) || storedVer;
       const el = document.getElementById('en-sb-version');
       if (el) {
         // Bug f5b133dc: detect CDP/Playwright-opened tab and show indicator
@@ -10789,19 +10804,8 @@ function _checkForVersionUpdate() {
           window.__pwInitScripts ||
           window._playwrightChannel
         );
-        el.textContent = fetchedVer + (_isCDP ? ' [CDP]' : '');
+        el.textContent = (loadedVer || fetchedVer) + (_isCDP ? ' [CDP]' : '');
       }
-      // Issue e9f1157c: the badge above always shows fetchedVer (the LIVE server
-      // version). That does NOT mean this tab is running that code — a tab left
-      // open across a deploy keeps executing whatever it loaded originally. Compare
-      // fetchedVer against loadedVer, the version actually baked into the code this
-      // tab already has in memory (RELEASE_NOTES[0].v ships inside app/site-functions.js,
-      // which loaded with this page's own cache-busted ?v= tag — see script tags near
-      // the bottom of energy-department.html). Fall back to storedVer (localStorage,
-      // shared across tabs) only if RELEASE_NOTES isn't available yet.
-      const _CH_VER_KEY = 'ch_last_seen_version';
-      const storedVer = localStorage.getItem(_CH_VER_KEY);
-      const loadedVer = (typeof RELEASE_NOTES !== 'undefined' && RELEASE_NOTES[0] && RELEASE_NOTES[0].v) || storedVer;
       if (loadedVer && loadedVer !== fetchedVer && fetchedVer !== _chVersionDismissed) {
         // Do NOT auto-reload — a silent reload would destroy in-progress work
         // (e.g. a mid-batch extraction review). Show a persistent, actionable
