@@ -3524,6 +3524,15 @@ function emLoadMatrix(projId) {
       }
     }
   }
+  // space-type-classifier-2026-07-29: rebuild the row-lookup cache for this project from
+  // the (possibly just self-healed) row set, so it can never go stale — same lifetime as
+  // the self-heal pass just above. See _emRowByIdCache's declaration for why this exists.
+  var _newRowByIdMap = {};
+  for (var _ribi = 0; _ribi < _emData.rows.length; _ribi++) {
+    var _ribr = _emData.rows[_ribi];
+    if (_ribr && _ribr.id != null) _newRowByIdMap[_ribr.id] = _ribr;
+  }
+  _emRowByIdCache[projId] = _newRowByIdMap;
   return _emData;
 }
 
@@ -3654,6 +3663,11 @@ var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view
 var _emZoomLevel = 100; // zoom percentage, 50–150
 var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
+// space-type-classifier-2026-07-29: projId -> {rowId: row} lookup, rebuilt on every
+// emLoadMatrix call (see emLoadMatrix's return path) so emLoadEquipConfigFlags — which
+// only receives projId+rowId, not the row itself — can classify a row's space type
+// without re-loading/re-healing the whole matrix on every call.
+var _emRowByIdCache = {};
 var _emColKeyToCatKey = null; // FIX A: reverse map { colKey: { equipType: { catKey, catLabel, ashrae36Name, ashrae36Section, required } } } built lazily
 var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results, keyed by rawName+'\0'+category
 var _emPointsComputedCache = new WeakMap(); // Milestone 1: keyed on row object; caches emGetNormalizedPoints result
@@ -8510,11 +8524,17 @@ function emShowComplianceDetail(rowId) {
         }
 
         // Build friendly label lookup for zoneType
-        var zoneTypeLabels = {
-          vav: 'General VAV Zone',
-          mech_elec: 'Mechanical/Electrical Room',
-          networking: 'Networking/Server Room',
-        };
+        // space-type-classifier-2026-07-29 §2.6: reuse EM_SPACE_TYPE_LABELS (single
+        // source of truth) so the new space types added to the options array above
+        // render friendly labels instead of raw keys like "elevator_lobby".
+        var zoneTypeLabels =
+          typeof EM_SPACE_TYPE_LABELS !== 'undefined'
+            ? EM_SPACE_TYPE_LABELS
+            : {
+                vav: 'General VAV Zone',
+                mech_elec: 'Mechanical/Electrical Room',
+                networking: 'Networking/Server Room',
+              };
 
         var optionsHtml = '';
         for (var oi = 0; oi < optionKeys.length; oi++) {
@@ -11485,7 +11505,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11506,7 +11539,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11526,7 +11572,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11560,7 +11619,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11576,7 +11648,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11596,6 +11681,138 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasGasHeat', label: 'Has Gas Heat Stage', default: true },
   ],
 };
+
+/* ── emClassifySpaceType / EM_SPACE_TYPE_EXEMPT_CATS ────────────────────────
+   space-type-classifier-2026-07-29.md §2.1/§2.3. Some spaces intentionally lack
+   certain points by design (detention cells, stairwells, mechanical rooms) —
+   this makes that distinction data-driven instead of flagging everything as a
+   deficiency. Resolution order (first hit wins), per §2.1:
+     1. Explicit flag — row's stored `zoneType` config flag always wins.
+     2. Name inference — ZONE-TERMINAL categories only (vav/fpb/ddvav/zone/fcu).
+        Space label = text before the first " - " or " | " in equipName; no
+        separator → never classify (equipment-tag-only names like "VAV-1-08"
+        never classify). A label containing "," or "/" between distinct room
+        names never classifies (the "Storage, DA, Detox" guard).
+     3. Otherwise unclassified (null) — priced normally, exactly as today.
+   ahu/rtu NEVER classify — a room-name prefix on those names the machine's
+   location, not the space it serves (classifying them would wrongly exempt
+   duct CO2 serving whole wings).
+   Pattern table is byte-for-byte identical to the Phase 0 measurement harness
+   (AI/_context/temp/space-type-phase0/space-type-phase0-b.js, itself hand-
+   verified against all 104 real matches, zero occupied-space false positives)
+   — do not retune without a new prediction table (campaign doctrine: §3 wrong
+   paths / over-broad substring matching is the named failure mode).          */
+var EM_SPACE_TYPE_ZONE_TERMINAL_CATS = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+var EM_SPACE_TYPE_NEVER_CLASSIFY_CATS = { ahu: true, rtu: true };
+
+var EM_SPACE_TYPE_PATTERNS = [
+  { spaceType: 'restroom', re: /restroom|rest room|\blocker\b(?!.*hall)/i },
+  { spaceType: 'corridor', re: /corridor|hallway/i }, // NOT \bhall\b — "Bunk Hall" is an occupied bunkroom
+  {
+    spaceType: 'mech_elec',
+    re: /mech(anical)?\s*(room|rm)\b|ele[ck]\w*ical(\s*(room|rm))?$|electric\s*(room|rm)\b/i,
+  },
+  { spaceType: 'storage', re: /\bstorage\b/i },
+  { spaceType: 'stairwell', re: /\bstair/i },
+  { spaceType: 'elevator_lobby', re: /elevator\s*(lobby|vestibule|machine)?/i },
+  { spaceType: 'networking', re: /server|\bidf\b|\bmdf\b|data (room|center)/i },
+  { spaceType: 'secure_cell', re: /\bcell\b|inmate|\bpod\b(?!ium)|housing/i },
+];
+
+var EM_SPACE_TYPE_LABELS = {
+  vav: 'General VAV Zone',
+  mech_elec: 'Mechanical/Electrical Room',
+  networking: 'Networking/Server Room',
+  restroom: 'Restroom',
+  corridor: 'Corridor',
+  storage: 'Storage',
+  stairwell: 'Stairwell',
+  elevator_lobby: 'Elevator Lobby',
+  secure_cell: 'Secure Cell/Housing',
+};
+
+/* v1 exemption matrix (§2.3): per (space type × point category), NOT an on/off switch.
+   In v1 ONLY 'co2' is dollar-bearing — every other category stays "required as today".
+   secure_cell carries NO exemption in v1 (visibility-only: naPoints/labels never touch
+   dollars for it) — §1.6 explains why coolSP/htgSP are never added here without a
+   coordinated predicate change (extending the monitoring-only-exclusion filter). Adding a
+   future row here is a one-line data addition, never a code rewrite — but each one needs
+   its own prediction table per campaign doctrine, not a silent default.                  */
+var EM_SPACE_TYPE_EXEMPT_CATS = {
+  restroom: { co2: true },
+  corridor: { co2: true },
+  mech_elec: { co2: true },
+  storage: { co2: true },
+  stairwell: { co2: true },
+  elevator_lobby: { co2: true },
+  networking: { co2: true },
+  secure_cell: {},
+};
+
+function _emSpaceTypeExtractLabel(equipName) {
+  var name = String(equipName || '');
+  var iDash = name.indexOf(' - ');
+  var iPipe = name.indexOf(' | ');
+  var idx = -1;
+  if (iDash !== -1 && (iPipe === -1 || iDash < iPipe)) idx = iDash;
+  else if (iPipe !== -1) idx = iPipe;
+  if (idx === -1) return null; // no separator -> never classify
+  return name.slice(0, idx).trim();
+}
+
+/* emClassifySpaceType(equipRow, flags) — the single classification authority.
+   `flags` is optional (defaults to {}) and should be whatever configFlags object the
+   caller already has (emComputeCompliance's `flags` param, or emLoadEquipConfigFlags'
+   raw stored edits) — passing it lets rule 1 (explicit zoneType tag) win over rule 2
+   (name inference) without this function reading storage itself.
+   Returns { spaceType, source: 'flag'|'name', matchedLabel } or null (unclassified). */
+function emClassifySpaceType(equipRow, flags) {
+  if (!equipRow) return null;
+  var f = flags || {};
+  if (f.zoneType) {
+    return { spaceType: f.zoneType, source: 'flag', matchedLabel: null };
+  }
+  var category = equipRow.category;
+  if (!category) return null;
+  if (EM_SPACE_TYPE_NEVER_CLASSIFY_CATS[category]) return null; // ahu/rtu never classify
+  if (!EM_SPACE_TYPE_ZONE_TERMINAL_CATS[category]) return null; // zone-terminal only
+  var label = _emSpaceTypeExtractLabel(equipRow.equipName);
+  if (label === null) return null; // no separator -> unclassified
+  if (label.indexOf(',') !== -1 || label.indexOf('/') !== -1) return null; // multi-room-label guard
+  for (var i = 0; i < EM_SPACE_TYPE_PATTERNS.length; i++) {
+    var p = EM_SPACE_TYPE_PATTERNS[i];
+    if (p.re.test(label)) {
+      return { spaceType: p.spaceType, source: 'name', matchedLabel: label };
+    }
+  }
+  return null;
+}
+
+/* _emSpaceTypeConfigFlagOverrides(row, flags) — for a classified+exempt row, returns
+   { configFlagKey: false, ... } for every configFlag gating a category the row's space
+   type exempts in EM_SPACE_TYPE_EXEMPT_CATS (v1: only 'hasCO2', via the 'co2' category).
+   Returns null when the row doesn't classify or its space type carries no exemption.
+   Used by emLoadEquipConfigFlags to make consumers that read config flags directly
+   (e.g. pricing-estimator.js's buildOptionalPointRows, for the fcu/fpb *optional*
+   co2 category — required:false, so emComputeCompliance's own required-category loop
+   never reaches it) see the same effective exemption emComputeCompliance applies to
+   required categories — one behavior, reached two ways, never two different answers. */
+function _emSpaceTypeConfigFlagOverrides(row, flags) {
+  var cls = emClassifySpaceType(row, flags);
+  if (!cls) return null;
+  var exemptCats = EM_SPACE_TYPE_EXEMPT_CATS[cls.spaceType];
+  if (!exemptCats) return null;
+  var catDefs = (row.category && typeof EM_POINT_CATEGORIES !== 'undefined' && EM_POINT_CATEGORIES[row.category]) || [];
+  var overrides = null;
+  for (var i = 0; i < catDefs.length; i++) {
+    var def = catDefs[i];
+    if (exemptCats[def.key] && def.configFlag) {
+      overrides = overrides || {};
+      overrides[def.configFlag] = false;
+    }
+  }
+  return overrides;
+}
 
 /* ── GL36_TEMP_DEFAULTS ─────────────────────────────────────────────────────
    GL36-2021 Table 3.1.1.1, p.4 — Default zone temperature setpoints (°F)   */
@@ -18706,9 +18923,43 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
           break;
         }
       }
+      // space-type-classifier-2026-07-29 §2.4: explicit flag always wins, both directions.
+      // When no explicit value is present, a space-type exemption (e.g. "Corridor - VAV-12"
+      // never gets a CO2 sensor by design) beats the flag's static default — instead of
+      // falling straight to flagDefault (which for hasCO2 is `true`, penalizing every space
+      // that would never have this point regardless of what's actually installed there).
       var flagVal = def.configFlag in flags ? flags[def.configFlag] : flagDefault;
+      var _stCls = null;
+      if (!(def.configFlag in flags)) {
+        _stCls = emClassifySpaceType(equipRow, flags);
+        if (
+          _stCls &&
+          EM_SPACE_TYPE_EXEMPT_CATS[_stCls.spaceType] &&
+          EM_SPACE_TYPE_EXEMPT_CATS[_stCls.spaceType][def.key]
+        ) {
+          flagVal = false;
+        }
+      }
       if (!flagVal) {
-        naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: def.configFlag + '=false' });
+        var _naReason = def.configFlag + '=false';
+        var _naEntry = { categoryKey: def.key, categoryLabel: def.label, reason: _naReason };
+        // Re-derive independently of which branch set flagVal=false: emLoadEquipConfigFlags
+        // may have already merged a derived hasCO2:false into `flags` upstream (so a
+        // consumer that reads config flags directly, e.g. buildOptionalPointRows, sees the
+        // same exemption for required:false categories) — when that happens the check above
+        // (`!(def.configFlag in flags)`) never fires here, but the NA is still attributable
+        // to space type, so the reason/provenance must say so either way.
+        var _naCls = _stCls || emClassifySpaceType(equipRow, flags);
+        if (
+          _naCls &&
+          EM_SPACE_TYPE_EXEMPT_CATS[_naCls.spaceType] &&
+          EM_SPACE_TYPE_EXEMPT_CATS[_naCls.spaceType][def.key]
+        ) {
+          _naEntry.reason = 'space type: ' + (EM_SPACE_TYPE_LABELS[_naCls.spaceType] || _naCls.spaceType) + ' (auto)';
+          _naEntry.source = 'spaceType';
+          _naEntry.spaceType = _naCls.spaceType;
+        }
+        naPoints.push(_naEntry);
         totalNA++;
         continue;
       }
@@ -18750,7 +19001,25 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
 function emLoadEquipConfigFlags(projId, rowId) {
   var editKey = 'en_eqmatrix_edits_' + projId;
   var edits = DB.get(editKey, {});
-  return edits[rowId + '::config'] || {};
+  var stored = edits[rowId + '::config'] || {};
+  // space-type-classifier-2026-07-29 §2.4: merge in a derived override for any
+  // configFlag a space-type exemption would set false, but ONLY when the user hasn't
+  // explicitly set that key themselves (stored is overlaid last, below, so a real edit
+  // always wins in both directions). This is what makes consumers that read config
+  // flags directly instead of going through emComputeCompliance's own classifier
+  // fallback — pricing-estimator.js's buildOptionalPointRows, for required:false
+  // categories like fcu/fpb's optional CO2 — see the same effective exemption.
+  var _row = _emRowByIdCache[projId] && _emRowByIdCache[projId][rowId];
+  var _overrides = _row ? _emSpaceTypeConfigFlagOverrides(_row, stored) : null;
+  if (!_overrides) return stored;
+  var merged = {};
+  for (var _ok in _overrides) {
+    if (_overrides.hasOwnProperty(_ok)) merged[_ok] = _overrides[_ok];
+  }
+  for (var _sk in stored) {
+    if (stored.hasOwnProperty(_sk)) merged[_sk] = stored[_sk];
+  }
+  return merged;
 }
 
 function emSaveEquipConfigFlags(projId, rowId, flags) {
@@ -18772,6 +19041,20 @@ function emSaveEquipConfigFlags(projId, rowId, flags) {
                  chiller, pump room, generator
      vav:        everything else (most zones in office/courthouse/school)       */
 function emInferZoneType(equipRow) {
+  // space-type-classifier-2026-07-29 §2.2: emClassifySpaceType is now the single
+  // classification authority. Superseded-and-delegated (not pure "extend" — the
+  // legacy loose regexes below are too imprecise to gate dollars and must never
+  // touch the exemption decision; not pure "replace" — keeping them as the fallback
+  // means the setpoint-value engine loses zero recall for names emClassifySpaceType
+  // doesn't recognize, e.g. non-zone-terminal equipment or ahu/rtu location strings).
+  var cls = emClassifySpaceType(equipRow);
+  if (cls) {
+    // Map onto the legacy 3-value vocabulary the setpoint engine understands
+    // (GL36_TEMP_DEFAULTS only defines 'vav'/'mech_elec'/'networking').
+    if (cls.spaceType === 'networking') return 'networking';
+    if (cls.spaceType === 'mech_elec') return 'mech_elec';
+    return 'vav'; // restroom/corridor/storage/stairwell/elevator_lobby/secure_cell -> 'vav'
+  }
   var haystack = ((equipRow.equipName || '') + ' ' + (equipRow.location || '')).toLowerCase();
   if (/server|network|\bidf\b|\bmdf\b|comms|telecom|data ?center/.test(haystack)) {
     return 'networking';
@@ -19717,6 +20000,41 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
         : seq.requiredCats || [];
     var keyCatsResolved =
       seq.keyCatsByType && seq.keyCatsByType[category] ? seq.keyCatsByType[category] : seq.keyCats || [];
+
+    // space-type-classifier-2026-07-29 §2.5: a sequence whose requiredCats include a
+    // category emComputeCompliance NA'd for THIS row via space-type inference
+    // (source === 'spaceType' — restricted so this is byte-identical for every
+    // pre-existing naPoint, e.g. economizer/return-fan/OA-flow defaults) is itself N/A,
+    // not blocked/partial — a corridor VAV loses its CO2 hardware row and its DCV
+    // programming row together, coherently (the §1.4-1 defect this plan fixes: without
+    // this, NA-ing a zone's CO2 would drop the sensor but still price DCV programming
+    // for a sensor that will never exist).
+    var _spaceTypeNASet = {};
+    var _naPointsArr = (complianceData && complianceData.naPoints) || [];
+    for (var _npi = 0; _npi < _naPointsArr.length; _npi++) {
+      if (_naPointsArr[_npi] && _naPointsArr[_npi].source === 'spaceType') {
+        _spaceTypeNASet[_naPointsArr[_npi].categoryKey] = true;
+      }
+    }
+    var _seqSpaceTypeNA = false;
+    for (var _rci = 0; _rci < requiredCats.length; _rci++) {
+      if (_spaceTypeNASet[requiredCats[_rci]]) {
+        _seqSpaceTypeNA = true;
+        break;
+      }
+    }
+    if (_seqSpaceTypeNA) {
+      result[seq.key] = {
+        status: 'na',
+        label: seq.label,
+        ashrae36: seq.ashrae36,
+        presentCats: [],
+        missingCats: requiredCats.slice(),
+        keyCatsMissing: false,
+        spaceTypeNA: true,
+      };
+      continue;
+    }
 
     // Evaluate which required categories are present and which are missing
     var presentCats = [];
