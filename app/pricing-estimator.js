@@ -5315,6 +5315,19 @@ function _pricingBuildRoiUnits(rows) {
    _pricingComputeRecommendedTimeline (`{rows: [...], score, ...}`, no `hwRows` field) is handled
    via its `rows` array instead: `rows.some(r => r.phase === 1)` — true for any unit whose bundle
    contains a hardware row, including the defensive single-row leftover-fold-in units.
+
+   2026-07-29 (fix/pricing-phases-and-sensor-hours) — Matt wants "the best balance", not an
+   absolute rule: the hard partition above (no-hardware group strictly before hardware group,
+   regardless of score) measured out to Phases 1-3 (~2.5 years) being 100% programming-only and
+   60 of 97 hardware units ($530,776.30) deferred purely by the tier wall rather than by score —
+   worst case Courthouse vav_dcv ($236,251.20) pushed two phases later than its score warrants.
+   Replaced with the SAME additive-bonus mechanism _pricingEquipRowScore already uses for DCV's
+   priorityBonus (a flat premium added to the weight/effectiveCostTier ratio, not a hard
+   re-ordering rule) — see PRICING_NO_HW_SCORE_BONUS below. Simulated against real JOCO data
+   (Downloads\CompanyHub-localdatafile-20260729.json) at bonus 0.5/1.0/2.0: 0.5 and 1.0 gave the
+   identical result (headroom exists, not a knife edge) — Phases 1-2 stay 100% programming, Phase
+   3 now carries real hardware (7 hardware installs across phases 1-3, was 0) — while 2.0
+   collapsed back to the old hard-wall behavior. Shipping 1.0.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingUnitNeedsHardware(u) {
   if (u.hwRows) return u.hwRows.length > 0;
@@ -5326,20 +5339,24 @@ function _pricingUnitNeedsHardware(u) {
   return false;
 }
 
+// Flat premium added to a no-hardware unit's score before ranking (see the 2026-07-29 header
+// comment above _pricingUnitNeedsHardware) — same additive-bonus shape as
+// SEQUENCE_SAVINGS_IMPACT.*.priorityBonus, sized from real-data simulation, not a magic number
+// inline so it can be re-tuned in one place.
+var PRICING_NO_HW_SCORE_BONUS = 1.0;
+
+function _pricingUnitEffScore(u) {
+  return u.score + (_pricingUnitNeedsHardware(u) ? 0 : PRICING_NO_HW_SCORE_BONUS);
+}
+
 function _pricingSortUnitsNoHwFirst(units) {
-  var noHw = [];
-  var needsHw = [];
-  units.forEach(function (u) {
-    (_pricingUnitNeedsHardware(u) ? needsHw : noHw).push(u);
+  var sorted = units.slice().sort(function (a, b) {
+    return _pricingUnitEffScore(b) - _pricingUnitEffScore(a);
   });
-  var byScoreDesc = function (a, b) {
-    return b.score - a.score;
-  };
-  noHw.sort(byScoreDesc);
-  needsHw.sort(byScoreDesc);
-  // _pricingDiversifyTiedUnits runs PER GROUP (see header comment) so the family round-robin can
-  // never cross the no-hardware/needs-hardware boundary.
-  return _pricingDiversifyTiedUnits(noHw).concat(_pricingDiversifyTiedUnits(needsHw));
+  // _pricingDiversifyTiedUnits ties on the SAME effective score (bonus included) so a no-hardware
+  // and a hardware-needing unit only tie-diversify together when their bonused scores genuinely
+  // match, not their raw ones.
+  return _pricingDiversifyTiedUnits(sorted, _pricingUnitEffScore);
 }
 
 /* ── _pricingGreedyPrefix(units, ceiling) ────────────────────────────────────
@@ -5428,13 +5445,23 @@ function _pricingGreedyPrefix(units, ceiling) {
    second instance — so this composes with (does not replace) the round-robin fairness for the
    remaining tied families. Generalizes automatically: any future measure flagged with
    priorityBonus gets the same front-of-round-robin treatment, no seqKey-specific branch here.
+
+   2026-07-29 (fix/pricing-phases-and-sensor-hours): takes an optional `scoreFn` accessor so
+   _pricingSortUnitsNoHwFirst can tie-group on its bonused effective score (raw score +
+   PRICING_NO_HW_SCORE_BONUS) instead of the raw `.score` field — defaults to reading `.score`
+   directly, so every other/pre-existing caller is unaffected.
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingDiversifyTiedUnits(sortedUnits) {
+function _pricingDiversifyTiedUnits(sortedUnits, scoreFn) {
+  var getScore =
+    scoreFn ||
+    function (u) {
+      return u.score;
+    };
   var out = [];
   var i = 0;
   while (i < sortedUnits.length) {
     var j = i;
-    while (j < sortedUnits.length && Math.abs(sortedUnits[j].score - sortedUnits[i].score) < 0.0001) j++;
+    while (j < sortedUnits.length && Math.abs(getScore(sortedUnits[j]) - getScore(sortedUnits[i])) < 0.0001) j++;
     var tieGroup = sortedUnits.slice(i, j);
     if (tieGroup.length <= 1) {
       out.push(tieGroup[0]);
