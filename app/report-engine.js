@@ -15956,8 +15956,12 @@ function _rptA36PhaseTableInnerHTML(d) {
   // completely from that phase table since all buildings are included."). Every building in the
   // priced scope is included across the phases by construction, so a per-phase buildings list
   // added no information. facilitiesText itself (pricing-estimator.js) is left intact/unchanged
-  // — it still feeds the opt-in Cost Estimate page's separate phase timeline table
-  // (_rptA36RecommendedTimelineHTML), which keeps its own "Facilities Included" column.
+  // — it still feeds the interactive Cost Estimate tab's own Recommended timeline table
+  // (_pricingRecommendedTimelineHTML), Matt's internal planning view. The Cost Estimate PAGE's
+  // phase timeline table (_rptA36RecommendedTimelineHTML) also carried a "Facilities Included"
+  // column that hit the identical redundancy/overflow problem at 27-building portfolio scale
+  // (~276px page overflow) and was removed the same day for the same reason — see that
+  // function's own header comment.
 
   var resultsRow =
     '<tr><td style="' +
@@ -16865,8 +16869,9 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
  * AI/_context/specs/joco-service-proposal-target-2026-07-23.md, Table 2 and Table 3) carries NO
  * dollar figures anywhere in its phase tables — the $6,250/month figure is stated exactly once, in
  * the Recommended Optimization Program paragraph. This rebuild follows that: a plain schedule of
- * WORK (Phase / Date Range / Included Improvements / Facilities Included) — no boxes/cards, no
- * dollars, no footer total. "Included Improvements" reuses the SAME _rptA36PhaseImprovementsText
+ * WORK (Phase / Sequence / Included Improvements) — no boxes/cards, no dollars, no footer total.
+ * ("Date Range" and "Facilities Included" were both later removed — see the dated notes below.)
+ * "Included Improvements" reuses the SAME _rptA36PhaseImprovementsText
  * helper the Phase Table page (rptPageASHRAE36ProposalPhaseTable) already uses, so the two tables
  * can never disagree about what a phase contains. Reuses _pricingComputeRecommendedTimeline
  * (app/pricing-estimator.js) — the SAME computation the interactive Cost Estimate tab's Recommended
@@ -16874,6 +16879,15 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
  * internal planning tool and keeps its phase envelope/measures-total/labor breakdown columns).
  * Guarded/silent (returns '') when the computation isn't available or returns null (nothing priced
  * yet), same convention as discBlock/svcBlock.
+ * "Facilities Included" column REMOVED (2026-07-29, overflow fix): on the real JOCO portfolio (27
+ * buildings) this column's per-phase "(continues in Phase X, Y, Z...)" text pushed the table
+ * ~276px past the page footer, cutting the Phase 3 row into the footer wave graphic. Same
+ * treatment as commit 3062dcd, which removed the identical "Facilities Included" row from the
+ * sibling Service Proposal phase table (_rptA36PhaseTableInnerHTML) for the same reason (Matt:
+ * "why would you put continues in phase x for every building? That is redundant."). facilitiesText
+ * itself (pricing-estimator.js) is untouched — it still feeds the interactive Cost Estimate tab's
+ * own Recommended timeline table (_pricingRecommendedTimelineHTML), Matt's internal planning view,
+ * which is unpaginated and keeps its "Facilities Included" column.
  */
 function _rptA36RecommendedTimelineHTML(d) {
   if (typeof _pricingComputeRecommendedTimeline !== 'function') return '';
@@ -16891,8 +16905,8 @@ function _rptA36RecommendedTimelineHTML(d) {
   }
 
   var colgroup =
-    '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:262px">' +
-    '<col style="width:242px"></colgroup>';
+    '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:504px">' +
+    '</colgroup>';
   // Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling): dropped the
   // filled dark-blue header (color:#fff on background:var(--rpt-blue)) to match pages 1-3's
   // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
@@ -16910,13 +16924,6 @@ function _rptA36RecommendedTimelineHTML(d) {
   var _RPT_A36_TIMELINE_ORDINALS = ['First priority', 'Second priority', 'Third priority'];
   var rowsHTML = tl.phases
     .map(function (p, idx) {
-      // Facilities Included (Bug 3306c189, 2026-07-27): reads the shared `facilitiesText` field
-      // computed once in _pricingComputeRecommendedTimeline — dedups each building to its earliest
-      // phase and describes later-phase continuation instead of repeating the bare name in every
-      // phase it has a row (matches the fix applied to rptPageASHRAE36ProposalPhaseTable's
-      // facilitiesRow and pricing-estimator.js's own _pricingRecommendedTimelineHTML, so all three
-      // "Facilities Included"/Scope Summary surfaces agree). Already includes the fallback text.
-      var facilities = _esc(p.facilitiesText || '');
       var improvements =
         typeof _rptA36PhaseImprovementsText === 'function' ? _rptA36PhaseImprovementsText(p.rows, idx) : '';
       return (
@@ -16935,11 +16942,6 @@ function _rptA36RecommendedTimelineHTML(d) {
         tdStyle +
         '">' +
         _esc(improvements) +
-        '</td>' +
-        '<td style="' +
-        tdStyle +
-        '">' +
-        facilities +
         '</td>' +
         '</tr>'
       );
@@ -16973,9 +16975,6 @@ function _rptA36RecommendedTimelineHTML(d) {
     '<th style="' +
     thStyle +
     '">Included Improvements</th>' +
-    '<th style="' +
-    thStyle +
-    '">Facilities Included</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rowsHTML +
