@@ -15655,6 +15655,16 @@ function _rptA36PhaseImprovementsText(rows, idx) {
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 
+// PRICING_PROPOSAL_MAX_PHASES (2026-07-28, fix/pricing-phases-and-sensor-hours, backlog 8d7911c1):
+// _pricingComputeRecommendedTimeline's schedule is indefinite (as many calendar phases as it takes
+// to place every recommended unit). The Service Proposal is a client-facing sales document and
+// must not run to infinity on the page — every Proposal-facing phase render (Phase Table page,
+// Implementation Plan schedule, Cost Estimate page's Phased Implementation Schedule) caps to this
+// many phases (through 2028, matching the program's original fixed-3-phase near-term commitment).
+// The internal Cost Estimate tab (pricing-estimator.js's own _pricingRecommendedTimelineHTML) is
+// NOT capped by this constant — it always renders the full indefinite schedule.
+var PRICING_PROPOSAL_MAX_PHASES = 3;
+
 /**
  * _rptA36PhaseTableInnerHTML — content-only builder for the Recommended Optimization Program
  * intro paragraph + Phase table (extracted 2026-07-27, page-2/3 merge, so the standalone page
@@ -15709,6 +15719,16 @@ function _rptA36PhaseTableInnerHTML(d) {
       'for this project.' +
       '</div>';
     return intro + fallback;
+  }
+
+  // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): the Recommended tier's
+  // schedule is now INDEFINITE (_pricingComputeRecommendedTimeline generates as many calendar
+  // phases as it takes to place every recommended unit, with no fixed count). The Service Proposal
+  // is a client-facing sales document that must not run to infinity on the page — cap the phases
+  // it shows to the first 3 (through 2028), same as before this rebuild. The internal Cost Estimate
+  // tab (_pricingRecommendedTimelineHTML) is unaffected — it renders tl.phases unbounded.
+  if (tl.phases.length > PRICING_PROPOSAL_MAX_PHASES) {
+    tl = Object.assign({}, tl, { phases: tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES) });
   }
 
   // "Included Improvements" text now comes from the shared _rptA36PhaseImprovementsText helper
@@ -15870,6 +15890,11 @@ function _rptA36VisionInnerHTML(d) {
     if (typeof _pricingComputeRecommendedTimeline === 'function') tl = _pricingComputeRecommendedTimeline(d.project.id);
   } catch (e) {
     tl = null;
+  }
+  // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): cap to PRICING_PROPOSAL_MAX_PHASES
+  // — see that constant's own comment above _rptA36PhaseTableInnerHTML for why.
+  if (tl && tl.phases && tl.phases.length > PRICING_PROPOSAL_MAX_PHASES) {
+    tl = Object.assign({}, tl, { phases: tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES) });
   }
 
   // Density pass (2026-07-27, page-2/3 merge): cell padding tightened 6px->4px vertical (font size
@@ -16700,6 +16725,11 @@ function _rptA36RecommendedTimelineHTML(d) {
     return '';
   }
   if (!tl) return '';
+  // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): cap to PRICING_PROPOSAL_MAX_PHASES
+  // — see that constant's own comment above _rptA36PhaseTableInnerHTML for why.
+  if (tl.phases && tl.phases.length > PRICING_PROPOSAL_MAX_PHASES) {
+    tl = Object.assign({}, tl, { phases: tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES) });
+  }
 
   var colgroup =
     '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:262px">' +

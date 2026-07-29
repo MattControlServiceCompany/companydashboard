@@ -1422,17 +1422,18 @@ function _pricingLaborBreakdownHTML(projId) {
    contextLabel (optional) prefixes the mode label — used by Compare/Summary where
    more than one total is visible in the same footer (e.g. "vs Recommended").
 
-   ceilingOverride (2026-07-26, fix-phase-cost-budget-model — buildRecommendedRows ceiling netting):
-   when the caller is showing the RECOMMENDED tier's own total, this widget must compare against
-   the SAME ceiling buildRecommendedRows() actually fit membership against — the program-wide
-   net-of-labor measures budget (_pricingComputeProgramCostModel(projId).programMeasuresAvailable) —
-   not the generic budget.amount x termMonths figure _pricingComputeBudgetTotal returns. Those two
-   numbers diverged the moment the membership ceiling was netted against real EM labor: comparing a
-   correctly-funded Recommended scope against the OLD term-based figure would show a false "OVER
-   budget" alarm here, directly contradicting the accurate Phase Service Allowance timeline table
-   rendered right below it. Callers pass null (or omit) for every non-Recommended context
-   (Compliance/Full Scope were never fit to any budget ceiling, so the generic term-based
-   comparison is still the right — if informal — reference point for them, unchanged from before).
+   ceilingOverride (2026-07-26, fix-phase-cost-budget-model — buildRecommendedRows ceiling netting;
+   RETIRED 2026-07-28, fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): used to let the
+   RECOMMENDED tier's own total compare against the program-wide net-of-labor measures ceiling
+   buildRecommendedRows() fit membership against. That membership ceiling is now REMOVED —
+   Recommended is an unbounded, indefinite scope, so no bounded ceiling exists to compare its total
+   against anymore (comparing an ever-growing total against any fixed figure would always read
+   "OVER budget"). Every current caller now passes null for grandTotal itself when tier ===
+   'recommended' (skipping this widget entirely for that tier, not just the ceilingOverride) — see
+   the phased Implementation Timeline table instead. Parameter kept (always null from every current
+   call site) rather than removed, in case a future bounded-comparison need re-emerges. Compliance/
+   Full Scope (never fit to any budget ceiling) keep the generic budget.amount x termMonths
+   comparison, unchanged from before.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingBudgetVsTotalHTML(budget, grandTotal, contextLabel, ceilingOverride) {
   var comp;
@@ -3096,7 +3097,79 @@ function buildCatalogRows(projId) {
     });
   });
 
-  return rows;
+  return rows.concat(buildSensorInvestigationRows(projId));
+}
+
+/* ── buildSensorInvestigationRows(projId) ─────────────────────────────────────────────────────
+   2026-07-28 (fix/pricing-phases-and-sensor-hours): prices the labor to investigate each
+   suspect/failed sensor reading emGetSensorDeficiencies/emComputeSensorDeficiencyInventory
+   (app/equipment-matrix.js, fix/point-evidence-all-rows, commit ebf80dd) already flags — dead/
+   implausible CO2, humidity, zone-temp, or discharge-airflow readings that are visible on the
+   point list but excluded from averages/comparisons as unreliable. Uses THAT shared detector
+   verbatim (does not re-implement plausibility logic here) — 1 hour of investigation labor per
+   suspect point, at the project's shared configured Hourly Rate (cfg.hourlyRate ||
+   COST_LABOR_RATE_DEFAULT, the SAME rate every other labor line in this file uses per
+   fix/unify-labor-rate, commit 07cbbd0 — never a hardcoded number).
+
+   SCOPE (hard constraint — HARD SCOPE per task): reads emLoadMatrix(projId) directly, the SAME
+   raw source collectASHRAE36Data itself reads from, rather than reusing collectASHRAE36Data's own
+   `equipResults` projection — that projection deliberately does NOT carry deficiency data (it's a
+   narrowed, audit-safe view; see collectASHRAE36Data's equipResults.push). This function is called
+   ONLY from buildCatalogRows (Catalog tier — flows automatically into Full Scope, which clones
+   every catalog row, and is automatically EXCLUDED from Compliance, whose filter keeps phase-1
+   rows plus only 'safety'-type phase-2 sequences — sensor investigation is neither; matches
+   emGetSensorDeficiencies' own note that a sensor's existence for ASHRAE 36 compliance purposes is
+   determined purely by point-NAME matching, never by this detector) and from buildRecommendedRows
+   (re-added after its unit-membership filter, which would otherwise drop these standalone,
+   non-sequence rows — see that call site's comment). NEVER called from collectASHRAE36Data,
+   generateASHRAE36AuditHTML, or any rptPageASHRAE36* audit page — sensor failures are a
+   service-scope/pricing matter, not an ASHRAE 36 compliance finding, and must not reach the audit
+   report. (Verified: grep confirms zero references to this function or emGetSensorDeficiencies/
+   emComputeSensorDeficiencyInventory anywhere in the audit-report render path.)
+
+   Returns phase-2 (labor-only) rows, one per suspect point, shaped to match every other row this
+   file produces (id/building/item/type/equipment/qty/unitPrice/lineTotal/phase/hrsPerUnit/note)
+   so they merge into the SAME tables/totals as hardware and programming rows, not a parallel line.
+   No seqKey (this is not a G36 sequence) — _pricingBuildRoiUnits correctly leaves these rows
+   unclaimed by any unit; _pricingComputeRecommendedTimeline's existing defensive safety net then
+   folds each one in as its own single-row unit (scored via the same _pricingEquipRowScore every
+   other unclaimed row uses) so it still gets scheduled into a phase like any other line item.
+   ─────────────────────────────────────────────────────────────────────────── */
+function buildSensorInvestigationRows(projId) {
+  if (typeof emLoadMatrix !== 'function' || typeof emComputeSensorDeficiencyInventory !== 'function') return [];
+  var matData = emLoadMatrix(projId);
+  if (!matData || !matData.rows || !matData.rows.length) return [];
+  var inventory = emComputeSensorDeficiencyInventory(matData.rows);
+  if (!inventory || !inventory.rows.length) return [];
+
+  var cfg = _pricingGetConfig();
+  var hourlyRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
+
+  return inventory.rows.map(function (d, idx) {
+    var statusLabel = d.status === 'failed' ? 'failed reading' : 'suspect reading';
+    return {
+      id: 'sinv_' + (d.id || 'row') + '_' + d.col + '_' + idx,
+      building: d.building || '',
+      item: 'Sensor Investigation — ' + (d.categoryLabel || d.col),
+      type: 'Investigation',
+      equipment: (d.equipName || 'Equipment') + ' (' + statusLabel + ')',
+      qty: 1,
+      sku: null,
+      engReview: false,
+      noSku: false,
+      ioOnly: false,
+      unitPrice: hourlyRate,
+      listPrice: null,
+      netPrice: null,
+      contractPrice: null,
+      lineTotal: parseFloat((1 * hourlyRate).toFixed(2)),
+      note: d.reason || '', // emGetSensorDeficiencies' own reason field — "safe to surface to a client"
+      phase: 2,
+      hrsPerUnit: 1,
+      isSensorInvestigation: true,
+      sensorDeficiencyStatus: d.status,
+    };
+  });
 }
 
 /* ── buildComplianceRows(projId) ────────────────────────────────────────────
@@ -3634,10 +3707,6 @@ function initCostEstimateTab(projId) {
     '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
       (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
       '</span>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-      (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
-      '</span>',
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
     '<span style="font-size:11px;color:var(--text3)">' + _p2CaveatLine + '</span>',
@@ -3817,10 +3886,6 @@ function _pricingRefreshFooter(projId) {
     '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
     '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
       (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
-      '</span>',
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-      (totals.grand !== null ? _pricingFmt(totals.grand) : '—') +
       '</span>',
     '<span style="flex:1"></span>',
     '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
@@ -4108,51 +4173,30 @@ function buildRecommendedRows(projId) {
 
   var units = _pricingBuildRoiUnits(poolRows);
 
-  var budget = _pricingGetBudget(projId);
-  var comp = _pricingComputeBudgetTotal(budget);
-  // 2026-07-26 (fix/phase-cost-budget-model) — RESOLVED, ceiling now netted against real EM labor.
-  // History: comp.total (budget.termMonths-based, defaults to 12 → $75,000 for JOCO) was left
-  // UNCHANGED through two earlier passes because both alternate ceilings tried then broke on real
-  // JOCO numbers:
-  //   1. Widening to the raw 29-month program allowance ($181,250, no netting): measures alone
-  //      consumed 99.98% of the WHOLE allowance before a dollar of EM labor was even counted.
-  //   2. Netting the FULL EM-labor total out of that same raw ceiling ($181,250 − $177,480 =
-  //      $3,770): collapsed membership to 7 rows/$3,740 — but DOUBLE-SUBTRACTED, because
-  //      `_pricingComputeMonthlyLaborBreakdown`'s old "Program & Sequence Setup" category reused
-  //      the SAME COST_PER_SEQ_HOURS_DEFAULT hours already priced into every phase-2 row's
-  //      Programming cost inside this same candidate pool.
-  //   That double-count is now FIXED AT THE SOURCE (Program & Sequence Setup was removed from the
-  //   recurring EM labor breakdown entirely — see _pricingComputeMonthlyLaborBreakdown's header
-  //   comment) — so netting is safe now. Ceiling below is the PROGRAM-WIDE net-of-labor measures
-  //   budget (`_pricingComputeProgramCostModel(projId).programMeasuresAvailable`) — every figure it
-  //   derives from (budget.amount, the phase date ranges, and the recurring labor constants) is
-  //   already stored/derived elsewhere; nothing here is a new hardcoded number. Falls back to the
-  //   old `comp.total` (budget.termMonths-based) ceiling only when the calendar cost model can't be
-  //   computed (e.g. a 'lump' denomination, which has no natural monthly figure to net against) —
-  //   same recurring-mode branch as before, just a different derivation of the ceiling inside it.
-  var costModelForCeiling = _pricingComputeProgramCostModel(projId);
+  // ── Membership ceiling REMOVED (2026-07-28, fix/pricing-phases-and-sensor-hours, backlog
+  //    8d7911c1) ─────────────────────────────────────────────────────────────────────────────
+  // History: this used to cap Recommended-tier membership to a Fit-to-Budget greedy prefix of the
+  // fixed 3-phase/29-month program ceiling (_pricingGreedyPrefix against
+  // _pricingComputeProgramCostModel(projId).programMeasuresAvailable, or a HIGH-impact-only
+  // fallback with no budget configured) — see git history for the full ceiling-netting story
+  // (2026-07-26 double-count fix, etc.), all of which is now moot. Matt's explicit correction:
+  // "Why would you do anything per building? We are not doing all work at each individual
+  // building... Everything should be based on line item roi" combined with the indefinite-phase
+  // architecture (8d7911c1) means every unit the ROI scorer builds is now a Recommended-tier
+  // member — nothing is silently excluded from the tier for not fitting one budget window.
+  // _pricingComputeRecommendedTimeline schedules every member into an ROI-ordered phase, generating
+  // as many calendar phases as needed (indefinitely) until no unit is left pending; a unit that
+  // doesn't fit THIS phase's envelope is scheduled into a LATER phase, never dropped. The
+  // Fit-to-Budget button (_pricingComputeBudgetFitPlan/_pricingOpenBudgetFitPreview) remains
+  // available as a separate, explicit, user-invoked action for anyone who wants to manually narrow
+  // the tier to what fits inside a single budget window — see the updated comment near that
+  // feature's toolbar entry point for why it's no longer a no-op here.
   var keepUnitToggleKeys = {};
-  if (comp && budget.mode === 'recurring') {
-    // Budget entered: ranked prefix that fits the ceiling — the shipped v631 Fit-to-Budget greedy
-    // engine, reused verbatim as the membership rule (pricing-estimator.js:536-558 conversion; NOT
-    // re-derived here). Ceiling = program-wide measures budget net of recurring EM labor when the
-    // calendar cost model is available; otherwise the pre-existing term-based total.
-    var _ceiling = costModelForCeiling ? costModelForCeiling.programMeasuresAvailable : comp.total;
-    var _fitPlan = _pricingGreedyPrefix(units, _ceiling);
-    _fitPlan.keepKeys.forEach(function (k) {
+  units.forEach(function (u) {
+    u.toggleKeys.forEach(function (k) {
       keepUnitToggleKeys[k] = true;
     });
-  } else {
-    // No budget (or Mode A financing, or an invalid term): highest-impact
-    // (HIGH) units only — Matt's specified fallback.
-    units.forEach(function (u) {
-      if (u.seqRow && u.seqRow.savingsImpact === 'high') {
-        u.toggleKeys.forEach(function (k) {
-          keepUnitToggleKeys[k] = true;
-        });
-      }
-    });
-  }
+  });
 
   // A row survives in Recommended only if it's the sequence half or a claimed
   // hardware half of a KEPT unit. Standalone hardware (never formed a unit)
@@ -4164,6 +4208,18 @@ function buildRecommendedRows(projId) {
     var toggleKey = r._baseId || r.id;
     return !!keepUnitToggleKeys[toggleKey];
   });
+
+  // Sensor Investigation rows (2026-07-28, fix/pricing-phases-and-sensor-hours): re-added AFTER
+  // the unit-membership filter above. These are standalone phase-2 labor rows with no seqKey, so
+  // _pricingBuildRoiUnits never forms a "unit" for them and the membership filter just removed
+  // them along with every other never-claimed row — correct for a real un-bundled sequence, but
+  // NOT what we want for investigation labor, which should always be priced here regardless of
+  // ROI-unit bundling. buildCatalogRows() already appended these once (recRows above included a
+  // pass-through clone of them that the filter just discarded); fetch a fresh copy here instead of
+  // trying to rescue the discarded clone. _pricingComputeRecommendedTimeline's existing "unclaimed
+  // row" safety net (see that function's header comment) picks these up as their own single-row
+  // units for phase scheduling, same as any other unbundled row.
+  recRows = recRows.concat(buildSensorInvestigationRows(projId));
 
   // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
   // Apply sort within building groups, preserve building order and phase-1/phase-2 structure.
@@ -5259,6 +5315,19 @@ function _pricingBuildRoiUnits(rows) {
    _pricingComputeRecommendedTimeline (`{rows: [...], score, ...}`, no `hwRows` field) is handled
    via its `rows` array instead: `rows.some(r => r.phase === 1)` — true for any unit whose bundle
    contains a hardware row, including the defensive single-row leftover-fold-in units.
+
+   2026-07-29 (fix/pricing-phases-and-sensor-hours) — Matt wants "the best balance", not an
+   absolute rule: the hard partition above (no-hardware group strictly before hardware group,
+   regardless of score) measured out to Phases 1-3 (~2.5 years) being 100% programming-only and
+   60 of 97 hardware units ($530,776.30) deferred purely by the tier wall rather than by score —
+   worst case Courthouse vav_dcv ($236,251.20) pushed two phases later than its score warrants.
+   Replaced with the SAME additive-bonus mechanism _pricingEquipRowScore already uses for DCV's
+   priorityBonus (a flat premium added to the weight/effectiveCostTier ratio, not a hard
+   re-ordering rule) — see PRICING_NO_HW_SCORE_BONUS below. Simulated against real JOCO data
+   (Downloads\CompanyHub-localdatafile-20260729.json) at bonus 0.5/1.0/2.0: 0.5 and 1.0 gave the
+   identical result (headroom exists, not a knife edge) — Phases 1-2 stay 100% programming, Phase
+   3 now carries real hardware (7 hardware installs across phases 1-3, was 0) — while 2.0
+   collapsed back to the old hard-wall behavior. Shipping 1.0.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingUnitNeedsHardware(u) {
   if (u.hwRows) return u.hwRows.length > 0;
@@ -5270,20 +5339,24 @@ function _pricingUnitNeedsHardware(u) {
   return false;
 }
 
+// Flat premium added to a no-hardware unit's score before ranking (see the 2026-07-29 header
+// comment above _pricingUnitNeedsHardware) — same additive-bonus shape as
+// SEQUENCE_SAVINGS_IMPACT.*.priorityBonus, sized from real-data simulation, not a magic number
+// inline so it can be re-tuned in one place.
+var PRICING_NO_HW_SCORE_BONUS = 1.0;
+
+function _pricingUnitEffScore(u) {
+  return u.score + (_pricingUnitNeedsHardware(u) ? 0 : PRICING_NO_HW_SCORE_BONUS);
+}
+
 function _pricingSortUnitsNoHwFirst(units) {
-  var noHw = [];
-  var needsHw = [];
-  units.forEach(function (u) {
-    (_pricingUnitNeedsHardware(u) ? needsHw : noHw).push(u);
+  var sorted = units.slice().sort(function (a, b) {
+    return _pricingUnitEffScore(b) - _pricingUnitEffScore(a);
   });
-  var byScoreDesc = function (a, b) {
-    return b.score - a.score;
-  };
-  noHw.sort(byScoreDesc);
-  needsHw.sort(byScoreDesc);
-  // _pricingDiversifyTiedUnits runs PER GROUP (see header comment) so the family round-robin can
-  // never cross the no-hardware/needs-hardware boundary.
-  return _pricingDiversifyTiedUnits(noHw).concat(_pricingDiversifyTiedUnits(needsHw));
+  // _pricingDiversifyTiedUnits ties on the SAME effective score (bonus included) so a no-hardware
+  // and a hardware-needing unit only tie-diversify together when their bonused scores genuinely
+  // match, not their raw ones.
+  return _pricingDiversifyTiedUnits(sorted, _pricingUnitEffScore);
 }
 
 /* ── _pricingGreedyPrefix(units, ceiling) ────────────────────────────────────
@@ -5372,13 +5445,23 @@ function _pricingGreedyPrefix(units, ceiling) {
    second instance — so this composes with (does not replace) the round-robin fairness for the
    remaining tied families. Generalizes automatically: any future measure flagged with
    priorityBonus gets the same front-of-round-robin treatment, no seqKey-specific branch here.
+
+   2026-07-29 (fix/pricing-phases-and-sensor-hours): takes an optional `scoreFn` accessor so
+   _pricingSortUnitsNoHwFirst can tie-group on its bonused effective score (raw score +
+   PRICING_NO_HW_SCORE_BONUS) instead of the raw `.score` field — defaults to reading `.score`
+   directly, so every other/pre-existing caller is unaffected.
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingDiversifyTiedUnits(sortedUnits) {
+function _pricingDiversifyTiedUnits(sortedUnits, scoreFn) {
+  var getScore =
+    scoreFn ||
+    function (u) {
+      return u.score;
+    };
   var out = [];
   var i = 0;
   while (i < sortedUnits.length) {
     var j = i;
-    while (j < sortedUnits.length && Math.abs(sortedUnits[j].score - sortedUnits[i].score) < 0.0001) j++;
+    while (j < sortedUnits.length && Math.abs(getScore(sortedUnits[j]) - getScore(sortedUnits[i])) < 0.0001) j++;
     var tieGroup = sortedUnits.slice(i, j);
     if (tieGroup.length <= 1) {
       out.push(tieGroup[0]);
@@ -6058,15 +6141,18 @@ function _pricingBuildBudgetSectionHTML(projId, tier) {
         '\')" style="cursor:pointer">Clear</button>' +
         '</div>';
     } else {
-      // 32878dc1: c82cc354 REV 2 made Recommended membership intrinsically budget-fit by
-      // construction — buildRecommendedRows already runs the same greedy-ceiling walk before
-      // any row reaches the table, so clicking "Fit to Budget…" here recomputes the SAME plan
-      // against a row set that's already fit and (on Recommended) will always come back with
-      // excludedCount 0. Compute the plan (read-only — nothing is written) so the copy reflects
-      // the CURRENT state instead of a hardcoded string: only offer the action button when it
-      // would actually exclude something (defensive — covers any future case where it wouldn't
-      // be a no-op); otherwise show the reviewer-suggested static line so it stops implying an
-      // action is needed (stages/c82cc354/review.md).
+      // STALE as of 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): this used
+      // to say Recommended membership was "intrinsically budget-fit by construction" because
+      // buildRecommendedRows ran a greedy-ceiling walk before any row reached the table. That
+      // ceiling is now REMOVED — buildRecommendedRows keeps every unit the ROI scorer builds, and
+      // _pricingComputeRecommendedTimeline schedules the (now likely much larger) full scope into
+      // as many ROI-ordered calendar phases as it takes, indefinitely, rather than capping
+      // membership to what fits one budget window. So this Fit-to-Budget preview — which still
+      // computes its OWN one-window greedy-ceiling plan against the full (unbounded) Recommended
+      // row set — will now typically find real work to exclude (excludedCount > 0) and show the
+      // action button below; it stays available as a separate, explicit, user-invoked way to see
+      // "what fits in a single budget window right now," distinct from the phased schedule, which
+      // always shows the complete indefinite scope.
       var _recFitPlan = _pricingComputeBudgetFitPlan(projId);
       if (_recFitPlan && _recFitPlan.excludedCount > 0) {
         html +=
@@ -6761,8 +6847,9 @@ function _pricingComputeCondensedRows(rows, estimate) {
    affordances (no toggle checkboxes, manual-price inputs, hours overrides, column resize/hide,
    sort). Building filter + toolbar controls still apply (same _pricingBldgFilter module state,
    same _pricingBuildToolbarHTML), so switching Condensed <-> Full Itemization mid-filter is
-   seamless. Grand total footer reuses _pricingComputeTotals on the SAME filtered row set the
-   full table would use — cannot disagree with the full view or the tier's own totals.
+   seamless. 2026-07-28: footer "Grand Total" removed — this is a monthly ongoing
+   service-allowance, not a capital project with a one-time total; each section (Hardware &
+   Installation / Programming) still shows its own Subtotal row in the table itself.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingRenderCondensedTab(projId, el, estimate, tier) {
   var builder = tier === 'full-scope' ? buildFullScopeRows : buildComplianceRows;
@@ -6786,7 +6873,6 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
       })
     : baseRows;
 
-  var totals = _pricingComputeTotals(filteredRows, estimate);
   var agg = _pricingComputeCondensedRows(filteredRows, estimate);
   var itemCount = agg.hw.length + agg.lb.length;
 
@@ -6905,40 +6991,52 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
     '</div>',
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
     _pricingTierLabelHTML(tier),
-    '<span style="color:var(--border2)">|</span>',
-    '<span style="font-size:12px;font-weight:700;color:var(--text2)">Grand Total:</span>',
-    '<span style="font-size:14px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">' +
-      (totals.grand !== null
-        ? _pricingFmt(totals.grand)
-        : '<span style="color:var(--text3);font-size:11px;font-weight:400">' +
-          (totals.noCatalog ? 'Import pricing CSV' : '—') +
-          '</span>') +
-      '</span>',
     '</div>',
     '</div>',
   ].join('');
 }
 
-/* ── Calendar-phase date definitions (2026-07-26 fix/phase-cost-budget-model) ──────────────────
-   The Recommended tier's 3-phase rollout calendar: Phase 1 Aug 1 – Dec 31 2026, Phase 2 all of
-   CY2027, Phase 3 all of CY2028. Only the start/end [year, month] pairs are literal (Matt's
-   actual program dates) — the months-in-phase count and the "Aug 2026 – Dec 2026" display label
-   are DERIVED from those two endpoints, never a separately hand-typed 5/12/12 number, so editing
-   a date here changes the downstream cost math and the label text together (task requirement:
+/* ── Calendar-phase date definitions (2026-07-26 fix/phase-cost-budget-model; REBUILT 2026-07-28
+   fix/pricing-phases-and-sensor-hours, backlog 8d7911c1) ──────────────────────────────────────
+   The Recommended tier's rollout calendar is INDEFINITE — Phase 1 is the literal, fixed program
+   start date (Aug 1 – Dec 31 2026, Matt's actual near-term commitment); every phase after that is
+   ONE CALENDAR YEAR, generated on demand by _pricingPhaseDateRangeAt(i) rather than pre-declared
+   in a fixed-length array, because the service is an ongoing monthly allowance with no fixed
+   phase count or end date (Matt: "there is no total ever" — a fixed 3-element array baked in a
+   promised stop date the system cannot actually compute). The months-in-phase count and the "Aug
+   2026 – Dec 2026" display label are still DERIVED from each phase's two endpoints, never a
+   separately hand-typed number, so editing the start rule here changes the downstream cost math
+   and the label text together (task requirement carried over from the original 2026-07-26 fix:
    "Derive the month counts from the phase date ranges, don't hardcode 5/12/12").
+   Callers that need a BOUNDED view (the Service Proposal, a client-facing sales document that
+   must not run to infinity on the page — shows only Phase 1-3, through 2028) pass an explicit
+   count; callers that need the full indefinite schedule (the internal Cost Estimate tab) generate
+   phases one at a time inside _pricingComputeRecommendedTimeline's packing loop until no
+   recommended work remains pending, with no upper bound baked in here.
    ─────────────────────────────────────────────────────────────────────────── */
-var _PRICING_PHASE_DATE_RANGES = [
-  { label: 'Phase 1', start: [2026, 8], end: [2026, 12] },
-  { label: 'Phase 2', start: [2027, 1], end: [2027, 12] },
-  { label: 'Phase 3', start: [2028, 1], end: [2028, 12] },
-];
 var _PRICING_MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function _pricingMonthsBetween(startYear, startMonth, endYear, endMonth) {
   // Inclusive whole-month count, e.g. Aug 2026 -> Dec 2026 = 5 (Aug, Sep, Oct, Nov, Dec).
   return (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
 }
-function _pricingPhaseDateDefs() {
-  return _PRICING_PHASE_DATE_RANGES.map(function (p) {
+// _pricingPhaseDateRangeAt(i) — the ONLY place the program's literal start date is hand-typed.
+// i is 0-based: i===0 is the fixed Aug-Dec 2026 start; every i>=1 is the full calendar year
+// (2026+i), so i===1 -> CY2027, i===2 -> CY2028, i===3 -> CY2029, indefinitely.
+function _pricingPhaseDateRangeAt(i) {
+  if (i === 0) return { label: 'Phase 1', start: [2026, 8], end: [2026, 12] };
+  var year = 2026 + i;
+  return { label: 'Phase ' + (i + 1), start: [year, 1], end: [year, 12] };
+}
+// _pricingPhaseDateDefs(count) — generates the first `count` phase defs (default 3, preserving
+// every pre-existing caller's behavior — the Proposal's near-term-rollout copy, the "through
+// 2028" client-facing tables, and the Monthly Service Agreement widget all still see exactly
+// Phase 1-3 unless they explicitly ask for more). The indefinite Cost Estimate view asks for as
+// many as it actually needs — see _pricingComputeRecommendedTimeline.
+function _pricingPhaseDateDefs(count) {
+  var n = count == null ? 3 : count;
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    var p = _pricingPhaseDateRangeAt(i);
     var months = _pricingMonthsBetween(p.start[0], p.start[1], p.end[0], p.end[1]);
     var dateRange =
       _PRICING_MONTH_ABBR[p.start[1] - 1] +
@@ -6948,12 +7046,14 @@ function _pricingPhaseDateDefs() {
       _PRICING_MONTH_ABBR[p.end[1] - 1] +
       ' ' +
       p.end[0];
-    return { label: p.label, months: months, dateRange: dateRange };
-  });
+    out.push({ label: p.label, months: months, dateRange: dateRange });
+  }
+  return out;
 }
-// Total calendar months across the whole 3-phase program (29 for the current Aug 2026 – Dec 2028
-// dates) — used to widen the Fit-to-Budget membership ceiling in buildRecommendedRows, above, to
-// the program's TRUE horizon instead of budget.termMonths (which defaults to 12).
+// Total calendar months across the near-term (default 3-phase, 29-month) program — used by the
+// Proposal's recIntro copy for "the program funds approximately $X over its initial N-month
+// phased rollout" language. NOT the indefinite program's total (there isn't one — see Grand Total
+// removal, 2026-07-28) — this is specifically the bounded near-term commitment.
 function _pricingRecommendedProgramMonths() {
   return _pricingPhaseDateDefs().reduce(function (s, p) {
     return s + p.months;
@@ -7006,7 +7106,11 @@ function _pricingMonthlyAllowanceAmount(budget) {
    Returns null when no budget.amount is configured (same silent-until-configured convention as
    the rest of this feature) — callers fall back to the pre-existing measures-total-only view.
    ─────────────────────────────────────────────────────────────────────────── */
-function _pricingComputeProgramCostModel(projId) {
+// phaseCount (2026-07-28, indefinite-phase rebuild): defaults to 3, so every pre-existing caller
+// (recIntro's near-term-rollout copy, the Monthly Service Agreement widget, the Fit-to-Budget
+// ceiling context) is byte-unchanged. _pricingComputeRecommendedTimeline is the only caller that
+// passes a larger count, requesting as many phases as its indefinite packing loop actually needs.
+function _pricingComputeProgramCostModel(projId, phaseCount) {
   var budget = _pricingGetBudget(projId);
   var monthlyAllowance = _pricingMonthlyAllowanceAmount(budget);
   if (monthlyAllowance == null) return null;
@@ -7019,7 +7123,7 @@ function _pricingComputeProgramCostModel(projId) {
   var bd = _pricingComputeMonthlyLaborBreakdown(projId); // recurring EM labor breakdown — Program & Sequence Setup deliberately excluded (priced in measures instead)
 
   var absoluteMonth = 0; // climbs across phase boundaries so the Month-1..3 ramp only ever applies once, at the true start of the program
-  var phases = _pricingPhaseDateDefs().map(function (p) {
+  var phases = _pricingPhaseDateDefs(phaseCount).map(function (p) {
     var allowanceTotal = Math.round(p.months * monthlyAllowance * 100) / 100;
     var emLaborHours = 0;
     for (var i = 0; i < p.months; i++) {
@@ -7081,12 +7185,22 @@ function _pricingComputeProgramCostModel(projId) {
   };
 }
 
-/* ── Recommended tier 3-phase implementation timeline (Task 2, 2026-07-22; rebuilt 2026-07-26
-   fix/phase-cost-budget-model; rebuilt AGAIN 2026-07-26 same branch — global ROI ranking) ───────
+/* ── Recommended tier INDEFINITE implementation timeline (Task 2, 2026-07-22; rebuilt 2026-07-26
+   fix/phase-cost-budget-model; rebuilt AGAIN 2026-07-26 same branch — global ROI ranking; rebuilt
+   AGAIN 2026-07-28 fix/pricing-phases-and-sensor-hours, backlog 8d7911c1 — indefinite phases) ────
    Matt's ask: a calendar-phase rollout plan for the RECOMMENDED tier specifically — Phase 1
-   Aug-Dec 2026, Phase 2 all of CY2027, Phase 3 all of CY2028. No calendar-phase concept existed
-   anywhere in this file before this — the pre-existing row `phase:1`/`phase:2` fields mean
+   Aug-Dec 2026, every phase after that one full calendar year, CONTINUING INDEFINITELY until every
+   recommended unit has a phase (Matt: "This is literally a monthly ongoing service… there is no
+   total ever" — a fixed phase count would silently cap the schedule the same way the old
+   membership ceiling silently capped tier membership, which this same task removed from
+   buildRecommendedRows above). No calendar-phase concept existed anywhere in this file before the
+   original 2026-07-22 version — the pre-existing row `phase:1`/`phase:2` fields mean
    Hardware-install vs Labor-programming (a WITHIN-a-year categorization), unrelated to this.
+   Display is bounded ONLY at the render layer: the Service Proposal (a client-facing sales
+   document) shows the first 3 phases only (through 2028) — see report-engine.js's
+   _rptA36PhaseTableInnerHTML/_rptA36VisionInnerHTML/_rptA36RecommendedTimelineHTML, each of which
+   slices `tl.phases` to 3 before rendering. The Cost Estimate tab (_pricingRecommendedTimelineHTML,
+   Matt's internal planning tool) renders every phase this function returns, unbounded.
 
    Two DIFFERENT dollar figures are now tracked per phase, deliberately, because they answer two
    different questions (see item 4 of the task spec — "give them clear, distinct labels so no
@@ -7130,13 +7244,17 @@ function _pricingComputeProgramCostModel(projId) {
      3. A single multi-round greedy first-fit walk (same bin-pack-with-carry mechanics the prior
         per-building version used, just operating on the global ranked list instead of one
         building's rows at a time): each round offers every still-pending unit, in ROI order, to
-        the CURRENT phase's own envelope; a unit too big to fit is deferred to the next round
-        (next phase) — never bumping a smaller, lower-ranked unit that DOES fit out of the way.
-        phaseIdx only advances forward; Phase 3's envelope is treated as Infinity DURING THIS PASS
-        ONLY so nothing is ever permanently stranded before the repair pass (step 6) gets a chance
-        to redistribute it against Phase 3's real envelope. Ranking at UNIT (not raw-row)
-        granularity also keeps a sequence and the hardware it needs together in the same phase — a
-        measure is never sold half-installed across two phases.
+        the CURRENT phase's own REAL envelope (2026-07-28: no more Infinity safety-valve phase —
+        every phase's envelope, including the last one generated, is its own real
+        measuresAvailable); a unit too big to fit is deferred to the next round, which GENERATES a
+        new phase on demand (_pricingPhaseDateDefs/_pricingComputeProgramCostModel called with an
+        increasing count) rather than reading from a fixed 3-element array — never bumping a
+        smaller, lower-ranked unit that DOES fit out of the way. phaseIdx only advances forward and
+        is capped at PRICING_MAX_RECOMMENDED_PHASES purely as a runaway-loop safety valve (should
+        never be reached on real data — see that constant's own comment); anything still pending at
+        the cap is placed in the final generated phase rather than lost. Ranking at UNIT (not
+        raw-row) granularity also keeps a sequence and the hardware it needs together in the same
+        phase — a measure is never sold half-installed across two phases.
      4. A building can now legitimately appear in more than one phase's list far more often than
         before (its measures are scattered across the ROI ranking, not walked as one contiguous
         block) — `phases[i].buildings` still collects each building name at most once per phase.
@@ -7208,24 +7326,35 @@ function _pricingComputeRecommendedTimeline(projId) {
   });
 
   var grand = grandTotals.grand;
-  var defs = _pricingPhaseDateDefs();
-  var costModel = _pricingComputeProgramCostModel(projId); // null when no budget.amount configured
+  // hasBudget: cheap 1-phase presence check — avoids computing the (potentially many-phase) cost
+  // model twice just to learn whether a budget.amount is configured at all.
+  var hasBudget = _pricingComputeProgramCostModel(projId, 1) !== null;
 
-  // Each phase's OWN envelope for MEASURES specifically — measuresAvailable (the calendar
-  // allowance net of that phase's own EM labor cost), not the gross allowanceTotal — when a
-  // budget is configured, since allowanceTotal includes dollars already committed to EM labor and
-  // is not itself an envelope for hardware/programming measures (task item 2: "assign measures
-  // per phase against that phase's own budget envelope"). Otherwise falls back to an even
-  // 1/3-of-measures-grand split (pre-existing behavior, still needed for the no-budget case).
-  // NON-cumulative deliberately (2026-07-26 bin-pack rebuild): each phase is checked against ITS
-  // OWN phaseShare[i], never a running cumulative ceiling — a cumulative ceiling let unused slack
-  // in an earlier phase silently roll forward and inflate a LATER phase's admission budget (Phase
-  // 1 finishing $6.7k under its envelope let Phase 2 over-admit by the same ~$6.7k under a
-  // cumulative check), which is exactly the kind of silent cross-phase borrowing the invariant
-  // forbids.
-  var phaseShare = defs.map(function (d, i) {
-    return costModel ? costModel.phases[i].measuresAvailable : grand / 3;
-  });
+  // defs/phaseShare/phaseUnits are grown ON DEMAND by _pricingEnsureTimelinePhase below, as the
+  // greedy walk needs another phase — never pre-declared to a fixed length (2026-07-28, indefinite
+  // rebuild, backlog 8d7911c1). Each phase's OWN envelope is measuresAvailable specifically (the
+  // calendar allowance net of that phase's own EM labor cost), not the gross allowanceTotal — when
+  // a budget is configured, since allowanceTotal includes dollars already committed to EM labor and
+  // is not itself an envelope for hardware/programming measures (task item 2: "assign measures per
+  // phase against that phase's own budget envelope"). With no budget configured, every phase falls
+  // back to an even grand/3 share (pre-existing behavior for the no-budget case, unchanged) — since
+  // any 3 phases' grand/3 shares sum to exactly `grand`, the backlog is mathematically guaranteed to
+  // drain in a finite number of phases even in that fallback.
+  // NON-cumulative deliberately (2026-07-26 bin-pack rebuild, unchanged by this indefinite rebuild):
+  // each phase is checked against ITS OWN phaseShare[i], never a running cumulative ceiling — a
+  // cumulative ceiling let unused slack in an earlier phase silently roll forward and inflate a
+  // LATER phase's admission budget (Phase 1 finishing $6.7k under its envelope let Phase 2
+  // over-admit by the same ~$6.7k under a cumulative check), which is exactly the kind of silent
+  // cross-phase borrowing the invariant forbids.
+  var defs = [];
+  var phaseShare = [];
+  var phaseUnits = [];
+  function _pricingEnsureTimelinePhase(i) {
+    if (defs[i]) return;
+    defs[i] = _pricingPhaseDateDefs(i + 1)[i];
+    phaseShare[i] = hasBudget ? _pricingComputeProgramCostModel(projId, i + 1).phases[i].measuresAvailable : grand / 3;
+    phaseUnits[i] = [];
+  }
 
   // ── Global ROI-ranked units ────────────────────────────────────────────────────────────────
   // _pricingBuildRoiUnits (the SAME pairing/scoring engine buildRecommendedRows uses for tier
@@ -7275,24 +7404,55 @@ function _pricingComputeRecommendedTimeline(projId) {
   // hardware-readiness group (see _pricingSortUnitsNoHwFirst) so it can never cross that boundary.
   units = _pricingSortUnitsNoHwFirst(units);
 
-  // phaseUnits: UNIT-granularity working set for the greedy walk + repair pass below (kept
-  // separate from the final `phases` rows/buildings/total view, which is derived once at the end
-  // — see step 6 of the header comment). Tracking whole units (never individual rows) here is
-  // what keeps a sequence and the hardware it needs together through every relocate/swap.
-  var phaseUnits = [[], [], []];
+  // phaseUnits (built by _pricingEnsureTimelinePhase above, one entry per generated phase): the
+  // UNIT-granularity working set for the greedy walk + repair pass below (kept separate from the
+  // final `phases` rows/buildings/total view, which is derived once at the end — see step 6 of the
+  // header comment). Tracking whole units (never individual rows) here is what keeps a sequence and
+  // the hardware it needs together through every relocate/swap.
+  //
+  // PRICING_MAX_RECOMMENDED_PHASES (2026-07-28, indefinite rebuild): a runaway-loop safety valve
+  // ONLY — should never be reached on real data (every real unit is a few hundred to a few thousand
+  // dollars; a monthly/annual measures envelope in the tens of thousands admits many units per
+  // phase, so the backlog drains in a handful of phases in practice). If a single unit's total
+  // genuinely exceeds every phase's envelope forever (pathological data), whatever is still pending
+  // at this cap is placed in the LAST generated phase rather than looping forever — that phase's
+  // overCommitted flag (computed later in this function) then surfaces the residual non-silently,
+  // the same "never hide a genuine overage" convention as the rest of this file.
+  var PRICING_MAX_RECOMMENDED_PHASES = 500;
   // Multi-round greedy first-fit walk over the GLOBAL ROI-ranked unit list — see step 3 of the
   // header comment above. Replaces the prior per-building walk (preserved in git history) with the
   // same bin-pack-with-carry mechanics, just operating on ranked units across the whole portfolio
   // instead of one building's rows at a time; there is no "per building" boundary to reset
-  // phaseIdx against anymore — phaseIdx only ever advances forward.
+  // phaseIdx against anymore — phaseIdx only ever advances forward, generating a new calendar phase
+  // on demand each time it does (2026-07-28: no more fixed 3-element array, no more Infinity
+  // safety-valve phase — every phase's envelope is its own real measuresAvailable).
+  // Oversized-unit guard (2026-07-28, found during verification against real JOCO data): a single
+  // "unit" can legitimately be larger than one whole calendar phase's measures envelope — e.g. a
+  // consolidated multi-device row (buildCatalogRows groups by point-type + equipment-type PER
+  // BUILDING, so "44 AHUs needing a duct-static sensor at this building" can be ONE row/unit whose
+  // total is well into six figures, far above a single year's ~$41.8k steady-state envelope). Since
+  // every phase from index 1 onward shares the same steady-state envelope (constant monthly
+  // allowance, constant recurring EM labor), such a unit can NEVER satisfy `runningTotal + item.total
+  // <= envelope` in ANY phase, however many are generated — without this guard the walk would spin
+  // through phase after phase forever (empty phases, since nothing else fits either once smaller
+  // units are exhausted) until PRICING_MAX_RECOMMENDED_PHASES's safety valve finally dumped it,
+  // wasting hundreds of phantom empty phases. Fix: a unit that would not fit even a completely EMPTY
+  // phase (item.total > envelope) is admitted into the current phase anyway THE FIRST TIME that
+  // phase is empty (runningTotal === 0) — it becomes that phase's one deliberate, real, surfaced
+  // overage (via overCommitted/overageAmount below) rather than being deferred to a future phase
+  // that can never help. Never splits a unit across phases — that invariant ("a measure is never
+  // sold half-installed") is preserved; this only changes WHICH single phase absorbs it.
   var pending = units;
   var phaseIdx = 0;
-  while (pending.length) {
-    var envelope = phaseIdx < 2 ? phaseShare[phaseIdx] : Infinity;
+  while (pending.length && phaseIdx < PRICING_MAX_RECOMMENDED_PHASES) {
+    _pricingEnsureTimelinePhase(phaseIdx);
+    var envelope = phaseShare[phaseIdx];
     var runningTotal = 0;
     var stillPending = [];
     pending.forEach(function (item) {
-      if (phaseIdx === 2 || runningTotal + item.total <= envelope) {
+      var fits = runningTotal + item.total <= envelope;
+      var forceAdmitOversized = !fits && runningTotal === 0 && item.total > envelope;
+      if (fits || forceAdmitOversized) {
         phaseUnits[phaseIdx].push(item);
         runningTotal += item.total;
       } else {
@@ -7300,21 +7460,38 @@ function _pricingComputeRecommendedTimeline(projId) {
       }
     });
     pending = stillPending;
-    if (pending.length) {
-      if (phaseIdx < 2) phaseIdx++;
-      else break; // unreachable safety net — phaseIdx 2 uses an Infinity envelope, so pending always empties above
-    }
+    if (pending.length) phaseIdx++;
+  }
+  if (pending.length) {
+    // Safety valve reached (see PRICING_MAX_RECOMMENDED_PHASES comment above) — should never
+    // happen on real data. Non-silent: logged, and the residual is visible via the last phase's
+    // overCommitted flag rather than dropped.
+    var _lastCreatedIdx = phaseIdx > 0 ? phaseIdx - 1 : 0;
+    _pricingEnsureTimelinePhase(_lastCreatedIdx);
+    phaseUnits[_lastCreatedIdx] = phaseUnits[_lastCreatedIdx].concat(pending);
+    console.error(
+      '[_pricingComputeRecommendedTimeline] SAFETY VALVE: ' +
+        pending.length +
+        ' unit(s) still pending after ' +
+        PRICING_MAX_RECOMMENDED_PHASES +
+        ' generated phases — placed in the final phase (' +
+        defs[_lastCreatedIdx].label +
+        ') rather than looped forever. Should never happen on real data — investigate if seen.',
+    );
   }
 
   // ── Repair pass — step 6 of the header comment above ──────────────────────────────────────
-  // realEnvelope: the TRUE per-phase envelope, including phase index 2 (the greedy walk above
-  // used Infinity there deliberately so nothing was permanently stranded before this pass runs).
+  // realEnvelope: the TRUE per-phase envelope for every generated phase (2026-07-28: no more
+  // Infinity-envelope safety-valve phase to special-case here — every phaseShare entry already IS
+  // each phase's real envelope).
   var realEnvelope = phaseShare.slice();
   var repairLog = []; // every relocate/swap actually performed — surfaced on the return value for verification/reporting, not rendered anywhere
   // REPAIR_MAX_PASSES: scales with portfolio size (6 full relocate-then-swap passes per unit,
   // floored at 50) instead of a flat constant tuned to JOCO's ~49-unit portfolio, so this can't
-  // loop unboundedly on a much larger one. Each pass itself does O(unitsInPhase^2) work across at
-  // most 3 phases, so total work stays polynomial in unit count.
+  // loop unboundedly on a much larger one. Each pass itself does O(unitsInPhase^2) work across
+  // phaseUnits.length phases (2026-07-28: no longer a fixed 3 — however many phases the greedy
+  // walk actually generated, bounded by PRICING_MAX_RECOMMENDED_PHASES), so total work stays
+  // polynomial in unit count.
   var REPAIR_MAX_PASSES = Math.max(50, units.length * 6);
   var _repairPhaseTotal = function (i) {
     return phaseUnits[i].reduce(function (s, u) {
@@ -7449,6 +7626,13 @@ function _pricingComputeRecommendedTimeline(projId) {
       }
     }
   }
+
+  // costModel (2026-07-28, indefinite rebuild): computed ONCE here, now that the greedy walk +
+  // repair pass have settled on the final phase count (phaseUnits.length) — every downstream
+  // costModel.phases[i] lookup below (allowanceTotal/emLaborTotal/measuresAvailable per phase,
+  // programAllowanceTotal/programEmLaborTotal/monthlyAllowance on the return value) now covers
+  // every generated phase, not just a fixed first 3.
+  var costModel = hasBudget ? _pricingComputeProgramCostModel(projId, phaseUnits.length) : null;
 
   // Flatten the repaired unit assignment into the rows/buildings/total shape the rest of this
   // function (and every downstream caller) expects — buildings is rebuilt from `naturalRank` order
@@ -7796,8 +7980,6 @@ function _pricingRecommendedTimelineHTML(projId) {
     })
     .join('');
 
-  var footTotalAllowance = hasBudget ? tl.programAllowanceTotal : tl.measuresGrandTotal;
-
   // EM-labor-vs-measures caption (task verify requirement: prove measures don't consume the
   // whole allowance) — silent when no budget is configured (same convention as the rest of this
   // feature).
@@ -7842,10 +8024,18 @@ function _pricingRecommendedTimelineHTML(projId) {
   // ui-standards.md documents for the Top ROI card and _pricingLaborBreakdownHTML immediately
   // above) — without this, an unbounded table stacked as a flex-shrink:0 sibling under the
   // fixed-height, overflow:hidden `.ch-panel` gets silently CLIPPED past the panel's bottom edge
-  // (verified: `.ch-panel` scrollHeight 965 vs clientHeight 815 before this fix — Phase 2/Phase 3/
-  // Total rows were invisible with no way to scroll to them). 220px comfortably shows all 4 rows
-  // (3 phases + total) for a typical portfolio; a longer building list just scrolls within this
-  // box instead of pushing the whole panel past its layout budget.
+  // (verified: `.ch-panel` scrollHeight 965 vs clientHeight 815 before this fix — later rows were
+  // invisible with no way to scroll to them). 220px comfortably shows several phase rows for a
+  // typical portfolio; a longer indefinite phase list just scrolls within this box instead of
+  // pushing the whole panel past its layout budget — same reasoning as before, just no longer
+  // bounded to "3 phases" specifically now that the schedule is indefinite.
+  //
+  // No footer total row (2026-07-28, fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): this
+  // used to close with a "Program Total (Service Allowance)" tfoot summing every phase's allowance/
+  // measures together — the exact "grand total" category error Matt rejected for an indefinite
+  // ongoing service ("there is no total ever"), now made literally unbounded once phases stopped
+  // being capped at 3. Removed rather than renamed; each phase row already shows its own Phase
+  // Service Allowance / Priced Measures This Phase figures.
   return (
     '<div style="margin:10px 14px 0;flex-shrink:0">' +
     '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:11px;text-transform:uppercase;' +
@@ -7859,15 +8049,6 @@ function _pricingRecommendedTimelineHTML(projId) {
     '<tbody>' +
     bodyRows +
     '</tbody>' +
-    '<tfoot><tr><td colspan="3" style="padding:8px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">' +
-    (hasBudget ? 'Program Total (Service Allowance)' : 'Total (no budget configured)') +
-    '</td>' +
-    '<td style="padding:8px 10px;text-align:right;font-weight:700;background:var(--s1);border-top:2px solid var(--border2);font-variant-numeric:tabular-nums">' +
-    _pricingFmt(footTotalAllowance) +
-    '</td>' +
-    '<td style="padding:8px 10px;text-align:right;font-weight:700;background:var(--s1);border-top:2px solid var(--border2);font-variant-numeric:tabular-nums;color:var(--text2)">' +
-    _pricingFmt(tl.measuresGrandTotal) +
-    '</td></tr></tfoot>' +
     '</table>' +
     '</div>' +
     laborCaption +
@@ -8517,7 +8698,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         _pricingFmt(_rowRate) +
         '<span style="font-size:10px;color:var(--text3)">/hr</span></span>';
     } else if (row.phase === 1 && !row.ioOnly && row._pointKey) {
-      var _instRowRate = row.installLaborRate != null ? row.installLaborRate : cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
+      var _instRowRate =
+        row.installLaborRate != null ? row.installLaborRate : cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
       rateContent =
         '<span style="font-size:11px">' +
         _pricingFmt(_instRowRate) +
@@ -9231,13 +9413,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
         (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
         '</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Total: ' +
-        (totals.grand !== null
-          ? totals.noCatalog
-            ? 'Labor: ' + _pricingFmt(totals.grand)
-            : _pricingFmt(totals.grand)
-          : '—') +
-        '</span>',
       '<span style="color:var(--border2)">|</span>',
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Recommended — Hardware: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
@@ -9246,13 +9421,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Programming: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
         (recTotals.grand !== null ? _pricingFmt(recTotals.phase2) : '—') +
-        '</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums">Total: ' +
-        (recTotals.grand !== null
-          ? recTotals.noCatalog
-            ? 'Labor: ' + _pricingFmt(recTotals.grand)
-            : _pricingFmt(recTotals.grand)
-          : '—') +
         '</span>',
     );
   } else {
@@ -9268,14 +9436,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 2 Programming:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
         (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
-        '</span>',
-      '<span style="color:var(--border2)">|</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-        (totals.grand !== null
-          ? totals.noCatalog
-            ? 'Labor: ' + _pricingFmt(totals.grand)
-            : _pricingFmt(totals.grand)
-          : '—') +
         '</span>',
     );
   }
@@ -9355,26 +9515,20 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // b771dec6 3b: M&V disclaimer moved from here into the Top ROI card
   // (see _pricingTopRoiCallout's `showDisclaimer` param / call site below).
 
-  // 174ad49a Phase 2: budget-vs-total indicator — every tier, including Compare (where it
-  // compares against Recommended, the tier the original budget complaint was about).
+  // 174ad49a Phase 2: budget-vs-total indicator — Compliance/Full-Scope only as of 2026-07-28
+  // (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1). This used to also compare the
+  // Recommended tier's total against the program-wide net-of-labor ceiling (the same ceiling
+  // buildRecommendedRows used to cap membership against) — that ceiling is REMOVED (Recommended
+  // now schedules its full, unbounded scope across as many ROI-ordered phases as it takes,
+  // indefinitely), so comparing an ever-growing indefinite total against a bounded near-term
+  // figure would always read "OVER budget" and is no longer a meaningful signal — see the phased
+  // Implementation Timeline table instead, which shows exactly what fits each real period. Kept
+  // for Compliance/Full-Scope, which remain genuine one-time capital-project totals a budget
+  // ceiling comparison still makes sense for.
   var _budgetForFooter = _pricingGetBudget(projId);
-  var _budgetCompareTotal = isBothMode ? (recTotals ? recTotals.grand : null) : totals.grand;
-  // 2026-07-26 ceiling-netting fix: this footer's total IS the Recommended tier's total whenever
-  // tier==='recommended' OR isBothMode ('vs Recommended' always compares recTotals) — in both
-  // cases it must be compared against the SAME ceiling buildRecommendedRows() actually used (see
-  // _pricingBudgetVsTotalHTML's header comment), not the generic term-based figure.
-  var _recCeilingOverride = null;
-  if ((tier === 'recommended' || isBothMode) && _budgetForFooter.mode === 'recurring') {
-    var _recCostModelForFooter = _pricingComputeProgramCostModel(projId);
-    if (_recCostModelForFooter) _recCeilingOverride = _recCostModelForFooter.programMeasuresAvailable;
-  }
+  var _budgetCompareTotal = tier === 'recommended' || isBothMode ? null : totals.grand;
   footerParts.push(
-    _pricingBudgetVsTotalHTML(
-      _budgetForFooter,
-      _budgetCompareTotal,
-      isBothMode ? 'vs Recommended' : '',
-      _recCeilingOverride,
-    ),
+    _pricingBudgetVsTotalHTML(_budgetForFooter, _budgetCompareTotal, isBothMode ? 'vs Recommended' : '', null),
   );
 
   footerParts.push('</div>');
@@ -9792,34 +9946,16 @@ function _pricingComputeSummaryData(projId, estimate) {
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
         (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
         '</span>',
-      '<span style="color:var(--border2)">|</span>',
-      '<span style="font-size:13px;font-weight:700;color:var(--em);font-variant-numeric:tabular-nums">Grand Total: ' +
-        (totals.grand !== null
-          ? totals.noCatalog
-            ? 'Labor: ' + _pricingFmt(totals.grand)
-            : _pricingFmt(totals.grand)
-          : '—') +
-        '</span>',
       filterNote,
       '<span style="flex:1"></span>',
       '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
       '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatParts.join(' · ') + '</span>',
       tier === 'recommended' ? _pricingAdvisoryLineHTML(_anySavingsShown) : '', // 45ceb14f: was missing entirely
-      // 2026-07-26 ceiling-netting fix: same override as the full-render footer above — tier here
-      // is always 'compliance' or 'recommended' (see the guard comment a few lines up), so only
-      // 'recommended' needs the program-wide net-of-labor ceiling swapped in.
-      _pricingBudgetVsTotalHTML(
-        _pricingGetBudget(projId),
-        totals.grand,
-        '',
-        (function () {
-          if (tier !== 'recommended') return null;
-          var _b = _pricingGetBudget(projId);
-          if (_b.mode !== 'recurring') return null;
-          var _cm = _pricingComputeProgramCostModel(projId);
-          return _cm ? _cm.programMeasuresAvailable : null;
-        })(),
-      ), // 174ad49a Phase 2
+      // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): Compliance/Full-Scope
+      // only, same as the full-render footer above — the program-wide net-of-labor ceiling
+      // Recommended used to compare against is REMOVED (Recommended is now an unbounded,
+      // indefinite scope), so this widget no longer renders anything for tier === 'recommended'.
+      _pricingBudgetVsTotalHTML(_pricingGetBudget(projId), tier === 'recommended' ? null : totals.grand, '', null), // 174ad49a Phase 2
       '</div>',
     ].join('');
   };
