@@ -1576,6 +1576,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.719',
+    date: '2026-07-29',
+    title: 'Service Proposal no longer states a fixed cost total or timeline',
+    items: [
+      {
+        type: 'change',
+        text: 'Service Proposal: the Stage 1 / Stage 2 whole-project dollar totals are gone. Assessment Findings and the Recommended Program now describe only the monthly service allowance ($6,250/month) that funds the work.',
+      },
+      {
+        type: 'change',
+        text: 'Service Proposal phase tables now show priority order ("First priority", "Second priority", "Third priority") instead of calendar dates, with a note that phases are funded as completed with no fixed end date.',
+      },
+      {
+        type: 'feature',
+        text: 'Service Proposal: two new optional sections, "ASHRAE 36 Compliance" and "Full Scope", can be turned on when building a proposal. Each describes the categories of work covered, funded through the monthly allowance.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Services Agreement: the contract term and renewal dates are now written relative to the Effective Date (a 12-month initial term with automatic renewal) instead of fixed calendar years.',
+      },
+      {
+        type: 'change',
+        text: 'ASHRAE 36 Audit Report cover: the four summary figures (Buildings Assessed, HVAC Systems Audited, Sequences to Program, Sensors to Install) now read in story order, and the vertical divider lines between them are removed.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.718',
     date: '2026-07-29',
     title: 'Report text sizing fixed; audit report pagination corrected',
