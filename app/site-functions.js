@@ -1576,6 +1576,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.720',
+    date: '2026-07-29',
+    title: 'Cost Estimate tab: no more Grand Total; sensor investigation time now priced; phase schedule runs until everything is scheduled',
+    items: [
+      {
+        type: 'change',
+        text: 'Cost Estimate tab: the "Grand Total" line is gone from the footer on every tier. This is a monthly ongoing service program, not a one-time project, so there is no single total to show.',
+      },
+      {
+        type: 'change',
+        text: 'Cost Estimate tab, Recommended tier: the phase schedule no longer stops at a fixed 3-phase window. It now keeps adding phases, in priority order, until every recommended item has a place on the schedule.',
+      },
+      {
+        type: 'feature',
+        text: 'Cost Estimate tab: suspect or unreliable sensor readings found during the audit are now priced as investigation time (one hour each at the standard labor rate) so the cost of checking them out shows up in the estimate.',
+      },
+      {
+        type: 'change',
+        text: 'Cost Estimate tab, Recommended tier: measures that only need programming (no new hardware) are still prioritized toward the front of the schedule, but hardware work is no longer pushed entirely to the back — the highest-value hardware items can now compete for an earlier phase.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.719',
     date: '2026-07-29',
     title: 'Service Proposal no longer states a fixed cost total or timeline',
