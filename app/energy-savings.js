@@ -5675,8 +5675,16 @@ const UTILITY_RULES = [
           if (/Service\s+Address\s*[:;,.]?/i.test(ln)) {
             _inSites = true;
             // Extract building name (text between "Service Address:" and "Acct/Meter:")
+            // Fix (2026-07-28, gas-bill-ocr-extraction): the "Acct/Meter" LABEL's slash is
+            // frequently misread by OCR — verified on Inv 447604 (Apr 2025): "AcctUMeter",
+            // "AcctMeter" (slash dropped entirely). The old regex required a literal "/" in
+            // the label, so every site on that invoice silently lost its AccountNumber AND
+            // MeterNumber even though the VALUE side ("560189/T920419C") read back fine —
+            // only the label's punctuation was corrupted. Tolerate 0-2 stray characters
+            // (U/1/l/I/|/./space/etc, OCR's common misreads of "/") between "Acct" and
+            // "Meter" in the LABEL only; the VALUE separator below is unchanged.
             const _saM = ln.match(
-              /Service\s+Address\s*[:;,.]?\s*(.+?)\s+Acct\/Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
+              /Service\s+Address\s*[:;,.]?\s*(.+?)\s+Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
             );
             let _addr, _acct, _meter;
             if (_saM) {
@@ -5718,8 +5726,12 @@ const UTILITY_RULES = [
           }
 
           // Inline Acct/Meter on a line after Service Address (safety fallback)
-          if (_inSites && _cur && !_cur.AccountNumber && /Acct\/Meter\s*:/i.test(ln)) {
-            const _amM = ln.match(/Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i);
+          // Fix (2026-07-28, gas-bill-ocr-extraction): same label-slash OCR tolerance as
+          // the primary Service Address match above.
+          if (_inSites && _cur && !_cur.AccountNumber && /Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?/i.test(ln)) {
+            const _amM = ln.match(
+              /Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
+            );
             if (_amM) {
               _cur.AccountNumber = _amM[1].trim();
               _cur.MeterNumber = _amM[2].trim();
@@ -5929,7 +5941,44 @@ const UTILITY_RULES = [
       const results = [];
       for (let i = 0; i < siteBlocks.length; i++) {
         const blk = siteBlocks[i];
-        if (!blk.AccountNumber && blk.mmbtu == null) continue;
+        // Fix (2026-07-28, gas-bill-ocr-extraction): a site block that has NEITHER an
+        // AccountNumber NOR a usable mmbtu was previously `continue`d — silently dropped
+        // with zero trace. Verified on Inv 447604 (Apr 2025, low-DPI scan): 8 of this
+        // invoice's 10 known sites (per spring-hill.md's 10-site Wood River format) vanished
+        // this way with no warning, no manual-review row, nothing — the app showed 2 bills
+        // and gave no indication 8 more existed on the page. Same class of defect as
+        // b5951068 (per-page parse errors) but at the per-SITE level within one page. Surface
+        // it the same way: a flagged manual-review record carrying whatever was legible
+        // (ServiceAddress fragment, dollar-from-components fallback if any) so the user sees
+        // every site the invoice lists, even ones OCR couldn't fully read.
+        if (!blk.AccountNumber && blk.mmbtu == null) {
+          if (!blk.ServiceAddress && blk.dollar == null) continue; // truly nothing legible — not even a stub worth showing
+          results.push({
+            UtilityCompany: 'Wood River Energy',
+            Commodity: 'Gas',
+            _utilityName: 'Wood River Energy',
+            InvoiceNumber,
+            CustomerNumber,
+            AccountNumber: null,
+            MeterNumber: null,
+            ServiceAddress: blk.ServiceAddress || null,
+            BillingPeriodStart,
+            BillingPeriodEnd,
+            BillDate,
+            ProductionMonth,
+            NaturalGasMMbtu: null,
+            TotalCurrentCharges: blk.dollar || null,
+            TotalAmountDue: blk.dollar || null,
+            parseError: true,
+            _manualReview: true,
+            _manualReviewLabel:
+              'Parse error — site block unreadable (site #' +
+              (i + 1) +
+              (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
+              ' — OCR could not read account/meter or usage; re-run extraction or enter manually)',
+          });
+          continue;
+        }
 
         results.push({
           UtilityCompany: 'Wood River Energy',

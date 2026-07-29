@@ -1310,7 +1310,9 @@ function _analyzeWaterSewerParity(building) {
 function _gateA_evaluateCoverage() {
   const cov = window._pdfPageCoverage;
   window._pdfPageCoverage = null; // consume once, same convention as _pdfOcrBudgetExceeded
-  if (!cov || !cov.summary) return null;
+  if (!cov || !cov.summary) {
+    return null;
+  }
   const badBudget = cov.summary['skipped-budget'] || 0;
   const badCap = cov.summary['skipped-cap'] || 0;
   const badEmpty = cov.summary['ocr-empty'] || 0;
@@ -13222,12 +13224,17 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Meter Readings' },
     { type: 'pair', fields: ['MeterNumber', 'ReadDifference'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
-    // Fix 3 (60de292d): show only the gas-unit field(s) that are present on this bill.
-    // Each row has a condition so it is skipped when the field is null/empty.
+    { section: 'Charges' },
+    // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): CCF/MMbtu usage used to render
+    // under "Meter Readings" ABOVE "Charges" — Therms already showed correctly WITH its
+    // charge via the 'Gas' charge-line's qtyField below, so CCF/MMbtu bills were the only
+    // ones splitting usage from charges into two sections. Moved into Charges (still
+    // conditional — only the unit(s) actually present on this bill render) so every gas
+    // unit type shows usage alongside its charge consistently.
+    // Fix 3 (60de292d, preserved): show only the gas-unit field(s) present on this bill.
     { type: 'pair', fields: ['NaturalGasTherms'], condition: 'NaturalGasTherms' },
     { type: 'pair', fields: ['NaturalGasCCF'], condition: 'NaturalGasCCF' },
     { type: 'pair', fields: ['NaturalGasMMbtu', 'ProductionMonth'], condition: 'NaturalGasMMbtu' },
-    { section: 'Charges' },
     { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge', rateKey: null },
     {
       type: 'charge-line',
@@ -13256,9 +13263,13 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Billing Period' },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
     { type: 'pair', fields: ['BillDate', 'ProductionMonth'] },
-    { section: 'Meter Readings' },
-    { type: 'pair', fields: ['NaturalGasMMbtu'] },
     { section: 'Charges' },
+    // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): usage (NaturalGasMMbtu) used to
+    // render under its own "Meter Readings" section ABOVE "Charges" — the exact "gas usage
+    // reading in its own separate section instead of with the charges" complaint. Moved
+    // into the Charges section (as the first row) so usage and the charges it produced are
+    // read together, not split across two headers.
+    { type: 'pair', fields: ['NaturalGasMMbtu'] },
     // Per-site charge component lines (from Fix 1 extractor — a84458f0 defect 1)
     // _wreTriggerCharge/_wreIndexCharge/_wreSWECharge are underscore-prefixed, so they
     // are excluded from the extra-field tail by the startsWith('_') filter.
