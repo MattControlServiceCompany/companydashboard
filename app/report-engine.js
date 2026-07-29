@@ -13002,6 +13002,43 @@ function _a36SeqRequiredSensorLabels(seq) {
  */
 function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   var p = d.portfolio;
+  // Consolidated sensor/sequence counts (2026-07-29 fix) — the cover previously printed
+  // p.totalMissingHardwarePoints / p.totalNotReadySequences, RAW per-equipment-unit accumulators
+  // from collectASHRAE36Data (see ~line 12157/12451/12461) that count every equipment row's gaps
+  // independently. The priced scope (buildCatalogRows, app/pricing-estimator.js) applies three
+  // exclusions the raw counters never see: (1) monitoring-only zone units — equipment rows missing
+  // BOTH coolSP and htgSP are dropped entirely by _pricingIsMonitoringOnlyZoneUnit before any row
+  // is generated, for every category, not just those two; (2) ioOnly points, which wire to
+  // existing controller I/O — $0 parts, 0 install hours, not new hardware; (3) building-level
+  // dedup (oat / oaWetBulb / damper-position / zoneTemp+co2 combos) that collapses many
+  // per-equipment gaps into one physical device. Measured 2026-07-29 on real JOCO data: raw
+  // sensors 4,049 vs. consolidated 1,311 (a 67.6% overcount); raw sequences 1,764 vs. consolidated
+  // 1,313 (a 25.6% overcount). Matt: "we will look stupid if we tell them they need a bunch of
+  // things and then we get started and realize they don't need any of it." The cover is the
+  // client-facing, highest-stakes number in the deliverable — it must always match the priced
+  // scope, so it is derived here from buildCatalogRows, never hardcoded, so it tracks the priced
+  // scope automatically as pricing rules evolve. Sensors = sum of qty where phase===1 && !ioOnly
+  // (phase 1 = hardware rows; ioOnly rows are $0/no-install and are not "sensors to install").
+  // Sequences = sum of qty where phase===2 (phase 2 = sequence-programming rows). Defensive
+  // fallback to the raw portfolio totals if buildCatalogRows is unavailable for any reason (should
+  // never happen on energy-department.html, which always loads pricing-estimator.js alongside
+  // report-engine.js, but avoids a hard crash if this function is ever reused in a context that
+  // doesn't).
+  var _a36ConsolidatedSensors = p.totalMissingHardwarePoints;
+  var _a36ConsolidatedSequences = p.totalNotReadySequences;
+  if (typeof buildCatalogRows === 'function') {
+    var _a36CatalogRows = buildCatalogRows(d.project.id) || [];
+    var _a36SensorSum = 0;
+    var _a36SeqSum = 0;
+    _a36CatalogRows.forEach(function (r) {
+      if (r.phase === 1 && !r.ioOnly) _a36SensorSum += r.qty || 0;
+      else if (r.phase === 2) _a36SeqSum += r.qty || 0;
+    });
+    if (_a36CatalogRows.length) {
+      _a36ConsolidatedSensors = _a36SensorSum;
+      _a36ConsolidatedSequences = _a36SeqSum;
+    }
+  }
   var color =
     p.composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
       ? 'var(--rpt-green)'
@@ -13026,12 +13063,12 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     ' of HVAC equipment</strong>, <strong>' +
     d.project.name +
     '</strong> needs <strong>' +
-    p.totalNotReadySequences +
+    _a36ConsolidatedSequences +
     ' control sequence' +
-    (p.totalNotReadySequences !== 1 ? 's' : '') +
+    (_a36ConsolidatedSequences !== 1 ? 's' : '') +
     ' programmed</strong> and <strong>' +
-    p.totalMissingHardwarePoints +
-    (p.totalMissingHardwarePoints === 1 ? ' sensor or actuator' : ' sensors and actuators') +
+    _a36ConsolidatedSensors +
+    (_a36ConsolidatedSensors === 1 ? ' sensor or actuator' : ' sensors and actuators') +
     ' installed</strong>. ' +
     // a562fd67: the cover's forward-looking promise must match whether the report actually
     // includes per-building detail pages. perBuildingIncluded is passed true only when the
@@ -13095,13 +13132,13 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    p.totalNotReadySequences +
+    _a36ConsolidatedSequences +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sequences to Program</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    p.totalMissingHardwarePoints +
+    _a36ConsolidatedSensors +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sensors to Install</div>' +
     '</div>' +
