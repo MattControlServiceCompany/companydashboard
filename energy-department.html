@@ -2958,17 +2958,16 @@
       }
 
       /* -- ASHRAE 36 Cover scope-of-work stats --
-         No box/card treatment (feature/report-layer-isolation-and-theme, 2026-07-28,
-         supersedes the earlier "clean full border" compromise below) — plain numbers with a
-         label underneath, separated only by a thin rule between columns, matching
-         .rpt-bl-stats elsewhere in this report. */
+         2026-07-29 (Matt's direct instruction, supersedes the 2026-07-28 "thin rule between
+         columns" compromise below): "The lines separating the Sensors to Install, Sequences to
+         Program, HVAC Systems Audited, Buildings Assessed should never be done like that in a
+         report, it does not look very human... use no lines at all for that which would probably
+         look better overall." Separator border-right rule REMOVED entirely (no bordered-table
+         alternative either, per his stated lean) — plain numbers with a label underneath,
+         spacing-only separation via the parent flex `gap`. */
       .rpt-a36-stat-card {
         text-align: center;
         padding: 10px 12px;
-        border-right: 1px solid var(--rpt-rule);
-      }
-      .rpt-a36-stat-card:last-child {
-        border-right: none;
       }
     </style>
 
