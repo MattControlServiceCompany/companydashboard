@@ -240,39 +240,19 @@ function collectAgreementData(projId, templateType, opts) {
   var effDate = cfg.effectiveDate ? new Date(cfg.effectiveDate + 'T00:00:00') : new Date();
   if (isNaN(effDate)) effDate = new Date();
 
-  // Initial Term end date — bound to Phase 1's end [year, month] from the raw
-  // _PRICING_PHASE_DATE_RANGES (not the pre-formatted dateRange string, which only carries a
-  // 3-letter month abbreviation and no day-of-month), grounded in a confirmed match: JOCO's own
-  // source Agreement says "until December 31st, 2026," which is EXACTLY the JOCO Phase 1 end
-  // month in the live phase schedule (Aug 2026 - Dec 2026). This resolves the base document's
-  // blank/incomplete term concept with a live-derived date instead of a hardcoded one — using the
-  // LAST CALENDAR DAY of that end month (new Date(year, month, 0) trick), matching "December 31st".
-  var initialTermEndLabel = null;
-  if (typeof _PRICING_PHASE_DATE_RANGES !== 'undefined' && _PRICING_PHASE_DATE_RANGES.length) {
-    var p1End = _PRICING_PHASE_DATE_RANGES[0].end; // [year, month] e.g. [2026, 12]
-    var lastDay = new Date(p1End[0], p1End[1], 0).getDate();
-    var ord =
-      lastDay % 10 === 1 && lastDay !== 11
-        ? 'st'
-        : lastDay % 10 === 2 && lastDay !== 12
-          ? 'nd'
-          : lastDay % 10 === 3 && lastDay !== 13
-            ? 'rd'
-            : 'th';
-    initialTermEndLabel = _AGREEMENT_MONTHS[p1End[1] - 1] + ' ' + lastDay + ord + ', ' + p1End[0];
-  }
-
-  // First Renewal Date — the day after the Initial Term ends (Matt confirmed 2026-07-28: the Term
-  // renews automatically for successive one-year terms, and escalation is keyed to that renewal
-  // date rather than the Effective Date anniversary — the program runs Aug 2026 - Dec 2028, so an
-  // Effective-Date-anniversary trigger would fire mid-term and never align with a renewal). Derived
-  // from the SAME p1End used above (January 1 of the year following the Initial Term's end year),
-  // not hardcoded, so it tracks the live phase schedule exactly like initialTermEndLabel does.
-  var renewalDateLabel = null;
-  if (typeof _PRICING_PHASE_DATE_RANGES !== 'undefined' && _PRICING_PHASE_DATE_RANGES.length) {
-    var _p1EndForRenewal = _PRICING_PHASE_DATE_RANGES[0].end; // [year, month]
-    renewalDateLabel = 'January 1, ' + (_p1EndForRenewal[0] + 1);
-  }
+  // 2026-07-29 (fix/proposal-remove-fixed-anchors, Matt's sharpened rule, verbatim: "there is no
+  // guarantee we will have an agreement for 2027 and 2028 so I would probably not anchor on that
+  // date ever... That is a terrible idea."): initialTermEndLabel/renewalDateLabel used to derive a
+  // literal calendar date ("December 31st, 2026" / "January 1, 2027") from
+  // _PRICING_PHASE_DATE_RANGES[0].end (pricing-estimator.js) — a hardcoded phase schedule this
+  // Agreement has no business assuming will still exist by the time it renews. Both DELETED.
+  // _PRICING_PHASE_DATE_RANGES itself is untouched (pricing-estimator.js is owned by branch
+  // fix/pricing-phases-and-sensor-hours; do not edit there). The Term/Renewal clauses below are now
+  // expressed RELATIVE TO THE EFFECTIVE DATE ONLY — a fixed month count, never a calendar date — so
+  // the Agreement's own text never depends on a phase schedule outliving the contract year it was
+  // computed against. See initialTermText / the Renewal Term clause (_agreementCommercialRenderers,
+  // rptPageAgreementTermTermination) for the rewritten legal language.
+  var initialTermMonths = 12; // fixed contract term length, independent of any phase schedule
 
   return {
     project: { id: proj.id, name: clientName, client: clientName },
@@ -286,8 +266,7 @@ function collectAgreementData(projId, templateType, opts) {
     hourlyRate: pcfg ? pcfg.hourlyRate : null,
     allowanceAmount: budget ? budget.amount : null,
     monthlyService: monthlyService,
-    initialTermEndLabel: initialTermEndLabel, // e.g. "Dec 2026" -> formatted below per-clause
-    renewalDateLabel: renewalDateLabel, // e.g. "January 1, 2027" — first renewal / escalation date
+    initialTermMonths: initialTermMonths, // fixed month count from Effective Date — never a calendar date
     effectiveDate: effDate,
     lumpTotal: lumpTotal,
     escalationRate: cfg.escalationRate,
@@ -437,15 +416,18 @@ var _agreementCommercialRenderers = {
       utilityRebate:
         'Contractor shall assist with the application of any applicable utility rebates as part of this Agreement. Time expended performing such services shall be billed at the applicable labor rate and applied against the available labor hours under the Allowance.',
       hasRenewalEscalation: true,
-      // Matt confirmed 2026-07-28: the Term expires December 31, 2026 but renews automatically for
-      // successive one-year terms — this replaces the prior fixed-expiration reading, which
-      // conflicted with the Renewal Term/escalation clause below (a program running Aug 2026 -
-      // Dec 2028 needs the Agreement to still be in force when the second 4% increase fires).
+      // 2026-07-29 (fix/proposal-remove-fixed-anchors, Matt's sharpened rule, verbatim: "there is
+      // no guarantee we will have an agreement for 2027 and 2028 so I would probably not anchor on
+      // that date ever... That is a terrible idea."): this used to state a literal calendar date
+      // ("until December 31st, 2026") derived from a hardcoded phase schedule. Rewritten to express
+      // the Initial Term RELATIVE TO THE EFFECTIVE DATE ONLY (a fixed month count, never a calendar
+      // date), renewing automatically but explicitly terminable by either party's notice — reads as
+      // an ordinary annual service agreement, not an assumed multi-year commitment.
       initialTermText:
-        'This Agreement shall remain in effect until ' +
-        (d.initialTermEndLabel
-          ? esc(d.initialTermEndLabel) + ', renewing automatically for successive one-year terms.'
-          : '[program end date not yet available], renewing automatically for successive one-year terms.'),
+        'This Agreement shall remain in effect for an initial term of twelve (12) months from the ' +
+        'Effective Date, renewing automatically for successive one-year terms unless either party ' +
+        'provides written notice of non-renewal at least sixty (60) days prior to the end of the ' +
+        'then-current term.',
       earlyTerminationNoticeDays: 60,
       earlyTerminationReimbursement: false,
     };
@@ -695,18 +677,18 @@ function rptPageAgreementTermTermination(n, d) {
   var _romanNumerals = ['i', 'ii', 'iii', 'iv', 'v'];
   var _termRomanIdx = 1; // "i. Term:" already used index 0 above
 
-  // Escalation basis/compounding (Matt confirmed 2026-07-28, REVISED same day per his direct
-  // correction): the Term (see initialTermText above) expires December 31, 2026 but renews
-  // automatically for successive one-year terms, so escalation must be keyed to that RENEWAL date
-  // (January 1 of each renewal year), not an Effective-Date anniversary — the prior anniversary-of-
-  // Effective-Date basis was incoherent against a program that runs Aug 2026 - Dec 2028: the
-  // Agreement's own stated term would have already lapsed before a second anniversary-based
-  // increase could ever fire. Applied to BOTH the Allowance and the hourly labor rate stated in
-  // Section 1.1 — not CPI-indexed. Compounding is annual (each year's increase applies to the prior
-  // year's already-escalated amount, not the original base) — 4% on Jan 1 2027, then another 4% on
-  // Jan 1 2028, consistent with rptPageContractProjection's existing `Math.pow(1 + escalation/100,
-  // yr - 1)` contract-year compounding convention (report-engine.js), the only other escalation-math
-  // precedent in this codebase.
+  // 2026-07-29 (fix/proposal-remove-fixed-anchors, Matt's sharpened rule, verbatim: "there is no
+  // guarantee we will have an agreement for 2027 and 2028 so I would probably not anchor on that
+  // date ever... That is a terrible idea."): this used to key escalation to a literal calendar date
+  // ("January 1, 2027") derived from a hardcoded phase schedule. Rewritten to key escalation to the
+  // FIRST ANNIVERSARY OF THE EFFECTIVE DATE, and each anniversary thereafter — legally coherent with
+  // initialTermText above (Initial Term = twelve (12) months from the Effective Date, so the first
+  // renewal IS the first anniversary of the Effective Date; no separate date needs to be computed or
+  // stated). Applied to BOTH the Allowance and the hourly labor rate stated in Section 1.1 — not
+  // CPI-indexed. Compounding is annual (each year's increase applies to the prior year's already-
+  // escalated amount, not the original base), consistent with rptPageContractProjection's existing
+  // `Math.pow(1 + escalation/100, yr - 1)` contract-year compounding convention (report-engine.js),
+  // the only other escalation-math precedent in this codebase.
   var renewal = r.hasRenewalEscalation
     ? '<div style="' +
       _AGR_SUBHEAD +
@@ -715,10 +697,9 @@ function rptPageAgreementTermTermination(n, d) {
       '. Renewal Term:</div>' +
       '<div style="' +
       _AGR_BODY +
-      '" contenteditable="true">1. Beginning on the first renewal date' +
-      (d.renewalDateLabel ? ' (' + d.renewalDateLabel + ')' : '') +
-      ', and on each renewal thereafter, the Allowance and the hourly labor rate ' +
-      'described in Section 1.1 shall each increase by a fixed escalation rate of ' +
+      '" contenteditable="true">1. Beginning on the first anniversary of the Effective Date, and on ' +
+      'each anniversary thereafter, the Allowance and the hourly labor rate described in Section ' +
+      '1.1 shall each increase by a fixed escalation rate of ' +
       d.escalationRate +
       '% over the amount then in effect immediately prior to that renewal, compounding annually.' +
       _agreementUnconfirmedFlag(d.escalationConfirmed) +
