@@ -7956,10 +7956,13 @@ async function exportReportToWord() {
       '" alt="CSC Footer" width="816" height="108" style="width:8.5in;height:auto;display:block">';
     // footerLabelText / hasPageNum were computed above while stripping each page's body (from
     // whatever rptPage() actually emitted for THIS report), so this footer content only shows
-    // what each report type's design calls for. The Service Proposal's rptPage() calls all pass
-    // noPageNum:true and never set a period label, so hasPageNum/footerLabelText are both
-    // false/'' for it and footerBodyHtml below is the wave graphic alone — matching the target's
-    // no-page-number footer design exactly.
+    // what each report type's design calls for. 2026-07-29 (Matt: "all reports should always
+    // have page numbers"): the Service Proposal's rptPage() calls no longer pass noPageNum:true
+    // (that opt-in flag still exists on rptPage() itself for any future caller that needs it, it
+    // is just unused today), so hasPageNum is now true for every Proposal page too and this
+    // footer gets the same real Word field-code "Page <PAGE> of <NUMPAGES>" paragraph as every
+    // other report type. footerLabelText (the period-range label) still doesn't apply to the
+    // Proposal — no caller here sets data.period.label — so that piece remains ''.
     // color:var(--rpt-page-text) matches the token the live/PDF path uses for this chrome —
     // resolved to a real value below via resolveVars() (same helper used on bodyHtml above)
     // since this markup is assembled outside the resolveVars(rawBodyHtml) call.
@@ -13002,6 +13005,43 @@ function _a36SeqRequiredSensorLabels(seq) {
  */
 function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   var p = d.portfolio;
+  // Consolidated sensor/sequence counts (2026-07-29 fix) — the cover previously printed
+  // p.totalMissingHardwarePoints / p.totalNotReadySequences, RAW per-equipment-unit accumulators
+  // from collectASHRAE36Data (see ~line 12157/12451/12461) that count every equipment row's gaps
+  // independently. The priced scope (buildCatalogRows, app/pricing-estimator.js) applies three
+  // exclusions the raw counters never see: (1) monitoring-only zone units — equipment rows missing
+  // BOTH coolSP and htgSP are dropped entirely by _pricingIsMonitoringOnlyZoneUnit before any row
+  // is generated, for every category, not just those two; (2) ioOnly points, which wire to
+  // existing controller I/O — $0 parts, 0 install hours, not new hardware; (3) building-level
+  // dedup (oat / oaWetBulb / damper-position / zoneTemp+co2 combos) that collapses many
+  // per-equipment gaps into one physical device. Measured 2026-07-29 on real JOCO data: raw
+  // sensors 4,049 vs. consolidated 1,311 (a 67.6% overcount); raw sequences 1,764 vs. consolidated
+  // 1,313 (a 25.6% overcount). Matt: "we will look stupid if we tell them they need a bunch of
+  // things and then we get started and realize they don't need any of it." The cover is the
+  // client-facing, highest-stakes number in the deliverable — it must always match the priced
+  // scope, so it is derived here from buildCatalogRows, never hardcoded, so it tracks the priced
+  // scope automatically as pricing rules evolve. Sensors = sum of qty where phase===1 && !ioOnly
+  // (phase 1 = hardware rows; ioOnly rows are $0/no-install and are not "sensors to install").
+  // Sequences = sum of qty where phase===2 (phase 2 = sequence-programming rows). Defensive
+  // fallback to the raw portfolio totals if buildCatalogRows is unavailable for any reason (should
+  // never happen on energy-department.html, which always loads pricing-estimator.js alongside
+  // report-engine.js, but avoids a hard crash if this function is ever reused in a context that
+  // doesn't).
+  var _a36ConsolidatedSensors = p.totalMissingHardwarePoints;
+  var _a36ConsolidatedSequences = p.totalNotReadySequences;
+  if (typeof buildCatalogRows === 'function') {
+    var _a36CatalogRows = buildCatalogRows(d.project.id) || [];
+    var _a36SensorSum = 0;
+    var _a36SeqSum = 0;
+    _a36CatalogRows.forEach(function (r) {
+      if (r.phase === 1 && !r.ioOnly) _a36SensorSum += r.qty || 0;
+      else if (r.phase === 2) _a36SeqSum += r.qty || 0;
+    });
+    if (_a36CatalogRows.length) {
+      _a36ConsolidatedSensors = _a36SensorSum;
+      _a36ConsolidatedSequences = _a36SeqSum;
+    }
+  }
   var color =
     p.composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
       ? 'var(--rpt-green)'
@@ -13026,12 +13066,12 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     ' of HVAC equipment</strong>, <strong>' +
     d.project.name +
     '</strong> needs <strong>' +
-    p.totalNotReadySequences +
+    _a36ConsolidatedSequences +
     ' control sequence' +
-    (p.totalNotReadySequences !== 1 ? 's' : '') +
+    (_a36ConsolidatedSequences !== 1 ? 's' : '') +
     ' programmed</strong> and <strong>' +
-    p.totalMissingHardwarePoints +
-    (p.totalMissingHardwarePoints === 1 ? ' sensor or actuator' : ' sensors and actuators') +
+    _a36ConsolidatedSensors +
+    (_a36ConsolidatedSensors === 1 ? ' sensor or actuator' : ' sensors and actuators') +
     ' installed</strong>. ' +
     // a562fd67: the cover's forward-looking promise must match whether the report actually
     // includes per-building detail pages. perBuildingIncluded is passed true only when the
@@ -13095,13 +13135,13 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    p.totalNotReadySequences +
+    _a36ConsolidatedSequences +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sequences to Program</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    p.totalMissingHardwarePoints +
+    _a36ConsolidatedSensors +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sensors to Install</div>' +
     '</div>' +
@@ -13502,8 +13542,15 @@ function rptPageASHRAE36Executive(n, d) {
 
     var bodyHTML;
     if (chunkIndex === 0) {
-      // First page: callouts + titled table + footnote
-      bodyHTML = dcvCallout + callout + tableTitle + table + tableFootnote;
+      // First page: callouts + titled table + footnote. 2026-07-29 fix (Matt: "why does it not
+      // say 1 of 2 like the next page shows continued (2 of 2)?") — the continuation page below
+      // has always shown "— continued (N of numChunks)", but the first page's tableTitle (a
+      // fixed string built above, before numChunks was known) never carried the matching
+      // "(1 of N)" for its own page. Same fix pattern applied to every other paginated section
+      // with this asymmetry (see 2026-07-29 dashboardlogic.md entry for the full list).
+      var firstPageTableTitle =
+        numChunks > 1 ? tableTitle.replace('</div>', ' (1 of ' + numChunks + ')</div>') : tableTitle;
+      bodyHTML = dcvCallout + callout + firstPageTableTitle + table + tableFootnote;
     } else {
       // Continuation page: minimal header + table + footnote
       var contHdr =
@@ -14328,8 +14375,15 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
       }
     }
 
+    // 2026-07-29 fix (Matt: "why does it not say 1 of 2..."): page 1 of a multi-page building has
+    // no title-suffix of its own today (the continuation's contHdr div above already reads "b.name
+    // — continued (2 of 2)"). Appending the same "(N of numChunks)" fraction to the .rpt-int-hdr
+    // title bar (rptPage()'s own title param, present on every page including page 1) fixes the
+    // asymmetry consistently instead of only patching the continuation's already-correct text.
+    var pageTitleWithFraction =
+      'ASHRAE 36 Audit Report — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit Report — ' + b.name, bodyHTML, {
+      rptPage(pageN, pageTitleWithFraction, bodyHTML, {
         data: fakeData,
         label:
           'Page ' + pageN + ' — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
@@ -14906,8 +14960,14 @@ function rptPageASHRAE36SetpointReview(n, d) {
       bodyHTML = contHdr + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
     }
 
+    // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry as Building ASHRAE 36
+    // Readiness/Per-Building Detail above): append the fraction to the .rpt-int-hdr title bar so
+    // page 1 carries its own "(1 of N)" alongside the continuation's existing "(N of N)".
+    var _setpointTitle =
+      'ASHRAE 36 Audit Report — Setpoint Programming Review' +
+      (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit Report — Setpoint Programming Review', bodyHTML, {
+      rptPage(pageN, _setpointTitle, bodyHTML, {
         data: fakeData,
         label:
           'Page ' +
@@ -15287,8 +15347,10 @@ function _rptProposalDisplayClientName(fullName) {
  * comment "Clarify what is included" on the Full Energy Scope of Work row), Recommended
  * Optimization Program (paragraph + monthly allowance + 6 bullets), Why This Approach (5
  * bullets). Plain headings/tables only — zero shaded/filled bands, zero boxes/cards (hard
- * constraint, w:shd fill count = 0 in the target .docx). hero:true keeps the CSC letterhead;
- * noPageNum:true matches the target's page-number-free footer.
+ * constraint, w:shd fill count = 0 in the target .docx). hero:true keeps the CSC letterhead.
+ * 2026-07-29 (Matt: "all reports should always have page numbers"): this page (and every other
+ * Proposal page) no longer passes noPageNum:true — page numbers now render here exactly like
+ * every other report type.
  *
  * 2026-07-27: the 2-row "Assessment Findings Program Option / Estimated Cost" table that used to
  * sit between the narrative paragraph and the "what's included" paragraphs was removed at the
@@ -15537,7 +15599,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Proposal Summary',
   });
@@ -15846,7 +15907,6 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Recommended Optimization Program',
   });
@@ -16024,7 +16084,6 @@ function rptPageASHRAE36ProposalVision(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Long-Term Vision',
   });
@@ -16057,7 +16116,6 @@ function rptPageASHRAE36ProposalPhaseAndVision(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Recommended Program & Long-Term Vision',
   });
@@ -16132,7 +16190,6 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — ASHRAE 36 Compliance',
   });
@@ -16194,7 +16251,6 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Full Scope',
   });
@@ -17418,11 +17474,18 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           })
           .join('');
         var itTable = itTableHead + '<tbody>' + rowsHTML + '</tbody></table>';
+        // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry — see Building ASHRAE 36
+        // Readiness above): page 1 gets its own "(1 of N)" instead of only continuation pages
+        // carrying a fraction.
         var itTitle =
           '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
           'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate — Itemized Measures — ' +
           _esc(c.label) +
-          (idx > 0 ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')' : '') +
+          (numChunks > 1
+            ? idx > 0
+              ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')'
+              : ' (1 of ' + numChunks + ')'
+            : '') +
           '</div>';
         var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
         pages.push(
@@ -17583,11 +17646,18 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
             return t.html;
           })
           .join('');
+        // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry — see Building ASHRAE 36
+        // Readiness above): page 1 gets its own "(1 of N)" instead of only continuation pages
+        // carrying a fraction.
         var pageTitle =
           '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
           'text-transform:uppercase;letter-spacing:0.04em">Install &amp; Programming Detail — ' +
           _esc(c.label) +
-          (idx > 0 ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')' : '') +
+          (numChunks > 1
+            ? idx > 0
+              ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')'
+              : ' (1 of ' + numChunks + ')'
+            : '') +
           '</div>';
         pages.push(
           rptPage(pageN, 'ASHRAE 36 Service Proposal — Cost Estimate', pageTitle + rowsHTML, {
@@ -17834,8 +17904,13 @@ function rptPageASHRAE36PointInventory(n, d) {
       bodyHTML = contHdr + table + (chunkIndex === numChunks - 1 ? footnote : '');
     }
 
+    // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry — see Building ASHRAE 36
+    // Readiness above): append the fraction to the .rpt-int-hdr title bar for page 1 too.
+    var _pointInvTitle =
+      'ASHRAE 36 Audit Report — Point Inventory' +
+      (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit Report — Point Inventory', bodyHTML, {
+      rptPage(pageN, _pointInvTitle, bodyHTML, {
         data: fakeData,
         label:
           'Page ' +
