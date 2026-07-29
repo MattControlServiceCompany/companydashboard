@@ -4547,6 +4547,10 @@ function emGetAuditColDefs(filteredRows) {
   for (var si = 0; si < filteredRows.length; si++) {
     var sRow = filteredRows[si];
     if (!sRow.category || !EM_POINT_CATEGORIES[sRow.category]) continue;
+    // Left as no-flags call intentionally: only .coveredPoints is read below, and
+    // coveredPoints is flag-invariant (config flags only ever gate naPoints/missingPoints
+    // inside emComputeCompliance, never the point-name-matching pass that builds
+    // coveredPoints) — so passing real flags here would be a provable no-op.
     var sCompliance = emComputeCompliance(sRow);
     for (var sci = 0; sci < sCompliance.coveredPoints.length; sci++) {
       coveredCatKeys[sCompliance.coveredPoints[sci].categoryKey] = true;
@@ -4810,12 +4814,15 @@ function emComputeAuditStats(rows) {
   var totalCoverage = 0;
   var covCount = 0;
   var _auditStatsMaps = emLoadCustomMappings(window._emActivePid || '');
+  var _auditStatsPid = window._emActivePid || '';
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var pts = r.points || {};
     totalPts += Object.keys(pts).length;
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
-      var compliance = emComputeCompliance(r, {}, _auditStatsMaps);
+      // space-type-classifier-2026-07-29 fix: real per-row flags so the footer/summary
+      // avgCoverage stat agrees with the priced coverage and the Audit table column.
+      var compliance = emComputeCompliance(r, emLoadEquipConfigFlags(_auditStatsPid, r.id), _auditStatsMaps);
       totalCoverage += compliance.coveragePct;
       covCount++;
     }
@@ -4827,7 +4834,7 @@ function emComputeAuditStats(rows) {
   for (var si = 0; si < rows.length; si++) {
     var sr = rows[si];
     if (!sr.category || !EM_POINT_CATEGORIES[sr.category]) continue;
-    var srCompliance = emComputeCompliance(sr, {}, _auditStatsMaps);
+    var srCompliance = emComputeCompliance(sr, emLoadEquipConfigFlags(_auditStatsPid, sr.id), _auditStatsMaps);
     var srReadiness = emComputeSequenceReadiness(sr, srCompliance);
     for (var sk in srReadiness) {
       if (!srReadiness.hasOwnProperty(sk)) continue;
@@ -5772,6 +5779,7 @@ function emComputeAuditFooterTotals(rows, defs) {
   var covSum = 0;
   var covCount = 0;
   var _footerMaps = emLoadCustomMappings(window._emActivePid || '');
+  var _footerPid = window._emActivePid || '';
 
   // Collect cat and seq defs we need to count
   var catDefs = [];
@@ -5797,8 +5805,12 @@ function emComputeAuditFooterTotals(rows, defs) {
     var r = rows[ri];
     ptSum += Object.keys(r.points || {}).length;
     var comp = null;
+    // space-type-classifier-2026-07-29 fix: load once per row (not per emComputeCompliance
+    // call below) so the footer aggregates agree with the priced coverage without adding
+    // extra emLoadEquipConfigFlags calls per row.
+    var _rFlags = emLoadEquipConfigFlags(_footerPid, r.id);
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
-      comp = emComputeCompliance(r, {}, _footerMaps);
+      comp = emComputeCompliance(r, _rFlags, _footerMaps);
       covSum += comp.coveragePct;
       covCount++;
     }
@@ -5806,7 +5818,7 @@ function emComputeAuditFooterTotals(rows, defs) {
     // Count per-cat column presence
     if (catDefs.length) {
       if (!comp && r.category && EM_POINT_CATEGORIES[r.category]) {
-        comp = emComputeCompliance(r, {}, _footerMaps);
+        comp = emComputeCompliance(r, _rFlags, _footerMaps);
       }
       for (var cdi = 0; cdi < catDefs.length; cdi++) {
         var cd = catDefs[cdi];
@@ -5829,7 +5841,7 @@ function emComputeAuditFooterTotals(rows, defs) {
 
     // Count per-seq column presence
     if (seqDefs.length) {
-      if (!comp) comp = emComputeCompliance(r, {}, _footerMaps);
+      if (!comp) comp = emComputeCompliance(r, _rFlags, _footerMaps);
       var seqReadiness = emComputeSequenceReadiness(r, comp);
       for (var sdi = 0; sdi < seqDefs.length; sdi++) {
         var sd = seqDefs[sdi];
@@ -7658,7 +7670,10 @@ function emRenderAuditTable(data, filters) {
   var seqReadinessCache = {};
   for (var pr = 0; pr < pageRows.length; pr++) {
     var r = pageRows[pr];
-    complianceCache[r.id] = emComputeCompliance(r, {}, _auditMaps);
+    // space-type-classifier-2026-07-29 fix: pass real per-row config flag overrides so
+    // the visible Coverage % column agrees with the priced coverage (report-engine.js
+    // already does this — this was the one call site that fed the Audit table itself).
+    complianceCache[r.id] = emComputeCompliance(r, emLoadEquipConfigFlags(_auditPid, r.id), _auditMaps);
     seqReadinessCache[r.id] = emComputeSequenceReadiness(r, complianceCache[r.id]);
   }
 
@@ -8322,12 +8337,19 @@ function emAuditGetSortVal(row, def) {
   if (def.isAuditType) return row.category || '';
   if (def.isAuditCoverage) {
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
-    var c = emComputeCompliance(row, {}, _sortMaps);
+    // space-type-classifier-2026-07-29 fix: real per-row flags so sort order agrees
+    // with the displayed Coverage % (mirrors the existing isAuditSpValues pattern
+    // below, which already calls emLoadEquipConfigFlags per comparison).
+    var c = emComputeCompliance(row, emLoadEquipConfigFlags(window._emActivePid || '', row.id), _sortMaps);
     return c.coveragePct;
   }
   if (def.isAuditSeqPct) {
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
-    var _sortCompliance = emComputeCompliance(row, {}, _sortMaps);
+    var _sortCompliance = emComputeCompliance(
+      row,
+      emLoadEquipConfigFlags(window._emActivePid || '', row.id),
+      _sortMaps,
+    );
     var _sortReadiness = emComputeSequenceReadiness(row, _sortCompliance);
     var _sortApplicable = 0;
     var _sortReady = 0;
@@ -8362,6 +8384,10 @@ function emAuditGetSortVal(row, def) {
     var catKey = def.catKey;
     if (!row.category || def.catEquipTypes.indexOf(row.category) === -1) return -1;
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
+    // Note: coveredPoints is flag-invariant (config flags only gate naPoints/missingPoints,
+    // never coveredPoints), so passing real flags here would be a no-op for matchTier —
+    // left as {} intentionally, but kept consistent below for isAuditSeq which DOES read
+    // naPoints (via emComputeSequenceReadiness's space-type NA check).
     var comp = emComputeCompliance(row, {}, _sortMaps);
     for (var i = 0; i < comp.coveredPoints.length; i++) {
       if (comp.coveredPoints[i].categoryKey === catKey) return comp.coveredPoints[i].matchTier;
@@ -8371,7 +8397,10 @@ function emAuditGetSortVal(row, def) {
   if (def.isAuditSeq) {
     if (!row.category || def.seqEquipTypes.indexOf(row.category) === -1) return -1;
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
-    var seqComp = emComputeCompliance(row, {}, _sortMaps);
+    // space-type-classifier-2026-07-29 fix: real flags so a sequence's N/A status (which
+    // depends on naPoints[].source==='spaceType', see emComputeSequenceReadiness) agrees
+    // with the user's explicit override instead of always assuming the auto-exemption.
+    var seqComp = emComputeCompliance(row, emLoadEquipConfigFlags(window._emActivePid || '', row.id), _sortMaps);
     var seqR = emComputeSequenceReadiness(row, seqComp);
     var seqEntry = seqR[def.seqKey];
     if (!seqEntry || seqEntry.status === 'na') return -1;
@@ -8431,8 +8460,13 @@ function emShowComplianceDetail(rowId) {
   if (!row) return;
 
   var _detailMaps = emLoadCustomMappings(pid);
-  var c = emComputeCompliance(row, {}, _detailMaps);
+  // space-type-classifier-2026-07-29 fix: load real per-row config flag overrides
+  // BEFORE computing compliance, and pass them in — previously this computed
+  // compliance with {} (line-ordering bug), so the Point Coverage line above
+  // showed the stale auto-exemption while Section 2's checkbox (below, loaded
+  // from the same flags) correctly showed the user's explicit override.
   var flags = emLoadEquipConfigFlags(pid, rowId);
+  var c = emComputeCompliance(row, flags, _detailMaps);
   var spOvr = emLoadSpOverrides(pid, rowId);
   var category = row.category || '';
   var equipName = row.equipName || row.name || rowId;
