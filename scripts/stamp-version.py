@@ -62,6 +62,19 @@ HTML_FILES = [
     REPO_ROOT / "ems-leads.html",
 ]
 
+# index.html and service-department.html each keep their own inline
+# `var CH_VERSION = 'v...';` literal (added issue e9f1157c round 2, 2026-07-29)
+# so their version badges can paint the full vYYYY.MM.DD.NNN string this page
+# actually shipped with, with zero network fetch. Neither page loads site-ui.js
+# or app/site-functions.js as a <script> (see the comment beside each literal),
+# so this is the only local source of the full version string on those two
+# pages -- it must be rewritten in lockstep with site-ui.js's CH_VERSION on
+# every deploy or the badges go stale. Same file list as the two pages above.
+CH_VERSION_LITERAL_HTML_FILES = [
+    REPO_ROOT / "index.html",
+    REPO_ROOT / "service-department.html",
+]
+
 # Matches both ?v=NNN and ?v=YYYY.MM.DD.NNN (the core.js anomaly)
 VQ_PATTERN = re.compile(
     r"(\?v=)(?:\d{4}\.\d{2}\.\d{2}\.)?(\d+)"
@@ -142,13 +155,19 @@ def build_version_string(patch: int) -> str:
     return f"v{today.year}.{today.month:02d}.{today.day:02d}.{patch}"
 
 
-def rewrite_site_ui(new_version: str) -> None:
-    """Rewrite CH_VERSION line in site-ui.js."""
-    if not SITE_UI_JS.exists():
-        print(f"ERROR: {SITE_UI_JS} not found.", file=sys.stderr)
+def rewrite_ch_version_literal(path: Path, new_version: str) -> None:
+    """Rewrite a `var CH_VERSION = 'v...';` literal in-place in the given file.
+
+    Used for site-ui.js (the original source of truth) and, since issue
+    e9f1157c round 2 (2026-07-29), for index.html and service-department.html,
+    which each keep their own local copy of this same literal so their version
+    badges can paint the full version string with zero network fetch.
+    """
+    if not path.exists():
+        print(f"ERROR: {path} not found.", file=sys.stderr)
         sys.exit(1)
 
-    text = SITE_UI_JS.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8")
     new_text = re.sub(
         r"(var CH_VERSION\s*=\s*['\"])v[\d.]+(['\"])",
         rf"\g<1>{new_version}\g<2>",
@@ -156,11 +175,11 @@ def rewrite_site_ui(new_version: str) -> None:
     )
     if new_text == text:
         print(
-            f"WARNING: CH_VERSION line in site-ui.js did not change. "
+            f"WARNING: CH_VERSION line in {path.name} did not change. "
             f"Expected to find pattern: var CH_VERSION = 'v...'",
             file=sys.stderr,
         )
-    SITE_UI_JS.write_text(new_text, encoding="utf-8")
+    path.write_text(new_text, encoding="utf-8")
 
 
 def rewrite_html_tags(new_patch: int) -> dict:
@@ -347,9 +366,14 @@ def main() -> None:
         sys.exit(1)
     print(f"[stamp-version] OK -- RELEASE_NOTES[0].v matches {new_version}")
 
-    # Step 2: Rewrite site-ui.js
+    # Step 2: Rewrite site-ui.js, plus index.html/service-department.html's own
+    # local CH_VERSION literals (issue e9f1157c round 2 -- see
+    # CH_VERSION_LITERAL_HTML_FILES above).
     print(f"[stamp-version] Rewriting site-ui.js CH_VERSION...")
-    rewrite_site_ui(new_version)
+    rewrite_ch_version_literal(SITE_UI_JS, new_version)
+    for html_file in CH_VERSION_LITERAL_HTML_FILES:
+        print(f"[stamp-version] Rewriting {html_file.name} CH_VERSION literal...")
+        rewrite_ch_version_literal(html_file, new_version)
 
     # Step 3: Rewrite all ?v= tags in HTML files
     print(f"[stamp-version] Rewriting ?v= tags in HTML files...")

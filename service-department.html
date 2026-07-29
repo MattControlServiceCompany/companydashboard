@@ -4022,27 +4022,39 @@
         applyAccentColor: siteApplyAccent,
       };
 
-      // Issue e9f1157c / Matt report 2026-07-29: paint the version badge from the
-      // version actually LOADED by this page, not a live fetch() of the server's
-      // site-ui.js -- a fetch jumps to the new number the instant a deploy lands,
-      // even though this tab is still running the old code (no reload, no click).
-      // This page doesn't load app/site-functions.js (RELEASE_NOTES isn't
-      // available here), so the locally-loaded version is read from the ?v= tag
-      // already baked into this page's own <script src> tags at deploy-stamp time
-      // (scripts/stamp-version.py rewrites all of them together, so any one is
-      // representative of what HTML/JS this page itself shipped with).
-      // NOTE: this page has no update-detection/reload-banner logic today (unlike
-      // energy-department.html's app/report-engine.js) -- that was out of scope
-      // for this fix; only the badge source changed.
-      // Deferred to DOMContentLoaded: the <script src="app/sync-classification.js...">
-      // tag this reads lives later in the document and isn't in the DOM yet at the
-      // point this inline script executes during parsing.
+      // Issue e9f1157c round 2 / Matt report 2026-07-29: the previous fix here
+      // parsed the ?v= cache-buster integer off a <script src> tag and painted
+      // 'v' + that integer -- that renders the bare build number ("v719"), never
+      // the full vYYYY.MM.DD.NNN format every other surface in the app shows.
+      // This page doesn't load site-ui.js or app/site-functions.js as a <script>
+      // (RELEASE_NOTES/CH_VERSION globals from those files are NOT in scope here
+      // -- see window.__siteUI above, this page's own inline reimplementation of
+      // site-ui.js's UI helpers), so there is no existing global to read the full
+      // version from. CH_VERSION below is this page's OWN baked-in copy of the
+      // version string, kept in sync with site-ui.js's CH_VERSION by
+      // scripts/stamp-version.py on every deploy (rewrite_ch_version_literal) --
+      // it reflects exactly what this page itself shipped with, never what the
+      // live server currently has.
+      var CH_VERSION = 'v2026.07.29.719';
       document.addEventListener('DOMContentLoaded', function () {
-        var vScript = document.querySelector('script[src*="sync-classification.js"]');
-        var m = vScript && vScript.getAttribute('src').match(/\?v=(\d+)/);
         var el = document.getElementById('sb-version');
-        if (el && m) el.textContent = 'v' + m[1];
+        if (el) el.textContent = CH_VERSION;
       });
+
+      // Still fetch the live server's site-ui.js so a value is available if this
+      // page ever grows update-detection UI (mirroring energy-department.html's
+      // "Reload to update" banner in app/report-engine.js) -- adding that banner
+      // is out of scope for this fix. Never used to paint the badge above --
+      // CH_VERSION does that, from this page's own baked-in copy.
+      fetch('site-ui.js?nocache=' + Date.now())
+        .then(function (r) {
+          return r.text();
+        })
+        .then(function (t) {
+          var m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
+          if (m) localStorage.setItem('ch_last_seen_version', m[1]);
+        })
+        .catch(function () {});
 
       /* ── ESC KEY — closes any open modal-bg ── */
       document.addEventListener('keydown', function (e) {
