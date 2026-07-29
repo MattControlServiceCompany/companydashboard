@@ -15640,11 +15640,13 @@ function _rptA36WhyThisApproachHTML(HEAD, UL) {
  * rptPageASHRAE36ProposalPhaseTable — Page 2 of the rebuilt Service Proposal. Matches the target's
  * second "Recommended Optimization Program" heading + paragraph, then the transposed phase table
  * (rows = Included Improvements / Facilities Included / Expected Results, columns = Phase 1/2/3).
- * Facilities Included and Included Improvements are LIVE-DERIVED from
- * _pricingComputeRecommendedTimeline (pricing-estimator.js) — the same phase split the interactive
- * Cost Estimate tab's Recommended timeline table uses — never hardcoded building names or scope
- * text. Expected Results is generic phase-position narrative (foundation -> expansion ->
- * completion) that names no client-specific fact, matching the target's own wording verbatim.
+ * Facilities Included is LIVE-DERIVED from _pricingComputeRecommendedTimeline
+ * (pricing-estimator.js) — the same phase split the interactive Cost Estimate tab's Recommended
+ * timeline table uses — never hardcoded building names or scope text. Included Improvements and
+ * Expected Results (2026-07-29 rewrite, Matt's own phase framing — see the
+ * PHASE_IMPROVEMENTS/EXPECTED_RESULTS header comment in _rptA36PhaseTableInnerHTML) are fixed,
+ * generic phase-position narrative (foundation -> expansion -> completion) that names no
+ * client-specific fact, matching the target's own wording verbatim.
  * Returns '' content gracefully (a single "not yet available" page) if no priced timeline exists
  * yet for this project (i.e. pricing hasn't been configured) rather than showing empty cells.
  */
@@ -15779,15 +15781,44 @@ function _rptA36PhaseTableInnerHTML(d) {
     return intro + fallback;
   }
 
-  // "Included Improvements" text now comes from the shared _rptA36PhaseImprovementsText helper
-  // (extracted 2026-07-27) so this page and the Cost Estimate page's phase timeline never drift.
-  var improvementsForPhase = _rptA36PhaseImprovementsText;
+  // Phase copy rewrite (2026-07-29, Matt, verbatim: "can we not expand more on the 3 phases in
+  // the phases table and add more to the improvements and expected results, like phase 1 is
+  // programming all sequences that do not require sensors to be installed and getting reporting
+  // and alarms set up and if we have money to spare start installing sensors in high value
+  // places. Phase 2 is expanding where we install sensors and add the sequences for them. Phase
+  // 3 is remaining sensors and sequences. We need to make this more understandable to the
+  // reader."). PHASE_IMPROVEMENTS/EXPECTED_RESULTS below are fixed, plain-language, phase-
+  // POSITION copy (same convention EXPECTED_RESULTS already used — generic narrative, no
+  // client-specific fact) written to match Matt's own framing directly, replacing the prior
+  // live-derived _rptA36PhaseImprovementsText sentence for THIS table only. That helper is left
+  // fully intact and unchanged — the Cost Estimate page's separate phase timeline
+  // (_rptA36RecommendedTimelineHTML) still calls it, so its data-driven per-project wording is
+  // unaffected by this rewrite.
+  //
+  // KNOWN CONFLICT (flagged, not silently resolved): Matt's Phase 1 copy below says sensor
+  // installation in high-value locations can begin in Phase 1 "if we have money to spare." The
+  // shipped ranking algorithm (PRICING_NO_HW_SCORE_BONUS, pricing-estimator.js) currently scores
+  // 100% programming / zero hardware into Phases 1-2 by design — Phase 1 never actually contains
+  // priced hardware under today's algorithm, regardless of budget headroom. This copy is written
+  // exactly as Matt described it (literal compliance); the algorithm was NOT changed to match —
+  // that is a separate true-ROI ranking workstream. See dashboardlogic.md 2026-07-29 entry.
+  var PHASE_IMPROVEMENTS = [
+    'Programs every control sequence that does not require a new sensor to be installed, and sets up automated ' +
+      'reporting and alarms so problems are caught right away. If the monthly budget allows, sensor installation ' +
+      'begins in the highest-value locations first.',
+    'Expands sensor installation to more equipment and zones, and programs the additional control sequences ' +
+      'those new sensors make possible.',
+    'Installs the remaining sensors and programs the remaining control sequences across the portfolio.',
+  ];
 
   var EXPECTED_RESULTS = [
-    'Improved ventilation, sequences that just need to be programmed, higher HVAC efficiency, and ' +
-      'the foundation for future improvements.',
-    'Portfolio expansion, additional savings opportunities, and improved operational consistency.',
-    'Completion of initial strategy, increased ASHRAE 36 alignment, and continued comfort and ' + 'performance gains.',
+    'Immediate visibility into how equipment is running through reporting and alarms, plus the efficiency and ' +
+      'comfort improvements available from every sequence that does not require new hardware — the fastest, ' +
+      'lowest-cost gains first.',
+    'Broader sensor coverage and the added control sequences it enables, extending energy savings and comfort ' +
+      'improvements to more equipment and zones.',
+    'Every building operating with the same level of sensor coverage and automated control, completing the ' +
+      'ASHRAE 36 optimization program.',
   ];
 
   var thStyle =
@@ -15817,7 +15848,7 @@ function _rptA36PhaseTableInnerHTML(d) {
     '">Included Improvements</td>' +
     tl.phases
       .map(function (p, i) {
-        return '<td style="' + cellStyle + '">' + esc(improvementsForPhase(p.rows, i)) + '</td>';
+        return '<td style="' + cellStyle + '">' + esc(PHASE_IMPROVEMENTS[i] || '') + '</td>';
       })
       .join('') +
     '</tr>';
