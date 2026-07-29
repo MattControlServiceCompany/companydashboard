@@ -1576,6 +1576,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.722',
+    date: '2026-07-29',
+    title: 'Audit Report renamed to ASHRAE 36, gauges use CSC brand colors, clearer Proposal phase table',
+    items: [
+      {
+        type: 'change',
+        text: 'Audit Report: every mention of "ASHRAE Guideline 36" / "Guideline 36" / "GL36" now reads "ASHRAE 36" throughout the report.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report: the Composite/Overall score gauge is now Control Service Company blue, and the Sensor Coverage and Sequence Readiness gauges are now Control Service Company green, matching CSC brand colors.',
+      },
+      {
+        type: 'change',
+        text: "Service Proposal: the phase table's Included Improvements and Expected Results now describe each phase in plain language — Phase 1 covers sequences that do not need new sensors plus reporting/alarms setup, Phase 2 expands sensor coverage and its sequences, and Phase 3 finishes the remaining sensors and sequences.",
+      },
+      {
+        type: 'change',
+        text: 'Service Proposal: removed the redundant "Facilities Included" row from the phase table since every building is included in the program regardless of phase.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.721',
     date: '2026-07-29',
     title: 'ASHRAE 36 Audit Report cover now matches priced scope; Service Proposal pages numbered again',

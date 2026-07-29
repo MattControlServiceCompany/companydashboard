@@ -11916,22 +11916,22 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   // These describe deviations from GL36 §3.1.1.1 defaults, not missing hardware.
   // Label: "Needs Review" per design decision (never "Fail" — overrides are legitimate).
   spTempDeviation: {
-    short: 'Zone setpoint differs from GL36 §3.1.1.1 default',
+    short: 'Zone setpoint differs from ASHRAE 36 §3.1.1.1 default',
     impact: 'Zero-hardware quick win',
     plain:
-      'One or more zone setpoints differ from Guideline 36 defaults. Overrides are permitted — confirm these are intentional; corrections are a no-cost software change.',
+      'One or more zone setpoints differ from ASHRAE 36 defaults. Overrides are permitted — confirm these are intentional; corrections are a no-cost software change.',
   },
   spDeadbandTooNarrow: {
-    short: 'Heating/cooling deadband below GL36 §3.1.1.1 minimum (1°F)',
+    short: 'Heating/cooling deadband below ASHRAE 36 §3.1.1.1 minimum (1°F)',
     impact: 'Zero-hardware quick win',
     plain:
-      'The occupied deadband is below the Guideline 36 minimum of 1°F, causing heating and cooling to compete. Widening to at least 2°F requires only a programming change.',
+      'The occupied deadband is below the ASHRAE 36 minimum of 1°F, causing heating and cooling to compete. Widening to at least 2°F requires only a programming change.',
   },
   spCO2Deviation: {
-    short: 'CO₂ demand-control setpoint differs from GL36 Table 3.1.1.3 default',
+    short: 'CO₂ demand-control setpoint differs from ASHRAE 36 Table 3.1.1.3 default',
     impact: 'Zero-hardware quick win',
     plain:
-      'Zone CO₂ setpoint differs from the Guideline 36 default; an incorrect value causes over-ventilation or under-ventilation. Correction is software-only.',
+      'Zone CO₂ setpoint differs from the ASHRAE 36 default; an incorrect value causes over-ventilation or under-ventilation. Correction is software-only.',
   },
   spNotScheduled: {
     short: 'Setpoint value not found in export — schedule status unknown',
@@ -11999,7 +11999,7 @@ var ASHRAE36_SECTIONS = {
   audit: [
     { key: 'cover', label: 'Cover Page', group: 'Report', defaultOn: true },
     { key: 'executive', label: 'Executive Summary', group: 'Report', defaultOn: true },
-    { key: 'costEstimate', label: 'ASHRAE Guideline 36 Sequences', group: 'Report', defaultOn: true },
+    { key: 'costEstimate', label: 'ASHRAE 36 Sequences', group: 'Report', defaultOn: true },
     { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
     // a0c2152 (2026-07-06): power monitoring / OA-sensor metadata is not ASHRAE 36 scoring
     // content. Matt has twice asked why non-ASHRAE content is in the report, so this
@@ -13042,12 +13042,13 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       _a36ConsolidatedSequences = _a36SeqSum;
     }
   }
-  var color =
-    p.composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-      ? 'var(--rpt-green)'
-      : p.composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-        ? 'var(--rpt-orange)'
-        : 'var(--rpt-red)';
+  // Cover gauge color (2026-07-29, Matt: "make the Composite Score gauge be the CSC blue and
+  // then have the Sensor Coverage and Sequence Readiness be the CSC green" -- was threshold
+  // red/orange/green per ASHRAE36_READINESS_HIGH/PARTIAL_THRESHOLD; the building-level status
+  // (green/amber/red) is still shown via _a36StatusChip / the Score bar on the Building
+  // Compliance Status table below, so this brand-color swap on the cover's summary gauge does
+  // not remove that per-building signal from the report.
+  var color = 'var(--rpt-blue)';
   // One-paragraph finding — REORDERED 2026-07-29 (Matt's direct instruction: "always make reports
   // a story instead of just text... Buildings Assessed, HVAC Systems Audited, Sequences to
   // Program and then Sensors to Install in that order so it tells the story of what happened in
@@ -13055,7 +13056,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   // the stat strip below (buildings walked into -> equipment examined -> sequences found to
   // program -> sensors found to install).
   var finding =
-    'To meet ASHRAE Guideline 36, across <strong>' +
+    'To meet ASHRAE 36, across <strong>' +
     p.totalBuildings +
     ' building' +
     (p.totalBuildings !== 1 ? 's' : '') +
@@ -13089,10 +13090,10 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     _a36GaugeSVG(p.composite, color, 'Overall', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.pointPct, 'var(--rpt-blue)', 'Sensors', 110, true) +
+    _a36GaugeSVG(p.pointPct, 'var(--rpt-green)', 'Sensors', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.seqPct, '#7c3aed', 'Sequences', 110, true) +
+    _a36GaugeSVG(p.seqPct, 'var(--rpt-green)', 'Sequences', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
     '</div>';
 
@@ -13105,8 +13106,8 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    "This report evaluates the facility's building automation system against ASHRAE Guideline 36 — the industry standard for high-performance HVAC control. " +
-    'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with Guideline 36. ' +
+    "This report evaluates the facility's building automation system against ASHRAE 36 — the industry standard for high-performance HVAC control. " +
+    'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
@@ -13398,7 +13399,7 @@ function rptPageASHRAE36Executive(n, d) {
   // them. The underlying 'green'/'amber'/'red' status keys are unchanged (see _a36StatusChip).
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:12px;line-height:1.5">' +
-    '<strong>Score</strong> is Control Service Company’s own readiness assessment, built on ASHRAE Guideline 36 requirements ' +
+    '<strong>Score</strong> is Control Service Company’s own readiness assessment, built on ASHRAE 36 requirements ' +
     'and weighted by how many apply to each equipment type — ASHRAE 36 itself defines no composite score or compliance threshold. ' +
     '<strong>Readiness bands:</strong> High ≥' +
     ASHRAE36_READINESS_HIGH_THRESHOLD +
@@ -13696,7 +13697,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
   var RATIONALE_BUDGET_FIRST = _rptContentBudget('standard') - RATIONALE_FIRST_BASE_ADJUSTMENT;
   var RATIONALE_BUDGET_CONT = _rptContentBudget('standard') - RATIONALE_CONT_BASE_ADJUSTMENT;
 
-  var SEQ_SECTION_TITLE = 'ASHRAE Guideline 36 Sequences';
+  var SEQ_SECTION_TITLE = 'ASHRAE 36 Sequences';
 
   // Shared HTML fragments for the sequence table chrome
   var _ratTitle =
@@ -13846,17 +13847,23 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     })
     .join('');
 
+  // Per-building gauge colors (2026-07-29, same brand-color pass as the cover page's Composite
+  // Score/Sensor Coverage/Sequence Readiness gauges, ~line 13045 above): Overall -> CSC blue,
+  // Sensors/Sequences -> CSC green. b.statusColor (red/amber/green threshold) is left defined
+  // and still drives the Score bar in the Building Compliance Status table and the
+  // _a36StatusChip badge right below these gauges, so the per-building status signal is not
+  // lost — only this gauge's own fill now matches the report-wide brand-color scheme.
   var gauges =
     '<div style="display:flex;gap:14px;margin-bottom:12px;align-items:center">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.composite, b.statusColor, 'Overall', 70) +
+    _a36GaugeSVG(b.composite, 'var(--rpt-blue)', 'Overall', 70) +
     '</div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.pointPct, 'var(--rpt-blue)', 'Sensors', 70) +
+    _a36GaugeSVG(b.pointPct, 'var(--rpt-green)', 'Sensors', 70) +
     '</div>' +
     '<div style="text-align:center">' +
     (b.seqPct !== null
-      ? _a36GaugeSVG(b.seqPct, '#7c3aed', 'Sequences', 70)
+      ? _a36GaugeSVG(b.seqPct, 'var(--rpt-green)', 'Sequences', 70)
       : '<svg width="70" height="77.7" viewBox="0 0 70 77.7" style="display:block">' +
         '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
         // Grey text on a client deliverable is banned (same rule already applied to the
@@ -14783,7 +14790,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     '">Avg Occ Cool</th>' +
     '<th style="' +
     thStyleC +
-    '">GL36 Default<br><span style="font-size:9px;font-weight:400;text-transform:none">Heat / Cool</span></th>' +
+    '">ASHRAE 36 Default<br><span style="font-size:9px;font-weight:400;text-transform:none">Heat / Cool</span></th>' +
     '<th style="' +
     thStyleC +
     '">Avg Deadband</th>' +
@@ -14853,7 +14860,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var summaryParts = [buildingRows.length + ' building' + (buildingRows.length !== 1 ? 's' : '')];
   if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' Needs Review');
   if (notScheduledTotal > 0) summaryParts.push(notScheduledTotal + ' Not Scheduled');
-  if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match GL36 defaults');
+  if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match ASHRAE 36 defaults');
 
   var totalsCallout =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-bottom:8px">' +
@@ -14870,7 +14877,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">CO₂ Setpoint Data Not Found in Export</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'DCV CO₂ setpoints (GL36 §3.1.1.3 / Table 3.1.1.3) were not present in the equipment matrix export for this project. ' +
+      'DCV CO₂ setpoints (ASHRAE 36 §3.1.1.3 / Table 3.1.1.3) were not present in the equipment matrix export for this project. ' +
       'CO₂ setpoint values are programmed set-points in the BAS controller — separate from the live CO₂ sensor readings shown in the equipment matrix. ' +
       'A direct BAS lookup or updated export with CO₂ setpoint points is needed to complete this check.' +
       '</div>' +
@@ -14885,7 +14892,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     exclusionNote =
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'Only buildings with zone-level terminal equipment (VAV boxes, fan-powered boxes, fan coil units, and similar) are shown — these are the units ASHRAE Guideline 36’s zone setpoint standards apply to. ' +
+      'Only buildings with zone-level terminal equipment (VAV boxes, fan-powered boxes, fan coil units, and similar) are shown — these are the units ASHRAE 36’s zone setpoint standards apply to. ' +
       _excludedCount +
       ' of ' +
       _totalScoredBuildings +
@@ -14897,7 +14904,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // ── Preamble ──────────────────────────────────────────────────────────────
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
-    'ASHRAE Guideline 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types. ' +
+    'ASHRAE 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types. ' +
     'These are starting points — designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
     'Items marked Needs Review should be confirmed with the design engineer or facility staff to determine whether the deviation is intentional. ' +
     'Values shown are building averages across all zone equipment in the BAS export.' +
@@ -15026,7 +15033,7 @@ function _rptA36CoverPricingStrip(d) {
       isRec: true,
       desc: function (amtStr, svcSentence) {
         return (
-          'Installs the hardware points needed to close Guideline 36 gaps and programs the full set of ' +
+          'Installs the hardware points needed to close ASHRAE 36 gaps and programs the full set of ' +
           'cost-optimized energy sequences — supply air and duct pressure reset, economizer control, optimal ' +
           'start/stop, and equipment lead/lag rotation. ' +
           (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
@@ -15043,7 +15050,7 @@ function _rptA36CoverPricingStrip(d) {
       isRec: false,
       desc: function (amtStr, svcSentence) {
         return (
-          'Installs only the hardware points required to close Guideline 36 gaps and programs the sequences ' +
+          'Installs only the hardware points required to close ASHRAE 36 gaps and programs the sequences ' +
           'classified as safety-critical (e.g. freeze protection, minimum ventilation) — it does not add the ' +
           'optimization sequences (temperature/pressure reset, economizer, optimal start) that generate ongoing ' +
           'energy savings. ' +
@@ -15061,7 +15068,7 @@ function _rptA36CoverPricingStrip(d) {
       isRec: false,
       desc: function (amtStr, svcSentence) {
         return (
-          'Builds out every applicable Guideline 36 sequence across every piece of equipment in the portfolio ' +
+          'Builds out every applicable ASHRAE 36 sequence across every piece of equipment in the portfolio ' +
           'and adds building-wide Fault Detection &amp; Diagnostics (FDD) reporting; hardware is priced at ' +
           'full/standard spec rather than the Recommended tier’s cost-optimized substitutions. ' +
           (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
@@ -15485,12 +15492,12 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // 'complianceScope' / 'fullScope', rendered by rptPageASHRAE36ProposalComplianceScope /
   // ...FullScope near rptPageASHRAE36ProposalScope) — both still with no dollar total.
   var findingsPara =
-    'Reaching full ASHRAE Guideline 36 compliance across the ' +
+    'Reaching full ASHRAE 36 compliance across the ' +
     esc(displayClient) +
     ' portfolio requires two categories of work, in sequence. The first is the instrumentation ' +
-    'and safety programming every Guideline 36 sequence depends on — sensors, actuators, and ' +
+    'and safety programming every ASHRAE 36 sequence depends on — sensors, actuators, and ' +
     'safety-critical programming such as freeze protection — which must be in place before any ' +
-    'optimization sequence can be programmed. The second is the Guideline 36 optimization ' +
+    'optimization sequence can be programmed. The second is the ASHRAE 36 optimization ' +
     'sequences themselves, together with portfolio-wide fault detection and diagnostics (FDD) ' +
     'reporting — the work that delivers the energy, comfort, and compliance outcomes the program ' +
     'is built around. Rather than fund this as a single capital project, Control Service Company ' +
@@ -15632,12 +15639,16 @@ function _rptA36WhyThisApproachHTML(HEAD, UL) {
 /**
  * rptPageASHRAE36ProposalPhaseTable — Page 2 of the rebuilt Service Proposal. Matches the target's
  * second "Recommended Optimization Program" heading + paragraph, then the transposed phase table
- * (rows = Included Improvements / Facilities Included / Expected Results, columns = Phase 1/2/3).
- * Facilities Included and Included Improvements are LIVE-DERIVED from
- * _pricingComputeRecommendedTimeline (pricing-estimator.js) — the same phase split the interactive
- * Cost Estimate tab's Recommended timeline table uses — never hardcoded building names or scope
- * text. Expected Results is generic phase-position narrative (foundation -> expansion ->
- * completion) that names no client-specific fact, matching the target's own wording verbatim.
+ * (rows = Included Improvements / Expected Results, columns = Phase 1/2/3). A third row,
+ * "Facilities Included" (building names per phase, LIVE-DERIVED from
+ * _pricingComputeRecommendedTimeline), was removed 2026-07-29 (Matt, verbatim: "why would you
+ * put continues in phase x for every building? That is redundant... let's just remove the
+ * buildings completely from that phase table since all buildings are included.") — see the
+ * removal comment in _rptA36PhaseTableInnerHTML. Included Improvements and Expected Results
+ * (2026-07-29 rewrite, Matt's own phase framing — see the PHASE_IMPROVEMENTS/EXPECTED_RESULTS
+ * header comment in _rptA36PhaseTableInnerHTML) are fixed, generic phase-position narrative
+ * (foundation -> expansion -> completion) that names no client-specific fact, matching the
+ * target's own wording verbatim.
  * Returns '' content gracefully (a single "not yet available" page) if no priced timeline exists
  * yet for this project (i.e. pricing hasn't been configured) rather than showing empty cells.
  */
@@ -15760,7 +15771,7 @@ function _rptA36PhaseTableInnerHTML(d) {
   var intro =
     '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Recommended Optimization Program</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:4px">' +
-    'Based on the ASHRAE Guideline 36 assessment findings, Control Service Company recommends a ' +
+    'Based on the ASHRAE 36 assessment findings, Control Service Company recommends a ' +
     'phased optimization program' +
     (budgetFmt ? ' funded through a planned budget of approximately ' + budgetFmt + ' per month,' : '') +
     ' focused on the highest-value opportunities across the portfolio.' +
@@ -15792,16 +15803,44 @@ function _rptA36PhaseTableInnerHTML(d) {
     tl = Object.assign({}, tl, { phases: tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES) });
   }
 
-  // "Included Improvements" text now comes from the shared _rptA36PhaseImprovementsText helper
-  // (extracted 2026-07-27) so this page and the Cost Estimate page's phase timeline never drift.
-  var improvementsForPhase = _rptA36PhaseImprovementsText;
+  // Phase copy rewrite (2026-07-29, Matt, verbatim: "can we not expand more on the 3 phases in
+  // the phases table and add more to the improvements and expected results, like phase 1 is
+  // programming all sequences that do not require sensors to be installed and getting reporting
+  // and alarms set up and if we have money to spare start installing sensors in high value
+  // places. Phase 2 is expanding where we install sensors and add the sequences for them. Phase
+  // 3 is remaining sensors and sequences. We need to make this more understandable to the
+  // reader."). PHASE_IMPROVEMENTS/EXPECTED_RESULTS below are fixed, plain-language, phase-
+  // POSITION copy (same convention EXPECTED_RESULTS already used — generic narrative, no
+  // client-specific fact) written to match Matt's own framing directly, replacing the prior
+  // live-derived _rptA36PhaseImprovementsText sentence for THIS table only. That helper is left
+  // fully intact and unchanged — the Cost Estimate page's separate phase timeline
+  // (_rptA36RecommendedTimelineHTML) still calls it, so its data-driven per-project wording is
+  // unaffected by this rewrite.
+  //
+  // KNOWN CONFLICT (flagged, not silently resolved): Matt's Phase 1 copy below says sensor
+  // installation in high-value locations can begin in Phase 1 "if we have money to spare." The
+  // shipped ranking algorithm (PRICING_NO_HW_SCORE_BONUS, pricing-estimator.js) currently scores
+  // 100% programming / zero hardware into Phases 1-2 by design — Phase 1 never actually contains
+  // priced hardware under today's algorithm, regardless of budget headroom. This copy is written
+  // exactly as Matt described it (literal compliance); the algorithm was NOT changed to match —
+  // that is a separate true-ROI ranking workstream. See dashboardlogic.md 2026-07-29 entry.
+  var PHASE_IMPROVEMENTS = [
+    'Programs every control sequence that does not require a new sensor to be installed, and sets up automated ' +
+      'reporting and alarms so problems are caught right away. If the monthly budget allows, sensor installation ' +
+      'begins in the highest-value locations first.',
+    'Expands sensor installation to more equipment and zones, and programs the additional control sequences ' +
+      'those new sensors make possible.',
+    'Installs the remaining sensors and programs the remaining control sequences across the portfolio.',
+  ];
 
   var EXPECTED_RESULTS = [
-    'Improved ventilation, sequences that just need to be programmed, higher HVAC efficiency, and ' +
-      'the foundation for future improvements.',
-    'Portfolio expansion, additional savings opportunities, and improved operational consistency.',
-    'Completion of initial strategy, increased Guideline 36 alignment, and continued comfort and ' +
-      'performance gains.',
+    'Immediate visibility into how equipment is running through reporting and alarms, plus the efficiency and ' +
+      'comfort improvements available from every sequence that does not require new hardware — the fastest, ' +
+      'lowest-cost gains first.',
+    'Broader sensor coverage and the added control sequences it enables, extending energy savings and comfort ' +
+      'improvements to more equipment and zones.',
+    'Every building operating with the same level of sensor coverage and automated control, completing the ' +
+      'ASHRAE 36 optimization program.',
   ];
 
   var thStyle =
@@ -15831,29 +15870,18 @@ function _rptA36PhaseTableInnerHTML(d) {
     '">Included Improvements</td>' +
     tl.phases
       .map(function (p, i) {
-        return '<td style="' + cellStyle + '">' + esc(improvementsForPhase(p.rows, i)) + '</td>';
+        return '<td style="' + cellStyle + '">' + esc(PHASE_IMPROVEMENTS[i] || '') + '</td>';
       })
       .join('') +
     '</tr>';
 
-  var facilitiesRow =
-    '<tr><td style="' +
-    lblStyle +
-    '">Facilities Included</td>' +
-    tl.phases
-      .map(function (p) {
-        // Bug 3306c189 (2026-07-27): reads the shared `facilitiesText` field computed once in
-        // _pricingComputeRecommendedTimeline (pricing-estimator.js) — a building is named ONCE, in
-        // the earliest phase it has work, with later-phase continuation described in that same
-        // sentence rather than the building's bare name being repeated in every later phase's
-        // column (previously Phase 2 listed 21 buildings, Phase 3 listed 13, heavily overlapping,
-        // vs. the client's own base document's 5/9/8 with no repeats). Already includes the
-        // "no additional facilities this period" fallback text.
-        var txt = esc(p.facilitiesText || '');
-        return '<td style="' + cellStyle + '">' + txt + '</td>';
-      })
-      .join('') +
-    '</tr>';
+  // Facilities Included row REMOVED (2026-07-29, Matt, verbatim: "why would you put continues in
+  // phase x for every building? That is redundant. Also, let's just remove the buildings
+  // completely from that phase table since all buildings are included."). Every building in the
+  // priced scope is included across the phases by construction, so a per-phase buildings list
+  // added no information. facilitiesText itself (pricing-estimator.js) is left intact/unchanged
+  // — it still feeds the opt-in Cost Estimate page's separate phase timeline table
+  // (_rptA36RecommendedTimelineHTML), which keeps its own "Facilities Included" column.
 
   var resultsRow =
     '<tr><td style="' +
@@ -15883,7 +15911,6 @@ function _rptA36PhaseTableInnerHTML(d) {
     '</thead>' +
     '<tbody>' +
     improvementsRow +
-    facilitiesRow +
     resultsRow +
     '</tbody>' +
     '</table>';
@@ -16163,7 +16190,7 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
     '">ASHRAE 36 Compliance</div>' +
     '<div style="' +
     BODY +
-    '">Before any Guideline 36 optimization sequence can be programmed at ' +
+    '">Before any ASHRAE 36 optimization sequence can be programmed at ' +
     esc(displayClient) +
     ', the equipment it runs on needs the sensor and actuator instrumentation that sequence ' +
     'depends on. This scope covers that instrumentation, along with safety-critical programming ' +
@@ -16172,7 +16199,7 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
     '<ul style="' +
     UL +
     '">' +
-    '<li>Sensor and actuator instrumentation required by Guideline 36 control sequences</li>' +
+    '<li>Sensor and actuator instrumentation required by ASHRAE 36 control sequences</li>' +
     '<li>Safety-critical programming, including freeze protection</li>' +
     '<li>Verification that each piece of equipment has the points it needs before sequence ' +
     'programming begins</li>' +
@@ -16224,15 +16251,15 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
     '">Full Scope</div>' +
     '<div style="' +
     BODY +
-    '">Completing full ASHRAE Guideline 36 compliance across the ' +
+    '">Completing full ASHRAE 36 compliance across the ' +
     esc(displayClient) +
-    ' portfolio means programming every applicable Guideline 36 optimization sequence on top of ' +
+    ' portfolio means programming every applicable ASHRAE 36 optimization sequence on top of ' +
     'the instrumentation and safety programming above, and adding portfolio-wide reporting that ' +
     'continuously checks that every sequence keeps performing as intended.</div>' +
     '<ul style="' +
     UL +
     '">' +
-    '<li>Guideline 36 optimization sequences — supply air temperature reset, duct static pressure ' +
+    '<li>ASHRAE 36 optimization sequences — supply air temperature reset, duct static pressure ' +
     'reset, demand-controlled ventilation, economizer control, and the other sequences applicable ' +
     'to each piece of equipment</li>' +
     '<li>Portfolio-wide Fault Detection &amp; Diagnostics (FDD) reporting</li>' +
@@ -16409,12 +16436,12 @@ function rptPageASHRAE36ProposalScope(n, d) {
   var bodyHTML =
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 1 — Hardware &amp; Sensor Upgrades</div>' +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Installation of missing sensors and actuators required for Guideline 36 compliance. This phase establishes the hardware foundation for sequence programming.</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Installation of missing sensors and actuators required for ASHRAE 36 compliance. This phase establishes the hardware foundation for sequence programming.</div>' +
     ph1HTML +
     '</div>' +
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2 — BAS Sequence Programming</div>' +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming of ASHRAE Guideline 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming of ASHRAE 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
     ph2HTML +
     '</div>';
 
@@ -16957,7 +16984,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       label: 'Recommended',
       desc: 'An ongoing monthly program funding the highest-impact opportunities first — not a one-time project cost.',
     },
-    { key: 'compliance', label: 'Compliance', desc: 'Scope required to meet ASHRAE Guideline 36.' },
+    { key: 'compliance', label: 'Compliance', desc: 'Scope required to meet ASHRAE 36.' },
     { key: 'full-scope', label: 'Full Scope', desc: 'All identified upgrades across the portfolio.' },
   ];
 
@@ -17755,7 +17782,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     inv.totalAll.toLocaleString() +
     ' total points captured, ' +
     inv.totalASHRAE.toLocaleString() +
-    ' map directly to ASHRAE Guideline 36 sensor and actuator categories and are evaluated in the compliance scoring above. ' +
+    ' map directly to ASHRAE 36 sensor and actuator categories and are evaluated in the compliance scoring above. ' +
     'The remaining ' +
     inv.totalOther.toLocaleString() +
     ' points are present in the BAS export but do not correspond to a defined ASHRAE 36 category — these may include vendor-specific status objects, ' +
@@ -17849,7 +17876,7 @@ function rptPageASHRAE36PointInventory(n, d) {
   var footnote =
     '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;padding-top:8px">' +
     'Note: "Other BAS Points" counts are informational. They represent BAS objects that have been captured and logged but ' +
-    'do not correspond to any ASHRAE Guideline 36 sensor or actuator category. ' +
+    'do not correspond to any ASHRAE 36 sensor or actuator category. ' +
     'These points do not contribute to and do not reduce the ASHRAE 36 Coverage percentages shown in this report.' +
     '</div>';
 
