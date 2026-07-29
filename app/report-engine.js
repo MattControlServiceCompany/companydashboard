@@ -15639,14 +15639,16 @@ function _rptA36WhyThisApproachHTML(HEAD, UL) {
 /**
  * rptPageASHRAE36ProposalPhaseTable — Page 2 of the rebuilt Service Proposal. Matches the target's
  * second "Recommended Optimization Program" heading + paragraph, then the transposed phase table
- * (rows = Included Improvements / Facilities Included / Expected Results, columns = Phase 1/2/3).
- * Facilities Included is LIVE-DERIVED from _pricingComputeRecommendedTimeline
- * (pricing-estimator.js) — the same phase split the interactive Cost Estimate tab's Recommended
- * timeline table uses — never hardcoded building names or scope text. Included Improvements and
- * Expected Results (2026-07-29 rewrite, Matt's own phase framing — see the
- * PHASE_IMPROVEMENTS/EXPECTED_RESULTS header comment in _rptA36PhaseTableInnerHTML) are fixed,
- * generic phase-position narrative (foundation -> expansion -> completion) that names no
- * client-specific fact, matching the target's own wording verbatim.
+ * (rows = Included Improvements / Expected Results, columns = Phase 1/2/3). A third row,
+ * "Facilities Included" (building names per phase, LIVE-DERIVED from
+ * _pricingComputeRecommendedTimeline), was removed 2026-07-29 (Matt, verbatim: "why would you
+ * put continues in phase x for every building? That is redundant... let's just remove the
+ * buildings completely from that phase table since all buildings are included.") — see the
+ * removal comment in _rptA36PhaseTableInnerHTML. Included Improvements and Expected Results
+ * (2026-07-29 rewrite, Matt's own phase framing — see the PHASE_IMPROVEMENTS/EXPECTED_RESULTS
+ * header comment in _rptA36PhaseTableInnerHTML) are fixed, generic phase-position narrative
+ * (foundation -> expansion -> completion) that names no client-specific fact, matching the
+ * target's own wording verbatim.
  * Returns '' content gracefully (a single "not yet available" page) if no priced timeline exists
  * yet for this project (i.e. pricing hasn't been configured) rather than showing empty cells.
  */
@@ -15853,24 +15855,13 @@ function _rptA36PhaseTableInnerHTML(d) {
       .join('') +
     '</tr>';
 
-  var facilitiesRow =
-    '<tr><td style="' +
-    lblStyle +
-    '">Facilities Included</td>' +
-    tl.phases
-      .map(function (p) {
-        // Bug 3306c189 (2026-07-27): reads the shared `facilitiesText` field computed once in
-        // _pricingComputeRecommendedTimeline (pricing-estimator.js) — a building is named ONCE, in
-        // the earliest phase it has work, with later-phase continuation described in that same
-        // sentence rather than the building's bare name being repeated in every later phase's
-        // column (previously Phase 2 listed 21 buildings, Phase 3 listed 13, heavily overlapping,
-        // vs. the client's own base document's 5/9/8 with no repeats). Already includes the
-        // "no additional facilities this period" fallback text.
-        var txt = esc(p.facilitiesText || '');
-        return '<td style="' + cellStyle + '">' + txt + '</td>';
-      })
-      .join('') +
-    '</tr>';
+  // Facilities Included row REMOVED (2026-07-29, Matt, verbatim: "why would you put continues in
+  // phase x for every building? That is redundant. Also, let's just remove the buildings
+  // completely from that phase table since all buildings are included."). Every building in the
+  // priced scope is included across the phases by construction, so a per-phase buildings list
+  // added no information. facilitiesText itself (pricing-estimator.js) is left intact/unchanged
+  // — it still feeds the opt-in Cost Estimate page's separate phase timeline table
+  // (_rptA36RecommendedTimelineHTML), which keeps its own "Facilities Included" column.
 
   var resultsRow =
     '<tr><td style="' +
@@ -15900,7 +15891,6 @@ function _rptA36PhaseTableInnerHTML(d) {
     '</thead>' +
     '<tbody>' +
     improvementsRow +
-    facilitiesRow +
     resultsRow +
     '</tbody>' +
     '</table>';
