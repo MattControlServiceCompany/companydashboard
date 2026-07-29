@@ -2324,7 +2324,7 @@ function rptPageFinancial(n, d) {
     '</svg>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
     '<h2>Building Performance</h2>' +
     bldgTable +
     '<h2>Quarterly Savings vs Baseline</h2>' +
@@ -2726,7 +2726,7 @@ function rptPageSavingsPerformance(n, d) {
     '</table>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
     '<h2>Monthly Savings: Projected vs Actual</h2>' +
     chartSection +
     '<h2>Annual Summary by Year</h2>' +
@@ -2961,7 +2961,7 @@ function rptPageEUI(n, d) {
     '</table>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
     '<h2>Building Performance Rankings</h2>' +
     rankTable +
     '<h2>Site EUI vs CBECS Benchmark</h2>' +
@@ -3238,7 +3238,7 @@ function rptPageObservations(n, d) {
       '<p contenteditable="true">' +
       narrative +
       '</p>' +
-      '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);margin-top:2px"><strong>Recommendation:</strong> ' +
+      '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);margin-top:2px"><strong>Recommendation:</strong> ' +
       rec +
       '</p>'
     );
@@ -5361,7 +5361,7 @@ function rptPageElectric(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
     '<div style="margin-bottom:6px;font-size:11px;color:var(--rpt-page-text)">Period: ' +
     periodLabel +
     '</div>' +
@@ -5612,7 +5612,7 @@ function rptPageGas(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
     '<div style="margin-bottom:6px;font-size:11px;color:var(--rpt-page-text)">Period: ' +
     periodLabel +
     '</div>' +
@@ -6083,7 +6083,7 @@ function rptPageGasPropane(n, d) {
   });
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:11px;color:var(--rpt-page-text);line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
     _barChart(thermsMonthly, 'var(--rpt-gas-bl)', 'var(--rpt-gas-cur)', 'Therms', 'Natural Gas Therms') +
     '<h2 style="font-size:11px;font-weight:700;color:var(--rpt-gas-head);margin:8px 0 3px">Natural Gas by Building</h2>' +
     _table(
@@ -7478,28 +7478,29 @@ async function exportReportToWord() {
       });
       // Word list-item font-size fix (2026-07-26, measured via PyMuPDF span extraction on a real
       // Word COM PDF round-trip: bullet list items rendered at a measured 12.00pt — visibly
-      // larger than the surrounding 8.04pt body paragraphs/table cells this report's own markup
-      // declares as the SAME `font-size:10.5px` used on each list's own `<ul>` wrapper). Root
-      // cause, confirmed by unzipping document.xml: Word's HTML importer, when it converts a
-      // source `<ul>/<li>` into a native Word numbered/bulleted list, drops any font-size found
-      // on the `<ul>` (or an inline style added directly to the `<li>` that merely repeats a
-      // fixed literal like "10.0pt") without ever writing an explicit `w:sz` on the resulting
-      // run — it silently falls back to the document's base default instead, which is NOT the
-      // same value as this report's own body-paragraph text: body/table-cell `<div>`s DO get an
-      // explicit per-run `w:sz` from their own inline `font-size:10.5px` (measured: Word applies
-      // px-based font-size to ordinary paragraphs/divs via its usual px->half-point conversion,
-      // unlike the padding-px behavior fixed by _fixPaddingUnits above — font-size in px is NOT
-      // the same limitation), but that same literal value written directly onto a converted `<li>`
-      // is discarded during the list-numbering conversion specifically. Fix, mirroring
-      // _insetChildren's existing "read the wrapper's own intended value, write it onto the real
-      // child element" pattern rather than inventing a single global constant (this report has
-      // multiple <ul> font-sizes by design — e.g. 10.5px body-matched lists here and on
+      // larger than the surrounding body paragraphs/table cells this report's own markup declares
+      // via each list's own `<ul>` wrapper). Root cause, confirmed by unzipping document.xml:
+      // Word's HTML importer, when it converts a source `<ul>/<li>` into a native Word
+      // numbered/bulleted list, drops any font-size found on the `<ul>` (or an inline style added
+      // directly to the `<li>` that merely repeats a fixed literal like "10.0pt") without ever
+      // writing an explicit `w:sz` on the resulting run — it silently falls back to the document's
+      // base default instead, which is NOT the same value as this report's own body-paragraph
+      // text: body/table-cell `<div>`s DO get an explicit per-run `w:sz` from their own inline
+      // font-size (measured: Word applies px-based font-size to ordinary paragraphs/divs via its
+      // usual px->half-point conversion, unlike the padding-px behavior fixed by
+      // _fixPaddingUnits above — font-size in px is NOT the same limitation), but that same
+      // literal value written directly onto a converted `<li>` is discarded during the
+      // list-numbering conversion specifically. Fix, mirroring _insetChildren's existing "read the
+      // wrapper's own intended value, write it onto the real child element" pattern rather than
+      // inventing a single global constant (this report has multiple <ul> font-sizes by design —
+      // e.g. body-matched (14px = 10.5pt, per CSC Letterhead.docx spec) lists here and on
       // rptPageASHRAE36ProposalVision, vs an intentionally smaller 8.5px in
       // _rptA36TierDetailPanelHTML's item lists — a single hardcoded size would wrongly flatten
       // those): read each `<ul>`/`<ol>`'s own inline `font-size` and copy that EXACT literal
       // value onto every one of its own `<li>` children. When a list has no explicit font-size,
       // 10.0pt (matching wordFontCss's own .MsoChpDefault/p.MsoNormal docDefaults value below) is
-      // the safe fallback.
+      // the safe fallback. (2026-07-28: also switched the per-`<li>` font-family override from
+      // Calibri to Arial to match the CSC Letterhead.docx template — see wordFontCss below.)
       const _listFontSizeRe = /font-size\s*:\s*([^;]+)/;
       clone.querySelectorAll('ul, ol').forEach((listEl) => {
         const _listStyle = listEl.getAttribute('style') || '';
@@ -7512,8 +7513,8 @@ async function exportReportToWord() {
             'style',
             _existingLiStyle +
               (_existingLiStyle && !/;\s*$/.test(_existingLiStyle) ? ';' : '') +
-              'font-family:Calibri;mso-ascii-font-family:Calibri;mso-hansi-font-family:Calibri;' +
-              'mso-bidi-font-family:Calibri;font-size:' +
+              'font-family:Arial, sans-serif;mso-ascii-font-family:Arial;mso-hansi-font-family:Arial;' +
+              'mso-bidi-font-family:Arial;font-size:' +
               _liFontSize +
               ';',
           );
@@ -7690,16 +7691,17 @@ async function exportReportToWord() {
     );
     // Word default-font fix (2026-07-26, measured: exported doc rendered in Times New Roman
     // even though the live/PDF path's `.rpt-page { font-family: var(--rpt-font) }` resolves to
-    // a literal `'Segoe UI', Arial, sans-serif` list in the <style> block above). Matt's own
-    // hand-built target document (2026.07.23 Johnson County Service Proposal.docx, surveyed via
-    // dumpdocx.py) uses `w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"`
-    // everywhere — Calibri 10pt is this export's target, not the browser/PDF path's Segoe UI
-    // (that path is untouched by this change).
+    // a literal `'Segoe UI', Arial, sans-serif` list in the <style> block above).
     //
-    // A `.rpt-page {font-family:Calibri}` class rule ALONE was not enough (measured: unzipping
+    // 2026-07-28 update: target font changed from Calibri to Arial 10.5pt to match the measured
+    // CSC Letterhead.docx template (Arial 10.5pt body text — see docs/dashboardlogic.md
+    // 2026-07-28 entry). The mechanism below (three belt-and-suspenders selectors) is unchanged;
+    // only the font-family/font-size literals were swapped from Calibri/10.0pt to Arial/10.5pt.
+    //
+    // A `.rpt-page {font-family:Arial}` class rule ALONE was not enough (measured: unzipping
     // that attempt's document.xml showed w:docDefaults > w:rPrDefault > w:rFonts still
     // "Times New Roman" — Word's own hardcoded absolute fallback — and only a small minority of
-    // runs had any Calibri w:rFonts override at all). Root cause: Word's HTML importer does not
+    // runs had any override at all). Root cause: Word's HTML importer does not
     // fully compute CSS inheritance down through every level of this report's deeply nested
     // markup (.rpt-page > .rpt-body > section/table/paragraph elements, several levels deep) the
     // way a browser does — a class rule on an ancestor several levels above the actual text runs
@@ -7707,10 +7709,10 @@ async function exportReportToWord() {
     // Word's own "Save As Web Page" export always emits (see reference_filtered.htm, generated
     // via Word COM for comparison) to carry the document's absolute default character
     // properties — confirmed by test (varD_font.doc/.docx, 2026-07-26): declaring
-    // `.MsoChpDefault {font-family:Calibri; ...}` in the stylesheet changes
-    // `w:docDefaults > w:rPrDefault > w:rFonts` to Calibri even though no element in the body
+    // `.MsoChpDefault {font-family:Arial; ...}` in the stylesheet changes
+    // `w:docDefaults > w:rPrDefault > w:rFonts` to Arial even though no element in the body
     // ever carries that class. Since docDefaults is Word's fallback of last resort for any run
-    // that doesn't inherit a font from somewhere else, this reliably makes Calibri the base font
+    // that doesn't inherit a font from somewhere else, this reliably makes Arial the base font
     // everywhere in the document — EXCEPT that a second, independent hardcoded override still
     // won out (measured on the real report even after adding .MsoChpDefault, unzipped again): the
     // auto-generated "Normal" PARAGRAPH STYLE itself (`w:styleId="Normal" w:default="1"`, what
@@ -7721,18 +7723,18 @@ async function exportReportToWord() {
     // selector Word's own "Save As Web Page" export always emits (same reference_filtered.htm) to
     // define that exact "Normal" style's properties — confirmed by test (varD_font.doc/.docx):
     // adding it removes the Times New Roman override from the generated Normal style entirely,
-    // leaving it to inherit Calibri from docDefaults as intended. `.rpt-page`'s own rule is kept
+    // leaving it to inherit Arial from docDefaults as intended. `.rpt-page`'s own rule is kept
     // too (belt-and-suspenders for the shallower cases where CSS inheritance IS picked up) —
     // headings, KPI numbers, tables, etc. all set their OWN font-size inline/via their own CSS
     // rules already and are unaffected by any of these three rules, so this does not flatten the
     // report's type hierarchy.
     const wordFontCss =
-      '.MsoChpDefault {font-family:Calibri; mso-ascii-font-family:Calibri; ' +
-      'mso-hansi-font-family:Calibri; mso-bidi-font-family:Calibri; font-size:10.0pt;} ' +
-      'p.MsoNormal, li.MsoNormal, div.MsoNormal {font-family:Calibri; mso-ascii-font-family:Calibri; ' +
-      'mso-hansi-font-family:Calibri; mso-bidi-font-family:Calibri; font-size:10.0pt;} ' +
-      '.rpt-page {font-family:Calibri; mso-ascii-font-family:Calibri; ' +
-      'mso-hansi-font-family:Calibri; mso-bidi-font-family:Calibri; font-size:10.0pt;} ' +
+      '.MsoChpDefault {font-family:Arial, sans-serif; mso-ascii-font-family:Arial; ' +
+      'mso-hansi-font-family:Arial; mso-bidi-font-family:Arial; font-size:10.5pt;} ' +
+      'p.MsoNormal, li.MsoNormal, div.MsoNormal {font-family:Arial, sans-serif; mso-ascii-font-family:Arial; ' +
+      'mso-hansi-font-family:Arial; mso-bidi-font-family:Arial; font-size:10.5pt;} ' +
+      '.rpt-page {font-family:Arial, sans-serif; mso-ascii-font-family:Arial; ' +
+      'mso-hansi-font-family:Arial; mso-bidi-font-family:Arial; font-size:10.5pt;} ' +
       // Belt #3 (2026-07-26, measured: even with .MsoChpDefault + p.MsoNormal fixing
       // w:docDefaults and the auto-generated "Normal" STYLE, unzipping still showed every
       // individual run's OWN w:rPr carrying an explicit, hardcoded
@@ -7743,8 +7745,8 @@ async function exportReportToWord() {
       // (CSS inheritance through several levels of nested divs/tables not fully honored — same
       // root cause noted above). An explicit rule naming every element type this report's markup
       // actually uses is what reaches those per-run overrides directly.
-      'h1,h2,h3,h4,h5,h6,p,div,span,td,th,li,strong,b,em,i,a {font-family:Calibri; ' +
-      'mso-ascii-font-family:Calibri; mso-hansi-font-family:Calibri; mso-bidi-font-family:Calibri;}';
+      'h1,h2,h3,h4,h5,h6,p,div,span,td,th,li,strong,b,em,i,a {font-family:Arial, sans-serif; ' +
+      'mso-ascii-font-family:Arial; mso-hansi-font-family:Arial; mso-bidi-font-family:Arial;}';
     const wordOnlyCss =
       '@page Section1 {size:8.5in 11in; margin:0in 0in 0in 0in; mso-header-margin:0in; ' +
       'mso-footer-margin:0in; mso-paper-source:0; mso-header:h1; mso-footer:f1;} ' +
@@ -12748,13 +12750,13 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     d.project.name +
     '</div>' +
     '</div>' +
-    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
+    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
     "This report evaluates the facility's building automation system against ASHRAE Guideline 36 — the industry standard for high-performance HVAC control. " +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with Guideline 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
-    '<div class="rpt-a36-callout" style="font-size:12px;line-height:1.6;color:var(--rpt-page-text)">' +
+    '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' +
     finding +
     '</div>' +
     '<div style="display:flex;gap:16px;margin-top:12px">' +
@@ -14228,7 +14230,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // ── Empty-state guard ─────────────────────────────────────────────────────
   if (bldgOrder.length === 0) {
     var emptyBody =
-      '<div class="rpt-a36-callout" style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+      '<div class="rpt-a36-callout" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' +
       'No zone setpoint values were found in the equipment export for this project. ' +
       'Setpoint data is present when zones trend their occupied heating and cooling setpoints. ' +
       'Import an updated equipment matrix export to enable this analysis.' +
@@ -14711,7 +14713,7 @@ function _rptA36CoverPricingStrip(d) {
         'padding-bottom:3px;margin-bottom:5px">' +
         _esc(headline) +
         '</div>' +
-        '<div style="font-size:10.5px;color:var(--rpt-page-text);line-height:1.6">' +
+        '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' +
         t.desc(amtStr, svcSentence) +
         '</div>' +
         '</div>'
@@ -14992,11 +14994,15 @@ function rptPageASHRAE36ProposalCover(n, d) {
 
   // Density pass (2026-07-26, page-1 clip fix): tightened from 12/5 margin, 1.55 line-height to
   // fit all 5 "Why This Approach" bullets above the wave footer without shrinking type past a
-  // readable 10.5px/16.5px floor — see dashboardlogic.md 2026-07-26 entry for the before/after
-  // px-past-footer measurements this was tuned against.
+  // readable floor — see dashboardlogic.md 2026-07-26 entry for the before/after px-past-footer
+  // measurements this was tuned against. NOTE (2026-07-28): BODY/UL below were bumped from
+  // font-size:10.5px (rendered ~8.04pt in Word, a px/pt unit bug) to the correct font-size:14px
+  // (=10.5pt) per the CSC Letterhead.docx spec — this pagination density tuning was measured
+  // against the SMALLER pre-fix size and has not been re-verified at 14px; flag for the
+  // pagination owner to re-check page-1 fit.
   var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
-  var BODY = 'font-size:10.5px;color:var(--rpt-page-text);line-height:1.38';
-  var UL = 'margin:2px 0 0;padding-left:16px;font-size:10.5px;color:var(--rpt-page-text);line-height:1.38';
+  var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
+  var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
   // ── Title block ─────────────────────────────────────────────────────────
   var title =
@@ -15384,7 +15390,7 @@ function _rptA36PhaseTableInnerHTML(d) {
   // size unchanged) — see rptPageASHRAE36ProposalPhaseAndVision's header comment.
   var intro =
     '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Recommended Optimization Program</div>' +
-    '<div style="font-size:10.5px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:4px">' +
+    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:4px">' +
     'Based on the ASHRAE Guideline 36 assessment findings, Control Service Company recommends a ' +
     'phased optimization program' +
     (budgetFmt ? ' funded through a planned budget of approximately ' + budgetFmt + ' per month,' : '') +
@@ -15400,7 +15406,7 @@ function _rptA36PhaseTableInnerHTML(d) {
 
   if (!tl || !tl.phases || !tl.phases.length) {
     var fallback =
-      '<div style="font-size:10.5px;color:var(--rpt-page-text);padding:10px 0">' +
+      '<div style="font-size:14px;color:var(--rpt-page-text);padding:10px 0">' +
       'A phased facility rollout will populate here once pricing data has been imported and priced ' +
       'for this project.' +
       '</div>';
@@ -15420,10 +15426,10 @@ function _rptA36PhaseTableInnerHTML(d) {
   ];
 
   var thStyle =
-    'padding:8px 10px;font-size:10.5px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
+    'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
     'border:1px solid var(--rpt-rule)';
   var lblStyle =
-    'padding:8px 10px;font-size:10.5px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
+    'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
     'vertical-align:top;border:1px solid var(--rpt-rule)';
   var cellStyle =
     'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
@@ -15543,13 +15549,14 @@ function _rptA36VisionInnerHTML(d) {
   // Density pass (2026-07-27, page-2/3 merge — see rptPageASHRAE36ProposalPhaseAndVision's header
   // comment): tightened from 10px/5px heading margins and 1.55 line-height to the SAME 1.38
   // line-height page 1 (rptPageASHRAE36ProposalCover's BODY var) already established as this
-  // site's readable floor at this 10.5px font size — reusing an already-vetted value, not
-  // inventing a tighter one. Font sizes themselves are UNCHANGED (10.5px body, 12px heading) —
-  // only spacing tightened, so this is real content packed more efficiently, not padding removed
-  // to fake fullness.
+  // site's readable floor — reusing an already-vetted value, not inventing a tighter one. Font
+  // sizes themselves were UNCHANGED by this density pass (12px heading unchanged; body was
+  // font-size:10.5px at the time, later corrected to font-size:14px on 2026-07-28 — see
+  // rptPageASHRAE36ProposalCover's comment above) — only spacing tightened, so this is real
+  // content packed more efficiently, not padding removed to fake fullness.
   var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
-  var BODY = 'font-size:10.5px;color:var(--rpt-page-text);line-height:1.38';
-  var UL = 'margin:1px 0 0;padding-left:16px;font-size:10.5px;color:var(--rpt-page-text);line-height:1.38';
+  var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
+  var UL = 'margin:1px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
   var tl = null;
   try {
@@ -15563,9 +15570,9 @@ function _rptA36VisionInnerHTML(d) {
   // _rptA36PhaseTableInnerHTML (the most-scrutinized element per explicit instruction) is NOT
   // touched by this density pass.
   var thPlain =
-    'padding:4px 10px;font-size:10.5px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
+    'padding:4px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
   var tdPlain =
-    'padding:4px 10px;font-size:10.5px;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
+    'padding:4px 10px;font-size:14px;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
 
   var implTable = '';
   if (tl && tl.phases && tl.phases.length) {
@@ -16699,7 +16706,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // .rpt-a36-callout "just spacing, no border" convention as every other explanatory
         // text block on this and the Audit Report's pages.
         svcBlock =
-          '<div class="rpt-a36-callout" style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-top:12px">' +
+          '<div class="rpt-a36-callout" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-top:12px">' +
           '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
           'margin-bottom:4px">Monthly Energy Management Service Agreement</div>' +
           '<div>' +

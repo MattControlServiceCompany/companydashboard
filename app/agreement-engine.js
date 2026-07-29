@@ -302,9 +302,9 @@ function collectAgreementData(projId, templateType, opts) {
 
 // ─── Shared style tokens (matches rptPageASHRAE36ProposalCover's convention) ──────────────────────
 var _AGR_HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 3px';
-var _AGR_BODY = 'font-size:10.5px;color:var(--rpt-page-text);line-height:1.42';
-var _AGR_UL = 'margin:2px 0 4px;padding-left:18px;font-size:10.5px;color:var(--rpt-page-text);line-height:1.42';
-var _AGR_SUBHEAD = 'font-size:10.5px;font-weight:700;color:var(--rpt-page-text);margin:6px 0 2px';
+var _AGR_BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.42';
+var _AGR_UL = 'margin:2px 0 4px;padding-left:18px;font-size:14px;color:var(--rpt-page-text);line-height:1.42';
+var _AGR_SUBHEAD = 'font-size:14px;font-weight:700;color:var(--rpt-page-text);margin:6px 0 2px';
 
 // ─── Page 1: Title + Recital + Scope (building list) ──────────────────────────────────────────
 // 2026-07-28 fidelity fix (feature/energy-services-agreement): the Word original's page 1 is ONE
