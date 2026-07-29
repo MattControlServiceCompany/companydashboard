@@ -881,6 +881,80 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
 // -----------------------------------------------------------------------
 
 /**
+ * RPT_GEOMETRY_DEFAULTS / _rptGeometry / _rptContentBudget — single source of truth for report
+ * page geometry (sheet size, margins, gutter, header/footer band heights). fix/report-content-
+ * pagination (2026-07-28), Matt verbatim: "You literally have the dimensions and margins for a
+ * 8.5x11 sheet of paper... don't hard code numbers, instead make it user selectable or a
+ * variable in the code so it can be easily changed later." Every pagination row-budget in this
+ * file (ROWS_BUDGET_FIRST/CONT, RATIONALE_BUDGET_*, BUILDING_PAGE_BUDGET, etc.) must be derived
+ * from _rptContentBudget(), never a standalone invented literal.
+ *
+ * These values MIRROR the CSS custom properties on :root in energy-department.html's
+ * #report-styles block (--rpt-page-w/h, --rpt-pad-x, --rpt-hdr-h, --rpt-hero-hdr-h,
+ * --rpt-small-hdr-h, --rpt-ftr-h — see the "Page geometry / furniture-layer tokens" comment
+ * there for what each one drives visually; .rpt-body's own top/bottom padding, 12px/8px, is
+ * spelled out in the .rpt-body rule right below those tokens). _rptGeometry() reads the LIVE
+ * CSS values via getComputedStyle whenever a document is available, so changing a CSS token
+ * (e.g. a future user-facing margin control that writes to document.documentElement.style)
+ * flows straight through to every pagination budget with zero code changes here. The literals
+ * below are only a fallback for contexts with no document (e.g. a Node harness loading this
+ * file without the stylesheet) and are kept numerically identical to the CSS defaults.
+ */
+var RPT_GEOMETRY_DEFAULTS = {
+  pageW: 816, // 8.5in @ 96dpi — mirrors CSS --rpt-page-w
+  pageH: 1056, // 11in @ 96dpi — mirrors CSS --rpt-page-h
+  padX: 48, // 0.5in side margin/gutter — mirrors CSS --rpt-pad-x
+  hdrH: 60, // .rpt-int-hdr chrome bar — mirrors CSS --rpt-hdr-h
+  heroHdrH: 196, // full-bleed cover letterhead — mirrors CSS --rpt-hero-hdr-h
+  smallHdrH: 195, // inset letterhead (Agreement first/signature pages) — mirrors CSS --rpt-small-hdr-h
+  ftrH: 72, // footer graphic + label + page number — mirrors CSS --rpt-ftr-h
+  bodyPadTop: 12, // .rpt-body's own top padding (not a CSS var — literal in the .rpt-body rule)
+  bodyPadBottom: 8, // .rpt-body's own bottom padding (not a CSS var — literal in the .rpt-body rule)
+  flushTop: 12, // .rpt-body-flush top offset (options.hideIntHdr, no header chrome)
+};
+
+/**
+ * _rptGeometry — returns the live page-geometry values, read from CSS custom properties when a
+ * document exists (single source of truth with the on-screen/print CSS), else the defaults
+ * above. Never hardcode a geometry number anywhere else in this file — call this instead.
+ */
+function _rptGeometry() {
+  if (typeof document === 'undefined' || !document.documentElement) return RPT_GEOMETRY_DEFAULTS;
+  var cs = getComputedStyle(document.documentElement);
+  function px(name, fallback) {
+    var n = parseFloat(cs.getPropertyValue(name));
+    return isFinite(n) ? n : fallback;
+  }
+  return {
+    pageW: px('--rpt-page-w', RPT_GEOMETRY_DEFAULTS.pageW),
+    pageH: px('--rpt-page-h', RPT_GEOMETRY_DEFAULTS.pageH),
+    padX: px('--rpt-pad-x', RPT_GEOMETRY_DEFAULTS.padX),
+    hdrH: px('--rpt-hdr-h', RPT_GEOMETRY_DEFAULTS.hdrH),
+    heroHdrH: px('--rpt-hero-hdr-h', RPT_GEOMETRY_DEFAULTS.heroHdrH),
+    smallHdrH: px('--rpt-small-hdr-h', RPT_GEOMETRY_DEFAULTS.smallHdrH),
+    ftrH: px('--rpt-ftr-h', RPT_GEOMETRY_DEFAULTS.ftrH),
+    bodyPadTop: RPT_GEOMETRY_DEFAULTS.bodyPadTop,
+    bodyPadBottom: RPT_GEOMETRY_DEFAULTS.bodyPadBottom,
+    flushTop: RPT_GEOMETRY_DEFAULTS.flushTop,
+  };
+}
+
+/**
+ * _rptContentBudget — full available content height (px) inside .rpt-body for a given header
+ * variant, BEFORE any page-specific chrome (headings, table titles, callouts, table headers,
+ * footnotes) is subtracted. Every ROWS_BUDGET, RATIONALE_BUDGET, and PAGE_BUDGET constant in
+ * this file starts from this number minus a NAMED chrome constant — never a bare literal.
+ * @param {string} [variant] - 'standard' (default, .rpt-int-hdr present), 'flush'
+ *   (options.hideIntHdr with no smallHeaderImg), or 'smallHdr' (options.smallHeaderImg — always
+ *   paired with hideIntHdr:true, see rptPage()'s bodyModifierClass comment).
+ */
+function _rptContentBudget(variant) {
+  var g = _rptGeometry();
+  var topOffset = variant === 'flush' ? g.flushTop : variant === 'smallHdr' ? g.smallHdrH : g.hdrH;
+  return g.pageH - topOffset - g.bodyPadTop - g.ftrH - g.bodyPadBottom;
+}
+
+/**
  * _rptPaginateTokens — shared pixel-height paginator used by ALL multi-page report sections.
  *
  * Splits an array of token objects into page-sized chunks using pixel-height estimates rather
@@ -1332,14 +1406,26 @@ function generateReportHTML(data, selectedSections) {
     _appLtr = String.fromCharCode(l.charCodeAt(0) + 1);
     return l;
   }
-  if (s.appendixA !== false)
-    pages.push(_tagSection(rptPageAppendixNormalization(pageNum++, data, _nextAppLtr('norm')), 'appendixA'));
-  if (s.appendixB !== false)
-    pages.push(_tagSection(rptPageAppendixBaseline(pageNum++, data, _nextAppLtr('regr'), _appMap), 'appendixB'));
+  // fix/report-content-pagination (2026-07-28): appendixA/B/D now return {html, pageCount}
+  // (same shape as rptPageObservations) instead of a single un-paginated HTML string, so
+  // large portfolios (e.g. JOCO's 26 buildings) no longer overflow .rpt-body on these pages.
+  if (s.appendixA !== false) {
+    var _apA = rptPageAppendixNormalization(pageNum, data, _nextAppLtr('norm'));
+    pages.push(_tagSection(_apA.html, 'appendixA'));
+    pageNum += _apA.pageCount;
+  }
+  if (s.appendixB !== false) {
+    var _apB = rptPageAppendixBaseline(pageNum, data, _nextAppLtr('regr'), _appMap);
+    pages.push(_tagSection(_apB.html, 'appendixB'));
+    pageNum += _apB.pageCount;
+  }
   if (s.appendixC !== false)
     pages.push(_tagSection(rptPageAppendixWeather(pageNum++, data, _nextAppLtr('weather')), 'appendixC'));
-  if (s.appendixD !== false)
-    pages.push(_tagSection(rptPageAppendixBills(pageNum++, data, _nextAppLtr('bills')), 'appendixD'));
+  if (s.appendixD !== false) {
+    var _apD = rptPageAppendixBills(pageNum, data, _nextAppLtr('bills'));
+    pages.push(_tagSection(_apD.html, 'appendixD'));
+    pageNum += _apD.pageCount;
+  }
 
   // Rule 2.4 (Plan B): bake page numbers into the HTML at generation time so they
   // appear on ALL paths including Board Summary (which never calls _updateOverlayPageNumbers).
@@ -3294,15 +3380,19 @@ function rptPageObservations(n, d) {
   // _rptPaginateTokens so both the Quarterly Report and the ASHRAE Audit share the same
   // pagination mechanism (architectural mandate: one source of truth).
   //
-  // Page body budget: 895px actual (1056px page - 12px top pad - 45px int-hdr - 12px body-top-pad
-  //   - 80px body-bottom-pad - 12px page-bottom-pad = 895px)
-  // Page 1: subtract heading (~30px) + summary para (~60px) = 805px for building sections
-  // Continuation pages: subtract cont heading (~30px) = 865px for building sections
-  // At ~150px per building section, budget accommodates 5 on page 1 and 5 on cont pages.
+  // fix/report-content-pagination (2026-07-28): budgets now derive from _rptContentBudget()
+  // (the shared page-geometry source of truth, see its doc comment above _rptPaginateTokens)
+  // instead of standalone literals. _obsBase is the full available .rpt-body height for this
+  // page's standard header variant; OBS_FIRST_CHROME/OBS_CONT_CHROME are this page's own
+  // per-page chrome (heading, summary paragraph, continuation heading) plus the safety margin
+  // already baked into the prior hardcoded 805/865 budgets -- numerically unchanged from before.
+  var _obsBase = _rptContentBudget('standard');
+  var OBS_FIRST_CHROME = 99; // page-1 heading (~30px) + summary paragraph (~60px) + safety margin
+  var OBS_CONT_CHROME = 39; // continuation-page heading (~30px) + safety margin
   var _obsTokens = bldgSectionItems.map(function (html) {
     return { type: 'block', html: html, estH: 150 };
   });
-  var _obsChunks = _rptPaginateTokens(_obsTokens, 805, 865);
+  var _obsChunks = _rptPaginateTokens(_obsTokens, _obsBase - OBS_FIRST_CHROME, _obsBase - OBS_CONT_CHROME);
 
   var resultPages = [];
   var currentPageNum = n;
@@ -6148,7 +6238,6 @@ function rptPageAppendixNormalization(n, d, appLetter) {
     '</div>';
 
   // Per-building meter tables using meterDetails from collectReportData
-  var meterTables = '';
   var monthNames = [
     'January',
     'February',
@@ -6163,6 +6252,18 @@ function rptPageAppendixNormalization(n, d, appLetter) {
     'November',
     'December',
   ];
+  var sectionTitle =
+    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>';
+  var contSectionTitle =
+    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail (cont.)</h3>';
+
+  // fix/report-content-pagination (2026-07-28): this used to concatenate ALL buildings'
+  // meter tables into a single string handed to ONE rptPage() call — with JOCO's 26
+  // buildings that overflowed .rpt-body with zero pagination (footer no longer pinned to
+  // the page bottom in print). Now each building's block is a token; _rptPaginateTokens
+  // (the same shared paginator rptPageObservations/rptPageASHRAE36Executive use) splits
+  // them across as many pages as needed, each carrying full rptPage() header/footer chrome.
+  var bldgTokens = [];
   (d.buildings || []).forEach(function (b) {
     var details = b.meterDetails || [];
     if (!details.length) return;
@@ -6207,7 +6308,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
         );
       })
       .join('');
-    meterTables +=
+    var blockHTML =
       '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>' +
@@ -6218,22 +6319,56 @@ function rptPageAppendixNormalization(n, d, appLetter) {
       '</tr></thead><tbody>' +
       meterRows +
       '</tbody></table>';
+    // estH: building-name label (~20px) + table thead (~26px) + one row per meter (~22px,
+    // conservative for 10px-font table rows) + table margin-bottom (~6px) + safety margin.
+    var estH = 20 + 26 + details.length * 22 + 6 + 10;
+    bldgTokens.push({ type: 'block', html: blockHTML, estH: estH });
   });
 
-  if (!meterTables) {
-    meterTables =
+  // NORM_FIRST_CHROME: methodBox (~110px, 4 lines @ 11px/1.7 line-height + padding) + section
+  // heading (~24px) + safety margin. NORM_CONT_CHROME: continuation heading only + safety margin.
+  var NORM_FIRST_CHROME = 160;
+  var NORM_CONT_CHROME = 50;
+  var _normBudgetFirst = _rptContentBudget('standard') - NORM_FIRST_CHROME;
+  var _normBudgetCont = _rptContentBudget('standard') - NORM_CONT_CHROME;
+  var normChunks = _rptPaginateTokens(bldgTokens, _normBudgetFirst, _normBudgetCont);
+
+  var resultPages = [];
+  var currentPageNum = n;
+  var pageTitle = 'Appendix ' + appLetter + ': Normalization & Meter Baseline';
+
+  if (normChunks.length === 0) {
+    var emptyBody =
+      methodBox +
+      sectionTitle +
       '<p style="font-size:10px;color:var(--rpt-page-text);font-style:italic">No building meter data available.</p>';
+    resultPages.push(
+      rptPage(currentPageNum, pageTitle, emptyBody, {
+        data: d,
+        label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter,
+      }),
+    );
+    return { html: resultPages.join(''), pageCount: resultPages.length };
   }
 
-  var bodyHTML =
-    methodBox +
-    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
-    meterTables;
-
-  return rptPage(n, 'Appendix ' + appLetter + ': Normalization & Meter Baseline', bodyHTML, {
-    data: d,
-    label: 'Page ' + n + ' — Appendix ' + appLetter,
+  normChunks.forEach(function (chunk, idx) {
+    var isFirst = idx === 0;
+    var chunkHTML = chunk
+      .map(function (tok) {
+        return tok.html;
+      })
+      .join('');
+    var pageBody = (isFirst ? methodBox + sectionTitle : contSectionTitle) + chunkHTML;
+    resultPages.push(
+      rptPage(currentPageNum, pageTitle + (isFirst ? '' : ' (cont.)'), pageBody, {
+        data: d,
+        label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter + (isFirst ? '' : ' (cont.)'),
+      }),
+    );
+    currentPageNum++;
   });
+
+  return { html: resultPages.join(''), pageCount: resultPages.length };
 }
 
 function rptPageAppendixBaseline(n, d, appLetter, appMap) {
@@ -6280,8 +6415,16 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     wxByYm[w.month] = w;
   });
 
-  // Build full calculation tables per building per commodity
-  var calcHTML = '';
+  // Build full calculation tables per building per commodity.
+  // fix/report-content-pagination (2026-07-28): this used to concatenate ALL buildings' and
+  // meters' calculation tables into a single `calcHTML` string handed to ONE rptPage() call —
+  // with JOCO's 26 buildings (each with up to several meters and a combined
+  // baseline+reporting-period row set per meter) that overflowed .rpt-body with zero
+  // pagination. Now each meter's table is its own token (the building-name header rides
+  // along with that building's first meter token); _rptPaginateTokens (same shared
+  // paginator as rptPageObservations/rptPageASHRAE36Executive) splits them across as many
+  // pages as needed, each carrying full rptPage() header/footer chrome.
+  var meterTokens = [];
   (d.buildings || []).forEach(function (b) {
     var meters = b.meterDetails || [];
     var metersWithCoeffs = meters.filter(function (md) {
@@ -6294,10 +6437,11 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     // Skip buildings with no regression data AND no baseline months at all
     if (!metersWithCoeffs.length && !metersWithBlOnly.length) return;
 
-    calcHTML +=
+    var bldgHeaderHTML =
       '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>';
+    var isFirstBlockForBuilding = true;
 
     metersWithCoeffs.forEach(function (md) {
       var rc = md.regrCoeffs;
@@ -6313,7 +6457,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         eqn += ' + ' + rc.slope.toFixed(4) + ' × CDD';
       }
 
-      calcHTML +=
+      var meterBlockHTML =
         '<div style="margin:6px 0 4px">' +
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text)">' +
         md.commodity +
@@ -6481,7 +6625,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         '</td>' +
         '</tr>';
 
-      calcHTML +=
+      meterBlockHTML +=
         '<table class="rpt-table rpt-table-wrap" style="font-size:9px;margin-bottom:10px;table-layout:fixed;width:100%">' +
         '<thead><tr>' +
         '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
@@ -6497,6 +6641,21 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         '</tr></thead><tbody>' +
         rows +
         '</tbody></table>';
+
+      // estH: eqn block (~48px) + table thead (~36px, header text wraps to 2 lines on several
+      // columns) + one row per combined month (~24px — DOM-measured: 9px font * 1.5 inherited
+      // line-height + 8px vertical padding + ~2px border ≈ 23.5px, the original 16px estimate
+      // undercounted every row and compounded into a real overflow on stress-tested pages) +
+      // totals row (~24px) + table margin-bottom (~10px) + safety margin; building-name header
+      // (~24px) added only for the first block per building.
+      var meterEstH = 48 + 36 + (combined.length + 1) * 24 + 10 + 14;
+      var tokenHTML = meterBlockHTML;
+      if (isFirstBlockForBuilding) {
+        tokenHTML = bldgHeaderHTML + tokenHTML;
+        meterEstH += 24;
+        isFirstBlockForBuilding = false;
+      }
+      meterTokens.push({ type: 'block', html: tokenHTML, estH: meterEstH });
     });
 
     // Render baseline-only meters (have blMonths but no regression coefficients)
@@ -6505,7 +6664,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
       var blMonthsForMeter = md.blMonths || [];
       if (!blMonthsForMeter.length) return;
 
-      calcHTML +=
+      var blOnlyBlockHTML =
         '<div style="margin:6px 0 4px">' +
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text)">' +
         md.commodity +
@@ -6540,7 +6699,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           '</tr>';
       });
 
-      calcHTML +=
+      blOnlyBlockHTML +=
         '<table class="rpt-table" style="font-size:9px;margin-bottom:10px">' +
         '<thead><tr>' +
         '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
@@ -6557,24 +6716,70 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         '</tr></thead><tbody>' +
         rows +
         '</tbody></table>';
+
+      // Same DOM-measured per-row correction as meterEstH above (24px/row, not 16px).
+      var blOnlyEstH = 24 + 36 + blMonthsForMeter.length * 24 + 10 + 14;
+      var blOnlyTokenHTML = blOnlyBlockHTML;
+      if (isFirstBlockForBuilding) {
+        blOnlyTokenHTML = bldgHeaderHTML + blOnlyTokenHTML;
+        blOnlyEstH += 24;
+        isFirstBlockForBuilding = false;
+      }
+      meterTokens.push({ type: 'block', html: blOnlyTokenHTML, estH: blOnlyEstH });
     });
   });
 
-  if (!calcHTML) {
-    calcHTML =
-      '<p style="font-size:10px;color:var(--rpt-page-text);font-style:italic">No regression data available for calculation display.</p>';
-  }
-
-  var bodyHTML =
+  var baselineHeadHTML =
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
     regressionExplainer +
-    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
-    calcHTML;
+    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>';
+  var baselineContHeadHTML =
+    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations (cont.)</h3>';
 
-  return rptPage(n, 'Appendix ' + appLetter + ': Regression Model Methodology', bodyHTML, {
-    data: d,
-    label: 'Page ' + n + ' — Appendix ' + appLetter,
+  // BL_FIRST_CHROME: intro line (~20px) + regressionExplainer (~140px, 4 lines @ 11px/1.7
+  // line-height + padding) + section heading (~28px) + safety margin. BL_CONT_CHROME:
+  // continuation heading only + safety margin.
+  var BL_FIRST_CHROME = 220;
+  var BL_CONT_CHROME = 58;
+  var _blBudgetFirst = _rptContentBudget('standard') - BL_FIRST_CHROME;
+  var _blBudgetCont = _rptContentBudget('standard') - BL_CONT_CHROME;
+  var blChunks = _rptPaginateTokens(meterTokens, _blBudgetFirst, _blBudgetCont);
+
+  var resultPages = [];
+  var currentPageNum = n;
+  var pageTitle = 'Appendix ' + appLetter + ': Regression Model Methodology';
+
+  if (blChunks.length === 0) {
+    var emptyBody =
+      baselineHeadHTML +
+      '<p style="font-size:10px;color:var(--rpt-page-text);font-style:italic">No regression data available for calculation display.</p>';
+    resultPages.push(
+      rptPage(currentPageNum, pageTitle, emptyBody, {
+        data: d,
+        label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter,
+      }),
+    );
+    return { html: resultPages.join(''), pageCount: resultPages.length };
+  }
+
+  blChunks.forEach(function (chunk, idx) {
+    var isFirst = idx === 0;
+    var chunkHTML = chunk
+      .map(function (tok) {
+        return tok.html;
+      })
+      .join('');
+    var pageBody = (isFirst ? baselineHeadHTML : baselineContHeadHTML) + chunkHTML;
+    resultPages.push(
+      rptPage(currentPageNum, pageTitle + (isFirst ? '' : ' (cont.)'), pageBody, {
+        data: d,
+        label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter + (isFirst ? '' : ' (cont.)'),
+      }),
+    );
+    currentPageNum++;
   });
+
+  return { html: resultPages.join(''), pageCount: resultPages.length };
 }
 
 function rptPageAppendixWeather(n, d, appLetter) {
@@ -6838,94 +7043,170 @@ function rptPageAppendixBills(n, d, appLetter) {
     }
   });
 
-  var sections = '';
-  var allBillImages = '';
+  // fix/report-content-pagination (2026-07-28): this used to concatenate every reporting-period
+  // month's bill table (each potentially listing every building's bills for that month, up to
+  // JOCO's 26 buildings) PLUS every scanned bill PDF thumbnail into a single string handed to
+  // ONE rptPage() call — overflowing .rpt-body with zero pagination. Tokenizing per MONTH (one
+  // token = one month's whole table) was tried first and measured (headless, stress-tested at
+  // 4x building count) to still let a single heavy month's table blow through a page by itself,
+  // since _rptPaginateTokens can't split a single token. Tokenizing per BILL ROW instead lets a
+  // month's table split across as many pages as it needs — the month label + table thead simply
+  // repeat (via _billsGroupRowsByMonth below) on whichever page(s) that month's rows land on,
+  // the same "repeat the header on every page it appears on" convention every other multi-page
+  // table in this file already uses (rptPageASHRAE36Building, rptPageASHRAE36SetpointReview,
+  // etc.). Each bill-image thumbnail is its own token; the old flex-wrap container (which can't
+  // be split across pages) is gone — thumbnails are individually inline-block, so they wrap the
+  // same way across however many image tokens land on a page without needing a shared parent.
+  var THEAD_HTML =
+    '<thead><tr>' +
+    '<th>Building</th><th>Commodity</th><th>Provider</th><th class="rpt-n">kWh</th><th class="rpt-n">kW</th><th class="rpt-n">Therms</th><th class="rpt-n">Gallons</th><th class="rpt-n">Cost</th><th>Bill Date</th>' +
+    '</tr></thead>';
+  var billRowTokens = [];
   if (!periodYMs.length) {
-    sections =
-      '<p style="font-size:10px;color:var(--rpt-page-text);font-style:italic">No reporting period months configured.</p>';
+    billRowTokens.push({
+      type: 'block',
+      html: '<p style="font-size:10px;color:var(--rpt-page-text);font-style:italic">No reporting period months configured.</p>',
+      estH: 20,
+      moLabel: null,
+    });
   } else {
     periodYMs.forEach(function (ym) {
       var parts = ym.split('-');
       var moLabel = monthNames[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
       var bills = billsByMonth[ym] || [];
-      var rows = '';
+      // _billsGroupRowsByMonth re-emits a month label (~20px) + fresh table thead (~26px) at
+      // the START of every run of same-month rows within a page — including a page that starts
+      // mid-month after a page break. _rptPaginateTokens can't know in advance where a break
+      // will land, so this overhead is budgeted onto EVERY month's first row token (the one
+      // case guaranteed to need it); a mid-month split pays this same real cost again on its
+      // continuation page, which is why per-row estH also carries its own safety margin above
+      // the bare measured row height.
+      var GROUP_HEADER_OVERHEAD = 46; // month label (~20px) + table thead (~26px)
       if (!bills.length) {
-        rows =
-          '<tr><td colspan="9" style="color:var(--rpt-page-text);font-style:italic">No bills recorded for this month</td></tr>';
-      } else {
-        bills.forEach(function (bill) {
-          var _kwh = bill.kwh || bill.kwhUsage || 0;
-          var _kw = bill.kw || bill.kwDemand || 0;
-          var _therms = bill.therms || 0;
-          var _gal = bill.gallons || bill.propaneGal || 0;
-          rows +=
-            '<tr>' +
-            '<td contenteditable="true">' +
-            bill.building +
-            '</td>' +
-            '<td contenteditable="true">' +
-            bill.commodity +
-            '</td>' +
-            '<td contenteditable="true">' +
-            (bill.provider || '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (_kwh ? Math.round(_kwh).toLocaleString() : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (_kw ? Math.round(_kw).toLocaleString() : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (_therms ? Math.round(_therms).toLocaleString() : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (_gal ? Math.round(_gal).toLocaleString() : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (bill.amount ? $c(bill.amount) : '—') +
-            '</td>' +
-            '<td contenteditable="true">' +
-            _fmtBillDate(bill.billDate || bill.start) +
-            '</td>' +
-            '</tr>';
+        billRowTokens.push({
+          type: 'row',
+          moLabel: moLabel,
+          estH: 22 + GROUP_HEADER_OVERHEAD,
+          html: '<tr><td colspan="9" style="color:var(--rpt-page-text);font-style:italic">No bills recorded for this month</td></tr>',
         });
+        return;
       }
-      bills.forEach(function (bill) {
-        if (bill.pdfImage) {
-          allBillImages +=
-            '<div style="display:inline-block;margin:4px 6px 4px 0;border:1px solid var(--rpt-divider);border-radius:3px;overflow:hidden"><img src="' +
-            bill.pdfImage +
-            '" style="height:120px;width:auto;display:block"><div style="font-size:9px;color:var(--rpt-page-text);padding:2px 4px;background:var(--rpt-chart-bg);text-align:center">' +
-            bill.building +
-            ' · ' +
-            bill.commodity +
-            ' · ' +
-            moLabel +
-            '</div></div>';
-        }
+      bills.forEach(function (bill, billIdx) {
+        var _kwh = bill.kwh || bill.kwhUsage || 0;
+        var _kw = bill.kw || bill.kwDemand || 0;
+        var _therms = bill.therms || 0;
+        var _gal = bill.gallons || bill.propaneGal || 0;
+        var rowHTML =
+          '<tr>' +
+          '<td contenteditable="true">' +
+          bill.building +
+          '</td>' +
+          '<td contenteditable="true">' +
+          bill.commodity +
+          '</td>' +
+          '<td contenteditable="true">' +
+          (bill.provider || '—') +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (_kwh ? Math.round(_kwh).toLocaleString() : '—') +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (_kw ? Math.round(_kw).toLocaleString() : '—') +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (_therms ? Math.round(_therms).toLocaleString() : '—') +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (_gal ? Math.round(_gal).toLocaleString() : '—') +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (bill.amount ? $c(bill.amount) : '—') +
+          '</td>' +
+          '<td contenteditable="true">' +
+          _fmtBillDate(bill.billDate || bill.start) +
+          '</td>' +
+          '</tr>';
+        // estH: one table row (~22px, conservative for 10px-font table rows with padding) + a
+        // slice of safety margin so many small per-row estimates don't compound into a real
+        // underestimate across a long month; the FIRST row of each month also carries that
+        // month's group-header overhead (see GROUP_HEADER_OVERHEAD above).
+        billRowTokens.push({
+          type: 'row',
+          moLabel: moLabel,
+          estH: 24 + (billIdx === 0 ? GROUP_HEADER_OVERHEAD : 0),
+          html: rowHTML,
+        });
       });
-      sections +=
+    });
+  }
+
+  var allBillImages = [];
+  (d.rawBills || []).forEach(function (bill) {
+    if (!bill.pdfImage) return;
+    var ym = normMonth(bill.start, bill.end, true, d.rawBills || []) || (bill.start ? bill.start.substring(0, 7) : '');
+    var parts = ym ? ym.split('-') : null;
+    var moLabel = parts && parts.length === 2 ? monthNames[parseInt(parts[1], 10) - 1] + ' ' + parts[0] : '';
+    allBillImages.push(
+      '<div style="display:inline-block;margin:4px 6px 4px 0;border:1px solid var(--rpt-divider);border-radius:3px;overflow:hidden"><img src="' +
+        bill.pdfImage +
+        '" style="height:120px;width:auto;display:block"><div style="font-size:9px;color:var(--rpt-page-text);padding:2px 4px;background:var(--rpt-chart-bg);text-align:center">' +
+        bill.building +
+        ' · ' +
+        bill.commodity +
+        ' · ' +
+        moLabel +
+        '</div></div>',
+    );
+  });
+
+  // _billsGroupRowsByMonth — given ONE page's worth of row tokens (already-paginated, in order),
+  // groups consecutive same-month rows and wraps each group in its own month label + <table>
+  // (thead repeated per group so every page's table is independently valid/complete HTML — the
+  // same "reopen the table on every page" convention as this file's other multi-page tables).
+  // Non-'row' tokens (the no-months-configured placeholder <p>, or bill-image tokens which are
+  // paginated separately and never passed here) pass through unchanged.
+  function _billsGroupRowsByMonth(tokens) {
+    var out = '';
+    var i = 0;
+    while (i < tokens.length) {
+      var tok = tokens[i];
+      if (tok.type !== 'row') {
+        out += tok.html;
+        i++;
+        continue;
+      }
+      var moLabel = tok.moLabel;
+      var groupRows = '';
+      while (i < tokens.length && tokens[i].type === 'row' && tokens[i].moLabel === moLabel) {
+        groupRows += tokens[i].html;
+        i++;
+      }
+      out +=
         '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">' +
         moLabel +
         '</div>' +
         '<table class="rpt-table" style="font-size:10px;margin-bottom:6px">' +
-        '<thead><tr>' +
-        '<th>Building</th><th>Commodity</th><th>Provider</th><th class="rpt-n">kWh</th><th class="rpt-n">kW</th><th class="rpt-n">Therms</th><th class="rpt-n">Gallons</th><th class="rpt-n">Cost</th><th>Bill Date</th>' +
-        '</tr></thead><tbody>' +
-        rows +
+        THEAD_HTML +
+        '<tbody>' +
+        groupRows +
         '</tbody></table>';
-    });
+    }
+    return out;
   }
 
-  var billImagesSection = allBillImages
-    ? '<div style="margin-top:16px;border-top:1px solid var(--rpt-divider);padding-top:10px">' +
-      '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Scanned Bill Images</div>' +
-      '<div style="display:flex;flex-wrap:wrap">' +
-      allBillImages +
-      '</div></div>'
-    : '';
-
   var _hasBillImages = allBillImages.length > 0;
+  var imageTokens = [];
+  if (_hasBillImages) {
+    imageTokens.push({
+      type: 'cat',
+      html: '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin:16px 0 6px;border-top:1px solid var(--rpt-divider);padding-top:10px">Scanned Bill Images</div>',
+      estH: 30,
+    });
+    allBillImages.forEach(function (imgHTML) {
+      // estH: thumbnail (120px) + caption line (~14px) + border/margin (~10px) + safety.
+      imageTokens.push({ type: 'block', html: imgHTML, estH: 150 });
+    });
+  }
   var footerNote =
     '<div style="margin-top:12px;font-size:10px;color:var(--rpt-page-text);font-style:italic;border-top:1px solid var(--rpt-divider);padding-top:6px">' +
     (_hasBillImages
@@ -6933,16 +7214,36 @@ function rptPageAppendixBills(n, d, appLetter) {
       : 'No scanned bill images available. Upload PDFs in the Energy Department to include bill images in future reports.') +
     '</div>';
 
-  var bodyHTML =
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
-    sections +
-    billImagesSection +
-    footerNote;
+  var billsIntroHTML =
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px">Original utility bill PDFs for the reporting period</div>';
 
-  return rptPage(n, 'Appendix ' + appLetter + ': Utility Bills', bodyHTML, {
-    data: d,
-    label: 'Page ' + n + ' — Appendix ' + appLetter,
+  // BILLS_FIRST_CHROME: intro line (~20px) + safety margin. BILLS_CONT_CHROME: safety margin
+  // only (continuation pages carry no extra heading — month/image tokens speak for themselves).
+  var BILLS_FIRST_CHROME = 40;
+  var BILLS_CONT_CHROME = 20;
+  var _billsBudgetFirst = _rptContentBudget('standard') - BILLS_FIRST_CHROME;
+  var _billsBudgetCont = _rptContentBudget('standard') - BILLS_CONT_CHROME;
+  var billsChunks = _rptPaginateTokens(billRowTokens.concat(imageTokens), _billsBudgetFirst, _billsBudgetCont);
+
+  var resultPages = [];
+  var currentPageNum = n;
+  var pageTitle = 'Appendix ' + appLetter + ': Utility Bills';
+
+  billsChunks.forEach(function (chunk, idx) {
+    var isFirst = idx === 0;
+    var isLast = idx === billsChunks.length - 1;
+    var chunkHTML = _billsGroupRowsByMonth(chunk);
+    var pageBody = (isFirst ? billsIntroHTML : '') + chunkHTML + (isLast ? footerNote : '');
+    resultPages.push(
+      rptPage(currentPageNum, pageTitle + (isFirst ? '' : ' (cont.)'), pageBody, {
+        data: d,
+        label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter + (isFirst ? '' : ' (cont.)'),
+      }),
+    );
+    currentPageNum++;
   });
+
+  return { html: resultPages.join(''), pageCount: resultPages.length };
 }
 
 function saveReportToHistory() {
@@ -12905,8 +13206,16 @@ function rptPageASHRAE36Executive(n, d) {
   // overflowing onto the already-existing continuation page. Re-verified via headless DOM
   // scan of all 26 audit pages + 3 proposal pages: zero pages with negative clearance, page
   // counts unchanged (26 audit / 3 proposal).
-  var ROWS_BUDGET_FIRST = 862 - _firstChromeH - 30; // 30px safety margin
-  var ROWS_BUDGET_CONT = 717;
+  // fix/report-content-pagination (2026-07-28): bases now derive from _rptContentBudget()
+  // (shared page-geometry source of truth) instead of standalone literals 862/717. The named
+  // adjustment constants below preserve the EXACT numeric budgets this DOM-measured history
+  // arrived at (904 - 42 = 862, 904 - 187 = 717) -- no visual/page-count change, just naming the
+  // gap between the shared geometry base and this page's own additional historical safety
+  // margin instead of leaving it as an unexplained standalone number.
+  var EXEC_FIRST_BASE_ADJUSTMENT = 42; // gap between shared base and the historical 862 FIRST base
+  var EXEC_CONT_BASE_ADJUSTMENT = 187; // gap between shared base and the historical 717 CONT budget (cont heading + safety margin)
+  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - EXEC_FIRST_BASE_ADJUSTMENT - _firstChromeH - 30; // 30px safety margin
+  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - EXEC_CONT_BASE_ADJUSTMENT;
 
   // Shared table styles
   // fix/report-formatting-consistency (2026-07-27): font-size was 13px, a lone outlier against
@@ -13312,8 +13621,13 @@ function rptPageASHRAE36CostEstimate(n, d) {
   //   Page 1 body ~808px; chrome = _ratTitle(~17px) + _ratThead(~27px) + div(~18px) = ~62px
   //   Row budget = 808 − 62 = ~746px; using 740 for safety margin.
   //   Cont pages: same calibrated value of 750px.
-  var RATIONALE_BUDGET_FIRST = 740;
-  var RATIONALE_BUDGET_CONT = 750;
+  // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
+  // standalone literals — RATIONALE_BASE_ADJUSTMENT constants preserve these exact numeric
+  // values (904 - 164 = 740, 904 - 154 = 750), no visual/page-count change.
+  var RATIONALE_FIRST_BASE_ADJUSTMENT = 164; // chrome (title/thead/div) + safety margin, per comment above
+  var RATIONALE_CONT_BASE_ADJUSTMENT = 154;
+  var RATIONALE_BUDGET_FIRST = _rptContentBudget('standard') - RATIONALE_FIRST_BASE_ADJUSTMENT;
+  var RATIONALE_BUDGET_CONT = _rptContentBudget('standard') - RATIONALE_CONT_BASE_ADJUSTMENT;
 
   var SEQ_SECTION_TITLE = 'ASHRAE Guideline 36 Sequences';
 
@@ -13923,8 +14237,13 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
  *   Cont pages: subtract cont-header (~35px) + table thead (~30px) = 830px for rows
  */
 function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
-  var ROWS_BUDGET_FIRST = 730; // px available for equipment rows on page 1
-  var ROWS_BUDGET_CONT = 830; // px available for equipment rows on continuation pages
+  // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
+  // standalone literals — BUILDING_*_BASE_ADJUSTMENT constants preserve these exact numeric
+  // values (904 - 174 = 730, 904 - 74 = 830), no visual/page-count change.
+  var BUILDING_FIRST_BASE_ADJUSTMENT = 174; // gauges (~100px) + intro (~35px) + table thead (~30px) + margin
+  var BUILDING_CONT_BASE_ADJUSTMENT = 74; // cont-header (~35px) + table thead (~30px) + margin
+  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - BUILDING_FIRST_BASE_ADJUSTMENT; // px available for equipment rows on page 1
+  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - BUILDING_CONT_BASE_ADJUSTMENT; // px available for equipment rows on continuation pages
 
   var c = _a36BuildingContent(d, building, showBuildingInfra);
   var b = c.b;
@@ -14520,8 +14839,13 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // Continuation page:
   //   contHdr ~35px + thead 36px + 20(safety) = 91px → 894 - 91 = 803px
   // Each building row actual avg = 44px; estH raised to 46px for safety
-  var ROWS_BUDGET_FIRST = 758;
-  var ROWS_BUDGET_CONT = 803;
+  // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
+  // standalone literals — SETPOINT_*_BASE_ADJUSTMENT constants preserve these exact numeric
+  // values (904 - 146 = 758, 904 - 101 = 803), no visual/page-count change.
+  var SETPOINT_FIRST_BASE_ADJUSTMENT = 146; // first-page chrome (136px consumed, per comment above) + margin
+  var SETPOINT_CONT_BASE_ADJUSTMENT = 101; // contHdr + thead + safety (91px consumed, per comment above) + margin
+  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - SETPOINT_FIRST_BASE_ADJUSTMENT;
+  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - SETPOINT_CONT_BASE_ADJUSTMENT;
 
   var tokens = buildingRows.map(function (row) {
     return { type: 'row', estH: 46, html: _buildBldgRowHTML(row) };
@@ -16888,7 +17212,13 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         return { type: 'row', estH: row.clientSummary ? 60 : 30, html: _itemRowHTML(row) };
       });
 
-      var chunks = _rptPaginateTokens(tokens, 780, 780);
+      // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
+      // the standalone flat literal 780 — ITEMIZED_BASE_ADJUSTMENT preserves this exact numeric
+      // value (904 - 124 = 780), no visual/page-count change. FIRST and CONT stay equal per the
+      // comment above (a tier's first page has the same chrome as its continuation pages).
+      var ITEMIZED_BASE_ADJUSTMENT = 124; // title + thead + table margin-bottom (~60px chrome) + safety margin
+      var _itemizedBudget = _rptContentBudget('standard') - ITEMIZED_BASE_ADJUSTMENT;
+      var chunks = _rptPaginateTokens(tokens, _itemizedBudget, _itemizedBudget);
       var numChunks = chunks.length;
 
       chunks.forEach(function (chunk, idx) {
@@ -17049,7 +17379,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         });
       }
 
-      var chunks = _rptPaginateTokens(tokens, 900, 900);
+      // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
+      // the standalone flat literal 900 — SCOPE_BASE_ADJUSTMENT preserves this exact numeric
+      // value (904 - 4 = 900), no visual/page-count change.
+      var SCOPE_BASE_ADJUSTMENT = 4; // small margin — this section's rows are lightweight bullets, little chrome
+      var _scopeBudget = _rptContentBudget('standard') - SCOPE_BASE_ADJUSTMENT;
+      var chunks = _rptPaginateTokens(tokens, _scopeBudget, _scopeBudget);
       var numChunks = chunks.length;
 
       chunks.forEach(function (chunk, idx) {
@@ -17267,8 +17602,13 @@ function rptPageASHRAE36PointInventory(n, d) {
   //   using a wide safety margin (260px consumed) since these are estimates, not DOM-measured.
   //   Continuation chrome: contHdr (~35px) + thead (~32px) + safety = ~91px, matching the
   //   Setpoint Programming Review budget.
-  var ROWS_BUDGET_FIRST = 630;
-  var ROWS_BUDGET_CONT = 803;
+  // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
+  // standalone literals — INV_*_BASE_ADJUSTMENT constants preserve these exact numeric values
+  // (904 - 274 = 630, 904 - 101 = 803), no visual/page-count change.
+  var INV_FIRST_BASE_ADJUSTMENT = 274; // first-page chrome (summaryBlock + narrative + thead + wide safety margin, per comment above)
+  var INV_CONT_BASE_ADJUSTMENT = 101; // contHdr + thead + safety, matching Setpoint Review's continuation budget
+  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - INV_FIRST_BASE_ADJUSTMENT;
+  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - INV_CONT_BASE_ADJUSTMENT;
 
   var tokens = inv.byBuilding.map(function (b) {
     return { type: 'row', estH: 30, html: _buildInvRowHTML(b) };
@@ -17377,7 +17717,11 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     // of packed pages grow to ~1160-1224px actual scrollHeight (still auto-scaled to fit one
     // PDF page per Fix A2 above, not clipped, but denser than intended) — tightened to 700px
     // for a larger safety margin against the estH approximation in _a36BuildingBlockToken.
-    var BUILDING_PAGE_BUDGET = 750; // px — interior page body (~895px) minus safety margin
+    // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
+    // the standalone literal 750 — AUDIT_BUILDING_BASE_ADJUSTMENT preserves this exact numeric
+    // value (904 - 154 = 750), no visual/page-count change.
+    var AUDIT_BUILDING_BASE_ADJUSTMENT = 154; // safety margin against the estH approximation in _a36BuildingBlockToken, per comment above
+    var BUILDING_PAGE_BUDGET = _rptContentBudget('standard') - AUDIT_BUILDING_BASE_ADJUSTMENT; // px — interior page body (~895px) minus safety margin
     var _bldgFakeData = { project: { client: data.project.name }, period: { label: '', reportDate: data.rawDate } };
     var _pendingBlocks = [];
 

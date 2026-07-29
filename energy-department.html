@@ -2315,6 +2315,17 @@
         padding: 4px 6px;
         border: 1px solid var(--rpt-table-td-border);
         white-space: nowrap;
+        /* fix/report-content-pagination (2026-07-28): white-space:nowrap alone has no escape
+           hatch for a genuinely unbreakable long value (e.g. a long account number or building
+           name with no spaces) — on screen the fixed-width .rpt-page (overflow:visible) just
+           bleeds the cell past the page edge instead of clipping, and print has no scrollbar to
+           fall back on, so the same overflow blows out the printed page width. overflow-wrap:
+           anywhere is honored by browsers even under white-space:nowrap as a break-as-last-resort
+           (CSS Text spec): short content (numeric columns, short labels) still renders on one
+           line exactly as before; only a string too long to fit the cell gets an arbitrary
+           in-word break instead of overflowing. Short numeric columns are unaffected because
+           they never reach the width where a break would be needed. */
+        overflow-wrap: anywhere;
       }
       .rpt-table th {
         border: 1px solid var(--rpt-table-th-border);
