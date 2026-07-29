@@ -3524,6 +3524,15 @@ function emLoadMatrix(projId) {
       }
     }
   }
+  // space-type-classifier-2026-07-29: rebuild the row-lookup cache for this project from
+  // the (possibly just self-healed) row set, so it can never go stale — same lifetime as
+  // the self-heal pass just above. See _emRowByIdCache's declaration for why this exists.
+  var _newRowByIdMap = {};
+  for (var _ribi = 0; _ribi < _emData.rows.length; _ribi++) {
+    var _ribr = _emData.rows[_ribi];
+    if (_ribr && _ribr.id != null) _newRowByIdMap[_ribr.id] = _ribr;
+  }
+  _emRowByIdCache[projId] = _newRowByIdMap;
   return _emData;
 }
 
@@ -3654,6 +3663,11 @@ var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view
 var _emZoomLevel = 100; // zoom percentage, 50–150
 var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
+// space-type-classifier-2026-07-29: projId -> {rowId: row} lookup, rebuilt on every
+// emLoadMatrix call (see emLoadMatrix's return path) so emLoadEquipConfigFlags — which
+// only receives projId+rowId, not the row itself — can classify a row's space type
+// without re-loading/re-healing the whole matrix on every call.
+var _emRowByIdCache = {};
 var _emColKeyToCatKey = null; // FIX A: reverse map { colKey: { equipType: { catKey, catLabel, ashrae36Name, ashrae36Section, required } } } built lazily
 var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results, keyed by rawName+'\0'+category
 var _emPointsComputedCache = new WeakMap(); // Milestone 1: keyed on row object; caches emGetNormalizedPoints result
@@ -4533,6 +4547,10 @@ function emGetAuditColDefs(filteredRows) {
   for (var si = 0; si < filteredRows.length; si++) {
     var sRow = filteredRows[si];
     if (!sRow.category || !EM_POINT_CATEGORIES[sRow.category]) continue;
+    // Left as no-flags call intentionally: only .coveredPoints is read below, and
+    // coveredPoints is flag-invariant (config flags only ever gate naPoints/missingPoints
+    // inside emComputeCompliance, never the point-name-matching pass that builds
+    // coveredPoints) — so passing real flags here would be a provable no-op.
     var sCompliance = emComputeCompliance(sRow);
     for (var sci = 0; sci < sCompliance.coveredPoints.length; sci++) {
       coveredCatKeys[sCompliance.coveredPoints[sci].categoryKey] = true;
@@ -4796,12 +4814,15 @@ function emComputeAuditStats(rows) {
   var totalCoverage = 0;
   var covCount = 0;
   var _auditStatsMaps = emLoadCustomMappings(window._emActivePid || '');
+  var _auditStatsPid = window._emActivePid || '';
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var pts = r.points || {};
     totalPts += Object.keys(pts).length;
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
-      var compliance = emComputeCompliance(r, {}, _auditStatsMaps);
+      // space-type-classifier-2026-07-29 fix: real per-row flags so the footer/summary
+      // avgCoverage stat agrees with the priced coverage and the Audit table column.
+      var compliance = emComputeCompliance(r, emLoadEquipConfigFlags(_auditStatsPid, r.id), _auditStatsMaps);
       totalCoverage += compliance.coveragePct;
       covCount++;
     }
@@ -4813,7 +4834,7 @@ function emComputeAuditStats(rows) {
   for (var si = 0; si < rows.length; si++) {
     var sr = rows[si];
     if (!sr.category || !EM_POINT_CATEGORIES[sr.category]) continue;
-    var srCompliance = emComputeCompliance(sr, {}, _auditStatsMaps);
+    var srCompliance = emComputeCompliance(sr, emLoadEquipConfigFlags(_auditStatsPid, sr.id), _auditStatsMaps);
     var srReadiness = emComputeSequenceReadiness(sr, srCompliance);
     for (var sk in srReadiness) {
       if (!srReadiness.hasOwnProperty(sk)) continue;
@@ -5758,6 +5779,7 @@ function emComputeAuditFooterTotals(rows, defs) {
   var covSum = 0;
   var covCount = 0;
   var _footerMaps = emLoadCustomMappings(window._emActivePid || '');
+  var _footerPid = window._emActivePid || '';
 
   // Collect cat and seq defs we need to count
   var catDefs = [];
@@ -5783,8 +5805,12 @@ function emComputeAuditFooterTotals(rows, defs) {
     var r = rows[ri];
     ptSum += Object.keys(r.points || {}).length;
     var comp = null;
+    // space-type-classifier-2026-07-29 fix: load once per row (not per emComputeCompliance
+    // call below) so the footer aggregates agree with the priced coverage without adding
+    // extra emLoadEquipConfigFlags calls per row.
+    var _rFlags = emLoadEquipConfigFlags(_footerPid, r.id);
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
-      comp = emComputeCompliance(r, {}, _footerMaps);
+      comp = emComputeCompliance(r, _rFlags, _footerMaps);
       covSum += comp.coveragePct;
       covCount++;
     }
@@ -5792,7 +5818,7 @@ function emComputeAuditFooterTotals(rows, defs) {
     // Count per-cat column presence
     if (catDefs.length) {
       if (!comp && r.category && EM_POINT_CATEGORIES[r.category]) {
-        comp = emComputeCompliance(r, {}, _footerMaps);
+        comp = emComputeCompliance(r, _rFlags, _footerMaps);
       }
       for (var cdi = 0; cdi < catDefs.length; cdi++) {
         var cd = catDefs[cdi];
@@ -5815,7 +5841,7 @@ function emComputeAuditFooterTotals(rows, defs) {
 
     // Count per-seq column presence
     if (seqDefs.length) {
-      if (!comp) comp = emComputeCompliance(r, {}, _footerMaps);
+      if (!comp) comp = emComputeCompliance(r, _rFlags, _footerMaps);
       var seqReadiness = emComputeSequenceReadiness(r, comp);
       for (var sdi = 0; sdi < seqDefs.length; sdi++) {
         var sd = seqDefs[sdi];
@@ -7644,7 +7670,10 @@ function emRenderAuditTable(data, filters) {
   var seqReadinessCache = {};
   for (var pr = 0; pr < pageRows.length; pr++) {
     var r = pageRows[pr];
-    complianceCache[r.id] = emComputeCompliance(r, {}, _auditMaps);
+    // space-type-classifier-2026-07-29 fix: pass real per-row config flag overrides so
+    // the visible Coverage % column agrees with the priced coverage (report-engine.js
+    // already does this — this was the one call site that fed the Audit table itself).
+    complianceCache[r.id] = emComputeCompliance(r, emLoadEquipConfigFlags(_auditPid, r.id), _auditMaps);
     seqReadinessCache[r.id] = emComputeSequenceReadiness(r, complianceCache[r.id]);
   }
 
@@ -8308,12 +8337,19 @@ function emAuditGetSortVal(row, def) {
   if (def.isAuditType) return row.category || '';
   if (def.isAuditCoverage) {
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
-    var c = emComputeCompliance(row, {}, _sortMaps);
+    // space-type-classifier-2026-07-29 fix: real per-row flags so sort order agrees
+    // with the displayed Coverage % (mirrors the existing isAuditSpValues pattern
+    // below, which already calls emLoadEquipConfigFlags per comparison).
+    var c = emComputeCompliance(row, emLoadEquipConfigFlags(window._emActivePid || '', row.id), _sortMaps);
     return c.coveragePct;
   }
   if (def.isAuditSeqPct) {
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
-    var _sortCompliance = emComputeCompliance(row, {}, _sortMaps);
+    var _sortCompliance = emComputeCompliance(
+      row,
+      emLoadEquipConfigFlags(window._emActivePid || '', row.id),
+      _sortMaps,
+    );
     var _sortReadiness = emComputeSequenceReadiness(row, _sortCompliance);
     var _sortApplicable = 0;
     var _sortReady = 0;
@@ -8348,6 +8384,10 @@ function emAuditGetSortVal(row, def) {
     var catKey = def.catKey;
     if (!row.category || def.catEquipTypes.indexOf(row.category) === -1) return -1;
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
+    // Note: coveredPoints is flag-invariant (config flags only gate naPoints/missingPoints,
+    // never coveredPoints), so passing real flags here would be a no-op for matchTier —
+    // left as {} intentionally, but kept consistent below for isAuditSeq which DOES read
+    // naPoints (via emComputeSequenceReadiness's space-type NA check).
     var comp = emComputeCompliance(row, {}, _sortMaps);
     for (var i = 0; i < comp.coveredPoints.length; i++) {
       if (comp.coveredPoints[i].categoryKey === catKey) return comp.coveredPoints[i].matchTier;
@@ -8357,7 +8397,10 @@ function emAuditGetSortVal(row, def) {
   if (def.isAuditSeq) {
     if (!row.category || def.seqEquipTypes.indexOf(row.category) === -1) return -1;
     _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
-    var seqComp = emComputeCompliance(row, {}, _sortMaps);
+    // space-type-classifier-2026-07-29 fix: real flags so a sequence's N/A status (which
+    // depends on naPoints[].source==='spaceType', see emComputeSequenceReadiness) agrees
+    // with the user's explicit override instead of always assuming the auto-exemption.
+    var seqComp = emComputeCompliance(row, emLoadEquipConfigFlags(window._emActivePid || '', row.id), _sortMaps);
     var seqR = emComputeSequenceReadiness(row, seqComp);
     var seqEntry = seqR[def.seqKey];
     if (!seqEntry || seqEntry.status === 'na') return -1;
@@ -8396,6 +8439,67 @@ function emAuditGetSortVal(row, def) {
   return '';
 }
 
+var _emPanelListenersAttached = false;
+
+/* ── _emAttachPanelDelegatedListeners ───────────────────────────────────────
+   space-type-classifier-2026-07-29 override-control fix.
+
+   The compliance detail panel (emShowComplianceDetail) is rebuilt from an
+   HTML string every time it opens/re-renders, and previously wired its
+   interactive controls via onchange="fn(...)"/onclick="fn(...)" attributes
+   built from JSON.stringify(pid/rowId/flagKey) interpolated into a
+   double-quoted HTML attribute. JSON.stringify() ALWAYS wraps string values
+   in literal double quotes, so the emitted attribute
+   (onchange="emSaveEquipConfigFlagFromPanel("p1","r1","hasCO2",this.checked)")
+   terminated at the FIRST embedded quote per the HTML5 tokenizer — the
+   parsed handler was the syntactically-invalid fragment
+   "emSaveEquipConfigFlagFromPanel(" for EVERY pid/rowId/flagKey, not just
+   ones containing special characters. An event-handler content attribute
+   that fails to compile resolves to a null handler permanently, so the
+   override controls (CO2/economizer checkboxes, zoneType/occupancyCat
+   selects, "Mark as intentional" buttons, "All Points" toggle) silently did
+   nothing when clicked — confirmed by reproduction: checkbox.checked flips
+   in the DOM (native browser behavior) but the stored config flag in
+   en_eqmatrix_edits_<pid> never changes, and the truncated handler throws
+   "Unexpected end of input" when the browser tries to compile it.
+
+   Fixed by moving every interactive control in this panel off
+   attribute-embedded-JS entirely: each control carries emHtmlEsc()'d data-*
+   attributes (correct HTML-attribute escaping — not JS-string-in-HTML-
+   attribute, which is what broke this) and a single delegated listener,
+   attached once to `document`, reads event.target/.closest() + .dataset
+   and calls the same real save functions the old onchange/onclick attrs
+   called. Delegation (rather than addEventListener per node) is required
+   because the panel's DOM is thrown away and rebuilt on every open/re-render
+   (emShowComplianceDetail removes+recreates '#em-compliance-detail-panel'),
+   so per-node listeners would need re-attaching every render anyway — a
+   document-level delegate survives panel rebuilds for free and only needs
+   to be attached once per page load (guarded by _emPanelListenersAttached). */
+function _emAttachPanelDelegatedListeners() {
+  if (_emPanelListenersAttached) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  _emPanelListenersAttached = true;
+
+  document.addEventListener('change', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('[data-em-config-flag]') : null;
+    if (!el) return;
+    var value = el.type === 'checkbox' ? el.checked : el.value;
+    emSaveEquipConfigFlagFromPanel(el.dataset.pid, el.dataset.rowId, el.dataset.flagKey, value);
+  });
+
+  document.addEventListener('click', function (e) {
+    var markEl = e.target && e.target.closest ? e.target.closest('[data-em-mark-sp-override]') : null;
+    if (markEl) {
+      emMarkSpOverrideIntentional(markEl.dataset.pid, markEl.dataset.rowId, markEl.dataset.checkKey);
+      return;
+    }
+    var toggleEl = e.target && e.target.closest ? e.target.closest('[data-em-toggle-all-points]') : null;
+    if (toggleEl) {
+      emToggleAllPointsInDetail(toggleEl.dataset.rowId);
+    }
+  });
+}
+
 /* ── emShowComplianceDetail ─────────────────────────────────────────────────
    Clicking the Coverage % cell (or an amber Setpoint Values pill) opens a
    side panel showing:
@@ -8404,6 +8508,7 @@ function emAuditGetSortVal(row, def) {
      3. GL36 Setpoint Check table (Phase 4.2)
    The panel slides in from the right edge of the em-table-wrap container.  */
 function emShowComplianceDetail(rowId) {
+  _emAttachPanelDelegatedListeners();
   var pid = window._emActivePid || '';
   var data = emLoadMatrix(pid);
   if (!data) return;
@@ -8417,8 +8522,13 @@ function emShowComplianceDetail(rowId) {
   if (!row) return;
 
   var _detailMaps = emLoadCustomMappings(pid);
-  var c = emComputeCompliance(row, {}, _detailMaps);
+  // space-type-classifier-2026-07-29 fix: load real per-row config flag overrides
+  // BEFORE computing compliance, and pass them in — previously this computed
+  // compliance with {} (line-ordering bug), so the Point Coverage line above
+  // showed the stale auto-exemption while Section 2's checkbox (below, loaded
+  // from the same flags) correctly showed the user's explicit override.
   var flags = emLoadEquipConfigFlags(pid, rowId);
+  var c = emComputeCompliance(row, flags, _detailMaps);
   var spOvr = emLoadSpOverrides(pid, rowId);
   var category = row.category || '';
   var equipName = row.equipName || row.name || rowId;
@@ -8487,9 +8597,19 @@ function emShowComplianceDetail(rowId) {
     for (var fi = 0; fi < flagDefs.length; fi++) {
       var fd = flagDefs[fi];
       var storedVal = fd.key in flags ? flags[fd.key] : fd['default'];
-      var safeRowId = JSON.stringify(rowId);
-      var safePid = JSON.stringify(pid);
-      var safeFdKey = JSON.stringify(fd.key);
+      // space-type-classifier-2026-07-29 override-control fix: these were
+      // JSON.stringify()'d values interpolated into a double-quoted onchange="..."
+      // attribute — JSON.stringify ALWAYS wraps strings in literal double quotes,
+      // so the emitted attribute (e.g. onchange="fn("p1","r1",...)") terminated at
+      // the first embedded quote per the HTML5 tokenizer, leaving an unparseable
+      // handler that silently compiled to null and never fired for ANY pid/rowId/
+      // flagKey value — not just ones containing quotes. Fixed by moving off
+      // attribute-embedded-JS entirely: emHtmlEsc'd data-* attributes (safe HTML
+      // attribute escaping, not JS-string-in-HTML-attribute) + a single delegated
+      // listener (see _emAttachPanelDelegatedListeners) that reads .dataset.       */
+      var safeRowIdAttr = emHtmlEsc(rowId);
+      var safePidAttr = emHtmlEsc(pid);
+      var safeFdKeyAttr = emHtmlEsc(fd.key);
 
       if (fd.type === 'select') {
         // ── Select dropdown (zoneType, occupancyCat) ──────────────────────
@@ -8510,11 +8630,17 @@ function emShowComplianceDetail(rowId) {
         }
 
         // Build friendly label lookup for zoneType
-        var zoneTypeLabels = {
-          vav: 'General VAV Zone',
-          mech_elec: 'Mechanical/Electrical Room',
-          networking: 'Networking/Server Room',
-        };
+        // space-type-classifier-2026-07-29 §2.6: reuse EM_SPACE_TYPE_LABELS (single
+        // source of truth) so the new space types added to the options array above
+        // render friendly labels instead of raw keys like "elevator_lobby".
+        var zoneTypeLabels =
+          typeof EM_SPACE_TYPE_LABELS !== 'undefined'
+            ? EM_SPACE_TYPE_LABELS
+            : {
+                vav: 'General VAV Zone',
+                mech_elec: 'Mechanical/Electrical Room',
+                networking: 'Networking/Server Room',
+              };
 
         var optionsHtml = '';
         for (var oi = 0; oi < optionKeys.length; oi++) {
@@ -8539,15 +8665,14 @@ function emShowComplianceDetail(rowId) {
           emHtmlEsc(fd.label) +
           inferredHint +
           '</label>' +
-          '<select style="font-size:11px;padding:3px 6px;background:var(--s2);border:1px solid var(--border);' +
-          'color:var(--text);border-radius:4px;width:100%" ' +
-          'onchange="emSaveEquipConfigFlagFromPanel(' +
-          safePid +
-          ',' +
-          safeRowId +
-          ',' +
-          safeFdKey +
-          ',this.value)">' +
+          '<select data-em-config-flag="1" data-pid="' +
+          safePidAttr +
+          '" data-row-id="' +
+          safeRowIdAttr +
+          '" data-flag-key="' +
+          safeFdKeyAttr +
+          '" style="font-size:11px;padding:3px 6px;background:var(--s2);border:1px solid var(--border);' +
+          'color:var(--text);border-radius:4px;width:100%">' +
           optionsHtml +
           '</select>' +
           '</div>';
@@ -8556,15 +8681,14 @@ function emShowComplianceDetail(rowId) {
         var isChecked = storedVal === true || storedVal === 'true';
         cfHtml +=
           '<div style="margin-bottom:6px;display:flex;align-items:center;gap:8px">' +
-          '<input type="checkbox"' +
+          '<input type="checkbox" data-em-config-flag="1" data-pid="' +
+          safePidAttr +
+          '" data-row-id="' +
+          safeRowIdAttr +
+          '" data-flag-key="' +
+          safeFdKeyAttr +
+          '"' +
           (isChecked ? ' checked' : '') +
-          ' onchange="emSaveEquipConfigFlagFromPanel(' +
-          safePid +
-          ',' +
-          safeRowId +
-          ',' +
-          safeFdKey +
-          ',this.checked)"' +
           ' style="width:14px;height:14px;cursor:pointer">' +
           '<span style="font-size:12px;color:var(--text)">' +
           emHtmlEsc(fd.label) +
@@ -8625,14 +8749,16 @@ function emShowComplianceDetail(rowId) {
           srColor = '#27ae60';
           intentionalBadge = '';
         } else {
+          // Same broken JSON.stringify()-into-double-quoted-onclick pattern as the
+          // config-flag controls above — fixed the same way (data-* + delegated listener).
           markBtn =
-            ' <button onclick="emMarkSpOverrideIntentional(' +
-            JSON.stringify(pid) +
-            ',' +
-            JSON.stringify(rowId) +
-            ',' +
-            JSON.stringify(sr.checkKey) +
-            ')" ' +
+            ' <button data-em-mark-sp-override="1" data-pid="' +
+            emHtmlEsc(pid) +
+            '" data-row-id="' +
+            emHtmlEsc(rowId) +
+            '" data-check-key="' +
+            emHtmlEsc(sr.checkKey) +
+            '" ' +
             'style="font-size:10px;padding:1px 6px;background:var(--s2);border:1px solid var(--border);' +
             'color:var(--text2);border-radius:3px;cursor:pointer;margin-left:4px" ' +
             'title="Mark this deviation as intentional (designer override per GL36 §3.1.1.1)">Mark as intentional</button>';
@@ -8671,12 +8797,11 @@ function emShowComplianceDetail(rowId) {
   // — it does not call any of those functions, it only reads row.pointsRaw /
   // row.points for display.
   var allPointsOpen = _emAllPointsOpen.has(rowId);
-  var safeRowIdJs = JSON.stringify(rowId);
   var allPtsHtml =
     '<div style="margin-bottom:16px">' +
-    '<div onclick="emToggleAllPointsInDetail(' +
-    safeRowIdJs +
-    ')" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;' +
+    '<div data-em-toggle-all-points="1" data-row-id="' +
+    emHtmlEsc(rowId) +
+    '" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;' +
     'font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;' +
     'margin-bottom:8px">' +
     '<span>All Points (ASHRAE + Other)</span>' +
@@ -11485,7 +11610,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11506,7 +11644,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11526,7 +11677,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11560,7 +11724,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11576,7 +11753,20 @@ var EM_EQUIP_CONFIG_FLAGS = {
       key: 'zoneType',
       label: 'Zone Type (GL36 §3.1.1.1)',
       type: 'select',
-      options: ['vav', 'mech_elec', 'networking'],
+      // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
+      // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
+      // wins) can select any of them, not just the original three legacy zoneType values.
+      options: [
+        'vav',
+        'mech_elec',
+        'networking',
+        'restroom',
+        'corridor',
+        'storage',
+        'stairwell',
+        'elevator_lobby',
+        'secure_cell',
+      ],
       default: 'vav',
     },
     {
@@ -11596,6 +11786,138 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasGasHeat', label: 'Has Gas Heat Stage', default: true },
   ],
 };
+
+/* ── emClassifySpaceType / EM_SPACE_TYPE_EXEMPT_CATS ────────────────────────
+   space-type-classifier-2026-07-29.md §2.1/§2.3. Some spaces intentionally lack
+   certain points by design (detention cells, stairwells, mechanical rooms) —
+   this makes that distinction data-driven instead of flagging everything as a
+   deficiency. Resolution order (first hit wins), per §2.1:
+     1. Explicit flag — row's stored `zoneType` config flag always wins.
+     2. Name inference — ZONE-TERMINAL categories only (vav/fpb/ddvav/zone/fcu).
+        Space label = text before the first " - " or " | " in equipName; no
+        separator → never classify (equipment-tag-only names like "VAV-1-08"
+        never classify). A label containing "," or "/" between distinct room
+        names never classifies (the "Storage, DA, Detox" guard).
+     3. Otherwise unclassified (null) — priced normally, exactly as today.
+   ahu/rtu NEVER classify — a room-name prefix on those names the machine's
+   location, not the space it serves (classifying them would wrongly exempt
+   duct CO2 serving whole wings).
+   Pattern table is byte-for-byte identical to the Phase 0 measurement harness
+   (AI/_context/temp/space-type-phase0/space-type-phase0-b.js, itself hand-
+   verified against all 104 real matches, zero occupied-space false positives)
+   — do not retune without a new prediction table (campaign doctrine: §3 wrong
+   paths / over-broad substring matching is the named failure mode).          */
+var EM_SPACE_TYPE_ZONE_TERMINAL_CATS = { vav: true, fpb: true, ddvav: true, zone: true, fcu: true };
+var EM_SPACE_TYPE_NEVER_CLASSIFY_CATS = { ahu: true, rtu: true };
+
+var EM_SPACE_TYPE_PATTERNS = [
+  { spaceType: 'restroom', re: /restroom|rest room|\blocker\b(?!.*hall)/i },
+  { spaceType: 'corridor', re: /corridor|hallway/i }, // NOT \bhall\b — "Bunk Hall" is an occupied bunkroom
+  {
+    spaceType: 'mech_elec',
+    re: /mech(anical)?\s*(room|rm)\b|ele[ck]\w*ical(\s*(room|rm))?$|electric\s*(room|rm)\b/i,
+  },
+  { spaceType: 'storage', re: /\bstorage\b/i },
+  { spaceType: 'stairwell', re: /\bstair/i },
+  { spaceType: 'elevator_lobby', re: /elevator\s*(lobby|vestibule|machine)?/i },
+  { spaceType: 'networking', re: /server|\bidf\b|\bmdf\b|data (room|center)/i },
+  { spaceType: 'secure_cell', re: /\bcell\b|inmate|\bpod\b(?!ium)|housing/i },
+];
+
+var EM_SPACE_TYPE_LABELS = {
+  vav: 'General VAV Zone',
+  mech_elec: 'Mechanical/Electrical Room',
+  networking: 'Networking/Server Room',
+  restroom: 'Restroom',
+  corridor: 'Corridor',
+  storage: 'Storage',
+  stairwell: 'Stairwell',
+  elevator_lobby: 'Elevator Lobby',
+  secure_cell: 'Secure Cell/Housing',
+};
+
+/* v1 exemption matrix (§2.3): per (space type × point category), NOT an on/off switch.
+   In v1 ONLY 'co2' is dollar-bearing — every other category stays "required as today".
+   secure_cell carries NO exemption in v1 (visibility-only: naPoints/labels never touch
+   dollars for it) — §1.6 explains why coolSP/htgSP are never added here without a
+   coordinated predicate change (extending the monitoring-only-exclusion filter). Adding a
+   future row here is a one-line data addition, never a code rewrite — but each one needs
+   its own prediction table per campaign doctrine, not a silent default.                  */
+var EM_SPACE_TYPE_EXEMPT_CATS = {
+  restroom: { co2: true },
+  corridor: { co2: true },
+  mech_elec: { co2: true },
+  storage: { co2: true },
+  stairwell: { co2: true },
+  elevator_lobby: { co2: true },
+  networking: { co2: true },
+  secure_cell: {},
+};
+
+function _emSpaceTypeExtractLabel(equipName) {
+  var name = String(equipName || '');
+  var iDash = name.indexOf(' - ');
+  var iPipe = name.indexOf(' | ');
+  var idx = -1;
+  if (iDash !== -1 && (iPipe === -1 || iDash < iPipe)) idx = iDash;
+  else if (iPipe !== -1) idx = iPipe;
+  if (idx === -1) return null; // no separator -> never classify
+  return name.slice(0, idx).trim();
+}
+
+/* emClassifySpaceType(equipRow, flags) — the single classification authority.
+   `flags` is optional (defaults to {}) and should be whatever configFlags object the
+   caller already has (emComputeCompliance's `flags` param, or emLoadEquipConfigFlags'
+   raw stored edits) — passing it lets rule 1 (explicit zoneType tag) win over rule 2
+   (name inference) without this function reading storage itself.
+   Returns { spaceType, source: 'flag'|'name', matchedLabel } or null (unclassified). */
+function emClassifySpaceType(equipRow, flags) {
+  if (!equipRow) return null;
+  var f = flags || {};
+  if (f.zoneType) {
+    return { spaceType: f.zoneType, source: 'flag', matchedLabel: null };
+  }
+  var category = equipRow.category;
+  if (!category) return null;
+  if (EM_SPACE_TYPE_NEVER_CLASSIFY_CATS[category]) return null; // ahu/rtu never classify
+  if (!EM_SPACE_TYPE_ZONE_TERMINAL_CATS[category]) return null; // zone-terminal only
+  var label = _emSpaceTypeExtractLabel(equipRow.equipName);
+  if (label === null) return null; // no separator -> unclassified
+  if (label.indexOf(',') !== -1 || label.indexOf('/') !== -1) return null; // multi-room-label guard
+  for (var i = 0; i < EM_SPACE_TYPE_PATTERNS.length; i++) {
+    var p = EM_SPACE_TYPE_PATTERNS[i];
+    if (p.re.test(label)) {
+      return { spaceType: p.spaceType, source: 'name', matchedLabel: label };
+    }
+  }
+  return null;
+}
+
+/* _emSpaceTypeConfigFlagOverrides(row, flags) — for a classified+exempt row, returns
+   { configFlagKey: false, ... } for every configFlag gating a category the row's space
+   type exempts in EM_SPACE_TYPE_EXEMPT_CATS (v1: only 'hasCO2', via the 'co2' category).
+   Returns null when the row doesn't classify or its space type carries no exemption.
+   Used by emLoadEquipConfigFlags to make consumers that read config flags directly
+   (e.g. pricing-estimator.js's buildOptionalPointRows, for the fcu/fpb *optional*
+   co2 category — required:false, so emComputeCompliance's own required-category loop
+   never reaches it) see the same effective exemption emComputeCompliance applies to
+   required categories — one behavior, reached two ways, never two different answers. */
+function _emSpaceTypeConfigFlagOverrides(row, flags) {
+  var cls = emClassifySpaceType(row, flags);
+  if (!cls) return null;
+  var exemptCats = EM_SPACE_TYPE_EXEMPT_CATS[cls.spaceType];
+  if (!exemptCats) return null;
+  var catDefs = (row.category && typeof EM_POINT_CATEGORIES !== 'undefined' && EM_POINT_CATEGORIES[row.category]) || [];
+  var overrides = null;
+  for (var i = 0; i < catDefs.length; i++) {
+    var def = catDefs[i];
+    if (exemptCats[def.key] && def.configFlag) {
+      overrides = overrides || {};
+      overrides[def.configFlag] = false;
+    }
+  }
+  return overrides;
+}
 
 /* ── GL36_TEMP_DEFAULTS ─────────────────────────────────────────────────────
    GL36-2021 Table 3.1.1.1, p.4 — Default zone temperature setpoints (°F)   */
@@ -18706,9 +19028,43 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
           break;
         }
       }
+      // space-type-classifier-2026-07-29 §2.4: explicit flag always wins, both directions.
+      // When no explicit value is present, a space-type exemption (e.g. "Corridor - VAV-12"
+      // never gets a CO2 sensor by design) beats the flag's static default — instead of
+      // falling straight to flagDefault (which for hasCO2 is `true`, penalizing every space
+      // that would never have this point regardless of what's actually installed there).
       var flagVal = def.configFlag in flags ? flags[def.configFlag] : flagDefault;
+      var _stCls = null;
+      if (!(def.configFlag in flags)) {
+        _stCls = emClassifySpaceType(equipRow, flags);
+        if (
+          _stCls &&
+          EM_SPACE_TYPE_EXEMPT_CATS[_stCls.spaceType] &&
+          EM_SPACE_TYPE_EXEMPT_CATS[_stCls.spaceType][def.key]
+        ) {
+          flagVal = false;
+        }
+      }
       if (!flagVal) {
-        naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: def.configFlag + '=false' });
+        var _naReason = def.configFlag + '=false';
+        var _naEntry = { categoryKey: def.key, categoryLabel: def.label, reason: _naReason };
+        // Re-derive independently of which branch set flagVal=false: emLoadEquipConfigFlags
+        // may have already merged a derived hasCO2:false into `flags` upstream (so a
+        // consumer that reads config flags directly, e.g. buildOptionalPointRows, sees the
+        // same exemption for required:false categories) — when that happens the check above
+        // (`!(def.configFlag in flags)`) never fires here, but the NA is still attributable
+        // to space type, so the reason/provenance must say so either way.
+        var _naCls = _stCls || emClassifySpaceType(equipRow, flags);
+        if (
+          _naCls &&
+          EM_SPACE_TYPE_EXEMPT_CATS[_naCls.spaceType] &&
+          EM_SPACE_TYPE_EXEMPT_CATS[_naCls.spaceType][def.key]
+        ) {
+          _naEntry.reason = 'space type: ' + (EM_SPACE_TYPE_LABELS[_naCls.spaceType] || _naCls.spaceType) + ' (auto)';
+          _naEntry.source = 'spaceType';
+          _naEntry.spaceType = _naCls.spaceType;
+        }
+        naPoints.push(_naEntry);
         totalNA++;
         continue;
       }
@@ -18750,7 +19106,25 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
 function emLoadEquipConfigFlags(projId, rowId) {
   var editKey = 'en_eqmatrix_edits_' + projId;
   var edits = DB.get(editKey, {});
-  return edits[rowId + '::config'] || {};
+  var stored = edits[rowId + '::config'] || {};
+  // space-type-classifier-2026-07-29 §2.4: merge in a derived override for any
+  // configFlag a space-type exemption would set false, but ONLY when the user hasn't
+  // explicitly set that key themselves (stored is overlaid last, below, so a real edit
+  // always wins in both directions). This is what makes consumers that read config
+  // flags directly instead of going through emComputeCompliance's own classifier
+  // fallback — pricing-estimator.js's buildOptionalPointRows, for required:false
+  // categories like fcu/fpb's optional CO2 — see the same effective exemption.
+  var _row = _emRowByIdCache[projId] && _emRowByIdCache[projId][rowId];
+  var _overrides = _row ? _emSpaceTypeConfigFlagOverrides(_row, stored) : null;
+  if (!_overrides) return stored;
+  var merged = {};
+  for (var _ok in _overrides) {
+    if (_overrides.hasOwnProperty(_ok)) merged[_ok] = _overrides[_ok];
+  }
+  for (var _sk in stored) {
+    if (stored.hasOwnProperty(_sk)) merged[_sk] = stored[_sk];
+  }
+  return merged;
 }
 
 function emSaveEquipConfigFlags(projId, rowId, flags) {
@@ -18772,6 +19146,20 @@ function emSaveEquipConfigFlags(projId, rowId, flags) {
                  chiller, pump room, generator
      vav:        everything else (most zones in office/courthouse/school)       */
 function emInferZoneType(equipRow) {
+  // space-type-classifier-2026-07-29 §2.2: emClassifySpaceType is now the single
+  // classification authority. Superseded-and-delegated (not pure "extend" — the
+  // legacy loose regexes below are too imprecise to gate dollars and must never
+  // touch the exemption decision; not pure "replace" — keeping them as the fallback
+  // means the setpoint-value engine loses zero recall for names emClassifySpaceType
+  // doesn't recognize, e.g. non-zone-terminal equipment or ahu/rtu location strings).
+  var cls = emClassifySpaceType(equipRow);
+  if (cls) {
+    // Map onto the legacy 3-value vocabulary the setpoint engine understands
+    // (GL36_TEMP_DEFAULTS only defines 'vav'/'mech_elec'/'networking').
+    if (cls.spaceType === 'networking') return 'networking';
+    if (cls.spaceType === 'mech_elec') return 'mech_elec';
+    return 'vav'; // restroom/corridor/storage/stairwell/elevator_lobby/secure_cell -> 'vav'
+  }
   var haystack = ((equipRow.equipName || '') + ' ' + (equipRow.location || '')).toLowerCase();
   if (/server|network|\bidf\b|\bmdf\b|comms|telecom|data ?center/.test(haystack)) {
     return 'networking';
@@ -19717,6 +20105,41 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
         : seq.requiredCats || [];
     var keyCatsResolved =
       seq.keyCatsByType && seq.keyCatsByType[category] ? seq.keyCatsByType[category] : seq.keyCats || [];
+
+    // space-type-classifier-2026-07-29 §2.5: a sequence whose requiredCats include a
+    // category emComputeCompliance NA'd for THIS row via space-type inference
+    // (source === 'spaceType' — restricted so this is byte-identical for every
+    // pre-existing naPoint, e.g. economizer/return-fan/OA-flow defaults) is itself N/A,
+    // not blocked/partial — a corridor VAV loses its CO2 hardware row and its DCV
+    // programming row together, coherently (the §1.4-1 defect this plan fixes: without
+    // this, NA-ing a zone's CO2 would drop the sensor but still price DCV programming
+    // for a sensor that will never exist).
+    var _spaceTypeNASet = {};
+    var _naPointsArr = (complianceData && complianceData.naPoints) || [];
+    for (var _npi = 0; _npi < _naPointsArr.length; _npi++) {
+      if (_naPointsArr[_npi] && _naPointsArr[_npi].source === 'spaceType') {
+        _spaceTypeNASet[_naPointsArr[_npi].categoryKey] = true;
+      }
+    }
+    var _seqSpaceTypeNA = false;
+    for (var _rci = 0; _rci < requiredCats.length; _rci++) {
+      if (_spaceTypeNASet[requiredCats[_rci]]) {
+        _seqSpaceTypeNA = true;
+        break;
+      }
+    }
+    if (_seqSpaceTypeNA) {
+      result[seq.key] = {
+        status: 'na',
+        label: seq.label,
+        ashrae36: seq.ashrae36,
+        presentCats: [],
+        missingCats: requiredCats.slice(),
+        keyCatsMissing: false,
+        spaceTypeNA: true,
+      };
+      continue;
+    }
 
     // Evaluate which required categories are present and which are missing
     var presentCats = [];
