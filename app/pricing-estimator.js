@@ -3097,7 +3097,79 @@ function buildCatalogRows(projId) {
     });
   });
 
-  return rows;
+  return rows.concat(buildSensorInvestigationRows(projId));
+}
+
+/* ── buildSensorInvestigationRows(projId) ─────────────────────────────────────────────────────
+   2026-07-28 (fix/pricing-phases-and-sensor-hours): prices the labor to investigate each
+   suspect/failed sensor reading emGetSensorDeficiencies/emComputeSensorDeficiencyInventory
+   (app/equipment-matrix.js, fix/point-evidence-all-rows, commit ebf80dd) already flags — dead/
+   implausible CO2, humidity, zone-temp, or discharge-airflow readings that are visible on the
+   point list but excluded from averages/comparisons as unreliable. Uses THAT shared detector
+   verbatim (does not re-implement plausibility logic here) — 1 hour of investigation labor per
+   suspect point, at the project's shared configured Hourly Rate (cfg.hourlyRate ||
+   COST_LABOR_RATE_DEFAULT, the SAME rate every other labor line in this file uses per
+   fix/unify-labor-rate, commit 07cbbd0 — never a hardcoded number).
+
+   SCOPE (hard constraint — HARD SCOPE per task): reads emLoadMatrix(projId) directly, the SAME
+   raw source collectASHRAE36Data itself reads from, rather than reusing collectASHRAE36Data's own
+   `equipResults` projection — that projection deliberately does NOT carry deficiency data (it's a
+   narrowed, audit-safe view; see collectASHRAE36Data's equipResults.push). This function is called
+   ONLY from buildCatalogRows (Catalog tier — flows automatically into Full Scope, which clones
+   every catalog row, and is automatically EXCLUDED from Compliance, whose filter keeps phase-1
+   rows plus only 'safety'-type phase-2 sequences — sensor investigation is neither; matches
+   emGetSensorDeficiencies' own note that a sensor's existence for ASHRAE 36 compliance purposes is
+   determined purely by point-NAME matching, never by this detector) and from buildRecommendedRows
+   (re-added after its unit-membership filter, which would otherwise drop these standalone,
+   non-sequence rows — see that call site's comment). NEVER called from collectASHRAE36Data,
+   generateASHRAE36AuditHTML, or any rptPageASHRAE36* audit page — sensor failures are a
+   service-scope/pricing matter, not an ASHRAE 36 compliance finding, and must not reach the audit
+   report. (Verified: grep confirms zero references to this function or emGetSensorDeficiencies/
+   emComputeSensorDeficiencyInventory anywhere in the audit-report render path.)
+
+   Returns phase-2 (labor-only) rows, one per suspect point, shaped to match every other row this
+   file produces (id/building/item/type/equipment/qty/unitPrice/lineTotal/phase/hrsPerUnit/note)
+   so they merge into the SAME tables/totals as hardware and programming rows, not a parallel line.
+   No seqKey (this is not a G36 sequence) — _pricingBuildRoiUnits correctly leaves these rows
+   unclaimed by any unit; _pricingComputeRecommendedTimeline's existing defensive safety net then
+   folds each one in as its own single-row unit (scored via the same _pricingEquipRowScore every
+   other unclaimed row uses) so it still gets scheduled into a phase like any other line item.
+   ─────────────────────────────────────────────────────────────────────────── */
+function buildSensorInvestigationRows(projId) {
+  if (typeof emLoadMatrix !== 'function' || typeof emComputeSensorDeficiencyInventory !== 'function') return [];
+  var matData = emLoadMatrix(projId);
+  if (!matData || !matData.rows || !matData.rows.length) return [];
+  var inventory = emComputeSensorDeficiencyInventory(matData.rows);
+  if (!inventory || !inventory.rows.length) return [];
+
+  var cfg = _pricingGetConfig();
+  var hourlyRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
+
+  return inventory.rows.map(function (d, idx) {
+    var statusLabel = d.status === 'failed' ? 'failed reading' : 'suspect reading';
+    return {
+      id: 'sinv_' + (d.id || 'row') + '_' + d.col + '_' + idx,
+      building: d.building || '',
+      item: 'Sensor Investigation — ' + (d.categoryLabel || d.col),
+      type: 'Investigation',
+      equipment: (d.equipName || 'Equipment') + ' (' + statusLabel + ')',
+      qty: 1,
+      sku: null,
+      engReview: false,
+      noSku: false,
+      ioOnly: false,
+      unitPrice: hourlyRate,
+      listPrice: null,
+      netPrice: null,
+      contractPrice: null,
+      lineTotal: parseFloat((1 * hourlyRate).toFixed(2)),
+      note: d.reason || '', // emGetSensorDeficiencies' own reason field — "safe to surface to a client"
+      phase: 2,
+      hrsPerUnit: 1,
+      isSensorInvestigation: true,
+      sensorDeficiencyStatus: d.status,
+    };
+  });
 }
 
 /* ── buildComplianceRows(projId) ────────────────────────────────────────────
@@ -4136,6 +4208,18 @@ function buildRecommendedRows(projId) {
     var toggleKey = r._baseId || r.id;
     return !!keepUnitToggleKeys[toggleKey];
   });
+
+  // Sensor Investigation rows (2026-07-28, fix/pricing-phases-and-sensor-hours): re-added AFTER
+  // the unit-membership filter above. These are standalone phase-2 labor rows with no seqKey, so
+  // _pricingBuildRoiUnits never forms a "unit" for them and the membership filter just removed
+  // them along with every other never-claimed row — correct for a real un-bundled sequence, but
+  // NOT what we want for investigation labor, which should always be priced here regardless of
+  // ROI-unit bundling. buildCatalogRows() already appended these once (recRows above included a
+  // pass-through clone of them that the filter just discarded); fetch a fresh copy here instead of
+  // trying to rescue the discarded clone. _pricingComputeRecommendedTimeline's existing "unclaimed
+  // row" safety net (see that function's header comment) picks these up as their own single-row
+  // units for phase scheduling, same as any other unbundled row.
+  recRows = recRows.concat(buildSensorInvestigationRows(projId));
 
   // ── Phase 5: Two-key sort for phase-2 rows within each building group (correction #3)
   // Apply sort within building groups, preserve building order and phase-1/phase-2 structure.
@@ -7315,6 +7399,22 @@ function _pricingComputeRecommendedTimeline(projId) {
   // phaseIdx against anymore — phaseIdx only ever advances forward, generating a new calendar phase
   // on demand each time it does (2026-07-28: no more fixed 3-element array, no more Infinity
   // safety-valve phase — every phase's envelope is its own real measuresAvailable).
+  // Oversized-unit guard (2026-07-28, found during verification against real JOCO data): a single
+  // "unit" can legitimately be larger than one whole calendar phase's measures envelope — e.g. a
+  // consolidated multi-device row (buildCatalogRows groups by point-type + equipment-type PER
+  // BUILDING, so "44 AHUs needing a duct-static sensor at this building" can be ONE row/unit whose
+  // total is well into six figures, far above a single year's ~$41.8k steady-state envelope). Since
+  // every phase from index 1 onward shares the same steady-state envelope (constant monthly
+  // allowance, constant recurring EM labor), such a unit can NEVER satisfy `runningTotal + item.total
+  // <= envelope` in ANY phase, however many are generated — without this guard the walk would spin
+  // through phase after phase forever (empty phases, since nothing else fits either once smaller
+  // units are exhausted) until PRICING_MAX_RECOMMENDED_PHASES's safety valve finally dumped it,
+  // wasting hundreds of phantom empty phases. Fix: a unit that would not fit even a completely EMPTY
+  // phase (item.total > envelope) is admitted into the current phase anyway THE FIRST TIME that
+  // phase is empty (runningTotal === 0) — it becomes that phase's one deliberate, real, surfaced
+  // overage (via overCommitted/overageAmount below) rather than being deferred to a future phase
+  // that can never help. Never splits a unit across phases — that invariant ("a measure is never
+  // sold half-installed") is preserved; this only changes WHICH single phase absorbs it.
   var pending = units;
   var phaseIdx = 0;
   while (pending.length && phaseIdx < PRICING_MAX_RECOMMENDED_PHASES) {
@@ -7323,7 +7423,9 @@ function _pricingComputeRecommendedTimeline(projId) {
     var runningTotal = 0;
     var stillPending = [];
     pending.forEach(function (item) {
-      if (runningTotal + item.total <= envelope) {
+      var fits = runningTotal + item.total <= envelope;
+      var forceAdmitOversized = !fits && runningTotal === 0 && item.total > envelope;
+      if (fits || forceAdmitOversized) {
         phaseUnits[phaseIdx].push(item);
         runningTotal += item.total;
       } else {
