@@ -11425,6 +11425,13 @@ async function processPDF(file) {
                           if (!orig || !retry) continue;
                           if (_mergeIdentityConflict(orig, retry)) continue; // identity disagrees — do not merge this pair
                           for (const [k, v] of Object.entries(retry)) {
+                            // TASK 3 guard: never gap-fill a field that a validity check
+                            // (e.g. the WRE MMbtu-vs-rate/component cross-check) already
+                            // examined and deliberately nulled — that null is a decision,
+                            // not a gap. Silently refilling it from a DIFFERENT OCR pass's
+                            // reading (which was never itself validated) is exactly the
+                            // "silently correct the number" behavior TASK 3 forbids.
+                            if (k === 'NaturalGasMMbtu' && orig._mmbtuRateMismatch === true) continue;
                             if (
                               (orig[k] === null || orig[k] === undefined || orig[k] === '') &&
                               v !== null &&

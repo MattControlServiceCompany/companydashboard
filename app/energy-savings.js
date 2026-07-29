@@ -5980,6 +5980,82 @@ const UTILITY_RULES = [
           continue;
         }
 
+        // Fix (2026-07-28, gas-bill-ocr-extraction TASK 3): rate-based sanity cross-
+        // check. Tesseract can misread a digit in MMbtu (real 4.74 read as 174) or in
+        // an account number, but the DOLLAR charge on this invoice format extracts
+        // correctly even on the worst real bill tested (verified exact on Inv 447604:
+        // $22.92/$182.02/$417.16/$604.41). Each per-site block prints its own MMbtu,
+        // rate, AND resulting charge for both the Trigger and Index components, so
+        // MMbtu*rate can be checked against the printed charge without any external
+        // data. Tolerance chosen from real observed data, not a guess: probed all 10
+        // sites' Trigger AND Index components (20 checks) on Inv 478203 (Nov 2025) —
+        // the one Spring Hill invoice with a real digital text layer (no OCR involved,
+        // so every discrepancy here is legitimate bill-rounding, not misread digits).
+        // Every single check came back within -0.89% to -0.97% of the printed charge
+        // (the bill's printed MMbtu/rate are rounded to fewer decimals than its own
+        // internal billing math) — a tight, consistent band under 1%. 5% is >5x that
+        // natural rounding floor, so it will never false-flag a correctly-read site,
+        // while a genuine digit misread (e.g. 174 vs 4.74 MMbtu is a ~3570% swing)
+        // blows past it by orders of magnitude. The $1 floor (AND, not OR) additionally
+        // guards the smallest real sites (e.g. a $0.47 total bill) from being flagged
+        // purely on cents-level rounding noise inflating a % check at tiny scale.
+        const _wreRateMismatch = (mmbtu, rate, charge) => {
+          if (mmbtu == null || rate == null || charge == null || charge === 0) return false;
+          const computed = mmbtu * rate;
+          const deltaPct = (Math.abs(computed - charge) / Math.abs(charge)) * 100;
+          const deltaDollar = Math.abs(computed - charge);
+          return deltaPct > 5 && deltaDollar > 1;
+        };
+        const _trigMismatch = _wreRateMismatch(
+          blk.triggerMMbtu,
+          blk.triggerRate != null ? parseFloat(blk.triggerRate) : null,
+          blk.triggerCharge,
+        );
+        const _idxMismatch = _wreRateMismatch(
+          blk.indexMMbtu,
+          blk.indexRate != null ? parseFloat(blk.indexRate) : null,
+          blk.indexCharge,
+        );
+        // Second, rate-INDEPENDENT identity check: the Sub-Total line's own printed
+        // MMbtu must equal Trigger MMbtu + Index MMbtu — they are literally the same
+        // number, printed twice on the same invoice (once as two line items, once as
+        // their sum). Needed because the rate-based check above goes blind whenever
+        // the RATE column itself is OCR-unreadable (confirmed on Inv 447604 site #1:
+        // Sub-Total read as 174 MMbtu, but Index alone read as 424 MMbtu with the rate
+        // column unreadable — the rate check had nothing to compare, but 424 MMbtu
+        // from ONE component can never fit inside a 174 MMbtu total, which this check
+        // catches without needing any rate at all). Empirically verified on the same
+        // 478203 clean-text sample used above: Sub-Total MMbtu equals
+        // TriggerMMbtu+IndexMMbtu on 10/10 sites, within 0.01 MMbtu (2-decimal
+        // print-rounding). Tolerance set to max(0.1 MMbtu, 3% of the sub-total) — 10x
+        // that observed 0.01 rounding floor — so it won't false-flag a clean bill.
+        const _wreComponentSumMismatch = (subTotal, trigMmbtu, idxMmbtu) => {
+          if (subTotal == null || (trigMmbtu == null && idxMmbtu == null)) return false;
+          const sum = (trigMmbtu != null ? trigMmbtu : 0) + (idxMmbtu != null ? idxMmbtu : 0);
+          const tolerance = Math.max(0.1, subTotal * 0.03);
+          if (trigMmbtu != null && idxMmbtu != null) {
+            return Math.abs(sum - subTotal) > tolerance;
+          }
+          // Only one component legible: a non-negative component can never exceed the total.
+          return sum > subTotal + tolerance;
+        };
+        const _sumMismatch = _wreComponentSumMismatch(blk.mmbtu, blk.triggerMMbtu, blk.indexMMbtu);
+        const _mmbtuRateMismatch = _trigMismatch || _idxMismatch || _sumMismatch;
+        if (_mmbtuRateMismatch) {
+          console.log(
+            '[WRE] Rate/sum cross-check FAILED for site #' +
+              (i + 1) +
+              (blk.ServiceAddress ? ' (' + blk.ServiceAddress + ')' : '') +
+              ' — trigger mismatch=' +
+              _trigMismatch +
+              ', index mismatch=' +
+              _idxMismatch +
+              ', sub-total-vs-components mismatch=' +
+              _sumMismatch +
+              '. NaturalGasMMbtu suppressed, flagged for manual review.',
+          );
+        }
+
         results.push({
           UtilityCompany: 'Wood River Energy',
           Commodity: 'Gas',
@@ -5993,7 +6069,7 @@ const UTILITY_RULES = [
           BillingPeriodEnd,
           BillDate,
           ProductionMonth,
-          NaturalGasMMbtu: blk.mmbtu != null ? String(blk.mmbtu) : null,
+          NaturalGasMMbtu: _mmbtuRateMismatch ? null : blk.mmbtu != null ? String(blk.mmbtu) : null,
           NaturalGasTherms: null,
           NaturalGasCCF: null,
           GasCharge: blk.dollar || null,
@@ -6013,6 +6089,17 @@ const UTILITY_RULES = [
           _wreSummaryMMbtu: summaryMMbtu,
           _wreSummaryTotal: summaryTotalCC,
           _wreInvoiceMMbtu: summaryMMbtu,
+          // TASK 3 rate cross-check markers — reuse the existing manual-review
+          // mechanism rather than inventing a second one; never silently "correct"
+          // the number toward what the math implies, only flag it.
+          _mmbtuRateMismatch: _mmbtuRateMismatch || undefined,
+          _manualReview: _mmbtuRateMismatch ? true : undefined,
+          _manualReviewLabel: _mmbtuRateMismatch
+            ? 'Usage flagged — MMbtu × printed rate does not match the printed charge (site #' +
+              (i + 1) +
+              (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
+              ' — likely a misread digit; verify usage manually)'
+            : undefined,
         });
       }
 
