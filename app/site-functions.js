@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.724',
+    date: '2026-07-29',
+    title: 'Equipment Matrix and Audit Report stop flagging by-design gaps as deficiencies',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix and Audit Report no longer count spaces that do not need a sensor by design — restrooms, corridors, closets, detention cells — as deficiencies, so coverage percentages and cost estimates now reflect only real gaps.',
+      },
+      {
+        type: 'fix',
+        text: 'The override checkboxes in the compliance detail panel (including "Mark as intentional" and the "All Points" toggle) now save correctly and persist after a reload.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.723',
     date: '2026-07-29',
     title: 'Service Proposal phase table names sequence categories; sidebar version badge fixed',
