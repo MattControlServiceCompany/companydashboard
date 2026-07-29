@@ -1576,6 +1576,37 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.718',
+    date: '2026-07-29',
+    title: 'Report text sizing fixed; audit report pagination corrected',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department reports (Audit, Proposal, Agreement, Annual): body text now prints at the correct size and font. It had been rendering noticeably smaller than intended when exported to Word; it now matches the CSC letterhead standard of 10.5pt Arial body text.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department reports: all report pages now measure their page breaks from one shared setting, so future page-size adjustments will apply consistently across every report page.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report: fixed pages that were overflowing past their printed page boundary.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department Cost Estimate: BAS programming labor and hardware installation labor now bill at the same hourly rate.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department Equipment Matrix: the Recommended Measures list now shows units that do not need new hardware ahead of units that still need a sensor installed.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department Equipment Matrix: point-based equipment verification now checks every classified equipment row, not just some of them.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.28.717',
     date: '2026-07-28',
     title: 'Report pages hold their layout under long content; Cost Estimate catches over-budget months',
