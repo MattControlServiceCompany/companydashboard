@@ -15322,11 +15322,20 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // measurements this was tuned against. NOTE (2026-07-28): BODY/UL below were bumped from
   // font-size:10.5px (rendered ~8.04pt in Word, a px/pt unit bug) to the correct font-size:14px
   // (=10.5pt) per the CSC Letterhead.docx spec — this pagination density tuning was measured
-  // against the SMALLER pre-fix size and has not been re-verified at 14px; flag for the
-  // pagination owner to re-check page-1 fit.
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
-  var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
-  var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
+  // against the SMALLER pre-fix size and had not been re-verified at 14px.
+  //
+  // 2026-07-29 (re-verified at 14px, fix/report-typography-and-pagination-merge): headless
+  // re-measurement against real JOCO data found this page 159.7px past the 1056px design height
+  // with "Why This Approach" still on it. Moving that section to rptPageASHRAE36ProposalPhaseTable
+  // (see that function + rptPageASHRAE36ProposalCover's own header comment) closed most of the
+  // gap; the remaining ~35px is closed here by tightening HEAD margin (7/3 -> 5/2) and
+  // BODY/UL line-height (1.38 -> 1.32, still above the 1.2x-ish "unreadably tight" floor the
+  // 2026-07-26 comment above was written against and well above the original bug's ~8pt-equivalent
+  // density) — spacing only, font-size untouched at 12px/14px. Re-measured after: 0px overflow
+  // (see dashboardlogic.md 2026-07-29 entry for before/after numbers).
+  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
+  var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
+  var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
   // ── Title block ─────────────────────────────────────────────────────────
   var title =
@@ -15563,7 +15572,34 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '</ul>';
 
   // ── Why This Approach ───────────────────────────────────────────────────
-  var whyThisApproach =
+  // fix/report-typography-and-pagination-merge (2026-07-29): moved OFF this page onto the top
+  // of rptPageASHRAE36ProposalPhaseTable (see _rptA36WhyThisApproachHTML below). At the corrected
+  // 14px/10.5pt body size (fix/report-typography-standard), this page measured 159.7px past the
+  // 1056px one-page design height with Why This Approach still included — the density tuning
+  // this page's HEAD comment already flagged as unverified. Content is preserved verbatim, not
+  // deleted or shrunk — only relocated to a page with spare room. Re-measured after the move:
+  // this page fits (see dashboardlogic.md 2026-07-29 entry for before/after numbers).
+  var bodyHTML =
+    '<div style="padding:4px 48px 2px">' + title + execSummary + assessmentFindings + recProgram1 + '</div>';
+
+  return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
+    hero: true,
+    noPageNum: true,
+    data: fakeData,
+    label: 'Page ' + n + ' — Proposal Summary',
+  });
+}
+
+/**
+ * _rptA36WhyThisApproachHTML — "Why This Approach" bullet list. Extracted from
+ * rptPageASHRAE36ProposalCover (2026-07-29, see that function's header comment) so it can render
+ * on rptPageASHRAE36ProposalPhaseTable instead, where there is spare room after the phase/vision
+ * merge was reverted (see generateASHRAE36ProposalHTML). Content unchanged from the original
+ * inline block — HEAD/UL styles come from the caller (same vars used throughout this file's ASHRAE
+ * 36 Proposal pages).
+ */
+function _rptA36WhyThisApproachHTML(HEAD, UL) {
+  return (
     '<div style="' +
     HEAD +
     '">Why This Approach</div>' +
@@ -15575,23 +15611,8 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<li>Avoids the need for a large capital expenditure.</li>' +
     '<li>Allows implementation to align with budget planning cycles.</li>' +
     '<li>Creates a sustainable long-term optimization strategy.</li>' +
-    '</ul>';
-
-  var bodyHTML =
-    '<div style="padding:4px 48px 2px">' +
-    title +
-    execSummary +
-    assessmentFindings +
-    recProgram1 +
-    whyThisApproach +
-    '</div>';
-
-  return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
-    hero: true,
-    noPageNum: true,
-    data: fakeData,
-    label: 'Page ' + n + ' — Proposal Summary',
-  });
+    '</ul>'
+  );
 }
 
 /**
@@ -15838,7 +15859,16 @@ function _rptA36PhaseTableInnerHTML(d) {
 
 function rptPageASHRAE36ProposalPhaseTable(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var bodyHTML = '<div style="padding:8px 48px 4px">' + _rptA36PhaseTableInnerHTML(d) + '</div>';
+  // fix/report-typography-and-pagination-merge (2026-07-29): "Why This Approach" prepended here —
+  // see rptPageASHRAE36ProposalCover's header comment for why it moved off the cover page. Same
+  // HEAD/UL literal style strings used throughout the ASHRAE 36 Proposal page family.
+  var _whyHead = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
+  var _whyUl = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
+  var bodyHTML =
+    '<div style="padding:8px 48px 4px">' +
+    _rptA36WhyThisApproachHTML(_whyHead, _whyUl) +
+    _rptA36PhaseTableInnerHTML(d) +
+    '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
@@ -17050,7 +17080,18 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // Guarded/silent-until-priced, same as discBlock/svcBlock above.
   var timelineBlock = _rptA36RecommendedTimelineHTML(d);
 
-  var bodyHTML = titleBlock + intro + table + timelineBlock + discBlock + svcBlock;
+  // fix/report-typography-and-pagination-merge (2026-07-29): discBlock (Estimate & Savings
+  // Disclaimer) and svcBlock (Monthly Energy Management Service Agreement line) moved OFF this
+  // page onto their own small continuation page. At the corrected 14px/10.5pt body size (svcBlock
+  // sets font-size:14px explicitly — one of the individual sites the px/pt unit-bug fix touched),
+  // this page measured 105px past the 1056px design height with titleBlock+intro+table+
+  // timelineBlock+discBlock+svcBlock all on one unpaginated page. table/timelineBlock stay put
+  // (the priced tier table and phased schedule are the page's primary content, not severable);
+  // discBlock/svcBlock are the two smallest, least position-dependent blocks (a disclaimer and a
+  // one-line budget callout), same "move the most severable block" approach used on
+  // rptPageASHRAE36ProposalCover (see that function's comment). Content unchanged, not shrunk.
+  var bodyHTML = titleBlock + intro + table + timelineBlock;
+  var trailerHTML = discBlock + svcBlock;
 
   var resultPages = [
     rptPage(n, 'ASHRAE 36 Service Proposal — Cost Estimate', bodyHTML, {
@@ -17059,6 +17100,15 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     }),
   ];
   var nextPageNum = n + 1;
+  if (trailerHTML) {
+    resultPages.push(
+      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal — Cost Estimate', titleBlock + trailerHTML, {
+        data: fakeData,
+        label: 'Page ' + nextPageNum + ' — Cost Estimate Disclaimer',
+      }),
+    );
+    nextPageNum++;
+  }
 
   // ── "Per-building pricing breakdown" (costEstimatePerBuilding) REMOVED 2026-07-22 ─────────────
   // Matt's explicit request: "The Cost Estimate per building I do not like and it honestly gives
@@ -17817,21 +17867,31 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // (see the dated entries above), pages 2-3 measured 38.6% / 49.1% empty — the same "reads as
   // unfinished" complaint that drove the page-1 redesign. Rendered measurement (not assumption)
   // confirmed the two pages' combined content comfortably fits one physical page, so
-  // proposalPhaseTable + proposalVision now render as ONE merged page
-  // (rptPageASHRAE36ProposalPhaseAndVision) whenever BOTH are selected — the default state, and
-  // the only state that matters for the client-facing document. Narrative order is unchanged
-  // (Recommended Optimization Program + Phase table, then Implementation Plan & Long-Term
-  // Vision + Long-Term Program Vision + Disclaimer). If only ONE of the two toggles is enabled
-  // (a rarer, non-default combination), each still renders as its own standalone page via
-  // rptPageASHRAE36ProposalPhaseTable/rptPageASHRAE36ProposalVision — neither existing capability
-  // was destroyed, only the default (both-on) rendering path changed.
+  // proposalPhaseTable + proposalVision briefly rendered as ONE merged page
+  // (rptPageASHRAE36ProposalPhaseAndVision) whenever BOTH were selected.
+  //
+  // 2026-07-29 (merge reverted, fix/report-typography-and-pagination-merge): that "comfortably
+  // fits one physical page" measurement was taken against body text rendered at ~8.04pt (the
+  // px/pt unit bug fixed by fix/report-typography-standard). At the corrected 14px/10.5pt size the
+  // merged page measured 125px past the 1056px design height. Reverted to the pre-merge two-page
+  // shape (rptPageASHRAE36ProposalPhaseTable, now carrying "Why This Approach" moved off the cover
+  // page — see that function's comment, then rptPageASHRAE36ProposalVision) rather than
+  // re-tightening spacing again, since a second density pass on top of an already-tight one risks
+  // the same "reads as unfinished"-adjacent readability floor the 2026-07-26 comment above was
+  // written against. No content was removed — the "one merged page" arrangement was itself the
+  // thing this size no longer supports, not any bullet, heading, or paragraph in it. If only ONE
+  // of the two toggles is enabled (a rarer, non-default combination), each still renders as its
+  // own standalone page via rptPageASHRAE36ProposalPhaseTable/rptPageASHRAE36ProposalVision —
+  // neither existing capability was destroyed, only the default (both-on) rendering path changed
+  // back. rptPageASHRAE36ProposalPhaseAndVision itself is left intact (unused) rather than
+  // deleted, per the "do not destroy existing capability" constraint already established elsewhere
+  // in this file.
   if (s.proposalCover !== false)
     pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
-  if (s.proposalPhaseTable !== false && s.proposalVision !== false) {
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalPhaseAndVision(pageNum++, data), 'proposalPhaseTable'));
-  } else if (s.proposalPhaseTable !== false) {
+  if (s.proposalPhaseTable !== false) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalPhaseTable(pageNum++, data), 'proposalPhaseTable'));
-  } else if (s.proposalVision !== false) {
+  }
+  if (s.proposalVision !== false) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalVision(pageNum++, data), 'proposalVision'));
   }
 

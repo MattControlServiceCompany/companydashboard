@@ -763,6 +763,11 @@ function rptPageAgreementTermTermination(n, d) {
 }
 
 // ─── Page 5: General Provisions ────────────────────────────────────────────────────────────────
+// fix/report-typography-and-pagination-merge (2026-07-29): split into TWO pages (4.1-4.6 / 4.7-4.9)
+// — see the header comment right before the return statement below for the measured before/after
+// numbers and why this specific split point was chosen. Returns an Array, matching the
+// rptPageASHRAE36Executive/rptPageObservations convention already used elsewhere in this file for
+// multi-page sections — see generateAgreementHTML for the caller-side spread.
 function rptPageAgreementGeneralProvisions(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var esc = _agreementEsc;
@@ -824,7 +829,17 @@ function rptPageAgreementGeneralProvisions(n, d) {
     ';vertical-align:top;width:50%">Client: ' +
     esc(d.legalClientName) +
     '<br>[Client mailing address — enter here]</td>' +
-    '</tr></table>' +
+    '</tr></table>';
+
+  // Split point: after 4.6 Notices (incl. its address table). 4.7 Limitation of Liability and 4.8
+  // Dispute Resolution are the two longest clauses on this page (multiple full paragraphs each) —
+  // moving 4.7-4.9 to a second page removes enough height to close the 291px/237px (screen/print)
+  // overflow measured at the corrected 14px/10.5pt body size (headless re-measurement against real
+  // JOCO data, before this split: page 4 rendered 1263px vs the 1056px design height / 972px
+  // .rpt-body budget; after: both pages fit — see dashboardlogic.md 2026-07-29 entry for the
+  // before/after numbers). No clause text was edited, shortened, or reworded — same html this
+  // page has always rendered, just carried across two pages instead of one.
+  var html2 =
     '<div style="' +
     _AGR_SUBHEAD +
     '">4.7 Limitation of Liability:</div>' +
@@ -853,7 +868,10 @@ function rptPageAgreementGeneralProvisions(n, d) {
     _AGR_BODY +
     '" contenteditable="true">This Agreement may be executed in any number of counterparts, each of which shall be deemed to be an original and all of which taken together shall constitute one Agreement. To evidence the fact that it has executed this Agreement, a party may send a copy of its executed counterpart to the other party by electronic transmission (including, without limitation, via email or facsimile) and the signature transmitted by such transmission shall be deemed to be that party&rsquo;s original signature for all purposes.</div>';
 
-  return rptPage(n, 'Energy Management Services Agreement', html, { data: fakeData, hideIntHdr: true });
+  return [
+    rptPage(n, 'Energy Management Services Agreement', html, { data: fakeData, hideIntHdr: true }),
+    rptPage(n + 1, 'Energy Management Services Agreement', html2, { data: fakeData, hideIntHdr: true }),
+  ];
 }
 
 // ─── Page 5: Signature Block ───────────────────────────────────────────────────────────────────
@@ -910,7 +928,13 @@ function generateAgreementHTML(projId, templateType, opts) {
   pages.push(_tagAgreementSection(rptPageAgreementCover(pageNum++, d), 'agreementCover'));
   pages.push(_tagAgreementSection(rptPageAgreementCommercialTerms(pageNum++, d), 'agreementCommercialTerms'));
   pages.push(_tagAgreementSection(rptPageAgreementTermTermination(pageNum++, d), 'agreementTermTermination'));
-  pages.push(_tagAgreementSection(rptPageAgreementGeneralProvisions(pageNum++, d), 'agreementGeneralProvisions'));
+  // rptPageAgreementGeneralProvisions returns an Array (2026-07-29, split across 2 pages to fix
+  // overflow at the corrected 14px/10.5pt body size — see that function's header comment).
+  var _gpPages = rptPageAgreementGeneralProvisions(pageNum, d);
+  _gpPages.forEach(function (pg) {
+    pages.push(_tagAgreementSection(pg, 'agreementGeneralProvisions'));
+    pageNum++;
+  });
   pages.push(_tagAgreementSection(rptPageAgreementSignatureBlock(pageNum++, d), 'agreementSignature'));
 
   return { html: _injectPageNumbers(pages.join('\n')), data: d };
