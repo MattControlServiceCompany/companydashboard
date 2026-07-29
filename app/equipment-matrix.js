@@ -8439,6 +8439,67 @@ function emAuditGetSortVal(row, def) {
   return '';
 }
 
+var _emPanelListenersAttached = false;
+
+/* ── _emAttachPanelDelegatedListeners ───────────────────────────────────────
+   space-type-classifier-2026-07-29 override-control fix.
+
+   The compliance detail panel (emShowComplianceDetail) is rebuilt from an
+   HTML string every time it opens/re-renders, and previously wired its
+   interactive controls via onchange="fn(...)"/onclick="fn(...)" attributes
+   built from JSON.stringify(pid/rowId/flagKey) interpolated into a
+   double-quoted HTML attribute. JSON.stringify() ALWAYS wraps string values
+   in literal double quotes, so the emitted attribute
+   (onchange="emSaveEquipConfigFlagFromPanel("p1","r1","hasCO2",this.checked)")
+   terminated at the FIRST embedded quote per the HTML5 tokenizer — the
+   parsed handler was the syntactically-invalid fragment
+   "emSaveEquipConfigFlagFromPanel(" for EVERY pid/rowId/flagKey, not just
+   ones containing special characters. An event-handler content attribute
+   that fails to compile resolves to a null handler permanently, so the
+   override controls (CO2/economizer checkboxes, zoneType/occupancyCat
+   selects, "Mark as intentional" buttons, "All Points" toggle) silently did
+   nothing when clicked — confirmed by reproduction: checkbox.checked flips
+   in the DOM (native browser behavior) but the stored config flag in
+   en_eqmatrix_edits_<pid> never changes, and the truncated handler throws
+   "Unexpected end of input" when the browser tries to compile it.
+
+   Fixed by moving every interactive control in this panel off
+   attribute-embedded-JS entirely: each control carries emHtmlEsc()'d data-*
+   attributes (correct HTML-attribute escaping — not JS-string-in-HTML-
+   attribute, which is what broke this) and a single delegated listener,
+   attached once to `document`, reads event.target/.closest() + .dataset
+   and calls the same real save functions the old onchange/onclick attrs
+   called. Delegation (rather than addEventListener per node) is required
+   because the panel's DOM is thrown away and rebuilt on every open/re-render
+   (emShowComplianceDetail removes+recreates '#em-compliance-detail-panel'),
+   so per-node listeners would need re-attaching every render anyway — a
+   document-level delegate survives panel rebuilds for free and only needs
+   to be attached once per page load (guarded by _emPanelListenersAttached). */
+function _emAttachPanelDelegatedListeners() {
+  if (_emPanelListenersAttached) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  _emPanelListenersAttached = true;
+
+  document.addEventListener('change', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('[data-em-config-flag]') : null;
+    if (!el) return;
+    var value = el.type === 'checkbox' ? el.checked : el.value;
+    emSaveEquipConfigFlagFromPanel(el.dataset.pid, el.dataset.rowId, el.dataset.flagKey, value);
+  });
+
+  document.addEventListener('click', function (e) {
+    var markEl = e.target && e.target.closest ? e.target.closest('[data-em-mark-sp-override]') : null;
+    if (markEl) {
+      emMarkSpOverrideIntentional(markEl.dataset.pid, markEl.dataset.rowId, markEl.dataset.checkKey);
+      return;
+    }
+    var toggleEl = e.target && e.target.closest ? e.target.closest('[data-em-toggle-all-points]') : null;
+    if (toggleEl) {
+      emToggleAllPointsInDetail(toggleEl.dataset.rowId);
+    }
+  });
+}
+
 /* ── emShowComplianceDetail ─────────────────────────────────────────────────
    Clicking the Coverage % cell (or an amber Setpoint Values pill) opens a
    side panel showing:
@@ -8447,6 +8508,7 @@ function emAuditGetSortVal(row, def) {
      3. GL36 Setpoint Check table (Phase 4.2)
    The panel slides in from the right edge of the em-table-wrap container.  */
 function emShowComplianceDetail(rowId) {
+  _emAttachPanelDelegatedListeners();
   var pid = window._emActivePid || '';
   var data = emLoadMatrix(pid);
   if (!data) return;
@@ -8535,9 +8597,19 @@ function emShowComplianceDetail(rowId) {
     for (var fi = 0; fi < flagDefs.length; fi++) {
       var fd = flagDefs[fi];
       var storedVal = fd.key in flags ? flags[fd.key] : fd['default'];
-      var safeRowId = JSON.stringify(rowId);
-      var safePid = JSON.stringify(pid);
-      var safeFdKey = JSON.stringify(fd.key);
+      // space-type-classifier-2026-07-29 override-control fix: these were
+      // JSON.stringify()'d values interpolated into a double-quoted onchange="..."
+      // attribute — JSON.stringify ALWAYS wraps strings in literal double quotes,
+      // so the emitted attribute (e.g. onchange="fn("p1","r1",...)") terminated at
+      // the first embedded quote per the HTML5 tokenizer, leaving an unparseable
+      // handler that silently compiled to null and never fired for ANY pid/rowId/
+      // flagKey value — not just ones containing quotes. Fixed by moving off
+      // attribute-embedded-JS entirely: emHtmlEsc'd data-* attributes (safe HTML
+      // attribute escaping, not JS-string-in-HTML-attribute) + a single delegated
+      // listener (see _emAttachPanelDelegatedListeners) that reads .dataset.       */
+      var safeRowIdAttr = emHtmlEsc(rowId);
+      var safePidAttr = emHtmlEsc(pid);
+      var safeFdKeyAttr = emHtmlEsc(fd.key);
 
       if (fd.type === 'select') {
         // ── Select dropdown (zoneType, occupancyCat) ──────────────────────
@@ -8593,15 +8665,14 @@ function emShowComplianceDetail(rowId) {
           emHtmlEsc(fd.label) +
           inferredHint +
           '</label>' +
-          '<select style="font-size:11px;padding:3px 6px;background:var(--s2);border:1px solid var(--border);' +
-          'color:var(--text);border-radius:4px;width:100%" ' +
-          'onchange="emSaveEquipConfigFlagFromPanel(' +
-          safePid +
-          ',' +
-          safeRowId +
-          ',' +
-          safeFdKey +
-          ',this.value)">' +
+          '<select data-em-config-flag="1" data-pid="' +
+          safePidAttr +
+          '" data-row-id="' +
+          safeRowIdAttr +
+          '" data-flag-key="' +
+          safeFdKeyAttr +
+          '" style="font-size:11px;padding:3px 6px;background:var(--s2);border:1px solid var(--border);' +
+          'color:var(--text);border-radius:4px;width:100%">' +
           optionsHtml +
           '</select>' +
           '</div>';
@@ -8610,15 +8681,14 @@ function emShowComplianceDetail(rowId) {
         var isChecked = storedVal === true || storedVal === 'true';
         cfHtml +=
           '<div style="margin-bottom:6px;display:flex;align-items:center;gap:8px">' +
-          '<input type="checkbox"' +
+          '<input type="checkbox" data-em-config-flag="1" data-pid="' +
+          safePidAttr +
+          '" data-row-id="' +
+          safeRowIdAttr +
+          '" data-flag-key="' +
+          safeFdKeyAttr +
+          '"' +
           (isChecked ? ' checked' : '') +
-          ' onchange="emSaveEquipConfigFlagFromPanel(' +
-          safePid +
-          ',' +
-          safeRowId +
-          ',' +
-          safeFdKey +
-          ',this.checked)"' +
           ' style="width:14px;height:14px;cursor:pointer">' +
           '<span style="font-size:12px;color:var(--text)">' +
           emHtmlEsc(fd.label) +
@@ -8679,14 +8749,16 @@ function emShowComplianceDetail(rowId) {
           srColor = '#27ae60';
           intentionalBadge = '';
         } else {
+          // Same broken JSON.stringify()-into-double-quoted-onclick pattern as the
+          // config-flag controls above — fixed the same way (data-* + delegated listener).
           markBtn =
-            ' <button onclick="emMarkSpOverrideIntentional(' +
-            JSON.stringify(pid) +
-            ',' +
-            JSON.stringify(rowId) +
-            ',' +
-            JSON.stringify(sr.checkKey) +
-            ')" ' +
+            ' <button data-em-mark-sp-override="1" data-pid="' +
+            emHtmlEsc(pid) +
+            '" data-row-id="' +
+            emHtmlEsc(rowId) +
+            '" data-check-key="' +
+            emHtmlEsc(sr.checkKey) +
+            '" ' +
             'style="font-size:10px;padding:1px 6px;background:var(--s2);border:1px solid var(--border);' +
             'color:var(--text2);border-radius:3px;cursor:pointer;margin-left:4px" ' +
             'title="Mark this deviation as intentional (designer override per GL36 §3.1.1.1)">Mark as intentional</button>';
@@ -8725,12 +8797,11 @@ function emShowComplianceDetail(rowId) {
   // — it does not call any of those functions, it only reads row.pointsRaw /
   // row.points for display.
   var allPointsOpen = _emAllPointsOpen.has(rowId);
-  var safeRowIdJs = JSON.stringify(rowId);
   var allPtsHtml =
     '<div style="margin-bottom:16px">' +
-    '<div onclick="emToggleAllPointsInDetail(' +
-    safeRowIdJs +
-    ')" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;' +
+    '<div data-em-toggle-all-points="1" data-row-id="' +
+    emHtmlEsc(rowId) +
+    '" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;' +
     'font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;' +
     'margin-bottom:8px">' +
     '<span>All Points (ASHRAE + Other)</span>' +
