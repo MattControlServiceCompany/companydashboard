@@ -7956,10 +7956,13 @@ async function exportReportToWord() {
       '" alt="CSC Footer" width="816" height="108" style="width:8.5in;height:auto;display:block">';
     // footerLabelText / hasPageNum were computed above while stripping each page's body (from
     // whatever rptPage() actually emitted for THIS report), so this footer content only shows
-    // what each report type's design calls for. The Service Proposal's rptPage() calls all pass
-    // noPageNum:true and never set a period label, so hasPageNum/footerLabelText are both
-    // false/'' for it and footerBodyHtml below is the wave graphic alone — matching the target's
-    // no-page-number footer design exactly.
+    // what each report type's design calls for. 2026-07-29 (Matt: "all reports should always
+    // have page numbers"): the Service Proposal's rptPage() calls no longer pass noPageNum:true
+    // (that opt-in flag still exists on rptPage() itself for any future caller that needs it, it
+    // is just unused today), so hasPageNum is now true for every Proposal page too and this
+    // footer gets the same real Word field-code "Page <PAGE> of <NUMPAGES>" paragraph as every
+    // other report type. footerLabelText (the period-range label) still doesn't apply to the
+    // Proposal — no caller here sets data.period.label — so that piece remains ''.
     // color:var(--rpt-page-text) matches the token the live/PDF path uses for this chrome —
     // resolved to a real value below via resolveVars() (same helper used on bodyHtml above)
     // since this markup is assembled outside the resolveVars(rawBodyHtml) call.
@@ -15324,8 +15327,10 @@ function _rptProposalDisplayClientName(fullName) {
  * comment "Clarify what is included" on the Full Energy Scope of Work row), Recommended
  * Optimization Program (paragraph + monthly allowance + 6 bullets), Why This Approach (5
  * bullets). Plain headings/tables only — zero shaded/filled bands, zero boxes/cards (hard
- * constraint, w:shd fill count = 0 in the target .docx). hero:true keeps the CSC letterhead;
- * noPageNum:true matches the target's page-number-free footer.
+ * constraint, w:shd fill count = 0 in the target .docx). hero:true keeps the CSC letterhead.
+ * 2026-07-29 (Matt: "all reports should always have page numbers"): this page (and every other
+ * Proposal page) no longer passes noPageNum:true — page numbers now render here exactly like
+ * every other report type.
  *
  * 2026-07-27: the 2-row "Assessment Findings Program Option / Estimated Cost" table that used to
  * sit between the narrative paragraph and the "what's included" paragraphs was removed at the
@@ -15574,7 +15579,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Proposal Summary',
   });
@@ -15863,7 +15867,6 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Recommended Optimization Program',
   });
@@ -16036,7 +16039,6 @@ function rptPageASHRAE36ProposalVision(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Long-Term Vision',
   });
@@ -16069,7 +16071,6 @@ function rptPageASHRAE36ProposalPhaseAndVision(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Recommended Program & Long-Term Vision',
   });
@@ -16144,7 +16145,6 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — ASHRAE 36 Compliance',
   });
@@ -16206,7 +16206,6 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
-    noPageNum: true,
     data: fakeData,
     label: 'Page ' + n + ' — Full Scope',
   });
