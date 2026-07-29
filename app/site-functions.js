@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.723',
+    date: '2026-07-29',
+    title: 'Service Proposal phase table names sequence categories; sidebar version badge fixed',
+    items: [
+      {
+        type: 'change',
+        text: 'Service Proposal: the phase table now lists which sequence categories are included in each phase, instead of just a count.',
+      },
+      {
+        type: 'fix',
+        text: "Sidebar version badge on the Energy Department, Service Department, and main dashboard pages now always shows the version your browser tab is actually running, instead of occasionally showing the newer version available on the server before you've refreshed.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.722',
     date: '2026-07-29',
     title: 'Audit Report renamed to ASHRAE 36, gauges use CSC brand colors, clearer Proposal phase table',
