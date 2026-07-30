@@ -12042,6 +12042,19 @@ var ASHRAE36_SECTIONS = {
     // step changed.
     { key: 'proposalCover', label: 'Proposal Summary (Title, Findings, Program)', group: 'Proposal', defaultOn: true },
     { key: 'proposalPhaseTable', label: 'Recommended Program — Phase Table', group: 'Proposal', defaultOn: true },
+    // futureWorkInline (2026-07-29, months + Future Work rebuild — Matt, verbatim: "Do it as
+    // months and then give me the ability to see the future work in the table or as a standalone
+    // section."): default OFF = Future Work renders as its own standalone section (on the
+    // Implementation Plan & Long-Term Vision page). Checking this box instead folds Future Work
+    // into the Recommended Program — Phase Table as an extra row, and the standalone section is
+    // suppressed so it is never shown twice. See _pricingProposalTermAndFuture's header comment.
+    {
+      key: 'futureWorkInline',
+      label: '  Show Future Work inside the Phase table (instead of its own section)',
+      group: 'Proposal',
+      defaultOn: false,
+      indent: true,
+    },
     { key: 'proposalVision', label: 'Implementation Plan & Long-Term Vision', group: 'Proposal', defaultOn: true },
     // 2026-07-29 (fix/proposal-remove-fixed-anchors, Matt's approved spec): two NEW independent
     // opt-in sections, BOTH default OFF. Each describes what that scope of work ENTAILS (categories
@@ -15841,15 +15854,84 @@ function _rptA36PhaseImprovementsText(rows, idx) {
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 
-// PRICING_PROPOSAL_MAX_PHASES (2026-07-28, fix/pricing-phases-and-sensor-hours, backlog 8d7911c1):
-// _pricingComputeRecommendedTimeline's schedule is indefinite (as many calendar phases as it takes
-// to place every recommended unit). The Service Proposal is a client-facing sales document and
-// must not run to infinity on the page — every Proposal-facing phase render (Phase Table page,
-// Implementation Plan schedule, Cost Estimate page's Phased Implementation Schedule) caps to this
-// many phases (through 2028, matching the program's original fixed-3-phase near-term commitment).
-// The internal Cost Estimate tab (pricing-estimator.js's own _pricingRecommendedTimelineHTML) is
-// NOT capped by this constant — it always renders the full indefinite schedule.
-var PRICING_PROPOSAL_MAX_PHASES = 3;
+// PRICING_PROPOSAL_TERM_PHASE_COUNT (2026-07-29, replacing PRICING_PROPOSAL_MAX_PHASES=3):
+// _pricingComputeRecommendedTimeline's schedule is indefinite (today: 19 calendar phases, Aug
+// 2026 -> Dec 2044). The OLD PRICING_PROPOSAL_MAX_PHASES=3 constant was independently re-applied
+// via `tl.phases.slice(0, 3)` at three separate render sites (Phase Table page, Implementation
+// Plan schedule, Cost Estimate page's Phased Implementation Schedule) — three independent slices
+// that could silently disagree, and which rendered phases 1-3 while saying nothing anywhere about
+// phases 4-19 (silent truncation; ~$96,032 of a much larger total shown, the rest invisible).
+// Matt, verbatim (2026-07-29): "Would it be better to have the phases really just be the months
+// through 2026 and then have a future section where it lists all of the future work?" / "Do it as
+// months and then give me the ability to see the future work in the table or as a standalone
+// section." This constant is now how many of the timeline's leading phases count as "the current
+// term" shown to the client as calendar months — today that's exactly 1 (Phase 1, the fixed
+// Aug-Dec 2026 program start defined in `_pricingPhaseDateRangeAt(0)`, pricing-estimator.js — NOT
+// edited by this change). Every phase after the term is Future Work — see
+// _pricingProposalTermAndFuture below, the ONE place phases are now split, so the term view and
+// the Future Work population can never drift apart again.
+var PRICING_PROPOSAL_TERM_PHASE_COUNT = 1;
+
+/**
+ * _pricingProposalTermAndFuture(projId) — THE single derivation of {tl, termPhases, futurePhases}
+ * every Proposal-facing phase render site must use (replaces the three independent
+ * `tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES)` call sites this constant's own comment
+ * describes). termPhases = the current PRICING_PROPOSAL_TERM_PHASE_COUNT leading phases (today:
+ * just Phase 1, Aug-Dec 2026); futurePhases = every phase after that (today: 18 phases, 2027 ->
+ * 2044). futurePhases carries the SAME row objects as the internal Cost Estimate tab's indefinite
+ * timeline — including dollar fields (measuresTotal, allowanceTotal, ...) — this function does NOT
+ * strip them; every Future Work render site must read ONLY category names
+ * (_rptA36PhaseSeqCategoryNames) from futurePhases[i].rows, never a dollar field, to hold the
+ * "Future Work carries zero dollars" rule.
+ */
+function _pricingProposalTermAndFuture(projId) {
+  var tl = null;
+  try {
+    if (typeof _pricingComputeRecommendedTimeline === 'function') tl = _pricingComputeRecommendedTimeline(projId);
+  } catch (e) {
+    tl = null;
+  }
+  if (!tl || !tl.phases || !tl.phases.length) return { tl: tl, termPhases: [], futurePhases: [] };
+  return {
+    tl: tl,
+    termPhases: tl.phases.slice(0, PRICING_PROPOSAL_TERM_PHASE_COUNT),
+    futurePhases: tl.phases.slice(PRICING_PROPOSAL_TERM_PHASE_COUNT),
+  };
+}
+
+/**
+ * _pricingProposalTermMonthLabels(termPhases) — derives calendar month labels (e.g. "Aug 2026")
+ * for the current term, from `_pricingPhaseDateRangeAt` + `_PRICING_MONTH_ABBR`
+ * (pricing-estimator.js's own existing config/constants — read here, never re-typed as a new date
+ * literal in this file, per the de-anchor spec's "no hardcoded calendar dates" rule).
+ * KNOWN TENSION (flagged, not silently resolved — see this change's dashboardlogic.md entry): the
+ * 2026-07-29 de-anchor pass (fix/proposal-remove-fixed-anchors, Matt: "We do not want to anchor a
+ * fixed total cost or timeline at all to them anywhere") deliberately removed calendar-date
+ * columns from these same render sites. Matt's later, more specific months instruction
+ * reintroduces a timeline reference (named calendar months for the current 5-month term only —
+ * still no dollar figure and no date beyond the term itself). Implemented as asked because it is
+ * the later, more specific instruction; flagged here so it can be swapped for unanchored
+ * "Month 1..N" labels with a one-line change (replace this function's return value) if Matt
+ * prefers that instead.
+ */
+function _pricingProposalTermMonthLabels(termPhases) {
+  var labels = [];
+  if (typeof _pricingPhaseDateRangeAt !== 'function' || typeof _PRICING_MONTH_ABBR === 'undefined') return labels;
+  (termPhases || []).forEach(function (p, idx) {
+    var def = _pricingPhaseDateRangeAt(idx);
+    if (!def || !def.start) return;
+    var sy = def.start[0],
+      sm = def.start[1];
+    var count = p.months || 0;
+    for (var i = 0; i < count; i++) {
+      var totalM = sm - 1 + i;
+      var yy = sy + Math.floor(totalM / 12);
+      var mm = totalM % 12;
+      labels.push(_PRICING_MONTH_ABBR[mm] + ' ' + yy);
+    }
+  });
+  return labels;
+}
 
 /**
  * _rptA36PhaseSeqCategoryNames — client-readable names of every distinct priced sequence category
@@ -15894,11 +15976,93 @@ function _rptA36PhaseSeqCategoryNames(rows) {
   }
   return names;
 }
+
+/**
+ * _rptA36PhaseSeqCategoryDetails(rows) — SAME distinct-category derivation as
+ * _rptA36PhaseSeqCategoryNames (same filter, same EM_SEQUENCE_DEFS order, same hwp_/chwp_
+ * disambiguation) but returns {label, plain} pairs instead of bare label strings, pulling the
+ * plain-English one-line description from `ASHRAE36_SEQUENCE_PLAIN` (existing, vetted,
+ * jargon-free copy already used by the Audit's ASHRAE 36 Sequences glossary page — see that
+ * object's own header comment). Added 2026-07-29 to give the term's Included Improvements cell
+ * real per-category detail (what each sequence actually does) instead of a bare name list, per
+ * Matt's coordinator-relayed direction: "expanding what each entails is real content, not
+ * padding." `plain` is '' (never omitted/undefined) if a key has no entry in
+ * ASHRAE36_SEQUENCE_PLAIN, so callers can render the label alone rather than crash.
+ */
+function _rptA36PhaseSeqCategoryDetails(rows) {
+  rows = rows || [];
+  var seen = {};
+  rows.forEach(function (r) {
+    if (r.phase === 2 && r.seqKey) seen[r.seqKey] = true;
+  });
+  var details = [];
+  if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+    EM_SEQUENCE_DEFS.forEach(function (sd) {
+      if (!seen[sd.key]) return;
+      var label = sd.label;
+      if (sd.key.indexOf('hwp_') === 0) label = 'Hot Water ' + label;
+      else if (sd.key.indexOf('chwp_') === 0) label = 'Chilled Water ' + label;
+      var plain = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[sd.key]) || '';
+      details.push({ label: label, plain: plain });
+    });
+  }
+  return details;
+}
 // SEQ_CAT_DISPLAY_CAP: max category names shown per phase cell before truncating to a truthful
 // "and N more" (never silent) — dense 8.5x11 print constraint, not a data limit. Real JOCO data
 // (2026-07-29, projId 1779664753271) tops out at 6 categories in Phase 1, well under this cap —
 // verified in the render, not assumed.
 var SEQ_CAT_DISPLAY_CAP = 8;
+
+/**
+ * _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) — content-only builder for the
+ * Future Work section (2026-07-29, replacing the silent PRICING_PROPOSAL_MAX_PHASES truncation —
+ * see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment). Names every sequence category still to
+ * come by reusing _rptA36PhaseSeqCategoryNames over ALL future-phase rows combined (deduped, same
+ * EM_SEQUENCE_DEFS order the term table's per-phase category list already uses), so a category can
+ * never be named here without real priced rows behind it in `futurePhases`.
+ * Deliberately NOT truncated by SEQ_CAT_DISPLAY_CAP — that cap exists for per-phase cell density;
+ * this section's entire purpose is to stop hiding scope, so silently capping this specific list
+ * would reintroduce a smaller copy of the exact defect this section closes.
+ * Carries ZERO dollar figures — callers must pass this function `rows`, never a phase object with
+ * measuresTotal/allowanceTotal/etc. fields left readable downstream.
+ */
+function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
+  function esc(s) {
+    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
+  }
+  var allRows = [];
+  (futurePhases || []).forEach(function (p) {
+    if (p && p.rows) allRows = allRows.concat(p.rows);
+  });
+  if (!allRows.length) return '';
+  var cats = _rptA36PhaseSeqCategoryNames(allRows);
+  var narrative =
+    'Beyond the initial term, the program continues to expand sensor installation across ' +
+    'additional equipment and zones and to program the control sequences those sensors make ' +
+    'possible, until every building has the same level of sensor coverage and automated control. ' +
+    'Future work is funded through the same monthly service allowance as it is completed, with no ' +
+    'fixed end date.';
+  var catHTML = '';
+  if (cats.length) {
+    catHTML =
+      '<div style="margin-top:4px">' +
+      '<span style="font-weight:700">Sequence categories addressed in future work: </span>' +
+      cats.map(esc).join(', ') +
+      '</div>';
+  }
+  return (
+    '<div style="' +
+    headStyle +
+    '">Future Work</div>' +
+    '<div style="' +
+    bodyStyle +
+    '">' +
+    narrative +
+    '</div>' +
+    catHTML
+  );
+}
 
 /**
  * _rptA36PhaseTableInnerHTML — content-only builder for the Recommended Optimization Program
@@ -15912,7 +16076,7 @@ var SEQ_CAT_DISPLAY_CAP = 8;
  * belt-and-suspenders guarantee it is never split across a physical page break even if a future
  * content change pushes total page height right up against the print boundary.
  */
-function _rptA36PhaseTableInnerHTML(d) {
+function _rptA36PhaseTableInnerHTML(d, opts) {
   function esc(s) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
@@ -15940,14 +16104,16 @@ function _rptA36PhaseTableInnerHTML(d) {
     ' focused on the highest-value opportunities across the portfolio.' +
     '</div>';
 
-  var tl = null;
-  try {
-    if (typeof _pricingComputeRecommendedTimeline === 'function') tl = _pricingComputeRecommendedTimeline(d.project.id);
-  } catch (e) {
-    tl = null;
-  }
+  // 2026-07-29 (months + Future Work rebuild, replacing the PRICING_PROPOSAL_MAX_PHASES=3 cap —
+  // see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment): ONE derivation call feeds both this
+  // table (the current term, shown as calendar months) and the Future Work section, so the two can
+  // never disagree about which phase is which.
+  var td = _pricingProposalTermAndFuture(d.project.id);
+  var tl = td.tl;
+  var termPhases = td.termPhases;
+  var futurePhases = td.futurePhases;
 
-  if (!tl || !tl.phases || !tl.phases.length) {
+  if (!tl || !termPhases.length) {
     var fallback =
       '<div style="font-size:14px;color:var(--rpt-page-text);padding:10px 0">' +
       'A phased facility rollout will populate here once pricing data has been imported and priced ' +
@@ -15956,15 +16122,25 @@ function _rptA36PhaseTableInnerHTML(d) {
     return intro + fallback;
   }
 
-  // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): the Recommended tier's
-  // schedule is now INDEFINITE (_pricingComputeRecommendedTimeline generates as many calendar
-  // phases as it takes to place every recommended unit, with no fixed count). The Service Proposal
-  // is a client-facing sales document that must not run to infinity on the page — cap the phases
-  // it shows to the first 3 (through 2028), same as before this rebuild. The internal Cost Estimate
-  // tab (_pricingRecommendedTimelineHTML) is unaffected — it renders tl.phases unbounded.
-  if (tl.phases.length > PRICING_PROPOSAL_MAX_PHASES) {
-    tl = Object.assign({}, tl, { phases: tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES) });
-  }
+  // monthLabels: one label per calendar month of the current term (e.g. "Aug 2026" .. "Dec 2026")
+  // — see _pricingProposalTermMonthLabels' header comment for the derivation + the timeline-
+  // anchoring tension it flags. Falls back to the phase's own label (e.g. "Phase 1") if month
+  // labels can't be derived (defensive — should not happen when pricing-estimator.js is present).
+  var monthLabels = _pricingProposalTermMonthLabels(termPhases);
+  var headCols = monthLabels.length
+    ? monthLabels
+    : termPhases.map(function (p) {
+        return p.label;
+      });
+  // termRows: every row across the term's phase(s) — feeds the single Included Improvements /
+  // Expected Results cell below (colspan across all month columns, since the underlying data has
+  // no finer-than-phase month assignment for individual rows — see this change's dashboardlogic.md
+  // entry for why the term is rendered as ONE merged content block under real month headers rather
+  // than fabricating a false per-month split of the same rows).
+  var termRows = [];
+  termPhases.forEach(function (p) {
+    if (p && p.rows) termRows = termRows.concat(p.rows);
+  });
 
   // Phase copy rewrite (2026-07-29, Matt, verbatim: "can we not expand more on the 3 phases in
   // the phases table and add more to the improvements and expected results, like phase 1 is
@@ -15987,23 +16163,21 @@ function _rptA36PhaseTableInnerHTML(d) {
   // priced hardware under today's algorithm, regardless of budget headroom. This copy is written
   // exactly as Matt described it (literal compliance); the algorithm was NOT changed to match —
   // that is a separate true-ROI ranking workstream. See dashboardlogic.md 2026-07-29 entry.
+  // PHASE_IMPROVEMENTS[0]/EXPECTED_RESULTS[0] describe the current term (rendered below, under the
+  // real month headers). Index 1/2 are no longer rendered as separate phase columns (the table now
+  // shows only the term — everything past it is Future Work), but their content lives on,
+  // paraphrased, inside _rptA36FutureWorkInnerHTML's narrative so the "expanding sensor
+  // installation" / "remaining sensors" framing is not lost, only relocated.
   var PHASE_IMPROVEMENTS = [
     'Programs every control sequence that does not require a new sensor to be installed, and sets up automated ' +
       'reporting and alarms so problems are caught right away. If the monthly budget allows, sensor installation ' +
       'begins in the highest-value locations first.',
-    'Expands sensor installation to more equipment and zones, and programs the additional control sequences ' +
-      'those new sensors make possible.',
-    'Installs the remaining sensors and programs the remaining control sequences across the portfolio.',
   ];
 
   var EXPECTED_RESULTS = [
     'Immediate visibility into how equipment is running through reporting and alarms, plus the efficiency and ' +
       'comfort improvements available from every sequence that does not require new hardware — the fastest, ' +
       'lowest-cost gains first.',
-    'Broader sensor coverage and the added control sequences it enables, extending energy savings and comfort ' +
-      'improvements to more equipment and zones.',
-    'Every building operating with the same level of sensor coverage and automated control, completing the ' +
-      'ASHRAE 36 optimization program.',
   ];
 
   var thStyle =
@@ -16016,19 +16190,23 @@ function _rptA36PhaseTableInnerHTML(d) {
     'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
     'line-height:1.5;border:1px solid var(--rpt-rule)';
 
+  // headRow: one column per calendar month of the current term (e.g. Aug 2026 .. Dec 2026) —
+  // replaces the old one-column-per-phase header (Phase 1 | Phase 2 | Phase 3). See
+  // _pricingProposalTermMonthLabels' header comment for the derivation and the timeline-anchoring
+  // tension this reintroduces.
   var headRow =
     '<tr><th style="' +
     thStyle +
-    '">Phase</th>' +
-    tl.phases
-      .map(function (p) {
-        return '<th style="' + thStyle + '">' + esc(p.label) + '</th>';
+    '">Month</th>' +
+    headCols
+      .map(function (m) {
+        return '<th style="' + thStyle + '">' + esc(m) + '</th>';
       })
       .join('') +
     '</tr>';
 
   // catListStyle: nested sub-block inside the Included Improvements cell naming the actual priced
-  // sequence categories for that phase (see _rptA36PhaseSeqCategoryNames' header comment above for
+  // sequence categories for the term (see _rptA36PhaseSeqCategoryNames' header comment above for
   // the full rationale). Left-aligned + smaller than the parent cell's centered narrative text so
   // it reads as a compact reference list, not competing prose; a top rule (var(--rpt-rule), the
   // same token the table's own borders use — no new hardcoded color) separates it from the
@@ -16036,30 +16214,55 @@ function _rptA36PhaseTableInnerHTML(d) {
   var catListStyle =
     'margin-top:6px;padding-top:5px;border-top:1px solid var(--rpt-rule);font-size:8.5px;' +
     'color:var(--rpt-page-text);text-align:left;line-height:1.4';
+  var catListUlStyle = 'margin:3px 0 0;padding-left:14px;text-align:left';
+
+  // Single merged content cell (colspan across every month column) instead of one cell per phase —
+  // the underlying data has no finer-than-term month assignment for individual rows (see the
+  // termRows comment above), so this shows real content once rather than fabricating a false
+  // per-month split or repeating identical content in every month column.
+  // Per-category detail (2026-07-29, page-density fix): the compact comma list was replaced with
+  // one line PER sequence category, each carrying its real plain-English description
+  // (_rptA36PhaseSeqCategoryDetails -> ASHRAE36_SEQUENCE_PLAIN, existing vetted copy, not new
+  // padding text) — real content that fills the page instead of leaving it half-blank, per Matt's
+  // coordinator-relayed direction ("expanding what each entails is real content, not padding").
+  // No boxes/cards/rules added — a plain <ul> list, same text-only convention as the rest of this
+  // table.
+  var termCatDetails = _rptA36PhaseSeqCategoryDetails(termRows);
+  var termCatHTML = '';
+  if (termCatDetails.length) {
+    var termShownDetails = termCatDetails.slice(0, SEQ_CAT_DISPLAY_CAP);
+    var termMoreCount = termCatDetails.length - termShownDetails.length;
+    var termListItems = termShownDetails
+      .map(function (c) {
+        return (
+          '<li><span style="font-weight:700">' + esc(c.label) + (c.plain ? '</span> — ' + esc(c.plain) : '</span>')
+        );
+      })
+      .join('');
+    termCatHTML =
+      '<div style="' +
+      catListStyle +
+      '"><span style="font-weight:700">Sequences programmed this term:</span>' +
+      '<ul style="' +
+      catListUlStyle +
+      '">' +
+      termListItems +
+      (termMoreCount > 0 ? '<li>and ' + termMoreCount + ' more</li>' : '') +
+      '</ul></div>';
+  }
 
   var improvementsRow =
     '<tr><td style="' +
     lblStyle +
     '">Included Improvements</td>' +
-    tl.phases
-      .map(function (p, i) {
-        var catNames = _rptA36PhaseSeqCategoryNames(p.rows);
-        var catHTML = '';
-        if (catNames.length) {
-          var shown = catNames.slice(0, SEQ_CAT_DISPLAY_CAP);
-          var moreCount = catNames.length - shown.length;
-          var listText = shown.map(esc).join(', ') + (moreCount > 0 ? ', and ' + moreCount + ' more' : '');
-          catHTML =
-            '<div style="' +
-            catListStyle +
-            '"><span style="font-weight:700">Sequences programmed: </span>' +
-            listText +
-            '</div>';
-        }
-        return '<td style="' + cellStyle + '">' + esc(PHASE_IMPROVEMENTS[i] || '') + catHTML + '</td>';
-      })
-      .join('') +
-    '</tr>';
+    '<td style="' +
+    cellStyle +
+    '" colspan="' +
+    headCols.length +
+    '">' +
+    esc(PHASE_IMPROVEMENTS[0] || '') +
+    termCatHTML +
+    '</td></tr>';
 
   // Facilities Included row REMOVED (2026-07-29, Matt, verbatim: "why would you put continues in
   // phase x for every building? That is redundant. Also, let's just remove the buildings
@@ -16077,16 +16280,51 @@ function _rptA36PhaseTableInnerHTML(d) {
     '<tr><td style="' +
     lblStyle +
     '">Expected Results</td>' +
-    tl.phases
-      .map(function (p, i) {
-        return '<td style="' + cellStyle + '">' + esc(EXPECTED_RESULTS[i] || '') + '</td>';
-      })
-      .join('') +
-    '</tr>';
+    '<td style="' +
+    cellStyle +
+    '" colspan="' +
+    headCols.length +
+    '">' +
+    esc(EXPECTED_RESULTS[0] || '') +
+    '</td></tr>';
+
+  // futureRowHTML: the "fold into the table" rendering mode (opts.futureWorkInline === true) —
+  // appends Future Work as one more row inside THIS table instead of the standalone section
+  // _rptA36VisionInnerHTML renders by default. Same content either way
+  // (_rptA36FutureWorkInnerHTML), never dollars, never a truncated category list.
+  var futureRowHTML = '';
+  if (opts && opts.futureWorkInline === true && futurePhases.length) {
+    var futureAllRows = [];
+    futurePhases.forEach(function (p) {
+      if (p && p.rows) futureAllRows = futureAllRows.concat(p.rows);
+    });
+    var futureCatNames = _rptA36PhaseSeqCategoryNames(futureAllRows);
+    if (futureCatNames.length) {
+      var futureListText = futureCatNames.map(esc).join(', ');
+      futureRowHTML =
+        '<tr><td style="' +
+        lblStyle +
+        '">Future Work</td>' +
+        '<td style="' +
+        cellStyle +
+        '" colspan="' +
+        headCols.length +
+        '">' +
+        'Beyond the initial term, the program continues to expand sensor installation and program the ' +
+        'additional control sequences those sensors make possible, funded through the same monthly ' +
+        'service allowance, with no fixed end date.' +
+        '<div style="' +
+        catListStyle +
+        '"><span style="font-weight:700">Sequence categories addressed in future work: </span>' +
+        futureListText +
+        '</div>' +
+        '</td></tr>';
+    }
+  }
 
   var colgroup =
     '<colgroup><col style="width:140px">' +
-    tl.phases
+    headCols
       .map(function () {
         return '<col>';
       })
@@ -16102,13 +16340,30 @@ function _rptA36PhaseTableInnerHTML(d) {
     '<tbody>' +
     improvementsRow +
     resultsRow +
+    futureRowHTML +
     '</tbody>' +
     '</table>';
 
-  return intro + table;
+  // standaloneFutureWorkHTML: DEFAULT placement (2026-07-29, page-density fix, coordinator
+  // direction — "bring Future Work onto that page as the default rather than a separate page...
+  // fills the space with real content instead of filler"). Suppressed when opts.futureWorkInline
+  // is true, since that mode already folded the identical content into futureRowHTML above (never
+  // rendered twice). Previously defaulted to the Vision page (_rptA36VisionInnerHTML) — moved here
+  // because the term and Future Work belong on the same page and the Phase table page had
+  // significant unused space (~514px clearance measured pre-move) while the Vision page did not
+  // need it. Same heading/body style literals rptPage 2's own `intro` block above uses, for visual
+  // consistency within this page.
+  var standaloneFutureWorkHTML = '';
+  if (!(opts && opts.futureWorkInline === true)) {
+    var _fwHead = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 4px';
+    var _fwBody = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
+    standaloneFutureWorkHTML = _rptA36FutureWorkInnerHTML(futurePhases, _fwHead, _fwBody);
+  }
+
+  return intro + table + standaloneFutureWorkHTML;
 }
 
-function rptPageASHRAE36ProposalPhaseTable(n, d) {
+function rptPageASHRAE36ProposalPhaseTable(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   // fix/report-typography-and-pagination-merge (2026-07-29): "Why This Approach" prepended here —
   // see rptPageASHRAE36ProposalCover's header comment for why it moved off the cover page. Same
@@ -16118,7 +16373,7 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
   var bodyHTML =
     '<div style="padding:8px 48px 4px">' +
     _rptA36WhyThisApproachHTML(_whyHead, _whyUl) +
-    _rptA36PhaseTableInnerHTML(d) +
+    _rptA36PhaseTableInnerHTML(d, opts) +
     '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
@@ -16142,7 +16397,7 @@ function rptPageASHRAE36ProposalPhaseTable(n, d) {
  * Program Vision and Disclaimer was removed at the client's explicit direction ("Just get rid of
  * the entire Expected Outcomes page. No questions.").
  */
-function _rptA36VisionInnerHTML(d) {
+function _rptA36VisionInnerHTML(d, opts) {
   // Prose-only display name — see _rptProposalDisplayClientName above rptPageASHRAE36ProposalCover.
   var displayClient = _rptProposalDisplayClientName(d.project.name);
 
@@ -16162,70 +16417,60 @@ function _rptA36VisionInnerHTML(d) {
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:1px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
-  var tl = null;
-  try {
-    if (typeof _pricingComputeRecommendedTimeline === 'function') tl = _pricingComputeRecommendedTimeline(d.project.id);
-  } catch (e) {
-    tl = null;
-  }
-  // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): cap to PRICING_PROPOSAL_MAX_PHASES
-  // — see that constant's own comment above _rptA36PhaseTableInnerHTML for why.
-  if (tl && tl.phases && tl.phases.length > PRICING_PROPOSAL_MAX_PHASES) {
-    tl = Object.assign({}, tl, { phases: tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES) });
-  }
+  // 2026-07-29 (months + Future Work rebuild): SAME single derivation _rptA36PhaseTableInnerHTML
+  // uses (see PRICING_PROPOSAL_TERM_PHASE_COUNT / _pricingProposalTermAndFuture header comments) —
+  // this site and the Phase table page can never disagree about which phase is the term vs. Future
+  // Work.
+  var td = _pricingProposalTermAndFuture(d.project.id);
+  var tl = td.tl;
+  var termPhases = td.termPhases;
+  var futurePhases = td.futurePhases;
+  var monthLabels = _pricingProposalTermMonthLabels(termPhases);
 
-  // Density pass (2026-07-27, page-2/3 merge): cell padding tightened 6px->4px vertical (font size
-  // unchanged) on this small 2-column schedule table only — the main Phase/Improvements table in
-  // _rptA36PhaseTableInnerHTML (the most-scrutinized element per explicit instruction) is NOT
-  // touched by this density pass.
-  var thPlain =
-    'padding:4px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
-  var tdPlain =
-    'padding:4px 10px;font-size:14px;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
+  // phaseTableOn (2026-07-29, fix: Phase-Table-off silent-truncation gap — reviewer-caught):
+  // proposalPhaseTable and proposalVision are two INDEPENDENT toggles a user can check/uncheck
+  // separately (this function's own header comment has documented Phase-Table-off/Vision-on as a
+  // supported combination since before this branch). Future Work normally renders on the Phase
+  // Table page (_rptA36PhaseTableInnerHTML) — if that page did NOT run, this page must carry
+  // Future Work itself, or the silent-truncation defect this branch closes comes right back for
+  // this one toggle combination. Defaults to true (assume the Phase Table page rendered) when
+  // `opts` doesn't say otherwise, so any call site that doesn't pass this flag keeps prior
+  // behavior (no double-render risk from an unrelated caller).
+  var phaseTableOn = !(opts && opts.proposalPhaseTableOn === false);
 
   var implTable = '';
-  if (tl && tl.phases && tl.phases.length) {
-    // 2026-07-29 (fix/proposal-remove-fixed-anchors): "Schedule" column (p.dateRange — a fixed
-    // Aug 2026 – Dec 2028-style calendar range) DELETED per Matt's approved spec. Replaced with a
-    // "Sequence" column stating ordinal priority only (first/second/third), so the client still
-    // sees implementation ORDER without a fixed month/year anchor. The sentence appended after the
-    // table states the funding mechanism (sequenced by return, funded as each phase completes, no
-    // fixed end) in place of the date range this column used to carry. p.dateRange itself is
-    // untouched in pricing-estimator.js (out of scope for this change) — simply no longer read here.
-    var ORDINALS = ['First priority', 'Second priority', 'Third priority'];
+  if (tl && termPhases.length) {
+    // 2026-07-29 (months rebuild): the old per-phase "Phase | Sequence" mini-table (one row per
+    // Phase 1/2/3 with an ordinal First/Second/Third priority column) is REMOVED — with only ONE
+    // term phase now shown (see PRICING_PROPOSAL_TERM_PHASE_COUNT), that table would render a
+    // single content-free row duplicating what the Recommended Optimization Program table above
+    // already shows under real month headers. Replaced with one sentence naming the term's actual
+    // months (derived, never hardcoded — see _pricingProposalTermMonthLabels) and the same
+    // no-fixed-end-date funding language the table used to carry.
+    var termRangeLabel = monthLabels.length
+      ? monthLabels.length > 1
+        ? monthLabels[0] + ' – ' + monthLabels[monthLabels.length - 1]
+        : monthLabels[0]
+      : termPhases[0].label;
+    // "table above" only makes sense when the Phase Table page actually ran ahead of this one —
+    // when it's off, say what the term is without pointing at a table that isn't in the document.
+    var termRangeIntro = phaseTableOn
+      ? 'The current term (' +
+        esc(termRangeLabel) +
+        ') is detailed in the Recommended Optimization Program table above.'
+      : 'The current term runs ' + esc(termRangeLabel) + '.';
     implTable =
       '<div style="' +
       HEAD +
       '">Implementation Plan &amp; Long-Term Vision</div>' +
-      '<table style="width:100%;border-collapse:collapse;margin-bottom:2px;page-break-inside:avoid;break-inside:avoid">' +
-      '<colgroup><col style="width:140px"><col></colgroup>' +
-      '<thead><tr><th style="' +
-      thPlain +
-      '">Phase</th><th style="' +
-      thPlain +
-      '">Sequence</th></tr></thead><tbody>' +
-      tl.phases
-        .map(function (p, i) {
-          return (
-            '<tr><td style="' +
-            tdPlain +
-            '">' +
-            esc(p.label) +
-            '</td><td style="' +
-            tdPlain +
-            '">' +
-            (ORDINALS[i] || 'Additional priority') +
-            '</td></tr>'
-          );
-        })
-        .join('') +
-      '</tbody></table>' +
       '<div style="' +
       BODY +
-      ';margin-top:2px;margin-bottom:2px">Phases are sequenced by expected return on investment — ' +
-      'the highest-return measures come first. Each phase is funded through the monthly service ' +
-      'allowance as it is completed, with no fixed end date; the program continues for as long as ' +
-      'improvement opportunities remain.</div>';
+      '">' +
+      termRangeIntro +
+      ' Phases are sequenced by ' +
+      'expected return on investment — the highest-return measures come first. Each phase is funded ' +
+      'through the monthly service allowance as it is completed, with no fixed end date; the program ' +
+      'continues for as long as improvement opportunities remain.</div>';
   } else {
     implTable =
       '<div style="' +
@@ -16236,6 +16481,16 @@ function _rptA36VisionInnerHTML(d) {
       '">A calendar-phase schedule will populate here once pricing data has been imported and ' +
       'priced for this project.</div>';
   }
+
+  // futureWorkFallbackHTML (2026-07-29, fix: Phase-Table-off silent-truncation gap): Future Work
+  // normally renders on the Phase Table page (_rptA36PhaseTableInnerHTML's
+  // standaloneFutureWorkHTML / futureRowHTML) — directly under/inside the term table it belongs
+  // with. When that page is OFF (phaseTableOn === false), this page is the only remaining place a
+  // client would ever see it, so it falls back to rendering the SAME _rptA36FutureWorkInnerHTML
+  // helper the Phase Table page uses — never a second copy of the Future Work markup, so the two
+  // call sites can never disagree about content. When the Phase Table page IS on, this stays ''
+  // so Future Work is never rendered twice.
+  var futureWorkFallbackHTML = phaseTableOn ? '' : _rptA36FutureWorkInnerHTML(futurePhases, HEAD, BODY);
 
   var longTermVision =
     '<div style="' +
@@ -16285,7 +16540,7 @@ function _rptA36VisionInnerHTML(d) {
     'patterns, utility rates, weather conditions, operational practices, and implementation quality.' +
     '</div>';
 
-  return implTable + longTermVision + disclaimer;
+  return implTable + futureWorkFallbackHTML + longTermVision + disclaimer;
 }
 
 /**
@@ -16293,10 +16548,16 @@ function _rptA36VisionInnerHTML(d) {
  * an independent page-producing function for the case where a caller enables `proposalVision` but
  * disables `proposalPhaseTable` (or vice versa) via the section toggles — see
  * rptPageASHRAE36ProposalPhaseAndVision below for the merged-page path both flags default to.
+ * proposalPhaseTable-off/proposalVision-on (2026-07-29, reviewer-caught fix): this combination is
+ * real and independently selectable, so _rptA36VisionInnerHTML's `opts.proposalPhaseTableOn` flag
+ * (threaded from generateASHRAE36ProposalHTML's `phaseOpts`) tells it whether the Phase Table page
+ * ran; if not, it falls back to rendering Future Work itself (same _rptA36FutureWorkInnerHTML
+ * helper the Phase Table page uses — never a duplicated copy) so this toggle combination can never
+ * silently drop the future-phase category list again.
  */
-function rptPageASHRAE36ProposalVision(n, d) {
+function rptPageASHRAE36ProposalVision(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var bodyHTML = '<div style="padding:8px 48px 4px">' + _rptA36VisionInnerHTML(d) + '</div>';
+  var bodyHTML = '<div style="padding:8px 48px 4px">' + _rptA36VisionInnerHTML(d, opts) + '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
@@ -16322,13 +16583,16 @@ function rptPageASHRAE36ProposalVision(n, d) {
  * (rare) case where only one of the two section toggles is enabled, so neither existing capability
  * is destroyed.
  */
-function rptPageASHRAE36ProposalPhaseAndVision(n, d) {
+function rptPageASHRAE36ProposalPhaseAndVision(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   // Density pass (2026-07-27, page-2/3 merge): 2px/1px top/bottom padding (was 8px/4px) — the same
   // kind of spacing-only tightening _rptA36VisionInnerHTML's HEAD/BODY vars use, applied here to
   // the outermost wrapper. Real content packed more efficiently, not padding added to fake fullness.
   var bodyHTML =
-    '<div style="padding:2px 48px 1px">' + _rptA36PhaseTableInnerHTML(d) + _rptA36VisionInnerHTML(d) + '</div>';
+    '<div style="padding:2px 48px 1px">' +
+    _rptA36PhaseTableInnerHTML(d, opts) +
+    _rptA36VisionInnerHTML(d, opts) +
+    '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
@@ -17001,18 +17265,15 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
  */
 function _rptA36RecommendedTimelineHTML(d) {
   if (typeof _pricingComputeRecommendedTimeline !== 'function') return '';
-  var tl;
-  try {
-    tl = _pricingComputeRecommendedTimeline(d.project.id);
-  } catch (e) {
-    return '';
-  }
-  if (!tl) return '';
-  // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): cap to PRICING_PROPOSAL_MAX_PHASES
-  // — see that constant's own comment above _rptA36PhaseTableInnerHTML for why.
-  if (tl.phases && tl.phases.length > PRICING_PROPOSAL_MAX_PHASES) {
-    tl = Object.assign({}, tl, { phases: tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES) });
-  }
+  // 2026-07-29 (months + Future Work rebuild): SAME single derivation the Phase table page and the
+  // Vision page use — see PRICING_PROPOSAL_TERM_PHASE_COUNT / _pricingProposalTermAndFuture header
+  // comments. This is the third of the three sites that used to independently
+  // `tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES)`.
+  var td = _pricingProposalTermAndFuture(d.project.id);
+  var tl = td.tl;
+  var termPhases = td.termPhases;
+  var futurePhases = td.futurePhases;
+  if (!tl || !termPhases.length) return '';
 
   var colgroup = '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:504px">' + '</colgroup>';
   // Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling): dropped the
@@ -17030,7 +17291,7 @@ function _rptA36RecommendedTimelineHTML(d) {
   // "Sequence" column stating ordinal priority only (first/second/third) — order is preserved,
   // the fixed-date anchor is not. p.dateRange itself is untouched in pricing-estimator.js.
   var _RPT_A36_TIMELINE_ORDINALS = ['First priority', 'Second priority', 'Third priority'];
-  var rowsHTML = tl.phases
+  var rowsHTML = termPhases
     .map(function (p, idx) {
       var improvements =
         typeof _rptA36PhaseImprovementsText === 'function' ? _rptA36PhaseImprovementsText(p.rows, idx) : '';
@@ -17055,6 +17316,32 @@ function _rptA36RecommendedTimelineHTML(d) {
       );
     })
     .join('');
+
+  // Future Work row (2026-07-29): names every sequence category priced beyond the term (zero
+  // dollars) so this internal Cost Estimate page's own timeline table can never independently
+  // truncate the schedule again — same category-name source (_rptA36PhaseSeqCategoryNames) the
+  // Phase table page and the Vision page's standalone Future Work section use.
+  var futureAllRows = [];
+  futurePhases.forEach(function (p) {
+    if (p && p.rows) futureAllRows = futureAllRows.concat(p.rows);
+  });
+  var futureCatNames = _rptA36PhaseSeqCategoryNames(futureAllRows);
+  if (futureCatNames.length) {
+    rowsHTML +=
+      '<tr>' +
+      '<td style="' +
+      tdStyle +
+      ';font-weight:700">Future Work</td>' +
+      '<td style="' +
+      tdStyle +
+      '">—</td>' +
+      '<td style="' +
+      tdStyle +
+      '">Beyond the initial term: ' +
+      _esc(futureCatNames.join(', ')) +
+      '.</td>' +
+      '</tr>';
+  }
 
   // Client-safe transparency note — no dollar figures (2026-07-27 reframe). Ongoing Energy
   // Management Services labor is delivered throughout the program in addition to the improvements
@@ -18313,11 +18600,29 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // in this file.
   if (s.proposalCover !== false)
     pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
+  // phaseOpts (2026-07-29, months + Future Work rebuild): threaded into both the Phase table page
+  // and the Vision page so they agree on whether Future Work renders inline (in the table) or as
+  // the default standalone section — see the 'futureWorkInline' section def's header comment above.
+  // proposalPhaseTableOn (2026-07-29, fix: Phase-Table-off silent-truncation gap — reviewer-caught):
+  // proposalPhaseTable and proposalVision are two INDEPENDENT toggles (both default on, both
+  // independently uncheckable — see rptPageASHRAE36ProposalVision's own header comment, which has
+  // documented Phase-Table-off/Vision-on as a supported combination since before this branch).
+  // Future Work rendered ONLY inside _rptA36PhaseTableInnerHTML, so unchecking Phase Table while
+  // leaving Vision on reintroduced the exact silent truncation this branch closes — the program
+  // would say "continues with no fixed end date" while naming none of the future categories.
+  // proposalPhaseTableOn tells _rptA36VisionInnerHTML whether the Phase Table page ran; when it
+  // did NOT, Vision falls back to rendering Future Work itself (see that function's own
+  // futureWorkFallbackHTML). Both true (default) and Phase-Table-off cases below still call the
+  // SAME _rptA36FutureWorkInnerHTML helper — never a second copy of the markup.
+  var phaseOpts = {
+    futureWorkInline: s.futureWorkInline === true,
+    proposalPhaseTableOn: s.proposalPhaseTable !== false,
+  };
   if (s.proposalPhaseTable !== false) {
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalPhaseTable(pageNum++, data), 'proposalPhaseTable'));
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalPhaseTable(pageNum++, data, phaseOpts), 'proposalPhaseTable'));
   }
   if (s.proposalVision !== false) {
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalVision(pageNum++, data), 'proposalVision'));
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalVision(pageNum++, data, phaseOpts), 'proposalVision'));
   }
 
   // 2026-07-29 (fix/proposal-remove-fixed-anchors): two NEW independent opt-in sections, both
