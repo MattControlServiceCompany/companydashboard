@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.726',
+    date: '2026-07-29',
+    title: 'Audit Report counts now match what is priced',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Audit Report, the Per-Building Detail sensor and sequence counts, and the cover page totals, now count only the sensors and sequences that are actually in the cost estimate. Equipment that intentionally has no sensor by design is no longer counted as work to be done.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.725',
     date: '2026-07-29',
     title: 'Service Proposal cover names the document; Cost Estimate timeline table fits the page',
