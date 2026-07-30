@@ -17527,24 +17527,64 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       .join('') +
     '</tr>';
 
-  // _tierPartsRounded — the SINGLE whole-dollar-rounded derivation both amtRow (below) and
-  // phaseSplitRow (further below) read from, so the printed Estimated Cost is ALWAYS the sum of
-  // the printed Hardware/Programming parts, by construction (fix/tier-hardware-programming-
-  // rounding, 2026-07-30). Before this fix, amtRow rounded tt[key].grand (phase1+phase2 computed
-  // in pricing-estimator.js's _pricingComputeTotals) independently of phaseSplitRow rounding
-  // phase1/phase2 -- Math.round(A)+Math.round(B) is not always Math.round(A+B), and for real JOCO
-  // Full Scope data it wasn't: Hardware $1,084,722 + Programming $337,437 (each individually
-  // rounded) summed to $1,422,159 beside a $1,422,158 Estimated Cost (independently rounded from
-  // 1422158.1999999993). Rounding phase1/phase2 ONCE here and having amtRow display their sum --
-  // instead of separately rounding grand -- makes the two rows agree by construction. Returns null
-  // when the tier has nothing priced (grand null), matching the existing "Available upon request"
-  // fallback path unchanged.
+  // _tierPartsRounded — the SINGLE derivation both amtRow (below) and phaseSplitRow (further
+  // below) read from, so the printed Estimated Cost ALWAYS equals the sum of the printed
+  // Hardware/Programming parts (fix/tier-hardware-programming-rounding, 2026-07-30).
+  //
+  // 2026-07-30 CORRECTION (coordinator review): the first version of this function rounded
+  // phase1/phase2 independently and had amtRow display THEIR sum as the total. That fixed the
+  // within-page mismatch but pointed the fix the wrong direction — it moved the displayed Full
+  // Scope total from $1,422,158 up to $1,422,159, which no longer matches tt[key].grand
+  // (1422158.1999999993, truthfully rounds to $1,422,158) or the in-app Cost Estimate tab, which
+  // reads that same unchanged grand. A within-page mismatch traded for a cross-surface one is
+  // worse: the total is the number that appears elsewhere and is authoritative, so it must be
+  // rounded truthfully (Math.round(grand)) and the PARTS must absorb the rounding residual, never
+  // the reverse.
+  //
+  // Implementation: the largest-remainder method (a.k.a. Hamilton's method — the standard
+  // apportionment answer to "N numbers must round to individually-sensible values AND sum to an
+  // already-fixed rounded total"). Floor every part, then hand out the dollars still owed
+  // (totalR - sum of floors) one at a time to the parts with the largest fractional remainder —
+  // the parts closest to rounding UP on their own get the extra dollar first. For Full Scope:
+  // floor(1084721.70)=1084721, floor(337436.50)=337436, sum=1422157, totalR=1422158, 1 dollar
+  // owed; hardware's remainder (.70) beats programming's (.50), so hardware gets it:
+  // 1,084,722 + 337,436 = 1,422,158. Ties broken deterministically by lower part-index (phase1
+  // before phase2) — arbitrary but stable and reproducible, never a coin flip.
+  //
+  // Generic over any number of parts (not special-cased to Hardware/Programming or to Full
+  // Scope's specific values) — extend the `parts` array below and this still produces a valid
+  // allocation. `owed` is provably in [0, parts.length] whenever every part is >= 0 (floor never
+  // exceeds the true value; Math.round never differs from the true sum by more than 0.5) — true
+  // for every real dollar amount this report ever prices; the loop bound below is still clamped
+  // defensively so a pathological negative input can never run past the ranked list.
+  //
+  // Returns null when the tier has nothing priced (grand null), matching the existing "Available
+  // upon request" fallback path unchanged.
   function _tierPartsRounded(key) {
     var t = tt && tt[key];
     if (!t || t.grand === null || t.grand === undefined || isNaN(t.grand)) return null;
-    var p1r = Math.round(t.phase1 || 0);
-    var p2r = Math.round(t.phase2 || 0);
-    return { p1r: p1r, p2r: p2r, totalR: p1r + p2r, noCatalog: !!t.noCatalog };
+    var totalR = Math.round(t.grand); // the authoritative total — same number every other surface reads
+    var parts = [t.phase1 || 0, t.phase2 || 0];
+    var floors = parts.map(function (v) {
+      return Math.floor(v);
+    });
+    var owed =
+      totalR -
+      floors.reduce(function (s, v) {
+        return s + v;
+      }, 0);
+    var ranked = parts
+      .map(function (v, i) {
+        return { i: i, frac: v - floors[i] };
+      })
+      .sort(function (a, b) {
+        return b.frac - a.frac || a.i - b.i; // largest fractional remainder first; ties -> lower index wins
+      });
+    var result = floors.slice();
+    for (var k = 0; k < owed && k < ranked.length; k++) {
+      result[ranked[k].i] += 1;
+    }
+    return { p1r: result[0], p2r: result[1], totalR: totalR, noCatalog: !!t.noCatalog };
   }
 
   var amtStyle =
