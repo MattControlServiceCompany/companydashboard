@@ -12447,8 +12447,12 @@ function collectASHRAE36Data(projId, reportDate) {
       var flags = typeof emLoadEquipConfigFlags === 'function' ? emLoadEquipConfigFlags(projId, row.id) : {};
       var result = emComputeCompliance(row, flags, _reportMaps);
 
-      // Accumulate physical point coverage totals
-      totalPointsRequired += result.totalRequired;
+      // Accumulate physical point coverage totals. Exclude N/A points (space-type classifier,
+      // v724) from the denominator -- an intentionally-absent point (no CO2 sensor in a closet,
+      // no occupancy point in a detention cell) is not a coverage gap. Matches emComputeCompliance's
+      // own coveragePct field (equipment-matrix.js ~19174: denominator = totalRequired - totalNA),
+      // which this report-level aggregation had drifted from. 2026-07-30.
+      totalPointsRequired += result.totalRequired - result.totalNA;
       totalPointsMatched += result.totalMatched;
 
       // Accumulate sequence readiness using emComputeSequenceReadiness (same approach
