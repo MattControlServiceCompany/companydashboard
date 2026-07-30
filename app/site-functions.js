@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.29.727',
+    date: '2026-07-29',
+    title: 'Equipment Matrix paging and building drill-down are fixed',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Equipment Matrix, the page navigation now works: the Next and Previous buttons and the rows-per-page selector had no effect, so projects with more than 100 pieces of equipment only ever showed the first 100. Clicking a building name to see its equipment detail also did nothing and now works, as does the Back button returning to the summary.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.726',
     date: '2026-07-29',
     title: 'Audit Report counts now match what is priced',
