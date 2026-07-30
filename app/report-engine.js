@@ -16188,13 +16188,13 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
 
   var thStyle =
     'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
-    'border:1px solid var(--rpt-rule)';
+    'border:1px solid var(--rpt-border)';
   var lblStyle =
     'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
-    'vertical-align:top;border:1px solid var(--rpt-rule)';
+    'vertical-align:top;border:1px solid var(--rpt-border)';
   var cellStyle =
     'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
-    'line-height:1.5;border:1px solid var(--rpt-rule)';
+    'line-height:1.5;border:1px solid var(--rpt-border)';
 
   // headRow: one column per calendar month of the current term (e.g. Aug 2026 .. Dec 2026) —
   // replaces the old one-column-per-phase header (Phase 1 | Phase 2 | Phase 3). See
@@ -16819,14 +16819,14 @@ function rptPageASHRAE36ProposalScope(n, d) {
     var _dcvScopeStr = _dcvScopeParts.join(', ');
     dcvScopeRow =
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       'Carbon Dioxide (CO₂) sensors for demand-controlled ventilation' +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       _dcvScopeStr +
       ' affected' +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border)">' +
       'Avoids conditioning air for empty rooms' +
       '</td>' +
       '</tr>';
@@ -16836,13 +16836,13 @@ function rptPageASHRAE36ProposalScope(n, d) {
     var desc = gap.desc || {};
     return (
       '<tr>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       (desc.short || gap.key) +
       '</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       gap.count +
       ' units affected</td>' +
-      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-rule)">' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border)">' +
       (desc.impact || '—') +
       '</td>' +
       '</tr>'
@@ -16856,7 +16856,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
   // match pages 1-3's thPlain convention (rptPageASHRAE36ProposalCover): plain bold text, thin
   // var(--rpt-rule) border, no fill. Content/values unchanged — styling only.
   var thStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
+    'padding:5px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
 
   var ph1HTML =
     phase1Gaps.length || dcvScopeRow
@@ -17287,9 +17287,9 @@ function _rptA36RecommendedTimelineHTML(d) {
   // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
   // thStyle. Styling only; no content/values changed.
   var thStyle =
-    'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-rule)';
+    'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
   var tdStyle =
-    'padding:6px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule);vertical-align:top';
+    'padding:6px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
 
   // 2026-07-29 (fix/proposal-remove-fixed-anchors): "Date Range" column (p.dateRange — a fixed
   // Aug 2026 – Dec 2028-style calendar range) DELETED per Matt's approved spec, same treatment
@@ -17492,7 +17492,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var thStyle =
     'padding:8px 10px;font-size:11px;font-weight:700;color:var(--rpt-page-text);' +
-    'text-align:center;border:1px solid var(--rpt-rule)';
+    'text-align:center;border:1px solid var(--rpt-border)';
   var headRow =
     '<tr>' +
     tierCols
@@ -17504,7 +17504,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var descStyle =
     'padding:8px 10px;font-size:10px;color:var(--rpt-page-text);line-height:1.5;text-align:center;' +
-    'border:1px solid var(--rpt-rule);vertical-align:top';
+    'border:1px solid var(--rpt-border);vertical-align:top';
   var descRow =
     '<tr>' +
     tierCols
@@ -17521,7 +17521,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // lines"). Every cell in this table now carries a full 1px border on all 4 sides.
   var lblStyle =
     'padding:10px 10px 2px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;' +
-    'color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-rule)';
+    'color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var lblRow =
     '<tr>' +
     tierCols
@@ -17595,7 +17595,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var amtStyle =
     'padding:2px 10px 12px;font-size:18px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
-    'border:1px solid var(--rpt-rule)';
+    'border:1px solid var(--rpt-border)';
   var amtRow =
     '<tr>' +
     tierCols
@@ -17634,7 +17634,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   if (wantPhaseSplit) {
     var phaseCellStyle =
       'padding:6px 10px 12px;font-size:9px;color:var(--rpt-page-text);text-align:center;line-height:1.7;' +
-      'border:1px solid var(--rpt-rule);vertical-align:top';
+      'border:1px solid var(--rpt-border);vertical-align:top';
     phaseSplitRow =
       '<tr>' +
       tierCols
@@ -17745,7 +17745,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var detailRow = '';
   if (summaryData && summaryData.perTier && detailFitsInline) {
-    var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-rule);vertical-align:top';
+    var detailCellStyle = 'padding:8px 10px 12px;border:1px solid var(--rpt-border);vertical-align:top';
     detailRow =
       '<tr>' +
       tierCols
@@ -17763,7 +17763,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       '</tr>';
   } else if (summaryData && summaryData.perTier && !detailFitsInline) {
     var detailNoteStyle =
-      'padding:10px;font-size:9px;color:var(--rpt-page-text);font-style:italic;border:1px solid var(--rpt-rule);text-align:center';
+      'padding:10px;font-size:9px;color:var(--rpt-page-text);font-style:italic;border:1px solid var(--rpt-border);text-align:center';
     // Reworded 2026-07-27 (coordinator review): the bare "detail for each scope" line let a
     // reader assume all three tiers' continuation pages are the same kind of thing (priced
     // detail). Recommended's continuation pages (item 6/7 above, _buildTierDetailPages/
@@ -17960,7 +17960,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         : '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
         'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;' +
-        'border:1px solid var(--rpt-rule)';
+        'border:1px solid var(--rpt-border)';
       var itThRight = itThStyle.replace('text-align:left', 'text-align:right');
       var itTableHead =
         '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
@@ -17977,7 +17977,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
       function _itemRowHTML(row) {
         var td =
-          'padding:5px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-rule);vertical-align:top';
+          'padding:5px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
         var tdR = td + ';text-align:right';
         var nameHTML =
           '<div>' +
