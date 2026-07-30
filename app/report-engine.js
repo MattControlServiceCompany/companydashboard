@@ -1229,10 +1229,23 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '<div class="rpt-page" data-page="' +
     pageNum +
     '">' +
+    // csc-header-img-inset (2026-07-30, letterhead overflow fix, item 5b789cc8): this <img>
+    // previously carried no class and no width/height attributes, so it was invisible to the
+    // Word image-sizing regex below and Word rendered it at its native intrinsic pixel size
+    // (918x218), overflowing ~77pt/1.07in past the right page edge on the Agreement's cover and
+    // signature pages (measured via PyMuPDF bbox extraction on a real Word COM PDF round-trip of
+    // Matt's v729 .doc). Reusing the plain "csc-header-img" class (unqualified) would instead
+    // route it through the FULL-BLEED hero regex (width:8.5in) — wrong here, since this image
+    // sits inset within the page's 0.5in side margins (it is not full-bleed like the hero cover
+    // letterhead), and .rpt-small-hdr's own "48px" padding already makes it a target of
+    // _insetChildren's margin-left/right:0.5in fix in exportReportToWord(), so an 8.5in-wide
+    // image would overflow by a full extra inch. "csc-header-img-inset" is a second, more
+    // specific class so the two sites can be sized differently by the same shared regex-based
+    // technique instead of a one-off parallel sizing path.
     (smallHeaderImg
       ? '<div class="rpt-small-hdr" style="padding:14px 48px 6px"><img src="' +
         CSC_HEADER_B64 +
-        '" alt="CSC Letterhead" style="width:100%;display:block"></div>'
+        '" alt="CSC Letterhead" class="csc-header-img csc-header-img-inset" style="width:100%;display:block"></div>'
       : '') +
     (hideIntHdr
       ? ''
@@ -7847,6 +7860,39 @@ async function exportReportToWord() {
     bodyHtml = bodyHtml.replace(
       /<img src="([^"]*)" alt="CSC Letterhead" class="csc-header-img"[^>]*>/g,
       '<img src="$1" alt="CSC Letterhead" class="csc-header-img" width="816" height="194" style="width:8.5in;height:auto;display:block">',
+    );
+    // csc-header-img-inset sizing fix (2026-07-30, item 5b789cc8): same technique as the
+    // full-bleed regex immediately above (literal HTML width/height attributes — the only thing
+    // Word's HTML importer reliably honors for <img> sizing, per ROOT CAUSE 3 below), applied to
+    // the Agreement's inset small-header letterhead (rptPage()'s smallHeaderImg option) instead
+    // of the full page width. This regex runs SECOND and only matches the more specific
+    // class="csc-header-img csc-header-img-inset" string, so it never touches the hero images
+    // the regex above already sized to 8.5in.
+    //
+    // Width source: NOT this file's own 0.5in-margin convention (which would give 7.5in, per
+    // WORD_CONTENT_WIDTH above) — per the task's explicit instruction, this uses the measured CSC
+    // document-style baseline instead: AI/_context/specs/csc-document-style-spec-2026-07-29.md
+    // section 1, extracted from Louisburg School District's actual OOXML sectPr (12240 twips page
+    // width minus 1170+990 twips left/right margins = 10080 twips = exactly 7.0000in / 672.00px
+    // content width). Height derived by preserving this same image's existing aspect ratio already
+    // established by the full-bleed regex above (816px:194px, i.e. 194/816): 672 * 194/816 =
+    // 159.76, rounded to 160px / ~1.664in.
+    //
+    // Left-inset note (2026-07-30, tested and reverted, not a regression): this file's own
+    // clone.querySelectorAll('div[style*="48px"]') pass (above) DOES try to inset this image by
+    // setting margin-left/right:0.5in on it as a child of .rpt-small-hdr — but this regex's
+    // literal replacement runs AFTER that DOM pass and, matching every other emission site in
+    // this function, replaces the entire <img> tag wholesale, so any margin the DOM pass added is
+    // discarded. Tried adding margin-left:0.5in directly into this replacement string instead;
+    // measured via a real Word COM PDF round-trip that it has NO effect — this image still
+    // renders flush against the page's left edge (bbox x0=0.00pt) either way. Confirmed this is
+    // NOT a regression from this fix: the PRE-FIX bbox was also x0=0.00pt (it was simply masked by
+    // the far larger right-edge overflow this fix addresses). Left-inset on this specific <img> is
+    // out of scope here per the task's own instruction — it is the same class of issue as backlog
+    // 4c946ba2 (paragraph indentation/spacing), which owns its own dispatch.
+    bodyHtml = bodyHtml.replace(
+      /<img src="([^"]*)" alt="CSC Letterhead" class="csc-header-img csc-header-img-inset"[^>]*>/g,
+      '<img src="$1" alt="CSC Letterhead" class="csc-header-img csc-header-img-inset" width="672" height="160" style="width:7in;height:auto;display:block">',
     );
 
     const client = data.project.client || data.project.name || 'Report';
