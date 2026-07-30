@@ -2924,6 +2924,16 @@ function buildCatalogRows(projId) {
       rows.push({
         id: 'hw_' + bName + '_' + gKey + '_' + rowIdx++,
         building: bName,
+        // category (fix/per-building-sensor-reconcile, 2026-07-29): gap.equipType is already
+        // computed above for every hardware-gap group (the raw category key, e.g. 'vav', or
+        // 'building' for the oat/oaWetBulb building-wide dedup rows) — was never stamped onto
+        // the row itself. Report-side per-building/per-category reconciliation (Per-Building
+        // Detail summary table, app/report-engine.js _pushCatSummaryRow) needs it to filter
+        // buildCatalogRows down to "priced qty for THIS building's THIS category," the same
+        // buildCatalogRows-derived pattern commit 2cd25a7 established for the cover page.
+        // Purely additive — no existing consumer reads this key, so no behavior change to
+        // qty/price/lineTotal for any tier.
+        category: gap.equipType,
         item: _pricingPointLabel(gap.pointKey),
         type: typeName,
         equipment: eqLabel,
@@ -2982,6 +2992,21 @@ function buildCatalogRows(projId) {
       map[seqKey][group]++;
     }
 
+    // seqCatCounts (fix/per-building-sensor-reconcile, 2026-07-29): seqKey -> group -> category
+    // -> count. A single seqKey (e.g. vav_dcv) can apply to several zone categories at once
+    // (EM_SEQUENCE_DEFS.equipTypes, e.g. ['vav','fpb','ddvav']), so the seqCounts/seqBlocked/
+    // seqPartial totals above are already a cross-category sum for the building. The
+    // Per-Building Detail report table (app/report-engine.js _pushCatSummaryRow) prints ONE
+    // "Sequences to Program" cell PER equipment category, so it needs the same total broken back
+    // out by eq.category — which is already available in this exact loop below (per contributing
+    // unit) and is captured here with zero effect on qty/lineTotal/pricing; report-only metadata,
+    // stamped onto each row as `categoryQty` after the loop.
+    var seqCatCounts = {};
+    function _bumpSeqCatCount(seqKey, group, cat) {
+      if (!seqCatCounts[seqKey]) seqCatCounts[seqKey] = { ready: {}, gap: {} };
+      seqCatCounts[seqKey][group][cat] = (seqCatCounts[seqKey][group][cat] || 0) + 1;
+    }
+
     // 2026-07-27: uses the SAME filtered `equipResults` as the hardware-gap pass above, so a
     // monitoring-only unit (excluded above) never contributes sequence-programming labor either —
     // e.g. it can no longer be counted as a vav_dcv/DCV-programming "blocked/partial" instance,
@@ -3016,6 +3041,7 @@ function buildCatalogRows(projId) {
         _bumpSeqGroupCount(seqCounts, seqKey, group);
         if (entry.status === 'blocked') _bumpSeqGroupCount(seqBlocked, seqKey, group);
         else _bumpSeqGroupCount(seqPartial, seqKey, group);
+        _bumpSeqCatCount(seqKey, group, eq.category);
       });
     });
 
@@ -3078,6 +3104,12 @@ function buildCatalogRows(projId) {
           type: 'Sequence',
           equipment: eqLabel2 + statusBreakdown,
           qty: count,
+          // categoryQty (fix/per-building-sensor-reconcile, 2026-07-29): {category -> count} for
+          // THIS seqKey+group row, taken verbatim from seqCatCounts (see counting-loop comment
+          // above). Report-only breakdown of `qty` by equipment category — sums back to qty,
+          // never affects pricing. Shallow-copied since seqCatCounts is a per-building loop
+          // variable that keeps accumulating for later seqKeys in this same forEach.
+          categoryQty: Object.assign({}, (seqCatCounts[seqKey] && seqCatCounts[seqKey][group]) || {}),
           sku: null,
           engReview: false,
           noSku: false,
@@ -4501,6 +4533,9 @@ function buildOptionalPointRows(projId) {
       rows.push({
         id: 'opt_' + bName + '_' + gKey + '_' + rowIdx++,
         building: bName,
+        // category — see identical comment on the required-point hw_ row push above
+        // (fix/per-building-sensor-reconcile, 2026-07-29). Same additive, non-breaking field.
+        category: gap.equipType,
         item: _pricingPointLabel(gap.pointKey),
         type: typeName,
         typeLabel: 'Beyond-Compliance',

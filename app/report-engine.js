@@ -13039,7 +13039,16 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     var _a36SeqSum = 0;
     _a36CatalogRows.forEach(function (r) {
       if (r.phase === 1 && !r.ioOnly) _a36SensorSum += r.qty || 0;
-      else if (r.phase === 2) _a36SeqSum += r.qty || 0;
+      // fix/per-building-sensor-reconcile (2026-07-29): require r.seqKey — buildCatalogRows
+      // concatenates buildSensorInvestigationRows()' phase-2 labor rows (suspect/failed sensor
+      // readings, fix/pricing-phases-and-sensor-hours) onto the SAME array. Those rows carry no
+      // seqKey (they are not a G36 sequence) and that function's own header comment is explicit:
+      // "must not reach the audit report... sensor failures are a service-scope/pricing matter,
+      // not an ASHRAE 36 compliance finding." A plain `r.phase === 2` sum missed that distinction
+      // and let 19 investigation rows (qty 19) inflate this cover figure by counting them as
+      // "sequences to program" — measured 2026-07-29 on real JOCO data: 1,304 vs. 1,285 once
+      // excluded. r.seqKey is only ever set on the actual G36 sequence-programming rows.
+      else if (r.phase === 2 && r.seqKey) _a36SeqSum += r.qty || 0;
     });
     if (_a36CatalogRows.length) {
       _a36ConsolidatedSensors = _a36SensorSum;
@@ -13799,6 +13808,24 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // Rule 2.3: reportDate drives footer date; label empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
+  // Priced-scope reconciliation (fix/per-building-sensor-reconcile, 2026-07-29) — the raw
+  // eq.compliance.missingPoints / eq.seqReadiness accumulators below used to be this table's
+  // ONLY source, the same defect class commit 2cd25a7 fixed on the cover page: buildCatalogRows
+  // applies monitoring-only-zone-unit exclusion (_pricingIsMonitoringOnlyZoneUnit — equipment
+  // rows missing BOTH coolSP and htgSP are dropped entirely, before any row is generated),
+  // ioOnly exclusion ($0/no-install existing-controller-I/O points), and oat/oaWetBulb/damper/
+  // co2+zoneTemp combo dedup that the raw per-equipment accumulators never see. Measured
+  // 2026-07-29 on real JOCO data: NC Adult Detention Center's VAV Terminals row alone was
+  // printing 255 raw sensor gaps — 60 of its 62 VAV units are monitoring-only detention cells
+  // wired for temperature monitoring only, by design (feedback_absence_is_not_always_a_
+  // deficiency.md) — while only 4 were ever priced. Cached on `d` (memoized once per report
+  // render) rather than recomputed here, since buildCatalogRows walks the WHOLE project on every
+  // call and this function runs once PER BUILDING (up to 27 times per report).
+  if (!d._a36CatalogRowsCache) {
+    d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
+  }
+  var _a36CatRows = d._a36CatalogRowsCache;
+
   // Helper: resolve human-readable name for a missing point category key
   function _missingPointName(mp) {
     var desc = ASHRAE36_GAP_DESCRIPTIONS[mp.categoryKey];
@@ -13920,17 +13947,18 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     return (a.name || '').localeCompare(b2.name || '');
   });
 
-  // Compute building-level totals for summary line (last chunk only)
+  // Compute building-level totals for summary line (last chunk only) — priced-scope
+  // (fix/per-building-sensor-reconcile, 2026-07-29), same _a36CatRows source as
+  // _pushCatSummaryRow below. Summed across EVERY category for this building, INCLUDING the
+  // building-wide oat/oaWetBulb dedup rows (category==='building'), so this total reconciles
+  // exactly to (sum of every per-category row below) + (the Building-Wide row, when present) —
+  // never an invisible number.
   var totalSensorsNeeded = 0;
   var totalSeqsNotReady = 0;
-  sortedEquip.forEach(function (eq) {
-    totalSensorsNeeded += (eq.compliance.missingPoints || []).length;
-    var sr = eq.seqReadiness || {};
-    for (var k in sr) {
-      if (sr.hasOwnProperty(k) && (sr[k].status === 'blocked' || sr[k].status === 'partial')) {
-        totalSeqsNotReady++;
-      }
-    }
+  _a36CatRows.forEach(function (r) {
+    if (r.building !== b.name) return;
+    if (r.phase === 1 && !r.ioOnly) totalSensorsNeeded += r.qty || 0;
+    else if (r.phase === 2 && r.seqKey) totalSeqsNotReady += r.qty || 0;
   });
 
   // Table header HTML (reused on every chunk)
@@ -14073,36 +14101,49 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   }
 
   // Change 2 (2026-06-16): helper — push ONE summary row per category (replaces per-unit rows).
-  // Counts use the same underlying data as the cover-page totals
-  // (missingPoints.length for sensors; blocked/partial seqReadiness entries for sequences).
+  // fix/per-building-sensor-reconcile (2026-07-29): sensorsSum/seqsSum/mpFreq/sqFreq now come
+  // from the PRICED catalog (_a36CatRows, see this function's header comment above) instead of
+  // the raw eq.compliance.missingPoints/eq.seqReadiness accumulators — see that comment for the
+  // full rationale and the 255-raw-vs-4-priced NC ADC VAV measurement. hasApplicableSeq and
+  // rawSensorsSum stay RAW on purpose: hasApplicableSeq answers "was G36 ever checked against
+  // this category" (an audit fact, not a cost), and rawSensorsSum exists only to distinguish
+  // "0 priced because genuinely compliant" from "0 priced because every raw gap here is
+  // monitoring-only-zone/ioOnly and never entered the priced scope" in the sensorsCell branch
+  // below.
   function _pushCatSummaryRow(cat, catRows) {
     var unitCount = catRows.length;
-    var sensorsSum = 0;
-    var seqsSum = 0;
-    // 2026-07-10 fix (audit-report-na-rationale): tracks whether ANY sequence in
-    // EM_SEQUENCE_DEFS was ever applicable to this equipment category (status !== 'na'
-    // for at least one entry across all rows). Categories like furnaces/heaters/zone
-    // terminals have EVERY sequence hit status:'na' via the equipTypes scope check
-    // (emComputeSequenceReadiness, app/equipment-matrix.js) -- Guideline 36 was never
-    // checked against them at all, which is a different fact from "checked and passed."
     var hasApplicableSeq = false;
-    // Frequency maps for top-type breakdown (Change B 2026-06-16)
-    var mpFreq = {};
-    var sqFreq = {};
+    var rawSensorsSum = 0;
     catRows.forEach(function (eq) {
-      (eq.compliance.missingPoints || []).forEach(function (mp) {
-        sensorsSum++;
-        var lbl = _missingPointName(mp);
-        mpFreq[lbl] = (mpFreq[lbl] || 0) + 1;
-      });
+      rawSensorsSum += (eq.compliance.missingPoints || []).length;
       var sr = eq.seqReadiness || {};
       for (var sk in sr) {
-        if (!sr.hasOwnProperty(sk)) continue;
-        if (sr[sk].status !== 'na') hasApplicableSeq = true;
-        if (sr[sk].status === 'blocked' || sr[sk].status === 'partial') {
-          seqsSum++;
-          var slbl = _seqLabel(sk, sr[sk]);
-          sqFreq[slbl] = (sqFreq[slbl] || 0) + 1;
+        if (sr.hasOwnProperty(sk) && sr[sk].status !== 'na') hasApplicableSeq = true;
+      }
+    });
+
+    // Priced sums for THIS building + THIS category. Sensors = phase-1, non-ioOnly rows (same
+    // buildCatalogRows-derived definition 2cd25a7 uses on the cover page). Sequences = phase-2
+    // rows carrying a seqKey (excludes buildSensorInvestigationRows' phase-2 labor rows, which
+    // are a service-scope finding, not a G36 sequence — see that function's own "must not reach
+    // the audit report" guardrail comment, pricing-estimator.js), with qty attributed to this
+    // category via categoryQty (a seqKey can span multiple zone categories at once, e.g. vav_dcv
+    // applies to vav/fpb/ddvav — categoryQty is the per-category split of that row's qty, added
+    // specifically for this reconciliation).
+    var sensorsSum = 0;
+    var seqsSum = 0;
+    var mpFreq = {};
+    var sqFreq = {};
+    _a36CatRows.forEach(function (r) {
+      if (r.building !== b.name) return;
+      if (r.phase === 1 && !r.ioOnly && r.category === cat) {
+        sensorsSum += r.qty || 0;
+        mpFreq[r.item] = (mpFreq[r.item] || 0) + (r.qty || 0);
+      } else if (r.phase === 2 && r.seqKey) {
+        var _catQty = (r.categoryQty && r.categoryQty[cat]) || 0;
+        if (_catQty > 0) {
+          seqsSum += _catQty;
+          sqFreq[r.item] = (sqFreq[r.item] || 0) + _catQty;
         }
       }
     });
@@ -14128,8 +14169,18 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var sensorsBreakdown = _topBreakdown(mpFreq, sensorsSum);
     var seqsBreakdown = _topBreakdown(sqFreq, seqsSum);
 
+    // 2026-07-29 fix (per-building-sensor-reconcile): a category can have raw gaps (points the
+    // audit found missing) that are ALL monitoring-only-zone/ioOnly and so never enter the
+    // priced scope — "0 — Complete" would falsely read as a compliance pass in that case. Only
+    // use "Complete" when the raw scan found nothing to begin with.
     var sensorsCell =
-      sensorsSum === 0 ? '0 — Complete' : sensorsBreakdown ? sensorsSum + ' — ' + sensorsBreakdown : String(sensorsSum);
+      sensorsSum === 0
+        ? rawSensorsSum === 0
+          ? '0 — Complete'
+          : '0 — No Priced Hardware'
+        : sensorsBreakdown
+          ? sensorsSum + ' — ' + sensorsBreakdown
+          : String(sensorsSum);
     // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered" -> (rename
     // #2, Matt's decision, supersedes v647) "Fully Compliant".
     // 2026-07-10 fix (audit-report-na-rationale, wording-decision.md item 2): a category with
@@ -14206,6 +14257,55 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         });
         _pushCatSummaryRow(eq.category, _uncovCatRows);
       }
+    });
+  }
+
+  // Building-Wide priced row (fix/per-building-sensor-reconcile, 2026-07-29): oat/oaWetBulb
+  // dedup to ONE sensor per building regardless of how many pieces of equipment are missing it
+  // (buildCatalogRows, pricing-estimator.js ~line 2683/2699) — these attribute to
+  // category==='building', not any single equipment category, so they never match a per-category
+  // row above and would otherwise be an invisible number (priced but never shown). Surfaced here
+  // explicitly so (sum of every category row above) + (this row, when present) reconciles exactly
+  // to the "Total for <building>" row below. Rare — 8 of these exist portfolio-wide across 27
+  // buildings (2026-07-29 measurement), so this stays a single compact row, not its own table.
+  var _bldgWideRows = _a36CatRows.filter(function (r) {
+    return r.building === b.name && r.phase === 1 && !r.ioOnly && r.category === 'building';
+  });
+  if (_bldgWideRows.length) {
+    var _bwSum = 0;
+    var _bwFreq = {};
+    _bldgWideRows.forEach(function (r) {
+      _bwSum += r.qty || 0;
+      _bwFreq[r.item] = (_bwFreq[r.item] || 0) + (r.qty || 0);
+    });
+    var _bwBreakdown = Object.keys(_bwFreq)
+      .map(function (k) {
+        return _bwFreq[k] + ' - ' + k;
+      })
+      .join(', ');
+    var _bwTdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
+    tokens.push({
+      type: 'row',
+      estH: 34,
+      html:
+        '<tr>' +
+        '<td style="' +
+        _bwTdBase +
+        ';font-weight:600;color:var(--rpt-page-text)">Building-Wide (Outdoor Air)</td>' +
+        '<td style="' +
+        _bwTdBase +
+        ';text-align:center;color:var(--rpt-page-text)">1</td>' +
+        '<td style="' +
+        _bwTdBase +
+        ';color:var(--rpt-page-text);font-weight:400">' +
+        _bwSum +
+        ' — ' +
+        _bwBreakdown +
+        '</td>' +
+        '<td style="' +
+        _bwTdBase +
+        ';color:var(--rpt-page-text);font-weight:400">No Applicable Sequences</td>' +
+        '</tr>',
     });
   }
 
@@ -16914,9 +17014,7 @@ function _rptA36RecommendedTimelineHTML(d) {
     tl = Object.assign({}, tl, { phases: tl.phases.slice(0, PRICING_PROPOSAL_MAX_PHASES) });
   }
 
-  var colgroup =
-    '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:504px">' +
-    '</colgroup>';
+  var colgroup = '<colgroup><col style="width:70px"><col style="width:110px"><col style="width:504px">' + '</colgroup>';
   // Design-language pass (2026-07-26, fix/proposal-clientname-and-legacy-styling): dropped the
   // filled dark-blue header (color:#fff on background:var(--rpt-blue)) to match pages 1-3's
   // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
