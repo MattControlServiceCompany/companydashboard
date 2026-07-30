@@ -1576,6 +1576,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.30.730',
+    date: '2026-07-30',
+    title: 'Service Proposal months table, sensor coverage accuracy, and Word export fixes',
+    items: [
+      {
+        type: 'feature',
+        text: "The Service Proposal's term table now shows one column per month, each listing only the improvements and expected results actually scheduled that month; previously all five months shared one merged cell.",
+      },
+      {
+        type: 'fix',
+        text: "The ASHRAE 36 Audit Report no longer counts intentionally-absent sensors (like a closet with no CO2 sensor or a detention cell with no occupancy point) as coverage gaps. Portfolio Sensor Coverage now reads 59% (was 55%) and Composite Score reads 55% (was 52%), which more accurately reflects Johnson County's actual coverage.",
+      },
+      {
+        type: 'fix',
+        text: 'In Word exports of any report, the CSC letterhead graphic no longer runs off the right edge of the page.',
+      },
+      {
+        type: 'fix',
+        text: "In Word exports of any report, body text, callout boxes, and the EMS Agreement's numbered building list now show their intended indentation and spacing.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.30.729',
     date: '2026-07-30',
     title: 'Cost Estimate tier amounts now add up exactly',
