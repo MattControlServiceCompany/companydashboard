@@ -16420,13 +16420,23 @@ function _rptA36VisionInnerHTML(d, opts) {
   // 2026-07-29 (months + Future Work rebuild): SAME single derivation _rptA36PhaseTableInnerHTML
   // uses (see PRICING_PROPOSAL_TERM_PHASE_COUNT / _pricingProposalTermAndFuture header comments) —
   // this site and the Phase table page can never disagree about which phase is the term vs. Future
-  // Work. Only termPhases is needed here (the term-range sentence below); Future Work itself
-  // no longer renders on this page — see the page-density fix note above futureWorkBlock's former
-  // call site (moved to _rptA36PhaseTableInnerHTML, same page as the term table).
+  // Work.
   var td = _pricingProposalTermAndFuture(d.project.id);
   var tl = td.tl;
   var termPhases = td.termPhases;
+  var futurePhases = td.futurePhases;
   var monthLabels = _pricingProposalTermMonthLabels(termPhases);
+
+  // phaseTableOn (2026-07-29, fix: Phase-Table-off silent-truncation gap — reviewer-caught):
+  // proposalPhaseTable and proposalVision are two INDEPENDENT toggles a user can check/uncheck
+  // separately (this function's own header comment has documented Phase-Table-off/Vision-on as a
+  // supported combination since before this branch). Future Work normally renders on the Phase
+  // Table page (_rptA36PhaseTableInnerHTML) — if that page did NOT run, this page must carry
+  // Future Work itself, or the silent-truncation defect this branch closes comes right back for
+  // this one toggle combination. Defaults to true (assume the Phase Table page rendered) when
+  // `opts` doesn't say otherwise, so any call site that doesn't pass this flag keeps prior
+  // behavior (no double-render risk from an unrelated caller).
+  var phaseTableOn = !(opts && opts.proposalPhaseTableOn === false);
 
   var implTable = '';
   if (tl && termPhases.length) {
@@ -16442,15 +16452,22 @@ function _rptA36VisionInnerHTML(d, opts) {
         ? monthLabels[0] + ' – ' + monthLabels[monthLabels.length - 1]
         : monthLabels[0]
       : termPhases[0].label;
+    // "table above" only makes sense when the Phase Table page actually ran ahead of this one —
+    // when it's off, say what the term is without pointing at a table that isn't in the document.
+    var termRangeIntro = phaseTableOn
+      ? 'The current term (' +
+        esc(termRangeLabel) +
+        ') is detailed in the Recommended Optimization Program table above.'
+      : 'The current term runs ' + esc(termRangeLabel) + '.';
     implTable =
       '<div style="' +
       HEAD +
       '">Implementation Plan &amp; Long-Term Vision</div>' +
       '<div style="' +
       BODY +
-      '">The current term (' +
-      esc(termRangeLabel) +
-      ') is detailed in the Recommended Optimization Program table above. Phases are sequenced by ' +
+      '">' +
+      termRangeIntro +
+      ' Phases are sequenced by ' +
       'expected return on investment — the highest-return measures come first. Each phase is funded ' +
       'through the monthly service allowance as it is completed, with no fixed end date; the program ' +
       'continues for as long as improvement opportunities remain.</div>';
@@ -16465,11 +16482,15 @@ function _rptA36VisionInnerHTML(d, opts) {
       'priced for this project.</div>';
   }
 
-  // Future Work MOVED (2026-07-29, page-density fix, coordinator direction): now renders on the
-  // Phase table page (_rptA36PhaseTableInnerHTML's standaloneFutureWorkHTML / futureRowHTML),
-  // directly under/inside the term table it belongs with, instead of here. `opts` is accepted for
-  // call-site compatibility (generateASHRAE36ProposalHTML passes the same phaseOpts to both pages)
-  // but this page no longer reads it.
+  // futureWorkFallbackHTML (2026-07-29, fix: Phase-Table-off silent-truncation gap): Future Work
+  // normally renders on the Phase Table page (_rptA36PhaseTableInnerHTML's
+  // standaloneFutureWorkHTML / futureRowHTML) — directly under/inside the term table it belongs
+  // with. When that page is OFF (phaseTableOn === false), this page is the only remaining place a
+  // client would ever see it, so it falls back to rendering the SAME _rptA36FutureWorkInnerHTML
+  // helper the Phase Table page uses — never a second copy of the Future Work markup, so the two
+  // call sites can never disagree about content. When the Phase Table page IS on, this stays ''
+  // so Future Work is never rendered twice.
+  var futureWorkFallbackHTML = phaseTableOn ? '' : _rptA36FutureWorkInnerHTML(futurePhases, HEAD, BODY);
 
   var longTermVision =
     '<div style="' +
@@ -16519,7 +16540,7 @@ function _rptA36VisionInnerHTML(d, opts) {
     'patterns, utility rates, weather conditions, operational practices, and implementation quality.' +
     '</div>';
 
-  return implTable + longTermVision + disclaimer;
+  return implTable + futureWorkFallbackHTML + longTermVision + disclaimer;
 }
 
 /**
@@ -16527,6 +16548,12 @@ function _rptA36VisionInnerHTML(d, opts) {
  * an independent page-producing function for the case where a caller enables `proposalVision` but
  * disables `proposalPhaseTable` (or vice versa) via the section toggles — see
  * rptPageASHRAE36ProposalPhaseAndVision below for the merged-page path both flags default to.
+ * proposalPhaseTable-off/proposalVision-on (2026-07-29, reviewer-caught fix): this combination is
+ * real and independently selectable, so _rptA36VisionInnerHTML's `opts.proposalPhaseTableOn` flag
+ * (threaded from generateASHRAE36ProposalHTML's `phaseOpts`) tells it whether the Phase Table page
+ * ran; if not, it falls back to rendering Future Work itself (same _rptA36FutureWorkInnerHTML
+ * helper the Phase Table page uses — never a duplicated copy) so this toggle combination can never
+ * silently drop the future-phase category list again.
  */
 function rptPageASHRAE36ProposalVision(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
@@ -18576,7 +18603,21 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // phaseOpts (2026-07-29, months + Future Work rebuild): threaded into both the Phase table page
   // and the Vision page so they agree on whether Future Work renders inline (in the table) or as
   // the default standalone section — see the 'futureWorkInline' section def's header comment above.
-  var phaseOpts = { futureWorkInline: s.futureWorkInline === true };
+  // proposalPhaseTableOn (2026-07-29, fix: Phase-Table-off silent-truncation gap — reviewer-caught):
+  // proposalPhaseTable and proposalVision are two INDEPENDENT toggles (both default on, both
+  // independently uncheckable — see rptPageASHRAE36ProposalVision's own header comment, which has
+  // documented Phase-Table-off/Vision-on as a supported combination since before this branch).
+  // Future Work rendered ONLY inside _rptA36PhaseTableInnerHTML, so unchecking Phase Table while
+  // leaving Vision on reintroduced the exact silent truncation this branch closes — the program
+  // would say "continues with no fixed end date" while naming none of the future categories.
+  // proposalPhaseTableOn tells _rptA36VisionInnerHTML whether the Phase Table page ran; when it
+  // did NOT, Vision falls back to rendering Future Work itself (see that function's own
+  // futureWorkFallbackHTML). Both true (default) and Phase-Table-off cases below still call the
+  // SAME _rptA36FutureWorkInnerHTML helper — never a second copy of the markup.
+  var phaseOpts = {
+    futureWorkInline: s.futureWorkInline === true,
+    proposalPhaseTableOn: s.proposalPhaseTable !== false,
+  };
   if (s.proposalPhaseTable !== false) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalPhaseTable(pageNum++, data, phaseOpts), 'proposalPhaseTable'));
   }
