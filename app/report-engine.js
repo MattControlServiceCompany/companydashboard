@@ -17527,6 +17527,26 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       .join('') +
     '</tr>';
 
+  // _tierPartsRounded — the SINGLE whole-dollar-rounded derivation both amtRow (below) and
+  // phaseSplitRow (further below) read from, so the printed Estimated Cost is ALWAYS the sum of
+  // the printed Hardware/Programming parts, by construction (fix/tier-hardware-programming-
+  // rounding, 2026-07-30). Before this fix, amtRow rounded tt[key].grand (phase1+phase2 computed
+  // in pricing-estimator.js's _pricingComputeTotals) independently of phaseSplitRow rounding
+  // phase1/phase2 -- Math.round(A)+Math.round(B) is not always Math.round(A+B), and for real JOCO
+  // Full Scope data it wasn't: Hardware $1,084,722 + Programming $337,437 (each individually
+  // rounded) summed to $1,422,159 beside a $1,422,158 Estimated Cost (independently rounded from
+  // 1422158.1999999993). Rounding phase1/phase2 ONCE here and having amtRow display their sum --
+  // instead of separately rounding grand -- makes the two rows agree by construction. Returns null
+  // when the tier has nothing priced (grand null), matching the existing "Available upon request"
+  // fallback path unchanged.
+  function _tierPartsRounded(key) {
+    var t = tt && tt[key];
+    if (!t || t.grand === null || t.grand === undefined || isNaN(t.grand)) return null;
+    var p1r = Math.round(t.phase1 || 0);
+    var p2r = Math.round(t.phase2 || 0);
+    return { p1r: p1r, p2r: p2r, totalR: p1r + p2r, noCatalog: !!t.noCatalog };
+  }
+
   var amtStyle =
     'padding:2px 10px 12px;font-size:18px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
     'border:1px solid var(--rpt-rule)';
@@ -17543,12 +17563,16 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           var recDisplay = budgetFmt ? budgetFmt + ' per Month' : 'Available upon request';
           return '<td style="' + amtStyle + '">' + recDisplay + '</td>';
         }
-        var g = tt && tt[c.key] ? _fmtUSD(tt[c.key].grand) : null;
+        // Estimated Cost = the SAME rounded Hardware + Programming parts phaseSplitRow prints
+        // below (_tierPartsRounded) — not an independent rounding of tt[c.key].grand (see that
+        // helper's comment; fix/tier-hardware-programming-rounding, 2026-07-30).
+        var parts = _tierPartsRounded(c.key);
+        var g = parts ? _fmtUSD(parts.totalR) : null;
         // noCatalog guard mirrors the interactive Cost Estimate tab's own footer
         // (app/pricing-estimator.js:6314-6317 / 6291-6293): when no pricing catalog is imported,
         // .grand is labor-only (Phase 2 only, hardware unpriced) — prefix "Labor: " so the total
         // is never shown as an unqualified full-scope dollar figure.
-        var noCat = tt && tt[c.key] && tt[c.key].noCatalog;
+        var noCat = parts && parts.noCatalog;
         var display = g ? (noCat ? 'Labor: ' + g : g) : 'Available upon request';
         return '<td style="' + amtStyle + '">' + display + '</td>';
       })
@@ -17557,8 +17581,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   // Phase split (sub-option costEstimatePhaseSplit) — folds Phase 1 (hardware/install) vs Phase 2
   // (programming/commissioning) dollar SUBTOTALS into the SAME tier table, 0 added pages. Values
-  // come straight from tt[tier].phase1 / .phase2 (already computed, no new math). Dollar subtotals
-  // only — no hourly rate, no markup mechanics.
+  // come from the SAME _tierPartsRounded(c.key) helper amtRow above reads (fix/tier-hardware-
+  // programming-rounding, 2026-07-30) — so these two parts always sum exactly to the Estimated
+  // Cost printed above them. Dollar subtotals only — no hourly rate, no markup mechanics.
   var phaseSplitRow = '';
   if (wantPhaseSplit) {
     var phaseCellStyle =
@@ -17585,13 +17610,14 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           // noCatalog guard mirrors the interactive Cost Estimate tab's own footer
           // (app/pricing-estimator.js:6301-6306 / 6263-6267): phase1 is unpriced (not legitimately
           // $0) whenever no pricing catalog is imported, so _fmtUSD(0) must never print here.
-          var noCat = tt && tt[c.key] && tt[c.key].noCatalog;
+          var parts = _tierPartsRounded(c.key);
+          var noCat = parts && parts.noCatalog;
           var p1 = noCat
             ? '<span style="color:var(--rpt-page-text);font-weight:400">CSV needed</span>'
-            : tt && tt[c.key]
-              ? _fmtUSD(tt[c.key].phase1) || '—'
+            : parts
+              ? _fmtUSD(parts.p1r) || '—'
               : '—';
-          var p2 = tt && tt[c.key] ? _fmtUSD(tt[c.key].phase2) : null;
+          var p2 = parts ? _fmtUSD(parts.p2r) : null;
           return (
             '<td style="' +
             phaseCellStyle +
