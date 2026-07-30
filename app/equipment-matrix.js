@@ -5988,7 +5988,78 @@ function buildAvgFooterRow(avgMap, defs, label, isBold, hasEditCol) {
   return html;
 }
 
+var _emNavListenersAttached = false;
+
+/* ── _emAttachNavDelegatedListeners ───────────────────────────────────────
+   fix/em-event-attr-delegation (2026-07-29). Same defect 3a2067e fixed in
+   the compliance-detail panel, found in the other 12 event-attribute call
+   sites in this file: the pagination bar (Prev/Next/rows-per-page, used by
+   emRenderTable, emRenderAuditTable and emRenderBuildingDetailView) and the
+   Summary view's building drill-down link (emRenderSummaryView) built
+   onclick="fn(...)"/onchange="fn(...)" attributes from
+   JSON.stringify(pid)/JSON.stringify(bldg) interpolated into a double-
+   quoted HTML attribute. JSON.stringify() ALWAYS wraps strings in literal
+   double quotes, so the emitted attribute (e.g.
+   onclick="emNextPage("proj1")") terminated at the FIRST embedded quote per
+   the HTML5 tokenizer for EVERY pid/building value -- not just ones with
+   special characters -- leaving the syntactically invalid handler fragment
+   "emNextPage(", which fails to compile and resolves to a permanently null
+   handler. Confirmed by real-click reproduction: Next/Prev/Back did
+   nothing and getAttribute('onclick') read back truncated at the embedded
+   quote.
+
+   Fixed the same way as 3a2067e: every pagination control and the building
+   drill-down link now carries emHtmlEsc()'d data-* attributes (correct HTML-
+   attribute escaping, not JS-string-in-HTML-attribute encoding) instead of
+   attribute-embedded JS, plus a single delegated listener attached once to
+   `document` (guarded by _emNavListenersAttached) that reads
+   event.target.closest(...) + .dataset and calls the same real functions
+   the old onclick/onchange attributes called. Delegation is required
+   because emRenderTable/emRenderAuditTable/emRenderSummaryView/
+   emRenderBuildingDetailView all throw away and rebuild '#em-table-wrap'
+   (and the sibling '.em-pagination' bar) on every render, so per-node
+   listeners would need re-attaching every render anyway -- a document-level
+   delegate survives rebuilds for free and only needs to attach once per
+   page load.                                                              */
+function _emAttachNavDelegatedListeners() {
+  if (_emNavListenersAttached) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  _emNavListenersAttached = true;
+
+  document.addEventListener('click', function (e) {
+    var prevEl = e.target && e.target.closest ? e.target.closest('[data-em-prev-page]') : null;
+    if (prevEl) {
+      emPrevPage(prevEl.dataset.pid);
+      return;
+    }
+    var nextEl = e.target && e.target.closest ? e.target.closest('[data-em-next-page]') : null;
+    if (nextEl) {
+      emNextPage(nextEl.dataset.pid);
+      return;
+    }
+    var exitEl = e.target && e.target.closest ? e.target.closest('[data-em-exit-drill]') : null;
+    if (exitEl) {
+      emExitDrillBuilding(exitEl.dataset.pid);
+      return;
+    }
+    var drillEl = e.target && e.target.closest ? e.target.closest('[data-em-drill-building]') : null;
+    if (drillEl) {
+      e.preventDefault();
+      emDrillBuilding(drillEl.dataset.pid, drillEl.dataset.building);
+      return;
+    }
+  });
+
+  document.addEventListener('change', function (e) {
+    var sizeEl = e.target && e.target.closest ? e.target.closest('[data-em-page-size]') : null;
+    if (sizeEl) {
+      emSetPageSize(sizeEl.dataset.pid, sizeEl.value);
+    }
+  });
+}
+
 function emRenderTable(data, filters) {
+  _emAttachNavDelegatedListeners();
   // Route to audit renderer when in audit view mode
   if (_emViewMode === 'audit') {
     emRenderAuditTable(data, filters);
@@ -6202,12 +6273,15 @@ function emRenderTable(data, filters) {
 
   // ── Pagination bar ──
   var pid = window._emActivePid || '';
+  var safePidAttr = emHtmlEsc(pid);
   var pageSizeOptions = [50, 100, 250, 0];
   var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
+  // fix/em-event-attr-delegation: data-* attrs + delegated listener (see
+  // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onchange.
   var sizeSelectHtml =
-    '<select onchange="emSetPageSize(' +
-    JSON.stringify(pid) +
-    ', this.value)" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
+    '<select data-em-page-size="1" data-pid="' +
+    safePidAttr +
+    '" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
   for (var si = 0; si < pageSizeOptions.length; si++) {
     var opt = pageSizeOptions[si];
     var lbl = pageSizeLabels[opt];
@@ -6224,19 +6298,21 @@ function emRenderTable(data, filters) {
       ? 'All rows visible (' + filtered.length + ' rows)'
       : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
 
+  // fix/em-event-attr-delegation: data-* attrs + delegated listener (see
+  // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onclick.
   var paginationHtml =
     '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
-    '<button onclick="emPrevPage(' +
-    JSON.stringify(pid) +
-    ')" ' +
+    '<button data-em-prev-page="1" data-pid="' +
+    safePidAttr +
+    '" ' +
     (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
     'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
     '<span style="flex:1;text-align:center">' +
     pageLabel +
     '</span>' +
-    '<button onclick="emNextPage(' +
-    JSON.stringify(pid) +
-    ')" ' +
+    '<button data-em-next-page="1" data-pid="' +
+    safePidAttr +
+    '" ' +
     (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
     'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
     '<span style="color:var(--text3)">Rows per page:</span>' +
@@ -6817,6 +6893,7 @@ function emComputeBuildingZoneStats(rows, seedRows) {
    Otherwise renders a 5-column table: Building | Zone Air Temp |
    Zone Htg Setpoint | Zone Clg Setpoint | Zones vs Setpoints.           */
 function emRenderSummaryView(data, filters) {
+  _emAttachNavDelegatedListeners();
   emSyncViewModeControls();
 
   var wrap = document.getElementById('em-table-wrap');
@@ -7078,13 +7155,15 @@ function emRenderSummaryView(data, filters) {
     for (var bi = 0; bi < bldgNames.length; bi++) {
       var bldg = bldgNames[bi];
       var bs = zoneStats[bldg];
-      // Building name as hyperlink — use JSON.stringify to safely handle special chars
+      // Building name as hyperlink — fix/em-event-attr-delegation: data-* attrs
+      // (emHtmlEsc'd) + delegated listener (see _emAttachNavDelegatedListeners)
+      // instead of JSON.stringify()-into-onclick, which broke for every value.
       var bldgLink =
-        '<a href="#" onclick="emDrillBuilding(' +
-        JSON.stringify(pid) +
-        ',' +
-        JSON.stringify(bldg) +
-        ');return false;" ' +
+        '<a href="#" data-em-drill-building="1" data-pid="' +
+        emHtmlEsc(pid) +
+        '" data-building="' +
+        emHtmlEsc(bldg) +
+        '" ' +
         'style="color:var(--accent);cursor:pointer;font-weight:600;text-decoration:none">' +
         emHtmlEsc(bldg) +
         '</a>';
@@ -7245,6 +7324,7 @@ function emRenderSummaryView(data, filters) {
    zone air temp, setpoints, and status color coding. Includes a Back button,
    a stats bar, a detail table, footer avg rows, and pagination.           */
 function emRenderBuildingDetailView(data, filters, buildingName) {
+  _emAttachNavDelegatedListeners();
   var wrap = document.getElementById('em-table-wrap');
   if (!wrap) return;
 
@@ -7305,11 +7385,13 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   }
 
   // ── Back button + header ──
+  // fix/em-event-attr-delegation: data-* attr + delegated listener (see
+  // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onclick.
   var html = '<div style="padding:24px;overflow:auto;height:100%;box-sizing:border-box">';
   html +=
-    '<button onclick="emExitDrillBuilding(' +
-    JSON.stringify(pid) +
-    ')" ' +
+    '<button data-em-exit-drill="1" data-pid="' +
+    emHtmlEsc(pid) +
+    '" ' +
     'style="background:var(--s2);border:1px solid var(--border);color:var(--text);' +
     'padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;margin-bottom:16px">&#8592; Back to Summary</button>';
   html +=
@@ -7512,10 +7594,12 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
     var pageLabel = 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + bldgRows.length + ' total zones)';
     var pageSizeOptions = [50, 100, 250, 0];
     var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
+    // fix/em-event-attr-delegation: data-* attrs + delegated listener (see
+    // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onchange/onclick.
     var sizeSelectHtml =
-      '<select onchange="emSetPageSize(' +
-      JSON.stringify(pid) +
-      ', this.value)" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
+      '<select data-em-page-size="1" data-pid="' +
+      emHtmlEsc(pid) +
+      '" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
     for (var si = 0; si < pageSizeOptions.length; si++) {
       var opt = pageSizeOptions[si];
       sizeSelectHtml +=
@@ -7531,17 +7615,17 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
 
     html +=
       '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;font-size:11px;color:var(--text2);margin-top:8px">' +
-      '<button onclick="emPrevPage(' +
-      JSON.stringify(pid) +
-      ')" ' +
+      '<button data-em-prev-page="1" data-pid="' +
+      emHtmlEsc(pid) +
+      '" ' +
       (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
       'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
       '<span style="flex:1;text-align:center">' +
       pageLabel +
       '</span>' +
-      '<button onclick="emNextPage(' +
-      JSON.stringify(pid) +
-      ')" ' +
+      '<button data-em-next-page="1" data-pid="' +
+      emHtmlEsc(pid) +
+      '" ' +
       (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
       'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
       '<span style="color:var(--text3)">Rows per page:</span>' +
@@ -7560,6 +7644,7 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
    Pagination, sorting, and sticky frozen columns all work the same as raw view.
    Edit mode is suppressed in audit view (compliance cells are computed, not edited). */
 function emRenderAuditTable(data, filters) {
+  _emAttachNavDelegatedListeners();
   emSyncViewModeControls();
 
   var wrap = document.getElementById('em-table-wrap');
@@ -7776,12 +7861,15 @@ function emRenderAuditTable(data, filters) {
 
   // ── Pagination bar ──
   var pid = window._emActivePid || '';
+  var safePidAttr = emHtmlEsc(pid);
   var pageSizeOptions = [50, 100, 250, 0];
   var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
+  // fix/em-event-attr-delegation: data-* attrs + delegated listener (see
+  // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onchange/onclick.
   var sizeSelectHtml =
-    '<select onchange="emSetPageSize(' +
-    JSON.stringify(pid) +
-    ', this.value)" ' +
+    '<select data-em-page-size="1" data-pid="' +
+    safePidAttr +
+    '" ' +
     'style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
   for (var si = 0; si < pageSizeOptions.length; si++) {
     var opt = pageSizeOptions[si];
@@ -7801,17 +7889,17 @@ function emRenderAuditTable(data, filters) {
 
   var paginationHtml =
     '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
-    '<button onclick="emPrevPage(' +
-    JSON.stringify(pid) +
-    ')" ' +
+    '<button data-em-prev-page="1" data-pid="' +
+    safePidAttr +
+    '" ' +
     (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
     'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
     '<span style="flex:1;text-align:center">' +
     pageLabel +
     '</span>' +
-    '<button onclick="emNextPage(' +
-    JSON.stringify(pid) +
-    ')" ' +
+    '<button data-em-next-page="1" data-pid="' +
+    safePidAttr +
+    '" ' +
     (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
     'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
     '<span style="color:var(--text3)">Rows per page:</span>' +
