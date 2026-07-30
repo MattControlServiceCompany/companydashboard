@@ -15976,6 +15976,38 @@ function _rptA36PhaseSeqCategoryNames(rows) {
   }
   return names;
 }
+
+/**
+ * _rptA36PhaseSeqCategoryDetails(rows) — SAME distinct-category derivation as
+ * _rptA36PhaseSeqCategoryNames (same filter, same EM_SEQUENCE_DEFS order, same hwp_/chwp_
+ * disambiguation) but returns {label, plain} pairs instead of bare label strings, pulling the
+ * plain-English one-line description from `ASHRAE36_SEQUENCE_PLAIN` (existing, vetted,
+ * jargon-free copy already used by the Audit's ASHRAE 36 Sequences glossary page — see that
+ * object's own header comment). Added 2026-07-29 to give the term's Included Improvements cell
+ * real per-category detail (what each sequence actually does) instead of a bare name list, per
+ * Matt's coordinator-relayed direction: "expanding what each entails is real content, not
+ * padding." `plain` is '' (never omitted/undefined) if a key has no entry in
+ * ASHRAE36_SEQUENCE_PLAIN, so callers can render the label alone rather than crash.
+ */
+function _rptA36PhaseSeqCategoryDetails(rows) {
+  rows = rows || [];
+  var seen = {};
+  rows.forEach(function (r) {
+    if (r.phase === 2 && r.seqKey) seen[r.seqKey] = true;
+  });
+  var details = [];
+  if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+    EM_SEQUENCE_DEFS.forEach(function (sd) {
+      if (!seen[sd.key]) return;
+      var label = sd.label;
+      if (sd.key.indexOf('hwp_') === 0) label = 'Hot Water ' + label;
+      else if (sd.key.indexOf('chwp_') === 0) label = 'Chilled Water ' + label;
+      var plain = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[sd.key]) || '';
+      details.push({ label: label, plain: plain });
+    });
+  }
+  return details;
+}
 // SEQ_CAT_DISPLAY_CAP: max category names shown per phase cell before truncating to a truthful
 // "and N more" (never silent) — dense 8.5x11 print constraint, not a data limit. Real JOCO data
 // (2026-07-29, projId 1779664753271) tops out at 6 categories in Phase 1, well under this cap —
@@ -16182,23 +16214,41 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
   var catListStyle =
     'margin-top:6px;padding-top:5px;border-top:1px solid var(--rpt-rule);font-size:8.5px;' +
     'color:var(--rpt-page-text);text-align:left;line-height:1.4';
+  var catListUlStyle = 'margin:3px 0 0;padding-left:14px;text-align:left';
 
   // Single merged content cell (colspan across every month column) instead of one cell per phase —
   // the underlying data has no finer-than-term month assignment for individual rows (see the
   // termRows comment above), so this shows real content once rather than fabricating a false
   // per-month split or repeating identical content in every month column.
-  var termCatNames = _rptA36PhaseSeqCategoryNames(termRows);
+  // Per-category detail (2026-07-29, page-density fix): the compact comma list was replaced with
+  // one line PER sequence category, each carrying its real plain-English description
+  // (_rptA36PhaseSeqCategoryDetails -> ASHRAE36_SEQUENCE_PLAIN, existing vetted copy, not new
+  // padding text) — real content that fills the page instead of leaving it half-blank, per Matt's
+  // coordinator-relayed direction ("expanding what each entails is real content, not padding").
+  // No boxes/cards/rules added — a plain <ul> list, same text-only convention as the rest of this
+  // table.
+  var termCatDetails = _rptA36PhaseSeqCategoryDetails(termRows);
   var termCatHTML = '';
-  if (termCatNames.length) {
-    var termShown = termCatNames.slice(0, SEQ_CAT_DISPLAY_CAP);
-    var termMoreCount = termCatNames.length - termShown.length;
-    var termListText = termShown.map(esc).join(', ') + (termMoreCount > 0 ? ', and ' + termMoreCount + ' more' : '');
+  if (termCatDetails.length) {
+    var termShownDetails = termCatDetails.slice(0, SEQ_CAT_DISPLAY_CAP);
+    var termMoreCount = termCatDetails.length - termShownDetails.length;
+    var termListItems = termShownDetails
+      .map(function (c) {
+        return (
+          '<li><span style="font-weight:700">' + esc(c.label) + (c.plain ? '</span> — ' + esc(c.plain) : '</span>')
+        );
+      })
+      .join('');
     termCatHTML =
       '<div style="' +
       catListStyle +
-      '"><span style="font-weight:700">Sequences programmed: </span>' +
-      termListText +
-      '</div>';
+      '"><span style="font-weight:700">Sequences programmed this term:</span>' +
+      '<ul style="' +
+      catListUlStyle +
+      '">' +
+      termListItems +
+      (termMoreCount > 0 ? '<li>and ' + termMoreCount + ' more</li>' : '') +
+      '</ul></div>';
   }
 
   var improvementsRow =
@@ -16294,7 +16344,23 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
     '</tbody>' +
     '</table>';
 
-  return intro + table;
+  // standaloneFutureWorkHTML: DEFAULT placement (2026-07-29, page-density fix, coordinator
+  // direction — "bring Future Work onto that page as the default rather than a separate page...
+  // fills the space with real content instead of filler"). Suppressed when opts.futureWorkInline
+  // is true, since that mode already folded the identical content into futureRowHTML above (never
+  // rendered twice). Previously defaulted to the Vision page (_rptA36VisionInnerHTML) — moved here
+  // because the term and Future Work belong on the same page and the Phase table page had
+  // significant unused space (~514px clearance measured pre-move) while the Vision page did not
+  // need it. Same heading/body style literals rptPage 2's own `intro` block above uses, for visual
+  // consistency within this page.
+  var standaloneFutureWorkHTML = '';
+  if (!(opts && opts.futureWorkInline === true)) {
+    var _fwHead = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 4px';
+    var _fwBody = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
+    standaloneFutureWorkHTML = _rptA36FutureWorkInnerHTML(futurePhases, _fwHead, _fwBody);
+  }
+
+  return intro + table + standaloneFutureWorkHTML;
 }
 
 function rptPageASHRAE36ProposalPhaseTable(n, d, opts) {
@@ -16354,11 +16420,12 @@ function _rptA36VisionInnerHTML(d, opts) {
   // 2026-07-29 (months + Future Work rebuild): SAME single derivation _rptA36PhaseTableInnerHTML
   // uses (see PRICING_PROPOSAL_TERM_PHASE_COUNT / _pricingProposalTermAndFuture header comments) —
   // this site and the Phase table page can never disagree about which phase is the term vs. Future
-  // Work.
+  // Work. Only termPhases is needed here (the term-range sentence below); Future Work itself
+  // no longer renders on this page — see the page-density fix note above futureWorkBlock's former
+  // call site (moved to _rptA36PhaseTableInnerHTML, same page as the term table).
   var td = _pricingProposalTermAndFuture(d.project.id);
   var tl = td.tl;
   var termPhases = td.termPhases;
-  var futurePhases = td.futurePhases;
   var monthLabels = _pricingProposalTermMonthLabels(termPhases);
 
   var implTable = '';
@@ -16398,13 +16465,11 @@ function _rptA36VisionInnerHTML(d, opts) {
       'priced for this project.</div>';
   }
 
-  // futureWorkBlock: the DEFAULT standalone Future Work section (opts.futureWorkInline !== true —
-  // see _rptA36PhaseTableInnerHTML's futureRowHTML for the "fold into the table" alternative,
-  // which renders this same content there instead, so it is never shown twice).
-  var futureWorkBlock = '';
-  if (!opts || opts.futureWorkInline !== true) {
-    futureWorkBlock = _rptA36FutureWorkInnerHTML(futurePhases, HEAD, BODY);
-  }
+  // Future Work MOVED (2026-07-29, page-density fix, coordinator direction): now renders on the
+  // Phase table page (_rptA36PhaseTableInnerHTML's standaloneFutureWorkHTML / futureRowHTML),
+  // directly under/inside the term table it belongs with, instead of here. `opts` is accepted for
+  // call-site compatibility (generateASHRAE36ProposalHTML passes the same phaseOpts to both pages)
+  // but this page no longer reads it.
 
   var longTermVision =
     '<div style="' +
@@ -16454,7 +16519,7 @@ function _rptA36VisionInnerHTML(d, opts) {
     'patterns, utility rates, weather conditions, operational practices, and implementation quality.' +
     '</div>';
 
-  return implTable + futureWorkBlock + longTermVision + disclaimer;
+  return implTable + longTermVision + disclaimer;
 }
 
 /**
