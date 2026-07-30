@@ -7569,7 +7569,50 @@ async function exportReportToWord() {
   try {
     const reportStylesEl = document.getElementById('report-styles');
     const rawCss = reportStylesEl ? reportStylesEl.textContent : '';
-    const resolveVars = _buildReportCssVarResolver(rawCss);
+    // Word position:static fix (2026-07-30, fix/word-export-indentation — Matt: "I don't see
+    // the indentations or spacing I asked for", backlog 4c946ba2). `.rpt-int-hdr`/
+    // `.rpt-small-hdr`/`.rpt-body` are `position:absolute` (`.rpt-int-hdr` also `display:flex`)
+    // in the live/screen-preview CSS (feature/report-layer-isolation-and-theme, 2026-07-28).
+    // Measured via a real Word COM round-trip (SaveAs2 -> ExportAsFixedFormat -> PyMuPDF): the
+    // `margin-left:0.5in` that `_insetChildren` below already writes onto every `.rpt-int-hdr`/
+    // `.rpt-body` direct child renders at 0pt, not 36pt, in Word — Word's HTML importer does not
+    // apply a child's margin inside a `position:absolute` parent. The ONLY place this already
+    // gets converted back to `position:static` for correct flow behavior is the `@media print`
+    // block (`#report-print-overrides` below, energy-department.html) — written for the
+    // browser's native print-to-PDF path and never previously read by this function (it only
+    // ever read `#report-styles`, a separate, earlier-closing `<style>` tag). Rather than
+    // hand-retype a second copy of the same override — exactly the shape of divergent-copy bug
+    // that produced this defect — pull the two rule blocks this needs directly out of that
+    // canonical print stylesheet text and fold them into the CSS handed to Word, so any future
+    // edit to the print override is automatically picked up here too. `!important` is stripped:
+    // nothing else in the exported doc conflicts with these two selectors, so it isn't needed.
+    const printOverridesEl = document.getElementById('report-print-overrides');
+    const printCssText = printOverridesEl ? printOverridesEl.textContent : '';
+    const _grabRuleBlock = (cssText, startMarker) => {
+      const start = cssText.indexOf(startMarker);
+      if (start === -1) return '';
+      const braceOpen = cssText.indexOf('{', start);
+      const braceClose = braceOpen === -1 ? -1 : cssText.indexOf('}', braceOpen);
+      if (braceOpen === -1 || braceClose === -1) return '';
+      return cssText.slice(start, braceClose + 1).replace(/!important/g, '');
+    };
+    // `.rpt-small-hdr` is deliberately EXCLUDED from this extraction even though the print
+    // stylesheet groups it with `.rpt-int-hdr` in one comma-selector rule. Measured (Word COM
+    // round-trip, Agreement page 1): including it shifted the whole page's content up by ~44pt —
+    // `.rpt-small-hdr` holds only the inset letterhead `<img>` (no text needing an inset at all),
+    // and switching it to `position:static; height:auto` let Word's flow-layout size it from the
+    // image's own rendered height instead of the fixed `--rpt-small-hdr-h` (195px) reservation
+    // `.rpt-body.rpt-body-small-hdr`'s `top` offset assumes, desyncing the two. The letterhead
+    // image sizing was just fixed in d493b8d (this branch's parent commit) and is out of scope
+    // here — stripping `.rpt-small-hdr` from the shared selector text (keeping the identical
+    // `position:static/height:auto` declaration body for `.rpt-int-hdr` alone, which DOES have
+    // text content needing the inset) avoids touching it.
+    const printIndentCss =
+      _grabRuleBlock(printCssText, '.rpt-int-hdr,').replace(/,\s*\.rpt-small-hdr/, '') +
+      ' ' +
+      _grabRuleBlock(printCssText, '.rpt-body {');
+    const rawCssWithIndentFix = rawCss + ' ' + printIndentCss;
+    const resolveVars = _buildReportCssVarResolver(rawCssWithIndentFix);
     // Word text-inset fix (2026-07-26, measured via rendered PDF: body text ran edge-to-edge
     // to both page edges in Word even though the live/PDF path's `padding: 12px 48px 30px`
     // (.rpt-body) / `padding:4px 48px 2px` (report-page-function inline wrappers) etc. all
@@ -7586,7 +7629,67 @@ async function exportReportToWord() {
     // stay full-bleed: @page margin remains 0in and this only touches padding on text
     // containers, never image sizing.
     const _fixPaddingUnits = (str) => str.replace(/(padding\s*:\s*[^;"']*?)48px/g, '$1' + '0.5in');
-    const css = _fixPaddingUnits(resolveVars(rawCss));
+    // Word class-vs-inline margin-shorthand fix (2026-07-30, fix/word-export-indentation —
+    // newly measured this session, via a real Word COM round-trip: converting `.rpt-int-hdr`/
+    // `.rpt-body` back to `position:static` above was NOT enough on its own. Several report
+    // sections (e.g. `.rpt-a36-callout`, the ASHRAE 36 Executive Summary's DCV/top-gap prose
+    // blocks) nest their real text one level BELOW the `.rpt-body` direct child `_insetChildren`
+    // touches, and rely on that direct child's own margin to carry the inset down through normal
+    // block flow. `_insetChildren` correctly writes pure-longhand `margin-left:0.5in` INLINE on
+    // that direct child (e.g. `<div class="rpt-a36-callout" style="margin-top:0;margin-bottom:
+    // 14px;margin-left:0.5in;margin-right:0.5in;">`) — confirmed present, verbatim, in the
+    // exported .doc. But `.rpt-a36-callout` ALSO has its own CLASS rule in `#report-styles`
+    // (`margin: 6px 0;`, SHORTHAND) — and measured via PyMuPDF span position on the Word-COM
+    // PDF, the class shorthand wins over the element's own correct inline longhand (x0 rendered
+    // at 0pt, not 36pt). This generalizes the already-documented "Word drops longhand margin
+    // entirely if a shorthand margin: appears in the SAME style attribute" fact — here the
+    // conflicting shorthand lives in a separate CSS class rule, not the same attribute, and it
+    // still wins. Fix: expand every remaining CLASS-level `margin: <shorthand>` declaration in
+    // the exported stylesheet into four longhand `margin-top/right/bottom/left` declarations
+    // (same 1/2/3/4-value parsing `_insetChildren` already uses below) — once no shorthand
+    // margin declaration exists anywhere for an element, Word applies normal CSS specificity and
+    // the correct per-element inline longhand wins, as documented for the plain "no shorthand
+    // anywhere" case elsewhere in this function. Scoped to `margin:` only (the `-left`/`-right`/
+    // `-top`/`-bottom` longhand properties are untouched, and `!important` is preserved).
+    const _expandMarginShorthand = (str) =>
+      str.replace(/margin\s*:\s*([^;{}]+);/g, function (whole, rawVal) {
+        var hasImportant = /!important/.test(rawVal);
+        var val = rawVal.replace(/!important/g, '').trim();
+        var parts = val.split(/\s+/);
+        var top, right, bottom, left;
+        if (parts.length === 1) {
+          top = right = bottom = left = parts[0];
+        } else if (parts.length === 2) {
+          top = bottom = parts[0];
+          right = left = parts[1];
+        } else if (parts.length === 3) {
+          top = parts[0];
+          right = left = parts[1];
+          bottom = parts[2];
+        } else {
+          top = parts[0];
+          right = parts[1];
+          bottom = parts[2];
+          left = parts[3];
+        }
+        var bang = hasImportant ? ' !important' : '';
+        return (
+          'margin-top:' +
+          top +
+          bang +
+          ';margin-right:' +
+          right +
+          bang +
+          ';margin-bottom:' +
+          bottom +
+          bang +
+          ';margin-left:' +
+          left +
+          bang +
+          ';'
+        );
+      });
+    const css = _expandMarginShorthand(_fixPaddingUnits(resolveVars(rawCssWithIndentFix)));
 
     // Real Word headers/footers (2026-07-26 rewrite — see exportReportToWord()'s doc comment
     // below for the full root-cause history this replaces). The old approach baked
@@ -7707,9 +7810,42 @@ async function exportReportToWord() {
       // wrapper itself.
       const _isBareInsetWrapper = (el) =>
         el.tagName === 'DIV' && !el.className && /48px/.test(el.getAttribute('style') || '');
+      // Two-level wrapper fix, part 2 (2026-07-30, fix/word-export-indentation — Matt: "I don't
+      // see the indentations or spacing I asked for", backlog 4c946ba2). Measured via a real
+      // Word COM round-trip and confirmed directly in the unzipped `word/document.xml` (not just
+      // the rendered PDF): several report sections — e.g. `rptPageASHRAE36Executive`'s DCV/
+      // top-gap `.rpt-a36-callout` prose blocks — nest their real text TWO levels below
+      // `.rpt-body` (`.rpt-body > .rpt-a36-callout > div[text]`), not one. `.rpt-a36-callout` is
+      // NOT a "bare" wrapper (`_isBareInsetWrapper` requires `!el.className`, and this element
+      // has a class), so the recursion above previously skipped it and instead inset the wrapper
+      // ITSELF — giving `.rpt-a36-callout` a correct inline `margin-left:0.5in`. That value never
+      // reaches its own children: unzipping `document.xml` for the resulting paragraph showed
+      // `<w:pPr>` with NO `<w:ind>` element at all (not merely a wrong one) — Word's HTML importer
+      // computes a paragraph's indent from the CSS of the element that directly generates that
+      // paragraph, never from an ancestor wrapping `<div>`'s margin, confirming this is the SAME
+      // underlying limitation `_isBareInsetWrapper` was already written for (2026-07-26, "Word
+      // does not apply a div's padding/margin to its children"), just one level deeper and behind
+      // a class name instead of a bare/48px-styled div. Fix: detect ANY div — classed or not —
+      // that is a pure grouping wrapper (every direct child is itself a block element, and it has
+      // no direct text of its own) and recurse into it exactly like a bare wrapper, instead of
+      // insetting the wrapper itself. The wrapper's own vertical margin (top/bottom — real content
+      // spacing, e.g. `.rpt-a36-callout`'s `margin-bottom:14px`) is left untouched; only the
+      // decision of WHERE the 0.5in left/right inset actually lands changes.
+      const _hasDirectText = (el) =>
+        Array.from(el.childNodes).some(function (n) {
+          return n.nodeType === 3 && n.textContent.trim().length > 0;
+        });
+      const _BLOCK_TAGS = ['DIV', 'TABLE', 'UL', 'OL', 'P'];
+      const _isPureBlockWrapper = (el) =>
+        el.tagName === 'DIV' &&
+        el.children.length > 0 &&
+        !_hasDirectText(el) &&
+        Array.from(el.children).every(function (c) {
+          return _BLOCK_TAGS.indexOf(c.tagName) !== -1;
+        });
       const _insetChildren = (container) => {
         Array.from(container.children).forEach((child) => {
-          if (_isBareInsetWrapper(child)) {
+          if (_isBareInsetWrapper(child) || _isPureBlockWrapper(child)) {
             _insetChildren(child);
             return;
           }
@@ -7815,11 +7951,44 @@ async function exportReportToWord() {
       // 10.0pt (matching wordFontCss's own .MsoChpDefault/p.MsoNormal docDefaults value below) is
       // the safe fallback. (2026-07-28: also switched the per-`<li>` font-family override from
       // Calibri to Arial to match the CSC Letterhead.docx template — see wordFontCss below.)
+      // List indentation fix (2026-07-30, fix/word-export-indentation), SCOPED TO `<ol>` ONLY —
+      // measured via the same Word COM round-trip that `<ul>` (bulleted) lists do NOT have this
+      // problem: e.g. the Proposal's "future opportunities" bullet list and the Agreement's own
+      // Section 1.1 services bullets both already rendered at the correct 36pt via
+      // `_insetChildren`'s existing wrapper-level `margin-left:0.5in` — confirmed unaffected in a
+      // controlled A/B (measuring the exact same bullet list before vs after this change: 36pt
+      // both times). The ONLY defect measured is on `<ol>` (numbered lists — the single `<ol>`
+      // in this codebase, the EMS Agreement's building list): Word's HTML importer converts an
+      // `<ol>` into a native NUMBERED list where each `<li>` becomes its own paragraph
+      // (`<w:p>` + `<w:numPr>`) using ONE of Word's own built-in default numbering definitions,
+      // apparently seeded from the source `padding-left` (interpreted unit-blind as pt, not px —
+      // the same behavior `_fixPaddingUnits` above works around for padding generally) — but the
+      // `<ol>` wrapper's own `margin-left` has no OOXML home to attach to and is dropped
+      // (measured x0 18pt, the list's own `padding-left` value, not the intended 36pt). An
+      // initial attempt applying this SAME per-`<li>` fix to `<ul>` too caused a real regression
+      // (36pt -> 56pt on an already-correct bullet list) — do not widen this back to `ul`
+      // without a fresh measurement proving it is still needed. Fix: when the `<ol>`'s own
+      // margin-left equals the standard page inset (`WORD_TEXT_INSET`, i.e. this list WAS a
+      // direct `.rpt-body`/`.rpt-int-hdr` child `_insetChildren` touched), copy the REMAINING
+      // delta — target inset minus the `padding-left`-derived baseline Word already applies —
+      // onto every `<li>` (a per-paragraph `margin-left` DOES have a real OOXML home, `<w:ind>`,
+      // and survives), so the two combine to the intended 36pt total (measured after fix: 36pt,
+      // matching the live browser/PDF reference render of 37.8pt within marker-glyph rounding).
       const _listFontSizeRe = /font-size\s*:\s*([^;]+)/;
+      const _listMarginLeftRe = /margin-left\s*:\s*([^;]+)/;
+      const _listPaddingLeftRe = /padding-left\s*:\s*([\d.]+)px/;
+      const WORD_TEXT_INSET_PT = 36; // matches WORD_TEXT_INSET ('0.5in') in points
       clone.querySelectorAll('ul, ol').forEach((listEl) => {
         const _listStyle = listEl.getAttribute('style') || '';
         const _sizeMatch = _listStyle.match(_listFontSizeRe);
         const _liFontSize = _sizeMatch ? _sizeMatch[1].trim() : '10.0pt';
+        const _marginMatch = _listStyle.match(_listMarginLeftRe);
+        const _paddingMatch = _listStyle.match(_listPaddingLeftRe);
+        const _existingBaselinePt = _paddingMatch ? parseFloat(_paddingMatch[1]) : 0;
+        const _liMarginLeft =
+          listEl.tagName === 'OL' && _marginMatch && _marginMatch[1].trim() === WORD_TEXT_INSET
+            ? Math.max(0, WORD_TEXT_INSET_PT - _existingBaselinePt) + 'pt'
+            : null;
         Array.from(listEl.children).forEach((li) => {
           if (li.tagName !== 'LI') return;
           const _existingLiStyle = li.getAttribute('style') || '';
@@ -7830,7 +7999,8 @@ async function exportReportToWord() {
               'font-family:Arial, sans-serif;mso-ascii-font-family:Arial;mso-hansi-font-family:Arial;' +
               'mso-bidi-font-family:Arial;font-size:' +
               _liFontSize +
-              ';',
+              ';' +
+              (_liMarginLeft ? 'margin-left:' + _liMarginLeft + ';' : ''),
           );
         });
       });

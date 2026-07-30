@@ -2992,8 +2992,16 @@
       rewrite. This covers every report type #reportPages renders (Audit Report, Service
       Proposal, quarterly/annual Savings Report) since they all share the same .rpt-page/
       .rpt-pl/.report-pages markup produced by rptPage() in app/report-engine.js.
+
+      2026-07-30 (fix/word-export-indentation, backlog 4c946ba2): this block's id is also read
+      directly by exportReportToWord() in app/report-engine.js, which extracts the
+      `.rpt-int-hdr`/`.rpt-small-hdr`/`.rpt-body` `position:static` rules below (they undo the
+      2026-07-28 layer-isolation `position:absolute` furniture, which was measured to silently
+      block Word from applying any child element's margin-left indentation). Word export shares
+      this canonical block instead of a hand-authored second copy — do not fork these two rules,
+      keep them here and let exportReportToWord() keep reading them from this one place.
     -->
-    <style>
+    <style id="report-print-overrides">
       @media print {
         /* html/body are height:100%/overflow:hidden by default (clips every page to one
            viewport height — needed for the app's own internal-scroll UI shell). That same
