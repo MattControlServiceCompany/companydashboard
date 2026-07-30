@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.30.728',
+    date: '2026-07-30',
+    title: 'Service Proposal now shows the full program, not just the first three phases',
+    items: [
+      {
+        type: 'feature',
+        text: 'On the Service Proposal, the Recommended Program section now shows the current five-month term (Aug-Dec 2026) instead of three fixed phases.',
+      },
+      {
+        type: 'feature',
+        text: 'A new Future Work section on the Service Proposal lists every remaining improvement category so nothing planned for later goes unnamed. Future Work shows no dollar amounts.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.29.727',
     date: '2026-07-29',
     title: 'Equipment Matrix paging and building drill-down are fixed',
