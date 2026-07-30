@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.30.729',
+    date: '2026-07-30',
+    title: 'Cost Estimate tier amounts now add up exactly',
+    items: [
+      {
+        type: 'fix',
+        text: "On the Service Proposal's Cost Estimate tiers, the Hardware and Programming amounts now add up exactly to the Estimated Cost shown beside them; previously each was rounded on its own and the parts could total one dollar more than the estimate.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.30.728',
     date: '2026-07-30',
     title: 'Service Proposal now shows the full program, not just the first three phases',
