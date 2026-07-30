@@ -16156,13 +16156,18 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
   // (_rptA36RecommendedTimelineHTML) still calls it, so its data-driven per-project wording is
   // unaffected by this rewrite.
   //
-  // KNOWN CONFLICT (flagged, not silently resolved): Matt's Phase 1 copy below says sensor
-  // installation in high-value locations can begin in Phase 1 "if we have money to spare." The
-  // shipped ranking algorithm (PRICING_NO_HW_SCORE_BONUS, pricing-estimator.js) currently scores
-  // 100% programming / zero hardware into Phases 1-2 by design — Phase 1 never actually contains
-  // priced hardware under today's algorithm, regardless of budget headroom. This copy is written
-  // exactly as Matt described it (literal compliance); the algorithm was NOT changed to match —
-  // that is a separate true-ROI ranking workstream. See dashboardlogic.md 2026-07-29 entry.
+  // 2026-07-30 (contradiction fix, copy-only): the "if we have money to spare" framing above was
+  // written to match Matt's literal 07-29 request, but it implies Phase 1 hardware is a budget
+  // contingency. It never is: the shipped ranking (PRICING_NO_HW_SCORE_BONUS, pricing-estimator.js)
+  // biases no-hardware units ahead of hardware units in the sort, so Phase 1 (the whole term —
+  // PRICING_PROPOSAL_TERM_PHASE_COUNT=1) is 100% programming on equipment that already has the
+  // sensors it needs, by construction, regardless of budget headroom. Confirmed against real JOCO
+  // data (project 1779664753271) at render time: 0 of the term phase's rows carry a hardware
+  // install; every row is a programming-only sequence. Rewritten below to say what actually
+  // happens — sequencing driven by existing instrumentation, hardware following once programming
+  // is done — instead of describing a contingency the algorithm never produces. The ranking itself
+  // was NOT changed (that remains a separate true-ROI workstream, per Matt's explicit instruction
+  // not to move client dollars via this fix). See dashboardlogic.md 2026-07-30 entry.
   // PHASE_IMPROVEMENTS[0]/EXPECTED_RESULTS[0] describe the current term (rendered below, under the
   // real month headers). Index 1/2 are no longer rendered as separate phase columns (the table now
   // shows only the term — everything past it is Future Work), but their content lives on,
@@ -16170,8 +16175,9 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
   // installation" / "remaining sensors" framing is not lost, only relocated.
   var PHASE_IMPROVEMENTS = [
     'Programs every control sequence that does not require a new sensor to be installed, and sets up automated ' +
-      'reporting and alarms so problems are caught right away. If the monthly budget allows, sensor installation ' +
-      'begins in the highest-value locations first.',
+      'reporting and alarms so problems are caught right away. Sequencing is prioritized by what can already be ' +
+      'done with the sensors in place today; hardware installation for the remaining sequences follows once this ' +
+      'programming work is complete.',
   ];
 
   var EXPECTED_RESULTS = [
