@@ -7905,6 +7905,132 @@ function _pricingComputeRecommendedTimeline(projId) {
   };
 }
 
+/**
+ * _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, monthlyAllowance) — 2026-07-30
+ * (Service Proposal months-table rebuild, Matt verbatim: "the months table in the Service Proposal
+ * is supposed to be a column per month not just a separation in the months row"). Re-partitions the
+ * TERM PHASE'S ALREADY-COMMITTED rows (termRows — exactly `termPhases[*].rows` from
+ * _pricingComputeRecommendedTimeline, never re-derived/re-priced) across the term's individual
+ * calendar months, so the Proposal's month columns can carry real per-month content instead of one
+ * merged cell.
+ *
+ * THIS DOES NOT RE-PRICE OR RE-RANK ANYTHING. It re-runs the SAME two building blocks
+ * _pricingComputeRecommendedTimeline itself uses to decide phase membership — _pricingBuildRoiUnits
+ * (hardware+sequence bundling) and _pricingSortUnitsNoHwFirst (the no-hardware-first, ROI-score-
+ * secondary ordering, PRICING_NO_HW_SCORE_BONUS included, untouched) — over the term's own rows
+ * only, then bin-packs the SAME greedy first-fit walk _pricingComputeRecommendedTimeline uses for
+ * phases (see that function's "Multi-round greedy first-fit walk" section, ~L7480) at MONTH
+ * granularity instead of PHASE granularity, using the per-month `monthlyAllowance` as the envelope
+ * instead of a whole phase's multi-month `measuresAvailable`. Same algorithm, same ordering, finer
+ * resolution — no new pricing formula, no new ranking rule.
+ *
+ * A unit whose own total exceeds one month's allowance (item.total > envelope) is force-admitted
+ * into the first month it's tried against when that month is otherwise empty (same "oversized unit"
+ * escape hatch _pricingComputeRecommendedTimeline already has) rather than looping forever — flagged
+ * back to the caller via `spansMonths` (Math.ceil(item.total / envelope), informational only) so the
+ * render layer can note "spans multiple months of allowance" in that unit's STARTING month. It is
+ * deliberately NOT duplicated into the months it conceptually spans (Matt's explicit instruction:
+ * "don't duplicate it into every month it touches as if it were delivered five times") — subsequent
+ * units simply continue filling the following months' envelopes normally, which is realistic (a
+ * large item's work can run in parallel with smaller items elsewhere) rather than fabricated.
+ *
+ * Never touches dollar totals shown anywhere else: the returned `total` per item is the SAME
+ * per-unit dollar figure _pricingComputeRecommendedTimeline itself computes for phase-level
+ * bin-packing (identical `_pricingBuildRoiUnits` + `_pricingComputeTotals` call shape) — this
+ * function only decides WHICH MONTH BUCKET each already-priced unit's row set is grouped under for
+ * display. No dollar figure from this function is intended to ever be rendered to the client
+ * (category names/labels only) — see _rptA36PhaseTableInnerHTML's month-cell builder.
+ *
+ * Returns { months: [{ items: [{rows, building, score, total, spansMonths}] }, ...], envelope }.
+ * `months.length === monthCount` always (even if some entries end up with an empty `items` array —
+ * e.g. the term simply has fewer ROI units than months once big items front-load early months).
+ */
+function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, monthlyAllowance) {
+  var months = [];
+  for (var mi = 0; mi < monthCount; mi++) months.push({ items: [] });
+  if (!termRows || !termRows.length || !monthCount) return { months: months, envelope: monthlyAllowance || 0 };
+
+  var estimate = _pricingGetEstimate(projId);
+
+  // Same unit construction _pricingComputeRecommendedTimeline uses ("Global ROI-ranked units"
+  // section, ~L7400) — re-run over termRows only, never over the full portfolio's `rows`.
+  var units = _pricingBuildRoiUnits(termRows).map(function (u) {
+    var unitRows = u.hwRows.concat([u.seqRow]);
+    return {
+      rows: unitRows,
+      building: u.seqRow.building,
+      score: u.score,
+      total: _pricingComputeTotals(unitRows, estimate).grand || 0,
+    };
+  });
+  // Defensive fold-in — identical safety net to _pricingComputeRecommendedTimeline's own (~L7414):
+  // any termRow _pricingBuildRoiUnits didn't bundle into a savings-type unit (enabler/safety/
+  // null-impact rows) becomes its own single-row unit so it can never be silently missing from every
+  // month's content.
+  var claimedIds = {};
+  units.forEach(function (u) {
+    u.rows.forEach(function (r) {
+      claimedIds[r.id] = true;
+    });
+  });
+  termRows.forEach(function (r) {
+    if (claimedIds[r.id]) return;
+    units.push({
+      rows: [r],
+      building: r.building,
+      score: _pricingEquipRowScore(r),
+      total: _pricingComputeTotals([r], estimate).grand || 0,
+    });
+  });
+  units = _pricingSortUnitsNoHwFirst(units);
+
+  // envelope: the real per-month service allowance when a budget is configured (same
+  // _pricingMonthlyAllowanceAmount-derived figure already shown to the client elsewhere as the
+  // monthly cap) — falls back to an even split of the term's own already-priced total ONLY as an
+  // internal bin-packing input (never displayed) when no budget.amount is configured, so the walk
+  // still has a real stopping rule.
+  var termGrand = units.reduce(function (s, u) {
+    return s + u.total;
+  }, 0);
+  var envelope = monthlyAllowance != null ? monthlyAllowance : monthCount ? termGrand / monthCount : 0;
+  if (!envelope) envelope = termGrand || 1; // defensive: never divide by zero below
+
+  // Multi-round greedy first-fit walk, ROI order — identical shape to
+  // _pricingComputeRecommendedTimeline's own phase-level walk (~L7480-7516), at month granularity.
+  var pending = units;
+  var monthIdx = 0;
+  while (pending.length && monthIdx < monthCount) {
+    var runningTotal = 0;
+    var stillPending = [];
+    pending.forEach(function (item) {
+      var fits = runningTotal + item.total <= envelope + 0.005;
+      var forceAdmitOversized = !fits && runningTotal === 0 && item.total > envelope;
+      if (fits || forceAdmitOversized) {
+        item.spansMonths = forceAdmitOversized ? Math.max(1, Math.ceil(item.total / envelope)) : 1;
+        months[monthIdx].items.push(item);
+        runningTotal += item.total;
+      } else {
+        stillPending.push(item);
+      }
+    });
+    pending = stillPending;
+    if (pending.length) monthIdx++;
+  }
+  if (pending.length) {
+    // Safety valve — should not happen given the term's own rows already fit within the term's
+    // total allowance envelope by construction, but never silently drop a unit: whatever is left
+    // lands in the LAST month rather than vanishing (same non-silent convention as the phase-level
+    // walk's own safety valve, ~L7500-7516).
+    var lastIdx = monthCount - 1;
+    pending.forEach(function (item) {
+      item.spansMonths = item.spansMonths || 1;
+      months[lastIdx].items.push(item);
+    });
+  }
+
+  return { months: months, envelope: envelope };
+}
+
 /* ── Recommended tier timeline table (Task 2, 2026-07-22; rebuilt 2026-07-26
    fix/phase-cost-budget-model) ─────────────────────────────────────────────────────────────────
    Renders _pricingComputeRecommendedTimeline as a plain table — no boxes/cards, following the

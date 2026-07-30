@@ -16226,53 +16226,101 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
     'color:var(--rpt-page-text);text-align:left;line-height:1.4';
   var catListUlStyle = 'margin:3px 0 0;padding-left:14px;text-align:left';
 
-  // Single merged content cell (colspan across every month column) instead of one cell per phase —
-  // the underlying data has no finer-than-term month assignment for individual rows (see the
-  // termRows comment above), so this shows real content once rather than fabricating a false
-  // per-month split or repeating identical content in every month column.
-  // Per-category detail (2026-07-29, page-density fix): the compact comma list was replaced with
-  // one line PER sequence category, each carrying its real plain-English description
-  // (_rptA36PhaseSeqCategoryDetails -> ASHRAE36_SEQUENCE_PLAIN, existing vetted copy, not new
-  // padding text) — real content that fills the page instead of leaving it half-blank, per Matt's
-  // coordinator-relayed direction ("expanding what each entails is real content, not padding").
-  // No boxes/cards/rules added — a plain <ul> list, same text-only convention as the rest of this
-  // table.
-  var termCatDetails = _rptA36PhaseSeqCategoryDetails(termRows);
-  var termCatHTML = '';
-  if (termCatDetails.length) {
-    var termShownDetails = termCatDetails.slice(0, SEQ_CAT_DISPLAY_CAP);
-    var termMoreCount = termCatDetails.length - termShownDetails.length;
-    var termListItems = termShownDetails
+  // Per-month cell content (2026-07-30, months-table rebuild — Matt verbatim: "the months table
+  // in the Service Proposal is supposed to be a column per month not just a separation in the
+  // months row... How could you not understand that and think I wanted 1 explanation for all of
+  // the months?"). REPLACES the single colspan="N" merged cell this row used to render. Both rows
+  // now emit ONE <td> per calendar month, each carrying only the categories actually admitted in
+  // THAT month per _pricingComputeTermMonthlyAllocation's month-level re-partition of termRows
+  // (pricing-estimator.js — same ROI-ordered, no-hardware-first bin-pack the phase-level walk
+  // already uses, just run at month granularity against the real per-month `monthlyAllowance`
+  // instead of one 5-month `allowanceTotal` block; see that function's header comment for the full
+  // derivation, including how an oversized single unit's multi-month span is represented WITHOUT
+  // duplicating it into every month it touches).
+  // PHASE_IMPROVEMENTS[0]/EXPECTED_RESULTS[0] (fixed generic narrative, unused below) is
+  // deliberately retired here rather than kept as a lead-in paragraph — it was written to describe
+  // "the term as one block" and is exactly the "1 explanation for all of the months" framing this
+  // rebuild replaces with real per-month content; nothing else in this file still reads those two
+  // vars (left declared above only because removing them is out of this task's stated scope of a
+  // pure content-row rebuild — see this change's dashboardlogic.md entry).
+  var monthCount = headCols.length;
+  var monthAlloc =
+    typeof _pricingComputeTermMonthlyAllocation === 'function'
+      ? _pricingComputeTermMonthlyAllocation(d.project.id, termRows, monthCount, tl.monthlyAllowance)
+      : { months: [], envelope: 0 };
+  var monthBuckets = monthAlloc.months || [];
+
+  // monthCellData[i]: the client-readable category list ACTUALLY ADMITTED (starting) in calendar
+  // month i, via the SAME _rptA36PhaseSeqCategoryDetails naming path the old merged cell used
+  // (EM_SEQUENCE_DEFS declared order, real ASHRAE36_SEQUENCE_PLAIN copy) — never a hardcoded list,
+  // so a category can never be named in a month cell without a real priced row behind it that
+  // month's allocation actually admitted.
+  var monthCellData = monthBuckets.map(function (bucket) {
+    var rowsThisMonth = [];
+    var spanningLabels = {};
+    (bucket.items || []).forEach(function (item) {
+      rowsThisMonth = rowsThisMonth.concat(item.rows);
+      if (item.spansMonths > 1) {
+        _rptA36PhaseSeqCategoryDetails(item.rows).forEach(function (c) {
+          spanningLabels[c.label] = item.spansMonths;
+        });
+      }
+    });
+    return { details: _rptA36PhaseSeqCategoryDetails(rowsThisMonth), spanning: spanningLabels };
+  });
+
+  // Fallback copy for a month with zero newly-admitted categories — same wording convention
+  // pricing-estimator.js's own facilitiesText fallback already uses for a phase with no new
+  // buildings ("Ongoing Energy Management Services only for this period"), not new copy.
+  var MONTH_EMPTY_TEXT = 'Ongoing Energy Management Services for this period.';
+
+  function monthImprovementsCellHTML(i) {
+    var data = monthCellData[i] || { details: [], spanning: {} };
+    if (!data.details.length) {
+      return '<span style="font-style:italic">' + esc(MONTH_EMPTY_TEXT) + '</span>';
+    }
+    var shown = data.details.slice(0, SEQ_CAT_DISPLAY_CAP);
+    var moreCount = data.details.length - shown.length;
+    var items = shown
       .map(function (c) {
-        return (
-          '<li><span style="font-weight:700">' + esc(c.label) + (c.plain ? '</span> — ' + esc(c.plain) : '</span>')
-        );
+        var spanNote = data.spanning[c.label]
+          ? ' <span style="font-style:italic">(spans multiple months of allowance)</span>'
+          : '';
+        return '<li><span style="font-weight:700">' + esc(c.label) + '</span>' + spanNote + '</li>';
       })
       .join('');
-    termCatHTML =
-      '<div style="' +
-      catListStyle +
-      '"><span style="font-weight:700">Sequences programmed this term:</span>' +
+    return (
       '<ul style="' +
       catListUlStyle +
       '">' +
-      termListItems +
-      (termMoreCount > 0 ? '<li>and ' + termMoreCount + ' more</li>' : '') +
-      '</ul></div>';
+      items +
+      (moreCount > 0 ? '<li>and ' + moreCount + ' more</li>' : '') +
+      '</ul>'
+    );
+  }
+
+  // monthResultsCellHTML(i): a short benefit sentence DERIVED from that month's own admitted
+  // categories — never a static string repeated across months (the defect this rebuild fixes).
+  function monthResultsCellHTML(i) {
+    var data = monthCellData[i] || { details: [] };
+    if (!data.details.length) return esc(MONTH_EMPTY_TEXT);
+    var names = data.details.map(function (c) {
+      return c.label;
+    });
+    var namesText = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+    return 'Reporting, alarms, and efficiency/comfort gains from ' + esc(namesText) + '.';
   }
 
   var improvementsRow =
     '<tr><td style="' +
     lblStyle +
     '">Included Improvements</td>' +
-    '<td style="' +
-    cellStyle +
-    '" colspan="' +
-    headCols.length +
-    '">' +
-    esc(PHASE_IMPROVEMENTS[0] || '') +
-    termCatHTML +
-    '</td></tr>';
+    headCols
+      .map(function (m, i) {
+        return '<td style="' + cellStyle + '">' + monthImprovementsCellHTML(i) + '</td>';
+      })
+      .join('') +
+    '</tr>';
 
   // Facilities Included row REMOVED (2026-07-29, Matt, verbatim: "why would you put continues in
   // phase x for every building? That is redundant. Also, let's just remove the buildings
@@ -16290,13 +16338,12 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
     '<tr><td style="' +
     lblStyle +
     '">Expected Results</td>' +
-    '<td style="' +
-    cellStyle +
-    '" colspan="' +
-    headCols.length +
-    '">' +
-    esc(EXPECTED_RESULTS[0] || '') +
-    '</td></tr>';
+    headCols
+      .map(function (m, i) {
+        return '<td style="' + cellStyle + '">' + monthResultsCellHTML(i) + '</td>';
+      })
+      .join('') +
+    '</tr>';
 
   // futureRowHTML: the "fold into the table" rendering mode (opts.futureWorkInline === true) —
   // appends Future Work as one more row inside THIS table instead of the standalone section
