@@ -15194,6 +15194,14 @@
       integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG"
       crossorigin="anonymous"
     ></script>
+    <!-- Word Export Rebuild plan (AI/_context/plans/word-export-rebuild-2026-07-30.md): these two
+         files existed since Steps 1/3 but were never wired into this page's load tag list on ANY
+         docx-* branch (checked feature/docx-skeleton-step1, feature/docx-writer-step3,
+         feature/docx-writer-step5, feature/docx-agreement-step6, and their fix/* branches — none
+         load either file). Without them, exportReportToDocx() throws 'docx-writer.js not loaded'
+         immediately on every call. Found/fixed 2026-07-31 during Step 8 (Service Proposal). -->
+    <script src="app/docx-skeleton.js?v=731"></script>
+    <script src="app/docx-writer.js?v=731"></script>
     <!-- CompanyHub computation modules -->
     <script src="lib/date-helpers.js?v=731"></script>
     <script src="lib/formatting.js?v=731"></script>

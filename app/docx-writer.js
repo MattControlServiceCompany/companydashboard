@@ -222,11 +222,17 @@ function _docxTableCell(opts) {
 
 /** Build a <w:tr> table row from an array of pre-built cell XML strings.
  * opts.header -- sets w:tblHeader (repeat this row on every page, spec §5c
- * note: must be added explicitly, it is never automatic). */
+ * note: must be added explicitly, it is never automatic).
+ * w:cantSplit (2026-07-31, Step 8 fix): ALWAYS set, on every row (header or not) -- confirmed
+ * 2026-07-31 via a real JOCO Service Proposal render: without it, Word freely splits a single
+ * <w:tr> across a page boundary mid-cell (a multi-paragraph item-detail cell's SECOND paragraph
+ * orphaned onto the next page while the row's vertically-centered Total Qty value stayed rendered
+ * on the first page, leaving an empty-looking Total Qty cell under the orphaned text) -- a proper
+ * table-quality defect, not the known in-flight "short row gets its last cell stretched" grid
+ * issue. w:cantSplit tells Word to move the WHOLE row to the next page instead of breaking it. */
 function _docxTableRow(cellsXml, opts) {
   opts = opts || {};
-  var trPr = '';
-  if (opts.header) trPr = '<w:trPr><w:tblHeader/></w:trPr>';
+  var trPr = '<w:trPr><w:cantSplit/>' + (opts.header ? '<w:tblHeader/>' : '') + '</w:trPr>';
   return '<w:tr>' + trPr + cellsXml.join('') + '</w:tr>';
 }
 
@@ -833,22 +839,44 @@ function _docxWalkInline(node, fmt, entries, ctx) {
   if (tag === 'STRONG' || tag === 'B') childFmt.bold = true;
   if (tag === 'EM' || tag === 'I') childFmt.italic = true;
   if (tag === 'U') childFmt.underline = true;
-  if (node.style) {
-    var fw = node.style.fontWeight;
-    if (fw === 'bold' || fw === '700' || fw === '800' || fw === '900' || parseInt(fw, 10) >= 600) childFmt.bold = true;
-    if (node.style.fontStyle === 'italic') childFmt.italic = true;
-    var fs = node.style.fontSize;
-    if (fs) {
-      var hp = _docxPxToHalfPt(fs);
-      if (hp) childFmt.sizeHalfPt = hp;
-    }
-    var col = node.style.color;
-    if (col) {
-      var hex = _docxCssColorToHex(col);
-      if (hex) childFmt.color = hex;
-    }
-  }
+  childFmt = _docxStyleFmtFromEl(node, childFmt);
   for (var i = 0; i < node.childNodes.length; i++) _docxWalkInline(node.childNodes[i], childFmt, entries, ctx);
+}
+
+/**
+ * Read an element's OWN inline style (font-weight/font-style/font-size/color) and merge it onto
+ * baseFmt, returning a NEW fmt object (baseFmt is never mutated). Factored out of
+ * _docxWalkInline's per-node style check (2026-07-31, Step 8 fix) so block-position DIV/P
+ * elements can ALSO apply their own inline style before collecting their children's runs -- see
+ * the call in _docxTranslateBlock's P/DIV branch for why this matters: report markup across the
+ * Service Proposal (and, by extension, any other document) is almost entirely bare
+ * `<div style="font-size:19px;font-weight:700;...">text</div>` with NO nested <span>/<strong>.
+ * Before this fix, _docxCollectRuns(el, {}, ctx) was called with an EMPTY base fmt for that DIV,
+ * so the div's own font-size/weight/color were silently dropped and its text fell back to the
+ * default 10.5pt/normal-weight/black run -- every visually distinct title/eyebrow/dollar-amount
+ * size in the Proposal (19px cover title, 16px subtitle, 11px section eyebrows, 18px dollar
+ * amounts, etc.) rendered as plain 10.5pt body text, reproducing Matt's exact "headers are the
+ * same text size as the rest of the text" complaint even though the SOURCE markup already
+ * carries the right sizes -- confirmed 2026-07-31 via a real JOCO Service Proposal PDF render
+ * (measured 10.56pt on every one of those elements; see this branch's dashboardlogic.md entry).
+ */
+function _docxStyleFmtFromEl(el, baseFmt) {
+  var fmt = Object.assign({}, baseFmt);
+  if (!el || !el.style) return fmt;
+  var fw = el.style.fontWeight;
+  if (fw === 'bold' || fw === '700' || fw === '800' || fw === '900' || parseInt(fw, 10) >= 600) fmt.bold = true;
+  if (el.style.fontStyle === 'italic') fmt.italic = true;
+  var fs = el.style.fontSize;
+  if (fs) {
+    var hp = _docxPxToHalfPt(fs);
+    if (hp) fmt.sizeHalfPt = hp;
+  }
+  var col = el.style.color;
+  if (col) {
+    var hex = _docxCssColorToHex(col);
+    if (hex) fmt.color = hex;
+  }
+  return fmt;
 }
 
 /**
@@ -977,16 +1005,50 @@ function _docxTranslateTable(tableEl, ctx) {
         colIdx += span;
 
         var isHeaderCell = cell.tagName === 'TH';
-        var runs = _docxCollectRuns(cell, isHeaderCell ? { bold: true } : {}, ctx);
         var align = (cell.style && cell.style.textAlign) || 'center';
-        var para = _docxParagraph({
-          runs: runs.length ? runs : [_docxRun({ text: '', bold: isHeaderCell })],
-          align: align,
-          spacingAfter: 0,
-        });
+        var cellParagraphs;
+        if (_docxHasBlockChild(cell)) {
+          // Cell contains block-level content (e.g. a <ul> improvement list -- the Service
+          // Proposal months table's Included Improvements cells, plan Step 8). _docxCollectRuns
+          // only walks INLINE content and _docxWalkInline defensively SKIPS any block tag it
+          // encounters (by design, for the page-level walk) -- so before this fix, a <td><ul>...
+          // </ul></td> cell silently produced an empty run (confirmed 2026-07-31 via a real JOCO
+          // Service Proposal render: every month cell carrying a category list rendered as a
+          // literal empty <w:t/>, dropping the actual improvement names -- exactly the
+          // "column per month" content Matt asked for, present in the source markup and in the
+          // live HTML preview, missing from the .docx). Fix: delegate each cell child element to
+          // the SAME _docxTranslateBlock dispatch the page-level walk already uses (handles
+          // UL/OL/P/DIV/heading/table uniformly), and collect every resulting paragraph/list-item
+          // block into this cell -- multiple <w:p> inside one <w:tc> is valid OOXML.
+          // cellFmt: the cell's OWN inline font-size/weight/color (e.g. the months table's
+          // cellStyle font-size:9.5px), threaded down as inheritedFmt so a <ul>/<li> descendant
+          // that declares no font-size of its own (relying on normal CSS cascade from the <td>,
+          // which _docxTranslateBlock's isolated per-element dispatch does not replicate) still
+          // ends up at the cell's intended size instead of silently falling back to the default
+          // 10.5pt body run -- see _docxTranslateBlock's own header comment for the full defect.
+          var cellFmt = _docxStyleFmtFromEl(cell, isHeaderCell ? { bold: true } : {});
+          cellParagraphs = [];
+          Array.prototype.forEach.call(cell.children, function (child) {
+            cellParagraphs = cellParagraphs.concat(_docxTranslateBlock(child, ctx, cellFmt));
+          });
+          if (!cellParagraphs.length) {
+            cellParagraphs = [
+              _docxParagraph({ runs: [_docxRun({ text: '', bold: isHeaderCell })], align: align, spacingAfter: 0 }),
+            ];
+          }
+        } else {
+          var runs = _docxCollectRuns(cell, isHeaderCell ? { bold: true } : {}, ctx);
+          cellParagraphs = [
+            _docxParagraph({
+              runs: runs.length ? runs : [_docxRun({ text: '', bold: isHeaderCell })],
+              align: align,
+              spacingAfter: 0,
+            }),
+          ];
+        }
         return _docxTableCell({
           widthTwips: widthTwips,
-          paragraphs: [para],
+          paragraphs: cellParagraphs,
           gridSpan: span > 1 ? span : undefined,
           vAlign: 'center',
         });
@@ -1031,8 +1093,9 @@ function _docxListItemFromRuns(runs, numId, ilvl) {
  * ilvl+1 -- never the parent's -- so an unrelated/nested list never
  * continues another list's counter (see the _DOCX_ABSTRACTNUM_* comment).
  */
-function _docxTranslateList(listEl, ctx, numId, ilvl) {
+function _docxTranslateList(listEl, ctx, numId, ilvl, inheritedFmt) {
   ilvl = ilvl || 0;
+  var baseFmt = inheritedFmt || {};
   var out = [];
   var liEls = Array.prototype.filter.call(listEl.children, function (c) {
     return c.tagName === 'LI';
@@ -1044,7 +1107,7 @@ function _docxTranslateList(listEl, ctx, numId, ilvl) {
       if (node.nodeType === 1 && (node.tagName === 'UL' || node.tagName === 'OL')) {
         nestedLists.push(node);
       } else {
-        _docxWalkInline(node, {}, entries, ctx);
+        _docxWalkInline(node, baseFmt, entries, ctx);
       }
     });
     var directRuns = _docxFinalizeRuns(entries);
@@ -1052,7 +1115,7 @@ function _docxTranslateList(listEl, ctx, numId, ilvl) {
     nestedLists.forEach(function (nested) {
       var nestedAbstractId = nested.tagName === 'OL' ? _DOCX_ABSTRACTNUM_DECIMAL : _DOCX_ABSTRACTNUM_BULLET;
       var nestedNumId = _docxAllocNumId(ctx, nestedAbstractId, ilvl + 1);
-      out = out.concat(_docxTranslateList(nested, ctx, nestedNumId, ilvl + 1));
+      out = out.concat(_docxTranslateList(nested, ctx, nestedNumId, ilvl + 1, baseFmt));
     });
   });
   return out;
@@ -1062,10 +1125,25 @@ function _docxTranslateList(listEl, ctx, numId, ilvl) {
  * Dispatch a single block-position element to its OOXML shape. Returns an
  * array of block XML strings (0, 1, or many -- a container <div> returns
  * the concatenation of all its block children's output).
+ *
+ * inheritedFmt (2026-07-31, Step 8 fix): optional base run fmt (sizeHalfPt/bold/italic/color)
+ * inherited from an ANCESTOR this dispatch started under, for callers that begin a sub-tree
+ * translation somewhere other than a bare .rpt-page (currently: table-cell content -- see
+ * _docxTranslateTable's cell dispatch). Needed because CSS inheritance (a <td style="font-
+ * size:9.5px"> whose <ul>/<li> children declare no font-size of their own, relying on normal
+ * cascade) has no DOM equivalent once each element is inspected in isolation -- confirmed
+ * 2026-07-31 via a real JOCO Service Proposal render: the months table's per-month <ul> content
+ * rendered at the default 10.5pt body size (no ancestor font-size ever reached it) inside a
+ * table cell (~1.17in wide including bullet/hanging indent), producing near letter-by-letter
+ * word wrapping ("Demand- / Controlle / d / Ventilatio / n (AHU)") -- readable-width failure,
+ * not a horizontal overflow (min_x0/max_x1 stayed in-page). Page-level top-of-tree calls omit
+ * this argument (undefined), which every branch below treats as {} -- zero behavior change for
+ * the non-cell path.
  */
-function _docxTranslateBlock(el, ctx) {
+function _docxTranslateBlock(el, ctx, inheritedFmt) {
   if (el.nodeType !== 1) return [];
   var tag = el.tagName;
+  var baseFmt = inheritedFmt || {};
 
   if (tag === 'TABLE') {
     var tblXml = _docxTranslateTable(el, ctx);
@@ -1075,7 +1153,7 @@ function _docxTranslateBlock(el, ctx) {
   if (tag === 'UL' || tag === 'OL') {
     var abstractId = tag === 'OL' ? _DOCX_ABSTRACTNUM_DECIMAL : _DOCX_ABSTRACTNUM_BULLET;
     var listNumId = _docxAllocNumId(ctx, abstractId, 0);
-    return _docxTranslateList(el, ctx, listNumId, 0);
+    return _docxTranslateList(el, ctx, listNumId, 0, baseFmt);
   }
 
   if (_DOCX_HEADING_TAGS[tag]) {
@@ -1084,9 +1162,11 @@ function _docxTranslateBlock(el, ctx) {
     // _DOCX_HEADING_SIZE_SECTION comment above; the baseline has no such
     // size, this closes Matt's 2026-07-31 "headers are the same text size
     // as the rest of the text" report. Neither level is bold by default
-    // (Matt asked for larger font only, not added weight).
+    // (Matt asked for larger font only, not added weight). The heading's
+    // OWN fixed size always wins over any inherited size (headings are
+    // never smaller because of where they happen to sit).
     var headingSizeHalfPt = tag === 'H1' ? _DOCX_HEADING_SIZE_H1 : _DOCX_HEADING_SIZE_SECTION;
-    var hRuns = _docxCollectRuns(el, { sizeHalfPt: headingSizeHalfPt }, ctx);
+    var hRuns = _docxCollectRuns(el, Object.assign({}, baseFmt, { sizeHalfPt: headingSizeHalfPt }), ctx);
     if (!hRuns.length) return [];
     return [
       _docxParagraph({
@@ -1104,7 +1184,12 @@ function _docxTranslateBlock(el, ctx) {
   }
 
   if (tag === 'P' || (tag === 'DIV' && !_docxHasBlockChild(el))) {
-    var pRuns = _docxCollectRuns(el, {}, ctx);
+    // Seed the base run fmt from the inherited context, THEN this element's own inline style
+    // (font-size/weight/color) on top -- see _docxStyleFmtFromEl's header comment for the defect
+    // this closes (report markup's title/eyebrow/amount divs carry their own font-size with no
+    // nested <span>) and this function's own header comment for why inheritedFmt matters too.
+    var pBaseFmt = _docxStyleFmtFromEl(el, baseFmt);
+    var pRuns = _docxCollectRuns(el, pBaseFmt, ctx);
     if (!pRuns.length) return []; // empty layout-only leaf -- no stray blank paragraph
     var indOpts = _docxResolveIndentHint(el.getAttribute && el.getAttribute('data-word-indent'));
     return [
@@ -1123,7 +1208,7 @@ function _docxTranslateBlock(el, ctx) {
 
   if (tag === 'DIV') {
     var out = [];
-    for (var i = 0; i < el.children.length; i++) out = out.concat(_docxTranslateBlock(el.children[i], ctx));
+    for (var i = 0; i < el.children.length; i++) out = out.concat(_docxTranslateBlock(el.children[i], ctx, baseFmt));
     return out;
   }
 
@@ -1131,7 +1216,7 @@ function _docxTranslateBlock(el, ctx) {
   // element children defensively so content is never silently dropped, but
   // the unknown tag itself emits no XML.
   var out2 = [];
-  for (var j = 0; j < el.children.length; j++) out2 = out2.concat(_docxTranslateBlock(el.children[j], ctx));
+  for (var j = 0; j < el.children.length; j++) out2 = out2.concat(_docxTranslateBlock(el.children[j], ctx, baseFmt));
   return out2;
 }
 
