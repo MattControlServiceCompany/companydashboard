@@ -20051,7 +20051,11 @@ var EM_SEQUENCE_DEFS = [
   /* ── DCV sequences ──────────────────────────────────────────────────── */
   {
     key: 'demandCtrl',
-    label: 'Demand-Controlled Ventilation (AHU)',
+    // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Demand-Controlled
+    // Ventilation (AHU)' -- DCV/AHU are opaque acronyms to a non-technical reader. This `label`
+    // is a DISPLAY value only; `key: 'demandCtrl'` (matched elsewhere via _RPT_A36_DCV_SEQ,
+    // SEQUENCE_SAVINGS_IMPACT, etc.) is unchanged.
+    label: 'Occupancy-Based Ventilation (Air Handling Units)',
     ashrae36: '§5.16',
     equipTypes: ['ahu', 'rtu'],
     requiredCats: ['co2', 'oaDampCmd'],
@@ -20060,7 +20064,9 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'vav_dcv',
-    label: 'Demand-Controlled Ventilation (VAV)',
+    // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Demand-Controlled
+    // Ventilation (VAV)'. `key: 'vav_dcv'` is unchanged.
+    label: 'Occupancy-Based Ventilation (Zone Terminals)',
     ashrae36: '§5.6',
     equipTypes: ['vav', 'fpb', 'ddvav'],
     requiredCats: ['co2', 'dampCmd'],

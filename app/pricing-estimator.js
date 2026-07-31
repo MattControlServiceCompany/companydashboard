@@ -216,7 +216,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
       ORNL_CONTEXT_SENTENCE,
     clientSummary:
       'Adjusts supply air temperature to match real-time building demand, reducing simultaneous heating and ' +
-      'cooling and lowering overall HVAC energy use.',
+      'cooling and lowering overall heating and cooling energy use.',
     source: '[LBNL-G36-2022]',
     sourceType: SAVINGS_SOURCE_LITERATURE,
   },
@@ -448,11 +448,12 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'supply fan pressure optimization (DSP reset) and unoccupied-mode damper closure. ' +
       'Also enables fault detection for stuck-damper identification.',
     clientSummary:
-      'Provides zone damper position feedback to the BAS, enabling duct pressure reset and automatic ' +
-      'unoccupied-mode damper closure.',
+      'Provides zone damper position feedback to the building automation system, enabling duct pressure reset ' +
+      'and automatic unoccupied-mode damper closure.',
     source: '[G36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
-    enablesLabel: 'Enables Duct SP Reset',
+    // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Enables Duct SP Reset'.
+    enablesLabel: 'Enables Duct Pressure Reset',
   },
   hwp_staging: {
     tier: 'enabler',
@@ -468,7 +469,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'inefficiency and enabling hot water temperature reset.',
     source: '[G36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
-    enablesLabel: 'Enables HW Plant Reset',
+    // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Enables HW Plant Reset'.
+    enablesLabel: 'Enables Hot Water Plant Reset',
   },
   chwp_staging: {
     tier: 'enabler',
@@ -484,7 +486,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'inefficiency and enabling chilled water temperature reset.',
     source: '[G36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
-    enablesLabel: 'Enables CHW Plant Reset',
+    // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Enables CHW Plant Reset'.
+    enablesLabel: 'Enables Chilled Water Plant Reset',
   },
   ahu_freeze_prot: {
     tier: 'safety',
@@ -3069,14 +3072,17 @@ function buildCatalogRows(projId) {
         if (!count || count <= 0) return;
         var hrs = perSeqHours[seqKey] != null ? perSeqHours[seqKey] : 2.0;
         var label = seqLabels[seqKey] || seqKey;
-        // DCV label override per spec §2A note
-        if (seqKey === 'demandCtrl' || seqKey === 'vav_dcv') label += ' (CO2/DCV Programming)';
+        // DCV label override per spec §2A note. Plain-language rewrite (no-abbreviations pass,
+        // 2026-07-31): was ' (CO2/DCV Programming)' -- both CO2 and DCV are opaque acronyms to a
+        // non-technical reader. The strip-back-off regex a few lines below MUST match this exact
+        // string.
+        if (seqKey === 'demandCtrl' || seqKey === 'vav_dcv') label += ' (Occupancy Sensor Programming)';
         var lineHours = count * hrs;
         var lineTotal = parseFloat((lineHours * hourlyRate).toFixed(2));
 
         // FIX 3: Equipment label — show "N of M [type]" or "N [type]" if all applicable
         var applicable = seqApplicable[seqKey] || count;
-        var seqTypeLabel = label.replace(/ \(CO2\/DCV Programming\)$/, ''); // strip suffix for the label
+        var seqTypeLabel = label.replace(/ \(Occupancy Sensor Programming\)$/, ''); // strip suffix for the label
         var eqLabel2;
         if (count === applicable) {
           eqLabel2 = count + ' ' + seqTypeLabel + (count !== 1 ? 's' : '');
@@ -3221,26 +3227,41 @@ function buildComplianceRows(projId) {
 }
 
 /* ── Label helpers ── */
+// Plain-language rewrite (no-abbreviations pass, 2026-07-31): every value below was a raw
+// building-automation acronym (AHU/RTU/VAV/FPB/DDVAV/DOAS/FCU/EF), unreadable to a client with no
+// controls background. Wording matches report-engine.js's own CAT_LABELS/CAT_LABELS_PLURAL dicts
+// (~line 12491/14204) so the same equipment type reads identically across the Audit Report and
+// the Service Proposal/Cost Estimate. `cat` keys (ahu/rtu/vav/...) are unchanged -- they are
+// equipment-matrix category keys matched elsewhere, not display text.
 function _pricingCatLabel(cat) {
   var labels = {
-    ahu: 'AHU',
-    rtu: 'RTU',
-    vav: 'VAV',
-    fpb: 'FPB',
-    ddvav: 'DDVAV',
+    ahu: 'Air Handling Unit',
+    rtu: 'Rooftop Unit',
+    vav: 'Variable Air Volume Terminal',
+    fpb: 'Fan-Powered Terminal',
+    ddvav: 'Dual-Duct Terminal',
     hwp: 'Hot Water Plant',
     chwp: 'Chilled Water Plant',
     ct: 'Cooling Tower',
-    doas: 'DOAS',
-    fcu: 'FCU',
+    doas: 'Dedicated Outdoor Air System',
+    fcu: 'Fan Coil Unit',
     zone: 'Zone',
     furnace: 'Furnace',
     heater: 'Heater',
-    ef: 'EF',
+    ef: 'Exhaust Fan',
   };
   return labels[cat] || cat.toUpperCase();
 }
 
+// Plain-language rewrite (no-abbreviations pass, 2026-07-31): every value below is what a client
+// reads in the Cost Estimate "Item" column and the Audit Report Sequences table's "Requires:"
+// sub-line (via _a36SeqRequiredSensorLabels, report-engine.js). Raw acronyms (HW/CHW/CW/OA/RA/SF/
+// CT/AHU/VAV/FPB/CO2) are spelled out; "Temp"/"Cmd"/"Setpoint" are left as-is (common, unambiguous
+// shorthand, not building-automation jargon). `pointKey` values (the object keys: sat/rat/hwst/
+// co2_ahu/...) are equipment-matrix/pricing category keys matched elsewhere and are UNCHANGED.
+// Added three keys (co2, rfEnable, rfSpeedCmd) that previously had no entry here and silently fell
+// through to EM_POINT_CATEGORIES' raw label (equipment-matrix.js) via _a36SeqRequiredSensorLabels'
+// fallback chain.
 function _pricingPointLabel(pointKey) {
   var labels = {
     sat: 'Supply Air Temp',
@@ -3248,45 +3269,47 @@ function _pricingPointLabel(pointKey) {
     mat: 'Mixed Air Temp',
     oat: 'Outdoor Air Temp',
     dsp: 'Duct Static Pressure',
-    co2_ahu: 'CO2 (AHU Duct)',
+    co2_ahu: 'Carbon Dioxide Sensor (Air Handling Unit Duct)',
     // Renamed 2026-07-22 (Matt): the "CO2 (Zone)" label hid that this line item is the combined
     // ZS2-HC-ALC temp+humidity+CO2 zone sensor whenever the combo fires — see the PRICE_POINT_MAP
     // co2_zone entry above for the hardware-identity investigation behind this rename.
-    co2_zone: 'Zone Temp/Humidity/CO2 Sensor',
+    co2_zone: 'Zone Temp/Humidity/Carbon Dioxide Sensor',
     // 2026-07-28: standalone CO2-only sensor (zone already has a working temp sensor) — distinct
     // from co2_zone above (the combo replacement) so a reader can't confuse the two SKUs/prices.
-    co2_zone_standalone: 'CO2 (Zone, Standalone)',
+    co2_zone_standalone: 'Carbon Dioxide Sensor (Zone, Standalone)',
     dat: 'Discharge Air Temp',
-    hwst: 'HW Supply Temp',
-    hwrt: 'HW Return Temp',
-    hwdp: 'HW Diff Pressure',
-    chwst: 'CHW Supply Temp',
-    chwrt: 'CHW Return Temp',
-    chwdp: 'CHW Diff Pressure',
-    cwst: 'CW Supply Temp',
-    cwrt: 'CW Return Temp',
-    oaWetBulb: 'OA Wet Bulb',
+    hwst: 'Hot Water Supply Temp',
+    hwrt: 'Hot Water Return Temp',
+    hwdp: 'Hot Water Differential Pressure',
+    chwst: 'Chilled Water Supply Temp',
+    chwrt: 'Chilled Water Return Temp',
+    chwdp: 'Chilled Water Differential Pressure',
+    cwst: 'Condenser Water Supply Temp',
+    cwrt: 'Condenser Water Return Temp',
+    oaWetBulb: 'Outdoor Air Wet Bulb',
     zoneTemp: 'Zone Temp',
-    oaDampCmd: 'OA Damper Actuator',
-    raDampCmd: 'RA Damper Actuator',
+    oaDampCmd: 'Outdoor Air Damper Actuator',
+    raDampCmd: 'Return Air Damper Actuator',
     // damperPositionControl: consolidated OA+RA damper actuator line item (2026-07-27) — see the
     // PRICE_POINT_MAP entry of the same name for the full rationale.
-    damperPositionControl: 'Damper Position Control (OA/RA Actuators)',
+    damperPositionControl: 'Damper Position Control (Outdoor/Return Air Actuators)',
     dampCmd: 'Damper Actuator',
     coldDampCmd: 'Cold Deck Damper',
     hotDampCmd: 'Hot Deck Damper',
-    chwIsoValveCmd: 'CHW Iso Valve',
-    cwIsoValveCmd: 'CW Iso Valve',
+    chwIsoValveCmd: 'Chilled Water Isolation Valve',
+    cwIsoValveCmd: 'Condenser Water Isolation Valve',
     makeupValveCmd: 'Makeup Valve',
     clgValve: 'Cooling Coil Valve',
     htgValve: 'Heating Coil Valve',
     reheatValve: 'Reheat Valve',
-    discFlow: 'VAV Zone Controller (Flow)',
-    primaryFlow: 'FPB Zone Controller (Flow)',
-    sfStatus: 'SF Status',
-    sfSpeed: 'SF Speed',
-    sfEnable: 'SF Enable',
-    sfSpeedCmd: 'SF Speed Cmd',
+    discFlow: 'Variable Air Volume Zone Controller (Flow)',
+    primaryFlow: 'Fan-Powered Box Zone Controller (Flow)',
+    sfStatus: 'Supply Fan Status',
+    sfSpeed: 'Supply Fan Speed',
+    sfEnable: 'Supply Fan Enable',
+    sfSpeedCmd: 'Supply Fan Speed Command',
+    rfEnable: 'Return Fan Enable',
+    rfSpeedCmd: 'Return Fan Speed Command',
     coolSP: 'Cool Setpoint',
     htgSP: 'Heat Setpoint',
     fanStatus: 'Fan Status',
@@ -3294,25 +3317,26 @@ function _pricingPointLabel(pointKey) {
     termFanEnable: 'Terminal Fan Enable',
     boilerStatus: 'Boiler Status',
     boilerEnable: 'Boiler Enable',
-    hwSetpoint: 'HW Setpoint',
-    hwPumpStatus: 'HW Pump Status',
-    hwPumpEnable: 'HW Pump Enable',
-    hwPumpSpeed: 'HW Pump Speed',
+    hwSetpoint: 'Hot Water Setpoint',
+    hwPumpStatus: 'Hot Water Pump Status',
+    hwPumpEnable: 'Hot Water Pump Enable',
+    hwPumpSpeed: 'Hot Water Pump Speed',
     chillerStatus: 'Chiller Status',
     chillerEnable: 'Chiller Enable',
-    chwSetpoint: 'CHW Setpoint',
-    pchwpStatus: 'Primary CHWP Status',
-    schwpStatus: 'Secondary CHWP Status',
-    schwpSpeed: 'Secondary CHWP Speed',
-    chwIsoValveStatus: 'CHW Iso Valve Status',
-    pchwpEnable: 'Primary CHWP Enable',
-    schwpEnable: 'Secondary CHWP Enable',
-    ctFanStatus: 'CT Fan Status',
-    cwPumpStatus: 'CW Pump Status',
-    ctFanEnable: 'CT Fan Enable',
-    cwPumpEnable: 'CW Pump Enable',
-    freezeStat: 'Freeze Stat',
-    oaFlow: 'OA Flow Station',
+    chwSetpoint: 'Chilled Water Setpoint',
+    pchwpStatus: 'Primary Chilled Water Pump Status',
+    schwpStatus: 'Secondary Chilled Water Pump Status',
+    schwpSpeed: 'Secondary Chilled Water Pump Speed',
+    chwIsoValveStatus: 'Chilled Water Isolation Valve Status',
+    pchwpEnable: 'Primary Chilled Water Pump Enable',
+    schwpEnable: 'Secondary Chilled Water Pump Enable',
+    ctFanStatus: 'Cooling Tower Fan Status',
+    cwPumpStatus: 'Condenser Water Pump Status',
+    ctFanEnable: 'Cooling Tower Fan Enable',
+    cwPumpEnable: 'Condenser Water Pump Enable',
+    freezeStat: 'Freeze Status',
+    oaFlow: 'Outdoor Air Flow Station',
+    co2: 'Carbon Dioxide Sensor',
   };
   return labels[pointKey] || pointKey;
 }
@@ -8329,7 +8353,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       var _lbl = sd.label;
-      if (sd.key === 'demandCtrl' || sd.key === 'vav_dcv') _lbl += ' (CO2/DCV Programming)';
+      // Plain-language rewrite (no-abbreviations pass, 2026-07-31) -- keep in sync with the
+      // identical suffix/regex pair in buildBaseRows above.
+      if (sd.key === 'demandCtrl' || sd.key === 'vav_dcv') _lbl += ' (Occupancy Sensor Programming)';
       _seqItemLabelByKey[sd.key] = _lbl;
     });
   }

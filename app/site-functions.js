@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.31.735',
+    date: '2026-07-31',
+    title: 'Audit Report and Service Proposal — plain-language wording',
+    items: [
+      {
+        type: 'change',
+        text: 'Audit Report and Service Proposal — technical abbreviations have been replaced with plain wording throughout, so the documents read clearly without building-automation background.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.31.734',
     date: '2026-07-31',
     title: 'Word exports — deeper indentation for text and bullet points',

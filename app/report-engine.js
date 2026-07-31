@@ -11644,6 +11644,12 @@ window.addEventListener('resize', () => {
  * column key from the equipment matrix.
  * Each entry: { short, impact, plain }
  */
+// Plain-language rewrite (no-abbreviations pass, 2026-07-31): `short`/`impact`/`plain` are the
+// three DISPLAY fields client documents actually render (Executive Summary top-gap callout,
+// Audit Report Sequences table "Requires:" sub-line fallback, Recommendations page). Object KEYS
+// (sat/rat/mat/.../ahu_sat_reset/vav_zone_temp/...) are matched elsewhere (e.g.
+// _RPT_A36_DCV_SEQ/_RPT_A36_FAN_SEQ above, EM_SEQUENCE_DEFS/EM_POINT_CATEGORIES in
+// equipment-matrix.js) and are UNCHANGED.
 var ASHRAE36_GAP_DESCRIPTIONS = {
   sat: {
     short: 'Supply air temperature sensor',
@@ -11672,7 +11678,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
       'Enables fan speed control based on actual demand instead of running the fan at fixed full speed at all times.',
   },
   sfVfd: {
-    short: 'Supply fan VFD',
+    short: 'Supply fan variable frequency drive',
     impact: 'Cuts fan energy versus fixed speed',
     plain:
       'Allows fan speed to match load; energy consumption drops sharply as speed is reduced, following fan-affinity physics.',
@@ -11694,7 +11700,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     plain: 'Uses outdoor air for free cooling whenever conditions allow, reducing mechanical cooling run time.',
   },
   demandCtrl: {
-    short: 'CO2-based demand control ventilation',
+    short: 'Occupancy-based ventilation control (carbon dioxide sensor)',
     impact: 'Avoids conditioning air for empty rooms',
     plain:
       'Reduces outdoor air to match actual occupancy, avoiding the energy cost of conditioning ventilation air for empty rooms.',
@@ -11733,7 +11739,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   discFlow: {
     short: 'Discharge airflow measurement',
-    impact: 'Required for VAV minimum ventilation',
+    impact: 'Required for variable air volume minimum ventilation',
     plain:
       'Confirms minimum ventilation to each space and enables duct pressure reset sequences; both require measured airflow.',
   },
@@ -11864,7 +11870,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     plain: 'Enables exhaust fan modulation to prevent over-pressurization during economizer operation.',
   },
   co2: {
-    short: 'CO2 sensor (return or zone)',
+    short: 'Carbon dioxide sensor (return or zone)',
     impact: 'Avoids conditioning air for empty rooms',
     plain: 'Measures occupancy through air quality, allowing the system to reduce outdoor air when rooms are empty.',
   },
@@ -11891,7 +11897,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
       'Monitors delivered air temperature, enabling precise reheat control and preventing overcooling at minimum airflow.',
   },
   fanStatus: {
-    short: 'AHU supply fan status (at terminal)',
+    short: 'Air handling unit supply fan status (at terminal)',
     impact: 'Required for terminal unit sequencing',
     plain: 'Prevents the terminal damper from opening when the air handler is off, avoiding energy waste.',
   },
@@ -12163,53 +12169,53 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   // ── EM_SEQUENCE_DEFS sequence keys ──────────────────────────────────────
   ahu_sat_reset: {
-    short: 'Supply air temperature reset sequence (AHU)',
+    short: 'Supply air temperature reset sequence (air handling units)',
     impact: 'Reduces conditioning energy in mild weather',
     plain:
       'Adjusts supply air temperature to match outdoor conditions and zone demand, cutting conditioning energy during partial loads.',
   },
   ahu_dsp_reset: {
-    short: 'Duct static pressure reset sequence (AHU)',
+    short: 'Duct static pressure reset sequence (air handling units)',
     impact: 'Cuts fan energy when demand is low',
     plain:
       'Lowers duct pressure when zones have adequate airflow, so the fan stops working harder than the building needs.',
   },
   ahu_economizer: {
-    short: 'Economizer control sequence (AHU)',
+    short: 'Economizer control sequence (air handling units)',
     impact: 'Reduces mechanical cooling run time',
     plain: 'Uses outdoor air for free cooling whenever conditions allow, reducing chiller run time.',
   },
   ahu_freeze_prot: {
-    short: 'Freeze protection sequence (AHU)',
+    short: 'Freeze protection sequence (air handling units)',
     impact: 'Required for coil safety',
     plain: 'Shuts down the air handler when freezing is detected, preventing costly water coil damage.',
   },
   ahu_min_oa: {
-    short: 'Minimum outdoor air control sequence (AHU)',
+    short: 'Minimum outdoor air control sequence (air handling units)',
     impact: 'Required for ventilation compliance',
     plain:
       'Coordinates the outdoor air damper with fan speed to maintain code-required minimum ventilation during part-load operation.',
   },
   ahu_rf_control: {
-    short: 'Return fan control sequence (AHU)',
+    short: 'Return fan control sequence (air handling units)',
     impact: 'Required for building pressure control',
     plain:
       'Matches return fan speed to supply fan output to maintain pressurization; without it, economizer causes pressure swings.',
   },
   vav_zone_temp: {
-    short: 'Zone temperature control sequence (VAV)',
+    short: 'Zone temperature control sequence (variable air volume terminals)',
     impact: 'Required for zone comfort and compliance',
     plain:
       'Modulates airflow to maintain zone temperature between setpoints; without it, temperatures drift and simultaneous heating and cooling is common.',
   },
   vav_damper_writeback: {
-    short: 'Damper position write-back sequence (VAV)',
+    short: 'Damper position write-back sequence (variable air volume terminals)',
     impact: 'Required for position verification and diagnostics',
     plain:
-      'Surfaces the damper command as a BACnet read-back point for fault detection; applicable to units that expose this point in the BAS export.',
+      'Surfaces the damper command as a BACnet read-back point for fault detection; applicable to units that expose this point in the building automation system export.',
   },
   vav_reheat: {
-    short: 'Zone reheat sequence (VAV)',
+    short: 'Zone reheat sequence (variable air volume terminals)',
     impact: 'Required for zone heating at minimum airflow',
     plain:
       'Activates reheat at minimum airflow; without it, zone heating falls to the primary air system, increasing air handler energy.',
@@ -12249,9 +12255,10 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
   },
   // ── VAV/zone DCV sequence key ──────────────────────────────────────────────
   vav_dcv: {
-    short: 'Demand-controlled ventilation (VAV zones)',
+    short: 'Occupancy-based ventilation control (variable air volume zones)',
     impact: 'Avoids conditioning air for empty rooms',
-    plain: 'Adjusts outdoor air per zone based on CO₂ readings, avoiding the energy cost of ventilating empty rooms.',
+    plain:
+      'Adjusts outdoor air per zone based on carbon dioxide readings, avoiding the energy cost of ventilating empty rooms.',
   },
   // ── Heater point key ────────────────────────────────────────────────────────
   enable: {
@@ -12289,16 +12296,16 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
       'The occupied deadband is below the ASHRAE 36 minimum of 1°F, causing heating and cooling to compete. Widening to at least 2°F requires only a programming change.',
   },
   spCO2Deviation: {
-    short: 'CO₂ demand-control setpoint differs from ASHRAE 36 Table 3.1.1.3 default',
+    short: 'Carbon dioxide ventilation setpoint differs from ASHRAE 36 Table 3.1.1.3 default',
     impact: 'Zero-hardware quick win',
     plain:
-      'Zone CO₂ setpoint differs from the ASHRAE 36 default; an incorrect value causes over-ventilation or under-ventilation. Correction is software-only.',
+      'Zone carbon dioxide setpoint differs from the ASHRAE 36 default; an incorrect value causes over-ventilation or under-ventilation. Correction is software-only.',
   },
   spNotScheduled: {
     short: 'Setpoint value not found in export — schedule status unknown',
     impact: 'Data completeness',
     plain:
-      'The BAS export did not include a numeric value for this setpoint; the programmed value requires a direct BAS lookup to verify.',
+      'The building automation system export did not include a numeric value for this setpoint; the programmed value requires a direct building automation system lookup to verify.',
   },
 };
 
@@ -12347,9 +12354,9 @@ var ASHRAE36_SEQUENCE_PLAIN = {
   chwp_staging:
     'Automatically brings a second chiller online only when the building actually needs the extra cooling, and shuts it back off when demand drops.',
   demandCtrl:
-    'Uses a CO2 sensor to bring in only as much outdoor air as the number of people in the building actually calls for, instead of a fixed amount around the clock.',
+    'Uses a carbon dioxide sensor to bring in only as much outdoor air as the number of people in the building actually calls for, instead of a fixed amount around the clock.',
   vav_dcv:
-    'Uses a CO2 sensor at the zone level to adjust ventilation air based on how many people are actually in that specific room.',
+    'Uses a carbon dioxide sensor at the zone level to adjust ventilation air based on how many people are actually in that specific room.',
 };
 
 /**
@@ -12519,13 +12526,13 @@ function collectASHRAE36Data(projId, reportDate) {
   var CAT_LABELS = {
     ahu: 'Air Handling Unit',
     rtu: 'Rooftop Unit',
-    vav: 'VAV Terminal',
+    vav: 'Variable Air Volume Terminal',
     fpb: 'Fan-Powered Terminal',
     ddvav: 'Dual-Duct Terminal',
     hwp: 'Hot Water Plant',
     chwp: 'Chilled Water Plant',
     ct: 'Cooling Tower',
-    doas: 'DOAS',
+    doas: 'Dedicated Outdoor Air System',
     fcu: 'Fan Coil Unit',
     zone: 'Zone Terminal',
     furnace: 'Furnace',
@@ -13469,7 +13476,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     p.totalEquip +
     ' piece' +
     (p.totalEquip !== 1 ? 's' : '') +
-    ' of HVAC equipment</strong>, <strong>' +
+    ' of heating and cooling equipment</strong>, <strong>' +
     d.project.name +
     '</strong> needs <strong>' +
     _a36ConsolidatedSequences +
@@ -13511,7 +13518,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    "This report evaluates the facility's building automation system against ASHRAE 36 — the industry standard for high-performance HVAC control. " +
+    "This report evaluates the facility's building automation system against ASHRAE 36 — the industry standard for high-performance heating and cooling control. " +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
@@ -13537,7 +13544,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
     p.totalEquip +
     '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text)">HVAC Systems Audited</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Heating and Cooling Systems Audited</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
@@ -13624,14 +13631,14 @@ function rptPageASHRAE36Executive(n, d) {
     if (_dcvZonesMissing > 0) {
       dcvParts.push(_dcvZonesMissing + ' of ' + dcv.totalZones + ' zone' + (dcv.totalZones > 1 ? 's' : ''));
     }
-    var dcvSentence = dcvParts.join(' and ') + ' have no CO₂ sensor.';
+    var dcvSentence = dcvParts.join(' and ') + ' have no carbon dioxide sensor.';
     dcvCallout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Demand Control Ventilation Readiness</div>' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
       '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
-      ' Without CO₂ sensing, these units ventilate at full design rates even when spaces are empty—wasting fan and cooling energy. ' +
-      'Adding CO₂ sensors enables demand control ventilation, so equipment stops conditioning air for spaces that are empty.' +
+      ' Without a way to sense carbon dioxide levels, these units ventilate at full design rates even when spaces are empty—wasting fan and cooling energy. ' +
+      'Adding carbon dioxide sensors lets ventilation adjust to how many people are actually in the space, so equipment stops conditioning air for rooms that are empty.' +
       '</div>' +
       '</div>';
   }
@@ -14245,13 +14252,13 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   var CAT_LABELS_PLURAL = {
     ahu: 'Air Handlers',
     rtu: 'Rooftop Units',
-    vav: 'VAV Terminals',
+    vav: 'Variable Air Volume Terminals',
     fpb: 'Fan-Powered Terminals',
     ddvav: 'Dual-Duct Terminals',
     hwp: 'Hot Water Plant',
     chwp: 'Chilled Water Plant',
     ct: 'Cooling Towers',
-    doas: 'DOAS Units',
+    doas: 'Dedicated Outdoor Air System Units',
     fcu: 'Fan Coil Units',
     zone: 'Zone Terminals',
     furnace: 'Furnaces',
@@ -14751,10 +14758,10 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   var infraCallout =
     '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px">' +
     '<div style="font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (BAS Export)</div>' +
+    'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (Building Automation System Export)</div>' +
     '<div style="display:flex;gap:16px">' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
-    '<span style="font-weight:600">Dedicated BAS power monitoring:</span> ' +
+    '<span style="font-weight:600">Dedicated building automation system power monitoring:</span> ' +
     (b.hasPowerMonitoring
       ? '<span style="color:var(--rpt-page-text)">Installed</span>'
       : '<span style="color:var(--rpt-page-text)">Not found in this export</span>') +
@@ -15013,10 +15020,10 @@ function rptPageASHRAE36Recommendations(n, d) {
       (recCount + 1) +
       '</td>' +
       '<td style="padding:6px 8px;border:1px solid var(--rpt-border);vertical-align:top">' +
-      '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">Add CO₂ sensors — enable demand control ventilation</div>' +
+      '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">Add carbon dioxide sensors — enable ventilation that adjusts to occupancy</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
       (dcvDesc.plain ||
-        'CO₂ sensors measure occupancy indirectly and allow the BAS to reduce outdoor air intake when spaces are unoccupied. Without them, these units ventilate at full design rates around the clock.') +
+        'Carbon dioxide sensors measure occupancy indirectly and allow the building automation system to reduce outdoor air intake when spaces are unoccupied. Without them, these units ventilate at full design rates around the clock.') +
       '</div>' +
       '</td>' +
       '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border:1px solid var(--rpt-border);vertical-align:top;white-space:nowrap">' +
@@ -15371,11 +15378,11 @@ function rptPageASHRAE36SetpointReview(n, d) {
       // documented as "NO background. NO border-left. NO border. Just spacing." (see its CSS
       // comment); this inline border-top violated that rule.
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
-      '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">CO₂ Setpoint Data Not Found in Export</div>' +
+      '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">Carbon Dioxide Setpoint Data Not Found in Export</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'DCV CO₂ setpoints (ASHRAE 36 §3.1.1.3 / Table 3.1.1.3) were not present in the equipment matrix export for this project. ' +
-      'CO₂ setpoint values are programmed set-points in the BAS controller — separate from the live CO₂ sensor readings shown in the equipment matrix. ' +
-      'A direct BAS lookup or updated export with CO₂ setpoint points is needed to complete this check.' +
+      'Carbon dioxide setpoints for occupancy-based ventilation (ASHRAE 36 §3.1.1.3 / Table 3.1.1.3) were not present in the equipment matrix export for this project. ' +
+      'Carbon dioxide setpoint values are programmed set-points in the building automation system controller — separate from the live carbon dioxide sensor readings shown in the equipment matrix. ' +
+      'A direct building automation system lookup or updated export with carbon dioxide setpoint points is needed to complete this check.' +
       '</div>' +
       '</div>';
   }
@@ -15388,11 +15395,11 @@ function rptPageASHRAE36SetpointReview(n, d) {
     exclusionNote =
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'Only buildings with zone-level terminal equipment (VAV boxes, fan-powered boxes, fan coil units, and similar) are shown — these are the units ASHRAE 36’s zone setpoint standards apply to. ' +
+      'Only buildings with zone-level terminal equipment (variable air volume boxes, fan-powered boxes, fan coil units, and similar) are shown — these are the units ASHRAE 36’s zone setpoint standards apply to. ' +
       _excludedCount +
       ' of ' +
       _totalScoredBuildings +
-      ' buildings are not included here because their HVAC equipment (rooftop units, heaters, exhaust fans, and similar) has no separate zone-level setpoints to review.' +
+      ' buildings are not included here because their heating and cooling equipment (rooftop units, heaters, exhaust fans, and similar) has no separate zone-level setpoints to review.' +
       '</div>' +
       '</div>';
   }
@@ -15403,7 +15410,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     'ASHRAE 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types. ' +
     'These are starting points — designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
     'Items marked Needs Review should be confirmed with the design engineer or facility staff to determine whether the deviation is intentional. ' +
-    'Values shown are building averages across all zone equipment in the BAS export.' +
+    'Values shown are building averages across all zone equipment in the building automation system export.' +
     '</div>';
 
   // ── Pagination (Issue 6 + Fix B correction 2026-06-18) ───────────────────
@@ -15534,7 +15541,7 @@ function _rptA36CoverPricingStrip(d) {
           'start/stop, and equipment lead/lag rotation. ' +
           (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
           svcSentence +
-          'Because these sequences directly target the largest controllable HVAC energy uses — fan speed, ' +
+          'Because these sequences directly target the largest controllable heating and cooling energy uses — fan speed, ' +
           'mechanical cooling run time, and equipment cycling — this tier is expected to return the most energy ' +
           'savings per dollar spent of the three scopes.'
         );
@@ -15565,12 +15572,12 @@ function _rptA36CoverPricingStrip(d) {
       desc: function (amtStr, svcSentence) {
         return (
           'Builds out every applicable ASHRAE 36 sequence across every piece of equipment in the portfolio ' +
-          'and adds building-wide Fault Detection &amp; Diagnostics (FDD) reporting; hardware is priced at ' +
+          'and adds building-wide automatic fault detection and diagnostics reporting; hardware is priced at ' +
           'full/standard spec rather than the Recommended tier’s cost-optimized substitutions. ' +
           (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
           svcSentence +
           'This is the highest-cost of the three tiers, but it delivers full-portfolio coverage ' +
-          'and the earliest access to FDD-driven fault alerts, so equipment problems that waste energy or shorten ' +
+          'and the earliest access to automatic fault alerts, so equipment problems that waste energy or shorten ' +
           'equipment life are caught automatically instead of during periodic manual review.'
         );
       },
@@ -15927,7 +15934,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<div style="text-align:center;margin-bottom:6px">' +
     '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">' +
     esc(displayClient) +
-    ' BAS</div>' +
+    ' Building Automation System</div>' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Optimization Program</div>' +
     // Document-type identifier (2026-07-29) -- the cover previously never said "Service
     // Proposal" anywhere, while the interior Cost Estimate headers and the modal/PDF filename
@@ -15956,9 +15963,9 @@ function rptPageASHRAE36ProposalCover(n, d) {
     Number(p.totalBuildings).toLocaleString() +
     ' buildings and ' +
     Number(p.totalEquip).toLocaleString() +
-    ' equipment units. The assessment found significant opportunities to improve HVAC energy ' +
-    'performance, ventilation control, occupant comfort, and overall BAS operational consistency ' +
-    'through targeted controls upgrades and optimization strategies.</div>';
+    ' equipment units. The assessment found significant opportunities to improve heating and cooling ' +
+    'energy performance, ventilation control, occupant comfort, and overall building automation system ' +
+    'operational consistency through targeted controls upgrades and optimization strategies.</div>';
 
   // ── Assessment Findings ─────────────────────────────────────────────────
   // 2026-07-27 (client review — page 1 redesign, verbatim: "Like those are wildly different
@@ -16004,7 +16011,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     'and safety programming every ASHRAE 36 sequence depends on — sensors, actuators, and ' +
     'safety-critical programming such as freeze protection — which must be in place before any ' +
     'optimization sequence can be programmed. The second is the ASHRAE 36 optimization ' +
-    'sequences themselves, together with portfolio-wide fault detection and diagnostics (FDD) ' +
+    'sequences themselves, together with portfolio-wide automatic fault detection and diagnostics ' +
     'reporting — the work that delivers the energy, comfort, and compliance outcomes the program ' +
     'is built around. Rather than fund this as a single capital project, Control Service Company ' +
     'recommends implementing it through the Recommended Optimization Program described below — a ' +
@@ -16091,11 +16098,11 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<ul style="' +
     UL +
     ';margin-top:4px">' +
-    '<li>Demand-controlled ventilation improvements</li>' +
+    '<li>Ventilation that adjusts to occupancy</li>' +
     '<li>Supply air temperature optimization</li>' +
     '<li>Fan energy optimization</li>' +
     '<li>Supporting sensor infrastructure upgrades</li>' +
-    '<li>BAS programming</li>' +
+    '<li>Building automation system programming</li>' +
     '<li>Continuous operational improvement</li>' +
     '</ul>';
 
@@ -16168,27 +16175,30 @@ function _rptA36WhyThisApproachHTML(HEAD, UL) {
  * (_rptA36RecommendedTimelineHTML) describe each phase's work with the SAME derivation — no
  * separate hardcoded copy that could drift between the two tables.
  */
+// Plain-language rewrite (no-abbreviations pass, 2026-07-31): dcv/bas VALUES were 'DCV
+// sensors and programming'/'BAS programming' -- both opaque acronyms. Object property NAMES
+// (dcv/sat/sensor/fan/bas) are matched by _rptA36PhaseImprovementsText below and are UNCHANGED.
 var _RPT_A36_PHASE_VERBS = [
   {
-    dcv: 'DCV sensors and programming',
+    dcv: 'occupancy-based ventilation sensors and programming',
     sat: 'supply air temperature optimization',
     sensor: 'supporting sensor infrastructure upgrades',
     fan: 'fan energy optimization',
-    bas: 'BAS programming',
+    bas: 'building automation system programming',
   },
   {
-    dcv: 'expanded DCV deployments',
+    dcv: 'expanded occupancy-based ventilation deployments',
     sat: 'expanded supply air temperature optimization',
     sensor: 'additional sensor deployments',
     fan: 'fan energy optimization',
-    bas: 'BAS programming',
+    bas: 'building automation system programming',
   },
   {
-    dcv: 'final DCV sensor deployment',
+    dcv: 'final occupancy-based ventilation sensor deployment',
     sat: 'remaining supply air temperature optimization',
     sensor: 'remaining sensor deployment',
     fan: 'remaining fan optimization',
-    bas: 'ongoing BAS programming',
+    bas: 'ongoing building automation system programming',
   },
 ];
 var _RPT_A36_DCV_SEQ = { demandCtrl: true, vav_dcv: true };
@@ -16931,7 +16941,7 @@ function _rptA36VisionInnerHTML(d, opts) {
     '<div style="' +
     BODY +
     '">The objective of the Recommended Optimization Program is not simply to complete a one-time ' +
-    'project. The objective is to continuously improve HVAC performance, increase energy ' +
+    'project. The objective is to continuously improve heating and cooling system performance, increase energy ' +
     'efficiency, improve occupant comfort, and progressively increase ASHRAE 36 alignments across ' +
     'the ' +
     esc(displayClient) +
@@ -17146,9 +17156,9 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
     UL +
     '">' +
     '<li>ASHRAE 36 optimization sequences — supply air temperature reset, duct static pressure ' +
-    'reset, demand-controlled ventilation, economizer control, and the other sequences applicable ' +
+    'reset, ventilation that adjusts to occupancy, economizer control, and the other sequences applicable ' +
     'to each piece of equipment</li>' +
-    '<li>Portfolio-wide Fault Detection &amp; Diagnostics (FDD) reporting</li>' +
+    '<li>Portfolio-wide automatic fault detection and diagnostics reporting</li>' +
     '<li>Ongoing verification and tuning as sequences are commissioned</li>' +
     '</ul>' +
     (budgetFmt
@@ -17246,7 +17256,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
     dcvScopeRow =
       '<tr>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
-      'Carbon Dioxide (CO₂) sensors for demand-controlled ventilation' +
+      'Carbon dioxide sensors for ventilation that adjusts to occupancy' +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
       _dcvScopeStr +
@@ -17326,7 +17336,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
     ph1HTML +
     '</div>' +
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2 — BAS Sequence Programming</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2 — Building Automation System Sequence Programming</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming of ASHRAE 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
     ph2HTML +
     '</div>';
@@ -17458,7 +17468,7 @@ function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
  * Hardware" in _rptA36HardwareCategoryAgg below (forward-compatible with future catalog entries).
  */
 var _RPT_A36_DEVICE_CLASS_LABEL = {
-  spaceZoneSensor: 'Zone Sensors (Temperature/Humidity/CO2)',
+  spaceZoneSensor: 'Zone Sensors (Temperature/Humidity/Carbon Dioxide)',
   ductTempRhSensor: 'Duct Temperature Sensors',
   ductStaticPressureSensor: 'Duct Static Pressure Sensors',
   immersionWellTempSensor: 'Hydronic Temperature Sensors',
@@ -17468,7 +17478,7 @@ var _RPT_A36_DEVICE_CLASS_LABEL = {
   currentSwitchStatusRelay: 'Status Sensing Relays',
   diffPressureSwitch: 'Differential Pressure Sensors',
   unitaryDdcController: 'Zone Controllers',
-  ahuPlantDdcController: 'AHU/Plant Controllers',
+  ahuPlantDdcController: 'Air Handler/Plant Controllers',
   flowBtuMeter: 'Flow Meters',
   vfdIntegration: 'Variable Frequency Drive Integration',
   networkRouterGateway: 'Network Gateways',
@@ -18716,7 +18726,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-page-text)">' +
     inv.totalAll.toLocaleString() +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Total BAS Points Inventoried</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Total Building Automation System Points Inventoried</div>' +
     '</div>' +
     // Card 2: ASHRAE-mapped points
     '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
@@ -18730,7 +18740,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-page-text)">' +
     inv.totalOther.toLocaleString() +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Other BAS Points Inventoried</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Other Building Automation System Points Inventoried</div>' +
     '</div>' +
     // Card 4: ASHRAE coverage of total inventory
     '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
@@ -18745,7 +18755,7 @@ function rptPageASHRAE36PointInventory(n, d) {
   // ── Narrative ─────────────────────────────────────────────────────────────
   var narrative =
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
-    'This inventory covers every BAS data object exported from the building automation system for this project. ' +
+    'This inventory covers every building automation system data object exported for this project. ' +
     'Of the ' +
     inv.totalAll.toLocaleString() +
     ' total points captured, ' +
@@ -18753,7 +18763,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     ' map directly to ASHRAE 36 sensor and actuator categories and are evaluated in the compliance scoring above. ' +
     'The remaining ' +
     inv.totalOther.toLocaleString() +
-    ' points are present in the BAS export but do not correspond to a defined ASHRAE 36 category — these may include vendor-specific status objects, ' +
+    ' points are present in the building automation system export but do not correspond to a defined ASHRAE 36 category — these may include vendor-specific status objects, ' +
     'integration relay programs, setpoint offsets, or equipment not addressed by ASHRAE 36. ' +
     'All points are accounted for; none are discarded.' +
     '</div>';
@@ -18780,7 +18790,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     '">ASHRAE 36 Points</th>' +
     '<th style="' +
     thRight +
-    '">Other BAS Points</th>' +
+    '">Other Building Automation System Points</th>' +
     '<th style="' +
     thRight +
     '">ASHRAE Coverage</th>' +
@@ -18843,7 +18853,7 @@ function rptPageASHRAE36PointInventory(n, d) {
   // added an outline on plain prose text (also banned — plain text gets no border). Both removed.
   var footnote =
     '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;padding-top:8px">' +
-    'Note: "Other BAS Points" counts are informational. They represent BAS objects that have been captured and logged but ' +
+    'Note: "Other Building Automation System Points" counts are informational. They represent building automation system objects that have been captured and logged but ' +
     'do not correspond to any ASHRAE 36 sensor or actuator category. ' +
     'These points do not contribute to and do not reduce the ASHRAE 36 Coverage percentages shown in this report.' +
     '</div>';

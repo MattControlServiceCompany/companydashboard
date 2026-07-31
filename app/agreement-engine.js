@@ -443,7 +443,7 @@ var _agreementCommercialRenderers = {
     return {
       servicesBullets: servicesBullets,
       servicesExcluded:
-        'Equipment replacement and calibration services are not included under this Agreement. Retro-Commissioning (RCx) services are not included under this Agreement. Major reprogramming of BAS system graphics and program logic that are not for the purposes of saving energy are not included under this Agreement. Utility data management platform costs and services are not included under this Agreement.',
+        'Equipment replacement and calibration services are not included under this Agreement. Retro-Commissioning services are not included under this Agreement. Major reprogramming of building automation system graphics and program logic that are not for the purposes of saving energy are not included under this Agreement. Utility data management platform costs and services are not included under this Agreement.',
       compensation:
         'Client shall pay Contractor ' +
         d.cscPct +
@@ -555,7 +555,7 @@ function rptPageAgreementCommercialTerms(n, d) {
     '">1.1 Services:</div>' +
     '<div style="' +
     _AGR_BODY +
-    '" contenteditable="true">Provide Energy Management services to optimize the BAS System including but not limited to the following:</div>' +
+    '" contenteditable="true">Provide Energy Management services to optimize the building automation system including but not limited to the following:</div>' +
     '<ul style="' +
     _AGR_UL +
     '" contenteditable="true">' +
@@ -567,7 +567,7 @@ function rptPageAgreementCommercialTerms(n, d) {
     '">Implement optimized set points.</li>' +
     '<li style="' +
     _AGR_BODY +
-    '">Implement optimized sequences (resets, economizer logic, DCV).</li>' +
+    '">Implement optimized sequences (resets, economizer logic, and ventilation that adjusts to occupancy).</li>' +
     r.servicesBullets +
     '<li style="' +
     _AGR_BODY +
@@ -584,10 +584,10 @@ function rptPageAgreementCommercialTerms(n, d) {
     '</ul>' +
     '<div style="' +
     _AGR_SUBHEAD +
-    '">1.2 Facility and BAS Access:</div>' +
+    '">1.2 Facility and Building Automation System Access:</div>' +
     '<div style="' +
     _AGR_BODY +
-    '" contenteditable="true">Client shall provide Contractor with remote and on-site access to the BAS and facilities during normal business hours as needed.</div>' +
+    '" contenteditable="true">Client shall provide Contractor with remote and on-site access to the building automation system and facilities during normal business hours as needed.</div>' +
     '<div style="' +
     _AGR_SUBHEAD +
     '">1.3 Services Excluded:</div>' +
