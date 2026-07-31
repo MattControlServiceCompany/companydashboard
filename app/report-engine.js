@@ -12220,7 +12220,12 @@ var ASHRAE36_SECTIONS = {
     { key: 'cover', label: 'Cover Page', group: 'Report', defaultOn: true },
     { key: 'executive', label: 'Executive Summary', group: 'Report', defaultOn: true },
     { key: 'costEstimate', label: 'ASHRAE 36 Sequences', group: 'Report', defaultOn: true },
-    { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
+    // 2026-07-30 (Matt's decision): Per-Building Detail, Setpoint Programming Review, and Point
+    // Inventory Completeness flipped to opt-in (default OFF) -- Matt unchecks these three for
+    // every client copy of the Audit Report, so the tool now starts in the shape he actually
+    // ships. Sections are unchanged and fully available when checked; only the modal's initial
+    // checkbox state changed (openASHRAE36ReportModal renders `checked` from `defaultOn !== false`).
+    { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: false },
     // a0c2152 (2026-07-06): power monitoring / OA-sensor metadata is not ASHRAE 36 scoring
     // content. Matt has twice asked why non-ASHRAE content is in the report, so this
     // callout is now an independent, unchecked-by-default sub-option (threaded into
@@ -12238,9 +12243,9 @@ var ASHRAE36_SECTIONS = {
     // between these two sections" complaint by removing one of the two sections.
     // rptPageASHRAE36Recommendations() itself is left defined (no other callers) — only its
     // inclusion in the Audit section list / generation pipeline is removed.
-    { key: 'setpointReview', label: 'Setpoint Programming Review', group: 'Report', defaultOn: true },
+    { key: 'setpointReview', label: 'Setpoint Programming Review', group: 'Report', defaultOn: false },
     // Phase D-3: Point inventory completeness — informational only, never affects Coverage %
-    { key: 'pointInventory', label: 'Point Inventory Completeness', group: 'Report', defaultOn: true },
+    { key: 'pointInventory', label: 'Point Inventory Completeness', group: 'Report', defaultOn: false },
   ],
   proposal: [
     // 2026-07-26 rebuild (spec: AI/_context/specs/joco-service-proposal-target-2026-07-23.md):
