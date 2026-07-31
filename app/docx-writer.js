@@ -1272,9 +1272,34 @@ function _docxTranslateTable(tableEl, ctx) {
           // the SAME _docxTranslateBlock dispatch the page-level walk already uses (handles
           // UL/OL/P/DIV/heading/table uniformly), and collect every resulting paragraph/list-item
           // block into this cell -- multiple <w:p> inside one <w:tc> is valid OOXML.
+          // Walk cell.childNodes (elements AND loose text), NOT cell.children (elements only) --
+          // same gap _docxTranslateBlockChildren was built to close elsewhere, but this cell
+          // delegation loop (added whole-cloth by Step 8, never routed through that helper) still
+          // had it. Found 2026-07-31 via the plan's own content-completeness diff (source text vs
+          // rendered PDF text): the ASHRAE 36 Sequences glossary table's first column is
+          // `_esc(seq.label) + '<div>Requires: ...</div>'` (report-engine.js) -- a LOOSE text node
+          // (the sequence name, e.g. "Supply Air Temperature Reset") immediately followed by a
+          // <div> element (the "Requires: ..." line). _docxHasBlockChild(cell) is true (the DIV
+          // qualifies), so this cell takes this delegation branch; iterating cell.children skipped
+          // the loose text node entirely -- every sequence NAME in that table vanished while its
+          // "Requires:" sub-line rendered fine, confirmed via a real render (text search for
+          // "Supply Air Temperature Reset" absent, "Requires: Supply Air Temp..." present).
           cellParagraphs = [];
-          Array.prototype.forEach.call(cell.children, function (child) {
-            cellParagraphs = cellParagraphs.concat(_docxTranslateBlock(child, ctx, cellBaseFmt));
+          Array.prototype.forEach.call(cell.childNodes, function (child) {
+            if (child.nodeType === 1) {
+              cellParagraphs = cellParagraphs.concat(_docxTranslateBlock(child, ctx, cellBaseFmt));
+            } else if (child.nodeType === 3) {
+              var looseText = _docxCollapseLooseText(child.nodeValue);
+              if (looseText) {
+                cellParagraphs.push(
+                  _docxParagraph({
+                    runs: [_docxRun(Object.assign({ text: looseText }, cellBaseFmt))],
+                    align: align,
+                    spacingAfter: 0,
+                  }),
+                );
+              }
+            }
           });
           if (!cellParagraphs.length) {
             cellParagraphs = [
