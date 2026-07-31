@@ -27,10 +27,30 @@
 
 /** Escape a string for safe use as XML text content or attribute value.
  * Order matters: & must be escaped first, or the entities inserted for the
- * other characters would themselves get re-escaped. */
+ * other characters would themselves get re-escaped.
+ *
+ * ALSO strips (not merely fails to escape) XML-illegal C0 control chars --
+ * XML 1.0 permits only \x09/\x0A/\x0D among them. Found 2026-07-31 via an
+ * adversarial fixture render: \x00/\x08/\x0B/\x1F reaching <w:t> made
+ * DOMParser reject the body XML ("Invalid character: Char 0x0 out of
+ * allowed range") and Word refused to open the file at all ("Open with the
+ * Text Recovery converter") -- worse than a repair prompt. This is not
+ * contrived: Excel's Alt+Enter inside a cell is literally \x0B, and OCR
+ * extraction can emit stray bytes; JOCO's data comes from spreadsheets and
+ * OCR. Deliberately placed HERE (not in _docxWalkInline) because this is
+ * the single choke point EVERY builder routes text and attribute values
+ * through (including alt text and other DOM-derived attributes, not just
+ * <w:t> body content) -- stripping upstream in only the DOM walker would
+ * leave every other caller unprotected. \x0B specifically is intercepted
+ * one level up in _docxRun (converted to a real <w:br/>, matching what an
+ * Alt+Enter user meant) BEFORE it would otherwise be stripped here; \x0B
+ * arriving here via any other path (e.g. inside an attribute) is still
+ * stripped, not turned into a break -- a break has no meaning inside an
+ * XML attribute value. */
 function _docxEscapeXml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -73,6 +93,12 @@ function _docxRun(opts) {
   rPr += '</w:rPr>';
 
   var text = opts.text != null ? String(opts.text) : '';
+  // A literal \x0B (vertical tab) is what Excel writes for Alt+Enter inside
+  // a cell -- if a user typed that, they meant a line break, not nothing.
+  // Normalize it to '\n' BEFORE the split below so it becomes a real
+  // <w:br/> here, same as an explicit '\n', instead of silently vanishing
+  // when _docxEscapeXml strips remaining illegal control chars per line.
+  text = text.replace(/\x0B/g, '\n');
   var lines = text.split('\n');
   var body = lines
     .map(function (line, i) {
@@ -413,7 +439,20 @@ async function _docxSpliceNumbering(zip, allocations) {
   if (!allocations || !allocations.length) return;
   var path = 'word/numbering.xml';
   var xml = await zip.file(path).async('string');
-  var entries = allocations
+
+  // Idempotency guard: calling this twice with the SAME allocation (a
+  // retry, or a preview-then-final double build) must not append a second
+  // <w:num> for a numId already spliced in -- the XML stays well-formed
+  // either way, but a duplicate w:numId is semantically invalid and Word's
+  // behavior is undefined. Dedupe on numId rather than early-returning the
+  // whole call so a MIX of already-spliced and genuinely-new allocations in
+  // one call still splices only the new ones.
+  var freshAllocations = allocations.filter(function (a) {
+    return xml.indexOf('w:numId="' + a.numId + '"') === -1;
+  });
+  if (!freshAllocations.length) return;
+
+  var entries = freshAllocations
     .map(function (a) {
       var ilvl = a.ilvl || 0;
       return (
@@ -580,8 +619,18 @@ async function _docxAssemble(documentXml, opts) {
      div / p / h1-h6 / span / strong / em / table / tr / td / th / ul / ol /
      li / img -- plus the data-word-indent hint attribute (spec §4e, Agreement
      clause sub-levels). Anything outside this vocabulary is walked
-     defensively (children still visited, so content is never silently
-     dropped) but the unknown tag itself never emits XML.
+     defensively via _docxTranslateBlockChildren() (ALL childNodes visited,
+     elements AND text -- not just el.children, which the DOM defines as
+     elements only -- so loose text sitting directly at a block position is
+     turned into its own paragraph instead of silently vanishing) but the
+     unknown tag itself never emits XML. Corrected 2026-07-31: this comment
+     used to claim "children still visited, so content is never silently
+     dropped" while the code underneath walked el.children (elements only)
+     in three places (this branch, a DIV-with-block-children container, and
+     the page-root iteration) -- the claim was false and loose text between
+     block siblings was in fact dropped; verified by adversarial fixture
+     render (zero occurrences of the injected loose-text markers in the
+     generated XML / rendered PDF).
 
    Indentation policy (Step 5, plan line 298-301): body paragraphs get NO
    w:ind -- the skeleton's real page margins (spec §1) do the work now, which
@@ -969,9 +1018,32 @@ function _docxTranslateTable(tableEl, ctx) {
       var cells = Array.prototype.slice.call(tr.children).filter(function (c) {
         return c.tagName === 'TD' || c.tagName === 'TH';
       });
+      if (!cells.length) return '';
+
+      var spans = cells.map(function (c) {
+        return parseInt(c.getAttribute('colspan'), 10) || 1;
+      });
+      var rowSpanTotal = spans.reduce(function (sum, s) {
+        return sum + s;
+      }, 0);
+      // Reconcile a row that declares FEWER grid columns than colCount (the
+      // max colspan-sum across the WHOLE table -- e.g. one aberrant
+      // colspan="5" row in an otherwise-3-column table drives colCount to
+      // 5) by letting its LAST cell absorb the shortfall. Without this, a
+      // normal row's real <w:tc> cells only ever covered colCount worth of
+      // grid width when colCount came from a DIFFERENT, wider row, so the
+      // whole table's declared w:gridCol columns stopped lining up with
+      // this row's actual cells and it rendered visibly narrower than the
+      // overflow row. Found 2026-07-31 via adversarial fixture render
+      // (v2_page4.png, table "F1"). rowSpanTotal can never exceed colCount
+      // (colCount is the max), so this only ever widens, never shrinks.
+      if (rowSpanTotal < colCount) {
+        spans[spans.length - 1] += colCount - rowSpanTotal;
+      }
+
       var colIdx = 0;
-      var cellsXml = cells.map(function (cell) {
-        var span = parseInt(cell.getAttribute('colspan'), 10) || 1;
+      var cellsXml = cells.map(function (cell, cIdx) {
+        var span = spans[cIdx];
         var widthTwips = 0;
         for (var k = 0; k < span; k++) widthTwips += colWidths[colIdx + k] || 0;
         colIdx += span;
@@ -1058,6 +1130,52 @@ function _docxTranslateList(listEl, ctx, numId, ilvl) {
   return out;
 }
 
+/** Whitespace-collapse a loose (block-position) text node's raw value the
+ * same way _docxWalkInline does for inline text (every run of space/tab/
+ * CR/LF -> one space), then trim leading/trailing space -- this text stands
+ * alone as its own paragraph (no neighboring run to preserve a boundary
+ * space against), so unlike _docxFinalizeRuns' single-space-off-each-end
+ * trim it is fully trimmed both ends. Returns '' for pure formatting
+ * whitespace (a source template literal's own indentation/newlines between
+ * tags), which must still be dropped -- do NOT turn that into blank
+ * paragraphs. */
+function _docxCollapseLooseText(rawText) {
+  if (!rawText) return '';
+  return rawText.replace(/[ \t\r\n]+/g, ' ').trim();
+}
+
+/**
+ * Walk `parentEl`'s DIRECT childNodes -- elements AND text nodes -- at a
+ * block position: element children are dispatched through
+ * _docxTranslateBlock(); any text node whose content survives
+ * _docxCollapseLooseText() becomes its own body paragraph (spacingAfter=240,
+ * the same body-paragraph policy _docxTranslateBlock uses for <p>/<div>).
+ *
+ * The THREE call sites that need this (page-root iteration, a <div>
+ * container with block children, and the defensive out-of-vocabulary-tag
+ * branch) used to iterate `el.children`, which the DOM defines as ELEMENTS
+ * ONLY -- text nodes sitting directly at a block position (e.g.
+ * `<p>Before</p>LOOSE TEXT<p>After</p>`) were silently dropped. Found
+ * 2026-07-31 via adversarial fixture render: zero occurrences of the
+ * injected loose-text markers in the generated XML, confirmed absent in the
+ * rendered PDF, across all three paths.
+ */
+function _docxTranslateBlockChildren(parentEl, ctx) {
+  var out = [];
+  var childNodes = parentEl.childNodes;
+  for (var i = 0; i < childNodes.length; i++) {
+    var node = childNodes[i];
+    if (node.nodeType === 1) {
+      out = out.concat(_docxTranslateBlock(node, ctx));
+    } else if (node.nodeType === 3) {
+      var text = _docxCollapseLooseText(node.nodeValue);
+      if (text) out.push(_docxParagraph({ text: text, spacingAfter: 240 }));
+    }
+    // other nodeTypes (comments, etc.) -- skip, same as _docxWalkInline.
+  }
+  return out;
+}
+
 /**
  * Dispatch a single block-position element to its OOXML shape. Returns an
  * array of block XML strings (0, 1, or many -- a container <div> returns
@@ -1122,17 +1240,14 @@ function _docxTranslateBlock(el, ctx) {
   }
 
   if (tag === 'DIV') {
-    var out = [];
-    for (var i = 0; i < el.children.length; i++) out = out.concat(_docxTranslateBlock(el.children[i], ctx));
-    return out;
+    return _docxTranslateBlockChildren(el, ctx);
   }
 
-  // Outside the closed vocabulary at a block position -- recurse into
-  // element children defensively so content is never silently dropped, but
-  // the unknown tag itself emits no XML.
-  var out2 = [];
-  for (var j = 0; j < el.children.length; j++) out2 = out2.concat(_docxTranslateBlock(el.children[j], ctx));
-  return out2;
+  // Outside the closed vocabulary at a block position -- walk childNodes
+  // (elements AND loose text, via _docxTranslateBlockChildren) defensively
+  // so content is never silently dropped, but the unknown tag itself emits
+  // no XML.
+  return _docxTranslateBlockChildren(el, ctx);
 }
 
 /**
@@ -1153,9 +1268,7 @@ function _docxTranslatePages(pageEls) {
   var blocks = [];
   for (var p = 0; p < pageEls.length; p++) {
     if (p > 0) blocks.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
-    for (var i = 0; i < pageEls[p].children.length; i++) {
-      blocks = blocks.concat(_docxTranslateBlock(pageEls[p].children[i], ctx));
-    }
+    blocks = blocks.concat(_docxTranslateBlockChildren(pageEls[p], ctx));
   }
   return { xml: blocks.join(''), images: ctx.images, numIds: ctx.numAllocations };
 }
