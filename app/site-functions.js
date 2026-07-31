@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.31.733',
+    date: '2026-07-31',
+    title: 'Audit Report Word export — cover numbers now print side by side',
+    items: [
+      {
+        type: 'fix',
+        text: 'Audit Report Word export — the cover-page percentages and the four statistics below them now print side by side, the way they look on screen, instead of stacked in a single column.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report Word export — the two Executive Summary section headings now print noticeably larger than the body text below them.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.31.732',
     date: '2026-07-31',
     title: 'Audit Report cover gauges now weighted by equipment count',
