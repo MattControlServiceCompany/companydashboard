@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.30.731',
+    date: '2026-07-30',
+    title: 'ASHRAE 36 Audit Report now generates client-ready by default',
+    items: [
+      {
+        type: 'change',
+        text: "On the ASHRAE 36 Audit Report, the Per-Building Detail, Setpoint Programming Review, and Point Inventory Completeness sections now start unchecked, so the report generates in its client-ready form right away. All three can still be turned on from the report options whenever they're wanted.",
+      },
+    ],
+  },
+  {
     v: 'v2026.07.30.730',
     date: '2026-07-30',
     title: 'Service Proposal months table, sensor coverage accuracy, and Word export fixes',
