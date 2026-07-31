@@ -7870,8 +7870,15 @@ async function exportReportToWord() {
       // percentage Word might re-resolve against the wrong box. Only DIRECT children get the
       // margin-left/right inset itself (nested width:100% descendants already sit inside an
       // already-inset ancestor and would be double-inset otherwise).
-      const WORD_TEXT_INSET = '0.5in';
-      const WORD_CONTENT_WIDTH = '7.5in';
+      // Indentation depth increase (2026-07-31, fix/word-export-indent-depth — Matt: "the
+      // indents need to be more for normal text and especially bullet points"). Body text was
+      // measured at a correct-but-shallow 36pt (0.5in) inset; target is 54pt (0.75in). Page is
+      // 8.5in (612pt) wide with @page margin 0in, so content width shrinks in lockstep to
+      // 8.5in - 2*0.75in = 7.0in (was 7.5in) to keep the same 0.75in gutter on both sides —
+      // WORD_CONTENT_WIDTH must always equal page width minus 2x WORD_TEXT_INSET, never edited
+      // independently, or width:100% tables will overflow/underflow the new margin.
+      const WORD_TEXT_INSET = '0.75in';
+      const WORD_CONTENT_WIDTH = '7.0in';
       // Scoped to `table` elements only (2026-07-26, regression fix). The unscoped
       // `[style*="width:100%"]` substring selector below also matched non-table elements that
       // legitimately use `width:100%` combined with their own `max-width` cap — e.g. the monthly
@@ -8047,6 +8054,12 @@ async function exportReportToWord() {
       // 10.0pt (matching wordFontCss's own .MsoChpDefault/p.MsoNormal docDefaults value below) is
       // the safe fallback. (2026-07-28: also switched the per-`<li>` font-family override from
       // Calibri to Arial to match the CSC Letterhead.docx template — see wordFontCss below.)
+      // NOTE (2026-07-31, fix/word-export-indent-depth): the "`<ul>` wrapper margin alone is
+      // sufficient, `<ol>` needs the per-`<li>` fallback" conclusion in the paragraph immediately
+      // below is SUPERSEDED — see the "List depth" comment further down for the fresh,
+      // contradicting measurement this branch made. Left in place as the historical record of
+      // why the per-`<li>` mechanism exists and how `<ol>`'s baseline-delta math works; the
+      // `<ul>`-is-fine claim specifically should not be relied on.
       // List indentation fix (2026-07-30, fix/word-export-indentation), SCOPED TO `<ol>` ONLY —
       // measured via the same Word COM round-trip that `<ul>` (bulleted) lists do NOT have this
       // problem: e.g. the Proposal's "future opportunities" bullet list and the Agreement's own
@@ -8072,19 +8085,51 @@ async function exportReportToWord() {
       // matching the live browser/PDF reference render of 37.8pt within marker-glyph rounding).
       const _listFontSizeRe = /font-size\s*:\s*([^;]+)/;
       const _listMarginLeftRe = /margin-left\s*:\s*([^;]+)/;
-      const _listPaddingLeftRe = /padding-left\s*:\s*([\d.]+)px/;
-      const WORD_TEXT_INSET_PT = 36; // matches WORD_TEXT_INSET ('0.5in') in points
+      const WORD_TEXT_INSET_PT = 54; // matches WORD_TEXT_INSET ('0.75in') in points
+      // List depth (2026-07-31, fix/word-export-indent-depth — Matt: "especially bullet
+      // points"). Bullets/numbers must sit clearly deeper than body text, not level with it.
+      // THREE controlled Word COM round-trips this branch (PyMuPDF span x0 on the ASHRAE 36
+      // Proposal's "Why This Approach" bullet list) established the actual, DIFFERENT-from-
+      // documented-history behavior of Word's HTML->native-list conversion, superseding both the
+      // "<ul> wrapper margin is honored" AND "<ol> padding-left seeds the numbering-def"
+      // conclusions in the 2026-07-30 comment block above:
+      //   1. An explicit `margin-left:72pt`/`144pt` on the `<ul>` wrapper: ZERO effect (marker
+      //      unmoved either time).
+      //   2. An explicit `padding-left:18pt`/`72pt`/`144pt` on the `<ul>` wrapper: ALSO zero
+      //      effect on the rendered marker once a clean (non-duplicate) single declaration is
+      //      used — the 18pt "match" in an earlier draft of this fix was a coincidence: that
+      //      draft's DOM edit left the list's pre-existing `padding-left:16px` in the style
+      //      string ahead of the new one, and Word's rendered marker in that case simply equalled
+      //      WORD's OWN un-overridable default (see point 3), which happened to be 18pt too.
+      //   3. With no per-`<li>` override at all, EVERY bullet list in this report renders its
+      //      marker at a fixed x0 of 18.00pt and its text at 22.56pt (a 4.56pt marker-to-text
+      //      gap) — Word's own built-in "List Bullet" numbering-def default, entirely independent
+      //      of any source CSS on the `<ul>`/`<li>`.
+      //   4. A per-`<li>` `margin-left` (documented below as having a real OOXML `<w:ind>` home)
+      //      is the ONE lever that reliably moves anything: it shifts marker AND text together,
+      //      1:1, preserving Word's fixed 4.56pt gap exactly (measured: `margin-left:18pt` on
+      //      every `<li>` -> marker 36.00pt, text 40.56pt — exactly the 18pt baseline plus an
+      //      18pt shift, gap unchanged).
+      // Net effect: Word's native bullet-list HTML import does not expose an independently
+      // controllable marker-to-text HANGING gap via inline CSS at all in this environment — only
+      // a uniform shift of the whole item (marker+text together) is achievable. Given that hard
+      // constraint, this fix hits the MARKER target exactly (WORD_LIST_MARKER_INSET_PT, 72pt/
+      // 1.0in) via `WORD_LIST_DEFAULT_MARKER_PT` (Word's fixed 18pt baseline) + a per-`<li>`
+      // margin-left of exactly the remaining delta; the resulting TEXT position is
+      // WORD_LIST_MARKER_INSET_PT + Word's own fixed ~4.56pt gap (~76.6pt) rather than the
+      // requested 90pt (1.25in) hanging target — flagged explicitly in this branch's report
+      // rather than silently claiming 90pt was achieved.
+      const WORD_LIST_DEFAULT_MARKER_PT = 18; // Word's fixed, CSS-independent default marker x0
+      const WORD_LIST_MARKER_INSET_PT = 72; // 1.0in — target marker position, achieved exactly
       clone.querySelectorAll('ul, ol').forEach((listEl) => {
         const _listStyle = listEl.getAttribute('style') || '';
         const _sizeMatch = _listStyle.match(_listFontSizeRe);
         const _liFontSize = _sizeMatch ? _sizeMatch[1].trim() : '10.0pt';
         const _marginMatch = _listStyle.match(_listMarginLeftRe);
-        const _paddingMatch = _listStyle.match(_listPaddingLeftRe);
-        const _existingBaselinePt = _paddingMatch ? parseFloat(_paddingMatch[1]) : 0;
-        const _liMarginLeft =
-          listEl.tagName === 'OL' && _marginMatch && _marginMatch[1].trim() === WORD_TEXT_INSET
-            ? Math.max(0, WORD_TEXT_INSET_PT - _existingBaselinePt) + 'pt'
-            : null;
+        const _isBodyLevelList = !!(_marginMatch && _marginMatch[1].trim() === WORD_TEXT_INSET);
+        const _liMarginLeft = _isBodyLevelList
+          ? Math.max(0, WORD_LIST_MARKER_INSET_PT - WORD_LIST_DEFAULT_MARKER_PT) + 'pt'
+          : null;
         Array.from(listEl.children).forEach((li) => {
           if (li.tagName !== 'LI') return;
           const _existingLiStyle = li.getAttribute('style') || '';
