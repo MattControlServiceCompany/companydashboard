@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.31.732',
+    date: '2026-07-31',
+    title: 'Audit Report cover gauges now weighted by equipment count',
+    items: [
+      {
+        type: 'change',
+        text: 'Audit Report — the readiness percentages on the cover (Composite Score, Sensor Coverage, Sequence Readiness) now give larger buildings proportionally more weight, so a building with 500 pieces of equipment counts more than one with 5. Composite Score now reads 60% (was 55%), Sensor Coverage 62% (was 59%), and Sequence Readiness 52% (was 37%). Per-building numbers are unchanged.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.30.731',
     date: '2026-07-30',
     title: 'ASHRAE 36 Audit Report now generates client-ready by default',
