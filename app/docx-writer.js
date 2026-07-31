@@ -1281,6 +1281,21 @@ function _docxTranslateTable(tableEl, ctx) {
               _docxParagraph({ runs: [_docxRun({ text: '', bold: isHeaderCell })], align: align, spacingAfter: 0 }),
             ];
           }
+          // OOXML's CT_Tc content model is (w:tbl | w:p)+ but MUST end in a w:p -- a <w:tc> whose
+          // last child is a <w:tbl> (no trailing paragraph) is schema-invalid and Word refuses to
+          // open the whole document ("file appears to be corrupted"), not just repair this one
+          // cell. A block child can legitimately BE a table here -- found 2026-07-31 merge-
+          // verifying the Audit Report: the 27-building compliance table's Status column nests a
+          // small per-building gap-detail <table> directly inside the <td> (report-engine.js
+          // _buildRowHTML), which _docxTranslateBlock's TABLE branch correctly returns as raw
+          // '<w:tbl>...</w:tbl>' XML with no paragraph of its own (a page-level table never needs
+          // one; only this nested-in-a-cell position does). This nesting was previously invisible
+          // because _docxCollectRuns' inline-only walk silently DROPPED any nested <table> before
+          // Step 8's block-child delegation existed to translate it at all -- content that used to
+          // vanish now renders, but needs this trailing paragraph to stay valid OOXML.
+          if (/<\/w:tbl>\s*$/.test(cellParagraphs[cellParagraphs.length - 1])) {
+            cellParagraphs.push(_docxParagraph({ runs: [], align: align, spacingAfter: 0 }));
+          }
         } else {
           var runs = _docxCollectRuns(cell, cellBaseFmt, ctx);
           cellParagraphs = [
