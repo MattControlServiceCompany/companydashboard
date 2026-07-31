@@ -1322,17 +1322,56 @@ function _docxTranslateBlock(el, ctx) {
  * where the source had a page boundary; pagination WITHIN a page's own
  * content is still Word's own flow.
  *
+ * 2026-07-31 blank-page fix: the break is folded into the LAST run of the
+ * preceding page's own final paragraph (an extra invisible run on real
+ * content), not emitted as a standalone `<w:p><w:r><w:br/></w:r></w:p>`
+ * paragraph between pages. A standalone break-only paragraph still needs
+ * its own line of vertical space; when a page's content already reaches
+ * the bottom margin (e.g. the JOCO agreement cover page's 27-item building
+ * list, which ends flush with the page bottom), Word has no room left for
+ * that empty paragraph and pushes the WHOLE paragraph onto a fresh page --
+ * whose own forced break then immediately turns that fresh page into a
+ * genuinely blank physical page (reproduced 2026-07-31: JOCO EMS Agreement
+ * page 2 of an 8-page render came back with 1 character, "2", i.e. only
+ * the footer page-number field -- everything else was this orphaned
+ * break-only paragraph). Attaching the break run to real content that was
+ * always going to render removes the empty paragraph entirely, so Word
+ * never needs to find room for a line that carries nothing.
+ *
  * Returns { xml: string, images: array<{bytes, extension, mediaIndex}>,
  *           numIds: array<{numId, abstractNumId}> }.
  */
 function _docxTranslatePages(pageEls) {
   var ctx = { images: [], imageCounter: 100, numAllocations: [], nextNumId: _DOCX_NUMID_ALLOC_START };
-  var blocks = [];
+  var pageBreakRun = '<w:r><w:br w:type="page"/></w:r>';
+  var allBlocks = [];
   for (var p = 0; p < pageEls.length; p++) {
-    if (p > 0) blocks.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
-    blocks = blocks.concat(_docxTranslateBlockChildren(pageEls[p], ctx));
+    // Walk ALL childNodes (elements AND loose text) via
+    // _docxTranslateBlockChildren -- NOT pageEls[p].children, which the DOM
+    // defines as elements-only and would silently drop loose text nodes
+    // sitting directly at page-root position (fix/docx-writer-step5-adversarial,
+    // 2026-07-31). The per-page block array is still needed (not folded
+    // straight into allBlocks) so the blank-page splice fix below
+    // (fix/docx-agreement-blankpages) can attach the page-break run onto the
+    // LAST paragraph of THIS page rather than emitting a standalone
+    // break-only paragraph that can overflow onto its own blank page.
+    var pageBlocks = _docxTranslateBlockChildren(pageEls[p], ctx);
+    if (p < pageEls.length - 1) {
+      var lastIdx = pageBlocks.length - 1;
+      if (lastIdx >= 0 && typeof pageBlocks[lastIdx] === 'string' && /<\/w:p>\s*$/.test(pageBlocks[lastIdx])) {
+        // Splice the break run in just before the paragraph's closing tag --
+        // same paragraph, same numPr/pPr, one extra trailing run.
+        pageBlocks[lastIdx] = pageBlocks[lastIdx].replace(/<\/w:p>\s*$/, pageBreakRun + '</w:p>');
+      } else {
+        // No paragraph to attach to (page ended in a table, or produced no
+        // blocks at all) -- fall back to the old standalone-break paragraph
+        // rather than silently dropping the page boundary.
+        pageBlocks.push('<w:p>' + pageBreakRun + '</w:p>');
+      }
+    }
+    allBlocks = allBlocks.concat(pageBlocks);
   }
-  return { xml: blocks.join(''), images: ctx.images, numIds: ctx.numAllocations };
+  return { xml: allBlocks.join(''), images: ctx.images, numIds: ctx.numAllocations };
 }
 
 /** Single-page convenience wrapper around _docxTranslatePages(). */

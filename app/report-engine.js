@@ -8342,6 +8342,119 @@ async function exportReportToWord() {
   }
 }
 
+/**
+ * exportReportToDocx — Word Export Rebuild plan Step 6 (first shipped document), wired for the
+ * EMS Agreement (data._agreement). AI/_context/plans/word-export-rebuild-2026-07-30.md Part D
+ * lines 306-311. Style authority: AI/_context/specs/csc-document-style-spec-2026-07-29.md.
+ *
+ * Produces a REAL OOXML .docx (app/docx-writer.js's _docxTranslatePages() DOM->OOXML translator
+ * + _docxAssemble(), splicing generated word/document.xml body content into the CSC letterhead
+ * skeleton, app/docx-skeleton.js, via JSZip) — NOT the mso-HTML ".doc wrapper" technique
+ * exportReportToWord() above uses. That path is being retired per the plan (Part B: duplicate
+ * footer, flex/SVG collapse, zero page margins, and un-measured px paragraph spacing are all
+ * structural to mso-HTML import and cannot be patched further).
+ *
+ * Deliberately does NOT reuse any of exportReportToWord()'s workaround machinery
+ * (_buildReportCssVarResolver, _fixPaddingUnits, _expandMarginShorthand, _insetChildren, the
+ * wordHeaderFooterHtml mso-element construction, etc.) — every one of those exists solely to
+ * compensate for gaps in Word's HTML *import* engine, which this path never touches. The
+ * skeleton supplies real page margins (spec §1) and real header/footer parts (spec §2/§3) by
+ * construction; _docxTranslatePages() reads the live DOM's actual element structure (tag names,
+ * inline styles it explicitly recognizes, data-word-* hints) directly into OOXML primitives.
+ *
+ * Chrome the skeleton already supplies is stripped from each page clone before translation so it
+ * is never ALSO emitted as body content (which would duplicate the letterhead and inflate file
+ * size): .rpt-footer/.rpt-footer-label/.rpt-pg-footer-pagenum (skeleton's real footer1.xml/
+ * footer2.xml + PAGE field already put a page number on every page, spec §3) and .rpt-small-hdr/
+ * .csc-header-img (skeleton's real header2.xml/header3.xml already put the full letterhead on
+ * page 1 and the wave band on pages 2+ by construction, spec §2c — nothing here needs to draw a
+ * letterhead image itself). .rpt-pl (the "PAGE N" preview caption) is a sibling of .rpt-page, not
+ * a descendant, so it is never selected in the first place.
+ */
+async function exportReportToDocx() {
+  const data = window._currentReportData;
+  if (!data) {
+    showToast('No report data available');
+    return;
+  }
+
+  const pagesContainer = document.getElementById('reportPages');
+  const pages = pagesContainer ? pagesContainer.querySelectorAll('.rpt-page') : [];
+  if (!pages.length) {
+    showToast('No report pages to export');
+    return;
+  }
+
+  // Same tier-detail force-expand as exportReportToPDF()/exportReportToWord() (see comment on
+  // exportReportToPDF above): whichever tier(s) the user had collapsed in the live preview must
+  // still render fully expanded in the exported document. Restored in `finally`. No-op for the
+  // Agreement (has no tier-detail panels) — kept for the Proposal/Audit documents Steps 7-8 wire
+  // through this same function next.
+  const tierDetailPanels = document.querySelectorAll('#reportPages [id^="rpt-tier-detail-"]');
+  const tierDetailPriorDisplay = [];
+  tierDetailPanels.forEach((panel) => {
+    tierDetailPriorDisplay.push(panel.style.display);
+    panel.style.display = 'block';
+  });
+
+  showToast('Generating Word document...');
+
+  try {
+    if (typeof _docxTranslatePages !== 'function' || typeof _docxAssemble !== 'function') {
+      throw new Error('docx-writer.js not loaded (_docxTranslatePages/_docxAssemble missing)');
+    }
+
+    const CHROME_SELECTORS = [
+      '.rpt-footer',
+      '.rpt-footer-label',
+      '.rpt-pg-footer-pagenum',
+      '.rpt-small-hdr',
+      '.csc-header-img',
+    ];
+    const pageEls = [];
+    pages.forEach((pageEl) => {
+      const clone = pageEl.cloneNode(true);
+      CHROME_SELECTORS.forEach((sel) => {
+        clone.querySelectorAll(sel).forEach((el) => el.remove());
+      });
+      pageEls.push(clone);
+    });
+
+    const translated = _docxTranslatePages(pageEls);
+
+    const client = data.project.client || data.project.name || 'Report';
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+    let filename;
+    if (data._agreement) {
+      filename = client + ' - Energy Management Services Agreement ' + dateStr + '.docx';
+    } else if (data._ashrae) {
+      filename =
+        data._ashrae.type === 'proposal'
+          ? client + ' - Service Proposal ' + dateStr + '.docx'
+          : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.docx';
+    } else {
+      const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
+      filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.docx';
+    }
+
+    await _docxAssemble(translated.xml, {
+      filename: filename,
+      images: translated.images,
+      numIds: translated.numIds,
+    });
+
+    showToast('Word document generated ✓');
+  } catch (err) {
+    console.error('Word (.docx) export failed:', err);
+    showToast('Word export failed: ' + (err && err.message ? err.message : err), 'error');
+  } finally {
+    tierDetailPanels.forEach((panel, i) => {
+      panel.style.display = tierDetailPriorDisplay[i];
+    });
+  }
+}
+window.exportReportToDocx = exportReportToDocx;
+
 /* -- BOARD EXECUTIVE SUMMARY PAGE -- */
 
 /**
