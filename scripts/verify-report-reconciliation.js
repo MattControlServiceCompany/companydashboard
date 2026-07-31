@@ -82,8 +82,29 @@
 const path = require('path');
 const fs = require('fs');
 
-const REPO_ROOT = 'C:/Users/Matt Miller/AI/companydashboard';
-const { chromium } = require(path.join(REPO_ROOT, 'node_modules/playwright'));
+// REPO_ROOT must resolve to the tree this script is actually running FROM (primary checkout
+// or a git worktree), not a fixed path -- otherwise the gate silently grades a different tree
+// than the one under test (backlog 53b15c49dc7ab28e). Derived from this script's own location:
+// scripts/verify-report-reconciliation.js -> one level up is the repo root.
+const REPO_ROOT = path.resolve(__dirname, '..');
+
+// `git worktree add` checkouts do not get their own node_modules install (confirmed: none of
+// the existing worktrees under C:/Temp have one). Try resolving playwright from the tree we're
+// actually grading first (so a worktree WITH its own install is honored); fall back to the
+// primary checkout's shared install as a tooling dependency only. This fallback does NOT change
+// which tree's app files get loaded/graded -- that is governed solely by REPO_ROOT above.
+function resolvePlaywright(repoRoot) {
+  try {
+    return require(path.join(repoRoot, 'node_modules', 'playwright'));
+  } catch (e) {
+    const FALLBACK_PLAYWRIGHT_HOST = 'C:/Users/Matt Miller/AI/companydashboard';
+    if (path.resolve(repoRoot) !== path.resolve(FALLBACK_PLAYWRIGHT_HOST)) {
+      return require(path.join(FALLBACK_PLAYWRIGHT_HOST, 'node_modules', 'playwright'));
+    }
+    throw e;
+  }
+}
+const { chromium } = resolvePlaywright(REPO_ROOT);
 
 // ── CLI args ────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -112,6 +133,9 @@ const APP_URL = args['app-url'] || 'file:///' + REPO_ROOT.replace(/\\/g, '/') + 
 const DATA_FILE = args.data || ORACLE.dataFile;
 const PROJ_HINT = args.proj || ORACLE.projId;
 const LABEL = args.label || APP_URL;
+
+console.log('REPO_ROOT resolved to: ' + REPO_ROOT);
+console.log('APP_URL: ' + APP_URL);
 
 if (!DATA_FILE || !fs.existsSync(DATA_FILE)) {
   console.error('FATAL: data file not found:', DATA_FILE);
