@@ -15223,6 +15223,17 @@
     <script src="app/utility-data.js?v=731"></script>
     <script src="app/pipeline-diagram.js?v=731"></script>
     <script src="app/csv-import.js?v=731"></script>
+    <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
+         wired into this page's script list -- exportReportToDocx() (report-engine.js) calls
+         _docxTranslatePages()/_docxAssemble() (docx-writer.js) and CSC_DOCX_SKELETON_B64
+         (docx-skeleton.js) unconditionally, so without these two tags every real-page Word
+         export throws "docx-writer.js not loaded" (found 2026-07-31 verifying Step 7 -- Steps
+         1/3's own acceptance tests ran against isolated hello-world fixtures, not this page, so
+         the gap was never exercised end-to-end). Formal button wiring is plan Step 11; these two
+         tags are the load-order prerequisite that step (and every step since 6) actually needs
+         to function through the live app at all, not new report content. -->
+    <script src="app/docx-skeleton.js?v=731"></script>
+    <script src="app/docx-writer.js?v=731"></script>
     <script src="app/report-engine.js?v=731"></script>
     <script src="app/report-preview.js?v=731"></script>
     <script src="app/calculators.js?v=731"></script>

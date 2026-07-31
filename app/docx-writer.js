@@ -680,6 +680,14 @@ var _DOCX_INDENT_FIRSTLINE = 360;
 var _DOCX_HEADING_SIZE_H1 = 36; // 18pt -- spec §4d, unchanged baseline value
 var _DOCX_HEADING_SIZE_SECTION = 26; // 13pt -- NEW, not in the baseline, Matt-authorized 2026-07-31
 
+/* Word Export Rebuild plan Step 7 (Part D lines 313-319): gauge <svg> (ring/dial) has no
+   OOXML equivalent -- decided, not re-opened (dispatch's "Gauges" section). Render the
+   percentage baked into the svg's own <text> element as bold text at this size (14pt,
+   between the 10.5pt body default and the 18pt page title -- prominent without competing
+   with H1) plus the sibling label div, which the existing generic DIV-container/leaf-
+   paragraph path already carries through unchanged. */
+var _DOCX_GAUGE_PCT_SIZE = 28; // 14pt
+
 var _DOCX_HEADING_TAGS = { H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1 };
 var _DOCX_BLOCK_TAGS = Object.assign({ DIV: 1, P: 1, TABLE: 1, UL: 1, OL: 1 }, _DOCX_HEADING_TAGS);
 var _DOCX_INLINE_TAGS = { SPAN: 1, STRONG: 1, B: 1, EM: 1, I: 1, U: 1, BR: 1 };
@@ -716,6 +724,47 @@ function _docxCssColorToHex(cssColor) {
   return null;
 }
 
+/**
+ * Extract bold/italic/sizeHalfPt/color from an element's OWN inline style
+ * (font-weight/font-style/font-size/color) -- returns only the keys actually
+ * present (e.g. {} for an element with no relevant inline style). Shared by
+ * _docxWalkInline (a child element's style, merged onto its parent's
+ * inherited fmt as it recurses) and by callers that need to seed a LEAF
+ * element's own style as the base fmt before collecting its runs.
+ *
+ * Found 2026-07-31 verifying the Audit Report: report-engine.js's
+ * "headings" are frequently a bare, non-semantic
+ * `<div style="font-size:22px;font-weight:700;...">Title</div>` with the
+ * text as a direct text-node child -- no wrapping <span>/<strong>. Before
+ * this helper existed, _docxCollectRuns(el, {}, ctx) only ever walked el's
+ * CHILDREN through _docxWalkInline (which reads node.style per node it
+ * visits); it never read el's OWN style, since el itself is never passed
+ * through _docxWalkInline. Every such title rendered as plain 10.5pt
+ * non-bold body text -- Matt's exact "headers are the same text size as the
+ * rest of the text" complaint (closed for <h1>-<h6> in Step 6, but this
+ * ASHRAE 36 report family's cover/section titles use styled <div>s, not
+ * heading tags, so that fix never reached them). Table cells have the same
+ * gap: <td style="font-size:11px;...">, read nowhere before this fix.
+ */
+function _docxStyleFmtFromElement(el) {
+  var out = {};
+  if (!el || !el.style) return out;
+  var fw = el.style.fontWeight;
+  if (fw === 'bold' || fw === '700' || fw === '800' || fw === '900' || parseInt(fw, 10) >= 600) out.bold = true;
+  if (el.style.fontStyle === 'italic') out.italic = true;
+  var fs = el.style.fontSize;
+  if (fs) {
+    var hp = _docxPxToHalfPt(fs);
+    if (hp) out.sizeHalfPt = hp;
+  }
+  var col = el.style.color;
+  if (col) {
+    var hex = _docxCssColorToHex(col);
+    if (hex) out.color = hex;
+  }
+  return out;
+}
+
 /** data-word-indent="1"|"2"|"3" -> {indLeft, indFirstLine}, else {} (no w:ind -- body-paragraph default). */
 function _docxResolveIndentHint(value) {
   if (value == null || value === '') return {};
@@ -733,6 +782,20 @@ function _docxHasBlockChild(el) {
     if (_DOCX_BLOCK_TAGS[el.children[i].tagName]) return true;
   }
   return false;
+}
+
+/** True if el's OWN inline `style` attribute declares `display:flex` (Word
+ * Export Rebuild plan Step 4 inventory construct C candidate). Checks the
+ * raw attribute string, not the live CSSOM, so this is independent of
+ * whether stylesheet rules have been applied to the clone being translated.
+ * Deliberately does NOT match class-driven flex (e.g. `.rpt-int-hdr`) --
+ * per the Step 4 inventory only 1 of 18 declared flex classes is ever used
+ * by these 3 documents' bodies, and it is a different (already
+ * content-preserving) shape than the tile/gauge row this function targets;
+ * scoping to inline style keeps this rule exact instead of overreaching. */
+function _docxIsFlexRow(el) {
+  var style = (el.getAttribute && el.getAttribute('style')) || '';
+  return /display\s*:\s*flex/i.test(style);
 }
 
 /**
@@ -821,33 +884,56 @@ function _docxWalkInline(node, fmt, entries, ctx) {
     if (imgRun) entries.push({ xml: imgRun });
     return;
   }
-  if (!_DOCX_INLINE_TAGS[tag] && _DOCX_BLOCK_TAGS[tag]) {
+  if (tag !== 'DIV' && !_DOCX_INLINE_TAGS[tag] && _DOCX_BLOCK_TAGS[tag]) {
     // A block element found where only inline content was expected (should
     // not happen -- _docxHasBlockChild() routes true block children to the
     // container path before we ever call this). Skip defensively rather
     // than emit malformed run text.
     return;
   }
+  // DIV is the one exception, treated as a transparent inline pass-through
+  // (Word Export Rebuild plan Step 4 inventory, construct A/B: the
+  // <td>-vertical-centering wrapper `<div style="min-height:34px;display:
+  // flex;align-items:center...">` and the inline bar+label widget `<div
+  // style="display:flex;align-items:center;gap:4px">` are both bare <div>s
+  // with no OOXML meaning of their own -- native w:vAlign already reproduces
+  // the centering (_docxTableCell defaults every cell to vAlign=center), so
+  // dropping the wrapper here (as the block-tag skip above used to do for
+  // EVERY block tag, DIV included) silently discarded the wrapper's TEXT
+  // content too. Found 2026-07-31 tracing the Audit Report's per-building
+  // compliance table (app/report-engine.js _buildRowHTML, 13695-13760): all
+  // 6 <td>s per row wrap their content in exactly this shape, so every one
+  // of the 27 rows' 6 cells (162 cells total) rendered as a BLANK <w:tc> --
+  // a content-completeness failure the plan's Part C check 4 (diff source
+  // text vs rendered PDF text) is specifically designed to catch. TABLE/UL/
+  // OL/heading tags reaching this point remain defensively skipped (a real
+  // translator bug upstream, not a legitimate shape) -- DIV is the only
+  // block tag known to appear here by design.
+  //
+  // A DIV is still block-level HTML even when flattened this way -- if it
+  // follows content already collected in THIS cell/leaf (e.g. the ASHRAE 36
+  // Sequences table's `_esc(seq.label) + '<div>Requires: ...</div>'`,
+  // app/report-engine.js ~14020), a browser/html2canvas would start it on a
+  // new line, but a bare inline flatten concatenates it onto the same line
+  // with no separator at all -- found 2026-07-31 rendering the real
+  // document: "Supply Air Temperature ResetRequires: Supply Air Temp..."
+  // with the two run together. Insert a soft line break (w:br, same
+  // paragraph -- not a new w:p, which would complicate the cell's vAlign)
+  // whenever entries already hold real (non-whitespace) content; the FIRST
+  // div in a cell (construct A/B's outer wrapper, entries still empty at
+  // that point) correctly gets no leading break.
+  if (tag === 'DIV') {
+    var hasPriorContent = entries.some(function (e) {
+      return e.xml || (e.text != null && e.text.trim() !== '');
+    });
+    if (hasPriorContent) entries.push({ text: '\n', fmt: fmt, isBreak: true });
+  }
 
   var childFmt = Object.assign({}, fmt);
   if (tag === 'STRONG' || tag === 'B') childFmt.bold = true;
   if (tag === 'EM' || tag === 'I') childFmt.italic = true;
   if (tag === 'U') childFmt.underline = true;
-  if (node.style) {
-    var fw = node.style.fontWeight;
-    if (fw === 'bold' || fw === '700' || fw === '800' || fw === '900' || parseInt(fw, 10) >= 600) childFmt.bold = true;
-    if (node.style.fontStyle === 'italic') childFmt.italic = true;
-    var fs = node.style.fontSize;
-    if (fs) {
-      var hp = _docxPxToHalfPt(fs);
-      if (hp) childFmt.sizeHalfPt = hp;
-    }
-    var col = node.style.color;
-    if (col) {
-      var hex = _docxCssColorToHex(col);
-      if (hex) childFmt.color = hex;
-    }
-  }
+  Object.assign(childFmt, _docxStyleFmtFromElement(node));
   for (var i = 0; i < node.childNodes.length; i++) _docxWalkInline(node.childNodes[i], childFmt, entries, ctx);
 }
 
@@ -931,6 +1017,49 @@ function _docxDeriveColWidths(tableEl, colCount, contentWidthTwips) {
       }
     }
   }
+  // Construct D's per-cell variant (Word Export Rebuild plan Step 4 inventory: "48 width:N%
+  // ... 36 in per-<td>/<th> width:N% attributes (Sequences table)" -- app/report-engine.js
+  // rptPageASHRAE36CostEstimate's `_ratThead`, no <colgroup>, each <th> carries its own
+  // style="width:N%" instead). Not every column needs to declare one (this table's
+  // Description column has none, deliberately taking the remainder); a header/first row
+  // whose cells match colCount and where AT LEAST ONE declares a percentage is enough to
+  // derive from -- any undeclared column splits the leftover percentage evenly, rounding-
+  // corrected on the last column so the row still sums to exactly contentWidthTwips.
+  var firstRow = tableEl.querySelector('tr');
+  if (firstRow) {
+    var firstCells = Array.prototype.slice.call(firstRow.children).filter(function (c) {
+      return c.tagName === 'TD' || c.tagName === 'TH';
+    });
+    if (firstCells.length === colCount) {
+      var declaredPct = firstCells.map(function (c) {
+        var w = (c.style && c.style.width) || c.getAttribute('width') || '';
+        var m = /([\d.]+)\s*%/.exec(w);
+        return m ? parseFloat(m[1]) : null;
+      });
+      var anyDeclared = declaredPct.some(function (p) {
+        return p != null;
+      });
+      if (anyDeclared) {
+        var declaredSum = declaredPct.reduce(function (s, p) {
+          return s + (p || 0);
+        }, 0);
+        var undeclaredCount = declaredPct.filter(function (p) {
+          return p == null;
+        }).length;
+        var remainingPct = Math.max(0, 100 - declaredSum);
+        var eachUndeclaredPct = undeclaredCount ? remainingPct / undeclaredCount : 0;
+        var pctWidths = declaredPct.map(function (p) {
+          return Math.round((contentWidthTwips * (p != null ? p : eachUndeclaredPct)) / 100);
+        });
+        var pctSum = pctWidths.reduce(function (s, w2) {
+          return s + w2;
+        }, 0);
+        pctWidths[pctWidths.length - 1] += contentWidthTwips - pctSum;
+        return pctWidths;
+      }
+    }
+  }
+
   var each = Math.floor(contentWidthTwips / colCount);
   var widths = [];
   for (var i = 0; i < colCount; i++) widths.push(each);
@@ -977,7 +1106,12 @@ function _docxTranslateTable(tableEl, ctx) {
         colIdx += span;
 
         var isHeaderCell = cell.tagName === 'TH';
-        var runs = _docxCollectRuns(cell, isHeaderCell ? { bold: true } : {}, ctx);
+        // Seed with the <td>/<th>'s OWN inline style (font-size is common on
+        // report tables, e.g. `<td style="...font-size:11px;...">` -- same
+        // gap _docxStyleFmtFromElement's header comment describes for leaf
+        // divs) merged under isHeaderCell's bold default.
+        var cellBaseFmt = Object.assign({}, isHeaderCell ? { bold: true } : {}, _docxStyleFmtFromElement(cell));
+        var runs = _docxCollectRuns(cell, cellBaseFmt, ctx);
         var align = (cell.style && cell.style.textAlign) || 'center';
         var para = _docxParagraph({
           runs: runs.length ? runs : [_docxRun({ text: '', bold: isHeaderCell })],
@@ -1059,6 +1193,67 @@ function _docxTranslateList(listEl, ctx, numId, ilvl) {
 }
 
 /**
+ * Translate a flex-row wrapper (construct C, see _docxIsFlexRow) into a
+ * single-row, N-column BORDERLESS table -- Word's closest layout-table
+ * equivalent to CSS flexbox row placement. Each direct child of el becomes
+ * one cell, translated via the normal _docxTranslateBlock dispatch (so a
+ * child's own gauge <svg>/text-leaf divs are handled exactly as they would
+ * be anywhere else -- this function only supplies the side-by-side
+ * placement, not any content-shape logic of its own) with center alignment
+ * forced on every paragraph produced inside the cell (ctx._flexCellAlign),
+ * because the design's center intent lives on ancestor wrapper divs
+ * (`text-align:center`) that are never themselves a leaf paragraph and so
+ * would otherwise be lost -- see the plan Step 4 inventory's cover
+ * gauge-row/stat-row markup, where only the OUTER per-item wrapper carries
+ * `text-align:center`, not the inner bold-number/label leaf divs.
+ * Equal-width columns across the spec's full content width (10080 twips,
+ * spec §1) -- the source's own centered/gapped narrow cluster has no direct
+ * OOXML equivalent, and the plan's acceptance criteria (side-by-side tiles,
+ * columns within content width) do not require reproducing the exact
+ * source gap/centering, only that the tiles share a row.
+ */
+function _docxTranslateFlexRowTable(el, ctx) {
+  var children = Array.prototype.slice.call(el.children);
+  var n = children.length;
+  var contentWidthTwips = 10080;
+  var each = Math.floor(contentWidthTwips / n);
+  var colWidths = [];
+  for (var w = 0; w < n; w++) colWidths.push(each);
+  colWidths[n - 1] += contentWidthTwips - each * n;
+
+  var priorAlign = ctx._flexCellAlign;
+  ctx._flexCellAlign = 'center';
+  var cellsXml = children.map(function (child, idx) {
+    var blockParas = _docxTranslateBlock(child, ctx);
+    var paragraphs = blockParas.length
+      ? blockParas
+      : [_docxParagraph({ runs: [_docxRun({ text: '' })], align: 'center', spacingAfter: 0 })];
+    return _docxTableCell({ widthTwips: colWidths[idx], paragraphs: paragraphs, vAlign: 'center' });
+  });
+  ctx._flexCellAlign = priorAlign;
+
+  var grid =
+    '<w:tblGrid>' +
+    colWidths
+      .map(function (w2) {
+        return '<w:gridCol w:w="' + w2 + '"/>';
+      })
+      .join('') +
+    '</w:tblGrid>';
+  var tblPr =
+    '<w:tblPr>' +
+    '<w:tblW w:w="0" w:type="auto"/>' +
+    '<w:tblBorders>' +
+    '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/>' +
+    '<w:insideH w:val="nil"/><w:insideV w:val="nil"/>' +
+    '</w:tblBorders>' +
+    '<w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/>' +
+    '</w:tblPr>';
+
+  return '<w:tbl>' + tblPr + grid + '<w:tr>' + cellsXml.join('') + '</w:tr>' + '</w:tbl>';
+}
+
+/**
  * Dispatch a single block-position element to its OOXML shape. Returns an
  * array of block XML strings (0, 1, or many -- a container <div> returns
  * the concatenation of all its block children's output).
@@ -1103,8 +1298,44 @@ function _docxTranslateBlock(el, ctx) {
     return imgBlock ? [imgBlock.xml] : [];
   }
 
+  if (tag.toLowerCase() === 'svg') {
+    // Word Export Rebuild plan Step 7 (Part D lines 313-319), Step 4
+    // inventory construct C' -- the ring/dial gauge <svg> has no OOXML
+    // equivalent (decided with Matt, not re-opened): render the percentage
+    // baked into the svg's own <text> element (app/report-engine.js
+    // _a36GaugeSVG, ~13164-13237) as bold text; the dial itself is dropped.
+    // Extracted from the rendered svg rather than re-derived from data so
+    // the text always matches whatever percentage the svg actually shows.
+    var gaugeTextEls = el.querySelectorAll ? el.querySelectorAll('text') : [];
+    var gaugePct = gaugeTextEls.length ? (gaugeTextEls[0].textContent || '').trim() : '';
+    if (!gaugePct) return [];
+    return [
+      _docxParagraph({
+        runs: [_docxRun({ text: gaugePct, bold: true, sizeHalfPt: _DOCX_GAUGE_PCT_SIZE })],
+        align: (ctx && ctx._flexCellAlign) || 'center',
+        spacingAfter: 40,
+      }),
+    ];
+  }
+
+  if (tag === 'DIV' && _docxIsFlexRow(el) && _docxHasBlockChild(el) && el.children.length >= 2) {
+    // Word Export Rebuild plan Step 7 (Part D lines 313-319), Step 4
+    // inventory construct C -- a tile-row/gauge-row (`display:flex;gap:...`
+    // wrapping N block-level children meant to sit side by side). Word has
+    // no flexbox; this is the exact defect Matt screenshotted (stats
+    // stacked instead of side-by-side). Emitted as an N-column BORDERLESS
+    // layout table (spec §5 border style only where the design calls for a
+    // visible grid -- this is layout, not data) instead of falling through
+    // to the generic DIV-container path below, which would flatten every
+    // child into one vertical stack of paragraphs.
+    return [_docxTranslateFlexRowTable(el, ctx)];
+  }
+
   if (tag === 'P' || (tag === 'DIV' && !_docxHasBlockChild(el))) {
-    var pRuns = _docxCollectRuns(el, {}, ctx);
+    // Seed with the leaf element's OWN inline style (font-size/weight/color)
+    // -- see _docxStyleFmtFromElement's header comment: a bare styled <div>
+    // with no wrapping <span> would otherwise render at plain body size.
+    var pRuns = _docxCollectRuns(el, _docxStyleFmtFromElement(el), ctx);
     if (!pRuns.length) return []; // empty layout-only leaf -- no stray blank paragraph
     var indOpts = _docxResolveIndentHint(el.getAttribute && el.getAttribute('data-word-indent'));
     return [
@@ -1112,7 +1343,7 @@ function _docxTranslateBlock(el, ctx) {
         Object.assign(
           {
             runs: pRuns,
-            align: el.style && el.style.textAlign,
+            align: (ctx && ctx._flexCellAlign) || (el.style && el.style.textAlign),
             spacingAfter: 240, // body-paragraph policy (Part E); indentation-only override below
           },
           indOpts,
