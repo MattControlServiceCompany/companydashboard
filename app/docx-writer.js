@@ -445,7 +445,40 @@ async function _docxAssemble(documentXml, opts) {
   var head = skeletonDocXml.slice(0, bodyOpenIdx + bodyOpenTag.length); // ...<w:document ...><w:body>
   var tail = skeletonDocXml.slice(sectPrIdx); // <w:sectPr ...>...</w:sectPr></w:body></w:document>  -- VERBATIM, unmodified
 
-  var fullDocXml = head + documentXml + tail;
+  // Page-1 letterhead clearance (spec §1 / plan Part A): the skeleton (CSC
+  // Letterhead.docx) carries 10 empty leading <w:p> paragraphs between <w:body>
+  // and <w:sectPr>, all Arial 10.5pt (w:sz/w:szCs=21). They exist ONLY to push
+  // body content below the full-page letterhead's logo lockup on page 1 (logo
+  // bottom edge ~146pt; the page's own top margin, 31.95pt, ends above the logo
+  // and provides essentially no clearance on its own). This function used to
+  // start `head` at bodyOpenIdx and skip straight to sectPrIdx, silently
+  // discarding those 10 paragraphs -- so generated content began at paragraph 0
+  // and collided with the logo/tagline/address block.
+  //
+  // Fix: preserve the skeleton's own leading paragraphs verbatim (don't discard,
+  // don't re-derive a synthetic block) and apply one targeted edit -- upsize the
+  // LAST of the 10 from 10.5pt to 18pt. This reproduces the CSC Louisburg
+  // baseline's proven recipe (9x10.5pt + 1x18pt) exactly. The uniform bare-
+  // skeleton 10x10.5pt block alone only clears ~13.3pt below the logo, which is
+  // not enough; Louisburg's own document.xml upsizes its final leading paragraph
+  // for this reason, and its rendered title lands at y0=179.93pt (34.3pt clear).
+  var leadingParasXml = skeletonDocXml.slice(bodyOpenIdx + bodyOpenTag.length, sectPrIdx);
+  var leadingParaRe = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+  var lastLeadingParaMatch = null;
+  var leadingParaMatch;
+  while ((leadingParaMatch = leadingParaRe.exec(leadingParasXml)) !== null) {
+    lastLeadingParaMatch = leadingParaMatch;
+  }
+  if (lastLeadingParaMatch) {
+    var origLastPara = lastLeadingParaMatch[0];
+    var upsizedLastPara = origLastPara.replace(/w:val="21"/g, 'w:val="36"');
+    leadingParasXml =
+      leadingParasXml.slice(0, lastLeadingParaMatch.index) +
+      upsizedLastPara +
+      leadingParasXml.slice(lastLeadingParaMatch.index + origLastPara.length);
+  }
+
+  var fullDocXml = head + leadingParasXml + documentXml + tail;
   zip.file('word/document.xml', fullDocXml);
 
   if (Array.isArray(opts.images)) {
