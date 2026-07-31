@@ -7741,6 +7741,102 @@ async function exportReportToWord() {
       stripSelectors.forEach((sel) => {
         clone.querySelectorAll(sel).forEach((el) => el.remove());
       });
+      // Word cover-stats flex-row -> table fix (2026-07-31, fix/word-export-cover-stats-
+      // sidebyside — Matt: the ASHRAE 36 Cover's gauge row and stat-tile row rendered STACKED
+      // vertically instead of side by side in the live downloaded Audit Report). Word's HTML
+      // importer has no flexbox support (settled/documented — any `display:flex` row collapses
+      // to stacked block elements) but handles <table> correctly, so each row is rebuilt here as
+      // a borderless one-row layout table, one <td> per statistic — no visible borders added
+      // (Matt, 2026-07-29, same cover: "use no lines at all" between these stats). Scoped to the
+      // .rpt-cover page and to the two EXACT style strings rptPageASHRAE36Cover emits (verified
+      // against report-engine.js ~13352/~13388, and against the flex/svg inventory,
+      // AI/_context/plans/word-export-flex-svg-inventory-2026-07-31.md, Shape C) — this is a
+      // narrow, targeted fix for the two elements Matt actually saw stacked, not a general
+      // flex-to-table translator for this report's other 189 flex occurrences (that inventory
+      // ranks those as either invisible <td> vertical-centering wrappers or a separate,
+      // lower-priority inline bar widget — out of scope here).
+      if (clone.classList && clone.classList.contains('rpt-cover')) {
+        const _wordRowToTable = (rowDiv, isGaugeRow) => {
+          const kids = Array.from(rowDiv.children);
+          if (!kids.length) return;
+          const widthPct = (100 / kids.length).toFixed(3) + '%';
+          const existingStyle = rowDiv.getAttribute('style') || '';
+          const marginMatch = existingStyle.match(/(?:^|;)\s*margin\s*:\s*([^;]+)/);
+          const rowMargin = marginMatch ? marginMatch[1].trim() : '0';
+          const table = document.createElement('table');
+          table.setAttribute('style', 'width:100%;border-collapse:collapse;margin:' + rowMargin);
+          table.setAttribute('cellpadding', '0');
+          table.setAttribute('cellspacing', '0');
+          const tr = document.createElement('tr');
+          kids.forEach((kid) => {
+            const td = document.createElement('td');
+            td.setAttribute('style', 'width:' + widthPct + ';text-align:center;vertical-align:top;padding:0 6px');
+            if (isGaugeRow) {
+              // Word drops <svg> entirely — no OOXML equivalent for the ring graphic itself
+              // (documented, no lightweight fix). Reproduce the one part of the gauge that DOES
+              // have a plain-text equivalent: the pct% number the SVG already draws via its own
+              // <text> element (_a36GaugeSVG, report-engine.js) — read that text/color straight
+              // back out of the live-rendered SVG so the client-facing number still survives in
+              // Word even though the ring visualization does not.
+              const svg = kid.querySelector('svg');
+              const labelDiv = kid.querySelector('div');
+              let pctText = '';
+              let color = 'var(--rpt-page-text)';
+              if (svg) {
+                const texts = svg.querySelectorAll('text');
+                if (texts.length) {
+                  pctText = texts[texts.length - 1].textContent || '';
+                  color = texts[texts.length - 1].getAttribute('fill') || color;
+                }
+              }
+              td.innerHTML =
+                '<div style="font-size:26px;font-weight:700;color:' +
+                color +
+                '">' +
+                pctText +
+                '</div>' +
+                (labelDiv
+                  ? '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">' +
+                    labelDiv.textContent +
+                    '</div>'
+                  : '');
+            } else {
+              if (kid.className) td.className = kid.className;
+              td.innerHTML = kid.innerHTML;
+            }
+            tr.appendChild(td);
+          });
+          table.appendChild(tr);
+          rowDiv.parentNode.replaceChild(table, rowDiv);
+        };
+        const gaugeRow = clone.querySelector(
+          'div[style="display:flex;justify-content:center;gap:36px;margin:24px 0 20px"]',
+        );
+        if (gaugeRow) _wordRowToTable(gaugeRow, true);
+        const statRow = clone.querySelector('div[style="display:flex;gap:16px;margin-top:12px"]');
+        if (statRow) _wordRowToTable(statRow, false);
+      }
+      // Word section-heading size fix (2026-07-31, fix/word-export-cover-stats-sidebyside —
+      // Matt, same complaint batch as the cover stats: "paragraph headings need to be bigger
+      // font size"). This report has no intermediate heading size between 14px (10.5pt) body
+      // text and the 18px (~13.5pt) page-title bar — these two Executive Summary callout
+      // headers (rptPageASHRAE36Executive, report-engine.js ~13538/~13564, "Most Common Gap
+      // Across Portfolio" / "Demand Control Ventilation Readiness") render at 11px (~8.25pt),
+      // visually the SAME SIZE as the body sentence directly under them (measured on a real
+      // Word COM PDF round-trip: both 8.5pt in the rendered PDF) — bold is their only signal.
+      // Matt authorized one new size, applied here in the Word export only: 13pt, Arial, size
+      // ONLY — "he asked for size, not weight" — so bold is REMOVED rather than compounded; the
+      // size increase alone carries the heading now. Scoped to the exact style string both of
+      // these two headers share (verified unique to just these two elements in the whole file);
+      // not a general heading-style overhaul of the report.
+      clone
+        .querySelectorAll('div[style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px"]')
+        .forEach((h) => {
+          h.setAttribute(
+            'style',
+            'font-size:13pt;font-weight:400;font-family:Arial, sans-serif;color:var(--rpt-page-text);margin-bottom:4px',
+          );
+        });
       // Word text-inset DOM fix (2026-07-26, second pass on top of _fixPaddingUnits below — see
       // that function's comment for the "48px must become 0.5in" half of this fix). Converting
       // the unit was necessary but NOT sufficient: measured via synthetic Word COM round-trips
