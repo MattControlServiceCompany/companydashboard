@@ -13518,7 +13518,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    "This report evaluates the facility's building automation system against ASHRAE 36 — the industry standard for high-performance heating and cooling control. " +
+    "This report evaluates the facility's building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. " +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
@@ -13637,7 +13637,7 @@ function rptPageASHRAE36Executive(n, d) {
       '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
       '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
-      ' Without a way to sense carbon dioxide levels, these units ventilate at full design rates even when spaces are empty—wasting fan and cooling energy. ' +
+      ' Without a way to sense carbon dioxide levels, these units ventilate at full design rates even when spaces are empty, wasting fan and cooling energy. ' +
       'Adding carbon dioxide sensors lets ventilation adjust to how many people are actually in the space, so equipment stops conditioning air for rooms that are empty.' +
       '</div>' +
       '</div>';
@@ -13812,7 +13812,7 @@ function rptPageASHRAE36Executive(n, d) {
   var tableFootnote =
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:-10px;margin-bottom:12px;line-height:1.5">' +
     '<strong>Score</strong> is Control Service Company’s own readiness assessment, built on ASHRAE 36 requirements ' +
-    'and weighted by how many apply to each equipment type — ASHRAE 36 itself defines no composite score or compliance threshold. ' +
+    'and weighted by how many apply to each equipment type. ASHRAE 36 itself defines no composite score or compliance threshold. ' +
     '<strong>Readiness bands:</strong> High ≥' +
     ASHRAE36_READINESS_HIGH_THRESHOLD +
     '% (meets the ASHRAE 36 baseline), Partial ' +
@@ -13969,7 +13969,7 @@ function rptPageASHRAE36Executive(n, d) {
       var contHdr =
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Building ASHRAE 36 Readiness — continued (' +
+        'Building ASHRAE 36 Readiness (continued, ' +
         (chunkIndex + 1) +
         ' of ' +
         numChunks +
@@ -13979,7 +13979,7 @@ function rptPageASHRAE36Executive(n, d) {
     }
 
     resultPages.push(
-      rptPage(pageN, 'ASHRAE 36 Audit Report — Executive Summary', bodyHTML, {
+      rptPage(pageN, 'ASHRAE 36 Audit Report: Executive Summary', bodyHTML, {
         data: fakeData,
         label:
           'Page ' +
@@ -14142,7 +14142,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
     resultPages.push(
       rptPage(
         currentPageNum,
-        'ASHRAE 36 Audit Report — ' + SEQ_SECTION_TITLE,
+        'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE,
         '<div style="font-size:11px;color:var(--rpt-page-text)">No sequence data available.</div>',
         {
           data: fakeData,
@@ -14166,8 +14166,8 @@ function rptPageASHRAE36CostEstimate(n, d) {
         rptPage(
           currentPageNum,
           isFirst
-            ? 'ASHRAE 36 Audit Report — ' + SEQ_SECTION_TITLE
-            : 'ASHRAE 36 Audit Report — ' + SEQ_SECTION_TITLE + ' (cont.)',
+            ? 'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE
+            : 'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE + ' (cont.)',
           pageBody,
           { data: fakeData, label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE },
         ),
@@ -14575,10 +14575,10 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var sensorsCell =
       sensorsSum === 0
         ? rawSensorsSum === 0
-          ? '0 — Complete'
-          : '0 — No Priced Hardware'
+          ? '0: Complete'
+          : '0: No Priced Hardware'
         : sensorsBreakdown
-          ? sensorsSum + ' — ' + sensorsBreakdown
+          ? sensorsSum + ': ' + sensorsBreakdown
           : String(sensorsSum);
     // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered" -> (rename
     // #2, Matt's decision, supersedes v647) "Fully Compliant".
@@ -14592,9 +14592,9 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var seqsCell = !hasApplicableSeq
       ? 'No Applicable Sequences'
       : seqsSum === 0
-        ? '0 — Fully Compliant'
+        ? '0: Fully Compliant'
         : seqsBreakdown
-          ? seqsSum + ' — ' + seqsBreakdown
+          ? seqsSum + ': ' + seqsBreakdown
           : String(seqsSum);
 
     // 2026-07-10 fix: near-black --rpt-border, same reasoning as _pushEquipRow's rowBorder above.
@@ -14698,7 +14698,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         _bwTdBase +
         ';color:var(--rpt-page-text);font-weight:400">' +
         _bwSum +
-        ' — ' +
+        ': ' +
         _bwBreakdown +
         '</td>' +
         '<td style="' +
@@ -14777,7 +14777,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
 
   var intro =
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px;line-height:1.6">' +
-    'The table below summarizes each equipment type — the number of units audited, sensors that must be added, ' +
+    'The table below summarizes each equipment type: the number of units audited, sensors that must be added, ' +
     'and sequences that cannot run until those sensors are installed.' +
     '</div>';
 
@@ -14873,7 +14873,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         b.name +
-        ' — continued (' +
+        ' (continued, ' +
         (chunkIndex + 1) +
         ' of ' +
         numChunks +
@@ -14891,7 +14891,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
     // title bar (rptPage()'s own title param, present on every page including page 1) fixes the
     // asymmetry consistently instead of only patching the continuation's already-correct text.
     var pageTitleWithFraction =
-      'ASHRAE 36 Audit Report — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
+      'ASHRAE 36 Audit Report: ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, pageTitleWithFraction, bodyHTML, {
         data: fakeData,
@@ -15139,7 +15139,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       'Import an updated equipment matrix export to enable this analysis.' +
       '</div>';
     return [
-      rptPage(n, 'ASHRAE 36 Audit Report — Setpoint Programming Review', emptyBody, {
+      rptPage(n, 'ASHRAE 36 Audit Report: Setpoint Programming Review', emptyBody, {
         data: fakeData,
         label: 'Page ' + n + ' — Setpoint Programming Review',
       }),
@@ -15206,7 +15206,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     if (deviatorCount > 0) {
       deviatorLabel = deviatorCount + ' of ' + zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' deviate';
     } else if (!hasAnyData) {
-      deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' — no setpoint data';
+      deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ': no setpoint data';
     } else {
       deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' match';
     }
@@ -15381,7 +15381,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">Carbon Dioxide Setpoint Data Not Found in Export</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
       'Carbon dioxide setpoints for occupancy-based ventilation (ASHRAE 36 §3.1.1.3 / Table 3.1.1.3) were not present in the equipment matrix export for this project. ' +
-      'Carbon dioxide setpoint values are programmed set-points in the building automation system controller — separate from the live carbon dioxide sensor readings shown in the equipment matrix. ' +
+      'Carbon dioxide setpoint values are programmed set-points in the building automation system controller, separate from the live carbon dioxide sensor readings shown in the equipment matrix. ' +
       'A direct building automation system lookup or updated export with carbon dioxide setpoint points is needed to complete this check.' +
       '</div>' +
       '</div>';
@@ -15395,7 +15395,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     exclusionNote =
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'Only buildings with zone-level terminal equipment (variable air volume boxes, fan-powered boxes, fan coil units, and similar) are shown — these are the units ASHRAE 36’s zone setpoint standards apply to. ' +
+      'Only buildings with zone-level terminal equipment (variable air volume boxes, fan-powered boxes, fan coil units, and similar) are shown. These are the units ASHRAE 36’s zone setpoint standards apply to. ' +
       _excludedCount +
       ' of ' +
       _totalScoredBuildings +
@@ -15408,7 +15408,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
     'ASHRAE 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types. ' +
-    'These are starting points — designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
+    'These are starting points. Designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
     'Items marked Needs Review should be confirmed with the design engineer or facility staff to determine whether the deviation is intentional. ' +
     'Values shown are building averages across all zone equipment in the building automation system export.' +
     '</div>';
@@ -15461,7 +15461,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       var contHdr =
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Setpoint Programming Review — continued (' +
+        'Setpoint Programming Review (continued, ' +
         (chunkIndex + 1) +
         ' of ' +
         numChunks +
@@ -15474,7 +15474,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     // Readiness/Per-Building Detail above): append the fraction to the .rpt-int-hdr title bar so
     // page 1 carries its own "(1 of N)" alongside the continuation's existing "(N of N)".
     var _setpointTitle =
-      'ASHRAE 36 Audit Report — Setpoint Programming Review' +
+      'ASHRAE 36 Audit Report: Setpoint Programming Review' +
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, _setpointTitle, bodyHTML, {
@@ -15537,12 +15537,12 @@ function _rptA36CoverPricingStrip(d) {
       desc: function (amtStr, svcSentence) {
         return (
           'Installs the hardware points needed to close ASHRAE 36 gaps and programs the full set of ' +
-          'cost-optimized energy sequences — supply air and duct pressure reset, economizer control, optimal ' +
+          'cost-optimized energy sequences: supply air and duct pressure reset, economizer control, optimal ' +
           'start/stop, and equipment lead/lag rotation. ' +
           (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
           svcSentence +
-          'Because these sequences directly target the largest controllable heating and cooling energy uses — fan speed, ' +
-          'mechanical cooling run time, and equipment cycling — this tier is expected to return the most energy ' +
+          'Because these sequences directly target the largest controllable heating and cooling energy uses ' +
+          '(fan speed, mechanical cooling run time, and equipment cycling), this tier is expected to return the most energy ' +
           'savings per dollar spent of the three scopes.'
         );
       },
@@ -15554,13 +15554,13 @@ function _rptA36CoverPricingStrip(d) {
       desc: function (amtStr, svcSentence) {
         return (
           'Installs only the hardware points required to close ASHRAE 36 gaps and programs the sequences ' +
-          'classified as safety-critical (e.g. freeze protection, minimum ventilation) — it does not add the ' +
+          'classified as safety-critical (e.g. freeze protection, minimum ventilation). It does not add the ' +
           'optimization sequences (temperature/pressure reset, economizer, optimal start) that generate ongoing ' +
           'energy savings. ' +
           (amtStr ? 'The estimated cost for this scope is <strong>' + amtStr + '</strong>. ' : '') +
           svcSentence +
           'This tier establishes monitoring and code-required control only, making it the right starting point ' +
-          'where budget is the primary constraint — the Recommended or Full Scope sequences can be added in a ' +
+          'where budget is the primary constraint. The Recommended or Full Scope sequences can be added in a ' +
           'later phase under the same service agreement once budget allows.'
         );
       },
@@ -15620,7 +15620,7 @@ function _rptA36CoverPricingStrip(d) {
       var noCat = tt[t.key] && tt[t.key].noCatalog;
       var amtStr = g ? (noCat ? 'Labor: ' + g : g) : null;
       var headline =
-        t.label + (t.isRec ? ' (Recommended)' : '') + (amtStr ? ' — ' + amtStr : ' — Available upon request');
+        t.label + (t.isRec ? ' (Recommended)' : '') + (amtStr ? ': ' + amtStr : ': Available upon request');
       return (
         '<div style="margin-bottom:12px">' +
         '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);border-bottom:2px solid var(--rpt-rule);' +
@@ -15935,7 +15935,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">' +
     esc(displayClient) +
     ' Building Automation System</div>' +
-    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Optimization Program</div>' +
+    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Energy Management Services</div>' +
     // Document-type identifier (2026-07-29) -- the cover previously never said "Service
     // Proposal" anywhere, while the interior Cost Estimate headers and the modal/PDF filename
     // all call it that. Subordinate to both title lines above: smaller than the 16px program
@@ -16008,13 +16008,13 @@ function rptPageASHRAE36ProposalCover(n, d) {
     'Reaching full ASHRAE 36 compliance across the ' +
     esc(displayClient) +
     ' portfolio requires two categories of work, in sequence. The first is the instrumentation ' +
-    'and safety programming every ASHRAE 36 sequence depends on — sensors, actuators, and ' +
-    'safety-critical programming such as freeze protection — which must be in place before any ' +
+    'and safety programming every ASHRAE 36 sequence depends on (sensors, actuators, and ' +
+    'safety-critical programming such as freeze protection), which must be in place before any ' +
     'optimization sequence can be programmed. The second is the ASHRAE 36 optimization ' +
     'sequences themselves, together with portfolio-wide automatic fault detection and diagnostics ' +
-    'reporting — the work that delivers the energy, comfort, and compliance outcomes the program ' +
+    'reporting: the work that delivers the energy, comfort, and compliance outcomes this service ' +
     'is built around. Rather than fund this as a single capital project, Control Service Company ' +
-    'recommends implementing it through the Recommended Optimization Program described below — a ' +
+    'recommends delivering it through the Recommended Energy Management Services described below, a ' +
     'monthly service allowance that funds continuous, staged progress toward full compliance over ' +
     'time.';
 
@@ -16065,20 +16065,20 @@ function rptPageASHRAE36ProposalCover(n, d) {
   if (budgetFmt) {
     recIntro =
       'Rather than pursuing this scope of work as a single capital project, Control Service ' +
-      'Company recommends a phased optimization program funded through a predictable monthly ' +
+      'Company recommends a phased Energy Management Services approach funded through a predictable monthly ' +
       'service allowance of ' +
       budgetFmt +
-      ' per month, implementing the highest-return measures first (see the phased program on the ' +
+      ' per month, implementing the highest-return measures first (see the phased schedule on the ' +
       'following page) while also covering ongoing energy management labor from the same monthly ' +
       'figure. Each phase is fully funded as it is completed, so ' +
       esc(displayClient) +
       ' is never asked to approve a large capital expenditure up front, and the allowance ' +
-      'continues for as long as improvement opportunities remain — turning a large one-time ' +
+      'continues for as long as improvement opportunities remain. This turns a large one-time ' +
       'expense into a manageable, ongoing operating cost.';
   } else {
     recIntro =
       'Rather than pursuing a large one-time capital project, Control Service Company recommends a ' +
-      'phased optimization program focused on the highest-value opportunities first. This approach ' +
+      'phased Energy Management Services approach focused on the highest-value opportunities first. This approach ' +
       'allows ' +
       esc(displayClient) +
       ' to improve building performance using a predictable monthly budget while continuously ' +
@@ -16088,7 +16088,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var recProgram1 =
     '<div style="' +
     HEAD +
-    '">Recommended Optimization Program</div>' +
+    '">Recommended Energy Management Services</div>' +
     '<div style="' +
     BODY +
     '">' +
@@ -16427,7 +16427,7 @@ function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
   if (!allRows.length) return '';
   var cats = _rptA36PhaseSeqCategoryNames(allRows);
   var narrative =
-    'Beyond the initial term, the program continues to expand sensor installation across ' +
+    'Beyond the initial term, this service continues to expand sensor installation across ' +
     'additional equipment and zones and to program the control sequences those sensors make ' +
     'possible, until every building has the same level of sensor coverage and automated control. ' +
     'Future work is funded through the same monthly service allowance as it is completed, with no ' +
@@ -16485,10 +16485,10 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
   // Density pass (2026-07-27, page-2/3 merge): margin/line-height tightened (spacing only, font
   // size unchanged) — see rptPageASHRAE36ProposalPhaseAndVision's header comment.
   var intro =
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Recommended Optimization Program</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Recommended Energy Management Services</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:4px">' +
     'Based on the ASHRAE 36 assessment findings, Control Service Company recommends a ' +
-    'phased optimization program' +
+    'phased Energy Management Services approach' +
     (budgetFmt ? ' funded through a planned budget of approximately ' + budgetFmt + ' per month,' : '') +
     ' focused on the highest-value opportunities across the portfolio.' +
     '</div>';
@@ -16899,7 +16899,7 @@ function _rptA36VisionInnerHTML(d, opts) {
     var termRangeIntro = phaseTableOn
       ? 'The current term (' +
         esc(termRangeLabel) +
-        ') is detailed in the Recommended Optimization Program table above.'
+        ') is detailed in the Recommended Energy Management Services table above.'
       : 'The current term runs ' + esc(termRangeLabel) + '.';
     implTable =
       '<div style="' +
@@ -16910,8 +16910,8 @@ function _rptA36VisionInnerHTML(d, opts) {
       '">' +
       termRangeIntro +
       ' Phases are sequenced by ' +
-      'expected return on investment — the highest-return measures come first. Each phase is funded ' +
-      'through the monthly service allowance as it is completed, with no fixed end date; the program ' +
+      'expected return on investment: the highest-return measures come first. Each phase is funded ' +
+      'through the monthly service allowance as it is completed, with no fixed end date; the service ' +
       'continues for as long as improvement opportunities remain.</div>';
   } else {
     implTable =
@@ -16937,10 +16937,10 @@ function _rptA36VisionInnerHTML(d, opts) {
   var longTermVision =
     '<div style="' +
     HEAD +
-    '">Long-Term Program Vision</div>' +
+    '">Long-Term Vision</div>' +
     '<div style="' +
     BODY +
-    '">The objective of the Recommended Optimization Program is not simply to complete a one-time ' +
+    '">The objective of the Recommended Energy Management Services is not simply to complete a one-time ' +
     'project. The objective is to continuously improve heating and cooling system performance, increase energy ' +
     'efficiency, improve occupant comfort, and progressively increase ASHRAE 36 alignments across ' +
     'the ' +
@@ -16962,7 +16962,7 @@ function _rptA36VisionInnerHTML(d, opts) {
     '<div style="' +
     BODY +
     ';margin-top:4px">These future improvements can be prioritized and implemented as part of the ' +
-    'ongoing optimization program based on operational needs, budget priorities, and observed ' +
+    'ongoing Energy Management Services based on operational needs, budget priorities, and observed ' +
     'building performance.</div>';
 
   // Expected Outcomes section REMOVED 2026-07-27 (client review, verbatim: "Just get rid of the
@@ -17090,8 +17090,8 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
     esc(displayClient) +
     ', the equipment it runs on needs the sensor and actuator instrumentation that sequence ' +
     'depends on. This scope covers that instrumentation, along with safety-critical programming ' +
-    'such as freeze protection — the monitoring and safety foundation every other measure in this ' +
-    'program builds on.</div>' +
+    'such as freeze protection, the monitoring and safety foundation every other measure in this ' +
+    'service builds on.</div>' +
     '<ul style="' +
     UL +
     '">' +
@@ -17105,7 +17105,7 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
         BODY +
         ';margin-top:6px">This work is funded through the same monthly service allowance of ' +
         budgetFmt +
-        ' per month described earlier in this proposal — it is not billed as a separate project.' +
+        ' per month described earlier in this proposal. It is not billed as a separate project.' +
         '</div>'
       : '') +
     '</div>';
@@ -17155,7 +17155,7 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
     '<ul style="' +
     UL +
     '">' +
-    '<li>ASHRAE 36 optimization sequences — supply air temperature reset, duct static pressure ' +
+    '<li>ASHRAE 36 optimization sequences: supply air temperature reset, duct static pressure ' +
     'reset, ventilation that adjusts to occupancy, economizer control, and the other sequences applicable ' +
     'to each piece of equipment</li>' +
     '<li>Portfolio-wide automatic fault detection and diagnostics reporting</li>' +
@@ -17226,7 +17226,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
         impact: 'Required for economizer and zone airflow control',
         plain:
           'Provides modulating damper control for outdoor air intake, return air balancing, and zone airflow ' +
-          'delivery — required for economizer operation and to meet zone ventilation and temperature targets.',
+          'delivery, which is required for economizer operation and to meet zone ventilation and temperature targets.',
       },
     };
     return otherGaps.concat([merged]);
@@ -17310,7 +17310,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
         dcvScopeRow +
         phase1Gaps.map(scopeRow).join('') +
         '</tbody></table>'
-      : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No hardware gaps identified — all required sensors and actuators appear to be present.</div>';
+      : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No hardware gaps identified. All required sensors and actuators appear to be present.</div>';
 
   var ph2HTML = phase2Gaps.length
     ? '<table style="width:100%;border-collapse:collapse;margin-bottom:4px">' +
@@ -17324,24 +17324,24 @@ function rptPageASHRAE36ProposalScope(n, d) {
       '<tbody>' +
       phase2Gaps.map(scopeRow).join('') +
       '</tbody></table>'
-    : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No sequence programming gaps identified — all key ASHRAE 36 sequences appear to be active.</div>';
+    : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No sequence programming gaps identified. All key ASHRAE 36 sequences appear to be active.</div>';
 
   // Batch 3 item 4 (design-language pass extended to a flagged spot, per bolding-consistency-
   // audit.md finding #2): "more human / less colored fill" treatment — colored border + colored
   // title (var(--rpt-blue) and hardcoded #7c3aed purple) → var(--rpt-rule) border + black title.
   var bodyHTML =
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 1 — Hardware &amp; Sensor Upgrades</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 1: Hardware &amp; Sensor Upgrades</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Installation of missing sensors and actuators required for ASHRAE 36 compliance. This phase establishes the hardware foundation for sequence programming.</div>' +
     ph1HTML +
     '</div>' +
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2 — Building Automation System Sequence Programming</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2: Building Automation System Sequence Programming</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming of ASHRAE 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
     ph2HTML +
     '</div>';
 
-  return rptPage(n, 'ASHRAE 36 Proposal — Scope of Work', bodyHTML, {
+  return rptPage(n, 'ASHRAE 36 Proposal: Scope of Work', bodyHTML, {
     data: fakeData,
     label: 'Page ' + n + ' — Scope of Work',
   });
@@ -17565,7 +17565,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     var subtotalHTML = noCatFlag
       ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
       : subtotalStr
-        ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
+        ? ': <span style="font-weight:700">' + subtotalStr + '</span>'
         : '';
     var catLines = agg.categories.map(function (c) {
       var priceStr = '';
@@ -17573,9 +17573,9 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
       // a category whose only members are ioOnly/unpriced (null coerced to 0 when summed) must
       // read as "no additional cost", never a literal "$0".
       if (wantItemized && c.lineTotal === 0) {
-        priceStr = ' — ' + c.qty + ' units, no additional cost';
+        priceStr = ': ' + c.qty + ' units, no additional cost';
       } else if (wantItemized && c.lineTotal != null && fmtUSD(c.lineTotal)) {
-        priceStr = ' — ' + c.qty + ' units — ' + fmtUSD(c.lineTotal);
+        priceStr = ': ' + c.qty + ' units, ' + fmtUSD(c.lineTotal);
       } else if (c.qty > 1) {
         priceStr = ' (qty ' + c.qty + ')';
       }
