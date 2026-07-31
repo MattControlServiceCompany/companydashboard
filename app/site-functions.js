@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.31.734',
+    date: '2026-07-31',
+    title: 'Word exports — deeper indentation for text and bullet points',
+    items: [
+      {
+        type: 'change',
+        text: 'Word exports of the Audit Report, Service Proposal, and EMS Agreement — body text is now indented further from the left edge, and bullet points are indented noticeably deeper than the surrounding text so they stand out more clearly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.31.733',
     date: '2026-07-31',
     title: 'Audit Report Word export — cover numbers now print side by side',
