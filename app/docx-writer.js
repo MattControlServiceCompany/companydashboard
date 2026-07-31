@@ -389,6 +389,48 @@ async function _docxEmbedImage(zip, imageBytes, extension, mediaIndex) {
   return rId;
 }
 
+/**
+ * Splice one or more fresh <w:num> instances into word/numbering.xml on an
+ * already-loaded JSZip package, each referencing an EXISTING abstractNum
+ * already defined in the skeleton (bullet=2, decimal=5 -- see
+ * _DOCX_ABSTRACTNUM_BULLET/_DECIMAL). This is how the DOM->OOXML translator
+ * (Step 5) gives every independent <ul>/<ol> its own numbering counter
+ * instead of every list of the same type sharing one running count.
+ *
+ * Each entry ALSO carries an explicit <w:lvlOverride><w:startOverride
+ * w:val="1"/></w:lvlOverride> at its own ilvl -- confirmed necessary by a
+ * 2026-07-31 fixture render: a fresh w:numId with NO override, still
+ * pointing at the shared w:abstractNum, was NOT enough on its own -- Word's
+ * numbering engine continued the SAME running counter across w:num
+ * instances that share an abstractNum unless each instance explicitly
+ * overrides its start value. With the override, two independent <ol>
+ * elements on the same page both correctly render "1." as their first item.
+ *
+ * Must be called (and awaited) BEFORE zip.generateAsync().
+ * allocations: array<{numId: number, abstractNumId: number, ilvl: number}>.
+ */
+async function _docxSpliceNumbering(zip, allocations) {
+  if (!allocations || !allocations.length) return;
+  var path = 'word/numbering.xml';
+  var xml = await zip.file(path).async('string');
+  var entries = allocations
+    .map(function (a) {
+      var ilvl = a.ilvl || 0;
+      return (
+        '<w:num w:numId="' +
+        a.numId +
+        '"><w:abstractNumId w:val="' +
+        a.abstractNumId +
+        '"/><w:lvlOverride w:ilvl="' +
+        ilvl +
+        '"><w:startOverride w:val="1"/></w:lvlOverride></w:num>'
+      );
+    })
+    .join('');
+  xml = xml.replace('</w:numbering>', entries + '</w:numbering>');
+  zip.file(path, xml);
+}
+
 /* ── Assembly ─────────────────────────────────────────────────────────────── */
 
 /** Decode a base64 string (e.g. CSC_DOCX_SKELETON_B64) into a Uint8Array. */
@@ -421,6 +463,10 @@ function _docxBase64ToUint8Array(b64) {
  *   images    array of {bytes: Uint8Array, extension: string, mediaIndex: number}
  *             -- pre-registered via _docxEmbedImage before this call if the
  *             documentXml already references their rIds via _docxImageRun
+ *   numIds    array of {numId: number, abstractNumId: number} -- fresh list-
+ *             numbering instances (see _docxTranslatePages()'s return value)
+ *             that documentXml's <w:numPr> elements already reference;
+ *             spliced into word/numbering.xml via _docxSpliceNumbering
  *
  * Returns the generated Blob.
  */
@@ -488,6 +534,10 @@ async function _docxAssemble(documentXml, opts) {
     }
   }
 
+  if (Array.isArray(opts.numIds) && opts.numIds.length) {
+    await _docxSpliceNumbering(zip, opts.numIds);
+  }
+
   var blob = await zip.generateAsync({
     type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -508,4 +558,609 @@ async function _docxAssemble(documentXml, opts) {
   }
 
   return blob;
+}
+
+/* ── DOM -> OOXML translator (Step 5) ─────────────────────────────────────
+   Plan: AI/_context/plans/word-export-rebuild-2026-07-30.md Part D Step 5
+   (lines 295-304) + Part E (lines 355-368).
+
+   2026-07-31 spec deviation, Matt-authorized: H1 stays the spec §4d 18pt
+   page-title size; H2-H6 get a NEW 13pt section-heading size the measured
+   Louisburg baseline does not contain (spec §4b census found only 10.5pt
+   body + 18pt titles). See _DOCX_HEADING_SIZE_SECTION below for the full
+   rationale and the exact complaint this closes.
+
+   Walks `.rpt-page` clones (or any DOM container) and produces the BODY XML
+   _docxAssemble() expects, using ONLY the Step 3 primitive builders above --
+   this file still knows nothing about report content, pricing, or client
+   data; it only knows how to read a closed HTML vocabulary and turn it into
+   OOXML.
+
+   Closed element vocabulary (plan Part B, line 182-185):
+     div / p / h1-h6 / span / strong / em / table / tr / td / th / ul / ol /
+     li / img -- plus the data-word-indent hint attribute (spec §4e, Agreement
+     clause sub-levels). Anything outside this vocabulary is walked
+     defensively (children still visited, so content is never silently
+     dropped) but the unknown tag itself never emits XML.
+
+   Indentation policy (Step 5, plan line 298-301): body paragraphs get NO
+   w:ind -- the skeleton's real page margins (spec §1) do the work now, which
+   is what retires the old `_insetChildren` px-simulation entirely. Only an
+   element explicitly carrying `data-word-indent="1"|"2"|"3"` gets
+   `w:ind left=1080/1440/1800 firstLine=360` (spec §4e values, Agreement
+   clause sub-levels).
+
+   Spacing policy (Part E, line 359-365) is enforced by which _docx* builder
+   each shape below calls, not re-stated per call: body paragraphs
+   w:after=240 (_docxParagraph default), headings w:before=240/w:after=120
+   (set explicitly here), list items w:after=40 (_docxListItem-style
+   default), table-cell paragraphs w:after=0 (_docxTableCell default).
+
+   <ul> -> a freshly allocated w:numId per list instance, referencing the
+   skeleton's abstractNumId 2 (bullet, Symbol glyph, ind left=720/
+   hanging=360 -- spec §6, confirmed against the actual skeleton package).
+   <ol> -> a freshly allocated w:numId per list instance, referencing
+   abstractNumId 5 (decimal, ind left=720/hanging=360). "Freshly allocated
+   per instance" (not the skeleton's own fixed numId 6/4) because Word's
+   numbering engine shares a running counter across every w:num that points
+   at the same w:abstractNum UNLESS each instance carries its own
+   w:lvlOverride/w:startOverride -- see _docxSpliceNumbering.
+
+   Known, documented gaps (not silently glossed over):
+     - <img> is only embedded when its `src` is a `data:image/...;base64,...`
+       URI (decoded synchronously, no network fetch). A non-data-URL <img> is
+       skipped with a console.warn and omitted from output -- report content
+       does not currently emit non-data-URL <img> src values in the .rpt-page
+       markup this translator targets (letterhead art lives in the skeleton's
+       own header parts, not in .rpt-page body markup).
+     - Per-<td>/<th> `width:N%` (construct D's *table-cell* variant, e.g. the
+       ASHRAE 36 Sequences table) is NOT derived here -- only <colgroup><col
+       style="width:N%"> is. Per-cell width derivation, the flex/SVG shape
+       mapping (constructs A/B/C/E from the Step 4 inventory), and
+       w:tblHeader-on-long-tables are explicitly Step 6/7/8 concerns per the
+       plan's own Part D breakdown, not this step's.
+     - HTML whitespace collapsing is approximate: a text node that is entirely
+       whitespace collapses to a single space (mirrors normal inline HTML
+       rendering) rather than implementing the full CSS whitespace/formatting-
+       context algorithm.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Skeleton numbering.xml abstractNum IDs (verified 2026-07-31 by unzipping
+   the actual skeleton package, not assumed from the Step 3 comments alone):
+     abstractNumId 2 -> bullet, Symbol glyph, ind left=720/hanging=360 (spec §6)
+     abstractNumId 5 -> decimal,             ind left=720/hanging=360
+   The skeleton's own fixed w:num instances (numId 6->abstractNum2,
+   numId 4->abstractNum5) are NOT reused directly by the translator -- found
+   2026-07-31 via a fixture render, in TWO stages:
+     (1) two unrelated <ol> elements sharing the literal numId=4 constant
+         made Word treat them as ONE continuous list instance (the second
+         list's counter continued "2." instead of restarting "1.").
+     (2) switching to a FRESH w:numId per list (still pointing at the same
+         w:abstractNumId=5, no override) did NOT fix it -- Word's numbering
+         engine shares a running counter across every w:num that references
+         the SAME w:abstractNum unless each w:num explicitly overrides it.
+         The actual, confirmed-by-render fix is (2) PLUS an explicit
+         <w:lvlOverride><w:startOverride w:val="1"/></w:lvlOverride> on
+         every newly allocated w:num, at the exact ilvl that list starts at
+         -- see _docxSpliceNumbering. */
+var _DOCX_ABSTRACTNUM_BULLET = 2;
+var _DOCX_ABSTRACTNUM_DECIMAL = 5;
+/* First dynamically-allocated numId -- past the skeleton's own fixed 1-6. */
+var _DOCX_NUMID_ALLOC_START = 1000;
+
+/** Allocate a fresh w:numId bound to abstractNumId at the given ilvl,
+ * recorded on ctx for _docxSpliceNumbering to inject into
+ * word/numbering.xml (with a startOverride at that ilvl, forcing a genuine
+ * restart -- see the comment above) at assembly time. Every <ul>/<ol>
+ * element (top-level OR nested) gets its own call. */
+function _docxAllocNumId(ctx, abstractNumId, ilvl) {
+  var numId = ctx.nextNumId++;
+  ctx.numAllocations.push({ numId: numId, abstractNumId: abstractNumId, ilvl: ilvl || 0 });
+  return numId;
+}
+
+/* Agreement clause sub-level indentation (spec §4e measured values). */
+var _DOCX_INDENT_LEVELS = { 1: 1080, 2: 1440, 3: 1800 };
+var _DOCX_INDENT_FIRSTLINE = 360;
+
+/* Heading sizes (half-points). H1 = the spec §4b/§4d measured 18pt
+   page/section title (w:sz=36), used AS-IS, unchanged from the baseline.
+   H2-H6 = a size the Louisburg baseline does NOT contain -- spec §4b's own
+   census found only two body sizes in the whole document (10.5pt dominant
+   body, 18pt titles; §4b line 230: "No other paragraph/heading sizes exist
+   in the body"). Matt reviewed the v731 documents 2026-07-31 and reported
+   "headers are the same text size as the rest of the text" -- there is no
+   intermediate size to inherit, which is the root cause. Matt authorized
+   (2026-07-31) a THIRD level, 13pt (w:sz=26), Arial, NOT bold (larger font
+   only -- no added weight was requested), for section headings below the
+   page title.
+   ** DELIBERATE DEVIATION FROM THE MEASURED LOUISBURG BASELINE, AUTHORIZED
+   BY MATT 2026-07-31. This is an addition (H1's 18pt title size is kept
+   as-is), not a replacement of any measured value. ** */
+var _DOCX_HEADING_SIZE_H1 = 36; // 18pt -- spec §4d, unchanged baseline value
+var _DOCX_HEADING_SIZE_SECTION = 26; // 13pt -- NEW, not in the baseline, Matt-authorized 2026-07-31
+
+var _DOCX_HEADING_TAGS = { H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1 };
+var _DOCX_BLOCK_TAGS = Object.assign({ DIV: 1, P: 1, TABLE: 1, UL: 1, OL: 1 }, _DOCX_HEADING_TAGS);
+var _DOCX_INLINE_TAGS = { SPAN: 1, STRONG: 1, B: 1, EM: 1, I: 1, U: 1, BR: 1 };
+
+/** px -> half-points: px * 0.75 = pt, pt * 2 = half-points, so px * 1.5. */
+function _docxPxToHalfPt(pxValue) {
+  var n = parseFloat(pxValue);
+  if (!n || isNaN(n)) return null;
+  return Math.round(n * 1.5);
+}
+
+/** px -> twips: 1px @96dpi = 1/96in = 1440/96 = 15 twips. */
+function _docxPxToTwips(pxValue) {
+  var n = parseFloat(pxValue);
+  if (!n || isNaN(n)) return null;
+  return Math.round(n * 15);
+}
+
+/** '#rrggbb' or 'rgb(r,g,b)'/'rgba(r,g,b,a)' -> 'RRGGBB' (no '#'), else null. */
+function _docxCssColorToHex(cssColor) {
+  if (!cssColor) return null;
+  var m = /^#([0-9a-fA-F]{6})$/.exec(String(cssColor).trim());
+  if (m) return m[1].toUpperCase();
+  m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(cssColor);
+  if (m) {
+    return [1, 2, 3]
+      .map(function (i) {
+        var v = Math.max(0, Math.min(255, parseInt(m[i], 10))).toString(16);
+        return v.length < 2 ? '0' + v : v;
+      })
+      .join('')
+      .toUpperCase();
+  }
+  return null;
+}
+
+/** data-word-indent="1"|"2"|"3" -> {indLeft, indFirstLine}, else {} (no w:ind -- body-paragraph default). */
+function _docxResolveIndentHint(value) {
+  if (value == null || value === '') return {};
+  var left = _DOCX_INDENT_LEVELS[parseInt(value, 10)];
+  if (left == null) return {};
+  return { indLeft: left, indFirstLine: _DOCX_INDENT_FIRSTLINE };
+}
+
+/** True if el has at least one child ELEMENT that is itself block-level --
+ * used to decide whether a <div> is a paragraph-like text leaf (no block
+ * children -- collect its own runs) or a pure layout container (has block
+ * children -- recurse, emit nothing of its own). */
+function _docxHasBlockChild(el) {
+  for (var i = 0; i < el.children.length; i++) {
+    if (_DOCX_BLOCK_TAGS[el.children[i].tagName]) return true;
+  }
+  return false;
+}
+
+/**
+ * Register a <img src="data:..."> element's bytes as a to-be-embedded image
+ * (ctx.images, consumed by the caller via _docxAssemble's opts.images) and
+ * return the <w:r>...</w:r> image run XML referencing its relationship id.
+ * Returns null (and console.warn's) for any non-data-URL src -- see the
+ * "known gaps" note above this section.
+ */
+function _docxRegisterImage(el, ctx) {
+  var src = el.getAttribute('src') || '';
+  var m = /^data:image\/(png|jpe?g|gif);base64,(.+)$/i.exec(src);
+  if (!m) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn(
+        '_docxTranslatePage: skipping <img> with non-data-URL src (Step 5 only embeds data: URLs synchronously): ' +
+          src.slice(0, 80),
+      );
+    }
+    return null;
+  }
+  var ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
+  var bytes = _docxBase64ToUint8Array(m[2]);
+  var mediaIndex = ctx.imageCounter++;
+  ctx.images.push({ bytes: bytes, extension: ext, mediaIndex: mediaIndex });
+  var rId = _docxImageRelId(mediaIndex);
+
+  var widthPx = parseFloat(el.style && el.style.width) || parseFloat(el.getAttribute('width')) || el.naturalWidth || 96;
+  var heightPx =
+    parseFloat(el.style && el.style.height) || parseFloat(el.getAttribute('height')) || el.naturalHeight || 96;
+  var widthTwips = _docxPxToTwips(widthPx) || 1440;
+  var heightTwips = _docxPxToTwips(heightPx) || 1440;
+
+  return _docxImageRun(rId, widthTwips, heightTwips, { altText: el.getAttribute('alt') || undefined });
+}
+
+/** Block-level <img> -> its own paragraph (body spacing, w:after=240). */
+function _docxTranslateImage(el, ctx) {
+  var runXml = _docxRegisterImage(el, ctx);
+  if (!runXml) return null;
+  return { xml: _docxParagraph({ runs: [runXml], spacingAfter: 240 }) };
+}
+
+/**
+ * Recursively walk a node's inline descendants (text, span/strong/em/b/i/u/
+ * br, inline <img>) accumulating RAW run entries -- {text, fmt} for text,
+ * {xml} for an already-built run (image), {text:'\n', fmt, isBreak:true}
+ * for an explicit <br>. Entries are finalized into <w:r> XML by
+ * _docxFinalizeRuns() AFTER the full walk, because edge (leading/trailing)
+ * whitespace trimming needs to see the whole sequence, not one node at a
+ * time. fmt carries inherited formatting (bold/italic/underline/color/
+ * sizeHalfPt) down the tree -- children only ever ADD formatting, never
+ * remove an ancestor's.
+ */
+function _docxWalkInline(node, fmt, entries, ctx) {
+  if (node.nodeType === 3) {
+    var text = node.nodeValue;
+    if (!text) return;
+    // Collapse EVERY run of whitespace (space/tab/CR/LF) to a single space,
+    // mirroring normal HTML whitespace handling. Source markup (both this
+    // fixture and every real .rpt-page template) is written as indented,
+    // multi-line template literals, so a text node's raw value routinely
+    // contains embedded newlines/indentation. Left un-collapsed, a literal
+    // '\n' inside run text is turned into a spurious <w:br/> by _docxRun()
+    // (which exists to honor a REAL <br> tag, not source formatting) --
+    // found 2026-07-31 via a fixture render: an un-collapsed leading
+    // "\n        " text-node value produced an empty <w:t/> + <w:br/> before
+    // the real text, then rendered the following line's 8-space HTML indent
+    // as literal preserved characters, visibly shifting "Clause sub-level 1"
+    // ~18pt right of the paragraph's true left edge (measured x0 103.58pt
+    // vs the expected/correct 49.56pt page-margin start).
+    var collapsed = text.replace(/[ \t\r\n]+/g, ' ');
+    if (collapsed === '') return;
+    entries.push({ text: collapsed, fmt: fmt });
+    return;
+  }
+  if (node.nodeType !== 1) return; // skip comments etc.
+
+  var tag = node.tagName;
+  if (tag === 'BR') {
+    entries.push({ text: '\n', fmt: fmt, isBreak: true });
+    return;
+  }
+  if (tag === 'IMG') {
+    var imgRun = _docxRegisterImage(node, ctx);
+    if (imgRun) entries.push({ xml: imgRun });
+    return;
+  }
+  if (!_DOCX_INLINE_TAGS[tag] && _DOCX_BLOCK_TAGS[tag]) {
+    // A block element found where only inline content was expected (should
+    // not happen -- _docxHasBlockChild() routes true block children to the
+    // container path before we ever call this). Skip defensively rather
+    // than emit malformed run text.
+    return;
+  }
+
+  var childFmt = Object.assign({}, fmt);
+  if (tag === 'STRONG' || tag === 'B') childFmt.bold = true;
+  if (tag === 'EM' || tag === 'I') childFmt.italic = true;
+  if (tag === 'U') childFmt.underline = true;
+  if (node.style) {
+    var fw = node.style.fontWeight;
+    if (fw === 'bold' || fw === '700' || fw === '800' || fw === '900' || parseInt(fw, 10) >= 600) childFmt.bold = true;
+    if (node.style.fontStyle === 'italic') childFmt.italic = true;
+    var fs = node.style.fontSize;
+    if (fs) {
+      var hp = _docxPxToHalfPt(fs);
+      if (hp) childFmt.sizeHalfPt = hp;
+    }
+    var col = node.style.color;
+    if (col) {
+      var hex = _docxCssColorToHex(col);
+      if (hex) childFmt.color = hex;
+    }
+  }
+  for (var i = 0; i < node.childNodes.length; i++) _docxWalkInline(node.childNodes[i], childFmt, entries, ctx);
+}
+
+/**
+ * Trim a single leading space off the first entry and a single trailing
+ * space off the last entry of a raw run-entry sequence (mirrors normal HTML
+ * block-edge whitespace trimming -- word-separating spaces BETWEEN inline
+ * elements are real and preserved; a stray space inherited from the source
+ * markup's own indentation at the very start/end of a paragraph is not),
+ * dropping any entry that becomes empty as a result, then builds the final
+ * <w:r> XML for every surviving entry.
+ */
+function _docxFinalizeRuns(entries) {
+  entries = entries.filter(function (e) {
+    return e.xml || e.isBreak || (e.text != null && e.text !== '');
+  });
+  if (!entries.length) return [];
+
+  var first = entries[0];
+  if (!first.isBreak && !first.xml) first.text = first.text.replace(/^ +/, '');
+  var last = entries[entries.length - 1];
+  if (!last.isBreak && !last.xml) last.text = last.text.replace(/ +$/, '');
+
+  entries = entries.filter(function (e) {
+    return e.xml || e.isBreak || (e.text != null && e.text !== '');
+  });
+
+  return entries.map(function (e) {
+    if (e.xml) return e.xml;
+    return _docxRun(Object.assign({ text: e.text }, e.fmt));
+  });
+}
+
+/** Collect run XML for all of el's children (not el itself). inheritedFmt
+ * seeds the base formatting (e.g. {sizeHalfPt:36} for headings). */
+function _docxCollectRuns(el, inheritedFmt, ctx) {
+  var entries = [];
+  var fmt = inheritedFmt || {};
+  for (var i = 0; i < el.childNodes.length; i++) _docxWalkInline(el.childNodes[i], fmt, entries, ctx);
+  return _docxFinalizeRuns(entries);
+}
+
+/** True ancestor <table> of a <tr>/<td>, stopping correctly at the nearest
+ * enclosing table (so a table nested inside a cell doesn't get its rows
+ * double-counted into the outer table). */
+function _docxClosestTable(el) {
+  var p = el.parentElement;
+  while (p) {
+    if (p.tagName === 'TABLE') return p;
+    p = p.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Column widths in twips for a table's grid. If a direct <colgroup><col
+ * style="width:N%"> matching colCount is present, derive from that
+ * (construct D, plan Step 4 inventory); otherwise split the spec's content
+ * width (10080 twips, spec §1) evenly, correcting rounding on the last
+ * column so the sum is exact.
+ */
+function _docxDeriveColWidths(tableEl, colCount, contentWidthTwips) {
+  contentWidthTwips = contentWidthTwips || 10080;
+  var colgroup = tableEl.querySelector(':scope > colgroup');
+  if (colgroup) {
+    var cols = Array.prototype.slice.call(colgroup.querySelectorAll('col'));
+    if (cols.length === colCount) {
+      var pcts = cols.map(function (c) {
+        var w = (c.style && c.style.width) || c.getAttribute('width') || '';
+        var m = /([\d.]+)\s*%/.exec(w);
+        return m ? parseFloat(m[1]) : null;
+      });
+      if (
+        pcts.every(function (p) {
+          return p != null;
+        })
+      ) {
+        return pcts.map(function (p) {
+          return Math.round((contentWidthTwips * p) / 100);
+        });
+      }
+    }
+  }
+  var each = Math.floor(contentWidthTwips / colCount);
+  var widths = [];
+  for (var i = 0; i < colCount; i++) widths.push(each);
+  widths[colCount - 1] += contentWidthTwips - each * colCount;
+  return widths;
+}
+
+/**
+ * Translate a <table> element into a full <w:tbl> string. Row 0 becomes the
+ * repeating header row (w:tblHeader, spec §5c -- "must be added explicitly,
+ * it is not automatic"), bold+centered per spec §5c/5d (all cells centered,
+ * not just header). <th> cells force bold regardless of row index.
+ */
+function _docxTranslateTable(tableEl, ctx) {
+  var trEls = Array.prototype.slice.call(tableEl.querySelectorAll('tr')).filter(function (tr) {
+    return _docxClosestTable(tr) === tableEl;
+  });
+  if (!trEls.length) return '';
+
+  var colCount = 0;
+  trEls.forEach(function (tr) {
+    var cells = Array.prototype.slice.call(tr.children).filter(function (c) {
+      return c.tagName === 'TD' || c.tagName === 'TH';
+    });
+    var n = cells.reduce(function (sum, c) {
+      return sum + (parseInt(c.getAttribute('colspan'), 10) || 1);
+    }, 0);
+    if (n > colCount) colCount = n;
+  });
+  if (!colCount) return '';
+
+  var colWidths = _docxDeriveColWidths(tableEl, colCount);
+
+  var rowsXml = trEls
+    .map(function (tr, rIdx) {
+      var cells = Array.prototype.slice.call(tr.children).filter(function (c) {
+        return c.tagName === 'TD' || c.tagName === 'TH';
+      });
+      var colIdx = 0;
+      var cellsXml = cells.map(function (cell) {
+        var span = parseInt(cell.getAttribute('colspan'), 10) || 1;
+        var widthTwips = 0;
+        for (var k = 0; k < span; k++) widthTwips += colWidths[colIdx + k] || 0;
+        colIdx += span;
+
+        var isHeaderCell = cell.tagName === 'TH';
+        var runs = _docxCollectRuns(cell, isHeaderCell ? { bold: true } : {}, ctx);
+        var align = (cell.style && cell.style.textAlign) || 'center';
+        var para = _docxParagraph({
+          runs: runs.length ? runs : [_docxRun({ text: '', bold: isHeaderCell })],
+          align: align,
+          spacingAfter: 0,
+        });
+        return _docxTableCell({
+          widthTwips: widthTwips,
+          paragraphs: [para],
+          gridSpan: span > 1 ? span : undefined,
+          vAlign: 'center',
+        });
+      });
+      return _docxTableRow(cellsXml, { header: rIdx === 0 });
+    })
+    .join('');
+
+  var grid =
+    '<w:tblGrid>' +
+    colWidths
+      .map(function (w) {
+        return '<w:gridCol w:w="' + w + '"/>';
+      })
+      .join('') +
+    '</w:tblGrid>';
+  var tblPr =
+    '<w:tblPr><w:tblStyle w:val="TableGrid"/>' +
+    '<w:tblW w:w="0" w:type="auto"/>' +
+    '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>' +
+    '</w:tblPr>';
+
+  return '<w:tbl>' + tblPr + grid + rowsXml + '</w:tbl>';
+}
+
+/** Paragraph XML for a run-array + numId, list-item spacing (w:after=40). */
+function _docxListItemFromRuns(runs, numId, ilvl) {
+  return _docxParagraph({
+    runs: runs.length ? runs : [_docxRun({ text: '' })],
+    pStyle: 'ListParagraph',
+    numId: numId,
+    ilvl: ilvl || 0,
+    spacingAfter: 40,
+  });
+}
+
+/**
+ * Translate a <ul>/<ol>'s direct <li> children into list-item paragraphs.
+ * numId is the ALREADY-ALLOCATED w:numId for THIS list instance (see
+ * _docxAllocNumId -- callers allocate it, this function does not). A nested
+ * <ul>/<ol> found inside an <li> gets its OWN freshly-allocated numId at
+ * ilvl+1 -- never the parent's -- so an unrelated/nested list never
+ * continues another list's counter (see the _DOCX_ABSTRACTNUM_* comment).
+ */
+function _docxTranslateList(listEl, ctx, numId, ilvl) {
+  ilvl = ilvl || 0;
+  var out = [];
+  var liEls = Array.prototype.filter.call(listEl.children, function (c) {
+    return c.tagName === 'LI';
+  });
+  liEls.forEach(function (li) {
+    var nestedLists = [];
+    var entries = [];
+    Array.prototype.slice.call(li.childNodes).forEach(function (node) {
+      if (node.nodeType === 1 && (node.tagName === 'UL' || node.tagName === 'OL')) {
+        nestedLists.push(node);
+      } else {
+        _docxWalkInline(node, {}, entries, ctx);
+      }
+    });
+    var directRuns = _docxFinalizeRuns(entries);
+    out.push(_docxListItemFromRuns(directRuns, numId, ilvl));
+    nestedLists.forEach(function (nested) {
+      var nestedAbstractId = nested.tagName === 'OL' ? _DOCX_ABSTRACTNUM_DECIMAL : _DOCX_ABSTRACTNUM_BULLET;
+      var nestedNumId = _docxAllocNumId(ctx, nestedAbstractId, ilvl + 1);
+      out = out.concat(_docxTranslateList(nested, ctx, nestedNumId, ilvl + 1));
+    });
+  });
+  return out;
+}
+
+/**
+ * Dispatch a single block-position element to its OOXML shape. Returns an
+ * array of block XML strings (0, 1, or many -- a container <div> returns
+ * the concatenation of all its block children's output).
+ */
+function _docxTranslateBlock(el, ctx) {
+  if (el.nodeType !== 1) return [];
+  var tag = el.tagName;
+
+  if (tag === 'TABLE') {
+    var tblXml = _docxTranslateTable(el, ctx);
+    return tblXml ? [tblXml] : [];
+  }
+
+  if (tag === 'UL' || tag === 'OL') {
+    var abstractId = tag === 'OL' ? _DOCX_ABSTRACTNUM_DECIMAL : _DOCX_ABSTRACTNUM_BULLET;
+    var listNumId = _docxAllocNumId(ctx, abstractId, 0);
+    return _docxTranslateList(el, ctx, listNumId, 0);
+  }
+
+  if (_DOCX_HEADING_TAGS[tag]) {
+    // H1 = page/section title, spec §4d 18pt (unchanged baseline value).
+    // H2-H6 = section heading, 13pt -- Matt-authorized addition, see the
+    // _DOCX_HEADING_SIZE_SECTION comment above; the baseline has no such
+    // size, this closes Matt's 2026-07-31 "headers are the same text size
+    // as the rest of the text" report. Neither level is bold by default
+    // (Matt asked for larger font only, not added weight).
+    var headingSizeHalfPt = tag === 'H1' ? _DOCX_HEADING_SIZE_H1 : _DOCX_HEADING_SIZE_SECTION;
+    var hRuns = _docxCollectRuns(el, { sizeHalfPt: headingSizeHalfPt }, ctx);
+    if (!hRuns.length) return [];
+    return [
+      _docxParagraph({
+        runs: hRuns,
+        align: el.style && el.style.textAlign,
+        spacingBefore: 240,
+        spacingAfter: 120,
+      }),
+    ];
+  }
+
+  if (tag === 'IMG') {
+    var imgBlock = _docxTranslateImage(el, ctx);
+    return imgBlock ? [imgBlock.xml] : [];
+  }
+
+  if (tag === 'P' || (tag === 'DIV' && !_docxHasBlockChild(el))) {
+    var pRuns = _docxCollectRuns(el, {}, ctx);
+    if (!pRuns.length) return []; // empty layout-only leaf -- no stray blank paragraph
+    var indOpts = _docxResolveIndentHint(el.getAttribute && el.getAttribute('data-word-indent'));
+    return [
+      _docxParagraph(
+        Object.assign(
+          {
+            runs: pRuns,
+            align: el.style && el.style.textAlign,
+            spacingAfter: 240, // body-paragraph policy (Part E); indentation-only override below
+          },
+          indOpts,
+        ),
+      ),
+    ];
+  }
+
+  if (tag === 'DIV') {
+    var out = [];
+    for (var i = 0; i < el.children.length; i++) out = out.concat(_docxTranslateBlock(el.children[i], ctx));
+    return out;
+  }
+
+  // Outside the closed vocabulary at a block position -- recurse into
+  // element children defensively so content is never silently dropped, but
+  // the unknown tag itself emits no XML.
+  var out2 = [];
+  for (var j = 0; j < el.children.length; j++) out2 = out2.concat(_docxTranslateBlock(el.children[j], ctx));
+  return out2;
+}
+
+/**
+ * Step 5 entry point. Translate one or more `.rpt-page` (or any container)
+ * elements, in order, into a single documentXml BODY string ready for
+ * _docxAssemble(), plus the images (opts.images) and the dynamically
+ * allocated list-numbering instances (opts.numIds) that must both be passed
+ * through to it. A page break (<w:br w:type="page"/>) is inserted between
+ * page elements when more than one is given, so Word starts a new page
+ * where the source had a page boundary; pagination WITHIN a page's own
+ * content is still Word's own flow.
+ *
+ * Returns { xml: string, images: array<{bytes, extension, mediaIndex}>,
+ *           numIds: array<{numId, abstractNumId}> }.
+ */
+function _docxTranslatePages(pageEls) {
+  var ctx = { images: [], imageCounter: 100, numAllocations: [], nextNumId: _DOCX_NUMID_ALLOC_START };
+  var blocks = [];
+  for (var p = 0; p < pageEls.length; p++) {
+    if (p > 0) blocks.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+    for (var i = 0; i < pageEls[p].children.length; i++) {
+      blocks = blocks.concat(_docxTranslateBlock(pageEls[p].children[i], ctx));
+    }
+  }
+  return { xml: blocks.join(''), images: ctx.images, numIds: ctx.numAllocations };
+}
+
+/** Single-page convenience wrapper around _docxTranslatePages(). */
+function _docxTranslatePage(pageEl) {
+  return _docxTranslatePages([pageEl]);
 }
