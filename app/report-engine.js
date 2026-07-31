@@ -17585,9 +17585,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     // hardware — see buildCatalogRows) instead of enumerating each one separately.
     if (agg.ioOnlyCount > 0) {
       catLines.push(
-        '<li>Existing control points requiring programming only — ' +
-          agg.ioOnlyQty +
-          ' points, no additional cost</li>',
+        '<li>Existing control points requiring programming only: ' + agg.ioOnlyQty + ' points, no additional cost</li>',
       );
     }
     var listHTML = catLines.length
@@ -17613,7 +17611,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     var subtotalHTML = noCatFlag
       ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
       : subtotalStr
-        ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
+        ? ': <span style="font-weight:700">' + subtotalStr + '</span>'
         : '';
     var listHTML = items.length
       ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:var(--rpt-page-text);line-height:1.6">' +
@@ -17627,12 +17625,12 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
             // silently drop scope"), so the row/item stays; only the misleading $0 math is
             // replaced with a plain-English "no additional cost" label.
             if (wantItemized && it.lineTotal === 0) {
-              priceStr = it.qty > 1 ? ' — ' + it.qty + ' units, no additional cost' : ' — no additional cost';
+              priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
             } else if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
               priceStr =
                 it.qty > 1 && it.unitPrice != null && fmtUSD(it.unitPrice)
-                  ? ' — ' + it.qty + ' × ' + fmtUSD(it.unitPrice) + ' = ' + fmtUSD(it.lineTotal)
-                  : ' — ' + fmtUSD(it.lineTotal);
+                  ? ': ' + it.qty + ' × ' + fmtUSD(it.unitPrice) + ' = ' + fmtUSD(it.lineTotal)
+                  : ': ' + fmtUSD(it.lineTotal);
             } else if (it.qty > 1) {
               priceStr = ' (qty ' + it.qty + ')';
             }
@@ -17658,7 +17656,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   // .rpt-a36-callout and the disclaimer block below this table.
   var recNote = noDollarTier
     ? '<div style="font-size:8.5px;color:var(--rpt-page-text);font-style:italic;margin-bottom:4px">' +
-      'Delivered as part of the monthly program allowance shown above — not billed separately.' +
+      'Delivered as part of the monthly service allowance shown above, not billed separately.' +
       '</div>'
     : '';
 
@@ -17791,15 +17789,15 @@ function _rptA36RecommendedTimelineHTML(d) {
   // Optimization Program section above, so it is intentionally not repeated here.
   var laborNote =
     '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:4px;font-style:italic">' +
-    'Continuous Energy Management Services — alarm configuration, report setup, trend ' +
-    'configuration, utility bill data entry, and ongoing monitoring — are provided throughout the ' +
-    'program in addition to the improvements listed above.' +
+    'Continuous Energy Management Services (alarm configuration, report setup, trend ' +
+    'configuration, utility bill data entry, and ongoing monitoring) are provided throughout the ' +
+    'term in addition to the improvements listed above.' +
     '</div>';
 
   return (
     '<div style="margin-top:12px">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-    'text-transform:uppercase;letter-spacing:0.04em">Recommended Program — Phased Implementation Sequence</div>' +
+    'text-transform:uppercase;letter-spacing:0.04em">Recommended Energy Management Services: Phased Implementation Sequence</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
     colgroup +
     '<thead><tr>' +
@@ -17894,7 +17892,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     {
       key: 'recommended',
       label: 'Recommended',
-      desc: 'An ongoing monthly program funding the highest-impact opportunities first — not a one-time project cost.',
+      desc: 'An ongoing monthly service funding the highest-impact opportunities first, not a one-time project cost.',
     },
     { key: 'compliance', label: 'Compliance', desc: 'Scope required to meet ASHRAE 36.' },
     { key: 'full-scope', label: 'Full Scope', desc: 'All identified upgrades across the portfolio.' },
@@ -17915,8 +17913,8 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
     'The options below present three ways to address the assessment findings. Compliance and Full ' +
     'Scope are one-time capital projects, and each shows a total project cost. Recommended is ' +
-    'different: it is an ongoing monthly program, not a project with a total cost. Its scope is ' +
-    'delivered over time — see the phased schedule below for what is included and when.' +
+    'different: it is an ongoing monthly service, not a project with a total cost. Its scope is ' +
+    'delivered over time. See the phased schedule below for what is included and when.' +
     '</div>';
 
   // Table: 3 fixed columns, total width 684px (3 x 228). table-layout:fixed, black text, no colored
@@ -17963,7 +17961,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     tierCols
       .map(function (c) {
         return (
-          '<td style="' + lblStyle + '">' + (c.key === NO_DOLLAR_TIER ? 'Monthly Program' : 'Estimated Cost') + '</td>'
+          '<td style="' +
+          lblStyle +
+          '">' +
+          (c.key === NO_DOLLAR_TIER ? 'Monthly Allowance' : 'Estimated Cost') +
+          '</td>'
         );
       })
       .join('') +
@@ -18084,7 +18086,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
               '<td style="' +
               phaseCellStyle +
               '">' +
-              '<div style="font-weight:400">Funded from the monthly program allowance above — see ' +
+              '<div style="font-weight:400">Funded from the monthly service allowance above. See ' +
               'the phased implementation schedule below for what is delivered and when.</div>' +
               '</td>'
             );
@@ -18210,7 +18212,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       detailNoteStyle +
       '">Full Install &amp; Programming Detail for each scope is provided on the following pages. ' +
       'Compliance and Full Scope detail includes pricing; Recommended detail lists scope and ' +
-      'quantities only, funded through the monthly program allowance.</td></tr>';
+      'quantities only, funded through the monthly service allowance.</td></tr>';
   }
 
   var table =
@@ -18295,7 +18297,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var trailerHTML = discBlock + svcBlock;
 
   var resultPages = [
-    rptPage(n, 'ASHRAE 36 Service Proposal — Cost Estimate', bodyHTML, {
+    rptPage(n, 'ASHRAE 36 Service Proposal: Cost Estimate', bodyHTML, {
       data: fakeData,
       label: 'Page ' + n + ' — Cost Estimate',
     }),
@@ -18303,7 +18305,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var nextPageNum = n + 1;
   if (trailerHTML) {
     resultPages.push(
-      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal — Cost Estimate', titleBlock + trailerHTML, {
+      rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', titleBlock + trailerHTML, {
         data: fakeData,
         label: 'Page ' + nextPageNum + ' — Cost Estimate Disclaimer',
       }),
@@ -18484,7 +18486,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // carrying a fraction.
         var itTitle =
           '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-          'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate — Itemized Measures — ' +
+          'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate: Itemized Measures, ' +
           _esc(c.label) +
           (numChunks > 1
             ? idx > 0
@@ -18494,7 +18496,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '</div>';
         var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
         pages.push(
-          rptPage(pageN, 'ASHRAE 36 Service Proposal — Cost Estimate', body, {
+          rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', body, {
             data: fakeData,
             label: 'Page ' + pageN + ' — Itemized Measures (' + c.label + ')',
           }),
@@ -18524,9 +18526,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var priceStr = '';
       // Same no-bare-$0 rule as _sectionHTMLCategories above.
       if (showPrice && wantItemized && c.lineTotal === 0) {
-        priceStr = ' — ' + c.qty + ' units, no additional cost';
+        priceStr = ': ' + c.qty + ' units, no additional cost';
       } else if (showPrice && wantItemized && c.lineTotal != null && _fmtUSD(c.lineTotal)) {
-        priceStr = ' — ' + c.qty + ' units — ' + _fmtUSD(c.lineTotal);
+        priceStr = ': ' + c.qty + ' units, ' + _fmtUSD(c.lineTotal);
       } else if (c.qty > 1) {
         priceStr = ' (qty ' + c.qty + ')';
       }
@@ -18543,7 +18545,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       return (
         '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
-        'Existing control points requiring programming only — ' +
+        'Existing control points requiring programming only: ' +
         agg.ioOnlyQty +
         ' points, no additional cost' +
         '</div>'
@@ -18556,12 +18558,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // _sectionHTML above -- a real, computed $0 (ioOnly rows) must not render as "N × $0 = $0"
       // / a bare "$0". Row stays (real scope the client should see); only the price text changes.
       if (showPrice && wantItemized && it.lineTotal === 0) {
-        priceStr = it.qty > 1 ? ' — ' + it.qty + ' units, no additional cost' : ' — no additional cost';
+        priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
       } else if (showPrice && wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
         priceStr =
           it.qty > 1 && it.unitPrice != null && _fmtUSD(it.unitPrice)
-            ? ' — ' + it.qty + ' × ' + _fmtUSD(it.unitPrice) + ' = ' + _fmtUSD(it.lineTotal)
-            : ' — ' + _fmtUSD(it.lineTotal);
+            ? ': ' + it.qty + ' × ' + _fmtUSD(it.unitPrice) + ' = ' + _fmtUSD(it.lineTotal)
+            : ': ' + _fmtUSD(it.lineTotal);
       } else if (it.qty > 1) {
         priceStr = ' (qty ' + it.qty + ')';
       }
@@ -18584,7 +18586,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var subtotalHTML = noCatFlag
         ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
         : subtotalStr
-          ? ' — <span style="font-weight:700">' + subtotalStr + '</span>'
+          ? ': <span style="font-weight:700">' + subtotalStr + '</span>'
           : '';
       return (
         '<div style="font-size:10px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 3px">' +
@@ -18617,7 +18619,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           estH: 20,
           html:
             '<div style="font-size:8.5px;color:var(--rpt-page-text);font-style:italic;margin:6px 0 4px">' +
-            'Delivered as part of the monthly program allowance shown above — not billed separately.' +
+            'Delivered as part of the monthly service allowance shown above, not billed separately.' +
             '</div>',
         });
       }
@@ -18656,7 +18658,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // carrying a fraction.
         var pageTitle =
           '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-          'text-transform:uppercase;letter-spacing:0.04em">Install &amp; Programming Detail — ' +
+          'text-transform:uppercase;letter-spacing:0.04em">Install &amp; Programming Detail, ' +
           _esc(c.label) +
           (numChunks > 1
             ? idx > 0
@@ -18665,7 +18667,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
             : '') +
           '</div>';
         pages.push(
-          rptPage(pageN, 'ASHRAE 36 Service Proposal — Cost Estimate', pageTitle + rowsHTML, {
+          rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', pageTitle + rowsHTML, {
             data: fakeData,
             label: 'Page ' + pageN + ' — Install & Programming Detail (' + c.label + ')',
           }),
@@ -18763,7 +18765,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     ' map directly to ASHRAE 36 sensor and actuator categories and are evaluated in the compliance scoring above. ' +
     'The remaining ' +
     inv.totalOther.toLocaleString() +
-    ' points are present in the building automation system export but do not correspond to a defined ASHRAE 36 category — these may include vendor-specific status objects, ' +
+    ' points are present in the building automation system export but do not correspond to a defined ASHRAE 36 category. These may include vendor-specific status objects, ' +
     'integration relay programs, setpoint offsets, or equipment not addressed by ASHRAE 36. ' +
     'All points are accounted for; none are discarded.' +
     '</div>';
@@ -18900,7 +18902,7 @@ function rptPageASHRAE36PointInventory(n, d) {
       var contHdr =
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Point Inventory Completeness — continued (' +
+        'Point Inventory Completeness (continued, ' +
         (chunkIndex + 1) +
         ' of ' +
         numChunks +
@@ -18912,7 +18914,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     // 2026-07-29 fix (same "(1 of N) missing on page 1" asymmetry — see Building ASHRAE 36
     // Readiness above): append the fraction to the .rpt-int-hdr title bar for page 1 too.
     var _pointInvTitle =
-      'ASHRAE 36 Audit Report — Point Inventory' +
+      'ASHRAE 36 Audit Report: Point Inventory' +
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, _pointInvTitle, bodyHTML, {
@@ -19008,7 +19010,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
             return t.html;
           })
           .join('');
-        var pg = rptPage(pageNum, 'ASHRAE 36 Audit Report — Per-Building Detail', bodyHTML, {
+        var pg = rptPage(pageNum, 'ASHRAE 36 Audit Report: Per-Building Detail', bodyHTML, {
           data: _bldgFakeData,
           label: 'Page ' + pageNum + ' — Per-Building Detail',
         });
