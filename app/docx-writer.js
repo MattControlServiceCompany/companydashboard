@@ -988,6 +988,46 @@ function _docxDeriveColWidths(tableEl, colCount, contentWidthTwips) {
 }
 
 /**
+ * Determine a table's TRUE structural column count from each row's
+ * colspan-sum, using the MODAL (most common) sum rather than the max.
+ *
+ * The original defect used max(spanSum) as colCount: one aberrant wide row
+ * (e.g. a single colspan="5" cell in an otherwise 3-column table) inflated
+ * colCount to 5 for the WHOLE table, so every normal 3-cell row only ever
+ * covered 3 of the 5 declared w:gridCol columns and rendered visibly
+ * narrower than the overflow row (rendered evidence: v2_page4.png, table
+ * "F1"). Taking the value most ROWS agree on instead is immune to a single
+ * outlier row in either direction (too wide OR too narrow) -- see
+ * _docxTranslateTable's row-reconciliation step, which now CLAMPS an
+ * over-wide row down to this count instead of stretching an under-wide one
+ * up to it.
+ *
+ * Ties are broken toward the header row's (row 0) sum, since the header is
+ * the most reliable structural signal for a table's real width; a further
+ * tie (header absent from the tied candidates) falls back to the larger
+ * candidate so genuine wide content is not clipped.
+ */
+function _docxModalColCount(rowSpanSums) {
+  var freq = {};
+  rowSpanSums.forEach(function (n) {
+    if (n > 0) freq[n] = (freq[n] || 0) + 1;
+  });
+  var maxFreq = 0;
+  Object.keys(freq).forEach(function (key) {
+    if (freq[key] > maxFreq) maxFreq = freq[key];
+  });
+  var candidates = Object.keys(freq)
+    .map(function (k) {
+      return parseInt(k, 10);
+    })
+    .filter(function (n) {
+      return freq[n] === maxFreq;
+    });
+  if (candidates.indexOf(rowSpanSums[0]) !== -1) return rowSpanSums[0];
+  return Math.max.apply(null, candidates);
+}
+
+/**
  * Translate a <table> element into a full <w:tbl> string. Row 0 becomes the
  * repeating header row (w:tblHeader, spec §5c -- "must be added explicitly,
  * it is not automatic"), bold+centered per spec §5c/5d (all cells centered,
@@ -999,16 +1039,21 @@ function _docxTranslateTable(tableEl, ctx) {
   });
   if (!trEls.length) return '';
 
-  var colCount = 0;
-  trEls.forEach(function (tr) {
+  var rowSpanSums = trEls.map(function (tr) {
     var cells = Array.prototype.slice.call(tr.children).filter(function (c) {
       return c.tagName === 'TD' || c.tagName === 'TH';
     });
-    var n = cells.reduce(function (sum, c) {
+    return cells.reduce(function (sum, c) {
       return sum + (parseInt(c.getAttribute('colspan'), 10) || 1);
     }, 0);
-    if (n > colCount) colCount = n;
   });
+
+  // A direct <colgroup> is the author's explicit structural declaration --
+  // trust its <col> count as the true colCount when present. Otherwise fall
+  // back to the modal colspan-sum across rows (see _docxModalColCount).
+  var colgroupEl = tableEl.querySelector(':scope > colgroup');
+  var colgroupCount = colgroupEl ? colgroupEl.querySelectorAll('col').length : 0;
+  var colCount = colgroupCount || _docxModalColCount(rowSpanSums);
   if (!colCount) return '';
 
   var colWidths = _docxDeriveColWidths(tableEl, colCount);
@@ -1026,19 +1071,36 @@ function _docxTranslateTable(tableEl, ctx) {
       var rowSpanTotal = spans.reduce(function (sum, s) {
         return sum + s;
       }, 0);
-      // Reconcile a row that declares FEWER grid columns than colCount (the
-      // max colspan-sum across the WHOLE table -- e.g. one aberrant
-      // colspan="5" row in an otherwise-3-column table drives colCount to
-      // 5) by letting its LAST cell absorb the shortfall. Without this, a
-      // normal row's real <w:tc> cells only ever covered colCount worth of
-      // grid width when colCount came from a DIFFERENT, wider row, so the
-      // whole table's declared w:gridCol columns stopped lining up with
-      // this row's actual cells and it rendered visibly narrower than the
-      // overflow row. Found 2026-07-31 via adversarial fixture render
-      // (v2_page4.png, table "F1"). rowSpanTotal can never exceed colCount
-      // (colCount is the max), so this only ever widens, never shrinks.
-      if (rowSpanTotal < colCount) {
-        spans[spans.length - 1] += colCount - rowSpanTotal;
+      // colCount is now the table's TRUE structural width (colgroup, or the
+      // MODAL colspan-sum across rows -- see _docxModalColCount), not the
+      // max. That means a row can legitimately land on either side of it:
+      //
+      // - OVER colCount: an aberrant wide cell (e.g. colspan="5" in a
+      //   3-column table). CLAMP the overflow off the row's trailing
+      //   cell(s), working backward and never taking a cell below span=1,
+      //   so the row's real content lines up with the true grid instead of
+      //   overflowing it. This is the original defect (v2_page4.png, table
+      //   "F1"), now fixed by correcting colCount at the source instead of
+      //   stretching every OTHER row to match the outlier.
+      //
+      // - UNDER colCount: a legitimately ragged/short row (e.g. a 2-cell
+      //   footer note in a 4-column table, no colspan involved at all).
+      //   Leave it COMPLETELY alone. Auto-stretching the last cell to
+      //   absorb the shortfall was a regression introduced 2026-07-31: it
+      //   fired on this case too and stretched the footer's text across
+      //   columns it was never meant to occupy, destroying the row's
+      //   borders (docx-regression-check: body-xml-old.xml vs
+      //   body-xml-new.xml). Plain-browser rendering of the same fixture
+      //   (browser_render_check.png) confirms a short row should just stay
+      //   short -- matching the pre-regression (7998637) output exactly.
+      if (rowSpanTotal > colCount) {
+        var overflow = rowSpanTotal - colCount;
+        for (var si = spans.length - 1; si >= 0 && overflow > 0; si--) {
+          var reducible = spans[si] - 1; // never clamp a cell below span=1
+          var take = Math.min(reducible, overflow);
+          spans[si] -= take;
+          overflow -= take;
+        }
       }
 
       var colIdx = 0;
