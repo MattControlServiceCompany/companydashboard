@@ -1175,7 +1175,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // rendering at the wrong spot / overlapping body content in the Word export.
   const footerLabelHtml =
     data && data.period
-      ? '<div class="rpt-footer-label" style="text-align:center;font-size:10px;color:var(--rpt-page-text);padding:4px 0 2px;position:absolute;bottom:' +
+      ? '<div class="rpt-footer-label" style="text-align:center;font-size:14px;color:var(--rpt-page-text);padding:4px 0 2px;position:absolute;bottom:' +
         '45px' +
         ';left:0;right:0">' +
         (data.period.type === 'quarterly'
@@ -1210,7 +1210,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       footerImgHtml +
       (noPageNum
         ? ''
-        : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>') +
+        : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:14px;color:var(--rpt-page-text)"></div>') +
       '</div>'
     );
   }
@@ -1268,7 +1268,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     footerImgHtml +
     (noPageNum
       ? ''
-      : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>') +
+      : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:14px;color:var(--rpt-page-text)"></div>') +
     '</div>'
   );
 }
@@ -8324,7 +8324,7 @@ async function exportReportToWord() {
     // resolved to a real value below via resolveVars() (same helper used on bodyHtml above)
     // since this markup is assembled outside the resolveVars(rawBodyHtml) call.
     const footerLabelP = footerLabelText
-      ? '<p class="MsoFooter" style="text-align:center;font-size:10px;color:var(--rpt-page-text);margin:2px 0 0">' +
+      ? '<p class="MsoFooter" style="text-align:center;font-size:14px;color:var(--rpt-page-text);margin:2px 0 0">' +
         footerLabelText +
         '</p>'
       : '';
@@ -8333,7 +8333,7 @@ async function exportReportToWord() {
     // its own metrics instead of always reading whatever page count this app estimated at
     // export time.
     const pageNumP = hasPageNum
-      ? '<p class="MsoFooter" style="text-align:right;font-size:10px;color:var(--rpt-page-text);margin:2px 20px 0 0">' +
+      ? '<p class="MsoFooter" style="text-align:right;font-size:14px;color:var(--rpt-page-text);margin:2px 20px 0 0">' +
         "Page <span style='mso-field-code:PAGE'></span> of <span style='mso-field-code:NUMPAGES'></span></p>"
       : '';
     // footerBodyHtml is identical on the hero/title page and every interior page (rptPage()
