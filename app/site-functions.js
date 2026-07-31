@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.07.31.736',
+    date: '2026-07-31',
+    title: 'Reports — larger page numbers and header text',
+    items: [
+      {
+        type: 'fix',
+        text: 'Reports — the page numbers and the client name and date line at the top of each page are now large enough to read comfortably in print.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.31.735',
     date: '2026-07-31',
     title: 'Audit Report and Service Proposal — plain-language wording',
