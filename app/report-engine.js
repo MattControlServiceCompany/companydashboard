@@ -12895,30 +12895,43 @@ function collectASHRAE36Data(projId, reportDate) {
       };
     });
 
-  // Portfolio averages
-  var portfolioComposite = buildingsData.length
+  // Portfolio averages -- equipment-weighted (Matt's decision, backlog 9f21c94da4e717a5,
+  // 2026-07-31). The service agreement is priced off equipment counts, not building counts, so
+  // every portfolio gauge is weighted by each building's auditable equipCount instead of
+  // averaging the 27 buildings flat (a 512-unit Courthouse and an 8-unit outbuilding no longer
+  // count equally). Replaces the old `reduce(sum) / buildingsData.length` flat-average pattern
+  // for all three gauges (composite, pointPct, seqPct) for consistency -- do not fix one and
+  // leave the others flat.
+  var _totalEquipForComposite = buildingsData.reduce(function (s, b) {
+    return s + b.equipCount;
+  }, 0);
+  var portfolioComposite = _totalEquipForComposite
     ? Math.round(
         buildingsData.reduce(function (s, b) {
-          return s + b.composite;
-        }, 0) / buildingsData.length,
+          return s + b.composite * b.equipCount;
+        }, 0) / _totalEquipForComposite,
       )
     : 0;
-  var portfolioPointPct = buildingsData.length
+  var portfolioPointPct = _totalEquipForComposite
     ? Math.round(
         buildingsData.reduce(function (s, b) {
-          return s + b.pointPct;
-        }, 0) / buildingsData.length,
+          return s + b.pointPct * b.equipCount;
+        }, 0) / _totalEquipForComposite,
       )
     : 0;
-  // Exclude buildings with null seqPct (no applicable sequences) from the portfolio average.
+  // Exclude buildings with null seqPct (no applicable sequences) from the portfolio average --
+  // weight by equipCount of only the qualifying (non-null) buildings.
   var _seqBuildings = buildingsData.filter(function (b) {
     return b.seqPct !== null;
   });
-  var portfolioSeqPct = _seqBuildings.length
+  var _totalEquipForSeq = _seqBuildings.reduce(function (s, b) {
+    return s + b.equipCount;
+  }, 0);
+  var portfolioSeqPct = _totalEquipForSeq
     ? Math.round(
         _seqBuildings.reduce(function (s, b) {
-          return s + b.seqPct;
-        }, 0) / _seqBuildings.length,
+          return s + b.seqPct * b.equipCount;
+        }, 0) / _totalEquipForSeq,
       )
     : 0;
   var greenCount = buildingsData.filter(function (b) {
