@@ -16357,10 +16357,14 @@ function _rptA36PhaseSeqCategoryNames(rows) {
   if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       if (!seen[sd.key]) return;
-      var label = sd.label;
-      if (sd.key.indexOf('hwp_') === 0) label = 'Hot Water ' + label;
-      else if (sd.key.indexOf('chwp_') === 0) label = 'Chilled Water ' + label;
-      names.push(label);
+      // Hot Water/Chilled Water/Boiler/Chiller disambiguation used to be added HERE (prepending
+      // 'Hot Water '/'Chilled Water ' by key prefix) because hwp_*/chwp_* pairs shared identical
+      // bare labels ('Supply Temperature Reset', 'Staging', ...) in EM_SEQUENCE_DEFS. Removed
+      // 2026-07-31 (months-table content fix): the disambiguation is now baked directly into
+      // sd.label at the source (equipment-matrix.js) -- 'Hot Water Supply Temperature Reset',
+      // 'Boiler Staging', etc. -- so EVERY consumer of EM_SEQUENCE_DEFS gets it, not just this
+      // function. Re-adding a prefix here would double it (e.g. 'Hot Water Boiler Staging').
+      names.push(sd.label);
     });
   }
   return names;
@@ -16368,15 +16372,18 @@ function _rptA36PhaseSeqCategoryNames(rows) {
 
 /**
  * _rptA36PhaseSeqCategoryDetails(rows) — SAME distinct-category derivation as
- * _rptA36PhaseSeqCategoryNames (same filter, same EM_SEQUENCE_DEFS order, same hwp_/chwp_
- * disambiguation) but returns {label, plain} pairs instead of bare label strings, pulling the
- * plain-English one-line description from `ASHRAE36_SEQUENCE_PLAIN` (existing, vetted,
- * jargon-free copy already used by the Audit's ASHRAE 36 Sequences glossary page — see that
- * object's own header comment). Added 2026-07-29 to give the term's Included Improvements cell
- * real per-category detail (what each sequence actually does) instead of a bare name list, per
- * Matt's coordinator-relayed direction: "expanding what each entails is real content, not
- * padding." `plain` is '' (never omitted/undefined) if a key has no entry in
- * ASHRAE36_SEQUENCE_PLAIN, so callers can render the label alone rather than crash.
+ * _rptA36PhaseSeqCategoryNames (same filter, same EM_SEQUENCE_DEFS order) but returns
+ * {label, plain} pairs instead of bare label strings, pulling the plain-English one-line
+ * description from `ASHRAE36_SEQUENCE_PLAIN` (existing, vetted, jargon-free copy already used by
+ * the Audit's ASHRAE 36 Sequences glossary page — see that object's own header comment). Added
+ * 2026-07-29 to give the term's Included Improvements cell real per-category detail (what each
+ * sequence actually does) instead of a bare name list, per Matt's coordinator-relayed direction:
+ * "expanding what each entails is real content, not padding." `plain` is '' (never
+ * omitted/undefined) if a key has no entry in ASHRAE36_SEQUENCE_PLAIN, so callers can render the
+ * label alone rather than crash.
+ * hwp_/chwp_ disambiguation prefix REMOVED here 2026-07-31 (months-table content fix) — see
+ * _rptA36PhaseSeqCategoryNames' comment immediately above; sd.label already carries it at the
+ * source, so this function just reads it straight through.
  */
 function _rptA36PhaseSeqCategoryDetails(rows) {
   rows = rows || [];
@@ -16388,31 +16395,25 @@ function _rptA36PhaseSeqCategoryDetails(rows) {
   if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       if (!seen[sd.key]) return;
-      var label = sd.label;
-      if (sd.key.indexOf('hwp_') === 0) label = 'Hot Water ' + label;
-      else if (sd.key.indexOf('chwp_') === 0) label = 'Chilled Water ' + label;
       var plain = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[sd.key]) || '';
-      details.push({ label: label, plain: plain });
+      details.push({ label: sd.label, plain: plain });
     });
   }
   return details;
 }
-// SEQ_CAT_DISPLAY_CAP: max category names shown per phase cell before truncating to a truthful
-// "and N more" (never silent) — dense 8.5x11 print constraint, not a data limit. Real JOCO data
-// (2026-07-29, projId 1779664753271) tops out at 6 categories in Phase 1, well under this cap —
-// verified in the render, not assumed.
-var SEQ_CAT_DISPLAY_CAP = 8;
-
 /**
  * _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) — content-only builder for the
  * Future Work section (2026-07-29, replacing the silent PRICING_PROPOSAL_MAX_PHASES truncation —
  * see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment). Names every sequence category still to
  * come by reusing _rptA36PhaseSeqCategoryNames over ALL future-phase rows combined (deduped, same
- * EM_SEQUENCE_DEFS order the term table's per-phase category list already uses), so a category can
+ * EM_SEQUENCE_DEFS order the term table's per-unit category list already uses), so a category can
  * never be named here without real priced rows behind it in `futurePhases`.
- * Deliberately NOT truncated by SEQ_CAT_DISPLAY_CAP — that cap exists for per-phase cell density;
- * this section's entire purpose is to stop hiding scope, so silently capping this specific list
- * would reintroduce a smaller copy of the exact defect this section closes.
+ * Deliberately NOT truncated — this section's entire purpose is to stop hiding scope, so silently
+ * capping this list would reintroduce a smaller copy of the exact defect this section closes.
+ * (The 2026-07-30 per-month display cap SEQ_CAT_DISPLAY_CAP this comment used to reference was
+ * removed 2026-07-31 along with the per-month category-list cell design it capped — the term
+ * table's current rows-per-unit design shows every one of the term's units, uncapped, per plan
+ * word-export-rebuild-2026-07-30.md Part F.)
  * Carries ZERO dollar figures — callers must pass this function `rows`, never a phase object with
  * measuresTotal/allowanceTotal/etc. fields left readable downstream.
  */
@@ -16465,7 +16466,27 @@ function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
  * belt-and-suspenders guarantee it is never split across a physical page break even if a future
  * content change pushes total page height right up against the print boundary.
  */
-function _rptA36PhaseTableInnerHTML(d, opts) {
+/**
+ * _rptA36PhaseTableDerive — 2026-08-02 (months-table page-height fix, fix/monthstable-content):
+ * extracted from _rptA36PhaseTableInnerHTML (renamed from that function; all derivation logic
+ * below is UNCHANGED from the 2026-07-31 rows-as-term-units matrix rebuild -- see that dated
+ * comment block right below for the full content rationale, still accurate). This function now
+ * returns a STRUCTURED object (intro / colgroup / head row / one HTML string PER unit row / term
+ * notes / standalone Future Work / a pre-joined singlePageHTML) instead of one concatenated
+ * string, so the SAME derivation feeds two renderers without duplicating any of the row-building
+ * logic:
+ *   - _rptA36PhaseTableInnerHTML(d, opts) below -- thin wrapper, returns der.singlePageHTML
+ *     unchanged, used only by the legacy (unused, intentionally kept) merged
+ *     rptPageASHRAE36ProposalPhaseAndVision page.
+ *   - rptPageASHRAE36ProposalPhaseTable(startN, d, opts) further below -- the LIVE default-path
+ *     renderer, which paginates der.rowsHTMLArr across multiple .rpt-page elements via
+ *     _rptPaginateTokens (the same shared paginator _buildItemizedPages() already uses) instead
+ *     of forcing a variable 13-row (Johnson County) matrix onto one fixed-height page. See that
+ *     function's own header comment for why: the un-paginated single page overflowed 1056px by
+ *     roughly 30% under real JOCO data, corrupting the printed page count and page-number
+ *     footers (measured via page.pdf() print-path render, not just the on-screen preview).
+ */
+function _rptA36PhaseTableDerive(d, opts) {
   function esc(s) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
@@ -16508,7 +16529,7 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
       'A phased facility rollout will populate here once pricing data has been imported and priced ' +
       'for this project.' +
       '</div>';
-    return intro + fallback;
+    return { fallbackOnly: true, intro: intro, fallbackHTML: fallback };
   }
 
   // monthLabels: one label per calendar month of the current term (e.g. "Aug 2026" .. "Dec 2026")
@@ -16592,7 +16613,7 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
   var headRow =
     '<tr><th style="' +
     thStyle +
-    '">Month</th>' +
+    '">Included Improvements</th>' +
     headCols
       .map(function (m) {
         return '<th style="' + thStyle + '">' + esc(m) + '</th>';
@@ -16600,34 +16621,48 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
       .join('') +
     '</tr>';
 
-  // catListStyle: nested sub-block inside the Included Improvements cell naming the actual priced
-  // sequence categories for the term (see _rptA36PhaseSeqCategoryNames' header comment above for
-  // the full rationale). Left-aligned + smaller than the parent cell's centered narrative text so
-  // it reads as a compact reference list, not competing prose; a top rule (var(--rpt-rule), the
-  // same token the table's own borders use — no new hardcoded color) separates it from the
-  // narrative sentence without introducing a box/card (standing rule: no boxes in reports).
+  // catListStyle: nested sub-block inside the Future Work cell naming the actual priced sequence
+  // categories still to come (see _rptA36PhaseSeqCategoryNames' header comment above for the full
+  // rationale). Left-aligned + smaller than the parent cell's centered narrative text so it reads
+  // as a compact reference list, not competing prose; a top rule (var(--rpt-rule), the same token
+  // the table's own borders use — no new hardcoded color) separates it from the narrative
+  // sentence without introducing a box/card (standing rule: no boxes in reports).
   var catListStyle =
     'margin-top:6px;padding-top:5px;border-top:1px solid var(--rpt-rule);font-size:8.5px;' +
     'color:var(--rpt-page-text);text-align:left;line-height:1.4';
-  var catListUlStyle = 'margin:3px 0 0;padding-left:14px;text-align:left';
 
-  // Per-month cell content (2026-07-30, months-table rebuild — Matt verbatim: "the months table
-  // in the Service Proposal is supposed to be a column per month not just a separation in the
-  // months row... How could you not understand that and think I wanted 1 explanation for all of
-  // the months?"). REPLACES the single colspan="N" merged cell this row used to render. Both rows
-  // now emit ONE <td> per calendar month, each carrying only the categories actually admitted in
-  // THAT month per _pricingComputeTermMonthlyAllocation's month-level re-partition of termRows
-  // (pricing-estimator.js — same ROI-ordered, no-hardware-first bin-pack the phase-level walk
-  // already uses, just run at month granularity against the real per-month `monthlyAllowance`
-  // instead of one 5-month `allowanceTotal` block; see that function's header comment for the full
-  // derivation, including how an oversized single unit's multi-month span is represented WITHOUT
-  // duplicating it into every month it touches).
-  // PHASE_IMPROVEMENTS[0]/EXPECTED_RESULTS[0] (fixed generic narrative, unused below) is
-  // deliberately retired here rather than kept as a lead-in paragraph — it was written to describe
-  // "the term as one block" and is exactly the "1 explanation for all of the months" framing this
-  // rebuild replaces with real per-month content; nothing else in this file still reads those two
-  // vars (left declared above only because removing them is out of this task's stated scope of a
-  // pure content-row rebuild — see this change's dashboardlogic.md entry).
+  // unitLblStyle/unitMarkStyle: styles for the 2026-07-31 rows-as-term-units matrix rebuild (see
+  // the header comment right below for the full rationale). Font-size/padding/border copied
+  // verbatim from cellStyle above (this task does not change any report font size — a separate,
+  // concurrent change owns that); only text-align/vertical-align differ per column purpose.
+  var unitLblStyle =
+    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
+    'line-height:1.5;border:1px solid var(--rpt-border)';
+  var unitMarkStyle =
+    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
+    'line-height:1.4;border:1px solid var(--rpt-border)';
+
+  // Included Improvements matrix rebuild (2026-07-31, Matt verbatim: "why does Oct 2026 say
+  // Included Improvements Reheat? Why does Nov & Dec 2026 show Ongoing Energy Management
+  // Services for this period? Really that's the best we can do? We can't say what sequences or
+  // sensors to do?"). REPLACES the prior per-month category-name-list cell design (2026-07-30
+  // rebuild, monthImprovementsCellHTML/monthResultsCellHTML, removed below) with the plan's
+  // Option A (AI\_context\plans\word-export-rebuild-2026-07-30.md Part F): ONE ROW PER TERM UNIT
+  // (the same building+sequence pairing _pricingComputeTermMonthlyAllocation already bin-packs —
+  // pricing-estimator.js ~7972, never re-derived here) naming the real sequence, building, and
+  // priced equipment count, with a mark under the calendar month _pricingComputeTermMonthlyAllocation
+  // actually scheduled it in. Diagnosis (measured against real JOCO data, projId 1779664753271,
+  // 2026-07-31): BOTH of Matt's complaints were real and distinct — (a) Nov/Dec 2026 genuinely
+  // have zero allocated units (13 total units all front-load into Aug/Sep/Oct against the
+  // $6,250/month envelope; not a render bug) and (b) Oct's "Reheat" was a bare
+  // EM_SEQUENCE_DEFS label with the unit's own building+equipment-count data (Jo Co Multi Service
+  // Center, 2 variable air volume terminals) sitting right there on the row and simply never
+  // rendered. This rebuild fixes (b) by showing that data on every row, and answers (a) honestly
+  // — the Ongoing Energy Management Services line still applies to every month of the term
+  // (including Aug/Sep/Oct) but is now stated ONCE below the table (ongoingServicesHTML below)
+  // instead of standing in as the entire cell content for whichever months have no new unit
+  // starting. No unit is invented to fill Nov/Dec — there are only 13 real priced units in this
+  // term and all 13 appear here exactly once.
   var monthCount = headCols.length;
   var monthAlloc =
     typeof _pricingComputeTermMonthlyAllocation === 'function'
@@ -16635,77 +16670,128 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
       : { months: [], envelope: 0 };
   var monthBuckets = monthAlloc.months || [];
 
-  // monthCellData[i]: the client-readable category list ACTUALLY ADMITTED (starting) in calendar
-  // month i, via the SAME _rptA36PhaseSeqCategoryDetails naming path the old merged cell used
-  // (EM_SEQUENCE_DEFS declared order, real ASHRAE36_SEQUENCE_PLAIN copy) — never a hardcoded list,
-  // so a category can never be named in a month cell without a real priced row behind it that
-  // month's allocation actually admitted.
-  var monthCellData = monthBuckets.map(function (bucket) {
-    var rowsThisMonth = [];
-    var spanningLabels = {};
+  // _UNIT_EQUIP_SINGULAR: equipment-type plural/singular names for the row's own priced count
+  // (item.rows[*].categoryQty — {category -> count}, already computed and attached per-unit by
+  // buildBaseRows, pricing-estimator.js ~3118 — never re-derived here). Covers every equipType
+  // any EM_SEQUENCE_DEFS entry references (equipment-matrix.js). "Count actual items, not
+  // buildings" — per-category equipment counts, not a building tally.
+  var _UNIT_EQUIP_SINGULAR = {
+    ahu: 'air handler',
+    rtu: 'rooftop unit',
+    vav: 'variable air volume terminal',
+    fpb: 'fan-powered terminal',
+    ddvav: 'dual-duct terminal',
+    hwp: 'hot water plant pump',
+    chwp: 'chilled water plant pump',
+  };
+  function unitEquipPhrase(seqRow) {
+    var catQty = (seqRow && seqRow.categoryQty) || {};
+    var keys = Object.keys(catQty);
+    if (keys.length) {
+      return keys
+        .map(function (k) {
+          var n = catQty[k];
+          var name = _UNIT_EQUIP_SINGULAR[k] || k;
+          return n + ' ' + (n === 1 ? name : name + 's');
+        })
+        .join(', ');
+    }
+    // Defensive fallback for a row with no categoryQty breakdown (should not happen for a
+    // seqKey row per buildBaseRows — see that function's own comment on this field).
+    var n = (seqRow && seqRow.qty) || 1;
+    return n + (n === 1 ? ' unit' : ' units');
+  }
+
+  // unitRows: one entry per term unit, in the SAME order _pricingComputeTermMonthlyAllocation
+  // scheduled them (month order, then within-month ROI-admission order) — never re-sorted here.
+  var unitRows = [];
+  monthBuckets.forEach(function (bucket, mi) {
     (bucket.items || []).forEach(function (item) {
-      rowsThisMonth = rowsThisMonth.concat(item.rows);
-      if (item.spansMonths > 1) {
-        _rptA36PhaseSeqCategoryDetails(item.rows).forEach(function (c) {
-          spanningLabels[c.label] = item.spansMonths;
-        });
+      var seqRow = null;
+      (item.rows || []).forEach(function (r) {
+        if (r.phase === 2 && r.seqKey) seqRow = r;
+      });
+      var label, equipPhrase;
+      if (seqRow) {
+        var det = _rptA36PhaseSeqCategoryDetails([seqRow]);
+        label = det.length ? det[0].label : seqRow.item;
+        equipPhrase = unitEquipPhrase(seqRow);
+      } else {
+        // Defensive fold-in units (enabler/safety/null-impact/investigation rows with no
+        // seqKey — see _pricingComputeTermMonthlyAllocation's own header comment on this safety
+        // net). Not observed in real JOCO term data (all 13 current units carry a seqKey) but
+        // kept so a future term with one of these never silently disappears from the table.
+        var r0 = (item.rows || [])[0] || {};
+        label = r0.item || 'Improvement';
+        var n0 = r0.qty || 1;
+        equipPhrase = n0 + (n0 === 1 ? ' item' : ' items');
       }
+      unitRows.push({
+        label: label,
+        building: item.building,
+        equipPhrase: equipPhrase,
+        monthIndex: mi,
+        spansMonths: item.spansMonths || 1,
+      });
     });
-    return { details: _rptA36PhaseSeqCategoryDetails(rowsThisMonth), spanning: spanningLabels };
   });
 
-  // Fallback copy for a month with zero newly-admitted categories — same wording convention
-  // pricing-estimator.js's own facilitiesText fallback already uses for a phase with no new
-  // buildings ("Ongoing Energy Management Services only for this period"), not new copy.
+  // Fallback copy — same wording convention pricing-estimator.js's own facilitiesText fallback
+  // already uses for a phase with no new buildings ("Ongoing Energy Management Services only for
+  // this period"). Only used defensively if the term's allocation produces zero units at all
+  // (should not happen once termPhases.length > 0, but never render an empty table body).
   var MONTH_EMPTY_TEXT = 'Ongoing Energy Management Services for this period.';
 
-  function monthImprovementsCellHTML(i) {
-    var data = monthCellData[i] || { details: [], spanning: {} };
-    if (!data.details.length) {
-      return '<span style="font-style:italic">' + esc(MONTH_EMPTY_TEXT) + '</span>';
+  function unitMarkCellHTML(u, colIdx) {
+    if (colIdx !== u.monthIndex) return '';
+    var mark = '<span style="font-weight:700">&#10003;</span>';
+    if (u.spansMonths > 1) {
+      var endIdx = Math.min(u.monthIndex + u.spansMonths - 1, monthCount - 1);
+      mark +=
+        '<div style="font-style:italic;font-size:8.5px;margin-top:2px">continues through ' +
+        esc(headCols[endIdx]) +
+        '</div>';
     }
-    var shown = data.details.slice(0, SEQ_CAT_DISPLAY_CAP);
-    var moreCount = data.details.length - shown.length;
-    var items = shown
-      .map(function (c) {
-        var spanNote = data.spanning[c.label]
-          ? ' <span style="font-style:italic">(spans multiple months of allowance)</span>'
-          : '';
-        return '<li><span style="font-weight:700">' + esc(c.label) + '</span>' + spanNote + '</li>';
-      })
-      .join('');
+    return mark;
+  }
+
+  function unitRowHTML(u) {
     return (
-      '<ul style="' +
-      catListUlStyle +
-      '">' +
-      items +
-      (moreCount > 0 ? '<li>and ' + moreCount + ' more</li>' : '') +
-      '</ul>'
+      '<tr><td style="' +
+      unitLblStyle +
+      '"><span style="font-weight:700">' +
+      esc(u.label) +
+      '</span> at ' +
+      esc(u.building) +
+      ' (' +
+      esc(u.equipPhrase) +
+      ')</td>' +
+      headCols
+        .map(function (m, i) {
+          return '<td style="' + unitMarkStyle + '">' + unitMarkCellHTML(u, i) + '</td>';
+        })
+        .join('') +
+      '</tr>'
     );
   }
 
-  // monthResultsCellHTML(i): a short benefit sentence DERIVED from that month's own admitted
-  // categories — never a static string repeated across months (the defect this rebuild fixes).
-  function monthResultsCellHTML(i) {
-    var data = monthCellData[i] || { details: [] };
-    if (!data.details.length) return esc(MONTH_EMPTY_TEXT);
-    var names = data.details.map(function (c) {
-      return c.label;
-    });
-    var namesText = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
-    return 'Reporting, alarms, and efficiency/comfort gains from ' + esc(namesText) + '.';
-  }
-
-  var improvementsRow =
-    '<tr><td style="' +
-    lblStyle +
-    '">Included Improvements</td>' +
-    headCols
-      .map(function (m, i) {
-        return '<td style="' + cellStyle + '">' + monthImprovementsCellHTML(i) + '</td>';
-      })
-      .join('') +
-    '</tr>';
+  // improvementsRowsArr (2026-08-02, months-table page-height fix): kept as an ARRAY of
+  // individual <tr> strings, not just the joined `improvementsRows` string below -- pagination
+  // (rptPageASHRAE36ProposalPhaseTable) needs one row at a time to measure/chunk; the single-page
+  // wrapper (_rptA36PhaseTableInnerHTML) still joins the same array, so both renderers share
+  // identical row markup.
+  var improvementsRowsArr = unitRows.length
+    ? unitRows.map(unitRowHTML)
+    : [
+        '<tr><td style="' +
+          unitLblStyle +
+          '" colspan="' +
+          (headCols.length + 1) +
+          '"><span style="font-style:italic">' +
+          esc(MONTH_EMPTY_TEXT) +
+          '</span></td></tr>',
+      ];
+  var improvementsRows = improvementsRowsArr.join('');
 
   // Facilities Included row REMOVED (2026-07-29, Matt, verbatim: "why would you put continues in
   // phase x for every building? That is redundant. Also, let's just remove the buildings
@@ -16719,16 +16805,20 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
   // (~276px page overflow) and was removed the same day for the same reason — see that
   // function's own header comment.
 
-  var resultsRow =
-    '<tr><td style="' +
-    lblStyle +
-    '">Expected Results</td>' +
-    headCols
-      .map(function (m, i) {
-        return '<td style="' + cellStyle + '">' + monthResultsCellHTML(i) + '</td>';
-      })
-      .join('') +
-    '</tr>';
+  // Expected Results (2026-07-31 rebuild): ONE sentence for the whole term, derived from every
+  // distinct sequence category actually priced across termRows (_rptA36PhaseSeqCategoryNames,
+  // same helper the old per-month cell used) — replaces the old per-month benefit sentence, which
+  // hit the identical empty-month problem the Improvements cell did (same MONTH_EMPTY_TEXT
+  // fallback). A single term-level sentence never goes empty as long as any unit is priced.
+  var allTermCatNames = _rptA36PhaseSeqCategoryNames(termRows);
+  var expectedResultsText = '';
+  if (allTermCatNames.length) {
+    var namesText2 =
+      allTermCatNames.length === 1
+        ? allTermCatNames[0]
+        : allTermCatNames.slice(0, -1).join(', ') + ' and ' + allTermCatNames[allTermCatNames.length - 1];
+    expectedResultsText = 'Reporting, alarms, and efficiency/comfort gains from ' + esc(namesText2) + '.';
+  }
 
   // futureRowHTML: the "fold into the table" rendering mode (opts.futureWorkInline === true) —
   // appends Future Work as one more row inside THIS table instead of the standalone section
@@ -16764,8 +16854,14 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
     }
   }
 
+  // colgroup: label column widened from the old fixed 140px to a 30%/70% split (2026-07-31) —
+  // each row's label now carries a sequence name + building name + equipment count instead of a
+  // single row-header word ("Included Improvements"/"Expected Results"), so it needs materially
+  // more width. Percentage-based (not a wider fixed px) so the 5 month columns keep sharing the
+  // remaining width evenly and stay wide enough for "continues through Mon YYYY" without
+  // mid-word wrapping (verified in this change's render check — see dashboardlogic.md entry).
   var colgroup =
-    '<colgroup><col style="width:140px">' +
+    '<colgroup><col style="width:30%">' +
     headCols
       .map(function () {
         return '<col>';
@@ -16780,11 +16876,40 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
     headRow +
     '</thead>' +
     '<tbody>' +
-    improvementsRow +
-    resultsRow +
+    improvementsRows +
     futureRowHTML +
     '</tbody>' +
     '</table>';
+
+  // termNotesHTML: Expected Results (once, term-level) + the standing Ongoing Energy Management
+  // Services description (once, term-level, and now stated CONCRETELY instead of the old bare
+  // placeholder sentence that used to stand in as the entire cell content for an unallocated
+  // month — 2026-07-31, Matt verbatim: "Really that's the best we can do? We can't say what
+  // sequences or sensors to do?"). What follows is real, grounded, non-invented content: it names
+  // the SAME ongoing activities (monitoring, alarms/trend review, verification) the term's own
+  // PHASE_IMPROVEMENTS/EXPECTED_RESULTS narrative above already describes for this program
+  // ("reporting and alarms so problems are caught right away" / "Immediate visibility... through
+  // reporting and alarms") — never a per-month fabricated specific, since ongoing monitoring is
+  // genuinely the same activity in every month of the term regardless of whether a new unit also
+  // starts that month. Same body-text style literal `intro`'s own body div above uses (14px, no
+  // new font size introduced).
+  var _termNoteBody = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-top:6px';
+  var expectedResultsHTML = expectedResultsText
+    ? '<div style="' +
+      _termNoteBody +
+      '"><span style="font-weight:700">Expected Results: </span>' +
+      expectedResultsText +
+      '</div>'
+    : '';
+  var ongoingServicesHTML =
+    '<div style="' +
+    _termNoteBody +
+    '">' +
+    'Every month of the term, whether or not a new item begins that month, Control Service Company also ' +
+    'monitors equipment operation, reviews automated alarms and trend data, tunes sequences as conditions ' +
+    'change, and verifies that previously implemented work continues to perform as designed.' +
+    '</div>';
+  var termNotesHTML = expectedResultsHTML + ongoingServicesHTML;
 
   // standaloneFutureWorkHTML: DEFAULT placement (2026-07-29, page-density fix, coordinator
   // direction — "bring Future Work onto that page as the default rather than a separate page...
@@ -16802,28 +16927,172 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
     standaloneFutureWorkHTML = _rptA36FutureWorkInnerHTML(futurePhases, _fwHead, _fwBody);
   }
 
-  return intro + table + standaloneFutureWorkHTML;
+  return {
+    fallbackOnly: false,
+    intro: intro,
+    colgroupHTML: colgroup,
+    headRowHTML: headRow,
+    rowsHTMLArr: improvementsRowsArr,
+    futureRowHTML: futureRowHTML,
+    termNotesHTML: termNotesHTML,
+    standaloneFutureWorkHTML: standaloneFutureWorkHTML,
+    // singlePageHTML: pre-joined exactly as the pre-2026-08-02 function used to return, byte-for-
+    // byte -- consumed only by the thin _rptA36PhaseTableInnerHTML wrapper below so the legacy
+    // (unused) merged Phase+Vision page keeps its exact prior output with zero behavior change.
+    singlePageHTML: intro + table + termNotesHTML + standaloneFutureWorkHTML,
+  };
 }
 
-function rptPageASHRAE36ProposalPhaseTable(n, d, opts) {
+/**
+ * _rptA36PhaseTableInnerHTML — thin wrapper preserved for the legacy (unused, intentionally kept
+ * per "never destroy existing capability") rptPageASHRAE36ProposalPhaseAndVision merged page. Not
+ * on the default render path as of 2026-08-02 -- see _rptA36PhaseTableDerive's header comment.
+ * Returns the exact same single, unpaginated HTML string this function always has.
+ */
+function _rptA36PhaseTableInnerHTML(d, opts) {
+  var der = _rptA36PhaseTableDerive(d, opts);
+  return der.fallbackOnly ? der.intro + der.fallbackHTML : der.singlePageHTML;
+}
+
+/**
+ * rptPageASHRAE36ProposalPhaseTable — LIVE default-path renderer for the Recommended
+ * Optimization Program page (Page 2 of the rebuilt Service Proposal). Returns an ARRAY of page
+ * HTML strings (2026-08-02, months-table page-height fix) instead of a single string -- mirrors
+ * the Array-returning convention rptPageASHRAE36ProposalPricing already established (see
+ * generateASHRAE36ProposalHTML's costEstimate branch: `.forEach(pg => { pages.push(...);
+ * pageNum++ })`), so callers must spread/increment pageNum the same way.
+ *
+ * WHY THIS EXISTS (2026-08-02): the 2026-07-31 rows-as-term-units matrix rebuild replaced a fixed
+ * 2-row table with a variable one-row-per-term-unit table (13 rows for Johnson County) but added
+ * no page-height handling. Measured against real JOCO data (project 1779664753271) under the
+ * app's DEFAULT proposal section selection: the unpaginated page's content stood 1366-1378px tall
+ * against the fixed 1056px page box (roughly 30% overflow), and the real print path
+ * (page.emulateMedia('print') + page.pdf(), the same mechanism exportReportToPDF()'s
+ * window.print() uses) let the single overflowing `.rpt-page` grow past its footer, so the
+ * footer/page-number graphic landed mid-page-3 overlapping cut-off "Sequence categories addressed
+ * in future work:" text, while every footer still read "Page X of 3" (the page-numbering system
+ * never knew a 4th physical page existed). See _rptA36PhaseTableDerive's header comment for the
+ * shared-derivation architecture and dashboardlogic.md's 2026-08-02 entry for the full measurement.
+ *
+ * APPROACH: paginate der.rowsHTMLArr (one token per term unit) via _rptPaginateTokens -- the SAME
+ * shared pixel-height paginator _buildItemizedPages() already uses successfully (see that
+ * function's header comment) -- instead of inventing a new mechanism. Each resulting page is a
+ * full rptPage() with its OWN header/footer, so _injectPageNumbers' total-page count (and every
+ * "Page X of N" footer) automatically includes the added pages. Every continuation page repeats
+ * the month-column header row (der.headRowHTML) so a reader on page 2 still knows which column is
+ * which month -- required per this fix's own spec. The trailing term-notes/Future-Work content
+ * (der.termNotesHTML + der.standaloneFutureWorkHTML) is appended as a final 'block' token so it
+ * rides on whichever page it fits, never orphaned off the last row page.
+ */
+function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   // fix/report-typography-and-pagination-merge (2026-07-29): "Why This Approach" prepended here —
   // see rptPageASHRAE36ProposalCover's header comment for why it moved off the cover page. Same
   // HEAD/UL literal style strings used throughout the ASHRAE 36 Proposal page family.
   var _whyHead = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
   var _whyUl = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
-  var bodyHTML =
-    '<div style="padding:8px 48px 4px">' +
-    _rptA36WhyThisApproachHTML(_whyHead, _whyUl) +
-    _rptA36PhaseTableInnerHTML(d, opts) +
-    '</div>';
+  var whyHTML = _rptA36WhyThisApproachHTML(_whyHead, _whyUl);
 
-  return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
-    hero: false,
-    hideIntHdr: true,
-    data: fakeData,
-    label: 'Page ' + n + ' — Recommended Optimization Program',
+  var der = _rptA36PhaseTableDerive(d, opts);
+
+  function wrapPage(pageN, bodyInner, labelSuffix) {
+    var bodyHTML = '<div style="padding:8px 48px 4px">' + bodyInner + '</div>';
+    return rptPage(pageN, 'ASHRAE 36 Proposal', bodyHTML, {
+      hero: false,
+      hideIntHdr: true,
+      data: fakeData,
+      label: 'Page ' + pageN + ' — Recommended Optimization Program' + (labelSuffix || ''),
+    });
+  }
+
+  if (der.fallbackOnly) {
+    return [wrapPage(startN, whyHTML + der.intro + der.fallbackHTML, '')];
+  }
+
+  // Pixel budgets, all derived from _rptContentBudget() per this file's "never a standalone
+  // invented literal" rule (see RPT_GEOMETRY_DEFAULTS header comment). This page always renders
+  // with hideIntHdr:true (the 'flush' header variant -- no .rpt-int-hdr title bar).
+  //
+  // ROW_H/THEAD_H/HEAD_CHROME_FIRST/TAIL_H measured via real headless render against JOCO
+  // (project 1779664753271, 27-building portfolio, 13-unit current term): thead 38px; unit rows
+  // 46px (1-line label) to 60px (2-line label, the common case); Why This Approach block 115px
+  // (18px heading + 97px bullet list -- fixed generic copy, not data-driven, per
+  // _rptA36WhyThisApproachHTML); Recommended Optimization Program intro heading+paragraph 76px;
+  // term notes (Expected Results + Ongoing Services, always rendered) 116px; standalone Future
+  // Work block (heading + narrative + category list, suppressed when opts.futureWorkInline) an
+  // additional ~200px. Each constant below carries the same kind of safety margin
+  // _buildItemizedPages' own row-height constants do (that function's comment: "keep a safety
+  // margin for longer item names ... that could wrap further") for a longer building/sequence
+  // name or an extra future-work category than JOCO's own data happened to produce.
+  var g = _rptContentBudget('flush');
+  var THEAD_H = 42;
+  var ROW_H = 66;
+  var HEAD_CHROME_FIRST = 215; // Why This Approach (115) + intro paragraph (76) + inter-block gaps
+  var CONT_TITLE_CHROME = 30; // small "(continued)" heading on continuation pages only
+  var TAIL_H = opts && opts.futureWorkInline === true ? 140 : 340;
+
+  var tokens = der.rowsHTMLArr.map(function (html) {
+    return { type: 'row', estH: ROW_H, html: html };
   });
+  if (der.futureRowHTML) {
+    // futureWorkInline mode folds Future Work into the table as one more <tr> (der.futureRowHTML)
+    // -- narrower narrative + category sub-list makes this row taller than a plain unit row.
+    tokens.push({ type: 'row', estH: 160, html: der.futureRowHTML });
+  }
+  // Always-present trailing block: term notes (+ standalone Future Work unless folded inline
+  // above). Appended LAST so _rptPaginateTokens naturally pushes it onto a fresh page if it does
+  // not fit after the final row chunk, instead of forcing a reserved-but-usually-wasted budget on
+  // every page.
+  tokens.push({ type: 'block', estH: TAIL_H, html: der.termNotesHTML + der.standaloneFutureWorkHTML });
+
+  var firstBudget = g - HEAD_CHROME_FIRST - THEAD_H;
+  var contBudget = g - CONT_TITLE_CHROME - THEAD_H;
+  var chunks = _rptPaginateTokens(tokens, firstBudget, contBudget);
+  var numChunks = chunks.length;
+
+  var pages = [];
+  chunks.forEach(function (chunk, idx) {
+    var rowsHTML = '';
+    var tailHTML = '';
+    chunk.forEach(function (t) {
+      if (t.type === 'block') tailHTML += t.html;
+      else rowsHTML += t.html;
+    });
+    var table =
+      '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
+      der.colgroupHTML +
+      '<thead>' +
+      der.headRowHTML +
+      '</thead>' +
+      '<tbody>' +
+      rowsHTML +
+      '</tbody>' +
+      '</table>';
+    var head;
+    if (idx === 0) {
+      head = whyHTML + der.intro;
+    } else {
+      // Repeating header row (der.headRowHTML, above) plus this small continuation title -- so a
+      // reader who reaches page 2 knows both which page this is AND which column is which month.
+      head =
+        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+        'text-transform:uppercase;letter-spacing:0.04em">Included Improvements (continued ' +
+        (idx + 1) +
+        ' of ' +
+        numChunks +
+        ')</div>';
+    }
+    var bodyInner = head + table + tailHTML;
+    var labelSuffix =
+      numChunks > 1
+        ? idx === 0
+          ? ' (1 of ' + numChunks + ')'
+          : ' (continued ' + (idx + 1) + ' of ' + numChunks + ')'
+        : '';
+    pages.push(wrapPage(startN + idx, bodyInner, labelSuffix));
+  });
+
+  return pages;
 }
 
 /**
@@ -19129,7 +19398,14 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     proposalPhaseTableOn: s.proposalPhaseTable !== false,
   };
   if (s.proposalPhaseTable !== false) {
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalPhaseTable(pageNum++, data, phaseOpts), 'proposalPhaseTable'));
+    // rptPageASHRAE36ProposalPhaseTable now returns an Array (2026-08-02, months-table
+    // page-height fix) -- same spread-and-advance-pageNum pattern the costEstimate branch below
+    // already uses for rptPageASHRAE36ProposalPricing.
+    var phaseTablePages = rptPageASHRAE36ProposalPhaseTable(pageNum, data, phaseOpts);
+    phaseTablePages.forEach(function (pg) {
+      pages.push(_tagA36Section(pg, 'proposalPhaseTable'));
+      pageNum++;
+    });
   }
   if (s.proposalVision !== false) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalVision(pageNum++, data, phaseOpts), 'proposalVision'));

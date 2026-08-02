@@ -20055,7 +20055,14 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'vav_reheat',
-    label: 'Reheat',
+    // Label enrichment (2026-07-31, months-table content fix -- Matt verbatim: "why in the
+    // ASHRAE 36 Sequences are they labeled like Staging instead of Boiler Staging?"). Was bare
+    // 'Reheat' -- every consumer of this label (ASHRAE 36 Sequences glossary table, Service
+    // Proposal Included Improvements matrix) rendered it with zero equipment context, matching
+    // this def's own sibling naming style ('Zone Temperature Control', 'Damper Position
+    // Write-back'). `key: 'vav_reheat'` (the only field ever used for matching/pricing lookups)
+    // is unchanged -- this is a DISPLAY value only.
+    label: 'Reheat Valve Control',
     ashrae36: '§5.6.4',
     equipTypes: ['vav', 'fpb'],
     requiredCats: ['reheatValve', 'zoneTemp', 'dat'],
@@ -20065,24 +20072,37 @@ var EM_SEQUENCE_DEFS = [
 
   /* ── HWP sequences ──────────────────────────────────────────────────── */
   {
+    // Label enrichment (2026-07-31, months-table content fix): was bare 'Supply Temperature
+    // Reset', identical to chwp_supply_reset's label below by design (the def only names the
+    // sequence, not which plant loop it belongs to) -- report-engine.js used to manually
+    // prepend 'Hot Water '/'Chilled Water ' at render time to disambiguate; that prefix is now
+    // baked into the label itself here so EVERY consumer (ASHRAE 36 Sequences glossary table,
+    // Service Proposal months table, Equipment Matrix column header) is disambiguated, not just
+    // the one render site that remembered to add the prefix. `key: 'hwp_supply_reset'` unchanged.
     key: 'hwp_supply_reset',
-    label: 'Supply Temperature Reset',
+    label: 'Hot Water Supply Temperature Reset',
     ashrae36: '§5.21.1',
     equipTypes: ['hwp'],
     requiredCats: ['hwst', 'oat', 'hwSetpoint'],
     keyCats: ['hwst', 'hwSetpoint'],
   },
   {
+    // Same label-enrichment reasoning as hwp_supply_reset immediately above.
     key: 'hwp_pump_dp_reset',
-    label: 'Pump Differential Pressure Reset',
+    label: 'Hot Water Pump Differential Pressure Reset',
     ashrae36: '§5.21.2',
     equipTypes: ['hwp'],
     requiredCats: ['hwdp', 'hwPumpSpeed'],
     keyCats: ['hwdp', 'hwPumpSpeed'],
   },
   {
+    // Label enrichment (2026-07-31, Matt verbatim: "why in the ASHRAE 36 Sequences are they
+    // labeled like Staging instead of Boiler Staging?"). Was bare 'Staging'. requiredCats here
+    // (boilerStatus/boilerEnable/hwPumpStatus) is literally boiler on/off staging, so 'Boiler
+    // Staging' -- not the 'Hot Water ' prefix used above -- matches what the sequence actually
+    // does and Matt's own exact wording. `key: 'hwp_staging'` unchanged.
     key: 'hwp_staging',
-    label: 'Staging',
+    label: 'Boiler Staging',
     ashrae36: '§5.21.3',
     equipTypes: ['hwp'],
     requiredCats: ['boilerStatus', 'boilerEnable', 'hwPumpStatus'],
@@ -20091,8 +20111,10 @@ var EM_SEQUENCE_DEFS = [
 
   /* ── CHWP sequences ─────────────────────────────────────────────────── */
   {
+    // Same label-enrichment reasoning as the hwp_* sequences above -- see hwp_supply_reset's
+    // comment (2026-07-31).
     key: 'chwp_supply_reset',
-    label: 'Supply Temperature Reset',
+    label: 'Chilled Water Supply Temperature Reset',
     ashrae36: '§5.20.1',
     equipTypes: ['chwp'],
     requiredCats: ['chwst', 'oat', 'chwSetpoint'],
@@ -20100,15 +20122,17 @@ var EM_SEQUENCE_DEFS = [
   },
   {
     key: 'chwp_pump_dp_reset',
-    label: 'Pump Differential Pressure Reset',
+    label: 'Chilled Water Pump Differential Pressure Reset',
     ashrae36: '§5.20.2',
     equipTypes: ['chwp'],
     requiredCats: ['chwdp', 'schwpSpeed'],
     keyCats: ['chwdp', 'schwpSpeed'],
   },
   {
+    // Label enrichment (2026-07-31) -- parallel to hwp_staging's 'Boiler Staging' above.
+    // requiredCats here (chillerStatus/chillerEnable/pchwpStatus) is chiller on/off staging.
     key: 'chwp_staging',
-    label: 'Staging',
+    label: 'Chiller Staging',
     ashrae36: '§5.20.3',
     equipTypes: ['chwp'],
     requiredCats: ['chillerStatus', 'chillerEnable', 'pchwpStatus'],
