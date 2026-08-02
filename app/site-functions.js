@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.02.741',
+    date: '2026-08-02',
+    title: 'Service Proposal months table now schedules work in every month',
+    items: [
+      {
+        type: 'fix',
+        text: 'Service Proposal, every month of the current term now lists the specific work scheduled for that month, instead of the work being packed into the first few months.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.02.740',
     date: '2026-08-02',
     title: 'Service Proposal cost estimate wording fix',
