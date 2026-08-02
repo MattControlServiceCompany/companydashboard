@@ -3908,9 +3908,21 @@ function emRenderMatrix(container, data, pid) {
 
   var toolbarHtml = emRenderToolbar(data, pid, projBadge);
 
+  // Scope note (equipment-matrix count consistency, 2026-07-31): explains why
+  // this page's equipment count differs from the Audit Report's count without
+  // requiring the reader to ask. Equipment Matrix counts every imported control
+  // program (a BAS point group); the Audit Report narrows that to only heating
+  // and cooling equipment ASHRAE 36 applies to. Plain text, no box/card, dense
+  // single line, 11px (above the 10pt floor).
+  var scopeNoteHtml =
+    '<div style="padding:4px 20px;font-size:11px;line-height:1.4;color:var(--text3);border-bottom:1px solid var(--border);flex-shrink:0">' +
+    'Includes every imported control program (lighting, fire, plumbing, and more), not just heating and cooling equipment; see the Audit Report for the ASHRAE 36 scoped count.' +
+    '</div>';
+
   container.innerHTML =
     '<div style="display:flex;flex-direction:column;flex:1;min-height:0">' +
     statsHtml +
+    scopeNoteHtml +
     '<div style="flex-shrink:0;border-bottom:1px solid var(--border)">' +
     toolbarHtml +
     '</div>' +
@@ -4118,11 +4130,18 @@ function emRenderToolbar(data, pid, projBadge) {
     return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
   });
 
-  // Phase 4: count equipment per building for the filter dropdown labels
+  // Phase 4: count equipment per building for the filter dropdown labels.
+  // Fix (equipment-matrix count consistency): skip phantom BAS sub-component rows
+  // (VFD Integration, Supply/Return Duct — see emIsPhantomRow) so this dropdown
+  // agrees with the stats bar, pagination footer, and table, which all already
+  // exclude phantoms via emRenderAuditTable's filtered set. Without this, the
+  // "All Buildings (N equipment)" label showed the raw imported-row count while
+  // every other number on the page showed the phantom-filtered count.
   var equipCountPerBldg = {};
   var totalEquip = 0;
   var rows = data.rows || [];
   for (var rci = 0; rci < rows.length; rci++) {
+    if (emIsPhantomRow(rows[rci])) continue;
     var bname = rows[rci].building || '';
     if (bname) {
       equipCountPerBldg[bname] = (equipCountPerBldg[bname] || 0) + 1;
