@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.02.740',
+    date: '2026-08-02',
+    title: 'Service Proposal cost estimate wording fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Service Proposal, the cost estimate pages now name the specific sequences scheduled in the current term, matching the month by month table earlier in the document.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.02.739',
     date: '2026-08-02',
     title: 'Service Proposal wording cleanup',
