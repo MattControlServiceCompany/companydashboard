@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.02.737',
+    date: '2026-08-02',
+    title: 'Audit Report and Service Proposal, clearer wording',
+    items: [
+      {
+        type: 'change',
+        text: 'Audit Report and Service Proposal, the wording has been rewritten to read more naturally, and the service is now named consistently with the Energy Management Services Agreement.',
+      },
+    ],
+  },
+  {
     v: 'v2026.07.31.736',
     date: '2026-07-31',
     title: 'Reports — larger page numbers and header text',
