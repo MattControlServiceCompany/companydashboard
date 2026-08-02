@@ -60,6 +60,10 @@ function _docxEscapeXml(str) {
 
 /* ── Run builder ──────────────────────────────────────────────────────────── */
 
+/* 10pt minimum font size, in half-points (OOXML w:sz unit), for every run this file emits -- see
+ * the comment inside _docxRun for why this exists and why it is enforced there. */
+var _DOCX_MIN_SIZE_HALFPT = 20;
+
 /**
  * Build a <w:r> run.
  * opts:
@@ -75,6 +79,17 @@ function _docxRun(opts) {
   opts = opts || {};
   var font = opts.font || 'Arial';
   var sizeHalfPt = opts.sizeHalfPt != null ? opts.sizeHalfPt : 21;
+  // 10pt floor (spec baseline, Matt-authorized 2026-07-31: "you do realize the Audit Report has
+  // text as small as 7.5pt?" -- client documents are print-designed for 8.5x11 and NOTHING may
+  // render below 10pt). _docxRun is the SINGLE choke point every <w:sz>/<w:szCs> in the whole
+  // document routes through -- every caller (page-level runs, table-cell runs incl. the
+  // block-child delegation branch, list items, headings, the gauge percentage) ultimately builds
+  // its run XML here, so clamping here (rather than at each of the many sizeHalfPt callers, e.g.
+  // _docxPxToHalfPt for a small inline px style like the ASHRAE 36 Sequences table's "Requires:
+  // ..." sub-text or the Service Proposal's Future Work detail text) is the one place that can
+  // never be bypassed by a new caller later. Body default (21 = 10.5pt) and every heading/gauge
+  // size already sit above this floor and are unaffected.
+  if (sizeHalfPt < _DOCX_MIN_SIZE_HALFPT) sizeHalfPt = _DOCX_MIN_SIZE_HALFPT;
 
   var rPr = '<w:rPr>';
   rPr +=
@@ -761,6 +776,68 @@ function _docxPxToTwips(pxValue) {
   return Math.round(n * 15);
 }
 
+/**
+ * Resolve a `var(--name)` / `var(--name, fallback)` CSS value to its literal computed value,
+ * reading the custom property from the LIVE document's :root (document.documentElement) -- not
+ * from getComputedStyle() on the element that actually carries the var() reference. Non-var()
+ * input (a plain hex/rgb string, or anything _docxCssColorToHex already understands) passes
+ * through completely unchanged.
+ *
+ * WHY resolve against document.documentElement and not the source element: exportReportToDocx()
+ * (app/report-engine.js) always hands _docxTranslatePages() a DETACHED clone --
+ * `pageEl.cloneNode(true)`, never appended to the document -- so it can strip chrome selectors
+ * before translation without touching the live preview. Measured 2026-08-02 via a real headless
+ * Chromium render: `getComputedStyle(detachedClone).color` returns `''` (empty) for every
+ * property, custom properties included -- there is no cascade/rendering to resolve against for a
+ * node with no document tree. `el.style.color` (the CSSOM inline-style accessor this file
+ * previously read) does NOT resolve var() either -- it returns the literal, unresolved
+ * `"var(--rpt-blue)"` string verbatim, confirmed by the same render (this is what let every
+ * `color:var(--x)` in report markup fall through _docxCssColorToHex's hex/rgb regexes and get
+ * silently dropped, leaving fmt.color unset -> Word's default black run color -- the reported
+ * defect: the ASHRAE 36 Audit Report and Service Proposal cover titles measured 000000 instead of
+ * the brand blue their own markup specifies).
+ *
+ * The fix: `document.documentElement` is the ORIGINAL, connected, rendered root (never the
+ * detached clone), and every one of this report engine's custom properties is declared at true
+ * `:root` scope (energy-department.html #report-styles block, confirmed by reading the block
+ * directly) -- so `getComputedStyle(document.documentElement).getPropertyValue(name)` reliably
+ * returns the resolved value regardless of which detached subtree references it. This mirrors an
+ * existing, already-proven pattern elsewhere in this codebase for the identical class of problem
+ * (app/report-engine.js `_rptGeometry()` reads page-geometry custom properties the same way;
+ * app/bas-alarms.js and app/site-functions.js do the same for their own CSS tokens) rather than
+ * inventing a new technique -- deliberately NOT the old exportReportToWord() approach
+ * (`_buildReportCssVarResolver`, a regex-based resolver over the raw stylesheet TEXT), which
+ * would require this file to know the `#report-styles` selector/element id -- something this file
+ * is explicitly documented (top-of-file comment) never to know about report content.
+ *
+ * Deliberately does NOT hardcode any resolved hex value -- a future edit to a --rpt-* token in
+ * energy-department.html's #report-styles block flows through automatically, same as every other
+ * consumer of that token.
+ *
+ * Memoized per _docxTranslatePages() call (ctx._cssVarCache, reset at that entry point) since a
+ * handful of --rpt-* tokens repeat across hundreds of runs in a real report (e.g. --rpt-blue
+ * alone appears in dozens of inline styles across a single Audit Report render) -- avoids a
+ * repeat getComputedStyle() call for the same token name.
+ */
+function _docxResolveCssVarColor(value, ctx) {
+  if (!value) return value;
+  var m = /^var\(\s*(--[a-zA-Z0-9-]+)\s*(?:,\s*(.+))?\)$/.exec(String(value).trim());
+  if (!m) return value; // not a var() reference -- pass through unchanged
+  var name = m[1];
+  var fallback = m[2] != null ? m[2].trim() : null;
+  var cache = ctx && ctx._cssVarCache;
+  if (cache && Object.prototype.hasOwnProperty.call(cache, name)) {
+    return cache[name] != null ? cache[name] : fallback;
+  }
+  var resolved = null;
+  if (typeof document !== 'undefined' && document.documentElement && typeof getComputedStyle === 'function') {
+    var raw = getComputedStyle(document.documentElement).getPropertyValue(name);
+    if (raw && raw.trim()) resolved = raw.trim();
+  }
+  if (cache) cache[name] = resolved;
+  return resolved != null ? resolved : fallback;
+}
+
 /** '#rrggbb' or 'rgb(r,g,b)'/'rgba(r,g,b,a)' -> 'RRGGBB' (no '#'), else null. */
 function _docxCssColorToHex(cssColor) {
   if (!cssColor) return null;
@@ -947,7 +1024,7 @@ function _docxWalkInline(node, fmt, entries, ctx) {
   if (tag === 'STRONG' || tag === 'B') childFmt.bold = true;
   if (tag === 'EM' || tag === 'I') childFmt.italic = true;
   if (tag === 'U') childFmt.underline = true;
-  childFmt = _docxStyleFmtFromEl(node, childFmt);
+  childFmt = _docxStyleFmtFromEl(node, childFmt, ctx);
   for (var i = 0; i < node.childNodes.length; i++) _docxWalkInline(node.childNodes[i], childFmt, entries, ctx);
 }
 
@@ -974,8 +1051,15 @@ function _docxWalkInline(node, fmt, entries, ctx) {
  * This function is the more general of the two (it also threads an inherited ancestor fmt, which
  * _docxStyleFmtFromElement could not) and replaces it everywhere -- every _docxStyleFmtFromElement(el)
  * call site becomes _docxStyleFmtFromEl(el, {}) or, where an ancestor fmt is available, that fmt.
+ *
+ * ctx (2026-08-02, CSS-variable color fix): optional translation ctx, threaded through to
+ * _docxResolveCssVarColor() purely so it can memoize resolved --rpt-* tokens in
+ * ctx._cssVarCache -- see that function's own header comment for why `color:var(--rpt-blue)` (the
+ * overwhelming majority of this report engine's inline color styles) needs it resolved against
+ * document.documentElement rather than read off `el` directly. Every real call site has a ctx
+ * available; omitting it (undefined) still works correctly, just without memoization.
  */
-function _docxStyleFmtFromEl(el, baseFmt) {
+function _docxStyleFmtFromEl(el, baseFmt, ctx) {
   var fmt = Object.assign({}, baseFmt);
   if (!el || !el.style) return fmt;
   var fw = el.style.fontWeight;
@@ -988,7 +1072,7 @@ function _docxStyleFmtFromEl(el, baseFmt) {
   }
   var col = el.style.color;
   if (col) {
-    var hex = _docxCssColorToHex(col);
+    var hex = _docxCssColorToHex(_docxResolveCssVarColor(col, ctx));
     if (hex) fmt.color = hex;
   }
   return fmt;
@@ -1256,7 +1340,7 @@ function _docxTranslateTable(tableEl, ctx) {
         // as the seed fmt for the plain-text branch's own runs (so a cell with no block children
         // but its own inline style, e.g. the Audit Report's 27-building compliance table, does
         // not fall back to plain 10.5pt body text either).
-        var cellBaseFmt = _docxStyleFmtFromEl(cell, isHeaderCell ? { bold: true } : {});
+        var cellBaseFmt = _docxStyleFmtFromEl(cell, isHeaderCell ? { bold: true } : {}, ctx);
         var align = (cell.style && cell.style.textAlign) || 'center';
         var cellParagraphs;
         if (_docxHasBlockChild(cell)) {
@@ -1620,7 +1704,7 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
     // (font-size/weight/color) on top -- see _docxStyleFmtFromEl's header comment for the defect
     // this closes (report markup's title/eyebrow/amount divs carry their own font-size with no
     // nested <span>) and this function's own header comment for why inheritedFmt matters too.
-    var pBaseFmt = _docxStyleFmtFromEl(el, baseFmt);
+    var pBaseFmt = _docxStyleFmtFromEl(el, baseFmt, ctx);
     var pRuns = _docxCollectRuns(el, pBaseFmt, ctx);
     if (!pRuns.length) return []; // empty layout-only leaf -- no stray blank paragraph
     var indOpts = _docxResolveIndentHint(el.getAttribute && el.getAttribute('data-word-indent'));
@@ -1683,7 +1767,13 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
  *           numIds: array<{numId, abstractNumId}> }.
  */
 function _docxTranslatePages(pageEls) {
-  var ctx = { images: [], imageCounter: 100, numAllocations: [], nextNumId: _DOCX_NUMID_ALLOC_START };
+  var ctx = {
+    images: [],
+    imageCounter: 100,
+    numAllocations: [],
+    nextNumId: _DOCX_NUMID_ALLOC_START,
+    _cssVarCache: {}, // memoizes _docxResolveCssVarColor()'s --rpt-* lookups for this translation run
+  };
   var pageBreakRun = '<w:r><w:br w:type="page"/></w:r>';
   var allBlocks = [];
   for (var p = 0; p < pageEls.length; p++) {
