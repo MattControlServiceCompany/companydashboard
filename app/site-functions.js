@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.02.739',
+    date: '2026-08-02',
+    title: 'Service Proposal wording cleanup',
+    items: [
+      {
+        type: 'fix',
+        text: 'Service Proposal, sensor investigation items are now named in plain wording, for example Carbon Dioxide Sensor Investigation.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.02.738',
     date: '2026-08-02',
     title: 'Equipment Matrix and Service Proposal updates',
