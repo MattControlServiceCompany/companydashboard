@@ -7952,11 +7952,34 @@ function _pricingComputeRecommendedTimeline(projId) {
  * secondary ordering, PRICING_NO_HW_SCORE_BONUS included, untouched) — over the term's own rows
  * only, then bin-packs the SAME greedy first-fit walk _pricingComputeRecommendedTimeline uses for
  * phases (see that function's "Multi-round greedy first-fit walk" section, ~L7480) at MONTH
- * granularity instead of PHASE granularity, using the per-month `monthlyAllowance` as the envelope
- * instead of a whole phase's multi-month `measuresAvailable`. Same algorithm, same ordering, finer
- * resolution — no new pricing formula, no new ranking rule.
+ * granularity instead of PHASE granularity.
  *
- * A unit whose own total exceeds one month's allowance (item.total > envelope) is force-admitted
+ * Per-month envelope fix (2026-08-02, Matt verbatim: "How can we have no work scheduled? We
+ * started with there are at least 29 months worth of work, so how can we not have a concrete
+ * first 5 months of work?"). DIAGNOSIS: this function previously used the flat GROSS
+ * `monthlyAllowance` (e.g. $6,250) as every month's packing envelope. But the term phase's own
+ * committed rows (termRows) were never priced against that gross figure — they were admitted by
+ * _pricingComputeRecommendedTimeline's phase-level walk against `measuresAvailable`
+ * (allowanceTotal minus that phase's EM labor cost, ~7414/~7193), which for JOCO's real Phase 1
+ * is only $12,566 across the whole 5-month term (measured 2026-08-02: allowanceTotal $31,250 −
+ * emLaborTotal $18,684). Sub-allocating that already-labor-netted $12,566 total across 5 months
+ * using a flat $6,250/month GROSS envelope mathematically drains in ~2 months
+ * ($12,566 / $6,250 ≈ 2.0) and leaves the rest empty — not a genuine backlog shortfall (the
+ * program has 29 months and 299 units of real backlog; term Phase 1 alone still has 13 real
+ * priced units), just a unit mismatch between the phase-level admission envelope (net of labor)
+ * and this function's own month-level packing envelope (gross of labor).
+ *
+ * FIX: compute each calendar month's own real net-of-labor envelope the SAME way
+ * _pricingComputeProgramCostModel already does at phase granularity — monthlyAllowance minus that
+ * SPECIFIC absolute month's recurring EM labor cost (_pricingRecurringEMLaborHoursForMonth's own
+ * Month-1/2/3/4+-steady-state ramp, hourlyRate from _pricingComputeMonthlyService/
+ * _pricingGetConfig — the exact same building blocks, no new labor formula). termRows/monthCount
+ * always describe the FIRST N phases from program month 1 (_pricingProposalTermAndFuture always
+ * slices tl.phases from index 0), so absolute month = monthIdx+1 here is correct without any
+ * offset parameter. Falls back to the flat monthlyAllowance (old behavior) when no budget is
+ * configured or the labor breakdown is unavailable, so the no-budget case is unchanged.
+ *
+ * A unit whose own total exceeds ITS month's real envelope (item.total > envelope[monthIdx]) is force-admitted
  * into the first month it's tried against when that month is otherwise empty (same "oversized unit"
  * escape hatch _pricingComputeRecommendedTimeline already has) rather than looping forever — flagged
  * back to the caller via `spansMonths` (Math.ceil(item.total / envelope), informational only) so the
@@ -7974,13 +7997,16 @@ function _pricingComputeRecommendedTimeline(projId) {
  * (category names/labels only) — see _rptA36PhaseTableInnerHTML's month-cell builder.
  *
  * Returns { months: [{ items: [{rows, building, score, total, spansMonths}] }, ...], envelope }.
- * `months.length === monthCount` always (even if some entries end up with an empty `items` array —
- * e.g. the term simply has fewer ROI units than months once big items front-load early months).
+ * `envelope` is now an ARRAY, one real net-of-labor dollar figure per month index (was a single
+ * scalar before the 2026-08-02 fix above) — informational/diagnostic only, nothing currently
+ * renders it. `months.length === monthCount` always (even if some entries end up with an empty
+ * `items` array — e.g. the term simply has fewer ROI units than months once big items front-load
+ * early months).
  */
 function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, monthlyAllowance) {
   var months = [];
   for (var mi = 0; mi < monthCount; mi++) months.push({ items: [] });
-  if (!termRows || !termRows.length || !monthCount) return { months: months, envelope: monthlyAllowance || 0 };
+  if (!termRows || !termRows.length || !monthCount) return { months: months, envelope: [monthlyAllowance || 0] };
 
   var estimate = _pricingGetEstimate(projId);
 
@@ -8016,29 +8042,115 @@ function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, mont
   });
   units = _pricingSortUnitsNoHwFirst(units);
 
-  // envelope: the real per-month service allowance when a budget is configured (same
-  // _pricingMonthlyAllowanceAmount-derived figure already shown to the client elsewhere as the
-  // monthly cap) — falls back to an even split of the term's own already-priced total ONLY as an
-  // internal bin-packing input (never displayed) when no budget.amount is configured, so the walk
-  // still has a real stopping rule.
+  // envelopes[monthIdx]: the REAL net-of-labor dollar room for NEW measures in that specific
+  // calendar month — 2026-08-02 fix (see this function's header comment for the full diagnosis).
+  // When a budget is configured, each month's own envelope = monthlyAllowance MINUS that
+  // absolute month's real recurring EM labor cost (_pricingRecurringEMLaborHoursForMonth's own
+  // Month-1/2/3/4+-steady ramp × hourlyRate — the SAME building blocks
+  // _pricingComputeProgramCostModel already uses per-phase, ~L7186-7193, just resolved per month
+  // instead of summed over a whole phase). termRows/monthCount always describe the term starting
+  // at absolute program month 1 (_pricingProposalTermAndFuture always slices tl.phases from index
+  // 0), so absolute month = monthIdx+1 needs no offset parameter here.
+  // Falls back to an even split of the term's own already-priced total ONLY as an internal
+  // bin-packing input (never displayed) when no budget.amount is configured, so the walk still
+  // has a real stopping rule (pre-existing fallback, unchanged).
   var termGrand = units.reduce(function (s, u) {
     return s + u.total;
   }, 0);
-  var envelope = monthlyAllowance != null ? monthlyAllowance : monthCount ? termGrand / monthCount : 0;
-  if (!envelope) envelope = termGrand || 1; // defensive: never divide by zero below
+  var envelopes = [];
+  if (monthlyAllowance != null) {
+    var bdBreak = _pricingComputeMonthlyLaborBreakdown(projId);
+    var svcRate = _pricingComputeMonthlyService(projId);
+    var hourlyRate = svcRate
+      ? svcRate.hourlyRate
+      : typeof _pricingGetConfig === 'function'
+        ? _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT
+        : COST_LABOR_RATE_DEFAULT;
+    for (var ei = 0; ei < monthCount; ei++) {
+      var envHrs = bdBreak ? _pricingRecurringEMLaborHoursForMonth(bdBreak, ei + 1) : 0;
+      var envLabor = Math.round(envHrs * hourlyRate * 100) / 100;
+      envelopes.push(Math.max(0, Math.round((monthlyAllowance - envLabor) * 100) / 100));
+    }
+  } else {
+    var evenShare = monthCount ? termGrand / monthCount : 0;
+    for (var ej = 0; ej < monthCount; ej++) envelopes.push(evenShare);
+  }
+  // Defensive: never leave every month's envelope at 0 (would force EVERY unit into the oversized
+  // escape hatch, one per month) — same "never divide by zero" guard the old flat-scalar code had.
+  var envelopeSum = envelopes.reduce(function (s, e) {
+    return s + e;
+  }, 0);
+  if (!envelopeSum)
+    envelopes = envelopes.map(function () {
+      return termGrand / monthCount || 1;
+    });
+
+  // Globally-oversized placement fix (2026-08-02, same diagnosis as the header comment above):
+  // with per-month envelopes now varying (the labor ramp makes Aug's real room, e.g. $541, far
+  // smaller than a steady-state month's, e.g. $3,482), the OLD escape hatch — force-admit an
+  // oversized unit into whichever round is CURRENT when first tried — always landed a big unit in
+  // the earliest, TIGHTEST-capacity month (since ROI order tries top-priority units first, and
+  // Aug is round 0). That one placement alone consumed more real capacity than Aug's entire real
+  // envelope, and because the round-based walk always fills forward, the arithmetic that should
+  // have reached month 5 got exhausted by month 4 instead — a real month left with zero
+  // scheduled work despite adequate real capacity existing across the rest of the term. Fix: a
+  // unit whose total exceeds EVERY month's own envelope (can never fit anywhere) is placed into
+  // the month with the LARGEST real envelope (best able to absorb it) BEFORE the normal walk
+  // runs, instead of wherever it happens to be encountered first — same "never split a unit"
+  // invariant, same spansMonths flag, only WHICH month absorbs it changes. Normal-sized units
+  // (fit at least one month whole) are untouched by this and still walk in pure ROI order exactly
+  // as before.
+  var maxEnvelope = envelopes.reduce(function (m, e) {
+    return e > m ? e : m;
+  }, 0);
+  var preConsumed = [];
+  for (var pi = 0; pi < monthCount; pi++) preConsumed.push(0);
+  var stillUnits = [];
+  units.forEach(function (item) {
+    if (item.total > maxEnvelope && maxEnvelope > 0) {
+      // best-fit target: the month with the most remaining room after any earlier oversized
+      // placements this same pass (so two oversized units don't both pile onto the identical
+      // month if a second-largest month is available).
+      var bestIdx = 0;
+      for (var bi = 1; bi < monthCount; bi++) {
+        if (envelopes[bi] - preConsumed[bi] > envelopes[bestIdx] - preConsumed[bestIdx]) bestIdx = bi;
+      }
+      item.spansMonths = Math.max(1, Math.ceil(item.total / envelopes[bestIdx]));
+      months[bestIdx].items.push(item);
+      preConsumed[bestIdx] += item.total;
+    } else {
+      stillUnits.push(item);
+    }
+  });
+  units = stillUnits;
 
   // Multi-round greedy first-fit walk, ROI order — identical shape to
-  // _pricingComputeRecommendedTimeline's own phase-level walk (~L7480-7516), at month granularity.
+  // _pricingComputeRecommendedTimeline's own phase-level walk (~L7480-7516), at month granularity,
+  // now against EACH month's own real envelope instead of one flat figure, and starting each
+  // round's running total from that month's preConsumed amount (0 for every month with no
+  // globally-oversized placement above).
+  //
+  // No mid-round force-admit here (2026-08-02 fix — see header comment above): the phase-level
+  // walk this was copied from needs a force-admit escape hatch because EVERY future phase shares
+  // the identical envelope (steady state), so an item that doesn't fit now can NEVER fit later —
+  // without forcing it, the walk would spin forever. That assumption is false at MONTH
+  // granularity: envelopes vary (the labor ramp), and every unit still in `units` at this point
+  // already fits within at least one month's envelope somewhere (the globally-oversized pre-pass
+  // above removed every unit that does not). So an item that doesn't fit THIS round is deferred to
+  // `stillPending` and simply retried next round — guaranteed to terminate in <= monthCount
+  // rounds (no dynamic phase growth here, unlike the phase-level walk), and guaranteed to find a
+  // fitting round before the walk ends. Only the pre-existing safety valve below (unchanged) still
+  // force-places a unit if it somehow reaches the end still unplaced.
   var pending = units;
   var monthIdx = 0;
   while (pending.length && monthIdx < monthCount) {
-    var runningTotal = 0;
+    var envelope = envelopes[monthIdx];
+    var runningTotal = preConsumed[monthIdx];
     var stillPending = [];
     pending.forEach(function (item) {
       var fits = runningTotal + item.total <= envelope + 0.005;
-      var forceAdmitOversized = !fits && runningTotal === 0 && item.total > envelope;
-      if (fits || forceAdmitOversized) {
-        item.spansMonths = forceAdmitOversized ? Math.max(1, Math.ceil(item.total / envelope)) : 1;
+      if (fits) {
+        item.spansMonths = 1;
         months[monthIdx].items.push(item);
         runningTotal += item.total;
       } else {
@@ -8060,7 +8172,7 @@ function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, mont
     });
   }
 
-  return { months: months, envelope: envelope };
+  return { months: months, envelope: envelopes };
 }
 
 /* ── Recommended tier timeline table (Task 2, 2026-07-22; rebuilt 2026-07-26
