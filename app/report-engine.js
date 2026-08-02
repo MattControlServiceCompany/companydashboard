@@ -15992,6 +15992,54 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var assessmentFindings =
     '<div style="' + HEAD + '">Assessment Findings</div>' + '<div style="' + BODY + '">' + findingsPara + '</div>';
 
+  // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Optimization Program" +
+  // its 6-bullet list MOVED OFF this page onto its own page, rptPageASHRAE36ProposalProgramCover
+  // (below) -- this function now returns ONLY title/execSummary/assessmentFindings. Reason: the
+  // 07-29 density pass above (and the 07-26 pass before it) both tuned this page's spacing to
+  // "0px overflow" measured against the BROWSER PREVIEW (Chromium) render only. A real Word
+  // export/render round-trip (verify-docx-proposal-merge, 2026-08-02) found the live 27-building
+  // JOCO portfolio's real content actually needs the page's DESIGN height PLUS ~76px more than a
+  // single physical Word page provides -- only 2 of the 6 "Recommended Optimization Program"
+  // bullets fit before Word's own pagination kicked in, orphaning the remaining 4 alone on an
+  // otherwise-blank page 2. Root cause: Word's real per-line metrics for this Arial-rendered body
+  // text do not match Chromium's -- e.g. the real Word bottom page margin measured from the
+  // exported docx's own <w:pgMar> is 1872 twips (93.6pt/124.8px), well above the 72px --rpt-ftr-h
+  // this budget was tuned against -- so a page tuned to "exactly fit" in Chromium can never
+  // reliably fit in Word; any exact-fit tuning is fragile by construction and will keep breaking
+  // as project data (building/equipment counts -> paragraph line-wrap counts) changes. Splitting
+  // into two purpose-sized pages (this one; rptPageASHRAE36ProposalProgramCover) removes the
+  // exact-fit dependency entirely rather than re-tuning it a third time. Content is preserved
+  // verbatim -- nothing shortened or removed, only relocated, same as the "Why This Approach"
+  // move this same page's history already documents above.
+  var bodyHTML = '<div style="padding:4px 48px 2px">' + title + execSummary + assessmentFindings + '</div>';
+
+  return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
+    hero: true,
+    data: fakeData,
+    label: 'Page ' + n + ' — Proposal Summary',
+  });
+}
+
+/**
+ * rptPageASHRAE36ProposalProgramCover -- "Recommended Optimization Program" heading, intro
+ * paragraph, monthly allowance line, and 6-bullet scope list. Extracted from
+ * rptPageASHRAE36ProposalCover 2026-08-02 (fix/docx-proposal-pagination-orphans) -- see that
+ * function's header comment for the real-Word-render measurement this split is based on.
+ * hero:false/hideIntHdr:true matches every other page-2+ Proposal page (rptPageASHRAE36Proposal-
+ * PhaseTable etc.) -- full CSC logo stays page-1-only, this page gets the plain wave footer band.
+ */
+function rptPageASHRAE36ProposalProgramCover(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  var displayClient = _rptProposalDisplayClientName(d.project.name);
+
+  function esc(s) {
+    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
+  }
+
+  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
+  var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
+  var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.32';
+
   // ── Recommended Optimization Program (first heading) ───────────────────
   var budgetFmt = null;
   try {
@@ -16071,21 +16119,18 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<li>Continuous operational improvement</li>' +
     '</ul>';
 
-  // ── Why This Approach ───────────────────────────────────────────────────
-  // fix/report-typography-and-pagination-merge (2026-07-29): moved OFF this page onto the top
-  // of rptPageASHRAE36ProposalPhaseTable (see _rptA36WhyThisApproachHTML below). At the corrected
-  // 14px/10.5pt body size (fix/report-typography-standard), this page measured 159.7px past the
-  // 1056px one-page design height with Why This Approach still included — the density tuning
-  // this page's HEAD comment already flagged as unverified. Content is preserved verbatim, not
-  // deleted or shrunk — only relocated to a page with spare room. Re-measured after the move:
-  // this page fits (see dashboardlogic.md 2026-07-29 entry for before/after numbers).
-  var bodyHTML =
-    '<div style="padding:4px 48px 2px">' + title + execSummary + assessmentFindings + recProgram1 + '</div>';
+  // 2026-08-02 (fix/docx-proposal-pagination-orphans): this content used to be appended to
+  // rptPageASHRAE36ProposalCover's title+execSummary+assessmentFindings on ONE page (see that
+  // function's header comment for why it was split out) — now it is this standalone page's
+  // entire body. hero:false/hideIntHdr:true (not hero:true) — this is a page-2+ Proposal page,
+  // so it gets the plain wave footer band, not the full CSC letterhead logo.
+  var bodyHTML = '<div style="padding:8px 48px 4px">' + recProgram1 + '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
-    hero: true,
+    hero: false,
+    hideIntHdr: true,
     data: fakeData,
-    label: 'Page ' + n + ' — Proposal Summary',
+    label: 'Page ' + n + ' — Recommended Optimization Program',
   });
 }
 
@@ -18421,8 +18466,19 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // FIRST and CONT budgets are now equal (780) — a tier's own first page has the exact same
       // chrome (title ~22.5px + thead ~25.5px + table margin-bottom ~12px ≈ 60px) as its
       // continuation pages, so there was never a reason for the two to differ.
+      //
+      // 2026-08-02 (fix/docx-proposal-pagination-orphans): clientSummary estH bumped 60 -> 68.
+      // A real Word round-trip render of the live JOCO "Recommended" tier found the 60px estimate
+      // still UNDER Word's real per-row height: a chunk of 8 plain + 9 clientSummary rows summed to
+      // EXACTLY 780 (8*30 + 9*60) under this estimate — i.e. the old 60 left this chunk with ZERO
+      // margin at the budget ceiling, so ANY understatement guaranteed overflow. Measuring the same
+      // 16 rows' real bounding boxes in the exported PDF (word/document.xml row-top deltas) gave a
+      // real clientSummary row height of ~46.35pt = ~61.8px-equivalent at 96dpi — already above the
+      // old 60px estimate before any margin. 68 restores genuine headroom (68 vs 61.8 measured,
+      // ~10% margin) instead of an exact-fit estimate that only happened to work for OTHER row
+      // mixes. See docs/dashboardlogic.md 2026-08-02 entry for the full page/row measurement.
       var tokens = agg.map(function (row) {
-        return { type: 'row', estH: row.clientSummary ? 60 : 30, html: _itemRowHTML(row) };
+        return { type: 'row', estH: row.clientSummary ? 68 : 30, html: _itemRowHTML(row) };
       });
 
       // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
@@ -18431,7 +18487,12 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // comment above (a tier's first page has the same chrome as its continuation pages).
       var ITEMIZED_BASE_ADJUSTMENT = 124; // title + thead + table margin-bottom (~60px chrome) + safety margin
       var _itemizedBudget = _rptContentBudget('standard') - ITEMIZED_BASE_ADJUSTMENT;
-      var chunks = _rptPaginateTokens(tokens, _itemizedBudget, _itemizedBudget);
+      // 2026-08-02 (fix/docx-proposal-pagination-orphans): greedy _rptPaginateTokens ->
+      // _rptPaginateTokensBalanced, same reasoning as _buildTierDetailPages above — same minimum
+      // page count K, but a short remainder chunk is redistributed instead of stranded alone on a
+      // trailing page. w:cantSplit (docx-writer.js) still keeps each <tr> intact; this only changes
+      // WHERE the chunk boundary falls, never within a row.
+      var chunks = _rptPaginateTokensBalanced(tokens, _itemizedBudget);
       var numChunks = chunks.length;
 
       chunks.forEach(function (chunk, idx) {
@@ -18583,28 +18644,58 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
             '</div>',
         });
       }
+      // 2026-08-02 (fix/docx-proposal-pagination-orphans): bullet/section-title estH bumped
+      // 15 -> 30 and 24 -> 30. A real Word round-trip render of the live JOCO "Full Scope" tier
+      // found this WHOLE 28-token list (2 section titles + 26 bullets) estimated at only 438px
+      // under the OLD 15/24 constants — comfortably under the 900px _scopeBudget, so
+      // _rptPaginateTokens never even split it into multiple chunks (numChunks stayed 1). But the
+      // real exported PDF (word/document.xml row-top deltas, "Install & Programming Detail — Full
+      // Scope" page) measured a CONSISTENT ~20.05pt = ~26.7px-equivalent per bullet row and
+      // ~20.7pt = ~27.6px-equivalent for the section-title-to-next-row gap — i.e. every token in
+      // this list was underestimated by roughly HALF (15 vs 26.7 real, 24 vs 27.6 real). The real
+      // total for those same 28 tokens is ~830px, close enough to the page's real available height
+      // that the last bullet ("Sensor Investigation — Discharge Airflow") didn't fit and was
+      // orphaned alone on the next page. 30 (both constants unified, matching the itemized table's
+      // own plain-row value) covers the measured real heights with genuine margin instead of an
+      // estimate that was never validated against Word. See docs/dashboardlogic.md 2026-08-02.
       if (hasHw) {
-        tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Hardware & Installation', p1, noCat) });
+        tokens.push({ type: 'row', estH: 30, html: sectionTitleHTML('Hardware & Installation', p1, noCat) });
         hwAgg.categories.forEach(function (c2) {
-          tokens.push({ type: 'row', estH: 15, html: categoryBulletHTML(c2, !noDollar) });
+          tokens.push({ type: 'row', estH: 30, html: categoryBulletHTML(c2, !noDollar) });
         });
         if (hwAgg.ioOnlyCount > 0) {
-          tokens.push({ type: 'row', estH: 15, html: ioOnlySummaryHTML(hwAgg) });
+          tokens.push({ type: 'row', estH: 30, html: ioOnlySummaryHTML(hwAgg) });
         }
       }
       if (lb.length) {
-        tokens.push({ type: 'row', estH: 24, html: sectionTitleHTML('Programming', p2, false) });
+        tokens.push({ type: 'row', estH: 30, html: sectionTitleHTML('Programming', p2, false) });
         lb.forEach(function (it) {
-          tokens.push({ type: 'row', estH: 15, html: bulletHTML(it, !noDollar) });
+          tokens.push({ type: 'row', estH: 30, html: bulletHTML(it, !noDollar) });
         });
       }
 
       // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
       // the standalone flat literal 900 — SCOPE_BASE_ADJUSTMENT preserves this exact numeric
       // value (904 - 4 = 900), no visual/page-count change.
-      var SCOPE_BASE_ADJUSTMENT = 4; // small margin — this section's rows are lightweight bullets, little chrome
+      //
+      // 2026-08-02 (fix/docx-proposal-pagination-orphans): 4 -> 30. This adjustment is meant to
+      // reserve room for the pageTitle div ("Install & Programming Detail — <tier>") itself, which
+      // is prepended to rowsHTML OUTSIDE the token list below and so was never budgeted for at
+      // all. Real Word measurement: pageTitle top (98.4pt) to first token top (120.3pt) = 21.9pt =
+      // ~29.2px-equivalent. 4px reserved essentially nothing for it.
+      var SCOPE_BASE_ADJUSTMENT = 30; // reserves the pageTitle div's own real Word-measured height
       var _scopeBudget = _rptContentBudget('standard') - SCOPE_BASE_ADJUSTMENT;
-      var chunks = _rptPaginateTokens(tokens, _scopeBudget, _scopeBudget);
+      // 2026-08-02 (fix/docx-proposal-pagination-orphans): _rptPaginateTokens (greedy) -->
+      // _rptPaginateTokensBalanced. Even with the corrected estH above, a real Word round-trip on
+      // the live "Full Scope" tier's 30-token list found greedy packing 29 tokens onto page 1
+      // (right at the budget ceiling) and stranding the 30th ("Sensor Investigation — Discharge
+      // Airflow") alone on page 2 — same single-orphan symptom, now caused by genuine content
+      // length landing near a page boundary rather than by a bad estimate. _rptPaginateTokensBalanced
+      // already exists in this file for exactly this shape of problem (see its own header comment,
+      // "MedAct 53 Gardner alone on a ~20%-full page") — same minimum page count K (provably
+      // optimal, unchanged), but distributes tokens evenly across the K pages instead of greedily
+      // maximizing page 1, so a small remainder is never stranded alone.
+      var chunks = _rptPaginateTokensBalanced(tokens, _scopeBudget);
       var numChunks = chunks.length;
 
       chunks.forEach(function (chunk, idx) {
@@ -19068,8 +19159,13 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // back. rptPageASHRAE36ProposalPhaseAndVision itself is left intact (unused) rather than
   // deleted, per the "do not destroy existing capability" constraint already established elsewhere
   // in this file.
-  if (s.proposalCover !== false)
+  if (s.proposalCover !== false) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
+    // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Optimization Program" now
+    // renders on its OWN page (see rptPageASHRAE36ProposalCover's header comment) — pushed under
+    // the same 'proposalCover' section key so toggling that one checkbox still controls both.
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalProgramCover(pageNum++, data), 'proposalCover'));
+  }
   // phaseOpts (2026-07-29, months + Future Work rebuild): threaded into both the Phase table page
   // and the Vision page so they agree on whether Future Work renders inline (in the table) or as
   // the default standalone section — see the 'futureWorkInline' section def's header comment above.
