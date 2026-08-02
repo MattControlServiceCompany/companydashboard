@@ -234,6 +234,7 @@ function emSetAuditView() {
   _emDrillBuilding = null;
   _emViewMode = 'audit';
   emSyncViewModeControls();
+  emRefreshBldgFilterOptions(); // keep dropdown counts in sync with the view mode — see emGetBldgCounts
   var data = emLoadMatrix(window._emActivePid);
   if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
@@ -242,6 +243,7 @@ function emSetRawView() {
   _emDrillBuilding = null;
   _emViewMode = 'raw';
   emSyncViewModeControls();
+  emRefreshBldgFilterOptions(); // keep dropdown counts in sync with the view mode — see emGetBldgCounts
   var data = emLoadMatrix(window._emActivePid);
   if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
@@ -267,6 +269,7 @@ function emSetSummaryView() {
     _emViewMode = 'summary';
   }
   emSyncViewModeControls();
+  emRefreshBldgFilterOptions(); // keep dropdown counts in sync with the view mode — see emGetBldgCounts
   var data = emLoadMatrix(window._emActivePid);
   if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
@@ -4125,29 +4128,74 @@ function emCloseUploadModal(btn, resolvedMode) {
 
 /* ── PHASE 4: TOOLBAR & TABLE ── */
 
+/* ── emGetBldgCounts ─────────────────────────────────────────────────────────
+   Count equipment per building for the filter-dropdown labels, using whatever
+   population the currently active view mode actually displays on screen:
+     - Audit View / Summary View: phantom BAS sub-component rows (VFD
+       Integration, Supply/Return Duct — see emIsPhantomRow) are excluded, to
+       agree with the stats bar, pagination footer, and table which all
+       already exclude phantoms via emRenderAuditTable's filtered set.
+     - Raw View: every imported row counts, including phantoms, because
+       emRenderTable's raw branch shows the raw unfiltered row set (no
+       emIsPhantomRow filtering — see emRenderTable / emFilterRows).
+   Without branching on _emViewMode here, the dropdown label agrees with only
+   one of the two view modes and silently contradicts the other. */
+function emGetBldgCounts(data) {
+  var perBldg = {};
+  var total = 0;
+  var rows = data.rows || [];
+  var excludePhantoms = _emViewMode !== 'raw';
+  for (var rci = 0; rci < rows.length; rci++) {
+    if (excludePhantoms && emIsPhantomRow(rows[rci])) continue;
+    var bname = rows[rci].building || '';
+    if (bname) {
+      perBldg[bname] = (perBldg[bname] || 0) + 1;
+      total++;
+    }
+  }
+  return { perBldg: perBldg, total: total };
+}
+
+/* ── emRefreshBldgFilterOptions ─────────────────────────────────────────────
+   The toolbar (and its building-filter <select>) is built once at initial
+   render (emRenderToolbar, called from emRenderMatrix) and is not otherwise
+   re-rendered when the user switches view modes — emSetAuditView/
+   emSetRawView/emSetSummaryView only re-render the table body. Without this,
+   the dropdown's counts stay frozen in whatever view mode was active at
+   initial render. Call this on every view-mode switch so the dropdown always
+   matches the visible table. Preserves the current filter selection. */
+function emRefreshBldgFilterOptions() {
+  var sel = document.getElementById('em-filter-bldg');
+  if (!sel) return;
+  var data = emLoadMatrix(window._emActivePid);
+  if (!data) return;
+  var selectedValue = sel.value;
+  var buildings = (data.buildings || []).slice().sort(function (a, b) {
+    return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
+  });
+  var counts = emGetBldgCounts(data);
+  var bldgOpts = '<option value="">All Buildings (' + counts.total + ' equipment)</option>';
+  for (var i = 0; i < buildings.length; i++) {
+    var bCount = counts.perBldg[buildings[i]] || 0;
+    bldgOpts +=
+      '<option value="' + buildings[i].replace(/"/g, '&quot;') + '">' + buildings[i] + ' (' + bCount + ')</option>';
+  }
+  sel.innerHTML = bldgOpts;
+  sel.value = selectedValue;
+}
+
 function emRenderToolbar(data, pid, projBadge) {
   var buildings = (data.buildings || []).slice().sort(function (a, b) {
     return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
   });
 
   // Phase 4: count equipment per building for the filter dropdown labels.
-  // Fix (equipment-matrix count consistency): skip phantom BAS sub-component rows
-  // (VFD Integration, Supply/Return Duct — see emIsPhantomRow) so this dropdown
-  // agrees with the stats bar, pagination footer, and table, which all already
-  // exclude phantoms via emRenderAuditTable's filtered set. Without this, the
-  // "All Buildings (N equipment)" label showed the raw imported-row count while
-  // every other number on the page showed the phantom-filtered count.
-  var equipCountPerBldg = {};
-  var totalEquip = 0;
-  var rows = data.rows || [];
-  for (var rci = 0; rci < rows.length; rci++) {
-    if (emIsPhantomRow(rows[rci])) continue;
-    var bname = rows[rci].building || '';
-    if (bname) {
-      equipCountPerBldg[bname] = (equipCountPerBldg[bname] || 0) + 1;
-      totalEquip++;
-    }
-  }
+  // See emGetBldgCounts for why this branches on _emViewMode, and
+  // emRefreshBldgFilterOptions for how the dropdown stays in sync across
+  // view-mode switches after this initial render.
+  var counts = emGetBldgCounts(data);
+  var equipCountPerBldg = counts.perBldg;
+  var totalEquip = counts.total;
 
   var bldgOpts = '<option value="">All Buildings (' + totalEquip + ' equipment)</option>';
   for (var i = 0; i < buildings.length; i++) {
