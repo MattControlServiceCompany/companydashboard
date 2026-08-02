@@ -16174,6 +16174,15 @@ function _rptA36WhyThisApproachHTML(HEAD, UL) {
  * (rptPageASHRAE36ProposalPhaseTable) and the Cost Estimate page's phase timeline
  * (_rptA36RecommendedTimelineHTML) describe each phase's work with the SAME derivation — no
  * separate hardcoded copy that could drift between the two tables.
+ * STALE as of 2026-08-02 (fix/costest-wording-and-rounding): neither caller uses this function's
+ * OUTPUT for its primary text anymore — the Phase Table page was rebuilt 2026-07-31 to name literal
+ * per-unit sequences (_rptA36PhaseTableDerive's unitRows) and _rptA36RecommendedTimelineHTML was
+ * switched the same day as this comment to _rptA36PhaseSeqCategoryNames (also literal sequence
+ * names) after the two tables were found to describe the identical priced rows in two unrelated
+ * vocabularies (bucketed generic phrases here vs. literal names there) — see that call site's
+ * comment. This function is left intact, unremoved, as a defensive fallback only (a phase with rows
+ * but no phase===2 seqKey row, which should not occur for real term data). Do not add a new caller
+ * expecting it to match either table's live wording — it no longer does.
  */
 // Plain-language rewrite (no-abbreviations pass, 2026-07-31): dcv/bas VALUES were 'DCV
 // sensors and programming'/'BAS programming' -- both opaque acronyms. Object property NAMES
@@ -17954,9 +17963,20 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
  * the Recommended Optimization Program paragraph. This rebuild follows that: a plain schedule of
  * WORK (Phase / Sequence / Included Improvements) — no boxes/cards, no dollars, no footer total.
  * ("Date Range" and "Facilities Included" were both later removed — see the dated notes below.)
- * "Included Improvements" reuses the SAME _rptA36PhaseImprovementsText
- * helper the Phase Table page (rptPageASHRAE36ProposalPhaseTable) already uses, so the two tables
- * can never disagree about what a phase contains. Reuses _pricingComputeRecommendedTimeline
+ * "Included Improvements" originally reused the SAME _rptA36PhaseImprovementsText helper the
+ * Phase Table page used, on the theory that sharing a helper would keep the two tables from
+ * disagreeing. STALE as of 2026-08-02 (fix/costest-wording-and-rounding): by then the Phase Table
+ * page (_rptA36PhaseTableDerive) had been rebuilt (2026-07-31 rows-as-term-units matrix rebuild)
+ * to name literal per-unit sequence+building+equipment text instead of calling that helper at all,
+ * so "sharing a helper" no longer meant "saying the same thing" — this table kept the old bucketed
+ * generic phrasing ("fan energy optimization", "building automation system programming") while
+ * page 2 named specific sequences ("Duct Static Pressure Reset", "Reheat Valve Control"), a real
+ * client-visible mismatch (Matt's investigation finding: "it feels like what is in there does not
+ * match the Cost Estimate at all"). Fixed by switching this cell to _rptA36PhaseSeqCategoryNames
+ * (see that call site's own comment below) — the literal-name helper the Future Work row on THIS
+ * SAME table already used, so all three (page 2, this term row, this table's own Future Work row)
+ * now share one literal-name source. _rptA36PhaseImprovementsText itself is unchanged, kept only
+ * as this call site's defensive fallback. Reuses _pricingComputeRecommendedTimeline
  * (app/pricing-estimator.js) — the SAME computation the interactive Cost Estimate tab's Recommended
  * view renders via _pricingRecommendedTimelineHTML (which is UNCHANGED — that tab is Matt's
  * internal planning tool and keeps its phase envelope/measures-total/labor breakdown columns).
@@ -18000,10 +18020,32 @@ function _rptA36RecommendedTimelineHTML(d) {
   // "Sequence" column stating ordinal priority only (first/second/third) — order is preserved,
   // the fixed-date anchor is not. p.dateRange itself is untouched in pricing-estimator.js.
   var _RPT_A36_TIMELINE_ORDINALS = ['First priority', 'Second priority', 'Third priority'];
+  // Included Improvements wording fix (2026-08-02, fix/costest-wording-and-rounding): this cell
+  // used to call _rptA36PhaseImprovementsText, which buckets a phase's rows into 5 fixed generic
+  // phrases (e.g. "fan energy optimization", "building automation system programming") that never
+  // name a specific sequence -- "Duct Static Pressure Reset" and "Reheat Valve Control" were never
+  // literally named here even though they are the term's real priced work, and page 2's months
+  // table (_rptA36PhaseTableDerive's unitRows, same file) names those exact sequences per unit.
+  // Matt (investigation finding, verbatim): "it feels like what is in there does not match the
+  // Cost Estimate at all." Fixed by reusing _rptA36PhaseSeqCategoryNames(p.rows) -- the SAME
+  // literal-sequence-name derivation the Future Work row directly below already uses on this same
+  // table (see futureCatNames a few lines down) -- instead of the bucketed-verb helper, so the
+  // term row and the Future Work row on this table, AND page 2's months table, all draw their
+  // sequence names from one shared source and can never independently drift into different
+  // vocabularies again. _rptA36PhaseImprovementsText itself is left intact/unchanged (still used
+  // nowhere else after this change -- kept in case a future caller needs the generic phrasing) and
+  // is used here only as the defensive fallback for a phase with rows but no phase===2 seqKey rows
+  // (should not occur for real term data -- see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment
+  // on why Phase 1 is 100% programming on already-sensored equipment by construction -- but kept so
+  // an edge case never renders an empty cell).
   var rowsHTML = termPhases
     .map(function (p, idx) {
-      var improvements =
-        typeof _rptA36PhaseImprovementsText === 'function' ? _rptA36PhaseImprovementsText(p.rows, idx) : '';
+      var catNames = typeof _rptA36PhaseSeqCategoryNames === 'function' ? _rptA36PhaseSeqCategoryNames(p.rows) : [];
+      var improvements = catNames.length
+        ? catNames.join(', ') + '.'
+        : typeof _rptA36PhaseImprovementsText === 'function'
+          ? _rptA36PhaseImprovementsText(p.rows, idx)
+          : '';
       return (
         '<tr>' +
         '<td style="' +
@@ -18876,6 +18918,20 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // (_rptA36TierDetailPanelHTML) and the itemized pages above — never print a Hardware/
       // Programming subtotal or a per-item price for this tier.
       var noDollar = c.key === NO_DOLLAR_TIER;
+      // UNRESOLVED DESIGN QUESTION (investigated 2026-08-02, fix/costest-wording-and-rounding --
+      // NOT changed here, see that task's report): this page's Full Scope Programming subtotal
+      // ($337,437, from tt[c.key].phase2 fmtUSD'd raw) disagrees by $1 with page 7's
+      // phaseSplitRow Programming figure ($337,436, from _tierPartsRounded's largest-remainder
+      // allocation -- fix/tier-hardware-programming-rounding, 2026-07-30). Tried pointing p1/p2
+      // here at the SAME _tierPartsRounded(c.key) helper phaseSplitRow reads: that DOES make this
+      // page's header agree with page 7, but this page's own itemized bullet rows below (each an
+      // unrounded qty x unitPrice = lineTotal, never touched by _tierPartsRounded) independently
+      // sum to $337,437 -- so the header would then disagree with its OWN itemized list on the
+      // same page instead of with page 7. Every real dollar in the bullet list is correct; there
+      // is no rounding tweak that makes the header agree with both page 7 AND its own bullets
+      // simultaneously without fudging one bullet's true computed price by $1. Left AS-IS
+      // (self-consistent with its own bullets, disagrees with page 7 by $1) pending a decision on
+      // which of the two $1 disagreements is preferable -- do not silently pick one.
       var tt_ = !noDollar && tt && tt[c.key] ? tt[c.key] : null;
       var noCat = !!(tt_ && tt_.noCatalog);
       var p1 = tt_ ? _fmtUSD(tt_.phase1) : null;
