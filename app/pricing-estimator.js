@@ -3188,7 +3188,15 @@ function buildSensorInvestigationRows(projId) {
     return {
       id: 'sinv_' + (d.id || 'row') + '_' + d.col + '_' + idx,
       building: d.building || '',
-      item: 'Sensor Investigation — ' + (d.categoryLabel || d.col),
+      // No-em-dash pass (backlog 0b49f88c, 2026-08-02): was 'Sensor Investigation — ' + label,
+      // an em-dash pattern that read as machine-generated in the rendered Service Proposal.
+      // Category-first phrasing ("Carbon Dioxide Sensor Investigation") reads as a natural noun
+      // phrase and is no longer than the original in the Itemized Measures table cell. This
+      // string is BOTH the display label AND the grouping key report-engine.js's
+      // _buildItemizedPages()/_rptA36TierDetailAggByPhase() group by (r.item) -- category-first
+      // preserves the exact same set of distinct strings (one per d.categoryLabel value) as
+      // before, so row grouping/counts are unchanged, only the wording is.
+      item: (d.categoryLabel || d.col) + ' Sensor Investigation',
       type: 'Investigation',
       equipment: (d.equipName || 'Equipment') + ' (' + statusLabel + ')',
       qty: 1,
