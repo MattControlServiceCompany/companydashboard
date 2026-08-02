@@ -12510,7 +12510,7 @@ var ASHRAE36_SECTIONS = {
   ],
   proposal: [
     // 2026-07-26 rebuild (spec: AI/_context/specs/joco-service-proposal-target-2026-07-23.md):
-    // Matt's hand-built Word target is a 3-page Title/Exec Summary/Findings + Recommended Program
+    // Matt's hand-built Word target is a 3-page Title/Exec Summary/Findings + Recommended Services
     // + Phase table + Long-Term Vision document — replacing the old 9-page cover+scope+pricing
     // shape. 'proposalCover' now renders page 1 of that structure (still the toggle key so
     // existing stored preferences don't dangle); 'proposalPhaseTable' and 'proposalVision' are
@@ -12522,13 +12522,13 @@ var ASHRAE36_SECTIONS = {
     // (rptPageASHRAE36ProposalPhaseAndVision) instead of two mostly-empty pages — see that
     // function's header comment. The checkboxes/labels below are unchanged; only the assembly
     // step changed.
-    { key: 'proposalCover', label: 'Proposal Summary (Title, Findings, Program)', group: 'Proposal', defaultOn: true },
-    { key: 'proposalPhaseTable', label: 'Recommended Program — Phase Table', group: 'Proposal', defaultOn: true },
+    { key: 'proposalCover', label: 'Proposal Summary (Title, Findings, Services)', group: 'Proposal', defaultOn: true },
+    { key: 'proposalPhaseTable', label: 'Recommended Services — Phase Table', group: 'Proposal', defaultOn: true },
     // futureWorkInline (2026-07-29, months + Future Work rebuild — Matt, verbatim: "Do it as
     // months and then give me the ability to see the future work in the table or as a standalone
     // section."): default OFF = Future Work renders as its own standalone section (on the
     // Implementation Plan & Long-Term Vision page). Checking this box instead folds Future Work
-    // into the Recommended Program — Phase Table as an extra row, and the standalone section is
+    // into the Recommended Services — Phase Table as an extra row, and the standalone section is
     // suppressed so it is never shown twice. See _pricingProposalTermAndFuture's header comment.
     {
       key: 'futureWorkInline',
@@ -15944,7 +15944,7 @@ _RPT_US_STATE_ABBR.forEach(function (s) {
  * above) from a stored client name, e.g. "Johnson County, Kansas" -> "Johnson County". Does NOT
  * touch the stored project/client name anywhere else — this is purely a rendering choice for the
  * handful of mid-sentence prose lines in the Proposal (title, Executive Summary, Recommended
- * Optimization Program, Long-Term Program Vision) that read awkwardly with the full legal name
+ * Energy Management Services, Long-Term Program Vision) that read awkwardly with the full legal name
  * inline. Falls back to the original string unchanged whenever the suffix after the last comma
  * is NOT a recognized state (e.g. "Smith, Jones & Co." stays untouched) or when there's no comma
  * at all. See joco-service-proposal-target-2026-07-23.md for the audit that found this bug.
@@ -15968,7 +15968,7 @@ function _rptProposalDisplayClientName(fullName) {
  * Word target page 1: Title block, Executive Summary, Assessment Findings (narrative paragraph
  * stating both dollar figures in prose + Matt's requested "what's included" clarification — Word
  * comment "Clarify what is included" on the Full Energy Scope of Work row), Recommended
- * Optimization Program (paragraph + monthly allowance + 6 bullets), Why This Approach (5
+ * Energy Management Services (paragraph + monthly allowance + 6 bullets), Why This Approach (5
  * bullets). Plain headings/tables only — zero shaded/filled bands, zero boxes/cards (hard
  * constraint, w:shd fill count = 0 in the target .docx). hero:true keeps the CSC letterhead.
  * 2026-07-29 (Matt: "all reports should always have page numbers"): this page (and every other
@@ -15991,7 +15991,7 @@ function _rptProposalDisplayClientName(fullName) {
  * explain what each one gets you... put it in ROI terms." The Assessment Findings section was
  * rewritten so a reader who reads only its first paragraph understands both the scope and the
  * monthly-cost mechanism, followed by stacked (never side-by-side, never boxed) per-stage
- * explanations, then an ROI paragraph in Recommended Optimization Program grounded in
+ * explanations, then an ROI paragraph in Recommended Energy Management Services grounded in
  * _pricingComputeProgramCostModel (pricing-estimator.js) tying the monthly figure to the phased
  * program total.
  *
@@ -16140,14 +16140,14 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var assessmentFindings =
     '<div style="' + HEAD + '">Assessment Findings</div>' + '<div style="' + BODY + '">' + findingsPara + '</div>';
 
-  // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Optimization Program" +
-  // its 6-bullet list MOVED OFF this page onto its own page, rptPageASHRAE36ProposalProgramCover
+  // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Energy Management Services" +
+  // its 6-bullet list MOVED OFF this page onto its own page, rptPageASHRAE36ProposalRecommendedServicesCover
   // (below) -- this function now returns ONLY title/execSummary/assessmentFindings. Reason: the
   // 07-29 density pass above (and the 07-26 pass before it) both tuned this page's spacing to
   // "0px overflow" measured against the BROWSER PREVIEW (Chromium) render only. A real Word
   // export/render round-trip (verify-docx-proposal-merge, 2026-08-02) found the live 27-building
   // JOCO portfolio's real content actually needs the page's DESIGN height PLUS ~76px more than a
-  // single physical Word page provides -- only 2 of the 6 "Recommended Optimization Program"
+  // single physical Word page provides -- only 2 of the 6 "Recommended Energy Management Services"
   // bullets fit before Word's own pagination kicked in, orphaning the remaining 4 alone on an
   // otherwise-blank page 2. Root cause: Word's real per-line metrics for this Arial-rendered body
   // text do not match Chromium's -- e.g. the real Word bottom page margin measured from the
@@ -16155,7 +16155,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // this budget was tuned against -- so a page tuned to "exactly fit" in Chromium can never
   // reliably fit in Word; any exact-fit tuning is fragile by construction and will keep breaking
   // as project data (building/equipment counts -> paragraph line-wrap counts) changes. Splitting
-  // into two purpose-sized pages (this one; rptPageASHRAE36ProposalProgramCover) removes the
+  // into two purpose-sized pages (this one; rptPageASHRAE36ProposalRecommendedServicesCover) removes the
   // exact-fit dependency entirely rather than re-tuning it a third time. Content is preserved
   // verbatim -- nothing shortened or removed, only relocated, same as the "Why This Approach"
   // move this same page's history already documents above.
@@ -16169,14 +16169,14 @@ function rptPageASHRAE36ProposalCover(n, d) {
 }
 
 /**
- * rptPageASHRAE36ProposalProgramCover -- "Recommended Optimization Program" heading, intro
- * paragraph, monthly allowance line, and 6-bullet scope list. Extracted from
+ * rptPageASHRAE36ProposalRecommendedServicesCover -- "Recommended Energy Management Services"
+ * heading, intro paragraph, monthly allowance line, and 6-bullet scope list. Extracted from
  * rptPageASHRAE36ProposalCover 2026-08-02 (fix/docx-proposal-pagination-orphans) -- see that
  * function's header comment for the real-Word-render measurement this split is based on.
  * hero:false/hideIntHdr:true matches every other page-2+ Proposal page (rptPageASHRAE36Proposal-
  * PhaseTable etc.) -- full CSC logo stays page-1-only, this page gets the plain wave footer band.
  */
-function rptPageASHRAE36ProposalProgramCover(n, d) {
+function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var displayClient = _rptProposalDisplayClientName(d.project.name);
 
@@ -16188,7 +16188,7 @@ function rptPageASHRAE36ProposalProgramCover(n, d) {
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
-  // ── Recommended Optimization Program (first heading) ───────────────────
+  // ── Recommended Energy Management Services (first heading) ───────────────────
   var budgetFmt = null;
   try {
     if (typeof _pricingGetBudget === 'function') {
@@ -16278,7 +16278,7 @@ function rptPageASHRAE36ProposalProgramCover(n, d) {
     hero: false,
     hideIntHdr: true,
     data: fakeData,
-    label: 'Page ' + n + ' — Recommended Optimization Program',
+    label: 'Page ' + n + ' — Recommended Energy Management Services',
   });
 }
 
@@ -16309,7 +16309,7 @@ function _rptA36WhyThisApproachHTML(HEAD, UL) {
 
 /**
  * rptPageASHRAE36ProposalPhaseTable — Page 2 of the rebuilt Service Proposal. Matches the target's
- * second "Recommended Optimization Program" heading + paragraph, then the transposed phase table
+ * second "Recommended Energy Management Services" heading + paragraph, then the transposed phase table
  * (rows = Included Improvements / Expected Results, columns = Phase 1/2/3). A third row,
  * "Facilities Included" (building names per phase, LIVE-DERIVED from
  * _pricingComputeRecommendedTimeline), was removed 2026-07-29 (Matt, verbatim: "why would you
@@ -16622,7 +16622,7 @@ function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
 }
 
 /**
- * _rptA36PhaseTableInnerHTML — content-only builder for the Recommended Optimization Program
+ * _rptA36PhaseTableInnerHTML — content-only builder for the Recommended Energy Management Services
  * intro paragraph + Phase table (extracted 2026-07-27, page-2/3 merge, so the standalone page
  * function below and the merged Phase+Vision page share IDENTICAL content-building logic rather
  * than two copies that could drift). Returns the same HTML rptPageASHRAE36ProposalPhaseTable used
@@ -17123,7 +17123,7 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
 
 /**
  * rptPageASHRAE36ProposalPhaseTable — LIVE default-path renderer for the Recommended
- * Optimization Program page (Page 2 of the rebuilt Service Proposal). Returns an ARRAY of page
+ * Energy Management Services page (Page 2 of the rebuilt Service Proposal). Returns an ARRAY of page
  * HTML strings (2026-08-02, months-table page-height fix) instead of a single string -- mirrors
  * the Array-returning convention rptPageASHRAE36ProposalPricing already established (see
  * generateASHRAE36ProposalHTML's costEstimate branch: `.forEach(pg => { pages.push(...);
@@ -17168,7 +17168,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
       hero: false,
       hideIntHdr: true,
       data: fakeData,
-      label: 'Page ' + pageN + ' — Recommended Optimization Program' + (labelSuffix || ''),
+      label: 'Page ' + pageN + ' — Recommended Energy Management Services' + (labelSuffix || ''),
     });
   }
 
@@ -17184,7 +17184,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // (project 1779664753271, 27-building portfolio, 13-unit current term): thead 38px; unit rows
   // 46px (1-line label) to 60px (2-line label, the common case); Why This Approach block 115px
   // (18px heading + 97px bullet list -- fixed generic copy, not data-driven, per
-  // _rptA36WhyThisApproachHTML); Recommended Optimization Program intro heading+paragraph 76px;
+  // _rptA36WhyThisApproachHTML); Recommended Energy Management Services intro heading+paragraph 76px;
   // term notes (Expected Results + Ongoing Services, always rendered) 116px; standalone Future
   // Work block (heading + narrative + category list, suppressed when opts.futureWorkInline) an
   // additional ~200px. Each constant below carries the same kind of safety margin
@@ -17321,7 +17321,7 @@ function _rptA36VisionInnerHTML(d, opts) {
     // 2026-07-29 (months rebuild): the old per-phase "Phase | Sequence" mini-table (one row per
     // Phase 1/2/3 with an ordinal First/Second/Third priority column) is REMOVED — with only ONE
     // term phase now shown (see PRICING_PROPOSAL_TERM_PHASE_COUNT), that table would render a
-    // single content-free row duplicating what the Recommended Optimization Program table above
+    // single content-free row duplicating what the Recommended Energy Management Services table above
     // already shows under real month headers. Replaced with one sentence naming the term's actual
     // months (derived, never hardcoded — see _pricingProposalTermMonthLabels) and the same
     // no-fixed-end-date funding language the table used to carry.
@@ -17476,7 +17476,7 @@ function rptPageASHRAE36ProposalPhaseAndVision(n, d, opts) {
     hero: false,
     hideIntHdr: true,
     data: fakeData,
-    label: 'Page ' + n + ' — Recommended Program & Long-Term Vision',
+    label: 'Page ' + n + ' — Recommended Services & Long-Term Vision',
   });
 }
 
@@ -18118,7 +18118,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
  * row above stopped showing one. Matt's own hand-built target document (spec:
  * AI/_context/specs/joco-service-proposal-target-2026-07-23.md, Table 2 and Table 3) carries NO
  * dollar figures anywhere in its phase tables — the $6,250/month figure is stated exactly once, in
- * the Recommended Optimization Program paragraph. This rebuild follows that: a plain schedule of
+ * the Recommended Energy Management Services paragraph. This rebuild follows that: a plain schedule of
  * WORK (Phase / Sequence / Included Improvements) — no boxes/cards, no dollars, no footer total.
  * ("Date Range" and "Facilities Included" were both later removed — see the dated notes below.)
  * "Included Improvements" originally reused the SAME _rptA36PhaseImprovementsText helper the
@@ -18253,9 +18253,9 @@ function _rptA36RecommendedTimelineHTML(d) {
   }
 
   // Client-safe transparency note — no dollar figures (2026-07-27 reframe). Ongoing Energy
-  // Management Services labor is delivered throughout the program in addition to the improvements
-  // listed above; the monthly cost of the whole program is already stated once in the Recommended
-  // Optimization Program section above, so it is intentionally not repeated here.
+  // Management Services labor is delivered throughout the engagement in addition to the improvements
+  // listed above; the monthly cost of the whole engagement is already stated once in the Recommended
+  // Energy Management Services section above, so it is intentionally not repeated here.
   var laborNote =
     '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:4px;font-style:italic">' +
     'Continuous Energy Management Services (alarm configuration, report setup, trend ' +
@@ -19639,10 +19639,10 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // in this file.
   if (s.proposalCover !== false) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
-    // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Optimization Program" now
+    // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Energy Management Services" now
     // renders on its OWN page (see rptPageASHRAE36ProposalCover's header comment) — pushed under
     // the same 'proposalCover' section key so toggling that one checkbox still controls both.
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalProgramCover(pageNum++, data), 'proposalCover'));
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalRecommendedServicesCover(pageNum++, data), 'proposalCover'));
   }
   // phaseOpts (2026-07-29, months + Future Work rebuild): threaded into both the Phase table page
   // and the Vision page so they agree on whether Future Work renders inline (in the table) or as
