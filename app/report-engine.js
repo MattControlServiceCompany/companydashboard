@@ -17009,7 +17009,7 @@ function _rptA36PhaseTableDerive(d, opts) {
         '" colspan="' +
         headCols.length +
         '">' +
-        'Beyond the initial term, the program continues to expand sensor installation and program the ' +
+        'Beyond the initial term, this service continues to expand sensor installation and program the ' +
         'additional control sequences those sensors make possible, funded through the same monthly ' +
         'service allowance, with no fixed end date.' +
         '<div style="' +
