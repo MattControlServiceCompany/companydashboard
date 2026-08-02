@@ -301,10 +301,17 @@ function rptPageAgreementCover(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var esc = _agreementEsc;
 
+  // 2026-07-31 (Word Export Rebuild plan Step 6, AI/_context/plans/word-export-rebuild-2026-07-30.md
+  // Part D lines 306-311): was a plain <div><div> pair -- the docx-writer.js DOM->OOXML translator
+  // (Step 5) only recognizes h1-h6 as heading-shaped elements (spec §4d/§4b, closed element
+  // vocabulary, plan line 183). Now a single <h1> so this title gets the translator's H1 18pt
+  // treatment (_DOCX_HEADING_SIZE_H1). The live/PDF path is unaffected -- every property the browser
+  // rendered (text-align, font-size, font-weight, color) is still set inline, just consolidated onto
+  // one element instead of a wrapper+child pair; font-weight/color are correctly dropped in the
+  // exported .docx only, matching spec §4d's measured baseline exactly (Arial 18pt, NOT bold, no
+  // color override -- inherits black).
   var title =
-    '<div style="text-align:center;margin-bottom:10px" contenteditable="true">' +
-    '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">Energy Management Services Agreement</div>' +
-    '</div>';
+    '<h1 style="text-align:center;margin-bottom:10px;font-size:19px;font-weight:700;color:var(--rpt-blue)" contenteditable="true">Energy Management Services Agreement</h1>';
 
   var recitalText =
     'This Energy Management Services Agreement (the &ldquo;Agreement&rdquo;) is made and entered into as of ' +
@@ -546,13 +553,19 @@ function rptPageAgreementCommercialTerms(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var r = _agreementCommercialRenderers[d.templateType](d);
 
+  // 2026-07-31 (Word Export Rebuild plan Step 6): _AGR_HEAD/_AGR_SUBHEAD elements below converted
+  // from <div> to <h2>/<h3> throughout this function -- see the rptPageAgreementCover title comment
+  // above for why (translator heading vocabulary is h1-h6 only). Same pattern already used elsewhere
+  // in report-engine.js for section headings (e.g. rptPageBoardSummary's "<h2 style=...>Building
+  // Performance</h2>", grep-confirmed at report-engine.js:5473/5723/5988/6269 etc.) -- not a new
+  // convention for this codebase, just extended here. Text/style/order unchanged.
   var services =
-    '<div style="' +
+    '<h2 style="' +
     _AGR_HEAD +
-    '">1. Services of Contractor</div>' +
-    '<div style="' +
+    '">1. Services of Contractor</h2>' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">1.1 Services:</div>' +
+    '">1.1 Services:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">Provide Energy Management services to optimize the building automation system including but not limited to the following:</div>' +
@@ -582,15 +595,15 @@ function rptPageAgreementCommercialTerms(n, d) {
     _AGR_BODY +
     '">Advising on other energy related services and projects.</li>' +
     '</ul>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">1.2 Facility and Building Automation System Access:</div>' +
+    '">1.2 Facility and Building Automation System Access:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">Client shall provide Contractor with remote and on-site access to the building automation system and facilities during normal business hours as needed.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">1.3 Services Excluded:</div>' +
+    '">1.3 Services Excluded:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">' +
@@ -598,40 +611,40 @@ function rptPageAgreementCommercialTerms(n, d) {
     '</div>';
 
   var compensation =
-    '<div style="' +
+    '<h2 style="' +
     _AGR_HEAD +
-    '">2. Compensation and payment schedule</div>' +
-    '<div style="' +
+    '">2. Compensation and payment schedule</h2>' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">2.1 Compensation:</div>' +
+    '">2.1 Compensation:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">' +
     r.compensation +
     '</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">2.2 Payment Schedule:</div>' +
+    '">2.2 Payment Schedule:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">' +
     r.paymentSchedule +
     '</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">2.3 Late Payments:</div>' +
+    '">2.3 Late Payments:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">Late payments shall be subject to interest of 0.8% per month from the due date until paid.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">2.4 Non-Payments:</div>' +
+    '">2.4 Non-Payments:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">If payment is not received within sixty (60) days, Contractor may suspend services until payment is made.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">2.5 Utility Rebate Assistance:</div>' +
+    '">2.5 Utility Rebate Assistance:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">' +
@@ -654,19 +667,28 @@ function rptPageAgreementTermTermination(n, d) {
   // implementer's diff report. That means it is a structural artifact of CSC's own template, not a
   // one-off JOCO typo, so it is reproduced here as literal boilerplate per the "surface, don't
   // silently fix" instruction, exactly as both source documents actually read.
+  // 2026-07-31 (Word Export Rebuild plan Step 6, spec §4e -- "used for outline-numbered sub-levels
+  // in the Agreement variant's numbered clauses"): every numbered sub-clause paragraph below this
+  // point (the "1./2." body text nested under an "i./ii./iii./iv." roman-numeral sub-heading) now
+  // carries data-word-indent="1" -- the translator (docx-writer.js _docxResolveIndentHint) maps that
+  // to w:ind left=1080/firstLine=360 twips, spec §4e's measured value. This section is the ONLY place
+  // in the Agreement with a genuine two-level numbered nesting (a numbered "1./2." item inside an
+  // "i./ii./iii./iv." sub-heading) -- Sections 1/2/4 go straight from a "N.M Label:" sub-heading to
+  // unindented body prose, so no other section gets this hint. Purely additive on the live/PDF path
+  // (data-word-indent is inert there, plan line 185).
   var termHeading =
-    '<div style="' +
+    '<h2 style="' +
     _AGR_HEAD +
-    '">3. Term and Termination</div>' +
-    '<div style="' +
+    '">3. Term and Termination</h2>' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">3.1 Term:</div>' +
-    '<div style="' +
+    '">3.1 Term:</h3>' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">i. Term:</div>' +
+    '">i. Term:</h3>' +
     '<div style="' +
     _AGR_BODY +
-    '" contenteditable="true">1. ' +
+    '" contenteditable="true" data-word-indent="1">1. ' +
     r.initialTermText +
     '</div>';
 
@@ -690,14 +712,14 @@ function rptPageAgreementTermTermination(n, d) {
   // `Math.pow(1 + escalation/100, yr - 1)` contract-year compounding convention (report-engine.js),
   // the only other escalation-math precedent in this codebase.
   var renewal = r.hasRenewalEscalation
-    ? '<div style="' +
+    ? '<h3 style="' +
       _AGR_SUBHEAD +
       '">' +
       _romanNumerals[_termRomanIdx++] +
-      '. Renewal Term:</div>' +
+      '. Renewal Term:</h3>' +
       '<div style="' +
       _AGR_BODY +
-      '" contenteditable="true">1. Beginning on the first anniversary of the Effective Date, and on ' +
+      '" contenteditable="true" data-word-indent="1">1. Beginning on the first anniversary of the Effective Date, and on ' +
       'each anniversary thereafter, the Allowance and the hourly labor rate described in Section ' +
       '1.1 shall each increase by a fixed escalation rate of ' +
       d.escalationRate +
@@ -711,31 +733,31 @@ function rptPageAgreementTermTermination(n, d) {
     : ' If this Agreement is terminated by the Client, the Client agrees to reimburse the Contractor for all direct and indirect costs incurred up to the date of termination. These costs may include, but are not limited to, labor, materials, subcontractor expenses, mobilization, engineering, and administrative overhead directly associated with the scope of work performed under this Agreement. Payment shall be due within thirty (30) days of receipt of an itemized invoice from the Contractor.';
 
   var earlyTermination =
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
     '">' +
     _romanNumerals[_termRomanIdx++] +
-    '. Without Cause Early Termination:</div>' +
+    '. Without Cause Early Termination:</h3>' +
     '<div style="' +
     _AGR_BODY +
-    '" contenteditable="true">1. This Agreement may be terminated without cause or penalty upon ' +
+    '" contenteditable="true" data-word-indent="1">1. This Agreement may be terminated without cause or penalty upon ' +
     (r.earlyTerminationNoticeDays === 120 ? 'one hundred and twenty (120)' : 'sixty (60)') +
     " days' written notice to the other party. Prior to termination, Client shall pay Contractor in full for services rendered through the termination date.</div>" +
     '<div style="' +
     _AGR_BODY +
-    '" contenteditable="true">2.' +
+    '" contenteditable="true" data-word-indent="1">2.' +
     reimbursementClause +
     '</div>';
 
   var termination =
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
     '">' +
     _romanNumerals[_termRomanIdx++] +
-    '. Termination:</div>' +
+    '. Termination:</h3>' +
     '<div style="' +
     _AGR_BODY +
-    '" contenteditable="true">1. Upon termination or expiration of this agreement, neither party shall have any further obligations, except for those accrued prior to termination. Contractor shall provide all final reports and documentation within ninety (90) days of termination.</div>';
+    '" contenteditable="true" data-word-indent="1">1. Upon termination or expiration of this agreement, neither party shall have any further obligations, except for those accrued prior to termination. Contractor shall provide all final reports and documentation within ninety (90) days of termination.</div>';
 
   return rptPage(n, 'Energy Management Services Agreement', termHeading + renewal + earlyTermination + termination, {
     data: fakeData,
@@ -754,12 +776,12 @@ function rptPageAgreementGeneralProvisions(n, d) {
   var esc = _agreementEsc;
 
   var html =
-    '<div style="' +
+    '<h2 style="' +
     _AGR_HEAD +
-    '">4. General Provisions</div>' +
-    '<div style="' +
+    '">4. General Provisions</h2>' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.1 Governing Law:</div>' +
+    '">4.1 Governing Law:</h3>' +
     // DIVERGENCE FLAGGED, NOT FIXED: JOCO's source names Missouri here even though the Client is
     // in Kansas. Louisburg's own parallel clause (a separately-dated, Kansas-based deal) names the
     // CLIENT's own state instead — evidence this may be an oversight in the JOCO source, not an
@@ -768,33 +790,33 @@ function rptPageAgreementGeneralProvisions(n, d) {
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">This Agreement shall be governed by and construed in accordance with the laws of the State of Missouri, without regard to its conflict of law principles of any jurisdiction.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.2 Attorney&rsquo;s Fees and Cost:</div>' +
+    '">4.2 Attorney&rsquo;s Fees and Cost:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">If either party hereto shall properly institute formal legal action, including mediation as described in Section 5.8 below, the prevailing party shall be entitled to reasonable attorney fees and costs in addition to any other relief which may be granted.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.3 Waiver:</div>' +
+    '">4.3 Waiver:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">The waiver by either party to this Agreement of any one or more defaults, if any, on the part of the other, shall not be construed to operate as a waiver of any other or future defaults, under the same or different terms, conditions or covenants contained in this Agreement.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.4 Integration:</div>' +
+    '">4.4 Integration:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">This Agreement constitutes the entire contractual relationship between the parties with respect to the subject matter of this Agreement and supersedes any oral or written proposals, statements, discussions, negotiations, or other Agreements made prior to the Agreement. This Agreement may be amended at any time by mutual Agreement of the parties, provided that before any amendment shall be operative or valid, it shall be reduced to writing and signed by an authorized representative of both parties.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.5 Assignment:</div>' +
+    '">4.5 Assignment:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">The performance of this Agreement may not be assigned or transferred by either party without the prior written consent of the other.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.6 Notices:</div>' +
+    '">4.6 Notices:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">All notices required to be given hereunder shall be in writing and shall be deemed delivered if (i) personally delivered, (ii) dispatched by certified or registered mail, return receipt requested, postage prepaid, or (iii) sent via a nationally recognized overnight carrier, addressed to the parties as follows:</div>' +
@@ -821,18 +843,18 @@ function rptPageAgreementGeneralProvisions(n, d) {
   // before/after numbers). No clause text was edited, shortened, or reworded — same html this
   // page has always rendered, just carried across two pages instead of one.
   var html2 =
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.7 Limitation of Liability:</div>' +
+    '">4.7 Limitation of Liability:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">To the extent not prohibited by applicable law, in no event shall Contractor be liable for personal injury or any incidental, special, indirect or consequential damages whatsoever including, without limitation, damages for loss of revenue or profits, corruption or loss of data, failure to transmit or receive any data, ministry or business interruption or any other damages or losses, arising out of or related to Contractor&rsquo;s services or this Agreement, however caused, regardless of the theory of liability (whether contract, tort, or otherwise) and even if Contractor or Client has been advised of the possibility of such damages.</div>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">Some jurisdictions do not allow the limitation of liability for personal injury, or of incidental or consequential damages, so this limitation will not apply in such jurisdictions. In no event shall Contractor&rsquo;s total liability to Client for all damages (other than as may be required by applicable law in cases involving personal injury) exceed the amount of Five Thousand Dollars (U.S. $5,000.00). The foregoing limitations will apply even if the above stated remedy fails of its essential purpose.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.8 Dispute Resolution; Exclusive Venue and Jurisdiction:</div>' +
+    '">4.8 Dispute Resolution; Exclusive Venue and Jurisdiction:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">In the event of any dispute arising out of or relating to this Agreement, the parties agree to exclusively use the following process in the following order for such dispute: (a) informally discuss and attempt to resolve the dispute before proceeding with any further action; (b) in the event this is not successful, the parties agree to cooperatively arrange and participate in non-binding mediation; (c) in the event the mediation is not successful, the parties agree to cooperatively arrange and participate in binding arbitration; (d) in the event informal resolution, mediation and binding arbitration are not successful to resolve the dispute to the satisfaction of both parties, either party will then have the right to pursue litigation.</div>' +
@@ -842,9 +864,9 @@ function rptPageAgreementGeneralProvisions(n, d) {
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">The exclusive venue of any action, suit, or proceeding arising out of or relating to this Agreement or any rights or obligations under this Agreement shall lie solely in the courts of the State of Missouri or the United States of America located in Johnson County, Missouri. The expense of any mediation shall be borne equally by Client and Contractor and shall be held in Johnson County.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    '">4.9 Counterparts:</div>' +
+    '">4.9 Counterparts:</h3>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">This Agreement may be executed in any number of counterparts, each of which shall be deemed to be an original and all of which taken together shall constitute one Agreement. To evidence the fact that it has executed this Agreement, a party may send a copy of its executed counterpart to the other party by electronic transmission (including, without limitation, via email or facsimile) and the signature transmitted by such transmission shall be deemed to be that party&rsquo;s original signature for all purposes.</div>';
@@ -864,15 +886,15 @@ function rptPageAgreementSignatureBlock(n, d) {
     '<div style="' +
     _AGR_BODY +
     ';margin-top:10px" contenteditable="true">IN WITNESS WHEREOF, and intending to be legally bound, the parties hereto subscribe their names to this Agreement by their duly authorized officers on the date first above written.</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    ';margin-top:24px">CONTRACTOR:</div>' +
+    ';margin-top:24px">CONTRACTOR:</h3>' +
     '<div style="' +
     _AGR_BODY +
     ';margin-top:24px" contenteditable="true">Control Service Company&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;By: _____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: _____________</div>' +
-    '<div style="' +
+    '<h3 style="' +
     _AGR_SUBHEAD +
-    ';margin-top:24px">CLIENT:</div>' +
+    ';margin-top:24px">CLIENT:</h3>' +
     '<div style="' +
     _AGR_BODY +
     ';margin-top:24px" contenteditable="true">' +
