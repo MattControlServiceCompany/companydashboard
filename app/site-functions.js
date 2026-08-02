@@ -1576,6 +1576,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.02.738',
+    date: '2026-08-02',
+    title: 'Equipment Matrix and Service Proposal updates',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now shows the same equipment total everywhere on the page, with a note explaining why it differs from the Audit Report.',
+      },
+      {
+        type: 'feature',
+        text: 'Service Proposal now lists the specific work scheduled in each month, instead of a general summary.',
+      },
+      {
+        type: 'change',
+        text: 'Boiler and chiller work that previously shared one line in the cost estimate is now listed separately, with the same total cost as before.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.02.737',
     date: '2026-08-02',
     title: 'Audit Report and Service Proposal, clearer wording',
