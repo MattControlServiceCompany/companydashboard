@@ -12908,7 +12908,12 @@ var A36_SEQ_LABEL_OVERRIDE = {
  */
 var A36_SEQ_COL_NAME_PCT = 27;
 var A36_SEQ_COL_SPEC_PCT = 16;
-var A36_SEQ_COL_QTY_PCT = 13;
+// 14, not 13 (2026-08-03, Matt's item 10 rename "Number to Program" -> "Equipment to Program"):
+// the 13% width above was fitted to "NUMBER"; "EQUIPMENT" is a 9-char unbreakable word, the same
+// length as "SEQUENCES", which the sizing note above documents needs 14% to stay inside its own
+// column rule. The extra point comes from the description column's implicit remainder (44 -> 43),
+// the column with the most wrap slack, same as the V-11 rebalance.
+var A36_SEQ_COL_QTY_PCT = 14;
 // Density pass (Matt's review, 2026-08-03): this row renders inside the Control Sequences
 // table's 'rpt-mp-dense' <table> (rptPageASHRAE36CostEstimate, _ratThead) when
 // RPT_MP_DENSE_ACTIVE, which floors to RPT_MULTIPAGE_TABLE_MIN_PX (12px) instead of
@@ -14336,12 +14341,19 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     d.project.name +
     '</div>' +
     '</div>' +
+    // Cover gaps (Matt, 2026-08-03, item 5b): a blank-line gap in three spots — after the
+    // bolded project-name line (here), after the gauges row, and before the stat row below.
+    // Fixed-height spacer divs (~one 14px text line) rather than margin tweaks so the gap is
+    // explicit and survives any future margin consolidation.
+    '<div style="height:16px"></div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
     'This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
+    // Cover gap 2 of 3 (Matt, 2026-08-03, item 5b): blank line after the gauges row.
+    '<div style="height:16px"></div>' +
     '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' +
     finding +
     '</div>' +
@@ -14352,6 +14364,8 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     // CSS rule (energy-department.html) for the matching border-right removal; Matt: "The lines
     // separating the [stats]... should never be done like that in a report, it does not look very
     // human... use no lines at all." Values/labels unchanged, presentation/order only.
+    // Cover gap 3 of 3 (Matt, 2026-08-03, item 5b): blank line before the stat row.
+    '<div style="height:16px"></div>' +
     '<div style="display:flex;gap:16px;margin-top:12px">' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
@@ -14420,6 +14434,21 @@ function rptPageASHRAE36Executive(n, d) {
   var p = d.portfolio;
   // Rule 2.3: reportDate drives footer date; label empty.
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+
+  // Executive Summary intro paragraph (Matt, 2026-08-03, item 7e): one concise plain-language
+  // lead-in at the very top of the page, BEFORE the five sequence paragraphs, explaining what
+  // ASHRAE 36 control sequences are and why the top ones are listed here. Deliberately carries
+  // NO numbers — the paragraphs and table below carry the real, derived figures.
+  var execIntro =
+    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:14px">' +
+    'ASHRAE 36 is the industry standard for how a building automation system should run heating, ' +
+    'cooling, and ventilation equipment. It is built from proven control sequences — programmed ' +
+    'instructions that tell equipment how to respond to conditions such as occupancy, temperature, ' +
+    'and time of day. This audit compared each building’s current programming against that ' +
+    'standard. The sequences summarized below are the ones that apply to the most equipment across ' +
+    'the portfolio, so they are where programming work would have the greatest reach; the table ' +
+    'that follows shows how ready each building is to run them.' +
+    '</div>';
 
   // Top ASHRAE 36 Sequences, as short plain-language paragraphs (first page only).
   // 2026-08-03 (Matt, verbatim): "I want the Top ASHRAE 36 Sequences table removed completely and
@@ -14592,6 +14621,10 @@ function rptPageASHRAE36Executive(n, d) {
   //                                             to the 10.5pt body tier)
   //   tableTitle                     20 ->  32 (26 measured + its 6px margin)
   var _firstChromeH = 0;
+  // Exec intro paragraph (item 7e, 2026-08-03): ~510 chars at 14px/1.6 across the 720px body
+  // (~6 wrapped lines ≈ 135px) + its 14px margin. 150 is the safe-side budget; re-measure per
+  // the protocol above if the copy changes.
+  _firstChromeH += 150;
   if (dcvCallout) _firstChromeH += 146; // measured (occupancy-based ventilation readiness callout)
   // 2026-08-03 (Matt: remove the redundant sequences TABLE, use short paragraphs instead — see
   // this callout's own header comment above for the full rationale). `callout` is no longer one
@@ -14677,14 +14710,16 @@ function rptPageASHRAE36Executive(n, d) {
   // (RPT_SECTION_HEAD_PX) — this heading introduces a table whose own column headers print at
   // 10pt, so at the old 11px (8.25pt authored, 10.005pt after the floor) it was barely larger than
   // the table it names.
+  // Title case (Matt, 2026-08-03, item 8): text-transform:uppercase removed — section headings
+  // print in title case ("Building ASHRAE 36 Readiness"), never ALL CAPS. Same pass removed the
+  // word "continued" from every continuation heading (item 6b): "(2 of 3)", never
+  // "(CONTINUED 2 OF 3)".
   var READINESS_CAPTION_STYLE =
-    'font-size:' +
-    RPT_SECTION_HEAD_PX +
-    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em';
+    'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px';
   function _readinessCaption(chunkIndex, numChunks) {
     var part = '';
     if (numChunks > 1) {
-      part = ' (' + (chunkIndex > 0 ? 'continued, ' : '') + (chunkIndex + 1) + ' of ' + numChunks + ')';
+      part = ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')';
     }
     return '<div style="' + READINESS_CAPTION_STYLE + '">Building ASHRAE 36 Readiness' + part + '</div>';
   }
@@ -14921,24 +14956,29 @@ function rptPageASHRAE36Executive(n, d) {
     // (34.1px; every two-digit label is 26.8px). The bar keeps full proportionality by rescaling
     // to the new track (44/100 = 0.44 px per point) rather than clipping at a ceiling.
     // The Score COLUMN is not narrowed — narrowing it is what makes this worse (see colWidths).
-    var SCORE_TRACK_W = 44;
+    // Score bar redesign (Matt, 2026-08-03, item 9): the V-05 fixed 44px mini-bar with a
+    // floating % label "looks AI-made" — restored the ORIGINAL proportional-bar concept
+    // (pre-R4: fill length reflects the score) but on a clean fixed-length TRACK. The track is
+    // a full visible rail (var(--rpt-progress-bg), the existing progress-track token) that
+    // fills the cell width left of the label, and the colored fill is width:<composite>% OF
+    // that track — a 72% score visibly fills 72% of the rail. Fill color stays
+    // b.statusColor = a36ReadinessColor(composite): green High >=75, orange Partial 50-74,
+    // red Low <50. The % label keeps V-05's fixed right-aligned box so every label shares one
+    // right edge and the layout arithmetic that closed the old column-rule overflow still
+    // holds: track flexes to (inner - gap - label), never past it, so nothing can cross the
+    // Score/Status rule regardless of score.
     var SCORE_GAP_W = 4;
     var SCORE_LABEL_W = 35;
-    var barPx = Math.min(SCORE_TRACK_W, Math.round(b.composite * (SCORE_TRACK_W / 100)));
     var bar =
       '<div style="display:flex;align-items:center;gap:' +
       SCORE_GAP_W +
-      'px">' +
-      '<div style="flex:0 0 ' +
-      SCORE_TRACK_W +
-      'px;height:8px">' +
+      'px;width:100%">' +
+      '<div style="flex:1 1 auto;min-width:0;height:9px;background:var(--rpt-progress-bg);border-radius:2px;overflow:hidden">' +
       '<div style="width:' +
-      barPx +
-      'px;max-width:' +
-      SCORE_TRACK_W +
-      'px;height:8px;background:' +
+      b.composite +
+      '%;height:9px;background:' +
       b.statusColor +
-      ';border-radius:2px;min-width:2px"></div>' +
+      ';border-radius:2px 0 0 2px;min-width:2px"></div>' +
       '</div>' +
       '<span style="flex:0 0 ' +
       SCORE_LABEL_W +
@@ -15105,7 +15145,7 @@ function rptPageASHRAE36Executive(n, d) {
   // table's first chunk is never sharing a page with anything that could starve its row count.
   if (_pushTableToNextPage) {
     resultPages.push(
-      rptPage(n, 'ASHRAE 36 Audit Report: Executive Summary', dcvCallout + callout, {
+      rptPage(n, 'ASHRAE 36 Audit Report: Executive Summary', execIntro + dcvCallout + callout, {
         hideIntHdr: true,
         data: fakeData,
         label: 'Page ' + n + ' — Executive Summary',
@@ -15134,7 +15174,7 @@ function rptPageASHRAE36Executive(n, d) {
     // LAST chunk (Matt's fix #2, 2026-08-03) -- see _refitLastChunkForFootnote above for how the
     // per-chunk row budget accounts for that.
     var bodyHTML =
-      (!_pushTableToNextPage && chunkIndex === 0 ? dcvCallout + callout : '') +
+      (!_pushTableToNextPage && chunkIndex === 0 ? execIntro + dcvCallout + callout : '') +
       _readinessCaption(chunkIndex, numChunks) +
       table +
       (isLastChunk ? tableFootnote : '');
@@ -15448,16 +15488,18 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // the Building Readiness table two pages earlier: "(1 of 2)" on the first page of a split
   // section, "(continued, 2 of 2)" on each later page, spelled out, never abbreviated. A section
   // that fits on one page carries no marker.
+  // Item 6b (Matt, 2026-08-03): the word "continued" is removed from continuation headings —
+  // "Control Sequences (2 of 3)", never "(continued, 2 of 3)". Item 8 (same date): uppercase
+  // transform removed so the heading prints in title case.
   function _seqPartSuffix(idx, total) {
     if (total < 2) return '';
-    return idx === 0 ? ' (1 of ' + total + ')' : ' (continued, ' + (idx + 1) + ' of ' + total + ')';
+    return ' (' + (idx + 1) + ' of ' + total + ')';
   }
   function _ratTitleFor(idx, total) {
     return (
       '<div style="font-size:' +
       RPT_SECTION_HEAD_PX +
-      'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
-      'text-transform:uppercase;letter-spacing:0.04em">' +
+      'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">' +
       _esc(SEQ_SECTION_TITLE + _seqPartSuffix(idx, total)) +
       '</div>'
     );
@@ -15468,7 +15510,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
   var _ratIntro =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.5;margin-bottom:8px">' +
     'A sequence is listed below when it applies to at least one piece of equipment that was ' +
-    'audited. The quantity column counts how many pieces of equipment still need that sequence ' +
+    'audited. The Equipment to Program column counts how many pieces of equipment still need that sequence ' +
     'programmed, and the quantities add to ' +
     rptCount(_seqProgramTotal) +
     ', the number of control sequences reported on the cover page.' +
@@ -15505,7 +15547,9 @@ function rptPageASHRAE36CostEstimate(n, d) {
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;width:' +
     A36_SEQ_COL_QTY_PCT +
-    '%;border:1px solid var(--rpt-border)">Number to Program</th>' +
+    // "Equipment to Program" (Matt, 2026-08-03, item 10): was "Number to Program" — unclear what
+    // the number counted. It counts pieces of equipment still needing that sequence programmed.
+    '%;border:1px solid var(--rpt-border)">Equipment to Program</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Description</th>' +
     '</tr></thead><tbody>';
@@ -16176,10 +16220,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   var infraCallout =
     '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px">' +
     // D-12 (2026-08-03): 10px (7.5pt printed, 10.005pt after the floor) -> the 13pt section tier.
+    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from section headings.
     '<div style="font-size:' +
     RPT_SECTION_HEAD_PX +
-    'px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (Building Automation System Export)</div>' +
+    'px;font-weight:700;' +
+    'color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (Building Automation System Export)</div>' +
     '<div style="display:flex;gap:16px">' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
     '<span style="font-weight:600">Dedicated building automation system power monitoring:</span> ' +
@@ -16334,7 +16379,8 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
         'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         _a36DisplayName(b) +
-        ' (continued, ' +
+        // Item 6b (2026-08-03): "continued" removed from continuation headings — "(2 of 3)".
+        ' (' +
         (chunkIndex + 1) +
         ' of ' +
         numChunks +
@@ -16964,7 +17010,8 @@ function rptPageASHRAE36SetpointReview(n, d) {
         RPT_SECTION_HEAD_PX +
         'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Setpoint Programming Review (continued, ' +
+        // Item 6b (2026-08-03): "continued" removed from continuation headings — "(2 of 3)".
+        'Setpoint Programming Review (' +
         (chunkIndex + 1) +
         ' of ' +
         numChunks +
@@ -17145,8 +17192,9 @@ function _rptA36CoverPricingStrip(d) {
 
   return (
     '<div style="margin-bottom:8px">' +
-    '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;' +
-    'letter-spacing:0.04em;margin-bottom:8px">Cost Summary</div>' +
+    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from section headings.
+    '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);' +
+    'margin-bottom:8px">Cost Summary</div>' +
     rows +
     '</div>'
   );
@@ -17470,7 +17518,8 @@ function rptPageASHRAE36ProposalCover(n, d) {
     // title" / "why is there a date in the Service Proposal title") — neither was requested.
     // margin-top bumped 2px -> 8px so the kicker still reads as a deliberate second line under
     // the title rather than crowding it now that two lines were removed above it.
-    '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.5px;margin-top:8px">Service Proposal</div>' +
+    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed — "Service Proposal".
+    '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);letter-spacing:0.5px;margin-top:8px">Service Proposal</div>' +
     '</div>';
 
   // ── Executive Summary ───────────────────────────────────────────────────
@@ -18344,12 +18393,19 @@ function _rptA36PhaseTableDerive(d, opts) {
     'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
     'line-height:1.5;border:1px solid var(--rpt-border)';
 
-  // headRow (2026-08-03 months-table-as-text rebuild — see rptPageASHRAE36ProposalPhaseTable's
-  // header comment for the full "why"): two columns, Month | What We'll Be Doing, one ROW per
-  // calendar month of the current term (e.g. Aug 2026 .. Dec 2026) instead of the old
-  // one-check-mark-column-per-month matrix. See _pricingProposalTermMonthLabels' header comment for
-  // the month-label derivation.
-  var headRow = '<tr><th style="' + thStyle + '">Month</th><th style="' + thStyle + '">What We’ll Be Doing</th></tr>';
+  // headRow (2026-08-03 SIDE-BY-SIDE rebuild, Matt's item 12: "make months side by side
+  // (columns), work under each"): the months are COLUMNS across the top (Aug 2026 … Dec 2026),
+  // one column per calendar month of the current term, with that month's work described in the
+  // cell under it — replacing the transposed one-row-per-month layout. See
+  // _pricingProposalTermMonthLabels' header comment for the month-label derivation.
+  var headRow =
+    '<tr>' +
+    headCols
+      .map(function (m) {
+        return '<th style="' + thStyle + '">' + esc(m) + '</th>';
+      })
+      .join('') +
+    '</tr>';
 
   // catListStyle: nested sub-block inside the Future Work cell naming the actual priced sequence
   // categories still to come (see _rptA36PhaseSeqCategoryNames' header comment above for the full
@@ -18361,18 +18417,15 @@ function _rptA36PhaseTableDerive(d, opts) {
     'margin-top:6px;padding-top:5px;border-top:1px solid var(--rpt-rule);font-size:8.5px;' +
     'color:var(--rpt-page-text);text-align:left;line-height:1.4';
 
-  // monthLblStyle/monthDescStyle: styles for the 2026-08-03 months-table-as-text rebuild (Matt,
-  // verbatim: "he wants the table to say IN TEXT, month by month, what work is being done" —
-  // replaces the 2026-07-31 rows-as-term-units check-mark matrix entirely; NO check marks, ONE ROW
-  // PER CALENDAR MONTH, not per term unit). font-size 14px = RPT_BODY_PX, the same body-text tier
-  // every other paragraph on this page uses — this is prose, not a dense matrix cell, so it reads
-  // at the document's normal body size rather than the old 9.5px matrix-cell size.
-  var monthLblStyle =
-    'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
-    'line-height:1.4;border:1px solid var(--rpt-border);white-space:nowrap';
-  var monthDescStyle =
-    'padding:8px 10px;font-size:14px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
-    'line-height:1.42;border:1px solid var(--rpt-border)';
+  // monthCellStyle (2026-08-03 side-by-side rebuild): the per-month work description cell under
+  // each month column. RPT_MIN_TEXT_PX (13.34px, the 10pt printed floor — the smallest legal
+  // size) so five concise columns fit a portrait page; vertical-align:top so all five columns
+  // start level.
+  var monthCellStyle =
+    'padding:6px 8px;font-size:' +
+    RPT_MIN_TEXT_PX +
+    'px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
+    'line-height:1.35;border:1px solid var(--rpt-border)';
 
   var monthCount = headCols.length;
   var monthAlloc =
@@ -18410,57 +18463,80 @@ function _rptA36PhaseTableDerive(d, opts) {
   // non-empty because source (1) alone is guaranteed non-empty for any budget-configured project
   // (Ongoing Monitoring & Optimization / Bill Entry / Meeting / Rebate / Training are present in
   // every bucket, including Month 4+ steady state) — MONTH_EMPTY_TEXT is a defensive fallback only.
+  // monthEntries (2026-08-03 side-by-side rebuild, Matt's item 12): one entry per calendar month
+  // of the term, rendered as a COLUMN. Content rules per Matt's spec, verbatim: "Remove ALL
+  // building names — say WHAT we're doing, NOT WHERE", and keep it CONCISE so five columns fit a
+  // portrait page. Each cell is built from the SAME two real data sources as before — never
+  // invented: (1) that month's labor-breakdown bucket (_pricingComputeMonthlyLaborBreakdown,
+  // clamped the same way _pricingRecurringEMLaborHoursForMonth clamps) drives the foundational
+  // lines (finish the ASHRAE 36 Audit Report; set up alarms, automated reports, and trending —
+  // only the categories actually present in that bucket are named); (2) that month's own
+  // _pricingComputeTermMonthlyAllocation bucket, summarized by sequence TYPE via
+  // _rptA36MonthSequenceGroups, drives the "identify and verify equipment, then program" list —
+  // sequence type names only, NO per-building parentheticals (the old "across N buildings (…)"
+  // lists are gone). Recurring every-month EM labor (monitoring, bill entry, review meeting…)
+  // is stated ONCE, term-level, in ongoingServicesHTML below the table rather than repeated in
+  // all five columns.
+  var _SETUP_SHORT = {
+    'Alarm Configuration': 'alarms',
+    'Report Setup': 'automated reports',
+    'Trend Setup & Configuration': 'trending',
+  };
+  var _cellLineStyle = 'margin:0 0 5px';
+  var _cellSeqLineStyle = 'margin:0 0 3px;padding-left:7px;text-indent:-7px';
   var monthEntries = headCols.map(function (m, mi) {
-    var laborSentence = '';
+    var bucketIdx = Math.min(Math.max(mi + 1, 1), 4); // same absolute-month clamp as _pricingRecurringEMLaborHoursForMonth
+    var lines = [];
+    var charLens = [];
     if (bd && bd.months && bd.months.length) {
-      var bucketIdx = Math.min(Math.max(mi + 1, 1), 4); // same absolute-month clamp as _pricingRecurringEMLaborHoursForMonth
-      laborSentence = _rptA36MonthLaborSentence(bd.months[bucketIdx - 1].rows, bucketIdx, esc);
+      var bucketRows = (bd.months[bucketIdx - 1] && bd.months[bucketIdx - 1].rows) || [];
+      var hasAudit = false;
+      var setupNames = [];
+      bucketRows.forEach(function (r) {
+        if (!r || !r.category) return;
+        if (String(r.category).indexOf('Audit Report') === 0) hasAudit = true;
+        else if (_SETUP_SHORT[r.category] && setupNames.indexOf(_SETUP_SHORT[r.category]) === -1)
+          setupNames.push(_SETUP_SHORT[r.category]);
+      });
+      if (hasAudit) {
+        var auditLine = 'Finish the ASHRAE 36 Audit Report.';
+        lines.push('<div style="' + _cellLineStyle + '">' + auditLine + '</div>');
+        charLens.push(auditLine.length);
+      }
+      if (setupNames.length) {
+        var setupLine =
+          bucketIdx === 1
+            ? 'Set up ' + _rptA36JoinList(setupNames) + '.'
+            : 'Continue setting up ' + _rptA36JoinList(setupNames) + '.';
+        lines.push('<div style="' + _cellLineStyle + '">' + setupLine + '</div>');
+        charLens.push(setupLine.length);
+      }
     }
     var seqGroups = _rptA36MonthSequenceGroups((monthBuckets[mi] && monthBuckets[mi].items) || []);
-    var seqSentence = _rptA36MonthSequenceSentence(seqGroups, esc);
-    var text = (laborSentence + ' ' + seqSentence).trim() || esc(MONTH_EMPTY_TEXT);
-    return { label: m, text: text };
+    if (seqGroups.length) {
+      var seqLead = 'Identify and verify equipment, then program:';
+      lines.push('<div style="' + _cellLineStyle + ';font-weight:600">' + seqLead + '</div>');
+      charLens.push(seqLead.length);
+      seqGroups.forEach(function (g) {
+        lines.push('<div style="' + _cellSeqLineStyle + '">' + esc(g.label) + '</div>');
+        charLens.push(g.label.length + 2);
+      });
+    }
+    if (!lines.length) {
+      lines.push('<div style="' + _cellLineStyle + '">' + esc(MONTH_EMPTY_TEXT) + '</div>');
+      charLens.push(MONTH_EMPTY_TEXT.length);
+    }
+    return { label: m, cellHTML: lines.join(''), charLens: charLens };
   });
 
-  function monthRowHTML(entry) {
-    return (
-      '<tr><td style="' +
-      monthLblStyle +
-      '">' +
-      esc(entry.label) +
-      '</td><td style="' +
-      monthDescStyle +
-      '">' +
-      entry.text +
-      '</td></tr>'
-    );
-  }
-
-  // improvementsRowsArr (2026-08-02, months-table page-height fix — name kept from the prior
-  // rebuild, see rptPageASHRAE36ProposalPhaseTable's header comment): one <tr> string per calendar
-  // month (5 for the JOCO term), not per term unit as before. Pagination
-  // (rptPageASHRAE36ProposalPhaseTable) still needs one row at a time to measure/chunk; the
-  // single-page wrapper (_rptA36PhaseTableInnerHTML) still joins the same array.
-  var improvementsRowsArr = monthEntries.length
-    ? monthEntries.map(monthRowHTML)
-    : [
-        '<tr><td style="' +
-          monthLblStyle +
-          '" colspan="2"><span style="font-style:italic">' +
-          esc(MONTH_EMPTY_TEXT) +
-          '</span></td></tr>',
-      ];
-  var improvementsRows = improvementsRowsArr.join('');
-  // improvementsRowLabelLens (2026-08-03): re-purposed from the old LABEL-cell char count to the
-  // DESCRIPTION-cell char count — that column now holds the multi-sentence paragraph and is what
-  // actually drives each row's rendered height; the Month cell is always one short line. See
-  // PHASE_LABEL_CPL's own comment (rptPageASHRAE36ProposalPhaseTable) for the chars-per-line this
-  // is divided by.
-  var improvementsRowLabelLens = monthEntries.length
-    ? monthEntries.map(function (e) {
-        return e.text.length;
+  var bodyRow =
+    '<tr>' +
+    monthEntries
+      .map(function (e) {
+        return '<td style="' + monthCellStyle + '">' + e.cellHTML + '</td>';
       })
-    : [MONTH_EMPTY_TEXT.length];
+      .join('') +
+    '</tr>';
 
   // Facilities Included row REMOVED (2026-07-29, Matt, verbatim: "why would you put continues in
   // phase x for every building? That is redundant. Also, let's just remove the buildings
@@ -18493,9 +18569,8 @@ function _rptA36PhaseTableDerive(d, opts) {
   // appends Future Work as one more row inside THIS table instead of the standalone section
   // _rptA36VisionInnerHTML renders by default. Same content either way
   // (_rptA36FutureWorkInnerHTML), never dollars, never a truncated category list.
-  // colspan fixed at 1 (2026-08-03 months-table-as-text rebuild): this table now has exactly 2
-  // columns (Month, What We'll Be Doing) instead of the old 1-label + N-month-columns matrix, so
-  // there is only one content column left to span.
+  // colspan spans all month columns (2026-08-03 side-by-side rebuild): the months are columns
+  // now, so the Future Work narrative row runs the full table width beneath them.
   var futureRowHTML = '';
   if (opts && opts.futureWorkInline === true && futurePhases.length) {
     var futureAllRows = [];
@@ -18507,11 +18582,11 @@ function _rptA36PhaseTableDerive(d, opts) {
       var futureListText = futureCatNames.map(esc).join(', ');
       futureRowHTML =
         '<tr><td style="' +
-        lblStyle +
-        '">Future Work</td>' +
-        '<td style="' +
         cellStyle +
-        '" colspan="1">' +
+        '" colspan="' +
+        monthCount +
+        '">' +
+        '<span style="font-weight:700">Future Work: </span>' +
         'Beyond the initial term, this service continues to expand sensor installation and program the ' +
         'additional control sequences those sensors make possible, funded through the same monthly ' +
         'service allowance, with no fixed end date.' +
@@ -18524,22 +18599,48 @@ function _rptA36PhaseTableDerive(d, opts) {
     }
   }
 
-  // colgroup (2026-08-03 months-table-as-text rebuild): a narrow Month column (just "Aug 2026"
-  // etc., never wraps) plus one wide description column carrying the joined labor+sequence
-  // paragraph — replaces the old label + one-column-per-month layout.
-  var colgroup = '<colgroup><col style="width:14%"><col></colgroup>';
+  // colgroup (2026-08-03 side-by-side rebuild): equal-width month columns, one per calendar
+  // month of the term (5 for the JOCO term), table-layout:fixed so widths are deterministic.
+  var _monthColPct = Math.floor((100 / Math.max(monthCount, 1)) * 100) / 100;
+  var colgroup =
+    '<colgroup>' +
+    headCols
+      .map(function () {
+        return '<col style="width:' + _monthColPct + '%">';
+      })
+      .join('') +
+    '</colgroup>';
 
   var table =
-    '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
+    '<table style="width:100%;border-collapse:collapse;table-layout:fixed;page-break-inside:avoid;break-inside:avoid">' +
     colgroup +
     '<thead>' +
     headRow +
     '</thead>' +
     '<tbody>' +
-    improvementsRows +
+    bodyRow +
     futureRowHTML +
     '</tbody>' +
     '</table>';
+
+  // tableEstH (2026-08-03 side-by-side rebuild): the table is ONE body row of five side-by-side
+  // cells, so its height is the TALLEST cell. Estimated per cell from each line's char count at
+  // a conservative chars-per-line for the column's inner width ((718.9/monthCount) - 16px padding
+  // at ~6.9px/char for 13.34px Arial => ~18 chars/line at 5 columns), 19px per wrapped line
+  // (13.34px * 1.35 line-height, rounded up) + 5px per block margin + cell padding. Safe-side by
+  // construction (floor CPL, ceil lines); verified against the real JOCO render per this file's
+  // measurement protocol.
+  var _monthColCPL = Math.max(8, Math.floor((718.9 / Math.max(monthCount, 1) - 16) / 6.9));
+  var _maxCellH = 0;
+  monthEntries.forEach(function (e) {
+    var h = 12; // cell padding
+    e.charLens.forEach(function (len) {
+      h += Math.ceil(len / _monthColCPL) * 19 + 5;
+    });
+    if (h > _maxCellH) _maxCellH = h;
+  });
+  var _futureRowEstH = futureRowHTML ? 120 : 0;
+  var tableEstH = 34 + _maxCellH + _futureRowEstH; // 34 = measured-convention thead line + padding/borders
 
   // termNotesHTML: Expected Results (once, term-level) + the standing Ongoing Energy Management
   // Services description (once, term-level, and now stated CONCRETELY instead of the old bare
@@ -18592,11 +18693,11 @@ function _rptA36PhaseTableDerive(d, opts) {
   return {
     fallbackOnly: false,
     intro: intro,
-    colgroupHTML: colgroup,
-    headRowHTML: headRow,
-    rowsHTMLArr: improvementsRowsArr,
-    rowsLabelLenArr: improvementsRowLabelLens,
-    futureRowHTML: futureRowHTML,
+    // 2026-08-03 side-by-side rebuild: the table is a single indivisible block now (months as
+    // columns, one body row), so the per-row pagination fields (rowsHTMLArr/rowsLabelLenArr/
+    // colgroupHTML/headRowHTML) are replaced by the whole-table HTML + its height estimate.
+    tableHTML: table,
+    tableEstH: tableEstH,
     termNotesHTML: termNotesHTML,
     standaloneFutureWorkHTML: standaloneFutureWorkHTML,
     // singlePageHTML: pre-joined exactly as the pre-2026-08-02 function used to return, byte-for-
@@ -18677,128 +18778,40 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // invented literal" rule (see RPT_GEOMETRY_DEFAULTS header comment). This page always renders
   // with hideIntHdr:true (the 'flush' header variant -- no .rpt-int-hdr title bar).
   //
-  // ROW_H/THEAD_H/HEAD_CHROME_FIRST/TAIL_H measured via real headless render against JOCO
-  // (project 1779664753271, 27-building portfolio, 13-unit current term): thead 38px; unit rows
-  // 46px (1-line label) to 60px (2-line label, the common case); Why This Approach block 115px
-  // (18px heading + 97px bullet list -- fixed generic copy, not data-driven, per
-  // _rptA36WhyThisApproachHTML); Recommended Energy Management Services intro heading+paragraph 76px;
-  // term notes (Expected Results + Ongoing Services, always rendered) 116px; standalone Future
-  // Work block (heading + narrative + category list, suppressed when opts.futureWorkInline) an
-  // additional ~200px. Each constant below carries the same kind of safety margin
-  // _buildItemizedPages' own row-height constants do (that function's comment: "keep a safety
-  // margin for longer item names ... that could wrap further") for a longer building/sequence
-  // name or an extra future-work category than JOCO's own data happened to produce.
-  // U2 / RC-A (2026-08-02, D-04 + D-05): every constant below was re-measured in a headless PRINT
-  // render of the real JOCO Service Proposal AFTER the 10pt printed-text floor was applied, and
-  // every one of them had been too small. The flat ROW_H = 66 was the worst: real rows measured
-  // 77-157px, so the paginator put 9 rows on a page that holds 5 and the table ran 313px past the
-  // bottom of the content area and straight through the footer wave band. THEAD_H rose because the
-  // continuation page's narrower month columns wrap "Aug 2026" onto two lines (38px first page,
-  // 59px continuation — 60 covers both). The trailing notes block (Expected Results + Ongoing
-  // Services + standalone Future Work) measured 356px, over the old 340 reservation.
+  // 2026-08-03 side-by-side rebuild (Matt's item 12): the months table is now ONE indivisible
+  // block (months as columns, a single body row of five cells) instead of one row per month, so
+  // the per-row token pagination above is replaced by two block tokens: the table
+  // (der.tableHTML, height der.tableEstH -- see its derivation in _rptA36PhaseTableDerive) and
+  // the always-present trailing notes block. HEAD_CHROME_FIRST / TAIL_H keep their previously
+  // measured values (Why This Approach + intro chrome; term notes + standalone Future Work).
   var g = _rptContentBudget('flush');
-  var THEAD_H = 60; // measured 38 first page / 59 continuation (wrapped month headers); 60 covers both
   var HEAD_CHROME_FIRST = 232; // measured 224 (Why This Approach block + intro heading/paragraph + gaps)
-  var CONT_TITLE_CHROME = 30; // small "(continued)" heading on continuation pages only
   var PHASE_SAFETY_H = 40; // explicit page-level margin, same convention as the Audit pages
   var TAIL_H = opts && opts.futureWorkInline === true ? 150 : 370; // measured 356 in standalone mode
-  // Per-row height from the description cell's character count — 2026-08-03 months-table-as-text
-  // rebuild (replacing the old check-mark matrix's narrow-label chars-per-line model, which no
-  // longer applies now that the description column is a wide, wrapping multi-sentence paragraph).
-  // A chars-per-line/line-count model proved a poor fit here (real wrapped line lengths vary with
-  // word-break points, parentheticals, and building-name lists far more than a flat CPL captures)
-  // -- instead this is a direct linear fit against 5 REAL rows measured via headless render against
-  // JOCO (project 1779664753271): (descLen, renderedHeight) = (708,215.75) (677,195.875)
-  // (709,215.75) (325,116.375) (347,116.375) -> slope ~0.26px/char, intercept ~32px, every point
-  // OVER-estimated by 9-21px by the formula below (PHASE_DESC_PX_PER_CHAR * len +
-  // PHASE_ROW_BASE_H), matching this file's own "never below the real height" safety-margin
-  // convention while staying tight enough that 2-3 month rows now share a page instead of one
-  // check-mark-matrix-era's 321px/row flat overestimate leaving most of each page blank.
-  var PHASE_DESC_PX_PER_CHAR = 0.26;
-  var PHASE_ROW_BASE_H = 40;
-  var _phaseLabelLens = der.rowsLabelLenArr || [];
-  var tokens = der.rowsHTMLArr.map(function (html, i) {
-    var len = _phaseLabelLens[i] || 0;
-    return { type: 'row', estH: Math.ceil(len * PHASE_DESC_PX_PER_CHAR) + PHASE_ROW_BASE_H, html: html };
-  });
-  if (der.futureRowHTML) {
-    // futureWorkInline mode folds Future Work into the table as one more <tr> (der.futureRowHTML)
-    // -- narrower narrative + category sub-list makes this row taller than a plain unit row.
-    // U2 (2026-08-02): 160 -> 214, the same 1.334x the 10pt floor applied to every other text
-    // block on this page. Not directly measured (JOCO ships futureWorkInline off, so this row is
-    // not in the default export) — scaled, and flagged as scaled rather than measured.
-    tokens.push({ type: 'row', estH: 214, html: der.futureRowHTML });
-  }
-  // Always-present trailing block: term notes (+ standalone Future Work unless folded inline
-  // above). Appended LAST so _rptPaginateTokens naturally pushes it onto a fresh page if it does
-  // not fit after the final row chunk, instead of forcing a reserved-but-usually-wasted budget on
-  // every page.
-  tokens.push({ type: 'block', estH: TAIL_H, html: der.termNotesHTML + der.standaloneFutureWorkHTML });
 
-  var firstBudget = g - HEAD_CHROME_FIRST - THEAD_H - PHASE_SAFETY_H;
-  var contBudget = g - CONT_TITLE_CHROME - THEAD_H - PHASE_SAFETY_H;
+  var tokens = [
+    { type: 'block', estH: der.tableEstH, html: der.tableHTML },
+    // Trailing block: term notes (+ standalone Future Work unless folded inline into the table).
+    // Appended LAST so _rptPaginateTokens naturally pushes it onto a fresh page if it does not
+    // fit after the table, instead of overflowing the page.
+    { type: 'block', estH: TAIL_H, html: der.termNotesHTML + der.standaloneFutureWorkHTML },
+  ];
+
+  var firstBudget = g - HEAD_CHROME_FIRST - PHASE_SAFETY_H;
+  var contBudget = g - PHASE_SAFETY_H;
   var chunks = _rptPaginateTokens(tokens, firstBudget, contBudget);
   var numChunks = chunks.length;
 
   var pages = [];
   chunks.forEach(function (chunk, idx) {
-    var rowsHTML = '';
-    var tailHTML = '';
-    var hasRows = false;
-    chunk.forEach(function (t) {
-      if (t.type === 'block') tailHTML += t.html;
-      else {
-        rowsHTML += t.html;
-        hasRows = true;
-      }
-    });
-    // 2026-08-03 (months-table-as-text rebuild, empty-table fix): a chunk can legitimately be
-    // TAIL-ONLY (the term notes + standalone Future Work block landing alone on the final page once
-    // the description-cell text made every month row taller than the old check-mark cells) -- do
-    // not render an empty <table> with only a header row and zero <tr>s in that case; a headed
-    // table with nothing under it reads as a rendering bug, not real content.
-    var table = hasRows
-      ? '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
-        der.colgroupHTML +
-        '<thead>' +
-        der.headRowHTML +
-        '</thead>' +
-        '<tbody>' +
-        rowsHTML +
-        '</tbody>' +
-        '</table>'
-      : '';
-    var head;
-    if (idx === 0) {
-      head = whyHTML + der.intro;
-    } else if (hasRows) {
-      // Repeating header row (der.headRowHTML, above) plus this small continuation title -- so a
-      // reader who reaches page 2 knows both which page this is AND which column is which month.
-      head =
-        // D-12 / V-18 (2026-08-03): 11px -> the 13pt section tier. This was the heading V-18
-        // measured at 9.0pt on Proposal page 3 while the months table's own column headers on the
-        // same page printed at 10.5pt, making a table header the largest text on the page.
-        '<div style="font-size:' +
-        RPT_SECTION_HEAD_PX +
-        'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-        'text-transform:uppercase;letter-spacing:0.04em">Included Improvements (continued ' +
-        (idx + 1) +
-        ' of ' +
-        numChunks +
-        ')</div>';
-    } else {
-      // Tail-only continuation page: no table, so no "Included Improvements (continued...)" table
-      // title either -- tailHTML (Expected Results / Ongoing Services / Future Work) carries its
-      // own headings and reads fine starting straight into them.
-      head = '';
-    }
-    var bodyInner = head + table + tailHTML;
-    var labelSuffix =
-      numChunks > 1
-        ? idx === 0
-          ? ' (1 of ' + numChunks + ')'
-          : ' (continued ' + (idx + 1) + ' of ' + numChunks + ')'
-        : '';
+    var bodyInner = chunk
+      .map(function (t) {
+        return t.html;
+      })
+      .join('');
+    if (idx === 0) bodyInner = whyHTML + der.intro + bodyInner;
+    // Item 6b (2026-08-03): no "continued" wording in continuation labels -- "(2 of 2)".
+    var labelSuffix = numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '';
     pages.push(wrapPage(startN + idx, bodyInner, labelSuffix));
   });
 
@@ -18980,32 +18993,45 @@ function _rptA36VisionInnerHTML(d, opts) {
   // header comment above rptPageASHRAE36ProposalPhaseTable). Not preserved as an opt-in section,
   // per the client's explicit instruction.
 
-  // R7 (2026-08-03, V-20): the disclaimer used to read "Energy savings estimates are based on
-  // published research studies and engineering calculations representing typical applications.
-  // Actual savings depend on equipment condition, occupancy patterns, utility rates, weather
-  // conditions, operational practices, and implementation quality." That caveats numbers this
-  // document does not contain: there is NO savings estimate anywhere in the Service Proposal, by
-  // Matt's explicit 2026-07-29 decision to anchor no fixed total, timeline, or savings figure in a
-  // monthly-agreement deliverable. A caveat about figures that were never presented tells a county
-  // attorney that content was removed and the boilerplate was not, and invites the one question
-  // this document is deliberately built not to raise ("where are the savings numbers?"). Rewritten
-  // to caveat only what the document actually says: the readiness findings it is built on, the
-  // month-by-month schedule, and the allowance. No savings figure was added to close the gap — the
-  // decision to keep dollar figures out of this document stands.
-  var disclaimer =
-    '<div style="' +
-    HEAD +
-    '">Disclaimer</div>' +
-    '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.35;font-style:italic">' +
-    'The improvements listed in this proposal, and the month each one is scheduled for, reflect the ' +
-    'conditions found during the ASHRAE 36 readiness assessment of the ' +
-    esc(displayClient) +
-    ' portfolio. Scheduling may be adjusted as equipment condition, building access, and operating ' +
-    'priorities are confirmed in the field. Work is carried out under the monthly service allowance ' +
-    'described in this proposal, which covers parts, materials, and on-site labor hours.' +
-    '</div>';
+  // Disclaimer REMOVED entirely (Matt, 2026-08-03, item 15: "Remove the Disclaimer paragraph
+  // entirely (stop adding disclaimers)"). The R7/V-20 rewritten scheduling caveat that used to
+  // render here is gone — the Service Proposal now ends on the Long-Term Vision content.
 
-  return implTable + futureWorkFallbackHTML + longTermVision + disclaimer;
+  return implTable + futureWorkFallbackHTML + longTermVision;
+}
+
+/**
+ * _rptA36VisionBlocks — the same content _rptA36VisionInnerHTML returns, but as an ARRAY of
+ * independently placeable blocks (2026-08-03, Matt's item 14 INTERIM whitespace fix): the
+ * proposal's short trailing sections used to each sit on their own fixed-height page, leaving
+ * pages ~24-50% full. generateASHRAE36ProposalHTML now flows these blocks (together with the
+ * ASHRAE 36 Compliance / Full Scope sections when selected) onto shared pages via
+ * _rptPaginateTokens, filling each page before breaking. estH values are safe-side estimates
+ * (headless-verified against real JOCO data at the 10pt floor) for the shared paginator; the
+ * full token-refactor pagination rework remains deferred, per the same decision.
+ */
+function _rptA36VisionBlocks(d, opts) {
+  var blocks = [];
+  var full = _rptA36VisionInnerHTML(d, opts);
+  // Phase-Table-off mode folds the Future Work fallback section into the first block
+  // (implementation plan side) — budget its extra height when that mode is active.
+  var fallbackExtra = opts && opts.proposalPhaseTableOn === false ? 240 : 0;
+  // Split at the Long-Term Vision heading so the Implementation Plan (short) and the Long-Term
+  // Vision (taller: 2 paragraphs + 6 bullets + closing paragraph) can land on different pages
+  // when only one of them fits. The marker is the exact heading div _rptA36VisionInnerHTML
+  // emits; if the split marker is ever not found (copy change), the whole section rides as one
+  // block — degraded packing, never lost content.
+  var marker = '">Long-Term Vision</div>';
+  var idx = full.indexOf(marker);
+  if (idx !== -1) {
+    // Walk back to the opening <div of the heading itself.
+    var open = full.lastIndexOf('<div', idx);
+    blocks.push({ key: 'proposalVision', estH: 150 + fallbackExtra, html: full.slice(0, open) });
+    blocks.push({ key: 'proposalVision', estH: 460, html: full.slice(open) });
+  } else {
+    blocks.push({ key: 'proposalVision', estH: 610 + fallbackExtra, html: full });
+  }
+  return blocks;
 }
 
 /**
@@ -19080,12 +19106,26 @@ function rptPageASHRAE36ProposalPhaseAndVision(n, d, opts) {
  * already used on rptPageASHRAE36ProposalCover / rptPageASHRAE36ProposalPhaseTable (copied, not
  * reinvented, per the companyhub-client-deliverables skill's "find it and copy it" instruction).
  */
-function rptPageASHRAE36ProposalComplianceScope(n, d) {
+/**
+ * _rptA36ComplianceScopeInnerHTML — content-only builder for the "ASHRAE 36 Compliance" section
+ * (extracted 2026-08-03 for Matt's item 14 interim page-flow fix, so the section can share a page
+ * with the other short trailing sections instead of sitting alone on a ~24%-full page).
+ *
+ * Rewritten SUBSTANTIVE (Matt, 2026-08-03, item 13: "make it SUBSTANTIVE... real sensor/actuator
+ * counts, safety-critical programming specifics, freeze protection — NOT remove"): the prior
+ * version was a thin three-bullet restatement of page 1. This version states what compliance
+ * concretely requires using the project's REAL derived figures — the same consolidated
+ * buildCatalogRows sums the Audit Report cover prints (sensors/actuators to install = phase-1
+ * non-ioOnly qty; sequences to program = phase-2 seqKey qty; cached on d._a36CatalogRowsCache,
+ * the same cache rptPageASHRAE36Executive uses) — so the Proposal and the Audit can never
+ * disagree. No invented numbers: if the priced catalog is unavailable, the counts fall back to
+ * the same raw portfolio totals the cover falls back to.
+ */
+function _rptA36ComplianceScopeInnerHTML(d) {
   var displayClient = _rptProposalDisplayClientName(d.project.name);
   function esc(s) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
-  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
@@ -19103,38 +19143,65 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
     budgetFmt = null;
   }
 
-  // R7 (2026-08-03, V-15): this paragraph used to read "Before any ASHRAE 36 optimization sequence
-  // can be programmed at Johnson County, the equipment it runs on needs the sensor and actuator
-  // instrumentation that sequence depends on. This scope covers that instrumentation, along with
-  // safety-critical programming such as freeze protection, the monitoring and safety foundation
-  // every other measure in this service builds on." That is page 1's Assessment Findings sentence
-  // restated almost verbatim ("The first is the instrumentation and safety programming every
-  // ASHRAE 36 sequence depends on (sensors, actuators, and safety-critical programming such as
-  // freeze protection), which must be in place before any optimization sequence can be
-  // programmed."). Page 1 is where that point belongs — it is the argument the whole proposal
-  // rests on and a reader who reads only the summary has to get it there. So the argument stays on
-  // page 1 and is NOT repeated here; this section now does the one job page 1 does not, which is
-  // to itemize what that first category of work actually covers. Nothing was deleted from the
-  // document: the bullets and the funding sentence below are untouched, only the restatement above
-  // them is gone.
-  var bodyHTML =
-    '<div style="padding:8px 48px 4px">' +
+  // Same consolidated counts as the Audit cover (rptPageASHRAE36Cover) — derived, never typed.
+  var p = d.portfolio || {};
+  var sensorCount = p.totalMissingHardwarePoints || 0;
+  var seqCount = p.totalNotReadySequences || 0;
+  try {
+    if (!d._a36CatalogRowsCache) {
+      d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
+    }
+    var _csSensorSum = 0;
+    var _csSeqSum = 0;
+    (d._a36CatalogRowsCache || []).forEach(function (r) {
+      if (!r) return;
+      if (r.phase === 1 && !r.ioOnly) _csSensorSum += r.qty || 0;
+      else if (r.phase === 2 && r.seqKey) _csSeqSum += r.qty || 0;
+    });
+    if ((d._a36CatalogRowsCache || []).length) {
+      sensorCount = _csSensorSum;
+      seqCount = _csSeqSum;
+    }
+  } catch (e) {
+    /* fall back to raw portfolio totals above */
+  }
+
+  return (
     '<div style="' +
     HEAD +
     '">ASHRAE 36 Compliance</div>' +
     '<div style="' +
     BODY +
-    '">The first of the two categories of work named in the Assessment Findings covers the ' +
-    'following across the ' +
+    '">Compliance with ASHRAE 36 is concrete: every piece of heating and cooling equipment must ' +
+    'carry the sensors and actuators its control sequences depend on, its safety programming must ' +
+    'be in place, and the sequences themselves must be programmed and verified on that equipment. ' +
+    'Across the ' +
     esc(displayClient) +
-    ' portfolio:</div>' +
+    ' portfolio, the audit identified <strong>' +
+    rptCount(sensorCount) +
+    ' sensor' +
+    (sensorCount !== 1 ? 's' : '') +
+    ' and actuators to install</strong> and <strong>' +
+    rptCount(seqCount) +
+    ' control sequence' +
+    (seqCount !== 1 ? 's' : '') +
+    ' to program</strong> — the same figures reported in the ASHRAE 36 Audit Report. Reaching ' +
+    'compliance requires:</div>' +
     '<ul style="' +
     UL +
     '">' +
-    '<li>Sensor and actuator instrumentation required by ASHRAE 36 control sequences</li>' +
-    '<li>Safety-critical programming, including freeze protection</li>' +
-    '<li>Verification that each piece of equipment has the points it needs before sequence ' +
+    '<li>Installing the ' +
+    rptCount(sensorCount) +
+    ' sensors and actuators the sequences depend on — carbon dioxide sensors so ventilation can ' +
+    'follow occupancy, the temperature sensors individual sequences call for, and the damper ' +
+    'actuators that let equipment control airflow — matched to each piece of equipment</li>' +
+    '<li>Safety-critical programming, including freeze protection, so equipment protects itself ' +
+    'before any optimization sequence is layered on top</li>' +
+    '<li>Verifying that each piece of equipment has the points it needs before sequence ' +
     'programming begins</li>' +
+    '<li>Programming and verifying the ' +
+    rptCount(seqCount) +
+    ' control sequences on the equipment they run on</li>' +
     '</ul>' +
     (budgetFmt
       ? '<div style="' +
@@ -19143,9 +19210,13 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
         budgetFmt +
         ' per month described earlier in this proposal. It is not billed as a separate project.' +
         '</div>'
-      : '') +
-    '</div>';
+      : '')
+  );
+}
 
+function rptPageASHRAE36ProposalComplianceScope(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  var bodyHTML = '<div style="padding:8px 48px 4px">' + _rptA36ComplianceScopeInnerHTML(d) + '</div>';
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
@@ -19154,12 +19225,16 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
   });
 }
 
-function rptPageASHRAE36ProposalFullScope(n, d) {
+/**
+ * _rptA36FullScopeInnerHTML — content-only builder for the "Full Scope" section (extracted
+ * 2026-08-03 for Matt's item 14 interim page-flow fix — same reason as
+ * _rptA36ComplianceScopeInnerHTML above). Content unchanged.
+ */
+function _rptA36FullScopeInnerHTML(d) {
   var displayClient = _rptProposalDisplayClientName(d.project.name);
   function esc(s) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
-  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
@@ -19177,8 +19252,7 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
     budgetFmt = null;
   }
 
-  var bodyHTML =
-    '<div style="padding:8px 48px 4px">' +
+  return (
     '<div style="' +
     HEAD +
     '">Full Scope</div>' +
@@ -19205,9 +19279,13 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
         budgetFmt +
         ' per month described earlier in this proposal, phased in alongside the instrumentation ' +
         'work rather than billed as a separate project.</div>'
-      : '') +
-    '</div>';
+      : '')
+  );
+}
 
+function rptPageASHRAE36ProposalFullScope(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  var bodyHTML = '<div style="padding:8px 48px 4px">' + _rptA36FullScopeInnerHTML(d) + '</div>';
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
     hideIntHdr: true,
@@ -19460,7 +19538,7 @@ function _rptA36TierDetailToggleHTML(key) {
     '\')}" ' +
     'style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;' +
     'padding:4px 0;' +
-    'font-size:9px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em">' +
+    'font-size:9px;font-weight:700;color:var(--rpt-blue)">' +
     '<span class="rpt-tier-chev">▸</span>' +
     '<span class="rpt-tier-toggle-label">Install &amp; Programming Detail</span>' +
     '</div>'
@@ -19874,8 +19952,8 @@ function _rptA36RecommendedTimelineHTML(d) {
     // D-12 (2026-08-03): 11px -> the 13pt section tier.
     '<div style="font-size:' +
     RPT_SECTION_HEAD_PX +
-    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-    'text-transform:uppercase;letter-spacing:0.04em">Recommended Energy Management Services: Phased Implementation Sequence</div>' +
+    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from section headings.
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Recommended Energy Management Services: Phased Implementation Sequence</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
     colgroup +
     '<thead><tr>' +
@@ -19977,8 +20055,8 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   ];
 
   var titleBlock =
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-    'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate</div>';
+    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from section headings.
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Cost Estimate</div>';
 
   // Rewritten 2026-07-27 (coordinator review of the monthly-framing fix): the prior copy said
   // "Each figure is an independent estimate of the total cost for that scope... totals should be
@@ -20032,7 +20110,8 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // pattern banned elsewhere in this report (rule 2, "real bordered grid table, not ad-hoc
   // lines"). Every cell in this table now carries a full 1px border on all 4 sides.
   var lblStyle =
-    'padding:10px 10px 2px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;' +
+    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed from display labels.
+    'padding:10px 10px 2px;font-size:9px;font-weight:700;' +
     'color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var lblRow =
     '<tr>' +
@@ -20342,7 +20421,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // text block on this and the Audit Report's pages.
         svcBlock =
           '<div class="rpt-a36-callout" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-top:12px">' +
-          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;' +
+          '<div style="font-size:10px;font-weight:700;' +
           'margin-bottom:4px">Monthly Energy Management Service Agreement</div>' +
           '<div>' +
           _svcAllowanceStr +
@@ -20586,14 +20665,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // Readiness above): page 1 gets its own "(1 of N)" instead of only continuation pages
         // carrying a fraction.
         var itTitle =
-          '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-          'text-transform:uppercase;letter-spacing:0.04em">Cost Estimate: Itemized Measures, ' +
+          // Items 6b/8 (2026-08-03): title case (uppercase transform removed) and no
+          // "continued" in continuation headings — "(2 of 3)".
+          '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Cost Estimate: Itemized Measures, ' +
           _esc(c.label) +
-          (numChunks > 1
-            ? idx > 0
-              ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')'
-              : ' (1 of ' + numChunks + ')'
-            : '') +
+          (numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '') +
           '</div>';
         var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
         pages.push(
@@ -20806,14 +20882,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         // Readiness above): page 1 gets its own "(1 of N)" instead of only continuation pages
         // carrying a fraction.
         var pageTitle =
-          '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
-          'text-transform:uppercase;letter-spacing:0.04em">Install &amp; Programming Detail, ' +
+          // Items 6b/8 (2026-08-03): title case (uppercase transform removed) and no
+          // "continued" in continuation headings — "(2 of 3)".
+          '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Install &amp; Programming Detail, ' +
           _esc(c.label) +
-          (numChunks > 1
-            ? idx > 0
-              ? ' (continued ' + (idx + 1) + ' of ' + numChunks + ')'
-              : ' (1 of ' + numChunks + ')'
-            : '') +
+          (numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '') +
           '</div>';
         pages.push(
           rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', pageTitle + rowsHTML, {
@@ -20878,21 +20951,21 @@ function rptPageASHRAE36PointInventory(n, d) {
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-page-text)">' +
     inv.totalAll.toLocaleString() +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Total Building Automation System Points Inventoried</div>' +
+    '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text);margin-top:3px">Total Building Automation System Points Inventoried</div>' +
     '</div>' +
     // Card 2: ASHRAE-mapped points
     '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
     inv.totalASHRAE.toLocaleString() +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">ASHRAE 36 Mapped Points</div>' +
+    '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text);margin-top:3px">ASHRAE 36 Mapped Points</div>' +
     '</div>' +
     // Card 3: Other BAS points
     '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-page-text)">' +
     inv.totalOther.toLocaleString() +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Other Building Automation System Points Inventoried</div>' +
+    '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text);margin-top:3px">Other Building Automation System Points Inventoried</div>' +
     '</div>' +
     // Card 4: ASHRAE coverage of total inventory
     '<div class="rpt-a36-stat-card" style="flex:1;min-width:120px;padding:8px 10px;text-align:center">' +
@@ -20900,7 +20973,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     totalPct +
     '%' +
     '</div>' +
-    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--rpt-page-text);margin-top:3px">Points Mapped to ASHRAE 36</div>' +
+    '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text);margin-top:3px">Points Mapped to ASHRAE 36</div>' +
     '</div>' +
     '</div>';
 
@@ -21080,7 +21153,8 @@ function rptPageASHRAE36PointInventory(n, d) {
         RPT_SECTION_HEAD_PX +
         'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Point Inventory Completeness (continued, ' +
+        // Item 6b (2026-08-03): "continued" removed from continuation headings — "(2 of 3)".
+        'Point Inventory Completeness (' +
         (chunkIndex + 1) +
         ' of ' +
         numChunks +
@@ -21339,13 +21413,65 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // Long-Term Vision / Disclaimer sequence intact as one closing block, and keeps the single
   // content builder both the standalone and the legacy merged page share.
 
-  // 2026-07-29 (fix/proposal-remove-fixed-anchors): two NEW independent opt-in sections, both
+  // ── Trailing-section page flow (Matt, 2026-08-03, item 14 — INTERIM fix) ──────────────────
+  // The short trailing sections (ASHRAE 36 Compliance, Full Scope, Implementation Plan,
+  // Long-Term Vision) used to each render on their own fixed-height page, leaving big blank
+  // gaps (the Compliance page measured ~24% full on the live JOCO export). They now flow as
+  // blocks through _rptPaginateTokens so they SHARE pages and fill down before breaking.
+  // Deliberately interim: section-level blocks only, no token-refactor of every section builder
+  // (that full pagination rework is logged and deferred). The legacy standalone page functions
+  // (rptPageASHRAE36ProposalComplianceScope/...FullScope/...Vision) are kept intact.
+  var _trailFakeData = { project: { client: data.project.name }, period: { label: '', reportDate: data.rawDate } };
+  var _trailTokens = [];
+  function _flushTrailing() {
+    if (!_trailTokens.length) return;
+    // Same 'flush' geometry every other hideIntHdr proposal page budgets from, minus the same
+    // 40px page-level safety margin convention the Audit pages use.
+    var _tBudget = _rptContentBudget('flush') - 40;
+    var _tChunks = _rptPaginateTokens(_trailTokens, _tBudget, _tBudget);
+    _tChunks.forEach(function (chunk) {
+      var inner = chunk
+        .map(function (t) {
+          return t.html;
+        })
+        .join('<div style="height:14px"></div>');
+      var pageHTML = rptPage(pageNum, 'ASHRAE 36 Proposal', '<div style="padding:8px 48px 4px">' + inner + '</div>', {
+        hero: false,
+        hideIntHdr: true,
+        data: _trailFakeData,
+        label: 'Page ' + pageNum + ' — ' + chunk[0].labelText,
+      });
+      pages.push(_tagA36Section(pageHTML, chunk[0].key));
+      pageNum++;
+    });
+    _trailTokens = [];
+  }
+
+  // 2026-07-29 (fix/proposal-remove-fixed-anchors): two independent opt-in sections, both
   // default OFF (strict === true opt-in, matching the costEstimate/proposalScope precedent below)
-  // — see ASHRAE36_SECTIONS.proposal and rptPageASHRAE36ProposalComplianceScope/...FullScope's
-  // header comment.
+  // — see ASHRAE36_SECTIONS.proposal and _rptA36ComplianceScopeInnerHTML/_rptA36FullScopeInnerHTML.
+  // estH values are safe-side estimates for the section-block flow above (headless-verified
+  // against real JOCO data at the 10pt floor).
   if (s.complianceScope === true)
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalComplianceScope(pageNum++, data), 'complianceScope'));
-  if (s.fullScope === true) pages.push(_tagA36Section(rptPageASHRAE36ProposalFullScope(pageNum++, data), 'fullScope'));
+    _trailTokens.push({
+      type: 'block',
+      key: 'complianceScope',
+      labelText: 'ASHRAE 36 Compliance',
+      estH: 500,
+      html: _rptA36ComplianceScopeInnerHTML(data),
+    });
+  if (s.fullScope === true)
+    _trailTokens.push({
+      type: 'block',
+      key: 'fullScope',
+      labelText: 'Full Scope',
+      estH: 420,
+      html: _rptA36FullScopeInnerHTML(data),
+    });
+  // The legacy Scope of Work and priced Cost Estimate sections below are full-page (multi-page)
+  // renderers that cannot join the block flow — flush any accumulated trailing blocks first so
+  // document order is preserved.
+  if (s.proposalScope === true || s.costEstimate === true) _flushTrailing();
 
   // Legacy detailed Scope of Work page — now opt-in (default OFF), kept for capability parity.
   if (s.proposalScope === true)
@@ -21369,12 +21495,22 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
     });
   }
 
-  // Implementation Plan / Long-Term Vision / Disclaimer — LAST, always. See the R7 (2026-08-03,
-  // D-16) comment above the complianceScope branch for why this moved down here: this page ends
-  // with the Disclaimer, and nothing may print after a disclaimer.
+  // Implementation Plan / Long-Term Vision — LAST, always (D-16 story order; the Disclaimer that
+  // used to close this section was removed entirely per Matt's 2026-08-03 item 15). Joins the
+  // trailing-section flow (item 14) so it shares a page with Compliance/Full Scope when they fit,
+  // instead of always opening a fresh page while the prior one sits mostly blank.
   if (s.proposalVision !== false) {
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalVision(pageNum++, data, phaseOpts), 'proposalVision'));
+    _rptA36VisionBlocks(data, phaseOpts).forEach(function (blk) {
+      _trailTokens.push({
+        type: 'block',
+        key: blk.key,
+        labelText: 'Implementation Plan and Long-Term Vision',
+        estH: blk.estH,
+        html: blk.html,
+      });
+    });
   }
+  _flushTrailing();
 
   // 2026-07-22: Expected Outcomes page removed entirely (rptPageASHRAE36ProposalOutcomes,
   // _proposalOutcomeCard, _timelineStep deleted, plus its 'proposalOutcomes' settings checkbox)

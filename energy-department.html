@@ -2083,8 +2083,14 @@
         gap: 50px;
       }
 
-      /* -- Page Label -- */
+      /* -- Page Label --
+         2026-08-03 (Matt's review): the "PAGE N — SECTION" grey label above each page was
+         preview-only chrome (already display:none in print) but Matt does not want it in the
+         on-screen view either. Suppressed globally; the .rpt-pl div is still emitted by
+         rptPage() so sibling-based DOM structure (e.g. exportReportToDocx's .rpt-page-only
+         selection) is unchanged. */
       .rpt-pl {
+        display: none;
         color: var(--rpt-page-label);
         font-size: 14px;
         margin-bottom: 4px;
