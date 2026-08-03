@@ -12630,7 +12630,10 @@ var ASHRAE36_SECTIONS = {
       defaultOn: false,
       indent: true,
     },
-    { key: 'proposalVision', label: 'Implementation Plan & Long-Term Vision', group: 'Proposal', defaultOn: true },
+    // R7 (2026-08-03, V-23): "&" spelled out, matching every other label and the section's own
+    // headings in the rendered document (which are now "Implementation Plan" and "Long-Term
+    // Vision", two separate headings — see _rptA36VisionInnerHTML).
+    { key: 'proposalVision', label: 'Implementation Plan and Long-Term Vision', group: 'Proposal', defaultOn: true },
     // 2026-07-29 (fix/proposal-remove-fixed-anchors, Matt's approved spec): two NEW independent
     // opt-in sections, BOTH default OFF. Each describes what that scope of work ENTAILS (categories
     // of work) and states it is funded through the monthly service allowance — never a whole-scope
@@ -16915,8 +16918,15 @@ function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
     'Beyond the initial term, this service continues to expand sensor installation across ' +
     'additional equipment and zones and to program the control sequences those sensors make ' +
     'possible, until every building has the same level of sensor coverage and automated control. ' +
-    'Future work is funded through the same monthly service allowance as it is completed, with no ' +
-    'fixed end date.';
+    // R7 (2026-08-03): this sentence used to read "Future work is funded through the same monthly
+    // service allowance as it is completed, with no fixed end date." A near-duplicate census over
+    // the rendered PDF (every sentence pair scored with difflib) flagged it at 0.68 against the
+    // Implementation Plan's "Each stage of the work is funded through the monthly service allowance
+    // as it is completed, with no fixed end date; the service continues for as long as improvement
+    // opportunities remain." The funding-and-no-end-date mechanism belongs to the Implementation
+    // Plan, which is where a reader looks for it; all this block needs to say is that future work
+    // is not a separate bill. Shortened to the part that is not said anywhere else.
+    'Future work is included in the same monthly service allowance.';
   var catHTML = '';
   if (cats.length) {
     catHTML =
@@ -16975,27 +16985,25 @@ function _rptA36PhaseTableDerive(d, opts) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
 
-  var budgetFmt = null;
-  try {
-    if (typeof _pricingGetBudget === 'function') {
-      var _b = _pricingGetBudget(d.project.id);
-      if (_b && _b.amount != null && !isNaN(_b.amount) && Number(_b.amount) > 0) {
-        budgetFmt = '$' + Math.round(Number(_b.amount)).toLocaleString('en-US');
-      }
-    }
-  } catch (e) {
-    budgetFmt = null;
-  }
-
   // Density pass (2026-07-27, page-2/3 merge): margin/line-height tightened (spacing only, font
   // size unchanged) — see rptPageASHRAE36ProposalPhaseAndVision's header comment.
+  //
+  // R7 (2026-08-03, V-13 + V-14): this block used to open with a SECOND
+  // "Recommended Energy Management Services" heading and a paragraph that made the same
+  // recommendation rptPageASHRAE36ProposalRecommendedServicesCover already makes one page earlier,
+  // in near-identical words ("...recommends a phased Energy Management Services approach funded
+  // through a planned budget of approximately $6,250 per month..."). Two consequences, both
+  // reported off the live 2026-08-02 export: the proposal recommended the same thing twice under
+  // one heading (reads as a copy-paste error), and the price softened from the firm "$6,250 per
+  // month" stated on the previous page to "approximately $6,250 per month" here, contradicting the
+  // Agreement, which sets $6,250 as a MINIMUM monthly spend. The recommendation is now made ONCE,
+  // on the page before this one; this is a plain lead-in to the schedule that follows and states
+  // no price at all, so there is no second figure that can drift from the first. budgetFmt was
+  // deleted with the sentence that used it (it had no other reader in this function).
   var intro =
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Recommended Energy Management Services</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:4px">' +
-    'Based on the ASHRAE 36 assessment findings, Control Service Company recommends a ' +
-    'phased Energy Management Services approach' +
-    (budgetFmt ? ' funded through a planned budget of approximately ' + budgetFmt + ' per month,' : '') +
-    ' focused on the highest-value opportunities across the portfolio.' +
+    'The schedule below lists the improvements included in the current term and the month each one ' +
+    'is carried out.' +
     '</div>';
 
   // 2026-07-29 (months + Future Work rebuild, replacing the PRICING_PROPOSAL_MAX_PHASES=3 cap —
@@ -17013,7 +17021,12 @@ function _rptA36PhaseTableDerive(d, opts) {
       'A phased facility rollout will populate here once pricing data has been imported and priced ' +
       'for this project.' +
       '</div>';
-    return { fallbackOnly: true, intro: intro, fallbackHTML: fallback };
+    // R7 (2026-08-03): intro is deliberately EMPTY here. It is now a lead-in that promises "the
+    // schedule below" — in this branch there is no schedule below, only the "pricing not imported
+    // yet" notice, and printing both would have the page contradict itself in one line. The old
+    // intro was a self-contained recommendation paragraph, so it read fine ahead of the notice;
+    // this one does not, and the notice already says everything this branch has to say.
+    return { fallbackOnly: true, intro: '', fallbackHTML: fallback };
   }
 
   // monthLabels: one label per calendar month of the current term (e.g. "Aug 2026" .. "Dec 2026")
@@ -17679,30 +17692,58 @@ function _rptA36VisionInnerHTML(d, opts) {
         ? monthLabels[0] + ' – ' + monthLabels[monthLabels.length - 1]
         : monthLabels[0]
       : termPhases[0].label;
-    // "table above" only makes sense when the Phase Table page actually ran ahead of this one —
-    // when it's off, say what the term is without pointing at a table that isn't in the document.
+    // "the schedule earlier in this proposal" only makes sense when the Phase Table page actually
+    // ran ahead of this one — when it's off, say what the term is without pointing at a table that
+    // isn't in the document.
+    //
+    // R7 (2026-08-03, V-21): the cross-reference used to read "...is detailed in the Recommended
+    // Energy Management Services table above." Two things were wrong with it. The table is not
+    // captioned "Recommended Energy Management Services" — its caption/first column header reads
+    // "Included Improvements" — so a reader hunting for that name finds nothing. And it is not
+    // "above": it sits one to two pages BACK, because the schedule paginates across pages
+    // (rptPageASHRAE36ProposalPhaseTable). The reference now names the real caption and points the
+    // right direction.
     var termRangeIntro = phaseTableOn
       ? 'The current term (' +
         esc(termRangeLabel) +
-        ') is detailed in the Recommended Energy Management Services table above.'
+        ') is set out in the Included Improvements schedule earlier in this proposal.'
       : 'The current term runs ' + esc(termRangeLabel) + '.';
+    // R7 (2026-08-03, V-22): the second sentence used to assert "Phases are sequenced by expected
+    // return on investment: the highest-return measures come first." Ranking by what the work
+    // returns to the client IS the real rule and is NOT being dropped — but the schedule this
+    // sentence points at carries no return, savings, cost, or priority column, so nothing the
+    // client can see demonstrates the ranking, and stating it as a demonstrated property of the
+    // table invites "then show me the numbers". Reworded to state it as the rule Control Service
+    // Company applies when it builds the schedule (which the visible month ordering is the OUTPUT
+    // of), rather than as something the table proves.
+    //
+    // R7 (2026-08-03, V-23): heading was "Implementation Plan &amp; Long-Term Vision" — the only
+    // heading in the document using an ampersand where every other spells out "and", AND it named
+    // "Long-Term Vision", which appears again as its own heading one paragraph below. Both are
+    // fixed by naming this section for what it actually contains ("Implementation Plan"); the
+    // Long-Term Vision heading below now owns that subject outright instead of sharing it.
     implTable =
       '<div style="' +
       HEAD +
-      '">Implementation Plan &amp; Long-Term Vision</div>' +
+      '">Implementation Plan</div>' +
       '<div style="' +
       BODY +
       '">' +
       termRangeIntro +
-      ' Phases are sequenced by ' +
-      'expected return on investment: the highest-return measures come first. Each phase is funded ' +
-      'through the monthly service allowance as it is completed, with no fixed end date; the service ' +
-      'continues for as long as improvement opportunities remain.</div>';
+      ' Control Service Company orders the work by the return each ' +
+      'improvement is expected to deliver to ' +
+      esc(displayClient) +
+      ', so the improvements expected to return the most are carried out first. Each stage of the ' +
+      'work is funded through the monthly service allowance as it is completed, with no fixed end ' +
+      'date; the service continues for as long as improvement opportunities remain.</div>';
   } else {
+    // R7 (2026-08-03, V-23): same heading fix as the priced branch above — this
+    // no-pricing-data fallback carried its own copy of the ampersand heading and would have
+    // reintroduced it for any project that has not been priced yet.
     implTable =
       '<div style="' +
       HEAD +
-      '">Implementation Plan &amp; Long-Term Vision</div>' +
+      '">Implementation Plan</div>' +
       '<div style="' +
       BODY +
       '">A calendar-phase schedule will populate here once pricing data has been imported and ' +
@@ -17757,14 +17798,29 @@ function _rptA36VisionInnerHTML(d, opts) {
   // header comment above rptPageASHRAE36ProposalPhaseTable). Not preserved as an opt-in section,
   // per the client's explicit instruction.
 
+  // R7 (2026-08-03, V-20): the disclaimer used to read "Energy savings estimates are based on
+  // published research studies and engineering calculations representing typical applications.
+  // Actual savings depend on equipment condition, occupancy patterns, utility rates, weather
+  // conditions, operational practices, and implementation quality." That caveats numbers this
+  // document does not contain: there is NO savings estimate anywhere in the Service Proposal, by
+  // Matt's explicit 2026-07-29 decision to anchor no fixed total, timeline, or savings figure in a
+  // monthly-agreement deliverable. A caveat about figures that were never presented tells a county
+  // attorney that content was removed and the boilerplate was not, and invites the one question
+  // this document is deliberately built not to raise ("where are the savings numbers?"). Rewritten
+  // to caveat only what the document actually says: the readiness findings it is built on, the
+  // month-by-month schedule, and the allowance. No savings figure was added to close the gap — the
+  // decision to keep dollar figures out of this document stands.
   var disclaimer =
     '<div style="' +
     HEAD +
     '">Disclaimer</div>' +
     '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.35;font-style:italic">' +
-    'Energy savings estimates are based on published research studies and engineering calculations ' +
-    'representing typical applications. Actual savings depend on equipment condition, occupancy ' +
-    'patterns, utility rates, weather conditions, operational practices, and implementation quality.' +
+    'The improvements listed in this proposal, and the month each one is scheduled for, reflect the ' +
+    'conditions found during the ASHRAE 36 readiness assessment of the ' +
+    esc(displayClient) +
+    ' portfolio. Scheduling may be adjusted as equipment condition, building access, and operating ' +
+    'priorities are confirmed in the field. Work is carried out under the monthly service allowance ' +
+    'described in this proposal, which covers parts, materials, and on-site labor hours.' +
     '</div>';
 
   return implTable + futureWorkFallbackHTML + longTermVision + disclaimer;
@@ -17864,6 +17920,20 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
     budgetFmt = null;
   }
 
+  // R7 (2026-08-03, V-15): this paragraph used to read "Before any ASHRAE 36 optimization sequence
+  // can be programmed at Johnson County, the equipment it runs on needs the sensor and actuator
+  // instrumentation that sequence depends on. This scope covers that instrumentation, along with
+  // safety-critical programming such as freeze protection, the monitoring and safety foundation
+  // every other measure in this service builds on." That is page 1's Assessment Findings sentence
+  // restated almost verbatim ("The first is the instrumentation and safety programming every
+  // ASHRAE 36 sequence depends on (sensors, actuators, and safety-critical programming such as
+  // freeze protection), which must be in place before any optimization sequence can be
+  // programmed."). Page 1 is where that point belongs — it is the argument the whole proposal
+  // rests on and a reader who reads only the summary has to get it there. So the argument stays on
+  // page 1 and is NOT repeated here; this section now does the one job page 1 does not, which is
+  // to itemize what that first category of work actually covers. Nothing was deleted from the
+  // document: the bullets and the funding sentence below are untouched, only the restatement above
+  // them is gone.
   var bodyHTML =
     '<div style="padding:8px 48px 4px">' +
     '<div style="' +
@@ -17871,12 +17941,10 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
     '">ASHRAE 36 Compliance</div>' +
     '<div style="' +
     BODY +
-    '">Before any ASHRAE 36 optimization sequence can be programmed at ' +
+    '">The first of the two categories of work named in the Assessment Findings covers the ' +
+    'following across the ' +
     esc(displayClient) +
-    ', the equipment it runs on needs the sensor and actuator instrumentation that sequence ' +
-    'depends on. This scope covers that instrumentation, along with safety-critical programming ' +
-    'such as freeze protection, the monitoring and safety foundation every other measure in this ' +
-    'service builds on.</div>' +
+    ' portfolio:</div>' +
     '<ul style="' +
     UL +
     '">' +
@@ -20039,9 +20107,18 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
       pageNum++;
     });
   }
-  if (s.proposalVision !== false) {
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalVision(pageNum++, data, phaseOpts), 'proposalVision'));
-  }
+  // R7 (2026-08-03, D-16): the proposalVision page used to be pushed HERE, immediately after the
+  // schedule and BEFORE the scope sections. Because that page ends with the Disclaimer, every
+  // opt-in content section that followed it ("ASHRAE 36 Compliance", "Full Scope", "Scope of Work",
+  // the priced Cost Estimate) printed AFTER the disclaimer that is supposed to close the document.
+  // On the live 2026-08-02 Johnson County export that put a whole scope section on page 6, after
+  // the page-5 disclaimer, where it reads as an appendix mistake. A disclaimer ends a document, so
+  // this page is now pushed LAST (see below, after the costEstimate branch) — which also puts the
+  // proposal in story order: what was assessed, what is recommended, when each improvement happens,
+  // what the scope covers, then the plan and the closing caveat. Moving the push rather than
+  // splitting the Disclaimer out of _rptA36VisionInnerHTML keeps the Implementation Plan /
+  // Long-Term Vision / Disclaimer sequence intact as one closing block, and keeps the single
+  // content builder both the standalone and the legacy merged page share.
 
   // 2026-07-29 (fix/proposal-remove-fixed-anchors): two NEW independent opt-in sections, both
   // default OFF (strict === true opt-in, matching the costEstimate/proposalScope precedent below)
@@ -20071,6 +20148,13 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
       pages.push(_tagA36Section(pg, 'costEstimate'));
       pageNum++;
     });
+  }
+
+  // Implementation Plan / Long-Term Vision / Disclaimer — LAST, always. See the R7 (2026-08-03,
+  // D-16) comment above the complianceScope branch for why this moved down here: this page ends
+  // with the Disclaimer, and nothing may print after a disclaimer.
+  if (s.proposalVision !== false) {
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalVision(pageNum++, data, phaseOpts), 'proposalVision'));
   }
 
   // 2026-07-22: Expected Outcomes page removed entirely (rptPageASHRAE36ProposalOutcomes,
