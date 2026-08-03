@@ -993,6 +993,41 @@ var RPT_MIN_TEXT_PT = 10; // standing rule: nothing below 10pt in a client docum
 var RPT_MIN_TEXT_PX = Math.ceil((RPT_MIN_TEXT_PT / RPT_PRINT_PT_PER_PX) * 100) / 100; // 13.34px
 
 /**
+ * RPT_DOC_TITLE_PX / RPT_SECTION_HEAD_PX / RPT_BODY_PX — the report type hierarchy
+ * (D-12 / V-33 / V-18, DEFECTS-2026-08-02.md + VISUAL-REVIEW-2026-08-02.md, fixed 2026-08-03).
+ *
+ * WHY THIS EXISTS. Every section heading in the Audit and the Proposal was authored at 11px or
+ * 12px, which prints at 8.25pt / 9.0pt on the 0.75 px-to-pt print path. Once the 10pt floor
+ * (_rptApplyMinFontFloor, above) landed they all clamped to exactly 10.005pt — still BELOW the
+ * 10.5pt body text they introduce, and below the 10.5pt column headers of the tables inside them.
+ * Measured on the Proposal: "Executive Summary", "Assessment Findings", "Recommended Energy
+ * Management Services", "Why This Approach", "Future Work", "Implementation Plan", "Long-Term
+ * Vision" and "Disclaimer" all rendered at 10.0pt against 10.5pt body, and on Proposal page 3 the
+ * largest text on the whole page was a table column header. The document outline was inverted on
+ * every page: top-level sections looked subordinate to their own content.
+ *
+ * THE FLOOR ALONE CANNOT FIX THIS. A floor can only stop text going below a minimum; it cannot
+ * make a heading outrank body text that is already above the minimum. The heading sizes
+ * themselves have to go up, which is what these three constants do.
+ *
+ * THE TIERS (px authored / pt printed at 0.75):
+ *   24px    = 18.0pt   document title (the cover title of each document)
+ *   17.34px = 13.005pt section heading (every heading that introduces body text or a table)
+ *   14px    = 10.5pt   body text, list text, table cells (already the file's convention)
+ * 17.34, not 17.33: 17.33 * 0.75 = 12.9975pt, which can display as 12.99. 17.34 lands at 13.005
+ * and can never round down, exactly as RPT_MIN_TEXT_PX does at the floor.
+ *
+ * NOT CHANGED HERE, deliberately: the interior running page-title bar (.rpt-pg-title, 19px =
+ * 14.25pt) lives in energy-department.html, is shared by every report type, and is height-boxed
+ * inside the 60px --rpt-hdr-h chrome bar next to .rpt-info. It already outranks the new 13pt
+ * section tier, so the outline reads document title 18pt > running page title 14.25pt > section
+ * heading 13pt > body 10.5pt with no inversion at any level.
+ */
+var RPT_DOC_TITLE_PX = 24; // 18.0pt printed
+var RPT_SECTION_HEAD_PX = 17.34; // 13.005pt printed
+var RPT_BODY_PX = 14; // 10.5pt printed
+
+/**
  * _rptTextLineH — height of ONE rendered line of report body text, in px, for a given CSS
  * line-height multiplier. Pagination estimates that count text lines must call this instead of
  * hardcoding "15px per line" or "20px per line": those literals were all measured before the 10pt
@@ -12530,31 +12565,31 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
  */
 var ASHRAE36_SEQUENCE_PLAIN = {
   ahu_sat_reset:
-    "Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.",
+    'Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.',
   ahu_dsp_reset:
-    "Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.",
+    'Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.',
   ahu_economizer:
-    "Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.",
+    'Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.',
   ahu_freeze_prot:
     'Automatically shuts the air handler down if coil temperatures get cold enough to risk a frozen, burst water coil.',
   ahu_min_oa:
     'Keeps a minimum amount of fresh outdoor air coming into the building at all times to meet ventilation requirements, even as fan speed changes.',
   ahu_rf_control:
-    "Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.",
+    'Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.',
   vav_zone_temp:
     'Keeps each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
   vav_damper_writeback:
     'Confirms the air damper in each zone is actually at the position the system commands, so a stuck or failed damper gets caught early instead of silently wasting energy or causing comfort complaints.',
   vav_reheat:
-    "Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.",
+    'Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.',
   hwp_supply_reset:
-    "Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.",
+    'Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.',
   hwp_pump_dp_reset:
     'Lets the hot water pump slow down when fewer rooms are calling for heat, instead of always pumping at full speed.',
   hwp_staging:
     'Automatically brings a second boiler online only when the building actually needs the extra heat, and shuts it back off when demand drops, instead of running every boiler all the time.',
   chwp_supply_reset:
-    "Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.",
+    'Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.',
   chwp_pump_dp_reset:
     'Lets the chilled water pump slow down when cooling demand is low, instead of always pumping at full speed.',
   chwp_staging:
@@ -13898,13 +13933,18 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   var bodyHTML =
     '<div style="padding:20px 48px 16px">' +
     '<div style="text-align:center;margin-bottom:0">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
+    // D-12 (2026-08-03): 22px (16.5pt) -> the shared 18pt document-title tier, so the Audit cover
+    // title and the Proposal cover title are the same size and both sit above the 14.25pt running
+    // page-title bar that follows them on every interior page.
+    '<div style="font-size:' +
+    RPT_DOC_TITLE_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
     '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:12px">' +
     d.project.name +
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    "This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. " +
+    'This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
@@ -13994,11 +14034,22 @@ function rptPageASHRAE36Executive(n, d) {
   if (topGap) {
     callout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
-      '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
+      // D-12 (2026-08-03): "Most Common Gap Across Portfolio" is this callout's HEADING and moves
+      // to the 13pt section tier. The two lines under it are its CONTENT, not sub-headings, and
+      // both move to the 10.5pt body tier: the gap name (e.g. "Damper position command") keeps its
+      // 600 weight as a bold lead-in but is no longer a distinct size, which is what made it read
+      // as a heading smaller than the text around it (D-12 names it explicitly on Audit page 2).
+      '<div style="font-size:' +
+      RPT_SECTION_HEAD_PX +
+      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
+      '<div style="font-size:' +
+      RPT_BODY_PX +
+      'px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
       (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].short : topGap.key) +
       '</div>' +
-      '<div style="font-size:11px;color:var(--rpt-page-text)">' +
+      '<div style="font-size:' +
+      RPT_BODY_PX +
+      'px;color:var(--rpt-page-text)">' +
       (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].plain : '') +
       '</div>' +
       '</div>';
@@ -14020,8 +14071,13 @@ function rptPageASHRAE36Executive(n, d) {
     var dcvSentence = dcvParts.join(' and ') + ' have no carbon dioxide sensor.';
     dcvCallout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
-      '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+      // D-12 (2026-08-03): heading -> 13pt section tier, its paragraph -> 10.5pt body tier.
+      '<div style="font-size:' +
+      RPT_SECTION_HEAD_PX +
+      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
+      '<div style="font-size:' +
+      RPT_BODY_PX +
+      'px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
       ' Without a way to sense carbon dioxide levels, these units ventilate at full design rates even when spaces are empty, wasting fan and cooling energy. ' +
       'Adding carbon dioxide sensors lets ventilation adjust to how many people are actually in the space, so equipment stops conditioning air for rooms that are empty.' +
@@ -14106,8 +14162,13 @@ function rptPageASHRAE36Executive(n, d) {
   // Summary's "Contract Progress"/"Period Savings"/"Monthly Savings" headings and this report's
   // own "ASHRAE Guideline 36 Sequences" heading are all 11px) — dropped to 11px to match the
   // dominant convention. Text/content unchanged.
+  // D-12 (2026-08-03): 11px -> the 13pt section tier. This heading introduces a table whose own
+  // column headers print at 10pt, so at 8.25pt authored (10.005pt after the floor) it was smaller
+  // than the table it names.
   var tableTitle =
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header (color:#fff on
   // background:var(--rpt-blue)) to match the Proposal's plain/thin-bordered convention
   // (rptPageASHRAE36ProposalCover's thPlain) -- no fill, near-black text, same border. Styling
@@ -14427,7 +14488,12 @@ function rptPageASHRAE36Executive(n, d) {
     } else {
       // Continuation page: minimal header + table + footnote
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         'Building ASHRAE 36 Readiness (continued, ' +
         (chunkIndex + 1) +
@@ -15431,7 +15497,12 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
       }
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         _a36DisplayName(b) +
         ' (continued, ' +
@@ -16051,7 +16122,12 @@ function rptPageASHRAE36SetpointReview(n, d) {
       bodyHTML = preamble + totalsCallout + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         'Setpoint Programming Review (continued, ' +
         (chunkIndex + 1) +
@@ -20025,7 +20101,12 @@ function rptPageASHRAE36PointInventory(n, d) {
       bodyHTML = summaryBlock + narrative + table + (chunkIndex === numChunks - 1 ? footnote : '');
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         'Point Inventory Completeness (continued, ' +
         (chunkIndex + 1) +
