@@ -13904,7 +13904,8 @@ function rptPageASHRAE36Executive(n, d) {
   // read getBoundingClientRect().height of each .rpt-body child on the Executive Summary pages.
   var EXEC_THEAD_H = 46; // measured
   var EXEC_FOOTNOTE_H = 100; // measured (readiness-band methodology footnote, wraps to ~5 lines at 10pt)
-  var EXEC_SAFETY_H = 20; // single page-level margin covering block margin-collapse and sub-pixel rounding
+  var EXEC_SAFETY_H = 40; // single page-level margin. 40, not 20: at 20 this page measured only 13px
+  // of clearance below the reserved footer zone, and page count is explicitly not a constraint.
   var _firstChromeH = 0;
   if (dcvCallout) _firstChromeH += 121; // measured (occupancy-based ventilation readiness callout)
   if (callout) _firstChromeH += 78; // measured (most-common-gap callout)
@@ -14413,7 +14414,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // differently-fudged ones.
   var RATIONALE_TITLE_H = 28; // measured, section title + its margin-bottom
   var RATIONALE_THEAD_H = 56; // measured 33 first page / 53 continuation; 56 covers both
-  var RATIONALE_SAFETY_H = 20; // single page-level margin, same convention as EXEC_SAFETY_H above
+  var RATIONALE_SAFETY_H = 40; // single page-level margin, same convention as EXEC_SAFETY_H above
   var RATIONALE_BUDGET_FIRST =
     _rptContentBudget('standard') - RATIONALE_TITLE_H - RATIONALE_THEAD_H - RATIONALE_SAFETY_H;
   var RATIONALE_BUDGET_CONT = RATIONALE_BUDGET_FIRST;
@@ -15157,7 +15158,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
   var BUILDING_THEAD_H = 34; // measured 31
   var BUILDING_TOTAL_ROW_H = 36; // measured 33 (the table's own Total row, last chunk only)
   var BUILDING_CONT_HDR_H = 40; // "<name> (continued, N of M)" bar
-  var BUILDING_SAFETY_H = 20;
+  var BUILDING_SAFETY_H = 40;
   // The building-infrastructure callout is appended below the table on the LAST chunk, but was
   // never subtracted from either budget here (only _a36BuildingBlockToken's estH knew about it).
   // With the 10pt floor it measures up to ~113px, which is exactly how much four Per-Building
@@ -15810,7 +15811,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var SETPOINT_PREAMBLE_H = 127; // measured 107 preamble + the 20px caption block below it
   var SETPOINT_THEAD_H = 63; // measured
   var SETPOINT_CONT_HDR_H = 40;
-  var SETPOINT_SAFETY_H = 20;
+  var SETPOINT_SAFETY_H = 40;
   var SETPOINT_ROW_H = 70; // measured 49 typical, 69 max (3-line Status cell)
   var ROWS_BUDGET_FIRST =
     _rptContentBudget('standard') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
@@ -17489,6 +17490,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   var THEAD_H = 60; // measured 38 first page / 59 continuation (wrapped month headers); 60 covers both
   var HEAD_CHROME_FIRST = 232; // measured 224 (Why This Approach block + intro heading/paragraph + gaps)
   var CONT_TITLE_CHROME = 30; // small "(continued)" heading on continuation pages only
+  var PHASE_SAFETY_H = 40; // explicit page-level margin, same convention as the Audit pages
   var TAIL_H = opts && opts.futureWorkInline === true ? 150 : 370; // measured 356 in standalone mode
   // Per-row height from the label cell's line count — see rowsLabelLenArr's comment where it is
   // built. 22 chars/line and the 17px of td padding were fitted against all 13 measured JOCO rows:
@@ -17516,8 +17518,8 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // every page.
   tokens.push({ type: 'block', estH: TAIL_H, html: der.termNotesHTML + der.standaloneFutureWorkHTML });
 
-  var firstBudget = g - HEAD_CHROME_FIRST - THEAD_H;
-  var contBudget = g - CONT_TITLE_CHROME - THEAD_H;
+  var firstBudget = g - HEAD_CHROME_FIRST - THEAD_H - PHASE_SAFETY_H;
+  var contBudget = g - CONT_TITLE_CHROME - THEAD_H - PHASE_SAFETY_H;
   var chunks = _rptPaginateTokens(tokens, firstBudget, contBudget);
   var numChunks = chunks.length;
 
@@ -19716,7 +19718,7 @@ function rptPageASHRAE36PointInventory(n, d) {
   var INV_THEAD_H = 73; // measured
   var INV_FOOTNOTE_H = 90; // measured; reserved on every page (it rides the last chunk) for safety
   var INV_CONT_HDR_H = 40;
-  var INV_SAFETY_H = 20;
+  var INV_SAFETY_H = 40;
   var INV_NAME_CPL = 17; // chars per line in the 144px Building column at the 13.34px floor
   var INV_ROW_PAD_H = 11; // measured: a 1-line row is 31px = one 20px line box + 11px
   var _invLineH = _rptTextLineH(1.5);
