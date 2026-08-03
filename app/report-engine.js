@@ -1186,6 +1186,21 @@ function _rptPaginateTokensBalanced(tokens, cap) {
   return chunks;
 }
 
+// Footer page-number chrome, shared by rptPage()'s hero and interior branches (2026-08-03,
+// defect register D-08 — Matt: "the word documents don't have the right footer page numbering
+// format"). The .docx footer parts are byte-identical to the Louisburg EMS Agreement baseline
+// (part-level MD5 2f1ecd7a… / 8f0ce822…): a bare ` PAGE \* MERGEFORMAT ` field, right-aligned,
+// printing a BARE NUMBER ("1", "2", …) at 12pt. Louisburg is the standing formatting authority,
+// so the app/print path — which printed "Page N of M" at 10.5pt — is the deviation and is what
+// changed here. The .docx footer OOXML is deliberately NOT touched: it already matches.
+// 16px = 12pt printed (the print path scales px by exactly 0.75) so the size matches the
+// baseline as well as the format; bottom:16px puts it ~14pt above the sheet's bottom edge,
+// matching Louisburg's ~13.9pt. The text itself is written by _injectPageNumbers() at generation
+// time and re-written by _updateOverlayPageNumbers() after the DOM exists — both must stay in
+// this format.
+var RPT_PAGENUM_DIV =
+  '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:16px;right:20px;font-size:16px;color:var(--rpt-page-text)"></div>';
+
 /**
  * rptPage — wraps a single report page with header, body, and footer.
  * @param {number} pageNum - Page number for the data-page attribute
@@ -1289,9 +1304,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       footerTextHtml +
       footerLabelHtml +
       footerImgHtml +
-      (noPageNum
-        ? ''
-        : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:14px;color:var(--rpt-page-text)"></div>') +
+      (noPageNum ? '' : RPT_PAGENUM_DIV) +
       '</div>'
     );
   }
@@ -1347,9 +1360,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     footerTextHtml +
     footerLabelHtml +
     footerImgHtml +
-    (noPageNum
-      ? ''
-      : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:14px;color:var(--rpt-page-text)"></div>') +
+    (noPageNum ? '' : RPT_PAGENUM_DIV) +
     '</div>'
   );
 }
@@ -1373,8 +1384,37 @@ function _injectPageNumbers(html) {
   var n = 0;
   return html.replace(/(<div class="rpt-pg-footer-pagenum"[^>]*>)<\/div>/g, function (match, open) {
     n++;
-    return open + 'Page ' + n + ' of ' + total + '</div>';
+    return open + n + '</div>';
   });
+}
+
+/**
+ * _rptDocumentDateLong — the one date every generated client document prints on its cover.
+ *
+ * Reads the SAME instant and the SAME calendar day the export filename is built from
+ * (printReportToPDF / exportReportToWord / the .docx path all use
+ * `new Date().toISOString().slice(0, 10)`), so the date on the page and the date in the file
+ * name can never disagree. Formatted for a client to read out loud ("August 3, 2026"), never as
+ * a numeric code.
+ * @returns {string} e.g. "August 3, 2026"
+ */
+var _RPT_DOC_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+function _rptDocumentDateLong() {
+  var iso = new Date().toISOString().slice(0, 10).split('-');
+  return _RPT_DOC_MONTHS[Number(iso[1]) - 1] + ' ' + Number(iso[2]) + ', ' + iso[0];
 }
 
 /**
@@ -1561,7 +1601,8 @@ function _updateOverlayPageNumbers() {
   for (var i = 0; i < total; i++) {
     var footer = pages[i].querySelector('.rpt-pg-footer-pagenum');
     if (footer) {
-      footer.textContent = 'Page ' + (i + 1) + ' of ' + total;
+      // Bare number, no "Page N of M" — see the footer-format comment in rptPage().
+      footer.textContent = String(i + 1);
     }
   }
 }
@@ -8425,9 +8466,13 @@ async function exportReportToWord() {
     // string, so the number Word displays stays correct after Word repaginates the content at
     // its own metrics instead of always reading whatever page count this app estimated at
     // export time.
+    // 2026-08-03 (D-08): the field codes stay, the surrounding "Page … of …" words are gone —
+    // Louisburg (the standing formatting authority, and what the .docx footer parts already
+    // match byte for byte) prints a BARE right-aligned page number. Same change as the
+    // print/PDF path's RPT_PAGENUM_DIV so all three export paths now agree with the baseline.
     const pageNumP = hasPageNum
       ? '<p class="MsoFooter" style="text-align:right;font-size:14px;color:var(--rpt-page-text);margin:2px 20px 0 0">' +
-        "Page <span style='mso-field-code:PAGE'></span> of <span style='mso-field-code:NUMPAGES'></span></p>"
+        "<span style='mso-field-code:PAGE'></span></p>"
       : '';
     // footerBodyHtml is identical on the hero/title page and every interior page (rptPage()
     // renders the exact same footerImgHtml/footerLabelHtml/pagenum markup regardless of the
@@ -12530,31 +12575,31 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
  */
 var ASHRAE36_SEQUENCE_PLAIN = {
   ahu_sat_reset:
-    "Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.",
+    'Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.',
   ahu_dsp_reset:
-    "Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.",
+    'Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.',
   ahu_economizer:
-    "Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.",
+    'Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.',
   ahu_freeze_prot:
     'Automatically shuts the air handler down if coil temperatures get cold enough to risk a frozen, burst water coil.',
   ahu_min_oa:
     'Keeps a minimum amount of fresh outdoor air coming into the building at all times to meet ventilation requirements, even as fan speed changes.',
   ahu_rf_control:
-    "Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.",
+    'Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.',
   vav_zone_temp:
     'Keeps each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
   vav_damper_writeback:
     'Confirms the air damper in each zone is actually at the position the system commands, so a stuck or failed damper gets caught early instead of silently wasting energy or causing comfort complaints.',
   vav_reheat:
-    "Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.",
+    'Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.',
   hwp_supply_reset:
-    "Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.",
+    'Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.',
   hwp_pump_dp_reset:
     'Lets the hot water pump slow down when fewer rooms are calling for heat, instead of always pumping at full speed.',
   hwp_staging:
     'Automatically brings a second boiler online only when the building actually needs the extra heat, and shuts it back off when demand drops, instead of running every boiler all the time.',
   chwp_supply_reset:
-    "Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.",
+    'Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.',
   chwp_pump_dp_reset:
     'Lets the chilled water pump slow down when cooling demand is low, instead of always pumping at full speed.',
   chwp_staging:
@@ -13899,12 +13944,19 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div style="padding:20px 48px 16px">' +
     '<div style="text-align:center;margin-bottom:0">' +
     '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
-    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:12px">' +
+    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:2px">' +
     d.project.name +
+    '</div>' +
+    // 2026-08-03 (visual review V-02): the Audit carried NO date anywhere in its text layer —
+    // the date existed only in the export filename, so a filed copy could not be dated, cited or
+    // superseded. _rptDocumentDateLong() reads the same instant/calendar day that filename is
+    // built from, so page and filename can never disagree.
+    '<div style="font-size:14px;color:var(--rpt-page-text);margin-bottom:12px">' +
+    _rptDocumentDateLong() +
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    "This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. " +
+    'This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
@@ -13944,6 +13996,17 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sensors to Install</div>' +
     '</div>' +
+    '</div>' +
+    // 2026-08-03 (visual review V-03): the cover's only attribution was the letterhead graphic —
+    // no author, no addressee. Plain text lines, no box/card/tile and no separator rule (standing
+    // rule); the two labels are simply bolded. No phone/address is printed: no verified Control
+    // Service Company contact block exists anywhere in this codebase and inventing one is worse
+    // than omitting it.
+    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.5;margin-top:14px">' +
+    '<div><strong>Prepared for:</strong> ' +
+    d.project.name +
+    '</div>' +
+    '<div><strong>Prepared by:</strong> Control Service Company</div>' +
     '</div>' +
     '</div>';
 
@@ -16538,6 +16601,13 @@ function rptPageASHRAE36ProposalCover(n, d) {
     // font-size:11px; text-transform:uppercase; letter-spacing:0.5px) rather than introducing a
     // new pattern.
     '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">Service Proposal</div>' +
+    // 2026-08-03 (visual review V-25): the Proposal carried no date at all — its only date-like
+    // strings were the "Aug 2026"-"Dec 2026" schedule column labels, so the quoted monthly figure
+    // sat on an undated page. Same source as the export filename (_rptDocumentDateLong), so the
+    // two can never disagree.
+    '<div style="font-size:14px;color:var(--rpt-page-text);margin-top:3px">' +
+    _rptDocumentDateLong() +
+    '</div>' +
     '</div>';
 
   // ── Executive Summary ───────────────────────────────────────────────────
