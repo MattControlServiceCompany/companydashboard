@@ -1576,6 +1576,45 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.03.746',
+    date: '2026-08-03',
+    title: 'ASHRAE 36 Audit Report and Service Proposal visual and content overhaul',
+    items: [
+      {
+        type: 'change',
+        text: 'ASHRAE 36 Audit Report cover, the summary gauges now use fixed CSC brand colors (blue for Composite Score, green for Sensor Coverage and Sequence Readiness).',
+      },
+      {
+        type: 'feature',
+        text: 'ASHRAE 36 Audit Report Building Readiness table, the Score column is now a proportional bar that visibly fills to match the percentage, instead of a plain number.',
+      },
+      {
+        type: 'feature',
+        text: 'ASHRAE 36 Audit Report Executive Summary now opens with an introductory paragraph and includes five plain-language paragraphs describing the key sequence categories found across the portfolio.',
+      },
+      {
+        type: 'change',
+        text: 'ASHRAE 36 Audit Report and Service Proposal, section headings are now Title Case throughout instead of ALL CAPS.',
+      },
+      {
+        type: 'feature',
+        text: 'Service Proposal now includes a month-by-month schedule table (Recommended Services), showing which months each phase of work happens in.',
+      },
+      {
+        type: 'feature',
+        text: 'Service Proposal now includes a substantive ASHRAE 36 Compliance section with real portfolio-wide sensor and sequence counts.',
+      },
+      {
+        type: 'fix',
+        text: 'Service Proposal, the closing Disclaimer paragraph was removed from the default document.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report and Service Proposal, spacing and page-break issues on trailing sections were cleaned up so pages read more evenly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.03.745',
     date: '2026-08-03',
     title: 'Audit Report and Service Proposal formatting pass',
