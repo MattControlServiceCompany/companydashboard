@@ -14482,7 +14482,7 @@ function rptPageASHRAE36Executive(n, d) {
             '</td>' +
             '<td style="padding:5px 8px;font-size:' +
             RPT_BODY_PX +
-            'px;font-weight:700;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
+            'px;font-weight:700;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
             rptCount(s.qty) +
             '</td>' +
             '</tr>'
@@ -14921,22 +14921,22 @@ function rptPageASHRAE36Executive(n, d) {
       // Matrix key used for row matching elsewhere in this file.
       (b.displayName || rptBuildingDisplayName(b.name)) +
       '</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
       '<div style="' +
       _rowBoxStyle +
-      ';justify-content:center">' +
+      ';justify-content:flex-end">' +
       rptCount(b.equipCount) +
       '</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
       '<div style="' +
       _rowBoxStyle +
-      ';justify-content:center">' +
+      ';justify-content:flex-end">' +
       b.pointPct +
       '%</div></td>' +
-      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
       '<div style="' +
       _rowBoxStyle +
-      ';justify-content:center">' +
+      ';justify-content:flex-end">' +
       (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
       '</div></td>' +
       '<td style="padding:5px 8px;border:1px solid var(--rpt-border)">' +
@@ -15190,7 +15190,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         _esc(String(seq.ashrae36 || '').replace(/^§/, '')) +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-        'border:1px solid var(--rpt-border);vertical-align:top;text-align:center;width:' +
+        'border:1px solid var(--rpt-border);vertical-align:top;text-align:right;width:' +
         A36_SEQ_COL_QTY_PCT +
         '%">' +
         rptCount(seqQty) +
@@ -15269,7 +15269,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
           'Total control sequences to program' +
           '</td>' +
           '<td style="padding:7px 10px;font-size:11px;font-weight:700;color:var(--rpt-page-text);' +
-          'border:1px solid var(--rpt-border);vertical-align:top;text-align:center">' +
+          'border:1px solid var(--rpt-border);vertical-align:top;text-align:right">' +
           rptCount(_seqProgramTotal) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
@@ -15770,7 +15770,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         '</td>' +
         '<td style="' +
         tdBase +
-        ';text-align:center;color:var(--rpt-page-text)">' +
+        ';text-align:right;color:var(--rpt-page-text)">' +
         presentCount +
         '</td>' +
         '<td style="' +
@@ -15904,7 +15904,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         '</td>' +
         '<td style="' +
         tdBase +
-        ';text-align:center;color:var(--rpt-page-text)">' +
+        ';text-align:right;color:var(--rpt-page-text)">' +
         unitCount +
         '</td>' +
         '<td style="' +
@@ -15987,7 +15987,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         ';font-weight:600;color:var(--rpt-page-text)">Building-Wide (Outdoor Air)</td>' +
         '<td style="' +
         _bwTdBase +
-        ';text-align:center;color:var(--rpt-page-text)">1</td>' +
+        ';text-align:right;color:var(--rpt-page-text)">1</td>' +
         '<td style="' +
         _bwTdBase +
         ';color:var(--rpt-page-text);font-weight:400">' +
@@ -16334,7 +16334,7 @@ function rptPageASHRAE36Recommendations(n, d) {
           : affectedList.join(', ');
       return (
         '<tr>' +
-        '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border:1px solid var(--rpt-border);vertical-align:top">' +
+        '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border:1px solid var(--rpt-border);vertical-align:top;text-align:right">' +
         (idx + 1) +
         '</td>' +
         '<td style="padding:6px 8px;border:1px solid var(--rpt-border);vertical-align:top">' +
@@ -16375,7 +16375,7 @@ function rptPageASHRAE36Recommendations(n, d) {
     var recCount = p.topGaps.length; // DCV row gets the next sequential number
     dcvRow =
       '<tr>' +
-      '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border:1px solid var(--rpt-border);vertical-align:top">' +
+      '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border:1px solid var(--rpt-border);vertical-align:top;text-align:right">' +
       (recCount + 1) +
       '</td>' +
       '<td style="padding:6px 8px;border:1px solid var(--rpt-border);vertical-align:top">' +
@@ -16665,7 +16665,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     '</tr></thead>';
 
   var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
-  var tdCenter = tdBase + ';text-align:center';
+  var tdRight = tdBase + ';text-align:right';
 
   // ── Build one HTML row per building ──────────────────────────────────────
   function _buildBldgRowHTML(row) {
@@ -16679,29 +16679,29 @@ function rptPageASHRAE36SetpointReview(n, d) {
       _a36DisplayName(row) +
       '</td>' +
       '<td style="' +
-      tdCenter +
+      tdRight +
       ';color:var(--rpt-page-text)">' +
       _fmtAvg(row.avgHeat) +
       '</td>' +
       '<td style="' +
-      tdCenter +
+      tdRight +
       ';color:var(--rpt-page-text)">' +
       _fmtAvg(row.avgCool) +
       '</td>' +
       '<td style="' +
-      tdCenter +
+      tdRight +
       ';color:var(--rpt-page-text)">' +
       gl36Heat +
       ' / ' +
       gl36Cool +
       '</td>' +
       '<td style="' +
-      tdCenter +
+      tdRight +
       ';color:var(--rpt-page-text)">' +
       _fmtAvg(row.avgDb) +
       '</td>' +
       '<td style="' +
-      tdCenter +
+      tdBase +
       '">' +
       _statusCell(row.bStatus) +
       ' <span style="font-size:9px;color:var(--rpt-page-text)">' +
@@ -18217,10 +18217,10 @@ function _rptA36PhaseTableDerive(d, opts) {
     'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
     'border:1px solid var(--rpt-border)';
   var lblStyle =
-    'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
+    'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:left;' +
     'vertical-align:top;border:1px solid var(--rpt-border)';
   var cellStyle =
-    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
+    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
     'line-height:1.5;border:1px solid var(--rpt-border)';
 
   // headRow (2026-08-03 months-table-as-text rebuild — see rptPageASHRAE36ProposalPhaseTable's
