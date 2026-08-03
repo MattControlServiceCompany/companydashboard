@@ -1576,6 +1576,49 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.03.745',
+    date: '2026-08-03',
+    title: 'Audit Report and Service Proposal formatting pass',
+    items: [
+      {
+        type: 'change',
+        text: "Service Proposal, the month-by-month schedule now reads as plain-language sentences describing what work happens each month, replacing the checkbox-style table.",
+      },
+      {
+        type: 'feature',
+        text: 'Audit Report and Service Proposal, every page footer now reads "Page N of M" so you always know how many pages are left.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report cover, the summary gauges were redrawn for a cleaner look, including in the Word-exported version.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report and Service Proposal, section headings now follow a clearer, more consistent hierarchy.',
+      },
+      {
+        type: 'feature',
+        text: 'Audit Report Executive Summary, the "Top ASHRAE 36 Sequences" callout now shows a table of the top sequence types across the portfolio instead of a single line of text.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report, the "Score & Readiness Bands" legend now prints once per table instead of repeating on every page.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report Control Sequences table, the Sequence column is wider so sequence names are easier to read.',
+      },
+      {
+        type: 'change',
+        text: 'Audit Report and Service Proposal, table column headers are now centered instead of mixed left/right alignment.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report and Service Proposal, removed the redundant repeated page title that ran along the top of every interior page, so pages now start flush at the top.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.03.744',
     date: '2026-08-03',
     title: 'Service Proposal reads as one clear document',
