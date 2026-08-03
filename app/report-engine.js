@@ -12530,31 +12530,31 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
  */
 var ASHRAE36_SEQUENCE_PLAIN = {
   ahu_sat_reset:
-    "Adjusts how warm or cool the air handler's output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.",
+    "Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.",
   ahu_dsp_reset:
-    "Lets the supply fan slow down when the building doesn't need full airflow, instead of always pushing air at full force. Cuts fan energy use.",
+    "Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.",
   ahu_economizer:
-    "Uses outdoor air to cool the building for free when it's cool enough outside, so the cooling equipment doesn't have to run as much.",
+    "Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.",
   ahu_freeze_prot:
     'Automatically shuts the air handler down if coil temperatures get cold enough to risk a frozen, burst water coil.',
   ahu_min_oa:
     'Keeps a minimum amount of fresh outdoor air coming into the building at all times to meet ventilation requirements, even as fan speed changes.',
   ahu_rf_control:
-    "Keeps the return fan's speed matched to the supply fan so the building doesn't develop pressure problems, like doors that are hard to open or drafts.",
+    "Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.",
   vav_zone_temp:
     'Keeps each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
   vav_damper_writeback:
     'Confirms the air damper in each zone is actually at the position the system commands, so a stuck or failed damper gets caught early instead of silently wasting energy or causing comfort complaints.',
   vav_reheat:
-    "Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn't overcool when it needs less airflow.",
+    "Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.",
   hwp_supply_reset:
-    "Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn't heat water hotter than it needs to.",
+    "Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.",
   hwp_pump_dp_reset:
     'Lets the hot water pump slow down when fewer rooms are calling for heat, instead of always pumping at full speed.',
   hwp_staging:
     'Automatically brings a second boiler online only when the building actually needs the extra heat, and shuts it back off when demand drops, instead of running every boiler all the time.',
   chwp_supply_reset:
-    "Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn't have to work as hard as it does on a full-load day.",
+    "Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.",
   chwp_pump_dp_reset:
     'Lets the chilled water pump slow down when cooling demand is low, instead of always pumping at full speed.',
   chwp_staging:
@@ -12684,6 +12684,129 @@ var ASHRAE36_SECTIONS = {
 // actually applies them.
 var ASHRAE36_READINESS_HIGH_THRESHOLD = 75; // score >= this => 'green' / "High Readiness"
 var ASHRAE36_READINESS_PARTIAL_THRESHOLD = 50; // score >= this (and < HIGH) => 'amber' / "Partial Readiness"; below => 'red' / "Low Readiness"
+
+// ─── Client-visible name and number formatting (work unit R5, 2026-08-03) ──
+// Defects fixed here: D-14/V-08 (internal identifier "P25309 - " leaking into the client
+// building column, and the alphabetical sort corruption it caused), V-07 (raw source-system
+// building names), D-21 ("Sheriffs" missing its apostrophe), V-40 (mixed straight/curly
+// apostrophes), D-22 (counts printed with a thousands separator in the Proposal and without
+// one in the Audit).
+//
+// THIS IS A DISPLAY LAYER ONLY. Nothing here writes back to the Equipment Matrix. Every
+// building object keeps its raw `name` (which is the key every Equipment Matrix row is matched
+// against, e.g. `if (r.building !== b.name) return;`) and gains a `displayName` used for every
+// string a client ever reads. Do not "simplify" this by renaming `name` — that silently breaks
+// per-building row matching in four places.
+
+/**
+ * RPT_BUILDING_NAME_RULES — ordered display-only rewrites, applied in sequence.
+ *
+ * EVIDENCE FOR EVERY RULE (nothing here is guessed; see the report for the ones deliberately
+ * NOT expanded):
+ *
+ *  1. `^P\d+\s*-\s*` — the BAS/internal project identifier prefix. Only occurrence in real
+ *     data is "P25309 - Jo Co Arts and Heritage". Matt's own Service Proposal target document
+ *     (_context/specs/joco-service-proposal-target-2026-07-23.md, Facilities Included row)
+ *     names this building "Jo Co Arts and Heritage" with no prefix. Stripping it also repairs
+ *     the sort, which is why the sort below keys on the display name.
+ *  2. `Jo Co ` -> `Johnson County ` — "Jo Co" is an abbreviation of the client's own name. The
+ *     stored client name is "Johnson County, Kansas" and the WebCTRL BACnet tree root for these
+ *     buildings is literally "/Johnson County/" (dashboardlogic.md: "/Johnson County/Courthouse
+ *     -> Courthouse").
+ *  3. `NC ` -> `New Century ` — every NC-prefixed building sits directly under the WebCTRL
+ *     campus node "/New Century Complex/" in the raw exports: "/New Century Complex/NC Adult
+ *     Detention Center", "/New Century Complex/NC Arc 1", "/New Century Complex/NC Arc 4",
+ *     "/New Century Complex/NC Arc Programs Building", "/New Century Complex/NC Sheriff's
+ *     Operations Building" (_context/backlog/investigations/c350cb0f-setpoint-verification.md,
+ *     audit-plant-leveling-and-tiers.md, stages/3d6d7244/investigation.md). The naming
+ *     convention is city/campus-prefixed throughout the same list ("Olathe Adult Detention
+ *     Center" vs "NC Adult Detention Center"), and "New Century Complex" is itself a building
+ *     row in the same Equipment Matrix. Source-system evidence, not an inference from initials.
+ *  4. `Firestation-13` -> `Fire Station 13`. Plain English spelling of a run-together source
+ *     token; no expansion of an unknown abbreviation is involved.
+ *  5. `Sheriffs ` -> `Sheriff's ` (curly). D-21. The same documents already write
+ *     "NC Sheriff's Operations Building", and the proposal target spec writes
+ *     "Sheriff's Fleet Maintenance".
+ *  6. Straight apostrophe -> curly (U+2019) everywhere. V-40. Source data carries straight
+ *     apostrophes in "NC Sheriff's Operations Building" / "NC Sheriff's Warehouse" while the
+ *     surrounding prose uses curly ones.
+ *
+ * DELIBERATELY NOT EXPANDED (no evidence found; a wrong expansion in a client document is far
+ * worse than an unexpanded one): "Arc" (as in "New Century Arc 1/3/4" and "Arc Programs
+ * Building"), "MedAct", and "51/SS" in "MedAct 51/SS Olathe". Nothing in this repository, the
+ * Equipment Matrix, _context/specs/ or _context/reference/ states what they stand for, so they
+ * are printed exactly as stored, pending Matt's confirmation.
+ */
+var RPT_BUILDING_NAME_RULES = [
+  { re: /^\s*P\d+\s*[-–—]\s*/i, to: '' },
+  { re: /\bJo\s+Co\b/g, to: 'Johnson County' },
+  { re: /\bNC\b/g, to: 'New Century' },
+  { re: /\bFire\s*station\s*[-\s]\s*(\d+)/gi, to: 'Fire Station $1' },
+  { re: /\bSheriffs\b/g, to: 'Sheriff’s' },
+  { re: /'/g, to: '’' },
+];
+
+var _RPT_BLDG_NAME_CACHE = {};
+
+/**
+ * rptBuildingDisplayName — THE single place a stored building name becomes a client-visible one.
+ * Every client document (Audit cover, readiness table, per-building detail, recommendations,
+ * setpoint review, point inventory, Proposal schedule, Agreement scope list) renders through
+ * this. Pure and memoized; never mutates the Equipment Matrix.
+ *
+ * @param {string} raw stored Equipment Matrix building name
+ * @returns {string} client-visible name
+ */
+function rptBuildingDisplayName(raw) {
+  var s = raw == null ? '' : String(raw);
+  if (!s) return s;
+  if (Object.prototype.hasOwnProperty.call(_RPT_BLDG_NAME_CACHE, s)) return _RPT_BLDG_NAME_CACHE[s];
+  var out = s;
+  for (var i = 0; i < RPT_BUILDING_NAME_RULES.length; i++) {
+    out = out.replace(RPT_BUILDING_NAME_RULES[i].re, RPT_BUILDING_NAME_RULES[i].to);
+  }
+  out = out.replace(/\s{2,}/g, ' ').trim();
+  _RPT_BLDG_NAME_CACHE[s] = out;
+  return out;
+}
+
+/**
+ * rptBuildingNameSort — comparator that orders buildings by their CLIENT-VISIBLE name.
+ * D-14/V-08: with the raw name, "P25309 - Jo Co Arts and Heritage" filed under P, between
+ * "Olathe Sheriff Training Facility" and "Sheriffs Fleet Maintenance", so a reader looking
+ * under J concluded the building had been left out of the audit.
+ */
+function rptBuildingNameSort(a, b) {
+  return rptBuildingDisplayName(a).localeCompare(rptBuildingDisplayName(b), 'en');
+}
+
+/**
+ * rptCount — THE formatter for every client-visible whole-number count (buildings, equipment
+ * units, sequences, sensors, points). D-22: the Audit cover and narrative printed "1594",
+ * "1285", "1291" while the Proposal printed "1,594" for the same figure. Both documents now
+ * call this, so they cannot disagree. Not for currency (see the per-page fmtUSD helpers) and
+ * not for percentages.
+ *
+ * @param {number|string} v
+ * @returns {string} e.g. 1594 -> "1,594"
+ */
+function rptCount(v) {
+  var n = Number(v);
+  if (!isFinite(n)) return String(v == null ? '' : v);
+  return Math.round(n).toLocaleString('en-US');
+}
+
+/**
+ * _a36DisplayName — convenience accessor for the report page templates. Takes any object that
+ * carries a building name (collectASHRAE36Data's buildings/point-inventory rows all carry both
+ * `name` and `displayName`) and returns the client-visible string, computing it on the fly for
+ * any object that predates the displayName field.
+ */
+function _a36DisplayName(b) {
+  if (!b) return '';
+  if (typeof b === 'string') return rptBuildingDisplayName(b);
+  return b.displayName || rptBuildingDisplayName(b.name || b.building || '');
+}
 
 // ─── collectASHRAE36Data ───────────────────────────────────────────────────
 /**
@@ -13202,7 +13325,11 @@ function collectASHRAE36Data(projId, reportDate) {
     });
 
     buildingsData.push({
+      // name  = RAW Equipment Matrix key. Every per-building row match in this file compares
+      //         against it (`r.building !== b.name`). Never render this to a client.
+      // displayName = the client-visible name (R5, 2026-08-03). See rptBuildingDisplayName.
       name: bName,
+      displayName: rptBuildingDisplayName(bName),
       equipCount: auditableRows.length,
       equipCounts: equipCounts,
       equipResults: equipResults,
@@ -13235,6 +13362,18 @@ function collectASHRAE36Data(projId, reportDate) {
   });
 
   if (!buildingsData.length) return { _noAuditableEquip: true };
+
+  // D-14 / V-08 (R5, 2026-08-03): order the portfolio by the CLIENT-VISIBLE name, once, here —
+  // so the readiness table, the per-building detail pages, the recommendations "affected
+  // buildings" list and the Agreement's scope list can never disagree about where a building
+  // belongs. Previously this array carried Object-key insertion order (i.e. Equipment Matrix row
+  // order, which happens to be alphabetical by RAW name), which filed
+  // "P25309 - Jo Co Arts and Heritage" under P between "Olathe Sheriff Training Facility" and
+  // "Sheriffs Fleet Maintenance". Sorting is a presentation choice only; every downstream lookup
+  // is by name, never by index.
+  buildingsData.sort(function (a, b) {
+    return rptBuildingNameSort(a.name, b.name);
+  });
 
   // Portfolio-level top gaps (most common missing checks across all buildings).
   // co2, vav_dcv, and demandCtrl are excluded because the dedicated DCV readiness
@@ -13381,10 +13520,17 @@ function collectASHRAE36Data(projId, reportDate) {
       }
     });
   }
+  // R5 (2026-08-03): sort by the client-visible name, same rule as the readiness table above,
+  // and carry displayName so the Point Inventory table can never print a raw source name.
   var _invBuildingRows = Object.keys(_invByBuilding)
-    .sort()
+    .sort(rptBuildingNameSort)
     .map(function (bName) {
-      return { name: bName, ashrae: _invByBuilding[bName].ashrae, other: _invByBuilding[bName].other };
+      return {
+        name: bName,
+        displayName: rptBuildingDisplayName(bName),
+        ashrae: _invByBuilding[bName].ashrae,
+        other: _invByBuilding[bName].other,
+      };
     });
 
   return {
@@ -13704,23 +13850,26 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   // the Audit"). Same figures, same <strong> emphasis, only the narrative order changed to match
   // the stat strip below (buildings walked into -> equipment examined -> sequences found to
   // program -> sensors found to install).
+  // D-22 (R5, 2026-08-03): every count in this sentence goes through rptCount, the one shared
+  // thousands-separator formatter, so the Audit narrative and the Proposal's Executive Summary
+  // print the same figure the same way ("1,594", never "1594").
   var finding =
     'To meet ASHRAE 36, across <strong>' +
-    p.totalBuildings +
+    rptCount(p.totalBuildings) +
     ' building' +
     (p.totalBuildings !== 1 ? 's' : '') +
     '</strong> and <strong>' +
-    p.totalEquip +
+    rptCount(p.totalEquip) +
     ' piece' +
     (p.totalEquip !== 1 ? 's' : '') +
     ' of heating and cooling equipment</strong>, <strong>' +
     d.project.name +
     '</strong> needs <strong>' +
-    _a36ConsolidatedSequences +
+    rptCount(_a36ConsolidatedSequences) +
     ' control sequence' +
     (_a36ConsolidatedSequences !== 1 ? 's' : '') +
     ' programmed</strong> and <strong>' +
-    _a36ConsolidatedSensors +
+    rptCount(_a36ConsolidatedSensors) +
     (_a36ConsolidatedSensors === 1 ? ' sensor or actuator' : ' sensors and actuators') +
     ' installed</strong>. ' +
     // a562fd67: the cover's forward-looking promise must match whether the report actually
@@ -13755,7 +13904,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    "This report evaluates the facility's building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. " +
+    "This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. " +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
@@ -13773,25 +13922,25 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div style="display:flex;gap:16px;margin-top:12px">' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    p.totalBuildings +
+    rptCount(p.totalBuildings) +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings Assessed</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    p.totalEquip +
+    rptCount(p.totalEquip) +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Heating and Cooling Systems Audited</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    _a36ConsolidatedSequences +
+    rptCount(_a36ConsolidatedSequences) +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sequences to Program</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    _a36ConsolidatedSensors +
+    rptCount(_a36ConsolidatedSensors) +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sensors to Install</div>' +
     '</div>' +
@@ -14180,13 +14329,15 @@ function rptPageASHRAE36Executive(n, d) {
       '<div style="' +
       _rowBoxStyle +
       '">' +
-      b.name +
+      // R5 (2026-08-03) V-07/D-14: client-visible name only. b.name stays the raw Equipment
+      // Matrix key used for row matching elsewhere in this file.
+      (b.displayName || rptBuildingDisplayName(b.name)) +
       '</div></td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:center">' +
-      b.equipCount +
+      rptCount(b.equipCount) +
       '</div></td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
@@ -14653,10 +14804,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     // each building's section reads as a real header at a glance (2026-07-10 fix,
     // was 12px/600 — smaller than the 13px body text).
     '<h2 style="margin:0 0 4px 0">' +
-    b.name +
+    // R5 (2026-08-03): client-visible name, never the raw Equipment Matrix key.
+    _a36DisplayName(b) +
     '</h2>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">' +
-    b.equipCount +
+    rptCount(b.equipCount) +
     ' equipment units audited</div>' +
     '<div style="margin-bottom:4px">' +
     equipBreakdown +
@@ -15108,13 +15260,13 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     '<td colspan="4" style="padding:6px 8px;font-size:11px;color:var(--rpt-page-text);' +
     'border-top:2px solid var(--rpt-table-tot-bdr)">' +
     '<strong>Total for ' +
-    b.name +
+    _a36DisplayName(b) +
     ':</strong> install ' +
-    totalSensorsNeeded +
+    rptCount(totalSensorsNeeded) +
     ' sensor' +
     (totalSensorsNeeded !== 1 ? 's' : '') +
     ', program ' +
-    totalSeqsNotReady +
+    rptCount(totalSeqsNotReady) +
     ' sequence' +
     (totalSeqsNotReady !== 1 ? 's' : '') +
     ' across ' +
@@ -15281,7 +15433,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
       var contHdr =
         '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        b.name +
+        _a36DisplayName(b) +
         ' (continued, ' +
         (chunkIndex + 1) +
         ' of ' +
@@ -15300,12 +15452,18 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
     // title bar (rptPage()'s own title param, present on every page including page 1) fixes the
     // asymmetry consistently instead of only patching the continuation's already-correct text.
     var pageTitleWithFraction =
-      'ASHRAE 36 Audit Report: ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
+      'ASHRAE 36 Audit Report: ' +
+      _a36DisplayName(b) +
+      (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, pageTitleWithFraction, bodyHTML, {
         data: fakeData,
         label:
-          'Page ' + pageN + ' — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
+          'Page ' +
+          pageN +
+          ' — ' +
+          _a36DisplayName(b) +
+          (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
       }),
     );
   });
@@ -15371,7 +15529,7 @@ function _a36BuildingBlockToken(d, building, showBuildingInfra) {
     (showBuildingInfra ? BLOCK_INFRA_CALLOUT_H : 0) +
     BLOCK_SEPARATOR_H;
 
-  return { type: 'block', estH: estH, html: blockHTML, name: c.b.name };
+  return { type: 'block', estH: estH, html: blockHTML, name: _a36DisplayName(c.b) };
 }
 
 // ─── rptPageASHRAE36Recommendations ──────────────────────────────────────
@@ -15391,7 +15549,7 @@ function rptPageASHRAE36Recommendations(n, d) {
           return b.allGapKeys.indexOf(gap.key) !== -1;
         })
         .map(function (b) {
-          return b.name;
+          return _a36DisplayName(b);
         });
       var affectedStr =
         affectedList.length > 3
@@ -15637,6 +15795,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
 
     return {
       name: bName,
+      displayName: rptBuildingDisplayName(bName),
       avgHeat: avgHeat,
       avgCool: avgCool,
       avgDb: avgDb,
@@ -15655,9 +15814,9 @@ function rptPageASHRAE36SetpointReview(n, d) {
     var ao = STATUS_ORDER_B[a.bStatus] !== undefined ? STATUS_ORDER_B[a.bStatus] : 99;
     var bo = STATUS_ORDER_B[b2.bStatus] !== undefined ? STATUS_ORDER_B[b2.bStatus] : 99;
     if (ao !== bo) return ao - bo;
-    if (a.name < b2.name) return -1;
-    if (a.name > b2.name) return 1;
-    return 0;
+    // R5 (2026-08-03): alpha within group on the CLIENT-VISIBLE name, matching the readiness
+    // table, so no building files under an internal identifier's first letter.
+    return rptBuildingNameSort(a.name, b2.name);
   });
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -15738,7 +15897,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       '<td style="' +
       tdBase +
       ';font-weight:600;color:var(--rpt-page-text)">' +
-      row.name +
+      _a36DisplayName(row) +
       '</td>' +
       '<td style="' +
       tdCenter +
@@ -16393,9 +16552,9 @@ function rptPageASHRAE36ProposalCover(n, d) {
     ' building portfolio. The assessment identified an overall readiness score of ' +
     p.composite +
     '% across ' +
-    Number(p.totalBuildings).toLocaleString() +
+    rptCount(p.totalBuildings) +
     ' buildings and ' +
-    Number(p.totalEquip).toLocaleString() +
+    rptCount(p.totalEquip) +
     ' equipment units. The assessment found significant opportunities to improve heating and cooling ' +
     'energy performance, ventilation control, occupant comfort, and overall building automation system ' +
     'operational consistency through targeted controls upgrades and optimization strategies.</div>';
@@ -17259,7 +17418,9 @@ function _rptA36PhaseTableDerive(d, opts) {
       '"><span style="font-weight:700">' +
       esc(u.label) +
       '</span> at ' +
-      esc(u.building) +
+      // R5 (2026-08-03) V-07: the Proposal schedule renders the same client-visible building
+      // name the Audit does.
+      esc(_a36DisplayName(u.building)) +
       ' (' +
       esc(u.equipPhrase) +
       ')</td>' +
@@ -17298,7 +17459,7 @@ function _rptA36PhaseTableDerive(d, opts) {
   // Text below must stay byte-identical to unitRowHTML's own label cell.
   var improvementsRowLabelLens = unitRows.length
     ? unitRows.map(function (u) {
-        return (u.label + ' at ' + u.building + ' (' + u.equipPhrase + ')').length;
+        return (u.label + ' at ' + _a36DisplayName(u.building) + ' (' + u.equipPhrase + ')').length;
       })
     : [MONTH_EMPTY_TEXT.length];
 
@@ -19750,16 +19911,16 @@ function rptPageASHRAE36PointInventory(n, d) {
     return (
       '<tr>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
-      b.name +
+      _a36DisplayName(b) +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
-      bTotal.toLocaleString() +
+      rptCount(bTotal) +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border:1px solid var(--rpt-border);text-align:right">' +
-      b.ashrae.toLocaleString() +
+      rptCount(b.ashrae) +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
-      b.other.toLocaleString() +
+      rptCount(b.other) +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border:1px solid var(--rpt-border);text-align:right">' +
       bPct +
@@ -19842,7 +20003,7 @@ function rptPageASHRAE36PointInventory(n, d) {
   var ROWS_BUDGET_CONT = _rptContentBudget('standard') - INV_CONT_HDR_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
 
   var tokens = inv.byBuilding.map(function (b) {
-    return { type: 'row', estH: _invRowEstH(b.name || b.building), html: _buildInvRowHTML(b) };
+    return { type: 'row', estH: _invRowEstH(_a36DisplayName(b)), html: _buildInvRowHTML(b) };
   });
   tokens.push({ type: 'row', estH: INV_ROW_PAD_H + 2 * _invLineH, html: totalsRowHTML });
 
