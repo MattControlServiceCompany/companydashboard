@@ -14501,7 +14501,7 @@ function rptPageASHRAE36Executive(n, d) {
         '</div>' +
         '<table style="width:100%;border-collapse:collapse">' +
         '<thead><tr>' +
-        '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)">Sequence</th>' +
+        '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Sequence</th>' +
         '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Number to Program</th>' +
         '</tr></thead><tbody>' +
         _seqRowsHTML +
@@ -14672,7 +14672,7 @@ function rptPageASHRAE36Executive(n, d) {
   // (rptPageASHRAE36ProposalCover's thPlain) -- no fill, near-black text, same border. Styling
   // only; no content/values changed.
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:var(--rpt-page-text);text-align:left;white-space:normal;line-height:1.25;border:1px solid var(--rpt-border)';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:var(--rpt-page-text);text-align:center;white-space:normal;line-height:1.25;border:1px solid var(--rpt-border)';
   // Column widths (2026-07-09, fix/report-wording-compliance-rows): explicit colgroup +
   // table-layout:fixed added so column widths are deterministic instead of browser
   // auto-layout. Auto-layout let long building names (e.g. "P25309 - Jo Co Arts and
@@ -15364,11 +15364,11 @@ function rptPageASHRAE36CostEstimate(n, d) {
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;width:' +
     A36_SEQ_COL_NAME_PCT +
     '%;border:1px solid var(--rpt-border)">Sequence</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;width:' +
     A36_SEQ_COL_SPEC_PCT +
     '%;border:1px solid var(--rpt-border)">ASHRAE 36 Section</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
@@ -15376,7 +15376,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
     A36_SEQ_COL_QTY_PCT +
     '%;border:1px solid var(--rpt-border)">Number to Program</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)">Description</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Description</th>' +
     '</tr></thead><tbody>';
   var _ratTclose = '</tbody></table>';
 
@@ -15664,7 +15664,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;' +
     'border:1px solid var(--rpt-border)';
   var tableHead =
     colgroup +
@@ -16386,7 +16386,7 @@ function rptPageASHRAE36Recommendations(n, d) {
   // already carries (var(--rpt-border)) since removing the fill left the header with no
   // border at all. Matches the Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var table =
     '<table style="width:100%;border-collapse:collapse;margin-bottom:12px">' +
     '<thead><tr>' +
@@ -16615,7 +16615,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;' +
     'white-space:normal;word-wrap:break-word;line-height:1.3;border:1px solid var(--rpt-border)';
   var thStyleC = thStyle + ';text-align:center';
 
@@ -19189,7 +19189,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
   // match pages 1-3's thPlain convention (rptPageASHRAE36ProposalCover): plain bold text, thin
   // var(--rpt-rule) border, no fill. Content/values unchanged — styling only.
   var thStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
+    'padding:5px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
 
   var ph1HTML =
     phase1Gaps.length || dcvScopeRow
@@ -19633,7 +19633,7 @@ function _rptA36RecommendedTimelineHTML(d) {
   // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
   // thStyle. Styling only; no content/values changed.
   var thStyle =
-    'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
+    'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var tdStyle =
     'padding:6px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
 
@@ -20334,9 +20334,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         ? '<colgroup><col style="width:534px"><col style="width:150px"></colgroup>'
         : '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
-        'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;' +
+        'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
         'border:1px solid var(--rpt-border)';
-      var itThRight = itThStyle.replace('text-align:left', 'text-align:right');
+      var itThRight = itThStyle.replace('text-align:center', 'text-align:right');
       var itTableHead =
         '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
         itColgroup +
@@ -20772,7 +20772,7 @@ function rptPageASHRAE36PointInventory(n, d) {
   // Proposal's plain/thin-bordered convention. Styling only.
   var thBase =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var thRight = thBase + ';text-align:right';
 
   var tableHead =
