@@ -14114,10 +14114,20 @@ function rptPageASHRAE36Executive(n, d) {
   var EXEC_FOOTNOTE_H = 100; // measured (readiness-band methodology footnote, wraps to ~5 lines at 10pt)
   var EXEC_SAFETY_H = 40; // single page-level margin. 40, not 20: at 20 this page measured only 13px
   // of clearance below the reserved footer zone, and page count is explicitly not a constraint.
+  // D-12 (2026-08-03): all three re-measured after the section headings moved to the 13pt tier,
+  // per the re-measure protocol above (headless render, emulateMedia('print'),
+  // getBoundingClientRect().height of each .rpt-body child). Each number is now the measured box
+  // height PLUS that block's own declared margin-bottom, which the old figures omitted — the
+  // paginator is budgeting the space a block actually occupies, not just the space it paints.
+  //   occupancy-ventilation callout 121 -> 146 (132 measured + its 14px margin)
+  //   most-common-gap callout        78 -> 121 (107 measured + its 14px margin; this block grew
+  //                                             most because its two content lines also moved up
+  //                                             to the 10.5pt body tier)
+  //   tableTitle                     20 ->  32 (26 measured + its 6px margin)
   var _firstChromeH = 0;
-  if (dcvCallout) _firstChromeH += 121; // measured (occupancy-based ventilation readiness callout)
-  if (callout) _firstChromeH += 78; // measured (most-common-gap callout)
-  _firstChromeH += 20; // tableTitle — measured
+  if (dcvCallout) _firstChromeH += 146; // measured (occupancy-based ventilation readiness callout)
+  if (callout) _firstChromeH += 121; // measured (most-common-gap callout)
+  _firstChromeH += 32; // tableTitle — measured
   _firstChromeH += EXEC_THEAD_H;
   _firstChromeH += EXEC_FOOTNOTE_H;
   // d5929df4 (2026-07-13): FIRST base trimmed 894 -> 862. Restoring CSC_FOOTER_B64 to the
@@ -14151,7 +14161,9 @@ function rptPageASHRAE36Executive(n, d) {
   // budget, so the arithmetic states the actual page and can be re-derived by anyone who measures
   // it again. The continuation page's chrome is its own small "(continued, N of M)" heading plus
   // the same table head and footnote the first page carries.
-  var EXEC_CONT_HEADER_H = 27; // measured — "Building ASHRAE 36 Readiness (continued, N of M)" bar
+  // D-12 (2026-08-03): 27 -> 41 (33 measured + its 8px margin) now that this continuation heading
+  // sits on the 13pt section tier alongside the "(1 of N)" heading it continues.
+  var EXEC_CONT_HEADER_H = 41; // measured — "Building ASHRAE 36 Readiness (continued, N of M)" bar
   var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H + EXEC_FOOTNOTE_H;
   var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - _firstChromeH - EXEC_SAFETY_H;
   var ROWS_BUDGET_CONT = _rptContentBudget('standard') - _contChromeH - EXEC_SAFETY_H;
@@ -14663,7 +14675,9 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // slightly narrower "ASHRAE 36 Spec" column there wraps the header onto a second line) — 56px
   // covers both, so first and continuation pages can share one honest budget instead of two
   // differently-fudged ones.
-  var RATIONALE_TITLE_H = 28; // measured, section title + its margin-bottom
+  // D-12 (2026-08-03): 28 -> 34, re-measured after the "ASHRAE 36 Sequences" title moved to the
+  // 13pt section tier (26px box + its 8px margin-bottom).
+  var RATIONALE_TITLE_H = 34; // measured, section title + its margin-bottom
   var RATIONALE_THEAD_H = 56; // measured 33 first page / 53 continuation; 56 covers both
   var RATIONALE_SAFETY_H = 40; // single page-level margin, same convention as EXEC_SAFETY_H above
   var RATIONALE_BUDGET_FIRST =
