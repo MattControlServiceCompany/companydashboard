@@ -8577,6 +8577,157 @@ async function exportReportToWord() {
 }
 
 /**
+ * _rptResolveCssVarsAgainstRoot — replace every `var(--token)` in a string with the value that
+ * token resolves to ON THE LIVE DOCUMENT, via getComputedStyle(document.documentElement).
+ *
+ * THIS IS THE TRAP THE GAUGE RASTERIZATION PROOF EXISTS TO WARN ABOUT (D-25, 2026-08-02).
+ * The gauge ring's colors are written as `stroke="var(--rpt-orange)"` presentation attributes.
+ * Chrome resolves those correctly while the SVG is in the live document, but the .docx export
+ * works on DETACHED clones (pageEl.cloneNode(true)), and a detached element has no cascade: read
+ * a var off the clone — getComputedStyle(clonedSvg), or clonedSvg.style.getPropertyValue — and
+ * you get the empty string. Serialize that and the rasterizer draws a ring with NO stroke at all
+ * (a transparent ring with black text), which is worse than the missing gauge it was meant to
+ * fix, and it fails silently. Always resolve against document.documentElement, which is where
+ * `:root { --rpt-*: ... }` in #report-styles actually lives.
+ *
+ * Distinct from _buildReportCssVarResolver above, which parses var DEFINITIONS out of a CSS text
+ * blob for the mso-HTML path. This one asks the live CSSOM, so it also honors any runtime theme
+ * override and needs no stylesheet text.
+ */
+function _rptResolveCssVarsAgainstRoot(text) {
+  if (!text || text.indexOf('var(') === -1) return text;
+  var rootStyle = getComputedStyle(document.documentElement);
+  var cache = {};
+  return text.replace(/var\(\s*(--[a-zA-Z0-9-]+)\s*(?:,\s*([^()]*))?\)/g, function (whole, name, fallback) {
+    if (!(name in cache)) cache[name] = (rootStyle.getPropertyValue(name) || '').trim();
+    if (cache[name]) return cache[name];
+    return fallback !== undefined ? fallback.trim() : whole;
+  });
+}
+
+/** How many device pixels the gauge ring PNG carries per CSS pixel. 3x measured (D-25 proof,
+ *  2026-08-02): a ring-only PNG comes out 330x383px for the cover's 110px gauge and the three
+ *  cover rings together cost about 55.6KB — crisp in print, negligible in the package. */
+var RPT_DOCX_GAUGE_RASTER_SCALE = 3;
+
+/**
+ * _rptSwapGaugeRingForPng — draw ONE gauge ring into a PNG and insert it immediately before the
+ * <svg> it came from. Resolves with true on success, false on any failure (never rejects, never
+ * hangs: a Word export must not be lost because a canvas misbehaved).
+ *
+ * RING ONLY. Every <text> is stripped from the rasterized copy and the original <svg> is LEFT IN
+ * PLACE, because the docx translator's own <svg> branch (app/docx-writer.js) already emits that
+ * svg's percentage as a real bold text run. So the number stays live, selectable, searchable and
+ * restyleable text in Word — it is never baked into the picture — and the picture supplies only
+ * the part Word genuinely cannot draw.
+ */
+function _rptSwapGaugeRingForPng(svgEl, scale) {
+  var wCss = parseFloat(svgEl.getAttribute('width'));
+  var hCss = parseFloat(svgEl.getAttribute('height'));
+  if (!wCss || !hCss || !svgEl.parentNode) return Promise.resolve(false);
+
+  var ring = svgEl.cloneNode(true);
+  Array.prototype.slice.call(ring.querySelectorAll('text')).forEach(function (t) {
+    if (t.parentNode) t.parentNode.removeChild(t);
+  });
+  ring.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  if (!ring.getAttribute('viewBox')) ring.setAttribute('viewBox', '0 0 ' + wCss + ' ' + hCss);
+  var pxW = Math.round(wCss * scale);
+  var pxH = Math.round(hCss * scale);
+  ring.setAttribute('width', String(pxW));
+  ring.setAttribute('height', String(pxH));
+  // Resolve --rpt-* AFTER serializing, against the live root — see the doc comment above.
+  var markup = _rptResolveCssVarsAgainstRoot(new XMLSerializer().serializeToString(ring));
+
+  return new Promise(function (resolve) {
+    var settled = false;
+    var finish = function (ok) {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    // A data-URL SVG cannot hit the network, but never let a stuck decode block the export.
+    var timer = setTimeout(function () {
+      finish(false);
+    }, 5000);
+    var img = new Image();
+    img.onload = function () {
+      clearTimeout(timer);
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = pxW;
+        canvas.height = pxH;
+        var c2d = canvas.getContext('2d');
+        c2d.drawImage(img, 0, 0, pxW, pxH);
+        var out = document.createElement('img');
+        out.setAttribute('src', canvas.toDataURL('image/png'));
+        out.setAttribute('alt', 'Readiness ring');
+        // Placed at the SVG's own CSS size, so 3x raster data lands in a 1x box and prints sharp.
+        // _docxRegisterImage reads this inline width/height to size the OOXML drawing.
+        out.setAttribute('style', 'display:block;margin:0 auto;width:' + wCss + 'px;height:' + hCss + 'px');
+        svgEl.parentNode.insertBefore(out, svgEl);
+        finish(true);
+      } catch (e) {
+        finish(false);
+      }
+    };
+    img.onerror = function () {
+      clearTimeout(timer);
+      finish(false);
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  });
+}
+
+/**
+ * _rptRasterizeGaugeRingsForDocx — DEFECTS-2026-08-02.md D-25: "Cover gauges are plain text in
+ * the Word export" (Matt asked directly why the gauges are missing from the .docx).
+ *
+ * Word has no SVG: the OOXML translator drops the ring and keeps only the percentage, so the
+ * Audit cover arrived in Word as three bare numbers in a borderless table. Nothing about the
+ * embedding machinery needed to change — _docxRegisterImage / _docxEmbedImage / _docxImageRun /
+ * _docxAssemble already embed any <img src="data:image/png;base64,..."> generically — so this is
+ * only a rasterize-and-swap pass over the page clones, run before translation.
+ *
+ * Targets every <svg> that contains a <circle>, which is exactly the gauge rings (_a36GaugeSVG
+ * and its "No Scope Required" N/A twin) and nothing else in these documents: the bar and line
+ * charts are <rect>/<path>/<polyline>. A gauge that fails to rasterize simply keeps today's
+ * behavior (percentage text, no ring) — degraded, never broken.
+ *
+ * @returns {Promise<{found:number, rasterized:number}>}
+ */
+async function _rptRasterizeGaugeRingsForDocx(pageEls, scale) {
+  scale = scale || RPT_DOCX_GAUGE_RASTER_SCALE;
+  var rings = [];
+  pageEls.forEach(function (pageEl) {
+    if (!pageEl.querySelectorAll) return;
+    Array.prototype.forEach.call(pageEl.querySelectorAll('svg'), function (svg) {
+      if (svg.querySelector('circle')) rings.push(svg);
+    });
+  });
+  var rasterized = 0;
+  for (var i = 0; i < rings.length; i++) {
+    var ok = false;
+    try {
+      ok = await _rptSwapGaugeRingForPng(rings[i], scale);
+    } catch (e) {
+      ok = false;
+    }
+    if (ok) rasterized++;
+  }
+  if (rings.length && rasterized < rings.length && typeof console !== 'undefined' && console.warn) {
+    console.warn(
+      'Word export: ' +
+        (rings.length - rasterized) +
+        ' of ' +
+        rings.length +
+        ' gauge rings could not be rasterized; their percentages still export as text.',
+    );
+  }
+  return { found: rings.length, rasterized: rasterized };
+}
+
+/**
  * exportReportToDocx — Word Export Rebuild plan Step 6 (first shipped document), wired for the
  * EMS Agreement (data._agreement). AI/_context/plans/word-export-rebuild-2026-07-30.md Part D
  * lines 306-311. Style authority: AI/_context/specs/csc-document-style-spec-2026-07-29.md.
@@ -8653,6 +8804,11 @@ async function exportReportToDocx() {
       });
       pageEls.push(clone);
     });
+
+    // D-25 (R2, 2026-08-03): draw the gauge rings Word cannot draw. Must run BEFORE translation,
+    // and must run on these clones while the live document (and therefore the --rpt-* cascade)
+    // is still available to _rptResolveCssVarsAgainstRoot. Percentages stay live text.
+    await _rptRasterizeGaugeRingsForDocx(pageEls);
 
     const translated = _docxTranslatePages(pageEls);
 
