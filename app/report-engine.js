@@ -17456,24 +17456,21 @@ function rptPageASHRAE36ProposalCover(n, d) {
     'px;font-weight:700;color:var(--rpt-blue)">' +
     esc(displayClient) +
     ' Building Automation System</div>' +
-    '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Energy Management Services</div>' +
     // Document-type identifier (2026-07-29) -- the cover previously never said "Service
     // Proposal" anywhere, while the interior Cost Estimate headers and the modal/PDF filename
-    // all call it that. Subordinate to both title lines above: smaller than the 16px program
-    // line, lighter weight (600 vs 700), and var(--rpt-page-text) (near-black body-text token,
-    // #000000) instead of var(--rpt-blue) so the hierarchy reads client -> program -> document
-    // type without competing with either title line. Uppercase + letter-spacing follows this
-    // file's own existing section-label convention (see "Portfolio Metrics" label ~line 1906:
-    // font-size:11px; text-transform:uppercase; letter-spacing:0.5px) rather than introducing a
-    // new pattern.
-    '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">Service Proposal</div>' +
-    // 2026-08-03 (visual review V-25): the Proposal carried no date at all — its only date-like
-    // strings were the "Aug 2026"-"Dec 2026" schedule column labels, so the quoted monthly figure
-    // sat on an undated page. Same source as the export filename (_rptDocumentDateLong), so the
-    // two can never disagree.
-    '<div style="font-size:14px;color:var(--rpt-page-text);margin-top:3px">' +
-    _rptDocumentDateLong() +
-    '</div>' +
+    // all call it that. Subordinate to the title line above: var(--rpt-page-text) (near-black
+    // body-text token, #000000) instead of var(--rpt-blue) so the hierarchy reads client ->
+    // document type without competing with the title line. Uppercase + letter-spacing follows
+    // this file's own existing section-label convention (see "Portfolio Metrics" label ~line
+    // 1906: font-size:11px; text-transform:uppercase; letter-spacing:0.5px) rather than
+    // introducing a new pattern.
+    // 2026-08-03: removed the "ASHRAE 36 Energy Management Services" subtitle and the date line
+    // that previously sat between the title and this kicker (Matt: "why the fuck is there a
+    // random ASHRAE 36 Energy Services Management sentence in the middle of the Service Proposal
+    // title" / "why is there a date in the Service Proposal title") — neither was requested.
+    // margin-top bumped 2px -> 8px so the kicker still reads as a deliberate second line under
+    // the title rather than crowding it now that two lines were removed above it.
+    '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.5px;margin-top:8px">Service Proposal</div>' +
     '</div>';
 
   // ── Executive Summary ───────────────────────────────────────────────────
