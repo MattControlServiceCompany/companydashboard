@@ -18113,8 +18113,21 @@ function _rptA36PhaseSeqCategoryNames(rows) {
   });
   var names = [];
   if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+    // Occupancy-Based Ventilation canonicalization (Matt, 2026-08-03, docx item 13; standing
+    // count-OBV-once rule): demandCtrl and vav_dcv collapse to ONE "Occupancy-Based Ventilation"
+    // entry in every category list this function feeds (Expected Results, Future Work lists,
+    // the Cost Estimate page's phase timeline) — never "(Air Handling Units)" and
+    // "(Zone Terminals)" as two items.
+    var _obvNamed = false;
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       if (!seen[sd.key]) return;
+      if (sd.key === 'demandCtrl' || sd.key === 'vav_dcv') {
+        if (!_obvNamed) {
+          _obvNamed = true;
+          names.push('Occupancy-Based Ventilation');
+        }
+        return;
+      }
       // Hot Water/Chilled Water/Boiler/Chiller disambiguation used to be added HERE (prepending
       // 'Hot Water '/'Chilled Water ' by key prefix) because hwp_*/chwp_* pairs shared identical
       // bare labels ('Supply Temperature Reset', 'Staging', ...) in EM_SEQUENCE_DEFS. Removed
