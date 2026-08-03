@@ -1285,7 +1285,16 @@ function _docxRegisterImage(el, ctx) {
   var widthTwips = _docxPxToTwips(widthPx) || 1440;
   var heightTwips = _docxPxToTwips(heightPx) || 1440;
 
-  return _docxImageRun(rId, widthTwips, heightTwips, { altText: el.getAttribute('alt') || undefined });
+  // docPrId MUST be unique per drawing object in the document. _docxImageRun defaults it to 1,
+  // which was harmless while no document embedded more than one body image — the Audit cover's
+  // three gauge rings (R2, 2026-08-03) are the first case that does, and three <wp:docPr id="1">
+  // in one document.xml is exactly the kind of duplicate non-visual-drawing id Word can answer
+  // with an "unreadable content" repair prompt. mediaIndex is already unique and starts at 100,
+  // clear of the skeleton's own header drawing ids (measured: header2 uses 26, header3 uses 27).
+  return _docxImageRun(rId, widthTwips, heightTwips, {
+    altText: el.getAttribute('alt') || undefined,
+    docPrId: mediaIndex,
+  });
 }
 
 /** Block-level <img> -> its own paragraph (body spacing, w:after=240). */
