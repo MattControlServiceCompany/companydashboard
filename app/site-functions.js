@@ -1576,6 +1576,53 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.02.743',
+    date: '2026-08-02',
+    title: 'Printing and Word export fixes across the Audit Report, Service Proposal, and Services Agreement',
+    items: [
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report and Service Proposal, text no longer runs into the colored band at the bottom of the page when you print or download. Every page now keeps its content clear of the footer.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report and Service Proposal, all printed text is now 10 point or larger, so nothing comes out too small to read.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report, the column headings in the Building Readiness table no longer print on top of each other.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 Audit Report, the readiness scoring legend is now fully readable on every page it appears on.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Management Services Agreement, the complete building list in the scope section now prints in full, continuing onto another page when there are more buildings than fit on one.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Management Services Agreement, the utility rebate clause is no longer cut off part way through.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Management Services Agreement, internal placeholder notes that were never meant for the client have been removed from the contract text.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Management Services Agreement, the client mailing address is back in the notices section.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Management Services Agreement, a cross reference that pointed at the wrong section number is corrected.',
+      },
+      {
+        type: 'fix',
+        text: 'Word downloads, tables no longer break across pages in the wrong place, and the blank page at the end of the document is gone.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.02.742',
     date: '2026-08-02',
     title: 'Word export fixes and sequence counts in the Audit Report',
