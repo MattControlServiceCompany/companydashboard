@@ -955,6 +955,87 @@ function _rptContentBudget(variant) {
 }
 
 /**
+ * RPT_PRINT_PT_PER_PX / RPT_MIN_TEXT_PT / RPT_MIN_TEXT_PX / _rptApplyMinFontFloor —
+ * the report's minimum-legible-text floor (U2 / RC-A, 2026-08-02, DEFECTS-2026-08-02.md D-05).
+ *
+ * WHY THIS EXISTS. The standing rule is "no text below 10pt in any client document." The .docx
+ * export already satisfied it (measured minimum w:sz = 20 = exactly 10pt in all three JOCO
+ * documents), but the PRINT path did not, and it is the print path that produces the PDFs Matt
+ * actually sends. Measured via PyMuPDF span census on the live v2026.08.02.742 exports: the Audit
+ * carried 373 spans under 10pt (7.5pt x146, 8.25pt x195, 6.75pt x31, 9.0pt x1), the Service
+ * Proposal 79 (minimum 6.38pt), the Agreement 4.
+ *
+ * WHERE THE SUB-10pt SIZES COME FROM. A .rpt-page is authored 816px wide and prints onto an 8.5in
+ * (612pt) sheet, so the print path scales every CSS pixel by exactly 612/816 = 0.75. A font
+ * authored at 11px therefore prints at 8.25pt, 10px prints at 7.5pt, 9px at 6.75px. Nothing is
+ * "shrinking" — the report's own px type scale simply dips below the legal floor once converted.
+ * The floor in px is therefore 10 / 0.75 = 13.333px, rounded UP to 13.34px so the printed size
+ * lands at 10.005pt and can never round to 9.99.
+ *
+ * WHY A RUNTIME DOM PASS RATHER THAN EDITING THE FONT LITERALS. The small sizes are spread across
+ * hundreds of INLINE style strings in this file and in app/agreement-engine.js (plus SVG
+ * font-size presentation attributes on the cover gauges), and inline styles beat any stylesheet
+ * rule, so no @media print rule can raise them. One DOM pass at the single point where report
+ * HTML enters the document (showReportOverlay) enforces the floor for every report type, every
+ * export path that reads #reportPages (print-to-PDF, .doc, .docx), and every future page template,
+ * without a second copy of the rule anywhere. It is also the only approach that fixes the
+ * Agreement's headings without editing agreement-engine.js.
+ *
+ * INHERITANCE CORRECTNESS. Sizes are read for every element FIRST, then written, so no element's
+ * "original" size is ever read through a parent this pass already changed. An element that was
+ * already legal but whose PARENT gets raised is re-pinned at its own original px value, otherwise
+ * a child sized in em/% would be inflated by its parent's bump.
+ *
+ * @param {Element} root - container whose subtree gets the floor (normally #reportPages)
+ */
+var RPT_PRINT_PT_PER_PX = 0.75; // 816px-wide page printed onto a 612pt sheet
+var RPT_MIN_TEXT_PT = 10; // standing rule: nothing below 10pt in a client document
+var RPT_MIN_TEXT_PX = Math.ceil((RPT_MIN_TEXT_PT / RPT_PRINT_PT_PER_PX) * 100) / 100; // 13.34px
+
+/**
+ * _rptTextLineH — height of ONE rendered line of report body text, in px, for a given CSS
+ * line-height multiplier. Pagination estimates that count text lines must call this instead of
+ * hardcoding "15px per line" or "20px per line": those literals were all measured before the 10pt
+ * floor existed and every one of them silently under-counted afterwards (U2, 2026-08-02). Because
+ * this reads RPT_MIN_TEXT_PX, changing the floor re-derives every line-count estimate with it.
+ * @param {number} [mult] - the element's CSS line-height multiplier (defaults to 1.5)
+ */
+function _rptTextLineH(mult) {
+  return Math.round(RPT_MIN_TEXT_PX * (mult || 1.5));
+}
+
+function _rptApplyMinFontFloor(root) {
+  if (!root || typeof getComputedStyle !== 'function') return 0;
+  var MIN = RPT_MIN_TEXT_PX;
+  var els = root.querySelectorAll('*');
+  var orig = [];
+  var i;
+  var rootPx = parseFloat(getComputedStyle(root).fontSize) || 0;
+  for (i = 0; i < els.length; i++) {
+    orig[i] = parseFloat(getComputedStyle(els[i]).fontSize) || 0;
+  }
+  // Index lookup so an element can find its own parent's ORIGINAL (pre-write) size.
+  var idx = new Map();
+  for (i = 0; i < els.length; i++) idx.set(els[i], i);
+  var raised = 0;
+  for (i = 0; i < els.length; i++) {
+    var el = els[i];
+    var own = orig[i];
+    if (!own) continue;
+    var p = el.parentElement;
+    var parentPx = p === root ? rootPx : idx.has(p) ? orig[idx.get(p)] : 0;
+    if (own < MIN) {
+      el.style.setProperty('font-size', MIN + 'px', 'important');
+      raised++;
+    } else if (parentPx && parentPx < MIN) {
+      // Parent is about to grow; pin this element so it keeps the size it already had.
+      el.style.setProperty('font-size', own + 'px', 'important');
+    }
+  }
+  return raised;
+}
+
+/**
  * _rptPaginateTokens — shared pixel-height paginator used by ALL multi-page report sections.
  *
  * Splits an array of token objects into page-sized chunks using pixel-height estimates rather
@@ -1449,9 +1530,21 @@ function generateReportHTML(data, selectedSections) {
  * showReportOverlay — displays the report preview overlay with generated HTML.
  */
 function showReportOverlay(html, title) {
-  document.getElementById('reportPages').innerHTML = html;
+  var pagesEl = document.getElementById('reportPages');
+  pagesEl.innerHTML = html;
   document.getElementById('reportOverlayTitle').textContent = title || 'Report Preview';
   document.getElementById('reportOverlay').style.display = 'flex';
+  // U2 / RC-A (2026-08-02, D-05): enforce the 10pt printed-text floor on the live DOM before
+  // anything reads it. This is the ONE place report HTML enters the document, so every report
+  // type and every downstream export (print-to-PDF, .doc, .docx — all of which serialize
+  // #reportPages) inherits the floor. The overlay must already be display:flex above, otherwise
+  // getComputedStyle() reports 0px for every element in a display:none subtree and the pass is a
+  // silent no-op.
+  _rptApplyMinFontFloor(pagesEl);
+  // Kept as the pre-floor source string deliberately: nothing in the codebase reads
+  // document._currentReportHTML today (grep-verified), and re-serializing the live DOM here would
+  // add a multi-megabyte innerHTML round-trip to every preview open on a 26-building Audit. Any
+  // future consumer must read the LIVE #reportPages DOM (which carries the floor), not this.
   document._currentReportHTML = html;
   document.body.style.overflow = 'hidden';
 }
@@ -13796,12 +13889,28 @@ function rptPageASHRAE36Executive(n, d) {
   // under-counted this by ~25-30px, causing a checkOverflow() hit (scrollH 1086 vs clientH
   // 1056) on the first Executive Summary page. Re-measured and bumped below; re-verified via
   // headless render afterward that checkOverflow() returns 0 and the page count is unchanged.
+  // U2 / RC-A (2026-08-02, D-04 + D-05): ALL of the constants below were re-measured in a headless
+  // PRINT-media render of the real JOCO Audit (27 buildings) AFTER _rptApplyMinFontFloor raised
+  // every sub-10pt string to the 13.34px floor. Every one of them had grown, because they are all
+  // multi-line text blocks whose line count is set by the font size: the readiness footnote went
+  // 45px -> 100px (the tier sentences now wrap far more), the occupancy-ventilation callout
+  // 86px -> 121px, the top-gap callout 68px -> 78px, the table head 42px -> 46px. Budgeting the
+  // old numbers against the new type scale is precisely what pushed the readiness footnote 24.8pt
+  // into the footer wave band on Audit p2. Each constant below is now the MEASURED height, and the
+  // whole page carries ONE named safety margin (EXEC_SAFETY_H) instead of a private overcount
+  // baked into each line — per-item padding silently compounded to ~25px here, which was enough to
+  // drop a whole building row onto a fourth page and leave a one-row orphan.
+  // Re-measure protocol if any of this content changes: headless render, emulateMedia('print'),
+  // read getBoundingClientRect().height of each .rpt-body child on the Executive Summary pages.
+  var EXEC_THEAD_H = 46; // measured
+  var EXEC_FOOTNOTE_H = 100; // measured (readiness-band methodology footnote, wraps to ~5 lines at 10pt)
+  var EXEC_SAFETY_H = 20; // single page-level margin covering block margin-collapse and sub-pixel rounding
   var _firstChromeH = 0;
-  if (dcvCallout) _firstChromeH += 94; // measured ~86px; use 94 for slight overcount safety
-  if (callout) _firstChromeH += 72; // measured ~68px; use 72 for safety
-  _firstChromeH += 28; // tableTitle (~20px actual; 28 is safe overcount)
-  _firstChromeH += 44; // thead — DOM-measured 42px (spec said 32, was wrong)
-  _firstChromeH += 50; // tableFootnote — 3-line plain-language footnote, DOM-measured 45px actual; 50 for safety
+  if (dcvCallout) _firstChromeH += 121; // measured (occupancy-based ventilation readiness callout)
+  if (callout) _firstChromeH += 78; // measured (most-common-gap callout)
+  _firstChromeH += 20; // tableTitle — measured
+  _firstChromeH += EXEC_THEAD_H;
+  _firstChromeH += EXEC_FOOTNOTE_H;
   // d5929df4 (2026-07-13): FIRST base trimmed 894 -> 862. Restoring CSC_FOOTER_B64 to the
   // full 1699x224 crop (app/csv-import.js, this same commit — the 2026-07-10 regression had
   // cropped it to 1699x85, silently deleting the green band) made the rendered footer image
@@ -13826,10 +13935,17 @@ function rptPageASHRAE36Executive(n, d) {
   // arrived at (904 - 42 = 862, 904 - 187 = 717) -- no visual/page-count change, just naming the
   // gap between the shared geometry base and this page's own additional historical safety
   // margin instead of leaving it as an unexplained standalone number.
-  var EXEC_FIRST_BASE_ADJUSTMENT = 42; // gap between shared base and the historical 862 FIRST base
-  var EXEC_CONT_BASE_ADJUSTMENT = 187; // gap between shared base and the historical 717 CONT budget (cont heading + safety margin)
-  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - EXEC_FIRST_BASE_ADJUSTMENT - _firstChromeH - 30; // 30px safety margin
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - EXEC_CONT_BASE_ADJUSTMENT;
+  // U2 (2026-08-02): EXEC_FIRST_BASE_ADJUSTMENT (42) and EXEC_CONT_BASE_ADJUSTMENT (187) are gone.
+  // They existed only to reproduce two historical literals (862/717) that were themselves the
+  // residue of the 2026-07-13 emergency trim described above — an unexplained fudge on top of an
+  // unexplained fudge. Both pages now subtract their OWN measured chrome from the shared content
+  // budget, so the arithmetic states the actual page and can be re-derived by anyone who measures
+  // it again. The continuation page's chrome is its own small "(continued, N of M)" heading plus
+  // the same table head and footnote the first page carries.
+  var EXEC_CONT_HEADER_H = 27; // measured — "Building ASHRAE 36 Readiness (continued, N of M)" bar
+  var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H + EXEC_FOOTNOTE_H;
+  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - _firstChromeH - EXEC_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - _contChromeH - EXEC_SAFETY_H;
 
   // Shared table styles
   // fix/report-formatting-consistency (2026-07-27): font-size was 13px, a lone outlier against
@@ -13988,6 +14104,10 @@ function rptPageASHRAE36Executive(n, d) {
   // at it, not by the DOM proxy count alone). Re-tuned to 34px (34+10=44px matches the
   // measured max) — still a real reduction from the original 50px/row, just accurate instead
   // of optimistic.
+  // U2 (2026-08-02): ROW_BOX_MIN_H stays 34 — it is a MINIMUM, and at the 10pt font floor the
+  // rows are now taller than it anyway, so raising it would change nothing except the rare
+  // single-line row. What DID have to change is the estimate the paginator budgets with; see
+  // EXEC_ROW_EST_H below.
   var ROW_BOX_MIN_H = 34;
   var _rowBoxStyle = 'min-height:' + ROW_BOX_MIN_H + 'px;display:flex;align-items:center';
   // 2026-07-12 fix (item fb693f5c): row borders switched from the pale var(--rpt-rule)
@@ -14069,18 +14189,24 @@ function rptPageASHRAE36Executive(n, d) {
   }
 
   // Build flat token list — one token per building row
-  // estH: ROW_BOX_MIN_H (40px content box) + 10px td padding (5+5) = 50px per row, now uniform
-  // for every row (1-line or 2-line building name) after the row-height fix above. Placeholder
-  // value re-verified against real DOM-measured heights on JOCO data (see gate results).
+  // U2 (2026-08-02): estH was `ROW_BOX_MIN_H + 10` = 44px, which assumed the row's tallest cell
+  // was the flex box's own 34px minimum plus 5px+5px of td padding. At the 10pt printed-text floor
+  // that assumption is dead: the Status cell ("Partially Covered · 2658/4032 sensors") and the
+  // building name both wrap to more lines at the larger size, and headless print-media measurement
+  // of all 27 JOCO rows returned 65px for 25 of them (45-47px for the two shortest). Budgeting 44
+  // against a real 65 under-counted the readiness table by ~21px PER ROW — 231px on an 11-row page
+  // — which is the arithmetic behind D-04's Audit p2/p3 footer collisions. Now stated as its own
+  // measured constant rather than derived from an unrelated CSS minimum that no longer binds.
+  var EXEC_ROW_EST_H = 66; // DOM-measured max 65px at the 10pt floor; +1 for sub-pixel rounding
   var allBuildings = d.buildings;
   var tokens = allBuildings.map(function (b) {
-    return { type: 'row', estH: ROW_BOX_MIN_H + 10, html: _buildRowHTML(b) };
+    return { type: 'row', estH: EXEC_ROW_EST_H, html: _buildRowHTML(b) };
   });
   // Edge case: no buildings
   if (tokens.length === 0) {
     tokens.push({
       type: 'row',
-      estH: ROW_BOX_MIN_H + 10,
+      estH: EXEC_ROW_EST_H,
       html: '<tr><td colspan="6" style="padding:8px;font-size:11px;color:var(--rpt-page-text)">No buildings in portfolio.</td></tr>',
     });
   }
@@ -14233,11 +14359,37 @@ function rptPageASHRAE36CostEstimate(n, d) {
         _esc(plainDesc) +
         '</td>' +
         '</tr>';
-      // estH: DOM-measured 40–65px per row (avg ~55px); 60px for safety on wrapping text.
-      // Bumped to 82 (2026-07-23) to cover the added "Requires:" sensor sub-line, which can wrap
-      // to 2-3 lines in the narrow 26%-width sequence-name column for sequences with 3 required
-      // sensors (e.g. ahu_sat_reset, hwp_staging) — re-verified against rendered output below.
-      rationaleTokens.push({ type: 'row', html: rowHTML, estH: sensorLine ? 82 : 60 });
+      // U2 / RC-A (2026-08-02, D-04): estH was a two-bucket guess (82px with a "Requires:"
+      // sub-line, 60px without). At the 10pt printed-text floor the real rows measured 75-153px
+      // in a headless print render of the JOCO Audit — every single one taller than 82 — so the
+      // paginator packed 8 rows onto a page that could hold 6 and the last rows printed over the
+      // footer wave. A flat constant cannot work here: row height is driven by how many lines the
+      // sequence NAME (26% column), its "Requires:" list, and the plain-language DESCRIPTION each
+      // wrap to, and those vary by a factor of two across the 16 sequences.
+      //
+      // Model below is the same characters-per-line shape the Per-Building Detail table already
+      // uses, with the constants fitted against all 16 measured rows (grid search over chars-per-
+      // line for each column): it never under-estimates a single row and over-estimates by only
+      // 4px per row on average. Line height is _rptTextLineH() — the floored 13.34px font times
+      // the 1.5 line-height these cells declare — so if the floor ever changes, this follows it.
+      var SEQ_ROW_PAD_H = 14; // td padding 7px top + 7px bottom
+      var SEQ_NAME_CPL = 20; // chars per line, bold sequence label in the 26% (167px) name column
+      var SEQ_REQ_CPL = 24; // chars per line, "Requires: ..." sub-line (regular weight, same column)
+      var SEQ_DESC_CPL = 50; // chars per line, plain-language description in the ~365px column
+      var SEQ_REQ_GAP = 3; // the sub-line's margin-top
+      // One line height for all three columns: measured, the sub-line's declared line-height:1.4
+      // still lays out on the same 20px rhythm as the 1.5 cells once the font floor applies, and
+      // fitting it at 19px under-estimated two real rows by 1px.
+      var _seqLineH = _rptTextLineH(1.5);
+      var _reqText = sensorLine ? 'Requires: ' + sensorLine : '';
+      var _nameH = Math.ceil((seq.label || '').length / SEQ_NAME_CPL) * _seqLineH;
+      var _reqH = _reqText ? SEQ_REQ_GAP + Math.ceil(_reqText.length / SEQ_REQ_CPL) * _seqLineH : 0;
+      var _descH = Math.ceil(plainDesc.length / SEQ_DESC_CPL) * _seqLineH;
+      rationaleTokens.push({
+        type: 'row',
+        html: rowHTML,
+        estH: SEQ_ROW_PAD_H + Math.max(_nameH + _reqH, _descH),
+      });
     });
   } catch (e) {
     console.error('rptPageASHRAE36CostEstimate: sequence-glossary table build failed', e);
@@ -14252,10 +14404,19 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
   // standalone literals — RATIONALE_BASE_ADJUSTMENT constants preserve these exact numeric
   // values (904 - 164 = 740, 904 - 154 = 750), no visual/page-count change.
-  var RATIONALE_FIRST_BASE_ADJUSTMENT = 164; // chrome (title/thead/div) + safety margin, per comment above
-  var RATIONALE_CONT_BASE_ADJUSTMENT = 154;
-  var RATIONALE_BUDGET_FIRST = _rptContentBudget('standard') - RATIONALE_FIRST_BASE_ADJUSTMENT;
-  var RATIONALE_BUDGET_CONT = _rptContentBudget('standard') - RATIONALE_CONT_BASE_ADJUSTMENT;
+  // U2 (2026-08-02): the two BASE_ADJUSTMENT literals (164/154) preserved budgets calibrated
+  // against an 808px body and pre-floor type. Replaced with this page's own measured chrome, taken
+  // from a headless print render at the 10pt floor: the section title block is 28px including its
+  // margin, and the table head is 33px on the first page but 53px on a continuation page (the
+  // slightly narrower "ASHRAE 36 Spec" column there wraps the header onto a second line) — 56px
+  // covers both, so first and continuation pages can share one honest budget instead of two
+  // differently-fudged ones.
+  var RATIONALE_TITLE_H = 28; // measured, section title + its margin-bottom
+  var RATIONALE_THEAD_H = 56; // measured 33 first page / 53 continuation; 56 covers both
+  var RATIONALE_SAFETY_H = 20; // single page-level margin, same convention as EXEC_SAFETY_H above
+  var RATIONALE_BUDGET_FIRST =
+    _rptContentBudget('standard') - RATIONALE_TITLE_H - RATIONALE_THEAD_H - RATIONALE_SAFETY_H;
+  var RATIONALE_BUDGET_CONT = RATIONALE_BUDGET_FIRST;
 
   var SEQ_SECTION_TITLE = 'ASHRAE 36 Sequences';
 
@@ -14611,14 +14772,21 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:top;' + rowBorder;
 
     // Pixel-height estimate for this row (used by chunk pagination below).
-    // "Sensors Needed" column is ~200px wide at 10px font ≈ 30 chars/line.
-    // "Sequences" column is ~180px wide ≈ 28 chars/line.
-    // Each line is ~15px tall; base row padding (top+bottom 4px each) = 8px overhead.
+    // "Sensors Needed" column is ~200px wide, "Sequences" ~180px wide.
+    // U2 / RC-A (2026-08-02): the chars-per-line figures were 30 and 28, derived when this cell
+    // text rendered at 10px. The 10pt printed-text floor puts it at 13.34px in the same-width
+    // columns, so BOTH the characters that fit on a line and the height of each line change:
+    // chars scale by 10/13.34 (30 -> 22, 28 -> 21) and the line box goes 15px -> _rptTextLineH().
+    // Leaving the old numbers made every multi-line row under-count by roughly a third, which
+    // pushed the Per-Building Detail pages past the footer band once the floor was applied.
+    var PBD_SENSOR_CPL = 22; // was 30 at 10px; same 200px column at the 13.34px floor
+    var PBD_SEQ_CPL = 21; // was 28 at 10px; same 180px column at the 13.34px floor
+    var PBD_ROW_PAD_H = 12; // measured: a 1-line row is 31px = one 20px line box + 11px of padding/borders
     var sensorsText = mp.length === 0 ? '' : missingNames.join(', ');
     var seqsText = notReadySeqs.join(', ');
-    var sensorLines = mp.length === 0 ? 1 : Math.max(1, Math.ceil(sensorsText.length / 30));
-    var seqLines = notReadySeqs.length === 0 ? 1 : Math.max(1, Math.ceil(seqsText.length / 28));
-    var rowEstH = 8 + Math.max(sensorLines, seqLines) * 15;
+    var sensorLines = mp.length === 0 ? 1 : Math.max(1, Math.ceil(sensorsText.length / PBD_SENSOR_CPL));
+    var seqLines = notReadySeqs.length === 0 ? 1 : Math.max(1, Math.ceil(seqsText.length / PBD_SEQ_CPL));
+    var rowEstH = PBD_ROW_PAD_H + Math.max(sensorLines, seqLines) * _rptTextLineH(1.5);
 
     tokens.push({
       type: 'row',
@@ -14756,7 +14924,12 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var tdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
     tokens.push({
       type: 'row',
-      estH: sensorsSum > 0 || seqsSum > 0 ? 34 : 26,
+      // U2 (2026-08-02): 34/26 -> 48/36. These were single/double-line estimates for 10px cell
+      // text; at the 10pt printed-text floor the same cells render at 13.34px and their
+      // breakdown strings ("12 - Zone Temperature Sensor, 3 - ...") wrap further. Scaled by the
+      // floor ratio and re-verified by headless print render of the Per-Building Detail section
+      // with every optional Audit section switched on.
+      estH: sensorsSum > 0 || seqsSum > 0 ? 48 : 36,
       html:
         '<tr>' +
         '<td style="' +
@@ -14840,7 +15013,8 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var _bwTdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
     tokens.push({
       type: 'row',
-      estH: 34,
+      // U2 (2026-08-02): 34 -> 48, same reasoning as the category summary row above.
+      estH: 48,
       html:
         '<tr>' +
         '<td style="' +
@@ -14972,10 +15146,41 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
   // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
   // standalone literals — BUILDING_*_BASE_ADJUSTMENT constants preserve these exact numeric
   // values (904 - 174 = 730, 904 - 74 = 830), no visual/page-count change.
-  var BUILDING_FIRST_BASE_ADJUSTMENT = 174; // gauges (~100px) + intro (~35px) + table thead (~30px) + margin
-  var BUILDING_CONT_BASE_ADJUSTMENT = 74; // cont-header (~35px) + table thead (~30px) + margin
-  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - BUILDING_FIRST_BASE_ADJUSTMENT; // px available for equipment rows on page 1
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - BUILDING_CONT_BASE_ADJUSTMENT; // px available for equipment rows on continuation pages
+  // U2 / RC-A (2026-08-02): re-measured in a headless PRINT render of the JOCO Audit with EVERY
+  // optional section switched on, at the 10pt printed-text floor. The old adjustments (174/74)
+  // budgeted a 100px gauge strip, a 35px intro and a 30px table head; measured, the gauge strip is
+  // 184px, the intro runs to ~120px on buildings with many equipment categories, the head is 31px
+  // and the table's Total row is 33px. Under-reserving ~200px of chrome is why five Per-Building
+  // Detail pages ran past the footer band as soon as the font floor was applied.
+  var BUILDING_GAUGES_H = 190; // measured 184 (three readiness gauges + labels)
+  var BUILDING_INTRO_H = 120; // measured 43-107 depending on how many equipment categories the building has
+  var BUILDING_THEAD_H = 34; // measured 31
+  var BUILDING_TOTAL_ROW_H = 36; // measured 33 (the table's own Total row, last chunk only)
+  var BUILDING_CONT_HDR_H = 40; // "<name> (continued, N of M)" bar
+  var BUILDING_SAFETY_H = 20;
+  // The building-infrastructure callout is appended below the table on the LAST chunk, but was
+  // never subtracted from either budget here (only _a36BuildingBlockToken's estH knew about it).
+  // With the 10pt floor it measures up to ~113px, which is exactly how much four Per-Building
+  // Detail pages ran past the footer band after every other constant on this page was corrected.
+  // Reserved on every chunk rather than only the last one: a chunk count is not known until after
+  // pagination has already run, and this section is opt-in, so the conservative reservation costs
+  // nothing in the shipped client Audit.
+  var BUILDING_INFRA_CALLOUT_H = showBuildingInfra ? 130 : 0; // measured up to 113
+  var ROWS_BUDGET_FIRST =
+    _rptContentBudget('standard') -
+    BUILDING_GAUGES_H -
+    BUILDING_INTRO_H -
+    BUILDING_THEAD_H -
+    BUILDING_TOTAL_ROW_H -
+    BUILDING_INFRA_CALLOUT_H -
+    BUILDING_SAFETY_H; // px available for equipment rows on page 1
+  var ROWS_BUDGET_CONT =
+    _rptContentBudget('standard') -
+    BUILDING_CONT_HDR_H -
+    BUILDING_THEAD_H -
+    BUILDING_TOTAL_ROW_H -
+    BUILDING_INFRA_CALLOUT_H -
+    BUILDING_SAFETY_H; // px available for equipment rows on continuation pages
 
   var c = _a36BuildingContent(d, building, showBuildingInfra);
   var b = c.b;
@@ -15094,13 +15299,28 @@ function _a36BuildingBlockToken(d, building, showBuildingInfra) {
   // alone is enough separation between blocks.
   var blockHTML = '<div style="margin-bottom:12px">' + innerHTML + '</div>';
 
-  // estH: same chrome estimate used by rptPageASHRAE36Building's ROWS_BUDGET_FIRST derivation
-  // (gauges ~100px + intro ~35px + thead ~30px) + summed row heights + summary line (~30px) +
-  // optional infra callout (~50px) + this block's own separator chrome (~32px).
+  // estH: the same chrome constants rptPageASHRAE36Building's ROWS_BUDGET_FIRST derivation uses,
+  // so the two renderers of the same building content cannot disagree about how tall it is.
+  // U2 / RC-A (2026-08-02): re-measured at the 10pt printed-text floor and cross-checked against
+  // two real blocks packed onto one page (JOCO Audit, all sections on): this model predicted 550px
+  // and 459px against measured 550px and 459px.
+  var BLOCK_GAUGES_H = 190; // measured 184
+  var BLOCK_INTRO_H = 120; // measured 43-107
+  var BLOCK_THEAD_H = 34; // measured 31
+  var BLOCK_TOTAL_ROW_H = 36; // measured 33
+  var BLOCK_INFRA_CALLOUT_H = 130; // measured up to 113 at the 10pt floor
+  var BLOCK_SEPARATOR_H = 14; // this block's own margin-bottom:12px
   var rowsH = c.tokens.reduce(function (s, t) {
     return s + (t.estH || 20);
   }, 0);
-  var estH = 100 + 35 + 30 + rowsH + 30 + (showBuildingInfra ? 50 : 0) + 32;
+  var estH =
+    BLOCK_GAUGES_H +
+    BLOCK_INTRO_H +
+    BLOCK_THEAD_H +
+    rowsH +
+    BLOCK_TOTAL_ROW_H +
+    (showBuildingInfra ? BLOCK_INFRA_CALLOUT_H : 0) +
+    BLOCK_SEPARATOR_H;
 
   return { type: 'block', estH: estH, html: blockHTML, name: c.b.name };
 }
@@ -15581,13 +15801,24 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
   // standalone literals — SETPOINT_*_BASE_ADJUSTMENT constants preserve these exact numeric
   // values (904 - 146 = 758, 904 - 101 = 803), no visual/page-count change.
-  var SETPOINT_FIRST_BASE_ADJUSTMENT = 146; // first-page chrome (136px consumed, per comment above) + margin
-  var SETPOINT_CONT_BASE_ADJUSTMENT = 101; // contHdr + thead + safety (91px consumed, per comment above) + margin
-  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - SETPOINT_FIRST_BASE_ADJUSTMENT;
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - SETPOINT_CONT_BASE_ADJUSTMENT;
+  // U2 / RC-A (2026-08-02): re-measured at the 10pt printed-text floor (headless print render,
+  // JOCO Audit with every optional section on). Preamble 70px -> 107px, table head 36px -> 63px
+  // (the six column headers now wrap), rows 44px -> 49px, or 69px where the Status cell needs a
+  // third line. The row estimate below is the measured MAXIMUM rather than an average: this
+  // table's rows are near-uniform, so a max-based estimate costs almost no density and cannot
+  // overflow.
+  var SETPOINT_PREAMBLE_H = 127; // measured 107 preamble + the 20px caption block below it
+  var SETPOINT_THEAD_H = 63; // measured
+  var SETPOINT_CONT_HDR_H = 40;
+  var SETPOINT_SAFETY_H = 20;
+  var SETPOINT_ROW_H = 70; // measured 49 typical, 69 max (3-line Status cell)
+  var ROWS_BUDGET_FIRST =
+    _rptContentBudget('standard') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
+  var ROWS_BUDGET_CONT =
+    _rptContentBudget('standard') - SETPOINT_CONT_HDR_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
 
   var tokens = buildingRows.map(function (row) {
-    return { type: 'row', estH: 46, html: _buildBldgRowHTML(row) };
+    return { type: 'row', estH: SETPOINT_ROW_H, html: _buildBldgRowHTML(row) };
   });
 
   var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
@@ -17001,6 +17232,18 @@ function _rptA36PhaseTableDerive(d, opts) {
           '</span></td></tr>',
       ];
   var improvementsRows = improvementsRowsArr.join('');
+  // U2 / RC-A (2026-08-02, D-04): parallel array of each row's LABEL-CELL character count, in the
+  // same order as improvementsRowsArr. rptPageASHRAE36ProposalPhaseTable paginates this table by
+  // pixel height, and at the 10pt printed-text floor the row height is set entirely by how many
+  // lines that first cell wraps to (the month columns hold a single check mark) — measured 77px
+  // for a 3-line label up to 157px for a 7-line one. A flat per-row constant cannot express that,
+  // so the label length is published here rather than re-derived by parsing the row HTML back out.
+  // Text below must stay byte-identical to unitRowHTML's own label cell.
+  var improvementsRowLabelLens = unitRows.length
+    ? unitRows.map(function (u) {
+        return (u.label + ' at ' + u.building + ' (' + u.equipPhrase + ')').length;
+      })
+    : [MONTH_EMPTY_TEXT.length];
 
   // Facilities Included row REMOVED (2026-07-29, Matt, verbatim: "why would you put continues in
   // phase x for every building? That is redundant. Also, let's just remove the buildings
@@ -17142,6 +17385,7 @@ function _rptA36PhaseTableDerive(d, opts) {
     colgroupHTML: colgroup,
     headRowHTML: headRow,
     rowsHTMLArr: improvementsRowsArr,
+    rowsLabelLenArr: improvementsRowLabelLens,
     futureRowHTML: futureRowHTML,
     termNotesHTML: termNotesHTML,
     standaloneFutureWorkHTML: standaloneFutureWorkHTML,
@@ -17233,20 +17477,38 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // _buildItemizedPages' own row-height constants do (that function's comment: "keep a safety
   // margin for longer item names ... that could wrap further") for a longer building/sequence
   // name or an extra future-work category than JOCO's own data happened to produce.
+  // U2 / RC-A (2026-08-02, D-04 + D-05): every constant below was re-measured in a headless PRINT
+  // render of the real JOCO Service Proposal AFTER the 10pt printed-text floor was applied, and
+  // every one of them had been too small. The flat ROW_H = 66 was the worst: real rows measured
+  // 77-157px, so the paginator put 9 rows on a page that holds 5 and the table ran 313px past the
+  // bottom of the content area and straight through the footer wave band. THEAD_H rose because the
+  // continuation page's narrower month columns wrap "Aug 2026" onto two lines (38px first page,
+  // 59px continuation — 60 covers both). The trailing notes block (Expected Results + Ongoing
+  // Services + standalone Future Work) measured 356px, over the old 340 reservation.
   var g = _rptContentBudget('flush');
-  var THEAD_H = 42;
-  var ROW_H = 66;
-  var HEAD_CHROME_FIRST = 215; // Why This Approach (115) + intro paragraph (76) + inter-block gaps
+  var THEAD_H = 60; // measured 38 first page / 59 continuation (wrapped month headers); 60 covers both
+  var HEAD_CHROME_FIRST = 232; // measured 224 (Why This Approach block + intro heading/paragraph + gaps)
   var CONT_TITLE_CHROME = 30; // small "(continued)" heading on continuation pages only
-  var TAIL_H = opts && opts.futureWorkInline === true ? 140 : 340;
-
-  var tokens = der.rowsHTMLArr.map(function (html) {
-    return { type: 'row', estH: ROW_H, html: html };
+  var TAIL_H = opts && opts.futureWorkInline === true ? 150 : 370; // measured 356 in standalone mode
+  // Per-row height from the label cell's line count — see rowsLabelLenArr's comment where it is
+  // built. 22 chars/line and the 17px of td padding were fitted against all 13 measured JOCO rows:
+  // the estimate is never below the real height and averages ~3px over it.
+  var PHASE_LABEL_CPL = 22; // chars per line in the ~167px "Included Improvements" label column
+  var PHASE_ROW_PAD_H = 17; // td padding above/below the label block
+  var _phaseLineH = _rptTextLineH(1.5);
+  var _phaseLabelLens = der.rowsLabelLenArr || [];
+  var tokens = der.rowsHTMLArr.map(function (html, i) {
+    var len = _phaseLabelLens[i] || 0;
+    var lines = Math.max(1, Math.ceil(len / PHASE_LABEL_CPL));
+    return { type: 'row', estH: PHASE_ROW_PAD_H + lines * _phaseLineH, html: html };
   });
   if (der.futureRowHTML) {
     // futureWorkInline mode folds Future Work into the table as one more <tr> (der.futureRowHTML)
     // -- narrower narrative + category sub-list makes this row taller than a plain unit row.
-    tokens.push({ type: 'row', estH: 160, html: der.futureRowHTML });
+    // U2 (2026-08-02): 160 -> 214, the same 1.334x the 10pt floor applied to every other text
+    // block on this page. Not directly measured (JOCO ships futureWorkInline off, so this row is
+    // not in the default export) — scaled, and flagged as scaled rather than measured.
+    tokens.push({ type: 'row', estH: 214, html: der.futureRowHTML });
   }
   // Always-present trailing block: term notes (+ standalone Future Work unless folded inline
   // above). Appended LAST so _rptPaginateTokens naturally pushes it onto a fresh page if it does
@@ -19443,15 +19705,39 @@ function rptPageASHRAE36PointInventory(n, d) {
   // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
   // standalone literals — INV_*_BASE_ADJUSTMENT constants preserve these exact numeric values
   // (904 - 274 = 630, 904 - 101 = 803), no visual/page-count change.
-  var INV_FIRST_BASE_ADJUSTMENT = 274; // first-page chrome (summaryBlock + narrative + thead + wide safety margin, per comment above)
-  var INV_CONT_BASE_ADJUSTMENT = 101; // contHdr + thead + safety, matching Setpoint Review's continuation budget
-  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - INV_FIRST_BASE_ADJUSTMENT;
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - INV_CONT_BASE_ADJUSTMENT;
+  // U2 / RC-A (2026-08-02): the chrome above was explicitly "estimates, not DOM-measured" — it is
+  // measured now, in a headless print render at the 10pt printed-text floor: summary block 129px,
+  // narrative 107px, table head 73px (five headers, all wrapping), footnote ~90px. The flat 30px
+  // row estimate was the larger error: rows measure 31px, 51px or 71px depending purely on how
+  // many lines the building name wraps to in the 144px name column, so the estimate below counts
+  // those lines (17 chars per line, fitted against all 28 JOCO rows) instead of assuming one.
+  var INV_SUMMARY_H = 129; // measured
+  var INV_NARRATIVE_H = 107; // measured
+  var INV_THEAD_H = 73; // measured
+  var INV_FOOTNOTE_H = 90; // measured; reserved on every page (it rides the last chunk) for safety
+  var INV_CONT_HDR_H = 40;
+  var INV_SAFETY_H = 20;
+  var INV_NAME_CPL = 17; // chars per line in the 144px Building column at the 13.34px floor
+  var INV_ROW_PAD_H = 11; // measured: a 1-line row is 31px = one 20px line box + 11px
+  var _invLineH = _rptTextLineH(1.5);
+  function _invRowEstH(name) {
+    var lines = Math.max(1, Math.ceil(String(name || '').length / INV_NAME_CPL));
+    return INV_ROW_PAD_H + lines * _invLineH;
+  }
+  var ROWS_BUDGET_FIRST =
+    _rptContentBudget('standard') -
+    INV_SUMMARY_H -
+    INV_NARRATIVE_H -
+    INV_THEAD_H -
+    INV_FOOTNOTE_H -
+    INV_SAFETY_H;
+  var ROWS_BUDGET_CONT =
+    _rptContentBudget('standard') - INV_CONT_HDR_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
 
   var tokens = inv.byBuilding.map(function (b) {
-    return { type: 'row', estH: 30, html: _buildInvRowHTML(b) };
+    return { type: 'row', estH: _invRowEstH(b.name || b.building), html: _buildInvRowHTML(b) };
   });
-  tokens.push({ type: 'row', estH: 30, html: totalsRowHTML });
+  tokens.push({ type: 'row', estH: INV_ROW_PAD_H + 2 * _invLineH, html: totalsRowHTML });
 
   var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
   var numChunks = chunks.length;
