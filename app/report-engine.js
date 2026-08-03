@@ -14974,8 +14974,38 @@ function rptPageASHRAE36Executive(n, d) {
     });
   }
 
+  // Legend renders ONCE, after the LAST chunk only (Matt's fix #2, 2026-08-03): repeating the
+  // "Score and Readiness Bands" methodology block (tableFootnote) after every one of the (now up
+  // to 4) chunks ate ~EXEC_FOOTNOTE_H (100px) per intermediate page for content already stated on
+  // the first. ROWS_BUDGET_FIRST/CONT above still reserve that 100px on every page (needed for
+  // whichever page turns out to be last), so paginate here with NOFOOT budgets that give the
+  // reclaimed 100px back to rows on every page, then re-check only the actual last chunk: if
+  // adding the footnote back to that page would overflow it, spill the trailing rows that don't
+  // fit onto a new final chunk sized WITH the footnote reserved (that new chunk becomes the one
+  // that prints the legend). Row height (66px) is always smaller than the reclaimed 100px, so at
+  // most one row ever needs to move.
+  var ROWS_BUDGET_FIRST_NOFOOT = ROWS_BUDGET_FIRST + EXEC_FOOTNOTE_H;
+  var ROWS_BUDGET_CONT_NOFOOT = ROWS_BUDGET_CONT + EXEC_FOOTNOTE_H;
+
   // Paginate using shared pixel-height paginator
-  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
+  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST_NOFOOT, ROWS_BUDGET_CONT_NOFOOT);
+
+  (function _refitLastChunkForFootnote() {
+    var lastChunk = chunks[chunks.length - 1];
+    var lastIsFirst = chunks.length === 1;
+    var lastBudgetWithFootnote = lastIsFirst ? ROWS_BUDGET_FIRST : ROWS_BUDGET_CONT;
+    var lastUsedPx = lastChunk.reduce(function (sum, tok) {
+      return sum + (tok.estH || 20);
+    }, 0);
+    if (lastUsedPx <= lastBudgetWithFootnote) return;
+    var overflowTokens = [];
+    while (lastChunk.length > 1 && lastUsedPx > lastBudgetWithFootnote) {
+      var popped = lastChunk.pop();
+      lastUsedPx -= popped.estH || 20;
+      overflowTokens.unshift(popped);
+    }
+    if (overflowTokens.length > 0) chunks.push(overflowTokens);
+  })();
 
   var numChunks = chunks.length;
   var resultPages = [];
@@ -14989,12 +15019,19 @@ function rptPageASHRAE36Executive(n, d) {
     var table = tableOpenHead + '<tbody>' + tableRows + '</tbody></table>';
 
     var pageN = n + chunkIndex;
+    var isLastChunk = chunkIndex === numChunks - 1;
 
     // Every chunk carries the SAME caption, in the same style, numbered "N of M" for any M
     // (V-06, 2026-08-03; caption's own font raised to the 13pt section tier by D-12, same date --
     // see READINESS_CAPTION_STYLE above). First page keeps its callouts ahead of the caption.
+    // tableFootnote (the "Score and Readiness Bands" legend) now prints only once, after the
+    // LAST chunk (Matt's fix #2, 2026-08-03) -- see _refitLastChunkForFootnote above for how the
+    // per-chunk row budget accounts for that.
     var bodyHTML =
-      (chunkIndex === 0 ? dcvCallout + callout : '') + _readinessCaption(chunkIndex, numChunks) + table + tableFootnote;
+      (chunkIndex === 0 ? dcvCallout + callout : '') +
+      _readinessCaption(chunkIndex, numChunks) +
+      table +
+      (isLastChunk ? tableFootnote : '');
 
     resultPages.push(
       rptPage(pageN, 'ASHRAE 36 Audit Report: Executive Summary', bodyHTML, {
