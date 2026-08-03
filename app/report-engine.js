@@ -12774,40 +12774,86 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
  */
 var ASHRAE36_SEQUENCE_PLAIN = {
   ahu_sat_reset:
-    'Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.',
+    'Adjusts how warm or cool the air the air handler delivers is, based on what the building actually needs, instead of holding one fixed setting at all times. This reduces energy use in mild weather.',
   ahu_dsp_reset:
-    'Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.',
+    'Allows the supply fan to slow down when the building does not need full airflow, instead of pushing air at full force at all times. This reduces fan energy use.',
   ahu_economizer:
-    'Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.',
+    'Uses outdoor air to cool the building whenever outdoor conditions allow, so the cooling equipment runs less and uses less energy.',
   ahu_freeze_prot:
-    'Automatically shuts the air handler down if coil temperatures get cold enough to risk a frozen, burst water coil.',
+    'Shuts the air handler down automatically if coil temperatures fall low enough to risk a frozen, burst water coil.',
   ahu_min_oa:
-    'Keeps a minimum amount of fresh outdoor air coming into the building at all times to meet ventilation requirements, even as fan speed changes.',
+    'Maintains a minimum amount of fresh outdoor air entering the building at all times to meet ventilation requirements, even as fan speed changes.',
   ahu_rf_control:
-    'Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.',
+    'Matches the speed of the return fan to the supply fan so the building does not develop pressure problems such as doors that are hard to open, or drafts.',
   vav_zone_temp:
-    'Keeps each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
+    'Holds each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
   vav_damper_writeback:
-    'Confirms the air damper in each zone is actually at the position the system commands, so a stuck or failed damper gets caught early instead of silently wasting energy or causing comfort complaints.',
+    'Positions the air damper serving each zone as the control system directs, and confirms the damper reached that position, so a stuck or failed damper is identified promptly rather than quietly wasting energy or causing comfort complaints.',
   vav_reheat:
-    'Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.',
+    'Adds a small amount of heat to already-cooled supply air at the zone level so a room does not overcool when it needs less airflow.',
   hwp_supply_reset:
-    'Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.',
+    'Lowers the temperature of the hot water sent out to the building as the weather warms, so the boiler does not heat water hotter than the building requires.',
   hwp_pump_dp_reset:
-    'Lets the hot water pump slow down when fewer rooms are calling for heat, instead of always pumping at full speed.',
+    'Allows the hot water pump to slow down when fewer rooms are calling for heat, instead of pumping at full speed at all times.',
   hwp_staging:
-    'Automatically brings a second boiler online only when the building actually needs the extra heat, and shuts it back off when demand drops, instead of running every boiler all the time.',
+    'Brings a second boiler online automatically only when the building needs the additional heat, and shuts it back off when demand drops, instead of running every boiler at all times.',
   chwp_supply_reset:
-    'Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.',
+    'Raises the temperature of the chilled water sent out to the building when cooling loads are light, so the chiller does not work as hard as it does on a full-load day.',
   chwp_pump_dp_reset:
-    'Lets the chilled water pump slow down when cooling demand is low, instead of always pumping at full speed.',
+    'Allows the chilled water pump to slow down when cooling demand is low, instead of pumping at full speed at all times.',
   chwp_staging:
-    'Automatically brings a second chiller online only when the building actually needs the extra cooling, and shuts it back off when demand drops.',
+    'Brings a second chiller online automatically only when the building needs the additional cooling, and shuts it back off when demand drops.',
   demandCtrl:
-    'Uses a carbon dioxide sensor to bring in only as much outdoor air as the number of people in the building actually calls for, instead of a fixed amount around the clock.',
+    'Uses a carbon dioxide sensor to bring in only as much outdoor air as the number of people in the building calls for, instead of a fixed amount around the clock.',
   vav_dcv:
-    'Uses a carbon dioxide sensor at the zone level to adjust ventilation air based on how many people are actually in that specific room.',
+    'Uses a carbon dioxide sensor at the zone level to adjust ventilation air to the number of people actually in that room.',
 };
+
+/**
+ * _a36SeqDisplayLabel(sd) — client-facing display name for one EM_SEQUENCE_DEFS entry.
+ *
+ * V-11 (visual review 2026-08-02): EM_SEQUENCE_DEFS names vav_damper_writeback
+ * "Damper Position Write-back". "Write-back" is controls-trade jargon a county facilities
+ * manager cannot read, and the Audit's Executive Summary already names the same concept in
+ * plain language on an earlier page — ASHRAE36_GAP_DESCRIPTIONS.dampCmd.short,
+ * "Damper position command", the very point (requiredCats: ['dampCmd']) this sequence writes.
+ * One concept must carry one name, so the client documents render the Executive Summary's
+ * plain-language name in both places.
+ *
+ * Kept as an override map HERE rather than a rename in equipment-matrix.js on purpose: that
+ * label is also an internal Equipment Matrix column heading and a pricing-row `item` string,
+ * and this change is scoped to what the client reads. Any key absent from the map falls
+ * through to the def's own label, so new sequence defs need no change here.
+ *
+ * @param {object} sd - one entry from EM_SEQUENCE_DEFS
+ * @returns {string} display label
+ */
+var A36_SEQ_LABEL_OVERRIDE = {
+  vav_damper_writeback: 'Damper Position Command',
+};
+
+/**
+ * Column widths for the Audit's Control Sequences table (rptPageASHRAE36CostEstimate), as
+ * percentages of the 718.9px printed table width. Named here because the header cells, the body
+ * cells and the row-height estimate all have to agree on them.
+ *
+ * Set 2026-08-03 (V-10) when the quantity column was added. Sized from measured natural widths at
+ * the 13.34px font floor, per the method in
+ * my-knowledge-base/wiki/companyhub-report-print-geometry-and-font-floor.md §7: what has to fit in
+ * a header cell is its longest UNBREAKABLE WORD, not the whole label. Quantity column header is
+ * "Number to Program", whose longest word "NUMBER" is far narrower than "SEQUENCES" would be — the
+ * reason that wording was chosen over "Sequences to Program", which needs 14% to avoid printing
+ * across its own column rule. The room came from the description column, whose text wraps
+ * gracefully, never from a column with an unbreakable header word.
+ */
+var A36_SEQ_COL_NAME_PCT = 24;
+var A36_SEQ_COL_SPEC_PCT = 16;
+var A36_SEQ_COL_QTY_PCT = 13;
+var SEQ_ROW_TOTALS_H = 80; // measured height of the totals row at the floored type size
+function _a36SeqDisplayLabel(sd) {
+  if (!sd) return '';
+  return A36_SEQ_LABEL_OVERRIDE[sd.key] || sd.label || '';
+}
 
 /**
  * ASHRAE36_SECTIONS — defines available report sections for the audit and proposal.
@@ -14942,6 +14988,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // sequence applies to at least one piece of equipment anywhere (status !== 'na') to decide
   // whether to list it — no status is computed or rendered.
   var rationaleTokens = [];
+  var _seqProgramTotal = 0; // sum of the printed quantity column — must equal the cover figure
   try {
     var seqApplicable = {}; // seqKey -> true if it applies to at least one piece of equipment
     (d.buildings || []).forEach(function (b) {
@@ -14955,10 +15002,44 @@ function rptPageASHRAE36CostEstimate(n, d) {
       });
     });
 
+    // ── Quantity column (V-10, visual review 2026-08-02) ──────────────────────
+    // The cover headlines "N control sequences programmed" and this is the section that exists
+    // to explain that number, but it listed 16 sequence TYPES with no quantity of any kind, so a
+    // reader could not see how N was built. Standing rule is to count actual items, not buildings.
+    //
+    // These counts are derived from THE SAME source and THE SAME filter that produces the cover
+    // figure (rptPageASHRAE36Cover, this file): buildCatalogRows(project id) — the priced scope,
+    // which applies the monitoring-only-zone-unit, ioOnly and building-level dedup exclusions the
+    // raw per-equipment accumulators never see — summing `qty` over rows with phase === 2 (the
+    // sequence-programming rows) AND a seqKey (which excludes buildSensorInvestigationRows' phase-2
+    // labor rows, exactly as the cover does; without that clause the cover measured 1,304 instead
+    // of 1,285). Grouping the very same rows by seqKey therefore reconciles to the cover by
+    // construction — the total row below prints the sum of the printed column, never a separately
+    // computed figure, so the two can never silently disagree.
+    //
+    // qty on a phase-2 row is a count of EQUIPMENT UNITS whose readiness for that sequence is
+    // 'blocked' or 'partial' — i.e. units that still need it programmed. Units already ready, and
+    // units the sequence does not apply to, are not counted (absence is not always a deficiency).
+    // Cached on `d` the same way _a36BuildingContent caches it: buildCatalogRows walks the whole
+    // project on every call.
+    if (!d._a36CatalogRowsCache) {
+      d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
+    }
+    var _seqProgramCounts = {}; // seqKey -> equipment units still needing this sequence programmed
+    var _seqCatalogTotal = 0; // every phase-2/seqKey row, whether or not its key has a def below
+    (d._a36CatalogRowsCache || []).forEach(function (r) {
+      if (!r || r.phase !== 2 || !r.seqKey) return;
+      _seqProgramCounts[r.seqKey] = (_seqProgramCounts[r.seqKey] || 0) + (r.qty || 0);
+      _seqCatalogTotal += r.qty || 0;
+    });
+
     var seqDefsList =
       typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
     seqDefsList.forEach(function (seq) {
-      if (!seqApplicable[seq.key]) return; // not applicable to any equipment in this portfolio
+      // Listed when the sequence applies to any audited equipment OR carries priced programming
+      // work. The second clause is what makes the column arithmetically incapable of losing a
+      // count: no row with a quantity can be filtered out of the table.
+      if (!seqApplicable[seq.key] && !_seqProgramCounts[seq.key]) return;
       var plainDesc = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[seq.key]) || '';
       // 2026-07-23 (Matt's request): show which BAS points/sensors this sequence needs, directly
       // under the sequence name. Required-point source is EM_SEQUENCE_DEFS[*].requiredCats (this
@@ -14972,11 +15053,16 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // for the handful of keys _pricingPointLabel doesn't have (rfEnable, rfSpeedCmd, co2) —
       // never a raw unresolved point key.
       var sensorLine = _a36SeqRequiredSensorLabels(seq);
+      var seqName = _a36SeqDisplayLabel(seq);
+      var seqQty = _seqProgramCounts[seq.key] || 0;
+      _seqProgramTotal += seqQty;
       var rowHTML =
         '<tr>' +
         '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-        'border:1px solid var(--rpt-border);vertical-align:top;width:26%">' +
-        _esc(seq.label) +
+        'border:1px solid var(--rpt-border);vertical-align:top;width:' +
+        A36_SEQ_COL_NAME_PCT +
+        '%">' +
+        _esc(seqName) +
         (sensorLine
           ? '<div style="font-size:9px;font-weight:400;color:var(--rpt-page-text);margin-top:3px;line-height:1.4">' +
             'Requires: ' +
@@ -14985,9 +15071,17 @@ function rptPageASHRAE36CostEstimate(n, d) {
           : '') +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-        'border:1px solid var(--rpt-border);vertical-align:top;width:16%;white-space:nowrap">' +
-        'ASHRAE 36 ' +
-        _esc(seq.ashrae36 || '') +
+        'border:1px solid var(--rpt-border);vertical-align:top;width:' +
+        A36_SEQ_COL_SPEC_PCT +
+        '%;white-space:nowrap">' +
+        'Section ' +
+        _esc(String(seq.ashrae36 || '').replace(/^§/, '')) +
+        '</td>' +
+        '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+        'border:1px solid var(--rpt-border);vertical-align:top;text-align:center;width:' +
+        A36_SEQ_COL_QTY_PCT +
+        '%">' +
+        rptCount(seqQty) +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);line-height:1.5;vertical-align:top">' +
@@ -15007,17 +15101,22 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // line for each column): it never under-estimates a single row and over-estimates by only
       // 4px per row on average. Line height is _rptTextLineH() — the floored 13.34px font times
       // the 1.5 line-height these cells declare — so if the floor ever changes, this follows it.
+      //
+      // V-10 (2026-08-03): the quantity column narrowed the name column 26% -> 24% and the
+      // description column 58% -> 47%, so all three chars-per-line constants were re-fitted
+      // against a fresh headless print render of every row at the new widths (same method: the
+      // largest constant that still never under-estimates a measured row).
       var SEQ_ROW_PAD_H = 14; // td padding 7px top + 7px bottom
-      var SEQ_NAME_CPL = 20; // chars per line, bold sequence label in the 26% (167px) name column
-      var SEQ_REQ_CPL = 24; // chars per line, "Requires: ..." sub-line (regular weight, same column)
-      var SEQ_DESC_CPL = 50; // chars per line, plain-language description in the ~365px column
+      var SEQ_NAME_CPL = 18; // chars per line, bold sequence label in the 24% (~152px) name column
+      var SEQ_REQ_CPL = 21; // chars per line, "Requires: ..." sub-line (regular weight, same column)
+      var SEQ_DESC_CPL = 40; // chars per line, plain-language description in the 47% (~318px) column
       var SEQ_REQ_GAP = 3; // the sub-line's margin-top
       // One line height for all three columns: measured, the sub-line's declared line-height:1.4
       // still lays out on the same 20px rhythm as the 1.5 cells once the font floor applies, and
       // fitting it at 19px under-estimated two real rows by 1px.
       var _seqLineH = _rptTextLineH(1.5);
       var _reqText = sensorLine ? 'Requires: ' + sensorLine : '';
-      var _nameH = Math.ceil((seq.label || '').length / SEQ_NAME_CPL) * _seqLineH;
+      var _nameH = Math.ceil((seqName || '').length / SEQ_NAME_CPL) * _seqLineH;
       var _reqH = _reqText ? SEQ_REQ_GAP + Math.ceil(_reqText.length / SEQ_REQ_CPL) * _seqLineH : 0;
       var _descH = Math.ceil(plainDesc.length / SEQ_DESC_CPL) * _seqLineH;
       rationaleTokens.push({
@@ -15026,6 +15125,42 @@ function rptPageASHRAE36CostEstimate(n, d) {
         estH: SEQ_ROW_PAD_H + Math.max(_nameH + _reqH, _descH),
       });
     });
+
+    // Totals row (site table standard: totals where applicable). It prints the sum of the printed
+    // column, so the column always adds up to what the row says. That sum is asserted against the
+    // catalog total here: a difference could only come from a priced sequence key with no
+    // EM_SEQUENCE_DEFS entry, which would mean a row of work exists that no reader can see. It is
+    // logged rather than papered over — neither figure is ever adjusted to make the other agree.
+    if (rationaleTokens.length) {
+      if (_seqProgramTotal !== _seqCatalogTotal) {
+        console.error(
+          'rptPageASHRAE36CostEstimate: sequence quantity column (' +
+            _seqProgramTotal +
+            ') does not reconcile with the priced sequence total (' +
+            _seqCatalogTotal +
+            ') — a priced sequence key has no EM_SEQUENCE_DEFS entry.',
+        );
+      }
+      rationaleTokens.push({
+        type: 'row',
+        html:
+          '<tr>' +
+          '<td colspan="2" style="padding:7px 10px;font-size:11px;font-weight:700;' +
+          'color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top;text-align:right">' +
+          'Total control sequences to program' +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:11px;font-weight:700;color:var(--rpt-page-text);' +
+          'border:1px solid var(--rpt-border);vertical-align:top;text-align:center">' +
+          rptCount(_seqProgramTotal) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+          'border:1px solid var(--rpt-border);line-height:1.5;vertical-align:top">' +
+          'One for each piece of heating and cooling equipment that needs that sequence programmed.' +
+          '</td>' +
+          '</tr>',
+        estH: SEQ_ROW_TOTALS_H,
+      });
+    }
   } catch (e) {
     console.error('rptPageASHRAE36CostEstimate: sequence-glossary table build failed', e);
     rationaleTokens = []; // non-fatal — omit block if anything throws
@@ -15051,34 +15186,80 @@ function rptPageASHRAE36CostEstimate(n, d) {
   var RATIONALE_TITLE_H = 34; // measured, section title + its margin-bottom
   var RATIONALE_THEAD_H = 56; // measured 33 first page / 53 continuation; 56 covers both
   var RATIONALE_SAFETY_H = 40; // single page-level margin, same convention as EXEC_SAFETY_H above
-  var RATIONALE_BUDGET_FIRST =
+  // V-10: the first page also carries the sentence that tells the reader what the quantity column
+  // counts and that it adds to the cover figure. Measured 3 lines plus its margin at the floor.
+  var RATIONALE_INTRO_H = 72;
+  var RATIONALE_BUDGET_CONT =
     _rptContentBudget('standard') - RATIONALE_TITLE_H - RATIONALE_THEAD_H - RATIONALE_SAFETY_H;
-  var RATIONALE_BUDGET_CONT = RATIONALE_BUDGET_FIRST;
+  var RATIONALE_BUDGET_FIRST = RATIONALE_BUDGET_CONT - RATIONALE_INTRO_H;
 
-  var SEQ_SECTION_TITLE = 'ASHRAE 36 Sequences';
+  // V-09 / running-head repetition (visual review 2026-08-02): the running head read
+  // "ASHRAE 36 Audit Report: ASHRAE 36 Sequences" with the caption "ASHRAE 36 SEQUENCES" directly
+  // under it, so the same phrase printed three times in three consecutive lines. The section is now
+  // "Control Sequences" in both the running head and the caption (the standard itself is still
+  // named by the running head's document title and by the table's own "ASHRAE 36 Section" column),
+  // which drops the repetition from three lines to two without losing identification.
+  var SEQ_SECTION_TITLE = 'Control Sequences';
 
   // Shared HTML fragments for the sequence table chrome
   // D-12 (2026-08-03): 11px -> the 13pt section tier, so this heading outranks both the 10pt
   // column headers and the 10.5pt cell text of the sequences table it introduces.
-  var _ratTitle =
-    '<div style="font-size:' +
-    RPT_SECTION_HEAD_PX +
-    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
-    'text-transform:uppercase;letter-spacing:0.04em">' +
-    SEQ_SECTION_TITLE +
+  // ── Continuation convention (V-09) ────────────────────────────────────────
+  // Pages 4 and 5 previously carried the IDENTICAL caption with no marker at all, so a reader
+  // turning the page reasonably concluded the section had printed twice; the only hint was a
+  // running head reading "(cont.)", an abbreviation in a document whose standing rule is no
+  // abbreviations. One convention now applies to both the caption and the running head, matching
+  // the Building Readiness table two pages earlier: "(1 of 2)" on the first page of a split
+  // section, "(continued, 2 of 2)" on each later page, spelled out, never abbreviated. A section
+  // that fits on one page carries no marker.
+  function _seqPartSuffix(idx, total) {
+    if (total < 2) return '';
+    return idx === 0 ? ' (1 of ' + total + ')' : ' (continued, ' + (idx + 1) + ' of ' + total + ')';
+  }
+  function _ratTitleFor(idx, total) {
+    return (
+      '<div style="font-size:' +
+      RPT_SECTION_HEAD_PX +
+      'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
+      'text-transform:uppercase;letter-spacing:0.04em">' +
+      _esc(SEQ_SECTION_TITLE + _seqPartSuffix(idx, total)) +
+      '</div>'
+    );
+  }
+
+  // V-10: first page only — what the quantity column counts, and the fact that it adds to the
+  // figure the cover headlines. Without this the reader has a number and no way to place it.
+  var _ratIntro =
+    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.5;margin-bottom:8px">' +
+    'A sequence is listed below when it applies to at least one piece of equipment that was ' +
+    'audited. The quantity column counts how many pieces of equipment still need that sequence ' +
+    'programmed, and the quantities add to ' +
+    rptCount(_seqProgramTotal) +
+    ', the number of control sequences reported on the cover page.' +
     '</div>';
   // Status column removed (2026-07-09, Matt's decision): this table is informational
   // reference only (what each sequence IS, not a per-project readiness rollup) — see the
-  // rationaleTokens comment above. Widths redistributed across the remaining 3 columns.
+  // rationaleTokens comment above.
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
   // Proposal's plain/thin-bordered convention. Styling only.
+  // V-10 (2026-08-03): fourth column added. "ASHRAE 36 Spec" also became "ASHRAE 36 Section" and
+  // its cells read "Section 5.16.2" rather than "ASHRAE 36 §5.16.2" — "spec" is an abbreviation,
+  // and the header already names the standard, so the cell no longer repeats it on every row.
   var _ratThead =
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:26%;border:1px solid var(--rpt-border)">Sequence</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:' +
+    A36_SEQ_COL_NAME_PCT +
+    '%;border:1px solid var(--rpt-border)">Sequence</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:16%;border:1px solid var(--rpt-border)">ASHRAE 36 Spec</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:' +
+    A36_SEQ_COL_SPEC_PCT +
+    '%;border:1px solid var(--rpt-border)">ASHRAE 36 Section</th>' +
+    '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;width:' +
+    A36_SEQ_COL_QTY_PCT +
+    '%;border:1px solid var(--rpt-border)">Number to Program</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)">Description</th>' +
     '</tr></thead><tbody>';
@@ -15110,14 +15291,19 @@ function rptPageASHRAE36CostEstimate(n, d) {
           return tok.html;
         })
         .join('');
-      var pageBody = '<div>' + _ratTitle + _ratThead + chunkRowsHTML + _ratTclose + '</div>';
+      var pageBody =
+        '<div>' +
+        _ratTitleFor(chunkIdx, ratChunks.length) +
+        (isFirst ? _ratIntro : '') +
+        _ratThead +
+        chunkRowsHTML +
+        _ratTclose +
+        '</div>';
 
       resultPages.push(
         rptPage(
           currentPageNum,
-          isFirst
-            ? 'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE
-            : 'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE + ' (cont.)',
+          'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE + _seqPartSuffix(chunkIdx, ratChunks.length),
           pageBody,
           { data: fakeData, label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE },
         ),
@@ -17506,7 +17692,9 @@ function _rptA36PhaseSeqCategoryNames(rows) {
       // sd.label at the source (equipment-matrix.js) -- 'Hot Water Supply Temperature Reset',
       // 'Boiler Staging', etc. -- so EVERY consumer of EM_SEQUENCE_DEFS gets it, not just this
       // function. Re-adding a prefix here would double it (e.g. 'Hot Water Boiler Staging').
-      names.push(sd.label);
+      // V-11 (2026-08-03): through _a36SeqDisplayLabel so a sequence renamed for the client in one
+      // client document is renamed in every one of them.
+      names.push(_a36SeqDisplayLabel(sd));
     });
   }
   return names;
@@ -17538,7 +17726,7 @@ function _rptA36PhaseSeqCategoryDetails(rows) {
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       if (!seen[sd.key]) return;
       var plain = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[sd.key]) || '';
-      details.push({ label: sd.label, plain: plain });
+      details.push({ label: _a36SeqDisplayLabel(sd), plain: plain }); // V-11: one client-facing name everywhere
     });
   }
   return details;
