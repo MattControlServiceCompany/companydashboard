@@ -334,13 +334,23 @@ async function gatherPageData(page, projId) {
       const sensorsByBuilding = {},
         seqByBuilding = {};
       const seqCatSet = {};
+      // Keyed by the CLIENT-VISIBLE building name (rptBuildingDisplayName), not the raw
+      // Equipment Matrix name catRows carry in r.building -- the per-building detail page
+      // renders "Total for <displayName>" (report-engine.js _a36BuildingContent, via
+      // _a36DisplayName/rptBuildingDisplayName; the row JOIN inside that same function
+      // deliberately stays on raw r.building===b.name, only the printed label changed). The
+      // scrape below (buildingTotals) reads that rendered display name out of the DOM, so this
+      // map must be keyed the same way or every renamed building misses here with `|| 0` and
+      // falsely fails the per-building-rows-not-raw-accumulator check.
       catRows.forEach((r) => {
         if (r.phase === 1 && !r.ioOnly) {
           uSensorTotal += r.qty || 0;
-          sensorsByBuilding[r.building] = (sensorsByBuilding[r.building] || 0) + (r.qty || 0);
+          const dn = rptBuildingDisplayName(r.building);
+          sensorsByBuilding[dn] = (sensorsByBuilding[dn] || 0) + (r.qty || 0);
         } else if (r.phase === 2 && r.seqKey) {
           uSeqTotal += r.qty || 0;
-          seqByBuilding[r.building] = (seqByBuilding[r.building] || 0) + (r.qty || 0);
+          const dn = rptBuildingDisplayName(r.building);
+          seqByBuilding[dn] = (seqByBuilding[dn] || 0) + (r.qty || 0);
           seqCatSet[r.seqKey] = true;
         }
       });
