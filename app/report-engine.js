@@ -12919,7 +12919,8 @@ var A36_SEQ_COL_QTY_PCT = 14;
 // RPT_MP_DENSE_ACTIVE, which floors to RPT_MULTIPAGE_TABLE_MIN_PX (12px) instead of
 // RPT_MIN_TEXT_PX (13.34px) — re-measured at the new floor. Gated so
 // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 keeps the original 80px measurement exactly.
-var SEQ_ROW_TOTALS_H = RPT_MP_DENSE_ACTIVE ? 72 : 80; // measured height of the totals row
+// Item 10 density pass (2026-08-03): cell padding 7px -> 4px shaved 6px off the row box.
+var SEQ_ROW_TOTALS_H = RPT_MP_DENSE_ACTIVE ? 66 : 74; // measured height of the totals row
 function _a36SeqDisplayLabel(sd) {
   if (!sd) return '';
   return A36_SEQ_LABEL_OVERRIDE[sd.key] || sd.label || '';
@@ -14334,10 +14335,15 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     // page-title bar that follows them on every interior page.
     // R3 (2026-08-03): removed the document-date div that used to follow the subtitle here
     // (unrequested addition); the subtitle line below is bolded instead, per Matt's spec.
+    // Word title centering (Matt, 2026-08-03, docx item 1): text-align:center is declared ON THE
+    // LEAF DIVS, not only the wrapper — the .docx translator (app/docx-writer.js) reads alignment
+    // from each paragraph-leaf element's own inline style and cannot inherit it from an ancestor
+    // container, so a wrapper-only text-align:center rendered the title LEFT-aligned in Word.
+    // No visual change in the browser (the wrapper already centered it there).
     '<div style="font-size:' +
     RPT_DOC_TITLE_PX +
-    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
-    '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);margin-bottom:12px">' +
+    'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
+    '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">' +
     d.project.name +
     '</div>' +
     '</div>' +
@@ -14435,11 +14441,20 @@ function rptPageASHRAE36Executive(n, d) {
   // Rule 2.3: reportDate drives footer date; label empty.
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
+  // Section header (Matt, 2026-08-03, docx item 4): the page opened with a bare paragraph and no
+  // heading. "Executive Summary" now heads the page, in the same 13pt blue section-heading
+  // convention the Control Sequences / ASHRAE 36 Building Readiness captions already use.
+  var execHeader =
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Executive Summary</div>';
+
   // Executive Summary intro paragraph (Matt, 2026-08-03, item 7e): one concise plain-language
   // lead-in at the very top of the page, BEFORE the five sequence paragraphs, explaining what
   // ASHRAE 36 control sequences are and why the top ones are listed here. Deliberately carries
   // NO numbers — the paragraphs and table below carry the real, derived figures.
   var execIntro =
+    execHeader +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:14px">' +
     'ASHRAE 36 is the industry standard for how a building automation system should run heating, ' +
     'cooling, and ventilation equipment. It is built from proven control sequences — programmed ' +
@@ -14509,18 +14524,21 @@ function rptPageASHRAE36Executive(n, d) {
       })
       .slice(0, EXEC_TOP_SEQ_COUNT);
 
+    // Flowing-paragraph shape (Matt, 2026-08-03, docx items 5+6): the five sequence items used to
+    // each open with an oversized 13pt standalone heading, which read as five disconnected
+    // mini-sections. Each is now ONE body-size paragraph whose sequence name is a small BOLD
+    // INLINE lead-in, so the five read as one connected section under the page's single
+    // "Executive Summary" header + intro.
     callout = topSeqTypes
       .map(function (s) {
         return (
-          '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-          '<div style="font-size:' +
-          RPT_SECTION_HEAD_PX +
-          'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">' +
-          _esc(s.label) +
-          '</div>' +
+          '<div class="rpt-a36-callout" style="margin-bottom:10px;padding:0">' +
           '<div style="font-size:' +
           RPT_BODY_PX +
           'px;color:var(--rpt-page-text);line-height:1.6">' +
+          '<span style="font-weight:700">' +
+          _esc(s.label) +
+          '.</span> ' +
           rptCount(s.qty) +
           // fix/report-tighten-exec-paragraphs (2026-08-03, Matt: "Can we not tighten those
           // also?"): dropped "across the portfolio" (already implied — this is a portfolio-wide
@@ -14552,19 +14570,14 @@ function rptPageASHRAE36Executive(n, d) {
       dcvParts.push(_dcvZonesMissing + ' of ' + dcv.totalZones + ' zone' + (dcv.totalZones > 1 ? 's' : ''));
     }
     var dcvSentence = dcvParts.join(' and ') + ' have no carbon dioxide sensor.';
+    // Same flowing-paragraph shape as the 4 paragraphs below (Matt, 2026-08-03, docx items 5+6):
+    // bold inline lead-in at body size, never a standalone 13pt heading.
     dcvCallout =
-      '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      // D-12 (2026-08-03): heading -> 13pt section tier, its paragraph -> 10.5pt body tier.
-      // fix/report-heading-consistency (2026-08-03, Matt: "Why does only Occupancy Based
-      // Ventilation say readiness? all or none"): dropped "Readiness" so all 5 paragraph headings
-      // on this page are plain sequence-type names, matching the 4 headings below (each just
-      // `s.label`, no "Readiness" suffix).
-      '<div style="font-size:' +
-      RPT_SECTION_HEAD_PX +
-      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation</div>' +
+      '<div class="rpt-a36-callout" style="margin-bottom:10px;padding:0">' +
       '<div style="font-size:' +
       RPT_BODY_PX +
       'px;color:var(--rpt-page-text);line-height:1.6">' +
+      '<span style="font-weight:700">Occupancy-Based Ventilation.</span> ' +
       dcvSentence +
       // fix/report-tighten-exec-paragraphs (2026-08-03, Matt: "Can we not tighten those also?"):
       // was 3 sentences (fact + 2 explanatory); trimmed to fact + ONE crisp sentence, matching the
@@ -14621,11 +14634,19 @@ function rptPageASHRAE36Executive(n, d) {
   //                                             to the 10.5pt body tier)
   //   tableTitle                     20 ->  32 (26 measured + its 6px margin)
   var _firstChromeH = 0;
+  // "Executive Summary" section header (docx item 4, 2026-08-03): 26px box + 8px margin, same
+  // measured convention as the other 13pt section captions.
+  _firstChromeH += 34;
   // Exec intro paragraph (item 7e, 2026-08-03): ~510 chars at 14px/1.6 across the 720px body
   // (~6 wrapped lines ≈ 135px) + its 14px margin. 150 is the safe-side budget; re-measure per
   // the protocol above if the copy changes.
   _firstChromeH += 150;
-  if (dcvCallout) _firstChromeH += 146; // measured (occupancy-based ventilation readiness callout)
+  // Docx items 5+6 (2026-08-03): each sequence item is now ONE body-size flowing paragraph with a
+  // bold inline lead-in (no 13pt heading), so the old 146px-per-block budget over-counted by
+  // ~50px per block. Re-measured headlessly against real JOCO data after the change
+  // (getBoundingClientRect().height + margin-bottom, print media): 55-100px per paragraph.
+  // 105 is the safe-side per-paragraph budget.
+  if (dcvCallout) _firstChromeH += 105; // occupancy-based ventilation paragraph
   // 2026-08-03 (Matt: remove the redundant sequences TABLE, use short paragraphs instead — see
   // this callout's own header comment above for the full rationale). `callout` is no longer one
   // table block; it is 0-4 short paragraphs (heading + 1-2 sentences each), each rendered through
@@ -14640,7 +14661,7 @@ function rptPageASHRAE36Executive(n, d) {
   // sequence's plain-language description is one sentence, not two) — all comfortably inside the
   // 146px-per-block budget already established for this exact markup, so no new constant needed
   // and this is a deliberately conservative (safe-side) budget, not a tight fit.
-  _firstChromeH += 146 * topSeqTypes.length;
+  _firstChromeH += 105 * topSeqTypes.length; // same re-measured per-paragraph budget as dcvCallout above
   _firstChromeH += 32; // tableTitle — measured
   _firstChromeH += EXEC_THEAD_H_DENSE; // table head is INSIDE the dense table — dense variant
   _firstChromeH += EXEC_FOOTNOTE_H;
@@ -14721,7 +14742,9 @@ function rptPageASHRAE36Executive(n, d) {
     if (numChunks > 1) {
       part = ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')';
     }
-    return '<div style="' + READINESS_CAPTION_STYLE + '">Building ASHRAE 36 Readiness' + part + '</div>';
+    // Renamed "Building ASHRAE 36 Readiness" -> "ASHRAE 36 Building Readiness" (Matt, 2026-08-03,
+    // docx item 7).
+    return '<div style="' + READINESS_CAPTION_STYLE + '">ASHRAE 36 Building Readiness' + part + '</div>';
   }
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header (color:#fff on
   // background:var(--rpt-blue)) to match the Proposal's plain/thin-bordered convention
@@ -15282,12 +15305,24 @@ function rptPageASHRAE36CostEstimate(n, d) {
 
     var seqDefsList =
       typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
+    // Occupancy-Based Ventilation merge (Matt, 2026-08-03, docx item 10; standing OBV-once rule):
+    // demandCtrl (air-handler level) and vav_dcv (zone level) are the SAME canonical sequence
+    // type split by equipment level. They used to print as two rows ("... (Air Handling Units)" /
+    // "... (Zone Terminals)"); they now print as ONE "Occupancy-Based Ventilation" row whose
+    // quantity is the SUM of both keys' priced counts — no count is dropped, so the table total
+    // still reconciles to the cover figure by construction — whose ASHRAE 36 Section cell names
+    // both sections, and whose Requires list is the dedup union of both keys' required points.
+    // Descriptions are existing vetted ASHRAE36_SEQUENCE_PLAIN copy (demandCtrl's portfolio-level
+    // phrasing wins when both keys are present), never invented text.
+    var _OBV_MERGE_KEYS = { demandCtrl: true, vav_dcv: true };
+    var rowSpecs = [];
+    var _obvSpec = null;
     seqDefsList.forEach(function (seq) {
       // Listed when the sequence applies to any audited equipment OR carries priced programming
       // work. The second clause is what makes the column arithmetically incapable of losing a
       // count: no row with a quantity can be filtered out of the table.
       if (!seqApplicable[seq.key] && !_seqProgramCounts[seq.key]) return;
-      var plainDesc = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[seq.key]) || '';
+      var _plain = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[seq.key]) || '';
       // 2026-07-23 (Matt's request): show which BAS points/sensors this sequence needs, directly
       // under the sequence name. Required-point source is EM_SEQUENCE_DEFS[*].requiredCats (this
       // same file, equipment-matrix.js) — NOT app/pricing-estimator.js's SEQUENCE_BLOCKING_SENSORS,
@@ -15299,13 +15334,48 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // first, falling back to the EM_POINT_CATEGORIES category definition (equipment-matrix.js)
       // for the handful of keys _pricingPointLabel doesn't have (rfEnable, rfSpeedCmd, co2) —
       // never a raw unresolved point key.
-      var sensorLine = _a36SeqRequiredSensorLabels(seq);
-      var seqName = _a36SeqDisplayLabel(seq);
-      var seqQty = _seqProgramCounts[seq.key] || 0;
+      var _sensorLine = _a36SeqRequiredSensorLabels(seq);
+      var _sectionNum = String(seq.ashrae36 || '').replace(/^§/, '');
+      var _qty = _seqProgramCounts[seq.key] || 0;
+      if (_OBV_MERGE_KEYS[seq.key]) {
+        if (!_obvSpec) {
+          _obvSpec = { name: 'Occupancy-Based Ventilation', qty: 0, sections: [], sensorLabels: [], plainDesc: _plain };
+          rowSpecs.push(_obvSpec);
+        }
+        _obvSpec.qty += _qty;
+        if (_sectionNum && _obvSpec.sections.indexOf(_sectionNum) === -1) _obvSpec.sections.push(_sectionNum);
+        if (seq.key === 'demandCtrl' && _plain) _obvSpec.plainDesc = _plain;
+        (_sensorLine ? _sensorLine.split(', ') : []).forEach(function (lbl) {
+          if (lbl && _obvSpec.sensorLabels.indexOf(lbl) === -1) _obvSpec.sensorLabels.push(lbl);
+        });
+        return;
+      }
+      rowSpecs.push({
+        name: _a36SeqDisplayLabel(seq),
+        qty: _qty,
+        sections: _sectionNum ? [_sectionNum] : [],
+        sensorLabels: _sensorLine ? _sensorLine.split(', ') : [],
+        plainDesc: _plain,
+      });
+    });
+
+    rowSpecs.forEach(function (spec) {
+      var sensorLine = spec.sensorLabels.join(', ');
+      var seqName = spec.name;
+      var seqQty = spec.qty;
+      var plainDesc = spec.plainDesc;
+      // "Section 5.16.2" for a normal row; "Sections 5.16 and 5.6" for the merged OBV row. The
+      // merged text is allowed to wrap (no white-space:nowrap) — it is wider than the column.
+      var sectionText = spec.sections.length
+        ? (spec.sections.length > 1 ? 'Sections ' : 'Section ') + spec.sections.join(' and ')
+        : '';
+      var sectionNowrap = spec.sections.length > 1 ? '' : ';white-space:nowrap';
       _seqProgramTotal += seqQty;
+      // Un-bolded Sequence column (Matt, 2026-08-03, docx item 9): cell text is normal weight;
+      // only the header row stays bold. Padding 7px -> 4px (item 10 density pass, same date).
       var rowHTML =
         '<tr>' +
-        '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        '<td style="padding:4px 8px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);vertical-align:top;width:' +
         A36_SEQ_COL_NAME_PCT +
         '%">' +
@@ -15317,20 +15387,21 @@ function rptPageASHRAE36CostEstimate(n, d) {
             '</div>'
           : '') +
         '</td>' +
-        '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+        '<td style="padding:4px 8px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);vertical-align:top;width:' +
         A36_SEQ_COL_SPEC_PCT +
-        '%;white-space:nowrap">' +
-        'Section ' +
-        _esc(String(seq.ashrae36 || '').replace(/^§/, '')) +
+        '%' +
+        sectionNowrap +
+        '">' +
+        _esc(sectionText) +
         '</td>' +
-        '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+        '<td style="padding:4px 8px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);vertical-align:top;text-align:right;width:' +
         A36_SEQ_COL_QTY_PCT +
         '%">' +
         rptCount(seqQty) +
         '</td>' +
-        '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+        '<td style="padding:4px 8px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);line-height:1.5;vertical-align:top">' +
         _esc(plainDesc) +
         '</td>' +
@@ -15360,7 +15431,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // those constants assume, so the estimate stays conservative (over-, never under-, counts
       // lines). SEQ_DESC_CPL is scaled down proportionally to the narrower width (40 * 296.3/317.9,
       // floored) so a narrower description column doesn't make the estimate under-count lines.
-      var SEQ_ROW_PAD_H = 14; // td padding 7px top + 7px bottom (fixed, not font-driven)
+      var SEQ_ROW_PAD_H = 8; // td padding 4px top + 4px bottom (item 10 density pass, 2026-08-03)
       // Density pass (Matt's review, 2026-08-03): when this table's own <table> tag (_ratThead
       // below) carries 'rpt-mp-dense' (RPT_MP_DENSE_ACTIVE), its text floors to
       // RPT_MULTIPAGE_TABLE_MIN_PX (12px) instead of RPT_MIN_TEXT_PX (13.34px) — see
@@ -15407,15 +15478,15 @@ function rptPageASHRAE36CostEstimate(n, d) {
         type: 'row',
         html:
           '<tr>' +
-          '<td colspan="2" style="padding:7px 10px;font-size:11px;font-weight:700;' +
+          '<td colspan="2" style="padding:4px 8px;font-size:11px;font-weight:700;' +
           'color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top;text-align:right">' +
           'Total control sequences to program' +
           '</td>' +
-          '<td style="padding:7px 10px;font-size:11px;font-weight:700;color:var(--rpt-page-text);' +
+          '<td style="padding:4px 8px;font-size:11px;font-weight:700;color:var(--rpt-page-text);' +
           'border:1px solid var(--rpt-border);vertical-align:top;text-align:right">' +
           rptCount(_seqProgramTotal) +
           '</td>' +
-          '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+          '<td style="padding:4px 8px;font-size:11px;color:var(--rpt-page-text);' +
           'border:1px solid var(--rpt-border);line-height:1.5;vertical-align:top">' +
           'One for each piece of heating and cooling equipment that needs that sequence programmed.' +
           '</td>' +
@@ -15459,15 +15530,17 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // Gated so RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 keeps RATIONALE_THEAD_H_NORMAL exactly.
   var RATIONALE_THEAD_H = RPT_MP_DENSE_ACTIVE ? 68 : RATIONALE_THEAD_H_NORMAL; // measured 67; +1
   var RATIONALE_SAFETY_H = 40; // single page-level margin, same convention as EXEC_SAFETY_H above
-  // V-10: the first page also carries the sentence that tells the reader what the quantity column
-  // counts and that it adds to the cover figure. Measured 3 lines plus its margin at the floor.
-  var RATIONALE_INTRO_H = 72;
+  // RATIONALE_INTRO_H removed (Matt, 2026-08-03, docx item 11): the V-10 intro sentence that sat
+  // between the section title and the table is deleted, so the first page budgets like every
+  // continuation page.
   // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
   // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so the budget uses the 'flush'
   // variant (see rptPage()'s hideIntHdr option) — matches the ACTUAL top offset now that the
   // 60px chrome bar this page used to reserve is gone, reclaiming that space for rows.
   var RATIONALE_BUDGET_CONT = _rptContentBudget('flush') - RATIONALE_TITLE_H - RATIONALE_THEAD_H - RATIONALE_SAFETY_H;
-  var RATIONALE_BUDGET_FIRST = RATIONALE_BUDGET_CONT - RATIONALE_INTRO_H;
+  // Item 11 (2026-08-03): intro paragraph removed, so the first page carries the same chrome as a
+  // continuation page and shares its budget.
+  var RATIONALE_BUDGET_FIRST = RATIONALE_BUDGET_CONT;
 
   // V-09 / running-head repetition (visual review 2026-08-02): the running head read
   // "ASHRAE 36 Audit Report: ASHRAE 36 Sequences" with the caption "ASHRAE 36 SEQUENCES" directly
@@ -15505,16 +15578,10 @@ function rptPageASHRAE36CostEstimate(n, d) {
     );
   }
 
-  // V-10: first page only — what the quantity column counts, and the fact that it adds to the
-  // figure the cover headlines. Without this the reader has a number and no way to place it.
-  var _ratIntro =
-    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.5;margin-bottom:8px">' +
-    'A sequence is listed below when it applies to at least one piece of equipment that was ' +
-    'audited. The Equipment to Program column counts how many pieces of equipment still need that sequence ' +
-    'programmed, and the quantities add to ' +
-    rptCount(_seqProgramTotal) +
-    ', the number of control sequences reported on the cover page.' +
-    '</div>';
+  // V-10 intro paragraph REMOVED (Matt, 2026-08-03, docx item 11): the paragraph that sat
+  // directly above the Control Sequences table is deleted — the table now follows its section
+  // title immediately. (This is a DIFFERENT paragraph from the Executive Summary intro, which
+  // stays.)
   // Status column removed (2026-07-09, Matt's decision): this table is informational
   // reference only (what each sequence IS, not a per-project readiness rollup) — see the
   // rationaleTokens comment above.
@@ -15576,20 +15643,13 @@ function rptPageASHRAE36CostEstimate(n, d) {
     var ratChunks = _rptPaginateTokens(rationaleTokens, RATIONALE_BUDGET_FIRST, RATIONALE_BUDGET_CONT);
 
     ratChunks.forEach(function (chunk, chunkIdx) {
-      var isFirst = chunkIdx === 0;
       var chunkRowsHTML = chunk
         .map(function (tok) {
           return tok.html;
         })
         .join('');
       var pageBody =
-        '<div>' +
-        _ratTitleFor(chunkIdx, ratChunks.length) +
-        (isFirst ? _ratIntro : '') +
-        _ratThead +
-        chunkRowsHTML +
-        _ratTclose +
-        '</div>';
+        '<div>' + _ratTitleFor(chunkIdx, ratChunks.length) + _ratThead + chunkRowsHTML + _ratTclose + '</div>';
 
       resultPages.push(
         rptPage(
@@ -17499,9 +17559,12 @@ function rptPageASHRAE36ProposalCover(n, d) {
     // Result on the cover: title 18pt > programme line 14.25pt > section headings 13pt > body
     // 10.5pt, with the "Service Proposal" kicker left where it is (a deliberate small-caps
     // eyebrow, already at the legal 10pt floor, not a heading over any body text).
+    // Word title centering (Matt, 2026-08-03, docx item 12): text-align:center on the LEAF divs —
+    // the .docx translator reads alignment off each leaf element's own inline style, never an
+    // ancestor wrapper (same fix as the Audit cover title, item 1).
     '<div style="font-size:' +
     RPT_DOC_TITLE_PX +
-    'px;font-weight:700;color:var(--rpt-blue)">' +
+    'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">' +
     esc(displayClient) +
     ' Building Automation System</div>' +
     // Document-type identifier (2026-07-29) -- the cover previously never said "Service
@@ -17519,7 +17582,11 @@ function rptPageASHRAE36ProposalCover(n, d) {
     // margin-top bumped 2px -> 8px so the kicker still reads as a deliberate second line under
     // the title rather than crowding it now that two lines were removed above it.
     // Title case (Matt, 2026-08-03, item 8): uppercase transform removed — "Service Proposal".
-    '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);letter-spacing:0.5px;margin-top:8px">Service Proposal</div>' +
+    // Title block cleanup (Matt, 2026-08-03, docx item 12): the 11px letter-spaced kicker read as
+    // a tiny orphaned bold line under the big title in Word. "Service Proposal" is now a PROPER
+    // SUBTITLE styled exactly like the Audit cover's subtitle line (15px = 11.25pt printed, bold,
+    // near-black, centered) so the two documents' title blocks match.
+    '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">Service Proposal</div>' +
     '</div>';
 
   // ── Executive Summary ───────────────────────────────────────────────────
@@ -17669,7 +17736,9 @@ function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
   var monthlyAllowanceBlock = budgetFmt
     ? '<div style="' +
       BODY +
-      ';font-weight:700;margin-top:5px">Monthly Allowance for the following: Parts, materials, ' +
+      // Docx item 14 (Matt, 2026-08-03): page-2+ body text carries no bold — only headings and
+      // table header rows may be bold outside page 1.
+      ';margin-top:5px">Monthly Allowance for the following: Parts, materials, ' +
       'and on-site labor hours</div>' +
       '<div style="' +
       BODY +
@@ -18078,7 +18147,8 @@ function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
   if (cats.length) {
     catHTML =
       '<div style="margin-top:4px">' +
-      '<span style="font-weight:700">Sequence categories addressed in future work: </span>' +
+      // Docx item 14 (2026-08-03): inline lead-in no longer bold (page-2+ body text).
+      '<span>Sequence categories addressed in future work: </span>' +
       cats.map(esc).join(', ') +
       '</div>';
   }
@@ -18206,10 +18276,31 @@ function _rptA36MonthSequenceGroups(items) {
   });
   var groups = [];
   if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+    // Occupancy-Based Ventilation canonicalization (Matt, 2026-08-03, docx item 13; standing
+    // count-OBV-once rule): demandCtrl and vav_dcv are the same canonical sequence type split by
+    // equipment level — the months table must never show "(Air Handling Units)" and
+    // "(Zone Terminals)" as two separate work items. Merged into ONE group labeled
+    // "Occupancy-Based Ventilation" whose building set is the union of both keys'.
+    var _obvMonthKeys = { demandCtrl: true, vav_dcv: true };
+    var _obvGroup = null;
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       if (!bySeq[sd.key]) return;
+      if (_obvMonthKeys[sd.key]) {
+        if (!_obvGroup) {
+          _obvGroup = { label: 'Occupancy-Based Ventilation', _bMap: {} };
+          groups.push(_obvGroup);
+        }
+        Object.keys(bySeq[sd.key]).forEach(function (b) {
+          _obvGroup._bMap[b] = true;
+        });
+        return;
+      }
       groups.push({ label: _a36SeqDisplayLabel(sd), buildings: Object.keys(bySeq[sd.key]) });
     });
+    if (_obvGroup) {
+      _obvGroup.buildings = Object.keys(_obvGroup._bMap);
+      delete _obvGroup._bMap;
+    }
   }
   otherOrder.forEach(function (lbl) {
     groups.push({ label: lbl, buildings: Object.keys(otherMap[lbl]) });
@@ -18293,7 +18384,7 @@ function _rptA36PhaseTableDerive(d, opts) {
   var intro =
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:4px">' +
     'The schedule below lists the improvements included in the current term and the month each one ' +
-    'is carried out.' +
+    'is carried out. Ongoing monitoring and tuning continues every month of the term.' +
     '</div>';
 
   // 2026-07-29 (months + Future Work rebuild, replacing the PRICING_PROPOSAL_MAX_PHASES=3 cap —
@@ -18484,6 +18575,9 @@ function _rptA36PhaseTableDerive(d, opts) {
   };
   var _cellLineStyle = 'margin:0 0 5px';
   var _cellSeqLineStyle = 'margin:0 0 3px;padding-left:7px;text-indent:-7px';
+  // Sequence types already begun in an earlier month of the term (docx item 13, 2026-08-03) —
+  // drives the "Begin …" vs "… (continues)" wording below.
+  var _seqSeenTypes = {};
   var monthEntries = headCols.map(function (m, mi) {
     var bucketIdx = Math.min(Math.max(mi + 1, 1), 4); // same absolute-month clamp as _pricingRecurringEMLaborHoursForMonth
     var lines = [];
@@ -18512,16 +18606,23 @@ function _rptA36PhaseTableDerive(d, opts) {
         charLens.push(setupLine.length);
       }
     }
+    // Docx item 13 rebuild (Matt, 2026-08-03): the repeated bold "Identify and verify equipment,
+    // then program:" sub-header is GONE from every column. Each month now shows only the DISTINCT
+    // new work scoped that month, by canonical sequence type (OBV counted once — see
+    // _rptA36MonthSequenceGroups), with real progression across the columns: the month a type
+    // FIRST appears reads "Begin <type> programming."; every later month it is still being worked
+    // reads "<type> programming (continues)." — never the same identical block repeated. Ongoing
+    // monitoring/tuning is stated once in the intro sentence above the table, not per column.
+    // _seqSeenTypes persists across the map() over months, in calendar order, so first-appearance
+    // detection follows the real allocation.
     var seqGroups = _rptA36MonthSequenceGroups((monthBuckets[mi] && monthBuckets[mi].items) || []);
-    if (seqGroups.length) {
-      var seqLead = 'Identify and verify equipment, then program:';
-      lines.push('<div style="' + _cellLineStyle + ';font-weight:600">' + seqLead + '</div>');
-      charLens.push(seqLead.length);
-      seqGroups.forEach(function (g) {
-        lines.push('<div style="' + _cellSeqLineStyle + '">' + esc(g.label) + '</div>');
-        charLens.push(g.label.length + 2);
-      });
-    }
+    seqGroups.forEach(function (g) {
+      var isNew = !_seqSeenTypes[g.label];
+      _seqSeenTypes[g.label] = true;
+      var seqLine = isNew ? 'Begin ' + g.label + ' programming.' : g.label + ' programming (continues).';
+      lines.push('<div style="' + _cellSeqLineStyle + '">' + esc(seqLine) + '</div>');
+      charLens.push(seqLine.length);
+    });
     if (!lines.length) {
       lines.push('<div style="' + _cellLineStyle + '">' + esc(MONTH_EMPTY_TEXT) + '</div>');
       charLens.push(MONTH_EMPTY_TEXT.length);
@@ -18586,13 +18687,13 @@ function _rptA36PhaseTableDerive(d, opts) {
         '" colspan="' +
         monthCount +
         '">' +
-        '<span style="font-weight:700">Future Work: </span>' +
+        '<span>Future Work: </span>' +
         'Beyond the initial term, this service continues to expand sensor installation and program the ' +
         'additional control sequences those sensors make possible, funded through the same monthly ' +
         'service allowance, with no fixed end date.' +
         '<div style="' +
         catListStyle +
-        '"><span style="font-weight:700">Sequence categories addressed in future work: </span>' +
+        '"><span>Sequence categories addressed in future work: </span>' +
         futureListText +
         '</div>' +
         '</td></tr>';
@@ -18658,17 +18759,21 @@ function _rptA36PhaseTableDerive(d, opts) {
   var expectedResultsHTML = expectedResultsText
     ? '<div style="' +
       _termNoteBody +
-      '"><span style="font-weight:700">Expected Results: </span>' +
+      // Docx item 14 (2026-08-03): lead-in label no longer bold (page-2+ body text).
+      '"><span>Expected Results: </span>' +
       expectedResultsText +
       '</div>'
     : '';
+  // Docx item 15 (Matt, 2026-08-03): rewritten from a four-clause compound sentence into ONE
+  // plain sentence a non-technical reader understands. Meaning preserved: the monthly fee covers
+  // ongoing service every month — systems stay monitored, tuned, and performing even in months
+  // with no new item.
   var ongoingServicesHTML =
     '<div style="' +
     _termNoteBody +
     '">' +
-    'Every month of the term, whether or not a new item begins that month, Control Service Company also ' +
-    'monitors equipment operation, reviews automated alarms and trend data, tunes sequences as conditions ' +
-    'change, and verifies that previously implemented work continues to perform as designed.' +
+    'The monthly fee also covers ongoing service in every month of the term — even when no new item ' +
+    'begins, Control Service Company keeps the systems monitored, tuned, and performing as designed.' +
     '</div>';
   var termNotesHTML = expectedResultsHTML + ongoingServicesHTML;
 

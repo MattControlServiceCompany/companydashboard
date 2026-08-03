@@ -1833,6 +1833,18 @@ function _docxTranslateTable(tableEl, ctx) {
           // "Requires:" sub-line rendered fine, confirmed via a real render (text search for
           // "Supply Air Temperature Reset" absent, "Requires: Supply Air Temp..." present).
           cellParagraphs = [];
+          // Docx item 8 (Matt, 2026-08-03): a <td style="text-align:right"> whose content is a
+          // block child (e.g. the readiness table's flex-wrapper <div>) used to LOSE the cell's
+          // alignment — _docxTranslateBlock reads alignment off the leaf element's own style,
+          // and the inner wrapper div has none, so numeric cells rendered LEFT-aligned in Word
+          // while the browser rendered them right-aligned. Thread the cell's own EXPLICIT
+          // text-align down through the delegation via ctx._flexCellAlign (the same forced-align
+          // mechanism the flex-row table path already uses), saved/restored around the walk.
+          // Only an explicitly declared td/th text-align is threaded — a cell without one keeps
+          // today's behavior exactly.
+          var _cellExplicitAlign = (cell.style && cell.style.textAlign) || '';
+          var _priorCellAlign = ctx ? ctx._flexCellAlign : undefined;
+          if (_cellExplicitAlign && ctx) ctx._flexCellAlign = _cellExplicitAlign;
           Array.prototype.forEach.call(cell.childNodes, function (child) {
             if (child.nodeType === 1) {
               cellParagraphs = cellParagraphs.concat(_docxTranslateBlock(child, ctx, cellBaseFmt));
@@ -1849,6 +1861,7 @@ function _docxTranslateTable(tableEl, ctx) {
               }
             }
           });
+          if (_cellExplicitAlign && ctx) ctx._flexCellAlign = _priorCellAlign;
           if (!cellParagraphs.length) {
             cellParagraphs = [
               _docxParagraph({ runs: [_docxRun({ text: '', bold: isHeaderCell })], align: align, spacingAfter: 0 }),
