@@ -14008,7 +14008,38 @@ function rptPageASHRAE36Executive(n, d) {
   // width — see _buildRowHTML). +5% total went to
   // Equipment/Sensor/Sequence. Re-verified after rebalancing: 0 header overflow, 0 data-row
   // line-wrap regressions (see dashboardlogic entry for the exact before/after numbers).
-  var colWidths = { building: 30, equipment: 10, sensor: 9, sequence: 9, score: 14, status: 28 };
+  // U2 re-balance (2026-08-02, fix/u2-print-page-budget). The 30/10/9/9/14/28 split above was
+  // fitted against a 10px (7.5pt printed) header. The 10pt printed-text floor raises every th to
+  // 13.34px, which is 33% wider type in columns that had 0-3px of slack, so the header words
+  // overflowed their cells and PRINTED ON TOP OF the neighbouring header. Measured in a print
+  // render of the real JOCO audit (PyMuPDF span-pair overlap census, audit pages 2-5): 20
+  // overlapping span pairs, e.g. 'COVERAGE' over 'READINESS' by 8.7pt, 'READINESS' over 'SCORE'
+  // by 9.8pt, 'EQUIPMENT' over 'SENSOR' by 5.6pt.
+  //
+  // Re-fitted from measured natural widths at 13.34px in the print render (table width 718.9px,
+  // th horizontal padding 16px, so inner = pct * 718.9 - 16):
+  //   header longest unbreakable word: Building 64.4  Equipment 79.7  Coverage 74.1
+  //                                    Readiness 73.7  Score 45.0  Status 48.8
+  //   widest Status body line ~119 ("839/1294 sequences")
+  // New split and the slack each column keeps:
+  //   Building  25%  inner 163.7  (names wrap, as they already did; rows are 3 lines tall
+  //                                anyway because the Status cell carries three lines)
+  //   Equipment 14%  inner  84.6  vs 79.7  -> +4.9
+  //   Sensor    13.5% inner  81.0  vs 74.1  -> +6.9
+  //   Sequence  13.5% inner  81.0  vs 73.7  -> +7.3
+  //   Score     14%  unchanged (its bar has a 60px ceiling from item 6279e171 and a known
+  //                            pre-existing 3px overflow on a "100%" label -- do not shrink)
+  //   Status    20%  inner 127.8  vs ~119   -> +9
+  // Do not narrow Equipment/Sensor/Sequence again without re-running the overlap census: their
+  // header words are unbreakable and there is no smaller legal type to fall back to.
+  var colWidths = {
+    building: 25,
+    equipment: 14,
+    sensor: 13.5,
+    sequence: 13.5,
+    score: 14,
+    status: 20,
+  };
   var colgroup =
     '<colgroup>' +
     '<col style="width:' +
@@ -15813,10 +15844,8 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var SETPOINT_CONT_HDR_H = 40;
   var SETPOINT_SAFETY_H = 40;
   var SETPOINT_ROW_H = 70; // measured 49 typical, 69 max (3-line Status cell)
-  var ROWS_BUDGET_FIRST =
-    _rptContentBudget('standard') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
-  var ROWS_BUDGET_CONT =
-    _rptContentBudget('standard') - SETPOINT_CONT_HDR_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
+  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - SETPOINT_CONT_HDR_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
 
   var tokens = buildingRows.map(function (row) {
     return { type: 'row', estH: SETPOINT_ROW_H, html: _buildBldgRowHTML(row) };
@@ -19727,14 +19756,8 @@ function rptPageASHRAE36PointInventory(n, d) {
     return INV_ROW_PAD_H + lines * _invLineH;
   }
   var ROWS_BUDGET_FIRST =
-    _rptContentBudget('standard') -
-    INV_SUMMARY_H -
-    INV_NARRATIVE_H -
-    INV_THEAD_H -
-    INV_FOOTNOTE_H -
-    INV_SAFETY_H;
-  var ROWS_BUDGET_CONT =
-    _rptContentBudget('standard') - INV_CONT_HDR_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
+    _rptContentBudget('standard') - INV_SUMMARY_H - INV_NARRATIVE_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - INV_CONT_HDR_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
 
   var tokens = inv.byBuilding.map(function (b) {
     return { type: 'row', estH: _invRowEstH(b.name || b.building), html: _buildInvRowHTML(b) };
