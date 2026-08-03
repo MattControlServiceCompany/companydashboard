@@ -993,6 +993,41 @@ var RPT_MIN_TEXT_PT = 10; // standing rule: nothing below 10pt in a client docum
 var RPT_MIN_TEXT_PX = Math.ceil((RPT_MIN_TEXT_PT / RPT_PRINT_PT_PER_PX) * 100) / 100; // 13.34px
 
 /**
+ * RPT_DOC_TITLE_PX / RPT_SECTION_HEAD_PX / RPT_BODY_PX — the report type hierarchy
+ * (D-12 / V-33 / V-18, DEFECTS-2026-08-02.md + VISUAL-REVIEW-2026-08-02.md, fixed 2026-08-03).
+ *
+ * WHY THIS EXISTS. Every section heading in the Audit and the Proposal was authored at 11px or
+ * 12px, which prints at 8.25pt / 9.0pt on the 0.75 px-to-pt print path. Once the 10pt floor
+ * (_rptApplyMinFontFloor, above) landed they all clamped to exactly 10.005pt — still BELOW the
+ * 10.5pt body text they introduce, and below the 10.5pt column headers of the tables inside them.
+ * Measured on the Proposal: "Executive Summary", "Assessment Findings", "Recommended Energy
+ * Management Services", "Why This Approach", "Future Work", "Implementation Plan", "Long-Term
+ * Vision" and "Disclaimer" all rendered at 10.0pt against 10.5pt body, and on Proposal page 3 the
+ * largest text on the whole page was a table column header. The document outline was inverted on
+ * every page: top-level sections looked subordinate to their own content.
+ *
+ * THE FLOOR ALONE CANNOT FIX THIS. A floor can only stop text going below a minimum; it cannot
+ * make a heading outrank body text that is already above the minimum. The heading sizes
+ * themselves have to go up, which is what these three constants do.
+ *
+ * THE TIERS (px authored / pt printed at 0.75):
+ *   24px    = 18.0pt   document title (the cover title of each document)
+ *   17.34px = 13.005pt section heading (every heading that introduces body text or a table)
+ *   14px    = 10.5pt   body text, list text, table cells (already the file's convention)
+ * 17.34, not 17.33: 17.33 * 0.75 = 12.9975pt, which can display as 12.99. 17.34 lands at 13.005
+ * and can never round down, exactly as RPT_MIN_TEXT_PX does at the floor.
+ *
+ * NOT CHANGED HERE, deliberately: the interior running page-title bar (.rpt-pg-title, 19px =
+ * 14.25pt) lives in energy-department.html, is shared by every report type, and is height-boxed
+ * inside the 60px --rpt-hdr-h chrome bar next to .rpt-info. It already outranks the new 13pt
+ * section tier, so the outline reads document title 18pt > running page title 14.25pt > section
+ * heading 13pt > body 10.5pt with no inversion at any level.
+ */
+var RPT_DOC_TITLE_PX = 24; // 18.0pt printed
+var RPT_SECTION_HEAD_PX = 17.34; // 13.005pt printed
+var RPT_BODY_PX = 14; // 10.5pt printed
+
+/**
  * _rptTextLineH — height of ONE rendered line of report body text, in px, for a given CSS
  * line-height multiplier. Pagination estimates that count text lines must call this instead of
  * hardcoding "15px per line" or "20px per line": those literals were all measured before the 10pt
@@ -14223,7 +14258,14 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   var bodyHTML =
     '<div style="padding:20px 48px 16px">' +
     '<div style="text-align:center;margin-bottom:0">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
+    // D-12 (2026-08-03): 22px (16.5pt) -> the shared 18pt document-title tier, so the Audit cover
+    // title and the Proposal cover title are the same size and both sit above the 14.25pt running
+    // page-title bar that follows them on every interior page. margin-bottom stays 2px (not D-12's
+    // original 12px) because R9a (2026-08-03) inserted a document-date div right after this one,
+    // and that date div supplies its own margin-bottom:12px gap before the body text below it.
+    '<div style="font-size:' +
+    RPT_DOC_TITLE_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
     '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:2px">' +
     d.project.name +
     '</div>' +
@@ -14338,11 +14380,22 @@ function rptPageASHRAE36Executive(n, d) {
   if (topGap) {
     callout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
-      '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
+      // D-12 (2026-08-03): "Most Common Gap Across Portfolio" is this callout's HEADING and moves
+      // to the 13pt section tier. The two lines under it are its CONTENT, not sub-headings, and
+      // both move to the 10.5pt body tier: the gap name (e.g. "Damper position command") keeps its
+      // 600 weight as a bold lead-in but is no longer a distinct size, which is what made it read
+      // as a heading smaller than the text around it (D-12 names it explicitly on Audit page 2).
+      '<div style="font-size:' +
+      RPT_SECTION_HEAD_PX +
+      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
+      '<div style="font-size:' +
+      RPT_BODY_PX +
+      'px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
       (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].short : topGap.key) +
       '</div>' +
-      '<div style="font-size:11px;color:var(--rpt-page-text)">' +
+      '<div style="font-size:' +
+      RPT_BODY_PX +
+      'px;color:var(--rpt-page-text)">' +
       (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].plain : '') +
       '</div>' +
       '</div>';
@@ -14364,8 +14417,13 @@ function rptPageASHRAE36Executive(n, d) {
     var dcvSentence = dcvParts.join(' and ') + ' have no carbon dioxide sensor.';
     dcvCallout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
-      '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+      // D-12 (2026-08-03): heading -> 13pt section tier, its paragraph -> 10.5pt body tier.
+      '<div style="font-size:' +
+      RPT_SECTION_HEAD_PX +
+      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
+      '<div style="font-size:' +
+      RPT_BODY_PX +
+      'px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
       ' Without a way to sense carbon dioxide levels, these units ventilate at full design rates even when spaces are empty, wasting fan and cooling energy. ' +
       'Adding carbon dioxide sensors lets ventilation adjust to how many people are actually in the space, so equipment stops conditioning air for rooms that are empty.' +
@@ -14402,10 +14460,20 @@ function rptPageASHRAE36Executive(n, d) {
   var EXEC_FOOTNOTE_H = 100; // measured (readiness-band methodology footnote, wraps to ~5 lines at 10pt)
   var EXEC_SAFETY_H = 40; // single page-level margin. 40, not 20: at 20 this page measured only 13px
   // of clearance below the reserved footer zone, and page count is explicitly not a constraint.
+  // D-12 (2026-08-03): all three re-measured after the section headings moved to the 13pt tier,
+  // per the re-measure protocol above (headless render, emulateMedia('print'),
+  // getBoundingClientRect().height of each .rpt-body child). Each number is now the measured box
+  // height PLUS that block's own declared margin-bottom, which the old figures omitted — the
+  // paginator is budgeting the space a block actually occupies, not just the space it paints.
+  //   occupancy-ventilation callout 121 -> 146 (132 measured + its 14px margin)
+  //   most-common-gap callout        78 -> 121 (107 measured + its 14px margin; this block grew
+  //                                             most because its two content lines also moved up
+  //                                             to the 10.5pt body tier)
+  //   tableTitle                     20 ->  32 (26 measured + its 6px margin)
   var _firstChromeH = 0;
-  if (dcvCallout) _firstChromeH += 121; // measured (occupancy-based ventilation readiness callout)
-  if (callout) _firstChromeH += 78; // measured (most-common-gap callout)
-  _firstChromeH += 20; // tableTitle — measured
+  if (dcvCallout) _firstChromeH += 146; // measured (occupancy-based ventilation readiness callout)
+  if (callout) _firstChromeH += 121; // measured (most-common-gap callout)
+  _firstChromeH += 32; // tableTitle — measured
   _firstChromeH += EXEC_THEAD_H;
   _firstChromeH += EXEC_FOOTNOTE_H;
   // d5929df4 (2026-07-13): FIRST base trimmed 894 -> 862. Restoring CSC_FOOTER_B64 to the
@@ -14439,11 +14507,18 @@ function rptPageASHRAE36Executive(n, d) {
   // budget, so the arithmetic states the actual page and can be re-derived by anyone who measures
   // it again. The continuation page's chrome is its own small "(continued, N of M)" heading plus
   // the same table head and footnote the first page carries.
-  // Measured against the old continuation bar (text + 6px padding + 1px rule + 8px margin). The
-  // V-06 caption unification (2026-08-03) replaced that bar with the same caption the first page
-  // uses (text + 6px margin), which is ~9px SHORTER, so this stays conservative and pagination is
-  // unchanged. Do not lower it without re-measuring.
-  var EXEC_CONT_HEADER_H = 27; // "Building ASHRAE 36 Readiness (continued, N of M)" caption
+  // V-06 (2026-08-03) unified the continuation caption with the first-page caption -- same
+  // _readinessCaption() style/markup for every chunk, no separate bordered bar (see rationale on
+  // READINESS_CAPTION_STYLE below). D-12 (2026-08-03) then raised that one shared caption style
+  // 11px -> the 13pt section tier (RPT_SECTION_HEAD_PX) and re-measured it at 32 (26px text + 6px
+  // margin) where it is used on the first page (see "_firstChromeH += 32; // tableTitle --
+  // measured" above). Because the continuation caption renders through that exact same
+  // _readinessCaption() call/style, it uses that same 32 here -- the old "~9px shorter than the
+  // bar" conservatism no longer applies now that the bar it was compared against (D-12's own
+  // pre-unification bordered bar, replaced by V-06) is gone. Flag for a headless re-verify pass:
+  // this number assumes "(continued, N of M)" stays on one line at the 13pt tier like "(N of M)"
+  // does; re-measure if the JOCO portfolio (most chunks) ever shows it wrapping.
+  var EXEC_CONT_HEADER_H = 32; // measured — Building ASHRAE 36 Readiness caption at 13pt tier
   var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H + EXEC_FOOTNOTE_H;
   var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - _firstChromeH - EXEC_SAFETY_H;
   var ROWS_BUDGET_CONT = _rptContentBudget('standard') - _contChromeH - EXEC_SAFETY_H;
@@ -14460,8 +14535,14 @@ function rptPageASHRAE36Executive(n, d) {
   // bar's border-bottom was a floating separator rule, which the standing rules forbid). Every
   // chunk now renders through _readinessCaption(): same style, same words, "(N of M)" on the first
   // and "(continued, N of M)" after it, for ANY M (the JOCO table now splits into 4, not 2).
+  // D-12 (2026-08-03): that shared caption's font raised 11px -> the 13pt section tier
+  // (RPT_SECTION_HEAD_PX) — this heading introduces a table whose own column headers print at
+  // 10pt, so at the old 11px (8.25pt authored, 10.005pt after the floor) it was barely larger than
+  // the table it names.
   var READINESS_CAPTION_STYLE =
-    'font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em';
+    'font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em';
   function _readinessCaption(chunkIndex, numChunks) {
     var part = '';
     if (numChunks > 1) {
@@ -14801,7 +14882,8 @@ function rptPageASHRAE36Executive(n, d) {
     var pageN = n + chunkIndex;
 
     // Every chunk carries the SAME caption, in the same style, numbered "N of M" for any M
-    // (V-06, 2026-08-03). First page keeps its callouts ahead of the caption.
+    // (V-06, 2026-08-03; caption's own font raised to the 13pt section tier by D-12, same date --
+    // see READINESS_CAPTION_STYLE above). First page keeps its callouts ahead of the caption.
     var bodyHTML =
       (chunkIndex === 0 ? dcvCallout + callout : '') + _readinessCaption(chunkIndex, numChunks) + table + tableFootnote;
 
@@ -14964,7 +15046,9 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // slightly narrower "ASHRAE 36 Spec" column there wraps the header onto a second line) — 56px
   // covers both, so first and continuation pages can share one honest budget instead of two
   // differently-fudged ones.
-  var RATIONALE_TITLE_H = 28; // measured, section title + its margin-bottom
+  // D-12 (2026-08-03): 28 -> 34, re-measured after the "ASHRAE 36 Sequences" title moved to the
+  // 13pt section tier (26px box + its 8px margin-bottom).
+  var RATIONALE_TITLE_H = 34; // measured, section title + its margin-bottom
   var RATIONALE_THEAD_H = 56; // measured 33 first page / 53 continuation; 56 covers both
   var RATIONALE_SAFETY_H = 40; // single page-level margin, same convention as EXEC_SAFETY_H above
   var RATIONALE_BUDGET_FIRST =
@@ -14974,8 +15058,12 @@ function rptPageASHRAE36CostEstimate(n, d) {
   var SEQ_SECTION_TITLE = 'ASHRAE 36 Sequences';
 
   // Shared HTML fragments for the sequence table chrome
+  // D-12 (2026-08-03): 11px -> the 13pt section tier, so this heading outranks both the 10pt
+  // column headers and the 10.5pt cell text of the sequences table it introduces.
   var _ratTitle =
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
     'text-transform:uppercase;letter-spacing:0.04em">' +
     SEQ_SECTION_TITLE +
     '</div>';
@@ -15654,7 +15742,10 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // background. NO border-left. NO border. Just spacing."). Removed — plain spacing only.
   var infraCallout =
     '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px">' +
-    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;' +
+    // D-12 (2026-08-03): 10px (7.5pt printed, 10.005pt after the floor) -> the 13pt section tier.
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (Building Automation System Export)</div>' +
     '<div style="display:flex;gap:16px">' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
@@ -15798,7 +15889,12 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
       }
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         _a36DisplayName(b) +
         ' (continued, ' +
@@ -16418,7 +16514,12 @@ function rptPageASHRAE36SetpointReview(n, d) {
       bodyHTML = preamble + totalsCallout + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         'Setpoint Programming Review (continued, ' +
         (chunkIndex + 1) +
@@ -16582,7 +16683,11 @@ function _rptA36CoverPricingStrip(d) {
         t.label + (t.isRec ? ' (Recommended)' : '') + (amtStr ? ': ' + amtStr : ': Available upon request');
       return (
         '<div style="margin-bottom:12px">' +
-        '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);border-bottom:2px solid var(--rpt-rule);' +
+        // D-12 (2026-08-03): tier headline -> the 13pt section tier; the description directly
+        // beneath it is 14px/10.5pt body, so at 11px this heading printed smaller than its own text.
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:700;color:var(--rpt-page-text);border-bottom:2px solid var(--rpt-rule);' +
         'padding-bottom:3px;margin-bottom:5px">' +
         _esc(headline) +
         '</div>' +
@@ -16884,17 +16989,30 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // 2026-07-26 comment above was written against and well above the original bug's ~8pt-equivalent
   // density) — spacing only, font-size untouched at 12px/14px. Re-measured after: 0px overflow
   // (see dashboardlogic.md 2026-07-29 entry for before/after numbers).
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
+  // D-12 (2026-08-03): 12px (9pt printed, 10.005pt after the floor) -> the 13pt section tier.
+  // This constant styles the Proposal's top-level section headings ("Executive Summary",
+  // "Assessment Findings", "Recommended Energy Management Services", ...), every one of which
+  // was measured printing SMALLER than the 10.5pt body text directly beneath it.
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
   // ── Title block ─────────────────────────────────────────────────────────
   var title =
     '<div style="text-align:center;margin-bottom:6px">' +
-    '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">' +
+    // D-12 (2026-08-03): 19px (14.25pt) -> the 18pt document-title tier, matching the Audit
+    // cover. The second line (the programme line) goes 16px -> 19px (12pt -> 14.25pt) with it:
+    // at 12pt it would have printed SMALLER than the 13pt "Executive Summary" heading further
+    // down this same page, which is the same parent-smaller-than-child inversion being fixed.
+    // Result on the cover: title 18pt > programme line 14.25pt > section headings 13pt > body
+    // 10.5pt, with the "Service Proposal" kicker left where it is (a deliberate small-caps
+    // eyebrow, already at the legal 10pt floor, not a heading over any body text).
+    '<div style="font-size:' +
+    RPT_DOC_TITLE_PX +
+    'px;font-weight:700;color:var(--rpt-blue)">' +
     esc(displayClient) +
     ' Building Automation System</div>' +
-    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Energy Management Services</div>' +
+    '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Energy Management Services</div>' +
     // Document-type identifier (2026-07-29) -- the cover previously never said "Service
     // Proposal" anywhere, while the interior Cost Estimate headers and the modal/PDF filename
     // all call it that. Subordinate to both title lines above: smaller than the 16px program
@@ -17037,7 +17155,11 @@ function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
 
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
+  // D-12 (2026-08-03): 12px (9pt printed, 10.005pt after the floor) -> the 13pt section tier.
+  // This constant styles the Proposal's top-level section headings ("Executive Summary",
+  // "Assessment Findings", "Recommended Energy Management Services", ...), every one of which
+  // was measured printing SMALLER than the 10.5pt body text directly beneath it.
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
@@ -17966,7 +18088,9 @@ function _rptA36PhaseTableDerive(d, opts) {
   // consistency within this page.
   var standaloneFutureWorkHTML = '';
   if (!(opts && opts.futureWorkInline === true)) {
-    var _fwHead = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 4px';
+    // D-12 (2026-08-03): "Future Work" heading -> the 13pt section tier.
+    var _fwHead =
+      'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 4px';
     var _fwBody = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
     standaloneFutureWorkHTML = _rptA36FutureWorkInnerHTML(futurePhases, _fwHead, _fwBody);
   }
@@ -18034,7 +18158,8 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // fix/report-typography-and-pagination-merge (2026-07-29): "Why This Approach" prepended here —
   // see rptPageASHRAE36ProposalCover's header comment for why it moved off the cover page. Same
   // HEAD/UL literal style strings used throughout the ASHRAE 36 Proposal page family.
-  var _whyHead = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
+  // D-12 (2026-08-03): "Why This Approach" heading -> the 13pt section tier.
+  var _whyHead = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
   var _whyUl = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var whyHTML = _rptA36WhyThisApproachHTML(_whyHead, _whyUl);
 
@@ -18139,7 +18264,12 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
       // Repeating header row (der.headRowHTML, above) plus this small continuation title -- so a
       // reader who reaches page 2 knows both which page this is AND which column is which month.
       head =
-        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+        // D-12 / V-18 (2026-08-03): 11px -> the 13pt section tier. This was the heading V-18
+        // measured at 9.0pt on Proposal page 3 while the months table's own column headers on the
+        // same page printed at 10.5pt, making a table header the largest text on the page.
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
         'text-transform:uppercase;letter-spacing:0.04em">Included Improvements (continued ' +
         (idx + 1) +
         ' of ' +
@@ -18188,7 +18318,8 @@ function _rptA36VisionInnerHTML(d, opts) {
   // font-size:10.5px at the time, later corrected to font-size:14px on 2026-07-28 — see
   // rptPageASHRAE36ProposalCover's comment above) — only spacing tightened, so this is real
   // content packed more efficiently, not padding removed to fake fullness.
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
+  // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:1px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
@@ -18439,7 +18570,8 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
+  // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
@@ -18512,7 +18644,8 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
+  // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
@@ -18719,12 +18852,16 @@ function rptPageASHRAE36ProposalScope(n, d) {
   // title (var(--rpt-blue) and hardcoded #7c3aed purple) → var(--rpt-rule) border + black title.
   var bodyHTML =
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 1: Hardware &amp; Sensor Upgrades</div>' +
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 1: Hardware &amp; Sensor Upgrades</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Installation of missing sensors and actuators required for ASHRAE 36 compliance. This phase establishes the hardware foundation for sequence programming.</div>' +
     ph1HTML +
     '</div>' +
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2: Building Automation System Sequence Programming</div>' +
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2: Building Automation System Sequence Programming</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming of ASHRAE 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
     ph2HTML +
     '</div>';
@@ -19217,7 +19354,10 @@ function _rptA36RecommendedTimelineHTML(d) {
 
   return (
     '<div style="margin-top:12px">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+    // D-12 (2026-08-03): 11px -> the 13pt section tier.
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
     'text-transform:uppercase;letter-spacing:0.04em">Recommended Energy Management Services: Phased Implementation Sequence</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
     colgroup +
@@ -20399,7 +20539,12 @@ function rptPageASHRAE36PointInventory(n, d) {
       bodyHTML = summaryBlock + narrative + table + (chunkIndex === numChunks - 1 ? footnote : '');
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         'Point Inventory Completeness (continued, ' +
         (chunkIndex + 1) +
