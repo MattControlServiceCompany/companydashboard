@@ -2011,7 +2011,24 @@
         --rpt-hdr-h: 60px; /* .rpt-int-hdr chrome bar (title + client/period) */
         --rpt-hero-hdr-h: 196px; /* full-bleed hero letterhead (816x194 image + 2px clearance) */
         --rpt-small-hdr-h: 195px; /* inset letterhead used with smallHeaderImg (Agreement pages) */
-        --rpt-ftr-h: 72px; /* footer wave image + footer label + page number, combined */
+        /* --rpt-ftr-h — reserved bottom zone: NOTHING in .rpt-body may enter it.
+           U2 / RC-A (2026-08-02, DEFECTS-2026-08-02.md D-04, Matt's #1 reported defect: "text is
+           running into the footers in the exported PDFs"). This token was 72px, but the footer
+           wave graphic it is supposed to reserve room for is NOT 72px tall: CSC_FOOTER_B64 is the
+           full 1699x224 crop (restored d5929df4, 2026-07-13), so at the page's 816px width it
+           renders 816 * 224 / 1699 = 107.6px tall. Every exported PDF measured its wave band at
+           y711.0-792.0 on every page of all three client documents (PyMuPDF get_image_info), i.e.
+           81pt = 1.125in = 108px — 36px MORE than this token reserved. Body content was therefore
+           budgeted 36px past the top of the band and printed on top of the wave (worst measured
+           collision: Agreement p2 "under the Allowance." 35.2pt inside the band).
+           Now 120px = 1.25in: the 107.6px band plus ~12px of true clearance above it, so text
+           stops clear of the graphic rather than touching its top edge. This single token feeds
+           .rpt-body's bottom offset (screen), .rpt-body's print padding-bottom, and — through
+           _rptGeometry()/_rptContentBudget() in app/report-engine.js — EVERY pagination budget in
+           the report engine, which is why the fix is one number and not a per-page patch.
+           If the footer graphic is ever re-cropped, re-measure its rendered height at 816px width
+           and set this token to that height plus clearance; do not shrink it to buy page space. */
+        --rpt-ftr-h: 120px; /* footer wave image (107.6px) + clearance above it; see comment above */
       }
 
       /* -- Overlay & Toolbar -- */
@@ -3082,12 +3099,20 @@
           position: static !important;
           height: auto !important;
         }
+        /* U2 / RC-A (2026-08-02, D-04): padding-bottom was a flat 30px. In print .rpt-body is
+           position:static (see the block comment above — normal flow is what lets a table row
+           carry onto a second physical page), so on the print path this padding is the ONLY thing
+           holding body text off the footer wave band; the screen path's `bottom: var(--rpt-ftr-h)`
+           offset does not apply here. 30px reserved 22.5pt where the band itself is 81pt tall, so
+           text was free to print 58.5pt into the graphic. Now reserves the same
+           --rpt-ftr-h zone the screen layout and every pagination budget use, so all three paths
+           agree on where the content area ends. */
         .rpt-body {
           position: static !important;
           top: auto !important;
           bottom: auto !important;
           height: auto !important;
-          padding: 12px var(--rpt-pad-x) 30px !important;
+          padding: 12px var(--rpt-pad-x) var(--rpt-ftr-h) !important;
         }
         .rpt-page.rpt-cover > .csc-header-img {
           position: static !important;

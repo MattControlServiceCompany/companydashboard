@@ -336,24 +336,97 @@ function rptPageAgreementCover(n, d) {
     _AGR_BODY +
     ';margin-top:14px" contenteditable="true">The following buildings are included in the scope of this agreement:</div>';
 
-  var listItems = d.buildings
-    .map(function (b) {
-      return '<li style="' + _AGR_BODY + ';margin-bottom:2px">' + esc(b) + '</li>';
-    })
-    .join('');
-
-  var scopeList = d.buildings.length
-    ? '<ol style="' + _AGR_UL + '" contenteditable="true">' + listItems + '</ol>'
-    : '<div style="' +
-      _AGR_BODY +
-      ';font-style:italic;color:var(--rpt-orange)">No buildings are currently entered for this project — add buildings under the Utility Data tab so this list can populate.</div>';
-
-  return rptPage(n, 'Energy Management Services Agreement', title + recital + templateNote + scopeHeading + scopeList, {
-    data: fakeData,
-    hero: false,
-    hideIntHdr: true,
-    smallHeaderImg: true,
+  // Array, not a joined string — the list is paginated below, so each <li> has to stay separable.
+  var listItems = d.buildings.map(function (b) {
+    return '<li style="' + _AGR_BODY + ';margin-bottom:2px">' + esc(b) + '</li>';
   });
+
+  if (!d.buildings.length) {
+    return [
+      rptPage(
+        n,
+        'Energy Management Services Agreement',
+        title +
+          recital +
+          templateNote +
+          scopeHeading +
+          '<div style="' +
+          _AGR_BODY +
+          ';font-style:italic;color:var(--rpt-orange)">No buildings are currently entered for this project — add buildings under the Utility Data tab so this list can populate.</div>',
+        { data: fakeData, hero: false, hideIntHdr: true, smallHeaderImg: true },
+      ),
+    ];
+  }
+
+  // U2 (2026-08-02, fix/u2-print-page-budget). This page was hand-composed as ONE fixed page with
+  // however many buildings the project has, and JOCO's 27 overran it: measured in a print render
+  // (PyMuPDF), buildings 26 and 27 printed at y709.0-720.7pt and past the sheet edge, i.e. on top
+  // of / behind the footer wave band that occupies y711.0-792.0. Once the print body correctly
+  // reserved the footer zone the page stopped overprinting and instead GREW, splitting onto a
+  // second physical sheet that carried building 27 alone at y1.0 — inside the printer's dead
+  // margin. Neither is acceptable in a client contract: the scope list is the list of buildings
+  // the client is paying for.
+  //
+  // The list is now paginated instead of assumed to fit. Page count is explicitly not a
+  // constraint here (Matt, 2026-08-02: "I do not care about page count. All of the content is
+  // what I care about."), so the remainder takes another page rather than anything being shrunk.
+  //
+  // Constants, all measured in a print render of the real JOCO agreement rather than assumed:
+  //   COVER_CHROME_H  title + recital + templateNote + scopeHeading + the <ol>'s own top margin.
+  //                   Measured 191.6px (content top to the first <li>'s top, 143.7pt x 4/3).
+  //   COVER_LI_H      one <li>: _AGR_UL's 14px x line-height 1.42 = 19.9, + margin-bottom 2.
+  //                   Measured 22px (16.5pt between consecutive <li> tops).
+  //   COVER_SAFETY_H  one named page-level margin, same 40px convention as the Audit pages in
+  //                   this work unit — absorbs a longer client legal name wrapping the recital to
+  //                   an extra line or two on some other project.
+  var COVER_CHROME_H = 192;
+  var COVER_LI_H = 22;
+  var COVER_SAFETY_H = 40;
+  var COVER_CONT_HEADING_H = 40; // the "(continued)" scope heading + its margin on page 2+
+  var firstCap = Math.max(
+    1,
+    Math.floor((_rptContentBudget('smallHdr') - COVER_CHROME_H - COVER_SAFETY_H) / COVER_LI_H),
+  );
+  var contCap = Math.max(
+    1,
+    Math.floor((_rptContentBudget('flush') - COVER_CONT_HEADING_H - COVER_SAFETY_H) / COVER_LI_H),
+  );
+
+  var pages = [];
+  var idx = 0;
+  var pageIdx = 0;
+  while (idx < listItems.length) {
+    var cap = pageIdx === 0 ? firstCap : contCap;
+    var slice = listItems.slice(idx, idx + cap);
+    var ol = '<ol start="' + (idx + 1) + '" style="' + _AGR_UL + '" contenteditable="true">' + slice.join('') + '</ol>';
+    if (pageIdx === 0) {
+      pages.push(
+        rptPage(n, 'Energy Management Services Agreement', title + recital + templateNote + scopeHeading + ol, {
+          data: fakeData,
+          hero: false,
+          hideIntHdr: true,
+          smallHeaderImg: true,
+        }),
+      );
+    } else {
+      pages.push(
+        rptPage(
+          n + pageIdx,
+          'Energy Management Services Agreement',
+          // margin-top matches _AGR_HEAD's, so this heading starts at the same distance from the
+          // sheet edge as "1. Services of Contractor" does on the next page (measured y17.9pt).
+          '<div style="' +
+            _AGR_BODY +
+            ';margin:10px 0 8px" contenteditable="true">The following buildings are included in the scope of this agreement (continued):</div>' +
+            ol,
+          { data: fakeData, hideIntHdr: true },
+        ),
+      );
+    }
+    idx += cap;
+    pageIdx++;
+  }
+  return pages;
 }
 
 // ─── Commercial-terms renderers ────────────────────────────────────────────────────────────────
@@ -651,10 +724,24 @@ function rptPageAgreementCommercialTerms(n, d) {
     r.utilityRebate +
     '</div>';
 
-  return rptPage(n, 'Energy Management Services Agreement', services + compensation, {
-    data: fakeData,
-    hideIntHdr: true,
-  });
+  // U2 (2026-08-02, fix/u2-print-page-budget). Sections 1 and 2 were composed onto ONE fixed page
+  // and did not fit: measured in a print render, the combined content ran to roughly 1103px
+  // against this variant's 904px .rpt-body budget, so "2.5 Utility Rebate Assistance" and its
+  // paragraph spilled onto a second physical sheet, printing at y1.7pt with the footer wave
+  // immediately below it. Split at the section boundary — Section 1 (Services of Contractor) on
+  // one page, Section 2 (Compensation and payment schedule) on the next — which is the same
+  // remedy already applied to General Provisions on 2026-07-29. No clause text, ordering, or
+  // numbering changed; only which physical page carries each section.
+  return [
+    rptPage(n, 'Energy Management Services Agreement', services, {
+      data: fakeData,
+      hideIntHdr: true,
+    }),
+    rptPage(n + 1, 'Energy Management Services Agreement', compensation, {
+      data: fakeData,
+      hideIntHdr: true,
+    }),
+  ];
 }
 
 // ─── Page 4: Term and Termination ──────────────────────────────────────────────────────────────
@@ -928,8 +1015,19 @@ function generateAgreementHTML(projId, templateType, opts) {
   // 2026-07-28 fidelity fix: the building scope list is now rendered ON rptPageAgreementCover
   // itself (title + recital + scope list all share the Word original's one physical page 1) —
   // see that function's header comment. No separate 'agreementScope' page/section exists anymore.
-  pages.push(_tagAgreementSection(rptPageAgreementCover(pageNum++, d), 'agreementCover'));
-  pages.push(_tagAgreementSection(rptPageAgreementCommercialTerms(pageNum++, d), 'agreementCommercialTerms'));
+  // U2 (2026-08-02): rptPageAgreementCover and rptPageAgreementCommercialTerms now return an
+  // ARRAY of pages, same as rptPageAgreementGeneralProvisions has since 2026-07-29 — both were
+  // over-full fixed pages that spilled onto an extra physical sheet once the print body correctly
+  // reserved the footer wave band. Each still returns exactly one array element in the small-scope
+  // case, so short projects are unchanged.
+  rptPageAgreementCover(pageNum, d).forEach(function (pg) {
+    pages.push(_tagAgreementSection(pg, 'agreementCover'));
+    pageNum++;
+  });
+  rptPageAgreementCommercialTerms(pageNum, d).forEach(function (pg) {
+    pages.push(_tagAgreementSection(pg, 'agreementCommercialTerms'));
+    pageNum++;
+  });
   pages.push(_tagAgreementSection(rptPageAgreementTermTermination(pageNum++, d), 'agreementTermTermination'));
   // rptPageAgreementGeneralProvisions returns an Array (2026-07-29, split across 2 pages to fix
   // overflow at the corrected 14px/10.5pt body size — see that function's header comment).
