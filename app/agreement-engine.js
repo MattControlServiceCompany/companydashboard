@@ -28,6 +28,12 @@
 
 // ─── Config storage (plain settings, NOT the hand-edit override/diff system) ─────────────────────
 var AGREEMENT_TEMPLATE_TYPES = ['monthlyAllowance', 'profitSharing', 'epcFlatCost', 'oneTimeCost'];
+
+// Client notice address as stated verbatim in the base Agreement document, Section 4.6
+// (_context/specs/joco-energy-services-agreement-base-2026-07-23.md). Used only when the project
+// record has no project-level address of its own. Line breaks are rendered as they appear in the
+// source document.
+var _AGREEMENT_BASE_CLIENT_ADDRESS = '111 S. Cherry St.,\nOlathe, KS 66061';
 var AGREEMENT_TEMPLATE_LABELS = {
   monthlyAllowance: 'Monthly Allowance',
   profitSharing: 'Profit Sharing',
@@ -41,11 +47,12 @@ function _agreementGetConfig(projId) {
     templateType: 'monthlyAllowance',
     effectiveDate: null, // null = use today at generation time
     // Defaults per Matt's direction (2026-07-27): 4% escalation, $2,768/mo minimum spend
-    // (16 hrs x $173/hr). Both are UNCONFIRMED until the client explicitly accepts them — the
-    // *Confirmed flags gate whether the "(default — pending confirmation)" flag shows in the
-    // generated text, so a placeholder can never quietly reach a county. See Word comments #1
-    // ("Add minimum spend amount") and #2 ("Escalation in renewal terms.") in the base spec —
-    // this resolves both.
+    // (16 hrs x $173/hr). Both start UNCONFIRMED until the client explicitly accepts them. The
+    // *Confirmed flags used to gate an inline "pending confirmation" annotation in the generated
+    // contract text; that annotation was removed 2026-08-02 (defect register D-01/D-02) because it
+    // shipped to the client in orange with internal wording. The flags are now internal state only
+    // and change nothing in the rendered document. See Word comments #1 ("Add minimum spend
+    // amount") and #2 ("Escalation in renewal terms.") in the base spec.
     escalationRate: 4,
     escalationConfirmed: false,
     minimumSpend: 2768,
@@ -155,14 +162,16 @@ function _agreementEsc(s) {
   return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
 }
 
-// Inline "unconfirmed default" flag — plain text, no boxes/pills per report standards (report text
-// rule: "No outline boxes / pill treatments on report text"). Uses the existing --rpt-orange token
-// (same one used elsewhere in report-engine.js for "(extended)" style inline annotations) rather
-// than inventing a new color.
-function _agreementUnconfirmedFlag(isConfirmed) {
-  if (isConfirmed) return '';
-  return ' <span style="color:var(--rpt-orange);font-style:italic">(default value — pending your confirmation)</span>';
-}
+// 2026-08-02 (defect register D-01/D-02/D-19): _agreementUnconfirmedFlag() USED to append
+// "(default value ... pending your confirmation)" in orange after the minimum-spend sentence
+// (Section 1.1) and after the escalation clause (Section 3.1.ii). That annotation shipped inside a
+// signable client contract in a non-black color, carried internal tooling language, and contained
+// two of the document's three em dashes. Function and both call sites deleted. The VALUES it
+// annotated are unchanged and still render (minimum monthly spend, escalation rate) — only the
+// parenthetical went away. cfg.minimumSpendConfirmed / cfg.escalationConfirmed and their modal
+// checkboxes are intentionally left in place: they are internal state that no longer changes any
+// rendered output, kept so the confirmation status can be surfaced somewhere internal later
+// without re-plumbing. Nothing in the generated document reads them any more.
 
 // ─── collectAgreementData ─────────────────────────────────────────────────────────────────────
 /**
@@ -261,6 +270,11 @@ function collectAgreementData(projId, templateType, opts) {
     displayClient:
       typeof _rptProposalDisplayClientName === 'function' ? _rptProposalDisplayClientName(clientName) : clientName,
     legalClientName: clientName, // proj.client-first (see note above), unmodified beyond that resolution
+    // Section 4.6 Notices — Client mailing address. proj.addr (project-level address, the same
+    // field report-engine.js reads) wins when the project record carries one; otherwise the
+    // verified base-document address is used. See the Notices cell in
+    // rptPageAgreementGeneralProvisions for the full rationale (defect register D-03).
+    clientAddress: (proj.addr && String(proj.addr).trim()) || _AGREEMENT_BASE_CLIENT_ADDRESS,
     buildings: buildings,
     equipmentCount: equipmentCount,
     hourlyRate: pcfg ? pcfg.hourlyRate : null,
@@ -314,8 +328,10 @@ function rptPageAgreementCover(n, d) {
     '<h1 style="text-align:center;margin-bottom:10px;font-size:19px;font-weight:700;color:var(--rpt-blue)" contenteditable="true">Energy Management Services Agreement</h1>';
 
   var recitalText =
+    // 2026-08-02 (defect register D-20): read "as of this August 3, 2026" — the word "this" is a
+    // leftover from the template's "this ___ day of ___________, 20__" construction and is
+    // ungrammatical once a real date is substituted. Removed; the date binding is unchanged.
     'This Energy Management Services Agreement (the &ldquo;Agreement&rdquo;) is made and entered into as of ' +
-    'this ' +
     esc(_agreementFmtDateLong(d.effectiveDate)) +
     ' (&ldquo;Effective Date&rdquo;), between Control Service Company (&ldquo;Contractor&rdquo;), and ' +
     esc(d.legalClientName) +
@@ -324,12 +340,19 @@ function rptPageAgreementCover(n, d) {
 
   var recital = '<div style="' + _AGR_BODY + ';margin-top:14px" contenteditable="true">' + recitalText + '</div>';
 
+  // 2026-08-02 (defect register D-17): this line used to read "Commercial Terms: Monthly Allowance"
+  // — label-colon-value, which reads as a heading, and the thing that followed it was the building
+  // scope sentence and the building list, not any commercial term. The commercial terms themselves
+  // live in Section 1 (Services of Contractor) and Section 2 (Compensation and payment schedule).
+  // Rewritten as a complete sentence that describes itself and points at the sections that actually
+  // carry the terms, so nothing on this page reads as a heading over the building list. Kept in the
+  // same position (after the recital, before the scope sentence) so page 1's layout is unchanged.
   var templateNote =
     '<div style="' +
     _AGR_BODY +
-    ';margin-top:16px;font-style:italic;color:var(--rpt-page-text)">Commercial Terms: ' +
+    ';margin-top:16px" contenteditable="true">The commercial terms of this Agreement follow the ' +
     esc(d.templateLabel) +
-    '</div>';
+    ' structure, set forth in Sections 1 and 2 below.</div>';
 
   var scopeHeading =
     '<div style="' +
@@ -346,7 +369,11 @@ function rptPageAgreementCover(n, d) {
     ? '<ol style="' + _AGR_UL + '" contenteditable="true">' + listItems + '</ol>'
     : '<div style="' +
       _AGR_BODY +
-      ';font-style:italic;color:var(--rpt-orange)">No buildings are currently entered for this project — add buildings under the Utility Data tab so this list can populate.</div>';
+      // 2026-08-02 (defect register D-19, zero em dashes anywhere in the Agreement): the em dash in
+      // this empty-state line is gone. The source reference was also stale: buildings come from the
+      // Equipment Matrix via collectASHRAE36Data (see collectAgreementData above), never from
+      // Utility Data, which this client does not have and never will.
+      ';font-style:italic;color:var(--rpt-orange)">No buildings are currently entered for this project. Add buildings to the Equipment Matrix so this list can populate.</div>';
 
   return rptPage(n, 'Energy Management Services Agreement', title + recital + templateNote + scopeHeading + scopeList, {
     data: fakeData,
@@ -398,7 +425,6 @@ var _agreementCommercialRenderers = {
       'A minimum monthly spend of ' +
       minSpendStr +
       ' applies to maintain this Agreement in active status.' +
-      _agreementUnconfirmedFlag(d.minimumSpendConfirmed) +
       '</li>' +
       '<li style="' +
       _AGR_BODY +
@@ -475,10 +501,7 @@ var _agreementCommercialRenderers = {
   },
 
   epcFlatCost: function (d) {
-    var totalStr =
-      d.lumpTotal != null
-        ? _agreementSpellDollars(d.lumpTotal)
-        : '[project total not yet priced — import a pricing catalog and complete the Cost Estimate tab]';
+    var totalStr = d.lumpTotal != null ? _agreementSpellDollars(d.lumpTotal) : '[project total not yet configured]';
 
     var servicesBullets =
       '<li style="' +
@@ -516,10 +539,7 @@ var _agreementCommercialRenderers = {
   },
 
   oneTimeCost: function (d) {
-    var totalStr =
-      d.lumpTotal != null
-        ? _agreementSpellDollars(d.lumpTotal)
-        : '[project total not yet priced — import a pricing catalog and complete the Cost Estimate tab]';
+    var totalStr = d.lumpTotal != null ? _agreementSpellDollars(d.lumpTotal) : '[project total not yet configured]';
 
     var servicesBullets =
       '<li style="' +
@@ -724,7 +744,6 @@ function rptPageAgreementTermTermination(n, d) {
       '1.1 shall each increase by a fixed escalation rate of ' +
       d.escalationRate +
       '% over the amount then in effect immediately prior to that renewal, compounding annually.' +
-      _agreementUnconfirmedFlag(d.escalationConfirmed) +
       '</div>'
     : '';
 
@@ -795,7 +814,7 @@ function rptPageAgreementGeneralProvisions(n, d) {
     '">4.2 Attorney&rsquo;s Fees and Cost:</h3>' +
     '<div style="' +
     _AGR_BODY +
-    '" contenteditable="true">If either party hereto shall properly institute formal legal action, including mediation as described in Section 5.8 below, the prevailing party shall be entitled to reasonable attorney fees and costs in addition to any other relief which may be granted.</div>' +
+    '" contenteditable="true">If either party hereto shall properly institute formal legal action, including mediation as described in Section 4.8 below, the prevailing party shall be entitled to reasonable attorney fees and costs in addition to any other relief which may be granted.</div>' +
     '<h3 style="' +
     _AGR_SUBHEAD +
     '">4.3 Waiver:</h3>' +
@@ -824,14 +843,21 @@ function rptPageAgreementGeneralProvisions(n, d) {
     '<td style="' +
     _AGR_BODY +
     ';vertical-align:top;width:50%">Contractor: Control Service Company<br>3621 NE Akin Drive<br>Lee&rsquo;s Summit, MO 64064</td>' +
-    // No live "client mailing address" field exists anywhere in the project schema (grep-confirmed
-    // — only building-level bldg.addr exists, not a project-level client address). Left as an
-    // editable placeholder rather than guessing/inventing an address.
+    // 2026-08-02 (defect register D-03): this cell used to render the literal string
+    // "[Client mailing address ... enter here]" — a placeholder shipping in a signable contract
+    // where the base document carries a real, verified address. The base document
+    // (_context/specs/joco-energy-services-agreement-base-2026-07-23.md Section 4.6) states the
+    // Client notice address verbatim as "111 S. Cherry St., / Olathe, KS 66061". That value is now
+    // the fallback, exactly as the Contractor address on the left is hardcoded from the same source.
+    // A project record that carries its own project-level address (proj.addr, the same field
+    // report-engine.js reads) wins over it, so live data always beats the baked-in default.
     '<td style="' +
     _AGR_BODY +
     ';vertical-align:top;width:50%">Client: ' +
     esc(d.legalClientName) +
-    '<br>[Client mailing address — enter here]</td>' +
+    '<br>' +
+    esc(d.clientAddress).replace(/\n/g, '<br>') +
+    '</td>' +
     '</tr></table>';
 
   // Split point: after 4.6 Notices (incl. its address table). 4.7 Limitation of Liability and 4.8
