@@ -15639,6 +15639,46 @@ function rptPageASHRAE36CostEstimate(n, d) {
     '</tr></thead><tbody>';
   var _ratTclose = '</tbody></table>';
 
+  // Real-DOM row measurement (item 10 density pass, 2026-08-03). The characters-per-line height
+  // model above is a MODEL, and its mandatory never-under-estimate bias kept over-counting enough
+  // (~100px across 15 rows) to strand the totals row alone on a third page while every page sat
+  // ~35% empty. Measurement outranks a model: the full table is rendered once into a hidden
+  // off-screen container at the report page's own type context (Arial via --rpt-font, 720px
+  // content width, the same _rptApplyMinFontFloor pass — including the .rpt-mp-dense lower floor —
+  // that the visible report gets), each <tr>'s TRUE height is read back, and each token's estH
+  // becomes that measured height +2px sub-pixel safety. The char model stays as the fallback for
+  // any context where a DOM is unavailable or the measurement fails.
+  try {
+    if (rationaleTokens.length && typeof document !== 'undefined' && document.body) {
+      var _mWrap = document.createElement('div');
+      _mWrap.style.cssText =
+        'position:absolute;left:-9999px;top:0;width:720px;visibility:hidden;' +
+        'font-family:var(--rpt-font);font-size:14px;line-height:1.5';
+      _mWrap.innerHTML =
+        _ratThead +
+        rationaleTokens
+          .map(function (t) {
+            return t.html;
+          })
+          .join('') +
+        _ratTclose;
+      // Append BEFORE the font-floor pass: _rptApplyMinFontFloor reads getComputedStyle, which
+      // returns '' for every property on a detached tree — a detached pass silently floors
+      // nothing and the rows measure at their authored (pre-floor) sizes, ~10% short.
+      document.body.appendChild(_mWrap);
+      if (typeof _rptApplyMinFontFloor === 'function') _rptApplyMinFontFloor(_mWrap);
+      var _mRows = _mWrap.querySelectorAll('tbody tr');
+      if (_mRows.length === rationaleTokens.length) {
+        for (var _mi = 0; _mi < _mRows.length; _mi++) {
+          rationaleTokens[_mi].estH = Math.ceil(_mRows[_mi].getBoundingClientRect().height) + 2;
+        }
+      }
+      document.body.removeChild(_mWrap);
+    }
+  } catch (eMeasure) {
+    // Keep the char-model estimates — degraded packing, never lost content.
+  }
+
   var resultPages = [];
   var currentPageNum = n;
 
