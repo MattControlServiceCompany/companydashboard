@@ -11,6 +11,15 @@
  * PAGE \* MERGEFORMAT page-number field in both footer parts, and the
  * TableGrid table style every report table depends on.
  *
+ * NOTE (2026-08-03): those two footer parts are still the Louisburg baseline's
+ * BARE page-number field AS STORED HERE, but no exported .docx ships them that
+ * way -- _docxApplyPageNumberFooters() in app/docx-writer.js rewrites both to
+ * "Page N of M" (literal text + PAGE field + literal text + NUMPAGES field) on
+ * every assemble. Matt, 2026-08-03: "I wanted 'Page N of M'", which outranks the
+ * Louisburg baseline for this footer. The asset is left verbatim on purpose so it
+ * stays a faithful record of its two source templates; change the format in
+ * docx-writer.js, not here.
+ *
  * Built from:
  *   C:\Users\Matt Miller\OneDrive - Control Service Company\Templates\
  *   CSC Letterhead.docx  (read-only source, never modified)

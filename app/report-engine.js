@@ -1186,18 +1186,25 @@ function _rptPaginateTokensBalanced(tokens, cap) {
   return chunks;
 }
 
-// Footer page-number chrome, shared by rptPage()'s hero and interior branches (2026-08-03,
-// defect register D-08 — Matt: "the word documents don't have the right footer page numbering
-// format"). The .docx footer parts are byte-identical to the Louisburg EMS Agreement baseline
-// (part-level MD5 2f1ecd7a… / 8f0ce822…): a bare ` PAGE \* MERGEFORMAT ` field, right-aligned,
-// printing a BARE NUMBER ("1", "2", …) at 12pt. Louisburg is the standing formatting authority,
-// so the app/print path — which printed "Page N of M" at 10.5pt — is the deviation and is what
-// changed here. The .docx footer OOXML is deliberately NOT touched: it already matches.
-// 16px = 12pt printed (the print path scales px by exactly 0.75) so the size matches the
-// baseline as well as the format; bottom:16px puts it ~14pt above the sheet's bottom edge,
-// matching Louisburg's ~13.9pt. The text itself is written by _injectPageNumbers() at generation
-// time and re-written by _updateOverlayPageNumbers() after the DOM exists — both must stay in
-// this format.
+// Footer page-number chrome, shared by rptPage()'s hero and interior branches.
+//
+// THE FORMAT IS "Page N of M". Matt, 2026-08-03: "I wanted 'Page N of M'." That instruction is
+// the authority for this footer and it OUTRANKS the Louisburg EMS Agreement baseline, whose
+// footer prints a bare right-aligned number. An earlier pass that same day (defect register
+// D-08, commit f891b0a) read Matt's report "the word documents don't have the right footer page
+// numbering format" as a request to match Louisburg and stripped the words down to a bare
+// number on all three export paths. That was a misread and it has been reverted. Do NOT
+// "restore the baseline" here — the words are what he asked for, on all three artifacts
+// (this print/PDF path, the .docx footer parts in docx-skeleton.js, and the legacy .doc
+// mso-HTML export's pageNumP below).
+//
+// What f891b0a got RIGHT and is kept: the 12pt size and the right-aligned position. 16px = 12pt
+// printed (the print path scales px by exactly 0.75); bottom:16px puts it ~14pt above the
+// sheet's bottom edge. Matt did not object to either, only to the missing words.
+//
+// The text itself is written by _injectPageNumbers() at generation time and re-written by
+// _updateOverlayPageNumbers() after the DOM exists — the second overwrites the first, so BOTH
+// must emit the same "Page N of M" string.
 var RPT_PAGENUM_DIV =
   '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:16px;right:20px;font-size:16px;color:var(--rpt-page-text)"></div>';
 
@@ -1384,7 +1391,7 @@ function _injectPageNumbers(html) {
   var n = 0;
   return html.replace(/(<div class="rpt-pg-footer-pagenum"[^>]*>)<\/div>/g, function (match, open) {
     n++;
-    return open + n + '</div>';
+    return open + 'Page ' + n + ' of ' + total + '</div>';
   });
 }
 
@@ -1601,8 +1608,9 @@ function _updateOverlayPageNumbers() {
   for (var i = 0; i < total; i++) {
     var footer = pages[i].querySelector('.rpt-pg-footer-pagenum');
     if (footer) {
-      // Bare number, no "Page N of M" — see the footer-format comment in rptPage().
-      footer.textContent = String(i + 1);
+      // "Page N of M" — see the footer-format comment above RPT_PAGENUM_DIV. This runs AFTER
+      // _injectPageNumbers() and overwrites it, so the two must stay in the same format.
+      footer.textContent = 'Page ' + (i + 1) + ' of ' + total;
     }
   }
 }
@@ -8466,13 +8474,13 @@ async function exportReportToWord() {
     // string, so the number Word displays stays correct after Word repaginates the content at
     // its own metrics instead of always reading whatever page count this app estimated at
     // export time.
-    // 2026-08-03 (D-08): the field codes stay, the surrounding "Page … of …" words are gone —
-    // Louisburg (the standing formatting authority, and what the .docx footer parts already
-    // match byte for byte) prints a BARE right-aligned page number. Same change as the
-    // print/PDF path's RPT_PAGENUM_DIV so all three export paths now agree with the baseline.
+    // The format is "Page N of M" — Matt, 2026-08-03: "I wanted 'Page N of M'." An earlier pass
+    // that day (f891b0a) stripped the words to a bare number to match the Louisburg baseline;
+    // that was a misread of his report and is reverted. Both field codes are required: PAGE
+    // alone cannot produce the "of M" half. See the footer-format comment above RPT_PAGENUM_DIV.
     const pageNumP = hasPageNum
       ? '<p class="MsoFooter" style="text-align:right;font-size:14px;color:var(--rpt-page-text);margin:2px 20px 0 0">' +
-        "<span style='mso-field-code:PAGE'></span></p>"
+        "Page <span style='mso-field-code:PAGE'></span> of <span style='mso-field-code:NUMPAGES'></span></p>"
       : '';
     // footerBodyHtml is identical on the hero/title page and every interior page (rptPage()
     // renders the exact same footerImgHtml/footerLabelHtml/pagenum markup regardless of the

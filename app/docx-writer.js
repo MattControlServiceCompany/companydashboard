@@ -506,6 +506,90 @@ async function _docxSpliceNumbering(zip, allocations) {
   zip.file(path, xml);
 }
 
+/**
+ * _docxPageNumberOfFieldRuns -- the run sequence that renders "Page N of M" in a
+ * Word footer, as LIVE FIELDS.
+ *
+ * Shape (this is exactly what Word's own "Page X of Y" building block emits):
+ *   literal "Page " -> PAGE field -> literal " of " -> NUMPAGES field
+ * Each field is the full three-part construct Word requires: a `begin` fldChar,
+ * an `instrText` carrying the field code, a `separate` fldChar, the cached result
+ * text, then an `end` fldChar. The cached "1" is only what a reader shows before
+ * Word recalculates; the numbers stay live because they are fields, so a client
+ * who edits the .docx and repaginates gets correct numbers instead of a stale
+ * count baked in at export time. Do NOT replace these with static numbers.
+ *
+ * The literal runs carry no <w:rPr>, matching the field runs, so all four pieces
+ * inherit the same Footer/Normal formatting (Cambria 12pt in this skeleton --
+ * comfortably above the 10pt client-document floor).
+ */
+var _DOCX_PAGE_N_OF_M_RUNS =
+  '<w:r><w:t xml:space="preserve">Page </w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r><w:instrText xml:space="preserve"> PAGE   \\* MERGEFORMAT </w:instrText></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r><w:rPr><w:noProof/></w:rPr><w:t>1</w:t></w:r>' +
+  '<w:r><w:rPr><w:noProof/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>' +
+  '<w:r><w:t xml:space="preserve"> of </w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r><w:instrText xml:space="preserve"> NUMPAGES   \\* MERGEFORMAT </w:instrText></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r><w:rPr><w:noProof/></w:rPr><w:t>1</w:t></w:r>' +
+  '<w:r><w:rPr><w:noProof/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>';
+
+/**
+ * _docxApplyPageNumberFooters -- rewrite every word/footer*.xml page-number
+ * paragraph to read "Page N of M".
+ *
+ * THE FORMAT IS "Page N of M". Matt, 2026-08-03: "I wanted 'Page N of M'." That
+ * instruction is the authority for this footer and it OUTRANKS the Louisburg EMS
+ * Agreement baseline. The skeleton's footer1.xml/footer2.xml were lifted verbatim
+ * from Louisburg (see app/docx-skeleton.js build step (c)) and carry a BARE
+ * ` PAGE   \* MERGEFORMAT ` field, right-aligned, with no words around it. This
+ * function deliberately BREAKS that byte-identical match, because the .docx is the
+ * artifact Matt was actually complaining about and it has never had the format he
+ * asked for. Do NOT "restore the baseline" here. The same words are printed by the
+ * PDF/print path (RPT_PAGENUM_DIV / _injectPageNumbers / _updateOverlayPageNumbers
+ * in app/report-engine.js) and by the legacy .doc mso-HTML export (pageNumP, same
+ * file); all three artifacts must agree.
+ *
+ * The patch is surgical: it keeps each part's own <w:sdt> page-number content
+ * control, its paragraph identity and its right justification, and replaces ONLY
+ * the runs between <w:sdtContent>'s <w:pPr> and its </w:p>. Keeping the sdt is
+ * authentic -- Word's built-in "Page X of Y" gallery entry is this same
+ * "Page Numbers (Bottom of Page)" sdt with these same two fields inside it.
+ *
+ * Idempotent: a part that already contains a NUMPAGES field is left alone.
+ * Called from _docxAssemble() -- the single choke point every .docx export goes
+ * through -- so no export path can miss it.
+ */
+async function _docxApplyPageNumberFooters(zip) {
+  var names = Object.keys(zip.files).filter(function (n) {
+    return /^word\/footer\d*\.xml$/.test(n);
+  });
+  var patched = 0;
+  for (var i = 0; i < names.length; i++) {
+    var xml = await zip.file(names[i]).async('string');
+    if (xml.indexOf('NUMPAGES') !== -1) continue; // already "Page N of M"
+    // Match the page-number paragraph's run block: everything from the end of its
+    // <w:pPr> (which carries pStyle Footer + jc right) up to the paragraph close,
+    // but only inside <w:sdtContent> so the trailing empty Footer paragraph after
+    // </w:sdt> is never touched.
+    var next = xml.replace(
+      /(<w:sdtContent><w:p\b[^>]*>(?:<w:pPr>.*?<\/w:pPr>)?)(.*?)(<\/w:p><\/w:sdtContent>)/,
+      function (m, head, runs, tail) {
+        if (runs.indexOf('PAGE') === -1) return m; // not the page-number paragraph
+        return head + _DOCX_PAGE_N_OF_M_RUNS + tail;
+      },
+    );
+    if (next !== xml) {
+      zip.file(names[i], next);
+      patched++;
+    }
+  }
+  return patched;
+}
+
 /* ── Page budget model (U5 / RC-B, 2026-08-02) ───────────────────────────────
    Every number below is MEASURED, not assumed:
 
@@ -962,6 +1046,12 @@ async function _docxAssemble(documentXml, opts) {
   if (Array.isArray(opts.numIds) && opts.numIds.length) {
     await _docxSpliceNumbering(zip, opts.numIds);
   }
+
+  // "Page N of M" in every footer part (Matt, 2026-08-03). Unconditional and
+  // applied here rather than in the skeleton asset so the skeleton stays a
+  // verbatim record of its two source templates. See the function's comment for
+  // why this deliberately diverges from the Louisburg footer.
+  await _docxApplyPageNumberFooters(zip);
 
   var blob = await zip.generateAsync({
     type: 'blob',
