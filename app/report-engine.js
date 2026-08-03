@@ -14166,7 +14166,11 @@ function rptPageASHRAE36Executive(n, d) {
   // budget, so the arithmetic states the actual page and can be re-derived by anyone who measures
   // it again. The continuation page's chrome is its own small "(continued, N of M)" heading plus
   // the same table head and footnote the first page carries.
-  var EXEC_CONT_HEADER_H = 27; // measured — "Building ASHRAE 36 Readiness (continued, N of M)" bar
+  // Measured against the old continuation bar (text + 6px padding + 1px rule + 8px margin). The
+  // V-06 caption unification (2026-08-03) replaced that bar with the same caption the first page
+  // uses (text + 6px margin), which is ~9px SHORTER, so this stays conservative and pagination is
+  // unchanged. Do not lower it without re-measuring.
+  var EXEC_CONT_HEADER_H = 27; // "Building ASHRAE 36 Readiness (continued, N of M)" caption
   var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H + EXEC_FOOTNOTE_H;
   var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - _firstChromeH - EXEC_SAFETY_H;
   var ROWS_BUDGET_CONT = _rptContentBudget('standard') - _contChromeH - EXEC_SAFETY_H;
@@ -14177,8 +14181,21 @@ function rptPageASHRAE36Executive(n, d) {
   // Summary's "Contract Progress"/"Period Savings"/"Monthly Savings" headings and this report's
   // own "ASHRAE Guideline 36 Sequences" heading are all 11px) — dropped to 11px to match the
   // dominant convention. Text/content unchanged.
-  var tableTitle =
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
+  // V-06 (2026-08-03): ONE caption convention for every chunk of this table. The first page used
+  // this blue small-caps caption while continuation pages used a black, weight-600, sentence-case
+  // bar with a bottom rule — two adjacent pages of one table looked like two documents (and the
+  // bar's border-bottom was a floating separator rule, which the standing rules forbid). Every
+  // chunk now renders through _readinessCaption(): same style, same words, "(N of M)" on the first
+  // and "(continued, N of M)" after it, for ANY M (the JOCO table now splits into 4, not 2).
+  var READINESS_CAPTION_STYLE =
+    'font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em';
+  function _readinessCaption(chunkIndex, numChunks) {
+    var part = '';
+    if (numChunks > 1) {
+      part = ' (' + (chunkIndex > 0 ? 'continued, ' : '') + (chunkIndex + 1) + ' of ' + numChunks + ')';
+    }
+    return '<div style="' + READINESS_CAPTION_STYLE + '">Building ASHRAE 36 Readiness' + part + '</div>';
+  }
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header (color:#fff on
   // background:var(--rpt-blue)) to match the Proposal's plain/thin-bordered convention
   // (rptPageASHRAE36ProposalCover's thPlain) -- no fill, near-black text, same border. Styling
@@ -14382,15 +14399,41 @@ function rptPageASHRAE36Executive(n, d) {
     // char-count are hit simultaneously). Capped the ceiling at 56px instead of 60px — frees
     // 4px, enough to close the gap — with no visible change below composite~93
     // (round(93*0.6)=56 already, so only 93-100% bars get an imperceptibly shorter bar).
-    var barPx = Math.min(56, Math.round(b.composite * 0.6));
+    // V-05 (2026-08-03): the 56px cap did not close it — the label was still glued to the RIGHT
+    // END OF A VARIABLE-LENGTH BAR, so (a) no two percentages shared an edge (measured spread of
+    // the label right edges across one page: 31.5pt = 0.44in, x369.0 "24%" to x400.5 "95%" in the
+    // shipped export) and (b) the two widest cases still overran: DOM 95% 87px and 100% 94px
+    // against 84px of inner cell, and in the PDF the "100%" span crossed the Score/Status column
+    // rule by 1.62pt. Both are the same root cause and both are fixed by giving the bar a FIXED
+    // TRACK and right-aligning the label in a FIXED BOX, so every label shares one right edge at
+    // the cell's padding edge and the worst case is arithmetically inside the column:
+    //   inner width 84.7px (measured) >= track 44 + gap 4 + label 35 = 83px
+    // Label box 35px is the measured width of the widest label, "100%", at the 10pt printed floor
+    // (34.1px; every two-digit label is 26.8px). The bar keeps full proportionality by rescaling
+    // to the new track (44/100 = 0.44 px per point) rather than clipping at a ceiling.
+    // The Score COLUMN is not narrowed — narrowing it is what makes this worse (see colWidths).
+    var SCORE_TRACK_W = 44;
+    var SCORE_GAP_W = 4;
+    var SCORE_LABEL_W = 35;
+    var barPx = Math.min(SCORE_TRACK_W, Math.round(b.composite * (SCORE_TRACK_W / 100)));
     var bar =
-      '<div style="display:flex;align-items:center;gap:4px">' +
+      '<div style="display:flex;align-items:center;gap:' +
+      SCORE_GAP_W +
+      'px">' +
+      '<div style="flex:0 0 ' +
+      SCORE_TRACK_W +
+      'px;height:8px">' +
       '<div style="width:' +
       barPx +
-      'px;max-width:56px;height:8px;background:' +
+      'px;max-width:' +
+      SCORE_TRACK_W +
+      'px;height:8px;background:' +
       b.statusColor +
       ';border-radius:2px;min-width:2px"></div>' +
-      '<span style="font-size:10px;color:var(--rpt-page-text)">' +
+      '</div>' +
+      '<span style="flex:0 0 ' +
+      SCORE_LABEL_W +
+      'px;text-align:right;font-size:10px;color:var(--rpt-page-text)">' +
       b.composite +
       '%</span>' +
       '</div>';
@@ -14484,30 +14527,10 @@ function rptPageASHRAE36Executive(n, d) {
 
     var pageN = n + chunkIndex;
 
-    var bodyHTML;
-    if (chunkIndex === 0) {
-      // First page: callouts + titled table + footnote. 2026-07-29 fix (Matt: "why does it not
-      // say 1 of 2 like the next page shows continued (2 of 2)?") — the continuation page below
-      // has always shown "— continued (N of numChunks)", but the first page's tableTitle (a
-      // fixed string built above, before numChunks was known) never carried the matching
-      // "(1 of N)" for its own page. Same fix pattern applied to every other paginated section
-      // with this asymmetry (see 2026-07-29 dashboardlogic.md entry for the full list).
-      var firstPageTableTitle =
-        numChunks > 1 ? tableTitle.replace('</div>', ' (1 of ' + numChunks + ')</div>') : tableTitle;
-      bodyHTML = dcvCallout + callout + firstPageTableTitle + table + tableFootnote;
-    } else {
-      // Continuation page: minimal header + table + footnote
-      var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-        'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Building ASHRAE 36 Readiness (continued, ' +
-        (chunkIndex + 1) +
-        ' of ' +
-        numChunks +
-        ')' +
-        '</div>';
-      bodyHTML = contHdr + table + tableFootnote;
-    }
+    // Every chunk carries the SAME caption, in the same style, numbered "N of M" for any M
+    // (V-06, 2026-08-03). First page keeps its callouts ahead of the caption.
+    var bodyHTML =
+      (chunkIndex === 0 ? dcvCallout + callout : '') + _readinessCaption(chunkIndex, numChunks) + table + tableFootnote;
 
     resultPages.push(
       rptPage(pageN, 'ASHRAE 36 Audit Report: Executive Summary', bodyHTML, {
