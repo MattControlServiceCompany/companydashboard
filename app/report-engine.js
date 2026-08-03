@@ -17792,6 +17792,149 @@ function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
 }
 
 /**
+ * _RPT_A36_MONTH_CAT_PHRASE / _rptA36JoinList / _rptA36MonthLaborSentence — Proposal months-table
+ * rebuild (2026-08-03, replacing the check-mark unit matrix — Matt, verbatim: "it's a check-mark
+ * matrix that ... labels almost every row 'Occupancy-Based Ventilation' ... he wants the table to
+ * say IN TEXT, month by month, what work is being done ... the Cost Estimate has all the
+ * information to make this correct"). Turns _pricingComputeMonthlyLaborBreakdown's real,
+ * already-computed category rows for one bucket month (Month 1/2/3/4+ steady state,
+ * pricing-estimator.js ~L1018) into plain prose naming exactly those categories — never an
+ * invented task. Phrase values below are 1:1 renames of the real category strings
+ * _pricingComputeMonthlyLaborBreakdown emits (pricing-estimator.js ~L1134-1167); every key here
+ * must stay in sync with that function's category strings, or a real category would silently drop
+ * out of the sentence (guarded defensively in _rptA36MonthLaborSentence below — an unmapped
+ * category is simply skipped, never renders as "undefined").
+ */
+var _RPT_A36_MONTH_CAT_PHRASE = {
+  'Alarm Configuration': 'alarm configuration',
+  'Report Setup': 'automated report setup',
+  'Trend Setup & Configuration': 'BAS trend setup and configuration',
+  'Audit Report Verification & Quality Review': 'verification and quality review',
+  'Audit Report Final Formatting & Polish': 'final formatting and polish',
+  'Ongoing Monitoring & Optimization': 'ongoing equipment monitoring and optimization',
+  'Utility Bill Data Entry': 'utility bill data entry',
+  'Monthly Client Review Meeting': 'the monthly client review meeting',
+  'Utility Rebate Assistance': 'utility rebate assistance',
+  'Staff Training & Documentation': 'staff training and documentation',
+};
+
+function _rptA36JoinList(arr) {
+  if (!arr || !arr.length) return '';
+  if (arr.length === 1) return arr[0];
+  return arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1];
+}
+
+/**
+ * _rptA36MonthLaborSentence(monthRows, bucketIdx, esc) — builds the "Ongoing Energy Management
+ * labor" lead sentence(s) for one calendar month row of the Proposal months table, from that
+ * month's real bucket rows (bd.months[bucketIdx-1].rows — see caller). Three groups, in the order
+ * Matt asked for ("starting from the Ongoing Energy Management labor and building up: early
+ * months finish the ASHRAE 36 Audit Report, set up alarms and trending..."): recurring EM labor
+ * (present every month), the Month-1-only Audit Report finishing work, then the ramping-down
+ * setup work (alarm/report/trend). bucketIdx (1-4, same clamp _pricingRecurringEMLaborHoursForMonth
+ * uses) only changes the setup sentence's verb tense (sets up vs. continues tapering) — never
+ * invents a category that isn't in monthRows.
+ */
+function _rptA36MonthLaborSentence(monthRows, bucketIdx, esc) {
+  monthRows = monthRows || [];
+  var audit = [],
+    setup = [],
+    recurring = [];
+  monthRows.forEach(function (r) {
+    var phrase = _RPT_A36_MONTH_CAT_PHRASE[r.category];
+    if (!phrase) return; // defensive -- every real category from the breakdown has an entry above
+    if (r.category.indexOf('Audit Report') === 0) audit.push(phrase);
+    else if (
+      r.category === 'Alarm Configuration' ||
+      r.category === 'Report Setup' ||
+      r.category === 'Trend Setup & Configuration'
+    )
+      setup.push(phrase);
+    else recurring.push(phrase);
+  });
+  var sentences = [];
+  if (recurring.length) {
+    sentences.push('Ongoing Energy Management labor this month covers ' + esc(_rptA36JoinList(recurring)) + '.');
+  }
+  if (audit.length) {
+    sentences.push('This month also finishes the ASHRAE 36 Audit Report (' + esc(_rptA36JoinList(audit)) + ').');
+  }
+  if (setup.length) {
+    var verb = bucketIdx === 1 ? 'sets up' : 'continues, at a reduced level as the initial setup tapers off,';
+    sentences.push('This month also ' + verb + ' ' + esc(_rptA36JoinList(setup)) + '.');
+  }
+  return sentences.join(' ');
+}
+
+/**
+ * _rptA36MonthSequenceGroups(items) — real sequence-programming rows for one calendar month of the
+ * term (from _pricingComputeTermMonthlyAllocation's monthBuckets[mi].items), grouped by SEQUENCE
+ * TYPE (seqKey, same EM_SEQUENCE_DEFS-ordered dedup _rptA36PhaseSeqCategoryNames already uses)
+ * across every building scheduled that month — never one row/sentence per building (Matt,
+ * 2026-08-03: "NEVER one near-identical sentence per building"). Returns
+ * [{label, buildings:[name,...]}, ...] in EM_SEQUENCE_DEFS order, then any defensive fold-in items
+ * with no seqKey (enabler/safety/null-impact rows — see _pricingComputeTermMonthlyAllocation's own
+ * header comment on this safety net).
+ */
+function _rptA36MonthSequenceGroups(items) {
+  items = items || [];
+  var bySeq = {};
+  var otherOrder = [];
+  var otherMap = {};
+  items.forEach(function (item) {
+    var seqRow = null;
+    (item.rows || []).forEach(function (r) {
+      if (r.phase === 2 && r.seqKey) seqRow = r;
+    });
+    var bName = _a36DisplayName(item.building);
+    if (seqRow) {
+      if (!bySeq[seqRow.seqKey]) bySeq[seqRow.seqKey] = {};
+      bySeq[seqRow.seqKey][bName] = true;
+    } else {
+      var r0 = (item.rows || [])[0] || {};
+      var lbl = r0.item || 'Improvement';
+      if (!otherMap[lbl]) {
+        otherMap[lbl] = {};
+        otherOrder.push(lbl);
+      }
+      otherMap[lbl][bName] = true;
+    }
+  });
+  var groups = [];
+  if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+    EM_SEQUENCE_DEFS.forEach(function (sd) {
+      if (!bySeq[sd.key]) return;
+      groups.push({ label: _a36SeqDisplayLabel(sd), buildings: Object.keys(bySeq[sd.key]) });
+    });
+  }
+  otherOrder.forEach(function (lbl) {
+    groups.push({ label: lbl, buildings: Object.keys(otherMap[lbl]) });
+  });
+  return groups;
+}
+
+/**
+ * _rptA36MonthSequenceSentence(groups, esc) — turns _rptA36MonthSequenceGroups' output into one
+ * sentence naming each sequence type once, with the buildings it touches that month named in a
+ * parenthetical (or, past BUILDING_LIST_MAX, just a count — "the list is long" case Matt's spec
+ * calls out) rather than as a count-only "3 buildings" with no names, or a duplicated sentence per
+ * building.
+ */
+function _rptA36MonthSequenceSentence(groups, esc) {
+  if (!groups || !groups.length) return '';
+  var BUILDING_LIST_MAX = 4;
+  var parts = groups.map(function (g) {
+    var n = g.buildings.length;
+    if (n === 1) return esc(g.label) + ' programming at ' + esc(g.buildings[0]);
+    if (n <= BUILDING_LIST_MAX)
+      return esc(g.label) + ' programming across ' + n + ' buildings (' + g.buildings.map(esc).join(', ') + ')';
+    return esc(g.label) + ' programming across ' + n + ' buildings';
+  });
+  var joined = parts.length === 1 ? parts[0] : parts.slice(0, -1).join('; ') + '; and ' + parts[parts.length - 1];
+  return 'Sequence programming this month: ' + joined + '.';
+}
+
+/**
  * _rptA36PhaseTableInnerHTML — content-only builder for the Recommended Energy Management Services
  * intro paragraph + Phase table (extracted 2026-07-27, page-2/3 merge, so the standalone page
  * function below and the merged Phase+Vision page share IDENTICAL content-building logic rather
@@ -17946,20 +18089,12 @@ function _rptA36PhaseTableDerive(d, opts) {
     'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
     'line-height:1.5;border:1px solid var(--rpt-border)';
 
-  // headRow: one column per calendar month of the current term (e.g. Aug 2026 .. Dec 2026) —
-  // replaces the old one-column-per-phase header (Phase 1 | Phase 2 | Phase 3). See
-  // _pricingProposalTermMonthLabels' header comment for the derivation and the timeline-anchoring
-  // tension this reintroduces.
-  var headRow =
-    '<tr><th style="' +
-    thStyle +
-    '">Included Improvements</th>' +
-    headCols
-      .map(function (m) {
-        return '<th style="' + thStyle + '">' + esc(m) + '</th>';
-      })
-      .join('') +
-    '</tr>';
+  // headRow (2026-08-03 months-table-as-text rebuild — see rptPageASHRAE36ProposalPhaseTable's
+  // header comment for the full "why"): two columns, Month | What We'll Be Doing, one ROW per
+  // calendar month of the current term (e.g. Aug 2026 .. Dec 2026) instead of the old
+  // one-check-mark-column-per-month matrix. See _pricingProposalTermMonthLabels' header comment for
+  // the month-label derivation.
+  var headRow = '<tr><th style="' + thStyle + '">Month</th><th style="' + thStyle + '">What We’ll Be Doing</th></tr>';
 
   // catListStyle: nested sub-block inside the Future Work cell naming the actual priced sequence
   // categories still to come (see _rptA36PhaseSeqCategoryNames' header comment above for the full
@@ -17971,38 +18106,19 @@ function _rptA36PhaseTableDerive(d, opts) {
     'margin-top:6px;padding-top:5px;border-top:1px solid var(--rpt-rule);font-size:8.5px;' +
     'color:var(--rpt-page-text);text-align:left;line-height:1.4';
 
-  // unitLblStyle/unitMarkStyle: styles for the 2026-07-31 rows-as-term-units matrix rebuild (see
-  // the header comment right below for the full rationale). Font-size/padding/border copied
-  // verbatim from cellStyle above (this task does not change any report font size — a separate,
-  // concurrent change owns that); only text-align/vertical-align differ per column purpose.
-  var unitLblStyle =
-    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
-    'line-height:1.5;border:1px solid var(--rpt-border)';
-  var unitMarkStyle =
-    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
-    'line-height:1.4;border:1px solid var(--rpt-border)';
+  // monthLblStyle/monthDescStyle: styles for the 2026-08-03 months-table-as-text rebuild (Matt,
+  // verbatim: "he wants the table to say IN TEXT, month by month, what work is being done" —
+  // replaces the 2026-07-31 rows-as-term-units check-mark matrix entirely; NO check marks, ONE ROW
+  // PER CALENDAR MONTH, not per term unit). font-size 14px = RPT_BODY_PX, the same body-text tier
+  // every other paragraph on this page uses — this is prose, not a dense matrix cell, so it reads
+  // at the document's normal body size rather than the old 9.5px matrix-cell size.
+  var monthLblStyle =
+    'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
+    'line-height:1.4;border:1px solid var(--rpt-border);white-space:nowrap';
+  var monthDescStyle =
+    'padding:8px 10px;font-size:14px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
+    'line-height:1.42;border:1px solid var(--rpt-border)';
 
-  // Included Improvements matrix rebuild (2026-07-31, Matt verbatim: "why does Oct 2026 say
-  // Included Improvements Reheat? Why does Nov & Dec 2026 show Ongoing Energy Management
-  // Services for this period? Really that's the best we can do? We can't say what sequences or
-  // sensors to do?"). REPLACES the prior per-month category-name-list cell design (2026-07-30
-  // rebuild, monthImprovementsCellHTML/monthResultsCellHTML, removed below) with the plan's
-  // Option A (AI\_context\plans\word-export-rebuild-2026-07-30.md Part F): ONE ROW PER TERM UNIT
-  // (the same building+sequence pairing _pricingComputeTermMonthlyAllocation already bin-packs —
-  // pricing-estimator.js ~7972, never re-derived here) naming the real sequence, building, and
-  // priced equipment count, with a mark under the calendar month _pricingComputeTermMonthlyAllocation
-  // actually scheduled it in. Diagnosis (measured against real JOCO data, projId 1779664753271,
-  // 2026-07-31): BOTH of Matt's complaints were real and distinct — (a) Nov/Dec 2026 genuinely
-  // have zero allocated units (13 total units all front-load into Aug/Sep/Oct against the
-  // $6,250/month envelope; not a render bug) and (b) Oct's "Reheat" was a bare
-  // EM_SEQUENCE_DEFS label with the unit's own building+equipment-count data (Jo Co Multi Service
-  // Center, 2 variable air volume terminals) sitting right there on the row and simply never
-  // rendered. This rebuild fixes (b) by showing that data on every row, and answers (a) honestly
-  // — the Ongoing Energy Management Services line still applies to every month of the term
-  // (including Aug/Sep/Oct) but is now stated ONCE below the table (ongoingServicesHTML below)
-  // instead of standing in as the entire cell content for whichever months have no new unit
-  // starting. No unit is invented to fill Nov/Dec — there are only 13 real priced units in this
-  // term and all 13 appear here exactly once.
   var monthCount = headCols.length;
   var monthAlloc =
     typeof _pricingComputeTermMonthlyAllocation === 'function'
@@ -18010,140 +18126,84 @@ function _rptA36PhaseTableDerive(d, opts) {
       : { months: [], envelope: 0 };
   var monthBuckets = monthAlloc.months || [];
 
-  // _UNIT_EQUIP_SINGULAR: equipment-type plural/singular names for the row's own priced count
-  // (item.rows[*].categoryQty — {category -> count}, already computed and attached per-unit by
-  // buildBaseRows, pricing-estimator.js ~3118 — never re-derived here). Covers every equipType
-  // any EM_SEQUENCE_DEFS entry references (equipment-matrix.js). "Count actual items, not
-  // buildings" — per-category equipment counts, not a building tally.
-  var _UNIT_EQUIP_SINGULAR = {
-    ahu: 'air handler',
-    rtu: 'rooftop unit',
-    vav: 'variable air volume terminal',
-    fpb: 'fan-powered terminal',
-    ddvav: 'dual-duct terminal',
-    hwp: 'hot water plant pump',
-    chwp: 'chilled water plant pump',
-  };
-  function unitEquipPhrase(seqRow) {
-    var catQty = (seqRow && seqRow.categoryQty) || {};
-    var keys = Object.keys(catQty);
-    if (keys.length) {
-      return keys
-        .map(function (k) {
-          var n = catQty[k];
-          var name = _UNIT_EQUIP_SINGULAR[k] || k;
-          return n + ' ' + (n === 1 ? name : name + 's');
-        })
-        .join(', ');
-    }
-    // Defensive fallback for a row with no categoryQty breakdown (should not happen for a
-    // seqKey row per buildBaseRows — see that function's own comment on this field).
-    var n = (seqRow && seqRow.qty) || 1;
-    return n + (n === 1 ? ' unit' : ' units');
-  }
+  // bd: the real monthly labor breakdown (Alarm Configuration / Report Setup / Trend Setup &
+  // Configuration / Audit Report finishing work / recurring EM labor —
+  // _pricingComputeMonthlyLaborBreakdown, pricing-estimator.js ~L1018) — the SAME data
+  // _pricingLaborBreakdownHTML renders in the interactive Cost Estimate tab, read here (never
+  // re-derived) so the Proposal and the Cost Estimate can never disagree about what a month's labor
+  // covers. Null only when no budget.amount is configured for this project (same
+  // silent-until-configured convention as the rest of this feature) — guarded below.
+  var bd =
+    typeof _pricingComputeMonthlyLaborBreakdown === 'function'
+      ? _pricingComputeMonthlyLaborBreakdown(d.project.id)
+      : null;
 
-  // unitRows: one entry per term unit, in the SAME order _pricingComputeTermMonthlyAllocation
-  // scheduled them (month order, then within-month ROI-admission order) — never re-sorted here.
-  var unitRows = [];
-  monthBuckets.forEach(function (bucket, mi) {
-    (bucket.items || []).forEach(function (item) {
-      var seqRow = null;
-      (item.rows || []).forEach(function (r) {
-        if (r.phase === 2 && r.seqKey) seqRow = r;
-      });
-      var label, equipPhrase;
-      if (seqRow) {
-        var det = _rptA36PhaseSeqCategoryDetails([seqRow]);
-        label = det.length ? det[0].label : seqRow.item;
-        equipPhrase = unitEquipPhrase(seqRow);
-      } else {
-        // Defensive fold-in units (enabler/safety/null-impact/investigation rows with no
-        // seqKey — see _pricingComputeTermMonthlyAllocation's own header comment on this safety
-        // net). Not observed in real JOCO term data (all 13 current units carry a seqKey) but
-        // kept so a future term with one of these never silently disappears from the table.
-        var r0 = (item.rows || [])[0] || {};
-        label = r0.item || 'Improvement';
-        var n0 = r0.qty || 1;
-        equipPhrase = n0 + (n0 === 1 ? ' item' : ' items');
-      }
-      unitRows.push({
-        label: label,
-        building: item.building,
-        equipPhrase: equipPhrase,
-        monthIndex: mi,
-        spansMonths: item.spansMonths || 1,
-      });
-    });
-  });
-
-  // Fallback copy — same wording convention pricing-estimator.js's own facilitiesText fallback
-  // already uses for a phase with no new buildings ("Ongoing Energy Management Services only for
-  // this period"). Only used defensively if the term's allocation produces zero units at all
-  // (should not happen once termPhases.length > 0, but never render an empty table body).
+  // Fallback copy — used only if a month somehow has neither labor-breakdown rows nor any
+  // allocated sequence-programming unit (should not occur for a real, budget-configured project;
+  // guards against a fully blank row rather than assuming it can never happen).
   var MONTH_EMPTY_TEXT = 'Ongoing Energy Management Services for this period.';
 
-  function unitMarkCellHTML(u, colIdx) {
-    if (colIdx !== u.monthIndex) return '';
-    var mark = '<span style="font-weight:700">&#10003;</span>';
-    if (u.spansMonths > 1) {
-      var endIdx = Math.min(u.monthIndex + u.spansMonths - 1, monthCount - 1);
-      mark +=
-        '<div style="font-style:italic;font-size:8.5px;margin-top:2px">continues through ' +
-        esc(headCols[endIdx]) +
-        '</div>';
+  // monthEntries: ONE ENTRY PER CALENDAR MONTH of the term (2026-08-03 rebuild, replacing the old
+  // one-entry-per-term-unit check-mark matrix). Each entry's text JOINS two real data sources on
+  // month index, per Matt's spec: (1) that month's labor-breakdown bucket (Month 1/2/3/4+ steady
+  // state, clamped the SAME way _pricingRecurringEMLaborHoursForMonth clamps an absolute month
+  // index — pricing-estimator.js ~L1258) for the "Ongoing Energy Management labor... finish the
+  // Audit Report... set up alarms and trending" narrative, and (2) that month's own
+  // _pricingComputeTermMonthlyAllocation bucket, summarized by sequence TYPE across buildings
+  // (_rptA36MonthSequenceGroups/_rptA36MonthSequenceSentence above — never one sentence per
+  // building), for the "then sequence programming rolls out" narrative. EVERY month renders
+  // non-empty because source (1) alone is guaranteed non-empty for any budget-configured project
+  // (Ongoing Monitoring & Optimization / Bill Entry / Meeting / Rebate / Training are present in
+  // every bucket, including Month 4+ steady state) — MONTH_EMPTY_TEXT is a defensive fallback only.
+  var monthEntries = headCols.map(function (m, mi) {
+    var laborSentence = '';
+    if (bd && bd.months && bd.months.length) {
+      var bucketIdx = Math.min(Math.max(mi + 1, 1), 4); // same absolute-month clamp as _pricingRecurringEMLaborHoursForMonth
+      laborSentence = _rptA36MonthLaborSentence(bd.months[bucketIdx - 1].rows, bucketIdx, esc);
     }
-    return mark;
-  }
+    var seqGroups = _rptA36MonthSequenceGroups((monthBuckets[mi] && monthBuckets[mi].items) || []);
+    var seqSentence = _rptA36MonthSequenceSentence(seqGroups, esc);
+    var text = (laborSentence + ' ' + seqSentence).trim() || esc(MONTH_EMPTY_TEXT);
+    return { label: m, text: text };
+  });
 
-  function unitRowHTML(u) {
+  function monthRowHTML(entry) {
     return (
       '<tr><td style="' +
-      unitLblStyle +
-      '"><span style="font-weight:700">' +
-      esc(u.label) +
-      '</span> at ' +
-      // R5 (2026-08-03) V-07: the Proposal schedule renders the same client-visible building
-      // name the Audit does.
-      esc(_a36DisplayName(u.building)) +
-      ' (' +
-      esc(u.equipPhrase) +
-      ')</td>' +
-      headCols
-        .map(function (m, i) {
-          return '<td style="' + unitMarkStyle + '">' + unitMarkCellHTML(u, i) + '</td>';
-        })
-        .join('') +
-      '</tr>'
+      monthLblStyle +
+      '">' +
+      esc(entry.label) +
+      '</td><td style="' +
+      monthDescStyle +
+      '">' +
+      entry.text +
+      '</td></tr>'
     );
   }
 
-  // improvementsRowsArr (2026-08-02, months-table page-height fix): kept as an ARRAY of
-  // individual <tr> strings, not just the joined `improvementsRows` string below -- pagination
-  // (rptPageASHRAE36ProposalPhaseTable) needs one row at a time to measure/chunk; the single-page
-  // wrapper (_rptA36PhaseTableInnerHTML) still joins the same array, so both renderers share
-  // identical row markup.
-  var improvementsRowsArr = unitRows.length
-    ? unitRows.map(unitRowHTML)
+  // improvementsRowsArr (2026-08-02, months-table page-height fix — name kept from the prior
+  // rebuild, see rptPageASHRAE36ProposalPhaseTable's header comment): one <tr> string per calendar
+  // month (5 for the JOCO term), not per term unit as before. Pagination
+  // (rptPageASHRAE36ProposalPhaseTable) still needs one row at a time to measure/chunk; the
+  // single-page wrapper (_rptA36PhaseTableInnerHTML) still joins the same array.
+  var improvementsRowsArr = monthEntries.length
+    ? monthEntries.map(monthRowHTML)
     : [
         '<tr><td style="' +
-          unitLblStyle +
-          '" colspan="' +
-          (headCols.length + 1) +
-          '"><span style="font-style:italic">' +
+          monthLblStyle +
+          '" colspan="2"><span style="font-style:italic">' +
           esc(MONTH_EMPTY_TEXT) +
           '</span></td></tr>',
       ];
   var improvementsRows = improvementsRowsArr.join('');
-  // U2 / RC-A (2026-08-02, D-04): parallel array of each row's LABEL-CELL character count, in the
-  // same order as improvementsRowsArr. rptPageASHRAE36ProposalPhaseTable paginates this table by
-  // pixel height, and at the 10pt printed-text floor the row height is set entirely by how many
-  // lines that first cell wraps to (the month columns hold a single check mark) — measured 77px
-  // for a 3-line label up to 157px for a 7-line one. A flat per-row constant cannot express that,
-  // so the label length is published here rather than re-derived by parsing the row HTML back out.
-  // Text below must stay byte-identical to unitRowHTML's own label cell.
-  var improvementsRowLabelLens = unitRows.length
-    ? unitRows.map(function (u) {
-        return (u.label + ' at ' + _a36DisplayName(u.building) + ' (' + u.equipPhrase + ')').length;
+  // improvementsRowLabelLens (2026-08-03): re-purposed from the old LABEL-cell char count to the
+  // DESCRIPTION-cell char count — that column now holds the multi-sentence paragraph and is what
+  // actually drives each row's rendered height; the Month cell is always one short line. See
+  // PHASE_LABEL_CPL's own comment (rptPageASHRAE36ProposalPhaseTable) for the chars-per-line this
+  // is divided by.
+  var improvementsRowLabelLens = monthEntries.length
+    ? monthEntries.map(function (e) {
+        return e.text.length;
       })
     : [MONTH_EMPTY_TEXT.length];
 
@@ -18178,6 +18238,9 @@ function _rptA36PhaseTableDerive(d, opts) {
   // appends Future Work as one more row inside THIS table instead of the standalone section
   // _rptA36VisionInnerHTML renders by default. Same content either way
   // (_rptA36FutureWorkInnerHTML), never dollars, never a truncated category list.
+  // colspan fixed at 1 (2026-08-03 months-table-as-text rebuild): this table now has exactly 2
+  // columns (Month, What We'll Be Doing) instead of the old 1-label + N-month-columns matrix, so
+  // there is only one content column left to span.
   var futureRowHTML = '';
   if (opts && opts.futureWorkInline === true && futurePhases.length) {
     var futureAllRows = [];
@@ -18193,9 +18256,7 @@ function _rptA36PhaseTableDerive(d, opts) {
         '">Future Work</td>' +
         '<td style="' +
         cellStyle +
-        '" colspan="' +
-        headCols.length +
-        '">' +
+        '" colspan="1">' +
         'Beyond the initial term, this service continues to expand sensor installation and program the ' +
         'additional control sequences those sensors make possible, funded through the same monthly ' +
         'service allowance, with no fixed end date.' +
@@ -18208,20 +18269,10 @@ function _rptA36PhaseTableDerive(d, opts) {
     }
   }
 
-  // colgroup: label column widened from the old fixed 140px to a 30%/70% split (2026-07-31) —
-  // each row's label now carries a sequence name + building name + equipment count instead of a
-  // single row-header word ("Included Improvements"/"Expected Results"), so it needs materially
-  // more width. Percentage-based (not a wider fixed px) so the 5 month columns keep sharing the
-  // remaining width evenly and stay wide enough for "continues through Mon YYYY" without
-  // mid-word wrapping (verified in this change's render check — see dashboardlogic.md entry).
-  var colgroup =
-    '<colgroup><col style="width:30%">' +
-    headCols
-      .map(function () {
-        return '<col>';
-      })
-      .join('') +
-    '</colgroup>';
+  // colgroup (2026-08-03 months-table-as-text rebuild): a narrow Month column (just "Aug 2026"
+  // etc., never wraps) plus one wide description column carrying the joined labor+sequence
+  // paragraph — replaces the old label + one-column-per-month layout.
+  var colgroup = '<colgroup><col style="width:14%"><col></colgroup>';
 
   var table =
     '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
@@ -18396,17 +18447,24 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   var CONT_TITLE_CHROME = 30; // small "(continued)" heading on continuation pages only
   var PHASE_SAFETY_H = 40; // explicit page-level margin, same convention as the Audit pages
   var TAIL_H = opts && opts.futureWorkInline === true ? 150 : 370; // measured 356 in standalone mode
-  // Per-row height from the label cell's line count — see rowsLabelLenArr's comment where it is
-  // built. 22 chars/line and the 17px of td padding were fitted against all 13 measured JOCO rows:
-  // the estimate is never below the real height and averages ~3px over it.
-  var PHASE_LABEL_CPL = 22; // chars per line in the ~167px "Included Improvements" label column
-  var PHASE_ROW_PAD_H = 17; // td padding above/below the label block
-  var _phaseLineH = _rptTextLineH(1.5);
+  // Per-row height from the description cell's character count — 2026-08-03 months-table-as-text
+  // rebuild (replacing the old check-mark matrix's narrow-label chars-per-line model, which no
+  // longer applies now that the description column is a wide, wrapping multi-sentence paragraph).
+  // A chars-per-line/line-count model proved a poor fit here (real wrapped line lengths vary with
+  // word-break points, parentheticals, and building-name lists far more than a flat CPL captures)
+  // -- instead this is a direct linear fit against 5 REAL rows measured via headless render against
+  // JOCO (project 1779664753271): (descLen, renderedHeight) = (708,215.75) (677,195.875)
+  // (709,215.75) (325,116.375) (347,116.375) -> slope ~0.26px/char, intercept ~32px, every point
+  // OVER-estimated by 9-21px by the formula below (PHASE_DESC_PX_PER_CHAR * len +
+  // PHASE_ROW_BASE_H), matching this file's own "never below the real height" safety-margin
+  // convention while staying tight enough that 2-3 month rows now share a page instead of one
+  // check-mark-matrix-era's 321px/row flat overestimate leaving most of each page blank.
+  var PHASE_DESC_PX_PER_CHAR = 0.26;
+  var PHASE_ROW_BASE_H = 40;
   var _phaseLabelLens = der.rowsLabelLenArr || [];
   var tokens = der.rowsHTMLArr.map(function (html, i) {
     var len = _phaseLabelLens[i] || 0;
-    var lines = Math.max(1, Math.ceil(len / PHASE_LABEL_CPL));
-    return { type: 'row', estH: PHASE_ROW_PAD_H + lines * _phaseLineH, html: html };
+    return { type: 'row', estH: Math.ceil(len * PHASE_DESC_PX_PER_CHAR) + PHASE_ROW_BASE_H, html: html };
   });
   if (der.futureRowHTML) {
     // futureWorkInline mode folds Future Work into the table as one more <tr> (der.futureRowHTML)
@@ -18431,24 +18489,34 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   chunks.forEach(function (chunk, idx) {
     var rowsHTML = '';
     var tailHTML = '';
+    var hasRows = false;
     chunk.forEach(function (t) {
       if (t.type === 'block') tailHTML += t.html;
-      else rowsHTML += t.html;
+      else {
+        rowsHTML += t.html;
+        hasRows = true;
+      }
     });
-    var table =
-      '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
-      der.colgroupHTML +
-      '<thead>' +
-      der.headRowHTML +
-      '</thead>' +
-      '<tbody>' +
-      rowsHTML +
-      '</tbody>' +
-      '</table>';
+    // 2026-08-03 (months-table-as-text rebuild, empty-table fix): a chunk can legitimately be
+    // TAIL-ONLY (the term notes + standalone Future Work block landing alone on the final page once
+    // the description-cell text made every month row taller than the old check-mark cells) -- do
+    // not render an empty <table> with only a header row and zero <tr>s in that case; a headed
+    // table with nothing under it reads as a rendering bug, not real content.
+    var table = hasRows
+      ? '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
+        der.colgroupHTML +
+        '<thead>' +
+        der.headRowHTML +
+        '</thead>' +
+        '<tbody>' +
+        rowsHTML +
+        '</tbody>' +
+        '</table>'
+      : '';
     var head;
     if (idx === 0) {
       head = whyHTML + der.intro;
-    } else {
+    } else if (hasRows) {
       // Repeating header row (der.headRowHTML, above) plus this small continuation title -- so a
       // reader who reaches page 2 knows both which page this is AND which column is which month.
       head =
@@ -18463,6 +18531,11 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
         ' of ' +
         numChunks +
         ')</div>';
+    } else {
+      // Tail-only continuation page: no table, so no "Included Improvements (continued...)" table
+      // title either -- tailHTML (Expected Results / Ongoing Services / Future Work) carries its
+      // own headings and reads fine starting straight into them.
+      head = '';
     }
     var bodyInner = head + table + tailHTML;
     var labelSuffix =
