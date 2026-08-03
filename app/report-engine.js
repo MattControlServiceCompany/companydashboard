@@ -910,7 +910,12 @@ var RPT_GEOMETRY_DEFAULTS = {
   ftrH: 72, // footer graphic + label + page number — mirrors CSS --rpt-ftr-h
   bodyPadTop: 12, // .rpt-body's own top padding (not a CSS var — literal in the .rpt-body rule)
   bodyPadBottom: 8, // .rpt-body's own bottom padding (not a CSS var — literal in the .rpt-body rule)
-  flushTop: 12, // .rpt-body-flush top offset (options.hideIntHdr, no header chrome)
+  // fix/report-flush-top-margin (2026-08-03, Matt's top-margin fix): .rpt-body-flush's CSS `top`
+  // now reuses var(--rpt-hdr-h) instead of a standalone 12px literal (see energy-department.html's
+  // .rpt-body.rpt-body-flush rule) — the title BAR is gone but the top MARGIN it used to reserve is
+  // not, so this fallback is kept numerically identical to hdrH's default (60), never a smaller
+  // number, so a page rendered without CSS available still gets a normal top margin.
+  flushTop: 60, // .rpt-body-flush top offset (options.hideIntHdr, no header chrome) — mirrors hdrH
 };
 
 /**
@@ -935,7 +940,9 @@ function _rptGeometry() {
     ftrH: px('--rpt-ftr-h', RPT_GEOMETRY_DEFAULTS.ftrH),
     bodyPadTop: RPT_GEOMETRY_DEFAULTS.bodyPadTop,
     bodyPadBottom: RPT_GEOMETRY_DEFAULTS.bodyPadBottom,
-    flushTop: RPT_GEOMETRY_DEFAULTS.flushTop,
+    // .rpt-body-flush's CSS `top` reuses var(--rpt-hdr-h) (see energy-department.html) — read the
+    // SAME live token here so this stays the single source of truth if --rpt-hdr-h ever changes.
+    flushTop: px('--rpt-hdr-h', RPT_GEOMETRY_DEFAULTS.flushTop),
   };
 }
 
@@ -947,6 +954,12 @@ function _rptGeometry() {
  * @param {string} [variant] - 'standard' (default, .rpt-int-hdr present), 'flush'
  *   (options.hideIntHdr with no smallHeaderImg), or 'smallHdr' (options.smallHeaderImg — always
  *   paired with hideIntHdr:true, see rptPage()'s bodyModifierClass comment).
+ *
+ * NOTE (2026-08-03, fix/report-flush-top-margin): 'flush' and 'standard' now return numerically
+ * IDENTICAL budgets, because g.flushTop === g.hdrH (both 60px) — 'flush' pages have no title BAR
+ * drawn, but keep the same top MARGIN the bar used to reserve (Matt: content was "sitting in the
+ * header" at the old 12px flushTop). The two variants are kept distinct here (not collapsed into
+ * one) so a future header-chrome change to only one of them stays a one-line CSS-token edit.
  */
 function _rptContentBudget(variant) {
   var g = _rptGeometry();
@@ -14436,7 +14449,11 @@ function rptPageASHRAE36Executive(n, d) {
           RPT_BODY_PX +
           'px;color:var(--rpt-page-text);line-height:1.6">' +
           rptCount(s.qty) +
-          ' pieces of equipment across the portfolio still need this sequence programmed. ' +
+          // fix/report-tighten-exec-paragraphs (2026-08-03, Matt: "Can we not tighten those
+          // also?"): dropped "across the portfolio" (already implied — this is a portfolio-wide
+          // summary) and "this sequence" -> "this" (the heading directly above already names the
+          // sequence). Same fact, fewer words.
+          ' pieces of equipment still need this programmed. ' +
           _esc(s.plain) +
           '</div>' +
           '</div>'
@@ -14465,15 +14482,21 @@ function rptPageASHRAE36Executive(n, d) {
     dcvCallout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
       // D-12 (2026-08-03): heading -> 13pt section tier, its paragraph -> 10.5pt body tier.
+      // fix/report-heading-consistency (2026-08-03, Matt: "Why does only Occupancy Based
+      // Ventilation say readiness? all or none"): dropped "Readiness" so all 5 paragraph headings
+      // on this page are plain sequence-type names, matching the 4 headings below (each just
+      // `s.label`, no "Readiness" suffix).
       '<div style="font-size:' +
       RPT_SECTION_HEAD_PX +
-      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
+      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation</div>' +
       '<div style="font-size:' +
       RPT_BODY_PX +
       'px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
-      ' Without a way to sense carbon dioxide levels, these units ventilate at full design rates even when spaces are empty, wasting fan and cooling energy. ' +
-      'Adding carbon dioxide sensors lets ventilation adjust to how many people are actually in the space, so equipment stops conditioning air for rooms that are empty.' +
+      // fix/report-tighten-exec-paragraphs (2026-08-03, Matt: "Can we not tighten those also?"):
+      // was 3 sentences (fact + 2 explanatory); trimmed to fact + ONE crisp sentence, matching the
+      // count+one-sentence shape of the 4 paragraphs below.
+      ' Without it, these units ventilate at full design rates even when spaces are empty, wasting fan and cooling energy.' +
       '</div>' +
       '</div>';
   }
@@ -14942,13 +14965,14 @@ function rptPageASHRAE36Executive(n, d) {
   var ROWS_BUDGET_FIRST_NOFOOT = ROWS_BUDGET_FIRST + EXEC_FOOTNOTE_H;
   var ROWS_BUDGET_CONT_NOFOOT = ROWS_BUDGET_CONT + EXEC_FOOTNOTE_H;
 
-  // Paginate using shared pixel-height paginator
-  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST_NOFOOT, ROWS_BUDGET_CONT_NOFOOT);
-
-  (function _refitLastChunkForFootnote() {
-    var lastChunk = chunks[chunks.length - 1];
-    var lastIsFirst = chunks.length === 1;
-    var lastBudgetWithFootnote = lastIsFirst ? ROWS_BUDGET_FIRST : ROWS_BUDGET_CONT;
+  // fix/report-readiness-table-min-rows (2026-08-03, Matt: "only having 1 building in a table is
+  // unacceptable"): factored the footnote-refit pass into a named function (was an inline IIFE)
+  // so the same logic can run a second time below against a different budget pair, instead of
+  // duplicating it.
+  function _refitLastChunkForFootnote(chunksArr, budgetFirst, budgetCont) {
+    var lastChunk = chunksArr[chunksArr.length - 1];
+    var lastIsFirst = chunksArr.length === 1;
+    var lastBudgetWithFootnote = lastIsFirst ? budgetFirst : budgetCont;
     var lastUsedPx = lastChunk.reduce(function (sum, tok) {
       return sum + (tok.estH || 20);
     }, 0);
@@ -14959,11 +14983,45 @@ function rptPageASHRAE36Executive(n, d) {
       lastUsedPx -= popped.estH || 20;
       overflowTokens.unshift(popped);
     }
-    if (overflowTokens.length > 0) chunks.push(overflowTokens);
-  })();
+    if (overflowTokens.length > 0) chunksArr.push(overflowTokens);
+  }
+
+  // Paginate using shared pixel-height paginator
+  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST_NOFOOT, ROWS_BUDGET_CONT_NOFOOT);
+  _refitLastChunkForFootnote(chunks, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
+
+  // fix/report-readiness-table-min-rows (2026-08-03, Matt: "only having 1 building in a table is
+  // unacceptable"): the paragraphs above (dcvCallout + up to 4 topSeqTypes callouts) can eat
+  // nearly all of the first page's budget, leaving room for only a handful -- sometimes just one
+  // -- building rows before the table has to break to a continuation page. A readiness table
+  // chunk that opens with a lone orphan row looks broken. If the first chunk would land below
+  // MIN_FIRST_CHUNK_ROWS AND the table needs more than one page anyway (chunks.length > 1 --
+  // pushing gains nothing if everything already fits on one page), push the WHOLE table onto its
+  // own fresh page: re-paginate with EVERY chunk sized like a continuation page (no callout/
+  // paragraph chrome to share the page with), so the table's first chunk opens with a full page
+  // of buildings instead.
+  var MIN_FIRST_CHUNK_ROWS = 4;
+  var _pushTableToNextPage = chunks.length > 1 && chunks[0].length < MIN_FIRST_CHUNK_ROWS;
+  if (_pushTableToNextPage) {
+    chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_CONT_NOFOOT, ROWS_BUDGET_CONT_NOFOOT);
+    _refitLastChunkForFootnote(chunks, ROWS_BUDGET_CONT, ROWS_BUDGET_CONT);
+  }
 
   var numChunks = chunks.length;
   var resultPages = [];
+
+  // When pushed, the paragraphs get their own page (no readiness table on it at all) so the
+  // table's first chunk is never sharing a page with anything that could starve its row count.
+  if (_pushTableToNextPage) {
+    resultPages.push(
+      rptPage(n, 'ASHRAE 36 Audit Report: Executive Summary', dcvCallout + callout, {
+        hideIntHdr: true,
+        data: fakeData,
+        label: 'Page ' + n + ' — Executive Summary',
+      }),
+    );
+  }
+  var _tableStartPageN = _pushTableToNextPage ? n + 1 : n;
 
   chunks.forEach(function (chunk, chunkIndex) {
     var tableRows = chunk
@@ -14973,17 +15031,19 @@ function rptPageASHRAE36Executive(n, d) {
       .join('');
     var table = tableOpenHead + '<tbody>' + tableRows + '</tbody></table>';
 
-    var pageN = n + chunkIndex;
+    var pageN = _tableStartPageN + chunkIndex;
     var isLastChunk = chunkIndex === numChunks - 1;
 
     // Every chunk carries the SAME caption, in the same style, numbered "N of M" for any M
     // (V-06, 2026-08-03; caption's own font raised to the 13pt section tier by D-12, same date --
-    // see READINESS_CAPTION_STYLE above). First page keeps its callouts ahead of the caption.
+    // see READINESS_CAPTION_STYLE above). First page keeps its callouts ahead of the caption,
+    // UNLESS the table was pushed to its own page above (in which case the callouts already
+    // printed on the preceding page and must not repeat here).
     // tableFootnote (the "Score and Readiness Bands" legend) now prints only once, after the
     // LAST chunk (Matt's fix #2, 2026-08-03) -- see _refitLastChunkForFootnote above for how the
     // per-chunk row budget accounts for that.
     var bodyHTML =
-      (chunkIndex === 0 ? dcvCallout + callout : '') +
+      (!_pushTableToNextPage && chunkIndex === 0 ? dcvCallout + callout : '') +
       _readinessCaption(chunkIndex, numChunks) +
       table +
       (isLastChunk ? tableFootnote : '');

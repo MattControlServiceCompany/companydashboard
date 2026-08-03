@@ -2274,10 +2274,16 @@
         /* 48px sides = 0.5in, aligned with .rpt-int-hdr and .rpt-footer-text padding. */
         padding: 12px var(--rpt-pad-x) 8px;
       }
-      /* hideIntHdr:true, smallHeaderImg:false — no header chrome at all (continuation pages,
-         e.g. ASHRAE 36 Proposal phase/vision pages); content starts at the page's own top inset. */
+      /* hideIntHdr:true, smallHeaderImg:false — no .rpt-int-hdr title bar drawn, but content still
+         starts at the SAME top offset the title bar used to reserve (var(--rpt-hdr-h)), not at the
+         page's bare top edge. fix/report-flush-top-margin (2026-08-03, Matt: "text is still too
+         high on the page and looks like it's sitting in the header"): this was a literal 12px,
+         which — combined with .rpt-body's own 12px top padding — put content only 24px below the
+         page edge, reading as jammed into the header zone. Reusing --rpt-hdr-h (60px) restores a
+         normal top margin (60+12=72px total) while keeping the title bar itself removed, exactly
+         what Matt's fix #5 asked for: less chrome, not less margin. */
       .rpt-body.rpt-body-flush {
-        top: 12px;
+        top: var(--rpt-hdr-h);
       }
       /* hideIntHdr:true, smallHeaderImg:true — inset letterhead only (Agreement first/signature
          pages); content starts below the letterhead's reserved zone. */
