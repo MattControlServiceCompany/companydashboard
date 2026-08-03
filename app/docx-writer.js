@@ -140,16 +140,24 @@ function _docxRun(opts) {
  *   ilvl          number -- default 0
  *   indLeft/indRight/indHanging/indFirstLine  twips
  *   keepNext      bool
+ *   pageBreakBefore bool -- start this paragraph on a new page (U5; preferred
+ *                   over emitting a break-only paragraph, see _docxTranslatePages)
+ *
+ * pPr children are emitted in the CT_PPr schema order (pStyle, keepNext,
+ * keepLines, pageBreakBefore, numPr, ..., spacing, ind, jc) -- corrected 2026-08-02
+ * when pageBreakBefore was added; numPr used to precede keepNext, which is
+ * out of order (Word tolerated it, but there is no reason to keep emitting it).
  */
 function _docxParagraph(opts) {
   opts = opts || {};
 
   var pPr = '<w:pPr>';
   if (opts.pStyle) pPr += '<w:pStyle w:val="' + _docxEscapeXml(opts.pStyle) + '"/>';
+  if (opts.keepNext) pPr += '<w:keepNext/>';
+  if (opts.pageBreakBefore) pPr += '<w:pageBreakBefore/>';
   if (opts.numId != null) {
     pPr += '<w:numPr><w:ilvl w:val="' + (opts.ilvl || 0) + '"/><w:numId w:val="' + opts.numId + '"/></w:numPr>';
   }
-  if (opts.keepNext) pPr += '<w:keepNext/>';
 
   var spacingAfter = opts.spacingAfter != null ? opts.spacingAfter : 240;
   var spacingAttrs = '';
@@ -204,6 +212,13 @@ function _docxHeading(text, opts) {
     font: opts.font,
     spacingBefore: 240,
     spacingAfter: 120,
+    // U5, 2026-08-02: a heading always keeps with what it introduces, so it can
+    // never be left stranded alone at the bottom of a page when Word flows the
+    // body (the forced page break between source pages is now budgeted, not
+    // unconditional -- see _docxTranslatePages). This is Word's own Heading1
+    // style behaviour (styles.xml Heading1 carries keepNext/keepLines); these
+    // paragraphs are direct-formatted rather than styled, so they need it stated.
+    keepNext: opts.keepNext !== false,
   });
 }
 
@@ -491,6 +506,341 @@ async function _docxSpliceNumbering(zip, allocations) {
   zip.file(path, xml);
 }
 
+/* ── Page budget model (U5 / RC-B, 2026-08-02) ───────────────────────────────
+   Every number below is MEASURED, not assumed:
+
+   - Page and margins come from the skeleton's own <w:sectPr> (verified by
+     unzipping app/docx-skeleton.js and reading word/document.xml):
+       w:pgSz  w=12240 h=15840
+       w:pgMar top=639 bottom=1872 left=990 right=1170
+     => usable BODY height = 15840 - 639 - 1872 = 13329 twips = 666.45pt (9.256in)
+     => usable BODY width  = 12240 -  990 - 1170 = 10080 twips = 504pt (7.0in)
+     These match the Louisburg baseline byte-for-byte (same pgSz/pgMar).
+
+   - Letterhead lockup bottom edge: measured off the rendered letterhead,
+     Templates\CSC Letterhead.pdf, rasterised at 72dpi (1px = 1pt) and scanned
+     row-by-row for non-white ink. Ink bands found: y38-y108, y110-y144 (the
+     logo/tagline/address lockup) and y714-y790 (the wave band footer art).
+     So the lockup's bottom edge sits at y=145pt from the page top, and the
+     wave band starts at y=714pt.
+
+   - First-content top: the Louisburg baseline's own rendered page-1 title
+     lands at y0 = 179.93pt (style spec §3, PDF-text-layer verified 2026-07-29),
+     i.e. ~35pt clear below the lockup. That is the clearance this export must
+     reproduce, so first content starts at 180pt from the page top.
+
+   The old construct got there by copying Louisburg's TEN empty leading
+   paragraphs (9 x 10.5pt + 1 x 18pt paragraph marks) and letting Word's own
+   line-height model add up to the clearance. That is fragile (the total is a
+   function of Arial's hhea metrics, which is why the register measured it as
+   "~138pt of dead height" rather than a designed number) and it is ten
+   paragraphs the page-budget model then has to guess the height of. Replaced
+   by ONE paragraph with an EXACT line height (w:lineRule="exact"), which Word
+   honours to the twip regardless of font metrics -- same clearance, one block,
+   and a number the budget model knows exactly instead of estimating. */
+var _DOCX_USABLE_HEIGHT_PT = (15840 - 639 - 1872) / 20; // 666.45
+var _DOCX_CONTENT_WIDTH_TWIPS = 12240 - 990 - 1170; // 10080 (= 504pt)
+var _DOCX_TOP_MARGIN_PT = 639 / 20; // 31.95
+var _DOCX_LETTERHEAD_INK_BOTTOM_PT = 145; // measured, CSC Letterhead.pdf @72dpi
+var _DOCX_FIRST_CONTENT_TOP_PT = 180; // Louisburg-measured title y0 179.93, rounded up
+/* Height of the single page-1 spacer paragraph, in twips. */
+var _DOCX_LETTERHEAD_SPACER_TWIPS = Math.round((_DOCX_FIRST_CONTENT_TOP_PT - _DOCX_TOP_MARGIN_PT) * 20); // 2961
+
+/* Line-height factor -- CALIBRATED against the only Word-rendered ground truth
+   available (Word itself must never be launched from here), NOT taken from
+   Arial's metrics.
+
+   Arial's own hhea box is (ascender 1854 + descender 434 + lineGap 67) / 2048
+   = 1.1499 em, and using that number gets the wrong answer: it predicts the
+   Louisburg baseline's 10-paragraph leading stack (9 marks at 10.5pt + 1 at
+   18pt = 112.5pt of font size) at 129.4pt, which would put its page-1 title at
+   y=161.3pt. Louisburg's ACTUAL Word render puts that title at y0=179.93pt
+   (style spec §3, PDF text layer, measured 2026-07-29) -- 18.6pt lower.
+
+   The reason is styles.xml: docDefaults sets w:eastAsia="MS Mincho", and no run
+   this writer emits overrides w:eastAsia (it sets ascii/hAnsi/cs only). Word
+   sizes a line box from every font that participates in it, East Asian
+   included, and MS Mincho's box is (ascender 859 + descender 141 + lineGap 332)
+   / upem 1024 = 1.3008 em -- taller than Arial's. Substituting 1.3008 predicts
+   the stack at 146.3pt and the title glyph top at y=179.65pt against a measured
+   179.93pt: within 0.3pt, versus 18.6pt out for the Arial-only figure.
+
+   So 1.3008 is what Word actually does to these paragraphs. Anything that
+   changes docDefaults' eastAsia font, or starts emitting w:eastAsia on runs,
+   invalidates this constant -- re-derive it, do not nudge it. */
+var _DOCX_LINE_HEIGHT_FACTOR = 1.3008;
+/* Average advance width of Arial for mixed-case English running text, in em.
+   Regular ~0.50em, bold ~0.53em (Arial/Arial Bold hmtx census over the ASCII
+   printable range weighted by English letter frequency). Used only to count
+   how many LINES a run of text wraps to -- a proxy, not a typesetter. */
+var _DOCX_AVG_CHAR_EM = 0.5;
+var _DOCX_AVG_CHAR_EM_BOLD = 0.53;
+/* TableGrid's default per-side cell margin (w:tblCellMar left/right), twips. */
+var _DOCX_CELL_MARGIN_TWIPS = 108;
+/* Skeleton numbering.xml list indent (abstractNum 2 and 5 both use
+   ind left=720/hanging=360, spec §6) -- narrows a list item's text column. */
+var _DOCX_LIST_INDENT_TWIPS = 720;
+
+/**
+ * Split a body-XML string into its TOP-LEVEL blocks (<w:p> and <w:tbl>),
+ * depth-aware so a <w:tbl> nested inside a cell (flex-row layout tables can
+ * contain one) is not mistaken for a sibling and a <w:p> inside a cell is
+ * never emitted as a top-level block.
+ *
+ * The tag regex deliberately requires a word boundary after `p`/`tbl` so
+ * <w:pPr>, <w:pStyle/>, <w:pageBreakBefore/>, <w:tblPr>, <w:tblGrid> and
+ * <w:tblStyle/> never match (no word boundary between two word characters).
+ * Returns [{type:'p'|'tbl', xml:string}].
+ */
+function _docxSplitTopLevelBlocks(xml) {
+  var out = [];
+  if (!xml) return out;
+  var re = /<(\/?)w:(tbl|p)\b[^>]*?(\/?)>/g;
+  var m;
+  var cur = null;
+  var start = -1;
+  var tblDepth = 0;
+  while ((m = re.exec(xml)) !== null) {
+    var closing = m[1] === '/';
+    var name = m[2];
+    var selfClosing = m[3] === '/';
+    if (cur === null) {
+      if (closing) continue; // stray close tag -- ignore
+      start = m.index;
+      if (selfClosing) {
+        out.push({ type: name, xml: xml.slice(start, re.lastIndex) });
+        continue;
+      }
+      cur = name;
+      tblDepth = name === 'tbl' ? 1 : 0;
+    } else if (cur === 'tbl') {
+      if (name !== 'tbl') continue;
+      if (selfClosing) continue;
+      tblDepth += closing ? -1 : 1;
+      if (tblDepth === 0) {
+        out.push({ type: 'tbl', xml: xml.slice(start, re.lastIndex) });
+        cur = null;
+      }
+    } else if (name === 'p' && closing) {
+      out.push({ type: 'p', xml: xml.slice(start, re.lastIndex) });
+      cur = null;
+    }
+  }
+  return out;
+}
+
+/** Depth-aware child scanner: collect every `childTag` element sitting at
+ * depth 1 inside `xml`, skipping any nested `nestTag` subtree. Used for rows
+ * within a table (nestTag 'tbl') and cells within a row (nestTag 'tbl'). */
+function _docxCollectDirect(xml, childTag, nestTag) {
+  var out = [];
+  var re = new RegExp('<(/?)w:(' + childTag + '|' + nestTag + ')\\b[^>]*?(/?)>', 'g');
+  var m;
+  var nest = 0;
+  var start = -1;
+  var open = 0;
+  while ((m = re.exec(xml)) !== null) {
+    var closing = m[1] === '/';
+    var name = m[2];
+    var selfClosing = m[3] === '/';
+    if (selfClosing) continue;
+    if (name === nestTag) {
+      // Only count nesting once we are INSIDE a collected child; the outer
+      // element itself (the table wrapping the rows) is stripped by the caller.
+      nest += closing ? -1 : 1;
+      continue;
+    }
+    if (nest > 0) continue;
+    if (!closing) {
+      if (open === 0) start = m.index;
+      open++;
+    } else {
+      open--;
+      if (open === 0 && start >= 0) {
+        out.push(xml.slice(start, re.lastIndex));
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
+/** Estimated rendered height, in points, of ONE <w:p>. availWidthTwips is the
+ * text column it wraps inside (body width, or a table cell's inner width). */
+function _docxEstimateParagraphHeightPt(pXml, availWidthTwips) {
+  var before = 0;
+  var after = 0;
+  var exactLineTwips = null;
+  var sp = /<w:spacing\b([^>]*)\/>/.exec(pXml);
+  if (sp) {
+    var mb = /w:before="(\d+)"/.exec(sp[1]);
+    if (mb) before = Number(mb[1]) / 20;
+    var ma = /w:after="(\d+)"/.exec(sp[1]);
+    if (ma) after = Number(ma[1]) / 20;
+    var mrule = /w:lineRule="(\w+)"/.exec(sp[1]);
+    var mline = /w:line="(\d+)"/.exec(sp[1]);
+    if (mline && mrule && mrule[1] === 'exact') exactLineTwips = Number(mline[1]);
+  }
+
+  var avail = availWidthTwips;
+  var ind = /<w:ind\b([^>]*)\/>/.exec(pXml);
+  if (ind) {
+    var il = /w:left="(\d+)"/.exec(ind[1]);
+    if (il) avail -= Number(il[1]);
+    var ir = /w:right="(\d+)"/.exec(ind[1]);
+    if (ir) avail -= Number(ir[1]);
+  } else if (/<w:numPr>/.test(pXml)) {
+    avail -= _DOCX_LIST_INDENT_TWIPS;
+  }
+  if (avail < 360) avail = 360;
+  var availPt = avail / 20;
+
+  if (exactLineTwips != null) return before + exactLineTwips / 20 + after;
+
+  // Runs only -- everything after the paragraph properties block.
+  var pPrEnd = pXml.indexOf('</w:pPr>');
+  var body = pPrEnd === -1 ? pXml : pXml.slice(pPrEnd + 8);
+
+  var maxSizePt = 0;
+  var imageHeightPt = 0;
+  var segments = [0]; // advance width, in points, per forced-break segment
+  var runRe = /<w:r>([\s\S]*?)<\/w:r>/g;
+  var rm;
+  while ((rm = runRe.exec(body)) !== null) {
+    var runXml = rm[1];
+    var szM = /<w:sz w:val="(\d+)"\/>/.exec(runXml);
+    var sizePt = szM ? Number(szM[1]) / 2 : 10.5;
+    if (sizePt > maxSizePt) maxSizePt = sizePt;
+    var em = /<w:b\/>/.test(runXml) ? _DOCX_AVG_CHAR_EM_BOLD : _DOCX_AVG_CHAR_EM;
+
+    var exM = /<wp:extent\b[^>]*cy="(\d+)"/.exec(runXml);
+    if (exM) imageHeightPt += (Number(exM[1]) / 914400) * 72;
+
+    // Walk text and <w:br/> in document order so a forced break starts a new
+    // segment (a page break is NOT a line break -- it is handled by the caller).
+    var partRe = /<w:t[^>]*>([\s\S]*?)<\/w:t>|<w:br\s*\/>|<w:br(?![^>]*w:type)[^>]*\/>/g;
+    var pm;
+    while ((pm = partRe.exec(runXml)) !== null) {
+      if (pm[1] !== undefined) {
+        segments[segments.length - 1] += pm[1].length * sizePt * em;
+      } else {
+        segments.push(0);
+      }
+    }
+  }
+
+  if (!maxSizePt) {
+    // Empty paragraph: its height comes from the paragraph MARK's rPr.
+    var markM = /<w:rPr>[\s\S]*?<w:sz w:val="(\d+)"\/>/.exec(pXml);
+    maxSizePt = markM ? Number(markM[1]) / 2 : 10.5;
+  }
+  var lineHeightPt = maxSizePt * _DOCX_LINE_HEIGHT_FACTOR;
+
+  var lines = 0;
+  for (var s = 0; s < segments.length; s++) {
+    lines += Math.max(1, Math.ceil(segments[s] / availPt));
+  }
+  if (!lines) lines = 1;
+
+  return before + Math.max(lines * lineHeightPt, imageHeightPt) + after;
+}
+
+/** Estimated rendered height, in points, of ONE <w:tbl>. */
+function _docxEstimateTableHeightPt(tblXml, availWidthTwips) {
+  var cols = [];
+  var g = /<w:tblGrid>([\s\S]*?)<\/w:tblGrid>/.exec(tblXml);
+  if (g) {
+    var cre = /<w:gridCol w:w="(\d+)"\/>/g;
+    var cm;
+    while ((cm = cre.exec(g[1])) !== null) cols.push(Number(cm[1]));
+  }
+  var gridTotal = cols.reduce(function (a, b) {
+    return a + b;
+  }, 0);
+  var scale = gridTotal > availWidthTwips && gridTotal > 0 ? availWidthTwips / gridTotal : 1;
+
+  // Strip the table's own opening/closing tag so nesting inside cells counts correctly.
+  var inner = tblXml.replace(/^<w:tbl\b[^>]*>/, '').replace(/<\/w:tbl>$/, '');
+  var rows = _docxCollectDirect(inner, 'tr', 'tbl');
+  var total = 0;
+  for (var r = 0; r < rows.length; r++) {
+    var rowInner = rows[r].replace(/^<w:tr\b[^>]*>/, '').replace(/<\/w:tr>$/, '');
+    var cells = _docxCollectDirect(rowInner, 'tc', 'tbl');
+    var rowHeight = 0;
+    var colCursor = 0;
+    for (var c = 0; c < cells.length; c++) {
+      var cellXml = cells[c];
+      var span = 1;
+      var gsM = /<w:gridSpan w:val="(\d+)"\/>/.exec(cellXml);
+      if (gsM) span = Number(gsM[1]);
+      var widthTwips = 0;
+      var wM = /<w:tcW w:w="(\d+)"/.exec(cellXml);
+      if (wM && Number(wM[1]) > 0) {
+        widthTwips = Number(wM[1]) * span;
+      } else {
+        for (var k = 0; k < span; k++) widthTwips += cols[colCursor + k] || 0;
+      }
+      colCursor += span;
+      var cellAvail = Math.max(360, Math.round(widthTwips * scale) - 2 * _DOCX_CELL_MARGIN_TWIPS);
+      var cellInner = cellXml.replace(/^<w:tc\b[^>]*>/, '').replace(/<\/w:tc>$/, '');
+      var cellHeight = 0;
+      var blocks = _docxSplitTopLevelBlocks(cellInner);
+      for (var b = 0; b < blocks.length; b++) {
+        cellHeight +=
+          blocks[b].type === 'tbl'
+            ? _docxEstimateTableHeightPt(blocks[b].xml, cellAvail)
+            : _docxEstimateParagraphHeightPt(blocks[b].xml, cellAvail);
+      }
+      if (cellHeight > rowHeight) rowHeight = cellHeight;
+    }
+    total += rowHeight + 1; // ~1pt for the row's 0.5pt TableGrid borders
+  }
+  return total;
+}
+
+/** Estimated rendered height, in points, of a run of body XML (any mix of
+ * top-level <w:p>/<w:tbl>), against the real body column width. */
+function _docxEstimateBodyHeightPt(xml, availWidthTwips) {
+  var avail = availWidthTwips || _DOCX_CONTENT_WIDTH_TWIPS;
+  var blocks = _docxSplitTopLevelBlocks(xml);
+  var total = 0;
+  for (var i = 0; i < blocks.length; i++) {
+    total +=
+      blocks[i].type === 'tbl'
+        ? _docxEstimateTableHeightPt(blocks[i].xml, avail)
+        : _docxEstimateParagraphHeightPt(blocks[i].xml, avail);
+  }
+  return total;
+}
+
+/**
+ * Splice <w:pageBreakBefore/> into the FIRST paragraph of a block, so the
+ * block starts a new physical page WITHOUT introducing a paragraph of its own.
+ *
+ * For a <w:p> that is the paragraph's own pPr. For a <w:tbl> the first
+ * <w:pPr> in document order belongs to the first paragraph of the first cell,
+ * which is exactly where Word itself puts a "page break before" applied to a
+ * table. Either way, zero extra blocks are added -- which is the whole point
+ * (see _docxTranslatePages for the blank-page mechanism this replaces).
+ *
+ * Inserted after <w:pPr> and after a <w:pStyle/> if present, which is the
+ * schema's CT_PPr order (pStyle, keepNext, keepLines, pageBreakBefore, ...).
+ */
+function _docxApplyPageBreakBefore(blockXml) {
+  if (!blockXml || /<w:pageBreakBefore\/>/.test(blockXml)) return blockXml;
+  var re = /<w:pPr>(<w:pStyle w:val="[^"]*"\/>)?(<w:keepNext\/>)?/;
+  if (re.test(blockXml)) {
+    return blockXml.replace(re, function (whole) {
+      return whole + '<w:pageBreakBefore/>';
+    });
+  }
+  // No pPr anywhere (a bare <w:p> with runs only) -- give the first paragraph one.
+  if (/^<w:p\b[^>]*>/.test(blockXml)) {
+    return blockXml.replace(/^(<w:p\b[^>]*>)/, '$1<w:pPr><w:pageBreakBefore/></w:pPr>');
+  }
+  return blockXml;
+}
+
 /* ── Assembly ─────────────────────────────────────────────────────────────── */
 
 /** Decode a base64 string (e.g. CSC_DOCX_SKELETON_B64) into a Uint8Array. */
@@ -551,40 +901,55 @@ async function _docxAssemble(documentXml, opts) {
   var head = skeletonDocXml.slice(0, bodyOpenIdx + bodyOpenTag.length); // ...<w:document ...><w:body>
   var tail = skeletonDocXml.slice(sectPrIdx); // <w:sectPr ...>...</w:sectPr></w:body></w:document>  -- VERBATIM, unmodified
 
-  // Page-1 letterhead clearance (spec §1 / plan Part A): the skeleton (CSC
-  // Letterhead.docx) carries 10 empty leading <w:p> paragraphs between <w:body>
-  // and <w:sectPr>, all Arial 10.5pt (w:sz/w:szCs=21). They exist ONLY to push
-  // body content below the full-page letterhead's logo lockup on page 1 (logo
-  // bottom edge ~146pt; the page's own top margin, 31.95pt, ends above the logo
-  // and provides essentially no clearance on its own). This function used to
-  // start `head` at bodyOpenIdx and skip straight to sectPrIdx, silently
-  // discarding those 10 paragraphs -- so generated content began at paragraph 0
-  // and collided with the logo/tagline/address block.
+  // Page-1 letterhead clearance (spec §1 / plan Part A).
   //
-  // Fix: preserve the skeleton's own leading paragraphs verbatim (don't discard,
-  // don't re-derive a synthetic block) and apply one targeted edit -- upsize the
-  // LAST of the 10 from 10.5pt to 18pt. This reproduces the CSC Louisburg
-  // baseline's proven recipe (9x10.5pt + 1x18pt) exactly. The uniform bare-
-  // skeleton 10x10.5pt block alone only clears ~13.3pt below the logo, which is
-  // not enough; Louisburg's own document.xml upsizes its final leading paragraph
-  // for this reason, and its rendered title lands at y0=179.93pt (34.3pt clear).
-  var leadingParasXml = skeletonDocXml.slice(bodyOpenIdx + bodyOpenTag.length, sectPrIdx);
-  var leadingParaRe = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
-  var lastLeadingParaMatch = null;
-  var leadingParaMatch;
-  while ((leadingParaMatch = leadingParaRe.exec(leadingParasXml)) !== null) {
-    lastLeadingParaMatch = leadingParaMatch;
-  }
-  if (lastLeadingParaMatch) {
-    var origLastPara = lastLeadingParaMatch[0];
-    var upsizedLastPara = origLastPara.replace(/w:val="21"/g, 'w:val="36"');
-    leadingParasXml =
-      leadingParasXml.slice(0, lastLeadingParaMatch.index) +
-      upsizedLastPara +
-      leadingParasXml.slice(lastLeadingParaMatch.index + origLastPara.length);
+  // The skeleton (CSC Letterhead.docx) carries TEN empty leading <w:p>
+  // paragraphs between <w:body> and <w:sectPr>, all Arial 10.5pt
+  // (w:sz/w:szCs=21) -- a verbatim copy of the Louisburg baseline's own
+  // construct. They exist ONLY to push body content below the full-page
+  // letterhead's logo lockup on page 1; the page's own top margin (639 twips
+  // = 31.95pt) ends well above the lockup and clears nothing on its own.
+  // (An earlier build discarded them entirely and body content collided with
+  // the logo/tagline/address block -- that regression must not come back.)
+  //
+  // U5 / RC-B, 2026-08-02: those ten paragraphs are replaced by ONE spacer
+  // paragraph of EXACT height. Reasons, in order:
+  //   1. Ten empty paragraphs' combined height is whatever Word's line-height
+  //      model makes it -- a function of Arial's hhea metrics, not a designed
+  //      number. The 2026-08-02 defect register measured it as "~138pt of
+  //      dead height" precisely because nothing in the file states it.
+  //      w:lineRule="exact" states it, and Word honours it to the twip.
+  //   2. The page-budget model below (_docxEstimateBodyHeightPt) has to know
+  //      how much of page 1 is already spent. One exact number is knowable;
+  //      ten inherited line boxes are a guess.
+  //   3. Ten paragraph marks is nine more blocks than the document needs.
+  //
+  // The height is MEASURED, not chosen: the letterhead lockup's ink bottom
+  // edge sits at y=145pt (Templates\CSC Letterhead.pdf rasterised at 72dpi,
+  // ink bands y38-y108 and y110-y144), and the Louisburg baseline's rendered
+  // page-1 title lands at y0=179.93pt -- ~35pt clear below the lockup. So
+  // first content starts 180pt from the page top, and the spacer is
+  // 180 - 31.95 = 148.05pt = 2961 twips. See the page-budget block above.
+  var leadingParasXml =
+    '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="' +
+    _DOCX_LETTERHEAD_SPACER_TWIPS +
+    '" w:lineRule="exact"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>' +
+    '<w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr></w:pPr></w:p>';
+
+  // D-07(a): a <w:body> may not END with a table -- the OOXML schema requires
+  // a final <w:p> after a body-ending <w:tbl>, and Word silently auto-inserts
+  // one when it is missing. That auto-inserted paragraph mark is unbudgeted:
+  // when the last table already reaches the bottom margin it lands on a fresh
+  // sheet and produces a BLANK FINAL PAGE. The Audit's document.xml shipped
+  // ending "</w:tbl><w:sectPr>" for exactly this reason. Emit the paragraph
+  // ourselves, with zero spacing and no runs, so it is both schema-valid and
+  // as short as a paragraph can be.
+  var bodyXml = documentXml || '';
+  if (/<\/w:tbl>\s*$/.test(bodyXml)) {
+    bodyXml += '<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:p>';
   }
 
-  var fullDocXml = head + leadingParasXml + documentXml + tail;
+  var fullDocXml = head + leadingParasXml + bodyXml + tail;
   zip.file('word/document.xml', fullDocXml);
 
   if (Array.isArray(opts.images)) {
@@ -1657,6 +2022,12 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
         align: el.style && el.style.textAlign,
         spacingBefore: 240,
         spacingAfter: 120,
+        // U5, 2026-08-02: keep the heading with the block it introduces. With
+        // the forced page break between source pages now budgeted rather than
+        // unconditional (_docxTranslatePages), Word does more of the flowing --
+        // and a heading stranded at the foot of a page, with its table or
+        // paragraph on the next one, is exactly the orphan this prevents.
+        keepNext: true,
       }),
     ];
   }
@@ -1742,29 +2113,72 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
  * elements, in order, into a single documentXml BODY string ready for
  * _docxAssemble(), plus the images (opts.images) and the dynamically
  * allocated list-numbering instances (opts.numIds) that must both be passed
- * through to it. A page break (<w:br w:type="page"/>) is inserted between
- * page elements when more than one is given, so Word starts a new page
- * where the source had a page boundary; pagination WITHIN a page's own
- * content is still Word's own flow.
+ * through to it.
  *
- * 2026-07-31 blank-page fix: the break is folded into the LAST run of the
- * preceding page's own final paragraph (an extra invisible run on real
- * content), not emitted as a standalone `<w:p><w:r><w:br/></w:r></w:p>`
- * paragraph between pages. A standalone break-only paragraph still needs
- * its own line of vertical space; when a page's content already reaches
- * the bottom margin (e.g. the JOCO agreement cover page's 27-item building
- * list, which ends flush with the page bottom), Word has no room left for
- * that empty paragraph and pushes the WHOLE paragraph onto a fresh page --
- * whose own forced break then immediately turns that fresh page into a
- * genuinely blank physical page (reproduced 2026-07-31: JOCO EMS Agreement
- * page 2 of an 8-page render came back with 1 character, "2", i.e. only
- * the footer page-number field -- everything else was this orphaned
- * break-only paragraph). Attaching the break run to real content that was
- * always going to render removes the empty paragraph entirely, so Word
- * never needs to find room for a line that carries nothing.
+ * ── PAGINATION (U5 / RC-B rebuild, 2026-08-02) ──────────────────────────────
+ *
+ * The source `.rpt-page` elements are pre-paginated for the BROWSER preview,
+ * whose page box is taller than the body column Word actually has. Word's
+ * usable body height here is 13329 twips = 666.45pt (see the page-budget block
+ * near the top of this file); the 2026-08-02 defect register measured
+ * pre-paginated blocks at 726pt and 707pt. Emitting an unconditional forced
+ * break at the end of an over-budget block is the worst of both worlds: Word
+ * fills one physical page, spills the remainder onto a second, and the forced
+ * break then ends that second page immediately -- a near-empty sheet at every
+ * such boundary, plus a table split that the design never intended (D-06) and
+ * the blank/near-blank page the user reported (D-07).
+ *
+ * So the break is now BUDGETED rather than unconditional:
+ *
+ *   - A source page whose estimated height FITS the remaining budget keeps its
+ *     forced break. This costs nothing and preserves every design boundary
+ *     that is actually achievable -- notably the cover page, which is short and
+ *     always fits, so a cover never gains body content underneath it.
+ *   - A source page that OVERFLOWS has already lost its page-boundary premise:
+ *     Word is going to break it wherever the column runs out no matter what we
+ *     emit. Adding a forced break after it only guarantees an extra sparse
+ *     sheet, so the break is suppressed and the content simply flows on. The
+ *     split that does happen is then Word's own, at a row boundary
+ *     (w:cantSplit on every row) with the header row repeated (w:tblHeader),
+ *     and headings stay attached to what they introduce (w:keepNext).
+ *
+ * This is the "budget against Word's real 666.45pt" option from the fix plan,
+ * NOT the "drop all forced breaks" option: dropping them all would let page 2
+ * content climb onto the cover page. The running fill starts already spent by
+ * the page-1 letterhead spacer (_DOCX_LETTERHEAD_SPACER_TWIPS), because that
+ * clearance is real page-1 budget.
+ *
+ * The height figure is an ESTIMATE (_docxEstimateBodyHeightPt -- Arial metrics
+ * and average advance width, not a typesetter). It decides only whether to
+ * emit or suppress a break that Word would otherwise be forced to work around,
+ * so being a few points out changes nothing structural.
+ *
+ * ── HOW THE BREAK IS EMITTED ────────────────────────────────────────────────
+ *
+ * Never as a paragraph whose only content is the break. That construct
+ * (`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`) still needs a line of
+ * vertical space; when the preceding content already reaches the bottom
+ * margin, Word pushes the WHOLE paragraph onto a fresh sheet and its own
+ * forced break then turns that sheet into a genuinely blank page (reproduced
+ * 2026-07-31: JOCO EMS Agreement page 2 of an 8-page render came back with one
+ * character, "2" -- the footer page number and nothing else). The register
+ * found these still shipping at body index 16 and 36 (Audit), 36 (Proposal)
+ * and 98 (Agreement) -- every one of them the fallback path below, taken
+ * whenever a source page ended in a table. Both emission paths are now
+ * zero-paragraph:
+ *
+ *   1. Preferred: splice `<w:br w:type="page"/>` into the LAST run position of
+ *      the preceding page's own final paragraph -- one extra invisible run on
+ *      content that was always going to render.
+ *   2. Page ends in a table (no paragraph to attach to): put
+ *      `<w:pageBreakBefore/>` on the NEXT page's first paragraph instead (for
+ *      a table, that is the first paragraph of its first cell, which is
+ *      exactly where Word puts it itself). Still zero extra blocks.
  *
  * Returns { xml: string, images: array<{bytes, extension, mediaIndex}>,
- *           numIds: array<{numId, abstractNumId}> }.
+ *           numIds: array<{numId, abstractNumId}>,
+ *           pageBudget: array<{index, heightPt, budgetPt, fits, breakMode}> }.
+ * `pageBudget` is diagnostics only -- callers may ignore it.
  */
 function _docxTranslatePages(pageEls) {
   var ctx = {
@@ -1775,34 +2189,76 @@ function _docxTranslatePages(pageEls) {
     _cssVarCache: {}, // memoizes _docxResolveCssVarColor()'s --rpt-* lookups for this translation run
   };
   var pageBreakRun = '<w:r><w:br w:type="page"/></w:r>';
-  var allBlocks = [];
+
+  // Walk ALL childNodes (elements AND loose text) via
+  // _docxTranslateBlockChildren -- NOT pageEls[p].children, which the DOM
+  // defines as elements-only and would silently drop loose text nodes sitting
+  // directly at page-root position (fix/docx-writer-step5-adversarial,
+  // 2026-07-31). Kept as per-page arrays so the budget pass below can measure
+  // each source page and attach its break to real content.
+  var perPage = [];
   for (var p = 0; p < pageEls.length; p++) {
-    // Walk ALL childNodes (elements AND loose text) via
-    // _docxTranslateBlockChildren -- NOT pageEls[p].children, which the DOM
-    // defines as elements-only and would silently drop loose text nodes
-    // sitting directly at page-root position (fix/docx-writer-step5-adversarial,
-    // 2026-07-31). The per-page block array is still needed (not folded
-    // straight into allBlocks) so the blank-page splice fix below
-    // (fix/docx-agreement-blankpages) can attach the page-break run onto the
-    // LAST paragraph of THIS page rather than emitting a standalone
-    // break-only paragraph that can overflow onto its own blank page.
-    var pageBlocks = _docxTranslateBlockChildren(pageEls[p], ctx);
-    if (p < pageEls.length - 1) {
-      var lastIdx = pageBlocks.length - 1;
-      if (lastIdx >= 0 && typeof pageBlocks[lastIdx] === 'string' && /<\/w:p>\s*$/.test(pageBlocks[lastIdx])) {
-        // Splice the break run in just before the paragraph's closing tag --
-        // same paragraph, same numPr/pPr, one extra trailing run.
-        pageBlocks[lastIdx] = pageBlocks[lastIdx].replace(/<\/w:p>\s*$/, pageBreakRun + '</w:p>');
+    perPage.push(_docxTranslateBlockChildren(pageEls[p], ctx));
+  }
+
+  var budget = [];
+  var remainingPt = _DOCX_USABLE_HEIGHT_PT - _DOCX_LETTERHEAD_SPACER_TWIPS / 20; // page 1 starts partly spent
+  for (var i = 0; i < perPage.length; i++) {
+    var blocks = perPage[i];
+    var heightPt = _docxEstimateBodyHeightPt(blocks.join(''), _DOCX_CONTENT_WIDTH_TWIPS);
+    var fits = heightPt <= remainingPt;
+    var breakMode = 'none';
+
+    if (i < perPage.length - 1 && fits) {
+      var lastIdx = blocks.length - 1;
+      if (lastIdx >= 0 && typeof blocks[lastIdx] === 'string' && /<\/w:p>\s*$/.test(blocks[lastIdx])) {
+        blocks[lastIdx] = blocks[lastIdx].replace(/<\/w:p>\s*$/, pageBreakRun + '</w:p>');
+        breakMode = 'run';
       } else {
-        // No paragraph to attach to (page ended in a table, or produced no
-        // blocks at all) -- fall back to the old standalone-break paragraph
-        // rather than silently dropping the page boundary.
-        pageBlocks.push('<w:p>' + pageBreakRun + '</w:p>');
+        // Page ended in a table (or produced nothing): mark the NEXT page's
+        // first block instead. Never a break-only paragraph -- see above.
+        var next = perPage[i + 1];
+        var target = -1;
+        for (var n = 0; n < next.length; n++) {
+          if (typeof next[n] === 'string' && next[n]) {
+            target = n;
+            break;
+          }
+        }
+        if (target >= 0) {
+          next[target] = _docxApplyPageBreakBefore(next[target]);
+          breakMode = 'pageBreakBefore';
+        } else {
+          breakMode = 'dropped'; // next page is empty -- nothing to break to
+        }
       }
     }
-    allBlocks = allBlocks.concat(pageBlocks);
+
+    budget.push({
+      index: i,
+      heightPt: Math.round(heightPt * 10) / 10,
+      budgetPt: Math.round(remainingPt * 10) / 10,
+      fits: fits,
+      breakMode: breakMode,
+    });
+
+    // 'dropped' means the next page produced no blocks at all, so no break was
+    // actually emitted -- it must NOT reset the fill like a real break would.
+    if (fits && (breakMode === 'run' || breakMode === 'pageBreakBefore')) {
+      remainingPt = _DOCX_USABLE_HEIGHT_PT;
+    } else if (fits) {
+      remainingPt = remainingPt - heightPt; // no break emitted: same sheet keeps filling
+    } else {
+      // Overflowed: Word carries the surplus onto following sheets. What is
+      // left of the sheet the surplus lands on is the next page's budget.
+      var overflow = (heightPt - remainingPt) % _DOCX_USABLE_HEIGHT_PT;
+      remainingPt = _DOCX_USABLE_HEIGHT_PT - overflow;
+    }
   }
-  return { xml: allBlocks.join(''), images: ctx.images, numIds: ctx.numAllocations };
+
+  var allBlocks = [];
+  for (var q = 0; q < perPage.length; q++) allBlocks = allBlocks.concat(perPage[q]);
+  return { xml: allBlocks.join(''), images: ctx.images, numIds: ctx.numAllocations, pageBudget: budget };
 }
 
 /** Single-page convenience wrapper around _docxTranslatePages(). */
