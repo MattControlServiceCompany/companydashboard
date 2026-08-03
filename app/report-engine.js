@@ -14204,21 +14204,15 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       _a36ConsolidatedSequences = _a36SeqSum;
     }
   }
-  // Cover gauge color — R2 (2026-08-03), VISUAL-REVIEW-2026-08-02.md V-01. REPLACES the
-  // 2026-07-29 brand-color pass ("make the Composite Score gauge be the CSC blue and then have
-  // the Sensor Coverage and Sequence Readiness be the CSC green"), which is exactly what made
-  // this cover contradict the readiness legend printed two pages later: it painted 62% and 52%
-  // in #27ae60 — the green those pages define as "High Readiness, 75% and above" — and painted
-  // the Composite Score in a blue that appears in no legend in the document. All three rings now
-  // read their color from a36ReadinessColor(), the same single rule that colors all 27 Score
-  // bars in the Building ASHRAE 36 Readiness table, so a number can never be one band on the
-  // cover and a different band in the table. Nothing about the numbers themselves changed.
-  //
-  // The Composite Score deliberately uses that same rule rather than a distinct treatment: it is
-  // the score the readiness bands are literally defined over (portfolioStatus is already derived
-  // from it with these thresholds), so any other color would be a fourth unexplained one — the
-  // review's specific complaint. A legend printed directly under the rings (bandLegend below)
-  // spells the bands out so the cover decodes itself without turning the page.
+  // Cover gauge color — R3 (2026-08-03), reverts R2 above. R2's readiness-band coloring
+  // (a36ReadinessColor(pct) on all three rings, plus a "Ring color shows readiness" legend) was
+  // an unrequested addition; Matt's original 2026-07-29 instruction (commit 5d09930) was fixed
+  // CSC brand colors regardless of percentage: Composite Score -> CSC blue, Sensor Coverage and
+  // Sequence Readiness -> CSC green. Restored here, cover only (the per-building gauges in
+  // _a36BuildingContent are unchanged and keep their own existing treatment). var(--rpt-blue)
+  // (#1a5276) and var(--rpt-green) (#27ae60) are the same CSS variables already used for the
+  // report title and other CSC brand elements throughout this file — see energy-department.html
+  // ~line 1874/1882 for the definitions.
   // One-paragraph finding — REORDERED 2026-07-29 (Matt's direct instruction: "always make reports
   // a story instead of just text... Buildings Assessed, HVAC Systems Audited, Sequences to
   // Program and then Sensors to Install in that order so it tells the story of what happened in
@@ -14260,53 +14254,14 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   var gauges =
     '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 8px">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.composite, a36ReadinessColor(p.composite), 'Overall', 110, true) +
+    _a36GaugeSVG(p.composite, 'var(--rpt-blue)', 'Overall', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.pointPct, a36ReadinessColor(p.pointPct), 'Sensors', 110, true) +
+    _a36GaugeSVG(p.pointPct, 'var(--rpt-green)', 'Sensors', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.seqPct, a36ReadinessColor(p.seqPct), 'Sequences', 110, true) +
+    _a36GaugeSVG(p.seqPct, 'var(--rpt-green)', 'Sequences', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
-    '</div>';
-
-  // Cover readiness legend (R2, 2026-08-03, V-01). One centered line of ordinary text directly
-  // under the rings so a reader can decode a ring color without turning to page 2 — deliberately
-  // NOT a box, card, tile or bordered key (standing rule), and no separator rule above or below
-  // it (standing rule); it is simply the next line of copy on the page. Each band's mark is a
-  // colored square glyph in a text run rather than a styled <div>, so it survives every export
-  // path identically: the print/PDF path, the Word .docx path (which turns a colored <span> into
-  // a colored run but silently drops an empty background-colored <div>), and the mso-HTML path.
-  // The band words stay near-black — the report's settled convention is that color lives in the
-  // graphic and words are black (see _a36StatusChip). Thresholds are interpolated from
-  // ASHRAE36_READINESS_HIGH/PARTIAL_THRESHOLD, the same constants the table footnote uses, so the
-  // cover legend and the table legend can never drift apart; ranges are written in words rather
-  // than mathematical symbols per the no-jargon rule.
-  var _bandGap = '<span style="color:var(--rpt-page-text)">&nbsp; &nbsp; &nbsp;</span>';
-  var bandLegend =
-    '<div style="text-align:center;font-size:' +
-    RPT_MIN_TEXT_PX +
-    'px;line-height:1.5;color:var(--rpt-page-text);margin:0 0 16px">' +
-    'Ring color shows readiness: ' +
-    '<span style="color:' +
-    ASHRAE36_READINESS_BAND_COLORS.green +
-    '">■</span> High, ' +
-    ASHRAE36_READINESS_HIGH_THRESHOLD +
-    '% and above' +
-    _bandGap +
-    '<span style="color:' +
-    ASHRAE36_READINESS_BAND_COLORS.amber +
-    '">■</span> Partial, ' +
-    ASHRAE36_READINESS_PARTIAL_THRESHOLD +
-    ' to ' +
-    (ASHRAE36_READINESS_HIGH_THRESHOLD - 1) +
-    '%' +
-    _bandGap +
-    '<span style="color:' +
-    ASHRAE36_READINESS_BAND_COLORS.red +
-    '">■</span> Low, below ' +
-    ASHRAE36_READINESS_PARTIAL_THRESHOLD +
-    '%' +
     '</div>';
 
   var bodyHTML =
@@ -14314,21 +14269,14 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div style="text-align:center;margin-bottom:0">' +
     // D-12 (2026-08-03): 22px (16.5pt) -> the shared 18pt document-title tier, so the Audit cover
     // title and the Proposal cover title are the same size and both sit above the 14.25pt running
-    // page-title bar that follows them on every interior page. margin-bottom stays 2px (not D-12's
-    // original 12px) because R9a (2026-08-03) inserted a document-date div right after this one,
-    // and that date div supplies its own margin-bottom:12px gap before the body text below it.
+    // page-title bar that follows them on every interior page.
+    // R3 (2026-08-03): removed the document-date div that used to follow the subtitle here
+    // (unrequested addition); the subtitle line below is bolded instead, per Matt's spec.
     '<div style="font-size:' +
     RPT_DOC_TITLE_PX +
     'px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
-    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:2px">' +
+    '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);margin-bottom:12px">' +
     d.project.name +
-    '</div>' +
-    // 2026-08-03 (visual review V-02): the Audit carried NO date anywhere in its text layer —
-    // the date existed only in the export filename, so a filed copy could not be dated, cited or
-    // superseded. _rptDocumentDateLong() reads the same instant/calendar day that filename is
-    // built from, so page and filename can never disagree.
-    '<div style="font-size:14px;color:var(--rpt-page-text);margin-bottom:12px">' +
-    _rptDocumentDateLong() +
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
@@ -14337,7 +14285,6 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
-    bandLegend +
     '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' +
     finding +
     '</div>' +
@@ -14373,17 +14320,6 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sensors to Install</div>' +
     '</div>' +
-    '</div>' +
-    // 2026-08-03 (visual review V-03): the cover's only attribution was the letterhead graphic —
-    // no author, no addressee. Plain text lines, no box/card/tile and no separator rule (standing
-    // rule); the two labels are simply bolded. No phone/address is printed: no verified Control
-    // Service Company contact block exists anywhere in this codebase and inventing one is worse
-    // than omitting it.
-    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.5;margin-top:14px">' +
-    '<div><strong>Prepared for:</strong> ' +
-    d.project.name +
-    '</div>' +
-    '<div><strong>Prepared by:</strong> Control Service Company</div>' +
     '</div>' +
     '</div>';
 
