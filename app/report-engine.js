@@ -12565,31 +12565,31 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
  */
 var ASHRAE36_SEQUENCE_PLAIN = {
   ahu_sat_reset:
-    'Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.',
+    "Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.",
   ahu_dsp_reset:
-    'Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.',
+    "Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.",
   ahu_economizer:
-    'Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.',
+    "Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.",
   ahu_freeze_prot:
     'Automatically shuts the air handler down if coil temperatures get cold enough to risk a frozen, burst water coil.',
   ahu_min_oa:
     'Keeps a minimum amount of fresh outdoor air coming into the building at all times to meet ventilation requirements, even as fan speed changes.',
   ahu_rf_control:
-    'Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.',
+    "Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.",
   vav_zone_temp:
     'Keeps each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
   vav_damper_writeback:
     'Confirms the air damper in each zone is actually at the position the system commands, so a stuck or failed damper gets caught early instead of silently wasting energy or causing comfort complaints.',
   vav_reheat:
-    'Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.',
+    "Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.",
   hwp_supply_reset:
-    'Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.',
+    "Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.",
   hwp_pump_dp_reset:
     'Lets the hot water pump slow down when fewer rooms are calling for heat, instead of always pumping at full speed.',
   hwp_staging:
     'Automatically brings a second boiler online only when the building actually needs the extra heat, and shuts it back off when demand drops, instead of running every boiler all the time.',
   chwp_supply_reset:
-    'Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.',
+    "Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.",
   chwp_pump_dp_reset:
     'Lets the chilled water pump slow down when cooling demand is low, instead of always pumping at full speed.',
   chwp_staging:
@@ -13944,7 +13944,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    'This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
+    "This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. " +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
