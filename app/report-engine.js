@@ -14364,19 +14364,28 @@ function rptPageASHRAE36Executive(n, d) {
   // Rule 2.3: reportDate drives footer date; label empty.
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
-  // Top ASHRAE 36 Sequences by portfolio scope (first page only).
-  // 2026-08-03 (Matt's complaint): this callout used to show only the single #1 GAP
-  // (p.topGaps[0], a missing-sensor/point-category count) under the heading "Most Common Gap
-  // Across Portfolio" -- one item, and a different axis than "sequences" (a gap is a missing
-  // point/sensor; a sequence is the control routine it blocks). Matt: "there are still only 2
-  // sequences mentioned before the building ASHRAE 36 Readiness table, I thought we were going
-  // to expand that section?" (the "2" being this callout's one gap plus the DCV callout below).
-  // Replaced with a real summary of the top SEQUENCE TYPES by portfolio quantity, computed the
-  // SAME way (buildCatalogRows phase-2/seqKey rows, grouped by seqKey) as the "Control Sequences"
-  // table later in this report (rptPageASHRAE36CostEstimate, ~line 15025) so the two numbers can
-  // never disagree -- same cache key (d._a36CatalogRowsCache), same filter. Summarized by TYPE
-  // across the whole portfolio -- never one line per building. No invented names or counts: any
-  // sequence type with zero priced-programming quantity in the real data is simply not listed.
+  // Top ASHRAE 36 Sequences, as short plain-language paragraphs (first page only).
+  // 2026-08-03 (Matt, verbatim): "I want the Top ASHRAE 36 Sequences table removed completely and
+  // just have the top few be in paragraphs like the Occupancy-Based Ventilation Readiness, like
+  // just have the top 5 sequences... you are literally doubling up a sequence with Occupancy Based
+  // Ventilation. What happened to what I told you about not repeating the same type of sequence?"
+  // The table this callout used to render (removed here) listed 'demandCtrl' ("...Air Handling
+  // Units)") and 'vav_dcv' ("...Zone Terminals)") as two SEPARATE rows -- both are
+  // Occupancy-Based Ventilation, split by equipment type -- while the dcvCallout immediately below
+  // ALSO covers Occupancy-Based Ventilation. That was the same sequence type appearing 3 times
+  // before the reader ever reaches the Building Readiness table.
+  // Fix: dcvCallout (below) IS paragraph #1 of 5 -- it already covers Occupancy-Based Ventilation
+  // for the whole portfolio (combining the AHU and zone-terminal counts into one narrative, never
+  // split). This callout now renders paragraphs #2-#5: the next 4 highest-quantity sequence TYPES,
+  // explicitly EXCLUDING demandCtrl/vav_dcv so Occupancy-Based Ventilation is never named twice.
+  // Each paragraph is styled exactly like dcvCallout (bold heading + 1-2 plain sentences), computed
+  // from the SAME real data (buildCatalogRows phase-2/seqKey rows, same cache key
+  // d._a36CatalogRowsCache, same filter) as the "Control Sequences" table later in this report
+  // (rptPageASHRAE36CostEstimate, ~line 15025) so the counts can never disagree, and reusing that
+  // same table's plain-language copy (ASHRAE36_SEQUENCE_PLAIN) so wording is consistent across the
+  // report. Summarized by TYPE across the whole portfolio -- never one line per building. No
+  // invented names or counts: any sequence type with zero priced-programming quantity in the real
+  // data is simply not listed.
   var callout = '';
   try {
     if (!d._a36CatalogRowsCache) {
@@ -14389,61 +14398,51 @@ function rptPageASHRAE36Executive(n, d) {
     });
     var _execSeqDefs =
       typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
-    var EXEC_TOP_SEQ_COUNT = 6; // top N sequence types by portfolio quantity
+    // Occupancy-Based Ventilation is already covered, once, by dcvCallout below -- exclude both of
+    // its seqKeys here so it is never named a second time.
+    var _execObvKeys = { demandCtrl: true, vav_dcv: true };
+    var EXEC_TOP_SEQ_COUNT = 4; // paragraphs #2-#5: next-highest sequence types, OBV excluded
     var topSeqTypes = _execSeqDefs
       .map(function (seq) {
         // Client-facing label MUST match the later "Control Sequences" table exactly (both read
         // from the same EM_SEQUENCE_DEFS entry) -- _a36SeqDisplayLabel applies A36_SEQ_LABEL_OVERRIDE
         // (e.g. vav_damper_writeback -> "Damper Position Command", not the internal-jargon
         // "Damper Position Write-back") so one concept carries one name across the whole report.
-        return { key: seq.key, label: _a36SeqDisplayLabel(seq), qty: _execSeqCounts[seq.key] || 0 };
+        return {
+          key: seq.key,
+          label: _a36SeqDisplayLabel(seq),
+          qty: _execSeqCounts[seq.key] || 0,
+          plain: (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[seq.key]) || '',
+        };
       })
       .filter(function (s) {
-        return s.qty > 0;
+        return s.qty > 0 && !_execObvKeys[s.key];
       })
       .sort(function (a, b) {
         return b.qty - a.qty;
       })
       .slice(0, EXEC_TOP_SEQ_COUNT);
 
-    if (topSeqTypes.length) {
-      var _seqRowsHTML = topSeqTypes
-        .map(function (s) {
-          return (
-            '<tr>' +
-            '<td style="padding:5px 8px;font-size:' +
-            RPT_BODY_PX +
-            'px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
-            _esc(s.label) +
-            '</td>' +
-            '<td style="padding:5px 8px;font-size:' +
-            RPT_BODY_PX +
-            'px;font-weight:700;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
-            rptCount(s.qty) +
-            '</td>' +
-            '</tr>'
-          );
-        })
-        .join('');
-      callout =
-        '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-        '<div style="font-size:' +
-        RPT_SECTION_HEAD_PX +
-        'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Top ASHRAE 36 Sequences by Portfolio Scope</div>' +
-        '<div style="font-size:' +
-        RPT_BODY_PX +
-        'px;color:var(--rpt-page-text);margin-bottom:6px">' +
-        'The control sequences most needed across the portfolio, and how many pieces of equipment still need each one programmed.' +
-        '</div>' +
-        '<table style="width:100%;border-collapse:collapse">' +
-        '<thead><tr>' +
-        '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Sequence</th>' +
-        '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Number to Program</th>' +
-        '</tr></thead><tbody>' +
-        _seqRowsHTML +
-        '</tbody></table>' +
-        '</div>';
-    }
+    callout = topSeqTypes
+      .map(function (s) {
+        return (
+          '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
+          '<div style="font-size:' +
+          RPT_SECTION_HEAD_PX +
+          'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">' +
+          _esc(s.label) +
+          '</div>' +
+          '<div style="font-size:' +
+          RPT_BODY_PX +
+          'px;color:var(--rpt-page-text);line-height:1.6">' +
+          rptCount(s.qty) +
+          ' pieces of equipment across the portfolio still need this sequence programmed. ' +
+          _esc(s.plain) +
+          '</div>' +
+          '</div>'
+        );
+      })
+      .join('');
   } catch (e) {
     console.error('rptPageASHRAE36Executive: top-sequences summary build failed', e);
     callout = '';
@@ -14520,12 +14519,21 @@ function rptPageASHRAE36Executive(n, d) {
   //   tableTitle                     20 ->  32 (26 measured + its 6px margin)
   var _firstChromeH = 0;
   if (dcvCallout) _firstChromeH += 146; // measured (occupancy-based ventilation readiness callout)
-  // 2026-08-03: `callout` was a 3-line "most-common-gap" paragraph (121px measured); it is now a
-  // heading + intro sentence + a small Sequence/Number-to-Program table (up to 6 rows), which is
-  // materially taller. Re-measured per the re-measure protocol above (headless render against
-  // real JOCO data, emulateMedia('print'), getBoundingClientRect().height of the .rpt-a36-callout
-  // box): 314.03px content + its 14px margin-bottom = 328.03px, rounded up to 329 for safety.
-  if (callout) _firstChromeH += 329; // measured (top-sequences-by-portfolio-scope table, up to 6 rows)
+  // 2026-08-03 (Matt: remove the redundant sequences TABLE, use short paragraphs instead — see
+  // this callout's own header comment above for the full rationale). `callout` is no longer one
+  // table block; it is 0-4 short paragraphs (heading + 1-2 sentences each), each rendered through
+  // the SAME .rpt-a36-callout markup/style as dcvCallout immediately above, so each one occupies
+  // the same measured ~146px (132px content + its 14px margin-bottom) that dcvCallout does. Budget
+  // scales with how many paragraphs actually render (topSeqTypes.length, 0-4) rather than a single
+  // fixed literal, since an unlisted count here would either overshoot (fewer rows than budgeted,
+  // wasting page space) or undershoot (more rows than budgeted, causing overflow) as the underlying
+  // data changes. Re-measured via headless render against real JOCO data after this change
+  // (getBoundingClientRect().height + margin-bottom of each .rpt-a36-callout, print media): the 4
+  // new paragraphs measured 100.8-123.2px each (shorter than dcvCallout's own 145.6px because each
+  // sequence's plain-language description is one sentence, not two) — all comfortably inside the
+  // 146px-per-block budget already established for this exact markup, so no new constant needed
+  // and this is a deliberately conservative (safe-side) budget, not a tight fit.
+  _firstChromeH += 146 * topSeqTypes.length;
   _firstChromeH += 32; // tableTitle — measured
   _firstChromeH += EXEC_THEAD_H;
   _firstChromeH += EXEC_FOOTNOTE_H;
