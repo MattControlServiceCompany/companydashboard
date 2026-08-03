@@ -14420,31 +14420,89 @@ function rptPageASHRAE36Executive(n, d) {
   // Rule 2.3: reportDate drives footer date; label empty.
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
-  // Key finding callout (first page only)
-  var topGap = p.topGaps[0];
+  // Top ASHRAE 36 Sequences by portfolio scope (first page only).
+  // 2026-08-03 (Matt's complaint): this callout used to show only the single #1 GAP
+  // (p.topGaps[0], a missing-sensor/point-category count) under the heading "Most Common Gap
+  // Across Portfolio" -- one item, and a different axis than "sequences" (a gap is a missing
+  // point/sensor; a sequence is the control routine it blocks). Matt: "there are still only 2
+  // sequences mentioned before the building ASHRAE 36 Readiness table, I thought we were going
+  // to expand that section?" (the "2" being this callout's one gap plus the DCV callout below).
+  // Replaced with a real summary of the top SEQUENCE TYPES by portfolio quantity, computed the
+  // SAME way (buildCatalogRows phase-2/seqKey rows, grouped by seqKey) as the "Control Sequences"
+  // table later in this report (rptPageASHRAE36CostEstimate, ~line 15025) so the two numbers can
+  // never disagree -- same cache key (d._a36CatalogRowsCache), same filter. Summarized by TYPE
+  // across the whole portfolio -- never one line per building. No invented names or counts: any
+  // sequence type with zero priced-programming quantity in the real data is simply not listed.
   var callout = '';
-  if (topGap) {
-    callout =
-      '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      // D-12 (2026-08-03): "Most Common Gap Across Portfolio" is this callout's HEADING and moves
-      // to the 13pt section tier. The two lines under it are its CONTENT, not sub-headings, and
-      // both move to the 10.5pt body tier: the gap name (e.g. "Damper position command") keeps its
-      // 600 weight as a bold lead-in but is no longer a distinct size, which is what made it read
-      // as a heading smaller than the text around it (D-12 names it explicitly on Audit page 2).
-      '<div style="font-size:' +
-      RPT_SECTION_HEAD_PX +
-      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
-      '<div style="font-size:' +
-      RPT_BODY_PX +
-      'px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
-      (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].short : topGap.key) +
-      '</div>' +
-      '<div style="font-size:' +
-      RPT_BODY_PX +
-      'px;color:var(--rpt-page-text)">' +
-      (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].plain : '') +
-      '</div>' +
-      '</div>';
+  try {
+    if (!d._a36CatalogRowsCache) {
+      d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
+    }
+    var _execSeqCounts = {}; // seqKey -> equipment units still needing this sequence programmed
+    (d._a36CatalogRowsCache || []).forEach(function (r) {
+      if (!r || r.phase !== 2 || !r.seqKey) return;
+      _execSeqCounts[r.seqKey] = (_execSeqCounts[r.seqKey] || 0) + (r.qty || 0);
+    });
+    var _execSeqDefs =
+      typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
+    var EXEC_TOP_SEQ_COUNT = 6; // top N sequence types by portfolio quantity
+    var topSeqTypes = _execSeqDefs
+      .map(function (seq) {
+        // Client-facing label MUST match the later "Control Sequences" table exactly (both read
+        // from the same EM_SEQUENCE_DEFS entry) -- _a36SeqDisplayLabel applies A36_SEQ_LABEL_OVERRIDE
+        // (e.g. vav_damper_writeback -> "Damper Position Command", not the internal-jargon
+        // "Damper Position Write-back") so one concept carries one name across the whole report.
+        return { key: seq.key, label: _a36SeqDisplayLabel(seq), qty: _execSeqCounts[seq.key] || 0 };
+      })
+      .filter(function (s) {
+        return s.qty > 0;
+      })
+      .sort(function (a, b) {
+        return b.qty - a.qty;
+      })
+      .slice(0, EXEC_TOP_SEQ_COUNT);
+
+    if (topSeqTypes.length) {
+      var _seqRowsHTML = topSeqTypes
+        .map(function (s) {
+          return (
+            '<tr>' +
+            '<td style="padding:5px 8px;font-size:' +
+            RPT_BODY_PX +
+            'px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
+            _esc(s.label) +
+            '</td>' +
+            '<td style="padding:5px 8px;font-size:' +
+            RPT_BODY_PX +
+            'px;font-weight:700;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
+            rptCount(s.qty) +
+            '</td>' +
+            '</tr>'
+          );
+        })
+        .join('');
+      callout =
+        '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Top ASHRAE 36 Sequences by Portfolio Scope</div>' +
+        '<div style="font-size:' +
+        RPT_BODY_PX +
+        'px;color:var(--rpt-page-text);margin-bottom:6px">' +
+        'The control sequences most needed across the portfolio, and how many pieces of equipment still need each one programmed.' +
+        '</div>' +
+        '<table style="width:100%;border-collapse:collapse">' +
+        '<thead><tr>' +
+        '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)">Sequence</th>' +
+        '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Number to Program</th>' +
+        '</tr></thead><tbody>' +
+        _seqRowsHTML +
+        '</tbody></table>' +
+        '</div>';
+    }
+  } catch (e) {
+    console.error('rptPageASHRAE36Executive: top-sequences summary build failed', e);
+    callout = '';
   }
 
   // DCV readiness callout (first page only)
@@ -14518,7 +14576,12 @@ function rptPageASHRAE36Executive(n, d) {
   //   tableTitle                     20 ->  32 (26 measured + its 6px margin)
   var _firstChromeH = 0;
   if (dcvCallout) _firstChromeH += 146; // measured (occupancy-based ventilation readiness callout)
-  if (callout) _firstChromeH += 121; // measured (most-common-gap callout)
+  // 2026-08-03: `callout` was a 3-line "most-common-gap" paragraph (121px measured); it is now a
+  // heading + intro sentence + a small Sequence/Number-to-Program table (up to 6 rows), which is
+  // materially taller. Re-measured per the re-measure protocol above (headless render against
+  // real JOCO data, emulateMedia('print'), getBoundingClientRect().height of the .rpt-a36-callout
+  // box): 314.03px content + its 14px margin-bottom = 328.03px, rounded up to 329 for safety.
+  if (callout) _firstChromeH += 329; // measured (top-sequences-by-portfolio-scope table, up to 6 rows)
   _firstChromeH += 32; // tableTitle — measured
   _firstChromeH += EXEC_THEAD_H;
   _firstChromeH += EXEC_FOOTNOTE_H;
