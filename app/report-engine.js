@@ -8755,11 +8755,15 @@ var RPT_DOCX_GAUGE_RASTER_SCALE = 3;
  * <svg> it came from. Resolves with true on success, false on any failure (never rejects, never
  * hangs: a Word export must not be lost because a canvas misbehaved).
  *
- * RING ONLY. Every <text> is stripped from the rasterized copy and the original <svg> is LEFT IN
- * PLACE, because the docx translator's own <svg> branch (app/docx-writer.js) already emits that
- * svg's percentage as a real bold text run. So the number stays live, selectable, searchable and
- * restyleable text in Word — it is never baked into the picture — and the picture supplies only
- * the part Word genuinely cannot draw.
+ * RING + VALUE BAKED TOGETHER (Matt, 2026-08-03, docx item 2 — reverses the earlier ring-only
+ * decision). The ring-only PNG plus a separate text run put the percentage BELOW the ring in
+ * Word: Word ignores CSS overlays/absolute positioning, so there is no way to overlay live text
+ * onto an inline picture. The svg's own <text> elements (the centered percentage — Arial, a
+ * system font, so it rasterizes identically) are therefore KEPT in the rasterized copy, making
+ * each gauge ONE self-contained image with the value centered inside the ring exactly like the
+ * HTML design. The original <svg> is then REMOVED from the (detached) clone so the docx
+ * translator's <svg> branch cannot emit a duplicate percentage under the picture. Trade-off,
+ * accepted deliberately: the number is no longer selectable text in Word.
  */
 function _rptSwapGaugeRingForPng(svgEl, scale) {
   var wCss = parseFloat(svgEl.getAttribute('width'));
@@ -8767,9 +8771,6 @@ function _rptSwapGaugeRingForPng(svgEl, scale) {
   if (!wCss || !hCss || !svgEl.parentNode) return Promise.resolve(false);
 
   var ring = svgEl.cloneNode(true);
-  Array.prototype.slice.call(ring.querySelectorAll('text')).forEach(function (t) {
-    if (t.parentNode) t.parentNode.removeChild(t);
-  });
   ring.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   if (!ring.getAttribute('viewBox')) ring.setAttribute('viewBox', '0 0 ' + wCss + ' ' + hCss);
   var pxW = Math.round(wCss * scale);
@@ -8801,11 +8802,15 @@ function _rptSwapGaugeRingForPng(svgEl, scale) {
         c2d.drawImage(img, 0, 0, pxW, pxH);
         var out = document.createElement('img');
         out.setAttribute('src', canvas.toDataURL('image/png'));
-        out.setAttribute('alt', 'Readiness ring');
+        out.setAttribute('alt', 'Readiness gauge');
         // Placed at the SVG's own CSS size, so 3x raster data lands in a 1x box and prints sharp.
         // _docxRegisterImage reads this inline width/height to size the OOXML drawing.
         out.setAttribute('style', 'display:block;margin:0 auto;width:' + wCss + 'px;height:' + hCss + 'px');
         svgEl.parentNode.insertBefore(out, svgEl);
+        // Docx item 2 (2026-08-03): the percentage is baked into the PNG now — remove the source
+        // <svg> from the clone so the translator cannot emit a duplicate "60%" paragraph below
+        // the picture. (These are detached page CLONES — the live preview is never touched.)
+        svgEl.parentNode.removeChild(svgEl);
         finish(true);
       } catch (e) {
         finish(false);
@@ -8947,7 +8952,10 @@ async function exportReportToDocx() {
 
     // D-25 (R2, 2026-08-03): draw the gauge rings Word cannot draw. Must run BEFORE translation,
     // and must run on these clones while the live document (and therefore the --rpt-* cascade)
-    // is still available to _rptResolveCssVarsAgainstRoot. Percentages stay live text.
+    // is still available to _rptResolveCssVarsAgainstRoot. Docx item 2 (same date): each gauge is
+    // now ONE self-contained PNG with the percentage baked inside the ring (see
+    // _rptSwapGaugeRingForPng) — Word ignores CSS overlays on images, so a separate text run can
+    // only ever land BELOW the ring, never inside it.
     await _rptRasterizeGaugeRingsForDocx(pageEls);
 
     const translated = _docxTranslatePages(pageEls);

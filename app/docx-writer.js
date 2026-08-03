@@ -1387,11 +1387,16 @@ function _docxRegisterImage(el, ctx) {
   });
 }
 
-/** Block-level <img> -> its own paragraph (body spacing, w:after=240). */
+/** Block-level <img> -> its own paragraph (body spacing, w:after=240).
+ * Docx item 2 (2026-08-03): honors ctx._flexCellAlign (the flex-row/table-cell forced alignment)
+ * so a gauge PNG inside a centered flex-row cell is centered like the text around it — before
+ * this, the picture paragraph carried no w:jc and sat left in its cell. */
 function _docxTranslateImage(el, ctx) {
   var runXml = _docxRegisterImage(el, ctx);
   if (!runXml) return null;
-  return { xml: _docxParagraph({ runs: [runXml], spacingAfter: 240 }) };
+  return {
+    xml: _docxParagraph({ runs: [runXml], spacingAfter: 240, align: (ctx && ctx._flexCellAlign) || undefined }),
+  };
 }
 
 /**
