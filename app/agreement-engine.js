@@ -209,8 +209,15 @@ function collectAgreementData(projId, templateType, opts) {
   // never drift from the building count shown elsewhere in the app. See
   // _pricingGetBuildingCount (pricing-estimator.js) for the full rationale.
   var ashData = typeof collectASHRAE36Data === 'function' ? collectASHRAE36Data(projId) : null;
+  // R5 (2026-08-03, D-14/V-07/D-21): the contract's scope list prints the CLIENT-VISIBLE name,
+  // never the raw Equipment Matrix key — otherwise item 26 reads "P25309 - Jo Co Arts and
+  // Heritage" (an internal building-automation identifier) and item 27 "Sheriffs Fleet
+  // Maintenance". displayName is set for every building by collectASHRAE36Data via the one
+  // shared helper rptBuildingDisplayName (report-engine.js); b.name is kept as the fallback so
+  // this can never render blank. The list order also follows the display name, because
+  // collectASHRAE36Data now sorts on it.
   var buildings = (ashData && ashData.buildings ? ashData.buildings : []).map(function (b) {
-    return b.name;
+    return b.displayName || b.name;
   });
 
   // Equipment count — computed and exposed on `d` per the blueprint's live-data-binding table, but
@@ -848,7 +855,7 @@ function rptPageAgreementTermTermination(n, d) {
     _AGR_BODY +
     '" contenteditable="true" data-word-indent="1">1. This Agreement may be terminated without cause or penalty upon ' +
     (r.earlyTerminationNoticeDays === 120 ? 'one hundred and twenty (120)' : 'sixty (60)') +
-    " days' written notice to the other party. Prior to termination, Client shall pay Contractor in full for services rendered through the termination date.</div>" +
+    ' days’ written notice to the other party. Prior to termination, Client shall pay Contractor in full for services rendered through the termination date.</div>' +
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true" data-word-indent="1">2.' +

@@ -993,6 +993,41 @@ var RPT_MIN_TEXT_PT = 10; // standing rule: nothing below 10pt in a client docum
 var RPT_MIN_TEXT_PX = Math.ceil((RPT_MIN_TEXT_PT / RPT_PRINT_PT_PER_PX) * 100) / 100; // 13.34px
 
 /**
+ * RPT_DOC_TITLE_PX / RPT_SECTION_HEAD_PX / RPT_BODY_PX — the report type hierarchy
+ * (D-12 / V-33 / V-18, DEFECTS-2026-08-02.md + VISUAL-REVIEW-2026-08-02.md, fixed 2026-08-03).
+ *
+ * WHY THIS EXISTS. Every section heading in the Audit and the Proposal was authored at 11px or
+ * 12px, which prints at 8.25pt / 9.0pt on the 0.75 px-to-pt print path. Once the 10pt floor
+ * (_rptApplyMinFontFloor, above) landed they all clamped to exactly 10.005pt — still BELOW the
+ * 10.5pt body text they introduce, and below the 10.5pt column headers of the tables inside them.
+ * Measured on the Proposal: "Executive Summary", "Assessment Findings", "Recommended Energy
+ * Management Services", "Why This Approach", "Future Work", "Implementation Plan", "Long-Term
+ * Vision" and "Disclaimer" all rendered at 10.0pt against 10.5pt body, and on Proposal page 3 the
+ * largest text on the whole page was a table column header. The document outline was inverted on
+ * every page: top-level sections looked subordinate to their own content.
+ *
+ * THE FLOOR ALONE CANNOT FIX THIS. A floor can only stop text going below a minimum; it cannot
+ * make a heading outrank body text that is already above the minimum. The heading sizes
+ * themselves have to go up, which is what these three constants do.
+ *
+ * THE TIERS (px authored / pt printed at 0.75):
+ *   24px    = 18.0pt   document title (the cover title of each document)
+ *   17.34px = 13.005pt section heading (every heading that introduces body text or a table)
+ *   14px    = 10.5pt   body text, list text, table cells (already the file's convention)
+ * 17.34, not 17.33: 17.33 * 0.75 = 12.9975pt, which can display as 12.99. 17.34 lands at 13.005
+ * and can never round down, exactly as RPT_MIN_TEXT_PX does at the floor.
+ *
+ * NOT CHANGED HERE, deliberately: the interior running page-title bar (.rpt-pg-title, 19px =
+ * 14.25pt) lives in energy-department.html, is shared by every report type, and is height-boxed
+ * inside the 60px --rpt-hdr-h chrome bar next to .rpt-info. It already outranks the new 13pt
+ * section tier, so the outline reads document title 18pt > running page title 14.25pt > section
+ * heading 13pt > body 10.5pt with no inversion at any level.
+ */
+var RPT_DOC_TITLE_PX = 24; // 18.0pt printed
+var RPT_SECTION_HEAD_PX = 17.34; // 13.005pt printed
+var RPT_BODY_PX = 14; // 10.5pt printed
+
+/**
  * _rptTextLineH — height of ONE rendered line of report body text, in px, for a given CSS
  * line-height multiplier. Pagination estimates that count text lines must call this instead of
  * hardcoding "15px per line" or "20px per line": those literals were all measured before the 10pt
@@ -1186,6 +1221,28 @@ function _rptPaginateTokensBalanced(tokens, cap) {
   return chunks;
 }
 
+// Footer page-number chrome, shared by rptPage()'s hero and interior branches.
+//
+// THE FORMAT IS "Page N of M". Matt, 2026-08-03: "I wanted 'Page N of M'." That instruction is
+// the authority for this footer and it OUTRANKS the Louisburg EMS Agreement baseline, whose
+// footer prints a bare right-aligned number. An earlier pass that same day (defect register
+// D-08, commit f891b0a) read Matt's report "the word documents don't have the right footer page
+// numbering format" as a request to match Louisburg and stripped the words down to a bare
+// number on all three export paths. That was a misread and it has been reverted. Do NOT
+// "restore the baseline" here — the words are what he asked for, on all three artifacts
+// (this print/PDF path, the .docx footer parts in docx-skeleton.js, and the legacy .doc
+// mso-HTML export's pageNumP below).
+//
+// What f891b0a got RIGHT and is kept: the 12pt size and the right-aligned position. 16px = 12pt
+// printed (the print path scales px by exactly 0.75); bottom:16px puts it ~14pt above the
+// sheet's bottom edge. Matt did not object to either, only to the missing words.
+//
+// The text itself is written by _injectPageNumbers() at generation time and re-written by
+// _updateOverlayPageNumbers() after the DOM exists — the second overwrites the first, so BOTH
+// must emit the same "Page N of M" string.
+var RPT_PAGENUM_DIV =
+  '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:16px;right:20px;font-size:16px;color:var(--rpt-page-text)"></div>';
+
 /**
  * rptPage — wraps a single report page with header, body, and footer.
  * @param {number} pageNum - Page number for the data-page attribute
@@ -1289,9 +1346,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       footerTextHtml +
       footerLabelHtml +
       footerImgHtml +
-      (noPageNum
-        ? ''
-        : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:14px;color:var(--rpt-page-text)"></div>') +
+      (noPageNum ? '' : RPT_PAGENUM_DIV) +
       '</div>'
     );
   }
@@ -1347,9 +1402,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     footerTextHtml +
     footerLabelHtml +
     footerImgHtml +
-    (noPageNum
-      ? ''
-      : '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:14px;color:var(--rpt-page-text)"></div>') +
+    (noPageNum ? '' : RPT_PAGENUM_DIV) +
     '</div>'
   );
 }
@@ -1375,6 +1428,35 @@ function _injectPageNumbers(html) {
     n++;
     return open + 'Page ' + n + ' of ' + total + '</div>';
   });
+}
+
+/**
+ * _rptDocumentDateLong — the one date every generated client document prints on its cover.
+ *
+ * Reads the SAME instant and the SAME calendar day the export filename is built from
+ * (printReportToPDF / exportReportToWord / the .docx path all use
+ * `new Date().toISOString().slice(0, 10)`), so the date on the page and the date in the file
+ * name can never disagree. Formatted for a client to read out loud ("August 3, 2026"), never as
+ * a numeric code.
+ * @returns {string} e.g. "August 3, 2026"
+ */
+var _RPT_DOC_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+function _rptDocumentDateLong() {
+  var iso = new Date().toISOString().slice(0, 10).split('-');
+  return _RPT_DOC_MONTHS[Number(iso[1]) - 1] + ' ' + Number(iso[2]) + ', ' + iso[0];
 }
 
 /**
@@ -1561,6 +1643,8 @@ function _updateOverlayPageNumbers() {
   for (var i = 0; i < total; i++) {
     var footer = pages[i].querySelector('.rpt-pg-footer-pagenum');
     if (footer) {
+      // "Page N of M" — see the footer-format comment above RPT_PAGENUM_DIV. This runs AFTER
+      // _injectPageNumbers() and overwrites it, so the two must stay in the same format.
       footer.textContent = 'Page ' + (i + 1) + ' of ' + total;
     }
   }
@@ -8425,6 +8509,10 @@ async function exportReportToWord() {
     // string, so the number Word displays stays correct after Word repaginates the content at
     // its own metrics instead of always reading whatever page count this app estimated at
     // export time.
+    // The format is "Page N of M" — Matt, 2026-08-03: "I wanted 'Page N of M'." An earlier pass
+    // that day (f891b0a) stripped the words to a bare number to match the Louisburg baseline;
+    // that was a misread of his report and is reverted. Both field codes are required: PAGE
+    // alone cannot produce the "of M" half. See the footer-format comment above RPT_PAGENUM_DIV.
     const pageNumP = hasPageNum
       ? '<p class="MsoFooter" style="text-align:right;font-size:14px;color:var(--rpt-page-text);margin:2px 20px 0 0">' +
         "Page <span style='mso-field-code:PAGE'></span> of <span style='mso-field-code:NUMPAGES'></span></p>"
@@ -8577,6 +8665,157 @@ async function exportReportToWord() {
 }
 
 /**
+ * _rptResolveCssVarsAgainstRoot — replace every `var(--token)` in a string with the value that
+ * token resolves to ON THE LIVE DOCUMENT, via getComputedStyle(document.documentElement).
+ *
+ * THIS IS THE TRAP THE GAUGE RASTERIZATION PROOF EXISTS TO WARN ABOUT (D-25, 2026-08-02).
+ * The gauge ring's colors are written as `stroke="var(--rpt-orange)"` presentation attributes.
+ * Chrome resolves those correctly while the SVG is in the live document, but the .docx export
+ * works on DETACHED clones (pageEl.cloneNode(true)), and a detached element has no cascade: read
+ * a var off the clone — getComputedStyle(clonedSvg), or clonedSvg.style.getPropertyValue — and
+ * you get the empty string. Serialize that and the rasterizer draws a ring with NO stroke at all
+ * (a transparent ring with black text), which is worse than the missing gauge it was meant to
+ * fix, and it fails silently. Always resolve against document.documentElement, which is where
+ * `:root { --rpt-*: ... }` in #report-styles actually lives.
+ *
+ * Distinct from _buildReportCssVarResolver above, which parses var DEFINITIONS out of a CSS text
+ * blob for the mso-HTML path. This one asks the live CSSOM, so it also honors any runtime theme
+ * override and needs no stylesheet text.
+ */
+function _rptResolveCssVarsAgainstRoot(text) {
+  if (!text || text.indexOf('var(') === -1) return text;
+  var rootStyle = getComputedStyle(document.documentElement);
+  var cache = {};
+  return text.replace(/var\(\s*(--[a-zA-Z0-9-]+)\s*(?:,\s*([^()]*))?\)/g, function (whole, name, fallback) {
+    if (!(name in cache)) cache[name] = (rootStyle.getPropertyValue(name) || '').trim();
+    if (cache[name]) return cache[name];
+    return fallback !== undefined ? fallback.trim() : whole;
+  });
+}
+
+/** How many device pixels the gauge ring PNG carries per CSS pixel. 3x measured (D-25 proof,
+ *  2026-08-02): a ring-only PNG comes out 330x383px for the cover's 110px gauge and the three
+ *  cover rings together cost about 55.6KB — crisp in print, negligible in the package. */
+var RPT_DOCX_GAUGE_RASTER_SCALE = 3;
+
+/**
+ * _rptSwapGaugeRingForPng — draw ONE gauge ring into a PNG and insert it immediately before the
+ * <svg> it came from. Resolves with true on success, false on any failure (never rejects, never
+ * hangs: a Word export must not be lost because a canvas misbehaved).
+ *
+ * RING ONLY. Every <text> is stripped from the rasterized copy and the original <svg> is LEFT IN
+ * PLACE, because the docx translator's own <svg> branch (app/docx-writer.js) already emits that
+ * svg's percentage as a real bold text run. So the number stays live, selectable, searchable and
+ * restyleable text in Word — it is never baked into the picture — and the picture supplies only
+ * the part Word genuinely cannot draw.
+ */
+function _rptSwapGaugeRingForPng(svgEl, scale) {
+  var wCss = parseFloat(svgEl.getAttribute('width'));
+  var hCss = parseFloat(svgEl.getAttribute('height'));
+  if (!wCss || !hCss || !svgEl.parentNode) return Promise.resolve(false);
+
+  var ring = svgEl.cloneNode(true);
+  Array.prototype.slice.call(ring.querySelectorAll('text')).forEach(function (t) {
+    if (t.parentNode) t.parentNode.removeChild(t);
+  });
+  ring.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  if (!ring.getAttribute('viewBox')) ring.setAttribute('viewBox', '0 0 ' + wCss + ' ' + hCss);
+  var pxW = Math.round(wCss * scale);
+  var pxH = Math.round(hCss * scale);
+  ring.setAttribute('width', String(pxW));
+  ring.setAttribute('height', String(pxH));
+  // Resolve --rpt-* AFTER serializing, against the live root — see the doc comment above.
+  var markup = _rptResolveCssVarsAgainstRoot(new XMLSerializer().serializeToString(ring));
+
+  return new Promise(function (resolve) {
+    var settled = false;
+    var finish = function (ok) {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    // A data-URL SVG cannot hit the network, but never let a stuck decode block the export.
+    var timer = setTimeout(function () {
+      finish(false);
+    }, 5000);
+    var img = new Image();
+    img.onload = function () {
+      clearTimeout(timer);
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = pxW;
+        canvas.height = pxH;
+        var c2d = canvas.getContext('2d');
+        c2d.drawImage(img, 0, 0, pxW, pxH);
+        var out = document.createElement('img');
+        out.setAttribute('src', canvas.toDataURL('image/png'));
+        out.setAttribute('alt', 'Readiness ring');
+        // Placed at the SVG's own CSS size, so 3x raster data lands in a 1x box and prints sharp.
+        // _docxRegisterImage reads this inline width/height to size the OOXML drawing.
+        out.setAttribute('style', 'display:block;margin:0 auto;width:' + wCss + 'px;height:' + hCss + 'px');
+        svgEl.parentNode.insertBefore(out, svgEl);
+        finish(true);
+      } catch (e) {
+        finish(false);
+      }
+    };
+    img.onerror = function () {
+      clearTimeout(timer);
+      finish(false);
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  });
+}
+
+/**
+ * _rptRasterizeGaugeRingsForDocx — DEFECTS-2026-08-02.md D-25: "Cover gauges are plain text in
+ * the Word export" (Matt asked directly why the gauges are missing from the .docx).
+ *
+ * Word has no SVG: the OOXML translator drops the ring and keeps only the percentage, so the
+ * Audit cover arrived in Word as three bare numbers in a borderless table. Nothing about the
+ * embedding machinery needed to change — _docxRegisterImage / _docxEmbedImage / _docxImageRun /
+ * _docxAssemble already embed any <img src="data:image/png;base64,..."> generically — so this is
+ * only a rasterize-and-swap pass over the page clones, run before translation.
+ *
+ * Targets every <svg> that contains a <circle>, which is exactly the gauge rings (_a36GaugeSVG
+ * and its "No Scope Required" N/A twin) and nothing else in these documents: the bar and line
+ * charts are <rect>/<path>/<polyline>. A gauge that fails to rasterize simply keeps today's
+ * behavior (percentage text, no ring) — degraded, never broken.
+ *
+ * @returns {Promise<{found:number, rasterized:number}>}
+ */
+async function _rptRasterizeGaugeRingsForDocx(pageEls, scale) {
+  scale = scale || RPT_DOCX_GAUGE_RASTER_SCALE;
+  var rings = [];
+  pageEls.forEach(function (pageEl) {
+    if (!pageEl.querySelectorAll) return;
+    Array.prototype.forEach.call(pageEl.querySelectorAll('svg'), function (svg) {
+      if (svg.querySelector('circle')) rings.push(svg);
+    });
+  });
+  var rasterized = 0;
+  for (var i = 0; i < rings.length; i++) {
+    var ok = false;
+    try {
+      ok = await _rptSwapGaugeRingForPng(rings[i], scale);
+    } catch (e) {
+      ok = false;
+    }
+    if (ok) rasterized++;
+  }
+  if (rings.length && rasterized < rings.length && typeof console !== 'undefined' && console.warn) {
+    console.warn(
+      'Word export: ' +
+        (rings.length - rasterized) +
+        ' of ' +
+        rings.length +
+        ' gauge rings could not be rasterized; their percentages still export as text.',
+    );
+  }
+  return { found: rings.length, rasterized: rasterized };
+}
+
+/**
  * exportReportToDocx — Word Export Rebuild plan Step 6 (first shipped document), wired for the
  * EMS Agreement (data._agreement). AI/_context/plans/word-export-rebuild-2026-07-30.md Part D
  * lines 306-311. Style authority: AI/_context/specs/csc-document-style-spec-2026-07-29.md.
@@ -8653,6 +8892,11 @@ async function exportReportToDocx() {
       });
       pageEls.push(clone);
     });
+
+    // D-25 (R2, 2026-08-03): draw the gauge rings Word cannot draw. Must run BEFORE translation,
+    // and must run on these clones while the live document (and therefore the --rpt-* cascade)
+    // is still available to _rptResolveCssVarsAgainstRoot. Percentages stay live text.
+    await _rptRasterizeGaugeRingsForDocx(pageEls);
 
     const translated = _docxTranslatePages(pageEls);
 
@@ -12530,40 +12774,94 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
  */
 var ASHRAE36_SEQUENCE_PLAIN = {
   ahu_sat_reset:
-    "Adjusts how warm or cool the air handler's output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.",
+    'Adjusts how warm or cool the air the air handler delivers is, based on what the building actually needs, instead of holding one fixed setting at all times. This reduces energy use in mild weather.',
   ahu_dsp_reset:
-    "Lets the supply fan slow down when the building doesn't need full airflow, instead of always pushing air at full force. Cuts fan energy use.",
+    'Allows the supply fan to slow down when the building does not need full airflow, instead of pushing air at full force at all times. This reduces fan energy use.',
   ahu_economizer:
-    "Uses outdoor air to cool the building for free when it's cool enough outside, so the cooling equipment doesn't have to run as much.",
+    'Uses outdoor air to cool the building whenever outdoor conditions allow, so the cooling equipment runs less and uses less energy.',
   ahu_freeze_prot:
-    'Automatically shuts the air handler down if coil temperatures get cold enough to risk a frozen, burst water coil.',
+    'Shuts the air handler down automatically if coil temperatures fall low enough to risk a frozen, burst water coil.',
   ahu_min_oa:
-    'Keeps a minimum amount of fresh outdoor air coming into the building at all times to meet ventilation requirements, even as fan speed changes.',
+    'Maintains a minimum amount of fresh outdoor air entering the building at all times to meet ventilation requirements, even as fan speed changes.',
   ahu_rf_control:
-    "Keeps the return fan's speed matched to the supply fan so the building doesn't develop pressure problems, like doors that are hard to open or drafts.",
+    'Matches the speed of the return fan to the supply fan so the building does not develop pressure problems such as doors that are hard to open, or drafts.',
   vav_zone_temp:
-    'Keeps each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
+    'Holds each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
   vav_damper_writeback:
-    'Confirms the air damper in each zone is actually at the position the system commands, so a stuck or failed damper gets caught early instead of silently wasting energy or causing comfort complaints.',
+    'Positions the air damper serving each zone as the control system directs, and confirms the damper reached that position, so a stuck or failed damper is identified promptly rather than quietly wasting energy or causing comfort complaints.',
   vav_reheat:
-    "Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn't overcool when it needs less airflow.",
+    'Adds a small amount of heat to already-cooled supply air at the zone level so a room does not overcool when it needs less airflow.',
   hwp_supply_reset:
-    "Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn't heat water hotter than it needs to.",
+    'Lowers the temperature of the hot water sent out to the building as the weather warms, so the boiler does not heat water hotter than the building requires.',
   hwp_pump_dp_reset:
-    'Lets the hot water pump slow down when fewer rooms are calling for heat, instead of always pumping at full speed.',
+    'Allows the hot water pump to slow down when fewer rooms are calling for heat, instead of pumping at full speed at all times.',
   hwp_staging:
-    'Automatically brings a second boiler online only when the building actually needs the extra heat, and shuts it back off when demand drops, instead of running every boiler all the time.',
+    'Brings a second boiler online automatically only when the building needs the additional heat, and shuts it back off when demand drops, instead of running every boiler at all times.',
   chwp_supply_reset:
-    "Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn't have to work as hard as it does on a full-load day.",
+    'Raises the temperature of the chilled water sent out to the building when cooling loads are light, so the chiller does not work as hard as it does on a full-load day.',
   chwp_pump_dp_reset:
-    'Lets the chilled water pump slow down when cooling demand is low, instead of always pumping at full speed.',
+    'Allows the chilled water pump to slow down when cooling demand is low, instead of pumping at full speed at all times.',
   chwp_staging:
-    'Automatically brings a second chiller online only when the building actually needs the extra cooling, and shuts it back off when demand drops.',
+    'Brings a second chiller online automatically only when the building needs the additional cooling, and shuts it back off when demand drops.',
   demandCtrl:
-    'Uses a carbon dioxide sensor to bring in only as much outdoor air as the number of people in the building actually calls for, instead of a fixed amount around the clock.',
+    'Uses a carbon dioxide sensor to bring in only as much outdoor air as the number of people in the building calls for, instead of a fixed amount around the clock.',
   vav_dcv:
-    'Uses a carbon dioxide sensor at the zone level to adjust ventilation air based on how many people are actually in that specific room.',
+    'Uses a carbon dioxide sensor at the zone level to adjust ventilation air to the number of people actually in that room.',
 };
+
+/**
+ * _a36SeqDisplayLabel(sd) — client-facing display name for one EM_SEQUENCE_DEFS entry.
+ *
+ * V-11 (visual review 2026-08-02): EM_SEQUENCE_DEFS names vav_damper_writeback
+ * "Damper Position Write-back". "Write-back" is controls-trade jargon a county facilities
+ * manager cannot read, and the Audit's Executive Summary already names the same concept in
+ * plain language on an earlier page — ASHRAE36_GAP_DESCRIPTIONS.dampCmd.short,
+ * "Damper position command", the very point (requiredCats: ['dampCmd']) this sequence writes.
+ * One concept must carry one name, so the client documents render the Executive Summary's
+ * plain-language name in both places.
+ *
+ * Kept as an override map HERE rather than a rename in equipment-matrix.js on purpose: that
+ * label is also an internal Equipment Matrix column heading and a pricing-row `item` string,
+ * and this change is scoped to what the client reads. Any key absent from the map falls
+ * through to the def's own label, so new sequence defs need no change here.
+ *
+ * @param {object} sd - one entry from EM_SEQUENCE_DEFS
+ * @returns {string} display label
+ */
+var A36_SEQ_LABEL_OVERRIDE = {
+  vav_damper_writeback: 'Damper Position Command',
+};
+
+/**
+ * Column widths for the Audit's Control Sequences table (rptPageASHRAE36CostEstimate), as
+ * percentages of the 718.9px printed table width. Named here because the header cells, the body
+ * cells and the row-height estimate all have to agree on them.
+ *
+ * Set 2026-08-03 (V-10) when the quantity column was added. Sized from measured natural widths at
+ * the 13.34px font floor, per the method in
+ * my-knowledge-base/wiki/companyhub-report-print-geometry-and-font-floor.md §7: what has to fit in
+ * a header cell is its longest UNBREAKABLE WORD, not the whole label. Quantity column header is
+ * "Number to Program", whose longest word "NUMBER" is far narrower than "SEQUENCES" would be — the
+ * reason that wording was chosen over "Sequences to Program", which needs 14% to avoid printing
+ * across its own column rule. The room came from the description column, whose text wraps
+ * gracefully, never from a column with an unbreakable header word.
+ *
+ * V-11 (2026-08-03, Matt's fix #3: "can we not make the description column slightly less wide so
+ * that the Sequence column can be a little wider"). Sequence name column was cramped at 24%
+ * (inner ~152.5px) while the description column, whose text wraps gracefully with room to spare,
+ * had the most slack of any column. Moved 3 points name<-description (24 -> 27, description's
+ * implicit remainder 47 -> 44); Section and Quantity columns are untouched, so their own
+ * unbreakable-header-word fits (documented above) are unaffected. SEQ_DESC_CPL below was refitted
+ * to the new narrower description width so the row-height estimate still never under-counts.
+ */
+var A36_SEQ_COL_NAME_PCT = 27;
+var A36_SEQ_COL_SPEC_PCT = 16;
+var A36_SEQ_COL_QTY_PCT = 13;
+var SEQ_ROW_TOTALS_H = 80; // measured height of the totals row at the floored type size
+function _a36SeqDisplayLabel(sd) {
+  if (!sd) return '';
+  return A36_SEQ_LABEL_OVERRIDE[sd.key] || sd.label || '';
+}
 
 /**
  * ASHRAE36_SECTIONS — defines available report sections for the audit and proposal.
@@ -12684,6 +12982,190 @@ var ASHRAE36_SECTIONS = {
 // actually applies them.
 var ASHRAE36_READINESS_HIGH_THRESHOLD = 75; // score >= this => 'green' / "High Readiness"
 var ASHRAE36_READINESS_PARTIAL_THRESHOLD = 50; // score >= this (and < HIGH) => 'amber' / "Partial Readiness"; below => 'red' / "Low Readiness"
+
+/**
+ * a36ReadinessBand / a36ReadinessColor / a36ReadinessWord — the ONE place a readiness
+ * percentage becomes a band key, a color and a word (work unit R2, 2026-08-03).
+ *
+ * WHY THIS EXISTS (VISUAL-REVIEW-2026-08-02.md V-01, the review's #4 "matters most" finding).
+ * The two thresholds above were already shared, but the three-way ternary that turns a score
+ * into a COLOR was copy-pasted at four sites, and the Audit cover carried a fourth, entirely
+ * separate rule of its own: a 2026-07-29 brand-color pass hardcoded the cover's Composite
+ * Score ring to CSC blue and both other rings to CSC green. The result measured on the live
+ * v2026.08.02.742 export: the cover printed Sensor Coverage 62% and Sequence Readiness 52% in
+ * #27ae60 — the exact green pages 2-3 label "High Readiness" — while those same pages define
+ * High as 75% and above and color every one of the 27 rows in the 50-74% band orange, and the
+ * Composite Score 60% printed in a dark blue that appears in no legend anywhere in the
+ * document. The first thing the county saw was three rings reading "we are doing fine" and
+ * two pages later the same numbers reading "Partial Readiness".
+ *
+ * A percentage may now be turned into a color ONLY through a36ReadinessColor(). Do not write
+ * another `pct >= HIGH ? green : ...` ternary, and never hand a gauge a literal brand color:
+ * that is precisely how the cover drifted away from the table it summarizes. All three cover
+ * gauges (composite, sensor coverage, sequence readiness) are the same kind of quantity on the
+ * same 0-100 scale — the share of applicable ASHRAE 36 requirements that are met — so the same
+ * band rule applies to all three, and the cover legend printed beneath them is interpolated
+ * from these same two constants.
+ *
+ * @param {number|null} pct - readiness percentage, or null/undefined for "no applicable scope"
+ * @returns {string|null} 'green' | 'amber' | 'red', or null when pct is not a number
+ */
+function a36ReadinessBand(pct) {
+  var n = Number(pct);
+  if (pct === null || pct === undefined || isNaN(n)) return null;
+  if (n >= ASHRAE36_READINESS_HIGH_THRESHOLD) return 'green';
+  if (n >= ASHRAE36_READINESS_PARTIAL_THRESHOLD) return 'amber';
+  return 'red';
+}
+
+/** Band key -> report color token. The only mapping; every caller reads it. */
+var ASHRAE36_READINESS_BAND_COLORS = {
+  green: 'var(--rpt-green)',
+  amber: 'var(--rpt-orange)',
+  red: 'var(--rpt-red)',
+};
+
+/** Band key -> client-visible word (see _a36StatusChip for the wording history). */
+var ASHRAE36_READINESS_BAND_WORDS = {
+  green: 'High Readiness',
+  amber: 'Partial Readiness',
+  red: 'Low Readiness',
+};
+
+/** Readiness percentage -> the color token the readiness table uses for that same percentage. */
+function a36ReadinessColor(pct) {
+  var band = a36ReadinessBand(pct);
+  return band ? ASHRAE36_READINESS_BAND_COLORS[band] : 'var(--rpt-page-text)';
+}
+
+/** Readiness percentage -> the readiness word the readiness table uses for that same percentage. */
+function a36ReadinessWord(pct) {
+  var band = a36ReadinessBand(pct);
+  return band ? ASHRAE36_READINESS_BAND_WORDS[band] : '';
+}
+
+// ─── Client-visible name and number formatting (work unit R5, 2026-08-03) ──
+// Defects fixed here: D-14/V-08 (internal identifier "P25309 - " leaking into the client
+// building column, and the alphabetical sort corruption it caused), V-07 (raw source-system
+// building names), D-21 ("Sheriffs" missing its apostrophe), V-40 (mixed straight/curly
+// apostrophes), D-22 (counts printed with a thousands separator in the Proposal and without
+// one in the Audit).
+//
+// THIS IS A DISPLAY LAYER ONLY. Nothing here writes back to the Equipment Matrix. Every
+// building object keeps its raw `name` (which is the key every Equipment Matrix row is matched
+// against, e.g. `if (r.building !== b.name) return;`) and gains a `displayName` used for every
+// string a client ever reads. Do not "simplify" this by renaming `name` — that silently breaks
+// per-building row matching in four places.
+
+/**
+ * RPT_BUILDING_NAME_RULES — ordered display-only rewrites, applied in sequence.
+ *
+ * EVIDENCE FOR EVERY RULE (nothing here is guessed; see the report for the ones deliberately
+ * NOT expanded):
+ *
+ *  1. `^P\d+\s*-\s*` — the BAS/internal project identifier prefix. Only occurrence in real
+ *     data is "P25309 - Jo Co Arts and Heritage". Matt's own Service Proposal target document
+ *     (_context/specs/joco-service-proposal-target-2026-07-23.md, Facilities Included row)
+ *     names this building "Jo Co Arts and Heritage" with no prefix. Stripping it also repairs
+ *     the sort, which is why the sort below keys on the display name.
+ *  2. `Jo Co ` -> `Johnson County ` — "Jo Co" is an abbreviation of the client's own name. The
+ *     stored client name is "Johnson County, Kansas" and the WebCTRL BACnet tree root for these
+ *     buildings is literally "/Johnson County/" (dashboardlogic.md: "/Johnson County/Courthouse
+ *     -> Courthouse").
+ *  3. `NC ` -> `New Century ` — every NC-prefixed building sits directly under the WebCTRL
+ *     campus node "/New Century Complex/" in the raw exports: "/New Century Complex/NC Adult
+ *     Detention Center", "/New Century Complex/NC Arc 1", "/New Century Complex/NC Arc 4",
+ *     "/New Century Complex/NC Arc Programs Building", "/New Century Complex/NC Sheriff's
+ *     Operations Building" (_context/backlog/investigations/c350cb0f-setpoint-verification.md,
+ *     audit-plant-leveling-and-tiers.md, stages/3d6d7244/investigation.md). The naming
+ *     convention is city/campus-prefixed throughout the same list ("Olathe Adult Detention
+ *     Center" vs "NC Adult Detention Center"), and "New Century Complex" is itself a building
+ *     row in the same Equipment Matrix. Source-system evidence, not an inference from initials.
+ *  4. `Firestation-13` -> `Fire Station 13`. Plain English spelling of a run-together source
+ *     token; no expansion of an unknown abbreviation is involved.
+ *  5. `Sheriffs ` -> `Sheriff's ` (curly). D-21. The same documents already write
+ *     "NC Sheriff's Operations Building", and the proposal target spec writes
+ *     "Sheriff's Fleet Maintenance".
+ *  6. Straight apostrophe -> curly (U+2019) everywhere. V-40. Source data carries straight
+ *     apostrophes in "NC Sheriff's Operations Building" / "NC Sheriff's Warehouse" while the
+ *     surrounding prose uses curly ones.
+ *
+ * DELIBERATELY NOT EXPANDED (no evidence found; a wrong expansion in a client document is far
+ * worse than an unexpanded one): "Arc" (as in "New Century Arc 1/3/4" and "Arc Programs
+ * Building"), "MedAct", and "51/SS" in "MedAct 51/SS Olathe". Nothing in this repository, the
+ * Equipment Matrix, _context/specs/ or _context/reference/ states what they stand for, so they
+ * are printed exactly as stored, pending Matt's confirmation.
+ */
+var RPT_BUILDING_NAME_RULES = [
+  { re: /^\s*P\d+\s*[-–—]\s*/i, to: '' },
+  { re: /\bJo\s+Co\b/g, to: 'Johnson County' },
+  { re: /\bNC\b/g, to: 'New Century' },
+  { re: /\bFire\s*station\s*[-\s]\s*(\d+)/gi, to: 'Fire Station $1' },
+  { re: /\bSheriffs\b/g, to: 'Sheriff’s' },
+  { re: /'/g, to: '’' },
+];
+
+var _RPT_BLDG_NAME_CACHE = {};
+
+/**
+ * rptBuildingDisplayName — THE single place a stored building name becomes a client-visible one.
+ * Every client document (Audit cover, readiness table, per-building detail, recommendations,
+ * setpoint review, point inventory, Proposal schedule, Agreement scope list) renders through
+ * this. Pure and memoized; never mutates the Equipment Matrix.
+ *
+ * @param {string} raw stored Equipment Matrix building name
+ * @returns {string} client-visible name
+ */
+function rptBuildingDisplayName(raw) {
+  var s = raw == null ? '' : String(raw);
+  if (!s) return s;
+  if (Object.prototype.hasOwnProperty.call(_RPT_BLDG_NAME_CACHE, s)) return _RPT_BLDG_NAME_CACHE[s];
+  var out = s;
+  for (var i = 0; i < RPT_BUILDING_NAME_RULES.length; i++) {
+    out = out.replace(RPT_BUILDING_NAME_RULES[i].re, RPT_BUILDING_NAME_RULES[i].to);
+  }
+  out = out.replace(/\s{2,}/g, ' ').trim();
+  _RPT_BLDG_NAME_CACHE[s] = out;
+  return out;
+}
+
+/**
+ * rptBuildingNameSort — comparator that orders buildings by their CLIENT-VISIBLE name.
+ * D-14/V-08: with the raw name, "P25309 - Jo Co Arts and Heritage" filed under P, between
+ * "Olathe Sheriff Training Facility" and "Sheriffs Fleet Maintenance", so a reader looking
+ * under J concluded the building had been left out of the audit.
+ */
+function rptBuildingNameSort(a, b) {
+  return rptBuildingDisplayName(a).localeCompare(rptBuildingDisplayName(b), 'en');
+}
+
+/**
+ * rptCount — THE formatter for every client-visible whole-number count (buildings, equipment
+ * units, sequences, sensors, points). D-22: the Audit cover and narrative printed "1594",
+ * "1285", "1291" while the Proposal printed "1,594" for the same figure. Both documents now
+ * call this, so they cannot disagree. Not for currency (see the per-page fmtUSD helpers) and
+ * not for percentages.
+ *
+ * @param {number|string} v
+ * @returns {string} e.g. 1594 -> "1,594"
+ */
+function rptCount(v) {
+  var n = Number(v);
+  if (!isFinite(n)) return String(v == null ? '' : v);
+  return Math.round(n).toLocaleString('en-US');
+}
+
+/**
+ * _a36DisplayName — convenience accessor for the report page templates. Takes any object that
+ * carries a building name (collectASHRAE36Data's buildings/point-inventory rows all carry both
+ * `name` and `displayName`) and returns the client-visible string, computing it on the fly for
+ * any object that predates the displayName field.
+ */
+function _a36DisplayName(b) {
+  if (!b) return '';
+  if (typeof b === 'string') return rptBuildingDisplayName(b);
+  return b.displayName || rptBuildingDisplayName(b.name || b.building || '');
+}
 
 // ─── collectASHRAE36Data ───────────────────────────────────────────────────
 /**
@@ -13137,19 +13619,10 @@ function collectASHRAE36Data(projId, reportDate) {
     var totalReqsMet = totalPointsMatched + totalSeqMatched;
     var composite = totalReqsApplicable > 0 ? Math.round((totalReqsMet / totalReqsApplicable) * 100) : 0;
 
-    // Status band
-    var status =
-      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-        ? 'green'
-        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-          ? 'amber'
-          : 'red';
-    var statusColor =
-      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-        ? 'var(--rpt-green)'
-        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-          ? 'var(--rpt-orange)'
-          : 'var(--rpt-red)';
+    // Status band — R2 (2026-08-03): all three now come from the one shared band rule
+    // (a36ReadinessBand/Color/Word) instead of three copy-pasted ternaries. See V-01.
+    var status = a36ReadinessBand(composite);
+    var statusColor = a36ReadinessColor(composite);
     // Display-label rename (item ed465b3c, 2026-07-09; re-worded again fix/audit-report-scoring,
     // 2026-07-14, Matt's decision: ASHRAE 36 defines no composite score and no compliance
     // threshold, so "Compliant" wording next to genuine §5.x citations falsely implies the
@@ -13157,12 +13630,7 @@ function collectASHRAE36Data(projId, reportDate) {
     // This field isn't rendered directly anywhere today (the chip helper independently
     // derives its word from `status`), kept in sync anyway so it can't drift if a future
     // caller starts reading it.
-    var statusLabel =
-      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-        ? 'High Readiness'
-        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-          ? 'Partial Readiness'
-          : 'Low Readiness';
+    var statusLabel = a36ReadinessWord(composite);
     // Sensor counts for status chip display
     var totalSensorsInPlace = totalPointsMatched;
     var totalSensorsRequired = totalPointsRequired;
@@ -13202,7 +13670,11 @@ function collectASHRAE36Data(projId, reportDate) {
     });
 
     buildingsData.push({
+      // name  = RAW Equipment Matrix key. Every per-building row match in this file compares
+      //         against it (`r.building !== b.name`). Never render this to a client.
+      // displayName = the client-visible name (R5, 2026-08-03). See rptBuildingDisplayName.
       name: bName,
+      displayName: rptBuildingDisplayName(bName),
       equipCount: auditableRows.length,
       equipCounts: equipCounts,
       equipResults: equipResults,
@@ -13235,6 +13707,18 @@ function collectASHRAE36Data(projId, reportDate) {
   });
 
   if (!buildingsData.length) return { _noAuditableEquip: true };
+
+  // D-14 / V-08 (R5, 2026-08-03): order the portfolio by the CLIENT-VISIBLE name, once, here —
+  // so the readiness table, the per-building detail pages, the recommendations "affected
+  // buildings" list and the Agreement's scope list can never disagree about where a building
+  // belongs. Previously this array carried Object-key insertion order (i.e. Equipment Matrix row
+  // order, which happens to be alphabetical by RAW name), which filed
+  // "P25309 - Jo Co Arts and Heritage" under P between "Olathe Sheriff Training Facility" and
+  // "Sheriffs Fleet Maintenance". Sorting is a presentation choice only; every downstream lookup
+  // is by name, never by index.
+  buildingsData.sort(function (a, b) {
+    return rptBuildingNameSort(a.name, b.name);
+  });
 
   // Portfolio-level top gaps (most common missing checks across all buildings).
   // co2, vav_dcv, and demandCtrl are excluded because the dedicated DCV readiness
@@ -13307,12 +13791,7 @@ function collectASHRAE36Data(projId, reportDate) {
   var redCount = buildingsData.filter(function (b) {
     return b.status === 'red';
   }).length;
-  var portfolioStatus =
-    portfolioComposite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-      ? 'green'
-      : portfolioComposite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-        ? 'amber'
-        : 'red';
+  var portfolioStatus = a36ReadinessBand(portfolioComposite);
 
   // DCV readiness: count AHUs and VAV-type zones with/without a CO2 point.
   // Uses coveredPoints from real point data — no config flag dependency.
@@ -13381,10 +13860,17 @@ function collectASHRAE36Data(projId, reportDate) {
       }
     });
   }
+  // R5 (2026-08-03): sort by the client-visible name, same rule as the readiness table above,
+  // and carry displayName so the Point Inventory table can never print a raw source name.
   var _invBuildingRows = Object.keys(_invByBuilding)
-    .sort()
+    .sort(rptBuildingNameSort)
     .map(function (bName) {
-      return { name: bName, ashrae: _invByBuilding[bName].ashrae, other: _invByBuilding[bName].other };
+      return {
+        name: bName,
+        displayName: rptBuildingDisplayName(bName),
+        ashrae: _invByBuilding[bName].ashrae,
+        other: _invByBuilding[bName].other,
+      };
     });
 
   return {
@@ -13425,6 +13911,34 @@ function collectASHRAE36Data(projId, reportDate) {
 }
 
 // ─── Gauge ring SVG helper ─────────────────────────────────────────────────
+/**
+ * _a36GaugeSVG — one readiness ring.
+ *
+ * `color` MUST come from a36ReadinessColor(pct) (see that function). Never pass a brand color
+ * here: a 2026-07-29 pass that did exactly that is what made the Audit cover contradict its own
+ * readiness legend (V-01).
+ *
+ * ARC GEOMETRY (R2, 2026-08-03, VISUAL-REVIEW-2026-08-02.md V-12). Two corrections, both
+ * measured on the 400 dpi cover crop of the live v2026.08.02.742 export:
+ *
+ *  1. stroke-linecap was `round`. A round cap projects half the stroke width past each end of
+ *     the dash, so the printed fill ran fuller than the number it labels — measured Composite
+ *     63.5% for a stated 60%, Sensor 65.7% for 62%, Sequence 55.8% for 52%, i.e. about 3.5
+ *     points over in every case. The overhang is half the stroke width at the ring radius:
+ *     at the cover's 110px size the stroke is 9.9px and the radius 41.8px, so each cap adds
+ *     atan((9.9/2)/41.8) = 6.75 degrees, two caps = 13.5 degrees = 3.75 percentage points. The
+ *     arcs themselves were always geometrically correct; only the caps lied. `butt` squares
+ *     them off so the swept angle equals the stated percentage exactly.
+ *  2. transform was `rotate(90 ...)`, which puts an SVG circle's dash origin (natively 3
+ *     o'clock) at 6 o'clock, so every ring began at the bottom and swept left-and-up and read
+ *     half-finished. `rotate(-90 ...)` puts the origin at 12 o'clock and the fill sweeps
+ *     clockwise from the top, the convention every reader already knows.
+ *
+ * The percentage inside the ring prints in near-black, not in `color`: the standing rule is
+ * black or near-black text, and this report already settled that convention for the same data
+ * (see _a36StatusChip — "the word itself renders in var(--rpt-page-text), not `color`"). The
+ * ring carries the band signal; the number is just a number.
+ */
 function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
   size = size || 90;
   var r = size * 0.38;
@@ -13469,7 +13983,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
     ' ' +
     empty.toFixed(2) +
     '"' +
-    ' stroke-linecap="round" transform="rotate(90 ' +
+    ' stroke-linecap="butt" transform="rotate(-90 ' +
     cx +
     ' ' +
     cy +
@@ -13480,9 +13994,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
     (cy + size * 0.065) +
     '" text-anchor="middle" font-size="' +
     size * 0.22 +
-    '" font-weight="700" fill="' +
-    color +
-    '" font-family="Arial,sans-serif">' +
+    '" font-weight="700" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">' +
     pct +
     '%</text>' +
     (suppressBottomLabel
@@ -13513,7 +14025,8 @@ function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequire
   // word). Batch 3 item 3c ("make chip WORD black") was already satisfied at this line —
   // the word itself renders in var(--rpt-page-text) (#000000), not `color`; confirmed via
   // before/after render, no visual change on this element. Left as-is, not re-touched.
-  var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
+  // R2 (2026-08-03): reads the shared band->color map rather than repeating the ternary.
+  var color = ASHRAE36_READINESS_BAND_COLORS[status] || 'var(--rpt-page-text)';
   // Display-label rename (item ed465b3c, 2026-07-09, Matt's decision): Ready/Partial/Critical
   // -> Fully Covered/Partially Covered/Not Covered (2026-07-09 rename #2, Matt's decision,
   // supersedes v647): Covered -> Compliant. Re-worded again (fix/audit-report-scoring,
@@ -13527,7 +14040,7 @@ function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequire
   // "Partial Readiness" (17), "Not Compliant" (13) -> "Low Readiness" (13). DISPLAY TEXT
   // ONLY -- the 'green'/'amber'/'red' status keys and every caller's threshold logic
   // (now ASHRAE36_READINESS_HIGH_THRESHOLD/ASHRAE36_READINESS_PARTIAL_THRESHOLD) are untouched.
-  var word = status === 'green' ? 'High Readiness' : status === 'amber' ? 'Partial Readiness' : 'Low Readiness';
+  var word = ASHRAE36_READINESS_BAND_WORDS[status] || ASHRAE36_READINESS_BAND_WORDS.red;
   // 2026-07-10 fix (audit-report-na-rationale, wording-decision.md item 1): when the caller
   // passes seqNA (true for a building whose seqPct is null -- zero equipment within Guideline
   // 36's sequence scope), `status`/`composite` are driven entirely by sensor coverage with no
@@ -13691,36 +14204,47 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       _a36ConsolidatedSequences = _a36SeqSum;
     }
   }
-  // Cover gauge color (2026-07-29, Matt: "make the Composite Score gauge be the CSC blue and
-  // then have the Sensor Coverage and Sequence Readiness be the CSC green" -- was threshold
-  // red/orange/green per ASHRAE36_READINESS_HIGH/PARTIAL_THRESHOLD; the building-level status
-  // (green/amber/red) is still shown via _a36StatusChip / the Score bar on the Building
-  // Compliance Status table below, so this brand-color swap on the cover's summary gauge does
-  // not remove that per-building signal from the report.
-  var color = 'var(--rpt-blue)';
+  // Cover gauge color — R2 (2026-08-03), VISUAL-REVIEW-2026-08-02.md V-01. REPLACES the
+  // 2026-07-29 brand-color pass ("make the Composite Score gauge be the CSC blue and then have
+  // the Sensor Coverage and Sequence Readiness be the CSC green"), which is exactly what made
+  // this cover contradict the readiness legend printed two pages later: it painted 62% and 52%
+  // in #27ae60 — the green those pages define as "High Readiness, 75% and above" — and painted
+  // the Composite Score in a blue that appears in no legend in the document. All three rings now
+  // read their color from a36ReadinessColor(), the same single rule that colors all 27 Score
+  // bars in the Building ASHRAE 36 Readiness table, so a number can never be one band on the
+  // cover and a different band in the table. Nothing about the numbers themselves changed.
+  //
+  // The Composite Score deliberately uses that same rule rather than a distinct treatment: it is
+  // the score the readiness bands are literally defined over (portfolioStatus is already derived
+  // from it with these thresholds), so any other color would be a fourth unexplained one — the
+  // review's specific complaint. A legend printed directly under the rings (bandLegend below)
+  // spells the bands out so the cover decodes itself without turning the page.
   // One-paragraph finding — REORDERED 2026-07-29 (Matt's direct instruction: "always make reports
   // a story instead of just text... Buildings Assessed, HVAC Systems Audited, Sequences to
   // Program and then Sensors to Install in that order so it tells the story of what happened in
   // the Audit"). Same figures, same <strong> emphasis, only the narrative order changed to match
   // the stat strip below (buildings walked into -> equipment examined -> sequences found to
   // program -> sensors found to install).
+  // D-22 (R5, 2026-08-03): every count in this sentence goes through rptCount, the one shared
+  // thousands-separator formatter, so the Audit narrative and the Proposal's Executive Summary
+  // print the same figure the same way ("1,594", never "1594").
   var finding =
     'To meet ASHRAE 36, across <strong>' +
-    p.totalBuildings +
+    rptCount(p.totalBuildings) +
     ' building' +
     (p.totalBuildings !== 1 ? 's' : '') +
     '</strong> and <strong>' +
-    p.totalEquip +
+    rptCount(p.totalEquip) +
     ' piece' +
     (p.totalEquip !== 1 ? 's' : '') +
     ' of heating and cooling equipment</strong>, <strong>' +
     d.project.name +
     '</strong> needs <strong>' +
-    _a36ConsolidatedSequences +
+    rptCount(_a36ConsolidatedSequences) +
     ' control sequence' +
     (_a36ConsolidatedSequences !== 1 ? 's' : '') +
     ' programmed</strong> and <strong>' +
-    _a36ConsolidatedSensors +
+    rptCount(_a36ConsolidatedSensors) +
     (_a36ConsolidatedSensors === 1 ? ' sensor or actuator' : ' sensors and actuators') +
     ' installed</strong>. ' +
     // a562fd67: the cover's forward-looking promise must match whether the report actually
@@ -13734,32 +14258,86 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       : 'The sections that follow provide a prioritized list of recommended upgrades across the facilities in scope, each with its typical energy savings.');
 
   var gauges =
-    '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 20px">' +
+    '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 8px">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.composite, color, 'Overall', 110, true) +
+    _a36GaugeSVG(p.composite, a36ReadinessColor(p.composite), 'Overall', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.pointPct, 'var(--rpt-green)', 'Sensors', 110, true) +
+    _a36GaugeSVG(p.pointPct, a36ReadinessColor(p.pointPct), 'Sensors', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.seqPct, 'var(--rpt-green)', 'Sequences', 110, true) +
+    _a36GaugeSVG(p.seqPct, a36ReadinessColor(p.seqPct), 'Sequences', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
+    '</div>';
+
+  // Cover readiness legend (R2, 2026-08-03, V-01). One centered line of ordinary text directly
+  // under the rings so a reader can decode a ring color without turning to page 2 — deliberately
+  // NOT a box, card, tile or bordered key (standing rule), and no separator rule above or below
+  // it (standing rule); it is simply the next line of copy on the page. Each band's mark is a
+  // colored square glyph in a text run rather than a styled <div>, so it survives every export
+  // path identically: the print/PDF path, the Word .docx path (which turns a colored <span> into
+  // a colored run but silently drops an empty background-colored <div>), and the mso-HTML path.
+  // The band words stay near-black — the report's settled convention is that color lives in the
+  // graphic and words are black (see _a36StatusChip). Thresholds are interpolated from
+  // ASHRAE36_READINESS_HIGH/PARTIAL_THRESHOLD, the same constants the table footnote uses, so the
+  // cover legend and the table legend can never drift apart; ranges are written in words rather
+  // than mathematical symbols per the no-jargon rule.
+  var _bandGap = '<span style="color:var(--rpt-page-text)">&nbsp; &nbsp; &nbsp;</span>';
+  var bandLegend =
+    '<div style="text-align:center;font-size:' +
+    RPT_MIN_TEXT_PX +
+    'px;line-height:1.5;color:var(--rpt-page-text);margin:0 0 16px">' +
+    'Ring color shows readiness: ' +
+    '<span style="color:' +
+    ASHRAE36_READINESS_BAND_COLORS.green +
+    '">■</span> High, ' +
+    ASHRAE36_READINESS_HIGH_THRESHOLD +
+    '% and above' +
+    _bandGap +
+    '<span style="color:' +
+    ASHRAE36_READINESS_BAND_COLORS.amber +
+    '">■</span> Partial, ' +
+    ASHRAE36_READINESS_PARTIAL_THRESHOLD +
+    ' to ' +
+    (ASHRAE36_READINESS_HIGH_THRESHOLD - 1) +
+    '%' +
+    _bandGap +
+    '<span style="color:' +
+    ASHRAE36_READINESS_BAND_COLORS.red +
+    '">■</span> Low, below ' +
+    ASHRAE36_READINESS_PARTIAL_THRESHOLD +
+    '%' +
     '</div>';
 
   var bodyHTML =
     '<div style="padding:20px 48px 16px">' +
     '<div style="text-align:center;margin-bottom:0">' +
-    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
-    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:12px">' +
+    // D-12 (2026-08-03): 22px (16.5pt) -> the shared 18pt document-title tier, so the Audit cover
+    // title and the Proposal cover title are the same size and both sit above the 14.25pt running
+    // page-title bar that follows them on every interior page. margin-bottom stays 2px (not D-12's
+    // original 12px) because R9a (2026-08-03) inserted a document-date div right after this one,
+    // and that date div supplies its own margin-bottom:12px gap before the body text below it.
+    '<div style="font-size:' +
+    RPT_DOC_TITLE_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE 36 Audit Report</div>' +
+    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:2px">' +
     d.project.name +
+    '</div>' +
+    // 2026-08-03 (visual review V-02): the Audit carried NO date anywhere in its text layer —
+    // the date existed only in the export filename, so a filed copy could not be dated, cited or
+    // superseded. _rptDocumentDateLong() reads the same instant/calendar day that filename is
+    // built from, so page and filename can never disagree.
+    '<div style="font-size:14px;color:var(--rpt-page-text);margin-bottom:12px">' +
+    _rptDocumentDateLong() +
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    "This report evaluates the facility's building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. " +
+    'This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
+    bandLegend +
     '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' +
     finding +
     '</div>' +
@@ -13773,28 +14351,39 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div style="display:flex;gap:16px;margin-top:12px">' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    p.totalBuildings +
+    rptCount(p.totalBuildings) +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings Assessed</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    p.totalEquip +
+    rptCount(p.totalEquip) +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Heating and Cooling Systems Audited</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    _a36ConsolidatedSequences +
+    rptCount(_a36ConsolidatedSequences) +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sequences to Program</div>' +
     '</div>' +
     '<div class="rpt-a36-stat-card" style="flex:1;padding:10px 12px;text-align:center">' +
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
-    _a36ConsolidatedSensors +
+    rptCount(_a36ConsolidatedSensors) +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">Sensors to Install</div>' +
     '</div>' +
+    '</div>' +
+    // 2026-08-03 (visual review V-03): the cover's only attribution was the letterhead graphic —
+    // no author, no addressee. Plain text lines, no box/card/tile and no separator rule (standing
+    // rule); the two labels are simply bolded. No phone/address is printed: no verified Control
+    // Service Company contact block exists anywhere in this codebase and inventing one is worse
+    // than omitting it.
+    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.5;margin-top:14px">' +
+    '<div><strong>Prepared for:</strong> ' +
+    d.project.name +
+    '</div>' +
+    '<div><strong>Prepared by:</strong> Control Service Company</div>' +
     '</div>' +
     '</div>';
 
@@ -13839,20 +14428,89 @@ function rptPageASHRAE36Executive(n, d) {
   // Rule 2.3: reportDate drives footer date; label empty.
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
 
-  // Key finding callout (first page only)
-  var topGap = p.topGaps[0];
+  // Top ASHRAE 36 Sequences by portfolio scope (first page only).
+  // 2026-08-03 (Matt's complaint): this callout used to show only the single #1 GAP
+  // (p.topGaps[0], a missing-sensor/point-category count) under the heading "Most Common Gap
+  // Across Portfolio" -- one item, and a different axis than "sequences" (a gap is a missing
+  // point/sensor; a sequence is the control routine it blocks). Matt: "there are still only 2
+  // sequences mentioned before the building ASHRAE 36 Readiness table, I thought we were going
+  // to expand that section?" (the "2" being this callout's one gap plus the DCV callout below).
+  // Replaced with a real summary of the top SEQUENCE TYPES by portfolio quantity, computed the
+  // SAME way (buildCatalogRows phase-2/seqKey rows, grouped by seqKey) as the "Control Sequences"
+  // table later in this report (rptPageASHRAE36CostEstimate, ~line 15025) so the two numbers can
+  // never disagree -- same cache key (d._a36CatalogRowsCache), same filter. Summarized by TYPE
+  // across the whole portfolio -- never one line per building. No invented names or counts: any
+  // sequence type with zero priced-programming quantity in the real data is simply not listed.
   var callout = '';
-  if (topGap) {
-    callout =
-      '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
-      '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
-      (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].short : topGap.key) +
-      '</div>' +
-      '<div style="font-size:11px;color:var(--rpt-page-text)">' +
-      (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].plain : '') +
-      '</div>' +
-      '</div>';
+  try {
+    if (!d._a36CatalogRowsCache) {
+      d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
+    }
+    var _execSeqCounts = {}; // seqKey -> equipment units still needing this sequence programmed
+    (d._a36CatalogRowsCache || []).forEach(function (r) {
+      if (!r || r.phase !== 2 || !r.seqKey) return;
+      _execSeqCounts[r.seqKey] = (_execSeqCounts[r.seqKey] || 0) + (r.qty || 0);
+    });
+    var _execSeqDefs =
+      typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
+    var EXEC_TOP_SEQ_COUNT = 6; // top N sequence types by portfolio quantity
+    var topSeqTypes = _execSeqDefs
+      .map(function (seq) {
+        // Client-facing label MUST match the later "Control Sequences" table exactly (both read
+        // from the same EM_SEQUENCE_DEFS entry) -- _a36SeqDisplayLabel applies A36_SEQ_LABEL_OVERRIDE
+        // (e.g. vav_damper_writeback -> "Damper Position Command", not the internal-jargon
+        // "Damper Position Write-back") so one concept carries one name across the whole report.
+        return { key: seq.key, label: _a36SeqDisplayLabel(seq), qty: _execSeqCounts[seq.key] || 0 };
+      })
+      .filter(function (s) {
+        return s.qty > 0;
+      })
+      .sort(function (a, b) {
+        return b.qty - a.qty;
+      })
+      .slice(0, EXEC_TOP_SEQ_COUNT);
+
+    if (topSeqTypes.length) {
+      var _seqRowsHTML = topSeqTypes
+        .map(function (s) {
+          return (
+            '<tr>' +
+            '<td style="padding:5px 8px;font-size:' +
+            RPT_BODY_PX +
+            'px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
+            _esc(s.label) +
+            '</td>' +
+            '<td style="padding:5px 8px;font-size:' +
+            RPT_BODY_PX +
+            'px;font-weight:700;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
+            rptCount(s.qty) +
+            '</td>' +
+            '</tr>'
+          );
+        })
+        .join('');
+      callout =
+        '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Top ASHRAE 36 Sequences by Portfolio Scope</div>' +
+        '<div style="font-size:' +
+        RPT_BODY_PX +
+        'px;color:var(--rpt-page-text);margin-bottom:6px">' +
+        'The control sequences most needed across the portfolio, and how many pieces of equipment still need each one programmed.' +
+        '</div>' +
+        '<table style="width:100%;border-collapse:collapse">' +
+        '<thead><tr>' +
+        '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Sequence</th>' +
+        '<th style="padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Number to Program</th>' +
+        '</tr></thead><tbody>' +
+        _seqRowsHTML +
+        '</tbody></table>' +
+        '</div>';
+    }
+  } catch (e) {
+    console.error('rptPageASHRAE36Executive: top-sequences summary build failed', e);
+    callout = '';
   }
 
   // DCV readiness callout (first page only)
@@ -13871,8 +14529,13 @@ function rptPageASHRAE36Executive(n, d) {
     var dcvSentence = dcvParts.join(' and ') + ' have no carbon dioxide sensor.';
     dcvCallout =
       '<div class="rpt-a36-callout" style="margin-bottom:14px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
-      '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+      // D-12 (2026-08-03): heading -> 13pt section tier, its paragraph -> 10.5pt body tier.
+      '<div style="font-size:' +
+      RPT_SECTION_HEAD_PX +
+      'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:4px">Occupancy-Based Ventilation Readiness</div>' +
+      '<div style="font-size:' +
+      RPT_BODY_PX +
+      'px;color:var(--rpt-page-text);line-height:1.6">' +
       dcvSentence +
       ' Without a way to sense carbon dioxide levels, these units ventilate at full design rates even when spaces are empty, wasting fan and cooling energy. ' +
       'Adding carbon dioxide sensors lets ventilation adjust to how many people are actually in the space, so equipment stops conditioning air for rooms that are empty.' +
@@ -13909,10 +14572,25 @@ function rptPageASHRAE36Executive(n, d) {
   var EXEC_FOOTNOTE_H = 100; // measured (readiness-band methodology footnote, wraps to ~5 lines at 10pt)
   var EXEC_SAFETY_H = 40; // single page-level margin. 40, not 20: at 20 this page measured only 13px
   // of clearance below the reserved footer zone, and page count is explicitly not a constraint.
+  // D-12 (2026-08-03): all three re-measured after the section headings moved to the 13pt tier,
+  // per the re-measure protocol above (headless render, emulateMedia('print'),
+  // getBoundingClientRect().height of each .rpt-body child). Each number is now the measured box
+  // height PLUS that block's own declared margin-bottom, which the old figures omitted — the
+  // paginator is budgeting the space a block actually occupies, not just the space it paints.
+  //   occupancy-ventilation callout 121 -> 146 (132 measured + its 14px margin)
+  //   most-common-gap callout        78 -> 121 (107 measured + its 14px margin; this block grew
+  //                                             most because its two content lines also moved up
+  //                                             to the 10.5pt body tier)
+  //   tableTitle                     20 ->  32 (26 measured + its 6px margin)
   var _firstChromeH = 0;
-  if (dcvCallout) _firstChromeH += 121; // measured (occupancy-based ventilation readiness callout)
-  if (callout) _firstChromeH += 78; // measured (most-common-gap callout)
-  _firstChromeH += 20; // tableTitle — measured
+  if (dcvCallout) _firstChromeH += 146; // measured (occupancy-based ventilation readiness callout)
+  // 2026-08-03: `callout` was a 3-line "most-common-gap" paragraph (121px measured); it is now a
+  // heading + intro sentence + a small Sequence/Number-to-Program table (up to 6 rows), which is
+  // materially taller. Re-measured per the re-measure protocol above (headless render against
+  // real JOCO data, emulateMedia('print'), getBoundingClientRect().height of the .rpt-a36-callout
+  // box): 314.03px content + its 14px margin-bottom = 328.03px, rounded up to 329 for safety.
+  if (callout) _firstChromeH += 329; // measured (top-sequences-by-portfolio-scope table, up to 6 rows)
+  _firstChromeH += 32; // tableTitle — measured
   _firstChromeH += EXEC_THEAD_H;
   _firstChromeH += EXEC_FOOTNOTE_H;
   // d5929df4 (2026-07-13): FIRST base trimmed 894 -> 862. Restoring CSC_FOOTER_B64 to the
@@ -13946,10 +14624,24 @@ function rptPageASHRAE36Executive(n, d) {
   // budget, so the arithmetic states the actual page and can be re-derived by anyone who measures
   // it again. The continuation page's chrome is its own small "(continued, N of M)" heading plus
   // the same table head and footnote the first page carries.
-  var EXEC_CONT_HEADER_H = 27; // measured — "Building ASHRAE 36 Readiness (continued, N of M)" bar
+  // V-06 (2026-08-03) unified the continuation caption with the first-page caption -- same
+  // _readinessCaption() style/markup for every chunk, no separate bordered bar (see rationale on
+  // READINESS_CAPTION_STYLE below). D-12 (2026-08-03) then raised that one shared caption style
+  // 11px -> the 13pt section tier (RPT_SECTION_HEAD_PX) and re-measured it at 32 (26px text + 6px
+  // margin) where it is used on the first page (see "_firstChromeH += 32; // tableTitle --
+  // measured" above). Because the continuation caption renders through that exact same
+  // _readinessCaption() call/style, it uses that same 32 here -- the old "~9px shorter than the
+  // bar" conservatism no longer applies now that the bar it was compared against (D-12's own
+  // pre-unification bordered bar, replaced by V-06) is gone. Flag for a headless re-verify pass:
+  // this number assumes "(continued, N of M)" stays on one line at the 13pt tier like "(N of M)"
+  // does; re-measure if the JOCO portfolio (most chunks) ever shows it wrapping.
+  var EXEC_CONT_HEADER_H = 32; // measured — Building ASHRAE 36 Readiness caption at 13pt tier
   var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H + EXEC_FOOTNOTE_H;
-  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - _firstChromeH - EXEC_SAFETY_H;
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - _contChromeH - EXEC_SAFETY_H;
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
+  // variant — reclaims the 60px chrome bar's space for rows.
+  var ROWS_BUDGET_FIRST = _rptContentBudget('flush') - _firstChromeH - EXEC_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('flush') - _contChromeH - EXEC_SAFETY_H;
 
   // Shared table styles
   // fix/report-formatting-consistency (2026-07-27): font-size was 13px, a lone outlier against
@@ -13957,14 +14649,33 @@ function rptPageASHRAE36Executive(n, d) {
   // Summary's "Contract Progress"/"Period Savings"/"Monthly Savings" headings and this report's
   // own "ASHRAE Guideline 36 Sequences" heading are all 11px) — dropped to 11px to match the
   // dominant convention. Text/content unchanged.
-  var tableTitle =
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Building ASHRAE 36 Readiness</div>';
+  // V-06 (2026-08-03): ONE caption convention for every chunk of this table. The first page used
+  // this blue small-caps caption while continuation pages used a black, weight-600, sentence-case
+  // bar with a bottom rule — two adjacent pages of one table looked like two documents (and the
+  // bar's border-bottom was a floating separator rule, which the standing rules forbid). Every
+  // chunk now renders through _readinessCaption(): same style, same words, "(N of M)" on the first
+  // and "(continued, N of M)" after it, for ANY M (the JOCO table now splits into 4, not 2).
+  // D-12 (2026-08-03): that shared caption's font raised 11px -> the 13pt section tier
+  // (RPT_SECTION_HEAD_PX) — this heading introduces a table whose own column headers print at
+  // 10pt, so at the old 11px (8.25pt authored, 10.005pt after the floor) it was barely larger than
+  // the table it names.
+  var READINESS_CAPTION_STYLE =
+    'font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em';
+  function _readinessCaption(chunkIndex, numChunks) {
+    var part = '';
+    if (numChunks > 1) {
+      part = ' (' + (chunkIndex > 0 ? 'continued, ' : '') + (chunkIndex + 1) + ' of ' + numChunks + ')';
+    }
+    return '<div style="' + READINESS_CAPTION_STYLE + '">Building ASHRAE 36 Readiness' + part + '</div>';
+  }
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header (color:#fff on
   // background:var(--rpt-blue)) to match the Proposal's plain/thin-bordered convention
   // (rptPageASHRAE36ProposalCover's thPlain) -- no fill, near-black text, same border. Styling
   // only; no content/values changed.
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:var(--rpt-page-text);text-align:left;white-space:normal;line-height:1.25;border:1px solid var(--rpt-border)';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:var(--rpt-page-text);text-align:center;white-space:normal;line-height:1.25;border:1px solid var(--rpt-border)';
   // Column widths (2026-07-09, fix/report-wording-compliance-rows): explicit colgroup +
   // table-layout:fixed added so column widths are deterministic instead of browser
   // auto-layout. Auto-layout let long building names (e.g. "P25309 - Jo Co Arts and
@@ -14162,15 +14873,41 @@ function rptPageASHRAE36Executive(n, d) {
     // char-count are hit simultaneously). Capped the ceiling at 56px instead of 60px — frees
     // 4px, enough to close the gap — with no visible change below composite~93
     // (round(93*0.6)=56 already, so only 93-100% bars get an imperceptibly shorter bar).
-    var barPx = Math.min(56, Math.round(b.composite * 0.6));
+    // V-05 (2026-08-03): the 56px cap did not close it — the label was still glued to the RIGHT
+    // END OF A VARIABLE-LENGTH BAR, so (a) no two percentages shared an edge (measured spread of
+    // the label right edges across one page: 31.5pt = 0.44in, x369.0 "24%" to x400.5 "95%" in the
+    // shipped export) and (b) the two widest cases still overran: DOM 95% 87px and 100% 94px
+    // against 84px of inner cell, and in the PDF the "100%" span crossed the Score/Status column
+    // rule by 1.62pt. Both are the same root cause and both are fixed by giving the bar a FIXED
+    // TRACK and right-aligning the label in a FIXED BOX, so every label shares one right edge at
+    // the cell's padding edge and the worst case is arithmetically inside the column:
+    //   inner width 84.7px (measured) >= track 44 + gap 4 + label 35 = 83px
+    // Label box 35px is the measured width of the widest label, "100%", at the 10pt printed floor
+    // (34.1px; every two-digit label is 26.8px). The bar keeps full proportionality by rescaling
+    // to the new track (44/100 = 0.44 px per point) rather than clipping at a ceiling.
+    // The Score COLUMN is not narrowed — narrowing it is what makes this worse (see colWidths).
+    var SCORE_TRACK_W = 44;
+    var SCORE_GAP_W = 4;
+    var SCORE_LABEL_W = 35;
+    var barPx = Math.min(SCORE_TRACK_W, Math.round(b.composite * (SCORE_TRACK_W / 100)));
     var bar =
-      '<div style="display:flex;align-items:center;gap:4px">' +
+      '<div style="display:flex;align-items:center;gap:' +
+      SCORE_GAP_W +
+      'px">' +
+      '<div style="flex:0 0 ' +
+      SCORE_TRACK_W +
+      'px;height:8px">' +
       '<div style="width:' +
       barPx +
-      'px;max-width:56px;height:8px;background:' +
+      'px;max-width:' +
+      SCORE_TRACK_W +
+      'px;height:8px;background:' +
       b.statusColor +
       ';border-radius:2px;min-width:2px"></div>' +
-      '<span style="font-size:10px;color:var(--rpt-page-text)">' +
+      '</div>' +
+      '<span style="flex:0 0 ' +
+      SCORE_LABEL_W +
+      'px;text-align:right;font-size:10px;color:var(--rpt-page-text)">' +
       b.composite +
       '%</span>' +
       '</div>';
@@ -14180,13 +14917,15 @@ function rptPageASHRAE36Executive(n, d) {
       '<div style="' +
       _rowBoxStyle +
       '">' +
-      b.name +
+      // R5 (2026-08-03) V-07/D-14: client-visible name only. b.name stays the raw Equipment
+      // Matrix key used for row matching elsewhere in this file.
+      (b.displayName || rptBuildingDisplayName(b.name)) +
       '</div></td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:center">' +
-      b.equipCount +
+      rptCount(b.equipCount) +
       '</div></td>' +
       '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:center">' +
       '<div style="' +
@@ -14246,8 +14985,38 @@ function rptPageASHRAE36Executive(n, d) {
     });
   }
 
+  // Legend renders ONCE, after the LAST chunk only (Matt's fix #2, 2026-08-03): repeating the
+  // "Score and Readiness Bands" methodology block (tableFootnote) after every one of the (now up
+  // to 4) chunks ate ~EXEC_FOOTNOTE_H (100px) per intermediate page for content already stated on
+  // the first. ROWS_BUDGET_FIRST/CONT above still reserve that 100px on every page (needed for
+  // whichever page turns out to be last), so paginate here with NOFOOT budgets that give the
+  // reclaimed 100px back to rows on every page, then re-check only the actual last chunk: if
+  // adding the footnote back to that page would overflow it, spill the trailing rows that don't
+  // fit onto a new final chunk sized WITH the footnote reserved (that new chunk becomes the one
+  // that prints the legend). Row height (66px) is always smaller than the reclaimed 100px, so at
+  // most one row ever needs to move.
+  var ROWS_BUDGET_FIRST_NOFOOT = ROWS_BUDGET_FIRST + EXEC_FOOTNOTE_H;
+  var ROWS_BUDGET_CONT_NOFOOT = ROWS_BUDGET_CONT + EXEC_FOOTNOTE_H;
+
   // Paginate using shared pixel-height paginator
-  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
+  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST_NOFOOT, ROWS_BUDGET_CONT_NOFOOT);
+
+  (function _refitLastChunkForFootnote() {
+    var lastChunk = chunks[chunks.length - 1];
+    var lastIsFirst = chunks.length === 1;
+    var lastBudgetWithFootnote = lastIsFirst ? ROWS_BUDGET_FIRST : ROWS_BUDGET_CONT;
+    var lastUsedPx = lastChunk.reduce(function (sum, tok) {
+      return sum + (tok.estH || 20);
+    }, 0);
+    if (lastUsedPx <= lastBudgetWithFootnote) return;
+    var overflowTokens = [];
+    while (lastChunk.length > 1 && lastUsedPx > lastBudgetWithFootnote) {
+      var popped = lastChunk.pop();
+      lastUsedPx -= popped.estH || 20;
+      overflowTokens.unshift(popped);
+    }
+    if (overflowTokens.length > 0) chunks.push(overflowTokens);
+  })();
 
   var numChunks = chunks.length;
   var resultPages = [];
@@ -14261,34 +15030,23 @@ function rptPageASHRAE36Executive(n, d) {
     var table = tableOpenHead + '<tbody>' + tableRows + '</tbody></table>';
 
     var pageN = n + chunkIndex;
+    var isLastChunk = chunkIndex === numChunks - 1;
 
-    var bodyHTML;
-    if (chunkIndex === 0) {
-      // First page: callouts + titled table + footnote. 2026-07-29 fix (Matt: "why does it not
-      // say 1 of 2 like the next page shows continued (2 of 2)?") — the continuation page below
-      // has always shown "— continued (N of numChunks)", but the first page's tableTitle (a
-      // fixed string built above, before numChunks was known) never carried the matching
-      // "(1 of N)" for its own page. Same fix pattern applied to every other paginated section
-      // with this asymmetry (see 2026-07-29 dashboardlogic.md entry for the full list).
-      var firstPageTableTitle =
-        numChunks > 1 ? tableTitle.replace('</div>', ' (1 of ' + numChunks + ')</div>') : tableTitle;
-      bodyHTML = dcvCallout + callout + firstPageTableTitle + table + tableFootnote;
-    } else {
-      // Continuation page: minimal header + table + footnote
-      var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-        'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        'Building ASHRAE 36 Readiness (continued, ' +
-        (chunkIndex + 1) +
-        ' of ' +
-        numChunks +
-        ')' +
-        '</div>';
-      bodyHTML = contHdr + table + tableFootnote;
-    }
+    // Every chunk carries the SAME caption, in the same style, numbered "N of M" for any M
+    // (V-06, 2026-08-03; caption's own font raised to the 13pt section tier by D-12, same date --
+    // see READINESS_CAPTION_STYLE above). First page keeps its callouts ahead of the caption.
+    // tableFootnote (the "Score and Readiness Bands" legend) now prints only once, after the
+    // LAST chunk (Matt's fix #2, 2026-08-03) -- see _refitLastChunkForFootnote above for how the
+    // per-chunk row budget accounts for that.
+    var bodyHTML =
+      (chunkIndex === 0 ? dcvCallout + callout : '') +
+      _readinessCaption(chunkIndex, numChunks) +
+      table +
+      (isLastChunk ? tableFootnote : '');
 
     resultPages.push(
       rptPage(pageN, 'ASHRAE 36 Audit Report: Executive Summary', bodyHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label:
           'Page ' +
@@ -14342,6 +15100,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // sequence applies to at least one piece of equipment anywhere (status !== 'na') to decide
   // whether to list it — no status is computed or rendered.
   var rationaleTokens = [];
+  var _seqProgramTotal = 0; // sum of the printed quantity column — must equal the cover figure
   try {
     var seqApplicable = {}; // seqKey -> true if it applies to at least one piece of equipment
     (d.buildings || []).forEach(function (b) {
@@ -14355,10 +15114,44 @@ function rptPageASHRAE36CostEstimate(n, d) {
       });
     });
 
+    // ── Quantity column (V-10, visual review 2026-08-02) ──────────────────────
+    // The cover headlines "N control sequences programmed" and this is the section that exists
+    // to explain that number, but it listed 16 sequence TYPES with no quantity of any kind, so a
+    // reader could not see how N was built. Standing rule is to count actual items, not buildings.
+    //
+    // These counts are derived from THE SAME source and THE SAME filter that produces the cover
+    // figure (rptPageASHRAE36Cover, this file): buildCatalogRows(project id) — the priced scope,
+    // which applies the monitoring-only-zone-unit, ioOnly and building-level dedup exclusions the
+    // raw per-equipment accumulators never see — summing `qty` over rows with phase === 2 (the
+    // sequence-programming rows) AND a seqKey (which excludes buildSensorInvestigationRows' phase-2
+    // labor rows, exactly as the cover does; without that clause the cover measured 1,304 instead
+    // of 1,285). Grouping the very same rows by seqKey therefore reconciles to the cover by
+    // construction — the total row below prints the sum of the printed column, never a separately
+    // computed figure, so the two can never silently disagree.
+    //
+    // qty on a phase-2 row is a count of EQUIPMENT UNITS whose readiness for that sequence is
+    // 'blocked' or 'partial' — i.e. units that still need it programmed. Units already ready, and
+    // units the sequence does not apply to, are not counted (absence is not always a deficiency).
+    // Cached on `d` the same way _a36BuildingContent caches it: buildCatalogRows walks the whole
+    // project on every call.
+    if (!d._a36CatalogRowsCache) {
+      d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
+    }
+    var _seqProgramCounts = {}; // seqKey -> equipment units still needing this sequence programmed
+    var _seqCatalogTotal = 0; // every phase-2/seqKey row, whether or not its key has a def below
+    (d._a36CatalogRowsCache || []).forEach(function (r) {
+      if (!r || r.phase !== 2 || !r.seqKey) return;
+      _seqProgramCounts[r.seqKey] = (_seqProgramCounts[r.seqKey] || 0) + (r.qty || 0);
+      _seqCatalogTotal += r.qty || 0;
+    });
+
     var seqDefsList =
       typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS) ? EM_SEQUENCE_DEFS : [];
     seqDefsList.forEach(function (seq) {
-      if (!seqApplicable[seq.key]) return; // not applicable to any equipment in this portfolio
+      // Listed when the sequence applies to any audited equipment OR carries priced programming
+      // work. The second clause is what makes the column arithmetically incapable of losing a
+      // count: no row with a quantity can be filtered out of the table.
+      if (!seqApplicable[seq.key] && !_seqProgramCounts[seq.key]) return;
       var plainDesc = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[seq.key]) || '';
       // 2026-07-23 (Matt's request): show which BAS points/sensors this sequence needs, directly
       // under the sequence name. Required-point source is EM_SEQUENCE_DEFS[*].requiredCats (this
@@ -14372,11 +15165,16 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // for the handful of keys _pricingPointLabel doesn't have (rfEnable, rfSpeedCmd, co2) —
       // never a raw unresolved point key.
       var sensorLine = _a36SeqRequiredSensorLabels(seq);
+      var seqName = _a36SeqDisplayLabel(seq);
+      var seqQty = _seqProgramCounts[seq.key] || 0;
+      _seqProgramTotal += seqQty;
       var rowHTML =
         '<tr>' +
         '<td style="padding:7px 10px;font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
-        'border:1px solid var(--rpt-border);vertical-align:top;width:26%">' +
-        _esc(seq.label) +
+        'border:1px solid var(--rpt-border);vertical-align:top;width:' +
+        A36_SEQ_COL_NAME_PCT +
+        '%">' +
+        _esc(seqName) +
         (sensorLine
           ? '<div style="font-size:9px;font-weight:400;color:var(--rpt-page-text);margin-top:3px;line-height:1.4">' +
             'Requires: ' +
@@ -14385,9 +15183,17 @@ function rptPageASHRAE36CostEstimate(n, d) {
           : '') +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
-        'border:1px solid var(--rpt-border);vertical-align:top;width:16%;white-space:nowrap">' +
-        'ASHRAE 36 ' +
-        _esc(seq.ashrae36 || '') +
+        'border:1px solid var(--rpt-border);vertical-align:top;width:' +
+        A36_SEQ_COL_SPEC_PCT +
+        '%;white-space:nowrap">' +
+        'Section ' +
+        _esc(String(seq.ashrae36 || '').replace(/^§/, '')) +
+        '</td>' +
+        '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+        'border:1px solid var(--rpt-border);vertical-align:top;text-align:center;width:' +
+        A36_SEQ_COL_QTY_PCT +
+        '%">' +
+        rptCount(seqQty) +
         '</td>' +
         '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);line-height:1.5;vertical-align:top">' +
@@ -14407,17 +15213,29 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // line for each column): it never under-estimates a single row and over-estimates by only
       // 4px per row on average. Line height is _rptTextLineH() — the floored 13.34px font times
       // the 1.5 line-height these cells declare — so if the floor ever changes, this follows it.
+      //
+      // V-10 (2026-08-03): the quantity column narrowed the name column 26% -> 24% and the
+      // description column 58% -> 47%, so all three chars-per-line constants were re-fitted
+      // against a fresh headless print render of every row at the new widths (same method: the
+      // largest constant that still never under-estimates a measured row).
+      //
+      // V-11 (2026-08-03, Matt's fix #3): name column widened 24% -> 27%, description narrowed
+      // 47% -> 44% (see A36_SEQ_COL_NAME_PCT comment above). SEQ_NAME_CPL/SEQ_REQ_CPL are left at
+      // their V-10 values on purpose — a wider name column can only fit MORE chars per line than
+      // those constants assume, so the estimate stays conservative (over-, never under-, counts
+      // lines). SEQ_DESC_CPL is scaled down proportionally to the narrower width (40 * 296.3/317.9,
+      // floored) so a narrower description column doesn't make the estimate under-count lines.
       var SEQ_ROW_PAD_H = 14; // td padding 7px top + 7px bottom
-      var SEQ_NAME_CPL = 20; // chars per line, bold sequence label in the 26% (167px) name column
-      var SEQ_REQ_CPL = 24; // chars per line, "Requires: ..." sub-line (regular weight, same column)
-      var SEQ_DESC_CPL = 50; // chars per line, plain-language description in the ~365px column
+      var SEQ_NAME_CPL = 18; // chars per line, bold sequence label in the 27% (~174px) name column
+      var SEQ_REQ_CPL = 21; // chars per line, "Requires: ..." sub-line (regular weight, same column)
+      var SEQ_DESC_CPL = 37; // chars per line, plain-language description in the 44% (~296px) column
       var SEQ_REQ_GAP = 3; // the sub-line's margin-top
       // One line height for all three columns: measured, the sub-line's declared line-height:1.4
       // still lays out on the same 20px rhythm as the 1.5 cells once the font floor applies, and
       // fitting it at 19px under-estimated two real rows by 1px.
       var _seqLineH = _rptTextLineH(1.5);
       var _reqText = sensorLine ? 'Requires: ' + sensorLine : '';
-      var _nameH = Math.ceil((seq.label || '').length / SEQ_NAME_CPL) * _seqLineH;
+      var _nameH = Math.ceil((seqName || '').length / SEQ_NAME_CPL) * _seqLineH;
       var _reqH = _reqText ? SEQ_REQ_GAP + Math.ceil(_reqText.length / SEQ_REQ_CPL) * _seqLineH : 0;
       var _descH = Math.ceil(plainDesc.length / SEQ_DESC_CPL) * _seqLineH;
       rationaleTokens.push({
@@ -14426,6 +15244,42 @@ function rptPageASHRAE36CostEstimate(n, d) {
         estH: SEQ_ROW_PAD_H + Math.max(_nameH + _reqH, _descH),
       });
     });
+
+    // Totals row (site table standard: totals where applicable). It prints the sum of the printed
+    // column, so the column always adds up to what the row says. That sum is asserted against the
+    // catalog total here: a difference could only come from a priced sequence key with no
+    // EM_SEQUENCE_DEFS entry, which would mean a row of work exists that no reader can see. It is
+    // logged rather than papered over — neither figure is ever adjusted to make the other agree.
+    if (rationaleTokens.length) {
+      if (_seqProgramTotal !== _seqCatalogTotal) {
+        console.error(
+          'rptPageASHRAE36CostEstimate: sequence quantity column (' +
+            _seqProgramTotal +
+            ') does not reconcile with the priced sequence total (' +
+            _seqCatalogTotal +
+            ') — a priced sequence key has no EM_SEQUENCE_DEFS entry.',
+        );
+      }
+      rationaleTokens.push({
+        type: 'row',
+        html:
+          '<tr>' +
+          '<td colspan="2" style="padding:7px 10px;font-size:11px;font-weight:700;' +
+          'color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top;text-align:right">' +
+          'Total control sequences to program' +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:11px;font-weight:700;color:var(--rpt-page-text);' +
+          'border:1px solid var(--rpt-border);vertical-align:top;text-align:center">' +
+          rptCount(_seqProgramTotal) +
+          '</td>' +
+          '<td style="padding:7px 10px;font-size:11px;color:var(--rpt-page-text);' +
+          'border:1px solid var(--rpt-border);line-height:1.5;vertical-align:top">' +
+          'One for each piece of heating and cooling equipment that needs that sequence programmed.' +
+          '</td>' +
+          '</tr>',
+        estH: SEQ_ROW_TOTALS_H,
+      });
+    }
   } catch (e) {
     console.error('rptPageASHRAE36CostEstimate: sequence-glossary table build failed', e);
     rationaleTokens = []; // non-fatal — omit block if anything throws
@@ -14446,35 +15300,90 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // slightly narrower "ASHRAE 36 Spec" column there wraps the header onto a second line) — 56px
   // covers both, so first and continuation pages can share one honest budget instead of two
   // differently-fudged ones.
-  var RATIONALE_TITLE_H = 28; // measured, section title + its margin-bottom
+  // D-12 (2026-08-03): 28 -> 34, re-measured after the "ASHRAE 36 Sequences" title moved to the
+  // 13pt section tier (26px box + its 8px margin-bottom).
+  var RATIONALE_TITLE_H = 34; // measured, section title + its margin-bottom
   var RATIONALE_THEAD_H = 56; // measured 33 first page / 53 continuation; 56 covers both
   var RATIONALE_SAFETY_H = 40; // single page-level margin, same convention as EXEC_SAFETY_H above
-  var RATIONALE_BUDGET_FIRST =
-    _rptContentBudget('standard') - RATIONALE_TITLE_H - RATIONALE_THEAD_H - RATIONALE_SAFETY_H;
-  var RATIONALE_BUDGET_CONT = RATIONALE_BUDGET_FIRST;
+  // V-10: the first page also carries the sentence that tells the reader what the quantity column
+  // counts and that it adds to the cover figure. Measured 3 lines plus its margin at the floor.
+  var RATIONALE_INTRO_H = 72;
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so the budget uses the 'flush'
+  // variant (see rptPage()'s hideIntHdr option) — matches the ACTUAL top offset now that the
+  // 60px chrome bar this page used to reserve is gone, reclaiming that space for rows.
+  var RATIONALE_BUDGET_CONT = _rptContentBudget('flush') - RATIONALE_TITLE_H - RATIONALE_THEAD_H - RATIONALE_SAFETY_H;
+  var RATIONALE_BUDGET_FIRST = RATIONALE_BUDGET_CONT - RATIONALE_INTRO_H;
 
-  var SEQ_SECTION_TITLE = 'ASHRAE 36 Sequences';
+  // V-09 / running-head repetition (visual review 2026-08-02): the running head read
+  // "ASHRAE 36 Audit Report: ASHRAE 36 Sequences" with the caption "ASHRAE 36 SEQUENCES" directly
+  // under it, so the same phrase printed three times in three consecutive lines. The section is now
+  // "Control Sequences" in both the running head and the caption (the standard itself is still
+  // named by the running head's document title and by the table's own "ASHRAE 36 Section" column),
+  // which drops the repetition from three lines to two without losing identification.
+  var SEQ_SECTION_TITLE = 'Control Sequences';
 
   // Shared HTML fragments for the sequence table chrome
-  var _ratTitle =
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
-    'text-transform:uppercase;letter-spacing:0.04em">' +
-    SEQ_SECTION_TITLE +
+  // D-12 (2026-08-03): 11px -> the 13pt section tier, so this heading outranks both the 10pt
+  // column headers and the 10.5pt cell text of the sequences table it introduces.
+  // ── Continuation convention (V-09) ────────────────────────────────────────
+  // Pages 4 and 5 previously carried the IDENTICAL caption with no marker at all, so a reader
+  // turning the page reasonably concluded the section had printed twice; the only hint was a
+  // running head reading "(cont.)", an abbreviation in a document whose standing rule is no
+  // abbreviations. One convention now applies to both the caption and the running head, matching
+  // the Building Readiness table two pages earlier: "(1 of 2)" on the first page of a split
+  // section, "(continued, 2 of 2)" on each later page, spelled out, never abbreviated. A section
+  // that fits on one page carries no marker.
+  function _seqPartSuffix(idx, total) {
+    if (total < 2) return '';
+    return idx === 0 ? ' (1 of ' + total + ')' : ' (continued, ' + (idx + 1) + ' of ' + total + ')';
+  }
+  function _ratTitleFor(idx, total) {
+    return (
+      '<div style="font-size:' +
+      RPT_SECTION_HEAD_PX +
+      'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;' +
+      'text-transform:uppercase;letter-spacing:0.04em">' +
+      _esc(SEQ_SECTION_TITLE + _seqPartSuffix(idx, total)) +
+      '</div>'
+    );
+  }
+
+  // V-10: first page only — what the quantity column counts, and the fact that it adds to the
+  // figure the cover headlines. Without this the reader has a number and no way to place it.
+  var _ratIntro =
+    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.5;margin-bottom:8px">' +
+    'A sequence is listed below when it applies to at least one piece of equipment that was ' +
+    'audited. The quantity column counts how many pieces of equipment still need that sequence ' +
+    'programmed, and the quantities add to ' +
+    rptCount(_seqProgramTotal) +
+    ', the number of control sequences reported on the cover page.' +
     '</div>';
   // Status column removed (2026-07-09, Matt's decision): this table is informational
   // reference only (what each sequence IS, not a per-project readiness rollup) — see the
-  // rationaleTokens comment above. Widths redistributed across the remaining 3 columns.
+  // rationaleTokens comment above.
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
   // Proposal's plain/thin-bordered convention. Styling only.
+  // V-10 (2026-08-03): fourth column added. "ASHRAE 36 Spec" also became "ASHRAE 36 Section" and
+  // its cells read "Section 5.16.2" rather than "ASHRAE 36 §5.16.2" — "spec" is an abbreviation,
+  // and the header already names the standard, so the cell no longer repeats it on every row.
   var _ratThead =
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:26%;border:1px solid var(--rpt-border)">Sequence</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;width:' +
+    A36_SEQ_COL_NAME_PCT +
+    '%;border:1px solid var(--rpt-border)">Sequence</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;width:16%;border:1px solid var(--rpt-border)">ASHRAE 36 Spec</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;width:' +
+    A36_SEQ_COL_SPEC_PCT +
+    '%;border:1px solid var(--rpt-border)">ASHRAE 36 Section</th>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)">Description</th>' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;width:' +
+    A36_SEQ_COL_QTY_PCT +
+    '%;border:1px solid var(--rpt-border)">Number to Program</th>' +
+    '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)">Description</th>' +
     '</tr></thead><tbody>';
   var _ratTclose = '</tbody></table>';
 
@@ -14489,6 +15398,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE,
         '<div style="font-size:11px;color:var(--rpt-page-text)">No sequence data available.</div>',
         {
+          hideIntHdr: true,
           data: fakeData,
           label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE,
         },
@@ -14504,16 +15414,21 @@ function rptPageASHRAE36CostEstimate(n, d) {
           return tok.html;
         })
         .join('');
-      var pageBody = '<div>' + _ratTitle + _ratThead + chunkRowsHTML + _ratTclose + '</div>';
+      var pageBody =
+        '<div>' +
+        _ratTitleFor(chunkIdx, ratChunks.length) +
+        (isFirst ? _ratIntro : '') +
+        _ratThead +
+        chunkRowsHTML +
+        _ratTclose +
+        '</div>';
 
       resultPages.push(
         rptPage(
           currentPageNum,
-          isFirst
-            ? 'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE
-            : 'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE + ' (cont.)',
+          'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE + _seqPartSuffix(chunkIdx, ratChunks.length),
           pageBody,
-          { data: fakeData, label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE },
+          { hideIntHdr: true, data: fakeData, label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE },
         ),
       );
       currentPageNum++;
@@ -14621,23 +15536,23 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     })
     .join('');
 
-  // Per-building gauge colors (2026-07-29, same brand-color pass as the cover page's Composite
-  // Score/Sensor Coverage/Sequence Readiness gauges, ~line 13045 above): Overall -> CSC blue,
-  // Sensors/Sequences -> CSC green. b.statusColor (red/amber/green threshold) is left defined
-  // and still drives the Score bar in the Building Compliance Status table and the
-  // _a36StatusChip badge right below these gauges, so the per-building status signal is not
-  // lost — only this gauge's own fill now matches the report-wide brand-color scheme.
+  // Per-building gauge colors — R2 (2026-08-03), V-01. These were part of the SAME 2026-07-29
+  // brand-color pass that broke the cover (Overall -> CSC blue, Sensors/Sequences -> CSC green),
+  // so they carried the identical contradiction: a ring painted "High Readiness" green sitting
+  // inches above an _a36StatusChip reading "Partial Readiness" for the same building. Fixed the
+  // same way and from the same single rule — a36ReadinessColor() — so cover, per-building page
+  // and readiness table now all speak one color language.
   var gauges =
     '<div style="display:flex;gap:14px;margin-bottom:12px;align-items:center">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.composite, 'var(--rpt-blue)', 'Overall', 70) +
+    _a36GaugeSVG(b.composite, a36ReadinessColor(b.composite), 'Overall', 70) +
     '</div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.pointPct, 'var(--rpt-green)', 'Sensors', 70) +
+    _a36GaugeSVG(b.pointPct, a36ReadinessColor(b.pointPct), 'Sensors', 70) +
     '</div>' +
     '<div style="text-align:center">' +
     (b.seqPct !== null
-      ? _a36GaugeSVG(b.seqPct, 'var(--rpt-green)', 'Sequences', 70)
+      ? _a36GaugeSVG(b.seqPct, a36ReadinessColor(b.seqPct), 'Sequences', 70)
       : '<svg width="70" height="77.7" viewBox="0 0 70 77.7" style="display:block">' +
         '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
         // Grey text on a client deliverable is banned (same rule already applied to the
@@ -14653,10 +15568,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     // each building's section reads as a real header at a glance (2026-07-10 fix,
     // was 12px/600 — smaller than the 13px body text).
     '<h2 style="margin:0 0 4px 0">' +
-    b.name +
+    // R5 (2026-08-03): client-visible name, never the raw Equipment Matrix key.
+    _a36DisplayName(b) +
     '</h2>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">' +
-    b.equipCount +
+    rptCount(b.equipCount) +
     ' equipment units audited</div>' +
     '<div style="margin-bottom:4px">' +
     equipBreakdown +
@@ -14756,7 +15672,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;' +
     'border:1px solid var(--rpt-border)';
   var tableHead =
     colgroup +
@@ -15108,13 +16024,13 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     '<td colspan="4" style="padding:6px 8px;font-size:11px;color:var(--rpt-page-text);' +
     'border-top:2px solid var(--rpt-table-tot-bdr)">' +
     '<strong>Total for ' +
-    b.name +
+    _a36DisplayName(b) +
     ':</strong> install ' +
-    totalSensorsNeeded +
+    rptCount(totalSensorsNeeded) +
     ' sensor' +
     (totalSensorsNeeded !== 1 ? 's' : '') +
     ', program ' +
-    totalSeqsNotReady +
+    rptCount(totalSeqsNotReady) +
     ' sequence' +
     (totalSeqsNotReady !== 1 ? 's' : '') +
     ' across ' +
@@ -15135,7 +16051,10 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // background. NO border-left. NO border. Just spacing."). Removed — plain spacing only.
   var infraCallout =
     '<div class="rpt-a36-callout" style="margin-bottom:0;padding:8px 10px">' +
-    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;' +
+    // D-12 (2026-08-03): 10px (7.5pt printed, 10.005pt after the floor) -> the 13pt section tier.
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.05em;color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (Building Automation System Export)</div>' +
     '<div style="display:flex;gap:16px">' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
@@ -15215,8 +16134,12 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
   // pagination has already run, and this section is opt-in, so the conservative reservation costs
   // nothing in the shipped client Audit.
   var BUILDING_INFRA_CALLOUT_H = showBuildingInfra ? 130 : 0; // measured up to 113
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
+  // variant — matches the ACTUAL top offset now that the 60px chrome bar this page used to
+  // reserve is gone, reclaiming that space for rows.
   var ROWS_BUDGET_FIRST =
-    _rptContentBudget('standard') -
+    _rptContentBudget('flush') -
     BUILDING_GAUGES_H -
     BUILDING_INTRO_H -
     BUILDING_THEAD_H -
@@ -15224,7 +16147,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
     BUILDING_INFRA_CALLOUT_H -
     BUILDING_SAFETY_H; // px available for equipment rows on page 1
   var ROWS_BUDGET_CONT =
-    _rptContentBudget('standard') -
+    _rptContentBudget('flush') -
     BUILDING_CONT_HDR_H -
     BUILDING_THEAD_H -
     BUILDING_TOTAL_ROW_H -
@@ -15279,9 +16202,14 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
       }
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
-        b.name +
+        _a36DisplayName(b) +
         ' (continued, ' +
         (chunkIndex + 1) +
         ' of ' +
@@ -15300,12 +16228,19 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
     // title bar (rptPage()'s own title param, present on every page including page 1) fixes the
     // asymmetry consistently instead of only patching the continuation's already-correct text.
     var pageTitleWithFraction =
-      'ASHRAE 36 Audit Report: ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
+      'ASHRAE 36 Audit Report: ' +
+      _a36DisplayName(b) +
+      (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, pageTitleWithFraction, bodyHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label:
-          'Page ' + pageN + ' — ' + b.name + (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
+          'Page ' +
+          pageN +
+          ' — ' +
+          _a36DisplayName(b) +
+          (numChunks > 1 ? ' (' + (chunkIndex + 1) + '/' + numChunks + ')' : ''),
       }),
     );
   });
@@ -15371,7 +16306,7 @@ function _a36BuildingBlockToken(d, building, showBuildingInfra) {
     (showBuildingInfra ? BLOCK_INFRA_CALLOUT_H : 0) +
     BLOCK_SEPARATOR_H;
 
-  return { type: 'block', estH: estH, html: blockHTML, name: c.b.name };
+  return { type: 'block', estH: estH, html: blockHTML, name: _a36DisplayName(c.b) };
 }
 
 // ─── rptPageASHRAE36Recommendations ──────────────────────────────────────
@@ -15391,7 +16326,7 @@ function rptPageASHRAE36Recommendations(n, d) {
           return b.allGapKeys.indexOf(gap.key) !== -1;
         })
         .map(function (b) {
-          return b.name;
+          return _a36DisplayName(b);
         });
       var affectedStr =
         affectedList.length > 3
@@ -15464,7 +16399,7 @@ function rptPageASHRAE36Recommendations(n, d) {
   // already carries (var(--rpt-border)) since removing the fill left the header with no
   // border at all. Matches the Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
-    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var table =
     '<table style="width:100%;border-collapse:collapse;margin-bottom:12px">' +
     '<thead><tr>' +
@@ -15489,6 +16424,7 @@ function rptPageASHRAE36Recommendations(n, d) {
 
   var bodyHTML = table;
   return rptPage(n, 'ASHRAE 36 Audit Report — Recommendations', bodyHTML, {
+    hideIntHdr: true,
     data: fakeData,
     label: 'Page ' + n + ' — Recommendations',
   });
@@ -15564,6 +16500,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       '</div>';
     return [
       rptPage(n, 'ASHRAE 36 Audit Report: Setpoint Programming Review', emptyBody, {
+        hideIntHdr: true,
         data: fakeData,
         label: 'Page ' + n + ' — Setpoint Programming Review',
       }),
@@ -15637,6 +16574,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
 
     return {
       name: bName,
+      displayName: rptBuildingDisplayName(bName),
       avgHeat: avgHeat,
       avgCool: avgCool,
       avgDb: avgDb,
@@ -15655,9 +16593,9 @@ function rptPageASHRAE36SetpointReview(n, d) {
     var ao = STATUS_ORDER_B[a.bStatus] !== undefined ? STATUS_ORDER_B[a.bStatus] : 99;
     var bo = STATUS_ORDER_B[b2.bStatus] !== undefined ? STATUS_ORDER_B[b2.bStatus] : 99;
     if (ao !== bo) return ao - bo;
-    if (a.name < b2.name) return -1;
-    if (a.name > b2.name) return 1;
-    return 0;
+    // R5 (2026-08-03): alpha within group on the CLIENT-VISIBLE name, matching the readiness
+    // table, so no building files under an internal identifier's first letter.
+    return rptBuildingNameSort(a.name, b2.name);
   });
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -15692,7 +16630,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // Proposal's plain/thin-bordered convention. Styling only.
   var thStyle =
     'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;' +
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;' +
     'white-space:normal;word-wrap:break-word;line-height:1.3;border:1px solid var(--rpt-border)';
   var thStyleC = thStyle + ';text-align:center';
 
@@ -15738,7 +16676,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       '<td style="' +
       tdBase +
       ';font-weight:600;color:var(--rpt-page-text)">' +
-      row.name +
+      _a36DisplayName(row) +
       '</td>' +
       '<td style="' +
       tdCenter +
@@ -15861,8 +16799,11 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var SETPOINT_CONT_HDR_H = 40;
   var SETPOINT_SAFETY_H = 40;
   var SETPOINT_ROW_H = 70; // measured 49 typical, 69 max (3-line Status cell)
-  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - SETPOINT_CONT_HDR_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
+  // variant — reclaims the 60px chrome bar's space for rows.
+  var ROWS_BUDGET_FIRST = _rptContentBudget('flush') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('flush') - SETPOINT_CONT_HDR_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
 
   var tokens = buildingRows.map(function (row) {
     return { type: 'row', estH: SETPOINT_ROW_H, html: _buildBldgRowHTML(row) };
@@ -15892,7 +16833,12 @@ function rptPageASHRAE36SetpointReview(n, d) {
       bodyHTML = preamble + totalsCallout + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         'Setpoint Programming Review (continued, ' +
         (chunkIndex + 1) +
@@ -15911,6 +16857,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, _setpointTitle, bodyHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label:
           'Page ' +
@@ -16056,7 +17003,11 @@ function _rptA36CoverPricingStrip(d) {
         t.label + (t.isRec ? ' (Recommended)' : '') + (amtStr ? ': ' + amtStr : ': Available upon request');
       return (
         '<div style="margin-bottom:12px">' +
-        '<div style="font-size:11px;font-weight:700;color:var(--rpt-page-text);border-bottom:2px solid var(--rpt-rule);' +
+        // D-12 (2026-08-03): tier headline -> the 13pt section tier; the description directly
+        // beneath it is 14px/10.5pt body, so at 11px this heading printed smaller than its own text.
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:700;color:var(--rpt-page-text);border-bottom:2px solid var(--rpt-rule);' +
         'padding-bottom:3px;margin-bottom:5px">' +
         _esc(headline) +
         '</div>' +
@@ -16358,17 +17309,30 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // 2026-07-26 comment above was written against and well above the original bug's ~8pt-equivalent
   // density) — spacing only, font-size untouched at 12px/14px. Re-measured after: 0px overflow
   // (see dashboardlogic.md 2026-07-29 entry for before/after numbers).
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
+  // D-12 (2026-08-03): 12px (9pt printed, 10.005pt after the floor) -> the 13pt section tier.
+  // This constant styles the Proposal's top-level section headings ("Executive Summary",
+  // "Assessment Findings", "Recommended Energy Management Services", ...), every one of which
+  // was measured printing SMALLER than the 10.5pt body text directly beneath it.
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
   // ── Title block ─────────────────────────────────────────────────────────
   var title =
     '<div style="text-align:center;margin-bottom:6px">' +
-    '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">' +
+    // D-12 (2026-08-03): 19px (14.25pt) -> the 18pt document-title tier, matching the Audit
+    // cover. The second line (the programme line) goes 16px -> 19px (12pt -> 14.25pt) with it:
+    // at 12pt it would have printed SMALLER than the 13pt "Executive Summary" heading further
+    // down this same page, which is the same parent-smaller-than-child inversion being fixed.
+    // Result on the cover: title 18pt > programme line 14.25pt > section headings 13pt > body
+    // 10.5pt, with the "Service Proposal" kicker left where it is (a deliberate small-caps
+    // eyebrow, already at the legal 10pt floor, not a heading over any body text).
+    '<div style="font-size:' +
+    RPT_DOC_TITLE_PX +
+    'px;font-weight:700;color:var(--rpt-blue)">' +
     esc(displayClient) +
     ' Building Automation System</div>' +
-    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Energy Management Services</div>' +
+    '<div style="font-size:19px;font-weight:700;color:var(--rpt-blue)">ASHRAE 36 Energy Management Services</div>' +
     // Document-type identifier (2026-07-29) -- the cover previously never said "Service
     // Proposal" anywhere, while the interior Cost Estimate headers and the modal/PDF filename
     // all call it that. Subordinate to both title lines above: smaller than the 16px program
@@ -16379,6 +17343,13 @@ function rptPageASHRAE36ProposalCover(n, d) {
     // font-size:11px; text-transform:uppercase; letter-spacing:0.5px) rather than introducing a
     // new pattern.
     '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">Service Proposal</div>' +
+    // 2026-08-03 (visual review V-25): the Proposal carried no date at all — its only date-like
+    // strings were the "Aug 2026"-"Dec 2026" schedule column labels, so the quoted monthly figure
+    // sat on an undated page. Same source as the export filename (_rptDocumentDateLong), so the
+    // two can never disagree.
+    '<div style="font-size:14px;color:var(--rpt-page-text);margin-top:3px">' +
+    _rptDocumentDateLong() +
+    '</div>' +
     '</div>';
 
   // ── Executive Summary ───────────────────────────────────────────────────
@@ -16393,9 +17364,9 @@ function rptPageASHRAE36ProposalCover(n, d) {
     ' building portfolio. The assessment identified an overall readiness score of ' +
     p.composite +
     '% across ' +
-    Number(p.totalBuildings).toLocaleString() +
+    rptCount(p.totalBuildings) +
     ' buildings and ' +
-    Number(p.totalEquip).toLocaleString() +
+    rptCount(p.totalEquip) +
     ' equipment units. The assessment found significant opportunities to improve heating and cooling ' +
     'energy performance, ventilation control, occupant comfort, and overall building automation system ' +
     'operational consistency through targeted controls upgrades and optimization strategies.</div>';
@@ -16504,7 +17475,11 @@ function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
 
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
+  // D-12 (2026-08-03): 12px (9pt printed, 10.005pt after the floor) -> the 13pt section tier.
+  // This constant styles the Proposal's top-level section headings ("Executive Summary",
+  // "Assessment Findings", "Recommended Energy Management Services", ...), every one of which
+  // was measured printing SMALLER than the 10.5pt body text directly beneath it.
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
@@ -16851,7 +17826,9 @@ function _rptA36PhaseSeqCategoryNames(rows) {
       // sd.label at the source (equipment-matrix.js) -- 'Hot Water Supply Temperature Reset',
       // 'Boiler Staging', etc. -- so EVERY consumer of EM_SEQUENCE_DEFS gets it, not just this
       // function. Re-adding a prefix here would double it (e.g. 'Hot Water Boiler Staging').
-      names.push(sd.label);
+      // V-11 (2026-08-03): through _a36SeqDisplayLabel so a sequence renamed for the client in one
+      // client document is renamed in every one of them.
+      names.push(_a36SeqDisplayLabel(sd));
     });
   }
   return names;
@@ -16883,7 +17860,7 @@ function _rptA36PhaseSeqCategoryDetails(rows) {
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       if (!seen[sd.key]) return;
       var plain = (typeof ASHRAE36_SEQUENCE_PLAIN !== 'undefined' && ASHRAE36_SEQUENCE_PLAIN[sd.key]) || '';
-      details.push({ label: sd.label, plain: plain });
+      details.push({ label: _a36SeqDisplayLabel(sd), plain: plain }); // V-11: one client-facing name everywhere
     });
   }
   return details;
@@ -16946,6 +17923,149 @@ function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
     '</div>' +
     catHTML
   );
+}
+
+/**
+ * _RPT_A36_MONTH_CAT_PHRASE / _rptA36JoinList / _rptA36MonthLaborSentence — Proposal months-table
+ * rebuild (2026-08-03, replacing the check-mark unit matrix — Matt, verbatim: "it's a check-mark
+ * matrix that ... labels almost every row 'Occupancy-Based Ventilation' ... he wants the table to
+ * say IN TEXT, month by month, what work is being done ... the Cost Estimate has all the
+ * information to make this correct"). Turns _pricingComputeMonthlyLaborBreakdown's real,
+ * already-computed category rows for one bucket month (Month 1/2/3/4+ steady state,
+ * pricing-estimator.js ~L1018) into plain prose naming exactly those categories — never an
+ * invented task. Phrase values below are 1:1 renames of the real category strings
+ * _pricingComputeMonthlyLaborBreakdown emits (pricing-estimator.js ~L1134-1167); every key here
+ * must stay in sync with that function's category strings, or a real category would silently drop
+ * out of the sentence (guarded defensively in _rptA36MonthLaborSentence below — an unmapped
+ * category is simply skipped, never renders as "undefined").
+ */
+var _RPT_A36_MONTH_CAT_PHRASE = {
+  'Alarm Configuration': 'alarm configuration',
+  'Report Setup': 'automated report setup',
+  'Trend Setup & Configuration': 'BAS trend setup and configuration',
+  'Audit Report Verification & Quality Review': 'verification and quality review',
+  'Audit Report Final Formatting & Polish': 'final formatting and polish',
+  'Ongoing Monitoring & Optimization': 'ongoing equipment monitoring and optimization',
+  'Utility Bill Data Entry': 'utility bill data entry',
+  'Monthly Client Review Meeting': 'the monthly client review meeting',
+  'Utility Rebate Assistance': 'utility rebate assistance',
+  'Staff Training & Documentation': 'staff training and documentation',
+};
+
+function _rptA36JoinList(arr) {
+  if (!arr || !arr.length) return '';
+  if (arr.length === 1) return arr[0];
+  return arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1];
+}
+
+/**
+ * _rptA36MonthLaborSentence(monthRows, bucketIdx, esc) — builds the "Ongoing Energy Management
+ * labor" lead sentence(s) for one calendar month row of the Proposal months table, from that
+ * month's real bucket rows (bd.months[bucketIdx-1].rows — see caller). Three groups, in the order
+ * Matt asked for ("starting from the Ongoing Energy Management labor and building up: early
+ * months finish the ASHRAE 36 Audit Report, set up alarms and trending..."): recurring EM labor
+ * (present every month), the Month-1-only Audit Report finishing work, then the ramping-down
+ * setup work (alarm/report/trend). bucketIdx (1-4, same clamp _pricingRecurringEMLaborHoursForMonth
+ * uses) only changes the setup sentence's verb tense (sets up vs. continues tapering) — never
+ * invents a category that isn't in monthRows.
+ */
+function _rptA36MonthLaborSentence(monthRows, bucketIdx, esc) {
+  monthRows = monthRows || [];
+  var audit = [],
+    setup = [],
+    recurring = [];
+  monthRows.forEach(function (r) {
+    var phrase = _RPT_A36_MONTH_CAT_PHRASE[r.category];
+    if (!phrase) return; // defensive -- every real category from the breakdown has an entry above
+    if (r.category.indexOf('Audit Report') === 0) audit.push(phrase);
+    else if (
+      r.category === 'Alarm Configuration' ||
+      r.category === 'Report Setup' ||
+      r.category === 'Trend Setup & Configuration'
+    )
+      setup.push(phrase);
+    else recurring.push(phrase);
+  });
+  var sentences = [];
+  if (recurring.length) {
+    sentences.push('Ongoing Energy Management labor this month covers ' + esc(_rptA36JoinList(recurring)) + '.');
+  }
+  if (audit.length) {
+    sentences.push('This month also finishes the ASHRAE 36 Audit Report (' + esc(_rptA36JoinList(audit)) + ').');
+  }
+  if (setup.length) {
+    var verb = bucketIdx === 1 ? 'sets up' : 'continues, at a reduced level as the initial setup tapers off,';
+    sentences.push('This month also ' + verb + ' ' + esc(_rptA36JoinList(setup)) + '.');
+  }
+  return sentences.join(' ');
+}
+
+/**
+ * _rptA36MonthSequenceGroups(items) — real sequence-programming rows for one calendar month of the
+ * term (from _pricingComputeTermMonthlyAllocation's monthBuckets[mi].items), grouped by SEQUENCE
+ * TYPE (seqKey, same EM_SEQUENCE_DEFS-ordered dedup _rptA36PhaseSeqCategoryNames already uses)
+ * across every building scheduled that month — never one row/sentence per building (Matt,
+ * 2026-08-03: "NEVER one near-identical sentence per building"). Returns
+ * [{label, buildings:[name,...]}, ...] in EM_SEQUENCE_DEFS order, then any defensive fold-in items
+ * with no seqKey (enabler/safety/null-impact rows — see _pricingComputeTermMonthlyAllocation's own
+ * header comment on this safety net).
+ */
+function _rptA36MonthSequenceGroups(items) {
+  items = items || [];
+  var bySeq = {};
+  var otherOrder = [];
+  var otherMap = {};
+  items.forEach(function (item) {
+    var seqRow = null;
+    (item.rows || []).forEach(function (r) {
+      if (r.phase === 2 && r.seqKey) seqRow = r;
+    });
+    var bName = _a36DisplayName(item.building);
+    if (seqRow) {
+      if (!bySeq[seqRow.seqKey]) bySeq[seqRow.seqKey] = {};
+      bySeq[seqRow.seqKey][bName] = true;
+    } else {
+      var r0 = (item.rows || [])[0] || {};
+      var lbl = r0.item || 'Improvement';
+      if (!otherMap[lbl]) {
+        otherMap[lbl] = {};
+        otherOrder.push(lbl);
+      }
+      otherMap[lbl][bName] = true;
+    }
+  });
+  var groups = [];
+  if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
+    EM_SEQUENCE_DEFS.forEach(function (sd) {
+      if (!bySeq[sd.key]) return;
+      groups.push({ label: _a36SeqDisplayLabel(sd), buildings: Object.keys(bySeq[sd.key]) });
+    });
+  }
+  otherOrder.forEach(function (lbl) {
+    groups.push({ label: lbl, buildings: Object.keys(otherMap[lbl]) });
+  });
+  return groups;
+}
+
+/**
+ * _rptA36MonthSequenceSentence(groups, esc) — turns _rptA36MonthSequenceGroups' output into one
+ * sentence naming each sequence type once, with the buildings it touches that month named in a
+ * parenthetical (or, past BUILDING_LIST_MAX, just a count — "the list is long" case Matt's spec
+ * calls out) rather than as a count-only "3 buildings" with no names, or a duplicated sentence per
+ * building.
+ */
+function _rptA36MonthSequenceSentence(groups, esc) {
+  if (!groups || !groups.length) return '';
+  var BUILDING_LIST_MAX = 4;
+  var parts = groups.map(function (g) {
+    var n = g.buildings.length;
+    if (n === 1) return esc(g.label) + ' programming at ' + esc(g.buildings[0]);
+    if (n <= BUILDING_LIST_MAX)
+      return esc(g.label) + ' programming across ' + n + ' buildings (' + g.buildings.map(esc).join(', ') + ')';
+    return esc(g.label) + ' programming across ' + n + ' buildings';
+  });
+  var joined = parts.length === 1 ? parts[0] : parts.slice(0, -1).join('; ') + '; and ' + parts[parts.length - 1];
+  return 'Sequence programming this month: ' + joined + '.';
 }
 
 /**
@@ -17103,20 +18223,12 @@ function _rptA36PhaseTableDerive(d, opts) {
     'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
     'line-height:1.5;border:1px solid var(--rpt-border)';
 
-  // headRow: one column per calendar month of the current term (e.g. Aug 2026 .. Dec 2026) —
-  // replaces the old one-column-per-phase header (Phase 1 | Phase 2 | Phase 3). See
-  // _pricingProposalTermMonthLabels' header comment for the derivation and the timeline-anchoring
-  // tension this reintroduces.
-  var headRow =
-    '<tr><th style="' +
-    thStyle +
-    '">Included Improvements</th>' +
-    headCols
-      .map(function (m) {
-        return '<th style="' + thStyle + '">' + esc(m) + '</th>';
-      })
-      .join('') +
-    '</tr>';
+  // headRow (2026-08-03 months-table-as-text rebuild — see rptPageASHRAE36ProposalPhaseTable's
+  // header comment for the full "why"): two columns, Month | What We'll Be Doing, one ROW per
+  // calendar month of the current term (e.g. Aug 2026 .. Dec 2026) instead of the old
+  // one-check-mark-column-per-month matrix. See _pricingProposalTermMonthLabels' header comment for
+  // the month-label derivation.
+  var headRow = '<tr><th style="' + thStyle + '">Month</th><th style="' + thStyle + '">What We’ll Be Doing</th></tr>';
 
   // catListStyle: nested sub-block inside the Future Work cell naming the actual priced sequence
   // categories still to come (see _rptA36PhaseSeqCategoryNames' header comment above for the full
@@ -17128,38 +18240,19 @@ function _rptA36PhaseTableDerive(d, opts) {
     'margin-top:6px;padding-top:5px;border-top:1px solid var(--rpt-rule);font-size:8.5px;' +
     'color:var(--rpt-page-text);text-align:left;line-height:1.4';
 
-  // unitLblStyle/unitMarkStyle: styles for the 2026-07-31 rows-as-term-units matrix rebuild (see
-  // the header comment right below for the full rationale). Font-size/padding/border copied
-  // verbatim from cellStyle above (this task does not change any report font size — a separate,
-  // concurrent change owns that); only text-align/vertical-align differ per column purpose.
-  var unitLblStyle =
-    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
-    'line-height:1.5;border:1px solid var(--rpt-border)';
-  var unitMarkStyle =
-    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:center;vertical-align:top;' +
-    'line-height:1.4;border:1px solid var(--rpt-border)';
+  // monthLblStyle/monthDescStyle: styles for the 2026-08-03 months-table-as-text rebuild (Matt,
+  // verbatim: "he wants the table to say IN TEXT, month by month, what work is being done" —
+  // replaces the 2026-07-31 rows-as-term-units check-mark matrix entirely; NO check marks, ONE ROW
+  // PER CALENDAR MONTH, not per term unit). font-size 14px = RPT_BODY_PX, the same body-text tier
+  // every other paragraph on this page uses — this is prose, not a dense matrix cell, so it reads
+  // at the document's normal body size rather than the old 9.5px matrix-cell size.
+  var monthLblStyle =
+    'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
+    'line-height:1.4;border:1px solid var(--rpt-border);white-space:nowrap';
+  var monthDescStyle =
+    'padding:8px 10px;font-size:14px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
+    'line-height:1.42;border:1px solid var(--rpt-border)';
 
-  // Included Improvements matrix rebuild (2026-07-31, Matt verbatim: "why does Oct 2026 say
-  // Included Improvements Reheat? Why does Nov & Dec 2026 show Ongoing Energy Management
-  // Services for this period? Really that's the best we can do? We can't say what sequences or
-  // sensors to do?"). REPLACES the prior per-month category-name-list cell design (2026-07-30
-  // rebuild, monthImprovementsCellHTML/monthResultsCellHTML, removed below) with the plan's
-  // Option A (AI\_context\plans\word-export-rebuild-2026-07-30.md Part F): ONE ROW PER TERM UNIT
-  // (the same building+sequence pairing _pricingComputeTermMonthlyAllocation already bin-packs —
-  // pricing-estimator.js ~7972, never re-derived here) naming the real sequence, building, and
-  // priced equipment count, with a mark under the calendar month _pricingComputeTermMonthlyAllocation
-  // actually scheduled it in. Diagnosis (measured against real JOCO data, projId 1779664753271,
-  // 2026-07-31): BOTH of Matt's complaints were real and distinct — (a) Nov/Dec 2026 genuinely
-  // have zero allocated units (13 total units all front-load into Aug/Sep/Oct against the
-  // $6,250/month envelope; not a render bug) and (b) Oct's "Reheat" was a bare
-  // EM_SEQUENCE_DEFS label with the unit's own building+equipment-count data (Jo Co Multi Service
-  // Center, 2 variable air volume terminals) sitting right there on the row and simply never
-  // rendered. This rebuild fixes (b) by showing that data on every row, and answers (a) honestly
-  // — the Ongoing Energy Management Services line still applies to every month of the term
-  // (including Aug/Sep/Oct) but is now stated ONCE below the table (ongoingServicesHTML below)
-  // instead of standing in as the entire cell content for whichever months have no new unit
-  // starting. No unit is invented to fill Nov/Dec — there are only 13 real priced units in this
-  // term and all 13 appear here exactly once.
   var monthCount = headCols.length;
   var monthAlloc =
     typeof _pricingComputeTermMonthlyAllocation === 'function'
@@ -17167,138 +18260,84 @@ function _rptA36PhaseTableDerive(d, opts) {
       : { months: [], envelope: 0 };
   var monthBuckets = monthAlloc.months || [];
 
-  // _UNIT_EQUIP_SINGULAR: equipment-type plural/singular names for the row's own priced count
-  // (item.rows[*].categoryQty — {category -> count}, already computed and attached per-unit by
-  // buildBaseRows, pricing-estimator.js ~3118 — never re-derived here). Covers every equipType
-  // any EM_SEQUENCE_DEFS entry references (equipment-matrix.js). "Count actual items, not
-  // buildings" — per-category equipment counts, not a building tally.
-  var _UNIT_EQUIP_SINGULAR = {
-    ahu: 'air handler',
-    rtu: 'rooftop unit',
-    vav: 'variable air volume terminal',
-    fpb: 'fan-powered terminal',
-    ddvav: 'dual-duct terminal',
-    hwp: 'hot water plant pump',
-    chwp: 'chilled water plant pump',
-  };
-  function unitEquipPhrase(seqRow) {
-    var catQty = (seqRow && seqRow.categoryQty) || {};
-    var keys = Object.keys(catQty);
-    if (keys.length) {
-      return keys
-        .map(function (k) {
-          var n = catQty[k];
-          var name = _UNIT_EQUIP_SINGULAR[k] || k;
-          return n + ' ' + (n === 1 ? name : name + 's');
-        })
-        .join(', ');
-    }
-    // Defensive fallback for a row with no categoryQty breakdown (should not happen for a
-    // seqKey row per buildBaseRows — see that function's own comment on this field).
-    var n = (seqRow && seqRow.qty) || 1;
-    return n + (n === 1 ? ' unit' : ' units');
-  }
+  // bd: the real monthly labor breakdown (Alarm Configuration / Report Setup / Trend Setup &
+  // Configuration / Audit Report finishing work / recurring EM labor —
+  // _pricingComputeMonthlyLaborBreakdown, pricing-estimator.js ~L1018) — the SAME data
+  // _pricingLaborBreakdownHTML renders in the interactive Cost Estimate tab, read here (never
+  // re-derived) so the Proposal and the Cost Estimate can never disagree about what a month's labor
+  // covers. Null only when no budget.amount is configured for this project (same
+  // silent-until-configured convention as the rest of this feature) — guarded below.
+  var bd =
+    typeof _pricingComputeMonthlyLaborBreakdown === 'function'
+      ? _pricingComputeMonthlyLaborBreakdown(d.project.id)
+      : null;
 
-  // unitRows: one entry per term unit, in the SAME order _pricingComputeTermMonthlyAllocation
-  // scheduled them (month order, then within-month ROI-admission order) — never re-sorted here.
-  var unitRows = [];
-  monthBuckets.forEach(function (bucket, mi) {
-    (bucket.items || []).forEach(function (item) {
-      var seqRow = null;
-      (item.rows || []).forEach(function (r) {
-        if (r.phase === 2 && r.seqKey) seqRow = r;
-      });
-      var label, equipPhrase;
-      if (seqRow) {
-        var det = _rptA36PhaseSeqCategoryDetails([seqRow]);
-        label = det.length ? det[0].label : seqRow.item;
-        equipPhrase = unitEquipPhrase(seqRow);
-      } else {
-        // Defensive fold-in units (enabler/safety/null-impact/investigation rows with no
-        // seqKey — see _pricingComputeTermMonthlyAllocation's own header comment on this safety
-        // net). Not observed in real JOCO term data (all 13 current units carry a seqKey) but
-        // kept so a future term with one of these never silently disappears from the table.
-        var r0 = (item.rows || [])[0] || {};
-        label = r0.item || 'Improvement';
-        var n0 = r0.qty || 1;
-        equipPhrase = n0 + (n0 === 1 ? ' item' : ' items');
-      }
-      unitRows.push({
-        label: label,
-        building: item.building,
-        equipPhrase: equipPhrase,
-        monthIndex: mi,
-        spansMonths: item.spansMonths || 1,
-      });
-    });
-  });
-
-  // Fallback copy — same wording convention pricing-estimator.js's own facilitiesText fallback
-  // already uses for a phase with no new buildings ("Ongoing Energy Management Services only for
-  // this period"). Only used defensively if the term's allocation produces zero units at all
-  // (should not happen once termPhases.length > 0, but never render an empty table body).
+  // Fallback copy — used only if a month somehow has neither labor-breakdown rows nor any
+  // allocated sequence-programming unit (should not occur for a real, budget-configured project;
+  // guards against a fully blank row rather than assuming it can never happen).
   var MONTH_EMPTY_TEXT = 'Ongoing Energy Management Services for this period.';
 
-  function unitMarkCellHTML(u, colIdx) {
-    if (colIdx !== u.monthIndex) return '';
-    var mark = '<span style="font-weight:700">&#10003;</span>';
-    if (u.spansMonths > 1) {
-      var endIdx = Math.min(u.monthIndex + u.spansMonths - 1, monthCount - 1);
-      mark +=
-        '<div style="font-style:italic;font-size:8.5px;margin-top:2px">continues through ' +
-        esc(headCols[endIdx]) +
-        '</div>';
+  // monthEntries: ONE ENTRY PER CALENDAR MONTH of the term (2026-08-03 rebuild, replacing the old
+  // one-entry-per-term-unit check-mark matrix). Each entry's text JOINS two real data sources on
+  // month index, per Matt's spec: (1) that month's labor-breakdown bucket (Month 1/2/3/4+ steady
+  // state, clamped the SAME way _pricingRecurringEMLaborHoursForMonth clamps an absolute month
+  // index — pricing-estimator.js ~L1258) for the "Ongoing Energy Management labor... finish the
+  // Audit Report... set up alarms and trending" narrative, and (2) that month's own
+  // _pricingComputeTermMonthlyAllocation bucket, summarized by sequence TYPE across buildings
+  // (_rptA36MonthSequenceGroups/_rptA36MonthSequenceSentence above — never one sentence per
+  // building), for the "then sequence programming rolls out" narrative. EVERY month renders
+  // non-empty because source (1) alone is guaranteed non-empty for any budget-configured project
+  // (Ongoing Monitoring & Optimization / Bill Entry / Meeting / Rebate / Training are present in
+  // every bucket, including Month 4+ steady state) — MONTH_EMPTY_TEXT is a defensive fallback only.
+  var monthEntries = headCols.map(function (m, mi) {
+    var laborSentence = '';
+    if (bd && bd.months && bd.months.length) {
+      var bucketIdx = Math.min(Math.max(mi + 1, 1), 4); // same absolute-month clamp as _pricingRecurringEMLaborHoursForMonth
+      laborSentence = _rptA36MonthLaborSentence(bd.months[bucketIdx - 1].rows, bucketIdx, esc);
     }
-    return mark;
-  }
+    var seqGroups = _rptA36MonthSequenceGroups((monthBuckets[mi] && monthBuckets[mi].items) || []);
+    var seqSentence = _rptA36MonthSequenceSentence(seqGroups, esc);
+    var text = (laborSentence + ' ' + seqSentence).trim() || esc(MONTH_EMPTY_TEXT);
+    return { label: m, text: text };
+  });
 
-  function unitRowHTML(u) {
+  function monthRowHTML(entry) {
     return (
       '<tr><td style="' +
-      unitLblStyle +
-      '"><span style="font-weight:700">' +
-      esc(u.label) +
-      '</span> at ' +
-      esc(u.building) +
-      ' (' +
-      esc(u.equipPhrase) +
-      ')</td>' +
-      headCols
-        .map(function (m, i) {
-          return '<td style="' + unitMarkStyle + '">' + unitMarkCellHTML(u, i) + '</td>';
-        })
-        .join('') +
-      '</tr>'
+      monthLblStyle +
+      '">' +
+      esc(entry.label) +
+      '</td><td style="' +
+      monthDescStyle +
+      '">' +
+      entry.text +
+      '</td></tr>'
     );
   }
 
-  // improvementsRowsArr (2026-08-02, months-table page-height fix): kept as an ARRAY of
-  // individual <tr> strings, not just the joined `improvementsRows` string below -- pagination
-  // (rptPageASHRAE36ProposalPhaseTable) needs one row at a time to measure/chunk; the single-page
-  // wrapper (_rptA36PhaseTableInnerHTML) still joins the same array, so both renderers share
-  // identical row markup.
-  var improvementsRowsArr = unitRows.length
-    ? unitRows.map(unitRowHTML)
+  // improvementsRowsArr (2026-08-02, months-table page-height fix — name kept from the prior
+  // rebuild, see rptPageASHRAE36ProposalPhaseTable's header comment): one <tr> string per calendar
+  // month (5 for the JOCO term), not per term unit as before. Pagination
+  // (rptPageASHRAE36ProposalPhaseTable) still needs one row at a time to measure/chunk; the
+  // single-page wrapper (_rptA36PhaseTableInnerHTML) still joins the same array.
+  var improvementsRowsArr = monthEntries.length
+    ? monthEntries.map(monthRowHTML)
     : [
         '<tr><td style="' +
-          unitLblStyle +
-          '" colspan="' +
-          (headCols.length + 1) +
-          '"><span style="font-style:italic">' +
+          monthLblStyle +
+          '" colspan="2"><span style="font-style:italic">' +
           esc(MONTH_EMPTY_TEXT) +
           '</span></td></tr>',
       ];
   var improvementsRows = improvementsRowsArr.join('');
-  // U2 / RC-A (2026-08-02, D-04): parallel array of each row's LABEL-CELL character count, in the
-  // same order as improvementsRowsArr. rptPageASHRAE36ProposalPhaseTable paginates this table by
-  // pixel height, and at the 10pt printed-text floor the row height is set entirely by how many
-  // lines that first cell wraps to (the month columns hold a single check mark) — measured 77px
-  // for a 3-line label up to 157px for a 7-line one. A flat per-row constant cannot express that,
-  // so the label length is published here rather than re-derived by parsing the row HTML back out.
-  // Text below must stay byte-identical to unitRowHTML's own label cell.
-  var improvementsRowLabelLens = unitRows.length
-    ? unitRows.map(function (u) {
-        return (u.label + ' at ' + u.building + ' (' + u.equipPhrase + ')').length;
+  // improvementsRowLabelLens (2026-08-03): re-purposed from the old LABEL-cell char count to the
+  // DESCRIPTION-cell char count — that column now holds the multi-sentence paragraph and is what
+  // actually drives each row's rendered height; the Month cell is always one short line. See
+  // PHASE_LABEL_CPL's own comment (rptPageASHRAE36ProposalPhaseTable) for the chars-per-line this
+  // is divided by.
+  var improvementsRowLabelLens = monthEntries.length
+    ? monthEntries.map(function (e) {
+        return e.text.length;
       })
     : [MONTH_EMPTY_TEXT.length];
 
@@ -17333,6 +18372,9 @@ function _rptA36PhaseTableDerive(d, opts) {
   // appends Future Work as one more row inside THIS table instead of the standalone section
   // _rptA36VisionInnerHTML renders by default. Same content either way
   // (_rptA36FutureWorkInnerHTML), never dollars, never a truncated category list.
+  // colspan fixed at 1 (2026-08-03 months-table-as-text rebuild): this table now has exactly 2
+  // columns (Month, What We'll Be Doing) instead of the old 1-label + N-month-columns matrix, so
+  // there is only one content column left to span.
   var futureRowHTML = '';
   if (opts && opts.futureWorkInline === true && futurePhases.length) {
     var futureAllRows = [];
@@ -17348,9 +18390,7 @@ function _rptA36PhaseTableDerive(d, opts) {
         '">Future Work</td>' +
         '<td style="' +
         cellStyle +
-        '" colspan="' +
-        headCols.length +
-        '">' +
+        '" colspan="1">' +
         'Beyond the initial term, this service continues to expand sensor installation and program the ' +
         'additional control sequences those sensors make possible, funded through the same monthly ' +
         'service allowance, with no fixed end date.' +
@@ -17363,20 +18403,10 @@ function _rptA36PhaseTableDerive(d, opts) {
     }
   }
 
-  // colgroup: label column widened from the old fixed 140px to a 30%/70% split (2026-07-31) —
-  // each row's label now carries a sequence name + building name + equipment count instead of a
-  // single row-header word ("Included Improvements"/"Expected Results"), so it needs materially
-  // more width. Percentage-based (not a wider fixed px) so the 5 month columns keep sharing the
-  // remaining width evenly and stay wide enough for "continues through Mon YYYY" without
-  // mid-word wrapping (verified in this change's render check — see dashboardlogic.md entry).
-  var colgroup =
-    '<colgroup><col style="width:30%">' +
-    headCols
-      .map(function () {
-        return '<col>';
-      })
-      .join('') +
-    '</colgroup>';
+  // colgroup (2026-08-03 months-table-as-text rebuild): a narrow Month column (just "Aug 2026"
+  // etc., never wraps) plus one wide description column carrying the joined labor+sequence
+  // paragraph — replaces the old label + one-column-per-month layout.
+  var colgroup = '<colgroup><col style="width:14%"><col></colgroup>';
 
   var table =
     '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
@@ -17431,7 +18461,9 @@ function _rptA36PhaseTableDerive(d, opts) {
   // consistency within this page.
   var standaloneFutureWorkHTML = '';
   if (!(opts && opts.futureWorkInline === true)) {
-    var _fwHead = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 4px';
+    // D-12 (2026-08-03): "Future Work" heading -> the 13pt section tier.
+    var _fwHead =
+      'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 4px';
     var _fwBody = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
     standaloneFutureWorkHTML = _rptA36FutureWorkInnerHTML(futurePhases, _fwHead, _fwBody);
   }
@@ -17499,7 +18531,8 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // fix/report-typography-and-pagination-merge (2026-07-29): "Why This Approach" prepended here —
   // see rptPageASHRAE36ProposalCover's header comment for why it moved off the cover page. Same
   // HEAD/UL literal style strings used throughout the ASHRAE 36 Proposal page family.
-  var _whyHead = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
+  // D-12 (2026-08-03): "Why This Approach" heading -> the 13pt section tier.
+  var _whyHead = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:7px 0 3px';
   var _whyUl = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var whyHTML = _rptA36WhyThisApproachHTML(_whyHead, _whyUl);
 
@@ -17548,17 +18581,24 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   var CONT_TITLE_CHROME = 30; // small "(continued)" heading on continuation pages only
   var PHASE_SAFETY_H = 40; // explicit page-level margin, same convention as the Audit pages
   var TAIL_H = opts && opts.futureWorkInline === true ? 150 : 370; // measured 356 in standalone mode
-  // Per-row height from the label cell's line count — see rowsLabelLenArr's comment where it is
-  // built. 22 chars/line and the 17px of td padding were fitted against all 13 measured JOCO rows:
-  // the estimate is never below the real height and averages ~3px over it.
-  var PHASE_LABEL_CPL = 22; // chars per line in the ~167px "Included Improvements" label column
-  var PHASE_ROW_PAD_H = 17; // td padding above/below the label block
-  var _phaseLineH = _rptTextLineH(1.5);
+  // Per-row height from the description cell's character count — 2026-08-03 months-table-as-text
+  // rebuild (replacing the old check-mark matrix's narrow-label chars-per-line model, which no
+  // longer applies now that the description column is a wide, wrapping multi-sentence paragraph).
+  // A chars-per-line/line-count model proved a poor fit here (real wrapped line lengths vary with
+  // word-break points, parentheticals, and building-name lists far more than a flat CPL captures)
+  // -- instead this is a direct linear fit against 5 REAL rows measured via headless render against
+  // JOCO (project 1779664753271): (descLen, renderedHeight) = (708,215.75) (677,195.875)
+  // (709,215.75) (325,116.375) (347,116.375) -> slope ~0.26px/char, intercept ~32px, every point
+  // OVER-estimated by 9-21px by the formula below (PHASE_DESC_PX_PER_CHAR * len +
+  // PHASE_ROW_BASE_H), matching this file's own "never below the real height" safety-margin
+  // convention while staying tight enough that 2-3 month rows now share a page instead of one
+  // check-mark-matrix-era's 321px/row flat overestimate leaving most of each page blank.
+  var PHASE_DESC_PX_PER_CHAR = 0.26;
+  var PHASE_ROW_BASE_H = 40;
   var _phaseLabelLens = der.rowsLabelLenArr || [];
   var tokens = der.rowsHTMLArr.map(function (html, i) {
     var len = _phaseLabelLens[i] || 0;
-    var lines = Math.max(1, Math.ceil(len / PHASE_LABEL_CPL));
-    return { type: 'row', estH: PHASE_ROW_PAD_H + lines * _phaseLineH, html: html };
+    return { type: 'row', estH: Math.ceil(len * PHASE_DESC_PX_PER_CHAR) + PHASE_ROW_BASE_H, html: html };
   });
   if (der.futureRowHTML) {
     // futureWorkInline mode folds Future Work into the table as one more <tr> (der.futureRowHTML)
@@ -17583,33 +18623,53 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   chunks.forEach(function (chunk, idx) {
     var rowsHTML = '';
     var tailHTML = '';
+    var hasRows = false;
     chunk.forEach(function (t) {
       if (t.type === 'block') tailHTML += t.html;
-      else rowsHTML += t.html;
+      else {
+        rowsHTML += t.html;
+        hasRows = true;
+      }
     });
-    var table =
-      '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
-      der.colgroupHTML +
-      '<thead>' +
-      der.headRowHTML +
-      '</thead>' +
-      '<tbody>' +
-      rowsHTML +
-      '</tbody>' +
-      '</table>';
+    // 2026-08-03 (months-table-as-text rebuild, empty-table fix): a chunk can legitimately be
+    // TAIL-ONLY (the term notes + standalone Future Work block landing alone on the final page once
+    // the description-cell text made every month row taller than the old check-mark cells) -- do
+    // not render an empty <table> with only a header row and zero <tr>s in that case; a headed
+    // table with nothing under it reads as a rendering bug, not real content.
+    var table = hasRows
+      ? '<table style="width:100%;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid">' +
+        der.colgroupHTML +
+        '<thead>' +
+        der.headRowHTML +
+        '</thead>' +
+        '<tbody>' +
+        rowsHTML +
+        '</tbody>' +
+        '</table>'
+      : '';
     var head;
     if (idx === 0) {
       head = whyHTML + der.intro;
-    } else {
+    } else if (hasRows) {
       // Repeating header row (der.headRowHTML, above) plus this small continuation title -- so a
       // reader who reaches page 2 knows both which page this is AND which column is which month.
       head =
-        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+        // D-12 / V-18 (2026-08-03): 11px -> the 13pt section tier. This was the heading V-18
+        // measured at 9.0pt on Proposal page 3 while the months table's own column headers on the
+        // same page printed at 10.5pt, making a table header the largest text on the page.
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
         'text-transform:uppercase;letter-spacing:0.04em">Included Improvements (continued ' +
         (idx + 1) +
         ' of ' +
         numChunks +
         ')</div>';
+    } else {
+      // Tail-only continuation page: no table, so no "Included Improvements (continued...)" table
+      // title either -- tailHTML (Expected Results / Ongoing Services / Future Work) carries its
+      // own headings and reads fine starting straight into them.
+      head = '';
     }
     var bodyInner = head + table + tailHTML;
     var labelSuffix =
@@ -17653,7 +18713,8 @@ function _rptA36VisionInnerHTML(d, opts) {
   // font-size:10.5px at the time, later corrected to font-size:14px on 2026-07-28 — see
   // rptPageASHRAE36ProposalCover's comment above) — only spacing tightened, so this is real
   // content packed more efficiently, not padding removed to fake fullness.
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
+  // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:1px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
@@ -17904,7 +18965,8 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
+  // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
@@ -17977,7 +19039,8 @@ function rptPageASHRAE36ProposalFullScope(n, d) {
     return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
   }
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var HEAD = 'font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
+  // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
+  var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
@@ -18145,7 +19208,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
   // match pages 1-3's thPlain convention (rptPageASHRAE36ProposalCover): plain bold text, thin
   // var(--rpt-rule) border, no fill. Content/values unchanged — styling only.
   var thStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
+    'padding:5px 8px;font-size:10px;font-weight:700;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
 
   var ph1HTML =
     phase1Gaps.length || dcvScopeRow
@@ -18184,17 +19247,22 @@ function rptPageASHRAE36ProposalScope(n, d) {
   // title (var(--rpt-blue) and hardcoded #7c3aed purple) → var(--rpt-rule) border + black title.
   var bodyHTML =
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 1: Hardware &amp; Sensor Upgrades</div>' +
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 1: Hardware &amp; Sensor Upgrades</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Installation of missing sensors and actuators required for ASHRAE 36 compliance. This phase establishes the hardware foundation for sequence programming.</div>' +
     ph1HTML +
     '</div>' +
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2: Building Automation System Sequence Programming</div>' +
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-page-text);margin-bottom:6px;border-bottom:2px solid var(--rpt-rule);padding-bottom:3px">Phase 2: Building Automation System Sequence Programming</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming of ASHRAE 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
     ph2HTML +
     '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal: Scope of Work', bodyHTML, {
+    hideIntHdr: true,
     data: fakeData,
     label: 'Page ' + n + ' — Scope of Work',
   });
@@ -18585,7 +19653,7 @@ function _rptA36RecommendedTimelineHTML(d) {
   // plain/thin-bordered table convention — see the matching comment above rptPageASHRAE36ProposalScope's
   // thStyle. Styling only; no content/values changed.
   var thStyle =
-    'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
+    'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
   var tdStyle =
     'padding:6px 8px;font-size:9px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);vertical-align:top';
 
@@ -18682,7 +19750,10 @@ function _rptA36RecommendedTimelineHTML(d) {
 
   return (
     '<div style="margin-top:12px">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
+    // D-12 (2026-08-03): 11px -> the 13pt section tier.
+    '<div style="font-size:' +
+    RPT_SECTION_HEAD_PX +
+    'px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;' +
     'text-transform:uppercase;letter-spacing:0.04em">Recommended Energy Management Services: Phased Implementation Sequence</div>' +
     '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed">' +
     colgroup +
@@ -19184,6 +20255,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var resultPages = [
     rptPage(n, 'ASHRAE 36 Service Proposal: Cost Estimate', bodyHTML, {
+      hideIntHdr: true,
       data: fakeData,
       label: 'Page ' + n + ' — Cost Estimate',
     }),
@@ -19192,6 +20264,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   if (trailerHTML) {
     resultPages.push(
       rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', titleBlock + trailerHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label: 'Page ' + nextPageNum + ' — Cost Estimate Disclaimer',
       }),
@@ -19283,9 +20356,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         ? '<colgroup><col style="width:534px"><col style="width:150px"></colgroup>'
         : '<colgroup><col style="width:474px"><col style="width:100px"><col style="width:110px"></colgroup>';
       var itThStyle =
-        'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:left;' +
+        'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
         'border:1px solid var(--rpt-border)';
-      var itThRight = itThStyle.replace('text-align:left', 'text-align:right');
+      // Matt's fix #4 (2026-08-03): ALL table headers center-align, no exceptions for numeric
+      // columns — a prior pass kept these right-aligned as its own design judgment; removed.
+      var itThRight = itThStyle;
       var itTableHead =
         '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
         itColgroup +
@@ -19367,7 +20442,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // value (904 - 124 = 780), no visual/page-count change. FIRST and CONT stay equal per the
       // comment above (a tier's first page has the same chrome as its continuation pages).
       var ITEMIZED_BASE_ADJUSTMENT = 124; // title + thead + table margin-bottom (~60px chrome) + safety margin
-      var _itemizedBudget = _rptContentBudget('standard') - ITEMIZED_BASE_ADJUSTMENT;
+      // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+      // renders with hideIntHdr:true, so the budget uses the 'flush' variant — reclaims the
+      // 60px chrome bar's space for rows.
+      var _itemizedBudget = _rptContentBudget('flush') - ITEMIZED_BASE_ADJUSTMENT;
       // 2026-08-02 (fix/docx-proposal-pagination-orphans): greedy _rptPaginateTokens ->
       // _rptPaginateTokensBalanced, same reasoning as _buildTierDetailPages above — same minimum
       // page count K, but a short remainder chunk is redistributed instead of stranded alone on a
@@ -19399,6 +20477,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
         pages.push(
           rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', body, {
+            hideIntHdr: true,
             data: fakeData,
             label: 'Page ' + pageN + ' — Itemized Measures (' + c.label + ')',
           }),
@@ -19579,7 +20658,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // all. Real Word measurement: pageTitle top (98.4pt) to first token top (120.3pt) = 21.9pt =
       // ~29.2px-equivalent. 4px reserved essentially nothing for it.
       var SCOPE_BASE_ADJUSTMENT = 30; // reserves the pageTitle div's own real Word-measured height
-      var _scopeBudget = _rptContentBudget('standard') - SCOPE_BASE_ADJUSTMENT;
+      // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+      // renders with hideIntHdr:true, so the budget uses the 'flush' variant — reclaims the
+      // 60px chrome bar's space for rows.
+      var _scopeBudget = _rptContentBudget('flush') - SCOPE_BASE_ADJUSTMENT;
       // 2026-08-02 (fix/docx-proposal-pagination-orphans): _rptPaginateTokens (greedy) -->
       // _rptPaginateTokensBalanced. Even with the corrected estH above, a real Word round-trip on
       // the live "Full Scope" tier's 30-token list found greedy packing 29 tokens onto page 1
@@ -19614,6 +20696,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '</div>';
         pages.push(
           rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', pageTitle + rowsHTML, {
+            hideIntHdr: true,
             data: fakeData,
             label: 'Page ' + pageN + ' — Install & Programming Detail (' + c.label + ')',
           }),
@@ -19721,8 +20804,10 @@ function rptPageASHRAE36PointInventory(n, d) {
   // Proposal's plain/thin-bordered convention. Styling only.
   var thBase =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:left;border:1px solid var(--rpt-border)';
-  var thRight = thBase + ';text-align:right';
+    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
+  // Matt's fix #4 (2026-08-03): ALL table headers center-align, no exceptions for numeric
+  // columns — a prior pass kept these right-aligned as its own design judgment; removed.
+  var thRight = thBase;
 
   var tableHead =
     '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px;table-layout:fixed">' +
@@ -19750,16 +20835,16 @@ function rptPageASHRAE36PointInventory(n, d) {
     return (
       '<tr>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border)">' +
-      b.name +
+      _a36DisplayName(b) +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
-      bTotal.toLocaleString() +
+      rptCount(bTotal) +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border:1px solid var(--rpt-border);text-align:right">' +
-      b.ashrae.toLocaleString() +
+      rptCount(b.ashrae) +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border:1px solid var(--rpt-border);text-align:right">' +
-      b.other.toLocaleString() +
+      rptCount(b.other) +
       '</td>' +
       '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-blue);font-weight:600;border:1px solid var(--rpt-border);text-align:right">' +
       bPct +
@@ -19837,12 +20922,15 @@ function rptPageASHRAE36PointInventory(n, d) {
     var lines = Math.max(1, Math.ceil(String(name || '').length / INV_NAME_CPL));
     return INV_ROW_PAD_H + lines * _invLineH;
   }
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
+  // variant — reclaims the 60px chrome bar's space for rows.
   var ROWS_BUDGET_FIRST =
-    _rptContentBudget('standard') - INV_SUMMARY_H - INV_NARRATIVE_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - INV_CONT_HDR_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
+    _rptContentBudget('flush') - INV_SUMMARY_H - INV_NARRATIVE_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('flush') - INV_CONT_HDR_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
 
   var tokens = inv.byBuilding.map(function (b) {
-    return { type: 'row', estH: _invRowEstH(b.name || b.building), html: _buildInvRowHTML(b) };
+    return { type: 'row', estH: _invRowEstH(_a36DisplayName(b)), html: _buildInvRowHTML(b) };
   });
   tokens.push({ type: 'row', estH: INV_ROW_PAD_H + 2 * _invLineH, html: totalsRowHTML });
 
@@ -19864,7 +20952,12 @@ function rptPageASHRAE36PointInventory(n, d) {
       bodyHTML = summaryBlock + narrative + table + (chunkIndex === numChunks - 1 ? footnote : '');
     } else {
       var contHdr =
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);' +
+        // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
+        // heading it continues. Three sections share this exact fragment (Building ASHRAE 36
+        // Readiness, Per-Building Detail, Setpoint Programming Review).
+        '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;color:var(--rpt-page-text);' +
         'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--rpt-rule)">' +
         'Point Inventory Completeness (continued, ' +
         (chunkIndex + 1) +
@@ -19882,6 +20975,7 @@ function rptPageASHRAE36PointInventory(n, d) {
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, _pointInvTitle, bodyHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label:
           'Page ' +
@@ -19957,7 +21051,10 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     // the standalone literal 750 — AUDIT_BUILDING_BASE_ADJUSTMENT preserves this exact numeric
     // value (904 - 154 = 750), no visual/page-count change.
     var AUDIT_BUILDING_BASE_ADJUSTMENT = 154; // safety margin against the estH approximation in _a36BuildingBlockToken, per comment above
-    var BUILDING_PAGE_BUDGET = _rptContentBudget('standard') - AUDIT_BUILDING_BASE_ADJUSTMENT; // px — interior page body (~895px) minus safety margin
+    // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+    // renders with hideIntHdr:true, so the budget uses the 'flush' variant — reclaims the
+    // 60px chrome bar's space for rows.
+    var BUILDING_PAGE_BUDGET = _rptContentBudget('flush') - AUDIT_BUILDING_BASE_ADJUSTMENT; // px — interior page body (~895px) minus safety margin
     var _bldgFakeData = { project: { client: data.project.name }, period: { label: '', reportDate: data.rawDate } };
     var _pendingBlocks = [];
 
@@ -19975,6 +21072,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
           })
           .join('');
         var pg = rptPage(pageNum, 'ASHRAE 36 Audit Report: Per-Building Detail', bodyHTML, {
+          hideIntHdr: true,
           data: _bldgFakeData,
           label: 'Page ' + pageNum + ' — Per-Building Detail',
         });
