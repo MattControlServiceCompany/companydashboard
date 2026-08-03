@@ -12845,8 +12845,16 @@ var A36_SEQ_LABEL_OVERRIDE = {
  * reason that wording was chosen over "Sequences to Program", which needs 14% to avoid printing
  * across its own column rule. The room came from the description column, whose text wraps
  * gracefully, never from a column with an unbreakable header word.
+ *
+ * V-11 (2026-08-03, Matt's fix #3: "can we not make the description column slightly less wide so
+ * that the Sequence column can be a little wider"). Sequence name column was cramped at 24%
+ * (inner ~152.5px) while the description column, whose text wraps gracefully with room to spare,
+ * had the most slack of any column. Moved 3 points name<-description (24 -> 27, description's
+ * implicit remainder 47 -> 44); Section and Quantity columns are untouched, so their own
+ * unbreakable-header-word fits (documented above) are unaffected. SEQ_DESC_CPL below was refitted
+ * to the new narrower description width so the row-height estimate still never under-counts.
  */
-var A36_SEQ_COL_NAME_PCT = 24;
+var A36_SEQ_COL_NAME_PCT = 27;
 var A36_SEQ_COL_SPEC_PCT = 16;
 var A36_SEQ_COL_QTY_PCT = 13;
 var SEQ_ROW_TOTALS_H = 80; // measured height of the totals row at the floored type size
@@ -15206,10 +15214,17 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // description column 58% -> 47%, so all three chars-per-line constants were re-fitted
       // against a fresh headless print render of every row at the new widths (same method: the
       // largest constant that still never under-estimates a measured row).
+      //
+      // V-11 (2026-08-03, Matt's fix #3): name column widened 24% -> 27%, description narrowed
+      // 47% -> 44% (see A36_SEQ_COL_NAME_PCT comment above). SEQ_NAME_CPL/SEQ_REQ_CPL are left at
+      // their V-10 values on purpose — a wider name column can only fit MORE chars per line than
+      // those constants assume, so the estimate stays conservative (over-, never under-, counts
+      // lines). SEQ_DESC_CPL is scaled down proportionally to the narrower width (40 * 296.3/317.9,
+      // floored) so a narrower description column doesn't make the estimate under-count lines.
       var SEQ_ROW_PAD_H = 14; // td padding 7px top + 7px bottom
-      var SEQ_NAME_CPL = 18; // chars per line, bold sequence label in the 24% (~152px) name column
+      var SEQ_NAME_CPL = 18; // chars per line, bold sequence label in the 27% (~174px) name column
       var SEQ_REQ_CPL = 21; // chars per line, "Requires: ..." sub-line (regular weight, same column)
-      var SEQ_DESC_CPL = 40; // chars per line, plain-language description in the 47% (~318px) column
+      var SEQ_DESC_CPL = 37; // chars per line, plain-language description in the 44% (~296px) column
       var SEQ_REQ_GAP = 3; // the sub-line's margin-top
       // One line height for all three columns: measured, the sub-line's declared line-height:1.4
       // still lays out on the same 20px rhythm as the 1.5 cells once the font floor applies, and
