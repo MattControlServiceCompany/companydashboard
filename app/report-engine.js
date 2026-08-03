@@ -13118,6 +13118,13 @@ function collectASHRAE36Data(projId, reportDate) {
       statusLabel: statusLabel,
       totalSensorsInPlace: totalSensorsInPlace,
       totalSensorsRequired: totalSensorsRequired,
+      // Sequence counts for status chip display (2026-08-02, matches sensor counts above —
+      // totalSeqMatched/totalSeqRequired were already accumulated in the per-equipment loop
+      // above for seqPct/composite; simply persisting them here so _a36StatusChip can show
+      // "X/Y sequences" the same way it already shows "X/Y sensors". null when seqPct is null
+      // (no applicable ASHRAE 36 sequences for this building) — see seqPct comment above.
+      totalSeqMatched: totalSeqMatched,
+      totalSeqRequired: totalSeqRequired,
       topGaps: topGaps,
       allGapKeys: allGapKeys,
       // Phase 5 — setpoint compliance counts (additive, do not affect score)
@@ -13398,9 +13405,13 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
 }
 
 // ─── Status chip helper ────────────────────────────────────────────────────
-// status: 'green'|'amber'|'red'; inPlace/required: sensor counts (optional).
+// status: 'green'|'amber'|'red'; inPlace/required: sensor counts (optional);
+// seqMatched/seqRequired: sequence counts (optional, added 2026-08-02 per Matt's report
+// "why does the Building Status column have the Sensors count but not the sequences?" —
+// sensors that need installing and sequences that cannot run until they are both matter to
+// a reader judging a building's readiness; showing only one was an incomplete picture).
 // Renders "High Readiness · 3/3 sensors" style label when counts are provided.
-function _a36StatusChip(status, inPlace, required, seqNA) {
+function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequired) {
   // `color` is computed for the caller's colored status bar (data-viz, kept — see the
   // `.rpt-a36-*` executive-summary/building rows that render `color` alongside this chip's
   // word). Batch 3 item 3c ("make chip WORD black") was already satisfied at this line —
@@ -13434,11 +13445,28 @@ function _a36StatusChip(status, inPlace, required, seqNA) {
   // the reader nothing new, per Matt's flag) — drop it and show the word alone. Below 100%,
   // unchanged (e.g. "Partial Readiness · 178/261 sensors", "Low Readiness · 7/16 sensors").
   var isComplete = inPlace !== undefined && required !== undefined && required > 0 && inPlace === required;
-  var label =
-    inPlace !== undefined && required !== undefined && !isComplete
-      ? word + ' · ' + inPlace + '/' + required + ' sensors'
-      : word;
-  return '<span style="font-size:10px;color:var(--rpt-page-text)">' + label + '</span>';
+  var sensorDetail =
+    inPlace !== undefined && required !== undefined && !isComplete ? inPlace + '/' + required + ' sensors' : null;
+  // Same tautology rule applied to sequences (2026-08-02): at seqMatched===seqRequired>0 the
+  // fraction adds nothing, so drop it and let the word alone carry that case. When seqNA is
+  // true this building has zero applicable ASHRAE 36 sequences (word is already
+  // "No Scope Required" above) — never render a fabricated "0/0 sequences" for that case, per
+  // Matt's rule against showing zero as if it were a measurement.
+  var isSeqComplete =
+    !seqNA && seqMatched !== undefined && seqRequired !== undefined && seqRequired > 0 && seqMatched === seqRequired;
+  var seqDetail =
+    !seqNA && seqMatched !== undefined && seqRequired !== undefined && seqRequired > 0 && !isSeqComplete
+      ? seqMatched + '/' + seqRequired + ' sequences'
+      : null;
+  // Each present detail renders on its own line (rather than joined on one line with the
+  // word) so neither the Status column width nor the "1 row = 1 line per fact" wrapping
+  // invariant documented above is at risk of a longer combined string overflowing/wrapping
+  // mid-word — see 2026-08-02 dashboardlogic entry for the DOM-measured column-width check.
+  var detailLines = [sensorDetail, seqDetail].filter(function (x) {
+    return x;
+  });
+  var label = detailLines.length > 0 ? word + '<br>' + detailLines.join('<br>') : word;
+  return '<span style="font-size:10px;color:var(--rpt-page-text);line-height:1.35">' + label + '</span>';
 }
 
 /**
@@ -14027,7 +14055,14 @@ function rptPageASHRAE36Executive(n, d) {
       '<div style="' +
       _rowBoxStyle +
       '">' +
-      _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired, b.seqPct === null) +
+      _a36StatusChip(
+        b.status,
+        b.totalSensorsInPlace,
+        b.totalSensorsRequired,
+        b.seqPct === null,
+        b.totalSeqMatched,
+        b.totalSeqRequired,
+      ) +
       '</div></td>' +
       '</tr>'
     );
@@ -14430,7 +14465,14 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     '<div style="margin-bottom:4px">' +
     equipBreakdown +
     '</div>' +
-    _a36StatusChip(b.status, b.totalSensorsInPlace, b.totalSensorsRequired, b.seqPct === null) +
+    _a36StatusChip(
+      b.status,
+      b.totalSensorsInPlace,
+      b.totalSensorsRequired,
+      b.seqPct === null,
+      b.totalSeqMatched,
+      b.totalSeqRequired,
+    ) +
     '</div>' +
     '</div>';
 
