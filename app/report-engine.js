@@ -20336,7 +20336,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       var itThStyle =
         'padding:6px 8px;font-size:9px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
         'border:1px solid var(--rpt-border)';
-      var itThRight = itThStyle.replace('text-align:center', 'text-align:right');
+      // Matt's fix #4 (2026-08-03): ALL table headers center-align, no exceptions for numeric
+      // columns — a prior pass kept these right-aligned as its own design judgment; removed.
+      var itThRight = itThStyle;
       var itTableHead =
         '<table style="width:684px;max-width:684px;border-collapse:collapse;font-size:9px;table-layout:fixed;margin-bottom:12px">' +
         itColgroup +
@@ -20773,7 +20775,9 @@ function rptPageASHRAE36PointInventory(n, d) {
   var thBase =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;border:1px solid var(--rpt-border)';
-  var thRight = thBase + ';text-align:right';
+  // Matt's fix #4 (2026-08-03): ALL table headers center-align, no exceptions for numeric
+  // columns — a prior pass kept these right-aligned as its own design judgment; removed.
+  var thRight = thBase;
 
   var tableHead =
     '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px;table-layout:fixed">' +

@@ -2469,8 +2469,16 @@
         font-weight: 700;
         color: var(--rpt-page-text);
       }
-      .rpt-table .rpt-n {
+      /* Matt's fix #4 (2026-08-03): ALL table headers center-align, no exceptions for numeric
+         columns. .rpt-table .rpt-n previously right-aligned both <th> and <td> (two-class
+         selector beat the single-class .rpt-table th center rule above) — split so numeric DATA
+         cells stay right-aligned but numeric HEADER cells center like every other header. */
+      .rpt-table td.rpt-n {
         text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .rpt-table th.rpt-n {
+        text-align: center;
         font-variant-numeric: tabular-nums;
       }
       .rpt-table-compact {
