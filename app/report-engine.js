@@ -8630,6 +8630,157 @@ async function exportReportToWord() {
 }
 
 /**
+ * _rptResolveCssVarsAgainstRoot — replace every `var(--token)` in a string with the value that
+ * token resolves to ON THE LIVE DOCUMENT, via getComputedStyle(document.documentElement).
+ *
+ * THIS IS THE TRAP THE GAUGE RASTERIZATION PROOF EXISTS TO WARN ABOUT (D-25, 2026-08-02).
+ * The gauge ring's colors are written as `stroke="var(--rpt-orange)"` presentation attributes.
+ * Chrome resolves those correctly while the SVG is in the live document, but the .docx export
+ * works on DETACHED clones (pageEl.cloneNode(true)), and a detached element has no cascade: read
+ * a var off the clone — getComputedStyle(clonedSvg), or clonedSvg.style.getPropertyValue — and
+ * you get the empty string. Serialize that and the rasterizer draws a ring with NO stroke at all
+ * (a transparent ring with black text), which is worse than the missing gauge it was meant to
+ * fix, and it fails silently. Always resolve against document.documentElement, which is where
+ * `:root { --rpt-*: ... }` in #report-styles actually lives.
+ *
+ * Distinct from _buildReportCssVarResolver above, which parses var DEFINITIONS out of a CSS text
+ * blob for the mso-HTML path. This one asks the live CSSOM, so it also honors any runtime theme
+ * override and needs no stylesheet text.
+ */
+function _rptResolveCssVarsAgainstRoot(text) {
+  if (!text || text.indexOf('var(') === -1) return text;
+  var rootStyle = getComputedStyle(document.documentElement);
+  var cache = {};
+  return text.replace(/var\(\s*(--[a-zA-Z0-9-]+)\s*(?:,\s*([^()]*))?\)/g, function (whole, name, fallback) {
+    if (!(name in cache)) cache[name] = (rootStyle.getPropertyValue(name) || '').trim();
+    if (cache[name]) return cache[name];
+    return fallback !== undefined ? fallback.trim() : whole;
+  });
+}
+
+/** How many device pixels the gauge ring PNG carries per CSS pixel. 3x measured (D-25 proof,
+ *  2026-08-02): a ring-only PNG comes out 330x383px for the cover's 110px gauge and the three
+ *  cover rings together cost about 55.6KB — crisp in print, negligible in the package. */
+var RPT_DOCX_GAUGE_RASTER_SCALE = 3;
+
+/**
+ * _rptSwapGaugeRingForPng — draw ONE gauge ring into a PNG and insert it immediately before the
+ * <svg> it came from. Resolves with true on success, false on any failure (never rejects, never
+ * hangs: a Word export must not be lost because a canvas misbehaved).
+ *
+ * RING ONLY. Every <text> is stripped from the rasterized copy and the original <svg> is LEFT IN
+ * PLACE, because the docx translator's own <svg> branch (app/docx-writer.js) already emits that
+ * svg's percentage as a real bold text run. So the number stays live, selectable, searchable and
+ * restyleable text in Word — it is never baked into the picture — and the picture supplies only
+ * the part Word genuinely cannot draw.
+ */
+function _rptSwapGaugeRingForPng(svgEl, scale) {
+  var wCss = parseFloat(svgEl.getAttribute('width'));
+  var hCss = parseFloat(svgEl.getAttribute('height'));
+  if (!wCss || !hCss || !svgEl.parentNode) return Promise.resolve(false);
+
+  var ring = svgEl.cloneNode(true);
+  Array.prototype.slice.call(ring.querySelectorAll('text')).forEach(function (t) {
+    if (t.parentNode) t.parentNode.removeChild(t);
+  });
+  ring.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  if (!ring.getAttribute('viewBox')) ring.setAttribute('viewBox', '0 0 ' + wCss + ' ' + hCss);
+  var pxW = Math.round(wCss * scale);
+  var pxH = Math.round(hCss * scale);
+  ring.setAttribute('width', String(pxW));
+  ring.setAttribute('height', String(pxH));
+  // Resolve --rpt-* AFTER serializing, against the live root — see the doc comment above.
+  var markup = _rptResolveCssVarsAgainstRoot(new XMLSerializer().serializeToString(ring));
+
+  return new Promise(function (resolve) {
+    var settled = false;
+    var finish = function (ok) {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    // A data-URL SVG cannot hit the network, but never let a stuck decode block the export.
+    var timer = setTimeout(function () {
+      finish(false);
+    }, 5000);
+    var img = new Image();
+    img.onload = function () {
+      clearTimeout(timer);
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = pxW;
+        canvas.height = pxH;
+        var c2d = canvas.getContext('2d');
+        c2d.drawImage(img, 0, 0, pxW, pxH);
+        var out = document.createElement('img');
+        out.setAttribute('src', canvas.toDataURL('image/png'));
+        out.setAttribute('alt', 'Readiness ring');
+        // Placed at the SVG's own CSS size, so 3x raster data lands in a 1x box and prints sharp.
+        // _docxRegisterImage reads this inline width/height to size the OOXML drawing.
+        out.setAttribute('style', 'display:block;margin:0 auto;width:' + wCss + 'px;height:' + hCss + 'px');
+        svgEl.parentNode.insertBefore(out, svgEl);
+        finish(true);
+      } catch (e) {
+        finish(false);
+      }
+    };
+    img.onerror = function () {
+      clearTimeout(timer);
+      finish(false);
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  });
+}
+
+/**
+ * _rptRasterizeGaugeRingsForDocx — DEFECTS-2026-08-02.md D-25: "Cover gauges are plain text in
+ * the Word export" (Matt asked directly why the gauges are missing from the .docx).
+ *
+ * Word has no SVG: the OOXML translator drops the ring and keeps only the percentage, so the
+ * Audit cover arrived in Word as three bare numbers in a borderless table. Nothing about the
+ * embedding machinery needed to change — _docxRegisterImage / _docxEmbedImage / _docxImageRun /
+ * _docxAssemble already embed any <img src="data:image/png;base64,..."> generically — so this is
+ * only a rasterize-and-swap pass over the page clones, run before translation.
+ *
+ * Targets every <svg> that contains a <circle>, which is exactly the gauge rings (_a36GaugeSVG
+ * and its "No Scope Required" N/A twin) and nothing else in these documents: the bar and line
+ * charts are <rect>/<path>/<polyline>. A gauge that fails to rasterize simply keeps today's
+ * behavior (percentage text, no ring) — degraded, never broken.
+ *
+ * @returns {Promise<{found:number, rasterized:number}>}
+ */
+async function _rptRasterizeGaugeRingsForDocx(pageEls, scale) {
+  scale = scale || RPT_DOCX_GAUGE_RASTER_SCALE;
+  var rings = [];
+  pageEls.forEach(function (pageEl) {
+    if (!pageEl.querySelectorAll) return;
+    Array.prototype.forEach.call(pageEl.querySelectorAll('svg'), function (svg) {
+      if (svg.querySelector('circle')) rings.push(svg);
+    });
+  });
+  var rasterized = 0;
+  for (var i = 0; i < rings.length; i++) {
+    var ok = false;
+    try {
+      ok = await _rptSwapGaugeRingForPng(rings[i], scale);
+    } catch (e) {
+      ok = false;
+    }
+    if (ok) rasterized++;
+  }
+  if (rings.length && rasterized < rings.length && typeof console !== 'undefined' && console.warn) {
+    console.warn(
+      'Word export: ' +
+        (rings.length - rasterized) +
+        ' of ' +
+        rings.length +
+        ' gauge rings could not be rasterized; their percentages still export as text.',
+    );
+  }
+  return { found: rings.length, rasterized: rasterized };
+}
+
+/**
  * exportReportToDocx — Word Export Rebuild plan Step 6 (first shipped document), wired for the
  * EMS Agreement (data._agreement). AI/_context/plans/word-export-rebuild-2026-07-30.md Part D
  * lines 306-311. Style authority: AI/_context/specs/csc-document-style-spec-2026-07-29.md.
@@ -8706,6 +8857,11 @@ async function exportReportToDocx() {
       });
       pageEls.push(clone);
     });
+
+    // D-25 (R2, 2026-08-03): draw the gauge rings Word cannot draw. Must run BEFORE translation,
+    // and must run on these clones while the live document (and therefore the --rpt-* cascade)
+    // is still available to _rptResolveCssVarsAgainstRoot. Percentages stay live text.
+    await _rptRasterizeGaugeRingsForDocx(pageEls);
 
     const translated = _docxTranslatePages(pageEls);
 
@@ -12738,6 +12894,67 @@ var ASHRAE36_SECTIONS = {
 var ASHRAE36_READINESS_HIGH_THRESHOLD = 75; // score >= this => 'green' / "High Readiness"
 var ASHRAE36_READINESS_PARTIAL_THRESHOLD = 50; // score >= this (and < HIGH) => 'amber' / "Partial Readiness"; below => 'red' / "Low Readiness"
 
+/**
+ * a36ReadinessBand / a36ReadinessColor / a36ReadinessWord — the ONE place a readiness
+ * percentage becomes a band key, a color and a word (work unit R2, 2026-08-03).
+ *
+ * WHY THIS EXISTS (VISUAL-REVIEW-2026-08-02.md V-01, the review's #4 "matters most" finding).
+ * The two thresholds above were already shared, but the three-way ternary that turns a score
+ * into a COLOR was copy-pasted at four sites, and the Audit cover carried a fourth, entirely
+ * separate rule of its own: a 2026-07-29 brand-color pass hardcoded the cover's Composite
+ * Score ring to CSC blue and both other rings to CSC green. The result measured on the live
+ * v2026.08.02.742 export: the cover printed Sensor Coverage 62% and Sequence Readiness 52% in
+ * #27ae60 — the exact green pages 2-3 label "High Readiness" — while those same pages define
+ * High as 75% and above and color every one of the 27 rows in the 50-74% band orange, and the
+ * Composite Score 60% printed in a dark blue that appears in no legend anywhere in the
+ * document. The first thing the county saw was three rings reading "we are doing fine" and
+ * two pages later the same numbers reading "Partial Readiness".
+ *
+ * A percentage may now be turned into a color ONLY through a36ReadinessColor(). Do not write
+ * another `pct >= HIGH ? green : ...` ternary, and never hand a gauge a literal brand color:
+ * that is precisely how the cover drifted away from the table it summarizes. All three cover
+ * gauges (composite, sensor coverage, sequence readiness) are the same kind of quantity on the
+ * same 0-100 scale — the share of applicable ASHRAE 36 requirements that are met — so the same
+ * band rule applies to all three, and the cover legend printed beneath them is interpolated
+ * from these same two constants.
+ *
+ * @param {number|null} pct - readiness percentage, or null/undefined for "no applicable scope"
+ * @returns {string|null} 'green' | 'amber' | 'red', or null when pct is not a number
+ */
+function a36ReadinessBand(pct) {
+  var n = Number(pct);
+  if (pct === null || pct === undefined || isNaN(n)) return null;
+  if (n >= ASHRAE36_READINESS_HIGH_THRESHOLD) return 'green';
+  if (n >= ASHRAE36_READINESS_PARTIAL_THRESHOLD) return 'amber';
+  return 'red';
+}
+
+/** Band key -> report color token. The only mapping; every caller reads it. */
+var ASHRAE36_READINESS_BAND_COLORS = {
+  green: 'var(--rpt-green)',
+  amber: 'var(--rpt-orange)',
+  red: 'var(--rpt-red)',
+};
+
+/** Band key -> client-visible word (see _a36StatusChip for the wording history). */
+var ASHRAE36_READINESS_BAND_WORDS = {
+  green: 'High Readiness',
+  amber: 'Partial Readiness',
+  red: 'Low Readiness',
+};
+
+/** Readiness percentage -> the color token the readiness table uses for that same percentage. */
+function a36ReadinessColor(pct) {
+  var band = a36ReadinessBand(pct);
+  return band ? ASHRAE36_READINESS_BAND_COLORS[band] : 'var(--rpt-page-text)';
+}
+
+/** Readiness percentage -> the readiness word the readiness table uses for that same percentage. */
+function a36ReadinessWord(pct) {
+  var band = a36ReadinessBand(pct);
+  return band ? ASHRAE36_READINESS_BAND_WORDS[band] : '';
+}
+
 // ─── Client-visible name and number formatting (work unit R5, 2026-08-03) ──
 // Defects fixed here: D-14/V-08 (internal identifier "P25309 - " leaking into the client
 // building column, and the alphabetical sort corruption it caused), V-07 (raw source-system
@@ -13313,19 +13530,10 @@ function collectASHRAE36Data(projId, reportDate) {
     var totalReqsMet = totalPointsMatched + totalSeqMatched;
     var composite = totalReqsApplicable > 0 ? Math.round((totalReqsMet / totalReqsApplicable) * 100) : 0;
 
-    // Status band
-    var status =
-      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-        ? 'green'
-        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-          ? 'amber'
-          : 'red';
-    var statusColor =
-      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-        ? 'var(--rpt-green)'
-        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-          ? 'var(--rpt-orange)'
-          : 'var(--rpt-red)';
+    // Status band — R2 (2026-08-03): all three now come from the one shared band rule
+    // (a36ReadinessBand/Color/Word) instead of three copy-pasted ternaries. See V-01.
+    var status = a36ReadinessBand(composite);
+    var statusColor = a36ReadinessColor(composite);
     // Display-label rename (item ed465b3c, 2026-07-09; re-worded again fix/audit-report-scoring,
     // 2026-07-14, Matt's decision: ASHRAE 36 defines no composite score and no compliance
     // threshold, so "Compliant" wording next to genuine §5.x citations falsely implies the
@@ -13333,12 +13541,7 @@ function collectASHRAE36Data(projId, reportDate) {
     // This field isn't rendered directly anywhere today (the chip helper independently
     // derives its word from `status`), kept in sync anyway so it can't drift if a future
     // caller starts reading it.
-    var statusLabel =
-      composite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-        ? 'High Readiness'
-        : composite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-          ? 'Partial Readiness'
-          : 'Low Readiness';
+    var statusLabel = a36ReadinessWord(composite);
     // Sensor counts for status chip display
     var totalSensorsInPlace = totalPointsMatched;
     var totalSensorsRequired = totalPointsRequired;
@@ -13499,12 +13702,7 @@ function collectASHRAE36Data(projId, reportDate) {
   var redCount = buildingsData.filter(function (b) {
     return b.status === 'red';
   }).length;
-  var portfolioStatus =
-    portfolioComposite >= ASHRAE36_READINESS_HIGH_THRESHOLD
-      ? 'green'
-      : portfolioComposite >= ASHRAE36_READINESS_PARTIAL_THRESHOLD
-        ? 'amber'
-        : 'red';
+  var portfolioStatus = a36ReadinessBand(portfolioComposite);
 
   // DCV readiness: count AHUs and VAV-type zones with/without a CO2 point.
   // Uses coveredPoints from real point data — no config flag dependency.
@@ -13624,6 +13822,34 @@ function collectASHRAE36Data(projId, reportDate) {
 }
 
 // ─── Gauge ring SVG helper ─────────────────────────────────────────────────
+/**
+ * _a36GaugeSVG — one readiness ring.
+ *
+ * `color` MUST come from a36ReadinessColor(pct) (see that function). Never pass a brand color
+ * here: a 2026-07-29 pass that did exactly that is what made the Audit cover contradict its own
+ * readiness legend (V-01).
+ *
+ * ARC GEOMETRY (R2, 2026-08-03, VISUAL-REVIEW-2026-08-02.md V-12). Two corrections, both
+ * measured on the 400 dpi cover crop of the live v2026.08.02.742 export:
+ *
+ *  1. stroke-linecap was `round`. A round cap projects half the stroke width past each end of
+ *     the dash, so the printed fill ran fuller than the number it labels — measured Composite
+ *     63.5% for a stated 60%, Sensor 65.7% for 62%, Sequence 55.8% for 52%, i.e. about 3.5
+ *     points over in every case. The overhang is half the stroke width at the ring radius:
+ *     at the cover's 110px size the stroke is 9.9px and the radius 41.8px, so each cap adds
+ *     atan((9.9/2)/41.8) = 6.75 degrees, two caps = 13.5 degrees = 3.75 percentage points. The
+ *     arcs themselves were always geometrically correct; only the caps lied. `butt` squares
+ *     them off so the swept angle equals the stated percentage exactly.
+ *  2. transform was `rotate(90 ...)`, which puts an SVG circle's dash origin (natively 3
+ *     o'clock) at 6 o'clock, so every ring began at the bottom and swept left-and-up and read
+ *     half-finished. `rotate(-90 ...)` puts the origin at 12 o'clock and the fill sweeps
+ *     clockwise from the top, the convention every reader already knows.
+ *
+ * The percentage inside the ring prints in near-black, not in `color`: the standing rule is
+ * black or near-black text, and this report already settled that convention for the same data
+ * (see _a36StatusChip — "the word itself renders in var(--rpt-page-text), not `color`"). The
+ * ring carries the band signal; the number is just a number.
+ */
 function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
   size = size || 90;
   var r = size * 0.38;
@@ -13668,7 +13894,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
     ' ' +
     empty.toFixed(2) +
     '"' +
-    ' stroke-linecap="round" transform="rotate(90 ' +
+    ' stroke-linecap="butt" transform="rotate(-90 ' +
     cx +
     ' ' +
     cy +
@@ -13679,9 +13905,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
     (cy + size * 0.065) +
     '" text-anchor="middle" font-size="' +
     size * 0.22 +
-    '" font-weight="700" fill="' +
-    color +
-    '" font-family="Arial,sans-serif">' +
+    '" font-weight="700" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">' +
     pct +
     '%</text>' +
     (suppressBottomLabel
@@ -13712,7 +13936,8 @@ function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequire
   // word). Batch 3 item 3c ("make chip WORD black") was already satisfied at this line —
   // the word itself renders in var(--rpt-page-text) (#000000), not `color`; confirmed via
   // before/after render, no visual change on this element. Left as-is, not re-touched.
-  var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
+  // R2 (2026-08-03): reads the shared band->color map rather than repeating the ternary.
+  var color = ASHRAE36_READINESS_BAND_COLORS[status] || 'var(--rpt-page-text)';
   // Display-label rename (item ed465b3c, 2026-07-09, Matt's decision): Ready/Partial/Critical
   // -> Fully Covered/Partially Covered/Not Covered (2026-07-09 rename #2, Matt's decision,
   // supersedes v647): Covered -> Compliant. Re-worded again (fix/audit-report-scoring,
@@ -13726,7 +13951,7 @@ function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequire
   // "Partial Readiness" (17), "Not Compliant" (13) -> "Low Readiness" (13). DISPLAY TEXT
   // ONLY -- the 'green'/'amber'/'red' status keys and every caller's threshold logic
   // (now ASHRAE36_READINESS_HIGH_THRESHOLD/ASHRAE36_READINESS_PARTIAL_THRESHOLD) are untouched.
-  var word = status === 'green' ? 'High Readiness' : status === 'amber' ? 'Partial Readiness' : 'Low Readiness';
+  var word = ASHRAE36_READINESS_BAND_WORDS[status] || ASHRAE36_READINESS_BAND_WORDS.red;
   // 2026-07-10 fix (audit-report-na-rationale, wording-decision.md item 1): when the caller
   // passes seqNA (true for a building whose seqPct is null -- zero equipment within Guideline
   // 36's sequence scope), `status`/`composite` are driven entirely by sensor coverage with no
@@ -13890,13 +14115,21 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       _a36ConsolidatedSequences = _a36SeqSum;
     }
   }
-  // Cover gauge color (2026-07-29, Matt: "make the Composite Score gauge be the CSC blue and
-  // then have the Sensor Coverage and Sequence Readiness be the CSC green" -- was threshold
-  // red/orange/green per ASHRAE36_READINESS_HIGH/PARTIAL_THRESHOLD; the building-level status
-  // (green/amber/red) is still shown via _a36StatusChip / the Score bar on the Building
-  // Compliance Status table below, so this brand-color swap on the cover's summary gauge does
-  // not remove that per-building signal from the report.
-  var color = 'var(--rpt-blue)';
+  // Cover gauge color — R2 (2026-08-03), VISUAL-REVIEW-2026-08-02.md V-01. REPLACES the
+  // 2026-07-29 brand-color pass ("make the Composite Score gauge be the CSC blue and then have
+  // the Sensor Coverage and Sequence Readiness be the CSC green"), which is exactly what made
+  // this cover contradict the readiness legend printed two pages later: it painted 62% and 52%
+  // in #27ae60 — the green those pages define as "High Readiness, 75% and above" — and painted
+  // the Composite Score in a blue that appears in no legend in the document. All three rings now
+  // read their color from a36ReadinessColor(), the same single rule that colors all 27 Score
+  // bars in the Building ASHRAE 36 Readiness table, so a number can never be one band on the
+  // cover and a different band in the table. Nothing about the numbers themselves changed.
+  //
+  // The Composite Score deliberately uses that same rule rather than a distinct treatment: it is
+  // the score the readiness bands are literally defined over (portfolioStatus is already derived
+  // from it with these thresholds), so any other color would be a fourth unexplained one — the
+  // review's specific complaint. A legend printed directly under the rings (bandLegend below)
+  // spells the bands out so the cover decodes itself without turning the page.
   // One-paragraph finding — REORDERED 2026-07-29 (Matt's direct instruction: "always make reports
   // a story instead of just text... Buildings Assessed, HVAC Systems Audited, Sequences to
   // Program and then Sensors to Install in that order so it tells the story of what happened in
@@ -13936,16 +14169,55 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       : 'The sections that follow provide a prioritized list of recommended upgrades across the facilities in scope, each with its typical energy savings.');
 
   var gauges =
-    '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 20px">' +
+    '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 8px">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.composite, color, 'Overall', 110, true) +
+    _a36GaugeSVG(p.composite, a36ReadinessColor(p.composite), 'Overall', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.pointPct, 'var(--rpt-green)', 'Sensors', 110, true) +
+    _a36GaugeSVG(p.pointPct, a36ReadinessColor(p.pointPct), 'Sensors', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(p.seqPct, 'var(--rpt-green)', 'Sequences', 110, true) +
+    _a36GaugeSVG(p.seqPct, a36ReadinessColor(p.seqPct), 'Sequences', 110, true) +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Readiness</div></div>' +
+    '</div>';
+
+  // Cover readiness legend (R2, 2026-08-03, V-01). One centered line of ordinary text directly
+  // under the rings so a reader can decode a ring color without turning to page 2 — deliberately
+  // NOT a box, card, tile or bordered key (standing rule), and no separator rule above or below
+  // it (standing rule); it is simply the next line of copy on the page. Each band's mark is a
+  // colored square glyph in a text run rather than a styled <div>, so it survives every export
+  // path identically: the print/PDF path, the Word .docx path (which turns a colored <span> into
+  // a colored run but silently drops an empty background-colored <div>), and the mso-HTML path.
+  // The band words stay near-black — the report's settled convention is that color lives in the
+  // graphic and words are black (see _a36StatusChip). Thresholds are interpolated from
+  // ASHRAE36_READINESS_HIGH/PARTIAL_THRESHOLD, the same constants the table footnote uses, so the
+  // cover legend and the table legend can never drift apart; ranges are written in words rather
+  // than mathematical symbols per the no-jargon rule.
+  var _bandGap = '<span style="color:var(--rpt-page-text)">&nbsp; &nbsp; &nbsp;</span>';
+  var bandLegend =
+    '<div style="text-align:center;font-size:' +
+    RPT_MIN_TEXT_PX +
+    'px;line-height:1.5;color:var(--rpt-page-text);margin:0 0 16px">' +
+    'Ring color shows readiness: ' +
+    '<span style="color:' +
+    ASHRAE36_READINESS_BAND_COLORS.green +
+    '">■</span> High, ' +
+    ASHRAE36_READINESS_HIGH_THRESHOLD +
+    '% and above' +
+    _bandGap +
+    '<span style="color:' +
+    ASHRAE36_READINESS_BAND_COLORS.amber +
+    '">■</span> Partial, ' +
+    ASHRAE36_READINESS_PARTIAL_THRESHOLD +
+    ' to ' +
+    (ASHRAE36_READINESS_HIGH_THRESHOLD - 1) +
+    '%' +
+    _bandGap +
+    '<span style="color:' +
+    ASHRAE36_READINESS_BAND_COLORS.red +
+    '">■</span> Low, below ' +
+    ASHRAE36_READINESS_PARTIAL_THRESHOLD +
+    '%' +
     '</div>';
 
   var bodyHTML =
@@ -13969,6 +14241,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
     gauges +
+    bandLegend +
     '<div class="rpt-a36-callout" style="font-size:14px;line-height:1.6;color:var(--rpt-page-text)">' +
     finding +
     '</div>' +
@@ -14866,23 +15139,23 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     })
     .join('');
 
-  // Per-building gauge colors (2026-07-29, same brand-color pass as the cover page's Composite
-  // Score/Sensor Coverage/Sequence Readiness gauges, ~line 13045 above): Overall -> CSC blue,
-  // Sensors/Sequences -> CSC green. b.statusColor (red/amber/green threshold) is left defined
-  // and still drives the Score bar in the Building Compliance Status table and the
-  // _a36StatusChip badge right below these gauges, so the per-building status signal is not
-  // lost — only this gauge's own fill now matches the report-wide brand-color scheme.
+  // Per-building gauge colors — R2 (2026-08-03), V-01. These were part of the SAME 2026-07-29
+  // brand-color pass that broke the cover (Overall -> CSC blue, Sensors/Sequences -> CSC green),
+  // so they carried the identical contradiction: a ring painted "High Readiness" green sitting
+  // inches above an _a36StatusChip reading "Partial Readiness" for the same building. Fixed the
+  // same way and from the same single rule — a36ReadinessColor() — so cover, per-building page
+  // and readiness table now all speak one color language.
   var gauges =
     '<div style="display:flex;gap:14px;margin-bottom:12px;align-items:center">' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.composite, 'var(--rpt-blue)', 'Overall', 70) +
+    _a36GaugeSVG(b.composite, a36ReadinessColor(b.composite), 'Overall', 70) +
     '</div>' +
     '<div style="text-align:center">' +
-    _a36GaugeSVG(b.pointPct, 'var(--rpt-green)', 'Sensors', 70) +
+    _a36GaugeSVG(b.pointPct, a36ReadinessColor(b.pointPct), 'Sensors', 70) +
     '</div>' +
     '<div style="text-align:center">' +
     (b.seqPct !== null
-      ? _a36GaugeSVG(b.seqPct, 'var(--rpt-green)', 'Sequences', 70)
+      ? _a36GaugeSVG(b.seqPct, a36ReadinessColor(b.seqPct), 'Sequences', 70)
       : '<svg width="70" height="77.7" viewBox="0 0 70 77.7" style="display:block">' +
         '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
         // Grey text on a client deliverable is banned (same rule already applied to the
