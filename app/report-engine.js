@@ -14637,8 +14637,11 @@ function rptPageASHRAE36Executive(n, d) {
   // does; re-measure if the JOCO portfolio (most chunks) ever shows it wrapping.
   var EXEC_CONT_HEADER_H = 32; // measured — Building ASHRAE 36 Readiness caption at 13pt tier
   var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H + EXEC_FOOTNOTE_H;
-  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - _firstChromeH - EXEC_SAFETY_H;
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - _contChromeH - EXEC_SAFETY_H;
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
+  // variant — reclaims the 60px chrome bar's space for rows.
+  var ROWS_BUDGET_FIRST = _rptContentBudget('flush') - _firstChromeH - EXEC_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('flush') - _contChromeH - EXEC_SAFETY_H;
 
   // Shared table styles
   // fix/report-formatting-consistency (2026-07-27): font-size was 13px, a lone outlier against
@@ -15043,6 +15046,7 @@ function rptPageASHRAE36Executive(n, d) {
 
     resultPages.push(
       rptPage(pageN, 'ASHRAE 36 Audit Report: Executive Summary', bodyHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label:
           'Page ' +
@@ -15304,8 +15308,11 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // V-10: the first page also carries the sentence that tells the reader what the quantity column
   // counts and that it adds to the cover figure. Measured 3 lines plus its margin at the floor.
   var RATIONALE_INTRO_H = 72;
-  var RATIONALE_BUDGET_CONT =
-    _rptContentBudget('standard') - RATIONALE_TITLE_H - RATIONALE_THEAD_H - RATIONALE_SAFETY_H;
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so the budget uses the 'flush'
+  // variant (see rptPage()'s hideIntHdr option) — matches the ACTUAL top offset now that the
+  // 60px chrome bar this page used to reserve is gone, reclaiming that space for rows.
+  var RATIONALE_BUDGET_CONT = _rptContentBudget('flush') - RATIONALE_TITLE_H - RATIONALE_THEAD_H - RATIONALE_SAFETY_H;
   var RATIONALE_BUDGET_FIRST = RATIONALE_BUDGET_CONT - RATIONALE_INTRO_H;
 
   // V-09 / running-head repetition (visual review 2026-08-02): the running head read
@@ -15391,6 +15398,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE,
         '<div style="font-size:11px;color:var(--rpt-page-text)">No sequence data available.</div>',
         {
+          hideIntHdr: true,
           data: fakeData,
           label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE,
         },
@@ -15420,7 +15428,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
           currentPageNum,
           'ASHRAE 36 Audit Report: ' + SEQ_SECTION_TITLE + _seqPartSuffix(chunkIdx, ratChunks.length),
           pageBody,
-          { data: fakeData, label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE },
+          { hideIntHdr: true, data: fakeData, label: 'Page ' + currentPageNum + ' — ' + SEQ_SECTION_TITLE },
         ),
       );
       currentPageNum++;
@@ -16126,8 +16134,12 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
   // pagination has already run, and this section is opt-in, so the conservative reservation costs
   // nothing in the shipped client Audit.
   var BUILDING_INFRA_CALLOUT_H = showBuildingInfra ? 130 : 0; // measured up to 113
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
+  // variant — matches the ACTUAL top offset now that the 60px chrome bar this page used to
+  // reserve is gone, reclaiming that space for rows.
   var ROWS_BUDGET_FIRST =
-    _rptContentBudget('standard') -
+    _rptContentBudget('flush') -
     BUILDING_GAUGES_H -
     BUILDING_INTRO_H -
     BUILDING_THEAD_H -
@@ -16135,7 +16147,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
     BUILDING_INFRA_CALLOUT_H -
     BUILDING_SAFETY_H; // px available for equipment rows on page 1
   var ROWS_BUDGET_CONT =
-    _rptContentBudget('standard') -
+    _rptContentBudget('flush') -
     BUILDING_CONT_HDR_H -
     BUILDING_THEAD_H -
     BUILDING_TOTAL_ROW_H -
@@ -16221,6 +16233,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, pageTitleWithFraction, bodyHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label:
           'Page ' +
@@ -16411,6 +16424,7 @@ function rptPageASHRAE36Recommendations(n, d) {
 
   var bodyHTML = table;
   return rptPage(n, 'ASHRAE 36 Audit Report — Recommendations', bodyHTML, {
+    hideIntHdr: true,
     data: fakeData,
     label: 'Page ' + n + ' — Recommendations',
   });
@@ -16486,6 +16500,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       '</div>';
     return [
       rptPage(n, 'ASHRAE 36 Audit Report: Setpoint Programming Review', emptyBody, {
+        hideIntHdr: true,
         data: fakeData,
         label: 'Page ' + n + ' — Setpoint Programming Review',
       }),
@@ -16784,8 +16799,11 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var SETPOINT_CONT_HDR_H = 40;
   var SETPOINT_SAFETY_H = 40;
   var SETPOINT_ROW_H = 70; // measured 49 typical, 69 max (3-line Status cell)
-  var ROWS_BUDGET_FIRST = _rptContentBudget('standard') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - SETPOINT_CONT_HDR_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
+  // variant — reclaims the 60px chrome bar's space for rows.
+  var ROWS_BUDGET_FIRST = _rptContentBudget('flush') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('flush') - SETPOINT_CONT_HDR_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
 
   var tokens = buildingRows.map(function (row) {
     return { type: 'row', estH: SETPOINT_ROW_H, html: _buildBldgRowHTML(row) };
@@ -16839,6 +16857,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, _setpointTitle, bodyHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label:
           'Page ' +
@@ -19243,6 +19262,7 @@ function rptPageASHRAE36ProposalScope(n, d) {
     '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal: Scope of Work', bodyHTML, {
+    hideIntHdr: true,
     data: fakeData,
     label: 'Page ' + n + ' — Scope of Work',
   });
@@ -20235,6 +20255,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   var resultPages = [
     rptPage(n, 'ASHRAE 36 Service Proposal: Cost Estimate', bodyHTML, {
+      hideIntHdr: true,
       data: fakeData,
       label: 'Page ' + n + ' — Cost Estimate',
     }),
@@ -20243,6 +20264,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   if (trailerHTML) {
     resultPages.push(
       rptPage(nextPageNum, 'ASHRAE 36 Service Proposal: Cost Estimate', titleBlock + trailerHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label: 'Page ' + nextPageNum + ' — Cost Estimate Disclaimer',
       }),
@@ -20420,7 +20442,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // value (904 - 124 = 780), no visual/page-count change. FIRST and CONT stay equal per the
       // comment above (a tier's first page has the same chrome as its continuation pages).
       var ITEMIZED_BASE_ADJUSTMENT = 124; // title + thead + table margin-bottom (~60px chrome) + safety margin
-      var _itemizedBudget = _rptContentBudget('standard') - ITEMIZED_BASE_ADJUSTMENT;
+      // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+      // renders with hideIntHdr:true, so the budget uses the 'flush' variant — reclaims the
+      // 60px chrome bar's space for rows.
+      var _itemizedBudget = _rptContentBudget('flush') - ITEMIZED_BASE_ADJUSTMENT;
       // 2026-08-02 (fix/docx-proposal-pagination-orphans): greedy _rptPaginateTokens ->
       // _rptPaginateTokensBalanced, same reasoning as _buildTierDetailPages above — same minimum
       // page count K, but a short remainder chunk is redistributed instead of stranded alone on a
@@ -20452,6 +20477,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
         pages.push(
           rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', body, {
+            hideIntHdr: true,
             data: fakeData,
             label: 'Page ' + pageN + ' — Itemized Measures (' + c.label + ')',
           }),
@@ -20632,7 +20658,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // all. Real Word measurement: pageTitle top (98.4pt) to first token top (120.3pt) = 21.9pt =
       // ~29.2px-equivalent. 4px reserved essentially nothing for it.
       var SCOPE_BASE_ADJUSTMENT = 30; // reserves the pageTitle div's own real Word-measured height
-      var _scopeBudget = _rptContentBudget('standard') - SCOPE_BASE_ADJUSTMENT;
+      // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+      // renders with hideIntHdr:true, so the budget uses the 'flush' variant — reclaims the
+      // 60px chrome bar's space for rows.
+      var _scopeBudget = _rptContentBudget('flush') - SCOPE_BASE_ADJUSTMENT;
       // 2026-08-02 (fix/docx-proposal-pagination-orphans): _rptPaginateTokens (greedy) -->
       // _rptPaginateTokensBalanced. Even with the corrected estH above, a real Word round-trip on
       // the live "Full Scope" tier's 30-token list found greedy packing 29 tokens onto page 1
@@ -20667,6 +20696,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           '</div>';
         pages.push(
           rptPage(pageN, 'ASHRAE 36 Service Proposal: Cost Estimate', pageTitle + rowsHTML, {
+            hideIntHdr: true,
             data: fakeData,
             label: 'Page ' + pageN + ' — Install & Programming Detail (' + c.label + ')',
           }),
@@ -20892,9 +20922,12 @@ function rptPageASHRAE36PointInventory(n, d) {
     var lines = Math.max(1, Math.ceil(String(name || '').length / INV_NAME_CPL));
     return INV_ROW_PAD_H + lines * _invLineH;
   }
+  // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+  // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
+  // variant — reclaims the 60px chrome bar's space for rows.
   var ROWS_BUDGET_FIRST =
-    _rptContentBudget('standard') - INV_SUMMARY_H - INV_NARRATIVE_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
-  var ROWS_BUDGET_CONT = _rptContentBudget('standard') - INV_CONT_HDR_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
+    _rptContentBudget('flush') - INV_SUMMARY_H - INV_NARRATIVE_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
+  var ROWS_BUDGET_CONT = _rptContentBudget('flush') - INV_CONT_HDR_H - INV_THEAD_H - INV_FOOTNOTE_H - INV_SAFETY_H;
 
   var tokens = inv.byBuilding.map(function (b) {
     return { type: 'row', estH: _invRowEstH(_a36DisplayName(b)), html: _buildInvRowHTML(b) };
@@ -20942,6 +20975,7 @@ function rptPageASHRAE36PointInventory(n, d) {
       (numChunks > 1 ? ' (' + (chunkIndex + 1) + ' of ' + numChunks + ')' : '');
     resultPages.push(
       rptPage(pageN, _pointInvTitle, bodyHTML, {
+        hideIntHdr: true,
         data: fakeData,
         label:
           'Page ' +
@@ -21017,7 +21051,10 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     // the standalone literal 750 — AUDIT_BUILDING_BASE_ADJUSTMENT preserves this exact numeric
     // value (904 - 154 = 750), no visual/page-count change.
     var AUDIT_BUILDING_BASE_ADJUSTMENT = 154; // safety margin against the estH approximation in _a36BuildingBlockToken, per comment above
-    var BUILDING_PAGE_BUDGET = _rptContentBudget('standard') - AUDIT_BUILDING_BASE_ADJUSTMENT; // px — interior page body (~895px) minus safety margin
+    // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
+    // renders with hideIntHdr:true, so the budget uses the 'flush' variant — reclaims the
+    // 60px chrome bar's space for rows.
+    var BUILDING_PAGE_BUDGET = _rptContentBudget('flush') - AUDIT_BUILDING_BASE_ADJUSTMENT; // px — interior page body (~895px) minus safety margin
     var _bldgFakeData = { project: { client: data.project.name }, period: { label: '', reportDate: data.rawDate } };
     var _pendingBlocks = [];
 
@@ -21035,6 +21072,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
           })
           .join('');
         var pg = rptPage(pageNum, 'ASHRAE 36 Audit Report: Per-Building Detail', bodyHTML, {
+          hideIntHdr: true,
           data: _bldgFakeData,
           label: 'Page ' + pageNum + ' — Per-Building Detail',
         });
