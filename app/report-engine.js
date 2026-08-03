@@ -1006,6 +1006,39 @@ var RPT_MIN_TEXT_PT = 10; // standing rule: nothing below 10pt in a client docum
 var RPT_MIN_TEXT_PX = Math.ceil((RPT_MIN_TEXT_PT / RPT_PRINT_PT_PER_PX) * 100) / 100; // 13.34px
 
 /**
+ * RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT — Matt's review, 2026-08-03: "Decrease text inside
+ * tables that take up more than 1 page by 1pt. Make it a variable that is easy to change."
+ * CHANGE THIS ONE NUMBER to change the reduction everywhere it applies; 0 restores the normal
+ * RPT_MIN_TEXT_PT floor for these tables (i.e. turns the reduction off).
+ *
+ * Scope: only the specific tables that are marked with the 'rpt-mp-dense' CSS class are affected
+ * (currently the Control Sequences table in rptPageASHRAE36CostEstimate and the Building ASHRAE
+ * 36 Readiness table in rptPageASHRAE36Executive — both real multi-page tables on the JOCO
+ * portfolio, 4 printed pages each before this change). Every other table in the report keeps the
+ * normal RPT_MIN_TEXT_PX floor untouched.
+ *
+ * Mechanism: _rptApplyMinFontFloor (below) floors text to RPT_MULTIPAGE_TABLE_MIN_PX instead of
+ * RPT_MIN_TEXT_PX for any element inside a '.rpt-mp-dense' ancestor. This piggybacks on the same
+ * runtime DOM pass that already enforces the normal floor (see that function's header comment for
+ * why a runtime pass is used instead of editing hundreds of inline style strings) rather than
+ * adding a second, separate mechanism.
+ */
+var RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT = 1;
+var RPT_MULTIPAGE_TABLE_MIN_PT = RPT_MIN_TEXT_PT - RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT; // 9pt
+var RPT_MULTIPAGE_TABLE_MIN_PX = Math.ceil((RPT_MULTIPAGE_TABLE_MIN_PT / RPT_PRINT_PT_PER_PX) * 100) / 100; // 12.00px
+// RPT_MP_DENSE_ACTIVE — single on/off switch every dense-table call site below reads. The two
+// tables' own row-height/chrome constants (EXEC_ROW_EST_H_DENSE, RATIONALE_THEAD_H, ROW_BOX_MIN_H,
+// the SEQ_*_CPL set, ...) are DOM-measured absolutes at the specific RPT_MULTIPAGE_TABLE_MIN_PX
+// this file ships with (12px/9pt) — they do not auto-rescale to an arbitrary reduction value, so
+// setting RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT to a value other than 0 or 1 changes the rendered
+// font size correctly (via _rptApplyMinFontFloor) but reuses the 1pt-fitted packing constants,
+// which stays SAFE (conservative estimates never under-count by much at nearby reduction values)
+// but is not re-measured for other magnitudes. 0 is the one value guaranteed byte-identical to
+// this file's pre-2026-08-03 behavior: every dense call site below falls back to the table's
+// original (pre-density-pass) constant and the 'rpt-mp-dense' class is omitted entirely.
+var RPT_MP_DENSE_ACTIVE = RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT > 0;
+
+/**
  * RPT_DOC_TITLE_PX / RPT_SECTION_HEAD_PX / RPT_BODY_PX — the report type hierarchy
  * (D-12 / V-33 / V-18, DEFECTS-2026-08-02.md + VISUAL-REVIEW-2026-08-02.md, fixed 2026-08-03).
  *
@@ -1055,6 +1088,7 @@ function _rptTextLineH(mult) {
 function _rptApplyMinFontFloor(root) {
   if (!root || typeof getComputedStyle !== 'function') return 0;
   var MIN = RPT_MIN_TEXT_PX;
+  var DENSE_MIN = RPT_MULTIPAGE_TABLE_MIN_PX; // Matt's 1pt-smaller floor for '.rpt-mp-dense' tables
   var els = root.querySelectorAll('*');
   var orig = [];
   var i;
@@ -1070,12 +1104,17 @@ function _rptApplyMinFontFloor(root) {
     var el = els[i];
     var own = orig[i];
     if (!own) continue;
+    // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT (Matt's review, see that constant's comment): an
+    // element inside a table explicitly marked '.rpt-mp-dense' floors to the lower DENSE_MIN
+    // instead of the normal MIN. el.closest walks up from el itself, so the marked <table> tag's
+    // own cells/head/rows are all covered.
+    var elMin = el.closest && el.closest('.rpt-mp-dense') ? DENSE_MIN : MIN;
     var p = el.parentElement;
     var parentPx = p === root ? rootPx : idx.has(p) ? orig[idx.get(p)] : 0;
-    if (own < MIN) {
-      el.style.setProperty('font-size', MIN + 'px', 'important');
+    if (own < elMin) {
+      el.style.setProperty('font-size', elMin + 'px', 'important');
       raised++;
-    } else if (parentPx && parentPx < MIN) {
+    } else if (parentPx && parentPx < elMin) {
       // Parent is about to grow; pin this element so it keeps the size it already had.
       el.style.setProperty('font-size', own + 'px', 'important');
     }
@@ -12870,7 +12909,12 @@ var A36_SEQ_LABEL_OVERRIDE = {
 var A36_SEQ_COL_NAME_PCT = 27;
 var A36_SEQ_COL_SPEC_PCT = 16;
 var A36_SEQ_COL_QTY_PCT = 13;
-var SEQ_ROW_TOTALS_H = 80; // measured height of the totals row at the floored type size
+// Density pass (Matt's review, 2026-08-03): this row renders inside the Control Sequences
+// table's 'rpt-mp-dense' <table> (rptPageASHRAE36CostEstimate, _ratThead) when
+// RPT_MP_DENSE_ACTIVE, which floors to RPT_MULTIPAGE_TABLE_MIN_PX (12px) instead of
+// RPT_MIN_TEXT_PX (13.34px) — re-measured at the new floor. Gated so
+// RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 keeps the original 80px measurement exactly.
+var SEQ_ROW_TOTALS_H = RPT_MP_DENSE_ACTIVE ? 72 : 80; // measured height of the totals row
 function _a36SeqDisplayLabel(sd) {
   if (!sd) return '';
   return A36_SEQ_LABEL_OVERRIDE[sd.key] || sd.label || '';
@@ -14526,7 +14570,14 @@ function rptPageASHRAE36Executive(n, d) {
   // drop a whole building row onto a fourth page and leave a one-row orphan.
   // Re-measure protocol if any of this content changes: headless render, emulateMedia('print'),
   // read getBoundingClientRect().height of each .rpt-body child on the Executive Summary pages.
-  var EXEC_THEAD_H = 46; // measured
+  var EXEC_THEAD_H = 46; // measured, normal (non-dense) floor
+  // Density pass (Matt's review, 2026-08-03): the table (see 'rpt-mp-dense' on tableOpenHead
+  // below) floors its own head/rows to RPT_MULTIPAGE_TABLE_MIN_PX (12px), not RPT_MIN_TEXT_PX
+  // (13.34px), so this table's own thead height needs its own dense variant. Headless print-media
+  // measurement (getBoundingClientRect on the real <thead>): 43px on every readiness-table page.
+  // Gated on RPT_MP_DENSE_ACTIVE so RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 falls back to the
+  // table's original EXEC_THEAD_H exactly (see that constant's own header comment).
+  var EXEC_THEAD_H_DENSE = RPT_MP_DENSE_ACTIVE ? 44 : EXEC_THEAD_H; // measured 43; +1 for sub-pixel rounding
   var EXEC_FOOTNOTE_H = 100; // measured (readiness-band methodology footnote, wraps to ~5 lines at 10pt)
   var EXEC_SAFETY_H = 40; // single page-level margin. 40, not 20: at 20 this page measured only 13px
   // of clearance below the reserved footer zone, and page count is explicitly not a constraint.
@@ -14558,7 +14609,7 @@ function rptPageASHRAE36Executive(n, d) {
   // and this is a deliberately conservative (safe-side) budget, not a tight fit.
   _firstChromeH += 146 * topSeqTypes.length;
   _firstChromeH += 32; // tableTitle — measured
-  _firstChromeH += EXEC_THEAD_H;
+  _firstChromeH += EXEC_THEAD_H_DENSE; // table head is INSIDE the dense table — dense variant
   _firstChromeH += EXEC_FOOTNOTE_H;
   // d5929df4 (2026-07-13): FIRST base trimmed 894 -> 862. Restoring CSC_FOOTER_B64 to the
   // full 1699x224 crop (app/csv-import.js, this same commit — the 2026-07-10 regression had
@@ -14603,7 +14654,7 @@ function rptPageASHRAE36Executive(n, d) {
   // this number assumes "(continued, N of M)" stays on one line at the 13pt tier like "(N of M)"
   // does; re-measure if the JOCO portfolio (most chunks) ever shows it wrapping.
   var EXEC_CONT_HEADER_H = 32; // measured — Building ASHRAE 36 Readiness caption at 13pt tier
-  var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H + EXEC_FOOTNOTE_H;
+  var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H_DENSE + EXEC_FOOTNOTE_H;
   // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
   // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
   // variant — reclaims the 60px chrome bar's space for rows.
@@ -14742,8 +14793,18 @@ function rptPageASHRAE36Executive(n, d) {
     colWidths.status +
     '%">' +
     '</colgroup>';
+  // 'rpt-mp-dense' (Matt's review, 2026-08-03): this table is a real multi-page table on the
+  // JOCO portfolio (measured 3-4 printed pages before this change) -- see
+  // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT's header comment for the mechanism. Every element
+  // inside this <table> (head + rows) floors to RPT_MULTIPAGE_TABLE_MIN_PX instead of
+  // RPT_MIN_TEXT_PX; content OUTSIDE the table (the callouts, the caption, the legend) is
+  // unaffected and keeps the normal floor. Gated on RPT_MP_DENSE_ACTIVE so
+  // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 renders byte-identical to this table's pre-density-
+  // pass markup (no class at all, not just an inert one).
   var tableOpenHead =
-    '<table style="width:100%;border-collapse:collapse;margin-bottom:12px;table-layout:fixed">' +
+    '<table' +
+    (RPT_MP_DENSE_ACTIVE ? ' class="rpt-mp-dense"' : '') +
+    ' style="width:100%;border-collapse:collapse;margin-bottom:12px;table-layout:fixed">' +
     colgroup +
     '<thead><tr>' +
     '<th style="' +
@@ -14821,7 +14882,14 @@ function rptPageASHRAE36Executive(n, d) {
   // rows are now taller than it anyway, so raising it would change nothing except the rare
   // single-line row. What DID have to change is the estimate the paginator budgets with; see
   // EXEC_ROW_EST_H below.
-  var ROW_BOX_MIN_H = 34;
+  // Density pass (Matt's review, 2026-08-03): when this table renders through the
+  // RPT_MULTIPAGE_TABLE_MIN_PX floor (see 'rpt-mp-dense' on tableOpenHead below), the MINIMUM is
+  // lowered to match — 28px still comfortably covers a 2-line building name at the 12px dense
+  // floor (2 lines * 14.4px line-height ≈ 28.8, rounded down) with the same "never truncate,
+  // 2-line names simply grow the row" behavior; only rows that were previously padded out to the
+  // old 34px minimum with no real content get shorter. Gated on RPT_MP_DENSE_ACTIVE so
+  // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 keeps the original 34px minimum exactly.
+  var ROW_BOX_MIN_H = RPT_MP_DENSE_ACTIVE ? 28 : 34;
   var _rowBoxStyle = 'min-height:' + ROW_BOX_MIN_H + 'px;display:flex;align-items:center';
   // 2026-07-12 fix (item fb693f5c): row borders switched from the pale var(--rpt-rule)
   // (#d9dde3) to the darker var(--rpt-border) (#333333) to match the Per-Building Detail
@@ -14939,9 +15007,15 @@ function rptPageASHRAE36Executive(n, d) {
   // — which is the arithmetic behind D-04's Audit p2/p3 footer collisions. Now stated as its own
   // measured constant rather than derived from an unrelated CSS minimum that no longer binds.
   var EXEC_ROW_EST_H = 66; // DOM-measured max 65px at the 10pt floor; +1 for sub-pixel rounding
+  // Density pass (Matt's review, 2026-08-03): when row content renders through the 'rpt-mp-dense'
+  // table (tableOpenHead below), it floors to RPT_MULTIPAGE_TABLE_MIN_PX (12px) instead of
+  // RPT_MIN_TEXT_PX (13.34px). Headless print-media measurement (getBoundingClientRect on every
+  // real rendered row, all 27 JOCO buildings): max 59.6px. Gated on RPT_MP_DENSE_ACTIVE so
+  // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 falls back to the original EXEC_ROW_EST_H exactly.
+  var EXEC_ROW_EST_H_DENSE = RPT_MP_DENSE_ACTIVE ? 60 : EXEC_ROW_EST_H; // DOM-measured max 59.6px at the dense floor; +1
   var allBuildings = d.buildings;
   var tokens = allBuildings.map(function (b) {
-    return { type: 'row', estH: EXEC_ROW_EST_H, html: _buildRowHTML(b) };
+    return { type: 'row', estH: EXEC_ROW_EST_H_DENSE, html: _buildRowHTML(b) };
   });
   // Edge case: no buildings
   if (tokens.length === 0) {
@@ -15005,6 +15079,23 @@ function rptPageASHRAE36Executive(n, d) {
   if (_pushTableToNextPage) {
     chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_CONT_NOFOOT, ROWS_BUDGET_CONT_NOFOOT);
     _refitLastChunkForFootnote(chunks, ROWS_BUDGET_CONT, ROWS_BUDGET_CONT);
+
+    // Density pass (Matt's review, 2026-08-03, "why is there still so much blank space?"): once
+    // pushed, every chunk shares ONE uniform continuation-page budget (the callouts already moved
+    // to their own page above) -- exactly the shape _rptPaginateTokensBalanced requires. Re-split
+    // with it using ROWS_BUDGET_CONT (the footnote-safe budget, not the NOFOOT variant) as a
+    // single hard cap on every page: that function guarantees no chunk's estH sum ever exceeds
+    // the cap (same guarantee the greedy NOFOOT+refit path above already enforces, just choosing
+    // a different -- more even -- split point), so this cannot introduce overflow, and every chunk
+    // already reserves the footnote's room, so the LAST chunk needs no further refit. On the real
+    // JOCO portfolio this turned a 12/12/3-row split (the last page ~90% blank) into an even split
+    // across the SAME page count -- see that function's own header comment for the "MedAct 53
+    // Gardner alone on a mostly-empty page" case it originally fixed. Only takes effect when it
+    // does not increase the page count above what the greedy NOFOOT+refit split above achieved.
+    var _balancedChunks = _rptPaginateTokensBalanced(tokens, ROWS_BUDGET_CONT);
+    if (_balancedChunks.length > 0 && _balancedChunks.length <= chunks.length) {
+      chunks = _balancedChunks;
+    }
   }
 
   var numChunks = chunks.length;
@@ -15229,15 +15320,23 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // those constants assume, so the estimate stays conservative (over-, never under-, counts
       // lines). SEQ_DESC_CPL is scaled down proportionally to the narrower width (40 * 296.3/317.9,
       // floored) so a narrower description column doesn't make the estimate under-count lines.
-      var SEQ_ROW_PAD_H = 14; // td padding 7px top + 7px bottom
-      var SEQ_NAME_CPL = 18; // chars per line, bold sequence label in the 27% (~174px) name column
-      var SEQ_REQ_CPL = 21; // chars per line, "Requires: ..." sub-line (regular weight, same column)
-      var SEQ_DESC_CPL = 37; // chars per line, plain-language description in the 44% (~296px) column
-      var SEQ_REQ_GAP = 3; // the sub-line's margin-top
-      // One line height for all three columns: measured, the sub-line's declared line-height:1.4
-      // still lays out on the same 20px rhythm as the 1.5 cells once the font floor applies, and
-      // fitting it at 19px under-estimated two real rows by 1px.
-      var _seqLineH = _rptTextLineH(1.5);
+      var SEQ_ROW_PAD_H = 14; // td padding 7px top + 7px bottom (fixed, not font-driven)
+      // Density pass (Matt's review, 2026-08-03): when this table's own <table> tag (_ratThead
+      // below) carries 'rpt-mp-dense' (RPT_MP_DENSE_ACTIVE), its text floors to
+      // RPT_MULTIPAGE_TABLE_MIN_PX (12px) instead of RPT_MIN_TEXT_PX (13.34px) — see
+      // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT's header comment. A smaller font fits MORE
+      // characters per line, so every *_CPL constant below is scaled up by the same ratio
+      // (13.34/12 = 1.1117) and floored (never round up — the V-10/V-11 fitting method above is
+      // "the largest constant that never under-estimates a measured row"; flooring keeps that same
+      // conservative direction at the new size). Gated so RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0
+      // keeps the original V-10/V-11 constants (18/21/37) exactly.
+      var SEQ_NAME_CPL = RPT_MP_DENSE_ACTIVE ? Math.floor(18 * (RPT_MIN_TEXT_PX / RPT_MULTIPAGE_TABLE_MIN_PX)) : 18; // 20
+      var SEQ_REQ_CPL = RPT_MP_DENSE_ACTIVE ? Math.floor(21 * (RPT_MIN_TEXT_PX / RPT_MULTIPAGE_TABLE_MIN_PX)) : 21; // 23
+      var SEQ_DESC_CPL = RPT_MP_DENSE_ACTIVE ? Math.floor(37 * (RPT_MIN_TEXT_PX / RPT_MULTIPAGE_TABLE_MIN_PX)) : 37; // 41
+      var SEQ_REQ_GAP = 3; // the sub-line's margin-top (fixed, not font-driven)
+      // One line height for all three columns, at the table's own floor (dense: 12px * 1.5 = 18;
+      // normal, same as before this pass: _rptTextLineH(1.5) = round(RPT_MIN_TEXT_PX * 1.5) = 20).
+      var _seqLineH = RPT_MP_DENSE_ACTIVE ? Math.round(RPT_MULTIPAGE_TABLE_MIN_PX * 1.5) : _rptTextLineH(1.5);
       var _reqText = sensorLine ? 'Requires: ' + sensorLine : '';
       var _nameH = Math.ceil((seqName || '').length / SEQ_NAME_CPL) * _seqLineH;
       var _reqH = _reqText ? SEQ_REQ_GAP + Math.ceil(_reqText.length / SEQ_REQ_CPL) * _seqLineH : 0;
@@ -15306,8 +15405,19 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // differently-fudged ones.
   // D-12 (2026-08-03): 28 -> 34, re-measured after the "ASHRAE 36 Sequences" title moved to the
   // 13pt section tier (26px box + its 8px margin-bottom).
-  var RATIONALE_TITLE_H = 34; // measured, section title + its margin-bottom
-  var RATIONALE_THEAD_H = 56; // measured 33 first page / 53 continuation; 56 covers both
+  var RATIONALE_TITLE_H = 34; // measured, section title + its margin-bottom (OUTSIDE the table)
+  var RATIONALE_THEAD_H_NORMAL = 56; // measured 33 first page / 53 continuation; 56 covers both
+  // Density pass (Matt's review, 2026-08-03): when the table itself (_ratThead below) carries
+  // 'rpt-mp-dense' (RPT_MP_DENSE_ACTIVE), its head text floors to RPT_MULTIPAGE_TABLE_MIN_PX
+  // (12px) instead of RPT_MIN_TEXT_PX (13.34px). First estimate here was a simple font-ratio
+  // scale-down of RATIONALE_THEAD_H_NORMAL (51), which under-counted: the header line COUNT is
+  // set by whether "Number to Program" (3 words) wraps inside its narrow 13%-wide column, a
+  // discrete word-wrap outcome that does not scale linearly with font size the way a flowing
+  // body-text block does. Headless print-media measurement (getBoundingClientRect on the real
+  // <thead>) found 67px on every one of the table's pages (3 header lines x 18px dense line
+  // height + 12px padding = 66, +1 for sub-pixel rounding) -- corrected to the measured value.
+  // Gated so RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 keeps RATIONALE_THEAD_H_NORMAL exactly.
+  var RATIONALE_THEAD_H = RPT_MP_DENSE_ACTIVE ? 68 : RATIONALE_THEAD_H_NORMAL; // measured 67; +1
   var RATIONALE_SAFETY_H = 40; // single page-level margin, same convention as EXEC_SAFETY_H above
   // V-10: the first page also carries the sentence that tells the reader what the quantity column
   // counts and that it adds to the cover figure. Measured 3 lines plus its margin at the floor.
@@ -15371,8 +15481,18 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // V-10 (2026-08-03): fourth column added. "ASHRAE 36 Spec" also became "ASHRAE 36 Section" and
   // its cells read "Section 5.16.2" rather than "ASHRAE 36 §5.16.2" — "spec" is an abbreviation,
   // and the header already names the standard, so the cell no longer repeats it on every row.
+  // 'rpt-mp-dense' (Matt's review, 2026-08-03): the Control Sequences table is a real multi-page
+  // table on the JOCO portfolio (measured 4 printed pages before this change) -- see
+  // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT's header comment for the mechanism. Everything inside
+  // this <table> (head + rows + totals row) floors to RPT_MULTIPAGE_TABLE_MIN_PX instead of
+  // RPT_MIN_TEXT_PX; the section title (RATIONALE_TITLE_H) and the intro sentence
+  // (RATIONALE_INTRO_H), both OUTSIDE this <table>, are unaffected and keep the normal floor.
+  // Gated on RPT_MP_DENSE_ACTIVE so RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 renders byte-identical
+  // to this table's pre-density-pass markup (no class at all, not just an inert one).
   var _ratThead =
-    '<table style="width:100%;border-collapse:collapse">' +
+    '<table' +
+    (RPT_MP_DENSE_ACTIVE ? ' class="rpt-mp-dense"' : '') +
+    ' style="width:100%;border-collapse:collapse">' +
     '<thead><tr>' +
     '<th style="padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;width:' +
