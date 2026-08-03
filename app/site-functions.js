@@ -1576,6 +1576,37 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.03.744',
+    date: '2026-08-03',
+    title: 'Service Proposal reads as one clear document',
+    items: [
+      {
+        type: 'change',
+        text: 'Service Proposal, the recommendation for energy management services is now made once, on a single page, instead of being repeated on the following page in nearly the same words.',
+      },
+      {
+        type: 'fix',
+        text: 'Service Proposal, the monthly service allowance is now stated as a firm figure everywhere it appears. It is no longer called approximate on one page after being stated as a set amount on the page before.',
+      },
+      {
+        type: 'fix',
+        text: 'Service Proposal, the disclaimer at the end now describes what the proposal actually contains, instead of referring to figures the proposal does not include.',
+      },
+      {
+        type: 'fix',
+        text: 'Service Proposal, the sentence pointing you to the schedule of included improvements now calls that table by its correct name and tells you where in the document to find it.',
+      },
+      {
+        type: 'change',
+        text: 'Service Proposal, the compliance section no longer repeats what the opening summary already says. It now explains what that category of work covers and leads into its own list.',
+      },
+      {
+        type: 'change',
+        text: 'Service Proposal, the disclaimer now prints last, after the compliance and scope sections, instead of appearing partway through the document with content after it.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.02.743',
     date: '2026-08-02',
     title: 'Printing and Word export fixes across the Audit Report, Service Proposal, and Services Agreement',
