@@ -15449,9 +15449,18 @@ function rptPageASHRAE36CostEstimate(n, d) {
       // "the largest constant that never under-estimates a measured row"; flooring keeps that same
       // conservative direction at the new size). Gated so RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0
       // keeps the original V-10/V-11 constants (18/21/37) exactly.
-      var SEQ_NAME_CPL = RPT_MP_DENSE_ACTIVE ? Math.floor(18 * (RPT_MIN_TEXT_PX / RPT_MULTIPAGE_TABLE_MIN_PX)) : 18; // 20
-      var SEQ_REQ_CPL = RPT_MP_DENSE_ACTIVE ? Math.floor(21 * (RPT_MIN_TEXT_PX / RPT_MULTIPAGE_TABLE_MIN_PX)) : 21; // 23
-      var SEQ_DESC_CPL = RPT_MP_DENSE_ACTIVE ? Math.floor(37 * (RPT_MIN_TEXT_PX / RPT_MULTIPAGE_TABLE_MIN_PX)) : 37; // 41
+      // Item 10 density refit (2026-08-03): the previous font-ratio-scaled dense constants
+      // (20/23/41) over-estimated line counts enough to leave every Control Sequences page ~35%
+      // blank (7 rows on a page that really holds 8+) and hold the section at 3 pages. Re-fitted
+      // per the V-10 protocol — headless print-media measurement of ALL 15 real rows after the
+      // 4px-padding + un-bolded-name changes, then a grid search for the largest constants that
+      // never under-estimate a single measured row (total overshoot 103px across 15 rows). The
+      // un-bolded name column (item 9) fits more characters per line than the old bold fit
+      // assumed, which is part of why the old constants overshot. Non-dense fallbacks keep their
+      // original V-10/V-11 values.
+      var SEQ_NAME_CPL = RPT_MP_DENSE_ACTIVE ? 23 : 18;
+      var SEQ_REQ_CPL = RPT_MP_DENSE_ACTIVE ? 27 : 21;
+      var SEQ_DESC_CPL = RPT_MP_DENSE_ACTIVE ? 45 : 37;
       var SEQ_REQ_GAP = 3; // the sub-line's margin-top (fixed, not font-driven)
       // One line height for all three columns, at the table's own floor (dense: 12px * 1.5 = 18;
       // normal, same as before this pass: _rptTextLineH(1.5) = round(RPT_MIN_TEXT_PX * 1.5) = 20).
