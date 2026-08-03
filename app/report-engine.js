@@ -14719,7 +14719,21 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // by this change, it just gives the existing text more room per line. colgroup +
   // table-layout:fixed added so these percentages are deterministic instead of
   // browser auto-layout (which could otherwise let content push columns around).
-  var colWidths = { equip: 24, units: 6, sensors: 34, seqs: 36 };
+  // U2 (2026-08-02, fix/u2-print-page-budget). Same defect as the Building ASHRAE 36 Readiness
+  // table's header, same cause: the 2026-07-12 split above was fitted against a 10px (7.5pt
+  // printed) header, and the 10pt printed-text floor raises every th to 13.34px. "UNITS" is a
+  // single unbreakable word and its 6% column was sized for "a bare integer", so at the floor the
+  // header word overflowed its cell — 31 checkOverflow hits in an all-sections-on Audit render.
+  // (This section is opt-in and OFF in the client Audit, which is why it did not appear in the
+  // shipped PDFs; it would have appeared the first time anyone enabled Per-Building Detail.)
+  // Measured in a print-media DOM probe at 13.34px: table 720px, th horizontal padding 16px.
+  //   Units       inner 27.1 vs "Units" 41.7      -> FAILED by 14.6px; 9% gives inner 48.8, +7.1
+  //   Equipment   inner 156.5 vs "Equipment" 84.5 -> ample, untouched
+  //   Sensors     inner 228.5 vs "Sensors" 64.5   -> untouched
+  //   Sequences   inner 242.9 vs "Sequences" 85.2 -> gives up the 3%, still 221.6 inner. Its
+  //               content is a wrapping list already capped at top-3 + "+N more", so it wraps
+  //               slightly more rather than losing anything.
+  var colWidths = { equip: 24, units: 9, sensors: 34, seqs: 33 };
   var colgroup =
     '<colgroup>' +
     '<col style="width:' +
