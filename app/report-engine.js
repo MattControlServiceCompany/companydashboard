@@ -12530,40 +12530,67 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
  */
 var ASHRAE36_SEQUENCE_PLAIN = {
   ahu_sat_reset:
-    "Adjusts how warm or cool the air handler’s output is based on what the building actually needs, instead of always running at one fixed setting. Saves energy during mild weather.",
+    'Adjusts how warm or cool the air the air handler delivers is, based on what the building actually needs, instead of holding one fixed setting at all times. This reduces energy use in mild weather.',
   ahu_dsp_reset:
-    "Lets the supply fan slow down when the building doesn’t need full airflow, instead of always pushing air at full force. Cuts fan energy use.",
+    'Allows the supply fan to slow down when the building does not need full airflow, instead of pushing air at full force at all times. This reduces fan energy use.',
   ahu_economizer:
-    "Uses outdoor air to cool the building for free when it’s cool enough outside, so the cooling equipment doesn’t have to run as much.",
+    'Uses outdoor air to cool the building whenever outdoor conditions allow, so the cooling equipment runs less and uses less energy.',
   ahu_freeze_prot:
-    'Automatically shuts the air handler down if coil temperatures get cold enough to risk a frozen, burst water coil.',
+    'Shuts the air handler down automatically if coil temperatures fall low enough to risk a frozen, burst water coil.',
   ahu_min_oa:
-    'Keeps a minimum amount of fresh outdoor air coming into the building at all times to meet ventilation requirements, even as fan speed changes.',
+    'Maintains a minimum amount of fresh outdoor air entering the building at all times to meet ventilation requirements, even as fan speed changes.',
   ahu_rf_control:
-    "Keeps the return fan’s speed matched to the supply fan so the building doesn’t develop pressure problems, like doors that are hard to open or drafts.",
+    'Matches the speed of the return fan to the supply fan so the building does not develop pressure problems such as doors that are hard to open, or drafts.',
   vav_zone_temp:
-    'Keeps each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
+    'Holds each room or zone at its target temperature by adjusting how much heated or cooled air is delivered to that space.',
   vav_damper_writeback:
-    'Confirms the air damper in each zone is actually at the position the system commands, so a stuck or failed damper gets caught early instead of silently wasting energy or causing comfort complaints.',
+    'Positions the air damper serving each zone as the control system directs, and confirms the damper reached that position, so a stuck or failed damper is identified promptly rather than quietly wasting energy or causing comfort complaints.',
   vav_reheat:
-    "Adds a small amount of heat to already-cooled supply air at the zone level so a room doesn’t overcool when it needs less airflow.",
+    'Adds a small amount of heat to already-cooled supply air at the zone level so a room does not overcool when it needs less airflow.',
   hwp_supply_reset:
-    "Lowers the hot water temperature sent out to the building as the weather warms up, so the boiler doesn’t heat water hotter than it needs to.",
+    'Lowers the temperature of the hot water sent out to the building as the weather warms, so the boiler does not heat water hotter than the building requires.',
   hwp_pump_dp_reset:
-    'Lets the hot water pump slow down when fewer rooms are calling for heat, instead of always pumping at full speed.',
+    'Allows the hot water pump to slow down when fewer rooms are calling for heat, instead of pumping at full speed at all times.',
   hwp_staging:
-    'Automatically brings a second boiler online only when the building actually needs the extra heat, and shuts it back off when demand drops, instead of running every boiler all the time.',
+    'Brings a second boiler online automatically only when the building needs the additional heat, and shuts it back off when demand drops, instead of running every boiler at all times.',
   chwp_supply_reset:
-    "Raises the chilled water temperature sent out to the building when cooling loads are light, so the chiller doesn’t have to work as hard as it does on a full-load day.",
+    'Raises the temperature of the chilled water sent out to the building when cooling loads are light, so the chiller does not work as hard as it does on a full-load day.',
   chwp_pump_dp_reset:
-    'Lets the chilled water pump slow down when cooling demand is low, instead of always pumping at full speed.',
+    'Allows the chilled water pump to slow down when cooling demand is low, instead of pumping at full speed at all times.',
   chwp_staging:
-    'Automatically brings a second chiller online only when the building actually needs the extra cooling, and shuts it back off when demand drops.',
+    'Brings a second chiller online automatically only when the building needs the additional cooling, and shuts it back off when demand drops.',
   demandCtrl:
-    'Uses a carbon dioxide sensor to bring in only as much outdoor air as the number of people in the building actually calls for, instead of a fixed amount around the clock.',
+    'Uses a carbon dioxide sensor to bring in only as much outdoor air as the number of people in the building calls for, instead of a fixed amount around the clock.',
   vav_dcv:
-    'Uses a carbon dioxide sensor at the zone level to adjust ventilation air based on how many people are actually in that specific room.',
+    'Uses a carbon dioxide sensor at the zone level to adjust ventilation air to the number of people actually in that room.',
 };
+
+/**
+ * _a36SeqDisplayLabel(sd) — client-facing display name for one EM_SEQUENCE_DEFS entry.
+ *
+ * V-11 (visual review 2026-08-02): EM_SEQUENCE_DEFS names vav_damper_writeback
+ * "Damper Position Write-back". "Write-back" is controls-trade jargon a county facilities
+ * manager cannot read, and the Audit's Executive Summary already names the same concept in
+ * plain language on an earlier page — ASHRAE36_GAP_DESCRIPTIONS.dampCmd.short,
+ * "Damper position command", the very point (requiredCats: ['dampCmd']) this sequence writes.
+ * One concept must carry one name, so the client documents render the Executive Summary's
+ * plain-language name in both places.
+ *
+ * Kept as an override map HERE rather than a rename in equipment-matrix.js on purpose: that
+ * label is also an internal Equipment Matrix column heading and a pricing-row `item` string,
+ * and this change is scoped to what the client reads. Any key absent from the map falls
+ * through to the def's own label, so new sequence defs need no change here.
+ *
+ * @param {object} sd - one entry from EM_SEQUENCE_DEFS
+ * @returns {string} display label
+ */
+var A36_SEQ_LABEL_OVERRIDE = {
+  vav_damper_writeback: 'Damper Position Command',
+};
+function _a36SeqDisplayLabel(sd) {
+  if (!sd) return '';
+  return A36_SEQ_LABEL_OVERRIDE[sd.key] || sd.label || '';
+}
 
 /**
  * ASHRAE36_SECTIONS — defines available report sections for the audit and proposal.
@@ -13904,7 +13931,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '</div>' +
     '</div>' +
     '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-    "This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. " +
+    'This report evaluates the facility’s building automation system against ASHRAE 36, the industry standard for high-performance heating and cooling control. ' +
     'It identifies the specific sensors to install and control sequences to program to bring the facility into full alignment with ASHRAE 36. ' +
     'Use it to scope and prioritize the recommended upgrades.' +
     '</div>' +
