@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.02.742',
+    date: '2026-08-02',
+    title: 'Word export fixes and sequence counts in the Audit Report',
+    items: [
+      {
+        type: 'fix',
+        text: 'Word downloads of the Audit Report and Service Proposal now produce a true Word document instead of a converted web page. This fixes the cover statistics stacking vertically instead of sitting side by side, missing indentation, section headings being the same size as body text, text smaller than 10 point, and the duplicate footer on the last page.',
+      },
+      {
+        type: 'feature',
+        text: 'Audit Report, the Building Status column in the building readiness table now shows the sequences count alongside the sensors count.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.02.741',
     date: '2026-08-02',
     title: 'Service Proposal months table now schedules work in every month',
