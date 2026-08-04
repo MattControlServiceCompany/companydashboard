@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.03.748',
+    date: '2026-08-03',
+    title: 'Service Proposal monthly schedule now shows work counts',
+    items: [
+      {
+        type: 'feature',
+        text: "Service Proposal monthly schedule now shows how many sequences are programmed (and sensors installed, when applicable) in each month, so every month's workload is stated on its own.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.03.747',
     date: '2026-08-03',
     title: 'Audit Report and Service Proposal Word export cleanup',
