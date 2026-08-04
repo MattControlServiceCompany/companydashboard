@@ -13196,6 +13196,72 @@ function a36ReadinessWord(pct) {
   return band ? ASHRAE36_READINESS_BAND_WORDS[band] : '';
 }
 
+// ─── Building Readiness table score-bar fill gradient (2026-08-04) ─────────
+// The score bar FILL (not the band word/chip, not the cover gauges) reads as a continuous
+// red -> orange -> yellow -> green gradient instead of the 3-step band color, so a 74% and a
+// 76% building no longer render as visually opposite colors while a 51% and a 74% (both
+// "Partial Readiness") render identically. Stops sit at the same 30/80 window the table's
+// visual range actually uses: <=30% pure red, >=80% pure green, with orange/yellow interpolated
+// evenly between. This is DISPLAY ONLY — a36ReadinessBand/a36ReadinessColor/a36ReadinessWord
+// (the High/Partial/Low words and the 75/50 thresholds) are untouched and still drive the chip.
+// Also feeds data-rpt-scorebar-color below, so the .docx PNG-swap path (_rptSwapScoreBarsForPng)
+// bakes this same gradient hex instead of the old band color.
+var A36_SCORE_GRADIENT_STOPS = [
+  { pct: 30, hex: '#c0392b' }, // var(--rpt-red)
+  { pct: 46.666666666666664, hex: '#e67e22' }, // var(--rpt-orange)
+  { pct: 63.333333333333336, hex: '#f1c40f' }, // yellow
+  { pct: 80, hex: '#27ae60' }, // var(--rpt-green)
+];
+
+function _a36HexToRgb(hex) {
+  var n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function _a36RgbToHex(rgb) {
+  return (
+    '#' +
+    rgb
+      .map(function (c) {
+        return Math.round(Math.max(0, Math.min(255, c)))
+          .toString(16)
+          .padStart(2, '0');
+      })
+      .join('')
+  );
+}
+
+/**
+ * a36ScoreGradientColor — score bar fill color as a true continuous gradient (not the 3-step
+ * band color). Clamps to [0,100]; <=30 is pure red, >=80 is pure green, and everything between
+ * is linearly interpolated in RGB across the 4 stops in A36_SCORE_GRADIENT_STOPS so the fill
+ * changes smoothly with the exact score. Returns a concrete #rrggbb hex (used in an inline
+ * style attribute and in data-rpt-scorebar-color, so it cannot be a var()).
+ * @param {number} pct - composite readiness score, 0-100
+ * @returns {string} #rrggbb
+ */
+function a36ScoreGradientColor(pct) {
+  var n = Math.max(0, Math.min(100, Number(pct) || 0));
+  var stops = A36_SCORE_GRADIENT_STOPS;
+  if (n <= stops[0].pct) return stops[0].hex;
+  if (n >= stops[stops.length - 1].pct) return stops[stops.length - 1].hex;
+  for (var i = 0; i < stops.length - 1; i++) {
+    var a = stops[i];
+    var b = stops[i + 1];
+    if (n >= a.pct && n <= b.pct) {
+      var t = (n - a.pct) / (b.pct - a.pct);
+      var rgbA = _a36HexToRgb(a.hex);
+      var rgbB = _a36HexToRgb(b.hex);
+      return _a36RgbToHex([
+        rgbA[0] + (rgbB[0] - rgbA[0]) * t,
+        rgbA[1] + (rgbB[1] - rgbA[1]) * t,
+        rgbA[2] + (rgbB[2] - rgbA[2]) * t,
+      ]);
+    }
+  }
+  return stops[stops.length - 1].hex;
+}
+
 // ─── Client-visible name and number formatting (work unit R5, 2026-08-03) ──
 // Defects fixed here: D-14/V-08 (internal identifier "P25309 - " leaking into the client
 // building column, and the alphabetical sort corruption it caused), V-07 (raw source-system
@@ -15074,16 +15140,22 @@ function rptPageASHRAE36Executive(n, d) {
     // a full visible rail (var(--rpt-progress-bg), the existing progress-track token) that
     // fills the cell width left of the label, and the colored fill is width:<composite>% OF
     // that track — a 72% score visibly fills 72% of the rail. Fill color stays
-    // b.statusColor = a36ReadinessColor(composite): green High >=75, orange Partial 50-74,
-    // red Low <50. The % label keeps V-05's fixed right-aligned box so every label shares one
-    // right edge and the layout arithmetic that closed the old column-rule overflow still
-    // holds: track flexes to (inner - gap - label), never past it, so nothing can cross the
-    // Score/Status rule regardless of score.
+    // Fill color is a36ScoreGradientColor(composite): a true continuous red->orange->yellow->green
+    // gradient (see the function's own comment, ~line 13199) tied to the exact score, not the
+    // 3-step band color (a36ReadinessColor/b.statusColor is still used elsewhere on this row —
+    // e.g. nowhere on this bar anymore — and untouched for the chip/gauges). The % label keeps
+    // V-05's fixed right-aligned box so every label shares one right edge and the layout
+    // arithmetic that closed the old column-rule overflow still holds: track flexes to
+    // (inner - gap - label), never past it, so nothing can cross the Score/Status rule
+    // regardless of score.
     var SCORE_GAP_W = 4;
     var SCORE_LABEL_W = 35;
+    var scoreBarColor = a36ScoreGradientColor(b.composite);
     // data-rpt-scorebar / data-rpt-scorebar-color on the track div: consumed ONLY by the .docx
     // export's _rptSwapScoreBarsForPng() pass (real Word drops empty background-only divs, so the
     // export swaps this track for a canvas-drawn PNG). Inert in the browser preview/print paths.
+    // Carries the SAME gradient hex as the live fill below, so the baked PNG in Word matches the
+    // browser/PDF instead of reverting to the old band color (2026-08-04).
     var bar =
       '<div style="display:flex;align-items:center;gap:' +
       SCORE_GAP_W +
@@ -15091,12 +15163,12 @@ function rptPageASHRAE36Executive(n, d) {
       '<div data-rpt-scorebar="' +
       b.composite +
       '" data-rpt-scorebar-color="' +
-      b.statusColor +
+      scoreBarColor +
       '" style="flex:1 1 auto;min-width:0;height:9px;background:var(--rpt-progress-bg);border-radius:2px;overflow:hidden">' +
       '<div style="width:' +
       b.composite +
       '%;height:9px;background:' +
-      b.statusColor +
+      scoreBarColor +
       ';border-radius:2px 0 0 2px;min-width:2px"></div>' +
       '</div>' +
       '<span style="flex:0 0 ' +
