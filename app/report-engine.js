@@ -18310,21 +18310,39 @@ function _rptA36MonthSequenceGroups(items) {
   var otherMap = {};
   items.forEach(function (item) {
     var seqRow = null;
+    // Per-month scope counts (2026-08-03, deploy/months-counts): each allocation unit lives WHOLE
+    // in exactly one calendar month (_pricingComputeTermMonthlyAllocation never splits a unit —
+    // see its "never split a unit" invariant), so summing row qty per month here yields EXACT
+    // per-month counts whose parts sum to the term's type totals by construction — no
+    // hours→units proportional conversion, no rounding drift. Counting rules are 1:1 with the
+    // cover's canonical figures (rptPageASHRAE36Cover, ~L14256): sequences = qty of phase-2 rows
+    // WITH seqKey (investigation labor rows carry no seqKey and are excluded, same as the cover);
+    // sensors = qty of phase-1 rows with !ioOnly (ioOnly wires to existing I/O — not a new sensor).
+    var seqQty = 0;
+    var senQty = 0;
     (item.rows || []).forEach(function (r) {
-      if (r.phase === 2 && r.seqKey) seqRow = r;
+      if (r.phase === 2 && r.seqKey) {
+        seqRow = r;
+        seqQty += r.qty || 0;
+      } else if (r.phase === 1 && !r.ioOnly) {
+        senQty += r.qty || 0;
+      }
     });
     var bName = _a36DisplayName(item.building);
     if (seqRow) {
-      if (!bySeq[seqRow.seqKey]) bySeq[seqRow.seqKey] = {};
-      bySeq[seqRow.seqKey][bName] = true;
+      if (!bySeq[seqRow.seqKey]) bySeq[seqRow.seqKey] = { b: {}, seq: 0, sen: 0 };
+      bySeq[seqRow.seqKey].b[bName] = true;
+      bySeq[seqRow.seqKey].seq += seqQty;
+      bySeq[seqRow.seqKey].sen += senQty;
     } else {
       var r0 = (item.rows || [])[0] || {};
       var lbl = r0.item || 'Improvement';
       if (!otherMap[lbl]) {
-        otherMap[lbl] = {};
+        otherMap[lbl] = { b: {}, seq: 0, sen: 0 };
         otherOrder.push(lbl);
       }
-      otherMap[lbl][bName] = true;
+      otherMap[lbl].b[bName] = true;
+      otherMap[lbl].sen += senQty;
     }
   });
   var groups = [];
@@ -18340,15 +18358,24 @@ function _rptA36MonthSequenceGroups(items) {
       if (!bySeq[sd.key]) return;
       if (_obvMonthKeys[sd.key]) {
         if (!_obvGroup) {
-          _obvGroup = { label: 'Occupancy-Based Ventilation', _bMap: {} };
+          _obvGroup = { label: 'Occupancy-Based Ventilation', _bMap: {}, seqCount: 0, sensorCount: 0 };
           groups.push(_obvGroup);
         }
-        Object.keys(bySeq[sd.key]).forEach(function (b) {
+        Object.keys(bySeq[sd.key].b).forEach(function (b) {
           _obvGroup._bMap[b] = true;
         });
+        // OBV stays ONE line/type: the merged group's counts are the SUM of both underlying keys'
+        // (demandCtrl AHU-level + vav_dcv zone-terminal-level) — never two separate count lines.
+        _obvGroup.seqCount += bySeq[sd.key].seq;
+        _obvGroup.sensorCount += bySeq[sd.key].sen;
         return;
       }
-      groups.push({ label: _a36SeqDisplayLabel(sd), buildings: Object.keys(bySeq[sd.key]) });
+      groups.push({
+        label: _a36SeqDisplayLabel(sd),
+        buildings: Object.keys(bySeq[sd.key].b),
+        seqCount: bySeq[sd.key].seq,
+        sensorCount: bySeq[sd.key].sen,
+      });
     });
     if (_obvGroup) {
       _obvGroup.buildings = Object.keys(_obvGroup._bMap);
@@ -18356,7 +18383,12 @@ function _rptA36MonthSequenceGroups(items) {
     }
   }
   otherOrder.forEach(function (lbl) {
-    groups.push({ label: lbl, buildings: Object.keys(otherMap[lbl]) });
+    groups.push({
+      label: lbl,
+      buildings: Object.keys(otherMap[lbl].b),
+      seqCount: otherMap[lbl].seq,
+      sensorCount: otherMap[lbl].sen,
+    });
   });
   return groups;
 }
@@ -18672,7 +18704,18 @@ function _rptA36PhaseTableDerive(d, opts) {
     seqGroups.forEach(function (g) {
       var isNew = !_seqSeenTypes[g.label];
       _seqSeenTypes[g.label] = true;
-      var seqLine = isNew ? 'Begin ' + g.label + ' programming.' : g.label + ' programming (continues).';
+      // Per-month scope counts (2026-08-03, deploy/months-counts): each type line carries THIS
+      // MONTH'S OWN portion of sequences programmed / sensors installed (g.seqCount/g.sensorCount
+      // from _rptA36MonthSequenceGroups — exact per-month unit sums, never the type's full total
+      // repeated across months), so every month column stands on its own. Counts follow the
+      // cover's canonical counting rules — see the counting comment in that function.
+      var cParts = [];
+      if (g.seqCount) cParts.push(rptCount(g.seqCount) + (g.seqCount === 1 ? ' sequence' : ' sequences'));
+      if (g.sensorCount) cParts.push(rptCount(g.sensorCount) + (g.sensorCount === 1 ? ' sensor' : ' sensors'));
+      var cTxt = cParts.join(', ');
+      var seqLine = isNew
+        ? 'Begin ' + g.label + ' programming' + (cTxt ? ' (' + cTxt + ')' : '') + '.'
+        : g.label + ' programming (continues' + (cTxt ? ' — ' + cTxt : '') + ').';
       lines.push('<div style="' + _cellSeqLineStyle + '">' + esc(seqLine) + '</div>');
       charLens.push(seqLine.length);
     });
