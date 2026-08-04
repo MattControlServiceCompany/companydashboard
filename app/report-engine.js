@@ -18466,8 +18466,11 @@ function _rptA36PhaseTableDerive(d, opts) {
   // on the page before this one; this is a plain lead-in to the schedule that follows and states
   // no price at all, so there is no second figure that can drift from the first. budgetFmt was
   // deleted with the sentence that used it (it had no other reader in this function).
+  // 2026-08-03 (Matt): one blank line of breathing room between this intro sentence and the
+  // months table below it — margin-bottom 4px -> 23px (4px original gap + ~19px, one line at
+  // this block's own 14px x 1.38 line-height). Spacing only; text unchanged.
   var intro =
-    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:4px">' +
+    '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.38;margin-bottom:23px">' +
     'The schedule below lists the improvements included in the current term and the month each one ' +
     'is carried out. Ongoing monitoring and tuning continues every month of the term.' +
     '</div>';
@@ -18986,7 +18989,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // the always-present trailing notes block. HEAD_CHROME_FIRST / TAIL_H keep their previously
   // measured values (Why This Approach + intro chrome; term notes + standalone Future Work).
   var g = _rptContentBudget('flush');
-  var HEAD_CHROME_FIRST = 232; // measured 224 (Why This Approach block + intro heading/paragraph + gaps)
+  var HEAD_CHROME_FIRST = 251; // measured 224 (Why This Approach block + intro heading/paragraph + gaps) + 19px one-blank-line intro margin (2026-08-03)
   var PHASE_SAFETY_H = 40; // explicit page-level margin, same convention as the Audit pages
   var TAIL_H = opts && opts.futureWorkInline === true ? 150 : 370; // measured 356 in standalone mode
 
