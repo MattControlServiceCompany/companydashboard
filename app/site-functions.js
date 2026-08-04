@@ -1576,6 +1576,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.04.749',
+    date: '2026-08-04',
+    title: 'Service Proposal schedule and Audit Report Word export update',
+    items: [
+      {
+        type: 'change',
+        text: 'Service Proposal schedule page now starts the service term by identifying and verifying the control sequences before programming begins, and no longer lists a separate "Future Work" section.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit Report readiness score bars now render correctly when the report is exported to Word, matching what you see on screen.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.03.748',
     date: '2026-08-03',
     title: 'Service Proposal monthly schedule now shows work counts',
