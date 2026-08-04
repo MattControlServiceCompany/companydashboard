@@ -17609,41 +17609,24 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // ── Title block ─────────────────────────────────────────────────────────
   var title =
     '<div style="text-align:center;margin-bottom:6px">' +
-    // D-12 (2026-08-03): 19px (14.25pt) -> the 18pt document-title tier, matching the Audit
-    // cover. The second line (the programme line) goes 16px -> 19px (12pt -> 14.25pt) with it:
-    // at 12pt it would have printed SMALLER than the 13pt "Executive Summary" heading further
-    // down this same page, which is the same parent-smaller-than-child inversion being fixed.
-    // Result on the cover: title 18pt > programme line 14.25pt > section headings 13pt > body
-    // 10.5pt, with the "Service Proposal" kicker left where it is (a deliberate small-caps
-    // eyebrow, already at the legal 10pt floor, not a heading over any body text).
+    // Title block rework (Matt, 2026-08-03, deploy/report-docx-fixes): the cover previously led
+    // with "<client> Building Automation System" as the big title with "Service Proposal" as the
+    // subtitle. Reversed to mirror the Audit cover exactly (rptPageASHRAE36Cover ~line 14351):
+    // TITLE = "Service Proposal" (RPT_DOC_TITLE_PX = 18pt tier, bold, var(--rpt-blue), centered),
+    // SUBTITLE = the client/project name (15px = 11.25pt printed, bold, near-black, centered) —
+    // same treatment as "ASHRAE 36 Audit Report" / "Johnson County, Kansas". The
+    // "Building Automation System" text is deleted entirely. Full d.project.name here (not
+    // displayClient) because the Audit cover's subtitle uses d.project.name — the shortened
+    // prose form stays mid-sentence only.
     // Word title centering (Matt, 2026-08-03, docx item 12): text-align:center on the LEAF divs —
     // the .docx translator reads alignment off each leaf element's own inline style, never an
     // ancestor wrapper (same fix as the Audit cover title, item 1).
     '<div style="font-size:' +
     RPT_DOC_TITLE_PX +
-    'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">' +
-    esc(displayClient) +
-    ' Building Automation System</div>' +
-    // Document-type identifier (2026-07-29) -- the cover previously never said "Service
-    // Proposal" anywhere, while the interior Cost Estimate headers and the modal/PDF filename
-    // all call it that. Subordinate to the title line above: var(--rpt-page-text) (near-black
-    // body-text token, #000000) instead of var(--rpt-blue) so the hierarchy reads client ->
-    // document type without competing with the title line. Uppercase + letter-spacing follows
-    // this file's own existing section-label convention (see "Portfolio Metrics" label ~line
-    // 1906: font-size:11px; text-transform:uppercase; letter-spacing:0.5px) rather than
-    // introducing a new pattern.
-    // 2026-08-03: removed the "ASHRAE 36 Energy Management Services" subtitle and the date line
-    // that previously sat between the title and this kicker (Matt: "why the fuck is there a
-    // random ASHRAE 36 Energy Services Management sentence in the middle of the Service Proposal
-    // title" / "why is there a date in the Service Proposal title") — neither was requested.
-    // margin-top bumped 2px -> 8px so the kicker still reads as a deliberate second line under
-    // the title rather than crowding it now that two lines were removed above it.
-    // Title case (Matt, 2026-08-03, item 8): uppercase transform removed — "Service Proposal".
-    // Title block cleanup (Matt, 2026-08-03, docx item 12): the 11px letter-spaced kicker read as
-    // a tiny orphaned bold line under the big title in Word. "Service Proposal" is now a PROPER
-    // SUBTITLE styled exactly like the Audit cover's subtitle line (15px = 11.25pt printed, bold,
-    // near-black, centered) so the two documents' title blocks match.
-    '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">Service Proposal</div>' +
+    'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">Service Proposal</div>' +
+    '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">' +
+    esc(d.project.name) +
+    '</div>' +
     '</div>';
 
   // ── Executive Summary ───────────────────────────────────────────────────
