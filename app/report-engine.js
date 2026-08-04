@@ -18697,6 +18697,18 @@ function _rptA36PhaseTableDerive(d, opts) {
         charLens.push(setupLine.length);
       }
     }
+    // Verification-first month (2026-08-03, Matt: the first month of the term is setup +
+    // verification, NOT programming). The allocation model reserves month 1's entire net-of-labor
+    // room for identifying and verifying the term's sequences (real investigation labor —
+    // _pricingComputeProgramCostModel's verifyReserve; _pricingComputeTermMonthlyAllocation zeroes
+    // month 1's packing envelope with the same rule), so month 1's bucket carries no programming
+    // units and the seqGroups loop below renders nothing for it — programming lines begin in
+    // month 2. This line states the reserved verification work that month 1's room is spent on.
+    if (mi === 0) {
+      var verifyLine = 'Identify and verify the sequences.';
+      lines.push('<div style="' + _cellLineStyle + '">' + verifyLine + '</div>');
+      charLens.push(verifyLine.length);
+    }
     // Docx item 13 rebuild (Matt, 2026-08-03): the repeated bold "Identify and verify equipment,
     // then program:" sub-header is GONE from every column. Each month now shows only the DISTINCT
     // new work scoped that month, by canonical sequence type (OBV counted once — see
@@ -18827,13 +18839,21 @@ function _rptA36PhaseTableDerive(d, opts) {
     '</table>';
 
   // tableEstH (2026-08-03 side-by-side rebuild): the table is ONE body row of five side-by-side
-  // cells, so its height is the TALLEST cell. Estimated per cell from each line's char count at
-  // a conservative chars-per-line for the column's inner width ((718.9/monthCount) - 16px padding
-  // at ~6.9px/char for 13.34px Arial => ~18 chars/line at 5 columns), 19px per wrapped line
-  // (13.34px * 1.35 line-height, rounded up) + 5px per block margin + cell padding. Safe-side by
-  // construction (floor CPL, ceil lines); verified against the real JOCO render per this file's
-  // measurement protocol.
-  var _monthColCPL = Math.max(8, Math.floor((718.9 / Math.max(monthCount, 1) - 16) / 6.9));
+  // cells, so its height is the TALLEST cell. Estimated per cell from each line's char count,
+  // 19px per wrapped line (13.34px * 1.35 line-height, rounded up) + 5px per block margin + cell
+  // padding.
+  // CPL recalibrated 2026-08-03 (verification-first month, deploy/months-returnline): the prior
+  // 6.9px/char divisor (~18 CPL at 5 columns) modeled average glyph width only and ignored
+  // word-wrap waste, which dominates at ~128px-wide columns filled with long words
+  // ("Occupancy-Based", "Ventilation", "programming"). Measured against the real JOCO render
+  // (project 1779664753271, headless print-path, this date): the tallest cell wrapped 240 chars
+  // into 20 lines => ~12 real chars/line, while the old estimate said 18 CPL/317px for a cell
+  // that really rendered 387px — the "safe-side" claim had inverted, the paginator kept a
+  // genuinely overflowing page whole, and the printed PDF split DOM page 2 across two sheets
+  // (19 physical sheets vs 18 numbered footers — the exact corrupted-footer defect the
+  // 2026-08-02 pagination fix exists to prevent). 9.3px/char (=> 12 CPL at 5 columns) matches
+  // that measurement; floor CPL + ceil lines keeps it safe-side for real this time.
+  var _monthColCPL = Math.max(8, Math.floor((718.9 / Math.max(monthCount, 1) - 16) / 9.3));
   var _maxCellH = 0;
   monthEntries.forEach(function (e) {
     var h = 12; // cell padding
@@ -18842,8 +18862,40 @@ function _rptA36PhaseTableDerive(d, opts) {
     });
     if (h > _maxCellH) _maxCellH = h;
   });
-  var _futureRowEstH = futureRowHTML ? 120 : 0;
-  var tableEstH = 34 + _maxCellH + _futureRowEstH; // 34 = measured-convention thead line + padding/borders
+  // Future Work inline row: measured 164px on the real JOCO render (2026-08-03) against the old
+  // 120px estimate — budgeted 170, same rounding convention as REC_SVCS_H.
+  var _futureRowEstH = futureRowHTML ? 170 : 0;
+  var _tableCharEstH = 34 + _maxCellH + _futureRowEstH; // 34 = measured-convention thead line + padding/borders
+
+  // Real measured table height (2026-08-03, verification-first month, deploy/months-returnline):
+  // the char-model above is now a FALLBACK only (kept for the no-document defensive path). This
+  // table's estimate has drifted from reality twice (2026-08-02 print-split fix; again this date,
+  // when the recalibrated model still mis-sized the page and the printed PDF split a numbered page
+  // across two sheets), so per the "measure, don't model" convention the geometry system already
+  // follows, the finished table HTML is rendered off-screen at the page's exact content width
+  // (816px page − 2×48px wrapper gutters = 720px, the same width wrapPage's content div yields)
+  // inside a .rpt-page-classed probe (same font/CSS-var context as the real page) and MEASURED.
+  // One extra reflow per proposal render, exact by construction, immune to future wording/data
+  // changes in the month cells.
+  var tableEstH = _tableCharEstH;
+  try {
+    if (typeof document !== 'undefined' && document.body) {
+      var _probe = document.createElement('div');
+      _probe.className = 'rpt-page';
+      _probe.style.cssText =
+        'position:absolute;left:-10000px;top:0;width:816px;height:auto;min-height:0;margin:0;box-shadow:none;overflow:visible';
+      var _probeInner = document.createElement('div');
+      _probeInner.style.cssText = 'padding:0 48px';
+      _probeInner.innerHTML = table;
+      _probe.appendChild(_probeInner);
+      document.body.appendChild(_probe);
+      var _measured = Math.ceil(_probeInner.getBoundingClientRect().height);
+      document.body.removeChild(_probe);
+      if (_measured > 0) tableEstH = _measured;
+    }
+  } catch (e) {
+    /* keep the char-model fallback */
+  }
 
   // termNotesHTML: Expected Results (once, term-level) + the standing Ongoing Energy Management
   // Services description (once, term-level, and now stated CONCRETELY instead of the old bare
@@ -19019,7 +19071,28 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
 
   var firstBudget = g - HEAD_CHROME_FIRST - PHASE_SAFETY_H;
   var contBudget = g - PHASE_SAFETY_H;
-  var chunks = _rptPaginateTokens(tokens, firstBudget, contBudget);
+  // Table-vs-first-page fit check (2026-08-03, verification-first month, deploy/months-returnline):
+  // der.tableEstH is now the REAL measured table height (see its derivation), and _rptPaginateTokens
+  // ALWAYS force-includes the first token on the first page ("always include at least one token per
+  // chunk"), so an indivisible months table taller than the first page's post-chrome budget used to
+  // stay on the merged chrome page anyway and overflow it — measured on real JOCO data this date:
+  // 421px merged chrome + 590px table = ~99px past the .rpt-body budget on screen, and the PRINT
+  // path split that one numbered page across TWO physical sheets (19 PDF sheets vs 18 "Page N of
+  // 18" footers — the exact corrupted-footer defect this paginated renderer exists to prevent).
+  // When the table cannot fit under the merged chrome, the chrome keeps the first page to itself
+  // and the table starts on a fresh continuation page. The intro sentence ("The schedule below
+  // lists…") travels WITH the table so it never strands on the chrome page pointing at a table
+  // that is not below it. INTRO_EST_H: intro block measured 39px + its 23px one-blank-line
+  // margin-bottom (2026-08-03 spacing commit).
+  var INTRO_EST_H = 62;
+  var chromeOnlyFirst = der.tableEstH > firstBudget;
+  var chunks;
+  if (chromeOnlyFirst) {
+    tokens[0] = { type: 'block', estH: der.tableEstH + INTRO_EST_H, html: der.intro + der.tableHTML };
+    chunks = [[]].concat(_rptPaginateTokens(tokens, contBudget, contBudget));
+  } else {
+    chunks = _rptPaginateTokens(tokens, firstBudget, contBudget);
+  }
   var numChunks = chunks.length;
 
   var pages = [];
@@ -19029,7 +19102,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
         return t.html;
       })
       .join('');
-    if (idx === 0) bodyInner = recSvcsHTML + whyHTML + der.intro + bodyInner;
+    if (idx === 0) bodyInner = recSvcsHTML + whyHTML + (chromeOnlyFirst ? '' : der.intro) + bodyInner;
     // Item 6b (2026-08-03): no "continued" wording in continuation labels -- "(2 of 2)".
     var labelSuffix = numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '';
     pages.push(wrapPage(startN + idx, bodyInner, labelSuffix));

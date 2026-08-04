@@ -7193,18 +7193,35 @@ function _pricingComputeProgramCostModel(projId, phaseCount) {
   var phases = _pricingPhaseDateDefs(phaseCount).map(function (p) {
     var allowanceTotal = Math.round(p.months * monthlyAllowance * 100) / 100;
     var emLaborHours = 0;
+    // verifyReserve (2026-08-03, verification-first month — Matt: the FIRST month of the program
+    // is setup + sequence identification/verification, NOT programming): absolute program month
+    // 1's entire net-of-labor room (monthlyAllowance − that month's own recurring EM labor cost)
+    // is RESERVED for identifying and verifying the term's sequences — real investigation labor
+    // (the same labor class an existing point's 1hr investigation line prices), scheduled before
+    // any programming begins. That room is therefore EXCLUDED from this phase's measuresAvailable
+    // envelope, so the phase-level admission walk (_pricingComputeRecommendedTimeline) and the
+    // month-level allocation (_pricingComputeTermMonthlyAllocation, which independently zeroes
+    // month 1's packing envelope with this same rule) can never disagree about the term's real
+    // programming capacity. Only the phase containing absolute month 1 (always phase index 0) is
+    // affected; a genuinely smaller term simply defers the excess units to the next phase (Future
+    // Work) — never force-fit, never hand-edited counts.
+    var verifyReserve = 0;
     for (var i = 0; i < p.months; i++) {
       absoluteMonth++;
-      emLaborHours += _pricingRecurringEMLaborHoursForMonth(bd, absoluteMonth);
+      var mHrs = _pricingRecurringEMLaborHoursForMonth(bd, absoluteMonth);
+      emLaborHours += mHrs;
+      if (absoluteMonth === 1)
+        verifyReserve = Math.max(0, Math.round((monthlyAllowance - mHrs * hourlyRate) * 100) / 100);
     }
     var emLaborTotal = Math.round(emLaborHours * hourlyRate * 100) / 100;
-    var measuresAvailable = Math.round(Math.max(0, allowanceTotal - emLaborTotal) * 100) / 100;
+    var measuresAvailable = Math.round(Math.max(0, allowanceTotal - emLaborTotal - verifyReserve) * 100) / 100;
     return {
       label: p.label,
       dateRange: p.dateRange,
       months: p.months,
       allowanceTotal: allowanceTotal,
       emLaborTotal: emLaborTotal,
+      verifyReserve: verifyReserve,
       measuresAvailable: measuresAvailable,
       overCommitted: emLaborTotal > allowanceTotal,
     };
@@ -8067,22 +8084,39 @@ function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, mont
         ? _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT
         : COST_LABOR_RATE_DEFAULT;
     for (var ei = 0; ei < monthCount; ei++) {
+      // Verification-first month (2026-08-03, Matt: the FIRST month of the term is setup +
+      // sequence identification/verification, never programming): absolute month 1's packing
+      // envelope is 0 — its net-of-labor room is reserved for identifying and verifying the
+      // term's sequences, the SAME reservation _pricingComputeProgramCostModel's verifyReserve
+      // already subtracts from Phase 1's measuresAvailable (see that field's comment), so the
+      // phase-level admission capacity and this function's month-level packing capacity stay the
+      // identical number and every admitted unit still fits months 2..N without the safety valve.
+      // Guarded on monthCount > 1 so a degenerate 1-month term can still schedule its work.
+      if (ei === 0 && monthCount > 1) {
+        envelopes.push(0);
+        continue;
+      }
       var envHrs = bdBreak ? _pricingRecurringEMLaborHoursForMonth(bdBreak, ei + 1) : 0;
       var envLabor = Math.round(envHrs * hourlyRate * 100) / 100;
       envelopes.push(Math.max(0, Math.round((monthlyAllowance - envLabor) * 100) / 100));
     }
   } else {
-    var evenShare = monthCount ? termGrand / monthCount : 0;
-    for (var ej = 0; ej < monthCount; ej++) envelopes.push(evenShare);
+    // No-budget fallback: same verification-first rule — month 1 packs nothing, so the even split
+    // spreads the term's own priced total across months 2..N (still an internal bin-packing input
+    // only, never displayed).
+    var evenShare = monthCount > 1 ? termGrand / (monthCount - 1) : termGrand;
+    for (var ej = 0; ej < monthCount; ej++) envelopes.push(ej === 0 && monthCount > 1 ? 0 : evenShare);
   }
   // Defensive: never leave every month's envelope at 0 (would force EVERY unit into the oversized
   // escape hatch, one per month) — same "never divide by zero" guard the old flat-scalar code had.
+  // Month 1 stays reserved (0) in this fallback too when the term has more than one month.
   var envelopeSum = envelopes.reduce(function (s, e) {
     return s + e;
   }, 0);
   if (!envelopeSum)
-    envelopes = envelopes.map(function () {
-      return termGrand / monthCount || 1;
+    envelopes = envelopes.map(function (_e, ei2) {
+      if (ei2 === 0 && monthCount > 1) return 0;
+      return termGrand / (monthCount > 1 ? monthCount - 1 : monthCount) || 1;
     });
 
   // Globally-oversized placement fix (2026-08-02, same diagnosis as the header comment above):
