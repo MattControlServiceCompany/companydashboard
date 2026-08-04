@@ -231,9 +231,16 @@ const REGISTRY = [
   },
   {
     id: 'timeline-future-work-category-coverage',
-    doc: 'Service Proposal (Phase table + Future Work)',
+    doc: 'Service Proposal (Phase table term categories + opt-in Cost Estimate timeline Future Work row)',
     checkType: 'b',
-    site: 'report-engine.js _pricingProposalTermAndFuture + _rptA36FutureWorkInnerHTML',
+    // 2026-08-03 (Matt): the client-facing Future Work section was deleted from the proposal --
+    // future categories are now named ONLY on the opt-in (default-OFF) Cost Estimate page's
+    // internal timeline table (_rptA36RecommendedTimelineHTML's Future Work row), which this
+    // script renders (all sections ON). The term/future key union below is that timeline's own
+    // population, so the check still holds: every Recommended-tier category is named either in
+    // the term schedule or on the internal timeline -- the default proposal intentionally shows
+    // the term only.
+    site: 'report-engine.js _pricingProposalTermAndFuture + _rptA36RecommendedTimelineHTML',
     predicate:
       // The plan's own invariant text (B-2): "timeline rows subset-of Recommended subset-of
       // U-derived" -- the Recommended tier (buildRecommendedRows) is a DECLARED, ranked/budgeted
@@ -261,27 +268,23 @@ const REGISTRY = [
     },
   },
   {
-    id: 'future-work-section-rendered-when-scope-exists',
-    doc: 'Service Proposal (Implementation Plan & Long-Term Vision page)',
+    // INVERTED 2026-08-03 (was future-work-section-rendered-when-scope-exists): Matt does not
+    // want Future Work shown in the JOCO Service Proposal, so the whole client-facing Future Work
+    // render path (standalone section, inline table row, Vision-page fallback) was DELETED from
+    // report-engine.js. This check now guards the opposite invariant: the deleted section must
+    // never come back. The opt-in Cost Estimate page's internal timeline keeps its Future Work
+    // row and is excluded from the heading scan (see gatherPageData).
+    id: 'future-work-absent-from-proposal-pages',
+    doc: 'Service Proposal (schedule + Implementation Plan/Long-Term Vision pages)',
     checkType: 'b',
-    site: 'report-engine.js _rptA36FutureWorkInnerHTML / rptPageASHRAE36ProposalVision',
+    site: 'report-engine.js _rptA36PhaseTableDerive / _rptA36VisionInnerHTML (Future Work path deleted 2026-08-03)',
     predicate:
-      'if futurePhases is non-empty, the rendered proposal HTML must contain the "Future Work" heading and its category list -- never silently omitted',
+      'the proposalPhaseTable and proposalVision sections must contain neither a "Future Work" heading nor the "Sequence categories addressed in future work:" list',
     run(b) {
-      if (b.futurePhaseCount === 0) {
-        return {
-          pass: true,
-          expected: 'no future phases exist, nothing to render',
-          actual: 'skipped (futurePhaseCount=0)',
-        };
-      }
-      const pass = b.proposalHasFutureWorkHeading && b.proposalHasFutureWorkCategoryLine;
+      const pass = !b.proposalHasFutureWorkHeading && !b.proposalHasFutureWorkCategoryLine;
       return {
         pass,
-        expected:
-          'futurePhaseCount=' +
-          b.futurePhaseCount +
-          ' > 0 => "Future Work" heading + category line present in rendered HTML',
+        expected: 'no "Future Work" heading and no category line anywhere in the schedule/vision sections',
         actual: {
           headingPresent: b.proposalHasFutureWorkHeading,
           categoryLinePresent: b.proposalHasFutureWorkCategoryLine,
@@ -479,9 +482,6 @@ async function gatherPageData(page, projId) {
       (ASHRAE36_SECTIONS.proposal || []).forEach((s) => {
         proposalSections[s.key] = true;
       });
-      // futureWorkInline defaults false in the real UI (standalone-section default) -- keep
-      // that default here so we're testing the DEFAULT shape, not the folded-in variant.
-      proposalSections.futureWorkInline = false;
       const proposalHTML = generateASHRAE36ProposalHTML(data, proposalSections);
       const propContainer = document.createElement('div');
       propContainer.style.cssText = 'position:absolute;left:-99999px;top:0';
@@ -489,7 +489,15 @@ async function gatherPageData(page, projId) {
       document.body.appendChild(propContainer);
       const proposalText = propContainer.textContent || '';
 
-      out.proposalHasFutureWorkHeading = /Future Work/.test(proposalText);
+      // Future Work ABSENCE scan (2026-08-03, path deleted at Matt's direction): scoped to the
+      // schedule + vision sections only -- the opt-in Cost Estimate page's internal timeline
+      // legitimately keeps a "Future Work" row and must not trip this scan.
+      const fwScopeText = Array.from(
+        propContainer.querySelectorAll('[data-section="proposalPhaseTable"],[data-section="proposalVision"]'),
+      )
+        .map((el) => el.textContent || '')
+        .join(' ');
+      out.proposalHasFutureWorkHeading = /Future Work/.test(fwScopeText);
       out.proposalHasFutureWorkCategoryLine = /Sequence categories addressed in future work:/.test(proposalText);
 
       // Priced-tier table (Compliance / Full Scope columns): Hardware & Installation /

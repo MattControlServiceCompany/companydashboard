@@ -12986,19 +12986,9 @@ var ASHRAE36_SECTIONS = {
     // step changed.
     { key: 'proposalCover', label: 'Proposal Summary (Title, Findings, Services)', group: 'Proposal', defaultOn: true },
     { key: 'proposalPhaseTable', label: 'Recommended Services — Phase Table', group: 'Proposal', defaultOn: true },
-    // futureWorkInline (2026-07-29, months + Future Work rebuild — Matt, verbatim: "Do it as
-    // months and then give me the ability to see the future work in the table or as a standalone
-    // section."): default OFF = Future Work renders as its own standalone section (on the
-    // Implementation Plan & Long-Term Vision page). Checking this box instead folds Future Work
-    // into the Recommended Services — Phase Table as an extra row, and the standalone section is
-    // suppressed so it is never shown twice. See _pricingProposalTermAndFuture's header comment.
-    {
-      key: 'futureWorkInline',
-      label: '  Show Future Work inside the Phase table (instead of its own section)',
-      group: 'Proposal',
-      defaultOn: false,
-      indent: true,
-    },
+    // futureWorkInline toggle REMOVED (Matt, 2026-08-03: no Future Work in the JOCO Service
+    // Proposal at all — the whole Future Work code path was deleted, both the inline-row mode this
+    // toggle enabled and the standalone-section default it switched away from).
     // R7 (2026-08-03, V-23): "&" spelled out, matching every other label and the section's own
     // headings in the rendered document (which are now "Implementation Plan" and "Long-Term
     // Vision", two separate headings — see _rptA36VisionInnerHTML).
@@ -18160,66 +18150,11 @@ function _rptA36PhaseSeqCategoryDetails(rows) {
   }
   return details;
 }
-/**
- * _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) — content-only builder for the
- * Future Work section (2026-07-29, replacing the silent PRICING_PROPOSAL_MAX_PHASES truncation —
- * see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment). Names every sequence category still to
- * come by reusing _rptA36PhaseSeqCategoryNames over ALL future-phase rows combined (deduped, same
- * EM_SEQUENCE_DEFS order the term table's per-unit category list already uses), so a category can
- * never be named here without real priced rows behind it in `futurePhases`.
- * Deliberately NOT truncated — this section's entire purpose is to stop hiding scope, so silently
- * capping this list would reintroduce a smaller copy of the exact defect this section closes.
- * (The 2026-07-30 per-month display cap SEQ_CAT_DISPLAY_CAP this comment used to reference was
- * removed 2026-07-31 along with the per-month category-list cell design it capped — the term
- * table's current rows-per-unit design shows every one of the term's units, uncapped, per plan
- * word-export-rebuild-2026-07-30.md Part F.)
- * Carries ZERO dollar figures — callers must pass this function `rows`, never a phase object with
- * measuresTotal/allowanceTotal/etc. fields left readable downstream.
- */
-function _rptA36FutureWorkInnerHTML(futurePhases, headStyle, bodyStyle) {
-  function esc(s) {
-    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
-  }
-  var allRows = [];
-  (futurePhases || []).forEach(function (p) {
-    if (p && p.rows) allRows = allRows.concat(p.rows);
-  });
-  if (!allRows.length) return '';
-  var cats = _rptA36PhaseSeqCategoryNames(allRows);
-  var narrative =
-    'Beyond the initial term, this service continues to expand sensor installation across ' +
-    'additional equipment and zones and to program the control sequences those sensors make ' +
-    'possible, until every building has the same level of sensor coverage and automated control. ' +
-    // R7 (2026-08-03): this sentence used to read "Future work is funded through the same monthly
-    // service allowance as it is completed, with no fixed end date." A near-duplicate census over
-    // the rendered PDF (every sentence pair scored with difflib) flagged it at 0.68 against the
-    // Implementation Plan's "Each stage of the work is funded through the monthly service allowance
-    // as it is completed, with no fixed end date; the service continues for as long as improvement
-    // opportunities remain." The funding-and-no-end-date mechanism belongs to the Implementation
-    // Plan, which is where a reader looks for it; all this block needs to say is that future work
-    // is not a separate bill. Shortened to the part that is not said anywhere else.
-    'Future work is included in the same monthly service allowance.';
-  var catHTML = '';
-  if (cats.length) {
-    catHTML =
-      '<div style="margin-top:4px">' +
-      // Docx item 14 (2026-08-03): inline lead-in no longer bold (page-2+ body text).
-      '<span>Sequence categories addressed in future work: </span>' +
-      cats.map(esc).join(', ') +
-      '</div>';
-  }
-  return (
-    '<div style="' +
-    headStyle +
-    '">Future Work</div>' +
-    '<div style="' +
-    bodyStyle +
-    '">' +
-    narrative +
-    '</div>' +
-    catHTML
-  );
-}
+// _rptA36FutureWorkInnerHTML DELETED (Matt, 2026-08-03: no Future Work shown in the JOCO Service
+// Proposal). The whole Future Work render path is gone — the standalone section, the inline
+// Phase-table row (futureWorkInline mode), and the Vision-page fallback. futurePhases itself
+// (_pricingProposalTermAndFuture) still exists and still feeds the opt-in Cost Estimate page's
+// internal timeline table (_rptA36RecommendedTimelineHTML).
 
 /**
  * _RPT_A36_MONTH_CAT_PHRASE / _rptA36JoinList / _rptA36MonthLaborSentence — Proposal months-table
@@ -18430,6 +18365,37 @@ function _rptA36MonthSequenceSentence(groups, esc) {
  * content change pushes total page height right up against the print boundary.
  */
 /**
+ * _rptA36MeasureContentH(html) — real off-screen pixel height of `html` rendered at the proposal
+ * page's exact content width (816px page − 2×48px wrapper gutters = 720px, the same width
+ * wrapPage's content div yields) inside a .rpt-page-classed probe (same font/CSS-var context as
+ * the real page). Returns 0 when no document is available — callers keep their model/constant
+ * fallbacks. Extracted 2026-08-04 (pages 2+3 re-merge) from _rptA36PhaseTableDerive's inline
+ * table probe so the page renderer's chrome/notes budgets use the SAME "measure, don't model"
+ * mechanism: the fixed HEAD_CHROME_FIRST/TAIL_H constants had drifted safe-side far past reality
+ * (421 budgeted vs 316 measured chrome; 150 vs 84 measured notes on real JOCO data) and were
+ * blocking a page merge that genuinely fits.
+ */
+function _rptA36MeasureContentH(html) {
+  try {
+    if (typeof document === 'undefined' || !document.body || !html) return 0;
+    var probe = document.createElement('div');
+    probe.className = 'rpt-page';
+    probe.style.cssText =
+      'position:absolute;left:-10000px;top:0;width:816px;height:auto;min-height:0;margin:0;box-shadow:none;overflow:visible';
+    var inner = document.createElement('div');
+    inner.style.cssText = 'padding:0 48px';
+    inner.innerHTML = html;
+    probe.appendChild(inner);
+    document.body.appendChild(probe);
+    var h = Math.ceil(inner.getBoundingClientRect().height);
+    document.body.removeChild(probe);
+    return h > 0 ? h : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/**
  * _rptA36PhaseTableDerive — 2026-08-02 (months-table page-height fix, fix/monthstable-content):
  * extracted from _rptA36PhaseTableInnerHTML (renamed from that function; all derivation logic
  * below is UNCHANGED from the 2026-07-31 rows-as-term-units matrix rebuild -- see that dated
@@ -18479,13 +18445,11 @@ function _rptA36PhaseTableDerive(d, opts) {
     '</div>';
 
   // 2026-07-29 (months + Future Work rebuild, replacing the PRICING_PROPOSAL_MAX_PHASES=3 cap —
-  // see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment): ONE derivation call feeds both this
-  // table (the current term, shown as calendar months) and the Future Work section, so the two can
-  // never disagree about which phase is which.
+  // see PRICING_PROPOSAL_TERM_PHASE_COUNT's header comment): the ONE shared term/future split.
+  // Only termPhases is read here since the Future Work section was removed (Matt, 2026-08-03).
   var td = _pricingProposalTermAndFuture(d.project.id);
   var tl = td.tl;
   var termPhases = td.termPhases;
-  var futurePhases = td.futurePhases;
 
   if (!tl || !termPhases.length) {
     var fallback =
@@ -18548,10 +18512,9 @@ function _rptA36PhaseTableDerive(d, opts) {
   // was NOT changed (that remains a separate true-ROI workstream, per Matt's explicit instruction
   // not to move client dollars via this fix). See dashboardlogic.md 2026-07-30 entry.
   // PHASE_IMPROVEMENTS[0]/EXPECTED_RESULTS[0] describe the current term (rendered below, under the
-  // real month headers). Index 1/2 are no longer rendered as separate phase columns (the table now
-  // shows only the term — everything past it is Future Work), but their content lives on,
-  // paraphrased, inside _rptA36FutureWorkInnerHTML's narrative so the "expanding sensor
-  // installation" / "remaining sensors" framing is not lost, only relocated.
+  // real month headers). Index 1/2 are no longer rendered as separate phase columns — the table
+  // shows only the term (work beyond the term is intentionally not shown; the Future Work section
+  // that used to name it was removed at Matt's direction, 2026-08-03).
   var PHASE_IMPROVEMENTS = [
     'Programs every control sequence that does not require a new sensor to be installed, and sets up automated ' +
       'reporting and alarms so problems are caught right away. Sequencing is prioritized by what can already be ' +
@@ -18568,12 +18531,6 @@ function _rptA36PhaseTableDerive(d, opts) {
   var thStyle =
     'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:center;' +
     'border:1px solid var(--rpt-border)';
-  var lblStyle =
-    'padding:8px 10px;font-size:14px;font-weight:700;color:var(--rpt-page-text);text-align:left;' +
-    'vertical-align:top;border:1px solid var(--rpt-border)';
-  var cellStyle =
-    'padding:8px 10px;font-size:9.5px;color:var(--rpt-page-text);text-align:left;vertical-align:top;' +
-    'line-height:1.5;border:1px solid var(--rpt-border)';
 
   // headRow (2026-08-03 SIDE-BY-SIDE rebuild, Matt's item 12: "make months side by side
   // (columns), work under each"): the months are COLUMNS across the top (Aug 2026 … Dec 2026),
@@ -18588,16 +18545,6 @@ function _rptA36PhaseTableDerive(d, opts) {
       })
       .join('') +
     '</tr>';
-
-  // catListStyle: nested sub-block inside the Future Work cell naming the actual priced sequence
-  // categories still to come (see _rptA36PhaseSeqCategoryNames' header comment above for the full
-  // rationale). Left-aligned + smaller than the parent cell's centered narrative text so it reads
-  // as a compact reference list, not competing prose; a top rule (var(--rpt-rule), the same token
-  // the table's own borders use — no new hardcoded color) separates it from the narrative
-  // sentence without introducing a box/card (standing rule: no boxes in reports).
-  var catListStyle =
-    'margin-top:6px;padding-top:5px;border-top:1px solid var(--rpt-rule);font-size:8.5px;' +
-    'color:var(--rpt-page-text);text-align:left;line-height:1.4';
 
   // monthCellStyle (2026-08-03 side-by-side rebuild): the per-month work description cell under
   // each month column. RPT_MIN_TEXT_PX (13.34px, the 10pt printed floor — the smallest legal
@@ -18780,39 +18727,8 @@ function _rptA36PhaseTableDerive(d, opts) {
     expectedResultsText = 'Reporting, alarms, and efficiency/comfort gains from ' + esc(namesText2) + '.';
   }
 
-  // futureRowHTML: the "fold into the table" rendering mode (opts.futureWorkInline === true) —
-  // appends Future Work as one more row inside THIS table instead of the standalone section
-  // _rptA36VisionInnerHTML renders by default. Same content either way
-  // (_rptA36FutureWorkInnerHTML), never dollars, never a truncated category list.
-  // colspan spans all month columns (2026-08-03 side-by-side rebuild): the months are columns
-  // now, so the Future Work narrative row runs the full table width beneath them.
-  var futureRowHTML = '';
-  if (opts && opts.futureWorkInline === true && futurePhases.length) {
-    var futureAllRows = [];
-    futurePhases.forEach(function (p) {
-      if (p && p.rows) futureAllRows = futureAllRows.concat(p.rows);
-    });
-    var futureCatNames = _rptA36PhaseSeqCategoryNames(futureAllRows);
-    if (futureCatNames.length) {
-      var futureListText = futureCatNames.map(esc).join(', ');
-      futureRowHTML =
-        '<tr><td style="' +
-        cellStyle +
-        '" colspan="' +
-        monthCount +
-        '">' +
-        '<span>Future Work: </span>' +
-        'Beyond the initial term, this service continues to expand sensor installation and program the ' +
-        'additional control sequences those sensors make possible, funded through the same monthly ' +
-        'service allowance, with no fixed end date.' +
-        '<div style="' +
-        catListStyle +
-        '"><span>Sequence categories addressed in future work: </span>' +
-        futureListText +
-        '</div>' +
-        '</td></tr>';
-    }
-  }
+  // futureRowHTML (the "Future Work" inline table row) DELETED along with the whole Future Work
+  // render path (Matt, 2026-08-03: no Future Work shown in the JOCO Service Proposal).
 
   // colgroup (2026-08-03 side-by-side rebuild): equal-width month columns, one per calendar
   // month of the term (5 for the JOCO term), table-layout:fixed so widths are deterministic.
@@ -18834,7 +18750,6 @@ function _rptA36PhaseTableDerive(d, opts) {
     '</thead>' +
     '<tbody>' +
     bodyRow +
-    futureRowHTML +
     '</tbody>' +
     '</table>';
 
@@ -18862,40 +18777,18 @@ function _rptA36PhaseTableDerive(d, opts) {
     });
     if (h > _maxCellH) _maxCellH = h;
   });
-  // Future Work inline row: measured 164px on the real JOCO render (2026-08-03) against the old
-  // 120px estimate — budgeted 170, same rounding convention as REC_SVCS_H.
-  var _futureRowEstH = futureRowHTML ? 170 : 0;
-  var _tableCharEstH = 34 + _maxCellH + _futureRowEstH; // 34 = measured-convention thead line + padding/borders
+  var _tableCharEstH = 34 + _maxCellH; // 34 = measured-convention thead line + padding/borders
 
   // Real measured table height (2026-08-03, verification-first month, deploy/months-returnline):
   // the char-model above is now a FALLBACK only (kept for the no-document defensive path). This
   // table's estimate has drifted from reality twice (2026-08-02 print-split fix; again this date,
   // when the recalibrated model still mis-sized the page and the printed PDF split a numbered page
   // across two sheets), so per the "measure, don't model" convention the geometry system already
-  // follows, the finished table HTML is rendered off-screen at the page's exact content width
-  // (816px page − 2×48px wrapper gutters = 720px, the same width wrapPage's content div yields)
-  // inside a .rpt-page-classed probe (same font/CSS-var context as the real page) and MEASURED.
-  // One extra reflow per proposal render, exact by construction, immune to future wording/data
-  // changes in the month cells.
-  var tableEstH = _tableCharEstH;
-  try {
-    if (typeof document !== 'undefined' && document.body) {
-      var _probe = document.createElement('div');
-      _probe.className = 'rpt-page';
-      _probe.style.cssText =
-        'position:absolute;left:-10000px;top:0;width:816px;height:auto;min-height:0;margin:0;box-shadow:none;overflow:visible';
-      var _probeInner = document.createElement('div');
-      _probeInner.style.cssText = 'padding:0 48px';
-      _probeInner.innerHTML = table;
-      _probe.appendChild(_probeInner);
-      document.body.appendChild(_probe);
-      var _measured = Math.ceil(_probeInner.getBoundingClientRect().height);
-      document.body.removeChild(_probe);
-      if (_measured > 0) tableEstH = _measured;
-    }
-  } catch (e) {
-    /* keep the char-model fallback */
-  }
+  // follows, the finished table HTML is MEASURED off-screen (_rptA36MeasureContentH — extracted
+  // 2026-08-04 so the page renderer can measure its chrome/notes the same way). One extra reflow
+  // per proposal render, exact by construction, immune to future wording/data changes.
+  var _measuredTable = _rptA36MeasureContentH(table);
+  var tableEstH = _measuredTable > 0 ? _measuredTable : _tableCharEstH;
 
   // termNotesHTML: Expected Results (once, term-level) + the standing Ongoing Energy Management
   // Services description (once, term-level, and now stated CONCRETELY instead of the old bare
@@ -18931,23 +18824,9 @@ function _rptA36PhaseTableDerive(d, opts) {
     '</div>';
   var termNotesHTML = expectedResultsHTML + ongoingServicesHTML;
 
-  // standaloneFutureWorkHTML: DEFAULT placement (2026-07-29, page-density fix, coordinator
-  // direction — "bring Future Work onto that page as the default rather than a separate page...
-  // fills the space with real content instead of filler"). Suppressed when opts.futureWorkInline
-  // is true, since that mode already folded the identical content into futureRowHTML above (never
-  // rendered twice). Previously defaulted to the Vision page (_rptA36VisionInnerHTML) — moved here
-  // because the term and Future Work belong on the same page and the Phase table page had
-  // significant unused space (~514px clearance measured pre-move) while the Vision page did not
-  // need it. Same heading/body style literals rptPage 2's own `intro` block above uses, for visual
-  // consistency within this page.
-  var standaloneFutureWorkHTML = '';
-  if (!(opts && opts.futureWorkInline === true)) {
-    // D-12 (2026-08-03): "Future Work" heading -> the 13pt section tier.
-    var _fwHead =
-      'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 4px';
-    var _fwBody = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
-    standaloneFutureWorkHTML = _rptA36FutureWorkInnerHTML(futurePhases, _fwHead, _fwBody);
-  }
+  // standaloneFutureWorkHTML DELETED (Matt, 2026-08-03: no Future Work shown in the JOCO Service
+  // Proposal) — the schedule page now ends on termNotesHTML (Expected Results + the
+  // ongoing-service paragraph), both explicitly KEPT.
 
   return {
     fallbackOnly: false,
@@ -18958,11 +18837,9 @@ function _rptA36PhaseTableDerive(d, opts) {
     tableHTML: table,
     tableEstH: tableEstH,
     termNotesHTML: termNotesHTML,
-    standaloneFutureWorkHTML: standaloneFutureWorkHTML,
-    // singlePageHTML: pre-joined exactly as the pre-2026-08-02 function used to return, byte-for-
-    // byte -- consumed only by the thin _rptA36PhaseTableInnerHTML wrapper below so the legacy
-    // (unused) merged Phase+Vision page keeps its exact prior output with zero behavior change.
-    singlePageHTML: intro + table + termNotesHTML + standaloneFutureWorkHTML,
+    // singlePageHTML: pre-joined single-string form -- consumed only by the thin
+    // _rptA36PhaseTableInnerHTML wrapper below for the legacy (unused) merged Phase+Vision page.
+    singlePageHTML: intro + table + termNotesHTML,
   };
 }
 
@@ -19003,9 +18880,9 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
  * full rptPage() with its OWN header/footer, so _injectPageNumbers' total-page count (and every
  * "Page X of N" footer) automatically includes the added pages. Every continuation page repeats
  * the month-column header row (der.headRowHTML) so a reader on page 2 still knows which column is
- * which month -- required per this fix's own spec. The trailing term-notes/Future-Work content
- * (der.termNotesHTML + der.standaloneFutureWorkHTML) is appended as a final 'block' token so it
- * rides on whichever page it fits, never orphaned off the last row page.
+ * which month -- required per this fix's own spec. The trailing term-notes content
+ * (der.termNotesHTML) is appended as a final 'block' token so it rides on whichever page it
+ * fits, never orphaned off the last row page.
  */
 function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
@@ -19049,24 +18926,31 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // block (months as columns, a single body row of five cells) instead of one row per month, so
   // the per-row token pagination above is replaced by two block tokens: the table
   // (der.tableHTML, height der.tableEstH -- see its derivation in _rptA36PhaseTableDerive) and
-  // the always-present trailing notes block. HEAD_CHROME_FIRST / TAIL_H keep their previously
-  // measured values (Why This Approach + intro chrome; term notes + standalone Future Work).
+  // the always-present trailing notes block.
   var g = _rptContentBudget('flush');
-  // REC_SVCS_H (2026-08-03, combine pages 2+3): first-page chrome grows by the prepended
-  // Recommended Energy Management Services block when present -- heading + 2-sentence paragraph
-  // + allowance lines. Headless-measured 169.3px against real JOCO data (project 1779664753271,
-  // heading top -> Why This Approach heading top), budgeted at 170.
+  // MEASURED budgets (2026-08-04, pages 2+3 re-merge, deploy/months-returnline): the fixed
+  // chrome/tail constants this page used (HEAD_CHROME_FIRST = 251 + 170, TAIL_H = 150) had
+  // drifted safe-side far past reality — measured against real JOCO data (project 1779664753271,
+  // headless, 720px content width): chrome (Recommended Services + Why This Approach + intro)
+  // 316px real vs 421 budgeted, term notes 84px real vs 150 budgeted — and that inflation alone
+  // pushed the notes (and previously the table) onto their own mostly-blank pages when the whole
+  // page-2 stack (chrome 316 + table 354 + notes 84 = 754 ≤ 816 post-safety budget) genuinely
+  // fits one page. Same _rptA36MeasureContentH probe the table itself already uses; the old
+  // constants remain as no-document fallbacks only.
   var REC_SVCS_H = recSvcsHTML ? 170 : 0;
-  var HEAD_CHROME_FIRST = 251 + REC_SVCS_H; // measured 224 (Why This Approach block + intro heading/paragraph + gaps) + 19px one-blank-line intro margin (2026-08-03)
+  var _chromeMeasured = _rptA36MeasureContentH(recSvcsHTML + whyHTML + der.intro);
+  var HEAD_CHROME_FIRST = _chromeMeasured > 0 ? _chromeMeasured : 251 + REC_SVCS_H;
   var PHASE_SAFETY_H = 40; // explicit page-level margin, same convention as the Audit pages
-  var TAIL_H = opts && opts.futureWorkInline === true ? 150 : 370; // measured 356 in standalone mode
+  // TAIL_H: term notes only (Expected Results + ongoing-service paragraph) — the Future Work
+  // section that used to ride here was removed (Matt, 2026-08-03).
+  var _tailMeasured = _rptA36MeasureContentH(der.termNotesHTML);
+  var TAIL_H = _tailMeasured > 0 ? _tailMeasured : 150;
 
   var tokens = [
     { type: 'block', estH: der.tableEstH, html: der.tableHTML },
-    // Trailing block: term notes (+ standalone Future Work unless folded inline into the table).
-    // Appended LAST so _rptPaginateTokens naturally pushes it onto a fresh page if it does not
-    // fit after the table, instead of overflowing the page.
-    { type: 'block', estH: TAIL_H, html: der.termNotesHTML + der.standaloneFutureWorkHTML },
+    // Trailing block: term notes. Appended LAST so _rptPaginateTokens naturally pushes it onto a
+    // fresh page if it does not fit after the table, instead of overflowing the page.
+    { type: 'block', estH: TAIL_H, html: der.termNotesHTML },
   ];
 
   var firstBudget = g - HEAD_CHROME_FIRST - PHASE_SAFETY_H;
@@ -19082,9 +18966,10 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // When the table cannot fit under the merged chrome, the chrome keeps the first page to itself
   // and the table starts on a fresh continuation page. The intro sentence ("The schedule below
   // lists…") travels WITH the table so it never strands on the chrome page pointing at a table
-  // that is not below it. INTRO_EST_H: intro block measured 39px + its 23px one-blank-line
-  // margin-bottom (2026-08-03 spacing commit).
-  var INTRO_EST_H = 62;
+  // that is not below it. INTRO_EST_H: measured via the same probe; 62 fallback = intro block
+  // 39px + its 23px one-blank-line margin-bottom (2026-08-03 spacing commit).
+  var _introMeasured = _rptA36MeasureContentH(der.intro);
+  var INTRO_EST_H = _introMeasured > 0 ? _introMeasured : 62;
   var chromeOnlyFirst = der.tableEstH > firstBudget;
   var chunks;
   if (chromeOnlyFirst) {
@@ -19152,18 +19037,12 @@ function _rptA36VisionInnerHTML(d, opts) {
   var td = _pricingProposalTermAndFuture(d.project.id);
   var tl = td.tl;
   var termPhases = td.termPhases;
-  var futurePhases = td.futurePhases;
   var monthLabels = _pricingProposalTermMonthLabels(termPhases);
 
-  // phaseTableOn (2026-07-29, fix: Phase-Table-off silent-truncation gap — reviewer-caught):
-  // proposalPhaseTable and proposalVision are two INDEPENDENT toggles a user can check/uncheck
-  // separately (this function's own header comment has documented Phase-Table-off/Vision-on as a
-  // supported combination since before this branch). Future Work normally renders on the Phase
-  // Table page (_rptA36PhaseTableInnerHTML) — if that page did NOT run, this page must carry
-  // Future Work itself, or the silent-truncation defect this branch closes comes right back for
-  // this one toggle combination. Defaults to true (assume the Phase Table page rendered) when
-  // `opts` doesn't say otherwise, so any call site that doesn't pass this flag keeps prior
-  // behavior (no double-render risk from an unrelated caller).
+  // phaseTableOn: whether the Phase Table (schedule) page rendered ahead of this one — two
+  // INDEPENDENT toggles a user can check/uncheck separately. Only steers the Implementation
+  // Plan's cross-reference wording below (don't point at a schedule that isn't in the document).
+  // Defaults to true when `opts` doesn't say otherwise.
   var phaseTableOn = !(opts && opts.proposalPhaseTableOn === false);
 
   var implTable = '';
@@ -19238,15 +19117,8 @@ function _rptA36VisionInnerHTML(d, opts) {
       'priced for this project.</div>';
   }
 
-  // futureWorkFallbackHTML (2026-07-29, fix: Phase-Table-off silent-truncation gap): Future Work
-  // normally renders on the Phase Table page (_rptA36PhaseTableInnerHTML's
-  // standaloneFutureWorkHTML / futureRowHTML) — directly under/inside the term table it belongs
-  // with. When that page is OFF (phaseTableOn === false), this page is the only remaining place a
-  // client would ever see it, so it falls back to rendering the SAME _rptA36FutureWorkInnerHTML
-  // helper the Phase Table page uses — never a second copy of the Future Work markup, so the two
-  // call sites can never disagree about content. When the Phase Table page IS on, this stays ''
-  // so Future Work is never rendered twice.
-  var futureWorkFallbackHTML = phaseTableOn ? '' : _rptA36FutureWorkInnerHTML(futurePhases, HEAD, BODY);
+  // futureWorkFallbackHTML DELETED (Matt, 2026-08-03: no Future Work shown in the JOCO Service
+  // Proposal — the whole Future Work render path is gone, including this Phase-Table-off fallback).
 
   var longTermVision =
     '<div style="' +
@@ -19290,7 +19162,7 @@ function _rptA36VisionInnerHTML(d, opts) {
   // entirely (stop adding disclaimers)"). The R7/V-20 rewritten scheduling caveat that used to
   // render here is gone — the Service Proposal now ends on the Long-Term Vision content.
 
-  return implTable + futureWorkFallbackHTML + longTermVision;
+  return implTable + longTermVision;
 }
 
 /**
@@ -19306,9 +19178,6 @@ function _rptA36VisionInnerHTML(d, opts) {
 function _rptA36VisionBlocks(d, opts) {
   var blocks = [];
   var full = _rptA36VisionInnerHTML(d, opts);
-  // Phase-Table-off mode folds the Future Work fallback section into the first block
-  // (implementation plan side) — budget its extra height when that mode is active.
-  var fallbackExtra = opts && opts.proposalPhaseTableOn === false ? 240 : 0;
   // Split at the Long-Term Vision heading so the Implementation Plan (short) and the Long-Term
   // Vision (taller: 2 paragraphs + 6 bullets + closing paragraph) can land on different pages
   // when only one of them fits. The marker is the exact heading div _rptA36VisionInnerHTML
@@ -19319,10 +19188,10 @@ function _rptA36VisionBlocks(d, opts) {
   if (idx !== -1) {
     // Walk back to the opening <div of the heading itself.
     var open = full.lastIndexOf('<div', idx);
-    blocks.push({ key: 'proposalVision', estH: 150 + fallbackExtra, html: full.slice(0, open) });
+    blocks.push({ key: 'proposalVision', estH: 150, html: full.slice(0, open) });
     blocks.push({ key: 'proposalVision', estH: 460, html: full.slice(open) });
   } else {
-    blocks.push({ key: 'proposalVision', estH: 610 + fallbackExtra, html: full });
+    blocks.push({ key: 'proposalVision', estH: 610, html: full });
   }
   return blocks;
 }
@@ -19332,12 +19201,10 @@ function _rptA36VisionBlocks(d, opts) {
  * an independent page-producing function for the case where a caller enables `proposalVision` but
  * disables `proposalPhaseTable` (or vice versa) via the section toggles — see
  * rptPageASHRAE36ProposalPhaseAndVision below for the merged-page path both flags default to.
- * proposalPhaseTable-off/proposalVision-on (2026-07-29, reviewer-caught fix): this combination is
- * real and independently selectable, so _rptA36VisionInnerHTML's `opts.proposalPhaseTableOn` flag
- * (threaded from generateASHRAE36ProposalHTML's `phaseOpts`) tells it whether the Phase Table page
- * ran; if not, it falls back to rendering Future Work itself (same _rptA36FutureWorkInnerHTML
- * helper the Phase Table page uses — never a duplicated copy) so this toggle combination can never
- * silently drop the future-phase category list again.
+ * _rptA36VisionInnerHTML's `opts.proposalPhaseTableOn` flag (threaded from
+ * generateASHRAE36ProposalHTML's `phaseOpts`) tells it whether the Phase Table page ran, steering
+ * the Implementation Plan's cross-reference wording only (the Future Work fallback this flag used
+ * to also gate was removed 2026-08-03 with the rest of the Future Work path).
  */
 function rptPageASHRAE36ProposalVision(n, d, opts) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
@@ -21674,22 +21541,12 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
       pages.push(_tagA36Section(rptPageASHRAE36ProposalRecommendedServicesCover(pageNum++, data), 'proposalCover'));
     }
   }
-  // phaseOpts (2026-07-29, months + Future Work rebuild): threaded into both the Phase table page
-  // and the Vision page so they agree on whether Future Work renders inline (in the table) or as
-  // the default standalone section — see the 'futureWorkInline' section def's header comment above.
-  // proposalPhaseTableOn (2026-07-29, fix: Phase-Table-off silent-truncation gap — reviewer-caught):
-  // proposalPhaseTable and proposalVision are two INDEPENDENT toggles (both default on, both
-  // independently uncheckable — see rptPageASHRAE36ProposalVision's own header comment, which has
-  // documented Phase-Table-off/Vision-on as a supported combination since before this branch).
-  // Future Work rendered ONLY inside _rptA36PhaseTableInnerHTML, so unchecking Phase Table while
-  // leaving Vision on reintroduced the exact silent truncation this branch closes — the program
-  // would say "continues with no fixed end date" while naming none of the future categories.
-  // proposalPhaseTableOn tells _rptA36VisionInnerHTML whether the Phase Table page ran; when it
-  // did NOT, Vision falls back to rendering Future Work itself (see that function's own
-  // futureWorkFallbackHTML). Both true (default) and Phase-Table-off cases below still call the
-  // SAME _rptA36FutureWorkInnerHTML helper — never a second copy of the markup.
+  // phaseOpts: threaded into both the Phase table page and the Vision page.
+  // proposalPhaseTableOn tells _rptA36VisionInnerHTML whether the Phase Table page ran, steering
+  // the Implementation Plan's cross-reference wording (don't point at a schedule that isn't in
+  // the document). The futureWorkInline flag that used to ride here was removed 2026-08-03 with
+  // the whole Future Work render path (Matt: no Future Work shown in the JOCO Service Proposal).
   var phaseOpts = {
-    futureWorkInline: s.futureWorkInline === true,
     proposalPhaseTableOn: _phaseTableOn,
     // 2026-08-03 (combine pages 2+3): the trimmed Recommended Energy Management Services block —
     // prepended to the schedule page's first chunk. Gated on proposalCover, which owns the
