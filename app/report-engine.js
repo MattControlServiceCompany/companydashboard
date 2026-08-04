@@ -17737,15 +17737,27 @@ function rptPageASHRAE36ProposalCover(n, d) {
 }
 
 /**
- * rptPageASHRAE36ProposalRecommendedServicesCover -- "Recommended Energy Management Services"
- * heading, intro paragraph, monthly allowance line, and 6-bullet scope list. Extracted from
- * rptPageASHRAE36ProposalCover 2026-08-02 (fix/docx-proposal-pagination-orphans) -- see that
- * function's header comment for the real-Word-render measurement this split is based on.
- * hero:false/hideIntHdr:true matches every other page-2+ Proposal page (rptPageASHRAE36Proposal-
- * PhaseTable etc.) -- full CSC logo stays page-1-only, this page gets the plain wave footer band.
+ * _rptA36RecommendedServicesInnerHTML -- content-only builder for the "Recommended Energy
+ * Management Services" section: heading, ~2-sentence intro paragraph, and the monthly-allowance
+ * lines. Extracted from rptPageASHRAE36ProposalRecommendedServicesCover 2026-08-03 (Matt:
+ * combine Proposal pages 2+3) so the DEFAULT render path prepends this block onto the schedule
+ * page (rptPageASHRAE36ProposalPhaseTable, via opts.recServicesHTML) instead of spending a
+ * mostly-blank standalone page on it. The standalone page function below still exists for the
+ * proposalPhaseTable-off toggle combination, calling this same builder -- one copy of the
+ * content, two render sites that can never drift.
+ *
+ * Two cuts made here per Matt's 2026-08-03 instruction, both content, both his call verbatim:
+ * (1) "Cut everything on page 2 AFTER $6,250 per Month" -- the 6-bullet scope list (Ventilation
+ *     that adjusts to occupancy / Supply air temperature optimization / ...) is DELETED. The
+ *     months schedule one section later names the same work concretely per month, so the generic
+ *     bullets duplicated it in vaguer words.
+ * (2) "Cut the fluff from the paragraph" -- the intro paragraph is trimmed to two sentences
+ *     carrying only the essentials (phased approach, predictable $6,250/month allowance,
+ *     highest-return first, each phase fully funded as completed so no large capital approval,
+ *     one-time capital expense -> ongoing operating cost). The "(see the phased schedule on the
+ *     following page)" aside is gone -- the schedule now sits on THIS page, right below.
  */
-function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
-  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+function _rptA36RecommendedServicesInnerHTML(d) {
   var displayClient = _rptProposalDisplayClientName(d.project.name);
 
   function esc(s) {
@@ -17753,12 +17765,9 @@ function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
   }
 
   // D-12 (2026-08-03): 12px (9pt printed, 10.005pt after the floor) -> the 13pt section tier.
-  // This constant styles the Proposal's top-level section headings ("Executive Summary",
-  // "Assessment Findings", "Recommended Energy Management Services", ...), every one of which
-  // was measured printing SMALLER than the 10.5pt body text directly beneath it.
+  // Same HEAD/BODY literals used throughout the ASHRAE 36 Proposal page family.
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
-  var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
   // ── Recommended Energy Management Services (first heading) ───────────────────
   var budgetFmt = null;
@@ -17793,23 +17802,19 @@ function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
   // _pricingComputeProgramCostModel (pricing-estimator.js). Matt's approved spec (quoted in the
   // Assessment Findings comment above) forbids anchoring a fixed total cost or timeline anywhere in
   // this document; the paragraph below states only the $6,250/month allowance mechanism, never a
-  // total or an end date. _pricingComputeProgramCostModel itself is untouched — app/pricing-
-  // estimator.js is out of scope for this change per the plan, and the function still has its own
-  // other caller(s) inside that file.
+  // total or an end date. 2026-08-03 (Matt, combine pages 2+3): trimmed to two sentences -- see
+  // this function's header comment for what was cut and why.
   var recIntro;
   if (budgetFmt) {
     recIntro =
-      'Rather than pursuing this scope of work as a single capital project, Control Service ' +
-      'Company recommends a phased Energy Management Services approach funded through a predictable monthly ' +
-      'service allowance of ' +
+      'Control Service Company recommends a phased Energy Management Services approach funded ' +
+      'through a predictable monthly service allowance of ' +
       budgetFmt +
-      ' per month, implementing the highest-return measures first (see the phased schedule on the ' +
-      'following page) while also covering ongoing energy management labor from the same monthly ' +
-      'figure. Each phase is fully funded as it is completed, so ' +
+      ' per month, carrying out the highest-return improvements first. Each phase is fully ' +
+      'funded as it is completed, so ' +
       esc(displayClient) +
-      ' is never asked to approve a large capital expenditure up front, and the allowance ' +
-      'continues for as long as improvement opportunities remain. This turns a large one-time ' +
-      'expense into a manageable, ongoing operating cost.';
+      ' is never asked to approve a large capital expenditure — a one-time capital expense ' +
+      'becomes a manageable ongoing operating cost.';
   } else {
     recIntro =
       'Rather than pursuing a large one-time capital project, Control Service Company recommends a ' +
@@ -17820,7 +17825,7 @@ function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
       'expanding optimization efforts over time.';
   }
 
-  var recProgram1 =
+  return (
     '<div style="' +
     HEAD +
     '">Recommended Energy Management Services</div>' +
@@ -17829,24 +17834,22 @@ function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
     '">' +
     recIntro +
     '</div>' +
-    monthlyAllowanceBlock +
-    '<ul style="' +
-    UL +
-    ';margin-top:4px">' +
-    '<li>Ventilation that adjusts to occupancy</li>' +
-    '<li>Supply air temperature optimization</li>' +
-    '<li>Fan energy optimization</li>' +
-    '<li>Supporting sensor infrastructure upgrades</li>' +
-    '<li>Building automation system programming</li>' +
-    '<li>Continuous operational improvement</li>' +
-    '</ul>';
+    monthlyAllowanceBlock
+  );
+}
 
-  // 2026-08-02 (fix/docx-proposal-pagination-orphans): this content used to be appended to
-  // rptPageASHRAE36ProposalCover's title+execSummary+assessmentFindings on ONE page (see that
-  // function's header comment for why it was split out) — now it is this standalone page's
-  // entire body. hero:false/hideIntHdr:true (not hero:true) — this is a page-2+ Proposal page,
-  // so it gets the plain wave footer band, not the full CSC letterhead logo.
-  var bodyHTML = '<div style="padding:8px 48px 4px">' + recProgram1 + '</div>';
+/**
+ * rptPageASHRAE36ProposalRecommendedServicesCover -- standalone-page wrapper around
+ * _rptA36RecommendedServicesInnerHTML (see its header comment for the 2026-08-03 extraction and
+ * content cuts). On the DEFAULT render path this page no longer renders -- the section is
+ * prepended onto the schedule page instead (generateASHRAE36ProposalHTML threads the builder's
+ * HTML into rptPageASHRAE36ProposalPhaseTable via opts.recServicesHTML). This wrapper is kept for
+ * the proposalPhaseTable-OFF toggle combination, where there is no schedule page to ride on.
+ * hero:false/hideIntHdr:true matches every other page-2+ Proposal page.
+ */
+function rptPageASHRAE36ProposalRecommendedServicesCover(n, d) {
+  var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
+  var bodyHTML = '<div style="padding:8px 48px 4px">' + _rptA36RecommendedServicesInnerHTML(d) + '</div>';
 
   return rptPage(n, 'ASHRAE 36 Proposal', bodyHTML, {
     hero: false,
@@ -18962,6 +18965,14 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   var _whyUl = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var whyHTML = _rptA36WhyThisApproachHTML(_whyHead, _whyUl);
 
+  // 2026-08-03 (Matt, combine pages 2+3): the trimmed "Recommended Energy Management Services"
+  // block (heading + 2-sentence paragraph + monthly allowance lines) now rides at the TOP of this
+  // page's first chunk instead of occupying its own mostly-blank page --
+  // generateASHRAE36ProposalHTML threads the pre-built HTML in via opts.recServicesHTML (only
+  // when the proposalCover toggle is on, preserving that toggle's ownership of the section).
+  // Empty string when absent -- every prepend below is a no-op in that case.
+  var recSvcsHTML = (opts && opts.recServicesHTML) || '';
+
   var der = _rptA36PhaseTableDerive(d, opts);
 
   function wrapPage(pageN, bodyInner, labelSuffix) {
@@ -18975,7 +18986,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   }
 
   if (der.fallbackOnly) {
-    return [wrapPage(startN, whyHTML + der.intro + der.fallbackHTML, '')];
+    return [wrapPage(startN, recSvcsHTML + whyHTML + der.intro + der.fallbackHTML, '')];
   }
 
   // Pixel budgets, all derived from _rptContentBudget() per this file's "never a standalone
@@ -18989,7 +19000,12 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // the always-present trailing notes block. HEAD_CHROME_FIRST / TAIL_H keep their previously
   // measured values (Why This Approach + intro chrome; term notes + standalone Future Work).
   var g = _rptContentBudget('flush');
-  var HEAD_CHROME_FIRST = 251; // measured 224 (Why This Approach block + intro heading/paragraph + gaps) + 19px one-blank-line intro margin (2026-08-03)
+  // REC_SVCS_H (2026-08-03, combine pages 2+3): first-page chrome grows by the prepended
+  // Recommended Energy Management Services block when present -- heading + 2-sentence paragraph
+  // + allowance lines. Headless-measured 169.3px against real JOCO data (project 1779664753271,
+  // heading top -> Why This Approach heading top), budgeted at 170.
+  var REC_SVCS_H = recSvcsHTML ? 170 : 0;
+  var HEAD_CHROME_FIRST = 251 + REC_SVCS_H; // measured 224 (Why This Approach block + intro heading/paragraph + gaps) + 19px one-blank-line intro margin (2026-08-03)
   var PHASE_SAFETY_H = 40; // explicit page-level margin, same convention as the Audit pages
   var TAIL_H = opts && opts.futureWorkInline === true ? 150 : 370; // measured 356 in standalone mode
 
@@ -19013,7 +19029,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
         return t.html;
       })
       .join('');
-    if (idx === 0) bodyInner = whyHTML + der.intro + bodyInner;
+    if (idx === 0) bodyInner = recSvcsHTML + whyHTML + der.intro + bodyInner;
     // Item 6b (2026-08-03): no "continued" wording in continuation labels -- "(2 of 2)".
     var labelSuffix = numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '';
     pages.push(wrapPage(startN + idx, bodyInner, labelSuffix));
@@ -21569,12 +21585,21 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // back. rptPageASHRAE36ProposalPhaseAndVision itself is left intact (unused) rather than
   // deleted, per the "do not destroy existing capability" constraint already established elsewhere
   // in this file.
+  // 2026-08-03 (Matt, combine pages 2+3): computed up front because BOTH branches below need it —
+  // the Recommended Energy Management Services block only gets its own standalone page when the
+  // schedule page it normally rides on is toggled off.
+  var _phaseTableOn = s.proposalPhaseTable !== false;
   if (s.proposalCover !== false) {
     pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
-    // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Energy Management Services" now
-    // renders on its OWN page (see rptPageASHRAE36ProposalCover's header comment) — pushed under
-    // the same 'proposalCover' section key so toggling that one checkbox still controls both.
-    pages.push(_tagA36Section(rptPageASHRAE36ProposalRecommendedServicesCover(pageNum++, data), 'proposalCover'));
+    // 2026-08-02 (fix/docx-proposal-pagination-orphans): "Recommended Energy Management Services"
+    // was split off page 1 onto its OWN page. 2026-08-03 (Matt: combine pages 2+3 — that page's
+    // lower half sat blank): on the default path the trimmed section now rides at the top of the
+    // schedule page instead (opts.recServicesHTML below); the standalone page renders ONLY when
+    // proposalPhaseTable is off, so no page exists to carry it. Still under the 'proposalCover'
+    // section key either way — toggling that one checkbox controls page 1 + this section, as before.
+    if (!_phaseTableOn) {
+      pages.push(_tagA36Section(rptPageASHRAE36ProposalRecommendedServicesCover(pageNum++, data), 'proposalCover'));
+    }
   }
   // phaseOpts (2026-07-29, months + Future Work rebuild): threaded into both the Phase table page
   // and the Vision page so they agree on whether Future Work renders inline (in the table) or as
@@ -21592,9 +21617,14 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // SAME _rptA36FutureWorkInnerHTML helper — never a second copy of the markup.
   var phaseOpts = {
     futureWorkInline: s.futureWorkInline === true,
-    proposalPhaseTableOn: s.proposalPhaseTable !== false,
+    proposalPhaseTableOn: _phaseTableOn,
+    // 2026-08-03 (combine pages 2+3): the trimmed Recommended Energy Management Services block —
+    // prepended to the schedule page's first chunk. Gated on proposalCover, which owns the
+    // section (empty string when that toggle is off, so the schedule page renders it exactly
+    // when the standalone page used to).
+    recServicesHTML: s.proposalCover !== false && _phaseTableOn ? _rptA36RecommendedServicesInnerHTML(data) : '',
   };
-  if (s.proposalPhaseTable !== false) {
+  if (_phaseTableOn) {
     // rptPageASHRAE36ProposalPhaseTable now returns an Array (2026-08-02, months-table
     // page-height fix) -- same spread-and-advance-pageNum pattern the costEstimate branch below
     // already uses for rptPageASHRAE36ProposalPricing.
