@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.04.750',
+    date: '2026-08-04',
+    title: 'ASHRAE 36 Audit Report readiness score bars now use a color gradient',
+    items: [
+      {
+        type: 'change',
+        text: 'ASHRAE 36 Audit Report — the Building Readiness table Score bars now use a continuous color gradient (red for low scores through orange and yellow to green for high scores) instead of three fixed color steps. The cover gauges are unchanged.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.04.749',
     date: '2026-08-04',
     title: 'Service Proposal schedule and Audit Report Word export update',
