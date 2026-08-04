@@ -1576,6 +1576,41 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.03.747',
+    date: '2026-08-03',
+    title: 'Audit Report and Service Proposal Word export cleanup',
+    items: [
+      {
+        type: 'fix',
+        text: 'Audit Report and Service Proposal covers, the title and subtitle are now properly centered in the Word-exported version (they previously showed left-aligned when opened in Word, even though they looked centered on screen).',
+      },
+      {
+        type: 'feature',
+        text: 'Service Proposal cover now leads with "Service Proposal" as the title and the client name as the subtitle, matching the Audit Report cover layout.',
+      },
+      {
+        type: 'fix',
+        text: 'Cover gauge circles now show the percentage value baked directly inside the ring in the Word export, instead of the number floating below a blank circle.',
+      },
+      {
+        type: 'change',
+        text: 'Executive Summary now reads as one flowing narrative instead of five separate mini-sections, with each topic introduced by a short bold lead-in.',
+      },
+      {
+        type: 'change',
+        text: 'Building Readiness table renamed to "ASHRAE 36 Building Readiness" for clarity, and its numeric columns now align correctly in the Word export.',
+      },
+      {
+        type: 'change',
+        text: 'Control Sequences table on the Service Proposal now duplicate-checks Occupancy-Based Ventilation entries into a single combined row instead of listing it twice.',
+      },
+      {
+        type: 'fix',
+        text: 'Control Sequences and Building Readiness tables now fit their content tighter, cutting several mostly-empty trailing pages from both documents.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.03.746',
     date: '2026-08-03',
     title: 'ASHRAE 36 Audit Report and Service Proposal visual and content overhaul',
@@ -1621,7 +1656,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'change',
-        text: "Service Proposal, the month-by-month schedule now reads as plain-language sentences describing what work happens each month, replacing the checkbox-style table.",
+        text: 'Service Proposal, the month-by-month schedule now reads as plain-language sentences describing what work happens each month, replacing the checkbox-style table.',
       },
       {
         type: 'feature',
