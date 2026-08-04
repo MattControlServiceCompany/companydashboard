@@ -8872,6 +8872,84 @@ async function _rptRasterizeGaugeRingsForDocx(pageEls, scale) {
   return { found: rings.length, rasterized: rasterized };
 }
 
+/** Score-bar PNG geometry for the .docx export (CSS px before RPT_DOCX_GAUGE_RASTER_SCALE).
+ *  44px track = the V-05 fixed-track width the Score column's arithmetic was proven against
+ *  (track 44 + gap 4 + label 35 = 83px inside the cell's ~84.7px inner width — see
+ *  _buildRowHTML's history comment); 9px height matches the live bar's height exactly. */
+var RPT_DOCX_SCOREBAR_W = 44;
+var RPT_DOCX_SCOREBAR_H = 9;
+
+/**
+ * _rptSwapScoreBarsForPng — true-Word review 2026-08-03: the readiness table's Score bars are
+ * background-only nested <div>s, and the .docx translator flattens DIVs inside table cells to
+ * inline runs (see _docxWalkInline's DIV pass-through) — a div with no text contributes NOTHING,
+ * so real Word showed a bare percentage with no bar. Same class of gap as the cover gauges
+ * (D-25): Word can't draw our CSS/SVG, so bake a picture.
+ *
+ * Runs on the DETACHED page clones before translation (the live preview is never touched):
+ * every [data-rpt-scorebar] track div (stamped by _buildRowHTML) is replaced by a canvas-drawn
+ * PNG <img> — grey rail (--rpt-progress-bg) with the band-colored fill at the row's composite %,
+ * same rounded-2px geometry as the CSS bar. The % label span after it is left as live text
+ * (a NBSP text node is inserted between picture and label to keep the CSS gap the flex layout
+ * provided). Colors resolve through _rptResolveCssVarsAgainstRoot for the same detached-clone
+ * reason the gauge pass does. Synchronous (pure canvas, no Image decode). A bar that fails to
+ * draw keeps today's behavior (percentage only) — degraded, never broken.
+ *
+ * @returns {{found:number, swapped:number}}
+ */
+function _rptSwapScoreBarsForPng(pageEls, scale) {
+  scale = scale || RPT_DOCX_GAUGE_RASTER_SCALE;
+  var trackColor = _rptResolveCssVarsAgainstRoot('var(--rpt-progress-bg)');
+  if (trackColor.indexOf('var(') !== -1) trackColor = '#e8e8e8'; // unresolved token — use the :root literal
+  var found = 0;
+  var swapped = 0;
+  pageEls.forEach(function (pageEl) {
+    if (!pageEl.querySelectorAll) return;
+    Array.prototype.forEach.call(pageEl.querySelectorAll('[data-rpt-scorebar]'), function (track) {
+      found++;
+      try {
+        var pct = Math.max(0, Math.min(100, parseFloat(track.getAttribute('data-rpt-scorebar')) || 0));
+        var fillColor = _rptResolveCssVarsAgainstRoot(track.getAttribute('data-rpt-scorebar-color') || '');
+        if (!fillColor || fillColor.indexOf('var(') !== -1) fillColor = '#27ae60';
+        var pxW = RPT_DOCX_SCOREBAR_W * scale;
+        var pxH = RPT_DOCX_SCOREBAR_H * scale;
+        var canvas = document.createElement('canvas');
+        canvas.width = pxW;
+        canvas.height = pxH;
+        var c2d = canvas.getContext('2d');
+        c2d.beginPath();
+        if (c2d.roundRect) c2d.roundRect(0, 0, pxW, pxH, 2 * scale);
+        else c2d.rect(0, 0, pxW, pxH);
+        c2d.fillStyle = trackColor;
+        c2d.fill();
+        c2d.save();
+        c2d.clip(); // fill stays inside the rounded track, like the CSS overflow:hidden
+        c2d.fillStyle = fillColor;
+        // min-width:2px parity with the CSS fill so a near-zero score still shows a sliver.
+        c2d.fillRect(0, 0, Math.max(2 * scale, Math.round((RPT_DOCX_SCOREBAR_W * pct) / 100) * scale), pxH);
+        c2d.restore();
+        var out = document.createElement('img');
+        out.setAttribute('src', canvas.toDataURL('image/png'));
+        out.setAttribute('alt', 'Score bar ' + pct + '%');
+        // 3x raster data in a 1x box, sharp in print; _docxRegisterImage reads this inline size.
+        out.setAttribute('style', 'width:' + RPT_DOCX_SCOREBAR_W + 'px;height:' + RPT_DOCX_SCOREBAR_H + 'px');
+        track.parentNode.insertBefore(out, track);
+        // NBSP, not a plain space: _docxFinalizeRuns edge-trims \s, and the flex gap this
+        // replaces was a real 4px separation between bar and label.
+        track.parentNode.insertBefore(document.createTextNode('\u00A0'), track);
+        track.parentNode.removeChild(track);
+        swapped++;
+      } catch (e) {
+        /* keep the percentage-only fallback */
+      }
+    });
+  });
+  if (found && swapped < found && typeof console !== 'undefined' && console.warn) {
+    console.warn('Word export: ' + (found - swapped) + ' of ' + found + ' score bars could not be rasterized.');
+  }
+  return { found: found, swapped: swapped };
+}
+
 /**
  * exportReportToDocx — Word Export Rebuild plan Step 6 (first shipped document), wired for the
  * EMS Agreement (data._agreement). AI/_context/plans/word-export-rebuild-2026-07-30.md Part D
@@ -8958,10 +9036,23 @@ async function exportReportToDocx() {
     // only ever land BELOW the ring, never inside it.
     await _rptRasterizeGaugeRingsForDocx(pageEls);
 
+    // True-Word review 2026-08-03: same Word-can't-draw-our-CSS gap for the readiness table's
+    // Score bars (background-only divs flatten to nothing in table cells) — bake each bar as a
+    // PNG on the clones before translation. See _rptSwapScoreBarsForPng.
+    _rptSwapScoreBarsForPng(pageEls);
+
     const translated = _docxTranslatePages(pageEls);
 
     const client = data.project.client || data.project.name || 'Report';
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+    // LOCAL calendar date, not toISOString() (UTC): in Kansas (UTC-5/-6) any export after ~6-7 PM
+    // stamped TOMORROW's date into the suggested filename (true-Word review, 2026-08-03).
+    const _fnNow = new Date();
+    const dateStr =
+      _fnNow.getFullYear() +
+      '.' +
+      String(_fnNow.getMonth() + 1).padStart(2, '0') +
+      '.' +
+      String(_fnNow.getDate()).padStart(2, '0');
     let filename;
     if (data._agreement) {
       filename = client + ' - Energy Management Services Agreement ' + dateStr + '.docx';
@@ -14990,11 +15081,18 @@ function rptPageASHRAE36Executive(n, d) {
     // Score/Status rule regardless of score.
     var SCORE_GAP_W = 4;
     var SCORE_LABEL_W = 35;
+    // data-rpt-scorebar / data-rpt-scorebar-color on the track div: consumed ONLY by the .docx
+    // export's _rptSwapScoreBarsForPng() pass (real Word drops empty background-only divs, so the
+    // export swaps this track for a canvas-drawn PNG). Inert in the browser preview/print paths.
     var bar =
       '<div style="display:flex;align-items:center;gap:' +
       SCORE_GAP_W +
       'px;width:100%">' +
-      '<div style="flex:1 1 auto;min-width:0;height:9px;background:var(--rpt-progress-bg);border-radius:2px;overflow:hidden">' +
+      '<div data-rpt-scorebar="' +
+      b.composite +
+      '" data-rpt-scorebar-color="' +
+      b.statusColor +
+      '" style="flex:1 1 auto;min-width:0;height:9px;background:var(--rpt-progress-bg);border-radius:2px;overflow:hidden">' +
       '<div style="width:' +
       b.composite +
       '%;height:9px;background:' +
