@@ -2755,8 +2755,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // After: On Pk Sum/Win + Off Pk Sum/Win.
   // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
   // tieredChg excludes On/Off Pk lines so there's no double-counting.
-  const onPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]');
-  const offPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]');
+  const onPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]', null, 'EnergyOnPeakCharge');
+  const offPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]', null, 'EnergyOffPeakCharge');
   const tieredChg = xChg('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
   // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
   // part on Louis Elementary's Oct 2025 bill prints as "EGA Chg", which
@@ -5675,8 +5675,16 @@ const UTILITY_RULES = [
           if (/Service\s+Address\s*[:;,.]?/i.test(ln)) {
             _inSites = true;
             // Extract building name (text between "Service Address:" and "Acct/Meter:")
+            // Fix (2026-07-28, gas-bill-ocr-extraction): the "Acct/Meter" LABEL's slash is
+            // frequently misread by OCR — verified on Inv 447604 (Apr 2025): "AcctUMeter",
+            // "AcctMeter" (slash dropped entirely). The old regex required a literal "/" in
+            // the label, so every site on that invoice silently lost its AccountNumber AND
+            // MeterNumber even though the VALUE side ("560189/T920419C") read back fine —
+            // only the label's punctuation was corrupted. Tolerate 0-2 stray characters
+            // (U/1/l/I/|/./space/etc, OCR's common misreads of "/") between "Acct" and
+            // "Meter" in the LABEL only; the VALUE separator below is unchanged.
             const _saM = ln.match(
-              /Service\s+Address\s*[:;,.]?\s*(.+?)\s+Acct\/Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
+              /Service\s+Address\s*[:;,.]?\s*(.+?)\s+Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
             );
             let _addr, _acct, _meter;
             if (_saM) {
@@ -5718,8 +5726,12 @@ const UTILITY_RULES = [
           }
 
           // Inline Acct/Meter on a line after Service Address (safety fallback)
-          if (_inSites && _cur && !_cur.AccountNumber && /Acct\/Meter\s*:/i.test(ln)) {
-            const _amM = ln.match(/Acct\/Meter\s*:\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i);
+          // Fix (2026-07-28, gas-bill-ocr-extraction): same label-slash OCR tolerance as
+          // the primary Service Address match above.
+          if (_inSites && _cur && !_cur.AccountNumber && /Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?/i.test(ln)) {
+            const _amM = ln.match(
+              /Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
+            );
             if (_amM) {
               _cur.AccountNumber = _amM[1].trim();
               _cur.MeterNumber = _amM[2].trim();
@@ -5929,7 +5941,120 @@ const UTILITY_RULES = [
       const results = [];
       for (let i = 0; i < siteBlocks.length; i++) {
         const blk = siteBlocks[i];
-        if (!blk.AccountNumber && blk.mmbtu == null) continue;
+        // Fix (2026-07-28, gas-bill-ocr-extraction): a site block that has NEITHER an
+        // AccountNumber NOR a usable mmbtu was previously `continue`d — silently dropped
+        // with zero trace. Verified on Inv 447604 (Apr 2025, low-DPI scan): 8 of this
+        // invoice's 10 known sites (per spring-hill.md's 10-site Wood River format) vanished
+        // this way with no warning, no manual-review row, nothing — the app showed 2 bills
+        // and gave no indication 8 more existed on the page. Same class of defect as
+        // b5951068 (per-page parse errors) but at the per-SITE level within one page. Surface
+        // it the same way: a flagged manual-review record carrying whatever was legible
+        // (ServiceAddress fragment, dollar-from-components fallback if any) so the user sees
+        // every site the invoice lists, even ones OCR couldn't fully read.
+        if (!blk.AccountNumber && blk.mmbtu == null) {
+          if (!blk.ServiceAddress && blk.dollar == null) continue; // truly nothing legible — not even a stub worth showing
+          results.push({
+            UtilityCompany: 'Wood River Energy',
+            Commodity: 'Gas',
+            _utilityName: 'Wood River Energy',
+            InvoiceNumber,
+            CustomerNumber,
+            AccountNumber: null,
+            MeterNumber: null,
+            ServiceAddress: blk.ServiceAddress || null,
+            BillingPeriodStart,
+            BillingPeriodEnd,
+            BillDate,
+            ProductionMonth,
+            NaturalGasMMbtu: null,
+            TotalCurrentCharges: blk.dollar || null,
+            TotalAmountDue: blk.dollar || null,
+            parseError: true,
+            _manualReview: true,
+            _manualReviewLabel:
+              'Parse error — site block unreadable (site #' +
+              (i + 1) +
+              (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
+              ' — OCR could not read account/meter or usage; re-run extraction or enter manually)',
+          });
+          continue;
+        }
+
+        // Fix (2026-07-28, gas-bill-ocr-extraction TASK 3): rate-based sanity cross-
+        // check. Tesseract can misread a digit in MMbtu (real 4.74 read as 174) or in
+        // an account number, but the DOLLAR charge on this invoice format extracts
+        // correctly even on the worst real bill tested (verified exact on Inv 447604:
+        // $22.92/$182.02/$417.16/$604.41). Each per-site block prints its own MMbtu,
+        // rate, AND resulting charge for both the Trigger and Index components, so
+        // MMbtu*rate can be checked against the printed charge without any external
+        // data. Tolerance chosen from real observed data, not a guess: probed all 10
+        // sites' Trigger AND Index components (20 checks) on Inv 478203 (Nov 2025) —
+        // the one Spring Hill invoice with a real digital text layer (no OCR involved,
+        // so every discrepancy here is legitimate bill-rounding, not misread digits).
+        // Every single check came back within -0.89% to -0.97% of the printed charge
+        // (the bill's printed MMbtu/rate are rounded to fewer decimals than its own
+        // internal billing math) — a tight, consistent band under 1%. 5% is >5x that
+        // natural rounding floor, so it will never false-flag a correctly-read site,
+        // while a genuine digit misread (e.g. 174 vs 4.74 MMbtu is a ~3570% swing)
+        // blows past it by orders of magnitude. The $1 floor (AND, not OR) additionally
+        // guards the smallest real sites (e.g. a $0.47 total bill) from being flagged
+        // purely on cents-level rounding noise inflating a % check at tiny scale.
+        const _wreRateMismatch = (mmbtu, rate, charge) => {
+          if (mmbtu == null || rate == null || charge == null || charge === 0) return false;
+          const computed = mmbtu * rate;
+          const deltaPct = (Math.abs(computed - charge) / Math.abs(charge)) * 100;
+          const deltaDollar = Math.abs(computed - charge);
+          return deltaPct > 5 && deltaDollar > 1;
+        };
+        const _trigMismatch = _wreRateMismatch(
+          blk.triggerMMbtu,
+          blk.triggerRate != null ? parseFloat(blk.triggerRate) : null,
+          blk.triggerCharge,
+        );
+        const _idxMismatch = _wreRateMismatch(
+          blk.indexMMbtu,
+          blk.indexRate != null ? parseFloat(blk.indexRate) : null,
+          blk.indexCharge,
+        );
+        // Second, rate-INDEPENDENT identity check: the Sub-Total line's own printed
+        // MMbtu must equal Trigger MMbtu + Index MMbtu — they are literally the same
+        // number, printed twice on the same invoice (once as two line items, once as
+        // their sum). Needed because the rate-based check above goes blind whenever
+        // the RATE column itself is OCR-unreadable (confirmed on Inv 447604 site #1:
+        // Sub-Total read as 174 MMbtu, but Index alone read as 424 MMbtu with the rate
+        // column unreadable — the rate check had nothing to compare, but 424 MMbtu
+        // from ONE component can never fit inside a 174 MMbtu total, which this check
+        // catches without needing any rate at all). Empirically verified on the same
+        // 478203 clean-text sample used above: Sub-Total MMbtu equals
+        // TriggerMMbtu+IndexMMbtu on 10/10 sites, within 0.01 MMbtu (2-decimal
+        // print-rounding). Tolerance set to max(0.1 MMbtu, 3% of the sub-total) — 10x
+        // that observed 0.01 rounding floor — so it won't false-flag a clean bill.
+        const _wreComponentSumMismatch = (subTotal, trigMmbtu, idxMmbtu) => {
+          if (subTotal == null || (trigMmbtu == null && idxMmbtu == null)) return false;
+          const sum = (trigMmbtu != null ? trigMmbtu : 0) + (idxMmbtu != null ? idxMmbtu : 0);
+          const tolerance = Math.max(0.1, subTotal * 0.03);
+          if (trigMmbtu != null && idxMmbtu != null) {
+            return Math.abs(sum - subTotal) > tolerance;
+          }
+          // Only one component legible: a non-negative component can never exceed the total.
+          return sum > subTotal + tolerance;
+        };
+        const _sumMismatch = _wreComponentSumMismatch(blk.mmbtu, blk.triggerMMbtu, blk.indexMMbtu);
+        const _mmbtuRateMismatch = _trigMismatch || _idxMismatch || _sumMismatch;
+        if (_mmbtuRateMismatch) {
+          console.log(
+            '[WRE] Rate/sum cross-check FAILED for site #' +
+              (i + 1) +
+              (blk.ServiceAddress ? ' (' + blk.ServiceAddress + ')' : '') +
+              ' — trigger mismatch=' +
+              _trigMismatch +
+              ', index mismatch=' +
+              _idxMismatch +
+              ', sub-total-vs-components mismatch=' +
+              _sumMismatch +
+              '. NaturalGasMMbtu suppressed, flagged for manual review.',
+          );
+        }
 
         results.push({
           UtilityCompany: 'Wood River Energy',
@@ -5944,7 +6069,7 @@ const UTILITY_RULES = [
           BillingPeriodEnd,
           BillDate,
           ProductionMonth,
-          NaturalGasMMbtu: blk.mmbtu != null ? String(blk.mmbtu) : null,
+          NaturalGasMMbtu: _mmbtuRateMismatch ? null : blk.mmbtu != null ? String(blk.mmbtu) : null,
           NaturalGasTherms: null,
           NaturalGasCCF: null,
           GasCharge: blk.dollar || null,
@@ -5964,6 +6089,17 @@ const UTILITY_RULES = [
           _wreSummaryMMbtu: summaryMMbtu,
           _wreSummaryTotal: summaryTotalCC,
           _wreInvoiceMMbtu: summaryMMbtu,
+          // TASK 3 rate cross-check markers — reuse the existing manual-review
+          // mechanism rather than inventing a second one; never silently "correct"
+          // the number toward what the math implies, only flag it.
+          _mmbtuRateMismatch: _mmbtuRateMismatch || undefined,
+          _manualReview: _mmbtuRateMismatch ? true : undefined,
+          _manualReviewLabel: _mmbtuRateMismatch
+            ? 'Usage flagged — MMbtu × printed rate does not match the printed charge (site #' +
+              (i + 1) +
+              (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
+              ' — likely a misread digit; verify usage manually)'
+            : undefined,
         });
       }
 
