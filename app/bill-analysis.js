@@ -1310,7 +1310,9 @@ function _analyzeWaterSewerParity(building) {
 function _gateA_evaluateCoverage() {
   const cov = window._pdfPageCoverage;
   window._pdfPageCoverage = null; // consume once, same convention as _pdfOcrBudgetExceeded
-  if (!cov || !cov.summary) return null;
+  if (!cov || !cov.summary) {
+    return null;
+  }
   const badBudget = cov.summary['skipped-budget'] || 0;
   const badCap = cov.summary['skipped-cap'] || 0;
   const badEmpty = cov.summary['ocr-empty'] || 0;
@@ -2063,6 +2065,26 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const largeSet = new Set(largeVals);
           return smallVals.some((v) => !largeSet.has(v));
         };
+        // Fix (2026-07-28, gas-bill-ocr-extraction TASK 2): require POSITIVE
+        // agreement, not just "absence of conflict", before letting a low-address-
+        // overlap tiny group merge into an unrelated group. `_setsConflict` returns
+        // false whenever EITHER side has no data for that field — which is correct
+        // for "don't block a merge just because one side is silent" but was being
+        // reused as if it meant "the two sides agree". On real Wood River Energy
+        // multi-site gas invoices, most per-site OCR blocks have null AccountNumber
+        // AND null MeterNumber (both stripped by `_valsFor`'s Boolean filter), so
+        // EVERY secondary field came back "no conflict" purely from having no data —
+        // `_secondarySame` was true even when the two sites' addresses shared ZERO
+        // words. That silently merged 5 distinct Spring Hill sites into site #1's
+        // group, and the CONSENSUS_FIELDS vote below then overwrote all 5 sites'
+        // ServiceAddress with site #1's address. `_setsAgree` instead requires an
+        // ACTUAL shared non-empty value on both sides — real evidence, not merely
+        // the absence of a disagreement.
+        const _setsAgree = (smallVals, largeVals) => {
+          if (smallVals.length === 0 || largeVals.length === 0) return false;
+          const largeSet = new Set(largeVals);
+          return smallVals.some((v) => largeSet.has(v));
+        };
         const _lgAccts = _valsFor(_addrGroups[largest], 'AccountNumber');
         const _lgAddrW = new Set(_addrGroups[largest].flatMap((b) => _addrWords(b.ServiceAddress)));
         const _lgRates = _valsFor(_addrGroups[largest], 'RateSchedule');
@@ -2083,8 +2105,13 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               continue;
             }
             if (_addrConflict) {
-              const _hasSecondary = _lgRates.length > 0 || _lgMeters.length > 0;
-              const _secondarySame = _hasSecondary && !_rateConflict && !_meterConflict;
+              // Require ACTUAL agreement (a shared non-empty RateSchedule or
+              // MeterNumber value) to override a <50% address-word-overlap signal —
+              // not merely both sides lacking data to disagree with. See comment on
+              // `_setsAgree` above.
+              const _secondarySame =
+                _setsAgree(_valsFor(sm, 'RateSchedule'), _lgRates) ||
+                _setsAgree(_valsFor(sm, 'MeterNumber'), _lgMeters);
               if (!_secondarySame) {
                 continue;
               }
@@ -11353,13 +11380,58 @@ async function processPDF(file) {
                         validBills = retryValid;
                         window._pdfRawText = retryFull;
                       }
-                      // Also merge: fill in any null fields from retry into original
+                      // Also merge: fill in any null fields from retry into original.
+                      // Fix (2026-07-28, gas-bill-ocr-extraction TASK 2): this fills
+                      // `retryBills[bi]` from `retryCheck[bi]` purely BY ARRAY INDEX
+                      // across two independent OCR passes (this pass vs. the hi-res
+                      // retry pass). Root-caused ServiceAddress contamination on real
+                      // Wood River Energy invoices turned out to live in the
+                      // cross-bill-consensus step of `_postExtractionVerify` (see fix
+                      // there), not here — but this same index-only assumption is the
+                      // same defect CLASS the task called out, so guard it too: only
+                      // accept a field from `retry` when there's no active identity
+                      // conflict between `orig` and `retry` (AccountNumber/MeterNumber
+                      // disagree, or ServiceAddress shares no words) — if identity
+                      // actively disagrees, skip the whole pair rather than merge
+                      // possibly-misaligned data. Leaving a field null is safer than
+                      // filling it from a different bill/site.
+                      const _mergeIdNorm = (v) => (v || '').replace(/[\s-]/g, '').toLowerCase();
+                      const _mergeAddrWords = (v) =>
+                        (v || '')
+                          .toLowerCase()
+                          .replace(/[^a-z0-9 ]/g, '')
+                          .split(/\s+/)
+                          .filter(Boolean);
+                      const _mergeIdentityConflict = (orig, retry) => {
+                        const oa = _mergeIdNorm(orig.AccountNumber),
+                          ra = _mergeIdNorm(retry.AccountNumber);
+                        if (oa && ra && oa !== ra) return true;
+                        const om = _mergeIdNorm(orig.MeterNumber),
+                          rm = _mergeIdNorm(retry.MeterNumber);
+                        if (om && rm && om !== rm) return true;
+                        const ow = _mergeAddrWords(orig.ServiceAddress),
+                          rw = _mergeAddrWords(retry.ServiceAddress);
+                        if (ow.length > 0 && rw.length > 0) {
+                          const rwSet = new Set(rw);
+                          const overlap = ow.filter((w) => rwSet.has(w)).length / ow.length;
+                          if (overlap < 0.5) return true;
+                        }
+                        return false;
+                      };
                       if (retryCheck.length === retryBills.length) {
                         for (let bi = 0; bi < retryBills.length; bi++) {
                           const orig = retryBills[bi],
                             retry = retryCheck[bi];
                           if (!orig || !retry) continue;
+                          if (_mergeIdentityConflict(orig, retry)) continue; // identity disagrees — do not merge this pair
                           for (const [k, v] of Object.entries(retry)) {
+                            // TASK 3 guard: never gap-fill a field that a validity check
+                            // (e.g. the WRE MMbtu-vs-rate/component cross-check) already
+                            // examined and deliberately nulled — that null is a decision,
+                            // not a gap. Silently refilling it from a DIFFERENT OCR pass's
+                            // reading (which was never itself validated) is exactly the
+                            // "silently correct the number" behavior TASK 3 forbids.
+                            if (k === 'NaturalGasMMbtu' && orig._mmbtuRateMismatch === true) continue;
                             if (
                               (orig[k] === null || orig[k] === undefined || orig[k] === '') &&
                               v !== null &&
@@ -13222,12 +13294,17 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Meter Readings' },
     { type: 'pair', fields: ['MeterNumber', 'ReadDifference'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
-    // Fix 3 (60de292d): show only the gas-unit field(s) that are present on this bill.
-    // Each row has a condition so it is skipped when the field is null/empty.
+    { section: 'Charges' },
+    // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): CCF/MMbtu usage used to render
+    // under "Meter Readings" ABOVE "Charges" — Therms already showed correctly WITH its
+    // charge via the 'Gas' charge-line's qtyField below, so CCF/MMbtu bills were the only
+    // ones splitting usage from charges into two sections. Moved into Charges (still
+    // conditional — only the unit(s) actually present on this bill render) so every gas
+    // unit type shows usage alongside its charge consistently.
+    // Fix 3 (60de292d, preserved): show only the gas-unit field(s) present on this bill.
     { type: 'pair', fields: ['NaturalGasTherms'], condition: 'NaturalGasTherms' },
     { type: 'pair', fields: ['NaturalGasCCF'], condition: 'NaturalGasCCF' },
     { type: 'pair', fields: ['NaturalGasMMbtu', 'ProductionMonth'], condition: 'NaturalGasMMbtu' },
-    { section: 'Charges' },
     { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge', rateKey: null },
     {
       type: 'charge-line',
@@ -13256,9 +13333,13 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Billing Period' },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
     { type: 'pair', fields: ['BillDate', 'ProductionMonth'] },
-    { section: 'Meter Readings' },
-    { type: 'pair', fields: ['NaturalGasMMbtu'] },
     { section: 'Charges' },
+    // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): usage (NaturalGasMMbtu) used to
+    // render under its own "Meter Readings" section ABOVE "Charges" — the exact "gas usage
+    // reading in its own separate section instead of with the charges" complaint. Moved
+    // into the Charges section (as the first row) so usage and the charges it produced are
+    // read together, not split across two headers.
+    { type: 'pair', fields: ['NaturalGasMMbtu'] },
     // Per-site charge component lines (from Fix 1 extractor — a84458f0 defect 1)
     // _wreTriggerCharge/_wreIndexCharge/_wreSWECharge are underscore-prefixed, so they
     // are excluded from the extra-field tail by the startsWith('_') filter.
