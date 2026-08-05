@@ -1576,6 +1576,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.05.751',
+    date: '2026-08-05',
+    title: 'Gas bill accuracy fixes and a bill-saving data-safety fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Gas bill PDF extraction (Wood River Energy multi-site invoices) no longer merges separate sites into one record or overwrites their addresses when account/meter numbers are missing on one side of a cross-check.',
+      },
+      {
+        type: 'fix',
+        text: 'Gas bill PDF extraction now double-checks the MMbtu usage against both the printed rate and the invoice sub-totals, and flags a site for manual review instead of showing a misread digit as fact.',
+      },
+      {
+        type: 'fix',
+        text: 'Electric bills with a seasonal On/Off-Peak rate change mid-bill (4-line "changeover" bills) that had one unreadable line no longer silently save a manufactured kWh number — the bill is now flagged for manual review instead.',
+      },
+      {
+        type: 'fix',
+        text: "Saving a utility bill (from PDF extraction or manual entry) now writes only to the project it belongs to, instead of risking an overwrite of another project's utility data when two people are using the dashboard at the same time.",
+      },
+      {
+        type: 'change',
+        text: 'Bill cost fields (demand, usage, other charges, tax) now save the same way everywhere a bill can be saved from, so cost totals are consistent no matter which screen you saved the bill on.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.04.750',
     date: '2026-08-04',
     title: 'ASHRAE 36 Audit Report readiness score bars now use a color gradient',
