@@ -5377,6 +5377,58 @@ function _mbToggleRowOverride(rowIdx) {
 }
 window._mbToggleRowOverride = _mbToggleRowOverride;
 
+// F1 (item 21b4e21f): single shared cost/usage mapper — replaces six previously
+// diverged copies (confirmAutoAssign, confirmMultiBuildingSave,
+// _saveBillToMatchedMeter, confirmAssignBill, confirmManualAssign,
+// _saveSinglePDFBill). Evergy bucket mapping + $0.10 validation tolerance are
+// FROZEN (CLAUDE.md) — do not change without explicit sign-off. The Baldwin
+// fallback (ElectricCharge + FuelAdjustment) activates ONLY when every Evergy
+// energy-charge field is absent, so it never double-counts against a real
+// Evergy sum. Usage chain is the superset of all six prior chains, in one
+// canonical order, so no commodity's usage quantity is silently dropped.
+function _extractedToBillRowCosts(bill) {
+  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+  const hasVal = (v) => v !== undefined && v !== null && v !== '';
+  const hasEvergyEnergy =
+    hasVal(bill.EnergyOnPeakCharge) ||
+    hasVal(bill.EnergyOffPeakCharge) ||
+    hasVal(bill.ECACharge) ||
+    hasVal(bill.EERCharge) ||
+    hasVal(bill.PTSCharge);
+  const kwhCost = (
+    hasEvergyEnergy
+      ? pf(bill.EnergyOnPeakCharge) +
+        pf(bill.EnergyOffPeakCharge) +
+        pf(bill.ECACharge) +
+        pf(bill.EERCharge) +
+        pf(bill.PTSCharge)
+      : pf(bill.ElectricCharge) + pf(bill.FuelAdjustment)
+  ).toFixed(2);
+  const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
+  // otherCost folds in the RkVA reactive-power charge because it has no dedicated
+  // column in the bills table — without it here the value would be silently dropped.
+  const otherCost = (
+    pf(bill.CustomerCharge) +
+    pf(bill.TaxExemptDelivery) +
+    pf(bill.BillOffset) +
+    pf(bill.RkVACharge)
+  ).toFixed(2);
+  const taxCost = pf(bill.FranchiseFee).toFixed(2);
+  const totalCost = bill.TotalCurrentCharges || bill.TotalAmountDue || '';
+  // Usage quantity superset — one canonical order covering every commodity
+  // any of the six prior sites recognized (electric kWh incl. Baldwin's `kWh`
+  // field, gas Therms/CCF/MMbtu, propane gallons).
+  const kwh =
+    bill.kWhConsumed ||
+    bill.kWh ||
+    bill.NaturalGasTherms ||
+    bill.NaturalGasCCF ||
+    bill.NaturalGasMMbtu ||
+    bill.GallonsDelivered ||
+    '';
+  return { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost };
+}
+
 async function confirmAutoAssign() {
   if (_isMultiAcctFile()) {
     showToast('Use the Save All button in the building review table');
@@ -5453,28 +5505,13 @@ async function confirmAutoAssign() {
     }
     // Bills go directly to meter.bills — no need to also store in en_pdf_bills
     // (Saved Bills is for unassigned bills only)
-    const kwhCost = (
-      pf(bill.EnergyOnPeakCharge) +
-      pf(bill.EnergyOffPeakCharge) +
-      pf(bill.ECACharge) +
-      pf(bill.EERCharge) +
-      pf(bill.PTSCharge)
-    ).toFixed(2);
-    const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
-    // otherCost folds in the RkVA reactive-power charge because it has no dedicated
-    // column in the bills table — without it here the value would be silently dropped.
-    const otherCost = (
-      pf(bill.CustomerCharge) +
-      pf(bill.TaxExemptDelivery) +
-      pf(bill.BillOffset) +
-      pf(bill.RkVACharge)
-    ).toFixed(2);
-    const taxCost = pf(bill.FranchiseFee).toFixed(2);
+    // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
+    const { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(bill);
     const billRow = {
       id: 'r' + Date.now() + '_' + saved,
       start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
       end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
-      kwh: bill.kWhConsumed || bill.NaturalGasCCF || bill.GallonsDelivered || '',
+      kwh,
       demandKW: bill.ActualKW || '',
       billedKW: bill.BilledKW || '',
       facKW: bill.FacilitiesKW || '',
@@ -5483,7 +5520,7 @@ async function confirmAutoAssign() {
       kwhCost,
       otherCost,
       taxCost,
-      totalCost: bill.TotalCurrentCharges || bill.TotalAmountDue || '',
+      totalCost,
       fromPDF: true,
       pdfBillId: billId,
       hasPDF,
@@ -5821,27 +5858,14 @@ async function confirmMultiBuildingSave() {
     }
 
     const billId = 'pb' + Date.now() + '_' + saved;
-    const kwhCost = (
-      pf(bill.EnergyOnPeakCharge) +
-      pf(bill.EnergyOffPeakCharge) +
-      pf(bill.ECACharge) +
-      pf(bill.EERCharge) +
-      pf(bill.PTSCharge)
-    ).toFixed(2);
-    const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
-    const otherCost = (
-      pf(bill.CustomerCharge) +
-      pf(bill.TaxExemptDelivery) +
-      pf(bill.BillOffset) +
-      pf(bill.RkVACharge)
-    ).toFixed(2);
-    const taxCost = pf(bill.FranchiseFee).toFixed(2);
+    // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
+    const { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(bill);
 
     const billRow = {
       id: 'r' + Date.now() + '_' + saved,
       start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
       end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
-      kwh: bill.kWhConsumed || bill.NaturalGasCCF || bill.GallonsDelivered || '',
+      kwh,
       demandKW: bill.ActualKW || '',
       billedKW: bill.BilledKW || '',
       facKW: bill.FacilitiesKW || '',
@@ -5850,7 +5874,7 @@ async function confirmMultiBuildingSave() {
       kwhCost,
       otherCost,
       taxCost,
-      totalCost: bill.TotalCurrentCharges || bill.TotalAmountDue || '',
+      totalCost,
       fromPDF: true,
       pdfBillId: billId,
       hasPDF,
@@ -6358,28 +6382,8 @@ function _saveBillToMatchedMeter(extracted, match) {
     .replace(/\.pdf$/i, '')
     .trim();
   if (_filenameAddr && !extracted.ServiceAddress) extracted.ServiceAddress = _filenameAddr;
-  const kwhCost = (
-    pf(extracted.EnergyOnPeakCharge) +
-    pf(extracted.EnergyOffPeakCharge) +
-    pf(extracted.ECACharge) +
-    pf(extracted.EERCharge) +
-    pf(extracted.PTSCharge)
-  ).toFixed(2);
-  const kwCost = (pf(extracted.BilledKWCharge) + pf(extracted.TDCCharge)).toFixed(2);
-  const otherCost = (
-    pf(extracted.CustomerCharge) +
-    pf(extracted.TaxExemptDelivery) +
-    pf(extracted.BillOffset) +
-    pf(extracted.RkVACharge)
-  ).toFixed(2);
-  const taxCost = pf(extracted.FranchiseFee).toFixed(2);
-  const usageQty =
-    extracted.kWhConsumed ||
-    extracted.NaturalGasTherms ||
-    extracted.NaturalGasCCF ||
-    extracted.NaturalGasMMbtu ||
-    extracted.GallonsDelivered ||
-    '';
+  // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
+  const { kwh: usageQty, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(extracted);
   const billRow = {
     id: 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     start: toISO(extracted.BillingPeriodStart || extracted.DeliveryDate),
@@ -6410,7 +6414,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     kwhCost,
     otherCost,
     taxCost,
-    totalCost: extracted.TotalCurrentCharges || extracted.TotalAmountDue || '',
+    totalCost,
     fromPDF: true,
     // pdfBillId is REQUIRED for the Bills table render to show the 📄 button
     // (renderBillRow gates on `row.pdfBillId && row.hasPDF`). Without it the
@@ -15051,22 +15055,8 @@ function confirmAssignBill() {
   if (!meter) return;
   // Build billing row from bill data (same mapping as savePDFData)
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
-  const kwhCost = (
-    pf(bill.EnergyOnPeakCharge) +
-    pf(bill.EnergyOffPeakCharge) +
-    pf(bill.ECACharge) +
-    pf(bill.EERCharge) +
-    pf(bill.PTSCharge)
-  ).toFixed(2);
-  const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
-  const otherCost = (
-    pf(bill.CustomerCharge) +
-    pf(bill.TaxExemptDelivery) +
-    pf(bill.BillOffset) +
-    pf(bill.RkVACharge)
-  ).toFixed(2);
-  const taxCost = pf(bill.FranchiseFee).toFixed(2);
-  const totalCost = pf(bill.TotalCurrentCharges);
+  // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
+  const { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(bill);
   function toISO(d) {
     if (!d) return '';
     if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
@@ -15080,7 +15070,7 @@ function confirmAssignBill() {
     id: 'r' + Date.now(),
     start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
     end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
-    kwh: bill.kWhConsumed || '',
+    kwh,
     demandKW: bill.ActualKW || '',
     billedKW: bill.BilledKW || '',
     facKW: bill.FacilitiesKW || '',
@@ -15089,7 +15079,7 @@ function confirmAssignBill() {
     kwhCost,
     otherCost,
     taxCost,
-    totalCost: bill.TotalCurrentCharges || '',
+    totalCost,
     fromPDF: true,
     pdfBillId: bill.id,
     hasPDF: !!bill.hasPDF,
@@ -15401,21 +15391,8 @@ function confirmManualAssign() {
   }
 
   // Build billing row from extracted data (same field mapping as savePDFData)
-  const kwhCost = (
-    pf(extracted.EnergyOnPeakCharge) +
-    pf(extracted.EnergyOffPeakCharge) +
-    pf(extracted.ECACharge) +
-    pf(extracted.EERCharge) +
-    pf(extracted.PTSCharge)
-  ).toFixed(2);
-  const kwCost = (pf(extracted.BilledKWCharge) + pf(extracted.TDCCharge)).toFixed(2);
-  const otherCost = (
-    pf(extracted.CustomerCharge) +
-    pf(extracted.TaxExemptDelivery) +
-    pf(extracted.BillOffset) +
-    pf(extracted.RkVACharge)
-  ).toFixed(2);
-  const taxCost = pf(extracted.FranchiseFee).toFixed(2);
+  // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
+  const { kwh: usageQty, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(extracted);
 
   // Determine dates — prefer user-entered dates if "new" mode, else use extracted
   let startDate, endDate;
@@ -15431,14 +15408,6 @@ function confirmManualAssign() {
     startDate = toISO(extracted.BillingPeriodStart || extracted.DeliveryDate);
     endDate = toISO(extracted.BillingPeriodEnd || extracted.DeliveryDate);
   }
-
-  const usageQty =
-    extracted.kWhConsumed ||
-    extracted.NaturalGasTherms ||
-    extracted.NaturalGasCCF ||
-    extracted.NaturalGasMMbtu ||
-    extracted.GallonsDelivered ||
-    '';
 
   const newBillRow = {
     id: 'r' + Date.now(),
@@ -15468,7 +15437,7 @@ function confirmManualAssign() {
     kwhCost,
     otherCost,
     taxCost,
-    totalCost: extracted.TotalCurrentCharges || extracted.TotalAmountDue || '',
+    totalCost,
     rateSchedule: extracted.RateSchedule || '',
     onPeakKwh: extracted.OnPeakKWh || '',
     offPeakKwh: extracted.OffPeakKWh || '',
@@ -15755,37 +15724,21 @@ async function _saveSinglePDFBill(extracted, projId) {
     extracted.NaturalGasMMbtu
   );
   const isPropane = !!(extracted.GallonsDelivered || extracted.FuelType);
-  // Electric cost breakdown
-  const kwhCost = (
-    pf(extracted.EnergyOnPeakCharge) +
-    pf(extracted.EnergyOffPeakCharge) +
-    pf(extracted.ECACharge) +
-    pf(extracted.EERCharge) +
-    pf(extracted.PTSCharge)
-  ).toFixed(2);
-  const kwCost = (pf(extracted.BilledKWCharge) + pf(extracted.TDCCharge)).toFixed(2);
-  // otherCost: customer charge + tax-exempt delivery + bill offset + RkVA reactive
-  // power charge. RkVA isn't shown as its own column in the bills table, so folding
-  // it into otherCost here keeps the extracted value on the row (where the edit
-  // modal and total validation can still see it) instead of silently dropping it.
-  const otherCost = (
-    pf(extracted.CustomerCharge) +
-    pf(extracted.TaxExemptDelivery) +
-    pf(extracted.BillOffset) +
-    pf(extracted.RkVACharge)
-  ).toFixed(2);
-  const taxCost = pf(extracted.FranchiseFee).toFixed(2);
-  const totalCost = pf(extracted.TotalCurrentCharges || extracted.TotalAmountDue);
+  // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
+  // totalCostRaw feeds billRow.totalCost (string, matches PDF); totalCost below
+  // stays numeric — the rest of this function (componentSum/diff validation,
+  // .toFixed further down) expects a number, same as before this fix.
+  const {
+    kwh: usageQty,
+    kwCost,
+    kwhCost,
+    otherCost,
+    taxCost,
+    totalCost: totalCostRaw,
+  } = _extractedToBillRowCosts(extracted);
+  const totalCost = pf(totalCostRaw);
   const componentSum = pf(extracted.FacilitiesCharge) + pf(kwCost) + pf(kwhCost) + pf(otherCost) + pf(taxCost);
   const diff = Math.abs(componentSum - totalCost);
-  // Usage quantity: kWh for electric, CCF/therms for gas, gallons for propane
-  const usageQty =
-    extracted.kWhConsumed ||
-    extracted.NaturalGasTherms ||
-    extracted.NaturalGasCCF ||
-    extracted.NaturalGasMMbtu ||
-    extracted.GallonsDelivered ||
-    '';
   const billRow = {
     id: 'r' + Date.now(),
     start: toISO(extracted.BillingPeriodStart || extracted.DeliveryDate),
@@ -15816,7 +15769,7 @@ async function _saveSinglePDFBill(extracted, projId) {
     kwhCost,
     otherCost,
     taxCost,
-    totalCost: extracted.TotalCurrentCharges || extracted.TotalAmountDue || '',
+    totalCost: totalCostRaw,
     fromPDF: true,
     pdfBillId: billRecord.id,
     hasPDF,
