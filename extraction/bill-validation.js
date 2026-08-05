@@ -109,6 +109,7 @@ function dismissBillFlag(projId, bldgId, meterId, billId, flagId, note) {
   }
   flag.dismissed = true;
   flag.dismissNote = note || '';
-  if (typeof saveUtilityData === 'function') saveUtilityData();
+  // Scope to the flag's own project — may not be the currently active Utility Data tab project.
+  if (typeof saveUtilityData === 'function') saveUtilityData(projId);
   if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
 }

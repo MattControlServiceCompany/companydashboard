@@ -4976,7 +4976,7 @@ function saveAddressAlias(projId, bldgId, aliasString) {
   const already = bldg.addrAliases.some((a) => _normalizeAddr(a) === normNew);
   if (already) return;
   bldg.addrAliases.push(alias);
-  saveUtilityData();
+  saveUtilityData(projId);
 }
 window.saveAddressAlias = saveAddressAlias;
 function showAutoAssignBanner(match, extracted) {
@@ -5707,7 +5707,7 @@ async function confirmAutoAssign() {
     }
     saved++;
   }
-  saveUtilityData();
+  saveUtilityData(projId); // confirmAutoAssign targets exactly one project (_autoAssignTarget)
   window._pdfBillsSaved = true;
   const _blInherited = _inheritBaselinesForProject(udSelProjId);
   document.getElementById('pdfAutoAssignBanner').style.display = 'none';
@@ -5770,6 +5770,7 @@ async function confirmMultiBuildingSave() {
 
   let saved = 0;
   let flaggedForReview = 0;
+  const touchedPids = new Set(); // rows in this batch can target different projects/buildings
   for (let _bi = 0; _bi < bills.length; _bi++) {
     const bill = bills[_bi];
     const billDup = dupMap[_bi];
@@ -6085,6 +6086,7 @@ async function confirmMultiBuildingSave() {
         });
       }
       saved++;
+      touchedPids.add(billMatch.projId);
     } else {
       console.warn(
         '[confirmMultiBuildingSave] identity gate failed — refusing to write to targetMeter.bills (',
@@ -6115,8 +6117,9 @@ async function confirmMultiBuildingSave() {
     }
   }
 
-  // Save once after the loop — never per-bill
-  saveUtilityData();
+  // Save once after the loop — never per-bill. Scope to only the projects rows in
+  // this batch actually landed in (a multi-account PDF can span several projects).
+  saveUtilityData(Array.from(touchedPids));
   window._pdfBillsSaved = true;
   _inheritBaselinesForProject(udSelProjId);
   document.getElementById('pdfMultiBldgPanel').style.display = 'none';
@@ -6588,7 +6591,7 @@ function _saveBillToMatchedMeter(extracted, match) {
   if (extracted.AccountNumber && !liveMeter.account) {
     liveMeter.account = extracted.AccountNumber;
   }
-  saveUtilityData();
+  saveUtilityData(match.projId);
   return liveProj.name + ' → ' + liveBldg.name + ' → ' + (liveMeter.provider || liveMeter.meter || 'meter');
 }
 
@@ -12857,7 +12860,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       _copyPageRange();
       _recalcAggregates();
     }
-    saveUtilityData();
+    saveUtilityData(dup.projId);
     return true;
   } else if (dup.locationType === 'saved') {
     // Update existing saved bill record
@@ -14660,6 +14663,8 @@ async function deleteAllSavedBills(projId) {
 // Used as a last-resort to recover a row's stored page range when the onclick
 // passes null (e.g. a row that was saved before pdfPageStart was tracked). The
 // search is O(total bills) but only runs on-demand when the viewer needs it.
+// Returns { row, projId } (not just the row) so callers that mutate-and-save the
+// row can scope saveUtilityData() to the one project it actually lives in.
 function _findMeterBillById(id) {
   if (!id) return null;
   for (const proj of projects || []) {
@@ -14667,7 +14672,7 @@ function _findMeterBillById(id) {
     for (const b of udProj.buildings || []) {
       for (const m of b.meters || []) {
         for (const r of m.bills || []) {
-          if (r.id === id || r.pdfBillId === id) return r;
+          if (r.id === id || r.pdfBillId === id) return { row: r, projId: proj.id };
         }
       }
     }
@@ -14725,7 +14730,8 @@ async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
   //       _pageStart/_pageEnd on the in-memory bill — viewer gets the range
   //       even before the user runs a new Overwrite All.
   if ((!pageStart || !pageEnd) && id) {
-    const meterRow = _findMeterBillById(id);
+    const _found = _findMeterBillById(id);
+    const meterRow = _found ? _found.row : null;
     if (meterRow) {
       console.log('[viewSavedPDF] meter row found', {
         stored: { pageStart: meterRow.pdfPageStart, pageEnd: meterRow.pdfPageEnd },
@@ -14758,7 +14764,7 @@ async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
           if (pageStart && pageEnd) {
             meterRow.pdfPageStart = pageStart;
             meterRow.pdfPageEnd = pageEnd;
-            saveUtilityData();
+            saveUtilityData(_found.projId);
           }
         }
       }
@@ -15149,7 +15155,7 @@ function confirmAssignBill() {
   // Update bill record with project assignment (in case it wasn't removed)
   bill.projId = pid;
   bill.projName = proj.name;
-  saveUtilityData();
+  saveUtilityData(pid);
   closeAssignModal();
   renderSavedBills();
   showToast(
@@ -15452,7 +15458,7 @@ function confirmManualAssign() {
     meter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
   }
 
-  saveUtilityData();
+  saveUtilityData(pid);
   closeManualAssignModal();
 
   // Mark this bill index as saved so it's no longer highlighted as needing action
@@ -15512,7 +15518,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
         }
         if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
         if (typeof runBuildingValidation === 'function') runBuildingValidation(b);
-        saveUtilityData();
+        saveUtilityData(projId);
         const bldgLabel = b.name || b.addr || b.id;
         showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
         return { bldg: b, meter: m };
@@ -15592,7 +15598,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
       }
       if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
       if (typeof runBuildingValidation === 'function') runBuildingValidation(targetBldg);
-      saveUtilityData();
+      saveUtilityData(projId);
       const bldgLabel = targetBldg.name || targetBldg.addr || targetBldg.id;
       showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
       return { bldg: targetBldg, meter: m };
@@ -15627,7 +15633,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
   if (typeof runBillValidation === 'function') runBillValidation(newMeter, billRow);
   if (typeof runBuildingValidation === 'function') runBuildingValidation(targetBldg);
 
-  saveUtilityData();
+  saveUtilityData(projId);
 
   const bldgLabel = targetBldg.name || targetBldg.addr || targetBldg.id;
   const acctLabel = acctNum || meterNum;
@@ -16021,7 +16027,7 @@ async function _saveSinglePDFBill(extracted, projId) {
           showToast('No meter match found — saved to Saved Bills. Assign from Saved Bills tab.');
         }
       }
-      if (matched) saveUtilityData();
+      if (matched) saveUtilityData(projId);
     }
   } catch (e) {
     console.error(

@@ -2329,7 +2329,7 @@ function saveMeter() {
     const _blCount = _inheritBaselinesForProject(_targetProjId);
     showToast('Meter added to ' + (b.name || 'building') + (_blCount ? ' · baseline inherited ✓' : ' ✓'));
   }
-  saveUtilityData();
+  saveUtilityData(_targetProjId); // meter may target a different project than udSelProjId
   closeMeterModal();
   renderUDProjList();
   const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');

@@ -31,6 +31,24 @@ let _vcmKeyHandler = null; // module-level ref so Cancel/Save can remove it
 // treated as dirty (new project — must never be stranded unwritten).
 let _lastSavedSnapshot = {};
 
+// Cross-project write fix (2026-08-05): saveUtilityData() used to iterate every
+// loaded project on every call. `utilityData` is one shared in-memory object
+// holding ALL projects (loadUtilityData() eagerly loads every project up
+// front), so a single-project edit swept the whole map — the Phase 0.1
+// snapshot compare above was meant to filter that down to "changed" projects
+// only, but transient render-time cache field churn on OTHER projects
+// (portfolio/summary views calling getMeterSavings()/getNormRows(), which
+// stamp m._savingsCache/_reg/etc.) could still produce a real (if content-
+// equivalent) write to an unrelated project's en_utility_<pid> key on a
+// shared backend. Fixed at the source: saveUtilityData() now takes an
+// explicit target pid (or array of pids) and, by default, scopes to
+// `udSelProjId` — the project actually being edited — never the full map.
+// Reserved for the handful of legitimate multi-project batch callers
+// (one-time load migrations, multi-account PDF/CSV imports spanning several
+// projects in one user action) that must intentionally still be allowed to
+// write more than one project's key in a single call.
+const SAVE_ALL_PROJECTS = Symbol('saveAllProjects');
+
 // d2fe8e5e: tracks the most recently rendered Bills pane so the debounced
 // window resize listener below can re-run column layout in-place (no
 // reload) instead of leaving stale column widths/sticky offsets after the
@@ -100,7 +118,7 @@ function loadUtilityData() {
       }
     }
     if (fixed > 0) {
-      saveUtilityData();
+      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
       console.log('[date migration] Fixed ' + fixed + ' 2-digit year dates');
     }
     DB.set(_migratedKey, '1');
@@ -125,7 +143,7 @@ function loadUtilityData() {
       }
     }
     if (ratesFilled > 0) {
-      saveUtilityData();
+      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
       console.log(
         '[rate backfill v2] Recalculated rates on ' + ratesFilled + ' bills (totalKwRate now includes facKWCost)',
       );
@@ -216,7 +234,7 @@ function loadUtilityData() {
     DB.set('en_sewer_backfill_report_v1', JSON.stringify(_backfillReport));
     // Guard 5: write only if changes were made
     if (_backfillReport.filled.length > 0) {
-      saveUtilityData();
+      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
       // Guard 3: one-time user-visible notice
       showToast(_backfillReport.filled.length + ' sewer bills backfilled from water usage — see console for details.');
     }
@@ -350,7 +368,7 @@ function loadUtilityData() {
       );
     }
     if (_thermsFixed > 0) {
-      saveUtilityData();
+      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
       showToast(
         _thermsFixed +
           ' gas bill' +
@@ -391,14 +409,30 @@ function loadUtilityData() {
     }
   }
 }
-function saveUtilityData() {
+function saveUtilityData(pid) {
   // Write each project to its own localStorage key — but only projects whose
   // serialized content actually changed since the last save (Phase 0.1,
   // 2026-07-19: this used to unconditionally rewrite EVERY loaded project on
   // EVERY call; under per-key CAS that manufactures spurious 409 conflicts
   // the moment two users are on). Dirty detection is a snapshot/hash compare
-  // done entirely inside this function — no call site anywhere needs to change.
-  Object.keys(utilityData).forEach(function (pid) {
+  // done entirely inside this function.
+  //
+  // Cross-project write fix (2026-08-05): even with the dirty check above,
+  // sweeping every loaded project on every call left a structural hole — any
+  // in-memory cache churn on an untouched project could still trigger a real
+  // (if content-equivalent) write to that project's key. saveUtilityData()
+  // now scopes to an explicit target:
+  //   saveUtilityData()               -> only the active project (udSelProjId)
+  //   saveUtilityData(pid)             -> only that one project
+  //   saveUtilityData([pid1, pid2])    -> only those specific projects
+  //   saveUtilityData(SAVE_ALL_PROJECTS) -> every loaded project (migrations only)
+  const targetPids =
+    pid === SAVE_ALL_PROJECTS
+      ? Object.keys(utilityData)
+      : Array.isArray(pid)
+        ? pid.filter((p) => p != null && utilityData[p])
+        : [pid != null ? pid : udSelProjId].filter((p) => p != null && utilityData[p]);
+  targetPids.forEach(function (pid) {
     // Strip transient, runtime-only computed fields before persisting so a stale cache can never
     // be written to disk again (bcbc84e0). These are rebuilt on next render by getMeterSavings()/
     // getNormRows() — safe to delete from the live in-memory objects.
@@ -460,7 +494,7 @@ function _inheritBaselinesForProject(projId) {
       }
     }),
   );
-  if (count > 0) saveUtilityData();
+  if (count > 0) saveUtilityData(projId); // scope to the project this inherit ran for, not the active tab
   _lastInheritDetails = inheritedDetails;
   return count;
 }
@@ -4472,7 +4506,7 @@ function _getExportFilename(selectedBills) {
 function setProjectNormBasis(pid, basis) {
   const proj = getUDProj(pid);
   proj.normBasis = basis;
-  saveUtilityData();
+  saveUtilityData(pid);
   renderMeterWorkspace();
 }
 

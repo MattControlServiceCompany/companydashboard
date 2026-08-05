@@ -19881,8 +19881,9 @@ function emExecuteCreateBuildings() {
     created++;
   }
 
-  // Persist and refresh
-  if (typeof saveUtilityData === 'function') saveUtilityData();
+  // Persist and refresh — scope to this modal's target project (pid), not
+  // whatever project happens to be active in the Utility Data tab.
+  if (typeof saveUtilityData === 'function') saveUtilityData(pid);
   if (typeof renderUDProjList === 'function') renderUDProjList();
   if (typeof renderUDDetail === 'function') renderUDDetail();
   if (typeof renderProjTable === 'function') renderProjTable();
