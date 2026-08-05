@@ -3734,7 +3734,7 @@ async function deleteSavedBillFromProj(billId, projId) {
         }
       });
     });
-    saveUtilityData();
+    saveUtilityData(sb.projId);
   }
 
   bills = bills.filter((b) => b.id !== billId);
@@ -3782,6 +3782,7 @@ async function autoAssignAllSavedBills(projId) {
   }
   let assigned = 0,
     skipped = 0;
+  const touchedPids = new Set(); // bills in this batch can land in different projects (findMeterMatch searches all)
   for (const sb of unassigned) {
     const match = findMeterMatch(sb);
     if (!match) {
@@ -3825,10 +3826,11 @@ async function autoAssignAllSavedBills(projId) {
     sb.projId = match.projId;
     sb.bldgId = match.bldgId;
     sb.meterId = match.meterId;
+    touchedPids.add(match.projId);
     assigned++;
   }
   if (assigned > 0) {
-    saveUtilityData();
+    saveUtilityData(Array.from(touchedPids)); // only the specific projects bills actually landed in
     await sset('en_pdf_bills', allBills);
   }
   showToast(assigned + ' bill(s) auto-assigned' + (skipped ? ', ' + skipped + ' skipped (no meter match)' : '') + ' ✓');
@@ -3901,7 +3903,7 @@ async function assignSavedBillFromProj(billId, projId) {
 
   if (!m.bills) m.bills = [];
   m.bills.push(bill);
-  saveUtilityData();
+  saveUtilityData(projId);
 
   // Mark saved bill as assigned so it won't appear as unassigned elsewhere
   sb.projId = projId;
