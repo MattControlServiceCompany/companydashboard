@@ -804,6 +804,51 @@ function getUDMeter(pid, bid, mid) {
   return b ? b.meters.find((m) => m.id === mid) : null;
 }
 
+// importAnnualBenchmarksJSON — merges Talisen FAC-workbook annual benchmark data (yearBuilt +
+// per-year EUI/consumption/cost benchmarks, one object per year 2015-2025) onto existing
+// buildings in a project, plus the project-level Energy Plan text.
+//
+// Building match is an EXACT string match on canonicalName against b.name. The JSON's
+// canonicalName field was already resolved through the rename-map at data-prep time (workbook
+// name variants across years chained to one dashboard-facing identity) — this function does
+// NOT fuzzy-match names at runtime, per the architecture blueprint.
+//
+// Does not touch b.type — that field drives the existing CBECS chart lookup and must not be
+// overwritten by the JSON's estarPropertyType (which is stored per-year inside annualBenchmarks
+// instead, for the separate Talisen-sourced benchmark display).
+//
+// Inert merge: buildings with no match in jsonData are left untouched. Nothing else in the
+// codebase reads b.yearBuilt / b.annualBenchmarks / utilityData[pid].energyPlan as of this
+// writing (confirmed by grep) — this is a non-breaking storage addition.
+function importAnnualBenchmarksJSON(pid, jsonData) {
+  const proj = getUDProj(pid);
+  if (!jsonData || typeof jsonData !== 'object') return { matched: 0, total: 0 };
+  const bldgEntries = jsonData.buildings || {};
+  // Build canonicalName -> entry lookup (exact match only, no fuzzy matching at runtime)
+  const byName = {};
+  Object.keys(bldgEntries).forEach((slug) => {
+    const entry = bldgEntries[slug];
+    if (entry && entry.canonicalName) byName[entry.canonicalName] = entry;
+  });
+  let matched = 0;
+  (proj.buildings || []).forEach((b) => {
+    const entry = byName[b.name];
+    if (!entry) return;
+    b.yearBuilt = entry.yearBuilt != null ? entry.yearBuilt : b.yearBuilt || null;
+    b.annualBenchmarks = (entry.years || []).map((y) => ({ ...y }));
+    matched++;
+  });
+  if (jsonData.energyPlan && jsonData.energyPlan.text) {
+    proj.energyPlan = {
+      text: jsonData.energyPlan.text,
+      source: jsonData.energyPlan.source || '',
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+  saveUtilityData(pid);
+  return { matched, total: Object.keys(bldgEntries).length };
+}
+
 const UNIT_REGISTRY = {
   Electric: {
     usage: ['kWh', 'MWh', 'BTU', 'MMBtu'],
