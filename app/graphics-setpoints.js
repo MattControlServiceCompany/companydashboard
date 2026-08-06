@@ -20,6 +20,92 @@ function egfxTogglePerfVerify(projId) {
   if (!open) egfxRenderPerfVerify(projId);
 }
 
+// egfxRedrawTrendChart — draws/redraws the Multi-Year Usage Trend chart (Talisen FAC workbook
+// annual data, b.annualBenchmarks) inside the Energy Graphics tab. Re-derives everything from
+// getUDBldgs() fresh each call rather than reading captured egfxRefresh() closure state, so it
+// works both on initial render and as the onchange handler for the metric/mode selects. No-op
+// if the canvas isn't in the DOM (card only renders when at least one building has data).
+function egfxRedrawTrendChart(projId) {
+  const canvas = document.getElementById('egfx-trend-' + projId);
+  if (!canvas) return;
+  const bldgs = getUDBldgs(projId).filter((b) => Array.isArray(b.annualBenchmarks) && b.annualBenchmarks.length > 0);
+  if (bldgs.length === 0) return;
+
+  let minYr = Infinity,
+    maxYr = -Infinity;
+  bldgs.forEach((b) =>
+    b.annualBenchmarks.forEach((y) => {
+      if (y.year < minYr) minYr = y.year;
+      if (y.year > maxYr) maxYr = y.year;
+    }),
+  );
+  const years = [];
+  for (let y = minYr; y <= maxYr; y++) years.push(y);
+
+  const metricSel = document.getElementById('egfx-trend-metric-' + projId);
+  const modeSel = document.getElementById('egfx-trend-mode-' + projId);
+  const metric = metricSel ? metricSel.value : 'kwh';
+  const mode = modeSel ? modeSel.value : 'perBldg';
+
+  const METRIC_MAP = {
+    kwh: { unit: 'kWh', get: (y) => (y.elecKwh != null ? y.elecKwh : null) },
+    // Gas rows in the source workbook are CCF; the importer's convention (per the CSV import
+    // pipeline) is CCF × 1.037 = therms — apply the same conversion here for display.
+    therms: { unit: 'therms', get: (y) => (y.gasCcf != null ? y.gasCcf * 1.037 : null) },
+    cost: {
+      unit: '$',
+      get: (y) => (y.elecCost != null || y.gasCost != null ? (y.elecCost || 0) + (y.gasCost || 0) : null),
+    },
+    eui: { unit: 'kBtu/ft²/yr', get: (y) => (y.euiSite != null ? y.euiSite : null) },
+  };
+  const m = METRIC_MAP[metric] || METRIC_MAP.kwh;
+
+  let series;
+  if (mode === 'total') {
+    const totals = years.map((y) => {
+      // EUI is an intensity (kBtu/ft²/yr), not additive across buildings — summing each
+      // building's EUI would overstate the portfolio value. Portfolio EUI = total kBtu
+      // (Site EUI × sqft, summed) / total sqft, for buildings with data that year.
+      if (metric === 'eui') {
+        let kbtu = 0,
+          sqft = 0;
+        bldgs.forEach((b) => {
+          const yr = b.annualBenchmarks.find((r) => r.year === y);
+          if (yr && yr.euiSite != null && yr.sqft) {
+            kbtu += yr.euiSite * yr.sqft;
+            sqft += yr.sqft;
+          }
+        });
+        return sqft > 0 ? kbtu / sqft : null;
+      }
+      let sum = 0,
+        any = false;
+      bldgs.forEach((b) => {
+        const yr = b.annualBenchmarks.find((r) => r.year === y);
+        if (yr) {
+          const v = m.get(yr);
+          if (v != null) {
+            sum += v;
+            any = true;
+          }
+        }
+      });
+      return any ? sum : null;
+    });
+    series = [{ label: 'Portfolio Total', data: totals, color: '#3b82f6' }];
+  } else {
+    series = bldgs.map((b) => ({
+      label: b.name,
+      data: years.map((y) => {
+        const yr = b.annualBenchmarks.find((r) => r.year === y);
+        return yr ? m.get(yr) : null;
+      }),
+    }));
+  }
+
+  SharedCharts.renderAnnualTrendChart('egfx-trend-' + projId, { years, series, unit: m.unit }, { interactive: true });
+}
+
 function _pvToggleBldg(projId, bldgId) {
   var body = document.getElementById('pv-bldg-body-' + projId + '-' + bldgId);
   var chev = document.getElementById('pv-bldg-chev-' + projId + '-' + bldgId);
@@ -1607,6 +1693,103 @@ function egfxRefresh(projId) {
               <div style="position:relative;height:${chartH}px"><canvas id="${benchCanvasId}"></canvas></div>
             </div>`;
     })()}${(() => {
+      // Multi-Year Usage Trend — Talisen FAC workbook data (b.annualBenchmarks, added via
+      // importAnnualBenchmarksJSON). Absent for any project that hasn't imported that data —
+      // the section returns '' and existing Energy Graphics rendering is unaffected.
+      const trendBldgs = bldgs.filter((b) => Array.isArray(b.annualBenchmarks) && b.annualBenchmarks.length > 0);
+      if (trendBldgs.length === 0) return '';
+      let minYr = Infinity,
+        maxYr = -Infinity;
+      trendBldgs.forEach((b) =>
+        b.annualBenchmarks.forEach((y) => {
+          if (y.year < minYr) minYr = y.year;
+          if (y.year > maxYr) maxYr = y.year;
+        }),
+      );
+      const trendCanvasId = 'egfx-trend-' + projId;
+      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+                <div style="font-size:12px;font-weight:700;color:var(--text2)">📈 Multi-Year Usage Trend — ${minYr}–${maxYr}</div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <select id="egfx-trend-metric-${projId}" onchange="egfxRedrawTrendChart(${projId})" style="font-size:11px;padding:4px 6px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px">
+                    <option value="kwh">Electric (kWh)</option>
+                    <option value="therms">Gas (Therms)</option>
+                    <option value="cost">Total Cost ($)</option>
+                    <option value="eui">Site EUI (kBtu/ft²/yr)</option>
+                  </select>
+                  <select id="egfx-trend-mode-${projId}" onchange="egfxRedrawTrendChart(${projId})" style="font-size:11px;padding:4px 6px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px">
+                    <option value="perBldg">Per Building</option>
+                    <option value="total">Portfolio Total</option>
+                  </select>
+                </div>
+              </div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Source: Talisen FAC workbook · annual whole-building metering · a gap in a building's line means the building did not exist yet or was not yet tracked that year — not zero usage</div>
+              <div style="position:relative;height:220px"><canvas id="${trendCanvasId}"></canvas></div>
+            </div>`;
+    })()}${(() => {
+      // Property & Age strip — Talisen FAC workbook yearBuilt + ENERGY STAR benchmark, per
+      // building. Teal left-border + explicit "Source" line keeps this visually distinct from
+      // the green/red live CBECS EUI Benchmark chart above so the two methods (site-metered
+      // rolling-12-month vs Talisen's own annual workbook figures) are never conflated.
+      const ageBldgs = bldgs.filter(
+        (b) => b.yearBuilt || (Array.isArray(b.annualBenchmarks) && b.annualBenchmarks.length),
+      );
+      if (ageBldgs.length === 0) return '';
+      const curYr = new Date().getFullYear();
+      const rows = ageBldgs.map((b) => {
+        const latest =
+          Array.isArray(b.annualBenchmarks) && b.annualBenchmarks.length
+            ? b.annualBenchmarks.slice().sort((a, c) => a.year - c.year)[b.annualBenchmarks.length - 1]
+            : null;
+        const age = b.yearBuilt ? curYr - b.yearBuilt : null;
+        return { name: b.name, yearBuilt: b.yearBuilt, age, latest };
+      });
+      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px;border-left:3px solid var(--teal)">
+              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏛️ Property &amp; Age</div>
+              <div style="font-size:10px;color:var(--teal);font-weight:700;margin-bottom:8px">Source: Talisen FAC workbook — separate from the site's live CBECS EUI Benchmark above</div>
+              <div style="overflow-x:auto">
+                <table class="dtbl" style="min-width:760px">
+                  <thead><tr>
+                    <th style="text-align:left">Building</th>
+                    <th style="text-align:right">Year Built</th>
+                    <th style="text-align:right">Age</th>
+                    <th style="text-align:left">ENERGY STAR Property Type</th>
+                    <th style="text-align:right">Latest Year</th>
+                    <th style="text-align:right">Median EUI</th>
+                    <th style="text-align:right">Top 25% EUI</th>
+                    <th style="text-align:right">DOE Target EUI</th>
+                    <th style="text-align:right">vs Median</th>
+                  </tr></thead>
+                  <tbody>
+                    ${rows
+                      .map(
+                        (r) => `<tr>
+                        <td style="font-weight:600;white-space:nowrap">${r.name}</td>
+                        <td style="text-align:right;font-family:var(--mono)">${r.yearBuilt || '—'}</td>
+                        <td style="text-align:right;font-family:var(--mono)">${r.age != null ? r.age + ' yrs' : '—'}</td>
+                        <td style="font-size:11px;color:var(--text2)">${r.latest ? r.latest.estarPropertyType || '—' : '—'}</td>
+                        <td style="text-align:right;font-family:var(--mono)">${r.latest ? r.latest.year : '—'}</td>
+                        <td style="text-align:right;font-family:var(--mono)">${r.latest && r.latest.benchmarkMedianEui != null ? r.latest.benchmarkMedianEui.toFixed(1) : '—'}</td>
+                        <td style="text-align:right;font-family:var(--mono)">${r.latest && r.latest.benchmarkTop25Eui != null ? r.latest.benchmarkTop25Eui.toFixed(1) : '—'}</td>
+                        <td style="text-align:right;font-family:var(--mono)">${r.latest && r.latest.doeTargetEui != null ? r.latest.doeTargetEui.toFixed(1) : '—'}</td>
+                        <td style="text-align:right;font-family:var(--mono);color:${r.latest && r.latest.pctVsMedian != null ? (r.latest.pctVsMedian < 0 ? 'var(--green)' : 'var(--danger)') : 'var(--text3)'}">${r.latest && r.latest.pctVsMedian != null ? (r.latest.pctVsMedian > 0 ? '+' : '') + (r.latest.pctVsMedian * 100).toFixed(1) + '%' : '—'}</td>
+                      </tr>`,
+                      )
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>`;
+    })()}${(() => {
+      // Energy Plan — read-only text panel from utilityData[pid].energyPlan (Talisen source)
+      const plan = (utilityData[projId] || {}).energyPlan;
+      if (!plan || !plan.text) return '';
+      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px;border-left:3px solid var(--teal)">
+              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📋 Energy Management Plan</div>
+              <div style="font-size:10px;color:var(--teal);font-weight:700;margin-bottom:8px">Source: ${_escHtml(plan.source || 'Talisen FAC workbook')}</div>
+              <div style="font-size:11px;color:var(--text2);white-space:pre-wrap;line-height:1.5;font-family:var(--mono)">${_escHtml(plan.text)}</div>
+            </div>`;
+    })()}${(() => {
       // Building Performance Benchmarking — comprehensive comparison table
       if (bldgs.length === 0 || !latestYear) return '';
       const bRows = bldgs
@@ -1890,6 +2073,9 @@ function egfxRefresh(projId) {
         _drawYoyChart(entry.cid, entry.field, entry.unit, entry.blAvgArr);
       }
     });
+    // Multi-Year Usage Trend chart (Talisen FAC workbook data) — no-op if the card wasn't
+    // rendered (no building has annualBenchmarks) since the canvas won't exist.
+    egfxRedrawTrendChart(projId);
     // Savings chart
     const savChartCv = document.getElementById('egfx-savChart-' + projId);
     if (savChartCv && hasEgfxSav) {

@@ -804,6 +804,83 @@ function getUDMeter(pid, bid, mid) {
   return b ? b.meters.find((m) => m.id === mid) : null;
 }
 
+// importAnnualBenchmarksJSON — merges Talisen FAC-workbook annual benchmark data (yearBuilt +
+// per-year EUI/consumption/cost benchmarks, one object per year 2015-2025) onto existing
+// buildings in a project, plus the project-level Energy Plan text.
+//
+// Building match is an EXACT string match on canonicalName against b.name. The JSON's
+// canonicalName field was already resolved through the rename-map at data-prep time (workbook
+// name variants across years chained to one dashboard-facing identity) — this function does
+// NOT fuzzy-match names at runtime, per the architecture blueprint.
+//
+// Does not touch b.type — that field drives the existing CBECS chart lookup and must not be
+// overwritten by the JSON's estarPropertyType (which is stored per-year inside annualBenchmarks
+// instead, for the separate Talisen-sourced benchmark display).
+//
+// Inert merge: buildings with no match in jsonData are left untouched. Nothing else in the
+// codebase reads b.yearBuilt / b.annualBenchmarks / utilityData[pid].energyPlan as of this
+// writing (confirmed by grep) — this is a non-breaking storage addition.
+//
+// Hardening (b8f31c2e): getUDProj(pid) auto-vivifies utilityData[pid] for ANY pid, which would
+// silently persist a phantom en_utility_<pid> key for a typo'd/nonexistent project — so this
+// function requires the project to already exist in the `projects` registry before touching
+// utilityData. Per-building entries are validated before any field is mutated, and one bad
+// entry (e.g. entry.years not an array) is skipped-and-reported rather than throwing mid-loop
+// and leaving a half-applied building or aborting the rest of the import.
+function _isValidBenchmarkYearRow(y) {
+  return !!y && typeof y === 'object' && !Array.isArray(y);
+}
+function importAnnualBenchmarksJSON(pid, jsonData) {
+  if (!projects.find((p) => p.id === pid)) {
+    throw new Error(
+      'importAnnualBenchmarksJSON: no existing project for pid ' + pid + ' — aborting, not auto-creating',
+    );
+  }
+  const proj = getUDProj(pid);
+  if (!jsonData || typeof jsonData !== 'object') return { matched: 0, total: 0, skipped: 0, errors: [] };
+  const bldgEntries = jsonData.buildings || {};
+  // Build canonicalName -> entry lookup (exact match only, no fuzzy matching at runtime)
+  const byName = {};
+  Object.keys(bldgEntries).forEach((slug) => {
+    const entry = bldgEntries[slug];
+    if (entry && entry.canonicalName) byName[entry.canonicalName] = entry;
+  });
+  let matched = 0;
+  const errors = [];
+  (proj.buildings || []).forEach((b) => {
+    const entry = byName[b.name];
+    if (!entry) return;
+    try {
+      if (entry.years != null && !Array.isArray(entry.years)) {
+        errors.push({ building: b.name, reason: 'entry.years is not an array' });
+        return;
+      }
+      const yearRows = (entry.years || []).filter((y) => {
+        if (_isValidBenchmarkYearRow(y)) return true;
+        errors.push({ building: b.name, reason: 'skipped malformed year row: ' + JSON.stringify(y) });
+        return false;
+      });
+      // Nothing on `b` is mutated until every field above has been validated.
+      const yearBuilt = entry.yearBuilt != null ? entry.yearBuilt : b.yearBuilt || null;
+      const annualBenchmarks = yearRows.map((y) => ({ ...y }));
+      b.yearBuilt = yearBuilt;
+      b.annualBenchmarks = annualBenchmarks;
+      matched++;
+    } catch (e) {
+      errors.push({ building: b.name, reason: e && e.message ? e.message : String(e) });
+    }
+  });
+  if (jsonData.energyPlan && jsonData.energyPlan.text) {
+    proj.energyPlan = {
+      text: jsonData.energyPlan.text,
+      source: jsonData.energyPlan.source || '',
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+  saveUtilityData(pid);
+  return { matched, total: Object.keys(bldgEntries).length, skipped: errors.length, errors };
+}
+
 const UNIT_REGISTRY = {
   Electric: {
     usage: ['kWh', 'MWh', 'BTU', 'MMBtu'],
