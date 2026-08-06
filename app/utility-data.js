@@ -820,9 +820,24 @@ function getUDMeter(pid, bid, mid) {
 // Inert merge: buildings with no match in jsonData are left untouched. Nothing else in the
 // codebase reads b.yearBuilt / b.annualBenchmarks / utilityData[pid].energyPlan as of this
 // writing (confirmed by grep) — this is a non-breaking storage addition.
+//
+// Hardening (b8f31c2e): getUDProj(pid) auto-vivifies utilityData[pid] for ANY pid, which would
+// silently persist a phantom en_utility_<pid> key for a typo'd/nonexistent project — so this
+// function requires the project to already exist in the `projects` registry before touching
+// utilityData. Per-building entries are validated before any field is mutated, and one bad
+// entry (e.g. entry.years not an array) is skipped-and-reported rather than throwing mid-loop
+// and leaving a half-applied building or aborting the rest of the import.
+function _isValidBenchmarkYearRow(y) {
+  return !!y && typeof y === 'object' && !Array.isArray(y);
+}
 function importAnnualBenchmarksJSON(pid, jsonData) {
+  if (!projects.find((p) => p.id === pid)) {
+    throw new Error(
+      'importAnnualBenchmarksJSON: no existing project for pid ' + pid + ' — aborting, not auto-creating',
+    );
+  }
   const proj = getUDProj(pid);
-  if (!jsonData || typeof jsonData !== 'object') return { matched: 0, total: 0 };
+  if (!jsonData || typeof jsonData !== 'object') return { matched: 0, total: 0, skipped: 0, errors: [] };
   const bldgEntries = jsonData.buildings || {};
   // Build canonicalName -> entry lookup (exact match only, no fuzzy matching at runtime)
   const byName = {};
@@ -831,12 +846,29 @@ function importAnnualBenchmarksJSON(pid, jsonData) {
     if (entry && entry.canonicalName) byName[entry.canonicalName] = entry;
   });
   let matched = 0;
+  const errors = [];
   (proj.buildings || []).forEach((b) => {
     const entry = byName[b.name];
     if (!entry) return;
-    b.yearBuilt = entry.yearBuilt != null ? entry.yearBuilt : b.yearBuilt || null;
-    b.annualBenchmarks = (entry.years || []).map((y) => ({ ...y }));
-    matched++;
+    try {
+      if (entry.years != null && !Array.isArray(entry.years)) {
+        errors.push({ building: b.name, reason: 'entry.years is not an array' });
+        return;
+      }
+      const yearRows = (entry.years || []).filter((y) => {
+        if (_isValidBenchmarkYearRow(y)) return true;
+        errors.push({ building: b.name, reason: 'skipped malformed year row: ' + JSON.stringify(y) });
+        return false;
+      });
+      // Nothing on `b` is mutated until every field above has been validated.
+      const yearBuilt = entry.yearBuilt != null ? entry.yearBuilt : b.yearBuilt || null;
+      const annualBenchmarks = yearRows.map((y) => ({ ...y }));
+      b.yearBuilt = yearBuilt;
+      b.annualBenchmarks = annualBenchmarks;
+      matched++;
+    } catch (e) {
+      errors.push({ building: b.name, reason: e && e.message ? e.message : String(e) });
+    }
   });
   if (jsonData.energyPlan && jsonData.energyPlan.text) {
     proj.energyPlan = {
@@ -846,7 +878,7 @@ function importAnnualBenchmarksJSON(pid, jsonData) {
     };
   }
   saveUtilityData(pid);
-  return { matched, total: Object.keys(bldgEntries).length };
+  return { matched, total: Object.keys(bldgEntries).length, skipped: errors.length, errors };
 }
 
 const UNIT_REGISTRY = {
