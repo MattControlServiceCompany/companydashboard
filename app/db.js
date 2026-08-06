@@ -152,6 +152,58 @@ const DB = (() => {
     }
   }
 
+  // --- 3c: cross-host 404 guard --------------------------------------------
+  // GitHub Pages is the production host (scripts/stamp-version.py
+  // PRODUCTION_HOST) and serves NO Netlify Functions — every fetch to
+  // KV_SYNC_URL 404s there. Without this guard, a browser left with
+  // ch_backend_mode = 'shadow'/'on' on the wrong host (GitHub Pages, or a
+  // local file:// copy) would queue every write forever and poll into a 404
+  // loop, silently. netlify-migration-completion-plan-2026-08-04.md §3c.
+  // `_backendMode()` above stays untouched (the raw, persisted USER SETTING —
+  // switching hosts or the setting itself must stay a complete, instant
+  // rollback); every network-issuing call site below reads
+  // `_effectiveBackendMode()` instead, which folds in the host check.
+  let _hostGuardTripped = false; // sticky for this tab session only — never re-probed until the next page load.
+  function _isNetlifyHost() {
+    if (typeof location === 'undefined' || !location.hostname) return false;
+    return location.hostname.endsWith('.netlify.app');
+  }
+  function _tripHostGuard(reason) {
+    if (_hostGuardTripped) return; // already logged once this session — never per-request
+    _hostGuardTripped = true;
+    console.warn(
+      '[DB] Backend sync disabled for this session — sync is available on the production (Netlify) host only (' +
+        reason +
+        ').',
+    );
+  }
+  // A real kv-sync.js response is ALWAYS `content-type: application/json`,
+  // including its legitimate 404s (single-key GET miss: `respond(404, {found:
+  // false})` — see kv-sync.js handleGet). Manifest/PUT/batch-GET never 404 at
+  // all (kv-sync.js handleManifest/handlePut/handleBatchGet). So a 404 that is
+  // NOT JSON (a host's own generic not-found page, e.g. GitHub Pages' 404.html)
+  // can only mean this host has no Netlify Functions at all — never a false
+  // positive against a real "key not found" response.
+  function _isHostGuardSignal(res) {
+    if (res.status !== 404) return false;
+    const ct = res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-type') : null;
+    return !ct || ct.indexOf('application/json') === -1;
+  }
+  // The mode every network-issuing call site gates on. Returns the raw stored
+  // mode unless (a) it's already 'off', (b) this host is provably not
+  // Netlify, or (c) a live probe already proved the Functions endpoint
+  // unreachable earlier this session — in all of those cases returns 'off'.
+  function _effectiveBackendMode() {
+    const raw = _backendMode();
+    if (raw === 'off') return 'off';
+    if (!_isNetlifyHost()) {
+      _tripHostGuard('host is not the Netlify origin');
+      return 'off';
+    }
+    if (_hostGuardTripped) return 'off';
+    return raw;
+  }
+
   // Keys that never sync to the backend. Delegates to the single
   // classification map (app/sync-classification.js) shared with the Phase 3
   // migration skip list — see supabase-migration-plan-FINAL-2026-07-19.md
@@ -496,6 +548,16 @@ const DB = (() => {
       return { status: 'network-error', error: e };
     }
 
+    // 3c guard: reactive detection — the PUT route never legitimately 404s
+    // (kv-sync.js handlePut), so a non-JSON 404 here can only be a host with
+    // no Netlify Functions at all. Trips the sticky session guard so every
+    // later call site (poll/hydrate/drain/replicate) goes inert without
+    // attempting its own request.
+    if (_isHostGuardSignal(res)) {
+      _tripHostGuard('kv-sync PUT returned a non-JSON 404 (host likely has no Netlify Functions)');
+      return { status: 'host-unsupported', httpStatus: res.status };
+    }
+
     let json = {};
     try {
       json = await res.json();
@@ -784,7 +846,7 @@ const DB = (() => {
 
   // --- Live write replication tail (set()/remove() call this) --------------
   async function _replicateWrite(key, payload) {
-    const mode = _backendMode();
+    const mode = _effectiveBackendMode(); // 3c guard folded in — see above
     if (mode === 'off') return;
     if (!_shouldReplicate(key)) return;
     // Per-user key + nobody signed in: behave local-only. No fetch, no
@@ -804,6 +866,14 @@ const DB = (() => {
     if (result.status === 'ok') return;
     if (result.status === 'conflict') {
       await _handleConflict(key, payload, result.body, mode);
+      return;
+    }
+    if (result.status === 'host-unsupported') {
+      // 3c guard tripped reactively mid-write. Never enqueue: the retry queue
+      // lives in THIS origin's IndexedDB, which a correctly-hosted browser
+      // session can never read (different origin = different storage) — an
+      // entry queued here could never drain on any host, so queuing it would
+      // just be permanent dead weight, not a real safety net.
       return;
     }
     // network-error or server-error — never silently dropped.
@@ -836,12 +906,20 @@ const DB = (() => {
         _persistSyncQueue();
         continue;
       }
+      if (result.status === 'host-unsupported') {
+        // 3c guard tripped mid-cycle (rare — only reachable if this host
+        // passed the static Netlify-origin check but the Function itself
+        // 404'd). Stop processing the REST of this batch immediately so one
+        // bad entry doesn't still cost N more requests in the same cycle —
+        // every later cycle is already gated off by _drainQueueOnce below.
+        break;
+      }
       // still failing (offline/server error) — leave in queue, retry next cycle.
     }
   }
   async function _drainQueueOnce() {
     if (!_syncQueue.length) return;
-    if (_backendMode() === 'off') return;
+    if (_effectiveBackendMode() === 'off') return; // 3c guard folded in — see above
     if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
       try {
         await navigator.locks.request('ch_sync_drain', { ifAvailable: true }, async (lock) => {
@@ -871,6 +949,13 @@ const DB = (() => {
       })
         .then((res) => {
           clearTimeout(timer);
+          // 3c guard: the manifest route never legitimately 404s (kv-sync.js
+          // handleManifest) — a non-JSON 404 here can only be a host with no
+          // Netlify Functions. Trip the sticky guard so the NEXT poll/hydrate
+          // cycle goes inert instead of repeating this same failing request.
+          if (_isHostGuardSignal(res)) {
+            _tripHostGuard('kv-sync manifest returned a non-JSON 404 (host likely has no Netlify Functions)');
+          }
           if (!res.ok) return reject(new Error('manifest fetch failed: ' + res.status));
           res.json().then(resolve).catch(reject);
         })
@@ -889,7 +974,7 @@ const DB = (() => {
   }
 
   async function _hydrate() {
-    const mode = _backendMode();
+    const mode = _effectiveBackendMode(); // 3c guard folded in — see above
     if (mode !== 'on') return; // shadow/off: hydration is OFF per plan §8
 
     let manifest;
@@ -982,6 +1067,7 @@ const DB = (() => {
 
     // Hash-compare conflict check (integration #3 / R15 hydration-drift drill).
     for (const { m, localKey } of conflictCheckKeys) {
+      if (_hostGuardTripped) break; // 3c guard tripped mid-loop — stop, don't cost N more requests this cycle
       const localValue = _cache[localKey];
       let localHash;
       try {
@@ -1036,6 +1122,8 @@ const DB = (() => {
       // 'ok' -> _sendKvPut already updated _replicaVersions.
       // 'skipped-no-user' -> per-user key, signed out mid-session; leave as-is
       // (matches _replicateWrite's inertness guarantee, never queued).
+      // 'host-unsupported' -> 3c guard tripped on this PUT; also never
+      // queued, same reasoning as _replicateWrite's host-unsupported branch.
     }
 
     _persistReplicaState();
@@ -1053,7 +1141,7 @@ const DB = (() => {
   // page in v1. Dispatches `remoteChange` (mirrors the existing `dataUpdated`
   // pattern at set()) so app/sync-ui.js can render a passive "refresh" banner.
   async function _pollManifestForChanges() {
-    if (_backendMode() !== 'on') return;
+    if (_effectiveBackendMode() !== 'on') return; // 3c guard folded in — see above
     let manifest;
     try {
       manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
@@ -1579,8 +1667,21 @@ const DB = (() => {
     return Array.isArray(v) ? v : [];
   }
   async function getSyncStatus() {
-    const mode = _backendMode();
+    const mode = _backendMode(); // raw stored setting — the panel's mode label/switcher must stay accurate
     if (mode === 'off') return { mode, keys: [], queueDepth: _syncQueue.length };
+    if (_effectiveBackendMode() === 'off') {
+      // 3c guard: raw setting is shadow/on, but this host has no Netlify
+      // Functions (or a live probe already 404'd this session) — report the
+      // reason via the SAME `error` field sync-ui.js already renders as
+      // "Could not reach the server: <error>", instead of attempting a
+      // manifest fetch that would only 404 again.
+      return {
+        mode,
+        error: 'sync is available on the production (Netlify) host only',
+        keys: [],
+        queueDepth: _syncQueue.length,
+      };
+    }
     let manifest;
     try {
       manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);

@@ -134,6 +134,50 @@ function _pdfBackendMode() {
   return 'off';
 }
 
+// --- 3c: cross-host 404 guard (mirrors app/db.js's _isNetlifyHost/
+// _isHostGuardSignal/_effectiveBackendMode — duplicated here for the same
+// reason _pdfBackendMode() above is duplicated: no shared module state
+// between the two files). GitHub Pages/file:// serve no Netlify Functions —
+// every fetch to PDF_SYNC_URL 404s there. Without this guard a browser left
+// with ch_backend_mode = 'shadow'/'on' on the wrong host would queue every
+// PDF upload/delete forever and drain into a 404 loop, silently.
+// netlify-migration-completion-plan-2026-08-04.md §3c.
+let _pdfHostGuardTripped = false; // sticky for this tab session only.
+function _pdfIsNetlifyHost() {
+  if (typeof location === 'undefined' || !location.hostname) return false;
+  return location.hostname.endsWith('.netlify.app');
+}
+function _pdfTripHostGuard(reason) {
+  if (_pdfHostGuardTripped) return; // already logged once this session — never per-request
+  _pdfHostGuardTripped = true;
+  console.warn(
+    '[pdfSync] Backend sync disabled for this session — sync is available on the production (Netlify) host only (' +
+      reason +
+      ').',
+  );
+}
+// A real pdf-sync.js response is ALWAYS `content-type: application/json`,
+// including its legitimate 404s (GET "blob not found": `respond(404,
+// {found:false})` — see pdf-sync.js handleGet; the PUT route never 404s at
+// all — handlePut). A 404 that is NOT JSON (a host's own generic not-found
+// page, e.g. GitHub Pages' 404.html) can only mean this host has no Netlify
+// Functions at all — never a false positive against a real "not found".
+function _pdfIsHostGuardSignal(res) {
+  if (res.status !== 404) return false;
+  const ct = res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-type') : null;
+  return !ct || ct.indexOf('application/json') === -1;
+}
+function _pdfEffectiveBackendMode() {
+  const raw = _pdfBackendMode();
+  if (raw === 'off') return 'off';
+  if (!_pdfIsNetlifyHost()) {
+    _pdfTripHostGuard('host is not the Netlify origin');
+    return 'off';
+  }
+  if (_pdfHostGuardTripped) return 'off';
+  return raw;
+}
+
 // Mirrors app/db.js's private _authHeaders() — same window.CH_AUTH seam,
 // same header shape (Authorization stub/real bearer + x-stub-user), so
 // pdf-sync.js's identical verifyAuth() stub accepts both Functions' traffic
@@ -207,6 +251,11 @@ function _pdfEnqueue(type, key) {
 }
 
 async function _pdfHandlePutResponse(res) {
+  // 3c guard: the PUT route never legitimately 404s (pdf-sync.js handlePut).
+  if (_pdfIsHostGuardSignal(res)) {
+    _pdfTripHostGuard('pdf-sync PUT returned a non-JSON 404 (host likely has no Netlify Functions)');
+    return { status: 'host-unsupported', httpStatus: res.status };
+  }
   const json = await _pdfSafeJson(res);
   if (res.status === 200) return { status: 'ok', body: json };
   if (res.status === 409) return { status: 'terminal', conflict: true, body: json };
@@ -238,6 +287,12 @@ async function _pdfUploadChunked(key, bytes, finalHash) {
       });
     } catch (e) {
       return { status: 'network-error', error: e };
+    }
+    // 3c guard: check every chunk, not just the last — an early chunk 404
+    // must not fall through to the generic error branch below unnoticed.
+    if (_pdfIsHostGuardSignal(res)) {
+      _pdfTripHostGuard('pdf-sync PUT (chunked) returned a non-JSON 404 (host likely has no Netlify Functions)');
+      return { status: 'host-unsupported', httpStatus: res.status };
     }
     if (!res.ok) return { status: 'error', httpStatus: res.status, body: await _pdfSafeJson(res) };
     lastRes = res;
@@ -279,6 +334,14 @@ async function _pdfDownload(key) {
   } catch (e) {
     throw e;
   }
+  // 3c guard: a real "blob not found" 404 from pdf-sync.js is always JSON
+  // (`{found:false}`, see pdf-sync.js handleGet) — check the guard signal
+  // BEFORE the legitimate-404 branch below so only a non-JSON 404 (host has
+  // no Netlify Functions at all) trips it.
+  if (_pdfIsHostGuardSignal(res)) {
+    _pdfTripHostGuard('pdf-sync GET returned a non-JSON 404 (host likely has no Netlify Functions)');
+    return null; // degrade like "not found" — pdfLoad already treats null as a cache-miss no-op
+  }
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('pdf-sync GET failed: ' + res.status);
   const json = await res.json();
@@ -291,6 +354,10 @@ async function _pdfDownload(key) {
       method: 'GET',
       headers: _pdfAuthHeaders(),
     });
+    if (_pdfIsHostGuardSignal(cres)) {
+      _pdfTripHostGuard('pdf-sync chunk GET returned a non-JSON 404 (host likely has no Netlify Functions)');
+      throw new Error('pdf-sync host unsupported');
+    }
     if (!cres.ok) throw new Error('pdf-sync chunk GET failed: ' + cres.status);
     const cjson = await cres.json();
     parts.push(_pdfBase64ToBytes(cjson.base64Chunk));
@@ -327,6 +394,15 @@ async function _pdfDeleteCommit(key) {
     return { status: 'network-error', error: e };
   }
   if (res.status === 200) return { status: 'ok' };
+  // 3c guard: today pdf-sync.js has NO delete route at all (falls to the 405
+  // below), so a 404 on DELETE can only be a host with no Netlify Functions
+  // — never a legitimate "already gone" response yet. Checked before the
+  // existing 404 branch so it stays correct once 3a (4d348501) ships a real
+  // delete route that may 404 legitimately in JSON.
+  if (_pdfIsHostGuardSignal(res)) {
+    _pdfTripHostGuard('pdf-sync DELETE returned a non-JSON 404 (host likely has no Netlify Functions)');
+    return { status: 'host-unsupported', httpStatus: res.status };
+  }
   if (res.status === 404) return { status: 'terminal' };
   if (res.status === 405) {
     console.warn(
@@ -359,6 +435,7 @@ function _pdfCacheLocalOnly(id, base64) {
 async function _pdfDrainQueueLocked() {
   const snapshot = _pdfQueueLoad();
   for (const entry of snapshot) {
+    if (_pdfHostGuardTripped) break; // 3c guard tripped mid-batch — stop, don't cost N more requests this cycle
     if (!_pdfQueueLoad().some((e) => e.id === entry.id)) continue; // superseded meanwhile
     let result;
     try {
@@ -388,13 +465,20 @@ async function _pdfDrainQueueLocked() {
       _pdfQueueSave(_pdfQueueLoad().filter((e) => e.id !== entry.id));
       continue;
     }
+    if (result.status === 'host-unsupported') {
+      // 3c guard tripped mid-cycle. Leave queued (never silently dropped —
+      // same "no data loss" rule as network-error below) and stop the rest
+      // of this batch immediately; every later cycle is already gated off
+      // by _pdfDrainQueueOnce below.
+      break;
+    }
     // network-error / server-error — leave queued, retry next cycle.
   }
 }
 async function _pdfDrainQueueOnce() {
   const queue = _pdfQueueLoad();
   if (!queue.length) return;
-  if (_pdfBackendMode() === 'off') return;
+  if (_pdfEffectiveBackendMode() === 'off') return; // 3c guard folded in — see above
   if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
     try {
       await navigator.locks.request('ch_pdf_sync_drain', { ifAvailable: true }, async (lock) => {
@@ -441,7 +525,7 @@ async function pdfStore(id, base64) {
   // Local IDB write above is unchanged/first, exactly as today. When mode is
   // 'off' this is a single localStorage.getItem call — effectively free,
   // zero network, matching db.js's replication-tail guarantee for DB.set().
-  const mode = _pdfBackendMode();
+  const mode = _pdfEffectiveBackendMode(); // 3c guard folded in — see above
   if (mode === 'on' || mode === 'shadow') {
     try {
       _pdfEnqueue('upload', id);
@@ -471,7 +555,7 @@ async function pdfLoad(id) {
   // Local miss (IDB opened fine, key just isn't there). Phase 2c server
   // fallback — ONLY in full 'on' mode (mirrors db.js: reads/hydration stay
   // local-only in 'off' AND 'shadow'; only 'on' ever reads remotely).
-  if (_pdfBackendMode() !== 'on') return null;
+  if (_pdfEffectiveBackendMode() !== 'on') return null; // 3c guard folded in — see above
   try {
     const base64 = await _pdfDownload(id);
     if (!base64) return null;
@@ -497,7 +581,7 @@ async function pdfDelete(id) {
   }
   // --- Phase 2c: propagate delete to the server (see _pdfDeleteCommit's
   // KNOWN GAP note — pdf-sync.js has no DELETE route on this branch yet). ---
-  const mode = _pdfBackendMode();
+  const mode = _pdfEffectiveBackendMode(); // 3c guard folded in — see above
   if (mode === 'on' || mode === 'shadow') {
     try {
       _pdfEnqueue('delete', id);
