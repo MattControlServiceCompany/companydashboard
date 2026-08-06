@@ -2478,6 +2478,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           'FranchiseFee',
           'SolarCredit',
           'RenewableCharge',
+          'MiscellaneousCharge',
         ];
         // Round to cents to prevent floating-point accumulation errors
         // across 15 addends from producing phantom ±$0.01 mismatches.
@@ -4580,6 +4581,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         'FranchiseFee',
         'SolarCredit',
         'RenewableCharge',
+        'MiscellaneousCharge',
       ],
     };
     const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
@@ -5427,11 +5429,16 @@ function _extractedToBillRowCosts(bill) {
   const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
   // otherCost folds in the RkVA reactive-power charge because it has no dedicated
   // column in the bills table — without it here the value would be silently dropped.
+  // MiscellaneousCharge (item f71c0013) is the pre-mid-2025 Evergy front-summary-page
+  // Miscellaneous/Adjustments line (sign-preserved) — same rationale as RkVA: no
+  // dedicated column, must be folded in here so the $0.10 component-sum-vs-total
+  // validation still reconciles once TotalCurrentCharges includes it.
   const otherCost = (
     pf(bill.CustomerCharge) +
     pf(bill.TaxExemptDelivery) +
     pf(bill.BillOffset) +
-    pf(bill.RkVACharge)
+    pf(bill.RkVACharge) +
+    pf(bill.MiscellaneousCharge)
   ).toFixed(2);
   const taxCost = pf(bill.FranchiseFee).toFixed(2);
   const totalCost = bill.TotalCurrentCharges || bill.TotalAmountDue || '';
@@ -5564,6 +5571,7 @@ async function confirmAutoAssign() {
       ptsCharge: bill.PTSCharge || '',
       tdcCharge: bill.TDCCharge || '',
       rkvaCharge: bill.RkVACharge || '',
+      miscellaneousCharge: bill.MiscellaneousCharge || '',
       renewableCharge: bill.RenewableCharge || '',
       franchiseFee: bill.FranchiseFee || '',
       // KGS has two separate Franchise Fee lines; store individually so _LAYOUT_KGS
@@ -5915,6 +5923,7 @@ async function confirmMultiBuildingSave() {
       ptsCharge: bill.PTSCharge || '',
       tdcCharge: bill.TDCCharge || '',
       rkvaCharge: bill.RkVACharge || '',
+      miscellaneousCharge: bill.MiscellaneousCharge || '',
       renewableCharge: bill.RenewableCharge || '',
       franchiseFee: bill.FranchiseFee || '',
       franchiseFee1: bill.FranchiseFee1 || '',
@@ -6463,6 +6472,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     rkvaCharge: extracted.RkVACharge || '',
     taxExemptDelivery: extracted.TaxExemptDelivery || '',
     billOffset: extracted.BillOffset || '',
+    miscellaneousCharge: extracted.MiscellaneousCharge || '',
     renewableCharge: extracted.RenewableCharge || '',
     franchiseFee: extracted.FranchiseFee || '',
     franchiseFee1: extracted.FranchiseFee1 || '',
@@ -8912,6 +8922,7 @@ function _buildDiffFields(extracted, existing) {
     FranchiseFee: 'franchiseFee',
     TaxExemptDelivery: 'taxExemptDelivery',
     BillOffset: 'billOffset',
+    MiscellaneousCharge: 'miscellaneousCharge',
     TotalKWhRate: 'totalKwhRate',
     TotalKWRate: 'totalKwRate',
     OnPeakRate: 'onPeakRate',
@@ -11552,6 +11563,7 @@ async function processPDF(file) {
                   'TaxExemptDelivery',
                   'BillOffset',
                   'FranchiseFee',
+                  'MiscellaneousCharge',
                 ];
                 const total = pf(b.TotalCurrentCharges);
                 const currentSum = CHARGE_CHECK.reduce((s, f) => s + pf(b[f]), 0);
@@ -12047,6 +12059,7 @@ function renderMultiBillUI(bills, box) {
         'TaxExemptDelivery',
         'BillOffset',
         'FranchiseFee',
+        'MiscellaneousCharge',
       ],
       Gas: [
         'CustomerCharge',
@@ -12346,6 +12359,7 @@ function renderMultiBillUI(bills, box) {
         'RkVACharge',
         'TaxExemptDelivery',
         'BillOffset',
+        'MiscellaneousCharge',
         'FranchiseFee',
       ],
       Gas: [
@@ -12772,6 +12786,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       RkVACharge: 'rkvaCharge',
       TaxExemptDelivery: 'taxExemptDelivery',
       BillOffset: 'billOffset',
+      MiscellaneousCharge: 'miscellaneousCharge',
       RenewableCharge: 'renewableCharge',
       SolarCredit: 'solarCredit',
       FranchiseFee: 'franchiseFee',
@@ -12898,7 +12913,8 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
         pf(existing.customerCharge) +
         pf(existing.rkvaCharge) +
         pf(extracted.TaxExemptDelivery) +
-        pf(extracted.BillOffset)
+        pf(extracted.BillOffset) +
+        pf(extracted.MiscellaneousCharge)
       ).toFixed(2);
       const newTaxCost = pf(existing.franchiseFee).toFixed(2);
       existing.kwhCost = preserveHigher('kwhCost', newKwhCost, existing.kwhCost);
@@ -14073,6 +14089,7 @@ function renderPDFFields(parsed, warnings) {
       'FranchiseFee',
       'SolarCredit',
       'RenewableCharge',
+      'MiscellaneousCharge',
       // Baldwin City electric bills use ElectricCharge + FuelAdjustment instead of
       // Evergy-style per-charge fields. These are null on Evergy bills so they
       // contribute 0 and do not affect Evergy validation.
@@ -14519,6 +14536,7 @@ function renderPDFFields(parsed, warnings) {
         'TaxExemptDelivery',
         'BillOffset',
         'FranchiseFee',
+        'MiscellaneousCharge',
       ];
       if (CHARGE_SUM_FIELDS.includes(key)) {
         const pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
@@ -15814,6 +15832,7 @@ async function _saveSinglePDFBill(extracted, projId) {
     rkvaCharge: extracted.RkVACharge || '',
     taxExemptDelivery: extracted.TaxExemptDelivery || '',
     billOffset: extracted.BillOffset || '',
+    miscellaneousCharge: extracted.MiscellaneousCharge || '',
     renewableCharge: extracted.RenewableCharge || '',
     franchiseFee: extracted.FranchiseFee || '',
     franchiseFee1: extracted.FranchiseFee1 || '',
