@@ -2890,6 +2890,37 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
     return _stLastM ? _stLastM[1].replace(/,/g, '') : null;
   })();
+  // Miscellaneous / Adjustments line (item f71c0013). The pre-mid-2025 4-page Evergy
+  // template's front account-summary page prints three consecutive lines:
+  //   Current Charges (details on back) ............................. $17,224.57
+  //   Utility .............................................................. $16,912.24
+  //   Miscellaneous.................................................. $312.33
+  // "Utility" is the SAME dollar figure as the back Billing-Details page's own
+  // Subtotal/"Current Charges" line (what the SECTION-BLEED GUARD in totalDue below
+  // correctly selects). "Miscellaneous" (sign-preserved — a late-payment charge is
+  // positive, a one-time merger credit is negative) is a real front-page-only amount
+  // the back page never includes. Confirmed present (grep=0 on unaffected bills) only
+  // when this line is actually printed — 2025-format bills without it are unaffected.
+  const miscCharge = (() => {
+    const m = t.match(/Miscellaneous\.{2,}\s*(-)?\$?\s*([\d,]+\.\d{2})/i);
+    if (!m) return null;
+    return (m[1] ? '-' : '') + m[2].replace(/,/g, '');
+  })();
+  // Front page's own "Current Charges (details on back)" total. Used ONLY below as a
+  // self-check for the Miscellaneous reconciliation (Front - Misc == Back) — never
+  // extracted as the total directly. Do not remove the SECTION-BLEED GUARD's rejection
+  // of this same line in totalDue; that guard protects against real cross-bill
+  // contamination and is orthogonal to this reconciliation.
+  const frontCurrentCharges = (() => {
+    const m = t.match(/Current\s+Charges\s*\(details\s+on\s+back\)[^\n]*?\$\s*([\d,]+\.\d{2})/i);
+    return m ? m[1].replace(/,/g, '') : null;
+  })();
+  // Diagnostic: set when miscCharge is present but the Front - Misc == Back identity
+  // does not hold (or Front total is missing so the identity can't be checked). In
+  // that case totalDue below deliberately does NOT add miscCharge — flagged instead
+  // of silently fabricating a total. Attached to result._miscUnreconciled after result
+  // is built.
+  let _miscUnreconciled = null;
   const totalDue = (() => {
     // Prefer "Current Charges" in the billing detail section (page 2/3, near Subtotal)
     // Page 1 "Current Charges" may be a summary total that differs from the utility detail total.
@@ -2959,10 +2990,31 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         pf2(taxExempt) +
         pf2(billOffset) +
         pf2(franchise);
-      if (calcSum > 0 && bestVal > calcSum * 1.5) {
-        return calcSum.toFixed(2);
+      let chosenTotal = calcSum > 0 && bestVal > calcSum * 1.5 ? calcSum : bestVal;
+      // MiscellaneousCharge reconciliation (item f71c0013): the SECTION-BLEED GUARD
+      // above correctly rejects the front-summary page's own "Current Charges (details
+      // on back)" line as a candidate for bestVal (protecting against real cross-bill
+      // contamination) — but bestVal (the back-page total) never includes the front
+      // page's Miscellaneous line item. Only add it when the reconciling identity
+      // (Front Current Charges - Miscellaneous == back-page bestVal) holds to the cent
+      // (tolerance $0.02 for OCR rounding); otherwise leave chosenTotal as-is and flag
+      // rather than fabricate.
+      if (miscCharge !== null) {
+        const miscNum = parseFloat(miscCharge);
+        if (frontCurrentCharges !== null) {
+          const frontNum = parseFloat(frontCurrentCharges);
+          if (Math.abs(frontNum - miscNum - bestVal) < 0.02) {
+            chosenTotal = chosenTotal + miscNum;
+          } else {
+            _miscUnreconciled = { front: frontNum, misc: miscNum, back: bestVal, expected: frontNum - miscNum };
+          }
+        } else {
+          // Miscellaneous line found but no front-page Current Charges total to check
+          // the identity against — can't verify, so don't add it.
+          _miscUnreconciled = { front: null, misc: miscNum, back: bestVal, expected: null };
+        }
       }
-      return bestVal.toFixed(2);
+      return chosenTotal.toFixed(2);
     }
     // Try Subtotal — but only the LAST one in the section, and only if it appears
     // after the last "Billing Details" header (same section-bleed guard as above).
@@ -3104,10 +3156,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     BillOffset: billOffset,
     SolarCredit: parallelGenCredit,
     FranchiseFee: franchise,
+    MiscellaneousCharge: miscCharge,
     TotalCurrentCharges: totalDue,
     MeterNumber: null,
     _subtotal: subtotalAmount,
   };
+  // Diagnostic only (item f71c0013) — set when a Miscellaneous line was found but the
+  // Front - Misc == Back identity didn't hold, so it was NOT added to TotalCurrentCharges.
+  if (_miscUnreconciled) result._miscUnreconciled = _miscUnreconciled;
 
   // Flag multi-meter bills for transparency in debug output
   if (_meterCombined) {
@@ -3739,7 +3795,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         _pf(result.RkVACharge) +
         _pf(result.TaxExemptDelivery) +
         _pf(result.BillOffset) +
-        _pf(result.FranchiseFee);
+        _pf(result.FranchiseFee) +
+        _pf(result.MiscellaneousCharge);
       const _coreTotal = _pf(result.TotalCurrentCharges);
       const _onPkCharge = Math.round((_coreTotal - _coreSum) * 100) / 100;
       if (_onPkCharge > 0) {
@@ -3804,7 +3861,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         _pf(result.RkVACharge) +
         _pf(result.TaxExemptDelivery) +
         _pf(result.BillOffset) +
-        _pf(result.FranchiseFee);
+        _pf(result.FranchiseFee) +
+        _pf(result.MiscellaneousCharge);
       const _coreTotal = _pf(result.TotalCurrentCharges);
       const _offPkCharge = Math.round((_coreTotal - _coreSum) * 100) / 100;
       if (_offPkCharge > 0) {
@@ -3957,7 +4015,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         _pf(result.BillOffset) +
         _pf(result.FranchiseFee) +
         _pf(result.SolarCredit) +
-        _pf(result.RenewableCharge)) *
+        _pf(result.RenewableCharge) +
+        _pf(result.MiscellaneousCharge)) *
         100,
     ) / 100;
   const _total = _pf(result.TotalCurrentCharges);
@@ -4021,7 +4080,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     'PTSCharge',
     'TDCCharge',
   ];
-  const _allChargeFields = [..._coreChargeFields, 'RkVACharge', 'TaxExemptDelivery', 'BillOffset', 'FranchiseFee'];
+  const _allChargeFields = [
+    ..._coreChargeFields,
+    'RkVACharge',
+    'TaxExemptDelivery',
+    'BillOffset',
+    'FranchiseFee',
+    'MiscellaneousCharge',
+  ];
   const _recompSum = _allChargeFields.reduce((s, f) => s + _pf(result[f]), 0);
   const _recompTotal = _pf(result.TotalCurrentCharges);
   const _recompGap = _recompTotal - _recompSum;
