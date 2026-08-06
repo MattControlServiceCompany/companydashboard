@@ -1576,6 +1576,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.06.752',
+    date: '2026-08-06',
+    title: 'Evergy bill accuracy fix and JOCO multi-year energy tracking',
+    items: [
+      {
+        type: 'fix',
+        text: "Evergy electric bills with an old-format front-summary 'Miscellaneous' charge line now include that charge in the bill's saved total — it was previously silently dropped. This corrects 20 of 22 affected Evergy bills; a small number of bills with a separate page-layout issue are still being worked and will be fixed in a follow-up.",
+      },
+      {
+        type: 'feature',
+        text: "Energy Graphics now tracks multiple years of a building's annual electric and gas usage, with a trend chart and year-over-year cards showing whether usage is rising or falling.",
+      },
+      {
+        type: 'change',
+        text: "Importing annual usage data now checks each building and each year of data before saving, so a bad row in an import file no longer creates a phantom project or corrupts other buildings' saved history.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.05.751',
     date: '2026-08-05',
     title: 'Gas bill accuracy fixes and a bill-saving data-safety fix',
