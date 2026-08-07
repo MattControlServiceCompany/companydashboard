@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.07.753',
+    date: '2026-08-07',
+    title: 'Labor rate default updated on the Cost Estimate page',
+    items: [
+      {
+        type: 'change',
+        text: "The Cost Estimate page's default hourly labor rate (used for both programming and physical install pricing) is now $170/hr for any new project or any project that has never had a custom rate entered. Projects that already have a rate typed into the Hourly Rate field keep their own saved value and are not changed.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.06.752',
     date: '2026-08-06',
     title: 'Evergy bill accuracy fix and JOCO multi-year energy tracking',

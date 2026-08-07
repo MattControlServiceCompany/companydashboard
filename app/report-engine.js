@@ -17428,7 +17428,7 @@ function _rptA36CoverPricingStrip(d) {
       var _svcCfg = _pricingGetConfig();
       if (_svcBudget && _svcBudget.amount != null && !isNaN(_svcBudget.amount) && Number(_svcBudget.amount) > 0) {
         var _svcRate =
-          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 125);
+          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 170);
         svcSentence =
           'Ongoing programming refinement and support draws on your existing Monthly Energy ' +
           'Management Service Agreement (' +
@@ -20744,7 +20744,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       if (_svcBudget && _svcBudget.amount != null && !isNaN(_svcBudget.amount) && Number(_svcBudget.amount) > 0) {
         var _svcAllowanceStr = _fmtUSD(Number(_svcBudget.amount));
         var _svcRate =
-          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 125);
+          _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 170);
         // Design-language pass (report-export-fixes, 2026-07-22): dropped the full bordered-
         // rectangle treatment (reads as a box/card, banned in client reports) — uses the same
         // .rpt-a36-callout "just spacing, no border" convention as every other explanatory

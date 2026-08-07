@@ -5,13 +5,21 @@
      en_pricing_meta           — global {importedAt,filename,skuCount}
      en_pricing_config         — global {netMultiplier,contractPct,hourlyRate,priceBasis,perSequenceHours,
                                  installHoursByPoint} (Deliverable E, 2026-07-19 — installHoursByPoint
-                                 prices the PHYSICAL install hours of hardware gaps; hourlyRate is now
+                                 prices the PHYSICAL install hours of hardware gaps; hourlyRate is
                                  the SINGLE $/hr rate for ALL labor — programming AND physical install
                                  — per Matt 2026-07-28 ("we need to be using the $173/hr for all labor
                                  costs not just EM"). A separate installLaborRate field/default (195)
                                  existed 2026-07-19→2026-07-28 and is now removed; any project with a
                                  stale stored installLaborRate value simply has it ignored — nothing
-                                 reads that key anymore, hourlyRate is the one source of truth)
+                                 reads that key anymore, hourlyRate is the one source of truth.
+                                 RATE UPDATE (2026-08-07): default rate changed from $173/hr to
+                                 $170/hr per Matt ("let's use $170/hour now everywhere") — see
+                                 COST_LABOR_RATE_DEFAULT below. A project with a stored
+                                 en_pricing_config.hourlyRate from before this change keeps its old
+                                 stored value (173, or whatever was typed) until someone edits the
+                                 Hourly Rate field in that project's Cost Estimate tab — only NEW
+                                 projects / projects that never set a custom rate pick up $170
+                                 automatically.)
      en_pricing_estimate_{id}  — per-project {rowToggles,manualPrices,laborOverrides,tier}
      en_pricing_budget_{id}    — per-project {mode,amount,denomination,termMonths,fitToBudget,
                                  fitExcludedIds,fitPrevToggleValues,fitAppliedAt} (174ad49a).
@@ -23,7 +31,7 @@
 /* ── Constants (spec §1, §5) ── */
 const COST_CONTRACT_PCT = 0.4;
 const COST_NET_MULTIPLIER_DEFAULT = 0.6;
-const COST_LABOR_RATE_DEFAULT = 125; // $/hr
+const COST_LABOR_RATE_DEFAULT = 170; // $/hr — per Matt 2026-08-07 ("let's use $170/hour now everywhere"), supersedes the 2026-07-28 $173/hr directive
 
 const COST_PER_SEQ_HOURS_DEFAULT = {
   ahu_sat_reset: 2.5,
