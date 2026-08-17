@@ -15780,7 +15780,14 @@ async function _saveSinglePDFBill(extracted, projId) {
   const pdfBills = (await sget('en_pdf_bills', [])) || [];
   const billId = 'pb' + Date.now();
   let hasPDF = false;
-  if (pdfB64) {
+  let pdfKey = null;
+  if (extracted._pdfSharedKey) {
+    // _ensureBatchPdfStored already stored ONE shared blob for this source PDF
+    // and tagged it on this bill — reference that key instead of writing a
+    // fresh en_pdf_file_ copy (d61ec667: per-meter PDF duplication).
+    hasPDF = true;
+    pdfKey = extracted._pdfSharedKey;
+  } else if (pdfB64) {
     hasPDF = await pdfStore('en_pdf_file_' + billId, pdfB64);
   }
   const billRecord = {
@@ -15789,6 +15796,9 @@ async function _saveSinglePDFBill(extracted, projId) {
     projId: projId || null,
     projName: proj?.name || 'General',
     hasPDF,
+    pdfKey,
+    pdfPageStart: extracted._pageStart || null,
+    pdfPageEnd: extracted._pageEnd || null,
     ...extracted,
   };
   pdfBills.push(billRecord);
@@ -15860,6 +15870,9 @@ async function _saveSinglePDFBill(extracted, projId) {
     fromPDF: true,
     pdfBillId: billRecord.id,
     hasPDF,
+    pdfKey,
+    pdfPageStart: extracted._pageStart || null,
+    pdfPageEnd: extracted._pageEnd || null,
     rateSchedule: extracted.RateSchedule || '',
     onPeakKwh: extracted.OnPeakKWh || extracted.EnergyOnPeakKWh || '',
     offPeakKwh: extracted.OffPeakKWh || extracted.EnergyOffPeakKWh || '',
