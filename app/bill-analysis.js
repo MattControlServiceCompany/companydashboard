@@ -10070,8 +10070,10 @@ function binarizeCanvas(srcCanvas) {
 function _countOcrSignals(txt) {
   return (txt.match(/[\d$]/g) || []).length;
 }
-// _renderPageHQ: renders `pg` at `targetScale` for OCR, using a two-step process to
-// defeat pdf.js's own internal image-smoothing heuristic.
+// _renderPageHQ: renders `pg` at `targetScale` for OCR, using a supersample-then-
+// downsample process that defeats pdf.js's own internal image-smoothing heuristic
+// WITHOUT capping every source at 72 DPI (see CORRECTION below — that was this
+// function's own bug from 2026-07-22 to 2026-08-17).
 //
 // Root cause (2026-07-22, Wood River Energy May/Sep/Oct 2025 invoice legibility):
 // pdf.js's CanvasGraphics sets `ctx.imageSmoothingEnabled` itself, immediately before
@@ -10087,11 +10089,38 @@ function _countOcrSignals(txt) {
 // render(). (Confirmed by rendering the same source both ways and comparing Tesseract
 // output — see docs/dashboardlogic.md.)
 //
-// Fix: render once at scale 1 (no image upscaling occurs, so pdf.js's own smoothing
-// decision is irrelevant) into an intermediate canvas, then do a SEPARATE canvas-to-canvas
-// resize to targetScale ourselves via plain ctx.drawImage on a context WE control
-// (imageSmoothingQuality:'high'). pdf.js's render() is not involved in that second draw
-// at all, so its internal override cannot touch it.
+// CORRECTION (2026-08-17, pipeline item 29fa2c65 — regression audit): the 2026-07-22
+// fix below rendered at a FIXED scale:1 (72 DPI) before doing anything else, regardless
+// of the source raster's actual native resolution. That unconditionally throws away
+// every pixel above 72 DPI before the Lanczos upscale ever runs — Lanczos interpolates
+// between existing samples, it cannot invent detail that scale:1 already discarded.
+// Reproduced on a real Louisburg gas bill with a genuine 150 DPI embedded scan
+// (`Gas Bills May 2026 - BES.pdf`, confirmed 1275x1650px JPEG on a 612x792pt page via
+// PyMuPDF): the 2026-07-22 mechanism corrupted SewerCharge ($508.93 -> unparseable),
+// WaterProtectionFee (1.61 -> 161, a 100x decimal-point loss), and the gas meter reads/
+// therms usage (3.339 -> unrecoverable) that a supersampled render recovers cleanly.
+// It also broke Evergy's meter-read table (MeterMultiplier/StartRead/EndRead came back
+// null on every bill) for the same reason — Evergy scans are 150 DPI too.
+//
+// Fix (supersample-then-downsample, replaces the 2026-07-22 scale:1 floor): render
+// ONCE at `targetScale * OCR_SUPERSAMPLE_FACTOR` — always AT OR ABOVE the requested
+// target, never clamped to a fixed low floor — into an intermediate canvas, then do a
+// SEPARATE canvas-to-canvas resize DOWN to targetScale ourselves via the from-scratch
+// Lanczos-3 filter below, on a context WE control. This still defeats pdf.js's internal
+// smoothing override the same way the 2026-07-22 fix did (that second resize is a plain
+// canvas-to-canvas operation, not a pdf.js render() call), but never discards resolution
+// above 72 DPI: for a high-DPI source, the supersample render preserves and even exceeds
+// the source's native detail; for a genuinely low-DPI source (Wood River, ~72 DPI), the
+// Lanczos DOWNSAMPLE from the oversized intermediate canvas smooths out the blocky edges
+// pdf.js's own disabled-smoothing draw leaves behind — a standard supersampling
+// antialiasing (SSAA) technique — so both source qualities come out clean without any
+// runtime detection of the source's actual DPI. Verified empirically (headless Chromium,
+// same pdf.js 3.11.174 / Tesseract.js 5 versions and worker params as production) against
+// both the 150 DPI Louisburg gas bill above AND the genuine 72 DPI Wood River Inv 452084
+// invoice: recovers $187.08/$242.61 on Wood River at least as well as the 2026-07-22
+// scale:1 mechanism at every tested target scale, while also recovering the 150-DPI
+// bill's fields the 2026-07-22 mechanism corrupted. See docs/dashboardlogic.md
+// 2026-08-17 entry for the full before/after pass data.
 //
 // Safe to apply universally to every OCR-path render call in this file: OCR only ever
 // runs on pages that already failed native vector-text extraction (Step 1 of
@@ -10206,18 +10235,32 @@ function _lanczosResize(srcCanvas, dstW, dstH, a) {
   dst.getContext('2d').putImageData(new ImageData(out, dstW, dstH), 0, 0);
   return dst;
 }
+// Supersample multiplier for _renderPageHQ (see its doc comment above for the full
+// reasoning). Chosen empirically (2026-08-17, item 29fa2c65) by comparing OCR text
+// quality across 1.3/1.6/2.0 on the genuinely-low-DPI Wood River Inv 452084 fixture —
+// 1.6 was the first value that matched-or-beat the old scale:1 mechanism's recovery of
+// known dollar figures ($187.08, $242.61); 1.3 was measurably worse (more garbled digit
+// strings) and 2.0 was not measurably better while costing more render time/memory, so
+// 1.6 is the lowest factor that avoided the regression. At the pipeline's existing max
+// OCR pass (targetScale 4.0), 1.6 puts the intermediate supersample canvas at ~6.4x
+// (≈460 DPI-equivalent, ~19.9 megapixels for a letter page) — comfortably under the
+// ~34-megapixel/600 DPI danger zone profiled during this fix (see dashboardlogic.md
+// 2026-08-17 entry for full render/OCR timing at 2.5x and 4.0x).
+const OCR_SUPERSAMPLE_FACTOR = 1.6;
 async function _renderPageHQ(pg, targetScale) {
-  const vp1 = pg.getViewport({ scale: 1 });
+  const superScale = targetScale * OCR_SUPERSAMPLE_FACTOR;
+  const vpHi = pg.getViewport({ scale: superScale });
   const rawCanvas = document.createElement('canvas');
-  rawCanvas.width = Math.max(1, Math.round(vp1.width));
-  rawCanvas.height = Math.max(1, Math.round(vp1.height));
+  rawCanvas.width = Math.max(1, Math.round(vpHi.width));
+  rawCanvas.height = Math.max(1, Math.round(vpHi.height));
   const rawCtx = rawCanvas.getContext('2d');
-  await pg.render({ canvasContext: rawCtx, viewport: vp1 }).promise;
+  await pg.render({ canvasContext: rawCtx, viewport: vpHi }).promise;
   const targetVp = pg.getViewport({ scale: targetScale });
   const dstW = Math.max(1, Math.round(targetVp.width));
   const dstH = Math.max(1, Math.round(targetVp.height));
-  // Fix (2026-07-22): use the from-scratch Lanczos-3 resize above instead of a plain
-  // ctx.drawImage upscale — see _lanczosResize's doc comment for the measured quality
+  // Fix (2026-07-22, corrected 2026-08-17): use the from-scratch Lanczos-3 resize above
+  // to DOWNSAMPLE the supersampled render to the target scale, instead of a plain
+  // ctx.drawImage — see _lanczosResize's doc comment for the measured quality
   // difference. Falls back to the previous drawImage approach if anything throws
   // (e.g. a future browser blocks large ImageData reads) so a resize failure degrades
   // gracefully rather than breaking OCR entirely.
