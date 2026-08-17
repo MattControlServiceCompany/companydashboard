@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.17.754',
+    date: '2026-08-17',
+    title: 'Scanned utility bill extraction accuracy fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility bill import — scanned bills now extract accurately. Meter readings, multipliers, and charge amounts that were previously misread or dropped on scanned PDFs now read correctly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.07.753',
     date: '2026-08-07',
     title: 'Labor rate default updated on the Cost Estimate page',
