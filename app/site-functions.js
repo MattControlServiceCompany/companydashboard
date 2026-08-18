@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.17.755',
+    date: '2026-08-17',
+    title: 'Utility bill PDF storage fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data — bill PDFs: fixed the same bill PDF being saved many extra times when one bill covers several meters; your saved bills are unchanged, the file just takes up much less space now.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.17.754',
     date: '2026-08-17',
     title: 'Scanned utility bill extraction accuracy fix',
