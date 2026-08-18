@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.18.757',
+    date: '2026-08-18',
+    title: 'Utility bill extraction accuracy fix',
+    items: [
+      {
+        type: 'fix',
+        text: "Utility Data — bill extraction accuracy: fixed cases where bills that share a utility account but belong to different meters or buildings could borrow each other's numbers — a meter multiplier, a demand charge, or a meter reading bleeding in from a neighboring bill on the same statement. Each bill's values now come only from that bill and its own account, and a meter reading that can't be reconciled is held for your review instead of saved. Your existing saved bills are unchanged; this affects new extractions.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.18.756',
     date: '2026-08-18',
     title: 'Propane bill accuracy fixes',

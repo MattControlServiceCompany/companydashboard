@@ -4705,6 +4705,25 @@ const UTILITY_RULES = [
       // than the bill being built. If it does, that page belongs to
       // another bill and must not be silently absorbed — fall back to no
       // cover room (`pageStart = bdPage`) for this bill instead.
+      // CONTINUATION-PAGE GUARD (backlog 0d47ad08, item A) — a "(Continued)"
+      // page (e.g. the meter-read row printed on its own page after the
+      // charge-detail page) repeats "Account Number <n> ... (Continued)"
+      // but has NO "Billing Details - service from" header at all, so the
+      // sfMatches-only check above never sees it and treats it as free
+      // "cover room" for the NEXT bill — annexing that meter row (and its
+      // kWh) onto the wrong building. Extend the foreign-page check to also
+      // scan the candidate page's plain account-number text (same regex as
+      // `_acctForIdx`) for an account that differs from the bill being
+      // built; a "(Continued)" page always carries its OWNER's account
+      // number in that form even without a Billing-Details header.
+      const _pageOwnAccts = (page) => {
+        const pageText = _pfPageTextMap[page];
+        if (!pageText) return [];
+        const acctMatches = [
+          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+        ];
+        return acctMatches.map((am) => am[1].replace(/\s/g, ''));
+      };
       const _pageHasForeignBd = (page, ownAcct) => {
         if (!ownAcct) return false;
         for (const m of sfMatches) {
@@ -4712,8 +4731,31 @@ const UTILITY_RULES = [
           if (!_hasBdBefore(m)) continue;
           if (m._acct && m._acct !== ownAcct) return true;
         }
+        for (const foundAcct of _pageOwnAccts(page)) {
+          if (foundAcct !== ownAcct) return true;
+        }
         return false;
       };
+      // CONTINUATION ABSORPTION — the flip side of the guard above. A page
+      // has to belong to SOMEONE: once `_pageHasForeignBd` stops a
+      // "(Continued)" page from being claimed as the next bill's cover, it
+      // must instead extend the PREVIOUS bill's own page range so that
+      // bill keeps its meter-read row. A page qualifies as bill i's
+      // continuation only when it carries bill i's own account number and
+      // does not itself open a new bill (no "Billing Details - service
+      // from" header) — that keeps a real next-bill cover page, which may
+      // legitimately mention a prior account in passing, from being
+      // swallowed.
+      const _pageIsContinuationOf = (page, ownAcct) => {
+        if (!ownAcct) return false;
+        const pageText = _pfPageTextMap[page];
+        if (!pageText) return false;
+        if (_EVG_BILLING_DETAILS.test(pageText)) return false;
+        const foundAccts = _pageOwnAccts(page);
+        if (foundAccts.length === 0) return false;
+        return foundAccts.every((a) => a === ownAcct);
+      };
+      const _pfPageStarts = [];
       if (_pageFirstOk) {
         for (let i = 0; i < uniqueBills.length; i++) {
           const bdPage = _pfBdPages[i];
@@ -4728,7 +4770,20 @@ const UTILITY_RULES = [
             const _foreignBd = _hasRoom && _pageHasForeignBd(_candidatePage, _ownAcct);
             pageStart = _hasRoom && !_foreignBd ? _candidatePage : bdPage;
           }
-          const pageEnd = i + 1 < uniqueBills.length ? bdPage : _pfMaxPage;
+          _pfPageStarts.push(pageStart);
+        }
+        for (let i = 0; i < uniqueBills.length; i++) {
+          const bdPage = _pfBdPages[i];
+          let pageEnd = i + 1 < uniqueBills.length ? bdPage : _pfMaxPage;
+          if (i + 1 < uniqueBills.length) {
+            const _ownAcct = uniqueBills[i]._acct || acct;
+            const _limit = _pfPageStarts[i + 1] - 1;
+            for (let p = pageEnd + 1; p <= _limit; p++) {
+              if (!_pageIsContinuationOf(p, _ownAcct)) break;
+              pageEnd = p;
+            }
+          }
+          const pageStart = _pfPageStarts[i];
           // Guard against corrupt ranges.
           if (pageEnd < pageStart || pageStart < 1 || pageEnd > _pfMaxPage) {
             _pageFirstOk = false;

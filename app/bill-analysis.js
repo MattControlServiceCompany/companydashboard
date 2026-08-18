@@ -3035,6 +3035,16 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             if (j === i) continue;
             const nb = bills[j];
             if ((nb.AccountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
+            // Same account can have multiple physical meters (e.g. a building meter
+            // and a separate ballfields/irrigation meter) with different, legitimately
+            // different multipliers. Only trust a neighbor as a multiplier reference
+            // when it's the SAME meter — gate on MeterNumber when both bills have
+            // one, else fall back to ServiceAddress (mirrors isNeighbor() below, ~3703).
+            if (b.MeterNumber && nb.MeterNumber) {
+              if (b.MeterNumber !== nb.MeterNumber) continue;
+            } else if (b.ServiceAddress && nb.ServiceAddress && b.ServiceAddress !== nb.ServiceAddress) {
+              continue;
+            }
             const nm = pf(nb.MeterMultiplier);
             if (nm > 0 && nm <= 10000) {
               const key = nm.toFixed(4);
@@ -3046,8 +3056,22 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         };
         const curMult = pf(b.MeterMultiplier);
         const neighborMult = _getNeighborMult();
+        // Self-reconciliation skip: if the bill's own meter-table arithmetic already
+        // proves the current multiplier correct (ReadDifference × MeterMultiplier =
+        // the locked, corroborated kWhConsumed), don't let neighbor consensus override
+        // it. A different physical meter on the same account can have a different,
+        // legitimately lower/higher multiplier and would otherwise win by vote count
+        // (e.g. High School's 160 wrongly overridden by the Ballfields meter's 1.0).
+        const _multSelfReconciles =
+          curMult > 0 &&
+          pf(b.ReadDifference) > 0 &&
+          b._kwhConsumedLocked &&
+          pf(b.kWhConsumed) > 0 &&
+          Math.abs(curMult * pf(b.ReadDifference) - pf(b.kWhConsumed)) / pf(b.kWhConsumed) <= _Q_BUCKET_TOL;
         // Correct an obviously-garbled multiplier (> 10k or way off neighbor consensus)
-        if (neighborMult && neighborMult > 0) {
+        if (_multSelfReconciles) {
+          // Bill's own arithmetic already reconciles — leave MeterMultiplier alone.
+        } else if (neighborMult && neighborMult > 0) {
           const multOutOfRange = curMult > 10000;
           const multOffNeighbor = curMult > 0 && Math.abs(curMult - neighborMult) / neighborMult > 0.05;
           if (multOutOfRange || multOffNeighbor || !curMult) {
@@ -3229,6 +3253,17 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 readDifferenceTimesMultiplier: expectedKwh2.toFixed(4),
                 reason: 'Meter-table arithmetic disagrees with the corroborated kWhConsumed — flagged, not applied.',
               };
+              // The kWhConsumed side of this equation is protected (locked), so the
+              // side that's wrong is ReadDifference (or MeterMultiplier, but that has
+              // its own neighbor-consensus corrector — see ~3047). Reject the source
+              // field rather than let a garbled OCR value (e.g. "163577") sit as if
+              // it were confident data.
+              b['_meterReadDiscrepancy_ReadDifferenceRejected'] = {
+                original: b.ReadDifference,
+                reason: 'Meter-table ReadDifference disagrees with corroborated kWhConsumed — rejected, not saved.',
+              };
+              b.ReadDifference = null;
+              b['_likely_missing_ReadDifference'] = true;
             }
           }
         } else if (!_isMultiMeterKwh && cascadeDiff > 0 && multNow > 0) {
@@ -3470,7 +3505,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             mM = pfR(b.MeterMultiplier),
             kC = pfR(b.kWhConsumed);
           // EndRead − StartRead = ReadDifference
-          if (sR > 0 && eR > 0 && !dR) {
+          // Guard: don't recreate a value from the same suspect reads that just got
+          // its ReadDifference rejected for disagreeing with corroborated kWhConsumed
+          // (see ~3222) — EndRead/StartRead are equally OCR-suspect in that case.
+          if (sR > 0 && eR > 0 && !dR && !b._meterReadDiscrepancy_ReadDifferenceRejected) {
             const v = eR - sR;
             b.ReadDifference = v.toFixed(4);
             b._auto_recovered_ReadDifference = {
@@ -3551,10 +3589,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               };
               b.kWhConsumed = expected.toFixed(4);
             }
-          } else if (!_isMultiMeterKwh2 && kC > 0 && mM > 0 && !dR) {
+          } else if (!_isMultiMeterKwh2 && kC > 0 && mM > 0 && !dR && !b._meterReadDiscrepancy_ReadDifferenceRejected) {
             // Multi-meter bills have ReadDifference intentionally nulled (not a single
             // valid physical reading — see Fix 3 in energy-savings.js). Without this guard
             // this reverse-derivation immediately refills it from kWhConsumed / Multiplier.
+            // Same guard as the EndRead−StartRead branch above (~3487): a bill whose
+            // ReadDifference was just rejected for disagreeing with the corroborated
+            // kWhConsumed must not have it silently regenerated from that same locked
+            // kWhConsumed ÷ MeterMultiplier — that's re-deriving from the very value the
+            // rejection was protecting, not independent corroboration.
             const v = kC / mM;
             b.ReadDifference = v.toFixed(4);
             b._auto_recovered_ReadDifference = {
@@ -3768,9 +3811,27 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const newPeak = pf(b.FacilitiesKW);
         for (let j = i + 1; j < bills.length && j < i + 12; j++) {
           const nb = bills[j];
+          // Only propagate within the SAME account, and (when identifiable) the
+          // SAME physical meter — a different account on the same PDF (e.g.
+          // Ballfields on a different account than Circle Grove) must never have
+          // its FacilitiesKW/Charge overwritten by another account's new peak.
+          // Mirrors the account guard on the sibling rolling-peak block above (~3616).
+          const _bAcct = (b.AccountNumber || '').replace(/[\s\-]/g, '');
+          const _nbAcct = (nb.AccountNumber || '').replace(/[\s\-]/g, '');
+          if (_bAcct && _nbAcct && _bAcct !== _nbAcct) continue;
+          if (b.MeterNumber && nb.MeterNumber) {
+            if (b.MeterNumber !== nb.MeterNumber) continue;
+          } else if (b.ServiceAddress && nb.ServiceAddress && b.ServiceAddress !== nb.ServiceAddress) {
+            continue;
+          }
           const nbFacKW = pf(nb.FacilitiesKW);
+          // Self-consistency skip: if nb's own FacilitiesKW/Charge already reconcile
+          // against its own rate, it's not an OCR error — leave it alone (e.g. Circle
+          // Grove: 57.872 kW × $2.854 = $165.17, self-consistent).
+          const _nbRate = nb._rates?.FacilitiesCharge?.rate || 0;
+          const _nbSelfReconciles = _nbRate > 0 && Math.abs(nbFacKW * _nbRate - pf(nb.FacilitiesCharge)) <= 0.02;
           // If a subsequent bill's FacilitiesKW is less than the new peak, it's wrong
-          if (nbFacKW > 0 && nbFacKW < newPeak) {
+          if (!_nbSelfReconciles && nbFacKW > 0 && nbFacKW < newPeak) {
             const nbOriginal = nb._auto_corrected_FacilitiesKW?.original || nb.FacilitiesKW;
             nb.FacilitiesKW = newPeak.toFixed(4);
             nb['_auto_corrected_FacilitiesKW'] = {
