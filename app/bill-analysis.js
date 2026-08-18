@@ -6376,6 +6376,129 @@ async function _sweepPdfLsFallback() {
   } catch (e) {}
 }
 
+// ── Compact PDF Storage — bill-walk helper (backlog: dedupe ~929 stored PDF
+// blobs down to their unique content) ──────────────────────────────────────
+// Called by compactPdfStorage() (app/site-functions.js) AFTER it has hashed
+// every key currently in en_pdf_store and built `oldKeyToCanonical` (real
+// store key -> 'en_pdf_shared_<hash16>'). This function's only job is to walk
+// every place a PDF reference can live and, for each PDF-claiming record,
+// figure out which real store key it currently resolves through and rewrite
+// it to point at the canonical key instead.
+//
+// PDF references live in two homes (docs/dashboardlogic.md "Data Storage"):
+//   1. utilityData[pid].buildings[].meters[].bills[]  (via getUDProj — mirrors
+//      _findMeterBillById's walk)
+//   2. sget('en_pdf_bills', [])                        (flat extraction list)
+//
+// Resolution ladder per record MUST mirror viewSavedPDF's actual read-time
+// priority exactly, or compaction can canonicalize a bill to a blob the real
+// UI never shows and then delete the blob it does show (silent, irreversible
+// data loss). The real caller-side lookup is renderBillRow's
+// `pdfLookupId = row.pdfBillId || row.id` (app/csv-import.js), passed as the
+// `id` arg into viewSavedPDF, which then checks 'en_pdf_file_' + id FIRST and
+// falls back to pdfKey. So rung 1 here is the SAME single computed id —
+// 'en_pdf_file_<record.pdfBillId || record.id>' (pdfBillId wins when present,
+// never both) — and rung 2 is record.pdfKey, matching viewSavedPDF's second
+// check. The first candidate that was actually a real key in the store (i.e.
+// present in oldKeyToCanonical) wins. (Saved Bills / en_pdf_bills flat
+// records are rendered via viewSavedPDF('${b.id}', ..., '${b.pdfKey}') and
+// normally carry no pdfBillId of their own, so lookupId reduces to
+// record.id for them — same two-rung order applies.)
+//
+// A record whose hasPDF/pdfKey claims a PDF but NONE of its candidates were
+// ever real store keys is pre-existing breakage, unrelated to this
+// compaction — it's reported in `alreadyBroken` and left completely
+// untouched (never remapped, never subject to the hard verify gate in
+// site-functions.js, never a reason to abort the whole batch).
+//
+// NOTHING is persisted here. Mutations land only on the live in-memory
+// utilityData objects / the en_pdf_bills array this function read — the
+// caller must call the returned `commit()` only after it has independently
+// re-verified (via the real pdfLoad()) that every remapped record's new
+// canonical key actually loads. If verification fails, the caller simply
+// never calls commit() and nothing on disk changes (a page reload discards
+// the in-memory-only mutations too).
+async function _pdfCompactWalkAndRemap(oldKeyToCanonical) {
+  const touched = []; // [{ ref, canonical, changed, label }]
+  const alreadyBroken = []; // [{ id, label }]
+  const dirtyProjIds = new Set();
+
+  function isPdfClaiming(rec) {
+    return !!(rec && (rec.hasPDF || rec.pdfKey));
+  }
+  function candidatesFor(rec) {
+    const c = [];
+    // Must match pdfLookupId = row.pdfBillId || row.id (csv-import.js
+    // renderBillRow) → viewSavedPDF's 'en_pdf_file_' + id first check.
+    // pdfBillId wins when present — never probe 'en_pdf_file_<id>' too, the
+    // real UI never falls back to it once pdfBillId exists.
+    const lookupId = rec.pdfBillId || rec.id;
+    if (lookupId) c.push('en_pdf_file_' + lookupId);
+    if (rec.pdfKey) c.push(rec.pdfKey);
+    return c;
+  }
+  // Returns { canonical, changed } or null (not resolvable — already broken).
+  function resolve(rec) {
+    for (const cand of candidatesFor(rec)) {
+      if (Object.prototype.hasOwnProperty.call(oldKeyToCanonical, cand)) {
+        const canonical = oldKeyToCanonical[cand];
+        const changed = rec.pdfKey !== canonical;
+        rec.pdfKey = canonical;
+        rec.hasPDF = true;
+        return { canonical, changed };
+      }
+    }
+    return null;
+  }
+
+  // 1. Every project's meter-tree bills.
+  for (const proj of projects || []) {
+    const udProj = getUDProj(proj.id);
+    let projDirty = false;
+    for (const b of udProj.buildings || []) {
+      for (const m of b.meters || []) {
+        for (const r of m.bills || []) {
+          if (!isPdfClaiming(r)) continue;
+          const label = (proj.name || proj.id) + ' / ' + (b.name || b.id) + ' / ' + (m.account || m.id);
+          const result = resolve(r);
+          if (!result) {
+            alreadyBroken.push({ id: r.id || null, label });
+            continue;
+          }
+          touched.push({ ref: r, canonical: result.canonical, changed: result.changed, label });
+          if (result.changed) projDirty = true;
+        }
+      }
+    }
+    if (projDirty) dirtyProjIds.add(proj.id);
+  }
+
+  // 2. Flat en_pdf_bills list.
+  const flatBills = (await sget('en_pdf_bills', [])) || [];
+  let flatDirty = false;
+  for (const b of flatBills) {
+    if (!isPdfClaiming(b)) continue;
+    const label = 'Saved Bills / ' + (b.projName || 'General');
+    const result = resolve(b);
+    if (!result) {
+      alreadyBroken.push({ id: b.id || null, label });
+      continue;
+    }
+    touched.push({ ref: b, canonical: result.canonical, changed: result.changed, label });
+    if (result.changed) flatDirty = true;
+  }
+
+  return {
+    touched,
+    alreadyBroken,
+    remappedCount: touched.filter((t) => t.changed).length,
+    async commit() {
+      if (dirtyProjIds.size) saveUtilityData(Array.from(dirtyProjIds));
+      if (flatDirty) await sset('en_pdf_bills', flatBills);
+    },
+  };
+}
+
 // Store the current extraction's source PDF once per session and tag every bill
 // in the batch with a shared key, so downstream save paths (_saveBillToMatchedMeter,
 // _applyDupUpdate's _copyPageRange, _saveSinglePDFBill) all reference the SAME

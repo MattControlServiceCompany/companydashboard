@@ -2505,6 +2505,40 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   })();
   // Combine meter rows into a single effective meter reading
   const meterRow = _meterRows.length ? _meterRows[0] : null;
+  // ── Same-meter guard (item 0d47ad08 subtask 5) ──
+  // The meter_change sum below used to combine 2+ meter rows purely on count, with
+  // no identity check — two DIFFERENT meters that merely share an account/page range
+  // (e.g. a multi-account PDF whose account digits collide, or a mis-scoped page
+  // range) would get summed into one bogus bill. Derive each row's service address
+  // (bounded by the nearest preceding %%PAGE_N%% marker — _meterT is 1:1 char-length-
+  // identical to t, per the comment above the regex, so row.index is a valid offset
+  // into t) and group rows with row[0] (the anchor) only when the address matches.
+  // When address text is missing or didn't match on either side, fall back to
+  // comparing MeterMultiplier — a real mid-cycle meter swap keeps the same address
+  // AND multiplier; a foreign/contaminating row differs on both. Computed once here
+  // and reused by both the meter_change sum and the Meter1_/Meter2_ result fields
+  // below — never inline-copied.
+  const _meterPageMarkerIdxs = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => m.index);
+  const _meterRowAddr = (row) => {
+    let markerIdx = 0;
+    for (const idx of _meterPageMarkerIdxs) {
+      if (idx <= row.index) markerIdx = idx;
+      else break;
+    }
+    const m = t.slice(markerIdx, row.index).match(_EVG_ADDR);
+    return m ? m[1].trim().replace(/\s+/g, ' ').toUpperCase() : null;
+  };
+  for (const row of _meterRows) row._addr = _meterRowAddr(row);
+  const _meterGroup = _meterRows.length
+    ? _meterRows.filter((row) => {
+        if (row === _meterRows[0]) return true;
+        if (row._addr && _meterRows[0]._addr) return row._addr === _meterRows[0]._addr;
+        const rowMult = (row[7] || '').replace(/,/g, '').trim();
+        const anchorMult = (_meterRows[0][7] || '').replace(/,/g, '').trim();
+        return rowMult === anchorMult;
+      })
+    : [];
+  const _meterGroupExcluded = _meterRows.filter((row) => !_meterGroup.includes(row));
   const _meterCombined = (() => {
     if (_meterRows.length <= 1) return null; // single row handled by meterRow directly
     const pn = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
@@ -2535,13 +2569,18 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // must never be presented as one (see Meter1_/Meter2_ fields below for the
     // real per-meter values). ReadDifference IS combined (sum of each row's own
     // difference) because that's what genuinely represents total consumption.
-    const first = _meterRows[0],
-      last = _meterRows[_meterRows.length - 1];
+    // Same-meter guard: sum ONLY the primary group (_meterGroup, computed above) —
+    // rows that share row[0]'s derived service address (or MeterMultiplier as
+    // fallback). If nothing else survives, fall through to the already-verified
+    // single-meter path (meterRow = the anchor row, _meterRows[0]).
+    if (_meterGroup.length <= 1) return null;
+    const first = _meterGroup[0],
+      last = _meterGroup[_meterGroup.length - 1];
     let totalKwh = 0,
       totalDiff = 0,
       maxKw = 0,
       maxRkva = 0;
-    for (const r of _meterRows) {
+    for (const r of _meterGroup) {
       totalKwh += pn(r[8]);
       totalDiff += pn(r[6]);
       maxKw = Math.max(maxKw, pn(r[9]));
@@ -2549,7 +2588,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
     return {
       type: 'meter_change',
-      rows: _meterRows.length,
+      rows: _meterGroup.length,
       startDate: first[1],
       endDate: last[2],
       startRead: null,
@@ -3171,9 +3210,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (_meterCombined.type === 'meter_change') {
       result._meterInfo.note = 'Meter change: ' + _meterCombined.rows + ' meter lines summed for kWh, max KW/RKVA used';
       const _mrClean = (s) => (s || '').replace(/,/g, '');
-      if (_meterRows.length >= 2) {
-        const m1 = _meterRows[0],
-          m2 = _meterRows[1];
+      if (_meterGroup.length >= 2) {
+        const m1 = _meterGroup[0],
+          m2 = _meterGroup[1];
         result.Meter1_ReadStart = m1[1] || null;
         result.Meter1_ReadEnd = m1[2] || null;
         result.Meter1_StartRead = m1._fixedStartRead || _mrClean(m1[5]) || null;
@@ -3202,6 +3241,21 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         if (_genKwh > 0) result.GenerationKwh = _genKwh.toFixed(4);
       }
     }
+  }
+
+  // Diagnostic only (item 0d47ad08 subtask 5) — never silent: rows excluded from the
+  // meter_change sum because their derived service address (or, as fallback,
+  // MeterMultiplier) didn't match row[0]'s (_meterGroup above). Not gated on
+  // _meterCombined being truthy, since a group that shrinks to 1 row makes
+  // _meterCombined null (falls through to the single-meter path) — the exclusion
+  // still needs to be surfaced. Skipped for solar bills: _meterGroup is not used by
+  // the solar branch, so an address mismatch there (if any) excludes nothing real.
+  if (!_hasSolarLabels && _meterGroupExcluded.length) {
+    result._meterRowsExcluded = _meterGroupExcluded.map((row) => ({
+      address: row._addr || null,
+      multiplier: (row[7] || '').replace(/,/g, '') || null,
+      kWh: (row[8] || '').replace(/,/g, '') || null,
+    }));
   }
 
   // Flag OCR digit corrections applied to meter reads

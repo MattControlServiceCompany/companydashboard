@@ -877,6 +877,214 @@ async function processPdfImportFiles(fileList) {
   if (typeof showToast === 'function') showToast(msg, isErr ? 'error' : undefined);
 }
 
+// ── Compact PDF Storage ──────────────────────────────────────────────────
+// Dedupes en_pdf_store: many bills historically each got their OWN copy of
+// what is often the same underlying multi-page utility PDF (one legacy
+// per-bill 'en_pdf_file_<id>' blob per bill, even when several bills came off
+// the same source file). This collapses every group of byte-identical blobs
+// down to ONE canonical 'en_pdf_shared_<hash16>' copy and repoints every
+// bill's pdfKey at it, then deletes the now-redundant copies.
+//
+// Ordered algorithm (see the implementer plan for the full design):
+//   1. Promote any localStorage-fallback PDFs into IndexedDB first (so every
+//      blob is visible to _pdfExportAllKeys()).
+//   2/3. Hash every stored blob ONE AT A TIME (never the whole store in
+//      memory) and write one canonical 'en_pdf_shared_<hash16>' blob per
+//      distinct hash the first time that hash is seen.
+//   4. Remap every PDF-claiming bill (both homes) to its canonical key —
+//      IN MEMORY ONLY, not yet persisted (app/bill-analysis.js's
+//      _pdfCompactWalkAndRemap).
+//   5. HARD VERIFY GATE: independently re-load every remapped bill's new
+//      canonical key via the real pdfLoad(). If ANY fails, abort — persist
+//      nothing, delete nothing.
+//   6. Only once every remap verifies: persist the remaps, then delete every
+//      non-canonical key.
+// Idempotent — a second run finds everything already canonical and no-ops.
+async function compactPdfStorage(onProgress) {
+  const progress = typeof onProgress === 'function' ? onProgress : function () {};
+  const result = {
+    aborted: false,
+    hashed: 0,
+    unique: 0,
+    remapped: 0,
+    deleted: 0,
+    alreadyBroken: [],
+    failedVerify: [],
+  };
+
+  // 1. Promote any stranded localStorage-fallback PDFs into IndexedDB first.
+  try {
+    await _sweepPdfLsFallback();
+  } catch (e) {
+    console.warn('[compactPdfStorage] _sweepPdfLsFallback failed (continuing):', e);
+  }
+
+  // 2/3. Hash every key one at a time; write one canonical blob per hash.
+  let keys = [];
+  try {
+    keys = await _pdfExportAllKeys();
+  } catch (e) {
+    keys = [];
+  }
+  result.hashed = keys.length;
+  progress('hashing', { total: keys.length, done: 0 });
+
+  const oldKeyToCanonical = {}; // real store key (incl. canonical keys themselves) -> canonical key
+  const canonicalWritten = {}; // hash -> true once its canonical blob exists in the store
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    let base64 = null;
+    try {
+      base64 = await _pdfExportGetOne(key);
+    } catch (e) {
+      base64 = null;
+    }
+    if (!base64) {
+      progress('hashing', { total: keys.length, done: i + 1 });
+      continue; // unreadable/empty entry — leave it out of the map; harmless, just never becomes a remap candidate
+    }
+    let hash;
+    try {
+      hash = await _pdfSha256HexFromBytes(_pdfBase64ToBytes(base64));
+    } catch (e) {
+      progress('hashing', { total: keys.length, done: i + 1 });
+      continue;
+    }
+    const canonicalKey = 'en_pdf_shared_' + hash.slice(0, 16);
+    if (key !== canonicalKey && !canonicalWritten[hash]) {
+      try {
+        await pdfStore(canonicalKey, base64);
+      } catch (e) {
+        console.warn('[compactPdfStorage] failed writing canonical blob for hash', hash, e);
+        progress('hashing', { total: keys.length, done: i + 1 });
+        continue; // don't map anything to a canonical key we couldn't actually write
+      }
+    }
+    canonicalWritten[hash] = true;
+    oldKeyToCanonical[key] = canonicalKey;
+    base64 = null; // release before the next iteration — one PDF in memory at a time
+    progress('hashing', { total: keys.length, done: i + 1 });
+  }
+  result.unique = Object.keys(canonicalWritten).length;
+
+  // 4. Remap every PDF-claiming bill (both homes) — in memory only.
+  progress('remapping', {});
+  const walk = await _pdfCompactWalkAndRemap(oldKeyToCanonical);
+  result.alreadyBroken = walk.alreadyBroken;
+
+  // 5. HARD VERIFY GATE — independently re-load every remapped bill's new key.
+  progress('verifying', { total: walk.touched.length, done: 0 });
+  const failedVerify = [];
+  for (let i = 0; i < walk.touched.length; i++) {
+    const t = walk.touched[i];
+    let ok = null;
+    try {
+      ok = await pdfLoad(t.canonical);
+    } catch (e) {
+      ok = null;
+    }
+    if (!ok) failedVerify.push({ id: (t.ref && t.ref.id) || null, label: t.label, key: t.canonical });
+    progress('verifying', { total: walk.touched.length, done: i + 1 });
+  }
+  if (failedVerify.length) {
+    result.aborted = true;
+    result.failedVerify = failedVerify;
+    progress('aborted', { failedVerify });
+    return result; // nothing persisted, nothing deleted
+  }
+
+  // 6. Persist the remaps, then delete every non-canonical key.
+  await walk.commit();
+  result.remapped = walk.remappedCount;
+
+  progress('deleting', { total: keys.length, done: 0 });
+  let deleted = 0;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (oldKeyToCanonical[key] && oldKeyToCanonical[key] !== key) {
+      try {
+        await pdfDelete(key);
+        deleted++;
+      } catch (e) {
+        console.warn('[compactPdfStorage] failed deleting redundant key', key, e);
+      }
+    }
+    progress('deleting', { total: keys.length, done: i + 1 });
+  }
+  result.deleted = deleted;
+  progress('done', result);
+  return result;
+}
+
+// UI wrapper — confirm dialog + progress toasts + result summary. Not wired
+// to a button on this page (energy-department.html has no Compact PDF
+// Storage button yet — index.html/service-department.html do; they carry
+// their own inline copy of this wrapper since they don't load this file).
+async function compactPdfStorageUI() {
+  let keyCount = 0;
+  try {
+    keyCount = (await _pdfExportAllKeys()).length;
+  } catch (e) {
+    keyCount = 0;
+  }
+  if (!keyCount) {
+    if (typeof showToast === 'function') showToast('No stored PDFs to compact');
+    return;
+  }
+  let msg =
+    'Compact PDF Storage will scan every stored bill PDF (' +
+    keyCount +
+    ' currently stored), collapse byte-identical duplicates down to one copy each, and permanently delete the redundant copies. Export PDFs (backup) first — this cannot be undone.';
+  if (typeof _pdfBackendMode === 'function' && (_pdfBackendMode() === 'on' || _pdfBackendMode() === 'shadow')) {
+    msg +=
+      ' Server copies of consolidated PDFs will remain until server-side dedup is added — this only shrinks local storage.';
+  }
+  msg += ' Continue?';
+  const ok = typeof confirmAsync === 'function' ? await confirmAsync(msg) : window.confirm(msg);
+  if (!ok) return;
+
+  if (typeof showToast === 'function') showToast('Compacting PDF storage...');
+  let result;
+  try {
+    result = await compactPdfStorage(function (stage, info) {
+      if (typeof showToast !== 'function') return;
+      if (stage === 'hashing') showToast('Hashing PDFs: ' + info.done + '/' + info.total);
+      else if (stage === 'verifying') showToast('Verifying remapped bills: ' + info.done + '/' + info.total);
+      else if (stage === 'deleting') showToast('Removing redundant copies: ' + info.done + '/' + info.total);
+    });
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Compact PDF Storage failed: ' + ((e && e.message) || e), 'error');
+    return;
+  }
+  if (result.aborted) {
+    if (typeof showToast === 'function') {
+      showToast(
+        'Compact PDF Storage aborted — ' +
+          result.failedVerify.length +
+          ' remapped bill(s) failed to verify. Nothing was changed or deleted.',
+        'error',
+      );
+    }
+    console.warn('[compactPdfStorageUI] aborted, failed verify:', result.failedVerify);
+    return;
+  }
+  let summary =
+    'Compact PDF Storage done — hashed ' +
+    result.hashed +
+    ', ' +
+    result.unique +
+    ' unique, remapped ' +
+    result.remapped +
+    ' bill(s), deleted ' +
+    result.deleted +
+    ' redundant copies.';
+  if (result.alreadyBroken.length) {
+    summary += ' ' + result.alreadyBroken.length + ' bill(s) already had a missing PDF (unrelated, left as-is).';
+  }
+  if (typeof showToast === 'function') showToast(summary);
+  console.log('[compactPdfStorageUI] result:', result);
+}
+
 async function siteBackup() {
   // Get all DB data (IndexedDB-backed)
   var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
@@ -1575,6 +1783,24 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  {
+    v: 'v2026.08.18.758',
+    date: '2026-08-18',
+    title: 'Utility Data: meter-merge fix + Compact PDF Storage',
+    gateOverride: true,
+    gateOverrideReason:
+      "'Storage' is the actual button label ('Compact PDF Storage') shown in the sidebar — needed so the user can find the button by name, not developer jargon.",
+    items: [
+      {
+        type: 'fix',
+        text: "Utility Data: bill extraction — when one statement lists two different meters that share a utility account, they are no longer merged into a single combined reading; each meter's usage stays separate.",
+      },
+      {
+        type: 'feature',
+        text: "Utility Data: new 'Compact PDF Storage' button in the sidebar — removes duplicate copies of your saved bill PDFs to free up space and make backups/exports much faster. It permanently deletes the redundant copies, so use Export PDFs to back up first before running it; your saved bills and the PDF you actually see are unchanged.",
+      },
+    ],
+  },
   {
     v: 'v2026.08.18.757',
     date: '2026-08-18',

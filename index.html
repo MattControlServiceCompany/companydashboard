@@ -1790,7 +1790,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=757" />
+    <link rel="stylesheet" href="feedback-widget.css?v=758" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -1923,6 +1923,16 @@
                 title="Restore bill PDFs from files created by Export PDFs"
               >
                 Import PDFs
+              </button>
+            </div>
+            <div class="sb-btn-row">
+              <button
+                class="sb-btn"
+                style="width: 100%"
+                onclick="compactPdfStorageUI()"
+                title="Collapse duplicate stored bill PDFs down to one copy each — frees local storage space"
+              >
+                Compact PDF Storage
               </button>
             </div>
             <button
@@ -2651,6 +2661,51 @@
           });
         });
       }
+      // Deletes exactly ONE PDF blob. Used only by compactPdfStorage() below —
+      // this page never needed a single-key delete before (Export/Import/Reset
+      // above only ever read-all, put-one, or clear-all).
+      function _pdfBackupDelete(id) {
+        return _pdfBackupOpenDB().then(function (db) {
+          return new Promise(function (resolve) {
+            var tx = db.transaction(_pdfBackupDB.STORE, 'readwrite');
+            tx.objectStore(_pdfBackupDB.STORE).delete(id);
+            tx.oncomplete = function () {
+              resolve(true);
+            };
+            tx.onerror = function () {
+              resolve(false);
+            };
+          });
+        });
+      }
+      // Mirrors app/core.js's _pdfBase64ToBytes()/_pdfSha256HexFromBytes() —
+      // duplicated here only because this page doesn't load core.js as a
+      // script (see the note above CH_VERSION further down this file).
+      function _pdfBase64ToBytes(base64) {
+        var bin = atob(base64);
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes;
+      }
+      async function _pdfSha256HexFromBytes(bytes) {
+        var digest = await crypto.subtle.digest('SHA-256', bytes);
+        return Array.from(new Uint8Array(digest))
+          .map(function (b) {
+            return b.toString(16).padStart(2, '0');
+          })
+          .join('');
+      }
+      // Mirrors app/core.js's _pdfBackendMode() (off|shadow|on, with the
+      // legacy boolean ch_backend_enabled='true' => shadow fallback).
+      function _pdfBackendMode() {
+        try {
+          var v = localStorage.getItem('ch_backend_mode');
+          if (v === 'off' || v === 'shadow' || v === 'on') return v;
+          var legacy = localStorage.getItem('ch_backend_enabled');
+          if (legacy === 'true') return 'shadow';
+        } catch (e) {}
+        return 'off';
+      }
 
       /* ── Batched/chunked PDF export (backlog 729d274b) ─────────────────
        * SEPARATE and OPTIONAL from siteBackup()'s data-only export below —
@@ -2921,6 +2976,277 @@
           }
         }
         _pdfNotice(msg, isErr);
+      }
+
+      /* ── Compact PDF Storage (backlog: dedupe ~929 stored PDF blobs down to
+       * their unique content) ─────────────────────────────────────────────
+       * Self-contained inline copy — this page doesn't load app/site-functions.js
+       * or app/bill-analysis.js, so this mirrors compactPdfStorage() +
+       * _pdfCompactWalkAndRemap() from those two files, using this page's own
+       * DB.get/DB.set (app/db.js, loaded here) instead of sget/sset/getUDProj/
+       * saveUtilityData (not loaded on this page). Keep both copies in sync —
+       * see the canonical version's comments in app/site-functions.js and
+       * app/bill-analysis.js for the full algorithm rationale.
+       */
+      async function _pdfCompactWalkAndRemapInline(oldKeyToCanonical) {
+        var touched = [];
+        var alreadyBroken = [];
+        var dirtyProjIds = [];
+        var touchedProjData = {};
+        var projList = (typeof DB !== 'undefined' ? DB.get('en_projects', []) : []) || [];
+
+        function isPdfClaiming(rec) {
+          return !!(rec && (rec.hasPDF || rec.pdfKey));
+        }
+        function candidatesFor(rec) {
+          var c = [];
+          // Must match pdfLookupId = row.pdfBillId || row.id (csv-import.js
+          // renderBillRow) → viewSavedPDF's 'en_pdf_file_' + id first check.
+          // pdfBillId wins when present — never probe 'en_pdf_file_<id>' too,
+          // the real UI never falls back to it once pdfBillId exists.
+          var lookupId = rec.pdfBillId || rec.id;
+          if (lookupId) c.push('en_pdf_file_' + lookupId);
+          if (rec.pdfKey) c.push(rec.pdfKey);
+          return c;
+        }
+        function resolve(rec) {
+          var cands = candidatesFor(rec);
+          for (var i = 0; i < cands.length; i++) {
+            if (Object.prototype.hasOwnProperty.call(oldKeyToCanonical, cands[i])) {
+              var canonical = oldKeyToCanonical[cands[i]];
+              var changed = rec.pdfKey !== canonical;
+              rec.pdfKey = canonical;
+              rec.hasPDF = true;
+              return { canonical: canonical, changed: changed };
+            }
+          }
+          return null;
+        }
+
+        for (var p = 0; p < projList.length; p++) {
+          var proj = projList[p];
+          var projData = DB.get('en_utility_' + proj.id, null);
+          if (!projData || !Array.isArray(projData.buildings)) continue;
+          var projDirty = false;
+          for (var bi = 0; bi < projData.buildings.length; bi++) {
+            var b = projData.buildings[bi];
+            var meters = b.meters || [];
+            for (var mi = 0; mi < meters.length; mi++) {
+              var m = meters[mi];
+              var bills = m.bills || [];
+              for (var ri = 0; ri < bills.length; ri++) {
+                var r = bills[ri];
+                if (!isPdfClaiming(r)) continue;
+                var label = (proj.name || proj.id) + ' / ' + (b.name || b.id) + ' / ' + (m.account || m.id);
+                var result = resolve(r);
+                if (!result) {
+                  alreadyBroken.push({ id: r.id || null, label: label });
+                  continue;
+                }
+                touched.push({ ref: r, canonical: result.canonical, changed: result.changed, label: label });
+                if (result.changed) projDirty = true;
+              }
+            }
+          }
+          if (projDirty) {
+            touchedProjData[proj.id] = projData;
+            dirtyProjIds.push(proj.id);
+          }
+        }
+
+        var flatBills = (typeof DB !== 'undefined' ? DB.get('en_pdf_bills', []) : []) || [];
+        var flatDirty = false;
+        for (var fi = 0; fi < flatBills.length; fi++) {
+          var fb = flatBills[fi];
+          if (!isPdfClaiming(fb)) continue;
+          var flabel = 'Saved Bills / ' + (fb.projName || 'General');
+          var fresult = resolve(fb);
+          if (!fresult) {
+            alreadyBroken.push({ id: fb.id || null, label: flabel });
+            continue;
+          }
+          touched.push({ ref: fb, canonical: fresult.canonical, changed: fresult.changed, label: flabel });
+          if (fresult.changed) flatDirty = true;
+        }
+
+        return {
+          touched: touched,
+          alreadyBroken: alreadyBroken,
+          remappedCount: touched.filter(function (t) {
+            return t.changed;
+          }).length,
+          commit: async function () {
+            for (var i = 0; i < dirtyProjIds.length; i++) {
+              await DB.set('en_utility_' + dirtyProjIds[i], touchedProjData[dirtyProjIds[i]]);
+            }
+            if (flatDirty) await DB.set('en_pdf_bills', flatBills);
+          },
+        };
+      }
+
+      async function compactPdfStorage(onProgress) {
+        var progress = typeof onProgress === 'function' ? onProgress : function () {};
+        var result = {
+          aborted: false,
+          hashed: 0,
+          unique: 0,
+          remapped: 0,
+          deleted: 0,
+          alreadyBroken: [],
+          failedVerify: [],
+        };
+
+        var keys = [];
+        try {
+          keys = await _pdfExportAllKeys();
+        } catch (e) {
+          keys = [];
+        }
+        result.hashed = keys.length;
+        progress('hashing', { total: keys.length, done: 0 });
+
+        var oldKeyToCanonical = {};
+        var canonicalWritten = {};
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          var base64 = null;
+          try {
+            base64 = await _pdfExportGetOne(key);
+          } catch (e) {
+            base64 = null;
+          }
+          if (!base64) {
+            progress('hashing', { total: keys.length, done: i + 1 });
+            continue;
+          }
+          var hash;
+          try {
+            hash = await _pdfSha256HexFromBytes(_pdfBase64ToBytes(base64));
+          } catch (e) {
+            progress('hashing', { total: keys.length, done: i + 1 });
+            continue;
+          }
+          var canonicalKey = 'en_pdf_shared_' + hash.slice(0, 16);
+          if (key !== canonicalKey && !canonicalWritten[hash]) {
+            try {
+              await _pdfBackupPut(canonicalKey, base64);
+            } catch (e) {
+              progress('hashing', { total: keys.length, done: i + 1 });
+              continue;
+            }
+          }
+          canonicalWritten[hash] = true;
+          oldKeyToCanonical[key] = canonicalKey;
+          base64 = null;
+          progress('hashing', { total: keys.length, done: i + 1 });
+        }
+        result.unique = Object.keys(canonicalWritten).length;
+
+        progress('remapping', {});
+        var walk = await _pdfCompactWalkAndRemapInline(oldKeyToCanonical);
+        result.alreadyBroken = walk.alreadyBroken;
+
+        progress('verifying', { total: walk.touched.length, done: 0 });
+        var failedVerify = [];
+        for (var vi = 0; vi < walk.touched.length; vi++) {
+          var t = walk.touched[vi];
+          var ok = null;
+          try {
+            ok = await _pdfExportGetOne(t.canonical);
+          } catch (e) {
+            ok = null;
+          }
+          if (!ok) failedVerify.push({ id: (t.ref && t.ref.id) || null, label: t.label, key: t.canonical });
+          progress('verifying', { total: walk.touched.length, done: vi + 1 });
+        }
+        if (failedVerify.length) {
+          result.aborted = true;
+          result.failedVerify = failedVerify;
+          progress('aborted', { failedVerify: failedVerify });
+          return result;
+        }
+
+        await walk.commit();
+        result.remapped = walk.remappedCount;
+
+        progress('deleting', { total: keys.length, done: 0 });
+        var deleted = 0;
+        for (var di = 0; di < keys.length; di++) {
+          var dkey = keys[di];
+          if (oldKeyToCanonical[dkey] && oldKeyToCanonical[dkey] !== dkey) {
+            try {
+              await _pdfBackupDelete(dkey);
+              deleted++;
+            } catch (e) {}
+          }
+          progress('deleting', { total: keys.length, done: di + 1 });
+        }
+        result.deleted = deleted;
+        progress('done', result);
+        return result;
+      }
+
+      async function compactPdfStorageUI() {
+        var keyCount = 0;
+        try {
+          keyCount = (await _pdfExportAllKeys()).length;
+        } catch (e) {
+          keyCount = 0;
+        }
+        if (!keyCount) {
+          _pdfNotice('No stored PDFs to compact', false);
+          return;
+        }
+        var msg =
+          'Compact PDF Storage will scan every stored bill PDF (' +
+          keyCount +
+          ' currently stored), collapse byte-identical duplicates down to one copy each, and permanently delete the redundant copies. Export PDFs (backup) first — this cannot be undone.';
+        if (_pdfBackendMode() === 'on' || _pdfBackendMode() === 'shadow') {
+          msg +=
+            ' Server copies of consolidated PDFs will remain until server-side dedup is added — this only shrinks local storage.';
+        }
+        msg += ' Continue?';
+        if (!confirm(msg)) return;
+
+        _pdfNotice('Compacting PDF storage...', false);
+        var result;
+        try {
+          result = await compactPdfStorage(function (stage, info) {
+            if (stage === 'hashing') _pdfNotice('Hashing PDFs: ' + info.done + '/' + info.total, false);
+            else if (stage === 'verifying')
+              _pdfNotice('Verifying remapped bills: ' + info.done + '/' + info.total, false);
+            else if (stage === 'deleting')
+              _pdfNotice('Removing redundant copies: ' + info.done + '/' + info.total, false);
+          });
+        } catch (e) {
+          _pdfNotice('Compact PDF Storage failed: ' + ((e && e.message) || e), true);
+          return;
+        }
+        if (result.aborted) {
+          _pdfNotice(
+            'Compact PDF Storage aborted — ' +
+              result.failedVerify.length +
+              ' remapped bill(s) failed to verify. Nothing was changed or deleted.',
+            true,
+          );
+          console.warn('[compactPdfStorageUI] aborted, failed verify:', result.failedVerify);
+          return;
+        }
+        var summary =
+          'Compact PDF Storage done — hashed ' +
+          result.hashed +
+          ', ' +
+          result.unique +
+          ' unique, remapped ' +
+          result.remapped +
+          ' bill(s), deleted ' +
+          result.deleted +
+          ' redundant copies.';
+        if (result.alreadyBroken.length) {
+          summary += ' ' + result.alreadyBroken.length + ' bill(s) already had a missing PDF (unrelated, left as-is).';
+        }
+        _pdfNotice(summary, false);
+        console.log('[compactPdfStorageUI] result:', result);
       }
 
       // ── Loud, honest backup/restore reporting ──────────────────────────
@@ -3502,7 +3828,7 @@
       // scripts/stamp-version.py on every deploy (rewrite_ch_version_literal) --
       // it reflects exactly what this page itself shipped with, never what the
       // live server currently has.
-      var CH_VERSION = 'v2026.08.18.757';
+      var CH_VERSION = 'v2026.08.18.758';
       document.addEventListener('DOMContentLoaded', function () {
         var el = document.getElementById('sb-version');
         if (el) el.textContent = CH_VERSION;
@@ -3737,9 +4063,9 @@
         renderCalendar();
       });
     </script>
-    <script src="app/sync-classification.js?v=757"></script>
-    <script src="app/db.js?v=757"></script>
-    <script src="app/sync-ui.js?v=757"></script>
+    <script src="app/sync-classification.js?v=758"></script>
+    <script src="app/db.js?v=758"></script>
+    <script src="app/sync-ui.js?v=758"></script>
     <script>
       /* ── MOBILE SIDEBAR DRAWER ── */
       function buildMobileSidebarToggle() {
@@ -3821,6 +4147,6 @@
         }
       });
     </script>
-    <script src="feedback-widget.js?v=757"></script>
+    <script src="feedback-widget.js?v=758"></script>
   </body>
 </html>
