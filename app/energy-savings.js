@@ -9303,8 +9303,19 @@ const UTILITY_RULES = [
         null;
       const SaleNumber = page.match(/SALE\s+(\d+)/i)?.[1] || null;
 
-      let ServiceAddress = page.match(/Delivery\s*Address:?\s*\n?\s*([0-9][^\n]{10,80})/i)?.[1]?.trim() || null;
-      if (ServiceAddress) ServiceAddress = ServiceAddress.replace(/\s+(?:Driver:|Sale\s*#).*$/i, '').trim();
+      // "Delivery Address:" label line may carry trailing OCR junk
+      // ("ORIGINAL", "DUPLICATE", a stray "|") and/or a blank line before
+      // the actual address. Skip past the rest of the label line, then
+      // skip any blank lines (\s* eats newlines too), then take the next
+      // whole line as the address.
+      let ServiceAddress = page.match(/Delivery\s*Address:?[^\n]*\n\s*([^\n]+)/i)?.[1]?.trim() || null;
+      if (ServiceAddress) {
+        ServiceAddress = ServiceAddress.replace(/\s+(?:Driver:|Sale\s*#).*$/i, '').trim();
+        // Guard: if the address line is missing, this regex would otherwise
+        // grab the next line ("Driver: ..."). Require it to look like an
+        // address — leading street number, or a ", ST" state code.
+        if (!/^\d+\s+\S|,\s*[A-Z]{2}\b/i.test(ServiceAddress)) ServiceAddress = null;
+      }
 
       const CustomerName =
         page

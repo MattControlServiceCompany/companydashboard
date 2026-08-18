@@ -1576,6 +1576,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.18.756',
+    date: '2026-08-18',
+    title: 'Propane bill accuracy fixes',
+    items: [
+      {
+        type: 'fix',
+        text: "Utility Data — bill review: propane deliveries now show Gallons Delivered, price per gallon, and delivery date correctly instead of a mislabeled kWh value; a propane bill's Service Address is now captured reliably even when the bill layout varies; and when two bills for the same address disagree with no clear majority, the app now flags them for your review instead of silently changing one. Your saved bills are unchanged.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.17.755',
     date: '2026-08-17',
     title: 'Utility bill PDF storage fix',

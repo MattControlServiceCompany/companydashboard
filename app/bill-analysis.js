@@ -2158,16 +2158,44 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           if (sorted.length < 2) continue;
           const winner = sorted[0][0];
           const winCount = sorted[0][1];
-          let corrected = 0;
-          for (const b of group) {
-            if (b[field] && b[field] !== winner) {
-              b['_auto_corrected_' + field] = {
-                original: b[field],
-                corrected: winner,
-                reason: 'Consensus: ' + winCount + '/' + group.length + ' bills use "' + winner + '"',
-              };
-              b[field] = winner;
-              corrected++;
+          // FIX(ocr-958590ee, 2026-08-18): sorted.length >= 2 only proves there is
+          // disagreement — it does NOT prove the top entry is a real majority. On a
+          // 2-bill group split {A:1, B:1}, winCount is 1 and this was silently
+          // overwriting one bill's true value with a coin-flip "winner" while
+          // stamping _auto_corrected_<field> as if it were a real correction. Require
+          // an actual majority (winCount >= 3) before auto-correcting. Anything short
+          // of that is a genuine disagreement with no clear winner — flag it via the
+          // existing gate mechanism (_gateTripped/_gateReasons) instead of guessing.
+          if (winCount >= 3) {
+            let corrected = 0;
+            for (const b of group) {
+              if (b[field] && b[field] !== winner) {
+                b['_auto_corrected_' + field] = {
+                  original: b[field],
+                  corrected: winner,
+                  reason: 'Consensus: ' + winCount + '/' + group.length + ' bills use "' + winner + '"',
+                };
+                b[field] = winner;
+                corrected++;
+              }
+            }
+          } else {
+            // No entry has real majority support (winCount < 3), so "winner" here is
+            // just whichever value the stable sort happened to pick first among ties
+            // — it is NOT trustworthy. Flag every bill that HAS a value for this
+            // field (not merely the ones that differ from the arbitrary "winner"),
+            // since a bill matching the coin-flip winner is not actually confirmed.
+            const competing = sorted.map(([v, c]) => '"' + v + '"x' + c).join(', ');
+            const reason =
+              field +
+              ' disagrees across bills at this address with no clear majority (' +
+              competing +
+              ') — verify against source PDF.';
+            for (const b of group) {
+              if (b[field] !== null && b[field] !== undefined && b[field] !== '') {
+                b._gateTripped = true;
+                b._gateReasons = (Array.isArray(b._gateReasons) ? b._gateReasons : []).concat([reason]);
+              }
             }
           }
         }
@@ -8931,7 +8959,22 @@ function _buildDiffFields(extracted, existing) {
     OffPeakKWh: 'offPeakKwh',
     ReadDifference: 'readDifference',
     MeterMultiplier: 'meterMultiplier',
+    // Propane (backlog 9a686660) — field names match the billRow keys used
+    // everywhere else in this file (_applyDupUpdate FIELD_MAP ~12862, billRow
+    // builders ~5657-5662/6000-6005/6540-6545).
+    InvoiceNumber: 'invoiceNumber',
+    SaleNumber: 'saleNumber',
+    DeliveryDate: 'deliveryDate',
+    FuelType: 'fuelType',
+    GallonsDelivered: 'gallonsDelivered',
+    UnitPrice: 'unitPrice',
+    Subtotal: 'subtotal',
+    Tax: 'tax',
   };
+  // Propane/fuel-oil bills report usage as GallonsDelivered, not kWhConsumed.
+  // Detection mirrors the existing isPropaneBill check at ~line 266.
+  const isPropaneBill =
+    (extracted.Commodity || '').toLowerCase() === 'propane' || !!extracted.FuelType || !!extracted.GallonsDelivered;
   // For saved (unassigned) bills, fields map 1:1 (same raw keys)
   const isSaved = !existing.start && existing.BillingPeriodStart !== undefined;
   const toISO = (d) => {
@@ -8991,9 +9034,23 @@ function _buildDiffFields(extracted, existing) {
     'MeterMultiplier',
     'TDCkW',
     'RkVACharge',
+    'InvoiceNumber',
+    'SaleNumber',
+    'DeliveryDate',
+    'FuelType',
+    'GallonsDelivered',
+    'UnitPrice',
+    'Subtotal',
+    'Tax',
   ];
 
   for (const key of COMPARE_KEYS) {
+    // Propane bills never populate kWhConsumed — but billRow.kwh (existing) DOES
+    // hold the gallons value via the intentional cross-commodity superset in
+    // _extractedToBillRowCosts (~5448-5455, DO NOT TOUCH). Without this skip the
+    // dialog would show the same gallons number twice: once correctly labeled
+    // "Gallons Delivered" and once mislabeled "kWh Consumed" (backlog 9a686660).
+    if (key === 'kWhConsumed' && isPropaneBill) continue;
     const newVal = extracted[key] ?? '';
     let existVal = '';
     if (isSaved) {
@@ -9571,7 +9628,17 @@ function _renderDupModal(billIdx) {
   if (!dup || !ext) return;
 
   // Title
-  const period = (ext.BillingPeriodStart || '?') + ' to ' + (ext.BillingPeriodEnd || '?');
+  // Propane/fuel-oil bills never set BillingPeriodStart/End — they set
+  // DeliveryDate instead (backlog 9a686660). Fall back so the title shows the
+  // delivery date instead of "? to ?".
+  let period;
+  if (ext.BillingPeriodStart || ext.BillingPeriodEnd) {
+    period = (ext.BillingPeriodStart || '?') + ' to ' + (ext.BillingPeriodEnd || '?');
+  } else if (ext.DeliveryDate) {
+    period = 'Delivered ' + ext.DeliveryDate;
+  } else {
+    period = '? to ?';
+  }
   document.getElementById('dupModalTitle').innerHTML = '&#9888; Duplicate Bill &mdash; ' + period;
 
   // Nav
@@ -9639,6 +9706,15 @@ function _renderDupModal(billIdx) {
     BillOffset: 'Bill Offset',
     FranchiseFee: 'Franchise Fee',
     TotalCurrentCharges: 'Total Current Charges',
+    // Propane (backlog 9a686660) — mirrors renderPDFFields LABELS (~13178-13184)
+    InvoiceNumber: 'Invoice Number',
+    SaleNumber: 'Sale Number',
+    DeliveryDate: 'Delivery Date',
+    FuelType: 'Fuel Type',
+    GallonsDelivered: 'Gallons Delivered',
+    UnitPrice: '$/gal',
+    Subtotal: 'Subtotal',
+    Tax: 'Tax',
   };
 
   // Build rows: differing fields first, then matching
