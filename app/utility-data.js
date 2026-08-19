@@ -408,6 +408,17 @@ function loadUtilityData() {
       );
     }
   }
+  // Self-heal (app/bill-analysis.js _pdfBillsSelfHealMissingKeys): repair any
+  // en_pdf_bills record left with hasPDF:true but no pdfKey by the
+  // confirmMultiBuildingSave review-diversion bug — utilityData is fully
+  // populated above so sibling lookup has everything it needs. Fire-and-forget
+  // (never blocks page load); window._pdfBillsSelfHealPromise is exposed so
+  // tests/tools can await completion before reading en_pdf_bills back.
+  if (typeof _pdfBillsSelfHealMissingKeys === 'function') {
+    window._pdfBillsSelfHealPromise = _pdfBillsSelfHealMissingKeys().catch((e) => {
+      console.warn('[pdfBillsSelfHeal] self-heal pass failed:', e);
+    });
+  }
 }
 function saveUtilityData(pid) {
   // Write each project to its own localStorage key — but only projects whose
