@@ -1784,6 +1784,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.19.760',
+    date: '2026-08-19',
+    title: 'Utility bill extraction fix for combined scans',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility bill extraction — combined scans that mix city-utility and Evergy electric pages now correctly capture the electric bills instead of dropping them to Manual Review.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.19.759',
     date: '2026-08-19',
     title: 'Energy Department: Compact PDF Storage button added',

@@ -6922,6 +6922,12 @@ const UTILITY_RULES = [
             _unmatchedPages.push({
               pageNums: pageNums.length ? pageNums : [i + 1],
               preview: p.trim().slice(0, 200),
+              // Full page text (not the 200-char preview) so a downstream
+              // fallback can retry this page against OTHER UTILITY_RULES —
+              // e.g. an Evergy electric page mixed into a Louisburg multi-
+              // utility scan. See _unmatchedToSyntheticBills. Bug: combined
+              // Louisburg+Evergy PDFs silently dropped the Evergy pages.
+              pageText: p,
             });
           }
           return [];

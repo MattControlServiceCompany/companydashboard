@@ -11460,9 +11460,82 @@ function globalTaskGoTo() {
 // Convert the _unmatchedPages array produced by extractAll into synthetic
 // bill objects so they appear in the results instead of being silently dropped.
 // Each entry gets _manualReview:true so the UI can flag it distinctly.
+//
+// Cross-utility fallback (data-loss fix, 2026-08-19): a combined scan can
+// mix a local-utility (e.g. City of Louisburg) run with Evergy electric
+// pages. The file-level rule selection in _extractSingleFileForQueue /
+// processPDF picks ONE rule for the whole file, so pages that rule can't
+// parse used to go straight to a manual-review stub — silently dropping
+// real bills (e.g. Evergy) that a DIFFERENT rule in UTILITY_RULES could
+// have extracted. Before giving up on a page, retry its own full page
+// text (u.pageText, added by extractAll's unmatched-page collector) against
+// every other rule's detect()/extract(). Only a page that no rule can
+// parse becomes a manual-review synthetic. Each recovered bill is built
+// from ONLY that page's own text, so it can never borrow account/meter
+// identity from a neighboring page.
+// A recovered page only counts as a real bill if it actually carries bill
+// data — mirrors the _hasKeyField gate used at the call sites (bill-analysis.js
+// _extractSingleFileForQueue / processPDF) so an empty/near-empty extraction
+// (e.g. the Generic Utility catch-all's all-null object on a blank cover
+// page) can never masquerade as a recovered bill.
+function _unmatchedRecoveryHasKeyField(b) {
+  return !!(
+    b &&
+    (b.AccountNumber ||
+      b.BillingPeriodStart ||
+      b.kWhConsumed ||
+      b.NaturalGasTherms ||
+      b.NaturalGasCCF ||
+      b.WaterUsage ||
+      b.GasCharge ||
+      b.TotalCurrentCharges ||
+      b.TotalAmountDue)
+  );
+}
 function _unmatchedToSyntheticBills(unmatchedPages) {
   if (!unmatchedPages || !unmatchedPages.length) return [];
-  return unmatchedPages.map((u) => {
+  const recovered = [];
+  const stillUnmatched = [];
+  for (const u of unmatchedPages) {
+    let recoveredBill = null;
+    if (u.pageText && typeof UTILITY_RULES !== 'undefined') {
+      for (const r of UTILITY_RULES) {
+        if (!r || r.name === 'Generic Utility') continue; // catch-all: detect() is always true, extract() never returns null — never a valid "recovery"
+        if (typeof r.detect !== 'function' || !r.detect(u.pageText)) continue;
+        let extracted = null;
+        try {
+          if (typeof r.extract === 'function') {
+            extracted = r.extract(u.pageText);
+          } else if (typeof r.extractAll === 'function') {
+            const all = r.extractAll(u.pageText);
+            extracted = Array.isArray(all) && all.length ? all[0] : null;
+          }
+        } catch (e) {
+          extracted = null;
+        }
+        if (!extracted) continue;
+        const arr = Array.isArray(extracted) ? extracted : [extracted];
+        const first = arr.find((b) => b && !b._skipRecord && _unmatchedRecoveryHasKeyField(b)) || null;
+        if (first) {
+          recoveredBill = first;
+          recoveredBill.UtilityCompany = recoveredBill.UtilityCompany || recoveredBill._utilityName || r.name || null;
+          recoveredBill._recoveredFromFallbackRule = r.name || true;
+          break;
+        }
+      }
+    }
+    if (recoveredBill) {
+      const pageNums = u.pageNums && u.pageNums.length ? u.pageNums : [];
+      if (pageNums.length) {
+        recoveredBill._pageStart = Math.min(...pageNums);
+        recoveredBill._pageEnd = Math.max(...pageNums);
+      }
+      recovered.push(recoveredBill);
+    } else {
+      stillUnmatched.push(u);
+    }
+  }
+  const synthetics = stillUnmatched.map((u) => {
     const pageNums = u.pageNums && u.pageNums.length ? u.pageNums : [];
     const pageLabel = pageNums.length ? 'p.' + pageNums.join(',') : '?';
     return {
@@ -11478,6 +11551,7 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
       _manualReviewLabel: 'Manual Review — ' + pageLabel,
     };
   });
+  return recovered.concat(synthetics);
 }
 
 async function processPDF(file) {
