@@ -1784,6 +1784,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.19.764',
+    date: '2026-08-19',
+    title: 'Bill PDF links — auto-repair for a rare multi-building save case',
+    items: [
+      {
+        type: 'fix',
+        text: 'Bill PDF links — automatically repairs the rare case where a bill lost its saved PDF link after a multi-building save. The link is restored the next time the page loads.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.19.763',
     date: '2026-08-19',
     title: 'Notification bell — cleared out lingering sample alerts',
