@@ -682,7 +682,7 @@ function remapPdfReferences(data, scan) {
   }
 
   function isPdfClaim(record) {
-    return !!(record && (record.hasPDF || record.pdfKey || record.pdfBillId));
+    return !!(record && (record.hasPDF || record.pdfKey));
   }
 
   function processRecord(record, where) {
