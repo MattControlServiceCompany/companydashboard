@@ -1784,6 +1784,20 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.19.759',
+    date: '2026-08-19',
+    title: 'Energy Department: Compact PDF Storage button added',
+    gateOverride: true,
+    gateOverrideReason:
+      "'Storage' is the actual button label ('Compact PDF Storage') shown in the sidebar — needed so the user can find the button by name, not developer jargon.",
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department page — added the Compact PDF Storage button to the sidebar (previously only on the Dashboard and Service Department pages). It removes duplicate copies of your saved bill PDFs to free up space; your saved bills and the PDF you see are unchanged.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.18.758',
     date: '2026-08-18',
     title: 'Utility Data: meter-merge fix + Compact PDF Storage',
