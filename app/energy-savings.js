@@ -4457,6 +4457,183 @@ function _lbg_correctGasCharge(gasCharge, gasUsage, totalCharge, billDate) {
   return { charge: gasCharge, total: totalCharge, corrected: false };
 }
 
+// Reconciles a garbled or missing Louisburg Gas charge against the page's
+// Current Bill total (this period's Water + Gas + Sewer + Stormwater sum)
+// minus the OTHER three commodities, which _extractNew already parsed
+// independently (backlog 5884be3d, 37f76621). Only ever called when the raw
+// Gas charge already failed a plausibility check — never overrides a clean
+// value. Returns { total, variable, corrected: true, reason } when the
+// derived value independently rate-validates (within $1 of usage × rate —
+// the same tolerance _lbg_correctGasCharge uses), or
+// { corrected: false, reason } when it does not uniquely determine a value.
+// Callers MUST NOT apply an unvalidated derived value — hold for manual
+// confirmation instead. Never guesses.
+function _lbg_reconcileGasFromCurrentBill(currentBillTotal, otherCommoditySum, gasUsage, fuelAdj, billDate) {
+  if (currentBillTotal == null) {
+    return { corrected: false, reason: 'No Current Bill total was printed/legible on this page to reconcile against.' };
+  }
+  if (!(gasUsage > 0)) {
+    return { corrected: false, reason: 'Gas usage is unknown — cannot rate-validate a derived charge.' };
+  }
+  const r = _lbg_gasRate(billDate);
+  const derivedTotalWithFA = Math.round((currentBillTotal - otherCommoditySum) * 100) / 100;
+  const derivedTotal = Math.round((derivedTotalWithFA - (fuelAdj || 0)) * 100) / 100;
+  const derivedVariable = Math.round((derivedTotal - r.baseCharge) * 100) / 100;
+  const expected = Math.round(gasUsage * r.rate * 100) / 100;
+  if (derivedTotal > 0 && Math.abs(derivedVariable - expected) < 1.0) {
+    return {
+      total: derivedTotal,
+      variable: derivedVariable,
+      corrected: true,
+      reason:
+        'Derived from Current Bill ($' +
+        currentBillTotal.toFixed(2) +
+        ') - other commodities ($' +
+        otherCommoditySum.toFixed(2) +
+        ') — matches ' +
+        gasUsage +
+        ' therms × $' +
+        r.rate +
+        '/therm.',
+    };
+  }
+  return {
+    corrected: false,
+    reason:
+      'Current Bill ($' +
+      currentBillTotal.toFixed(2) +
+      ') minus other commodities ($' +
+      otherCommoditySum.toFixed(2) +
+      ') = $' +
+      derivedTotal.toFixed(2) +
+      ', which does not match ' +
+      gasUsage +
+      ' therms × $' +
+      r.rate +
+      '/therm (expected $' +
+      expected.toFixed(2) +
+      ') — not uniquely determined.',
+  };
+}
+
+// Builds the split "Gas" bill for a Louisburg new-format page, or null when
+// there's genuinely no Gas commodity on the page. Centralizes the garbled-
+// charge (rate exceeds $2.00/therm ceiling) and missing-charge (label
+// matched, no charge token parsed) recovery paths so both go through the
+// same reconcile-or-hold logic (backlog 5884be3d, 37f76621) — never a
+// silent guess, never a silent drop.
+function _lbg_buildGasBill(shared, gas, gasLineSeen, otherCommoditySum, currentBillTotal, signedFuelAdj, billDate) {
+  const r = _lbg_gasRate(billDate);
+  const base = {
+    ...shared,
+    Commodity: 'Gas',
+    StartRead: gas.prevRead || null,
+    EndRead: gas.currRead || null,
+    NaturalGasTherms: gas.usage || null,
+    CustomerCharge: r.baseCharge,
+    FuelAdjustment: signedFuelAdj,
+  };
+  const heldBill = (reason, originalCharge) => ({
+    ...base,
+    GasCharge: null,
+    TotalCurrentCharges: null,
+    TotalAmountDue: null,
+    _gateTripped: true,
+    _gateReasons: [reason],
+    _manualReview: true,
+    _manualReviewLabel: 'Gas charge could not be verified — held for manual confirmation',
+    _correction_pending_GasCharge: { original: originalCharge, reason },
+  });
+
+  if (gas.charge == null) {
+    if (!gasLineSeen) return null; // no Gas section on this page — nothing to report
+    // Gas label matched but OCR dropped/reordered the charge token so none
+    // could be parsed after it. Never silently drop the commodity.
+    const recon = _lbg_reconcileGasFromCurrentBill(
+      currentBillTotal,
+      otherCommoditySum,
+      gas.usage,
+      signedFuelAdj,
+      billDate,
+    );
+    if (!recon.corrected) {
+      return heldBill('Gas charge could not be parsed. ' + recon.reason, null);
+    }
+    const gasTotal = recon.total + (signedFuelAdj || 0);
+    return {
+      ...base,
+      GasCharge: recon.variable,
+      TotalCurrentCharges: gasTotal.toFixed(2),
+      TotalAmountDue: gasTotal.toFixed(2),
+      _auto_corrected_GasCharge: { original: null, corrected: recon.variable, reason: recon.reason },
+    };
+  }
+  if (gas.charge === 0) return null; // no charge printed for this commodity
+
+  let gasTotal = gas.charge;
+  let gasVariable = Math.round(Math.max(0, gasTotal - r.baseCharge) * 100) / 100;
+  if ((!gas.usage || gas.usage === 0) && gasVariable > 0 && r.rate > 0) {
+    gas.usage = Math.round(gasVariable / r.rate);
+  }
+  let corrected = gas.usage > 0 ? _lbg_correctGasCharge(gasVariable, gas.usage, gasTotal, billDate) : null;
+  if (corrected && corrected.corrected) {
+    gasVariable = corrected.charge;
+    gasTotal = corrected.total;
+  }
+  // Rate-ceiling sanity check (mirrors bill-analysis.js's GAS SANITY PASS,
+  // $2.00/therm). _lbg_correctGasCharge's own heuristics (fromTotal /
+  // reinterpreted-decimal / ratio) can still miss a badly garbled charge —
+  // e.g. a dropped decimal point turning $0.95 into $324.00 (backlog
+  // 5884be3d). When the effective rate is still above the ceiling after that
+  // pass, reconcile against the page-level Current Bill total instead of
+  // trusting the garbled OCR value. Only applied if it independently
+  // rate-validates; otherwise held for manual confirmation.
+  const impliedRate = gas.usage > 0 ? gasVariable / gas.usage : null;
+  if (impliedRate != null && impliedRate > 2.0) {
+    const recon = _lbg_reconcileGasFromCurrentBill(
+      currentBillTotal,
+      otherCommoditySum,
+      gas.usage,
+      signedFuelAdj,
+      billDate,
+    );
+    if (!recon.corrected) {
+      return heldBill(
+        'Gas charge implies $' + impliedRate.toFixed(2) + '/therm (exceeds $2.00 ceiling). ' + recon.reason,
+        gas.charge,
+      );
+    }
+    gasVariable = recon.variable;
+    gasTotal = recon.total;
+    corrected = { corrected: true, reason: recon.reason };
+  }
+  if (gasTotal < r.baseCharge && gas.usage > 0) {
+    gasVariable = Math.round(gas.usage * r.rate * 100) / 100;
+    gasTotal = gasVariable + r.baseCharge;
+  }
+  if (gasTotal < r.baseCharge && (!gas.usage || gas.usage === 0)) {
+    console.warn(
+      '[Louisburg] Skipping suspicious gas bill: charge $' +
+        gasTotal.toFixed(2) +
+        ' < base $' +
+        r.baseCharge +
+        ' with 0 usage',
+    );
+    return null;
+  }
+  gasTotal = gasTotal + (signedFuelAdj || 0);
+  const gasBill = {
+    ...base,
+    GasCharge: gasVariable,
+    TotalCurrentCharges: gasTotal.toFixed(2),
+    TotalAmountDue: gasTotal.toFixed(2),
+  };
+  if (corrected && corrected.corrected) {
+    gasBill._auto_corrected_GasCharge = { original: gas.charge, corrected: gasVariable, reason: corrected.reason };
+  }
+  return gasBill;
+}
+
 function formatRateWarning(rr, label, unitLabel) {
   const rateStr = '$' + rr.implied.toFixed(4) + unitLabel;
   if (rr.severity === 'error') {
@@ -7597,6 +7774,12 @@ const UTILITY_RULES = [
         storm = null,
         sewer = null,
         wpf = null;
+      // Tracks whether a "GAS" label was ever matched on the page, even if no
+      // charge token could be parsed after it (OCR reordered/garbled the
+      // charge — see backlog 37f76621). Distinguishes "Gas section exists but
+      // its charge is unrecoverable" (must be flagged) from "this page simply
+      // has no Gas commodity" (nothing to flag).
+      let gasLineSeen = false;
       for (const ln of lines) {
         // Skip section-header lines like "100- Water" and "300 - Gas":
         // those are column titles at the top of the bill layout and
@@ -7613,9 +7796,15 @@ const UTILITY_RULES = [
         // if a commodity label is on it, the after-text charge will be
         // the previous-balance dollar amount, not the current charge.
         if (/Previous\s*Balance/i.test(ln)) continue;
-        if (!gas && /\bG[A4]S\b/i.test(ln) && !/FUEL|ADJUSTMENT/i.test(ln)) gas = parseMetered(ln, /\bG[A4]S\b/i);
-        if (/\bM?W[A4]TER\b/i.test(ln) && !/PROTECTION/i.test(ln)) {
-          const wp = parseMetered(ln, /\bM?W[A4]TER\b/i);
+        if (!gas && /\bG[A4]S\b/i.test(ln) && !/FUEL|ADJUSTMENT/i.test(ln)) {
+          gas = parseMetered(ln, /\bG[A4]S\b/i);
+          gasLineSeen = true;
+        }
+        // Water label: leading "W" (and optional "M" before it) tolerated as
+        // dropped/garbled OCR — e.g. "WATER" → "ATER" (see backlog 37f76621).
+        // Mirrors the existing fuzzy G[A4]S tolerance on the Gas label.
+        if (/\bM?W?[A4]TER\b/i.test(ln) && !/PROTECTION/i.test(ln)) {
+          const wp = parseMetered(ln, /\bM?W?[A4]TER\b/i);
           if (water === null) {
             water = wp;
           } else {
@@ -7669,6 +7858,17 @@ const UTILITY_RULES = [
         if (loose) TotalAmountDue = loose[1].replace(/,/g, '').replace(':', '.');
       }
 
+      // Current Bill — the page's CURRENT-PERIOD commodity total (this
+      // period's Water + Gas + Sewer + Stormwater only). Unlike Total Amount
+      // Due, it never includes a carried-over Previous Balance/Payments/
+      // Penalty, so it's the only safe anchor for reconciling a garbled or
+      // missing per-commodity charge against the other three (see
+      // _lbg_reconcileGasFromCurrentBill / backlog 5884be3d, 37f76621).
+      // Reconciling against Total Amount Due instead would false-flag any
+      // account carrying a balance forward.
+      const _currentBillRaw = page.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
+      const CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
+
       if (!TotalAmountDue && !gas.charge && !water.charge && !sewer.charge && !storm.charge) return null;
 
       // ── Emit one bill per commodity with a real charge ──
@@ -7689,61 +7889,18 @@ const UTILITY_RULES = [
         MeterNumber: null,
       };
       const bills = [];
-      if (gas.charge != null && gas.charge !== 0) {
-        const r = _lbg_gasRate(BillingPeriodEnd || BillingPeriodStart || BillDate);
-        let gasTotal = gas.charge;
-        let gasVariable = Math.round(Math.max(0, gasTotal - r.baseCharge) * 100) / 100;
-        if ((!gas.usage || gas.usage === 0) && gasVariable > 0 && r.rate > 0) {
-          gas.usage = Math.round(gasVariable / r.rate);
-        }
-        const corrected =
-          gas.usage > 0
-            ? _lbg_correctGasCharge(
-                gasVariable,
-                gas.usage,
-                gasTotal,
-                BillingPeriodEnd || BillingPeriodStart || BillDate,
-              )
-            : null;
-        if (corrected && corrected.corrected) {
-          gasVariable = corrected.charge;
-          gasTotal = corrected.total;
-        }
-        if (gasTotal < r.baseCharge && gas.usage > 0) {
-          gasVariable = Math.round(gas.usage * r.rate * 100) / 100;
-          gasTotal = gasVariable + r.baseCharge;
-        }
-        if (gasTotal < r.baseCharge && (!gas.usage || gas.usage === 0)) {
-          console.warn(
-            '[Louisburg] Skipping suspicious gas bill: charge $' +
-              gasTotal.toFixed(2) +
-              ' < base $' +
-              r.baseCharge +
-              ' with 0 usage',
-          );
-        } else {
-          gasTotal = gasTotal + (signedFuelAdj || 0);
-          const gasBill = {
-            ...shared,
-            Commodity: 'Gas',
-            StartRead: gas.prevRead || null,
-            EndRead: gas.currRead || null,
-            NaturalGasTherms: gas.usage || null,
-            CustomerCharge: r.baseCharge,
-            GasCharge: gasVariable,
-            FuelAdjustment: signedFuelAdj,
-            TotalCurrentCharges: gasTotal.toFixed(2),
-            TotalAmountDue: gasTotal.toFixed(2),
-          };
-          if (corrected && corrected.corrected)
-            gasBill._auto_corrected_GasCharge = {
-              original: gas.charge,
-              corrected: gasVariable,
-              reason: corrected.reason,
-            };
-          bills.push(gasBill);
-        }
-      }
+      const _otherCommoditySum = (water.charge || 0) + (wpf.charge || 0) + (sewer.charge || 0) + (storm.charge || 0);
+      const _gasBillDate = BillingPeriodEnd || BillingPeriodStart || BillDate;
+      const gasBill = _lbg_buildGasBill(
+        shared,
+        gas,
+        gasLineSeen,
+        _otherCommoditySum,
+        CurrentBillTotal,
+        signedFuelAdj,
+        _gasBillDate,
+      );
+      if (gasBill) bills.push(gasBill);
       if (water.charge != null && water.charge !== 0) {
         const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
         bills.push({

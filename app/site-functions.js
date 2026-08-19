@@ -1784,6 +1784,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.19.762',
+    date: '2026-08-19',
+    title: 'Utility bill extraction — Louisburg gas and water fixes',
+    items: [
+      {
+        type: 'fix',
+        text: "Louisburg gas charges no longer misread when the scan drops a decimal, and a water charge is no longer silently dropped when the scan garbles the label; bills that can't be reconciled are flagged for review instead of saving a wrong value.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.19.761',
     date: '2026-08-19',
     title: 'Notification bell no longer shows sample alerts',
