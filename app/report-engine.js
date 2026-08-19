@@ -12199,26 +12199,6 @@ document.addEventListener('click', (e) => {
 window.addEventListener('DOMContentLoaded', function () {
   DB.warmCache().then(() => {
     loadNotifs();
-    if (!notifications.length) {
-      notifications = [
-        {
-          id: 1,
-          title: 'Baseline Report Due',
-          detail: 'Sample Regional Health System baseline report is due in 2 days. Review M&V data before submitting.',
-          icon: '📋',
-          time: new Date(Date.now() - 3600000).toISOString(),
-        },
-        {
-          id: 2,
-          title: 'High Priority Task',
-          detail: 'Upload utility bills Q1 — ISD is marked high priority and due this week.',
-          detail: 'Upload utility bills Q1 — ISD is marked high priority and due this week.',
-          icon: '⚡',
-          time: new Date(Date.now() - 7200000).toISOString(),
-        },
-      ];
-      saveNotifs();
-    }
     refreshNotifUI();
     init();
     // Reset pending-write counter so init-time IDB writes (baseline inheritance,

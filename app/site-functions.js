@@ -1784,6 +1784,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.19.761',
+    date: '2026-08-19',
+    title: 'Notification bell no longer shows sample alerts',
+    items: [
+      {
+        type: 'fix',
+        text: 'Removed placeholder sample notifications from the notification bell — it now stays empty until there is a real alert.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.19.760',
     date: '2026-08-19',
     title: 'Utility bill extraction fix for combined scans',
