@@ -1784,6 +1784,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.19.763',
+    date: '2026-08-19',
+    title: 'Notification bell — cleared out lingering sample alerts',
+    items: [
+      {
+        type: 'fix',
+        text: 'Notifications — cleared out old sample alerts that could linger in the bell. The bell now shows only real notifications.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.19.762',
     date: '2026-08-19',
     title: 'Utility bill extraction — Louisburg gas and water fixes',

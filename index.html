@@ -1790,7 +1790,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=762" />
+    <link rel="stylesheet" href="feedback-widget.css?v=763" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -2387,6 +2387,11 @@
         } catch (e) {
           notifications = [];
         }
+        // One-time purge of dead fake-seed notifications left over from pre-v761
+        // seed-on-empty code (real notifs always get id: Date.now(), ~1.7e12+).
+        const before = notifications.length;
+        notifications = notifications.filter((n) => !(typeof n.id === 'number' && n.id < 1e12));
+        if (notifications.length !== before) saveNotifs();
       }
       function saveNotifs() {
         try {
@@ -3809,7 +3814,7 @@
       // scripts/stamp-version.py on every deploy (rewrite_ch_version_literal) --
       // it reflects exactly what this page itself shipped with, never what the
       // live server currently has.
-      var CH_VERSION = 'v2026.08.19.762';
+      var CH_VERSION = 'v2026.08.19.763';
       document.addEventListener('DOMContentLoaded', function () {
         var el = document.getElementById('sb-version');
         if (el) el.textContent = CH_VERSION;
@@ -4044,9 +4049,9 @@
         renderCalendar();
       });
     </script>
-    <script src="app/sync-classification.js?v=762"></script>
-    <script src="app/db.js?v=762"></script>
-    <script src="app/sync-ui.js?v=762"></script>
+    <script src="app/sync-classification.js?v=763"></script>
+    <script src="app/db.js?v=763"></script>
+    <script src="app/sync-ui.js?v=763"></script>
     <script>
       /* ── MOBILE SIDEBAR DRAWER ── */
       function buildMobileSidebarToggle() {
@@ -4128,6 +4133,6 @@
         }
       });
     </script>
-    <script src="feedback-widget.js?v=762"></script>
+    <script src="feedback-widget.js?v=763"></script>
   </body>
 </html>

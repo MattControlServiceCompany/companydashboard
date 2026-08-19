@@ -12115,6 +12115,11 @@ async function loadNotifs() {
   } catch (e) {
     notifications = [];
   }
+  // One-time purge of dead fake-seed notifications left over from pre-v761
+  // seed-on-empty code (real notifs always get id: Date.now(), ~1.7e12+).
+  const before = notifications.length;
+  notifications = notifications.filter((n) => !(typeof n.id === 'number' && n.id < 1e12));
+  if (notifications.length !== before) saveNotifs();
 }
 function saveNotifs() {
   try {
