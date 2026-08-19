@@ -6532,7 +6532,7 @@ async function _pdfCompactWalkAndRemap(oldKeyToCanonical) {
 // possibly-stale _pdfSharedKey) — a record with no sibling carrying a resolved
 // pdfKey is left untouched and reported.
 async function _pdfBillsSelfHealMissingKeys() {
-  const report = { touched: [], stillBroken: [] };
+  const report = { touched: [], stillBroken: [], ambiguous: [] };
   let pdfBills;
   try {
     pdfBills = sget('en_pdf_bills', []) || [];
@@ -6581,18 +6581,40 @@ async function _pdfBillsSelfHealMissingKeys() {
       report.stillBroken.push({ id: rec.id, reason: 'id does not match the expected batch-timestamp format' });
       continue;
     }
-    const sib = candidates.find((c) => c.prefix === p && c.id !== rec.id);
-    if (sib) {
-      rec.pdfKey = sib.pdfKey;
+    // Guard: gather EVERY prefix-matched sibling, not just the first — a single
+    // ~100ms batch-timestamp bucket can (rarely) contain rows from two unrelated
+    // save batches (e.g. two users on the shared backend), so array-order alone
+    // is not proof of common origin.
+    const sibs = candidates.filter((c) => c.prefix === p && c.id !== rec.id);
+    const distinctKeys = Array.from(new Set(sibs.map((c) => c.pdfKey)));
+    if (distinctKeys.length === 1) {
+      const sib = sibs[0];
+      rec.pdfKey = distinctKeys[0];
       dirty = true;
-      report.touched.push({ id: rec.id, pdfKey: sib.pdfKey, fromSibling: sib.id });
+      report.touched.push({ id: rec.id, pdfKey: distinctKeys[0], fromSibling: sib.id });
       console.log(
         '[pdfBillsSelfHeal] recovered pdfKey for',
         rec.id,
         '->',
-        sib.pdfKey,
+        distinctKeys[0],
         '(from batch sibling',
         sib.id + ')',
+      );
+    } else if (distinctKeys.length > 1) {
+      // Guard: multiple candidates disagree on pdfKey — copying either would risk
+      // attaching the WRONG (but real) PDF to this bill. Skip and report instead
+      // of guessing (mirrors the sewer-usage backfill's Guard 2 in utility-data.js).
+      report.ambiguous.push({
+        id: rec.id,
+        reason: 'ambiguous: ' + sibs.length + ' candidates, ' + distinctKeys.length + ' distinct pdfKeys',
+        candidateIds: sibs.map((c) => c.id),
+        candidateKeys: distinctKeys,
+      });
+      console.warn(
+        '[pdfBillsSelfHeal] skipped',
+        rec.id,
+        '- ambiguous batch siblings with different pdfKeys:',
+        distinctKeys,
       );
     } else {
       report.stillBroken.push({ id: rec.id, reason: 'no batch sibling with a resolved pdfKey found' });
@@ -6612,6 +6634,9 @@ async function _pdfBillsSelfHealMissingKeys() {
       '[pdfBillsSelfHeal] could not recover ' + report.stillBroken.length + ' record(s):',
       report.stillBroken,
     );
+  }
+  if (report.ambiguous.length) {
+    console.warn('[pdfBillsSelfHeal] skipped ' + report.ambiguous.length + ' ambiguous record(s):', report.ambiguous);
   }
   window._pdfSelfHealLastReport = report;
   return report;
