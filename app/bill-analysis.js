@@ -6277,6 +6277,12 @@ async function confirmMultiBuildingSave() {
             projId: billMatch.projId || null,
             projName: (billMatch.proj && billMatch.proj.name) || 'General',
             hasPDF,
+            // b-<fix-uuid>: mirror the pdfKey conversion every other save path
+            // in this file performs (~5949, 13237, 13330, 13370, 13384) — this
+            // review-diversion branch was the one exception, so review-diverted
+            // bills previously saved with hasPDF:true but no pdfKey and their
+            // PDF could never be located.
+            pdfKey: hasPDF ? pdfKey : null,
           },
           bill,
         ),
@@ -6497,6 +6503,118 @@ async function _pdfCompactWalkAndRemap(oldKeyToCanonical) {
       if (flatDirty) await sset('en_pdf_bills', flatBills);
     },
   };
+}
+
+// ── Self-heal: recover a missing pdfKey on en_pdf_bills records ────────────
+// Root cause (fixed alongside this function, see confirmMultiBuildingSave's
+// review-diversion branch ~6271-6290): every OTHER save path in this file
+// converts a bill's _pdfSharedKey into a real pdfKey ('en_pdf_shared_' +
+// sharedKey) before persisting, but the review-diversion branch — reached
+// when a bill fails the identity gate and is parked in en_pdf_bills for
+// manual review — never did, so those records saved with hasPDF:true and no
+// pdfKey, and their PDF could never be located. This repairs any record left
+// broken by that bug BEFORE the fix landed. Runs on every load
+// (loadUtilityData(), app/utility-data.js) and is naturally idempotent — a
+// record that already has a pdfKey is skipped, so re-runs touch nothing.
+//
+// Recovery strategy: a broken record's own _pdfSharedKey can be STALE — the
+// hash-based canonical key introduced by Compact PDF Storage (site-functions.js
+// compactPdfStorage()) supersedes the old timestamp-based sharedId this field
+// may still hold, so deriving a key directly from it can point at a
+// deleted/renamed blob. Instead, find a BATCH SIBLING — another bill record
+// (in en_pdf_bills OR any project's meter tree, the same two homes
+// _pdfCompactWalkAndRemap walks) minted in the same save action. Ids are
+// '<pb|r><13-digit-ms>_<n>[...]'; a batched save stamps each row's Date.now()
+// 1-4ms apart in a tight loop, so siblings share every digit of that
+// timestamp except roughly the last two — that DOES already carry a resolved
+// (non-empty) pdfKey, and that exact observed value is copied verbatim. Never
+// invents/derives a key of its own (never 'en_pdf_shared_' + this record's own
+// possibly-stale _pdfSharedKey) — a record with no sibling carrying a resolved
+// pdfKey is left untouched and reported.
+async function _pdfBillsSelfHealMissingKeys() {
+  const report = { touched: [], stillBroken: [] };
+  let pdfBills;
+  try {
+    pdfBills = sget('en_pdf_bills', []) || [];
+  } catch (e) {
+    window._pdfSelfHealLastReport = report;
+    return report;
+  }
+  const broken = pdfBills.filter((b) => b && b.hasPDF && !b.pdfKey);
+  if (!broken.length) {
+    window._pdfSelfHealLastReport = report;
+    return report;
+  }
+
+  function batchPrefix(id) {
+    const m = /^(?:pb|r)(\d{13})/.exec(String(id || ''));
+    return m ? m[1].slice(0, -2) : null; // drop last ~2 digits -> ~100ms batch window
+  }
+
+  // Every candidate sibling that already carries a resolved (non-empty) pdfKey,
+  // from both homes a bill record can live in.
+  const candidates = []; // { id, pdfKey, prefix }
+  for (const b of pdfBills) {
+    if (b && b.pdfKey) {
+      const p = batchPrefix(b.id);
+      if (p) candidates.push({ id: b.id, pdfKey: b.pdfKey, prefix: p });
+    }
+  }
+  for (const pid of Object.keys(utilityData || {})) {
+    const ud = utilityData[pid];
+    for (const bldg of ud.buildings || []) {
+      for (const mt of bldg.meters || []) {
+        for (const bill of mt.bills || []) {
+          if (bill && bill.pdfKey) {
+            const p = batchPrefix(bill.id);
+            if (p) candidates.push({ id: bill.id, pdfKey: bill.pdfKey, prefix: p });
+          }
+        }
+      }
+    }
+  }
+
+  let dirty = false;
+  for (const rec of broken) {
+    const p = batchPrefix(rec.id);
+    if (!p) {
+      report.stillBroken.push({ id: rec.id, reason: 'id does not match the expected batch-timestamp format' });
+      continue;
+    }
+    const sib = candidates.find((c) => c.prefix === p && c.id !== rec.id);
+    if (sib) {
+      rec.pdfKey = sib.pdfKey;
+      dirty = true;
+      report.touched.push({ id: rec.id, pdfKey: sib.pdfKey, fromSibling: sib.id });
+      console.log(
+        '[pdfBillsSelfHeal] recovered pdfKey for',
+        rec.id,
+        '->',
+        sib.pdfKey,
+        '(from batch sibling',
+        sib.id + ')',
+      );
+    } else {
+      report.stillBroken.push({ id: rec.id, reason: 'no batch sibling with a resolved pdfKey found' });
+    }
+  }
+
+  if (dirty) {
+    try {
+      await sset('en_pdf_bills', pdfBills);
+    } catch (e) {
+      console.warn('[pdfBillsSelfHeal] failed to persist recovered pdfKey(s):', e);
+    }
+    console.log('[pdfBillsSelfHeal] repaired ' + report.touched.length + ' record(s):', report.touched);
+  }
+  if (report.stillBroken.length) {
+    console.warn(
+      '[pdfBillsSelfHeal] could not recover ' + report.stillBroken.length + ' record(s):',
+      report.stillBroken,
+    );
+  }
+  window._pdfSelfHealLastReport = report;
+  return report;
 }
 
 // Store the current extraction's source PDF once per session and tag every bill
