@@ -5026,9 +5026,25 @@ function findMeterMatch(extracted) {
   const meterNum = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
   const billComm = (extracted.Commodity || '').toLowerCase();
   const billAddr = _normalizeAddr(extracted.ServiceAddress);
+  // Fix 1 (49928d33): identity-contradiction veto input. A present, non-empty
+  // extracted AccountNumber that DEMONSTRABLY DIFFERS (fails _acctFuzzyMatch)
+  // from a same-commodity meter's own stored (also present, non-empty) account
+  // hard-blocks that building from the address-fallback below — the bill is
+  // known, by account number, to belong to a DIFFERENT meter. Absence of data
+  // on either side is never treated as a contradiction (mirrors the
+  // present-and-different-only discipline used by _setsConflict at ~2083).
+  const billAcctRaw = (extracted.AccountNumber || '').trim();
+  // Fix 2 (409830ae) input: does this bill carry ANY usable identity at all
+  // (account or meter number)? If not, address-fallback must never silently
+  // resolve to bldg.meters[0] when more than one same-commodity meter exists —
+  // that collapse is exactly what caused two distinct null-account bills to
+  // land on the same meter.
+  const hasIdentity = !!(acct || meterNum);
   let bestMatch = null;
-  let addrMatch = null;
-  let addrBestScore = 0; // tracks highest score seen so far for address fallback
+  // Collect every address-fallback candidate building (not just the running
+  // best) so that, after the search, we can both pick the top scorer AND
+  // detect a cross-building near-tie (Fix 2, second bullet) before deciding.
+  const addrCandidates = [];
   for (const proj of projects) {
     const udProj = getUDProj(proj.id);
     for (const bldg of udProj.buildings || []) {
@@ -5064,6 +5080,19 @@ function findMeterMatch(extracted) {
       // Fixed: was reading bldg.address (always undefined); correct field is bldg.addr.
       // Extended: checks addrAliases array and uses fuzzy similarity for near-matches.
       if (billAddr && billAddr.length >= 5) {
+        // Fix 1 veto: hard-block this building from address-fallback entirely
+        // when the bill's own account number contradicts one of its
+        // same-commodity meters' recorded accounts.
+        if (billAcctRaw) {
+          const contradicting = (bldg.meters || []).some(
+            (cm) =>
+              cm.account &&
+              String(cm.account).trim() &&
+              !_acctFuzzyMatch(billAcctRaw, cm.account) &&
+              (!billComm || (cm.commodity || '').toLowerCase() === billComm),
+          );
+          if (contradicting) continue;
+        }
         const bldgAddrNorm = _normalizeAddr(bldg.addr);
         const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
         // Check exact match against primary addr or any alias
@@ -5081,33 +5110,97 @@ function findMeterMatch(extracted) {
         if (bldgAddrNorm && _addressSimilarity(bldg.addr, extracted.ServiceAddress) >= bestScore) {
           isAlias = false;
         }
-        // Threshold: 0.60+ qualifies; keep the BEST-scoring building across all
-        // buildings (not just the first one above 0.6). This prevents
-        // cross-contamination when two buildings share a similar base address
-        // (e.g. "301 6th St" vs "305 6th St") — the bill routes to whichever
-        // building scores highest rather than whichever is iterated first.
         const candidateScore = exactHit ? 1.0 : bestScore;
-        if ((exactHit || bestScore >= 0.6) && candidateScore > addrBestScore) {
-          const commMeter = billComm
-            ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
-            : null;
-          const candidateMeter = commMeter || (bldg.meters || [])[0];
-          if (candidateMeter) {
-            addrBestScore = candidateScore;
-            addrMatch = {
+        if (exactHit || bestScore >= 0.6) {
+          const sameCommMeters = billComm
+            ? (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm)
+            : [];
+          // Fix 2: only resolve to a single meter when identity is present
+          // (hasIdentity) — mirrors today's "commMeter || meters[0]" pick — OR
+          // when there is exactly one same-commodity meter at this building
+          // (no ambiguity possible regardless of identity). Everything else
+          // (no identity + >1 same-commodity meter, or no billComm at all)
+          // stays unresolved rather than silently guessing meters[0].
+          let candidateMeter = null;
+          let isAmbiguous = false;
+          if (hasIdentity) {
+            const commMeter = billComm
+              ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
+              : null;
+            candidateMeter = commMeter || (bldg.meters || [])[0];
+          } else if (billComm) {
+            if (sameCommMeters.length === 1) candidateMeter = sameCommMeters[0];
+            else if (sameCommMeters.length > 1) isAmbiguous = true;
+            // sameCommMeters.length === 0 → candidateMeter stays null (unresolved)
+          }
+          // billComm empty (!hasIdentity branch) → candidateMeter stays null;
+          // never default to meters[0] with no commodity to disambiguate by.
+          if (candidateMeter || isAmbiguous) {
+            addrCandidates.push({
               proj,
               bldg,
-              meter: candidateMeter,
-              projId: proj.id,
-              bldgId: bldg.id,
-              meterId: candidateMeter.id,
-              fuzzyScore: candidateScore,
+              candidateMeter,
+              isAmbiguous,
+              sameCommMeters,
+              candidateScore,
               isAlias,
-              matchType: 'address',
-            };
+            });
           }
         }
       }
+    }
+  }
+  let addrMatch = null;
+  if (addrCandidates.length) {
+    addrCandidates.sort((a, b) => b.candidateScore - a.candidateScore);
+    const top = addrCandidates[0];
+    const second = addrCandidates[1];
+    // Fix 2, second bullet: >1 building surviving within ~0.03 of each other
+    // is itself ambiguous, even if the top one individually resolved to a
+    // single meter.
+    const crossBldgTie =
+      second &&
+      (top.bldg.id !== second.bldg.id || top.proj.id !== second.proj.id) &&
+      top.candidateScore - second.candidateScore <= 0.03;
+    if (crossBldgTie) {
+      const tied = addrCandidates.filter((c) => top.candidateScore - c.candidateScore <= 0.03);
+      addrMatch = {
+        projId: top.proj.id,
+        bldgId: top.bldg.id,
+        fuzzyScore: top.candidateScore,
+        matchType: 'ambiguous',
+        candidates: tied.map((c) => ({
+          proj: c.proj,
+          bldg: c.bldg,
+          projId: c.proj.id,
+          bldgId: c.bldg.id,
+          meterId: c.candidateMeter ? c.candidateMeter.id : null,
+          meter: c.candidateMeter || null,
+        })),
+      };
+    } else if (top.isAmbiguous) {
+      addrMatch = {
+        proj: top.proj,
+        bldg: top.bldg,
+        projId: top.proj.id,
+        bldgId: top.bldg.id,
+        fuzzyScore: top.candidateScore,
+        isAlias: top.isAlias,
+        matchType: 'ambiguous',
+        candidates: top.sameCommMeters.map((m) => ({ meterId: m.id, meter: m })),
+      };
+    } else {
+      addrMatch = {
+        proj: top.proj,
+        bldg: top.bldg,
+        meter: top.candidateMeter,
+        projId: top.proj.id,
+        bldgId: top.bldg.id,
+        meterId: top.candidateMeter.id,
+        fuzzyScore: top.candidateScore,
+        isAlias: top.isAlias,
+        matchType: 'address',
+      };
     }
   }
   return bestMatch || addrMatch;
@@ -5129,6 +5222,15 @@ function saveAddressAlias(projId, bldgId, aliasString) {
 window.saveAddressAlias = saveAddressAlias;
 function showAutoAssignBanner(match, extracted) {
   if (!match) return;
+  // Fix 2 (409830ae) call-site guard: an 'ambiguous' match carries no single
+  // resolved meter by design (findMeterMatch found >1 equally-plausible
+  // candidate and refused to guess) — every line below this reads
+  // match.meter directly. Never surface the single-bill confirm banner for
+  // it; leave nothing auto-selected so the user must use the manual
+  // project/building/meter picker. Does not change 'identity' or 'address'
+  // handling in any way — this matchType did not exist before this fix, so
+  // this branch was previously unreachable.
+  if (match.matchType === 'ambiguous' || !match.meter) return;
   if (_isMultiAcctFile()) {
     showMultiBuildingReviewPanel();
     return;
@@ -6727,6 +6829,19 @@ async function _ensureBatchPdfStored(bills) {
 // place.
 function _saveBillToMatchedMeter(extracted, match) {
   if (!extracted || !match || !match.proj || !match.bldg || !match.meter) return null;
+  // Fix 3 (49928d33/409830ae) — defense-in-depth. Even on an 'identity' call,
+  // refuse to write when the bill's own AccountNumber strongly contradicts
+  // the target meter's stored account. Guards against a bad match slipping
+  // through upstream (e.g. an identity hit found by MeterNumber alone, whose
+  // AccountNumber differs) — every caller of this function already has an
+  // if(dest){}else{held/failed} branch, so returning null safely falls
+  // through to that caller's existing review/hold path.
+  if (extracted.AccountNumber && match.meter.account) {
+    const strongMismatch =
+      !_acctFuzzyMatch(extracted.AccountNumber, match.meter.account) &&
+      String(extracted.AccountNumber).replace(/\D/g, '').length >= 6;
+    if (strongMismatch) return null;
+  }
   const billComm = (extracted.Commodity || '').toLowerCase();
   let meterComm = (match.meter.commodity || '').toLowerCase();
   if (billComm && !meterComm) {
