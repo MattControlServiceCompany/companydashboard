@@ -47,15 +47,21 @@
 // ~0.35MB (measured 2026-07-19, see phase2a-build-plan.md §6), so gzip alone
 // closes R5 for kv — no chunking protocol needed here.
 //
-// Auth: Phase 1 — real Entra JWT verification (supabase-migration-plan-FINAL-2026-07-19.md §4).
+// Auth: Supabase Auth JWT verification (replaces the former Entra ID/MSAL
+// login entirely — Entra required Azure tenant admin consent that could not
+// be obtained; no fallback/back-compat with the Entra path is kept).
 // `verifyAuth(event)` is the ONE seam that owns the caller's identity — every
 // other line that needs it calls this, never trusts `updatedBy` from the
 // request body (server-assigned identity, closes the spoofing gap named in
-// the migration plan §4/§11 task 1.2). Verifies signature + iss/tid + aud +
-// exp against the CSC Entra tenant via JWKS, then checks the token's email
-// against the `AUTHORIZED_USERS` allowlist (Netlify env var, comma-separated
-// — never hardcode emails here). Throws AuthError(401) for a missing/bad/
-// expired token, AuthError(403) for a valid-tenant token whose email is not
+// the migration plan §4/§11 task 1.2). Verifies signature + iss + aud against
+// the Supabase project's Auth JWKS (the project issues asymmetric ES256
+// tokens — confirmed live at
+// https://rrdugvwxtddjywqykphf.supabase.co/auth/v1/.well-known/jwks.json —
+// so JWKS verification is used, no HS256 shared-secret fallback needed), then
+// checks the token's email against the `AUTHORIZED_USERS` allowlist (Netlify
+// env var, comma-separated — never hardcode emails here; allowlist logic
+// unchanged from the Entra version). Throws AuthError(401) for a missing/bad/
+// expired token, AuthError(403) for a valid Supabase token whose email is not
 // allow-listed.
 //
 // Phase 2 (get-auth-hardening): verifyAuth is now called ONCE at the very
@@ -72,20 +78,17 @@ const { jwtVerify, createRemoteJWKSet } = require('jose');
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
-// Public Entra app-registration identifiers (safe to commit — see
-// AI/_context/temp/entra-ids.md). Not secrets.
-const ENTRA_TENANT_ID = '3a4273ad-6010-43d3-8bb9-45dfc3a5528d';
-const ENTRA_CLIENT_ID = '1dcf6406-c4c4-4664-94d0-50bcc2838c9d';
-const ENTRA_ISSUER = `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0`;
-// Entra can emit the custom-scope access token's `aud` as either the App ID
-// URI (`api://<clientId>`) or, depending on how the API/scope was exposed,
-// the bare client-id GUID — accept both (per task note: "verify both").
-const ENTRA_EXPECTED_AUDIENCES = [`api://${ENTRA_CLIENT_ID}`, ENTRA_CLIENT_ID];
+// Public Supabase project identifiers (safe to commit — the project ref/URL
+// is not a secret; only the service_role/JWT-signing secret keys are).
+// Project ref rrdugvwxtddjywqykphf — see docs/dashboardlogic.md.
+const SUPABASE_AUTH_ISSUER = `${SUPABASE_URL}/auth/v1`;
+// Supabase Auth access tokens always carry `aud: 'authenticated'` for a
+// signed-in user.
+const SUPABASE_EXPECTED_AUDIENCE = 'authenticated';
 // Test-only seam: NEVER set in production. Lets unit tests point JWKS
-// fetches at a local mock server instead of login.microsoftonline.com.
-// Undefined in every real deploy -> falls through to the real Entra URL.
-const JWKS_URL =
-  process.env.CH_TEST_JWKS_URL || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/discovery/v2.0/keys`;
+// fetches at a local mock server instead of the real Supabase project.
+// Undefined in every real deploy -> falls through to the real JWKS URL.
+const JWKS_URL = process.env.CH_TEST_JWKS_URL || `${SUPABASE_AUTH_ISSUER}/.well-known/jwks.json`;
 
 // createRemoteJWKSet's returned function caches fetched keys internally and
 // is created once at module scope, so the cache persists across warm
@@ -108,7 +111,8 @@ function pgHeaders(extra) {
 
 // AuthError carries the HTTP status the caller should respond with —
 // 401 for a missing/unverifiable/expired token, 403 for a token that
-// verifies fine for the CSC tenant but whose email isn't allow-listed.
+// verifies fine (valid Supabase Auth signature/issuer/audience) but whose
+// email isn't allow-listed.
 class AuthError extends Error {
   constructor(statusCode, message) {
     super(message);
@@ -124,8 +128,8 @@ function _authorizedUsers() {
     .filter(Boolean);
 }
 
-// --- Auth (§4 of the migration plan) ----------------------------------------
-// Real Entra JWT verification. Every other line that needs the caller's
+// --- Auth (§4 of the migration plan; Supabase Auth replaces Entra) ---------
+// Supabase Auth JWT verification. Every other line that needs the caller's
 // identity calls this — never trusts `updatedBy` from the request body.
 async function verifyAuth(event) {
   const authHeader = getHeader(event, 'authorization');
@@ -138,8 +142,8 @@ async function verifyAuth(event) {
   let payload;
   try {
     const result = await jwtVerify(token, JWKS, {
-      issuer: ENTRA_ISSUER,
-      audience: ENTRA_EXPECTED_AUDIENCES,
+      issuer: SUPABASE_AUTH_ISSUER,
+      audience: SUPABASE_EXPECTED_AUDIENCE,
     });
     payload = result.payload;
   } catch (err) {
@@ -149,15 +153,8 @@ async function verifyAuth(event) {
     throw new AuthError(401, 'Invalid or expired token');
   }
 
-  // Belt-and-suspenders tenant check: v2.0 Entra access tokens also carry
-  // a `tid` claim equal to the directory (tenant) ID; the issuer URL
-  // already encodes the tenant, but verify both per the migration plan.
-  if (payload.tid && payload.tid !== ENTRA_TENANT_ID) {
-    throw new AuthError(401, 'Token is not from the expected tenant');
-  }
-
-  const email = (payload.preferred_username || payload.email || '').toLowerCase();
-  if (!email) throw new AuthError(401, 'Token has no email/preferred_username claim');
+  const email = (payload.email || '').toLowerCase();
+  if (!email) throw new AuthError(401, 'Token has no email claim');
 
   const allowlist = _authorizedUsers();
   if (!allowlist.includes(email)) {

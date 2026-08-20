@@ -13,18 +13,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self' https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://rrdugvwxtddjywqykphf.supabase.co https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — Dashboard</title>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
     />
-    <script
-      src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"
-      integrity="sha384-OJTwghM0Gh3Zc+gmd6l0lz1pFw9KuHHq0mSEZgmQEKgMnuSWWDb3bU9KzuD7w2hU"
-      crossorigin="anonymous"
-    ></script>
     <script src="app/ch-auth.js"></script>
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -203,29 +198,27 @@
         filter: brightness(1.15);
         transform: translateY(-2px);
       }
-      .ms-mini {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2px;
-        width: 13px;
+      .login-input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 9px;
+        border: 1px solid var(--border2);
+        background: var(--s2);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 13px;
+        margin-bottom: 10px;
+        box-sizing: border-box;
       }
-      .ms-mini span {
-        display: block;
-        width: 5.5px;
-        height: 5.5px;
-        border-radius: 1px;
+      .login-input:focus {
+        outline: none;
+        border-color: var(--accent);
       }
-      .ms-mini span:nth-child(1) {
-        background: #fff;
-      }
-      .ms-mini span:nth-child(2) {
-        background: rgba(255, 255, 255, 0.7);
-      }
-      .ms-mini span:nth-child(3) {
-        background: rgba(255, 255, 255, 0.7);
-      }
-      .ms-mini span:nth-child(4) {
-        background: rgba(255, 255, 255, 0.5);
+      .login-error {
+        font-size: 12px;
+        color: var(--red);
+        margin: -2px 0 10px;
+        line-height: 1.5;
       }
       .login-divider {
         display: flex;
@@ -1800,16 +1793,32 @@
           <div class="login-mark">C</div>
           <span class="login-brand">CompanyHub</span>
         </div>
-        <p class="login-sub">Sign in with your company Microsoft 365 account to access all departments and tools.</p>
-        <button class="btn-ms" id="msBtn" onclick="loginWithMicrosoft()">
-          <div class="ms-mini"><span></span><span></span><span></span><span></span></div>
-          Sign in with Microsoft 365
-        </button>
+        <p class="login-sub">Sign in with your CompanyHub email and password to access all departments and tools.</p>
+        <form id="loginForm" onsubmit="return loginWithPassword(event);">
+          <input
+            class="login-input"
+            type="email"
+            id="loginEmail"
+            name="email"
+            placeholder="Email"
+            autocomplete="username"
+            required
+          />
+          <input
+            class="login-input"
+            type="password"
+            id="loginPassword"
+            name="password"
+            placeholder="Password"
+            autocomplete="current-password"
+            required
+          />
+          <p class="login-error" id="loginError" style="display: none"></p>
+          <button class="btn-ms" id="loginSubmitBtn" type="submit">Sign In</button>
+        </form>
         <div class="login-divider"><span>or</span></div>
         <button class="btn-demo" onclick="loginDemo()">Continue in Demo Mode</button>
-        <p class="login-note">
-          Your Microsoft credentials are verified by Microsoft — CompanyHub never sees your password.
-        </p>
+        <p class="login-note">Sign-in is verified by CompanyHub's backend — your password is never stored locally.</p>
       </div>
     </div>
 
@@ -2257,21 +2266,11 @@
     <div class="toast" id="toast"><span class="t-ic">✓</span><span id="toastMsg">Done!</span></div>
 
     <script>
-      /* ── AUTH ── */
-      const M365 = {
-        auth: {
-          clientId: '1dcf6406-c4c4-4664-94d0-50bcc2838c9d',
-          authority: 'https://login.microsoftonline.com/3a4273ad-6010-43d3-8bb9-45dfc3a5528d',
-          redirectUri: window.location.origin + '/index.html',
-        },
-        // localStorage (not sessionStorage) so a session started here is
-        // usable when a new tab is opened directly to another department
-        // page (integration #5, supabase-migration-plan-FINAL-2026-07-19.md §4).
-        cache: { cacheLocation: 'localStorage' },
-      };
-      const SCOPES = ['User.Read', 'Calendars.ReadWrite'];
-      let msalApp = null,
-        currentUser = null;
+      /* ── AUTH ──
+         Email + password sign-in via Supabase Auth (window.CH_AUTH, loaded
+         from app/ch-auth.js). Replaces the former Microsoft 365/MSAL flow —
+         removed entirely, no fallback. */
+      let currentUser = null;
 
       function saveSession(u) {
         sessionStorage.setItem('ch_user', JSON.stringify(u));
@@ -2295,45 +2294,45 @@
         saveSession(currentUser);
         enterApp();
       }
-      async function loginWithMicrosoft() {
-        const btn = document.getElementById('msBtn');
-        btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">⟳</span> Connecting...';
+
+      function _initialsFromEmail(email) {
+        const local = (email || '?').split('@')[0];
+        const parts = local.split(/[._-]+/).filter(Boolean);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        return local.slice(0, 2).toUpperCase();
+      }
+
+      async function loginWithPassword(evt) {
+        if (evt) evt.preventDefault();
+        const btn = document.getElementById('loginSubmitBtn');
+        const errEl = document.getElementById('loginError');
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
+        errEl.style.display = 'none';
+        btn.textContent = 'Signing in...';
         btn.disabled = true;
         try {
-          msalApp = new msal.PublicClientApplication(M365);
-          await msalApp.initialize();
-          const r = await msalApp.loginPopup({ scopes: SCOPES });
-          try {
-            // Finding 3 hardening (per-user-settings-sync adversarial review
-            // 2026-07-25/26) — this PCA instance and app/ch-auth.js's separate
-            // kv.sync-scoped PCA instance share the same MSAL cache
-            // (clientId + cacheLocation:'localStorage'). Marking the account
-            // active here means ch-auth.js's getUserId() resolves to THIS
-            // signed-in user rather than guessing via getAllAccounts()[0].
-            msalApp.setActiveAccount(r.account);
-          } catch (e) {}
+          if (!window.CH_AUTH || typeof window.CH_AUTH.signIn !== 'function') {
+            throw new Error('Sign-in is unavailable — auth module failed to load.');
+          }
+          const r = await window.CH_AUTH.signIn(email, password);
           currentUser = {
-            name: r.account.name || r.account.username,
-            email: r.account.username,
-            initials: (r.account.name || '?')
-              .split(' ')
-              .map((n) => n[0])
-              .join('')
-              .slice(0, 2)
-              .toUpperCase(),
+            name: r.email || email,
+            email: r.email || email,
+            initials: _initialsFromEmail(r.email || email),
             isReal: true,
           };
           saveSession(currentUser);
           enterApp();
         } catch (e) {
-          // Real Entra app is registered (Phase 1) — a failed login is a
-          // real failure, never a silent fallback into Demo mode. Demo mode
-          // is only ever entered via the explicit "Continue in Demo Mode"
-          // button (loginDemo()), and never carries the backend sync flag.
-          btn.innerHTML = '⚠️ Login failed';
+          errEl.textContent = (e && e.message) || 'Sign-in failed. Check your email and password.';
+          errEl.style.display = 'block';
+          btn.textContent = 'Sign In';
           btn.disabled = false;
         }
+        return false;
       }
+
       function enterApp() {
         // Check if user should be redirected to a different default page
         if (window.__siteUI && window.__siteUI.checkDefaultLogin()) return;
@@ -2351,7 +2350,9 @@
       }
       function signOut() {
         clearSession();
-        if (msalApp && currentUser?.isReal) msalApp.logoutPopup().catch(() => {});
+        if (currentUser?.isReal && window.CH_AUTH && typeof window.CH_AUTH.signOut === 'function') {
+          window.CH_AUTH.signOut().catch(() => {});
+        }
         document.getElementById('app').classList.remove('visible');
         document.getElementById('loginScreen').style.display = 'flex';
         if (typeof showToast === 'function') showToast('Signed out');

@@ -85,8 +85,8 @@ const DB = (() => {
   // CURRENT (correct) user out on their very next refresh, which is strictly
   // worse than the risk it would guard against: ch_user has zero effect on
   // which backend row a write lands in (that is controlled entirely by
-  // CH_AUTH.getUserId()/the Entra oid — see app/ch-auth.js — not by this
-  // app-level display-name/session marker).
+  // CH_AUTH.getUserId()/the Supabase auth user id — see app/ch-auth.js — not
+  // by this app-level display-name/session marker).
   const RAW_PER_USER_CH_USER_KEY = 'ch_user';
 
   // Dynamic-suffix "per-user" families ALSO written via raw localStorage only
@@ -253,17 +253,20 @@ const DB = (() => {
     return { localKey: mKey };
   }
 
-  // --- Auth stub seam (phase2a-build-plan.md §4) ---------------------------
-  // Every kv-sync fetch routes through this ONE helper. Stub today; Phase 1
-  // swaps only the window.CH_AUTH branch's real token in — zero call-site
-  // churn. x-stub-user varies per test context (window.ch_user.email when
-  // set) so multi-"user" drills work pre-auth.
+  // --- Auth seam (phase2a-build-plan.md §4) ---------------------------------
+  // Every kv-sync fetch routes through this ONE helper, reading the caller's
+  // identity exclusively from window.CH_AUTH.getToken() (app/ch-auth.js —
+  // Supabase Auth). `x-stub-user` was removed 2026-08 — the Netlify
+  // Functions never read that header (verifyAuth derives identity solely
+  // from the verified JWT's email claim), so it was a dead client-side
+  // header left over from the pre-auth dev stub.
   function _authHeaders() {
-    // Not a real credential — a placeholder the stub verifyAuth() on the
-    // Function side accepts unconditionally until Phase 1 auth ships (see
-    // phase2a-build-plan.md §4). Built from parts so a generic secret-scan
-    // pattern (`token\s*=\s*['"]...`) doesn't false-positive on a literal
-    // that is deliberately public/non-sensitive.
+    // Not a real credential — a placeholder used only if nobody is signed
+    // in (window.CH_AUTH has no cached token yet). The server's verifyAuth()
+    // rejects this with 401, same as any other invalid bearer token. Built
+    // from parts so a generic secret-scan pattern (`token\s*=\s*['"]...`)
+    // doesn't false-positive on a literal that is deliberately public/
+    // non-sensitive.
     let authValue = ['dev', 'stub', 'token'].join('-');
     if (typeof window !== 'undefined' && window.CH_AUTH && typeof window.CH_AUTH.getToken === 'function') {
       try {
@@ -273,8 +276,7 @@ const DB = (() => {
         // fall through to the placeholder above
       }
     }
-    const stubUser = (typeof window !== 'undefined' && window.ch_user && window.ch_user.email) || 'dev-stub@local';
-    return { Authorization: 'Bearer ' + authValue, 'x-stub-user': stubUser };
+    return { Authorization: 'Bearer ' + authValue };
   }
 
   // --- Client gzip (2a item 6 / R5 close) -----------------------------------

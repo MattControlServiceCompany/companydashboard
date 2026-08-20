@@ -134,10 +134,10 @@ function _pdfBackendMode() {
   return 'off';
 }
 
-// Mirrors app/db.js's private _authHeaders() — same window.CH_AUTH seam,
-// same header shape (Authorization stub/real bearer + x-stub-user), so
-// pdf-sync.js's identical verifyAuth() stub accepts both Functions' traffic
-// the same way pre-/post-Phase-1.
+// Mirrors app/db.js's private _authHeaders() — same window.CH_AUTH seam
+// (app/ch-auth.js, Supabase Auth), same header shape, so pdf-sync.js's
+// verifyAuth() accepts both Functions' traffic identically. `x-stub-user`
+// removed 2026-08 — never read server-side (dead pre-auth-stub header).
 function _pdfAuthHeaders() {
   let authValue = ['dev', 'stub', 'token'].join('-');
   if (typeof window !== 'undefined' && window.CH_AUTH && typeof window.CH_AUTH.getToken === 'function') {
@@ -148,8 +148,7 @@ function _pdfAuthHeaders() {
       /* fall through to the placeholder above */
     }
   }
-  const stubUser = (typeof window !== 'undefined' && window.ch_user && window.ch_user.email) || 'dev-stub@local';
-  return { Authorization: 'Bearer ' + authValue, 'x-stub-user': stubUser };
+  return { Authorization: 'Bearer ' + authValue };
 }
 
 function _pdfBase64ToBytes(base64) {

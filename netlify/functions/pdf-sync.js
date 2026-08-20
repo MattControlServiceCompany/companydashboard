@@ -1,7 +1,7 @@
 // netlify/functions/pdf-sync.js
 //
 // Shared-backend replication endpoint for CompanyHub's PDF blob store.
-// Mirrors netlify/functions/kv-sync.js's auth (verifyAuth, real Entra JWT
+// Mirrors netlify/functions/kv-sync.js's auth (verifyAuth, Supabase Auth JWT
 // verification), error-handling posture (502 = real backend failure,
 // 409 = expected content conflict, 400 = caller/protocol error), and
 // Supabase service-key access pattern -- see kv-sync.js's header for the
@@ -96,13 +96,13 @@
 //        limitation; no periodic sweep is built here (out of scope for
 //        this task, flagged in the implementer report).
 //
-// Auth (get-auth-hardening): real Entra JWT verification, identical logic
-// to kv-sync.js's verifyAuth(event) (jose, createRemoteJWKSet, iss/tid/aud/
-// exp against the CSC Entra tenant + AUTHORIZED_USERS allowlist). Phase 1
-// only swapped kv-sync.js's stub; this Function was left on the dev stub
-// until now -- this change closes that gap so GET and PUT (single-shot and
-// chunked) all require a valid allowlisted token, same 401/403 mapping as
-// kv-sync.js. All PDF traffic must relay through this Function (the office
+// Auth (get-auth-hardening): Supabase Auth JWT verification, identical logic
+// to kv-sync.js's verifyAuth(event) (jose, createRemoteJWKSet, iss/aud
+// against the Supabase project's Auth JWKS + AUTHORIZED_USERS allowlist).
+// Replaces the former Entra ID/MSAL verification entirely (no fallback) --
+// GET and PUT (single-shot and chunked) all require a valid allowlisted
+// token, same 401/403 mapping as kv-sync.js. All PDF traffic must relay
+// through this Function (the office
 // firewall blocks direct signed URLs to *.supabase.co) -- there is no
 // direct-to-Storage path in the shipped app, only in the one-time bulk
 // migration script run from home (§6.4 of the migration plan).
@@ -122,20 +122,17 @@ const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 const BUCKET = 'pdf_blobs';
 
-// Public Entra app-registration identifiers (safe to commit — see
-// AI/_context/temp/entra-ids.md). Not secrets. Identical to kv-sync.js.
-const ENTRA_TENANT_ID = '3a4273ad-6010-43d3-8bb9-45dfc3a5528d';
-const ENTRA_CLIENT_ID = '1dcf6406-c4c4-4664-94d0-50bcc2838c9d';
-const ENTRA_ISSUER = `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0`;
-// Entra can emit the custom-scope access token's `aud` as either the App ID
-// URI (`api://<clientId>`) or, depending on how the API/scope was exposed,
-// the bare client-id GUID — accept both (per task note: "verify both").
-const ENTRA_EXPECTED_AUDIENCES = [`api://${ENTRA_CLIENT_ID}`, ENTRA_CLIENT_ID];
+// Public Supabase project identifiers (safe to commit — the project ref/URL
+// is not a secret; only the service_role/JWT-signing secret keys are).
+// Identical to kv-sync.js.
+const SUPABASE_AUTH_ISSUER = `${SUPABASE_URL}/auth/v1`;
+// Supabase Auth access tokens always carry `aud: 'authenticated'` for a
+// signed-in user.
+const SUPABASE_EXPECTED_AUDIENCE = 'authenticated';
 // Test-only seam: NEVER set in production. Lets unit tests point JWKS
-// fetches at a local mock server instead of login.microsoftonline.com.
-// Undefined in every real deploy -> falls through to the real Entra URL.
-const JWKS_URL =
-  process.env.CH_TEST_JWKS_URL || `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/discovery/v2.0/keys`;
+// fetches at a local mock server instead of the real Supabase project.
+// Undefined in every real deploy -> falls through to the real JWKS URL.
+const JWKS_URL = process.env.CH_TEST_JWKS_URL || `${SUPABASE_AUTH_ISSUER}/.well-known/jwks.json`;
 
 // createRemoteJWKSet's returned function caches fetched keys internally and
 // is created once at module scope, so the cache persists across warm
@@ -173,9 +170,9 @@ const SINGLE_SHOT_LIMIT_BYTES = 4 * 1024 * 1024;
 const CHUNK_SIZE = 3 * 1024 * 1024;
 
 // --- Auth (get-auth-hardening) -----------------------------------------
-// Real Entra JWT verification, identical logic to kv-sync.js's verifyAuth.
-// Every request this Function serves calls this — never trusts any
-// caller-supplied identity header.
+// Supabase Auth JWT verification, identical logic to kv-sync.js's
+// verifyAuth. Every request this Function serves calls this — never trusts
+// any caller-supplied identity header.
 async function verifyAuth(event) {
   const authHeader = getHeader(event, 'authorization');
   if (!authHeader || !/^Bearer\s+/i.test(authHeader)) {
@@ -187,8 +184,8 @@ async function verifyAuth(event) {
   let payload;
   try {
     const result = await jwtVerify(token, JWKS, {
-      issuer: ENTRA_ISSUER,
-      audience: ENTRA_EXPECTED_AUDIENCES,
+      issuer: SUPABASE_AUTH_ISSUER,
+      audience: SUPABASE_EXPECTED_AUDIENCE,
     });
     payload = result.payload;
   } catch (err) {
@@ -198,15 +195,8 @@ async function verifyAuth(event) {
     throw new AuthError(401, 'Invalid or expired token');
   }
 
-  // Belt-and-suspenders tenant check: v2.0 Entra access tokens also carry
-  // a `tid` claim equal to the directory (tenant) ID; the issuer URL
-  // already encodes the tenant, but verify both per the migration plan.
-  if (payload.tid && payload.tid !== ENTRA_TENANT_ID) {
-    throw new AuthError(401, 'Token is not from the expected tenant');
-  }
-
-  const email = (payload.preferred_username || payload.email || '').toLowerCase();
-  if (!email) throw new AuthError(401, 'Token has no email/preferred_username claim');
+  const email = (payload.email || '').toLowerCase();
+  if (!email) throw new AuthError(401, 'Token has no email claim');
 
   const allowlist = _authorizedUsers();
   if (!allowlist.includes(email)) {
