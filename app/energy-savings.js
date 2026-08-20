@@ -2322,8 +2322,19 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Firefox "too much recursion" from catastrophic backtracking.
   const _meterT = t.replace(/[^\d\s+\-./,:\n]/g, ' ').replace(/:/g, ',');
   // Date pattern supports MM/DD (with optional slash) and 3-5 digit OCR garble like "12001" → "12/01"
+  // PER-COLUMN TOLERANCE (cef419c0): groups 4-10 (EndRead, StartRead, Difference, Mult, kWhUsed,
+  // KWUsed, RKVAUsed) each use `(?:(CLEAN_NUMBER)|\S+)` instead of a bare mandatory numeric group.
+  // Previously every data column was a single hard-required capture chained in one sequential
+  // match, so ONE OCR-garbled token anywhere in the row (a stray char surviving the pre-normalize
+  // pass, e.g. a stray '/' or extra '.') made the ENTIRE row fail to match — nulling every column
+  // on that line, including on a second/third row of a multi-meter (meter change / solar) bill.
+  // Now each column independently captures a clean number when the token parses, or silently
+  // yields undefined (→ null downstream) for ONLY that column when it doesn't — the token is still
+  // consumed positionally (via \S+) so later columns on the same row stay aligned. The row-anchor
+  // (groups 1-3: two dates + integer Days) is UNCHANGED — still strict/required — so this does not
+  // loosen what counts as a meter-table row, only what counts as a valid value once one is found.
   const _meterRe =
-    /(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(\d+)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,.]+)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+([\d,.]+)(?:[^\S\n]+([\d,.]+))?/g;
+    /(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(\d+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,.]+)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+(?:([\d,.]+)|\S+)(?:[^\S\n]+(?:([\d,.]+)|\S+))?/g;
   const _meterRowsRaw = [];
   let _mm;
   while ((_mm = _meterRe.exec(_meterT)) !== null) _meterRowsRaw.push(_mm);
