@@ -4740,7 +4740,7 @@ const UTILITY_RULES = [
       const _acctForIdx = (idx) => {
         const pageText = _pageTextForIdx(idx);
         const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
         ];
         if (acctMatches.length === 0) return null;
         return acctMatches[0][1].replace(/\s/g, '');
@@ -4750,19 +4750,82 @@ const UTILITY_RULES = [
         const addrMatch = pageText.match(_EVG_ADDR);
         return addrMatch ? addrMatch[1].trim() : null;
       };
+      // Facility disambiguator (backlog acc68bdb) — a single Evergy account
+      // can legitimately cover TWO distinct facilities for the same billing
+      // period (e.g. New HS "2LGSF" and Ballfields "2MGSE", both on account
+      // 2885731561 at 202 Aquatic Dr). Read the rate/meter-class code that
+      // prints immediately before that page's own "Billing Details" header
+      // (the same signal already used for the RateSchedule field) so the
+      // dedup key below can tell the two apart instead of collapsing them.
+      // Deliberately narrow: only the tight "<code> ... Billing Details"
+      // form (the code prints immediately before that page's OWN Billing
+      // Details header) is trusted here. The generic "Rate: <code>" fallback
+      // used elsewhere for the RateSchedule field is NOT reused — applied
+      // to a whole page (rather than an already-isolated bill section) it
+      // false-positives on ordinary prose (e.g. "...Evergy's rate review."
+      // on an LHS cover page matched as rate code "review", which then
+      // wrongly conflicted with the real "2LGSF" and split one bill in
+      // two). Returning null on anything less certain is the safe default
+      // — null is treated as "unknown" (compatible), never a false split.
+      const _rateForIdx = (idx) => {
+        const pageText = _pageTextForIdx(idx);
+        return pageText.match(/[-–]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)?.[1] || null;
+      };
       for (const m of sfMatches) {
         m._acct = _acctForIdx(m.idx);
         m._addr = _addrForIdx(m.idx);
+        m._rate = _rateForIdx(m.idx);
       }
+      // Two entries are the SAME bill (cover + billing-details repeat, or a
+      // genuine reprint) only when neither the rate/meter-class signal nor
+      // the service address CONTRADICTS the other — an unresolved (null)
+      // signal on either side is treated as unknown/compatible, never as
+      // grounds to force a split, mirroring the agree-or-unknown discipline
+      // used by `_sameAcct`/`_provenSameAcct` below. A resolved signal that
+      // genuinely disagrees (e.g. "2LGSF" vs "2MGSE", or two different
+      // service addresses) means two DISTINCT facilities share this
+      // account+period and must NOT collapse into one hybrid record.
+      const _normAddr = (a) => (a || '').replace(/\s+/g, ' ').trim().toUpperCase();
+      const _facilityConflict = (a, b) => {
+        if (a._rate && b._rate && a._rate !== b._rate) return true;
+        const na = _normAddr(a._addr);
+        const nb = _normAddr(b._addr);
+        if (na && nb && na !== nb) return true;
+        return false;
+      };
       // Dedupe by account+date pair — keep the LAST occurrence so section
       // boundaries line up with the billing-details page, not the cover.
-      // Account number prevents merging different accounts that share dates.
+      // Account number prevents merging different accounts that share dates;
+      // the facility conflict check above prevents merging different
+      // facilities that share BOTH an account and a period.
       const byPair = new Map();
       for (const m of sfMatches) {
         const acctKey = m._acct || '_';
-        byPair.set(acctKey + '|' + m.start + '|' + m.end, m);
+        const pairKey = acctKey + '|' + m.start + '|' + m.end;
+        const bucket = byPair.get(pairKey);
+        if (!bucket) {
+          byPair.set(pairKey, [m]);
+          continue;
+        }
+        let mergedInto = null;
+        for (const cand of bucket) {
+          if (!_facilityConflict(cand, m)) {
+            mergedInto = cand;
+            break;
+          }
+        }
+        if (mergedInto) {
+          const bi = bucket.indexOf(mergedInto);
+          if (!m._rate) m._rate = mergedInto._rate;
+          if (!m._addr) m._addr = mergedInto._addr;
+          bucket[bi] = m;
+        } else {
+          bucket.push(m);
+        }
       }
-      let uniqueBills = Array.from(byPair.values()).sort((a, b) => a.idx - b.idx);
+      let uniqueBills = Array.from(byPair.values())
+        .flat()
+        .sort((a, b) => a.idx - b.idx);
 
       // ── FUZZY DATE-PAIR MERGE ──
       // OCR can read the SAME bill's start date differently on two pages
@@ -4813,7 +4876,12 @@ const UTILITY_RULES = [
         const prevIsBd = prev ? _hasBdBefore(prev) : false;
         const curIsBd = _hasBdBefore(m);
         const _provenSameAcct = !!(prev && prev._acct && m._acct && prev._acct === m._acct);
-        const _distinctBillsCollision = prevIsBd && curIsBd && !_provenSameAcct;
+        // Even when the account IS proven equal, a resolved facility signal
+        // that disagrees (backlog acc68bdb — New HS "2LGSF" vs Ballfields
+        // "2MGSE", both account 2885731561) still means these are two
+        // distinct bills sharing one account, not a cover/detail repeat.
+        const _distinctBillsCollision =
+          prevIsBd && curIsBd && (!_provenSameAcct || (prev && _facilityConflict(prev, m)));
         if (
           prev &&
           _sameAcct &&
@@ -4962,7 +5030,7 @@ const UTILITY_RULES = [
         const pageText = _pfPageTextMap[page];
         if (!pageText) return [];
         const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
         ];
         return acctMatches.map((am) => am[1].replace(/\s/g, ''));
       };
