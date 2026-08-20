@@ -5084,12 +5084,21 @@ function findMeterMatch(extracted) {
         // when the bill's own account number contradicts one of its
         // same-commodity meters' recorded accounts.
         if (billAcctRaw) {
+          // Fix 3 (review of 1e99a20): veto must fire ONLY when billComm is
+          // known AND the meter's commodity matches it. The Generic catch-all
+          // rule (energy-savings.js) never sets Commodity, so `!billComm`
+          // was true on those bills and the veto fired against meters of ANY
+          // commodity — able to drop the CORRECT building and leave a wrong
+          // address-similar building as the sole surviving candidate. With
+          // commodity unknown we cannot attribute the mismatched account to
+          // a specific meter, so we must NOT veto.
           const contradicting = (bldg.meters || []).some(
             (cm) =>
               cm.account &&
               String(cm.account).trim() &&
               !_acctFuzzyMatch(billAcctRaw, cm.account) &&
-              (!billComm || (cm.commodity || '').toLowerCase() === billComm),
+              billComm &&
+              (cm.commodity || '').toLowerCase() === billComm,
           );
           if (contradicting) continue;
         }
@@ -5230,11 +5239,15 @@ function showAutoAssignBanner(match, extracted) {
   // project/building/meter picker. Does not change 'identity' or 'address'
   // handling in any way — this matchType did not exist before this fix, so
   // this branch was previously unreachable.
-  if (match.matchType === 'ambiguous' || !match.meter) return;
+  // Fix 4 (review of 1e99a20): the multi-account check must run BEFORE the
+  // ambiguous/no-meter guard below. A genuinely multi-account batch whose
+  // bill[0] happens to resolve 'ambiguous' would otherwise hit `return` here
+  // and never open the review panel, silently dropping the whole batch.
   if (_isMultiAcctFile()) {
     showMultiBuildingReviewPanel();
     return;
   }
+  if (match.matchType === 'ambiguous' || !match.meter) return;
   _autoAssignTarget = match;
   const banner = document.getElementById('pdfAutoAssignBanner');
   const msg = document.getElementById('pdfAutoAssignMsg');
@@ -5570,7 +5583,14 @@ function _mbUpdateSaveAllBtn() {
   const assigned = nonSkipped.filter(function (b, i) {
     // Find the original index in bills array
     const origIdx = bills.indexOf(b);
-    return _mbRowTargets[origIdx] !== null && _mbRowTargets[origIdx] !== undefined;
+    const t = _mbRowTargets[origIdx];
+    // Fix 2 (review of 1e99a20): a row is only "ready" when its target has a
+    // truthy .meter (identity, address, or a manual pick). An 'ambiguous'
+    // target is truthy but carries no resolved .meter — it must NOT satisfy
+    // Save-All eligibility, or Save All would enable itself while a row is
+    // still unresolved and confirmMultiBuildingSave would have nothing safe
+    // to write for it.
+    return !!(t && t.meter);
   });
   btn.disabled = !(assigned.length === nonSkipped.length);
 }
@@ -5932,7 +5952,41 @@ async function confirmAutoAssign() {
       if (Object.keys(cp).length) billRow._chargeParts = cp;
     }
     let billMatch = findMeterMatch(bill);
-    if (!billMatch) billMatch = _autoAssignTarget;
+    // Fix 1 (review of 1e99a20, closes 62ec935c): a per-bill re-match can come
+    // back truthy-but-not-identity — 'ambiguous' (no .meter at all, crashes the
+    // very next line) or 'address' (has .meter but is an unconfirmed fuzzy
+    // guess, silently misrouted to a meter with no identity gate). Only use the
+    // fresh re-match when it's a real 'identity' hit with a .meter; otherwise
+    // fall back to the trusted, already-gated _autoAssignTarget (banner/manual
+    // override — always has .meter) exactly as the pre-existing null case did.
+    // If even that trusted fallback is missing, hold the bill for review
+    // instead of crashing or writing a non-identity guess.
+    if (!(billMatch && billMatch.matchType === 'identity' && billMatch.meter)) {
+      billMatch = _autoAssignTarget;
+    }
+    if (!billMatch || !billMatch.meter) {
+      console.warn(
+        '[confirmAutoAssign] no identity match and no trusted fallback for bill',
+        _bi,
+        '— holding for review instead of writing',
+      );
+      const _pdfBillsForReviewUnresolved = (await sget('en_pdf_bills', [])) || [];
+      _pdfBillsForReviewUnresolved.push(
+        Object.assign(
+          {
+            id: 'pb' + Date.now() + '_' + saved + '_review',
+            savedAt: new Date().toISOString(),
+            projId: projId || null,
+            projName: (proj && proj.name) || 'General',
+            hasPDF,
+            pdfKey: hasPDF ? pdfKey : null,
+          },
+          bill,
+        ),
+      );
+      await sset('en_pdf_bills', _pdfBillsForReviewUnresolved);
+      continue;
+    }
     const _bComm = (bill.Commodity || '').toLowerCase();
     let _mComm = (billMatch.meter.commodity || '').toLowerCase();
     if (_bComm && !_mComm) {
@@ -6274,6 +6328,37 @@ async function confirmMultiBuildingSave() {
       if (Object.keys(cp).length) billRow._chargeParts = cp;
     }
 
+    // Fix 2 (review of 1e99a20): a row target can be truthy but meter-less
+    // (matchType 'ambiguous' from findMeterMatch, or otherwise malformed) —
+    // every line below this dereferences billMatch.meter/.bldg unconditionally.
+    // Treat any meter-less target as UNRESOLVED here, before that access, and
+    // hold it for review instead of crashing or writing. Mirrors the identity
+    // gate's own review-diversion branch further down in this same loop.
+    if (!billMatch.meter) {
+      console.warn(
+        '[confirmMultiBuildingSave] unresolved target (matchType=' +
+          billMatch.matchType +
+          ') — no .meter to write to, routing to Saved Bills for review',
+        { billIdx: _bi },
+      );
+      const _pdfBillsForReviewUnresolved = (await sget('en_pdf_bills', [])) || [];
+      _pdfBillsForReviewUnresolved.push(
+        Object.assign(
+          {
+            id: 'pb' + Date.now() + '_' + _bi + '_review',
+            savedAt: new Date().toISOString(),
+            projId: billMatch.projId || null,
+            projName: (billMatch.proj && billMatch.proj.name) || 'General',
+            hasPDF,
+            pdfKey: hasPDF ? pdfKey : null,
+          },
+          bill,
+        ),
+      );
+      await sset('en_pdf_bills', _pdfBillsForReviewUnresolved);
+      flaggedForReview++;
+      continue;
+    }
     // Commodity-mismatch / meter-create block — identical to confirmAutoAssign
     const _bComm = (bill.Commodity || '').toLowerCase();
     let _mComm = (billMatch.meter.commodity || '').toLowerCase();
