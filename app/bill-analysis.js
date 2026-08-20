@@ -2109,10 +2109,17 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const _lgAddrW = new Set(_addrGroups[largest].flatMap((b) => _addrWords(b.ServiceAddress)));
         const _lgRates = _valsFor(_addrGroups[largest], 'RateSchedule');
         const _lgMeters = _valsFor(_addrGroups[largest], 'MeterNumber');
+        const _lgNames = _valsFor(_addrGroups[largest], 'CustomerName');
         for (const k of groupKeys) {
           if (k !== largest && _addrGroups[k].length <= 2) {
             const sm = _addrGroups[k];
             const _acctConflict = _setsConflict(_valsFor(sm, 'AccountNumber'), _lgAccts);
+            // (d1d380dd, 2026-08-20) CustomerName conflict is PRIMARY-strength
+            // identity, same as AccountNumber — a genuinely different customer name
+            // must never merge into another customer's group, regardless of
+            // RateSchedule/MeterNumber agreement. Unconditional block, not folded
+            // into the address-overlap secondary-agreement branch below.
+            const _nameConflict = _setsConflict(_valsFor(sm, 'CustomerName'), _lgNames);
             const _smAddrW = sm.flatMap((b) => _addrWords(b.ServiceAddress));
             const _addrOverlap =
               _smAddrW.length > 0 && _lgAddrW.size > 0
@@ -2122,6 +2129,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             const _rateConflict = _setsConflict(_valsFor(sm, 'RateSchedule'), _lgRates);
             const _meterConflict = _setsConflict(_valsFor(sm, 'MeterNumber'), _lgMeters);
             if (_acctConflict) {
+              continue;
+            }
+            if (_nameConflict) {
               continue;
             }
             if (_addrConflict) {
