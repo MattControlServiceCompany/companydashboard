@@ -911,7 +911,11 @@ async function commitKvRow(row, creds, opts) {
   }
 
   const errText = await safeText(insertRes);
-  return { key: row.key, status: 'error', httpStatus: insertRes.status, error: errText.slice(0, 300) };
+  // Was sliced to 300 chars, which routinely truncated the real Postgres/
+  // PostgREST error message before the useful part (constraint name, column,
+  // detail) appeared. Raised to 2000 -- this is reporting only, never part of
+  // the write/commit/CAS logic above.
+  return { key: row.key, status: 'error', httpStatus: insertRes.status, error: errText.slice(0, 2000) };
 }
 
 // ── Live: Storage (pdf_blobs bucket) client ─────────────────────────────────
@@ -922,11 +926,31 @@ function pdfObjectUrl(creds, key) {
   return creds.url + '/storage/v1/object/' + PDF_BUCKET + '/' + String(key).replace(/^\/+/, '');
 }
 
+function isStorageNotFoundBody(text) {
+  // Supabase Storage reports "object not found" as HTTP 400 (not 404) with a
+  // JSON body like {"statusCode":"404","error":"not_found","message":"Object
+  // not found","code":"NoSuchKey"}. Treat any of these signature fields as
+  // not-found so a stat on a never-uploaded key doesn't abort the whole seed.
+  if (!text) return false;
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch (e) {
+    return false;
+  }
+  if (!body || typeof body !== 'object') return false;
+  if (body.code === 'NoSuchKey') return true;
+  if (body.error === 'not_found') return true;
+  if (body.statusCode === '404' || body.statusCode === 404) return true;
+  return false;
+}
+
 async function pdfStorageStat(key, creds) {
   const res = await fetch(pdfObjectUrl(creds, key), { headers: storageHeaders(creds, { Range: 'bytes=0-0' }) });
   if (res.status === 404) return null;
   if (res.status !== 200 && res.status !== 206) {
     const text = await safeText(res);
+    if (isStorageNotFoundBody(text)) return null;
     throw new Error('Storage stat failed (' + res.status + '): ' + text.slice(0, 300));
   }
   const cr = res.headers.get('content-range');
@@ -964,7 +988,9 @@ async function commitPdfObject(key, buffer, hash, creds) {
       if (raced) return resolvePdfAgainstExisting(key, buffer, hash, raced, creds);
     }
     const errText = await safeText(up);
-    return { key, status: 'error', httpStatus: up.status, error: errText.slice(0, 300) };
+    // See commitKvRow's identical comment -- 300 chars routinely truncated
+    // the useful part of the Storage API error. Reporting only.
+    return { key, status: 'error', httpStatus: up.status, error: errText.slice(0, 2000) };
   }
   return resolvePdfAgainstExisting(key, buffer, hash, existing, creds);
 }
@@ -1148,6 +1174,48 @@ async function liveSeedPdfFiles(pdfFilePaths, creds, opts) {
   return { perFile: perFileResults, summary };
 }
 
+// ── Live: failed-row reporting (--live mode; NOT gated on --json) ──────────
+// The --live summary lines only ever printed COUNTS (e.g. "error=2"), never
+// which key failed or why -- the per-row `results`/`perFile` arrays were
+// computed by liveSeedData()/liveSeedPdfFiles() but discarded. These two
+// functions print the full detail for every failed row, always, regardless
+// of --json. Reporting only -- no request/commit/CAS logic here.
+
+function printFailedDataRows(results) {
+  const failed = (results || []).filter((r) => r.status === 'error');
+  if (!failed.length) return;
+  console.log('');
+  console.log('FAILED data row(s) (' + failed.length + ') -- public.kv:');
+  for (const r of failed) {
+    console.log('  -----------------------------------------------------------');
+    console.log('  key:         ' + r.key);
+    console.log('  httpStatus:  ' + (r.httpStatus != null ? r.httpStatus : '(n/a)'));
+    console.log('  error:       ' + (r.error || '(no error text captured)'));
+  }
+  console.log('  -----------------------------------------------------------');
+}
+
+function printFailedPdfItems(perFileResults) {
+  const failed = [];
+  for (const f of perFileResults || []) {
+    for (const r of f.results || []) {
+      if (r.status === 'error') failed.push(Object.assign({ file: f.file }, r));
+    }
+  }
+  if (!failed.length) return;
+  console.log('');
+  console.log('FAILED PDF item(s) (' + failed.length + ') -- "' + PDF_BUCKET + '" bucket:');
+  for (const r of failed) {
+    console.log('  -----------------------------------------------------------');
+    console.log('  key:         ' + (r.key || r.sourceKey));
+    console.log('  sourceKey:   ' + (r.sourceKey || '(n/a)'));
+    console.log('  file:        ' + r.file);
+    console.log('  httpStatus:  ' + (r.httpStatus != null ? r.httpStatus : '(n/a)'));
+    console.log('  error:       ' + (r.error || '(no error text captured)'));
+  }
+  console.log('  -----------------------------------------------------------');
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 async function main() {
@@ -1177,7 +1245,7 @@ async function main() {
   const pdfRemapStats = dataLoaded && pdfReport ? remapPdfReferences(dataLoaded.data, pdfReport._scan) : null;
   const dataReport = dataLoaded ? buildDataReport(dataLoaded, args) : null;
 
-  function printFullReport() {
+  function printFullReport(liveResults) {
     if (args.json) {
       const out = {};
       if (dataReport) {
@@ -1189,6 +1257,7 @@ async function main() {
         out.pdf = publicPdfReport;
       }
       if (pdfRemapStats) out.pdfRemap = pdfRemapStats;
+      if (liveResults) out.live = liveResults; // --live mode only -- dry-run never passes this
       console.log(JSON.stringify(out, null, 2));
     } else {
       if (dataReport) printHumanDataReport(dataReport);
@@ -1223,14 +1292,18 @@ async function main() {
   console.log('LIVE MODE -- this will write to the real Supabase project. Ctrl+C now to abort.');
   const creds = await getSupabaseCreds();
 
+  let liveDataResults = null;
+  let livePdfResults = null;
+
   if (dataReport) {
     console.log('');
     console.log('Seeding ' + dataReport.synced.count + ' data row(s) to public.kv ...');
-    const { summary } = await liveSeedData(dataReport._rows, creds, {
+    const { results, summary } = await liveSeedData(dataReport._rows, creds, {
       operator: args.operator,
       force: args.force,
       concurrency: args.concurrency,
     });
+    liveDataResults = { results, summary };
     console.log(
       'Data seed done -- inserted=' +
         summary.inserted +
@@ -1252,14 +1325,16 @@ async function main() {
       );
     }
     if (summary.error) {
-      console.log('  ' + summary.error + ' key(s) failed outright -- see full JSON output (--json) for details.');
+      console.log('  ' + summary.error + ' key(s) failed outright -- see FAILED data row(s) detail below.');
     }
+    printFailedDataRows(results);
   }
 
   if (pdfFilePaths.length) {
     console.log('');
     console.log('Seeding PDFs from ' + pdfFilePaths.length + ' part file(s) to the "' + PDF_BUCKET + '" bucket ...');
-    const { summary } = await liveSeedPdfFiles(pdfFilePaths, creds, { concurrency: args.concurrency });
+    const { perFile, summary } = await liveSeedPdfFiles(pdfFilePaths, creds, { concurrency: args.concurrency });
+    livePdfResults = { perFile, summary };
     console.log(
       'PDF seed done -- uploaded=' +
         summary.uploaded +
@@ -1286,6 +1361,19 @@ async function main() {
           ' PDF key(s) already existed with DIFFERENT content -- left untouched (no --force path for PDFs, investigate manually).',
       );
     }
+    if (summary.error) {
+      console.log('  ' + summary.error + ' PDF item(s) failed outright -- see FAILED PDF item(s) detail below.');
+    }
+    printFailedPdfItems(perFile);
+  }
+
+  // Makes --json actually emit something in --live mode (previously it was a
+  // no-op here -- printFullReport() was only ever called from the --dry-run
+  // and pdf-remap-abort paths). Mirrors the dry-run path: same function, same
+  // JSON shape, plus a `live` section holding the full per-row results
+  // (including every failed row's key/httpStatus/error) captured above.
+  if (args.json) {
+    printFullReport({ data: liveDataResults, pdf: livePdfResults });
   }
 
   console.log('');
