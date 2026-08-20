@@ -4371,7 +4371,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
 const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
-const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/m;
+const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}(\d[\d ]{4,18}\d)/m;
 const _EVG_ADDR =
   /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
@@ -5270,7 +5270,7 @@ const UTILITY_RULES = [
           _pageTextMap[_pg] = t.slice(_pStart, _pEnd);
         }
         const _bdKeyRe = /Billing\s*Date\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i;
-        const _acctKeyRe = /Account\s*(?:Number)?\s*[:\s©®]+(\d[\d\s\-]{4,18}\d)/i;
+        const _acctKeyRe = /Account\s*(?:Number)?\s*[^0-9A-Za-z\n]{0,6}(\d[\d\s\-]{4,18}\d)/i;
         const _billsByKey = {}; // 'acct|date' → [page numbers]
         for (const [_pgStr, _pgText] of Object.entries(_pageTextMap)) {
           const _pg = parseInt(_pgStr);
@@ -6999,9 +6999,11 @@ const UTILITY_RULES = [
             ?.trim() ||
           null,
         AccountNumber:
-          // KGS format: "Account Number    <REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>" — spaces between digit groups
-          t.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i)?.[1]?.replace(/\s/g, '') ||
-          t.match(/account[\s#:]*([0-9\-]{6,20})/i)?.[1] ||
+          // KGS format: "Account Number    <REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>" — spaces between digit groups.
+          // Separator is a bounded run of non-alnum OCR gunk (colon, #, period,
+          // stray symbols) rather than an enumerated char class — see f1dc5e65.
+          t.match(/Account\s+Number[^0-9A-Za-z\n]{0,6}([0-9 ]{10,30})/i)?.[1]?.replace(/\s/g, '') ||
+          t.match(/account[^0-9A-Za-z\n]{0,6}([0-9\-]{6,20})/i)?.[1] ||
           null,
         ServiceAddress:
           // KGS: address is the line immediately before the city/state line (e.g. "BALDWIN CITY, KS")
@@ -7067,7 +7069,7 @@ const UTILITY_RULES = [
         MeterNumber:
           // KGS: meter number like "0322A82382" appears before a date pair on the meter row
           t.match(/\b([A-Z0-9]{8,12})\s+\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/)?.[1] ||
-          t.match(/meter[\s#:]*([A-Z0-9\-]{4,20})/i)?.[1] ||
+          t.match(/meter[^0-9A-Za-z\n]{0,6}([A-Z0-9\-]{4,20})/i)?.[1] ||
           null,
         _utilityName: company,
       };
@@ -7344,12 +7346,15 @@ const UTILITY_RULES = [
         .replace(/(\d{1,2}\/\d{1,2}\/\d)\s+(\d{1,3})(?=\D)/g, '$1$2');
 
       const headerLine = cleaned.match(
-        /Service\s*Address\s+([A-Z0-9][A-Z0-9 .,]+?)\s+Account\s*#?\s*:?\s*(\d{5,8})\s+Bill\s*Date[:;]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+        /Service\s*Address\s+([A-Z0-9][A-Z0-9 .,]+?)\s+Account[^0-9A-Za-z\n]{0,6}(\d{5,8})\s+Bill\s*Date[:;]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
       );
       let ServiceAddress = headerLine?.[1]?.trim() || null;
       let AccountNumber = headerLine?.[2] || null;
       let BillDate = headerLine?.[3] || null;
-      if (!AccountNumber) AccountNumber = cleaned.match(/Account\s*#?\s*:?\s*(\d{5,8})\s+Bill\s*Date/i)?.[1] || null;
+      // Separator after "Account" is a bounded run of non-alnum OCR gunk
+      // (colon, #, period, stray symbols), not an enumerated char class — f1dc5e65.
+      if (!AccountNumber)
+        AccountNumber = cleaned.match(/Account[^0-9A-Za-z\n]{0,6}(\d{5,8})\s+Bill\s*Date/i)?.[1] || null;
       if (!BillDate) BillDate = cleaned.match(/Bill\s*Date[:;]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] || null;
       if (!ServiceAddress)
         ServiceAddress =
@@ -7638,9 +7643,10 @@ const UTILITY_RULES = [
       // "O" in place of leading zero.
       const acctRaw = page.match(/([\d(O]{2}-\d{6}-\d{2})/)?.[1] || null;
       let AccountNumber = acctRaw ? acctRaw.replace(/[(O]/g, '0') : null;
-      // Fallback: 7-10 digit account after "Account Number:" label (LGS bills)
+      // Fallback: 7-10 digit account after "Account Number:" label (LGS bills).
+      // Bounded non-alnum gap tolerates OCR gunk (colon misread as period, etc) — f1dc5e65.
       if (!AccountNumber) {
-        const altAcct = page.match(/Account\s*(?:Number|#)\s*:?\s*(\d{7,10})/i)?.[1] || null;
+        const altAcct = page.match(/Account\s*(?:Number|#)\s*[^0-9A-Za-z\n]{0,6}(\d{7,10})/i)?.[1] || null;
         if (altAcct) AccountNumber = altAcct;
       }
 
@@ -9568,7 +9574,9 @@ const UTILITY_RULES = [
       if (!/propane|fuel\s*oil|lp\s*gas/i.test(page) && !/NET\s*DELIVERY/i.test(page)) return null;
 
       const InvoiceNumber = page.match(/Invoice\s*#?\s*:?\s*(\d{6,10})/i)?.[1] || null;
-      const AccountNumber = page.match(/Customer#?\s*:?\s*(\d{4,10})/i)?.[1] || null;
+      // Bounded non-alnum gap (not an enumerated separator class) tolerates
+      // OCR gunk between "Customer" and the digits — f1dc5e65.
+      const AccountNumber = page.match(/Customer[^0-9A-Za-z\n]{0,6}(\d{4,10})/i)?.[1] || null;
       const BillDate =
         page.match(/Date:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] ||
         page.match(/DATE\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] ||
