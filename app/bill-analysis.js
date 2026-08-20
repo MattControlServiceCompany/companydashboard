@@ -8015,6 +8015,150 @@ function exitPreviewMode() {
   renderQueueProgress();
 }
 
+// ── Destination cell builder (fix b-46a984a0 — batch-to-meter review) ──
+// GATE: zero silent auto-routes. An 'identity' match (account/meter-number hit) is
+// shown as confirmed text the user can still override via "Change". Anything else —
+// 'address'-only fuzzy match or no match at all — always renders the cascading
+// Project→Building→Meter picker and forces an explicit user pick (never pre-selects
+// a building/meter from a weak address guess). handlerArg must already be a valid
+// JS literal for the onclick/onchange call (numeric rowIdx unquoted, group key quoted).
+//
+// Hoisted to module scope (from a local const inside renderQueueResults) so
+// showMultiBuildingReviewPanel (single-PDF multi-bill review) can reuse the exact
+// same honest-match rendering instead of a parallel "Matched" badge that hid
+// non-identity (address/ambiguous) matches behind a false-confident green label.
+// Behavior-preserving hoist — same signature, same branches, same output.
+function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn) {
+  const ov = bill._meterOverride || null;
+  const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
+  const expanded = !!bill._destExpanded || !isIdentity;
+  if (isIdentity && !expanded) {
+    const destText =
+      autoMatch.proj.name +
+      ' → ' +
+      autoMatch.bldg.name +
+      ' → ' +
+      (autoMatch.meter.provider || autoMatch.meter.meter || 'meter');
+    return (
+      '<div style="font-size:10px;color:var(--text)" title="Identity match — account/meter number found">' +
+      _escHtml(destText) +
+      ' <a href="javascript:void(0)" onclick="' +
+      setExpandFn +
+      '(' +
+      handlerArg +
+      ',true)" style="font-size:9px;color:var(--em);text-decoration:underline">Change</a></div>'
+    );
+  }
+  // Cascading picker. For an identity match under "Change", pre-fill with the
+  // match's own proj/bldg/meter (an editable confirm, like the single-file banner's
+  // override toggle). For an address-only or absent match, leave building/meter BLANK
+  // even though we know a guess — the user must actively confirm it (this is the
+  // trust-violation guard: a wrong silent attach is worse than no attach).
+  const curProj =
+    ov && ov.projId != null
+      ? ov.projId
+      : isIdentity && autoMatch
+        ? autoMatch.projId
+        : bill._projOverride || (window._pdfQueue && window._pdfQueue.batchProjId) || '';
+  const curBldg = ov && ov.bldgId ? ov.bldgId : isIdentity && autoMatch && !ov ? autoMatch.bldgId : '';
+  const curMeter = ov && ov.meterId ? ov.meterId : isIdentity && autoMatch && !ov ? autoMatch.meterId : '';
+  const selStyle =
+    'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
+    'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
+  const projOpts =
+    '<option value="">Select project…</option>' +
+    (projects || [])
+      .map(
+        (p) =>
+          '<option value="' +
+          p.id +
+          '"' +
+          (String(p.id) === String(curProj) ? ' selected' : '') +
+          '>' +
+          _escHtml(p.name) +
+          '</option>',
+      )
+      .join('');
+  const bldgOpts =
+    '<option value="">Select building…</option>' +
+    (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
+      .map(
+        (b2) =>
+          '<option value="' +
+          b2.id +
+          '"' +
+          (String(b2.id) === String(curBldg) ? ' selected' : '') +
+          '>' +
+          _escHtml(b2.name || b2.id) +
+          '</option>',
+      )
+      .join('');
+  const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
+  const meterOpts =
+    '<option value="">Select meter…</option>' +
+    ((bldgObj && bldgObj.meters) || [])
+      .map((m) => {
+        const lbl =
+          (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : m.meter ? ' (' + m.meter + ')' : '');
+        return (
+          '<option value="' +
+          m.id +
+          '"' +
+          (String(m.id) === String(curMeter) ? ' selected' : '') +
+          '>' +
+          _escHtml(lbl) +
+          '</option>'
+        );
+      })
+      .join('');
+  const hint =
+    autoMatch && autoMatch.matchType === 'address'
+      ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
+        _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
+        '</div>'
+      : !autoMatch
+        ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
+        : '';
+  const changeLink = isIdentity
+    ? '<a href="javascript:void(0)" onclick="' +
+      setExpandFn +
+      '(' +
+      handlerArg +
+      ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
+    : '';
+  return (
+    hint +
+    '<select style="' +
+    selStyle +
+    '" onchange="' +
+    setProjFn +
+    '(' +
+    handlerArg +
+    ',this.value)">' +
+    projOpts +
+    '</select>' +
+    '<select style="' +
+    selStyle +
+    '" onchange="' +
+    setBldgFn +
+    '(' +
+    handlerArg +
+    ',this.value)">' +
+    bldgOpts +
+    '</select>' +
+    '<select style="' +
+    selStyle +
+    '" onchange="' +
+    setMeterFn +
+    '(' +
+    handlerArg +
+    ',this.value)">' +
+    meterOpts +
+    '</select>' +
+    changeLink
+  );
+}
+
 function renderQueueResults() {
   const q = window._pdfQueue;
   if (!q) return;
@@ -8317,144 +8461,6 @@ function renderQueueResults() {
       );
     }
     return '<span style="color:#4a4;font-size:10px">READY</span>';
-  };
-
-  // ── Destination cell builder (fix b-46a984a0 — batch-to-meter review) ──
-  // GATE: zero silent auto-routes. An 'identity' match (account/meter-number hit) is
-  // shown as confirmed text the user can still override via "Change". Anything else —
-  // 'address'-only fuzzy match or no match at all — always renders the cascading
-  // Project→Building→Meter picker and forces an explicit user pick (never pre-selects
-  // a building/meter from a weak address guess). handlerArg must already be a valid
-  // JS literal for the onclick/onchange call (numeric rowIdx unquoted, group key quoted).
-  const _buildDestCell = (bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn) => {
-    const ov = bill._meterOverride || null;
-    const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
-    const expanded = !!bill._destExpanded || !isIdentity;
-    if (isIdentity && !expanded) {
-      const destText =
-        autoMatch.proj.name +
-        ' → ' +
-        autoMatch.bldg.name +
-        ' → ' +
-        (autoMatch.meter.provider || autoMatch.meter.meter || 'meter');
-      return (
-        '<div style="font-size:10px;color:var(--text)" title="Identity match — account/meter number found">' +
-        _escHtml(destText) +
-        ' <a href="javascript:void(0)" onclick="' +
-        setExpandFn +
-        '(' +
-        handlerArg +
-        ',true)" style="font-size:9px;color:var(--em);text-decoration:underline">Change</a></div>'
-      );
-    }
-    // Cascading picker. For an identity match under "Change", pre-fill with the
-    // match's own proj/bldg/meter (an editable confirm, like the single-file banner's
-    // override toggle). For an address-only or absent match, leave building/meter BLANK
-    // even though we know a guess — the user must actively confirm it (this is the
-    // trust-violation guard: a wrong silent attach is worse than no attach).
-    const curProj =
-      ov && ov.projId != null
-        ? ov.projId
-        : isIdentity && autoMatch
-          ? autoMatch.projId
-          : bill._projOverride || (window._pdfQueue && window._pdfQueue.batchProjId) || '';
-    const curBldg = ov && ov.bldgId ? ov.bldgId : isIdentity && autoMatch && !ov ? autoMatch.bldgId : '';
-    const curMeter = ov && ov.meterId ? ov.meterId : isIdentity && autoMatch && !ov ? autoMatch.meterId : '';
-    const selStyle =
-      'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
-      'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
-    const projOpts =
-      '<option value="">Select project…</option>' +
-      (projects || [])
-        .map(
-          (p) =>
-            '<option value="' +
-            p.id +
-            '"' +
-            (String(p.id) === String(curProj) ? ' selected' : '') +
-            '>' +
-            _escHtml(p.name) +
-            '</option>',
-        )
-        .join('');
-    const bldgOpts =
-      '<option value="">Select building…</option>' +
-      (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
-        .map(
-          (b2) =>
-            '<option value="' +
-            b2.id +
-            '"' +
-            (String(b2.id) === String(curBldg) ? ' selected' : '') +
-            '>' +
-            _escHtml(b2.name || b2.id) +
-            '</option>',
-        )
-        .join('');
-    const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
-    const meterOpts =
-      '<option value="">Select meter…</option>' +
-      ((bldgObj && bldgObj.meters) || [])
-        .map((m) => {
-          const lbl =
-            (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : m.meter ? ' (' + m.meter + ')' : '');
-          return (
-            '<option value="' +
-            m.id +
-            '"' +
-            (String(m.id) === String(curMeter) ? ' selected' : '') +
-            '>' +
-            _escHtml(lbl) +
-            '</option>'
-          );
-        })
-        .join('');
-    const hint =
-      autoMatch && autoMatch.matchType === 'address'
-        ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
-          _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
-          '</div>'
-        : !autoMatch
-          ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
-          : '';
-    const changeLink = isIdentity
-      ? '<a href="javascript:void(0)" onclick="' +
-        setExpandFn +
-        '(' +
-        handlerArg +
-        ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
-      : '';
-    return (
-      hint +
-      '<select style="' +
-      selStyle +
-      '" onchange="' +
-      setProjFn +
-      '(' +
-      handlerArg +
-      ',this.value)">' +
-      projOpts +
-      '</select>' +
-      '<select style="' +
-      selStyle +
-      '" onchange="' +
-      setBldgFn +
-      '(' +
-      handlerArg +
-      ',this.value)">' +
-      bldgOpts +
-      '</select>' +
-      '<select style="' +
-      selStyle +
-      '" onchange="' +
-      setMeterFn +
-      '(' +
-      handlerArg +
-      ',this.value)">' +
-      meterOpts +
-      '</select>' +
-      changeLink
-    );
   };
 
   let billRowsHtml = '';
