@@ -26,6 +26,45 @@
       crossorigin="anonymous"
     ></script>
     <script src="app/ch-auth.js"></script>
+    <script>
+      /* ── SESSION GUARD (backlog: service-department silent-degrade fix) ──
+         Runs immediately after app/ch-auth.js loads, before the rest of
+         <head>/<body> parses — i.e. before this page's own MSAL `ch_user`
+         login gate (further down in this file) can show. Without this, a
+         user who lands directly on service-department.html with no
+         Supabase session sits on a fully rendered page while every
+         kv.sync/pdf.sync call silently 401s and app/db.js degrades to
+         local-only with no visible error (the bug this guard closes).
+
+         Source of truth is window.CH_AUTH (app/ch-auth.js) — the SAME
+         module app/db.js's _authHeaders() reads — via its public
+         isSignedOut() method. No new/duplicate session check is invented
+         here.
+
+         Demo Mode (index.html's loginDemo()) never creates a Supabase
+         session — it only stores a local `ch_user` record with
+         isReal:false — so a legitimate Demo session must not be bounced
+         back to index.html (that would be a redirect loop: index.html's
+         Demo button doesn't sign in to Supabase either, so a strict
+         Supabase-only check would trap a Demo user forever). */
+      (function () {
+        function hasDemoSession() {
+          try {
+            var raw = sessionStorage.getItem('ch_user') || localStorage.getItem('ch_user');
+            if (!raw) return false;
+            var u = JSON.parse(raw);
+            return !!(u && u.isReal === false);
+          } catch (e) {
+            return false;
+          }
+        }
+        var noSupabaseSession =
+          !window.CH_AUTH || typeof window.CH_AUTH.isSignedOut !== 'function' || window.CH_AUTH.isSignedOut();
+        if (noSupabaseSession && !hasDemoSession()) {
+          window.location.replace('index.html');
+        }
+      })();
+    </script>
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
