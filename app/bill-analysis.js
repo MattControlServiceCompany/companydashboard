@@ -12113,6 +12113,14 @@ async function processPDF(file) {
           // Use extractAll if available (multi-bill PDF support)
           let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
           const _extractUnmatchedPages = bills._unmatchedPages || [];
+          // Guard (2322a12f): a non-empty _unmatchedPages means `rule` already
+          // split this file correctly — some pages matched `rule` (e.g. a
+          // Louisburg gas page), others were deliberately left unmatched for
+          // a DIFFERENT provider's rule to pick up per-page later (see
+          // _unmatchedToSyntheticBills). That marks this file as a genuine
+          // multi-provider/multi-commodity document. See the OCR-retry guard
+          // below (search this comment ID) for why that matters.
+          const _fileHasMultiProviderSplit = _extractUnmatchedPages.length > 0;
           // Bug b5951068: Flag bills that fail the key-field filter instead of
           // silently dropping them. Unparseable billing periods surface as
           // parseError:true rows so the user can see and manually assign them.
@@ -12275,7 +12283,27 @@ async function processPDF(file) {
                   }
                   const retryFull = retryTexts.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
                   if (retryFull.trim().length > 100) {
-                    const retryRule = UTILITY_RULES.find((r) => r.detect(retryFull));
+                    // Guard (2322a12f): _fileHasMultiProviderSplit means this file
+                    // already produced a correct per-page split across DIFFERENT
+                    // providers/commodities (e.g. a Louisburg gas page + a page
+                    // left unmatched for Evergy). Re-detecting a rule from the
+                    // combined retryFull text (all pages concatenated) can match
+                    // a different single-provider rule than the one that owns
+                    // this file (Evergy's detect() firing on the Evergy page
+                    // mixed in with the Louisburg page). That rule's extractAll
+                    // then runs its OWN page-splitting logic across the whole
+                    // combined text — including pages it doesn't own — and the
+                    // wholesale `bills = retryBills2` below replaces the correct
+                    // split with duplicate/wrong-commodity bills (2322a12f: a
+                    // Louisburg gas+Evergy electric 2-page PDF came back as two
+                    // Evergy electric bills with the same dates). When this file
+                    // is known multi-provider, the retry must stay on the SAME
+                    // rule that owned the original split — never switch providers.
+                    const retryRule = _fileHasMultiProviderSplit
+                      ? rule.detect(retryFull)
+                        ? rule
+                        : null
+                      : UTILITY_RULES.find((r) => r.detect(retryFull));
                     if (retryRule) {
                       const retryBills2 = retryRule.extractAll
                         ? retryRule.extractAll(retryFull)
