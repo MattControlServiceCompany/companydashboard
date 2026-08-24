@@ -41,7 +41,7 @@
   // which must NEVER appear here or anywhere in client code). Fill this in
   // from the Supabase dashboard: Project Settings -> API -> "anon" /
   // "publishable" key.
-  var SUPABASE_ANON_KEY = '<<FILL_ME: Supabase anon/publishable key>>';
+  var SUPABASE_ANON_KEY = 'sb_publishable_YZEN55mO8GQQacXSFOe8jg_xRVOLlta';
 
   var TOKEN_ENDPOINT = SUPABASE_URL + '/auth/v1/token';
   var LOGOUT_ENDPOINT = SUPABASE_URL + '/auth/v1/logout';
