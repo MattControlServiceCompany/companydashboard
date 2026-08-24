@@ -7791,8 +7791,28 @@ const UTILITY_RULES = [
 
       // Customer info row: "USD <NNN> <FACILITY> <SERVICE ADDRESS> <acct>"
       // District number is captured generically — no hardcoded IDs.
+      // Address group was `\d+\s*[A-Z][...]` — required the digit run to be
+      // followed (after optional whitespace) by a LETTER. Fix (2026-08-24,
+      // defect #3 of the Louisburg 100%-accuracy gate): on the Broadmoor EMS
+      // account (02-002360-00) one OCR pass reads the printed "105 S 5TH ST
+      // E" as "1058 5STHE" — the direction letter "S" itself misread as
+      // digit "8" (a known Tesseract confusable pair), leaving BOTH tokens
+      // ("1058" and "5STHE") starting with a digit and no letter anywhere
+      // near the first token. The old pattern can never match that shape
+      // (every backtrack of the digit run still leaves a digit, not a
+      // letter, immediately before the next boundary), so ServiceAddress
+      // fell through to null even though a garbled-but-legible address was
+      // printed right there. Broadened to accept the address token starting
+      // with EITHER a digit or a letter — a strict superset of the old
+      // class, so every input the old regex matched still matches identically
+      // (same non-greedy minimal-length match); it only additionally accepts
+      // the digit-led-with-no-nearby-letter shape this defect needed. Confirmed
+      // against 7 other independent OCR passes of the same bill that read the
+      // cleaner "105S 5THE" (still garbled, but self-consistent with this
+      // same document's Evergy page printing "105 S 5TH ST E LOUISBURG KS" for
+      // the same property) — this also continues to match those unchanged.
       const custLine = page.match(
-        /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+(\d+\s*[A-Z][A-Z0-9 .&\-]{3,50}?)\s+[\d(O]{2}-\d{6}-\d{2}/,
+        /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+([0-9A-Z][0-9A-Z .&\-]{3,50}?)\s+[\d(O]{2}-\d{6}-\d{2}/,
       );
       let CustomerName = custLine ? 'USD ' + custLine[1] + ' ' + custLine[2].trim() : null;
       let ServiceAddress = custLine ? custLine[3].trim() : null;
@@ -7810,8 +7830,11 @@ const UTILITY_RULES = [
       }
       if (!CustomerName && AccountNumber) CustomerName = _lbg_facilityLookup(AccountNumber);
       if (!ServiceAddress) {
+        // Same broadening as the primary match above (digit-or-letter start)
+        // for the last-resort per-line scan, used when the CustomerName
+        // portion of the row didn't match the USD-prefixed pattern at all.
         for (const raw of page.split(/\r?\n/)) {
-          const m = raw.match(/\b(\d{2,6}\s*[NSEW]?\s*[A-Z][A-Z0-9 .]{3,40}?)\s+[\d(O]{2}-\d{6}-\d{2}/);
+          const m = raw.match(/\b([0-9A-Z][0-9A-Z .]{3,40}?)\s+[\d(O]{2}-\d{6}-\d{2}/);
           if (m) {
             ServiceAddress = m[1].trim();
             break;
