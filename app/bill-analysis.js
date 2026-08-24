@@ -12600,9 +12600,6 @@ async function processPDF(file) {
               }
             }
           }
-          // F3: pass texts only needed during consensus — free them now
-          window._pdfOcrPasses = null;
-          window._pdfPassScores = null;
 
           // Convert _pageIndex to _pageStart/_pageEnd for extractors that
           // set per-page indices instead of page ranges
@@ -12616,6 +12613,84 @@ async function processPDF(file) {
           // ── Inject unmatched pages as "Manual Review" entries so they are visible ──
           // Without this, pages that couldn't be parsed are silently dropped.
           const _syntheticReviewBills = _unmatchedToSyntheticBills(_extractUnmatchedPages);
+
+          // ── MULTI-PASS OCR CONSENSUS FOR RECOVERED UNMATCHED PAGES ──
+          // Fix (2026-08-24, Louisburg synthetic-recovery defect): the kWh-identity
+          // consensus block above only patches bills produced by the FILE-LEVEL
+          // `rule.extractAll(text)` pass (it's gated on `rule.name === 'Evergy'`,
+          // where `rule` is whichever provider owns the whole file — e.g. "City of
+          // Louisburg" for a mixed Louisburg+Evergy scan). It never runs against
+          // bills recovered by _unmatchedToSyntheticBills, because those bills are
+          // built from a DIFFERENT rule than the file-level one (an Evergy page
+          // mixed into a Louisburg scan) and don't exist yet at that point in the
+          // pipeline. A recovered bill can carry the exact same
+          // _auto_recovered_On/OffPeakKWh identity-fallback flags (set inside
+          // _extractEvergy, invoked by _unmatchedToSyntheticBills's own
+          // `r.extract(u.pageText)` — see ~11996-12020 above) with no path to a
+          // higher-fidelity alternate OCR pass. This block mirrors the one above
+          // but (a) runs unconditionally on `_syntheticReviewBills` regardless of
+          // the file-level `rule`, keying off each recovered bill's OWN rule
+          // (`_recoveredFromFallbackRule`) instead, and (b) normalizes that rule's
+          // `.extract()` return to an array the same way _unmatchedToSyntheticBills
+          // already does (Evergy's `.extract()` returns a single bill object, not
+          // an array — calling `.length` on it directly is always undefined).
+          if (hasAltPasses && _syntheticReviewBills.length) {
+            const KWH_FALLBACK_PAIRS_RECOVERED = [
+              { kwhField: 'OnPeakKWh', rateField: 'OnPeakRate', flag: '_auto_recovered_OnPeakKWh' },
+              { kwhField: 'OffPeakKWh', rateField: 'OffPeakRate', flag: '_auto_recovered_OffPeakKWh' },
+            ];
+            const altTextsRecovered = [];
+            for (const passes of Object.values(passTexts)) {
+              for (const p of passes) {
+                if (!altTextsRecovered.includes(p.text) && p.text !== text) altTextsRecovered.push(p.text);
+              }
+            }
+            for (const b of _syntheticReviewBills) {
+              const recoverRule =
+                b._recoveredFromFallbackRule && UTILITY_RULES.find((r) => r.name === b._recoveredFromFallbackRule);
+              if (!recoverRule || typeof recoverRule.extract !== 'function') continue;
+              for (const pair of KWH_FALLBACK_PAIRS_RECOVERED) {
+                if (!b[pair.flag]) continue;
+                for (const altText of altTextsRecovered) {
+                  try {
+                    const altResult = recoverRule.extract(altText);
+                    const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
+                    if (!altBills.length) continue;
+                    const altBill =
+                      altBills.find(
+                        (ab) =>
+                          ab &&
+                          ab.BillingPeriodStart === b.BillingPeriodStart &&
+                          ab.BillingPeriodEnd === b.BillingPeriodEnd,
+                      ) || altBills[0];
+                    // Same adoption guard as the block above: only take the alt
+                    // pass's reading when it read the charge line DIRECTLY (no
+                    // fallback flag of its own) AND recovered the paired rate —
+                    // never adopt a qty without its rate, or trade one degraded
+                    // reading for another.
+                    if (altBill && !altBill[pair.flag] && altBill[pair.kwhField] && altBill[pair.rateField]) {
+                      b['_consensus_recovered_' + pair.kwhField] = {
+                        original: b[pair.kwhField],
+                        corrected: altBill[pair.kwhField],
+                        reason:
+                          'Alternate OCR pass read the charge line directly instead of falling back to the kWh identity',
+                      };
+                      b[pair.kwhField] = altBill[pair.kwhField];
+                      b[pair.rateField] = altBill[pair.rateField];
+                      delete b[pair.flag];
+                      break;
+                    }
+                  } catch (e) {
+                    /* alt extraction failed, skip */
+                  }
+                }
+              }
+            }
+          }
+          // F3: pass texts only needed during consensus — free them now
+          window._pdfOcrPasses = null;
+          window._pdfPassScores = null;
+
           if (_syntheticReviewBills.length) {
             finalBills = finalBills.concat(_syntheticReviewBills);
           }
