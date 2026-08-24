@@ -5781,6 +5781,10 @@ async function confirmAutoAssign() {
       const overrideMeter = overrideBldg ? (overrideBldg.meters || []).find((m) => m.id === overrideMeterId) : null;
       const overrideProj = (projects || []).find((p) => p.id === overrideProjId);
       if (overrideBldg && overrideMeter && overrideProj) {
+        // Tag this explicit Project -> Building -> Meter override as manual,
+        // mirroring setMbRowDestMeter's _mbRowTargets[i] (~5603-5611) — the
+        // account veto below (~6088) must let an explicit user pick through
+        // regardless of account mismatch, same as _mbSaveOneBill's gate.
         _autoAssignTarget = {
           proj: overrideProj,
           bldg: overrideBldg,
@@ -5788,6 +5792,7 @@ async function confirmAutoAssign() {
           projId: overrideProjId,
           bldgId: overrideBldgId,
           meterId: overrideMeterId,
+          matchType: 'manual',
         };
       }
     } else {
@@ -6085,7 +6090,14 @@ async function confirmAutoAssign() {
     // still be wrong (e.g. found by MeterNumber alone). Runs BEFORE the
     // commodity-mismatch meter-create block below so a vetoed bill never creates
     // a phantom meter on the building either.
-    if (bill.AccountNumber && billMatch.meter.account) {
+    //
+    // Should-fix (re-review of Finding 1): an explicit manual override from the
+    // banner picker above (~5784-5791, tagged matchType: 'manual') must always
+    // win, exactly like _mbSaveOneBill's _isManualPick exemption (~6508-6511).
+    // findMeterMatch() never produces 'manual', so this cannot be spoofed by an
+    // auto/address match — only the trusted override-panel pick is exempt.
+    const _isManualOverridePick = billMatch.matchType === 'manual';
+    if (!_isManualOverridePick && bill.AccountNumber && billMatch.meter.account) {
       const _strongMismatch =
         !_acctFuzzyMatch(bill.AccountNumber, billMatch.meter.account) &&
         String(bill.AccountNumber).replace(/\D/g, '').length >= 6;
