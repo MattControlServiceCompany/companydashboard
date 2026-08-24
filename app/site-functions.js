@@ -1784,6 +1784,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.24.766',
+    date: '2026-08-24',
+    title: 'Bill uploading: more accurate reads and safer matching',
+    items: [
+      {
+        type: 'fix',
+        text: 'Bill extraction: more accurate meter reads and gas/electric splits when uploading utility bills.',
+      },
+      {
+        type: 'change',
+        text: 'Bill uploading: each bill in a batch now saves on its own with a clear destination, instead of all-or-nothing.',
+      },
+      {
+        type: 'change',
+        text: 'Bill-to-meter matching: unconfirmed matches are now flagged for your review instead of being auto-saved.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.24.765',
     date: '2026-08-24',
     title: 'Login: sign in with your email and password',
