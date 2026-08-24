@@ -1784,6 +1784,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.24.765',
+    date: '2026-08-24',
+    title: 'Login: sign in with your email and password',
+    items: [
+      {
+        type: 'feature',
+        text: 'Login: you can now sign in with your email and password. This replaces the old Microsoft 365 sign-in button.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.19.764',
     date: '2026-08-19',
     title: 'Bill PDF links — auto-repair for a rare multi-building save case',
