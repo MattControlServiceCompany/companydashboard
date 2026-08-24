@@ -58,7 +58,6 @@ SITE_FUNCTIONS_JS = REPO_ROOT / "app" / "site-functions.js"
 HTML_FILES = [
     REPO_ROOT / "energy-department.html",
     REPO_ROOT / "index.html",
-    REPO_ROOT / "service-department.html",
     REPO_ROOT / "ems-leads.html",
 ]
 
@@ -72,7 +71,6 @@ HTML_FILES = [
 # every deploy or the badges go stale. Same file list as the two pages above.
 CH_VERSION_LITERAL_HTML_FILES = [
     REPO_ROOT / "index.html",
-    REPO_ROOT / "service-department.html",
 ]
 
 # Matches both ?v=NNN and ?v=YYYY.MM.DD.NNN (the core.js anomaly)
