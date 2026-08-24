@@ -2417,6 +2417,73 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
 
+  // ── ZERO-ROW FALLBACK: recover a meter row whose BOTH date columns are unrecoverable ──
+  // The primary _meterRe above intentionally keeps the two leading date columns as a strict,
+  // non-optional anchor (see the comment above _meterRe) — loosening them directly would risk
+  // matching unrelated numeric content elsewhere in the bill (e.g. a charge-breakdown table),
+  // since groups 4-10 already tolerate almost any token via their \S+ fallback; the dates are
+  // what actually protects against a false-positive row match today. But a bill can garble
+  // BOTH date tokens past any digit-substitution recovery (e.g. "40s"/"oss" for "04/09"/
+  // "05/08" — Field House, April 2026 electric bill, acct 8980291458) while every remaining
+  // column — Days, EndRead, StartRead, Difference, Multiplier, kWhUsed, KWUsed, RKVAUsed —
+  // reads perfectly. The strict primary regex correctly refuses to match that line at all, so
+  // those numeric reads are silently lost. Recover them here, but ONLY when the primary pass
+  // found ZERO rows anywhere in the bill — this fallback can never fire on, and therefore can
+  // never regress, any bill that already has at least one strictly-anchored row (every bill in
+  // the existing 37-file reference corpus and every harness fixture). Because there is no date
+  // anchor to rely on for false-positive protection here, a candidate line is additionally
+  // REQUIRED to satisfy the row's own arithmetic identity — EndRead-StartRead≈Difference
+  // (tolerating the same missing-decimal insertion the recovery pass below applies) or
+  // Difference×Multiplier≈kWhUsed — before it is accepted. An unrelated line (a barcode digit
+  // run, a charge-breakdown row) has no reason to satisfy that identity; that check is what
+  // actually protects against false positives here, not the date shape.
+  // Bounded to a single bill/page's worth of text (~8KB — real single-bill OCR pages in the
+  // reference corpus run 2-4KB; this is called once per already-isolated bill section, never
+  // on a whole multi-page combined document, but the length guard is kept as a hard backstop
+  // regardless) and to at most 300 candidate-line attempts, so a worst-case document can never
+  // turn this into a multi-second scan — measured against the 47-bill and 33-bill harness
+  // fixtures after adding this guard (see dashboardlogic entry for this fix).
+  if (_meterRows.length === 0 && _meterT.length < 8000) {
+    const _meterReLoose =
+      /^[^\S\n]*(?:\S{1,6}[^\S\n]+){0,2}(?:\d{1,3}[^\S\n]+)?([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)(?:[^\S\n]+([\d,.]+))?(?:[^\S\n]+([\d,.]+))?[^\S\n]*$/gm;
+    let _lm;
+    let _looseAttempts = 0;
+    while ((_lm = _meterReLoose.exec(_meterT)) !== null && _looseAttempts < 300) {
+      _looseAttempts++;
+      const pnL = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
+      const _insertDecimal4L = (s) => {
+        if (!s || s.includes('.')) return s;
+        const digits = s.replace(/,/g, '');
+        if (!/^\d+$/.test(digits) || digits.length < 7 || digits.length > 9) return s;
+        return digits.slice(0, -4) + '.' + digits.slice(-4);
+      };
+      const endL = pnL(_insertDecimal4L(_lm[1]));
+      const startL = pnL(_insertDecimal4L(_lm[2]));
+      const diffL = pnL(_lm[3]);
+      const multL = pnL(_lm[4]);
+      const kwhL = pnL(_lm[5]);
+      if (endL <= 0 || startL <= 0 || diffL <= 0 || multL <= 0) continue;
+      const readsChecksum = Math.abs(endL - startL - diffL) < 0.5;
+      const kwhChecksum = kwhL > 0 && Math.abs(diffL * multL - kwhL) < 1;
+      if (!readsChecksum && !kwhChecksum) continue; // no evidence this is a real meter row — skip
+      const fakeRow = [
+        _lm[0],
+        null,
+        null,
+        null,
+        _lm[1],
+        _lm[2],
+        _lm[3],
+        _lm[4],
+        _lm[5],
+        _lm[6] || null,
+        _lm[7] || null,
+      ];
+      fakeRow.index = _lm.index;
+      _meterRows.push(fakeRow);
+    }
+  }
+
   // ── OCR DIGIT CORRECTION ENGINE ──
   // Tesseract frequently confuses 0↔6↔8↔3 (round digits) and occasionally 1↔7, 5↔6.
   // The meter table has built-in checksums: EndRead - StartRead = Difference, Diff × Mult = kWhUsed.
@@ -2486,6 +2553,53 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       if (row[gi]) row[gi] = row[gi].replace(/:/g, ',');
     }
   }
+  // ── MISSING-DECIMAL RECOVERY (groups 4/5: EndRead/StartRead) ──
+  // Same repair pattern already used for kWhUsed's "Candidate 1b" fallback (~line 2731,
+  // "1053648000" -> "105,364.8000"): occasionally the printed decimal point in a meter read
+  // OCRs to nothing at all rather than to a misread digit — the token still parses as a
+  // clean number (passes the CLEAN_NUMBER branch of _meterRe) but comes back as a bare
+  // integer with the decimal simply absent, which is not one of the confusable-digit
+  // misreads _reconcileNumber below can fix (that function requires identical digit counts).
+  // Every real EndRead/StartRead in the reference corpus prints with exactly 4 decimal digits
+  // (see the per-column comment above _meterRe), so a 7-9 digit integer-looking token is a
+  // candidate for "insert a decimal 4 digits from the right". Only adopted when it is a
+  // STRICT improvement to this row's own EndRead-StartRead=Difference checksum versus
+  // leaving the token as a bare integer — protects any bill that legitimately reads as a
+  // whole number (that checksum is already near 0 for a real integer read, so inserting a
+  // decimal would only make the gap worse and the guard correctly rejects it). Sets the
+  // same row._fixedEndRead/_fixedStartRead + *_Original fields Tier 1 below already sets on
+  // a digit-substitution fix, so every downstream consumer (StartRead/EndRead result
+  // fields, Meter1_/Meter2_, the kWh candidate list, _digitCorrections diagnostics) picks
+  // this up with no additional wiring.
+  for (const row of _meterRows) {
+    const _insertDecimal4 = (s) => {
+      if (!s || s.includes('.')) return null;
+      const digits = s.replace(/,/g, '');
+      if (!/^\d+$/.test(digits) || digits.length < 7 || digits.length > 9) return null;
+      return digits.slice(0, -4) + '.' + digits.slice(-4);
+    };
+    const endCand = _insertDecimal4(row[4]);
+    const startCand = _insertDecimal4(row[5]);
+    if (!endCand && !startCand) continue;
+    const pn0 = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
+    const rawEnd = pn0(row[4]),
+      rawStart = pn0(row[5]),
+      rawDiffCol = pn0(row[6]);
+    const candEnd = endCand ? parseFloat(endCand) : rawEnd;
+    const candStart = startCand ? parseFloat(startCand) : rawStart;
+    const rawGap = Math.abs(rawEnd - rawStart - rawDiffCol);
+    const candGap = Math.abs(candEnd - candStart - rawDiffCol);
+    if (candGap < rawGap) {
+      if (endCand) {
+        row._fixedEndRead = endCand;
+        row._endReadOriginal = row[4].replace(/,/g, '');
+      }
+      if (startCand) {
+        row._fixedStartRead = startCand;
+        row._startReadOriginal = row[5].replace(/,/g, '');
+      }
+    }
+  }
   // Apply checksum-driven reconciliation to meter rows. Two identities hold on a clean row:
   //   (1) EndRead - StartRead = Difference
   //   (2) Difference × Multiplier = kWh Used
@@ -2499,8 +2613,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // re-run Tier 1 once more with the corrected Difference as the trusted checksum.
   for (const row of _meterRows) {
     const pn = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
-    const endR = pn(row[4]),
-      startR = pn(row[5]);
+    const endR = pn(row._fixedEndRead || row[4]),
+      startR = pn(row._fixedStartRead || row[5]);
     let diff = pn(row[6]);
     const mult = pn(row[7]),
       kwhUsed = pn(row[8]);
@@ -2552,6 +2666,26 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           row._differenceOriginal = row[6].replace(/,/g, '');
           diff = parseFloat(fixedDiff);
           _tryFixReads(diff);
+        }
+      }
+    }
+
+    // Tier 3: neither the raw Difference nor the kWh-derived Difference reconciled the
+    // reads (Tier 1/2 both gave up above). If EndRead/StartRead themselves needed no
+    // digit-substitution fix here — either they were already self-consistent going in, or
+    // the missing-decimal recovery above already corrected them via a structural (not
+    // digit-guess) repair — trust them directly and correct the Difference column toward
+    // their own subtraction instead. This only runs after Tier 1/2 have already failed to
+    // find a plausible fix in the other two directions, so it never overrides a Difference
+    // correction the kWh identity already corroborated (Tier 2), and never fires on a row
+    // where the reads themselves are still in question (Tier 1 would have claimed it).
+    if (!tier1Fixed && !row._fixedDifference) {
+      const trustedDiff2 = parseFloat((endR - startR).toFixed(4));
+      if (trustedDiff2 > 0 && Math.abs(diff - trustedDiff2) > 0.0005) {
+        const fixedDiff2 = _reconcileNumber(row[6], trustedDiff2, 3);
+        if (fixedDiff2) {
+          row._fixedDifference = fixedDiff2;
+          row._differenceOriginal = row[6].replace(/,/g, '');
         }
       }
     }
