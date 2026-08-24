@@ -2109,10 +2109,17 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const _lgAddrW = new Set(_addrGroups[largest].flatMap((b) => _addrWords(b.ServiceAddress)));
         const _lgRates = _valsFor(_addrGroups[largest], 'RateSchedule');
         const _lgMeters = _valsFor(_addrGroups[largest], 'MeterNumber');
+        const _lgNames = _valsFor(_addrGroups[largest], 'CustomerName');
         for (const k of groupKeys) {
           if (k !== largest && _addrGroups[k].length <= 2) {
             const sm = _addrGroups[k];
             const _acctConflict = _setsConflict(_valsFor(sm, 'AccountNumber'), _lgAccts);
+            // (d1d380dd, 2026-08-20) CustomerName conflict is PRIMARY-strength
+            // identity, same as AccountNumber — a genuinely different customer name
+            // must never merge into another customer's group, regardless of
+            // RateSchedule/MeterNumber agreement. Unconditional block, not folded
+            // into the address-overlap secondary-agreement branch below.
+            const _nameConflict = _setsConflict(_valsFor(sm, 'CustomerName'), _lgNames);
             const _smAddrW = sm.flatMap((b) => _addrWords(b.ServiceAddress));
             const _addrOverlap =
               _smAddrW.length > 0 && _lgAddrW.size > 0
@@ -2122,6 +2129,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             const _rateConflict = _setsConflict(_valsFor(sm, 'RateSchedule'), _lgRates);
             const _meterConflict = _setsConflict(_valsFor(sm, 'MeterNumber'), _lgMeters);
             if (_acctConflict) {
+              continue;
+            }
+            if (_nameConflict) {
               continue;
             }
             if (_addrConflict) {
@@ -4953,6 +4963,16 @@ function countCriticalMissing(extracted, utilityName) {
 // ── Auto-assign: scan all meters across all projects/buildings for account or meter number match ──
 let _autoAssignTarget = null; // {projId, bldgId, meterId}
 let _mbRowTargets = {}; // keyed by _pdfMultiBills index -> match obj or null
+// Per-row checked/skipped state for the single-PDF multi-bill review panel
+// (showMultiBuildingReviewPanel) — mirrors renderQueueResults' row.checked
+// gate-wiring pattern. keyed by _pdfMultiBills index -> {checked, skipped}.
+let _mbRowState = {};
+// Shared PDF-store bookkeeping across per-row Save clicks AND the bulk Save
+// All loop, so the underlying PDF blob is stored at most once per panel
+// (mirrors the pdfStored/sharedId locals confirmMultiBuildingSave used to
+// keep purely local before per-bill save required this to persist across
+// separate _mbSaveOneBill() invocations).
+let _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
 function _isMultiAcctFile() {
   return new Set((window._pdfMultiBills || []).map((b) => b.AccountNumber).filter(Boolean)).size > 1;
 }
@@ -5016,9 +5036,25 @@ function findMeterMatch(extracted) {
   const meterNum = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
   const billComm = (extracted.Commodity || '').toLowerCase();
   const billAddr = _normalizeAddr(extracted.ServiceAddress);
+  // Fix 1 (49928d33): identity-contradiction veto input. A present, non-empty
+  // extracted AccountNumber that DEMONSTRABLY DIFFERS (fails _acctFuzzyMatch)
+  // from a same-commodity meter's own stored (also present, non-empty) account
+  // hard-blocks that building from the address-fallback below — the bill is
+  // known, by account number, to belong to a DIFFERENT meter. Absence of data
+  // on either side is never treated as a contradiction (mirrors the
+  // present-and-different-only discipline used by _setsConflict at ~2083).
+  const billAcctRaw = (extracted.AccountNumber || '').trim();
+  // Fix 2 (409830ae) input: does this bill carry ANY usable identity at all
+  // (account or meter number)? If not, address-fallback must never silently
+  // resolve to bldg.meters[0] when more than one same-commodity meter exists —
+  // that collapse is exactly what caused two distinct null-account bills to
+  // land on the same meter.
+  const hasIdentity = !!(acct || meterNum);
   let bestMatch = null;
-  let addrMatch = null;
-  let addrBestScore = 0; // tracks highest score seen so far for address fallback
+  // Collect every address-fallback candidate building (not just the running
+  // best) so that, after the search, we can both pick the top scorer AND
+  // detect a cross-building near-tie (Fix 2, second bullet) before deciding.
+  const addrCandidates = [];
   for (const proj of projects) {
     const udProj = getUDProj(proj.id);
     for (const bldg of udProj.buildings || []) {
@@ -5054,6 +5090,28 @@ function findMeterMatch(extracted) {
       // Fixed: was reading bldg.address (always undefined); correct field is bldg.addr.
       // Extended: checks addrAliases array and uses fuzzy similarity for near-matches.
       if (billAddr && billAddr.length >= 5) {
+        // Fix 1 veto: hard-block this building from address-fallback entirely
+        // when the bill's own account number contradicts one of its
+        // same-commodity meters' recorded accounts.
+        if (billAcctRaw) {
+          // Fix 3 (review of 1e99a20): veto must fire ONLY when billComm is
+          // known AND the meter's commodity matches it. The Generic catch-all
+          // rule (energy-savings.js) never sets Commodity, so `!billComm`
+          // was true on those bills and the veto fired against meters of ANY
+          // commodity — able to drop the CORRECT building and leave a wrong
+          // address-similar building as the sole surviving candidate. With
+          // commodity unknown we cannot attribute the mismatched account to
+          // a specific meter, so we must NOT veto.
+          const contradicting = (bldg.meters || []).some(
+            (cm) =>
+              cm.account &&
+              String(cm.account).trim() &&
+              !_acctFuzzyMatch(billAcctRaw, cm.account) &&
+              billComm &&
+              (cm.commodity || '').toLowerCase() === billComm,
+          );
+          if (contradicting) continue;
+        }
         const bldgAddrNorm = _normalizeAddr(bldg.addr);
         const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
         // Check exact match against primary addr or any alias
@@ -5071,33 +5129,97 @@ function findMeterMatch(extracted) {
         if (bldgAddrNorm && _addressSimilarity(bldg.addr, extracted.ServiceAddress) >= bestScore) {
           isAlias = false;
         }
-        // Threshold: 0.60+ qualifies; keep the BEST-scoring building across all
-        // buildings (not just the first one above 0.6). This prevents
-        // cross-contamination when two buildings share a similar base address
-        // (e.g. "301 6th St" vs "305 6th St") — the bill routes to whichever
-        // building scores highest rather than whichever is iterated first.
         const candidateScore = exactHit ? 1.0 : bestScore;
-        if ((exactHit || bestScore >= 0.6) && candidateScore > addrBestScore) {
-          const commMeter = billComm
-            ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
-            : null;
-          const candidateMeter = commMeter || (bldg.meters || [])[0];
-          if (candidateMeter) {
-            addrBestScore = candidateScore;
-            addrMatch = {
+        if (exactHit || bestScore >= 0.6) {
+          const sameCommMeters = billComm
+            ? (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm)
+            : [];
+          // Fix 2: only resolve to a single meter when identity is present
+          // (hasIdentity) — mirrors today's "commMeter || meters[0]" pick — OR
+          // when there is exactly one same-commodity meter at this building
+          // (no ambiguity possible regardless of identity). Everything else
+          // (no identity + >1 same-commodity meter, or no billComm at all)
+          // stays unresolved rather than silently guessing meters[0].
+          let candidateMeter = null;
+          let isAmbiguous = false;
+          if (hasIdentity) {
+            const commMeter = billComm
+              ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
+              : null;
+            candidateMeter = commMeter || (bldg.meters || [])[0];
+          } else if (billComm) {
+            if (sameCommMeters.length === 1) candidateMeter = sameCommMeters[0];
+            else if (sameCommMeters.length > 1) isAmbiguous = true;
+            // sameCommMeters.length === 0 → candidateMeter stays null (unresolved)
+          }
+          // billComm empty (!hasIdentity branch) → candidateMeter stays null;
+          // never default to meters[0] with no commodity to disambiguate by.
+          if (candidateMeter || isAmbiguous) {
+            addrCandidates.push({
               proj,
               bldg,
-              meter: candidateMeter,
-              projId: proj.id,
-              bldgId: bldg.id,
-              meterId: candidateMeter.id,
-              fuzzyScore: candidateScore,
+              candidateMeter,
+              isAmbiguous,
+              sameCommMeters,
+              candidateScore,
               isAlias,
-              matchType: 'address',
-            };
+            });
           }
         }
       }
+    }
+  }
+  let addrMatch = null;
+  if (addrCandidates.length) {
+    addrCandidates.sort((a, b) => b.candidateScore - a.candidateScore);
+    const top = addrCandidates[0];
+    const second = addrCandidates[1];
+    // Fix 2, second bullet: >1 building surviving within ~0.03 of each other
+    // is itself ambiguous, even if the top one individually resolved to a
+    // single meter.
+    const crossBldgTie =
+      second &&
+      (top.bldg.id !== second.bldg.id || top.proj.id !== second.proj.id) &&
+      top.candidateScore - second.candidateScore <= 0.03;
+    if (crossBldgTie) {
+      const tied = addrCandidates.filter((c) => top.candidateScore - c.candidateScore <= 0.03);
+      addrMatch = {
+        projId: top.proj.id,
+        bldgId: top.bldg.id,
+        fuzzyScore: top.candidateScore,
+        matchType: 'ambiguous',
+        candidates: tied.map((c) => ({
+          proj: c.proj,
+          bldg: c.bldg,
+          projId: c.proj.id,
+          bldgId: c.bldg.id,
+          meterId: c.candidateMeter ? c.candidateMeter.id : null,
+          meter: c.candidateMeter || null,
+        })),
+      };
+    } else if (top.isAmbiguous) {
+      addrMatch = {
+        proj: top.proj,
+        bldg: top.bldg,
+        projId: top.proj.id,
+        bldgId: top.bldg.id,
+        fuzzyScore: top.candidateScore,
+        isAlias: top.isAlias,
+        matchType: 'ambiguous',
+        candidates: top.sameCommMeters.map((m) => ({ meterId: m.id, meter: m })),
+      };
+    } else {
+      addrMatch = {
+        proj: top.proj,
+        bldg: top.bldg,
+        meter: top.candidateMeter,
+        projId: top.proj.id,
+        bldgId: top.bldg.id,
+        meterId: top.candidateMeter.id,
+        fuzzyScore: top.candidateScore,
+        isAlias: top.isAlias,
+        matchType: 'address',
+      };
     }
   }
   return bestMatch || addrMatch;
@@ -5119,13 +5241,42 @@ function saveAddressAlias(projId, bldgId, aliasString) {
 window.saveAddressAlias = saveAddressAlias;
 function showAutoAssignBanner(match, extracted) {
   if (!match) return;
+  // Fix 2 (409830ae) call-site guard: an 'ambiguous' match carries no single
+  // resolved meter by design (findMeterMatch found >1 equally-plausible
+  // candidate and refused to guess) — every line below this reads
+  // match.meter directly. Never surface the single-bill confirm banner for
+  // it; leave nothing auto-selected so the user must use the manual
+  // project/building/meter picker. Does not change 'identity' or 'address'
+  // handling in any way — this matchType did not exist before this fix, so
+  // this branch was previously unreachable.
+  // Fix 4 (review of 1e99a20): the multi-account check must run BEFORE the
+  // ambiguous/no-meter guard below. A genuinely multi-account batch whose
+  // bill[0] happens to resolve 'ambiguous' would otherwise hit `return` here
+  // and never open the review panel, silently dropping the whole batch.
   if (_isMultiAcctFile()) {
     showMultiBuildingReviewPanel();
     return;
   }
+  if (match.matchType === 'ambiguous' || !match.meter) return;
   _autoAssignTarget = match;
   const banner = document.getElementById('pdfAutoAssignBanner');
   const msg = document.getElementById('pdfAutoAssignMsg');
+  // Finding 1 (code review of fix/ocr-matching-rearchitecture): a non-identity
+  // ('address') match is a fuzzy guess with no confirmed account/meter-number
+  // hit — mirrors _buildDestCell's "Address match (unconfirmed)" convention
+  // (amber, ~line 8252) so this single-file banner never presents a fuzzy
+  // guess with the same confident "✓ Meter Match Found" label real identity
+  // hits get.
+  const hdr = document.getElementById('pdfAutoAssignHdr');
+  if (hdr) {
+    if (match.matchType === 'address') {
+      hdr.textContent = 'Address match (unconfirmed)';
+      hdr.style.color = 'var(--amber)';
+    } else {
+      hdr.textContent = '✓ Meter Match Found';
+      hdr.style.color = 'var(--em)';
+    }
+  }
   const bills = Array.isArray(window._pdfMultiBills) ? window._pdfMultiBills : [];
   const periods = bills.length || 1;
   const commodities = [...new Set(bills.map((b) => b.Commodity).filter(Boolean))];
@@ -5159,10 +5310,27 @@ function showMultiBuildingReviewPanel() {
   const panel = document.getElementById('pdfMultiBldgPanel');
   if (!panel) return;
 
-  // Reset row targets and pre-fill from findMeterMatch
+  // Reset row targets/state and pre-fill from findMeterMatch. Only runs when
+  // the panel is (re)opened for a fresh set of bills — per-row interactions
+  // (Save/Skip/dest picks) below re-render just their own row via
+  // _mbRerenderRow(), never this whole-panel rebuild, so they never lose
+  // sibling rows' in-progress state.
   _mbRowTargets = {};
+  _mbRowState = {};
+  _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
   bills.forEach(function (bill, i) {
+    delete bill._mbSaved;
+    delete bill._mbSavedDest;
+    delete bill._mbHeld;
+    delete bill._mbHeldReason;
     _mbRowTargets[i] = findMeterMatch(bill) || null;
+    const isIdentity = !!(_mbRowTargets[i] && _mbRowTargets[i].matchType === 'identity');
+    // GATE WIRING (mirrors renderQueueResults' `checked: !b._gateTripped`): a
+    // non-identity match (address/ambiguous/no-match) defaults UNCHECKED — the
+    // user must ACT (check the box, or make an explicit destination pick,
+    // which auto-checks it — see setMbRowDestMeter) to include it in Save
+    // All, instead of acting to prevent a wrong silent save.
+    _mbRowState[i] = { checked: isIdentity, skipped: false };
   });
 
   // Count unique accounts for header
@@ -5174,107 +5342,8 @@ function showMultiBuildingReviewPanel() {
       .filter(Boolean),
   );
 
-  // Build project options HTML (shared across unmatched rows)
-  const projOpts = (projects || [])
-    .map(function (p) {
-      return '<option value="' + p.id + '">' + (p.name || 'Project ' + p.id) + '</option>';
-    })
-    .join('');
-
-  // Build table rows
-  const rows = [];
-  bills.forEach(function (bill, i) {
-    const match = _mbRowTargets[i];
-    const period = (bill.BillingPeriodStart || '') + (bill.BillingPeriodEnd ? ' – ' + bill.BillingPeriodEnd : '');
-    const addr = bill.ServiceAddress || '—';
-    const acct = bill.AccountNumber || '—';
-    const dupInfo = (window._pdfDupMap || {})[i];
-    const isDupSkip = dupInfo && dupInfo.action === 'skip';
-
-    let destCell = '';
-    let statusCell = '';
-
-    if (isDupSkip) {
-      destCell = '<span style="color:var(--text3);font-size:12px;">Duplicate — skipped</span>';
-      statusCell =
-        '<span id="mbStatus_' +
-        i +
-        '" style="color:var(--text3);font-size:11px;padding:2px 6px;border-radius:3px;background:var(--s3);">Skip</span>';
-    } else if (match) {
-      destCell = [
-        '<span id="mbStaticDest_' + i + '" style="font-size:12px;">',
-        '<strong>' + (match.proj ? match.proj.name : '') + '</strong>',
-        ' → ' +
-          (match.bldg ? match.bldg.name : '') +
-          ' → ' +
-          (match.meter ? match.meter.commodity || match.meter.account || match.meter.id : ''),
-        '</span>',
-        ' <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px;" onclick="_mbToggleRowOverride(' +
-          i +
-          ')">Change</button>',
-        '<div id="mbOverride_' + i + '" style="display:none;margin-top:6px;">',
-        '<select class="fs" id="mbProjSel_' +
-          i +
-          '" style="min-width:120px;font-size:12px;" onchange="_mbUpdateBldgOpts(' +
-          i +
-          ')">',
-        projOpts,
-        '</select>',
-        '<select class="fs" id="mbBldgSel_' +
-          i +
-          '" style="min-width:120px;font-size:12px;" onchange="_mbUpdateMeterOpts(' +
-          i +
-          ')"><option value="">— building —</option></select>',
-        '<select class="fs" id="mbMeterSel_' +
-          i +
-          '" style="min-width:120px;font-size:12px;" onchange="_mbCommitRowTarget(' +
-          i +
-          ')"><option value="">— meter —</option></select>',
-        '</div>',
-      ].join('');
-      statusCell =
-        '<span id="mbStatus_' +
-        i +
-        '" style="color:var(--em);font-size:11px;padding:2px 6px;border-radius:3px;background:rgba(var(--em-rgb),.1);">Matched</span>';
-    } else {
-      destCell = [
-        '<select class="fs" id="mbProjSel_' +
-          i +
-          '" style="min-width:120px;font-size:12px;" onchange="_mbUpdateBldgOpts(' +
-          i +
-          ')">',
-        '<option value="">— project —</option>',
-        projOpts,
-        '</select>',
-        '<select class="fs" id="mbBldgSel_' +
-          i +
-          '" style="min-width:120px;font-size:12px;" onchange="_mbUpdateMeterOpts(' +
-          i +
-          ')"><option value="">— building —</option></select>',
-        '<select class="fs" id="mbMeterSel_' +
-          i +
-          '" style="min-width:120px;font-size:12px;" onchange="_mbCommitRowTarget(' +
-          i +
-          ')"><option value="">— meter —</option></select>',
-      ].join('');
-      statusCell =
-        '<span id="mbStatus_' +
-        i +
-        '" style="color:var(--accent);font-size:11px;padding:2px 6px;border-radius:3px;background:rgba(128,128,128,.12);">No match — pick below</span>';
-    }
-
-    rows.push(
-      [
-        '<tr style="border-bottom:1px solid var(--s3);">',
-        '<td style="padding:6px 8px;color:var(--text3);font-size:12px;">' + (i + 1) + '</td>',
-        '<td style="padding:6px 8px;font-size:12px;">' + period + '</td>',
-        '<td style="padding:6px 8px;font-size:12px;">' + addr + '</td>',
-        '<td style="padding:6px 8px;font-size:12px;">' + acct + '</td>',
-        '<td style="padding:6px 8px;">' + destCell + '</td>',
-        '<td style="padding:6px 8px;">' + statusCell + '</td>',
-        '</tr>',
-      ].join(''),
-    );
+  const rows = bills.map(function (bill, i) {
+    return _mbRowHtml(i);
   });
 
   const html = [
@@ -5300,9 +5369,10 @@ function showMultiBuildingReviewPanel() {
     '<th style="padding:6px 8px;text-align:left;font-weight:600;">Account</th>',
     '<th style="padding:6px 8px;text-align:left;font-weight:600;">Destination</th>',
     '<th style="padding:6px 8px;text-align:left;font-weight:600;">Status</th>',
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Save</th>',
     '</tr>',
     '</thead>',
-    '<tbody>',
+    '<tbody id="mbRowsBody">',
     rows.join(''),
     '</tbody>',
     '</table>',
@@ -5327,166 +5397,315 @@ function showMultiBuildingReviewPanel() {
 }
 window.showMultiBuildingReviewPanel = showMultiBuildingReviewPanel;
 
-function _mbUpdateBldgOpts(rowIdx) {
-  const projSel = document.getElementById('mbProjSel_' + rowIdx);
-  const bldgSel = document.getElementById('mbBldgSel_' + rowIdx);
-  const meterSel = document.getElementById('mbMeterSel_' + rowIdx);
-  if (!projSel || !bldgSel || !meterSel) return;
-  const projId = parseInt(projSel.value);
-  _mbRowTargets[rowIdx] = null;
-  if (!projId) {
-    bldgSel.innerHTML = '<option value="">— building —</option>';
-    meterSel.innerHTML = '<option value="">— meter —</option>';
-    _mbUpdateSaveAllBtn();
-    return;
+// ── Per-row builder (fix ede70be1 — honest match display + per-bill save) ──
+// Builds ONE <tr> for the single-PDF multi-bill review panel. Destination
+// cell reuses the module-scope _buildDestCell (same honest identity-vs-
+// unconfirmed rendering the batch queue table uses) instead of the old
+// unguarded "Matched" badge that showed address/ambiguous guesses as
+// confidently as a real account-number hit.
+function _mbRowHtml(i) {
+  const bills = window._pdfMultiBills || [];
+  const bill = bills[i];
+  if (!bill) return '';
+  const match = _mbRowTargets[i];
+  const period = (bill.BillingPeriodStart || '') + (bill.BillingPeriodEnd ? ' – ' + bill.BillingPeriodEnd : '');
+  const addr = bill.ServiceAddress || '—';
+  const acct = bill.AccountNumber || '—';
+  const dupInfo = (window._pdfDupMap || {})[i];
+  const isDupSkip = dupInfo && dupInfo.action === 'skip';
+  const st = _mbRowState[i] || { checked: false, skipped: false };
+
+  let destCell, statusCell, actionCell;
+
+  if (isDupSkip) {
+    destCell = '<span style="color:var(--text3);font-size:12px;">Duplicate — skipped</span>';
+    statusCell =
+      '<span id="mbStatus_' +
+      i +
+      '" style="color:var(--text3);font-size:11px;padding:2px 6px;border-radius:3px;background:var(--s3);">Skip</span>';
+    actionCell = '<span style="color:var(--text3);font-size:11px;">—</span>';
+  } else if (bill._mbSaved) {
+    destCell = '<span style="font-size:12px;color:var(--text3)">' + _escHtml(bill._mbSavedDest || 'Saved') + '</span>';
+    statusCell =
+      '<span id="mbStatus_' +
+      i +
+      '" style="color:var(--text3);font-size:11px;padding:2px 6px;border-radius:3px;background:var(--s3);">Saved</span>';
+    actionCell = '<span style="color:var(--text3);font-size:11px;">&#10003; Saved</span>';
+  } else {
+    destCell = _buildDestCell(
+      bill,
+      match,
+      String(i),
+      'setMbRowDestProj',
+      'setMbRowDestBldg',
+      'setMbRowDestMeter',
+      'setMbRowDestExpand',
+    );
+    const isIdentity = !!(match && match.matchType === 'identity');
+    const isManual = !!(match && match.matchType === 'manual');
+    const isAmbiguous = !!(match && match.matchType === 'ambiguous');
+    let statusLbl, statusColor, statusBg;
+    if (bill._mbHeld) {
+      statusLbl = 'Held — ' + (bill._mbHeldReason || 'needs review');
+      statusColor = 'var(--red)';
+      statusBg = 'rgba(239,68,68,.1)';
+    } else if (isIdentity) {
+      statusLbl = 'Matched';
+      statusColor = 'var(--em)';
+      statusBg = 'rgba(var(--em-rgb),.1)';
+    } else if (isManual) {
+      statusLbl = 'Assigned';
+      statusColor = 'var(--em)';
+      statusBg = 'rgba(var(--em-rgb),.1)';
+    } else if (isAmbiguous) {
+      statusLbl = 'Needs selection';
+      statusColor = 'var(--amber)';
+      statusBg = 'rgba(245,158,11,.1)';
+    } else if (match) {
+      // 'address' matchType — fuzzy, unconfirmed
+      statusLbl = 'Address match (unconfirmed)';
+      statusColor = 'var(--amber)';
+      statusBg = 'rgba(245,158,11,.1)';
+    } else {
+      statusLbl = 'No match — pick below';
+      statusColor = 'var(--accent)';
+      statusBg = 'rgba(128,128,128,.12)';
+    }
+    statusCell =
+      '<span id="mbStatus_' +
+      i +
+      '" style="color:' +
+      statusColor +
+      ';font-size:11px;padding:2px 6px;border-radius:3px;background:' +
+      statusBg +
+      ';">' +
+      _escHtml(statusLbl) +
+      '</span>';
+
+    if (st.skipped) {
+      actionCell =
+        '<span style="color:var(--text3);font-size:11px;display:block;margin-bottom:4px;">Skipped</span>' +
+        '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="_mbUnskipRow(' +
+        i +
+        ')">Undo skip</button>';
+    } else {
+      const canSave = !!(match && match.meter);
+      actionCell =
+        '<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-bottom:4px;white-space:nowrap">' +
+        '<input type="checkbox" onchange="_mbToggleRowChecked(' +
+        i +
+        ',this.checked)"' +
+        (st.checked ? ' checked' : '') +
+        '> Include in Save All</label>' +
+        '<div style="display:flex;gap:4px">' +
+        '<button class="btn btn-em btn-sm" style="font-size:10px;padding:2px 8px" onclick="_mbSaveRowClick(' +
+        i +
+        ')"' +
+        (canSave ? '' : ' disabled') +
+        '>Save</button>' +
+        '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="_mbSkipRow(' +
+        i +
+        ')">Skip</button>' +
+        '</div>';
+    }
   }
-  const bldgs = getUDProj(projId).buildings || [];
-  if (!bldgs.length) {
-    bldgSel.innerHTML = '<option value="">No buildings in this project — add one first</option>';
-    meterSel.innerHTML = '<option value="">— meter —</option>';
-    _mbUpdateSaveAllBtn();
-    return;
-  }
-  bldgSel.innerHTML =
-    '<option value="">— building —</option>' +
-    bldgs
-      .map(function (b) {
-        return '<option value="' + b.id + '">' + (b.name || b.id) + '</option>';
-      })
-      .join('');
-  meterSel.innerHTML = '<option value="">— meter —</option>';
+
+  return [
+    '<tr id="mbRow_' + i + '" style="border-bottom:1px solid var(--s3);">',
+    '<td style="padding:6px 8px;color:var(--text3);font-size:12px;">' + (i + 1) + '</td>',
+    '<td style="padding:6px 8px;font-size:12px;">' + _escHtml(period) + '</td>',
+    '<td style="padding:6px 8px;font-size:12px;">' + _escHtml(addr) + '</td>',
+    '<td style="padding:6px 8px;font-size:12px;">' + _escHtml(acct) + '</td>',
+    '<td style="padding:6px 8px;">' + destCell + '</td>',
+    '<td style="padding:6px 8px;">' + statusCell + '</td>',
+    '<td style="padding:6px 8px;">' + actionCell + '</td>',
+    '</tr>',
+  ].join('');
+}
+
+// Replaces just row i's <tr> in-place — never tears down or rebuilds the
+// panel, so every OTHER row's live Save/Skip controls and in-progress
+// picker state survive (ede70be1 3b).
+function _mbRerenderRow(i) {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills[i]) return;
+  const oldRow = document.getElementById('mbRow_' + i);
+  if (!oldRow || !oldRow.parentNode) return;
+  const tmp = document.createElement('table');
+  tmp.innerHTML = '<tbody>' + _mbRowHtml(i) + '</tbody>';
+  const newRow = tmp.querySelector('tr');
+  if (newRow) oldRow.parentNode.replaceChild(newRow, oldRow);
   _mbUpdateSaveAllBtn();
 }
-window._mbUpdateBldgOpts = _mbUpdateBldgOpts;
 
-function _mbUpdateMeterOpts(rowIdx) {
-  const projSel = document.getElementById('mbProjSel_' + rowIdx);
-  const bldgSel = document.getElementById('mbBldgSel_' + rowIdx);
-  const meterSel = document.getElementById('mbMeterSel_' + rowIdx);
-  if (!projSel || !bldgSel || !meterSel) return;
-  const projId = parseInt(projSel.value);
-  const bldgId = bldgSel.value;
-  _mbRowTargets[rowIdx] = null;
-  if (!projId || !bldgId) {
-    meterSel.innerHTML = '<option value="">— meter —</option>';
-    _mbUpdateSaveAllBtn();
-    return;
+// ── Destination pickers for the single-PDF multi-bill panel (fix ede70be1) ──
+// Same override convention _buildDestCell already expects on `bill`
+// (_meterOverride / _destExpanded) — reused here instead of a parallel
+// mechanism so _buildDestCell needs zero changes to serve both callers.
+function setMbRowDestExpand(i, expand) {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills[i]) return;
+  bills[i]._destExpanded = !!expand;
+  if (!expand) {
+    delete bills[i]._meterOverride;
+    // Cancel: restore the original auto-match (identity match "Change" → "Cancel").
+    _mbRowTargets[i] = findMeterMatch(bills[i]) || null;
   }
-  const bldg = getUDBldg(projId, bldgId);
-  const meters = bldg ? bldg.meters || [] : [];
-  meterSel.innerHTML =
-    '<option value="">— meter —</option>' +
-    meters
-      .map(function (m) {
-        const label = [m.commodity, m.account || m.meter, m.provider].filter(Boolean).join(' · ') || m.id;
-        return '<option value="' + m.id + '">' + label + '</option>';
-      })
-      .join('');
-  _mbUpdateSaveAllBtn();
+  _mbRerenderRow(i);
 }
-window._mbUpdateMeterOpts = _mbUpdateMeterOpts;
+window.setMbRowDestExpand = setMbRowDestExpand;
 
-function _mbCommitRowTarget(rowIdx) {
-  const projSel = document.getElementById('mbProjSel_' + rowIdx);
-  const bldgSel = document.getElementById('mbBldgSel_' + rowIdx);
-  const meterSel = document.getElementById('mbMeterSel_' + rowIdx);
-  const statusEl = document.getElementById('mbStatus_' + rowIdx);
-  if (!projSel || !bldgSel || !meterSel) return;
-  const projId = parseInt(projSel.value);
-  const bldgId = bldgSel.value;
-  const meterId = meterSel.value;
-  if (projId && bldgId && meterId) {
+function setMbRowDestProj(i, val) {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills[i]) return;
+  bills[i]._meterOverride = { projId: parseInt(val) || null, bldgId: null, meterId: null };
+  _mbRowTargets[i] = null; // incomplete pick — not save-ready until building+meter chosen
+  _mbRerenderRow(i);
+}
+window.setMbRowDestProj = setMbRowDestProj;
+
+function setMbRowDestBldg(i, val) {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills[i]) return;
+  const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  ov.bldgId = val || null;
+  ov.meterId = null;
+  bills[i]._meterOverride = ov;
+  _mbRowTargets[i] = null;
+  _mbRerenderRow(i);
+}
+window.setMbRowDestBldg = setMbRowDestBldg;
+
+function setMbRowDestMeter(i, val) {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills[i]) return;
+  const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  ov.meterId = val || null;
+  bills[i]._meterOverride = ov;
+  if (ov.projId && ov.bldgId && ov.meterId) {
     const proj = (projects || []).find(function (p) {
-      return p.id === projId;
+      return p.id === ov.projId;
     });
-    const bldg = getUDBldg(projId, bldgId);
+    const bldg = proj && getUDBldg(ov.projId, ov.bldgId);
     const meter = bldg
       ? (bldg.meters || []).find(function (m) {
-          return m.id === meterId;
+          return m.id === ov.meterId;
         })
       : null;
     if (proj && bldg && meter) {
-      _mbRowTargets[rowIdx] = {
-        proj: proj,
-        bldg: bldg,
-        meter: meter,
-        projId: projId,
-        bldgId: bldgId,
-        meterId: meterId,
-        // Fix 11e47d64/9de73981: tag explicit user picks so
-        // confirmMultiBuildingSave()'s identity gate lets them through
-        // regardless of account/matchType — an explicit Project->Building->
-        // Meter choice via this "Change" override is authoritative, same as
-        // the _meterOverride exemption saveQueuedBills already grants manual
-        // picks. findMeterMatch() never produces this value, so it cannot be
-        // spoofed by an auto-match.
+      // Fix 11e47d64/9de73981 (preserved): tag explicit user picks so
+      // confirmMultiBuildingSave()/_mbSaveOneBill()'s identity gate lets them
+      // through regardless of account/matchType — an explicit Project ->
+      // Building -> Meter choice via this picker is authoritative, same as
+      // the _meterOverride exemption saveQueuedBills already grants manual
+      // picks. findMeterMatch() never produces this value, so it cannot be
+      // spoofed by an auto-match.
+      _mbRowTargets[i] = {
+        proj,
+        bldg,
+        meter,
+        projId: ov.projId,
+        bldgId: ov.bldgId,
+        meterId: ov.meterId,
         matchType: 'manual',
       };
-      if (statusEl) {
-        statusEl.textContent = 'Assigned';
-        statusEl.style.color = 'var(--em)';
-        statusEl.style.background = 'rgba(var(--em-rgb),.1)';
-      }
+      // A manual pick is a deliberate, informed choice — include it in Save
+      // All by default (matches the identity-row default of checked:true).
+      if (_mbRowState[i]) _mbRowState[i].checked = true;
     } else {
-      _mbRowTargets[rowIdx] = null;
+      _mbRowTargets[i] = null;
     }
   } else {
-    _mbRowTargets[rowIdx] = null;
-    if (statusEl) {
-      statusEl.textContent = 'No match — pick below';
-      statusEl.style.color = 'var(--accent)';
-      statusEl.style.background = 'rgba(128,128,128,.12)';
-    }
+    _mbRowTargets[i] = null;
   }
+  _mbRerenderRow(i);
+}
+window.setMbRowDestMeter = setMbRowDestMeter;
+
+function _mbToggleRowChecked(i, checked) {
+  if (!_mbRowState[i]) _mbRowState[i] = { checked: false, skipped: false };
+  _mbRowState[i].checked = !!checked;
   _mbUpdateSaveAllBtn();
 }
-window._mbCommitRowTarget = _mbCommitRowTarget;
+window._mbToggleRowChecked = _mbToggleRowChecked;
+
+function _mbSkipRow(i) {
+  if (!_mbRowState[i]) _mbRowState[i] = { checked: false, skipped: false };
+  _mbRowState[i].skipped = true;
+  _mbRowState[i].checked = false;
+  _mbRerenderRow(i);
+}
+window._mbSkipRow = _mbSkipRow;
+
+function _mbUnskipRow(i) {
+  if (!_mbRowState[i]) _mbRowState[i] = { checked: false, skipped: false };
+  _mbRowState[i].skipped = false;
+  _mbRerenderRow(i);
+}
+window._mbUnskipRow = _mbUnskipRow;
+
+// Per-row Save button — saves exactly this one bill via the single _mbSaveOneBill
+// primitive (also used by confirmMultiBuildingSave's bulk "Save All" loop) and
+// re-renders only this row, leaving every other row's pending controls intact.
+async function _mbSaveRowClick(i) {
+  const result = await _mbSaveOneBill(i);
+  if (result.status === 'saved') {
+    saveUtilityData(result.projId ? [result.projId] : []);
+    window._pdfBillsSaved = true;
+    _inheritBaselinesForProject(udSelProjId);
+    showToast('Bill saved to ' + (result.destination || 'matched meter') + ' ✓');
+    if (udSelProjId && udSelBldgId) {
+      renderUDDetail();
+      renderUDProjList();
+    }
+  } else if (result.status === 'held') {
+    showToast('Held for review (' + (result.reason || 'unresolved') + ') — check Saved Bills');
+  } else if (result.status === 'skipped') {
+    showToast('Duplicate — already marked skip');
+  } else {
+    showToast('Could not save — ' + (result.reason || 'no destination assigned'));
+  }
+  _mbRerenderRow(i);
+  _mbUpdateSaveAllBtn();
+}
+window._mbSaveRowClick = _mbSaveRowClick;
 
 function _mbUpdateSaveAllBtn() {
   const btn = document.getElementById('mbSaveAllBtn');
   if (!btn) return;
   const bills = window._pdfMultiBills || [];
   const dupMap = window._pdfDupMap || {};
-  const nonSkipped = bills.filter(function (b, i) {
+  // Rows this Save All pass would actually touch: not a skipped duplicate,
+  // not manually skipped, not already individually saved, and checked
+  // (ede70be1 3b — Save All now honors the same per-row checked gate the
+  // batch queue table uses instead of blindly walking every row).
+  const included = bills.filter(function (b, i) {
+    if (b._mbSaved) return false;
     const d = dupMap[i];
-    return !(d && d.action === 'skip');
+    if (d && d.action === 'skip') return false;
+    const st = _mbRowState[i];
+    if (st && (st.skipped || st.checked === false)) return false;
+    return true;
   });
-  if (!nonSkipped.length) {
+  if (!included.length) {
     btn.disabled = true;
     return;
   }
-  const assigned = nonSkipped.filter(function (b, i) {
+  const assigned = included.filter(function (b) {
     // Find the original index in bills array
     const origIdx = bills.indexOf(b);
-    return _mbRowTargets[origIdx] !== null && _mbRowTargets[origIdx] !== undefined;
+    const t = _mbRowTargets[origIdx];
+    // Fix 2 (review of 1e99a20, PRESERVED): a row is only "ready" when its
+    // target has a truthy .meter (identity, address, or a manual pick). An
+    // 'ambiguous' target is truthy but carries no resolved .meter — it must
+    // NOT satisfy Save-All eligibility, or Save All would enable itself while
+    // a row is still unresolved and _mbSaveOneBill would have nothing safe
+    // to write for it.
+    return !!(t && t.meter);
   });
-  btn.disabled = !(assigned.length === nonSkipped.length);
+  btn.disabled = !(assigned.length === included.length);
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
-
-function _mbToggleRowOverride(rowIdx) {
-  const ovDiv = document.getElementById('mbOverride_' + rowIdx);
-  if (!ovDiv) return;
-  const isHidden = ovDiv.style.display === 'none';
-  ovDiv.style.display = isHidden ? 'block' : 'none';
-  if (isHidden) {
-    // Initialise project select to currently matched project if any
-    const match = _mbRowTargets[rowIdx];
-    const projSel = document.getElementById('mbProjSel_' + rowIdx);
-    if (projSel && match && match.projId) {
-      projSel.value = match.projId;
-      _mbUpdateBldgOpts(rowIdx);
-      const bldgSel = document.getElementById('mbBldgSel_' + rowIdx);
-      if (bldgSel && match.bldgId) {
-        bldgSel.value = match.bldgId;
-        _mbUpdateMeterOpts(rowIdx);
-        const meterSel = document.getElementById('mbMeterSel_' + rowIdx);
-        if (meterSel && match.meterId) meterSel.value = match.meterId;
-      }
-    }
-  }
-}
-window._mbToggleRowOverride = _mbToggleRowOverride;
 
 // F1 (item 21b4e21f): single shared cost/usage mapper — replaces six previously
 // diverged copies (confirmAutoAssign, confirmMultiBuildingSave,
@@ -5562,6 +5781,10 @@ async function confirmAutoAssign() {
       const overrideMeter = overrideBldg ? (overrideBldg.meters || []).find((m) => m.id === overrideMeterId) : null;
       const overrideProj = (projects || []).find((p) => p.id === overrideProjId);
       if (overrideBldg && overrideMeter && overrideProj) {
+        // Tag this explicit Project -> Building -> Meter override as manual,
+        // mirroring setMbRowDestMeter's _mbRowTargets[i] (~5603-5611) — the
+        // account veto below (~6088) must let an explicit user pick through
+        // regardless of account mismatch, same as _mbSaveOneBill's gate.
         _autoAssignTarget = {
           proj: overrideProj,
           bldg: overrideBldg,
@@ -5569,6 +5792,7 @@ async function confirmAutoAssign() {
           projId: overrideProjId,
           bldgId: overrideBldgId,
           meterId: overrideMeterId,
+          matchType: 'manual',
         };
       }
     } else {
@@ -5820,7 +6044,86 @@ async function confirmAutoAssign() {
       if (Object.keys(cp).length) billRow._chargeParts = cp;
     }
     let billMatch = findMeterMatch(bill);
-    if (!billMatch) billMatch = _autoAssignTarget;
+    // Fix 1 (review of 1e99a20, closes 62ec935c): a per-bill re-match can come
+    // back truthy-but-not-identity — 'ambiguous' (no .meter at all, crashes the
+    // very next line) or 'address' (has .meter but is an unconfirmed fuzzy
+    // guess, silently misrouted to a meter with no identity gate). Only use the
+    // fresh re-match when it's a real 'identity' hit with a .meter; otherwise
+    // fall back to the trusted, already-gated _autoAssignTarget (banner/manual
+    // override — always has .meter) exactly as the pre-existing null case did.
+    // If even that trusted fallback is missing, hold the bill for review
+    // instead of crashing or writing a non-identity guess.
+    if (!(billMatch && billMatch.matchType === 'identity' && billMatch.meter)) {
+      billMatch = _autoAssignTarget;
+    }
+    if (!billMatch || !billMatch.meter) {
+      console.warn(
+        '[confirmAutoAssign] no identity match and no trusted fallback for bill',
+        _bi,
+        '— holding for review instead of writing',
+      );
+      const _pdfBillsForReviewUnresolved = (await sget('en_pdf_bills', [])) || [];
+      _pdfBillsForReviewUnresolved.push(
+        Object.assign(
+          {
+            id: 'pb' + Date.now() + '_' + saved + '_review',
+            savedAt: new Date().toISOString(),
+            projId: projId || null,
+            projName: (proj && proj.name) || 'General',
+            hasPDF,
+            pdfKey: hasPDF ? pdfKey : null,
+          },
+          bill,
+        ),
+      );
+      await sset('en_pdf_bills', _pdfBillsForReviewUnresolved);
+      continue;
+    }
+    // Finding 1 (code review of fix/ocr-matching-rearchitecture): defense-in-depth
+    // account veto, ported from _saveBillToMatchedMeter's Fix 3 (49928d33/409830ae,
+    // ~line 7060) — that veto already guards the batch-review save path
+    // (_saveBillToMatchedMeter) and the multi-building gate (_mbSaveOneBill's
+    // _gateOK), but this single-file "Confirm & Save" path had neither. A present
+    // AccountNumber on the bill that strongly contradicts the matched meter's
+    // stored account hard-vetoes the write — applies even to an 'identity'
+    // matchType exactly like the sibling function, since an identity hit can
+    // still be wrong (e.g. found by MeterNumber alone). Runs BEFORE the
+    // commodity-mismatch meter-create block below so a vetoed bill never creates
+    // a phantom meter on the building either.
+    //
+    // Should-fix (re-review of Finding 1): an explicit manual override from the
+    // banner picker above (~5784-5791, tagged matchType: 'manual') must always
+    // win, exactly like _mbSaveOneBill's _isManualPick exemption (~6508-6511).
+    // findMeterMatch() never produces 'manual', so this cannot be spoofed by an
+    // auto/address match — only the trusted override-panel pick is exempt.
+    const _isManualOverridePick = billMatch.matchType === 'manual';
+    if (!_isManualOverridePick && bill.AccountNumber && billMatch.meter.account) {
+      const _strongMismatch =
+        !_acctFuzzyMatch(bill.AccountNumber, billMatch.meter.account) &&
+        String(bill.AccountNumber).replace(/\D/g, '').length >= 6;
+      if (_strongMismatch) {
+        console.warn(
+          '[confirmAutoAssign] account veto — bill AccountNumber contradicts matched meter, holding for review',
+          { bi: _bi, billAcct: bill.AccountNumber, meterAcct: billMatch.meter.account },
+        );
+        const _pdfBillsForReviewVeto = (await sget('en_pdf_bills', [])) || [];
+        _pdfBillsForReviewVeto.push(
+          Object.assign(
+            {
+              id: 'pb' + Date.now() + '_' + saved + '_review',
+              savedAt: new Date().toISOString(),
+              projId: projId || null,
+              projName: (proj && proj.name) || 'General',
+              hasPDF,
+              pdfKey: hasPDF ? pdfKey : null,
+            },
+            bill,
+          ),
+        );
+        await sset('en_pdf_bills', _pdfBillsForReviewVeto);
+        continue;
+      }
+    }
     const _bComm = (bill.Commodity || '').toLowerCase();
     let _mComm = (billMatch.meter.commodity || '').toLowerCase();
     if (_bComm && !_mComm) {
@@ -5907,28 +6210,32 @@ async function confirmAutoAssign() {
   }
 }
 
-async function confirmMultiBuildingSave() {
+// ── Single-bill save primitive (fix ede70be1 — per-bill save) ──────────────
+// Extracted from confirmMultiBuildingSave's old per-bill loop body so BOTH
+// the per-row Save button (_mbSaveRowClick) and the bulk "Save All" loop
+// (confirmMultiBuildingSave, below) call this ONE primitive — no duplicated
+// save logic. PRESERVES the identity gating + crash guards from 24d108f: a
+// meter-less target (matchType 'ambiguous') is held for review before any
+// unconditional .meter/.bldg dereference, and only an 'identity' match with
+// an agreeing AccountNumber, or an explicit 'manual' pick (from the forced
+// picker's destination selects), may write to targetMeter.bills — anything
+// else is diverted to Saved Bills for review instead of silently applied.
+async function _mbSaveOneBill(bi) {
   const bills = window._pdfMultiBills;
-  if (!bills || !bills.length) return;
+  if (!bills || !bills[bi]) return { status: 'error', reason: 'no bill' };
+  const bill = bills[bi];
   const dupMap = window._pdfDupMap || {};
-
-  // Dup-unresolved gate
-  const unresolved = Object.values(dupMap).filter(function (d) {
-    return d.action === null;
-  });
-  if (unresolved.length > 0) {
-    showToast(unresolved.length + ' duplicate bill(s) need review — click yellow-dot pills to resolve');
-    return;
+  const billDup = dupMap[bi];
+  if (billDup && billDup.action === 'skip') {
+    return { status: 'skipped', reason: 'duplicate — skipped' };
+  }
+  if (bill._mbSaved) {
+    return { status: 'saved', destination: bill._mbSavedDest || '', alreadySaved: true, projId: null };
   }
 
-  // Unmatched gate — every non-skipped bill must have a destination
-  for (let _bi = 0; _bi < bills.length; _bi++) {
-    const billDup = dupMap[_bi];
-    if (billDup && billDup.action === 'skip') continue;
-    if (!_mbRowTargets[_bi]) {
-      showToast('All billing periods need a destination — assign remaining rows first');
-      return;
-    }
+  let billMatch = _mbRowTargets[bi];
+  if (!billMatch) {
+    return { status: 'unresolved', reason: 'no destination assigned' };
   }
 
   const pf = function (v) {
@@ -5944,350 +6251,448 @@ async function confirmMultiBuildingSave() {
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
   }
 
-  // Store PDF once under a shared key to avoid duplication
-  const sharedId = bills[0]?._pdfSharedKey || Date.now();
-  const pdfKey = 'en_pdf_shared_' + String(sharedId).replace(/^en_pdf_shared_/, '');
-  let pdfStored = false;
+  // Store PDF once under a shared key, shared across EVERY per-bill save in
+  // this panel via the module-level _mbSaveState (not a local — see its
+  // declaration near _mbRowTargets) so repeated individual Save clicks, not
+  // just one bulk loop, still only store the underlying PDF once.
+  if (!_mbSaveState.sharedId) {
+    _mbSaveState.sharedId = bills[0]?._pdfSharedKey || Date.now();
+    _mbSaveState.pdfKey = 'en_pdf_shared_' + String(_mbSaveState.sharedId).replace(/^en_pdf_shared_/, '');
+  }
+  const pdfKey = _mbSaveState.pdfKey;
+  let hasPDF = false;
+  if (pdfB64 && !_mbSaveState.pdfStored) {
+    hasPDF = await pdfStore(pdfKey, pdfB64);
+    bills.forEach(function (b) {
+      b._pdfSharedKey = String(_mbSaveState.sharedId).replace(/^en_pdf_shared_/, '');
+    });
+    _mbSaveState.pdfStored = true;
+  } else if (pdfB64) {
+    hasPDF = true;
+  }
+
+  const billId = 'pb' + Date.now() + '_' + bi;
+  // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
+  const { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(bill);
+
+  const billRow = {
+    id: 'r' + Date.now() + '_' + bi,
+    start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
+    end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
+    kwh,
+    demandKW: bill.ActualKW || '',
+    billedKW: bill.BilledKW || '',
+    facKW: bill.FacilitiesKW || '',
+    facKWCost: bill.FacilitiesCharge || '',
+    kwCost,
+    kwhCost,
+    otherCost,
+    taxCost,
+    totalCost,
+    fromPDF: true,
+    pdfBillId: billId,
+    hasPDF,
+    pdfKey: pdfKey || null,
+    pdfPageStart: bill._pageStart || null,
+    pdfPageEnd: bill._pageEnd || null,
+    rateSchedule: bill.RateSchedule || '',
+    onPeakKwh: bill.OnPeakKWh || bill.EnergyOnPeakKWh || '',
+    offPeakKwh: bill.OffPeakKWh || bill.EnergyOffPeakKWh || '',
+    onPeakCost: bill.EnergyOnPeakCharge || '',
+    offPeakCost: bill.EnergyOffPeakCharge || '',
+    customerCharge: bill.CustomerCharge || '',
+    demandCharge: bill.BilledKWCharge || '',
+    facilitiesCharge: bill.FacilitiesCharge || '',
+    ecaCharge: bill.ECACharge || '',
+    eerCharge: bill.EERCharge || '',
+    ptsCharge: bill.PTSCharge || '',
+    tdcCharge: bill.TDCCharge || '',
+    rkvaCharge: bill.RkVACharge || '',
+    miscellaneousCharge: bill.MiscellaneousCharge || '',
+    renewableCharge: bill.RenewableCharge || '',
+    franchiseFee: bill.FranchiseFee || '',
+    franchiseFee1: bill.FranchiseFee1 || '',
+    franchiseFee2: bill.FranchiseFee2 || '',
+    solarCredit: bill.SolarCredit || '',
+    generationKwh: bill.GenerationKwh || '',
+    Meter1_ReadStart: bill.Meter1_ReadStart || '',
+    Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
+    Meter1_StartRead: bill.Meter1_StartRead || '',
+    Meter1_EndRead: bill.Meter1_EndRead || '',
+    Meter1_ReadDiff: bill.Meter1_ReadDiff || '',
+    Meter1_Multiplier: bill.Meter1_Multiplier || '',
+    Meter1_kWh: bill.Meter1_kWh || '',
+    Meter1_KW: bill.Meter1_KW || '',
+    Meter1_RKVA: bill.Meter1_RKVA || '',
+    Meter2_ReadStart: bill.Meter2_ReadStart || '',
+    Meter2_ReadEnd: bill.Meter2_ReadEnd || '',
+    Meter2_StartRead: bill.Meter2_StartRead || '',
+    Meter2_EndRead: bill.Meter2_EndRead || '',
+    Meter2_ReadDiff: bill.Meter2_ReadDiff || '',
+    Meter2_Multiplier: bill.Meter2_Multiplier || '',
+    Meter2_kWh: bill.Meter2_kWh || '',
+    Meter2_KW: bill.Meter2_KW || '',
+    Meter2_RKVA: bill.Meter2_RKVA || '',
+    utilityCompany: bill.UtilityCompany || '',
+    customerName: bill.CustomerName || '',
+    serviceAddress: bill.ServiceAddress || '',
+    accountNumber: bill.AccountNumber || '',
+    meterNumber: bill.MeterNumber || '',
+    numberOfDays: bill.NumberOfDays || '',
+    meterReadStart: bill.MeterReadStart || '',
+    meterReadEnd: bill.MeterReadEnd || '',
+    billDate: bill.BillDate || '',
+    commodity: bill.Commodity || '',
+    startRead: bill.StartRead || '',
+    endRead: bill.EndRead || '',
+    readDifference: bill.ReadDifference || '',
+    meterMultiplier: bill.MeterMultiplier || '',
+    actualRKVA: bill.ActualRKVA || '',
+    tdcKW: bill.TDCkW || '',
+    taxExemptDelivery: bill.TaxExemptDelivery || '',
+    billOffset: bill.BillOffset || '',
+    naturalGasCCF: bill.NaturalGasCCF || '',
+    naturalGasTherms: bill.NaturalGasTherms || '',
+    naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+    _wreTriggerCharge: bill._wreTriggerCharge || '',
+    _wreIndexCharge: bill._wreIndexCharge || '',
+    _wreSWECharge: bill._wreSWECharge || '',
+    _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
+    _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+    _wreTriggerRate: bill._wreTriggerRate || '',
+    _wreIndexRate: bill._wreIndexRate || '',
+    therms: (function () {
+      const t = pf(bill.NaturalGasTherms);
+      if (t) return t;
+      const ccf = pf(bill.NaturalGasCCF);
+      if (ccf) return Math.round(ccf * 1.037 * 100) / 100;
+      const mm = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+      if (mm) return Math.round(mm * 10 * 100) / 100;
+      return '';
+    })(),
+    thermCost:
+      bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
+        ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
+        : '',
+    gasCharge: bill.GasCharge || '',
+    fuelAdjustment: bill.FuelAdjustment || '',
+    waterUsage: bill.WaterUsage || '',
+    waterCharge: bill.WaterCharge || '',
+    waterProtectionFee: bill.WaterProtectionFee || '',
+    sewerUsage: bill.SewerUsage || '',
+    sewerCharge: bill.SewerCharge || '',
+    stormWaterCharge: bill.StormWaterCharge || '',
+    invoiceNumber: bill.InvoiceNumber || '',
+    saleNumber: bill.SaleNumber || '',
+    deliveryDate: bill.DeliveryDate || '',
+    fuelType: bill.FuelType || '',
+    gallonsDelivered: bill.GallonsDelivered || '',
+    unitPrice: bill.UnitPrice || '',
+    subtotal: bill.Subtotal || '',
+    tax: bill.Tax || '',
+    totalKwhRate: (function () {
+      const _kwh = pf(bill.kWhConsumed);
+      const _chg = pf(kwhCost);
+      return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
+    })(),
+    totalKwRate: (function () {
+      const _kw = pf(bill.BilledKW) || pf(bill.ActualKW) || pf(bill.FacilitiesKW);
+      const _chg = pf(kwCost) + pf(bill.FacilitiesCharge);
+      return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
+    })(),
+    facilitiesRate: bill.FacilitiesRate || '',
+    demandRate: bill.DemandRate || '',
+    tdcRate: bill.TDCRate || '',
+    onPeakRate: bill.OnPeakRate || '',
+    offPeakRate: bill.OffPeakRate || '',
+    ecaRate: bill.ECARate || '',
+    eerRate: bill.EERRate || '',
+    ptsRate: bill.PTSRate || '',
+    rkvaRate: bill.RkVARate || '',
+    totalGasRate: (function () {
+      const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+      const therms =
+        pf(bill.NaturalGasTherms) ||
+        (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
+      if (therms > 0 && c > 0) return (c / therms).toFixed(5);
+      const mmbtu = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+      return mmbtu > 0 && c > 0 ? (c / mmbtu).toFixed(5) : '';
+    })(),
+    totalWaterRate: (function () {
+      const u = pf(bill.WaterUsage);
+      const c = pf(bill.WaterCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+    })(),
+    totalPropaneRate: (function () {
+      const g = pf(bill.GallonsDelivered);
+      const up = pf(bill.UnitPrice);
+      if (up > 0) return up.toFixed(5);
+      const c = pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+      return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
+    })(),
+    totalSewerRate: (function () {
+      const u = pf(bill.SewerUsage);
+      const c = pf(bill.SewerCharge);
+      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+    })(),
+    totalStormwaterRate: (function () {
+      const c = pf(bill.StormWaterCharge);
+      return c > 0 ? c.toFixed(2) : '';
+    })(),
+  };
+
+  if (bill._rates) {
+    const cp = {};
+    for (const [k, v] of Object.entries(bill._rates)) {
+      if (v.parts && v.parts.length > 1) {
+        cp[k] = v.parts.map(function (p) {
+          return {
+            qty: p.qty || null,
+            rate: p.rate || null,
+            unit: p.unit || null,
+            charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
+          };
+        });
+      }
+    }
+    if (Object.keys(cp).length) billRow._chargeParts = cp;
+  }
+
+  // Fix 2 (review of 1e99a20, PRESERVED): a row target can be truthy but
+  // meter-less (matchType 'ambiguous' from findMeterMatch, or otherwise
+  // malformed) — every line below this dereferences billMatch.meter/.bldg
+  // unconditionally. Treat any meter-less target as UNRESOLVED here, before
+  // that access, and hold it for review instead of crashing or writing.
+  // Mirrors the identity gate's own review-diversion branch further down.
+  if (!billMatch.meter) {
+    console.warn(
+      '[_mbSaveOneBill] unresolved target (matchType=' +
+        billMatch.matchType +
+        ') — no .meter to write to, routing to Saved Bills for review',
+      { billIdx: bi },
+    );
+    const _pdfBillsForReviewUnresolved = (await sget('en_pdf_bills', [])) || [];
+    _pdfBillsForReviewUnresolved.push(
+      Object.assign(
+        {
+          id: 'pb' + Date.now() + '_' + bi + '_review',
+          savedAt: new Date().toISOString(),
+          projId: billMatch.projId || null,
+          projName: (billMatch.proj && billMatch.proj.name) || 'General',
+          hasPDF,
+          pdfKey: hasPDF ? pdfKey : null,
+        },
+        bill,
+      ),
+    );
+    await sset('en_pdf_bills', _pdfBillsForReviewUnresolved);
+    bill._mbHeld = true;
+    bill._mbHeldReason = 'no matched meter';
+    return { status: 'held', reason: 'no matched meter — flagged for review', projId: billMatch.projId || null };
+  }
+  // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0
+  // identity gate — PRESERVED, unchanged from 24d108f): a non-identity
+  // (address-similarity) guess must not silently write to targetMeter.bills
+  // at all, whether that write is an overwrite of an existing period (dup)
+  // OR a brand-new push (no dup). Only two things may pass this gate:
+  //   (a) billMatch.matchType === 'identity' (account/meter-number hit from
+  //       findMeterMatch) AND the incoming bill's own AccountNumber
+  //       reasonably agrees with the target meter's stored account, or
+  //   (b) billMatch.matchType === 'manual' — the user explicitly picked this
+  //       Project -> Building -> Meter via the destination picker in
+  //       showMultiBuildingReviewPanel (setMbRowDestMeter). An explicit user
+  //       pick is authoritative and always wins, exactly like the
+  //       _meterOverride exemption in saveQueuedBills — it must not be
+  //       diverted to review just because it lacks an 'identity' tag.
+  //
+  // Finding 2 (code review of fix/ocr-matching-rearchitecture): this gate is
+  // now evaluated BEFORE the commodity-mismatch/meter-create block below
+  // (which used to run unconditionally, ~formerly lines 6427-6463) — mirrors
+  // _saveBillToMatchedMeter's veto-before-meter-create order (~line 7060 vs
+  // 7066). A gate-refused row must never reach the meter-create block, or it
+  // leaves a phantom empty meter (carrying a possibly-foreign AccountNumber)
+  // on billMatch.bldg.meters even though the bill itself was held for
+  // review — that phantom then identity-matches future bills, silently
+  // misrouting them. The gate itself is evaluated against billMatch.meter
+  // as already resolved above (the account identity being validated does not
+  // depend on which same-building, different-commodity sibling meter the
+  // bill eventually lands on).
+  const _isManualPick = billMatch.matchType === 'manual';
+  const _acctAgrees =
+    !billMatch.meter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, billMatch.meter.account);
+  const _gateOK = _isManualPick || (billMatch.matchType === 'identity' && _acctAgrees);
+  if (!_gateOK) {
+    console.warn(
+      '[_mbSaveOneBill] identity gate failed — refusing to write (would have created/updated a bill on a',
+      'guessed meter), routing to Saved Bills for review instead of auto-applying. No meter was created.',
+      {
+        billIdx: bi,
+        matchType: billMatch.matchType,
+        incomingAcct: bill.AccountNumber,
+        targetMeterAcct: billMatch.meter.account,
+      },
+    );
+    const _pdfBillsForReview = (await sget('en_pdf_bills', [])) || [];
+    _pdfBillsForReview.push(
+      Object.assign(
+        {
+          id: 'pb' + Date.now() + '_' + bi + '_review',
+          savedAt: new Date().toISOString(),
+          projId: billMatch.projId || null,
+          projName: (billMatch.proj && billMatch.proj.name) || 'General',
+          hasPDF,
+          // b-<fix-uuid>: mirror the pdfKey conversion every other save path
+          // in this file performs (~5949, 13237, 13330, 13370, 13384) — this
+          // review-diversion branch was the one exception, so review-diverted
+          // bills previously saved with hasPDF:true but no pdfKey and their
+          // PDF could never be located.
+          pdfKey: hasPDF ? pdfKey : null,
+        },
+        bill,
+      ),
+    );
+    await sset('en_pdf_bills', _pdfBillsForReview);
+    bill._mbHeld = true;
+    bill._mbHeldReason = 'account mismatch — needs manual review';
+    return { status: 'held', reason: 'identity gate failed — account mismatch', projId: billMatch.projId || null };
+  }
+
+  // Commodity-mismatch / meter-create block — identical to confirmAutoAssign.
+  // Only reached once _gateOK is true (Finding 2 fix — see comment above).
+  const _bComm = (bill.Commodity || '').toLowerCase();
+  let _mComm = (billMatch.meter.commodity || '').toLowerCase();
+  if (_bComm && !_mComm) {
+    billMatch.meter.commodity = bill.Commodity;
+    _mComm = _bComm;
+  }
+  if (_bComm && _mComm && _bComm !== _mComm) {
+    const _existM = (billMatch.bldg.meters || []).find(function (m) {
+      return (m.commodity || '').toLowerCase() === _bComm;
+    });
+    if (_existM) {
+      billMatch = Object.assign({}, billMatch, { meter: _existM, meterId: _existM.id });
+    } else {
+      const _newM = {
+        id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+        commodity:
+          bill.Commodity ||
+          (bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
+            ? 'Gas'
+            : bill.GallonsDelivered || bill.FuelType
+              ? 'Propane'
+              : 'Electric'),
+        provider: bill.UtilityCompany || billMatch.meter.provider || '',
+        account: bill.AccountNumber || billMatch.meter.account || '',
+        meter: '',
+        maddr: billMatch.meter.maddr || '',
+        inclusive: true,
+        bills: [],
+        billUnit: '',
+        displayUnit: '',
+      };
+      billMatch.bldg.meters = billMatch.bldg.meters || [];
+      billMatch.bldg.meters.push(_newM);
+      billMatch = Object.assign({}, billMatch, { meter: _newM, meterId: _newM.id });
+    }
+  }
+
+  const targetMeter = billMatch.meter;
+  if (bill.AccountNumber && targetMeter.account) {
+    const _extN = bill.AccountNumber.replace(/[\s\-]/g, '')
+      .replace(/^0+/, '')
+      .toLowerCase();
+    const _stoN = targetMeter.account
+      .replace(/[\s\-]/g, '')
+      .replace(/^0+/, '')
+      .toLowerCase();
+    if (_extN !== _stoN && (_extN.includes(_stoN) || _stoN.includes(_extN))) {
+      if (bill.AccountNumber.length > targetMeter.account.length) {
+        targetMeter.account = bill.AccountNumber;
+      }
+    }
+  }
+  if ((bill._utilityName || '').toLowerCase().includes('wood river') && !targetMeter.billUnit) {
+    targetMeter.billUnit = 'MMBtu';
+  }
+  targetMeter.bills = targetMeter.bills || [];
+  const dup = targetMeter.bills.find(function (r) {
+    return r.start === billRow.start && r.end === billRow.end;
+  });
+  if (dup) {
+    Object.assign(dup, billRow);
+  } else {
+    targetMeter.bills.push(billRow);
+    targetMeter.bills.sort(function (a, b) {
+      return _parseISO(a.start) - _parseISO(b.start);
+    });
+  }
+  const destination =
+    (billMatch.proj ? billMatch.proj.name : '') +
+    ' → ' +
+    (billMatch.bldg ? billMatch.bldg.name : '') +
+    ' → ' +
+    (targetMeter.commodity || targetMeter.account || targetMeter.id || 'meter');
+  bill._mbSaved = true;
+  bill._mbSavedDest = destination;
+  return { status: 'saved', destination, projId: billMatch.projId };
+}
+window._mbSaveOneBill = _mbSaveOneBill;
+
+// ── Bulk "Save All" (fix ede70be1) ──────────────────────────────────────────
+// Loops over checked, non-skipped, not-yet-saved rows and calls the SAME
+// _mbSaveOneBill primitive the per-row Save button uses (one primitive, two
+// callers). Rows default unchecked unless they were an 'identity' match
+// (see showMultiBuildingReviewPanel) or the user made an explicit manual
+// pick (see setMbRowDestMeter) — so Save All only ever acts on rows the user
+// has confirmed one way or another, honest-display gate wiring from 3a/3b.
+async function confirmMultiBuildingSave() {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills.length) return;
+  const dupMap = window._pdfDupMap || {};
+
+  // Dup-unresolved gate
+  const unresolved = Object.values(dupMap).filter(function (d) {
+    return d.action === null;
+  });
+  if (unresolved.length > 0) {
+    showToast(unresolved.length + ' duplicate bill(s) need review — click yellow-dot pills to resolve');
+    return;
+  }
+
+  // Rows this Save All pass will actually touch.
+  const toSave = [];
+  for (let _bi = 0; _bi < bills.length; _bi++) {
+    const billDup = dupMap[_bi];
+    if (billDup && billDup.action === 'skip') continue;
+    if (bills[_bi]._mbSaved) continue;
+    const st = _mbRowState[_bi];
+    if (st && (st.skipped || st.checked === false)) continue;
+    toSave.push(_bi);
+  }
+  if (!toSave.length) {
+    showToast('Nothing checked to save — check a row or use its own Save button');
+    return;
+  }
+
+  // Unmatched gate — every row Save All is about to touch must have a
+  // resolved destination (truthy .meter — PRESERVED from _mbUpdateSaveAllBtn's
+  // eligibility check, see Fix 2 comment there).
+  for (const _bi of toSave) {
+    if (!_mbRowTargets[_bi] || !_mbRowTargets[_bi].meter) {
+      showToast('All included billing periods need a destination — assign, uncheck, or Skip remaining rows first');
+      return;
+    }
+  }
 
   let saved = 0;
   let flaggedForReview = 0;
   const touchedPids = new Set(); // rows in this batch can target different projects/buildings
-  for (let _bi = 0; _bi < bills.length; _bi++) {
-    const bill = bills[_bi];
-    const billDup = dupMap[_bi];
-    if (billDup && billDup.action === 'skip') continue;
-
-    let billMatch = _mbRowTargets[_bi];
-    if (!billMatch) {
-      console.warn('[confirmMultiBuildingSave] no target for bill', _bi, '— skipping');
-      continue;
-    }
-
-    // Store PDF file once on first saved bill
-    let hasPDF = false;
-    if (pdfB64 && !pdfStored) {
-      hasPDF = await pdfStore(pdfKey, pdfB64);
-      bills.forEach(function (b) {
-        b._pdfSharedKey = String(sharedId).replace(/^en_pdf_shared_/, '');
-      });
-      pdfStored = true;
-    } else if (pdfB64) {
-      hasPDF = true;
-    }
-
-    const billId = 'pb' + Date.now() + '_' + saved;
-    // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
-    const { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(bill);
-
-    const billRow = {
-      id: 'r' + Date.now() + '_' + saved,
-      start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
-      end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
-      kwh,
-      demandKW: bill.ActualKW || '',
-      billedKW: bill.BilledKW || '',
-      facKW: bill.FacilitiesKW || '',
-      facKWCost: bill.FacilitiesCharge || '',
-      kwCost,
-      kwhCost,
-      otherCost,
-      taxCost,
-      totalCost,
-      fromPDF: true,
-      pdfBillId: billId,
-      hasPDF,
-      pdfKey: pdfKey || null,
-      pdfPageStart: bill._pageStart || null,
-      pdfPageEnd: bill._pageEnd || null,
-      rateSchedule: bill.RateSchedule || '',
-      onPeakKwh: bill.OnPeakKWh || bill.EnergyOnPeakKWh || '',
-      offPeakKwh: bill.OffPeakKWh || bill.EnergyOffPeakKWh || '',
-      onPeakCost: bill.EnergyOnPeakCharge || '',
-      offPeakCost: bill.EnergyOffPeakCharge || '',
-      customerCharge: bill.CustomerCharge || '',
-      demandCharge: bill.BilledKWCharge || '',
-      facilitiesCharge: bill.FacilitiesCharge || '',
-      ecaCharge: bill.ECACharge || '',
-      eerCharge: bill.EERCharge || '',
-      ptsCharge: bill.PTSCharge || '',
-      tdcCharge: bill.TDCCharge || '',
-      rkvaCharge: bill.RkVACharge || '',
-      miscellaneousCharge: bill.MiscellaneousCharge || '',
-      renewableCharge: bill.RenewableCharge || '',
-      franchiseFee: bill.FranchiseFee || '',
-      franchiseFee1: bill.FranchiseFee1 || '',
-      franchiseFee2: bill.FranchiseFee2 || '',
-      solarCredit: bill.SolarCredit || '',
-      generationKwh: bill.GenerationKwh || '',
-      Meter1_ReadStart: bill.Meter1_ReadStart || '',
-      Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
-      Meter1_StartRead: bill.Meter1_StartRead || '',
-      Meter1_EndRead: bill.Meter1_EndRead || '',
-      Meter1_ReadDiff: bill.Meter1_ReadDiff || '',
-      Meter1_Multiplier: bill.Meter1_Multiplier || '',
-      Meter1_kWh: bill.Meter1_kWh || '',
-      Meter1_KW: bill.Meter1_KW || '',
-      Meter1_RKVA: bill.Meter1_RKVA || '',
-      Meter2_ReadStart: bill.Meter2_ReadStart || '',
-      Meter2_ReadEnd: bill.Meter2_ReadEnd || '',
-      Meter2_StartRead: bill.Meter2_StartRead || '',
-      Meter2_EndRead: bill.Meter2_EndRead || '',
-      Meter2_ReadDiff: bill.Meter2_ReadDiff || '',
-      Meter2_Multiplier: bill.Meter2_Multiplier || '',
-      Meter2_kWh: bill.Meter2_kWh || '',
-      Meter2_KW: bill.Meter2_KW || '',
-      Meter2_RKVA: bill.Meter2_RKVA || '',
-      utilityCompany: bill.UtilityCompany || '',
-      customerName: bill.CustomerName || '',
-      serviceAddress: bill.ServiceAddress || '',
-      accountNumber: bill.AccountNumber || '',
-      meterNumber: bill.MeterNumber || '',
-      numberOfDays: bill.NumberOfDays || '',
-      meterReadStart: bill.MeterReadStart || '',
-      meterReadEnd: bill.MeterReadEnd || '',
-      billDate: bill.BillDate || '',
-      commodity: bill.Commodity || '',
-      startRead: bill.StartRead || '',
-      endRead: bill.EndRead || '',
-      readDifference: bill.ReadDifference || '',
-      meterMultiplier: bill.MeterMultiplier || '',
-      actualRKVA: bill.ActualRKVA || '',
-      tdcKW: bill.TDCkW || '',
-      taxExemptDelivery: bill.TaxExemptDelivery || '',
-      billOffset: bill.BillOffset || '',
-      naturalGasCCF: bill.NaturalGasCCF || '',
-      naturalGasTherms: bill.NaturalGasTherms || '',
-      naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
-      _wreTriggerCharge: bill._wreTriggerCharge || '',
-      _wreIndexCharge: bill._wreIndexCharge || '',
-      _wreSWECharge: bill._wreSWECharge || '',
-      _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
-      _wreIndexMMbtu: bill._wreIndexMMbtu || '',
-      _wreTriggerRate: bill._wreTriggerRate || '',
-      _wreIndexRate: bill._wreIndexRate || '',
-      therms: (function () {
-        const t = pf(bill.NaturalGasTherms);
-        if (t) return t;
-        const ccf = pf(bill.NaturalGasCCF);
-        if (ccf) return Math.round(ccf * 1.037 * 100) / 100;
-        const mm = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
-        if (mm) return Math.round(mm * 10 * 100) / 100;
-        return '';
-      })(),
-      thermCost:
-        bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
-          ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
-          : '',
-      gasCharge: bill.GasCharge || '',
-      fuelAdjustment: bill.FuelAdjustment || '',
-      waterUsage: bill.WaterUsage || '',
-      waterCharge: bill.WaterCharge || '',
-      waterProtectionFee: bill.WaterProtectionFee || '',
-      sewerUsage: bill.SewerUsage || '',
-      sewerCharge: bill.SewerCharge || '',
-      stormWaterCharge: bill.StormWaterCharge || '',
-      invoiceNumber: bill.InvoiceNumber || '',
-      saleNumber: bill.SaleNumber || '',
-      deliveryDate: bill.DeliveryDate || '',
-      fuelType: bill.FuelType || '',
-      gallonsDelivered: bill.GallonsDelivered || '',
-      unitPrice: bill.UnitPrice || '',
-      subtotal: bill.Subtotal || '',
-      tax: bill.Tax || '',
-      totalKwhRate: (function () {
-        const _kwh = pf(bill.kWhConsumed);
-        const _chg = pf(kwhCost);
-        return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
-      })(),
-      totalKwRate: (function () {
-        const _kw = pf(bill.BilledKW) || pf(bill.ActualKW) || pf(bill.FacilitiesKW);
-        const _chg = pf(kwCost) + pf(bill.FacilitiesCharge);
-        return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
-      })(),
-      facilitiesRate: bill.FacilitiesRate || '',
-      demandRate: bill.DemandRate || '',
-      tdcRate: bill.TDCRate || '',
-      onPeakRate: bill.OnPeakRate || '',
-      offPeakRate: bill.OffPeakRate || '',
-      ecaRate: bill.ECARate || '',
-      eerRate: bill.EERRate || '',
-      ptsRate: bill.PTSRate || '',
-      rkvaRate: bill.RkVARate || '',
-      totalGasRate: (function () {
-        const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
-        const therms =
-          pf(bill.NaturalGasTherms) ||
-          (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
-        if (therms > 0 && c > 0) return (c / therms).toFixed(5);
-        const mmbtu = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
-        return mmbtu > 0 && c > 0 ? (c / mmbtu).toFixed(5) : '';
-      })(),
-      totalWaterRate: (function () {
-        const u = pf(bill.WaterUsage);
-        const c = pf(bill.WaterCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
-        return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-      })(),
-      totalPropaneRate: (function () {
-        const g = pf(bill.GallonsDelivered);
-        const up = pf(bill.UnitPrice);
-        if (up > 0) return up.toFixed(5);
-        const c = pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
-        return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-      })(),
-      totalSewerRate: (function () {
-        const u = pf(bill.SewerUsage);
-        const c = pf(bill.SewerCharge);
-        return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-      })(),
-      totalStormwaterRate: (function () {
-        const c = pf(bill.StormWaterCharge);
-        return c > 0 ? c.toFixed(2) : '';
-      })(),
-    };
-
-    if (bill._rates) {
-      const cp = {};
-      for (const [k, v] of Object.entries(bill._rates)) {
-        if (v.parts && v.parts.length > 1) {
-          cp[k] = v.parts.map(function (p) {
-            return {
-              qty: p.qty || null,
-              rate: p.rate || null,
-              unit: p.unit || null,
-              charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
-            };
-          });
-        }
-      }
-      if (Object.keys(cp).length) billRow._chargeParts = cp;
-    }
-
-    // Commodity-mismatch / meter-create block — identical to confirmAutoAssign
-    const _bComm = (bill.Commodity || '').toLowerCase();
-    let _mComm = (billMatch.meter.commodity || '').toLowerCase();
-    if (_bComm && !_mComm) {
-      billMatch.meter.commodity = bill.Commodity;
-      _mComm = _bComm;
-    }
-    if (_bComm && _mComm && _bComm !== _mComm) {
-      const _existM = (billMatch.bldg.meters || []).find(function (m) {
-        return (m.commodity || '').toLowerCase() === _bComm;
-      });
-      if (_existM) {
-        billMatch = Object.assign({}, billMatch, { meter: _existM, meterId: _existM.id });
-      } else {
-        const _newM = {
-          id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-          commodity:
-            bill.Commodity ||
-            (bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
-              ? 'Gas'
-              : bill.GallonsDelivered || bill.FuelType
-                ? 'Propane'
-                : 'Electric'),
-          provider: bill.UtilityCompany || billMatch.meter.provider || '',
-          account: bill.AccountNumber || billMatch.meter.account || '',
-          meter: '',
-          maddr: billMatch.meter.maddr || '',
-          inclusive: true,
-          bills: [],
-          billUnit: '',
-          displayUnit: '',
-        };
-        billMatch.bldg.meters = billMatch.bldg.meters || [];
-        billMatch.bldg.meters.push(_newM);
-        billMatch = Object.assign({}, billMatch, { meter: _newM, meterId: _newM.id });
-      }
-    }
-
-    const targetMeter = billMatch.meter;
-    if (bill.AccountNumber && targetMeter.account) {
-      const _extN = bill.AccountNumber.replace(/[\s\-]/g, '')
-        .replace(/^0+/, '')
-        .toLowerCase();
-      const _stoN = targetMeter.account
-        .replace(/[\s\-]/g, '')
-        .replace(/^0+/, '')
-        .toLowerCase();
-      if (_extN !== _stoN && (_extN.includes(_stoN) || _stoN.includes(_extN))) {
-        if (bill.AccountNumber.length > targetMeter.account.length) {
-          targetMeter.account = bill.AccountNumber;
-        }
-      }
-    }
-    if ((bill._utilityName || '').toLowerCase().includes('wood river') && !targetMeter.billUnit) {
-      targetMeter.billUnit = 'MMBtu';
-    }
-    targetMeter.bills = targetMeter.bills || [];
-    const dup = targetMeter.bills.find(function (r) {
-      return r.start === billRow.start && r.end === billRow.end;
-    });
-    // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0
-    // identity gate at ~line 7420): evaluated ONCE, before the dup/no-dup
-    // branch, and applies to BOTH — a non-identity (address-similarity) guess
-    // must not silently write to targetMeter.bills at all, whether that write
-    // is an overwrite of an existing period (dup) OR a brand-new push (no
-    // dup). The non-colliding push case is the MORE COMMON real-world trigger
-    // (most re-uploaded bills land on a NEW period, not the exact one already
-    // saved) and was originally left ungated here — confirmed empirically
-    // against the real Louisburg incident accounts (Account A vs
-    // Account B) during review. Only two things may pass this gate:
-    //   (a) billMatch.matchType === 'identity' (account/meter-number hit from
-    //       findMeterMatch) AND the incoming bill's own AccountNumber
-    //       reasonably agrees with the target meter's stored account, or
-    //   (b) billMatch.matchType === 'manual' — the user explicitly picked
-    //       this Project -> Building -> Meter via the "Change" override in
-    //       showMultiBuildingReviewPanel / _mbCommitRowTarget. An explicit
-    //       user pick is authoritative and always wins, exactly like the
-    //       _meterOverride exemption in saveQueuedBills — it must not be
-    //       diverted to review just because it lacks an 'identity' tag.
-    const _isManualPick = billMatch.matchType === 'manual';
-    const _acctAgrees =
-      !targetMeter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, targetMeter.account);
-    const _gateOK = _isManualPick || (billMatch.matchType === 'identity' && _acctAgrees);
-    if (_gateOK) {
-      if (dup) {
-        Object.assign(dup, billRow);
-      } else {
-        targetMeter.bills.push(billRow);
-        targetMeter.bills.sort(function (a, b) {
-          return _parseISO(a.start) - _parseISO(b.start);
-        });
-      }
+  for (const _bi of toSave) {
+    const result = await _mbSaveOneBill(_bi);
+    if (result.status === 'saved') {
       saved++;
-      touchedPids.add(billMatch.projId);
-    } else {
-      console.warn(
-        '[confirmMultiBuildingSave] identity gate failed — refusing to write to targetMeter.bills (',
-        dup ? 'would have overwritten an existing period' : 'would have created a new bill on a guessed meter',
-        '), routing to Saved Bills for review instead of auto-applying',
-        {
-          billIdx: _bi,
-          matchType: billMatch.matchType,
-          incomingAcct: bill.AccountNumber,
-          targetMeterAcct: targetMeter.account,
-        },
-      );
-      const _pdfBillsForReview = (await sget('en_pdf_bills', [])) || [];
-      _pdfBillsForReview.push(
-        Object.assign(
-          {
-            id: 'pb' + Date.now() + '_' + _bi + '_review',
-            savedAt: new Date().toISOString(),
-            projId: billMatch.projId || null,
-            projName: (billMatch.proj && billMatch.proj.name) || 'General',
-            hasPDF,
-            // b-<fix-uuid>: mirror the pdfKey conversion every other save path
-            // in this file performs (~5949, 13237, 13330, 13370, 13384) — this
-            // review-diversion branch was the one exception, so review-diverted
-            // bills previously saved with hasPDF:true but no pdfKey and their
-            // PDF could never be located.
-            pdfKey: hasPDF ? pdfKey : null,
-          },
-          bill,
-        ),
-      );
-      await sset('en_pdf_bills', _pdfBillsForReview);
+      if (result.projId) touchedPids.add(result.projId);
+    } else if (result.status === 'held') {
       flaggedForReview++;
     }
   }
@@ -6299,6 +6704,8 @@ async function confirmMultiBuildingSave() {
   _inheritBaselinesForProject(udSelProjId);
   document.getElementById('pdfMultiBldgPanel').style.display = 'none';
   _mbRowTargets = {};
+  _mbRowState = {};
+  _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
   _autoAssignTarget = null;
   showToast(
     saved +
@@ -6717,6 +7124,19 @@ async function _ensureBatchPdfStored(bills) {
 // place.
 function _saveBillToMatchedMeter(extracted, match) {
   if (!extracted || !match || !match.proj || !match.bldg || !match.meter) return null;
+  // Fix 3 (49928d33/409830ae) — defense-in-depth. Even on an 'identity' call,
+  // refuse to write when the bill's own AccountNumber strongly contradicts
+  // the target meter's stored account. Guards against a bad match slipping
+  // through upstream (e.g. an identity hit found by MeterNumber alone, whose
+  // AccountNumber differs) — every caller of this function already has an
+  // if(dest){}else{held/failed} branch, so returning null safely falls
+  // through to that caller's existing review/hold path.
+  if (extracted.AccountNumber && match.meter.account) {
+    const strongMismatch =
+      !_acctFuzzyMatch(extracted.AccountNumber, match.meter.account) &&
+      String(extracted.AccountNumber).replace(/\D/g, '').length >= 6;
+    if (strongMismatch) return null;
+  }
   const billComm = (extracted.Commodity || '').toLowerCase();
   let meterComm = (match.meter.commodity || '').toLowerCase();
   if (billComm && !meterComm) {
@@ -7805,6 +8225,150 @@ function exitPreviewMode() {
   renderQueueProgress();
 }
 
+// ── Destination cell builder (fix b-46a984a0 — batch-to-meter review) ──
+// GATE: zero silent auto-routes. An 'identity' match (account/meter-number hit) is
+// shown as confirmed text the user can still override via "Change". Anything else —
+// 'address'-only fuzzy match or no match at all — always renders the cascading
+// Project→Building→Meter picker and forces an explicit user pick (never pre-selects
+// a building/meter from a weak address guess). handlerArg must already be a valid
+// JS literal for the onclick/onchange call (numeric rowIdx unquoted, group key quoted).
+//
+// Hoisted to module scope (from a local const inside renderQueueResults) so
+// showMultiBuildingReviewPanel (single-PDF multi-bill review) can reuse the exact
+// same honest-match rendering instead of a parallel "Matched" badge that hid
+// non-identity (address/ambiguous) matches behind a false-confident green label.
+// Behavior-preserving hoist — same signature, same branches, same output.
+function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn) {
+  const ov = bill._meterOverride || null;
+  const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
+  const expanded = !!bill._destExpanded || !isIdentity;
+  if (isIdentity && !expanded) {
+    const destText =
+      autoMatch.proj.name +
+      ' → ' +
+      autoMatch.bldg.name +
+      ' → ' +
+      (autoMatch.meter.provider || autoMatch.meter.meter || 'meter');
+    return (
+      '<div style="font-size:10px;color:var(--text)" title="Identity match — account/meter number found">' +
+      _escHtml(destText) +
+      ' <a href="javascript:void(0)" onclick="' +
+      setExpandFn +
+      '(' +
+      handlerArg +
+      ',true)" style="font-size:9px;color:var(--em);text-decoration:underline">Change</a></div>'
+    );
+  }
+  // Cascading picker. For an identity match under "Change", pre-fill with the
+  // match's own proj/bldg/meter (an editable confirm, like the single-file banner's
+  // override toggle). For an address-only or absent match, leave building/meter BLANK
+  // even though we know a guess — the user must actively confirm it (this is the
+  // trust-violation guard: a wrong silent attach is worse than no attach).
+  const curProj =
+    ov && ov.projId != null
+      ? ov.projId
+      : isIdentity && autoMatch
+        ? autoMatch.projId
+        : bill._projOverride || (window._pdfQueue && window._pdfQueue.batchProjId) || '';
+  const curBldg = ov && ov.bldgId ? ov.bldgId : isIdentity && autoMatch && !ov ? autoMatch.bldgId : '';
+  const curMeter = ov && ov.meterId ? ov.meterId : isIdentity && autoMatch && !ov ? autoMatch.meterId : '';
+  const selStyle =
+    'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
+    'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
+  const projOpts =
+    '<option value="">Select project…</option>' +
+    (projects || [])
+      .map(
+        (p) =>
+          '<option value="' +
+          p.id +
+          '"' +
+          (String(p.id) === String(curProj) ? ' selected' : '') +
+          '>' +
+          _escHtml(p.name) +
+          '</option>',
+      )
+      .join('');
+  const bldgOpts =
+    '<option value="">Select building…</option>' +
+    (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
+      .map(
+        (b2) =>
+          '<option value="' +
+          b2.id +
+          '"' +
+          (String(b2.id) === String(curBldg) ? ' selected' : '') +
+          '>' +
+          _escHtml(b2.name || b2.id) +
+          '</option>',
+      )
+      .join('');
+  const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
+  const meterOpts =
+    '<option value="">Select meter…</option>' +
+    ((bldgObj && bldgObj.meters) || [])
+      .map((m) => {
+        const lbl =
+          (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : m.meter ? ' (' + m.meter + ')' : '');
+        return (
+          '<option value="' +
+          m.id +
+          '"' +
+          (String(m.id) === String(curMeter) ? ' selected' : '') +
+          '>' +
+          _escHtml(lbl) +
+          '</option>'
+        );
+      })
+      .join('');
+  const hint =
+    autoMatch && autoMatch.matchType === 'address'
+      ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
+        _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
+        '</div>'
+      : !autoMatch
+        ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
+        : '';
+  const changeLink = isIdentity
+    ? '<a href="javascript:void(0)" onclick="' +
+      setExpandFn +
+      '(' +
+      handlerArg +
+      ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
+    : '';
+  return (
+    hint +
+    '<select style="' +
+    selStyle +
+    '" onchange="' +
+    setProjFn +
+    '(' +
+    handlerArg +
+    ',this.value)">' +
+    projOpts +
+    '</select>' +
+    '<select style="' +
+    selStyle +
+    '" onchange="' +
+    setBldgFn +
+    '(' +
+    handlerArg +
+    ',this.value)">' +
+    bldgOpts +
+    '</select>' +
+    '<select style="' +
+    selStyle +
+    '" onchange="' +
+    setMeterFn +
+    '(' +
+    handlerArg +
+    ',this.value)">' +
+    meterOpts +
+    '</select>' +
+    changeLink
+  );
+}
+
 function renderQueueResults() {
   const q = window._pdfQueue;
   if (!q) return;
@@ -8107,144 +8671,6 @@ function renderQueueResults() {
       );
     }
     return '<span style="color:#4a4;font-size:10px">READY</span>';
-  };
-
-  // ── Destination cell builder (fix b-46a984a0 — batch-to-meter review) ──
-  // GATE: zero silent auto-routes. An 'identity' match (account/meter-number hit) is
-  // shown as confirmed text the user can still override via "Change". Anything else —
-  // 'address'-only fuzzy match or no match at all — always renders the cascading
-  // Project→Building→Meter picker and forces an explicit user pick (never pre-selects
-  // a building/meter from a weak address guess). handlerArg must already be a valid
-  // JS literal for the onclick/onchange call (numeric rowIdx unquoted, group key quoted).
-  const _buildDestCell = (bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn) => {
-    const ov = bill._meterOverride || null;
-    const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
-    const expanded = !!bill._destExpanded || !isIdentity;
-    if (isIdentity && !expanded) {
-      const destText =
-        autoMatch.proj.name +
-        ' → ' +
-        autoMatch.bldg.name +
-        ' → ' +
-        (autoMatch.meter.provider || autoMatch.meter.meter || 'meter');
-      return (
-        '<div style="font-size:10px;color:var(--text)" title="Identity match — account/meter number found">' +
-        _escHtml(destText) +
-        ' <a href="javascript:void(0)" onclick="' +
-        setExpandFn +
-        '(' +
-        handlerArg +
-        ',true)" style="font-size:9px;color:var(--em);text-decoration:underline">Change</a></div>'
-      );
-    }
-    // Cascading picker. For an identity match under "Change", pre-fill with the
-    // match's own proj/bldg/meter (an editable confirm, like the single-file banner's
-    // override toggle). For an address-only or absent match, leave building/meter BLANK
-    // even though we know a guess — the user must actively confirm it (this is the
-    // trust-violation guard: a wrong silent attach is worse than no attach).
-    const curProj =
-      ov && ov.projId != null
-        ? ov.projId
-        : isIdentity && autoMatch
-          ? autoMatch.projId
-          : bill._projOverride || (window._pdfQueue && window._pdfQueue.batchProjId) || '';
-    const curBldg = ov && ov.bldgId ? ov.bldgId : isIdentity && autoMatch && !ov ? autoMatch.bldgId : '';
-    const curMeter = ov && ov.meterId ? ov.meterId : isIdentity && autoMatch && !ov ? autoMatch.meterId : '';
-    const selStyle =
-      'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
-      'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
-    const projOpts =
-      '<option value="">Select project…</option>' +
-      (projects || [])
-        .map(
-          (p) =>
-            '<option value="' +
-            p.id +
-            '"' +
-            (String(p.id) === String(curProj) ? ' selected' : '') +
-            '>' +
-            _escHtml(p.name) +
-            '</option>',
-        )
-        .join('');
-    const bldgOpts =
-      '<option value="">Select building…</option>' +
-      (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
-        .map(
-          (b2) =>
-            '<option value="' +
-            b2.id +
-            '"' +
-            (String(b2.id) === String(curBldg) ? ' selected' : '') +
-            '>' +
-            _escHtml(b2.name || b2.id) +
-            '</option>',
-        )
-        .join('');
-    const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
-    const meterOpts =
-      '<option value="">Select meter…</option>' +
-      ((bldgObj && bldgObj.meters) || [])
-        .map((m) => {
-          const lbl =
-            (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : m.meter ? ' (' + m.meter + ')' : '');
-          return (
-            '<option value="' +
-            m.id +
-            '"' +
-            (String(m.id) === String(curMeter) ? ' selected' : '') +
-            '>' +
-            _escHtml(lbl) +
-            '</option>'
-          );
-        })
-        .join('');
-    const hint =
-      autoMatch && autoMatch.matchType === 'address'
-        ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
-          _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
-          '</div>'
-        : !autoMatch
-          ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
-          : '';
-    const changeLink = isIdentity
-      ? '<a href="javascript:void(0)" onclick="' +
-        setExpandFn +
-        '(' +
-        handlerArg +
-        ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
-      : '';
-    return (
-      hint +
-      '<select style="' +
-      selStyle +
-      '" onchange="' +
-      setProjFn +
-      '(' +
-      handlerArg +
-      ',this.value)">' +
-      projOpts +
-      '</select>' +
-      '<select style="' +
-      selStyle +
-      '" onchange="' +
-      setBldgFn +
-      '(' +
-      handlerArg +
-      ',this.value)">' +
-      bldgOpts +
-      '</select>' +
-      '<select style="' +
-      selStyle +
-      '" onchange="' +
-      setMeterFn +
-      '(' +
-      handlerArg +
-      ',this.value)">' +
-      meterOpts +
-      '</select>' +
-      changeLink
-    );
   };
 
   let billRowsHtml = '';
@@ -11761,6 +12187,14 @@ async function processPDF(file) {
           // Use extractAll if available (multi-bill PDF support)
           let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
           const _extractUnmatchedPages = bills._unmatchedPages || [];
+          // Guard (2322a12f): a non-empty _unmatchedPages means `rule` already
+          // split this file correctly — some pages matched `rule` (e.g. a
+          // Louisburg gas page), others were deliberately left unmatched for
+          // a DIFFERENT provider's rule to pick up per-page later (see
+          // _unmatchedToSyntheticBills). That marks this file as a genuine
+          // multi-provider/multi-commodity document. See the OCR-retry guard
+          // below (search this comment ID) for why that matters.
+          const _fileHasMultiProviderSplit = _extractUnmatchedPages.length > 0;
           // Bug b5951068: Flag bills that fail the key-field filter instead of
           // silently dropping them. Unparseable billing periods surface as
           // parseError:true rows so the user can see and manually assign them.
@@ -11923,7 +12357,27 @@ async function processPDF(file) {
                   }
                   const retryFull = retryTexts.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
                   if (retryFull.trim().length > 100) {
-                    const retryRule = UTILITY_RULES.find((r) => r.detect(retryFull));
+                    // Guard (2322a12f): _fileHasMultiProviderSplit means this file
+                    // already produced a correct per-page split across DIFFERENT
+                    // providers/commodities (e.g. a Louisburg gas page + a page
+                    // left unmatched for Evergy). Re-detecting a rule from the
+                    // combined retryFull text (all pages concatenated) can match
+                    // a different single-provider rule than the one that owns
+                    // this file (Evergy's detect() firing on the Evergy page
+                    // mixed in with the Louisburg page). That rule's extractAll
+                    // then runs its OWN page-splitting logic across the whole
+                    // combined text — including pages it doesn't own — and the
+                    // wholesale `bills = retryBills2` below replaces the correct
+                    // split with duplicate/wrong-commodity bills (2322a12f: a
+                    // Louisburg gas+Evergy electric 2-page PDF came back as two
+                    // Evergy electric bills with the same dates). When this file
+                    // is known multi-provider, the retry must stay on the SAME
+                    // rule that owned the original split — never switch providers.
+                    const retryRule = _fileHasMultiProviderSplit
+                      ? rule.detect(retryFull)
+                        ? rule
+                        : null
+                      : UTILITY_RULES.find((r) => r.detect(retryFull));
                     if (retryRule) {
                       const retryBills2 = retryRule.extractAll
                         ? retryRule.extractAll(retryFull)
@@ -12091,8 +12545,14 @@ async function processPDF(file) {
                 // Try re-extracting from each alternate OCR text
                 for (const altText of altTexts) {
                   try {
-                    const altBills = rule.extract(altText);
-                    if (!altBills || !altBills.length) continue;
+                    // Fix (8b6342e9): rule.extract() for Evergy returns a single
+                    // bill object, not an array — `!altBills.length` on the raw
+                    // object is always true (undefined), so this block never ran
+                    // for matched bills. Normalize the same way commit 5f563df
+                    // does for the recovered-bill consensus block below.
+                    const altResult = rule.extract(altText);
+                    const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
+                    if (!altBills.length) continue;
                     // Find the alt bill matching this bill's period
                     const altBill =
                       altBills.find(
@@ -12142,9 +12602,89 @@ async function processPDF(file) {
               }
             }
           }
-          // F3: pass texts only needed during consensus — free them now
-          window._pdfOcrPasses = null;
-          window._pdfPassScores = null;
+          // ── MULTI-PASS OCR CONSENSUS (kWh-identity fallback recovery) ──
+          // Fix (2026-08-24, defect #2 of the Louisburg 100%-accuracy gate): the
+          // _sum_mismatch consensus block above only reconciles DOLLAR charge
+          // fields, and only fires when the bill's charge total doesn't add up.
+          // A bill can have a perfectly reconciling dollar total while its
+          // On/OffPeakKWh silently fell back to the kWh-identity derivation
+          // (OnPeakKWh = kWhConsumed - OffPeakKWh or the reverse — see
+          // `_auto_recovered_On/OffPeakKWh` in energy-savings.js ~3905-3969)
+          // because THIS pass's OCR of the charge line was too garbled for the
+          // direct "<qty> kWh at $<rate>" regex to match. The identity math is
+          // valid but strictly lower-fidelity than a direct read: it inherits
+          // any rounding drift between the meter-table kWhConsumed and the
+          // charge line's own kWh figure, AND it can never recover the paired
+          // *Rate field (the identity has no rate term), leaving OnPeakRate/
+          // OffPeakRate permanently null. Root-caused on the Louisburg
+          // SKM_C551i Evergy bill (acct 8980291458): the OCR pass processPDF
+          // kept as "best text" (lowest countCriticalMissing — BillingPeriodStart/
+          // AccountNumber/kWhConsumed/TotalCurrentCharges were already present)
+          // garbled the Off-Peak charge line just enough that `xRate` never
+          // matched it, so OffPeakKWh fell back to the identity and OffPeakRate
+          // stayed null — while a DIFFERENT captured OCR pass of the SAME text
+          // (already sitting in window._pdfOcrPasses, never consulted because
+          // this bill has no _sum_mismatch) reads that line cleanly. Mirrors the
+          // _sum_mismatch block's structure/guards (same rule-name gate, same
+          // per-period alt-bill lookup) but targets the kWh-identity flags
+          // instead, and adopts BOTH the qty and its rate from the alt pass
+          // together (never one without the other) so the two stay consistent.
+          if (hasAltPasses && rule.name === 'Evergy') {
+            const KWH_FALLBACK_PAIRS = [
+              { kwhField: 'OnPeakKWh', rateField: 'OnPeakRate', flag: '_auto_recovered_OnPeakKWh' },
+              { kwhField: 'OffPeakKWh', rateField: 'OffPeakRate', flag: '_auto_recovered_OffPeakKWh' },
+            ];
+            const billsNeedingKwhConsensus = finalBills.filter((b) => KWH_FALLBACK_PAIRS.some((p) => b[p.flag]));
+            if (billsNeedingKwhConsensus.length > 0) {
+              const altTexts2 = [];
+              for (const passes of Object.values(passTexts)) {
+                for (const p of passes) {
+                  if (!altTexts2.includes(p.text) && p.text !== text) altTexts2.push(p.text);
+                }
+              }
+              for (const b of billsNeedingKwhConsensus) {
+                for (const pair of KWH_FALLBACK_PAIRS) {
+                  if (!b[pair.flag]) continue;
+                  for (const altText of altTexts2) {
+                    try {
+                      // Fix (8b6342e9): same array-normalization as the
+                      // _sum_mismatch block above — Evergy's extract() returns a
+                      // single object, so `!altBills.length` was always true and
+                      // this block never adopted an alt-pass value for matched bills.
+                      const altResult = rule.extract(altText);
+                      const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
+                      if (!altBills.length) continue;
+                      const altBill =
+                        altBills.find(
+                          (ab) =>
+                            ab.BillingPeriodStart === b.BillingPeriodStart &&
+                            ab.BillingPeriodEnd === b.BillingPeriodEnd,
+                        ) || altBills[0];
+                      // Only adopt when the alt pass read this field DIRECTLY (no
+                      // fallback flag of its own) AND recovered the paired rate —
+                      // otherwise this would trade one degraded reading for
+                      // another, or introduce a qty/rate pair that don't belong
+                      // together.
+                      if (altBill && !altBill[pair.flag] && altBill[pair.kwhField] && altBill[pair.rateField]) {
+                        b['_consensus_recovered_' + pair.kwhField] = {
+                          original: b[pair.kwhField],
+                          corrected: altBill[pair.kwhField],
+                          reason:
+                            'Alternate OCR pass read the charge line directly instead of falling back to the kWh identity',
+                        };
+                        b[pair.kwhField] = altBill[pair.kwhField];
+                        b[pair.rateField] = altBill[pair.rateField];
+                        delete b[pair.flag];
+                        break;
+                      }
+                    } catch (e) {
+                      /* alt extraction failed, skip */
+                    }
+                  }
+                }
+              }
+            }
+          }
 
           // Convert _pageIndex to _pageStart/_pageEnd for extractors that
           // set per-page indices instead of page ranges
@@ -12158,6 +12698,84 @@ async function processPDF(file) {
           // ── Inject unmatched pages as "Manual Review" entries so they are visible ──
           // Without this, pages that couldn't be parsed are silently dropped.
           const _syntheticReviewBills = _unmatchedToSyntheticBills(_extractUnmatchedPages);
+
+          // ── MULTI-PASS OCR CONSENSUS FOR RECOVERED UNMATCHED PAGES ──
+          // Fix (2026-08-24, Louisburg synthetic-recovery defect): the kWh-identity
+          // consensus block above only patches bills produced by the FILE-LEVEL
+          // `rule.extractAll(text)` pass (it's gated on `rule.name === 'Evergy'`,
+          // where `rule` is whichever provider owns the whole file — e.g. "City of
+          // Louisburg" for a mixed Louisburg+Evergy scan). It never runs against
+          // bills recovered by _unmatchedToSyntheticBills, because those bills are
+          // built from a DIFFERENT rule than the file-level one (an Evergy page
+          // mixed into a Louisburg scan) and don't exist yet at that point in the
+          // pipeline. A recovered bill can carry the exact same
+          // _auto_recovered_On/OffPeakKWh identity-fallback flags (set inside
+          // _extractEvergy, invoked by _unmatchedToSyntheticBills's own
+          // `r.extract(u.pageText)` — see ~11996-12020 above) with no path to a
+          // higher-fidelity alternate OCR pass. This block mirrors the one above
+          // but (a) runs unconditionally on `_syntheticReviewBills` regardless of
+          // the file-level `rule`, keying off each recovered bill's OWN rule
+          // (`_recoveredFromFallbackRule`) instead, and (b) normalizes that rule's
+          // `.extract()` return to an array the same way _unmatchedToSyntheticBills
+          // already does (Evergy's `.extract()` returns a single bill object, not
+          // an array — calling `.length` on it directly is always undefined).
+          if (hasAltPasses && _syntheticReviewBills.length) {
+            const KWH_FALLBACK_PAIRS_RECOVERED = [
+              { kwhField: 'OnPeakKWh', rateField: 'OnPeakRate', flag: '_auto_recovered_OnPeakKWh' },
+              { kwhField: 'OffPeakKWh', rateField: 'OffPeakRate', flag: '_auto_recovered_OffPeakKWh' },
+            ];
+            const altTextsRecovered = [];
+            for (const passes of Object.values(passTexts)) {
+              for (const p of passes) {
+                if (!altTextsRecovered.includes(p.text) && p.text !== text) altTextsRecovered.push(p.text);
+              }
+            }
+            for (const b of _syntheticReviewBills) {
+              const recoverRule =
+                b._recoveredFromFallbackRule && UTILITY_RULES.find((r) => r.name === b._recoveredFromFallbackRule);
+              if (!recoverRule || typeof recoverRule.extract !== 'function') continue;
+              for (const pair of KWH_FALLBACK_PAIRS_RECOVERED) {
+                if (!b[pair.flag]) continue;
+                for (const altText of altTextsRecovered) {
+                  try {
+                    const altResult = recoverRule.extract(altText);
+                    const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
+                    if (!altBills.length) continue;
+                    const altBill =
+                      altBills.find(
+                        (ab) =>
+                          ab &&
+                          ab.BillingPeriodStart === b.BillingPeriodStart &&
+                          ab.BillingPeriodEnd === b.BillingPeriodEnd,
+                      ) || altBills[0];
+                    // Same adoption guard as the block above: only take the alt
+                    // pass's reading when it read the charge line DIRECTLY (no
+                    // fallback flag of its own) AND recovered the paired rate —
+                    // never adopt a qty without its rate, or trade one degraded
+                    // reading for another.
+                    if (altBill && !altBill[pair.flag] && altBill[pair.kwhField] && altBill[pair.rateField]) {
+                      b['_consensus_recovered_' + pair.kwhField] = {
+                        original: b[pair.kwhField],
+                        corrected: altBill[pair.kwhField],
+                        reason:
+                          'Alternate OCR pass read the charge line directly instead of falling back to the kWh identity',
+                      };
+                      b[pair.kwhField] = altBill[pair.kwhField];
+                      b[pair.rateField] = altBill[pair.rateField];
+                      delete b[pair.flag];
+                      break;
+                    }
+                  } catch (e) {
+                    /* alt extraction failed, skip */
+                  }
+                }
+              }
+            }
+          }
+          // F3: pass texts only needed during consensus — free them now
+          window._pdfOcrPasses = null;
+          window._pdfPassScores = null;
+
           if (_syntheticReviewBills.length) {
             finalBills = finalBills.concat(_syntheticReviewBills);
           }
@@ -12619,11 +13237,23 @@ function renderMultiBillUI(bills, box) {
       ? `<span style="display:inline-block;margin-left:6px;vertical-align:middle;color:var(--amber);font-weight:700;font-size:11px;font-family:var(--mono)" title="Duplicate bill — ${diffCount} differing field${diffCount === 1 ? '' : 's'} — found in ${dupMap[p.i].locationType === 'saved' ? 'Saved Bills' : dupMap[p.i].location}">${diffCount}</span>`
       : '';
     const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${dupDot}</button>`;
+    // fix ede70be1 (3d) — per-pill "Save this period" quick action. Suppressed
+    // for a multi-account file (3e): the showMultiBuildingReviewPanel table is
+    // the single save source there — these pills stay browsing-only so there
+    // is never more than one save control for the same extraction.
+    const _pillIsMultiAcct = typeof _isMultiAcctFile === 'function' && _isMultiAcctFile();
+    const savePillBtn =
+      !_pillIsMultiAcct && !bill._batchSaved
+        ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();savePDFAllBills(undefined,${p.i})" title="Save this billing period" style="font-size:9px;padding:2px 6px;margin-left:4px">Save</button>`
+        : '';
     const gapInfo = bill._billing_gap;
     const gapRow = gapInfo
       ? `<div style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap (after ${gapInfo.afterPeriod || ''})</div>`
       : '';
-    return `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}</div>` + gapRow;
+    return (
+      `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}${savePillBtn}</div>` +
+      gapRow
+    );
   };
   let nav;
   if (_multiAcct) {
@@ -12810,9 +13440,16 @@ function renderMultiBillUI(bills, box) {
         ${legendParts.length ? `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;padding-top:4px;border-top:1px solid rgba(245,158,11,.2)">${legendParts.join('')}</div>` : ''}
       </div>`;
   }
-  // Move "Save All" button + per-commodity buttons into the extraction method badge area
+  // Move "Save All" button + per-commodity buttons into the extraction method badge area.
+  // fix ede70be1 (3e) — suppressed for a multi-account file: showMultiBuildingReviewPanel
+  // is the SINGLE save source there (it has its own per-row + bulk Save All), so this
+  // second "Save All Periods" row would be a duplicate/confusing save control for the
+  // same extraction. The per-pill "Save" quick action above is suppressed the same way.
   const badgeEl = document.getElementById('extractMethodBadge');
-  if (badgeEl) {
+  if (badgeEl && _isMultiAcctFile()) {
+    badgeEl.style.display = 'none';
+    badgeEl.innerHTML = '';
+  } else if (badgeEl) {
     badgeEl.style.display = 'inline-block';
     const commodities = {};
     bills.forEach((b, i) => {
@@ -13021,13 +13658,21 @@ function _confirmGatedBillsForSave() {
   );
 }
 
-async function savePDFAllBills(commodityFilter) {
+async function savePDFAllBills(commodityFilter, onlyIndex) {
   const allBills = window._pdfMultiBills;
   if (!allBills || !allBills.length) return;
   const billIndices = [];
-  for (let i = 0; i < allBills.length; i++) {
-    if (commodityFilter && (allBills[i].Commodity || 'Other') !== commodityFilter) continue;
-    billIndices.push(i);
+  // fix ede70be1 (3d) — per-pill "Save this period" passes onlyIndex so this
+  // same function saves exactly ONE bill instead of the whole file/commodity.
+  // Internals below (gate check, dup resolution, per-bill save/catch) are
+  // already per-bill, so restricting billIndices is the only change needed.
+  if (onlyIndex != null) {
+    if (allBills[onlyIndex]) billIndices.push(onlyIndex);
+  } else {
+    for (let i = 0; i < allBills.length; i++) {
+      if (commodityFilter && (allBills[i].Commodity || 'Other') !== commodityFilter) continue;
+      billIndices.push(i);
+    }
   }
   if (!billIndices.length) return;
   // GATE WIRING (18b33d9f): savePDFAllBills has no per-bill checkbox UI (unlike the

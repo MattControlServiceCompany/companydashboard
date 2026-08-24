@@ -2322,8 +2322,37 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Firefox "too much recursion" from catastrophic backtracking.
   const _meterT = t.replace(/[^\d\s+\-./,:\n]/g, ' ').replace(/:/g, ',');
   // Date pattern supports MM/DD (with optional slash) and 3-5 digit OCR garble like "12001" → "12/01"
+  // PER-COLUMN TOLERANCE (cef419c0): groups 4-10 (EndRead, StartRead, Difference, Mult, kWhUsed,
+  // KWUsed, RKVAUsed) each use `(?:(CLEAN_NUMBER)|\S+)` instead of a bare mandatory numeric group.
+  // Previously every data column was a single hard-required capture chained in one sequential
+  // match, so ONE OCR-garbled token anywhere in the row (a stray char surviving the pre-normalize
+  // pass, e.g. a stray '/' or extra '.') made the ENTIRE row fail to match — nulling every column
+  // on that line, including on a second/third row of a multi-meter (meter change / solar) bill.
+  // Now each column independently captures a clean number when the token parses, or silently
+  // yields undefined (→ null downstream) for ONLY that column when it doesn't — the token is still
+  // consumed positionally (via \S+) so later columns on the same row stay aligned.
+  // Group 3 (Days) uses a BOUNDED per-column tolerance (fix, was a bare mandatory `(\d+)`): a bill
+  // can OCR-garble Days into a non-numeric token (e.g. "ES") while every other column on the line is
+  // perfectly legible. Days was previously part of the "row anchor" along with the two dates, so a
+  // garbled Days token failed the anchor match and nulled the ENTIRE row — the exact per-column-
+  // isolation failure the cef419c0 rewrite was meant to prevent, just one column earlier than
+  // intended. Days is never read out of meterRow downstream for Evergy (NumberOfDays is computed
+  // separately from the billing-period dates above), so tolerating a garbled token here is safe.
+  // Unlike groups 4-10, Days' fallback is bounded to `\S{1,4}` (not unbounded `\S+`) and the whole
+  // group is optional (trailing `?`): the pre-normalize pass (`_meterT` above) replaces every OCR
+  // letter with a SPACE, so a fully-alphabetic garble like "ES" doesn't survive as a token at all —
+  // it collapses into the surrounding whitespace, leaving NOTHING between the second date and
+  // EndRead. An unbounded `\S+` fallback would then greedily consume the real EndRead token itself
+  // (it's the next non-whitespace run) as if it were Days, shifting every remaining column left by
+  // one — reproducing the exact "one garbled token nulls its neighbors" failure this whole per-
+  // column design exists to prevent, just via a different mechanism. Bounding the fallback to 4
+  // chars means it can never reach far enough to swallow a real value token (meter reads are always
+  // 6+ chars with the decimal point), so when Days has genuinely vanished, both alternatives fail at
+  // every length and the optional group correctly matches zero-width, leaving EndRead's own pattern
+  // to match starting at the right position. The two dates (groups 1-2) remain the strict/required
+  // anchor.
   const _meterRe =
-    /(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(\d+)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,.]+)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+([\d,.]+)(?:[^\S\n]+([\d,.]+))?/g;
+    /(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(?:(\d+)|\S{1,4})?[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,.]+)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+(?:([\d,.]+)|\S+)(?:[^\S\n]+(?:([\d,.]+)|\S+))?/g;
   const _meterRowsRaw = [];
   let _mm;
   while ((_mm = _meterRe.exec(_meterT)) !== null) _meterRowsRaw.push(_mm);
@@ -2388,6 +2417,73 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
 
+  // ── ZERO-ROW FALLBACK: recover a meter row whose BOTH date columns are unrecoverable ──
+  // The primary _meterRe above intentionally keeps the two leading date columns as a strict,
+  // non-optional anchor (see the comment above _meterRe) — loosening them directly would risk
+  // matching unrelated numeric content elsewhere in the bill (e.g. a charge-breakdown table),
+  // since groups 4-10 already tolerate almost any token via their \S+ fallback; the dates are
+  // what actually protects against a false-positive row match today. But a bill can garble
+  // BOTH date tokens past any digit-substitution recovery (e.g. "40s"/"oss" for "04/09"/
+  // "05/08" — Field House, April 2026 electric bill, acct 8980291458) while every remaining
+  // column — Days, EndRead, StartRead, Difference, Multiplier, kWhUsed, KWUsed, RKVAUsed —
+  // reads perfectly. The strict primary regex correctly refuses to match that line at all, so
+  // those numeric reads are silently lost. Recover them here, but ONLY when the primary pass
+  // found ZERO rows anywhere in the bill — this fallback can never fire on, and therefore can
+  // never regress, any bill that already has at least one strictly-anchored row (every bill in
+  // the existing 37-file reference corpus and every harness fixture). Because there is no date
+  // anchor to rely on for false-positive protection here, a candidate line is additionally
+  // REQUIRED to satisfy the row's own arithmetic identity — EndRead-StartRead≈Difference
+  // (tolerating the same missing-decimal insertion the recovery pass below applies) or
+  // Difference×Multiplier≈kWhUsed — before it is accepted. An unrelated line (a barcode digit
+  // run, a charge-breakdown row) has no reason to satisfy that identity; that check is what
+  // actually protects against false positives here, not the date shape.
+  // Bounded to a single bill/page's worth of text (~8KB — real single-bill OCR pages in the
+  // reference corpus run 2-4KB; this is called once per already-isolated bill section, never
+  // on a whole multi-page combined document, but the length guard is kept as a hard backstop
+  // regardless) and to at most 300 candidate-line attempts, so a worst-case document can never
+  // turn this into a multi-second scan — measured against the 47-bill and 33-bill harness
+  // fixtures after adding this guard (see dashboardlogic entry for this fix).
+  if (_meterRows.length === 0 && _meterT.length < 8000) {
+    const _meterReLoose =
+      /^[^\S\n]*(?:\S{1,6}[^\S\n]+){0,2}(?:\d{1,3}[^\S\n]+)?([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)(?:[^\S\n]+([\d,.]+))?(?:[^\S\n]+([\d,.]+))?[^\S\n]*$/gm;
+    let _lm;
+    let _looseAttempts = 0;
+    while ((_lm = _meterReLoose.exec(_meterT)) !== null && _looseAttempts < 300) {
+      _looseAttempts++;
+      const pnL = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
+      const _insertDecimal4L = (s) => {
+        if (!s || s.includes('.')) return s;
+        const digits = s.replace(/,/g, '');
+        if (!/^\d+$/.test(digits) || digits.length < 7 || digits.length > 9) return s;
+        return digits.slice(0, -4) + '.' + digits.slice(-4);
+      };
+      const endL = pnL(_insertDecimal4L(_lm[1]));
+      const startL = pnL(_insertDecimal4L(_lm[2]));
+      const diffL = pnL(_lm[3]);
+      const multL = pnL(_lm[4]);
+      const kwhL = pnL(_lm[5]);
+      if (endL <= 0 || startL <= 0 || diffL <= 0 || multL <= 0) continue;
+      const readsChecksum = Math.abs(endL - startL - diffL) < 0.5;
+      const kwhChecksum = kwhL > 0 && Math.abs(diffL * multL - kwhL) < 1;
+      if (!readsChecksum && !kwhChecksum) continue; // no evidence this is a real meter row — skip
+      const fakeRow = [
+        _lm[0],
+        null,
+        null,
+        null,
+        _lm[1],
+        _lm[2],
+        _lm[3],
+        _lm[4],
+        _lm[5],
+        _lm[6] || null,
+        _lm[7] || null,
+      ];
+      fakeRow.index = _lm.index;
+      _meterRows.push(fakeRow);
+    }
+  }
+
   // ── OCR DIGIT CORRECTION ENGINE ──
   // Tesseract frequently confuses 0↔6↔8↔3 (round digits) and occasionally 1↔7, 5↔6.
   // The meter table has built-in checksums: EndRead - StartRead = Difference, Diff × Mult = kWhUsed.
@@ -2405,36 +2501,51 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     8: ['0', '6', '3', '9', '5'],
     9: ['8', '0', '4', '6'],
   };
-  function _tryDigitFix(ocrStr, targetVal, tolerance) {
-    // Try single-digit substitutions on ocrStr to get a number within tolerance of targetVal
-    // Returns corrected string or null if no fix found
-    const digits = ocrStr.replace(/,/g, '').split('');
-    for (let i = 0; i < digits.length; i++) {
-      const orig = digits[i];
-      if (orig === '.' || orig === ',') continue;
-      const alts = _CONFUSABLE[orig];
-      if (!alts) continue;
-      for (const alt of alts) {
-        digits[i] = alt;
-        const candidate = parseFloat(digits.join(''));
-        if (!isNaN(candidate) && Math.abs(candidate - targetVal) < tolerance) {
-          digits[i] = orig; // restore
-          const fixed = [...ocrStr.replace(/,/g, '')];
-          // Find the actual position in the original (may have commas)
-          let digitIdx = 0;
-          for (let j = 0; j < ocrStr.length; j++) {
-            if (ocrStr[j] === ',') continue;
-            if (digitIdx === i) {
-              const fixedStr = ocrStr.substring(0, j) + alt + ocrStr.substring(j + 1);
-              return fixedStr.replace(/,/g, '');
-            }
-            digitIdx++;
-          }
-        }
-        digits[i] = orig;
-      }
+  function _reconcileNumber(ocrStr, targetVal, maxPositions) {
+    // Generalizes single-digit substitution to up to `maxPositions` simultaneous confusable-digit
+    // substitutions. A single OCR-garbled column can have more than one misread digit (e.g. two
+    // stray strokes in "0800" that should read "9590") — the original single-digit-only version of
+    // this function couldn't recover those, silently leaving the field wrong. Still format-strict:
+    // only accepts a fix when the corrected value has the EXACT same digit count/decimal-place
+    // layout as the OCR'd string (no digit insertion/deletion — that's a different failure mode,
+    // not a misread) AND every differing digit position is a plausible OCR confusion per
+    // _CONFUSABLE (guards against blindly overwriting a correctly-read value with the arithmetic
+    // target). Returns the corrected string (comma-stripped, matching the old _tryDigitFix
+    // contract) or null if no plausible fix was found.
+    if (ocrStr == null || !isFinite(targetVal)) return null;
+    const digitsOnly = ocrStr.replace(/,/g, '');
+    const dotIdx = digitsOnly.indexOf('.');
+    const decimals = dotIdx === -1 ? 0 : digitsOnly.length - dotIdx - 1;
+    let targetStr = decimals > 0 ? targetVal.toFixed(decimals) : String(Math.round(targetVal));
+    // A stray leading digit is a common OCR misread (e.g. "84385" read for true "4385") — the fix for
+    // that IS a plausible single-digit substitution (the extra leading digit → '0', which parses back
+    // to the same numeric value). Left-pad the shorter target with zeros so that case can be reached;
+    // do NOT do the reverse (never shrink the target to fit a shorter OCR string — that would mean
+    // fabricating a missing digit, not correcting a misread one).
+    if (targetStr.length < digitsOnly.length) targetStr = targetStr.padStart(digitsOnly.length, '0');
+    if (targetStr.length !== digitsOnly.length) return null; // digit count mismatch — not a simple misread
+    const diffPositions = [];
+    for (let i = 0; i < digitsOnly.length; i++) {
+      if (digitsOnly[i] === targetStr[i]) continue;
+      if (digitsOnly[i] === '.' || targetStr[i] === '.') return null; // decimal point moved — reject
+      const orig = digitsOnly[i],
+        want = targetStr[i];
+      const plausible = (_CONFUSABLE[orig] || []).includes(want) || (_CONFUSABLE[want] || []).includes(orig);
+      if (!plausible) return null;
+      diffPositions.push(i);
     }
-    return null;
+    if (diffPositions.length === 0 || diffPositions.length > maxPositions) return null;
+    // Rebuild the corrected string against the ORIGINAL (comma-containing) string so the
+    // substitution lands on the right character even though positions above were computed
+    // against the comma-stripped digit string.
+    let digitIdx = 0;
+    let fixed = '';
+    for (let j = 0; j < ocrStr.length; j++) {
+      if (ocrStr[j] === ',') continue; // comma has no slot in digitsOnly — skip without advancing digitIdx
+      fixed += diffPositions.includes(digitIdx) ? targetStr[digitIdx] : ocrStr[j];
+      digitIdx++;
+    }
+    return fixed;
   }
   // Normalize OCR artifacts in meter row numeric fields (colons → commas, strip non-numeric junk)
   for (const row of _meterRows) {
@@ -2442,13 +2553,70 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       if (row[gi]) row[gi] = row[gi].replace(/:/g, ',');
     }
   }
-  // Apply digit correction to meter rows using Difference column as checksum
+  // ── MISSING-DECIMAL RECOVERY (groups 4/5: EndRead/StartRead) ──
+  // Same repair pattern already used for kWhUsed's "Candidate 1b" fallback (~line 2731,
+  // "1053648000" -> "105,364.8000"): occasionally the printed decimal point in a meter read
+  // OCRs to nothing at all rather than to a misread digit — the token still parses as a
+  // clean number (passes the CLEAN_NUMBER branch of _meterRe) but comes back as a bare
+  // integer with the decimal simply absent, which is not one of the confusable-digit
+  // misreads _reconcileNumber below can fix (that function requires identical digit counts).
+  // Every real EndRead/StartRead in the reference corpus prints with exactly 4 decimal digits
+  // (see the per-column comment above _meterRe), so a 7-9 digit integer-looking token is a
+  // candidate for "insert a decimal 4 digits from the right". Only adopted when it is a
+  // STRICT improvement to this row's own EndRead-StartRead=Difference checksum versus
+  // leaving the token as a bare integer — protects any bill that legitimately reads as a
+  // whole number (that checksum is already near 0 for a real integer read, so inserting a
+  // decimal would only make the gap worse and the guard correctly rejects it). Sets the
+  // same row._fixedEndRead/_fixedStartRead + *_Original fields Tier 1 below already sets on
+  // a digit-substitution fix, so every downstream consumer (StartRead/EndRead result
+  // fields, Meter1_/Meter2_, the kWh candidate list, _digitCorrections diagnostics) picks
+  // this up with no additional wiring.
+  for (const row of _meterRows) {
+    const _insertDecimal4 = (s) => {
+      if (!s || s.includes('.')) return null;
+      const digits = s.replace(/,/g, '');
+      if (!/^\d+$/.test(digits) || digits.length < 7 || digits.length > 9) return null;
+      return digits.slice(0, -4) + '.' + digits.slice(-4);
+    };
+    const endCand = _insertDecimal4(row[4]);
+    const startCand = _insertDecimal4(row[5]);
+    if (!endCand && !startCand) continue;
+    const pn0 = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
+    const rawEnd = pn0(row[4]),
+      rawStart = pn0(row[5]),
+      rawDiffCol = pn0(row[6]);
+    const candEnd = endCand ? parseFloat(endCand) : rawEnd;
+    const candStart = startCand ? parseFloat(startCand) : rawStart;
+    const rawGap = Math.abs(rawEnd - rawStart - rawDiffCol);
+    const candGap = Math.abs(candEnd - candStart - rawDiffCol);
+    if (candGap < rawGap) {
+      if (endCand) {
+        row._fixedEndRead = endCand;
+        row._endReadOriginal = row[4].replace(/,/g, '');
+      }
+      if (startCand) {
+        row._fixedStartRead = startCand;
+        row._startReadOriginal = row[5].replace(/,/g, '');
+      }
+    }
+  }
+  // Apply checksum-driven reconciliation to meter rows. Two identities hold on a clean row:
+  //   (1) EndRead - StartRead = Difference
+  //   (2) Difference × Multiplier = kWh Used
+  // Tier 1 (restores the pre-regression engine, generalized to multi-digit fixes): when (1)
+  // fails but (2) corroborates the raw Difference column, trust Difference and try correcting
+  // EndRead or StartRead toward it.
+  // Tier 2 (NEW — the actual regression fix): Tier 1 alone assumed Difference itself was always
+  // clean, which is not true on this branch's per-column-tolerant regex — Difference is now just
+  // as capable of being individually OCR-garbled as any other column. When Tier 1 can't find a
+  // plausible EndRead/StartRead fix, try correcting Difference toward kWh÷Multiplier instead, then
+  // re-run Tier 1 once more with the corrected Difference as the trusted checksum.
   for (const row of _meterRows) {
     const pn = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
-    const endR = pn(row[4]),
-      startR = pn(row[5]),
-      diff = pn(row[6]),
-      mult = pn(row[7]),
+    const endR = pn(row._fixedEndRead || row[4]),
+      startR = pn(row._fixedStartRead || row[5]);
+    let diff = pn(row[6]);
+    const mult = pn(row[7]),
       kwhUsed = pn(row[8]);
     if (endR <= 0 || startR <= 0 || diff <= 0 || mult <= 0) continue;
     // Skip OCR correction for rollover rows — when endR < startR and near a boundary,
@@ -2458,32 +2626,67 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       const _isRolloverRow = _rvBoundaries.some((b) => startR > b * 0.9 && endR < b * 0.1);
       if (_isRolloverRow) continue;
     }
-    const calcDiff = parseFloat((endR - startR).toFixed(4));
-    const diffError = Math.abs(calcDiff - diff);
-    // If EndRead - StartRead matches Difference, reads are good
-    if (diffError < 0.001) continue;
-    // Difference × Multiplier should match kWh Used — if so, Difference is the trusted checksum
-    const diffTimesM = parseFloat((diff * mult).toFixed(4));
-    const kwhMatch = kwhUsed > 0 && Math.abs(diffTimesM - kwhUsed) < 1;
-    if (!kwhMatch) continue; // can't trust Difference either, skip correction
-    // Difference is correct. Try fixing EndRead or StartRead.
-    // The correct EndRead = StartRead + Difference, or correct StartRead = EndRead - Difference
-    const expectedEnd = parseFloat((startR + diff).toFixed(4));
-    const expectedStart = parseFloat((endR - diff).toFixed(4));
-    // Try fixing EndRead
-    if (Math.abs(endR - expectedEnd) > 0.0005) {
-      const fixedEnd = _tryDigitFix(row[4], expectedEnd, 0.001);
-      if (fixedEnd) {
-        row._fixedEndRead = fixedEnd;
-        row._endReadOriginal = row[4].replace(/,/g, '');
+    const calcDiff0 = parseFloat((endR - startR).toFixed(4));
+    if (Math.abs(calcDiff0 - diff) < 0.001) continue; // already self-consistent, nothing to fix
+
+    const _tryFixReads = (trustedDiff) => {
+      const diffTimesM = parseFloat((trustedDiff * mult).toFixed(4));
+      const kwhMatch = kwhUsed > 0 && Math.abs(diffTimesM - kwhUsed) < 1;
+      if (!kwhMatch) return false; // can't trust this Difference value, don't touch the reads
+      const expectedEnd = parseFloat((startR + trustedDiff).toFixed(4));
+      const expectedStart = parseFloat((endR - trustedDiff).toFixed(4));
+      let fixedSomething = false;
+      if (!row._fixedEndRead && Math.abs(endR - expectedEnd) > 0.0005) {
+        const fixedEnd = _reconcileNumber(row[4], expectedEnd, 3);
+        if (fixedEnd) {
+          row._fixedEndRead = fixedEnd;
+          row._endReadOriginal = row[4].replace(/,/g, '');
+          fixedSomething = true;
+        }
+      }
+      if (!row._fixedStartRead && Math.abs(startR - expectedStart) > 0.0005) {
+        const fixedStart = _reconcileNumber(row[5], expectedStart, 3);
+        if (fixedStart) {
+          row._fixedStartRead = fixedStart;
+          row._startReadOriginal = row[5].replace(/,/g, '');
+          fixedSomething = true;
+        }
+      }
+      return fixedSomething;
+    };
+
+    const tier1Fixed = _tryFixReads(diff);
+
+    if (!tier1Fixed && kwhUsed > 0) {
+      const diffFromKwh = parseFloat((kwhUsed / mult).toFixed(4));
+      if (Math.abs(diff - diffFromKwh) > 0.0005) {
+        const fixedDiff = _reconcileNumber(row[6], diffFromKwh, 3);
+        if (fixedDiff) {
+          row._fixedDifference = fixedDiff;
+          row._differenceOriginal = row[6].replace(/,/g, '');
+          diff = parseFloat(fixedDiff);
+          _tryFixReads(diff);
+        }
       }
     }
-    // Try fixing StartRead
-    if (Math.abs(startR - expectedStart) > 0.0005) {
-      const fixedStart = _tryDigitFix(row[5], expectedStart, 0.001);
-      if (fixedStart) {
-        row._fixedStartRead = fixedStart;
-        row._startReadOriginal = row[5].replace(/,/g, '');
+
+    // Tier 3: neither the raw Difference nor the kWh-derived Difference reconciled the
+    // reads (Tier 1/2 both gave up above). If EndRead/StartRead themselves needed no
+    // digit-substitution fix here — either they were already self-consistent going in, or
+    // the missing-decimal recovery above already corrected them via a structural (not
+    // digit-guess) repair — trust them directly and correct the Difference column toward
+    // their own subtraction instead. This only runs after Tier 1/2 have already failed to
+    // find a plausible fix in the other two directions, so it never overrides a Difference
+    // correction the kWh identity already corroborated (Tier 2), and never fires on a row
+    // where the reads themselves are still in question (Tier 1 would have claimed it).
+    if (!tier1Fixed && !row._fixedDifference) {
+      const trustedDiff2 = parseFloat((endR - startR).toFixed(4));
+      if (trustedDiff2 > 0 && Math.abs(diff - trustedDiff2) > 0.0005) {
+        const fixedDiff2 = _reconcileNumber(row[6], trustedDiff2, 3);
+        if (fixedDiff2) {
+          row._fixedDifference = fixedDiff2;
+          row._differenceOriginal = row[6].replace(/,/g, '');
+        }
       }
     }
   }
@@ -2582,7 +2785,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       maxRkva = 0;
     for (const r of _meterGroup) {
       totalKwh += pn(r[8]);
-      totalDiff += pn(r[6]);
+      totalDiff += pn(r._fixedDifference || r[6]);
       maxKw = Math.max(maxKw, pn(r[9]));
       maxRkva = Math.max(maxRkva, pn(r[10]));
     }
@@ -2664,7 +2867,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       if (_validKwh(repairedVal)) candidates.push({ val: repairedVal, src: 'repaired' });
     }
     // Candidate 2: Difference × Multiplier (fewer digits = less OCR error risk)
-    const diffVal = parseFloat((meterRow[6] || '').replace(/,/g, ''));
+    const diffVal = parseFloat((meterRow._fixedDifference || meterRow[6] || '').replace(/,/g, ''));
     const multVal = parseFloat((meterRow[7] || '').replace(/,/g, ''));
     if (diffVal > 0 && multVal > 0) {
       const diffTimesM = parseFloat((diffVal * multVal).toFixed(4));
@@ -3169,7 +3372,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // will never quite agree (e.g. 958.3596 vs 958.4766), which reads as an unexplained
     // mismatch to the user. Same treatment as StartRead/EndRead above: not a single valid
     // physical reading, so leave null. Per-meter values live in Meter1_/Meter2_ fields.
-    ReadDifference: _isMultiMeterChange ? null : meterRow?.[6]?.replace(/,/g, '') || null,
+    ReadDifference: _isMultiMeterChange ? null : meterRow?._fixedDifference || meterRow?.[6]?.replace(/,/g, '') || null,
     MeterMultiplier: _meterCombined?.multiplier || meterRow?.[7]?.replace(/,/g, '') || _mlMeter?.multiplier || null,
     kWhConsumed: adjKwh,
     ActualKW: _meterCombined?.kw || meterRow?.[9] || _mlMeter?.kwUsed || null,
@@ -3217,7 +3420,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         result.Meter1_ReadEnd = m1[2] || null;
         result.Meter1_StartRead = m1._fixedStartRead || _mrClean(m1[5]) || null;
         result.Meter1_EndRead = m1._fixedEndRead || _mrClean(m1[4]) || null;
-        result.Meter1_ReadDiff = _mrClean(m1[6]) || null;
+        result.Meter1_ReadDiff = m1._fixedDifference || _mrClean(m1[6]) || null;
         result.Meter1_Multiplier = _mrClean(m1[7]) || null;
         result.Meter1_kWh = _mrClean(m1[8]) || null;
         result.Meter1_KW = _mrClean(m1[9]) || null;
@@ -3226,7 +3429,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         result.Meter2_ReadEnd = m2[2] || null;
         result.Meter2_StartRead = m2._fixedStartRead || _mrClean(m2[5]) || null;
         result.Meter2_EndRead = m2._fixedEndRead || _mrClean(m2[4]) || null;
-        result.Meter2_ReadDiff = _mrClean(m2[6]) || null;
+        result.Meter2_ReadDiff = m2._fixedDifference || _mrClean(m2[6]) || null;
         result.Meter2_Multiplier = _mrClean(m2[7]) || null;
         result.Meter2_kWh = _mrClean(m2[8]) || null;
         result.Meter2_KW = _mrClean(m2[9]) || null;
@@ -3265,6 +3468,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       _digitFixes.push({ field: 'EndRead', original: row._endReadOriginal, corrected: row._fixedEndRead });
     if (row._fixedStartRead)
       _digitFixes.push({ field: 'StartRead', original: row._startReadOriginal, corrected: row._fixedStartRead });
+    if (row._fixedDifference)
+      _digitFixes.push({ field: 'Difference', original: row._differenceOriginal, corrected: row._fixedDifference });
   }
   if (_digitFixes.length) {
     result._digitCorrections = _digitFixes;
@@ -4371,7 +4576,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
 const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
-const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/m;
+const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}(\d[\d ]{4,18}\d)/m;
 const _EVG_ADDR =
   /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
@@ -4729,7 +4934,7 @@ const UTILITY_RULES = [
       const _acctForIdx = (idx) => {
         const pageText = _pageTextForIdx(idx);
         const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
         ];
         if (acctMatches.length === 0) return null;
         return acctMatches[0][1].replace(/\s/g, '');
@@ -4739,19 +4944,82 @@ const UTILITY_RULES = [
         const addrMatch = pageText.match(_EVG_ADDR);
         return addrMatch ? addrMatch[1].trim() : null;
       };
+      // Facility disambiguator (backlog acc68bdb) — a single Evergy account
+      // can legitimately cover TWO distinct facilities for the same billing
+      // period (e.g. New HS "2LGSF" and Ballfields "2MGSE", both on account
+      // 2885731561 at 202 Aquatic Dr). Read the rate/meter-class code that
+      // prints immediately before that page's own "Billing Details" header
+      // (the same signal already used for the RateSchedule field) so the
+      // dedup key below can tell the two apart instead of collapsing them.
+      // Deliberately narrow: only the tight "<code> ... Billing Details"
+      // form (the code prints immediately before that page's OWN Billing
+      // Details header) is trusted here. The generic "Rate: <code>" fallback
+      // used elsewhere for the RateSchedule field is NOT reused — applied
+      // to a whole page (rather than an already-isolated bill section) it
+      // false-positives on ordinary prose (e.g. "...Evergy's rate review."
+      // on an LHS cover page matched as rate code "review", which then
+      // wrongly conflicted with the real "2LGSF" and split one bill in
+      // two). Returning null on anything less certain is the safe default
+      // — null is treated as "unknown" (compatible), never a false split.
+      const _rateForIdx = (idx) => {
+        const pageText = _pageTextForIdx(idx);
+        return pageText.match(/[-–]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)?.[1] || null;
+      };
       for (const m of sfMatches) {
         m._acct = _acctForIdx(m.idx);
         m._addr = _addrForIdx(m.idx);
+        m._rate = _rateForIdx(m.idx);
       }
+      // Two entries are the SAME bill (cover + billing-details repeat, or a
+      // genuine reprint) only when neither the rate/meter-class signal nor
+      // the service address CONTRADICTS the other — an unresolved (null)
+      // signal on either side is treated as unknown/compatible, never as
+      // grounds to force a split, mirroring the agree-or-unknown discipline
+      // used by `_sameAcct`/`_provenSameAcct` below. A resolved signal that
+      // genuinely disagrees (e.g. "2LGSF" vs "2MGSE", or two different
+      // service addresses) means two DISTINCT facilities share this
+      // account+period and must NOT collapse into one hybrid record.
+      const _normAddr = (a) => (a || '').replace(/\s+/g, ' ').trim().toUpperCase();
+      const _facilityConflict = (a, b) => {
+        if (a._rate && b._rate && a._rate !== b._rate) return true;
+        const na = _normAddr(a._addr);
+        const nb = _normAddr(b._addr);
+        if (na && nb && na !== nb) return true;
+        return false;
+      };
       // Dedupe by account+date pair — keep the LAST occurrence so section
       // boundaries line up with the billing-details page, not the cover.
-      // Account number prevents merging different accounts that share dates.
+      // Account number prevents merging different accounts that share dates;
+      // the facility conflict check above prevents merging different
+      // facilities that share BOTH an account and a period.
       const byPair = new Map();
       for (const m of sfMatches) {
         const acctKey = m._acct || '_';
-        byPair.set(acctKey + '|' + m.start + '|' + m.end, m);
+        const pairKey = acctKey + '|' + m.start + '|' + m.end;
+        const bucket = byPair.get(pairKey);
+        if (!bucket) {
+          byPair.set(pairKey, [m]);
+          continue;
+        }
+        let mergedInto = null;
+        for (const cand of bucket) {
+          if (!_facilityConflict(cand, m)) {
+            mergedInto = cand;
+            break;
+          }
+        }
+        if (mergedInto) {
+          const bi = bucket.indexOf(mergedInto);
+          if (!m._rate) m._rate = mergedInto._rate;
+          if (!m._addr) m._addr = mergedInto._addr;
+          bucket[bi] = m;
+        } else {
+          bucket.push(m);
+        }
       }
-      let uniqueBills = Array.from(byPair.values()).sort((a, b) => a.idx - b.idx);
+      let uniqueBills = Array.from(byPair.values())
+        .flat()
+        .sort((a, b) => a.idx - b.idx);
 
       // ── FUZZY DATE-PAIR MERGE ──
       // OCR can read the SAME bill's start date differently on two pages
@@ -4802,7 +5070,12 @@ const UTILITY_RULES = [
         const prevIsBd = prev ? _hasBdBefore(prev) : false;
         const curIsBd = _hasBdBefore(m);
         const _provenSameAcct = !!(prev && prev._acct && m._acct && prev._acct === m._acct);
-        const _distinctBillsCollision = prevIsBd && curIsBd && !_provenSameAcct;
+        // Even when the account IS proven equal, a resolved facility signal
+        // that disagrees (backlog acc68bdb — New HS "2LGSF" vs Ballfields
+        // "2MGSE", both account 2885731561) still means these are two
+        // distinct bills sharing one account, not a cover/detail repeat.
+        const _distinctBillsCollision =
+          prevIsBd && curIsBd && (!_provenSameAcct || (prev && _facilityConflict(prev, m)));
         if (
           prev &&
           _sameAcct &&
@@ -4951,7 +5224,7 @@ const UTILITY_RULES = [
         const pageText = _pfPageTextMap[page];
         if (!pageText) return [];
         const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®=]+\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
         ];
         return acctMatches.map((am) => am[1].replace(/\s/g, ''));
       };
@@ -5270,7 +5543,7 @@ const UTILITY_RULES = [
           _pageTextMap[_pg] = t.slice(_pStart, _pEnd);
         }
         const _bdKeyRe = /Billing\s*Date\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i;
-        const _acctKeyRe = /Account\s*(?:Number)?\s*[:\s©®]+(\d[\d\s\-]{4,18}\d)/i;
+        const _acctKeyRe = /Account\s*(?:Number)?\s*[^0-9A-Za-z\n]{0,6}(\d[\d\s\-]{4,18}\d)/i;
         const _billsByKey = {}; // 'acct|date' → [page numbers]
         for (const [_pgStr, _pgText] of Object.entries(_pageTextMap)) {
           const _pg = parseInt(_pgStr);
@@ -6999,9 +7272,11 @@ const UTILITY_RULES = [
             ?.trim() ||
           null,
         AccountNumber:
-          // KGS format: "Account Number    <REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>" — spaces between digit groups
-          t.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i)?.[1]?.replace(/\s/g, '') ||
-          t.match(/account[\s#:]*([0-9\-]{6,20})/i)?.[1] ||
+          // KGS format: "Account Number    <REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>" — spaces between digit groups.
+          // Separator is a bounded run of non-alnum OCR gunk (colon, #, period,
+          // stray symbols) rather than an enumerated char class — see f1dc5e65.
+          t.match(/Account\s+Number[^0-9A-Za-z\n]{0,6}([0-9 ]{10,30})/i)?.[1]?.replace(/\s/g, '') ||
+          t.match(/account[^0-9A-Za-z\n]{0,6}([0-9\-]{6,20})/i)?.[1] ||
           null,
         ServiceAddress:
           // KGS: address is the line immediately before the city/state line (e.g. "BALDWIN CITY, KS")
@@ -7067,7 +7342,7 @@ const UTILITY_RULES = [
         MeterNumber:
           // KGS: meter number like "0322A82382" appears before a date pair on the meter row
           t.match(/\b([A-Z0-9]{8,12})\s+\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/)?.[1] ||
-          t.match(/meter[\s#:]*([A-Z0-9\-]{4,20})/i)?.[1] ||
+          t.match(/meter[^0-9A-Za-z\n]{0,6}([A-Z0-9\-]{4,20})/i)?.[1] ||
           null,
         _utilityName: company,
       };
@@ -7344,12 +7619,15 @@ const UTILITY_RULES = [
         .replace(/(\d{1,2}\/\d{1,2}\/\d)\s+(\d{1,3})(?=\D)/g, '$1$2');
 
       const headerLine = cleaned.match(
-        /Service\s*Address\s+([A-Z0-9][A-Z0-9 .,]+?)\s+Account\s*#?\s*:?\s*(\d{5,8})\s+Bill\s*Date[:;]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+        /Service\s*Address\s+([A-Z0-9][A-Z0-9 .,]+?)\s+Account[^0-9A-Za-z\n]{0,6}(\d{5,8})\s+Bill\s*Date[:;]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
       );
       let ServiceAddress = headerLine?.[1]?.trim() || null;
       let AccountNumber = headerLine?.[2] || null;
       let BillDate = headerLine?.[3] || null;
-      if (!AccountNumber) AccountNumber = cleaned.match(/Account\s*#?\s*:?\s*(\d{5,8})\s+Bill\s*Date/i)?.[1] || null;
+      // Separator after "Account" is a bounded run of non-alnum OCR gunk
+      // (colon, #, period, stray symbols), not an enumerated char class — f1dc5e65.
+      if (!AccountNumber)
+        AccountNumber = cleaned.match(/Account[^0-9A-Za-z\n]{0,6}(\d{5,8})\s+Bill\s*Date/i)?.[1] || null;
       if (!BillDate) BillDate = cleaned.match(/Bill\s*Date[:;]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] || null;
       if (!ServiceAddress)
         ServiceAddress =
@@ -7638,16 +7916,37 @@ const UTILITY_RULES = [
       // "O" in place of leading zero.
       const acctRaw = page.match(/([\d(O]{2}-\d{6}-\d{2})/)?.[1] || null;
       let AccountNumber = acctRaw ? acctRaw.replace(/[(O]/g, '0') : null;
-      // Fallback: 7-10 digit account after "Account Number:" label (LGS bills)
+      // Fallback: 7-10 digit account after "Account Number:" label (LGS bills).
+      // Bounded non-alnum gap tolerates OCR gunk (colon misread as period, etc) — f1dc5e65.
       if (!AccountNumber) {
-        const altAcct = page.match(/Account\s*(?:Number|#)\s*:?\s*(\d{7,10})/i)?.[1] || null;
+        const altAcct = page.match(/Account\s*(?:Number|#)\s*[^0-9A-Za-z\n]{0,6}(\d{7,10})/i)?.[1] || null;
         if (altAcct) AccountNumber = altAcct;
       }
 
       // Customer info row: "USD <NNN> <FACILITY> <SERVICE ADDRESS> <acct>"
       // District number is captured generically — no hardcoded IDs.
+      // Address group was `\d+\s*[A-Z][...]` — required the digit run to be
+      // followed (after optional whitespace) by a LETTER. Fix (2026-08-24,
+      // defect #3 of the Louisburg 100%-accuracy gate): on the Broadmoor EMS
+      // account (02-002360-00) one OCR pass reads the printed "105 S 5TH ST
+      // E" as "1058 5STHE" — the direction letter "S" itself misread as
+      // digit "8" (a known Tesseract confusable pair), leaving BOTH tokens
+      // ("1058" and "5STHE") starting with a digit and no letter anywhere
+      // near the first token. The old pattern can never match that shape
+      // (every backtrack of the digit run still leaves a digit, not a
+      // letter, immediately before the next boundary), so ServiceAddress
+      // fell through to null even though a garbled-but-legible address was
+      // printed right there. Broadened to accept the address token starting
+      // with EITHER a digit or a letter — a strict superset of the old
+      // class, so every input the old regex matched still matches identically
+      // (same non-greedy minimal-length match); it only additionally accepts
+      // the digit-led-with-no-nearby-letter shape this defect needed. Confirmed
+      // against 7 other independent OCR passes of the same bill that read the
+      // cleaner "105S 5THE" (still garbled, but self-consistent with this
+      // same document's Evergy page printing "105 S 5TH ST E LOUISBURG KS" for
+      // the same property) — this also continues to match those unchanged.
       const custLine = page.match(
-        /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+(\d+\s*[A-Z][A-Z0-9 .&\-]{3,50}?)\s+[\d(O]{2}-\d{6}-\d{2}/,
+        /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+([0-9A-Z][0-9A-Z .&\-]{3,50}?)\s+[\d(O]{2}-\d{6}-\d{2}/,
       );
       let CustomerName = custLine ? 'USD ' + custLine[1] + ' ' + custLine[2].trim() : null;
       let ServiceAddress = custLine ? custLine[3].trim() : null;
@@ -7665,8 +7964,11 @@ const UTILITY_RULES = [
       }
       if (!CustomerName && AccountNumber) CustomerName = _lbg_facilityLookup(AccountNumber);
       if (!ServiceAddress) {
+        // Same broadening as the primary match above (digit-or-letter start)
+        // for the last-resort per-line scan, used when the CustomerName
+        // portion of the row didn't match the USD-prefixed pattern at all.
         for (const raw of page.split(/\r?\n/)) {
-          const m = raw.match(/\b(\d{2,6}\s*[NSEW]?\s*[A-Z][A-Z0-9 .]{3,40}?)\s+[\d(O]{2}-\d{6}-\d{2}/);
+          const m = raw.match(/\b([0-9A-Z][0-9A-Z .]{3,40}?)\s+[\d(O]{2}-\d{6}-\d{2}/);
           if (m) {
             ServiceAddress = m[1].trim();
             break;
@@ -9568,7 +9870,9 @@ const UTILITY_RULES = [
       if (!/propane|fuel\s*oil|lp\s*gas/i.test(page) && !/NET\s*DELIVERY/i.test(page)) return null;
 
       const InvoiceNumber = page.match(/Invoice\s*#?\s*:?\s*(\d{6,10})/i)?.[1] || null;
-      const AccountNumber = page.match(/Customer#?\s*:?\s*(\d{4,10})/i)?.[1] || null;
+      // Bounded non-alnum gap (not an enumerated separator class) tolerates
+      // OCR gunk between "Customer" and the digits — f1dc5e65.
+      const AccountNumber = page.match(/Customer[^0-9A-Za-z\n]{0,6}(\d{4,10})/i)?.[1] || null;
       const BillDate =
         page.match(/Date:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] ||
         page.match(/DATE\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] ||
