@@ -8,8 +8,8 @@
 // supabase-js dependency (this is a no-build, plain-script-tag app) — plain
 // `fetch` calls against the Supabase Auth REST endpoints.
 //
-// Loaded on ALL FOUR db.js-loading pages (index.html, service-department.html,
-// energy-department.html, ems-leads.html). Exposes exactly one global,
+// Loaded on the three db.js-loading pages (index.html, energy-department.html,
+// ems-leads.html). Exposes exactly one global,
 // `window.CH_AUTH`, which `app/db.js`'s `_authHeaders()` already reads (that
 // call site is unchanged by this file).
 //

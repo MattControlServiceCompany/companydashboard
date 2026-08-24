@@ -181,9 +181,8 @@ svg.connectors text { fill: var(--bg); font-size: 9px; font-weight: 800; font-fa
 <script>
 var COMPONENTS = [
   { id: 'user',        col: 0, name: 'User (Browser)',      detail: 'Edge / Chrome',                cat: 'user' },
-  { id: 'index',       col: 1, name: 'index.html',          detail: 'Dashboard, metrics, calendar',  cat: 'page' },
+  { id: 'index',       col: 1, name: 'index.html',          detail: 'Login only — redirects to energy-department.html', cat: 'page' },
   { id: 'energy',      col: 1, name: 'energy-department',   detail: '13k lines, projects, bills, OCR', cat: 'page' },
-  { id: 'service',     col: 1, name: 'service-department',  detail: 'PM schedule, staff, dispatch',  cat: 'page' },
   { id: 'ems',         col: 1, name: 'ems-leads',           detail: 'Kanban pipeline, CSV import',   cat: 'page' },
   { id: 'siteui',      col: 2, name: 'site-ui.js',          detail: 'Store, DashboardController, theme', cat: 'shared' },
   { id: 'sitecss',     col: 2, name: 'site-ui.css',         detail: 'Topbar, sidebar, tokens, modals', cat: 'shared' },
@@ -214,7 +213,7 @@ var FLOWS = [
       { from:'index', to:'msal', label:'index.html calls loginWithMicrosoft()', detail:'MSAL.js opens OAuth popup window.' },
       { from:'msal', to:'azure', label:'MSAL redirects to Azure AD', detail:'User enters Microsoft 365 credentials in popup.' },
       { from:'azure', to:'ss', label:'Token returned, session saved', detail:'User object {name, email, initials, isReal} stored in sessionStorage.' },
-      { from:'ss', to:'index', label:'enterApp() shows dashboard', detail:'Login screen hides, topbar populates with user info.' },
+      { from:'ss', to:'index', label:'enterApp() redirects to energy-department.html', detail:'index.html is login-only — CompanyHub is Energy Department only (feature/energy-dept-only, 2026-08-24), no Home hub to land on.' },
     ]
   },
   {
@@ -272,27 +271,6 @@ var FLOWS = [
     ]
   },
   {
-    id: 'pm-schedule', name: 'PM schedule calendar', desc: 'Auto-generate PM dates from natural-language patterns',
-    path: ['user','service','ls'],
-    steps: [
-      { from:'user', to:'service', label:'User views PM Schedule tab', detail:'SA list with search and tech/frequency filters.' },
-      { from:'service', to:'ls', label:'Read sv_saData from localStorage', detail:'57+ service agreements with pattern field.' },
-      { from:'ls', to:'service', label:'generateDatesForPattern(pattern, year)', detail:'Parses "2nd Thu - Feb/May/Aug/Nov" etc.' },
-      { from:'service', to:'user', label:'Calendar renders with tech-colored dots', detail:'Click day for events, click SA for detail panel.' },
-    ]
-  },
-  {
-    id: 'outlook-sync', name: 'Outlook calendar sync', desc: 'Push PM events to Microsoft 365 Outlook calendar',
-    path: ['user','service','msal','azure','msgraph','ls'],
-    steps: [
-      { from:'user', to:'service', label:'User clicks Sync to Outlook', detail:'syncToOutlook() triggered from sidebar.' },
-      { from:'service', to:'msal', label:'Acquire token silently', detail:'MSAL gets cached or refreshed token.' },
-      { from:'msal', to:'azure', label:'Token validated with Azure AD', detail:'Scopes: User.Read, Calendars.ReadWrite.' },
-      { from:'service', to:'msgraph', label:'POST events to Graph API', detail:'Next 30 days, max 5 PM events.' },
-      { from:'msgraph', to:'ls', label:'Events cached in ch_outlook_events', detail:'Dashboard calendar reads these for markers.' },
-    ]
-  },
-  {
     id: 'ems-pipeline', name: 'EMS lead pipeline', desc: 'Drag-and-drop Kanban board with 8 stages',
     path: ['user','ems','ls'],
     steps: [
@@ -312,10 +290,10 @@ var FLOWS = [
   },
   {
     id: 'backup', name: 'Backup / Restore', desc: 'Export or import all localStorage data as JSON (data-only, no bill PDFs)',
-    path: ['user','index','siteui','ls'],
+    path: ['user','energy','siteui','ls'],
     steps: [
-      { from:'user', to:'index', label:'User clicks Backup button', detail:'Available on any page via sidebar.' },
-      { from:'index', to:'siteui', label:'siteBackup() serializes localStorage', detail:'All ch_*, sv_*, en_*, ems_* keys. Deliberately excludes en_pdf_store (see pdf-export flow) -- the v695 PDF-inclusion here OOM-crashed the tab, reverted 2026-07-20.' },
+      { from:'user', to:'energy', label:'User clicks Backup button', detail:'Sidebar, energy-department.html (the only remaining page with a sidebar).' },
+      { from:'energy', to:'siteui', label:'siteBackup() serializes localStorage', detail:'All ch_*, en_*, ems_* keys (sv_* legacy keys included if still present). Deliberately excludes en_pdf_store (see pdf-export flow) -- the v695 PDF-inclusion here OOM-crashed the tab, reverted 2026-07-20.' },
       { from:'siteui', to:'ls', label:'Read all localStorage keys', detail:'Serialized to single JSON object.' },
       { from:'ls', to:'user', label:'Download CompanyHub-localdatafile-YYYYMMDD.json', detail:'Browser downloads file.' },
     ]
@@ -324,31 +302,21 @@ var FLOWS = [
     id: 'pdf-export', name: 'Export / Import PDFs (batched)', desc: 'Separate, optional streamed export of bill PDFs from IndexedDB, batched to avoid the OOM the old approach hit',
     path: ['user','energy','idb'],
     steps: [
-      { from:'user', to:'energy', label:'User clicks Export PDFs button', detail:'Sidebar, separate from Backup. Available on index.html, energy-department.html, service-department.html (backlog 729d274b).' },
+      { from:'user', to:'energy', label:'User clicks Export PDFs button', detail:'Sidebar, separate from Backup. Available on energy-department.html (backlog 729d274b).' },
       { from:'energy', to:'idb', label:'_pdfExportAllKeys() reads keys only', detail:'Cheap -- no base64 values loaded yet.' },
       { from:'idb', to:'energy', label:'_pdfExportGetOne(id) fetches ONE PDF at a time', detail:'sitePdfExport() awaits each ~8MB batch\'s full download (Blob revoked) before fetching the next id -- real backpressure, peak live memory ~1 batch, not the whole store.' },
       { from:'energy', to:'user', label:'Downloads CompanyHub-PDFs-YYYYMMDD-partNNN.json (one or more files)', detail:'One outlier PDF whose own base64 exceeds the batch cap becomes its own solo file.' },
-      { from:'user', to:'energy', label:'Import: user selects all part files at once', detail:'processPdfImportFiles() reads/writes one file at a time; writes go through pdfStore() (energy page, real prod path) or _pdfBackupPut() (index.html/service-department.html).' },
+      { from:'user', to:'energy', label:'Import: user selects all part files at once', detail:'processPdfImportFiles() reads/writes one file at a time; writes go through pdfStore() (energy page, real prod path).' },
     ]
   },
   {
-    id: 'dashboard-refresh', name: 'Cross-page data sync', desc: 'Dashboard auto-refreshes when other pages update data',
-    path: ['energy','store','ls','siteui','index'],
+    id: 'theme', name: 'Theme and settings', desc: 'Dark/light mode, accent color, project/table defaults, fonts',
+    path: ['user','energy','siteui','ls'],
     steps: [
-      { from:'energy', to:'store', label:'Any page calls Store.set(key, data)', detail:'Energy, service, or EMS page saving data.' },
-      { from:'store', to:'ls', label:'localStorage.setItem() + dataUpdated event', detail:'CustomEvent dispatched on window.' },
-      { from:'siteui', to:'index', label:'DashboardController.refresh()', detail:'Re-reads staff, SA, project counts.' },
-      { from:'index', to:'index', label:'Stat cards update in real-time', detail:'Staff, SA Records, Energy Projects refresh.' },
-    ]
-  },
-  {
-    id: 'theme', name: 'Theme and settings', desc: 'Dark/light mode, accent color, default landing page',
-    path: ['user','index','siteui','ls'],
-    steps: [
-      { from:'user', to:'index', label:'User opens Settings modal', detail:'siteOpenSettings() from sidebar.' },
-      { from:'index', to:'siteui', label:'User picks theme or accent color', detail:'8 presets + custom hex. Dark/light toggle.' },
-      { from:'siteui', to:'ls', label:'Saved to ch_theme and ch_settings', detail:'{theme, accentColor, defaultLoginScreen, feedbackMode}.' },
-      { from:'ls', to:'index', label:'CSS variables updated live', detail:'--accent, --accent-dim set on :root.' },
+      { from:'user', to:'energy', label:'User opens Settings modal', detail:'siteOpenSettings() from sidebar (energy-department.html only -- no other page has a settings modal).' },
+      { from:'energy', to:'siteui', label:'User picks theme or accent color', detail:'8 presets + custom hex. Dark/light toggle. (No "default login page" picker -- removed feature/energy-dept-only 2026-08-24, there is only one destination now.)' },
+      { from:'siteui', to:'ls', label:'Saved to ch_theme and ch_settings', detail:'{theme, accentColor, feedbackMode, uiCustom, ...}.' },
+      { from:'ls', to:'energy', label:'CSS variables updated live', detail:'--accent, --accent-dim set on :root.' },
     ]
   },
   {
