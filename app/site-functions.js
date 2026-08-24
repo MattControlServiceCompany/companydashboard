@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.24.767',
+    date: '2026-08-24',
+    title: 'Simplified to the Energy Department',
+    items: [
+      {
+        type: 'change',
+        text: 'Sign in now takes you straight to the Energy Department — the separate department picker and Service Department pages are gone.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.24.766',
     date: '2026-08-24',
     title: 'Bill uploading: more accurate reads and safer matching',
