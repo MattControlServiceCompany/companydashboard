@@ -12471,8 +12471,14 @@ async function processPDF(file) {
                 // Try re-extracting from each alternate OCR text
                 for (const altText of altTexts) {
                   try {
-                    const altBills = rule.extract(altText);
-                    if (!altBills || !altBills.length) continue;
+                    // Fix (8b6342e9): rule.extract() for Evergy returns a single
+                    // bill object, not an array — `!altBills.length` on the raw
+                    // object is always true (undefined), so this block never ran
+                    // for matched bills. Normalize the same way commit 5f563df
+                    // does for the recovered-bill consensus block below.
+                    const altResult = rule.extract(altText);
+                    const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
+                    if (!altBills.length) continue;
                     // Find the alt bill matching this bill's period
                     const altBill =
                       altBills.find(
@@ -12567,8 +12573,13 @@ async function processPDF(file) {
                   if (!b[pair.flag]) continue;
                   for (const altText of altTexts2) {
                     try {
-                      const altBills = rule.extract(altText);
-                      if (!altBills || !altBills.length) continue;
+                      // Fix (8b6342e9): same array-normalization as the
+                      // _sum_mismatch block above — Evergy's extract() returns a
+                      // single object, so `!altBills.length` was always true and
+                      // this block never adopted an alt-pass value for matched bills.
+                      const altResult = rule.extract(altText);
+                      const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
+                      if (!altBills.length) continue;
                       const altBill =
                         altBills.find(
                           (ab) =>
