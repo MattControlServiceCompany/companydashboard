@@ -5261,6 +5261,22 @@ function showAutoAssignBanner(match, extracted) {
   _autoAssignTarget = match;
   const banner = document.getElementById('pdfAutoAssignBanner');
   const msg = document.getElementById('pdfAutoAssignMsg');
+  // Finding 1 (code review of fix/ocr-matching-rearchitecture): a non-identity
+  // ('address') match is a fuzzy guess with no confirmed account/meter-number
+  // hit — mirrors _buildDestCell's "Address match (unconfirmed)" convention
+  // (amber, ~line 8252) so this single-file banner never presents a fuzzy
+  // guess with the same confident "✓ Meter Match Found" label real identity
+  // hits get.
+  const hdr = document.getElementById('pdfAutoAssignHdr');
+  if (hdr) {
+    if (match.matchType === 'address') {
+      hdr.textContent = 'Address match (unconfirmed)';
+      hdr.style.color = 'var(--amber)';
+    } else {
+      hdr.textContent = '✓ Meter Match Found';
+      hdr.style.color = 'var(--em)';
+    }
+  }
   const bills = Array.isArray(window._pdfMultiBills) ? window._pdfMultiBills : [];
   const periods = bills.length || 1;
   const commodities = [...new Set(bills.map((b) => b.Commodity).filter(Boolean))];
@@ -6058,6 +6074,44 @@ async function confirmAutoAssign() {
       await sset('en_pdf_bills', _pdfBillsForReviewUnresolved);
       continue;
     }
+    // Finding 1 (code review of fix/ocr-matching-rearchitecture): defense-in-depth
+    // account veto, ported from _saveBillToMatchedMeter's Fix 3 (49928d33/409830ae,
+    // ~line 7060) — that veto already guards the batch-review save path
+    // (_saveBillToMatchedMeter) and the multi-building gate (_mbSaveOneBill's
+    // _gateOK), but this single-file "Confirm & Save" path had neither. A present
+    // AccountNumber on the bill that strongly contradicts the matched meter's
+    // stored account hard-vetoes the write — applies even to an 'identity'
+    // matchType exactly like the sibling function, since an identity hit can
+    // still be wrong (e.g. found by MeterNumber alone). Runs BEFORE the
+    // commodity-mismatch meter-create block below so a vetoed bill never creates
+    // a phantom meter on the building either.
+    if (bill.AccountNumber && billMatch.meter.account) {
+      const _strongMismatch =
+        !_acctFuzzyMatch(bill.AccountNumber, billMatch.meter.account) &&
+        String(bill.AccountNumber).replace(/\D/g, '').length >= 6;
+      if (_strongMismatch) {
+        console.warn(
+          '[confirmAutoAssign] account veto — bill AccountNumber contradicts matched meter, holding for review',
+          { bi: _bi, billAcct: bill.AccountNumber, meterAcct: billMatch.meter.account },
+        );
+        const _pdfBillsForReviewVeto = (await sget('en_pdf_bills', [])) || [];
+        _pdfBillsForReviewVeto.push(
+          Object.assign(
+            {
+              id: 'pb' + Date.now() + '_' + saved + '_review',
+              savedAt: new Date().toISOString(),
+              projId: projId || null,
+              projName: (proj && proj.name) || 'General',
+              hasPDF,
+              pdfKey: hasPDF ? pdfKey : null,
+            },
+            bill,
+          ),
+        );
+        await sset('en_pdf_bills', _pdfBillsForReviewVeto);
+        continue;
+      }
+    }
     const _bComm = (bill.Commodity || '').toLowerCase();
     let _mComm = (billMatch.meter.commodity || '').toLowerCase();
     if (_bComm && !_mComm) {
@@ -6424,7 +6478,75 @@ async function _mbSaveOneBill(bi) {
     bill._mbHeldReason = 'no matched meter';
     return { status: 'held', reason: 'no matched meter — flagged for review', projId: billMatch.projId || null };
   }
-  // Commodity-mismatch / meter-create block — identical to confirmAutoAssign
+  // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0
+  // identity gate — PRESERVED, unchanged from 24d108f): a non-identity
+  // (address-similarity) guess must not silently write to targetMeter.bills
+  // at all, whether that write is an overwrite of an existing period (dup)
+  // OR a brand-new push (no dup). Only two things may pass this gate:
+  //   (a) billMatch.matchType === 'identity' (account/meter-number hit from
+  //       findMeterMatch) AND the incoming bill's own AccountNumber
+  //       reasonably agrees with the target meter's stored account, or
+  //   (b) billMatch.matchType === 'manual' — the user explicitly picked this
+  //       Project -> Building -> Meter via the destination picker in
+  //       showMultiBuildingReviewPanel (setMbRowDestMeter). An explicit user
+  //       pick is authoritative and always wins, exactly like the
+  //       _meterOverride exemption in saveQueuedBills — it must not be
+  //       diverted to review just because it lacks an 'identity' tag.
+  //
+  // Finding 2 (code review of fix/ocr-matching-rearchitecture): this gate is
+  // now evaluated BEFORE the commodity-mismatch/meter-create block below
+  // (which used to run unconditionally, ~formerly lines 6427-6463) — mirrors
+  // _saveBillToMatchedMeter's veto-before-meter-create order (~line 7060 vs
+  // 7066). A gate-refused row must never reach the meter-create block, or it
+  // leaves a phantom empty meter (carrying a possibly-foreign AccountNumber)
+  // on billMatch.bldg.meters even though the bill itself was held for
+  // review — that phantom then identity-matches future bills, silently
+  // misrouting them. The gate itself is evaluated against billMatch.meter
+  // as already resolved above (the account identity being validated does not
+  // depend on which same-building, different-commodity sibling meter the
+  // bill eventually lands on).
+  const _isManualPick = billMatch.matchType === 'manual';
+  const _acctAgrees =
+    !billMatch.meter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, billMatch.meter.account);
+  const _gateOK = _isManualPick || (billMatch.matchType === 'identity' && _acctAgrees);
+  if (!_gateOK) {
+    console.warn(
+      '[_mbSaveOneBill] identity gate failed — refusing to write (would have created/updated a bill on a',
+      'guessed meter), routing to Saved Bills for review instead of auto-applying. No meter was created.',
+      {
+        billIdx: bi,
+        matchType: billMatch.matchType,
+        incomingAcct: bill.AccountNumber,
+        targetMeterAcct: billMatch.meter.account,
+      },
+    );
+    const _pdfBillsForReview = (await sget('en_pdf_bills', [])) || [];
+    _pdfBillsForReview.push(
+      Object.assign(
+        {
+          id: 'pb' + Date.now() + '_' + bi + '_review',
+          savedAt: new Date().toISOString(),
+          projId: billMatch.projId || null,
+          projName: (billMatch.proj && billMatch.proj.name) || 'General',
+          hasPDF,
+          // b-<fix-uuid>: mirror the pdfKey conversion every other save path
+          // in this file performs (~5949, 13237, 13330, 13370, 13384) — this
+          // review-diversion branch was the one exception, so review-diverted
+          // bills previously saved with hasPDF:true but no pdfKey and their
+          // PDF could never be located.
+          pdfKey: hasPDF ? pdfKey : null,
+        },
+        bill,
+      ),
+    );
+    await sset('en_pdf_bills', _pdfBillsForReview);
+    bill._mbHeld = true;
+    bill._mbHeldReason = 'account mismatch — needs manual review';
+    return { status: 'held', reason: 'identity gate failed — account mismatch', projId: billMatch.projId || null };
+  }
+
+  // Commodity-mismatch / meter-create block — identical to confirmAutoAssign.
+  // Only reached once _gateOK is true (Finding 2 fix — see comment above).
   const _bComm = (bill.Commodity || '').toLowerCase();
   let _mComm = (billMatch.meter.commodity || '').toLowerCase();
   if (_bComm && !_mComm) {
@@ -6484,83 +6606,23 @@ async function _mbSaveOneBill(bi) {
   const dup = targetMeter.bills.find(function (r) {
     return r.start === billRow.start && r.end === billRow.end;
   });
-  // Gate (fix 11e47d64/9de73981, mirrors the saveQueuedBills b-46a984a0
-  // identity gate — PRESERVED, unchanged from 24d108f): evaluated ONCE,
-  // before the dup/no-dup branch, and applies to BOTH — a non-identity
-  // (address-similarity) guess must not silently write to targetMeter.bills
-  // at all, whether that write is an overwrite of an existing period (dup)
-  // OR a brand-new push (no dup). The non-colliding push case is the MORE
-  // COMMON real-world trigger (most re-uploaded bills land on a NEW period,
-  // not the exact one already saved) and was originally left ungated here —
-  // confirmed empirically against the real Louisburg incident accounts
-  // (Account A vs Account B) during review. Only two things may pass this
-  // gate:
-  //   (a) billMatch.matchType === 'identity' (account/meter-number hit from
-  //       findMeterMatch) AND the incoming bill's own AccountNumber
-  //       reasonably agrees with the target meter's stored account, or
-  //   (b) billMatch.matchType === 'manual' — the user explicitly picked this
-  //       Project -> Building -> Meter via the destination picker in
-  //       showMultiBuildingReviewPanel (setMbRowDestMeter). An explicit user
-  //       pick is authoritative and always wins, exactly like the
-  //       _meterOverride exemption in saveQueuedBills — it must not be
-  //       diverted to review just because it lacks an 'identity' tag.
-  const _isManualPick = billMatch.matchType === 'manual';
-  const _acctAgrees =
-    !targetMeter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, targetMeter.account);
-  const _gateOK = _isManualPick || (billMatch.matchType === 'identity' && _acctAgrees);
-  if (_gateOK) {
-    if (dup) {
-      Object.assign(dup, billRow);
-    } else {
-      targetMeter.bills.push(billRow);
-      targetMeter.bills.sort(function (a, b) {
-        return _parseISO(a.start) - _parseISO(b.start);
-      });
-    }
-    const destination =
-      (billMatch.proj ? billMatch.proj.name : '') +
-      ' → ' +
-      (billMatch.bldg ? billMatch.bldg.name : '') +
-      ' → ' +
-      (targetMeter.commodity || targetMeter.account || targetMeter.id || 'meter');
-    bill._mbSaved = true;
-    bill._mbSavedDest = destination;
-    return { status: 'saved', destination, projId: billMatch.projId };
+  if (dup) {
+    Object.assign(dup, billRow);
+  } else {
+    targetMeter.bills.push(billRow);
+    targetMeter.bills.sort(function (a, b) {
+      return _parseISO(a.start) - _parseISO(b.start);
+    });
   }
-  console.warn(
-    '[_mbSaveOneBill] identity gate failed — refusing to write to targetMeter.bills (',
-    dup ? 'would have overwritten an existing period' : 'would have created a new bill on a guessed meter',
-    '), routing to Saved Bills for review instead of auto-applying',
-    {
-      billIdx: bi,
-      matchType: billMatch.matchType,
-      incomingAcct: bill.AccountNumber,
-      targetMeterAcct: targetMeter.account,
-    },
-  );
-  const _pdfBillsForReview = (await sget('en_pdf_bills', [])) || [];
-  _pdfBillsForReview.push(
-    Object.assign(
-      {
-        id: 'pb' + Date.now() + '_' + bi + '_review',
-        savedAt: new Date().toISOString(),
-        projId: billMatch.projId || null,
-        projName: (billMatch.proj && billMatch.proj.name) || 'General',
-        hasPDF,
-        // b-<fix-uuid>: mirror the pdfKey conversion every other save path
-        // in this file performs (~5949, 13237, 13330, 13370, 13384) — this
-        // review-diversion branch was the one exception, so review-diverted
-        // bills previously saved with hasPDF:true but no pdfKey and their
-        // PDF could never be located.
-        pdfKey: hasPDF ? pdfKey : null,
-      },
-      bill,
-    ),
-  );
-  await sset('en_pdf_bills', _pdfBillsForReview);
-  bill._mbHeld = true;
-  bill._mbHeldReason = 'account mismatch — needs manual review';
-  return { status: 'held', reason: 'identity gate failed — account mismatch', projId: billMatch.projId || null };
+  const destination =
+    (billMatch.proj ? billMatch.proj.name : '') +
+    ' → ' +
+    (billMatch.bldg ? billMatch.bldg.name : '') +
+    ' → ' +
+    (targetMeter.commodity || targetMeter.account || targetMeter.id || 'meter');
+  bill._mbSaved = true;
+  bill._mbSavedDest = destination;
+  return { status: 'saved', destination, projId: billMatch.projId };
 }
 window._mbSaveOneBill = _mbSaveOneBill;
 
