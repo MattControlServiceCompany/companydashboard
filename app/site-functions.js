@@ -1254,20 +1254,6 @@ async function siteResetData() {
   }, 1200);
 }
 
-/* Default login redirect */
-function siteCheckDefaultLogin() {
-  try {
-    var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
-    var def = s.defaultLoginScreen || 'index';
-    var cur = location.pathname.split('/').pop().replace('.html', '') || 'index';
-    if (cur === 'index' && def !== 'index' && sessionStorage.getItem('ch_user')) {
-      location.href = def + '.html';
-      return true;
-    }
-  } catch (e) {}
-  return false;
-}
-
 /* Mobile sidebar hamburger toggle */
 function buildMobileSidebarToggle() {
   if (document.getElementById('sidebarToggleBtn')) return;
@@ -1345,7 +1331,6 @@ function siteBuildSettingsModal() {
   } catch (e) {}
   var accent = s.accentColor || '#3b82f6';
   var theme = s.theme || localStorage.getItem('ch_theme') || 'dark';
-  var defPage = s.defaultLoginScreen || 'index';
   var uc = s.uiCustom || { fonts: {} };
   var ucf = uc.fonts || {};
   var fontOpts = UI_CUSTOM_SAFE_FONTS.map(function (f) {
@@ -1368,17 +1353,6 @@ function siteBuildSettingsModal() {
       '" onclick="siteSwatchClick(this)"></div>'
     );
   }).join('');
-
-  var loginOpts = ['index', 'service-department', 'energy-department']
-    .map(function (v) {
-      var labels = {
-        index: 'Dashboard (index.html)',
-        'service-department': 'Service Department',
-        'energy-department': 'Energy Department',
-      };
-      return '<option value="' + v + '"' + (defPage === v ? ' selected' : '') + '>' + labels[v] + '</option>';
-    })
-    .join('');
 
   var el = document.createElement('div');
   el.id = 'siteSettingsOverlay';
@@ -1419,15 +1393,6 @@ function siteBuildSettingsModal() {
     '" oninput="siteCustomColorChange(this.value)">' +
     '<span class="custom-color-label">Custom color</span>' +
     '</div>' +
-    '</div>' +
-    '</div>' +
-    '<div class="settings-section">' +
-    '<div class="settings-section-title">Default Login Screen</div>' +
-    '<div class="settings-row">' +
-    '<div><div class="settings-row-label">Landing page after sign-in</div><div class="settings-row-sub">Choose which page opens by default</div></div>' +
-    '<select class="settings-select" onchange="siteSetDefaultLogin(this.value)">' +
-    loginOpts +
-    '</select>' +
     '</div>' +
     '</div>' +
     '<div class="settings-section">' +
@@ -1582,13 +1547,6 @@ function siteCustomColorChange(hex) {
     s.classList.toggle('active', s.getAttribute('data-color').toLowerCase() === hex.toLowerCase());
   });
   siteApplyAccent(hex);
-}
-function siteSetDefaultLogin(val) {
-  try {
-    var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
-    s.defaultLoginScreen = val;
-    localStorage.setItem('ch_settings', JSON.stringify(s));
-  } catch (e) {}
 }
 function siteSetDefaultExportFormat(fmt, checked) {
   try {
@@ -8757,7 +8715,6 @@ window.__siteUI = {
   resetData: siteResetData,
   exportPdfs: sitePdfExport,
   importPdfs: sitePdfImportPick,
-  checkDefaultLogin: siteCheckDefaultLogin,
   applyAccentColor: siteApplyAccent,
   openReleaseNotes: openReleaseNotes,
   closeReleaseNotes: closeReleaseNotes,

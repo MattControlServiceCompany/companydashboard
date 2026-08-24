@@ -8,7 +8,7 @@
   "architecture": {
     "type": "Static frontend (vanilla HTML/CSS/JS)",
     "backend": "None  -  all data in browser localStorage",
-    "auth": "Microsoft 365 SSO (MSAL.js) + Demo mode fallback",
+    "auth": "Supabase Auth (email + password, window.CH_AUTH from app/ch-auth.js) + Demo mode fallback",
     "hosting": "GitHub Pages (production)",
     "fonts": {
       "primary": "Outfit",
@@ -25,119 +25,32 @@
     {
       "id": "index",
       "file": "index.html",
-      "title": "Dashboard",
+      "title": "Sign In",
       "icon": "HOME",
-      "description": "Main landing page with company-wide metrics, department navigation, calendar widget, notifications, and settings.",
+      "description": "Login-only page. CompanyHub is Energy Department only (feature/energy-dept-only, 2026-08-24) — there is no Home hub. A successful sign-in redirects straight to energy-department.html; there is nothing else to land on.",
       "flows": [
         {
           "id": "auth",
           "name": "Authentication",
-          "description": "Two-path login: Microsoft 365 SSO (MSAL popup) or Demo mode. Session stored in sessionStorage as ch_user. Auto-login on page refresh if session exists.",
+          "description": "Email + password sign-in via Supabase Auth (window.CH_AUTH from app/ch-auth.js), or Demo mode. Session stored in sessionStorage + localStorage as ch_user. Auto-login on page load if a session exists — either path ends the same way, redirected to energy-department.html.",
           "steps": [
-            "Page loads, checks sessionStorage for ch_user",
-            "If session exists → enterApp() immediately (auto-login)",
+            "Page loads, checks sessionStorage/localStorage for ch_user",
+            "If session exists → enterApp() immediately redirects to energy-department.html",
             "If no session → show login screen",
-            "User clicks 'Sign in with Microsoft' → MSAL popup OAuth",
-            "On success → save user object to sessionStorage, call enterApp()",
-            "On MSAL fail with dummy clientId → auto-fallback to demo mode",
-            "enterApp() hides login, shows app, populates topbar user chip"
+            "User submits email + password → window.CH_AUTH.signIn()",
+            "On success → save user object to session/localStorage, call enterApp()",
+            "enterApp() always does window.location.href = 'energy-department.html' (no local #app shell is ever shown)"
           ],
-          "functions": ["loginWithMicrosoft()", "loginDemo()", "saveSession(u)", "loadSession()", "clearSession()", "enterApp()", "signOut()"],
-          "storageKeys": ["ch_user (sessionStorage)"],
+          "functions": ["loginWithPassword(evt)", "loginDemo()", "saveSession(u)", "loadSession()", "clearSession()", "enterApp()"],
+          "storageKeys": ["ch_user (sessionStorage + localStorage)"],
           "dataModel": {
             "user": {
               "name": "string  -  display name",
               "email": "string  -  email or demo placeholder",
               "initials": "string  -  2-char for avatar",
-              "isReal": "boolean  -  true=MSAL, false=demo"
+              "isReal": "boolean  -  true=Supabase Auth, false=demo"
             }
           }
-        },
-        {
-          "id": "dashboard-metrics",
-          "name": "Dashboard Metric Cards",
-          "description": "Four stat cards showing company-wide numbers, plus two department cards and eight quick-access cards. Stats pull from localStorage keys written by other pages.",
-          "steps": [
-            "On page load, read sv_staffData, sv_saData, en_projects from localStorage",
-            "Populate stat cards with counts (fallback to defaults if empty)",
-            "Department cards link to service-department.html and energy-department.html",
-            "Quick-access cards link to specific views within those pages"
-          ],
-          "functions": ["DashboardController.refresh()"],
-          "statCards": [
-            {"label": "Departments", "element": "static", "default": "2"},
-            {"label": "Service Staff", "element": "dash-stat-staff", "source": "sv_staffData.length"},
-            {"label": "SA Records", "element": "dash-stat-sa", "source": "sv_saData.length"},
-            {"label": "Energy Projects", "element": "dash-stat-projects", "source": "en_projects.length"}
-          ]
-        },
-        {
-          "id": "calendar-widget",
-          "name": "Calendar & Events",
-          "description": "Mini calendar with event markers from three sources. Shows upcoming events list (top 5).",
-          "steps": [
-            "On page load, call getUpcomingEvents() to aggregate from 3 localStorage sources",
-            "Render calendar grid with colored dots on event days",
-            "Show top 5 upcoming events in sidebar list",
-            "Month navigation with calNav(dir)"
-          ],
-          "functions": ["renderCalendar()", "renderCalendarEvents()", "getUpcomingEvents()", "getCalendarEventDays(year, month)", "calNav(dir)"],
-          "eventSources": [
-            {"source": "sv_saData", "color": "Teal", "label": "PM Visit: {building}"},
-            {"source": "en_projects", "color": "Violet", "label": "{project}  -  Deadline"},
-            {"source": "ch_outlook_events", "color": "Amber", "label": "{subject}"}
-          ]
-        },
-        {
-          "id": "notifications",
-          "name": "Notifications Panel",
-          "description": "Persistent notification system with localStorage backing. Bell icon in topbar with badge count and dropdown panel.",
-          "functions": ["loadNotifs()", "saveNotifs()", "addNotif(title, detail, icon)", "clearNotif(id)", "clearAllNotifs()", "refreshNotifUI()", "toggleNotifPanel()", "renderNotifList()", "getNotifTimeAgo(date)"],
-          "storageKeys": ["ch_notifs"],
-          "dataModel": {
-            "notification": {
-              "id": "number  -  Date.now() timestamp",
-              "title": "string",
-              "detail": "string",
-              "icon": "string  -  emoji",
-              "time": "string  -  ISO date"
-            }
-          }
-        },
-        {
-          "id": "settings",
-          "name": "Settings Modal",
-          "description": "Overlay modal for theme (dark/light), accent color (8 presets + custom hex), default login page, and feedback mode toggle. Dynamically built on first load.",
-          "functions": ["siteOpenSettings()", "siteCloseSettings()", "siteApplyTheme(mode)", "siteApplyAccent(hex)", "siteSetDefaultLogin(val)", "siteBuildSettingsModal()"],
-          "storageKeys": ["ch_theme", "ch_settings"],
-          "sections": [
-            "Display Mode: Dark/Light toggle",
-            "Accent Color: 8 presets + custom hex picker",
-            "Default Login Screen: Dashboard / Service / Energy",
-            "Developer Tools: Feedback Mode toggle"
-          ]
-        },
-        {
-          "id": "backup-restore",
-          "name": "Backup / Restore / Reset",
-          "description": "Full localStorage export to JSON file (data-only, no bill PDFs), restore from JSON, and reset all data. Buttons in sidebar bottom. A separate, optional 'Export PDFs' / 'Import PDFs' pair of buttons (backlog 729d274b) streams bill PDFs out of the en_pdf_store IndexedDB in small batched files, never on the same code path as the data-only backup.",
-          "functions": ["siteBackup()", "siteRestore()", "processRestoreFile(file)", "siteResetData()", "sitePdfExport()", "sitePdfImportPick()", "processPdfImportFiles(fileList)"],
-          "details": {
-            "backupFilename": "CompanyHub-localdatafile-YYYYMMDD.json",
-            "restoreValidation": "Must be .json file",
-            "resetBehavior": "Clears both localStorage AND sessionStorage, reloads page",
-            "pdfExportFilename": "CompanyHub-PDFs-YYYYMMDD-partNNN.json",
-            "pdfExportBatching": "~8MB of base64 text per file, one PDF's own base64 becomes a solo batch if it alone exceeds the cap; sitePdfExport() awaits each batch's full download (Blob revoked) before fetching the next PDF from IndexedDB, bounding peak live memory to ~1 batch regardless of total store size",
-            "pdfImport": "Multi-file picker; user selects all part files from one export together; each file is read/written one at a time"
-          }
-        },
-        {
-          "id": "navigation",
-          "name": "Navigation System",
-          "description": "Topbar brand + department tabs, sidebar with view switching, and cross-page links via hrefs.",
-          "functions": ["setView(view, sideEl)", "setDept(dept, tabEl)"],
-          "departmentTabs": ["Dashboard (index.html)", "Service Department (service-department.html)", "Energy Department (energy-department.html)"],
-          "sidebarSections": ["Dashboard: Overview", "Service: Personnel, PM Schedule, Dispatch Board", "Energy: PDF/OCR, Weather Normalize, Baseline, Energy Savings, WebCTRL"]
         }
       ]
     },
@@ -290,109 +203,6 @@
       ]
     },
     {
-      "id": "service",
-      "file": "service-department.html",
-      "title": "Service Department",
-      "icon": "WRENCH",
-      "description": "Service department dashboard: personnel management, PM scheduling calendar with natural-language pattern parsing, and technician dispatch board.",
-      "flows": [
-        {
-          "id": "personnel",
-          "name": "Personnel Management",
-          "description": "Staff roster with status tracking (On Duty / Off / On Leave), filtering, and stats cards.",
-          "functions": ["renderStaff()", "filterStaff(f)", "updateStaffStats()", "removeStaff(id)", "openStaffModal()", "addStaff()"],
-          "modalId": "#staffModal",
-          "storageKeys": ["sv_staffData"],
-          "statCards": ["On Duty Today", "On Leave", "Off Today", "Total Staff"],
-          "filters": ["All", "On Duty", "Leave"],
-          "dataModel": {
-            "staff": {
-              "id": "number",
-              "name": "string",
-              "role": "string",
-              "hours": "number  -  weekly hours",
-              "status": "string  -  'on' | 'off' | 'leave'"
-            }
-          }
-        },
-        {
-          "id": "pm-schedule",
-          "name": "PM Scheduling Calendar",
-          "description": "Preventative maintenance schedule with auto-generated dates from natural-language patterns (Column M from service agreements). Supports 10+ pattern types. Calendar shows colored dots per technician.",
-          "steps": [
-            "Load service agreements from sv_saData",
-            "For each SA, parse pattern field through generateDatesForPattern(pattern, year)",
-            "Filter dates to contract start/end range",
-            "Render calendar grid with tech-colored event dots",
-            "Click day to see list of PM events",
-            "Click SA row to see detail panel with all generated dates"
-          ],
-          "functions": ["renderSAList()", "selectSA(id)", "renderSADetail()", "removeSA(id)", "updatePMStats()", "generateDatesForPattern(pattern, year)", "getNthWeekday(year, month, weekday, n)", "buildCalendar(mode, year, month, selDay, containerId)", "generateAllPMEvents(calYear)"],
-          "modalId": "#pmModal",
-          "storageKeys": ["sv_saData"],
-          "statCards": ["SA Records", "This Month", "Next 7 Days", "Active Techs"],
-          "patternTypes": [
-            "'Nth DAY - Month/Month/Month' (e.g., '2nd Thu - Feb/May/Aug/Nov')",
-            "'Nth DAY & Nth DAY' (e.g., '1st & 3rd Fri')",
-            "'Monthly - Nth DAY' (e.g., 'Monthly - 1st Fri')",
-            "'2x Monthly - Nth DAY'",
-            "'Nth per Year - Nth DAY - Months'",
-            "Generic: 'Monthly', 'Bi-Monthly', 'Quarterly', 'Semi-Annual', 'Annual'",
-            "Multi-line patterns (split by newline)"
-          ],
-          "frequencyColors": {
-            "Monthly / 2x Monthly": "Amber",
-            "Quarterly": "Blue",
-            "Semi-Annual": "Violet",
-            "Annual": "Teal",
-            "Bi-Monthly / Other": "Red"
-          },
-          "dataModel": {
-            "serviceAgreement": {
-              "id": "number",
-              "saNum": "string  -  SA number",
-              "customer": "string",
-              "addr": "string  -  site address",
-              "tech": "string  -  assigned technician",
-              "pmLabel": "string  -  frequency label (Col L)",
-              "pattern": "string  -  natural language pattern (Col M)",
-              "adminContact": "string",
-              "fieldContact": "string",
-              "contractStart": "string  -  date",
-              "contractEnd": "string  -  date"
-            }
-          }
-        },
-        {
-          "id": "dispatch",
-          "name": "Dispatch Board",
-          "description": "Work order management and technician assignments. Table view with status indicators.",
-          "functions": ["renderDispatch()", "openDispatchModal()", "addWorkOrder()"],
-          "modalId": "#dispatchModal",
-          "storageKeys": ["sv_dispatchData"],
-          "dataModel": {
-            "workOrder": {
-              "id": "number",
-              "saNum": "string",
-              "customer": "string",
-              "site": "string",
-              "start": "string  -  datetime",
-              "end": "string  -  datetime",
-              "tech": "string",
-              "status": "string  -  'Assigned' | 'Not Assigned'"
-            }
-          }
-        },
-        {
-          "id": "outlook-sync",
-          "name": "Microsoft 365 / Outlook Sync",
-          "description": "Sync upcoming PM events (next 30 days, max 5) to user's Outlook Calendar via Microsoft Graph API.",
-          "functions": ["syncToOutlook()"],
-          "details": "Posts events to graph.microsoft.com/v1.0/me/events with title '[PM] Customer  -  SA# (Label)'"
-        }
-      ]
-    },
-    {
       "id": "ems-leads",
       "file": "ems-leads.html",
       "title": "EMS Leads",
@@ -535,10 +345,10 @@
       {"key": "ch_user", "type": "object", "storage": "sessionStorage", "description": "Logged-in user data"},
       {"key": "ch_outlook_events", "type": "array", "description": "Synced Outlook calendar events"}
     ],
-    "service": [
-      {"key": "sv_saData", "type": "array", "description": "Service agreements with PM patterns"},
-      {"key": "sv_staffData", "type": "array", "description": "Staff roster"},
-      {"key": "sv_dispatchData", "type": "array", "description": "Dispatch work orders"}
+    "service_legacy": [
+      {"key": "sv_saData", "type": "array", "description": "Service agreements with PM patterns — legacy data, service-department.html page removed feature/energy-dept-only 2026-08-24; classified/synced in app/sync-classification.js but no longer readable/writable from any page"},
+      {"key": "sv_staffData", "type": "array", "description": "Staff roster — legacy data, page removed"},
+      {"key": "sv_dispatchData", "type": "array", "description": "Dispatch work orders — legacy data, page removed"}
     ],
     "energy": [
       {"key": "en_projects", "type": "array", "description": "Energy project metadata"},
