@@ -12522,6 +12522,84 @@ async function processPDF(file) {
               }
             }
           }
+          // ── MULTI-PASS OCR CONSENSUS (kWh-identity fallback recovery) ──
+          // Fix (2026-08-24, defect #2 of the Louisburg 100%-accuracy gate): the
+          // _sum_mismatch consensus block above only reconciles DOLLAR charge
+          // fields, and only fires when the bill's charge total doesn't add up.
+          // A bill can have a perfectly reconciling dollar total while its
+          // On/OffPeakKWh silently fell back to the kWh-identity derivation
+          // (OnPeakKWh = kWhConsumed - OffPeakKWh or the reverse — see
+          // `_auto_recovered_On/OffPeakKWh` in energy-savings.js ~3905-3969)
+          // because THIS pass's OCR of the charge line was too garbled for the
+          // direct "<qty> kWh at $<rate>" regex to match. The identity math is
+          // valid but strictly lower-fidelity than a direct read: it inherits
+          // any rounding drift between the meter-table kWhConsumed and the
+          // charge line's own kWh figure, AND it can never recover the paired
+          // *Rate field (the identity has no rate term), leaving OnPeakRate/
+          // OffPeakRate permanently null. Root-caused on the Louisburg
+          // SKM_C551i Evergy bill (acct 8980291458): the OCR pass processPDF
+          // kept as "best text" (lowest countCriticalMissing — BillingPeriodStart/
+          // AccountNumber/kWhConsumed/TotalCurrentCharges were already present)
+          // garbled the Off-Peak charge line just enough that `xRate` never
+          // matched it, so OffPeakKWh fell back to the identity and OffPeakRate
+          // stayed null — while a DIFFERENT captured OCR pass of the SAME text
+          // (already sitting in window._pdfOcrPasses, never consulted because
+          // this bill has no _sum_mismatch) reads that line cleanly. Mirrors the
+          // _sum_mismatch block's structure/guards (same rule-name gate, same
+          // per-period alt-bill lookup) but targets the kWh-identity flags
+          // instead, and adopts BOTH the qty and its rate from the alt pass
+          // together (never one without the other) so the two stay consistent.
+          if (hasAltPasses && rule.name === 'Evergy') {
+            const KWH_FALLBACK_PAIRS = [
+              { kwhField: 'OnPeakKWh', rateField: 'OnPeakRate', flag: '_auto_recovered_OnPeakKWh' },
+              { kwhField: 'OffPeakKWh', rateField: 'OffPeakRate', flag: '_auto_recovered_OffPeakKWh' },
+            ];
+            const billsNeedingKwhConsensus = finalBills.filter((b) => KWH_FALLBACK_PAIRS.some((p) => b[p.flag]));
+            if (billsNeedingKwhConsensus.length > 0) {
+              const altTexts2 = [];
+              for (const passes of Object.values(passTexts)) {
+                for (const p of passes) {
+                  if (!altTexts2.includes(p.text) && p.text !== text) altTexts2.push(p.text);
+                }
+              }
+              for (const b of billsNeedingKwhConsensus) {
+                for (const pair of KWH_FALLBACK_PAIRS) {
+                  if (!b[pair.flag]) continue;
+                  for (const altText of altTexts2) {
+                    try {
+                      const altBills = rule.extract(altText);
+                      if (!altBills || !altBills.length) continue;
+                      const altBill =
+                        altBills.find(
+                          (ab) =>
+                            ab.BillingPeriodStart === b.BillingPeriodStart &&
+                            ab.BillingPeriodEnd === b.BillingPeriodEnd,
+                        ) || altBills[0];
+                      // Only adopt when the alt pass read this field DIRECTLY (no
+                      // fallback flag of its own) AND recovered the paired rate —
+                      // otherwise this would trade one degraded reading for
+                      // another, or introduce a qty/rate pair that don't belong
+                      // together.
+                      if (altBill && !altBill[pair.flag] && altBill[pair.kwhField] && altBill[pair.rateField]) {
+                        b['_consensus_recovered_' + pair.kwhField] = {
+                          original: b[pair.kwhField],
+                          corrected: altBill[pair.kwhField],
+                          reason:
+                            'Alternate OCR pass read the charge line directly instead of falling back to the kWh identity',
+                        };
+                        b[pair.kwhField] = altBill[pair.kwhField];
+                        b[pair.rateField] = altBill[pair.rateField];
+                        delete b[pair.flag];
+                        break;
+                      }
+                    } catch (e) {
+                      /* alt extraction failed, skip */
+                    }
+                  }
+                }
+              }
+            }
+          }
           // F3: pass texts only needed during consensus — free them now
           window._pdfOcrPasses = null;
           window._pdfPassScores = null;
