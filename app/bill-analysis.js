@@ -12912,6 +12912,163 @@ async function processPDF(file) {
             }
           }
 
+          // ── MULTI-PASS OCR CONSENSUS FOR METER-READ FIELDS (identity-consistency winner, ACCOUNT-KEYED) ──
+          // Fix (2026-08-25, Circle Grove meter-row digit corruption, acct 3517540689,
+          // SKM_C551i26071613190.pdf#p4; also recovers High School accts 1257228027 /
+          // 8980291458 on the same file). A meter-row OCR misread can be internally
+          // SELF-CONSISTENT in isolation — the digit-correction/checksum engine
+          // (_reconcileNumber in energy-savings.js) can never catch it because
+          // nothing on that ONE field LOOKS broken. What actually distinguishes a
+          // correct reading from a corrupted one, verified directly against this
+          // file's own two captured OCR passes for account 3517540689, is that a
+          // genuine meter-row reading satisfies BOTH physical identities every
+          // Evergy bill's meter table encodes: EndRead - StartRead = ReadDifference,
+          // and ReadDifference * MeterMultiplier = kWhConsumed. Measured on this
+          // page: the 2.5x pass (StartRead 15484.8371, EndRead 15698.7069,
+          // ReadDifference 213.8698, kWhConsumed 8554.7920) satisfies both exactly;
+          // the 3.5x pass (EndRead 15608.7069, ReadDifference 213.8608, kWhConsumed
+          // 8564.7920) satisfies NEITHER (EndRead-StartRead=123.8698 != 213.8608;
+          // 213.8608*40=8554.432 != 8564.792) — i.e. higher render scale is NOT a
+          // reliable tiebreak here (a prior draft of this fix used "prefer highest
+          // scale" and picked the wrong, higher-scale pass). This version instead
+          // scores every candidate reading — the bill's own current fields, plus
+          // each independently-matched OCR pass's re-extraction — by how many of
+          // the two identities it satisfies, and only overwrites `b`'s meter-field
+          // group when `b`'s own reading is NOT already fully self-consistent AND
+          // exactly one alternate pass IS. Never overwrites an already-consistent
+          // reading (it might be genuinely correct); never guesses between two
+          // consistent-but-disagreeing alternates.
+          //
+          // ACCOUNT-KEYED MATCH — root-cause fix over the abandoned 3042120 prototype
+          // (branch fix/meter-row-ocr, reverted: validator 1084->972, 26 regressions).
+          // That prototype matched an alt pass's re-extracted bill to `b` by BILLING
+          // PERIOD ONLY. window._pdfOcrPasses is keyed by PAGE NUMBER across the WHOLE
+          // pdf, and Evergy's `rule.extract(pageText)` always returns whichever ONE
+          // account is FIRST on that page — so on a multi-bill Louisburg PDF where
+          // several different accounts/buildings share one billing period (the normal
+          // case — Louisburg's buildings are billed on a common monthly cycle), a
+          // period-only match happily adopted another building's meter reading onto
+          // `b`. Requiring the alt pass's own AccountNumber to match `b.AccountNumber`
+          // (same normalization convention used throughout this file:
+          // `.replace(/[\s\-]/g, '')`) restricts candidate passes to the SAME page/
+          // account, eliminating that cross-account clobber by construction. Bills
+          // with no AccountNumber of their own are skipped outright — never guess.
+          //
+          // Scoped to the 5 fields that participate in the two identities
+          // (StartRead/EndRead/ReadDifference/MeterMultiplier/kWhConsumed).
+          // ActualKW/ActualRKVA have no arithmetic identity to validate against, so
+          // there is no reliable signal to pick a winner for them — left untouched
+          // rather than guessed.
+          if (hasAltPasses && rule.name === 'Evergy') {
+            const pf3 = (v) =>
+              v !== undefined && v !== null && v !== '' ? parseFloat(String(v).replace(/,/g, '')) : NaN;
+            const acctKey = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
+            const IDENTITY_TOL = 0.02; // OCR hundredths-place rounding slack
+            const ALL_METER_FIELDS = ['StartRead', 'EndRead', 'ReadDifference', 'MeterMultiplier', 'kWhConsumed'];
+            // Two independent physical identities, checked and reconciled
+            // SEPARATELY rather than as one all-or-nothing group. On the bills
+            // this targets, it's common for exactly one field in a trio to be
+            // OCR-corrupted while the other two (and thus the OTHER identity's
+            // trio) are perfectly readable — e.g. Louisburg acct 1257228027's
+            // 06/29-07/29 bill has a correct StartRead/ReadDifference/
+            // MeterMultiplier/kWhConsumed on its one alternate pass, but a
+            // corrupted EndRead (13200.8243 misread from 13290.8243) that alone
+            // breaks the EndRead-StartRead=ReadDifference identity. Requiring
+            // BOTH identities to hold before trusting ANY field (the prior
+            // version of this fix) threw away 3 recoverable, individually-
+            // verified-correct fields along with the 1 genuinely bad one.
+            // Splitting into two groups recovers everything an identity CAN
+            // verify, while still never guessing a field no identity confirms
+            // (EndRead/StartRead stay untouched here, correctly, because every
+            // candidate's own EndRead-StartRead=ReadDifference check fails).
+            const GROUPS = [
+              {
+                fields: ['StartRead', 'EndRead', 'ReadDifference'],
+                label: 'EndRead-StartRead=ReadDifference',
+                check: (obj) => {
+                  const sr = pf3(obj.StartRead),
+                    er = pf3(obj.EndRead),
+                    rd = pf3(obj.ReadDifference);
+                  if (isNaN(sr) || isNaN(er) || isNaN(rd)) return false;
+                  return Math.abs(er - sr - rd) <= IDENTITY_TOL;
+                },
+              },
+              {
+                fields: ['ReadDifference', 'MeterMultiplier', 'kWhConsumed'],
+                label: 'ReadDifference*MeterMultiplier=kWhConsumed',
+                check: (obj) => {
+                  const rd = pf3(obj.ReadDifference),
+                    mm = pf3(obj.MeterMultiplier),
+                    kw = pf3(obj.kWhConsumed);
+                  if (isNaN(rd) || isNaN(mm) || isNaN(kw)) return false;
+                  return Math.abs(rd * mm - kw) <= Math.max(1, kw * 0.001);
+                },
+              },
+            ];
+            for (const b of finalBills) {
+              if (!ALL_METER_FIELDS.some((f) => b[f])) continue; // no meter-read fields on this bill at all
+              const bAcct = acctKey(b.AccountNumber);
+              if (!bAcct) continue; // can't verify same account — never guess across accounts
+              // Gather every captured pass's OWN reading of this bill's meter row,
+              // matched by BOTH billing period AND account number so pooled
+              // multi-page/multi-account pass text can never resolve to a
+              // DIFFERENT account's bill, even when two accounts share a period.
+              // Fetched once per bill and reused for both groups below.
+              const matchedReadings = [];
+              for (const passes of Object.values(passTexts)) {
+                for (const p of passes) {
+                  try {
+                    const altResult = rule.extract(p.text);
+                    const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
+                    if (!altBills.length) continue;
+                    const altBill = altBills.find(
+                      (ab) =>
+                        ab.BillingPeriodStart === b.BillingPeriodStart &&
+                        ab.BillingPeriodEnd === b.BillingPeriodEnd &&
+                        acctKey(ab.AccountNumber) === bAcct,
+                    );
+                    if (!altBill) continue; // this pass's text isn't this bill's account/page — skip, don't guess
+                    matchedReadings.push({ scale: p.scale, label: p.label, altBill });
+                  } catch (e) {
+                    /* alt extraction failed, skip */
+                  }
+                }
+              }
+              if (!matchedReadings.length) continue; // no alternate pass to compare against
+              for (const group of GROUPS) {
+                if (group.check(b)) continue; // this identity already holds on the bill's own reading — leave untouched
+                const cleanCandidates = matchedReadings.filter((r) => group.check(r.altBill));
+                if (!cleanCandidates.length) continue; // no candidate satisfies this identity either — never guess
+                // If more than one candidate satisfies this identity, they must
+                // agree with each other on this group's fields to be trusted —
+                // two identity-satisfying-but-different readings is exactly the
+                // ambiguous case this fix must never guess on.
+                const refBill = cleanCandidates[0].altBill;
+                const allAgree = cleanCandidates.every((r) =>
+                  group.fields.every((f) => Math.abs(pf3(r.altBill[f]) - pf3(refBill[f])) <= IDENTITY_TOL),
+                );
+                if (!allAgree) continue; // ambiguous — never guess
+                for (const f of group.fields) {
+                  const curVal = pf3(b[f]);
+                  const winVal = pf3(refBill[f]);
+                  if (isNaN(winVal)) continue; // winner doesn't have this field either
+                  if (!isNaN(curVal) && Math.abs(winVal - curVal) <= IDENTITY_TOL) continue; // already matches
+                  b['_consensus_recovered_' + f] = {
+                    original: b[f],
+                    corrected: refBill[f],
+                    reason:
+                      "This bill's own meter-row reading failed the " +
+                      group.label +
+                      ' identity check — adopted the reading from an alternate OCR pass (' +
+                      cleanCandidates[0].label +
+                      ') for this same account that satisfies it.',
+                  };
+                  b[f] = refBill[f];
+                }
+              }
+            }
+          }
+
           // Convert _pageIndex to _pageStart/_pageEnd for extractors that
           // set per-page indices instead of page ranges
           finalBills.forEach((b) => {
