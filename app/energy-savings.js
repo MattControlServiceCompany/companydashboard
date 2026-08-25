@@ -8165,6 +8165,20 @@ const UTILITY_RULES = [
       if (ServiceAddress && /^105S+5?THE$/i.test(ServiceAddress.replace(/\s+/g, ''))) {
         ServiceAddress = '105 S 5TH E';
       }
+      // FIX (backlog 7a051fed): a further OCR garble family for this SAME
+      // confirmed address (Broadmoor EMS acct 02-002360-00): "Gas Bills May
+      // 2026 - BES.pdf" and "SKM_C551i26081711320.pdf" both read the "S" in
+      // "105 S 5TH E" as digit "8" instead (a second, distinct Tesseract
+      // confusable of the same direction letter), producing "1058S 5STHE"
+      // and "1058 5STHE" — which, whitespace-stripped, are "1058S5STHE" and
+      // "10585STHE". The "105S+5?THE" pattern above can never match either
+      // (both start "1058", not "105S"), so ServiceAddress fell through
+      // unnormalized. Bounded to the two confirmed stripped forms only
+      // ("1058" + optional "S" + "5STHE") — not a general reformatter, so it
+      // cannot relabel a different real address.
+      if (ServiceAddress && /^1058S?5STHE$/i.test(ServiceAddress.replace(/\s+/g, ''))) {
+        ServiceAddress = '105 S 5TH E';
+      }
 
       // Period row has 5 dates: BillFrom, BillTo, BillFor, BillDate, PenaltyDate
       let BillingPeriodStart = null;

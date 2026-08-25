@@ -12240,6 +12240,21 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
           recoveredBill = first;
           recoveredBill.UtilityCompany = recoveredBill.UtilityCompany || recoveredBill._utilityName || r.name || null;
           recoveredBill._recoveredFromFallbackRule = r.name || true;
+          // FIX (backlog b8123c92): Evergy's own extract()/_extractEvergy()
+          // never sets a Commodity field at all — every OTHER caller of an
+          // Evergy bill object papers over that with a `.Commodity ||
+          // 'Electric'` fallback default sprinkled across the display/save/
+          // match code (Evergy only ever bills electric service, so that
+          // default is always correct for this provider). This recovery
+          // path hands the bare extracted object straight through instead,
+          // so a page recovered here carried Commodity: undefined all the
+          // way to storage with no fallback ever applied. Make the same
+          // provider-known default explicit at the source for Evergy only —
+          // NOT a blanket default for every rule this function can recover
+          // (the Louisburg rule already stamps its own correct Commodity
+          // per bill — Gas/Water/Sewer/Stormwater — inside its own
+          // extract(), so this must not override those).
+          if (r.name === 'Evergy' && !recoveredBill.Commodity) recoveredBill.Commodity = 'Electric';
           break;
         }
       }
