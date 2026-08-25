@@ -2517,12 +2517,22 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const dotIdx = digitsOnly.indexOf('.');
     const decimals = dotIdx === -1 ? 0 : digitsOnly.length - dotIdx - 1;
     let targetStr = decimals > 0 ? targetVal.toFixed(decimals) : String(Math.round(targetVal));
-    // A stray leading digit is a common OCR misread (e.g. "84385" read for true "4385") — the fix for
-    // that IS a plausible single-digit substitution (the extra leading digit → '0', which parses back
-    // to the same numeric value). Left-pad the shorter target with zeros so that case can be reached;
-    // do NOT do the reverse (never shrink the target to fit a shorter OCR string — that would mean
-    // fabricating a missing digit, not correcting a misread one).
-    if (targetStr.length < digitsOnly.length) targetStr = targetStr.padStart(digitsOnly.length, '0');
+    // FIX (2026-08-24, Louisburg visual audit bug #5/#8): this used to left-pad a shorter
+    // arithmetic target with a leading zero so a "stray leading digit" could be treated as a
+    // plausible single-digit substitution. That is unsound: the digit-count MISMATCH this
+    // branch exists to paper over is exactly as likely to mean "the arithmetic TARGET is wrong
+    // because a SIBLING column (EndRead/StartRead/Difference/kWh) was itself OCR-garbled" as it
+    // is to mean "this OCR string genuinely has a spurious extra leading digit." On the
+    // Maintenance Bldg April 2026 bill (account 0669287870) it was the former: EndRead's raw
+    // OCR ("B4,784.6376") lost its leading 8 to a letter-for-digit misread earlier in the
+    // pipeline, which made the row's own checksum target one digit short — and this padding
+    // branch then rewrote the ALREADY-CORRECT StartRead ("84,385.0790", matching the printed
+    // bill exactly) down to "04385.0790" to chase that corrupted target. Enforcing the EXACT
+    // digit-count match this function's own header comment already promises ("no digit
+    // insertion/deletion — that's a different failure mode, not a misread") means a length
+    // mismatch is now always rejected here, never silently patched over. A genuinely missing
+    // leading digit is instead recovered structurally, with its own explicit evidence
+    // (sibling-column digit-count comparison), by the MISSING-LEADING-DIGIT RECOVERY pass below.
     if (targetStr.length !== digitsOnly.length) return null; // digit count mismatch — not a simple misread
     const diffPositions = [];
     for (let i = 0; i < digitsOnly.length; i++) {
@@ -2546,6 +2556,39 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       digitIdx++;
     }
     return fixed;
+  }
+  // Enumerates every SINGLE plausible confusable-digit substitution of `ocrStr` (added
+  // 2026-08-24, Louisburg visual audit bug #8, for the joint EndRead/StartRead recovery tier
+  // below). Unlike _reconcileNumber, this does not test against one arithmetic target — it
+  // returns the whole candidate set (comma stripped from output, matching _reconcileNumber's
+  // contract) so a caller can search for a pairing that satisfies an identity spanning two
+  // independently-garbled columns. Bounded: at most (digit count) x (confusable alternatives
+  // per digit, typically 2-5) candidates, so a 10-character read produces well under 50.
+  function _singleDigitCandidates(ocrStr) {
+    if (!ocrStr) return [];
+    const digitsOnly = ocrStr.replace(/,/g, '');
+    const out = [];
+    for (let i = 0; i < digitsOnly.length; i++) {
+      const ch = digitsOnly[i];
+      if (ch === '.') continue;
+      const opts = new Set(_CONFUSABLE[ch] || []);
+      for (const k of Object.keys(_CONFUSABLE)) {
+        if (_CONFUSABLE[k].includes(ch)) opts.add(k);
+      }
+      opts.delete(ch);
+      for (const rep of opts) {
+        let digitIdx = 0;
+        let rebuilt = '';
+        for (let j = 0; j < ocrStr.length; j++) {
+          if (ocrStr[j] === ',') continue;
+          rebuilt += digitIdx === i ? rep : ocrStr[j];
+          digitIdx++;
+        }
+        const val = parseFloat(rebuilt);
+        if (isFinite(val)) out.push({ str: rebuilt, val });
+      }
+    }
+    return out;
   }
   // Normalize OCR artifacts in meter row numeric fields (colons → commas, strip non-numeric junk)
   for (const row of _meterRows) {
@@ -2600,6 +2643,60 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     }
   }
+  // ── MISSING-LEADING-DIGIT RECOVERY (groups 4/5: EndRead/StartRead) ──
+  // Added 2026-08-24 (Louisburg visual audit bug #5/#8) alongside removing the unsound
+  // leading-digit-pad branch from _reconcileNumber above. A meter's EndRead and StartRead are
+  // the same physical register, read on nearly the same date, so they always share the same
+  // integer-digit count (or EndRead has exactly one MORE digit than StartRead, on a genuine
+  // meter rollover — never fewer). When OCR drops a leading digit from one of them (e.g. an "8"
+  // misread as a letter that a later normalize pass blanks to whitespace — confirmed root cause
+  // on the Maint Bldg April 2026 bill, account 0669287870: "84,784.6376" OCR'd as "B4,784.6376"
+  // then normalized to " 4,784.6376", losing the 8 entirely), that digit-count mismatch against
+  // its sibling column IS the missing evidence — restoring the sibling's leading digit(s) is a
+  // structural repair (same category as the missing-decimal recovery above), not a digit GUESS,
+  // so it does not go through the confusable-digit plausibility gate at all. Like the
+  // missing-decimal recovery above, only adopted when it is a STRICT improvement to this row's
+  // own EndRead-StartRead≈Difference checksum, so it can never fire on (and never regress) a
+  // row where both columns already agree.
+  for (const row of _meterRows) {
+    if (row._fixedEndRead || row._fixedStartRead) continue; // already structurally repaired above
+    const endDigits = (row[4] || '').replace(/,/g, '').split('.')[0];
+    const startDigits = (row[5] || '').replace(/,/g, '').split('.')[0];
+    if (!endDigits || !startDigits || !/^\d+$/.test(endDigits) || !/^\d+$/.test(startDigits)) continue;
+    const pn0b = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
+    const rawEnd = pn0b(row[4]),
+      rawStart = pn0b(row[5]),
+      rawDiffCol = pn0b(row[6]);
+    if (rawEnd <= 0 || rawStart <= 0) continue;
+    const rawGap = Math.abs(rawEnd - rawStart - rawDiffCol);
+    let candEndStr = null,
+      candStartStr = null,
+      candVal = null;
+    if (startDigits.length - endDigits.length === 1) {
+      // EndRead is short exactly one leading digit — borrow StartRead's leading digit.
+      candEndStr = startDigits[0] + row[4];
+      candVal = parseFloat(candEndStr.replace(/,/g, ''));
+    } else if (endDigits.length - startDigits.length === 1) {
+      // StartRead is short exactly one leading digit — borrow EndRead's leading digit.
+      candStartStr = endDigits[0] + row[5];
+      candVal = parseFloat(candStartStr.replace(/,/g, ''));
+    } else {
+      continue; // not a single-digit sibling mismatch — outside this recovery's evidence
+    }
+    const candEnd = candEndStr ? candVal : rawEnd;
+    const candStart = candStartStr ? candVal : rawStart;
+    const candGap = Math.abs(candEnd - candStart - rawDiffCol);
+    if (candGap < rawGap) {
+      if (candEndStr) {
+        row._fixedEndRead = candEndStr;
+        row._endReadOriginal = row[4].replace(/,/g, '');
+      }
+      if (candStartStr) {
+        row._fixedStartRead = candStartStr;
+        row._startReadOriginal = row[5].replace(/,/g, '');
+      }
+    }
+  }
   // Apply checksum-driven reconciliation to meter rows. Two identities hold on a clean row:
   //   (1) EndRead - StartRead = Difference
   //   (2) Difference × Multiplier = kWh Used
@@ -2631,7 +2728,17 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
     const _tryFixReads = (trustedDiff) => {
       const diffTimesM = parseFloat((trustedDiff * mult).toFixed(4));
-      const kwhMatch = kwhUsed > 0 && Math.abs(diffTimesM - kwhUsed) < 1;
+      // TOLERANCE (fix, 2026-08-24, Louisburg visual audit bug #8): Difference x Multiplier =
+      // kWh Used is an EXACT restatement on an Evergy meter-read row, not a rounded rate calc —
+      // the bill prints the same number twice (once as "Read Difference", again as "kWh Used")
+      // whenever Multiplier is 1.0000, which is the common case. The old `< 1` tolerance was
+      // loose enough to accept an OCR-garbled Difference (Maint Bldg Meter 2, raw "558.8080"
+      // vs true/kWh-corroborated "558.9090", off by 0.101) as "confirmed," which then let this
+      // function corrupt an EndRead that was only one digit off from correct into one that was
+      // three digits off. Tightened to match the columns' own 4-decimal precision so a
+      // genuinely-wrong Difference is rejected here and left for the kWh-derived correction
+      // (Tier 2 below) instead of being trusted to rewrite the reads.
+      const kwhMatch = kwhUsed > 0 && Math.abs(diffTimesM - kwhUsed) < 0.01;
       if (!kwhMatch) return false; // can't trust this Difference value, don't touch the reads
       const expectedEnd = parseFloat((startR + trustedDiff).toFixed(4));
       const expectedStart = parseFloat((endR - trustedDiff).toFixed(4));
@@ -2686,6 +2793,40 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         if (fixedDiff2) {
           row._fixedDifference = fixedDiff2;
           row._differenceOriginal = row[6].replace(/,/g, '');
+        }
+      }
+    }
+
+    // Tier 4 (added 2026-08-24, Louisburg visual audit bug #8): EndRead AND StartRead are
+    // BOTH individually OCR-garbled by one digit each. Tiers 1-3 only ever hold ONE side fixed
+    // (at its raw, possibly-wrong value) while solving for the other, so they never find a fix
+    // when both sides need correcting at once — confirmed on Maint Bldg Meter 2 (account
+    // 0669287870, April 2026): raw EndRead "58,674.0800" (true "58,674.0600") and raw StartRead
+    // "58,116.1510" (true "58,115.1510") each need exactly one plausible digit swap, but neither
+    // swap alone reconciles against the OTHER column's still-raw value. Only reached once the
+    // Difference column is trusted (either it already agreed, or Tier 2/3 already corrected it)
+    // and both reads are still untouched — i.e., there is no simpler single-column explanation
+    // left. Searches EndRead's single-digit-substitution candidates (bounded, see
+    // _singleDigitCandidates) and asks _reconcileNumber to find a single-digit StartRead that
+    // pairs with each one to satisfy the trusted Difference exactly; a fix is only adopted when
+    // that search returns EXACTLY ONE candidate pair, so an ambiguous row (multiple equally
+    // plausible pairings) is left alone rather than guessed.
+    if (!row._fixedEndRead && !row._fixedStartRead) {
+      const trustedDiffFinal = row._fixedDifference ? parseFloat(row._fixedDifference) : diff;
+      const stillOff = trustedDiffFinal > 0 && Math.abs(endR - startR - trustedDiffFinal) > 0.001;
+      if (stillOff) {
+        const endCands = _singleDigitCandidates(row[4]);
+        const pairMatches = [];
+        for (const ec of endCands) {
+          const neededStart = parseFloat((ec.val - trustedDiffFinal).toFixed(4));
+          const fixedStartTry = _reconcileNumber(row[5], neededStart, 1);
+          if (fixedStartTry) pairMatches.push({ end: ec.str, start: fixedStartTry });
+        }
+        if (pairMatches.length === 1) {
+          row._fixedEndRead = pairMatches[0].end;
+          row._endReadOriginal = row[4].replace(/,/g, '');
+          row._fixedStartRead = pairMatches[0].start;
+          row._startReadOriginal = row[5].replace(/,/g, '');
         }
       }
     }
@@ -3340,7 +3481,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       null,
     AccountNumber:
       acctOverride ||
-      t.match(/Account\s+(?:Number\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
+      // FIX (2026-08-24, Louisburg visual audit bug #6): `\s+` -> `\s*`
+      // between "Account" and "Number" (see `_EVG_ACCT`/`_acctForIdx`
+      // comments for the confirmed real-bill glued-OCR example this covers).
+      t.match(/Account\s*(?:Number\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
       null,
     ServiceAddress: addrOverride || t.match(_EVG_ADDR)?.[1]?.trim() || null,
     RateSchedule: rateMatch?.[1] || null,
@@ -4576,7 +4720,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
 const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
-const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}(\d[\d ]{4,18}\d)/m;
+// FIX (2026-08-24, Louisburg visual audit bug #6): `\s+` -> `\s*` between
+// "Account" and "Number" — real OCR glues them into one token on some pages
+// ("AccountNumber", no space) even though the printed digits are legible.
+// See the matching fix + comment on `_acctForIdx` further below for the
+// confirmed real-bill example.
+const _EVG_ACCT = /[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}(\d[\d ]{4,18}\d)/m;
 const _EVG_ADDR =
   /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
@@ -4933,8 +5082,16 @@ const UTILITY_RULES = [
       };
       const _acctForIdx = (idx) => {
         const pageText = _pageTextForIdx(idx);
+        // FIX (2026-08-24, Louisburg visual audit bug #6): "Account" and
+        // "Number" tolerated `\s+` (one-or-more) between them, requiring a
+        // space. Real OCR on the New HS bill (202 Aquatic Dr, acct
+        // 2885731561, Dec 2025) read the header as one glued token
+        // "AccountNumber" with zero space — confirmed against the rendered
+        // page, where the printed number itself is sharp/unambiguous.
+        // `\s+` -> `\s*` tolerates the glued form while still matching every
+        // spaced form exactly as before (strict superset).
         const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+          ...pageText.matchAll(/[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
         ];
         if (acctMatches.length === 0) return null;
         return acctMatches[0][1].replace(/\s/g, '');
@@ -7945,8 +8102,22 @@ const UTILITY_RULES = [
       // cleaner "105S 5THE" (still garbled, but self-consistent with this
       // same document's Evergy page printing "105 S 5TH ST E LOUISBURG KS" for
       // the same property) — this also continues to match those unchanged.
+      // FIX (2026-08-24, Louisburg visual audit bug #5): tolerate a bounded
+      // run of OCR junk (a stray misread period, comma, etc.) landing
+      // directly against the account-number digits with NO whitespace of
+      // its own — e.g. real OCR text "825 WILDCAT DR                    .09-
+      // 009002-00" (account 09-009002-00, Irrigation, Feb 2026 scan). The
+      // old pattern required `\s+` to be immediately followed by the 2-char
+      // digit class; that stray "." sat between the whitespace run and the
+      // digits, so `\s+` was satisfied by the spaces but the very next
+      // character was "." (not in `[\d(O]`), and no amount of backtracking
+      // group3 could reach it either — the whole regex simply failed to
+      // match, silently dropping a perfectly legible ServiceAddress to
+      // null. Bounded to 3 junk chars (mirrors the existing bounded-gap
+      // tolerance already used for "Account[^0-9A-Za-z\n]{0,6}" above) so
+      // this can't accidentally swallow real address text.
       const custLine = page.match(
-        /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+([0-9A-Z][0-9A-Z .&\-]{3,50}?)\s+[\d(O]{2}-\d{6}-\d{2}/,
+        /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+([0-9A-Z][0-9A-Z .&\-]{3,50}?)\s+[^0-9A-Za-z\n]{0,3}[\d(O]{2}-\d{6}-\d{2}/,
       );
       let CustomerName = custLine ? 'USD ' + custLine[1] + ' ' + custLine[2].trim() : null;
       let ServiceAddress = custLine ? custLine[3].trim() : null;
@@ -7968,12 +8139,31 @@ const UTILITY_RULES = [
         // for the last-resort per-line scan, used when the CustomerName
         // portion of the row didn't match the USD-prefixed pattern at all.
         for (const raw of page.split(/\r?\n/)) {
-          const m = raw.match(/\b([0-9A-Z][0-9A-Z .]{3,40}?)\s+[\d(O]{2}-\d{6}-\d{2}/);
+          // Same bounded-junk tolerance as the primary custLine match above
+          // (bug #5) applied to this last-resort fallback too.
+          const m = raw.match(/\b([0-9A-Z][0-9A-Z .]{3,40}?)\s+[^0-9A-Za-z\n]{0,3}[\d(O]{2}-\d{6}-\d{2}/);
           if (m) {
             ServiceAddress = m[1].trim();
             break;
           }
         }
+      }
+      // FIX (2026-08-24, Louisburg visual audit bug #4): normalize the
+      // recurring OCR garble family for 105 S 5th St E (Broadmoor EMS acct
+      // 02-002360-00 / Maintenance Bldg acct 02-002364-00 — same physical
+      // building, two accounts). Confirmed against 5 real bill renders
+      // (Jan/Feb/Mar 2026) that this address NEVER extracts correctly on
+      // either account: seen garbles include "105S STHE", "105 S5THE",
+      // "105SSTHE", and (on Maint Bldg's own narrower-column print variant)
+      // "105 S5TH E". All of these collapse, once whitespace is stripped,
+      // to either "105SSTHE" (the "5" in "5TH" itself got misread as an
+      // extra "S") or "105S5THE" (the "5" survived, just missing a space).
+      // Normalizing on the whitespace-stripped form catches both families
+      // without needing to enumerate every spacing permutation. Scoped
+      // tightly to this one confirmed address (not a general address
+      // reformatter) so it can't relabel an unrelated property.
+      if (ServiceAddress && /^105S+5?THE$/i.test(ServiceAddress.replace(/\s+/g, ''))) {
+        ServiceAddress = '105 S 5TH E';
       }
 
       // Period row has 5 dates: BillFrom, BillTo, BillFor, BillDate, PenaltyDate
@@ -7999,8 +8189,15 @@ const UTILITY_RULES = [
         if (!m) return null;
         const before = raw.slice(0, m.index);
         const after = raw.slice(m.index + m[0].length);
-        const afterToks = [...after.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((x) => x[0]);
-        const charge = _lbg_cleanCents(afterToks[0] || null);
+        // Colon-for-decimal-point tolerance ("335:33" -> "335.33") — the same
+        // OCR-confusable already tolerated for TotalAmountDue's loose fallback
+        // below ([.:]\\d{2}). Without it, "335:33"'s digit run stops at "335"
+        // and the printed cents are silently dropped (defect: City of
+        // Louisburg May 2026 Gas TotalCurrentCharges landed $0.33 short,
+        // 315.47 vs printed 315.80 — traced to this exact truncation, not a
+        // fabricated CustomerCharge split).
+        const afterToks = [...after.matchAll(/-?[\d,]+(?:[.:]\d+|-\d{2})?/g)].map((x) => x[0]);
+        const charge = _lbg_cleanCents(afterToks[0] ? afterToks[0].replace(':', '.') : null);
         // Parse all numeric tokens in the before segment. Integers >=100
         // are meter reads; decimals >=100 are explicit usage columns (gas
         // CCF prints as "9,648.18"). Small decimals are bar-chart axis
@@ -8118,7 +8315,27 @@ const UTILITY_RULES = [
             };
           }
         }
-        if (!wpf && /W[A4]TER\s*PROT[E3]CTION/i.test(ln)) wpf = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
+        // Water Protection Fee: accumulate ALL occurrences, not just the
+        // first. A 2-physical-water-meter account (e.g. 16-016001-00, 977 N
+        // Rockville Rd) prints one WATER PROTECTION line PER METER — the old
+        // `!wpf` guard kept only one of the two identical-looking lines,
+        // silently dropping the 2nd meter's fee from the Water sub-total
+        // (defect: Feb/Mar/May 2026 bills each short by exactly one
+        // instance's worth, $2.75/$1.16/$0.69). Mirrors the accumulation
+        // pattern already used for multiple WATER lines above.
+        if (/W[A4]TER\s*PROT[E3]CTION/i.test(ln)) {
+          const wp2 = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
+          if (wpf === null) {
+            wpf = wp2;
+          } else {
+            wpf = {
+              usage: (wpf.usage || 0) + (wp2.usage || 0),
+              charge: wpf.charge != null ? wpf.charge + (wp2.charge || 0) : wp2.charge,
+              prevRead: wpf.prevRead != null ? wpf.prevRead : wp2.prevRead,
+              currRead: wpf.currRead != null ? wpf.currRead : wp2.currRead,
+            };
+          }
+        }
         if (!sewer && /\bS[E3]W[E3]R\b/i.test(ln)) sewer = parseMetered(ln, /\bS[E3]W[E3]R\b/i);
         if (!storm && /STORM\s*W[A4]TER/i.test(ln)) storm = parseMetered(ln, /STORM\s*W[A4]TER/i);
       }
@@ -8171,6 +8388,30 @@ const UTILITY_RULES = [
       const _currentBillRaw = page.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
       const CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
 
+      // WaterProtectionFee sign reconciliation — never a guess. Tesseract can
+      // drop the leading "-" glyph off a printed credit line (confirmed on a
+      // real bill: printed "WATER PROTECTION -$0.69" twice, OCR read both as
+      // positive "0.69" while correctly capturing the minus sign on the
+      // SAME page's negative WATER lines). Cross-validate against the page's
+      // own independently-printed Current Bill total — the same anchor
+      // _lbg_buildGasBill already trusts for gas reconciliation. Only flips
+      // the sign when doing so is the UNIQUE change that makes every line
+      // item sum to the printed total; otherwise leaves it alone.
+      if (CurrentBillTotal != null && wpf.charge) {
+        const _rawSum =
+          (gas.charge || 0) +
+          (signedFuelAdj || 0) +
+          (water.charge || 0) +
+          (wpf.charge || 0) +
+          (sewer.charge || 0) +
+          (storm.charge || 0);
+        const _flippedSum = _rawSum - 2 * wpf.charge;
+        if (Math.abs(_rawSum - CurrentBillTotal) > 0.01 && Math.abs(_flippedSum - CurrentBillTotal) < 0.01) {
+          wpf.charge = -wpf.charge;
+          wpf._signCorrected = true;
+        }
+      }
+
       if (!TotalAmountDue && !gas.charge && !water.charge && !sewer.charge && !storm.charge) return null;
 
       // ── Emit one bill per commodity with a real charge ──
@@ -8205,7 +8446,7 @@ const UTILITY_RULES = [
       if (gasBill) bills.push(gasBill);
       if (water.charge != null && water.charge !== 0) {
         const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
-        bills.push({
+        const waterBill = {
           ...shared,
           Commodity: 'Water',
           StartRead: water.prevRead || null,
@@ -8215,7 +8456,13 @@ const UTILITY_RULES = [
           WaterProtectionFee: wpf.charge,
           TotalCurrentCharges: waterTotal,
           TotalAmountDue: waterTotal,
-        });
+        };
+        if (wpf._signCorrected)
+          waterBill._auto_corrected_WaterProtectionFee = {
+            reason:
+              'Sign flipped to negative — reconciled against printed Current Bill total (OCR dropped the credit minus sign).',
+          };
+        bills.push(waterBill);
       }
       if (sewer.charge != null && sewer.charge !== 0) {
         const sewerTotal = sewer.charge.toFixed(2);
