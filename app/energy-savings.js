@@ -8363,8 +8363,20 @@ const UTILITY_RULES = [
         // Water label: leading "W" (and optional "M" before it) tolerated as
         // dropped/garbled OCR — e.g. "WATER" → "ATER" (see backlog 37f76621).
         // Mirrors the existing fuzzy G[A4]S tolerance on the Gas label.
-        if (/\bM?W?[A4]TER\b/i.test(ln) && !/PROTECTION/i.test(ln)) {
-          const wp = parseMetered(ln, /\bM?W?[A4]TER\b/i);
+        // FIX (backlog eea98fd5): also tolerate a handwritten pen annotation
+        // overlapping the printed "WATER" glyphs and garbling individual
+        // letters — confirmed on a real bill (account 02-002364-00, 6/15–
+        // 7/15/2026) where a stroke through the label made Tesseract read
+        // "WATER" as "/WAIER" (T→I). Without this, the entire Water line
+        // item — and the $44.33 charge on it — was silently dropped from
+        // extraction; the printed charge itself was always fully legible
+        // once rendered at higher scale, only the label glyphs were hit.
+        // Bounded to single-letter confusables at each of the T/E/R
+        // positions (T↔I, E↔3/F, R↔B) — the same confusable pairs already
+        // tolerated elsewhere in this file (S[E3]W[E3]R, PROT[E3]CTION) —
+        // so this can't drift into matching an unrelated 5-letter word.
+        if (/\bM?W?[A4][TI][E3F][RB]\b/i.test(ln) && !/PROTECTION/i.test(ln)) {
+          const wp = parseMetered(ln, /\bM?W?[A4][TI][E3F][RB]\b/i);
           if (water === null) {
             water = wp;
           } else {
@@ -8427,6 +8439,31 @@ const UTILITY_RULES = [
           /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\n]*\(\s*\$?[\d,]+\.\d{2}\s*\)/i.test(page)
         ) {
           signedFuelAdj = -signedFuelAdj;
+        }
+      } else {
+        // FALLBACK (backlog eea98fd5): a handwritten annotation sitting
+        // between the "FUEL ADJUSTMENT" label and its printed charge (real
+        // bill: "FUEL ADJUSTMENT  At  28            -0.05" — the "28" is
+        // pen noise, "-0.05" is the printed charge) breaks the primary
+        // regex above, which assumes no digit run intervenes before the
+        // charge. Tokenize the whole FUEL ADJUST... line and take the LAST
+        // cents-shaped (X.XX) token — mirrors the same handwriting-noise
+        // tolerance already applied to parseMetered's charge token
+        // (backlog 964b13e2) — instead of the first digit run encountered.
+        const _faLineMatch = page.match(/(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\n]*/i);
+        if (_faLineMatch) {
+          const _faToks = [...(_faLineMatch[0].matchAll(/-?[\d,]+\.\d{2}-?/g) || [])].map((m) => m[0]);
+          const _faTok = _faToks.length ? _faToks[_faToks.length - 1] : null;
+          if (_faTok) {
+            let s = _faTok;
+            let trailingMinus = false;
+            if (s.endsWith('-')) {
+              trailingMinus = true;
+              s = s.slice(0, -1);
+            }
+            signedFuelAdj = parseFloat(s.replace(/[\$,]/g, ''));
+            if (signedFuelAdj > 0 && trailingMinus) signedFuelAdj = -signedFuelAdj;
+          }
         }
       }
 
