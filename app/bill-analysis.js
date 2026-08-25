@@ -12960,43 +12960,60 @@ async function processPDF(file) {
           // there is no reliable signal to pick a winner for them — left untouched
           // rather than guessed.
           if (hasAltPasses && rule.name === 'Evergy') {
-            const METER_FIELDS = ['StartRead', 'EndRead', 'ReadDifference', 'MeterMultiplier', 'kWhConsumed'];
             const pf3 = (v) =>
               v !== undefined && v !== null && v !== '' ? parseFloat(String(v).replace(/,/g, '')) : NaN;
             const acctKey = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
             const IDENTITY_TOL = 0.02; // OCR hundredths-place rounding slack
-            // How many of the two physical meter-row identities does this
-            // bill-shaped object satisfy, out of how many were even checkable
-            // (some fields may be missing)? {score, checks}. checks===0 means
-            // there wasn't enough data to validate either identity at all.
-            const consistency = (obj) => {
-              const sr = pf3(obj.StartRead),
-                er = pf3(obj.EndRead),
-                rd = pf3(obj.ReadDifference),
-                mm = pf3(obj.MeterMultiplier),
-                kw = pf3(obj.kWhConsumed);
-              let score = 0,
-                checks = 0;
-              if (!isNaN(sr) && !isNaN(er) && !isNaN(rd)) {
-                checks++;
-                if (Math.abs(er - sr - rd) <= IDENTITY_TOL) score++;
-              }
-              if (!isNaN(rd) && !isNaN(mm) && !isNaN(kw)) {
-                checks++;
-                if (Math.abs(rd * mm - kw) <= Math.max(1, kw * 0.001)) score++;
-              }
-              return { score, checks };
-            };
+            const ALL_METER_FIELDS = ['StartRead', 'EndRead', 'ReadDifference', 'MeterMultiplier', 'kWhConsumed'];
+            // Two independent physical identities, checked and reconciled
+            // SEPARATELY rather than as one all-or-nothing group. On the bills
+            // this targets, it's common for exactly one field in a trio to be
+            // OCR-corrupted while the other two (and thus the OTHER identity's
+            // trio) are perfectly readable — e.g. Louisburg acct 1257228027's
+            // 06/29-07/29 bill has a correct StartRead/ReadDifference/
+            // MeterMultiplier/kWhConsumed on its one alternate pass, but a
+            // corrupted EndRead (13200.8243 misread from 13290.8243) that alone
+            // breaks the EndRead-StartRead=ReadDifference identity. Requiring
+            // BOTH identities to hold before trusting ANY field (the prior
+            // version of this fix) threw away 3 recoverable, individually-
+            // verified-correct fields along with the 1 genuinely bad one.
+            // Splitting into two groups recovers everything an identity CAN
+            // verify, while still never guessing a field no identity confirms
+            // (EndRead/StartRead stay untouched here, correctly, because every
+            // candidate's own EndRead-StartRead=ReadDifference check fails).
+            const GROUPS = [
+              {
+                fields: ['StartRead', 'EndRead', 'ReadDifference'],
+                label: 'EndRead-StartRead=ReadDifference',
+                check: (obj) => {
+                  const sr = pf3(obj.StartRead),
+                    er = pf3(obj.EndRead),
+                    rd = pf3(obj.ReadDifference);
+                  if (isNaN(sr) || isNaN(er) || isNaN(rd)) return false;
+                  return Math.abs(er - sr - rd) <= IDENTITY_TOL;
+                },
+              },
+              {
+                fields: ['ReadDifference', 'MeterMultiplier', 'kWhConsumed'],
+                label: 'ReadDifference*MeterMultiplier=kWhConsumed',
+                check: (obj) => {
+                  const rd = pf3(obj.ReadDifference),
+                    mm = pf3(obj.MeterMultiplier),
+                    kw = pf3(obj.kWhConsumed);
+                  if (isNaN(rd) || isNaN(mm) || isNaN(kw)) return false;
+                  return Math.abs(rd * mm - kw) <= Math.max(1, kw * 0.001);
+                },
+              },
+            ];
             for (const b of finalBills) {
-              if (!METER_FIELDS.some((f) => b[f])) continue; // no meter-read fields on this bill at all
+              if (!ALL_METER_FIELDS.some((f) => b[f])) continue; // no meter-read fields on this bill at all
               const bAcct = acctKey(b.AccountNumber);
               if (!bAcct) continue; // can't verify same account — never guess across accounts
-              const bCons = consistency(b);
-              if (bCons.checks > 0 && bCons.score === bCons.checks) continue; // already fully self-consistent — leave untouched
               // Gather every captured pass's OWN reading of this bill's meter row,
               // matched by BOTH billing period AND account number so pooled
               // multi-page/multi-account pass text can never resolve to a
               // DIFFERENT account's bill, even when two accounts share a period.
+              // Fetched once per bill and reused for both groups below.
               const matchedReadings = [];
               for (const passes of Object.values(passTexts)) {
                 for (const p of passes) {
@@ -13011,50 +13028,43 @@ async function processPDF(file) {
                         acctKey(ab.AccountNumber) === bAcct,
                     );
                     if (!altBill) continue; // this pass's text isn't this bill's account/page — skip, don't guess
-                    matchedReadings.push({ scale: p.scale, label: p.label, altBill, cons: consistency(altBill) });
+                    matchedReadings.push({ scale: p.scale, label: p.label, altBill });
                   } catch (e) {
                     /* alt extraction failed, skip */
                   }
                 }
               }
               if (!matchedReadings.length) continue; // no alternate pass to compare against
-              // Only candidates that satisfy every identity they can be checked
-              // against are trustworthy enough to adopt wholesale.
-              const cleanCandidates = matchedReadings.filter(
-                (r) => r.cons.checks > 0 && r.cons.score === r.cons.checks,
-              );
-              if (!cleanCandidates.length) continue; // no fully-consistent alternate — never guess
-              // If more than one clean candidate exists, they must agree with each
-              // other on every field to be trusted — two consistent-but-different
-              // readings is exactly the ambiguous case this fix must never guess on.
-              const refBill = cleanCandidates[0].altBill;
-              const allCleanAgree = cleanCandidates.every((r) =>
-                METER_FIELDS.every((f) => {
-                  const a = pf3(r.altBill[f]),
-                    c = pf3(refBill[f]);
-                  return (isNaN(a) && isNaN(c)) || Math.abs(a - c) <= IDENTITY_TOL;
-                }),
-              );
-              if (!allCleanAgree) continue; // ambiguous — never guess
-              // Adopt the winning candidate's ENTIRE meter-row group together
-              // (never mix fields across passes — that would recreate the
-              // Frankenstein-inconsistent readings this fix exists to eliminate).
-              for (const f of METER_FIELDS) {
-                const curVal = pf3(b[f]);
-                const winVal = pf3(refBill[f]);
-                if (isNaN(winVal)) continue; // winner doesn't have this field either
-                if (!isNaN(curVal) && Math.abs(winVal - curVal) <= IDENTITY_TOL) continue; // already matches
-                b['_consensus_recovered_' + f] = {
-                  original: b[f],
-                  corrected: refBill[f],
-                  reason:
-                    "This bill's own meter-row reading failed the EndRead-StartRead=ReadDifference / " +
-                    'ReadDifference*MeterMultiplier=kWhConsumed identity check — adopted the reading from an ' +
-                    'alternate OCR pass (' +
-                    cleanCandidates[0].label +
-                    ') for this same account that satisfies both identities.',
-                };
-                b[f] = refBill[f];
+              for (const group of GROUPS) {
+                if (group.check(b)) continue; // this identity already holds on the bill's own reading — leave untouched
+                const cleanCandidates = matchedReadings.filter((r) => group.check(r.altBill));
+                if (!cleanCandidates.length) continue; // no candidate satisfies this identity either — never guess
+                // If more than one candidate satisfies this identity, they must
+                // agree with each other on this group's fields to be trusted —
+                // two identity-satisfying-but-different readings is exactly the
+                // ambiguous case this fix must never guess on.
+                const refBill = cleanCandidates[0].altBill;
+                const allAgree = cleanCandidates.every((r) =>
+                  group.fields.every((f) => Math.abs(pf3(r.altBill[f]) - pf3(refBill[f])) <= IDENTITY_TOL),
+                );
+                if (!allAgree) continue; // ambiguous — never guess
+                for (const f of group.fields) {
+                  const curVal = pf3(b[f]);
+                  const winVal = pf3(refBill[f]);
+                  if (isNaN(winVal)) continue; // winner doesn't have this field either
+                  if (!isNaN(curVal) && Math.abs(winVal - curVal) <= IDENTITY_TOL) continue; // already matches
+                  b['_consensus_recovered_' + f] = {
+                    original: b[f],
+                    corrected: refBill[f],
+                    reason:
+                      "This bill's own meter-row reading failed the " +
+                      group.label +
+                      ' identity check — adopted the reading from an alternate OCR pass (' +
+                      cleanCandidates[0].label +
+                      ') for this same account that satisfies it.',
+                  };
+                  b[f] = refBill[f];
+                }
               }
             }
           }
