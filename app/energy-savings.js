@@ -8184,7 +8184,7 @@ const UTILITY_RULES = [
       // reads and the charge: "138,771 139,070 299 WATER 30.20". Parse
       // relative to the label.
       const lines = page.split(/\r?\n/);
-      const parseMetered = (raw, labelRe) => {
+      const parseMetered = (raw, labelRe, allowDecimalUsage) => {
         const m = raw.match(labelRe);
         if (!m) return null;
         const before = raw.slice(0, m.index);
@@ -8220,7 +8220,7 @@ const UTILITY_RULES = [
         if (!chargeTok) chargeTok = afterToks[0] || null;
         const charge = _lbg_cleanCents(chargeTok ? chargeTok.replace(':', '.') : null);
         // FIX (2026-08-25, backlog 964b13e2): Tesseract frequently misreads
-        // the thousands-comma in a 4-digit meter read as a decimal point
+        // the thousands-comma in a multi-digit meter read as a decimal point
         // ("9,737" OCRs as "9.737") — the same comma/period confusable
         // already documented and fixed for dollar amounts elsewhere in this
         // file (_wreFixOcrDollar). Reads in this column are always whole
@@ -8234,7 +8234,38 @@ const UTILITY_RULES = [
         // the real Current Reading into StartRead and fabricating a usage of
         // ~9000 (real bill: StartRead became 374, EndRead 9364, Usage 8990,
         // instead of StartRead 9364, EndRead 9737, Usage 373).
-        const beforeFixed = before.replace(/(^|[^\d.,])(\d)\.(\d{3})(?!\d)/g, '$1$2,$3');
+        // FIX (2026-08-25, Louisburg batch 2, backlog TBD): broadened the
+        // digit-run before the dot from a single digit to `\d+` — the same
+        // misread also hits multi-digit reads (real bill: City of Louisburg
+        // water meter, "147,327" OCR'd as "147.327", a 3-digit prefix). The
+        // old single-digit-only pattern never matched that shape, so
+        // "147.327" stayed a non-integer decimal and dropped out of
+        // integerTokens exactly like the "9.737" case above — collapsing a
+        // 3-reading water line to 2 tokens and swapping the real Previous
+        // Reading (147,327) into a fabricated Usage figure while a smaller
+        // stray token (1,897 — the REAL printed usage) got taken as
+        // StartRead instead.
+        //
+        // Gas-only exception: a genuine 3-decimal usage figure that is the
+        // LAST number before the commodity label is legitimate ONLY for gas
+        // (real bill: City of Louisburg gas, "3.339 GAS" — a real
+        // pressure/CCF-adjusted decimal-therms reading on a near-zero-usage
+        // summer bill, not a misread comma). Water/sewer/stormwater usage is
+        // always a whole number, so the identical shape there (real bill:
+        // City of Louisburg water, "58,552" OCR'd as "58.552" then landing
+        // as the last token before "WATER") IS always a misread comma and
+        // must still be fixed. `allowDecimalUsage` (true only for the Gas
+        // call site) gates a trailing-digit lookahead that skips the fix
+        // ONLY on gas lines when nothing numeric follows in this "before"
+        // segment — a misread comma on a meter READ is always followed by
+        // at least one more numeric token (the next reading and/or usage
+        // column), so requiring a following digit (when the exception even
+        // applies) still safely distinguishes the two shapes without
+        // touching the well-established single-digit "9.737" case.
+        const _commaFixRe = allowDecimalUsage
+          ? /(^|[^\d.,])(\d+)\.(\d{3})(?!\d)(?=[^\d]*\d)/g
+          : /(^|[^\d.,])(\d+)\.(\d{3})(?!\d)/g;
+        const beforeFixed = before.replace(_commaFixRe, '$1$2,$3');
         // Parse all numeric tokens in the before segment. Integers >=100
         // are meter reads; decimals >=100 are explicit usage columns (gas
         // CCF prints as "9,648.18"). Small decimals are bar-chart axis
@@ -8291,9 +8322,31 @@ const UTILITY_RULES = [
           const computed = prev === curr ? 0 : Math.abs(curr - prev);
           const currIdx = allBefore.lastIndexOf(curr);
           const trailing = allBefore.slice(currIdx + 1);
-          const decimalUsage = trailing.find(
+          let decimalUsage = trailing.find(
             (n) => !Number.isInteger(n) && n >= 100 && (!computed || Math.abs(n - computed) < computed * 1.0),
           );
+          // FIX (2026-08-25, Louisburg batch 2, backlog TBD): the >=100
+          // floor above exists to reject bar-chart axis-label decimals, but
+          // it also silently rejects a genuinely small decimal usage column
+          // (real bill: City of Louisburg gas, near-zero-usage summer month,
+          // "13,440 13,443 3.339 GAS" — printed usage 3.339 therms, below
+          // the 100 floor, so this branch fell through to the raw
+          // subtraction 3 and truncated the decimal). Magnitude alone can't
+          // tell a real small usage figure from an axis label, so fall back
+          // to position instead: accept a sub-100 decimal ONLY when it's the
+          // token immediately following the current reading (trailing[0] —
+          // nothing else printed between the reading and this number) AND
+          // within 100% relative tolerance of the cross-validated read
+          // diff, same tolerance already trusted for the >=100 case above.
+          // Gated to `allowDecimalUsage` (gas only) — water/sewer/stormwater
+          // usage is always a whole number, so a decimal reaching this far
+          // there is OCR noise, not a legitimate small usage figure.
+          if (decimalUsage == null && computed && allowDecimalUsage) {
+            const adjacent = trailing[0];
+            if (adjacent != null && !Number.isInteger(adjacent) && Math.abs(adjacent - computed) < computed * 1.0) {
+              decimalUsage = adjacent;
+            }
+          }
           if (decimalUsage != null) usage = decimalUsage;
           else usage = computed;
         }
@@ -8357,7 +8410,10 @@ const UTILITY_RULES = [
         // the previous-balance dollar amount, not the current charge.
         if (/Previous\s*Balance/i.test(ln)) continue;
         if (!gas && /\bG[A4]S\b/i.test(ln) && !/FUEL|ADJUSTMENT/i.test(ln)) {
-          gas = parseMetered(ln, /\bG[A4]S\b/i);
+          // allowDecimalUsage=true: gas is the only commodity here whose
+          // usage column can legitimately print a decimal (pressure/CCF
+          // adjustment) — see the parseMetered comment above.
+          gas = parseMetered(ln, /\bG[A4]S\b/i, true);
           gasLineSeen = true;
         }
         // Water label: leading "W" (and optional "M" before it) tolerated as
@@ -8486,16 +8542,22 @@ const UTILITY_RULES = [
       const _currentBillRaw = page.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
       const CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
 
-      // WaterProtectionFee sign reconciliation — never a guess. Tesseract can
-      // drop the leading "-" glyph off a printed credit line (confirmed on a
-      // real bill: printed "WATER PROTECTION -$0.69" twice, OCR read both as
-      // positive "0.69" while correctly capturing the minus sign on the
-      // SAME page's negative WATER lines). Cross-validate against the page's
-      // own independently-printed Current Bill total — the same anchor
-      // _lbg_buildGasBill already trusts for gas reconciliation. Only flips
-      // the sign when doing so is the UNIQUE change that makes every line
-      // item sum to the printed total; otherwise leaves it alone.
-      if (CurrentBillTotal != null && wpf.charge) {
+      // Sign reconciliation (WaterProtectionFee, FuelAdjustment) — never a
+      // guess. Tesseract can drop the leading "-" glyph off a printed
+      // credit/adjustment line: confirmed for WaterProtectionFee (printed
+      // "WATER PROTECTION -$0.69" twice, OCR read both as positive "0.69"
+      // while correctly capturing the minus sign on the SAME page's
+      // negative WATER lines) and, same class, for FuelAdjustment (real
+      // bill, City of Louisburg gas, printed "FUEL ADJUSTMENT -0.17" with no
+      // minus glyph at all surviving OCR — batch-2 fix). Cross-validate
+      // against the page's own independently-printed Current Bill total —
+      // the same anchor _lbg_buildGasBill already trusts for gas
+      // reconciliation. Only flips a field's sign when doing so is the
+      // UNIQUE single-field change that makes every line item sum to the
+      // printed total; if flipping either field (or neither) reconciles,
+      // leaves both alone rather than guess.
+      let _faSignCorrected = false;
+      if (CurrentBillTotal != null) {
         const _rawSum =
           (gas.charge || 0) +
           (signedFuelAdj || 0) +
@@ -8503,10 +8565,18 @@ const UTILITY_RULES = [
           (wpf.charge || 0) +
           (sewer.charge || 0) +
           (storm.charge || 0);
-        const _flippedSum = _rawSum - 2 * wpf.charge;
-        if (Math.abs(_rawSum - CurrentBillTotal) > 0.01 && Math.abs(_flippedSum - CurrentBillTotal) < 0.01) {
-          wpf.charge = -wpf.charge;
-          wpf._signCorrected = true;
+        if (Math.abs(_rawSum - CurrentBillTotal) > 0.01) {
+          const _wpfFlipSum = wpf.charge ? _rawSum - 2 * wpf.charge : null;
+          const _faFlipSum = signedFuelAdj ? _rawSum - 2 * signedFuelAdj : null;
+          const _wpfWorks = _wpfFlipSum != null && Math.abs(_wpfFlipSum - CurrentBillTotal) < 0.01;
+          const _faWorks = _faFlipSum != null && Math.abs(_faFlipSum - CurrentBillTotal) < 0.01;
+          if (_wpfWorks && !_faWorks) {
+            wpf.charge = -wpf.charge;
+            wpf._signCorrected = true;
+          } else if (_faWorks && !_wpfWorks) {
+            signedFuelAdj = -signedFuelAdj;
+            _faSignCorrected = true;
+          }
         }
       }
 
@@ -8541,7 +8611,14 @@ const UTILITY_RULES = [
         signedFuelAdj,
         _gasBillDate,
       );
-      if (gasBill) bills.push(gasBill);
+      if (gasBill) {
+        if (_faSignCorrected)
+          gasBill._auto_corrected_FuelAdjustment = {
+            reason:
+              'Sign flipped to negative — reconciled against printed Current Bill total (OCR dropped the credit minus sign).',
+          };
+        bills.push(gasBill);
+      }
       if (water.charge != null && water.charge !== 0) {
         const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
         const waterBill = {
