@@ -89,7 +89,6 @@ const ELECTRIC_FIELD_MAP = {
     tdc_rate: 'TDCRate',
     tax_exempt_delivery_cost: 'TaxExemptDelivery',
     bill_offset: 'BillOffset',
-    subtotal: 'TotalCurrentCharges',
     current_charges: 'TotalCurrentCharges',
     rkva_charge: 'RkVACharge',
     rkva_rate: 'RkVARate',
@@ -173,6 +172,14 @@ const MUNICIPAL_KNOWN_UNMAPPED_TOP = ['total_current_charges', 'total_amount_due
 // captured by the app's model, e.g. account-balance bookkeeping on the
 // municipal bill). Logged separately, never counted as pass or fail.
 const KNOWN_UNMAPPED = new Set([
+  // GT `subtotal` (pre-franchise-fee/pre-tax) has no distinct extracted
+  // field — the extractor only tracks the final billed total
+  // (TotalCurrentCharges, already correctly diffed against GT
+  // `current_charges`). Previously both GT fields were mapped to the SAME
+  // extracted field, so `subtotal` failed on every bill carrying a
+  // franchise fee/tax even though `current_charges` was extracted
+  // correctly. See 2026-08-25 validator failure triage, Class B.
+  'charges.subtotal',
   'charges.previous_balance',
   'charges.payments',
   'charges.adjustments',
@@ -313,8 +320,26 @@ function findExtractedBill(gtBill) {
   const wantStart = gtBill.billing_period_start;
   const wantEnd = gtBill.billing_period_end;
 
-  const candidates = (fileResult.bills || []).filter((b) => normAcct(b.AccountNumber) === wantAcct);
+  let candidates = (fileResult.bills || []).filter((b) => normAcct(b.AccountNumber) === wantAcct);
   if (candidates.length === 0) return { status: 'NO_ACCOUNT_MATCH', file, candidateCount: fileResult.bills.length };
+
+  // Disambiguate multiple same-account candidates (e.g. one account with two
+  // simultaneous meters billed for the identical period, such as Louisburg
+  // High School's main meter + Ballfields meter on account 2885731561) using
+  // RateSchedule — a stable identifying field, independent of account/period,
+  // that GT records for every electric bill (54/54) and that ties each GT
+  // record to exactly one extracted record when it billed under a different
+  // rate schedule than its account-mate. Only narrows the candidate set when
+  // it resolves to a SINGLE unambiguous match; otherwise falls through to the
+  // original period-match logic unchanged. See 2026-08-25 validator failure
+  // triage, Class A.
+  if (candidates.length > 1 && gtBill.rate_schedule) {
+    const wantSchedule = gtBill.rate_schedule.toString().trim().toLowerCase();
+    const scheduleMatches = candidates.filter(
+      (b) => (b.RateSchedule || '').toString().trim().toLowerCase() === wantSchedule,
+    );
+    if (scheduleMatches.length === 1) candidates = scheduleMatches;
+  }
 
   // Prefer an exact ISO period match, then fall back to the 5-day fuzz window.
   let best = candidates.find((b) => toISO(b.BillingPeriodStart) === wantStart && toISO(b.BillingPeriodEnd) === wantEnd);
