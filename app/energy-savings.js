@@ -2517,12 +2517,22 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const dotIdx = digitsOnly.indexOf('.');
     const decimals = dotIdx === -1 ? 0 : digitsOnly.length - dotIdx - 1;
     let targetStr = decimals > 0 ? targetVal.toFixed(decimals) : String(Math.round(targetVal));
-    // A stray leading digit is a common OCR misread (e.g. "84385" read for true "4385") — the fix for
-    // that IS a plausible single-digit substitution (the extra leading digit → '0', which parses back
-    // to the same numeric value). Left-pad the shorter target with zeros so that case can be reached;
-    // do NOT do the reverse (never shrink the target to fit a shorter OCR string — that would mean
-    // fabricating a missing digit, not correcting a misread one).
-    if (targetStr.length < digitsOnly.length) targetStr = targetStr.padStart(digitsOnly.length, '0');
+    // FIX (2026-08-24, Louisburg visual audit bug #5/#8): this used to left-pad a shorter
+    // arithmetic target with a leading zero so a "stray leading digit" could be treated as a
+    // plausible single-digit substitution. That is unsound: the digit-count MISMATCH this
+    // branch exists to paper over is exactly as likely to mean "the arithmetic TARGET is wrong
+    // because a SIBLING column (EndRead/StartRead/Difference/kWh) was itself OCR-garbled" as it
+    // is to mean "this OCR string genuinely has a spurious extra leading digit." On the
+    // Maintenance Bldg April 2026 bill (account 0669287870) it was the former: EndRead's raw
+    // OCR ("B4,784.6376") lost its leading 8 to a letter-for-digit misread earlier in the
+    // pipeline, which made the row's own checksum target one digit short — and this padding
+    // branch then rewrote the ALREADY-CORRECT StartRead ("84,385.0790", matching the printed
+    // bill exactly) down to "04385.0790" to chase that corrupted target. Enforcing the EXACT
+    // digit-count match this function's own header comment already promises ("no digit
+    // insertion/deletion — that's a different failure mode, not a misread") means a length
+    // mismatch is now always rejected here, never silently patched over. A genuinely missing
+    // leading digit is instead recovered structurally, with its own explicit evidence
+    // (sibling-column digit-count comparison), by the MISSING-LEADING-DIGIT RECOVERY pass below.
     if (targetStr.length !== digitsOnly.length) return null; // digit count mismatch — not a simple misread
     const diffPositions = [];
     for (let i = 0; i < digitsOnly.length; i++) {
@@ -2546,6 +2556,39 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       digitIdx++;
     }
     return fixed;
+  }
+  // Enumerates every SINGLE plausible confusable-digit substitution of `ocrStr` (added
+  // 2026-08-24, Louisburg visual audit bug #8, for the joint EndRead/StartRead recovery tier
+  // below). Unlike _reconcileNumber, this does not test against one arithmetic target — it
+  // returns the whole candidate set (comma stripped from output, matching _reconcileNumber's
+  // contract) so a caller can search for a pairing that satisfies an identity spanning two
+  // independently-garbled columns. Bounded: at most (digit count) x (confusable alternatives
+  // per digit, typically 2-5) candidates, so a 10-character read produces well under 50.
+  function _singleDigitCandidates(ocrStr) {
+    if (!ocrStr) return [];
+    const digitsOnly = ocrStr.replace(/,/g, '');
+    const out = [];
+    for (let i = 0; i < digitsOnly.length; i++) {
+      const ch = digitsOnly[i];
+      if (ch === '.') continue;
+      const opts = new Set(_CONFUSABLE[ch] || []);
+      for (const k of Object.keys(_CONFUSABLE)) {
+        if (_CONFUSABLE[k].includes(ch)) opts.add(k);
+      }
+      opts.delete(ch);
+      for (const rep of opts) {
+        let digitIdx = 0;
+        let rebuilt = '';
+        for (let j = 0; j < ocrStr.length; j++) {
+          if (ocrStr[j] === ',') continue;
+          rebuilt += digitIdx === i ? rep : ocrStr[j];
+          digitIdx++;
+        }
+        const val = parseFloat(rebuilt);
+        if (isFinite(val)) out.push({ str: rebuilt, val });
+      }
+    }
+    return out;
   }
   // Normalize OCR artifacts in meter row numeric fields (colons → commas, strip non-numeric junk)
   for (const row of _meterRows) {
@@ -2600,6 +2643,60 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     }
   }
+  // ── MISSING-LEADING-DIGIT RECOVERY (groups 4/5: EndRead/StartRead) ──
+  // Added 2026-08-24 (Louisburg visual audit bug #5/#8) alongside removing the unsound
+  // leading-digit-pad branch from _reconcileNumber above. A meter's EndRead and StartRead are
+  // the same physical register, read on nearly the same date, so they always share the same
+  // integer-digit count (or EndRead has exactly one MORE digit than StartRead, on a genuine
+  // meter rollover — never fewer). When OCR drops a leading digit from one of them (e.g. an "8"
+  // misread as a letter that a later normalize pass blanks to whitespace — confirmed root cause
+  // on the Maint Bldg April 2026 bill, account 0669287870: "84,784.6376" OCR'd as "B4,784.6376"
+  // then normalized to " 4,784.6376", losing the 8 entirely), that digit-count mismatch against
+  // its sibling column IS the missing evidence — restoring the sibling's leading digit(s) is a
+  // structural repair (same category as the missing-decimal recovery above), not a digit GUESS,
+  // so it does not go through the confusable-digit plausibility gate at all. Like the
+  // missing-decimal recovery above, only adopted when it is a STRICT improvement to this row's
+  // own EndRead-StartRead≈Difference checksum, so it can never fire on (and never regress) a
+  // row where both columns already agree.
+  for (const row of _meterRows) {
+    if (row._fixedEndRead || row._fixedStartRead) continue; // already structurally repaired above
+    const endDigits = (row[4] || '').replace(/,/g, '').split('.')[0];
+    const startDigits = (row[5] || '').replace(/,/g, '').split('.')[0];
+    if (!endDigits || !startDigits || !/^\d+$/.test(endDigits) || !/^\d+$/.test(startDigits)) continue;
+    const pn0b = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
+    const rawEnd = pn0b(row[4]),
+      rawStart = pn0b(row[5]),
+      rawDiffCol = pn0b(row[6]);
+    if (rawEnd <= 0 || rawStart <= 0) continue;
+    const rawGap = Math.abs(rawEnd - rawStart - rawDiffCol);
+    let candEndStr = null,
+      candStartStr = null,
+      candVal = null;
+    if (startDigits.length - endDigits.length === 1) {
+      // EndRead is short exactly one leading digit — borrow StartRead's leading digit.
+      candEndStr = startDigits[0] + row[4];
+      candVal = parseFloat(candEndStr.replace(/,/g, ''));
+    } else if (endDigits.length - startDigits.length === 1) {
+      // StartRead is short exactly one leading digit — borrow EndRead's leading digit.
+      candStartStr = endDigits[0] + row[5];
+      candVal = parseFloat(candStartStr.replace(/,/g, ''));
+    } else {
+      continue; // not a single-digit sibling mismatch — outside this recovery's evidence
+    }
+    const candEnd = candEndStr ? candVal : rawEnd;
+    const candStart = candStartStr ? candVal : rawStart;
+    const candGap = Math.abs(candEnd - candStart - rawDiffCol);
+    if (candGap < rawGap) {
+      if (candEndStr) {
+        row._fixedEndRead = candEndStr;
+        row._endReadOriginal = row[4].replace(/,/g, '');
+      }
+      if (candStartStr) {
+        row._fixedStartRead = candStartStr;
+        row._startReadOriginal = row[5].replace(/,/g, '');
+      }
+    }
+  }
   // Apply checksum-driven reconciliation to meter rows. Two identities hold on a clean row:
   //   (1) EndRead - StartRead = Difference
   //   (2) Difference × Multiplier = kWh Used
@@ -2631,7 +2728,17 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
     const _tryFixReads = (trustedDiff) => {
       const diffTimesM = parseFloat((trustedDiff * mult).toFixed(4));
-      const kwhMatch = kwhUsed > 0 && Math.abs(diffTimesM - kwhUsed) < 1;
+      // TOLERANCE (fix, 2026-08-24, Louisburg visual audit bug #8): Difference x Multiplier =
+      // kWh Used is an EXACT restatement on an Evergy meter-read row, not a rounded rate calc —
+      // the bill prints the same number twice (once as "Read Difference", again as "kWh Used")
+      // whenever Multiplier is 1.0000, which is the common case. The old `< 1` tolerance was
+      // loose enough to accept an OCR-garbled Difference (Maint Bldg Meter 2, raw "558.8080"
+      // vs true/kWh-corroborated "558.9090", off by 0.101) as "confirmed," which then let this
+      // function corrupt an EndRead that was only one digit off from correct into one that was
+      // three digits off. Tightened to match the columns' own 4-decimal precision so a
+      // genuinely-wrong Difference is rejected here and left for the kWh-derived correction
+      // (Tier 2 below) instead of being trusted to rewrite the reads.
+      const kwhMatch = kwhUsed > 0 && Math.abs(diffTimesM - kwhUsed) < 0.01;
       if (!kwhMatch) return false; // can't trust this Difference value, don't touch the reads
       const expectedEnd = parseFloat((startR + trustedDiff).toFixed(4));
       const expectedStart = parseFloat((endR - trustedDiff).toFixed(4));
@@ -2686,6 +2793,40 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         if (fixedDiff2) {
           row._fixedDifference = fixedDiff2;
           row._differenceOriginal = row[6].replace(/,/g, '');
+        }
+      }
+    }
+
+    // Tier 4 (added 2026-08-24, Louisburg visual audit bug #8): EndRead AND StartRead are
+    // BOTH individually OCR-garbled by one digit each. Tiers 1-3 only ever hold ONE side fixed
+    // (at its raw, possibly-wrong value) while solving for the other, so they never find a fix
+    // when both sides need correcting at once — confirmed on Maint Bldg Meter 2 (account
+    // 0669287870, April 2026): raw EndRead "58,674.0800" (true "58,674.0600") and raw StartRead
+    // "58,116.1510" (true "58,115.1510") each need exactly one plausible digit swap, but neither
+    // swap alone reconciles against the OTHER column's still-raw value. Only reached once the
+    // Difference column is trusted (either it already agreed, or Tier 2/3 already corrected it)
+    // and both reads are still untouched — i.e., there is no simpler single-column explanation
+    // left. Searches EndRead's single-digit-substitution candidates (bounded, see
+    // _singleDigitCandidates) and asks _reconcileNumber to find a single-digit StartRead that
+    // pairs with each one to satisfy the trusted Difference exactly; a fix is only adopted when
+    // that search returns EXACTLY ONE candidate pair, so an ambiguous row (multiple equally
+    // plausible pairings) is left alone rather than guessed.
+    if (!row._fixedEndRead && !row._fixedStartRead) {
+      const trustedDiffFinal = row._fixedDifference ? parseFloat(row._fixedDifference) : diff;
+      const stillOff = trustedDiffFinal > 0 && Math.abs(endR - startR - trustedDiffFinal) > 0.001;
+      if (stillOff) {
+        const endCands = _singleDigitCandidates(row[4]);
+        const pairMatches = [];
+        for (const ec of endCands) {
+          const neededStart = parseFloat((ec.val - trustedDiffFinal).toFixed(4));
+          const fixedStartTry = _reconcileNumber(row[5], neededStart, 1);
+          if (fixedStartTry) pairMatches.push({ end: ec.str, start: fixedStartTry });
+        }
+        if (pairMatches.length === 1) {
+          row._fixedEndRead = pairMatches[0].end;
+          row._endReadOriginal = row[4].replace(/,/g, '');
+          row._fixedStartRead = pairMatches[0].start;
+          row._startReadOriginal = row[5].replace(/,/g, '');
         }
       }
     }
