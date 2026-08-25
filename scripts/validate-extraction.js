@@ -32,6 +32,17 @@ const path = require('path');
 const GT_PATH = 'C:\\Users\\Matt Miller\\AI\\_context\\ground-truth\\louisburg-bills.json';
 const SWEEP_RESULTS_PATH =
   process.env.SWEEP_RESULTS || 'C:\\Users\\Matt Miller\\AI\\_context\\temp\\validator-sweep\\sweep-results.json';
+// Deliberately SEPARATE from SWEEP_RESULTS_PATH. The 11 PDFs the gas ground
+// truth references (louisburg-gt-gas-1/-2.json) were never part of the
+// original 17-file electric sweep. Two of them (SKM_C551i26081114010.pdf,
+// SKM_C551i26080715250.pdf) also happen to contain Evergy electric pages —
+// merging their extraction into sweep-results.json would silently change
+// which electric ground-truth bills get matched (50->54, 1180->1253 fields)
+// even though no electric scoring LOGIC changed. Keeping the gas sweep in
+// its own file guarantees the electric path stays byte-for-byte unchanged.
+const GAS_SWEEP_RESULTS_PATH =
+  process.env.GAS_SWEEP_RESULTS ||
+  'C:\\Users\\Matt Miller\\AI\\_context\\temp\\validator-sweep\\sweep-results-gas.json';
 const OUT_PATH =
   process.env.VALIDATION_OUT || 'C:\\Users\\Matt Miller\\AI\\_context\\temp\\validator-sweep\\validation-results.json';
 
@@ -78,7 +89,6 @@ const ELECTRIC_FIELD_MAP = {
     tdc_rate: 'TDCRate',
     tax_exempt_delivery_cost: 'TaxExemptDelivery',
     bill_offset: 'BillOffset',
-    subtotal: 'TotalCurrentCharges',
     current_charges: 'TotalCurrentCharges',
     rkva_charge: 'RkVACharge',
     rkva_rate: 'RkVARate',
@@ -103,10 +113,73 @@ const GAS_FIELD_MAP = {
 };
 const GAS_METER_READING_FIELDS = [{ gtPath: 'meter_readings.gas.usage', extField: 'NaturalGasTherms' }];
 
+// ---------------------------------------------------------------------------
+// GAS GROUND TRUTH (louisburg-gt-gas-1.json / -gas-2.json), added
+// 2026-08-25. Separate ground-truth fixture set covering all City of
+// Louisburg combined municipal bills (gas+water+sewer+stormwater and
+// water-only accounts), 25 bills total. Schema differs from the single
+// bill_type:"gas" record embedded in the electric fixture (see
+// GAS_FIELD_MAP above, left untouched) — here `water`/`gas` are top-level
+// objects (or, for multi-meter water service, an array of per-meter
+// objects), and `sewer_charge`/`stormwater_charge`/`water_protection_fee`
+// are top-level siblings, not nested under `charges`.
+//
+// Extraction model note: app/bill-analysis.js does NOT emit one combined
+// record per account+period for these bills. It splits each municipal-bill
+// page into ONE EXTRACTED RECORD PER COMMODITY (Commodity: 'Gas' | 'Water'
+// | 'Sewer' | 'Stormwater'), all sharing the same AccountNumber/billing
+// period. So matching a gas-ground-truth bill requires finding the right
+// *commodity-tagged* extracted record for each field group, not a single
+// merged record like the electric path uses.
+// ---------------------------------------------------------------------------
+const GAS_GT_PATHS = [
+  'C:\\Users\\Matt Miller\\AI\\_context\\ground-truth\\louisburg-gt-gas-1.json',
+  'C:\\Users\\Matt Miller\\AI\\_context\\ground-truth\\louisburg-gt-gas-2.json',
+];
+
+// gt dotted-path -> extractor field, grouped by which Commodity-tagged
+// extracted record to read it from.
+const MUNICIPAL_COMMODITY_FIELDS = {
+  gas: {
+    commodity: 'Gas',
+    fields: {
+      'gas.meter_start_read': 'StartRead',
+      'gas.meter_end_read': 'EndRead',
+      'gas.therms': 'NaturalGasTherms',
+      'gas.gas_charge': 'GasCharge',
+      'gas.fuel_adjustment': 'FuelAdjustment',
+    },
+  },
+  sewer: {
+    commodity: 'Sewer',
+    fields: { sewer_charge: 'SewerCharge' },
+  },
+  stormwater: {
+    commodity: 'Stormwater',
+    fields: { stormwater_charge: 'StormWaterCharge' },
+  },
+};
+
+// total_current_charges / total_amount_due are intentionally NOT compared:
+// the extractor has no single field representing the full combined-bill
+// total across commodities (each commodity's own TotalAmountDue is only
+// that commodity's subtotal) -- comparing gt's grand total against any one
+// commodity record would be a structurally-guaranteed mismatch, not a real
+// extraction defect. Logged as unmapped instead.
+const MUNICIPAL_KNOWN_UNMAPPED_TOP = ['total_current_charges', 'total_amount_due'];
+
 // Fields intentionally NOT diffed (no corresponding extractor field / not
 // captured by the app's model, e.g. account-balance bookkeeping on the
 // municipal bill). Logged separately, never counted as pass or fail.
 const KNOWN_UNMAPPED = new Set([
+  // GT `subtotal` (pre-franchise-fee/pre-tax) has no distinct extracted
+  // field — the extractor only tracks the final billed total
+  // (TotalCurrentCharges, already correctly diffed against GT
+  // `current_charges`). Previously both GT fields were mapped to the SAME
+  // extracted field, so `subtotal` failed on every bill carrying a
+  // franchise fee/tax even though `current_charges` was extracted
+  // correctly. See 2026-08-25 validator failure triage, Class B.
+  'charges.subtotal',
   'charges.previous_balance',
   'charges.payments',
   'charges.adjustments',
@@ -221,6 +294,18 @@ if (!fs.existsSync(SWEEP_RESULTS_PATH)) {
 
 const gt = JSON.parse(fs.readFileSync(GT_PATH, 'utf8'));
 const sweep = JSON.parse(fs.readFileSync(SWEEP_RESULTS_PATH, 'utf8'));
+// Gas sweep is optional at load time (only needed once we reach the gas run
+// near the end of the file) but checked eagerly here so failures surface
+// before burning time on the electric run.
+if (!fs.existsSync(GAS_SWEEP_RESULTS_PATH)) {
+  console.error(
+    'FATAL: gas extraction sweep results not found at ' +
+      GAS_SWEEP_RESULTS_PATH +
+      '\nGenerate it first with: node "C:\\Users\\Matt Miller\\AI\\_context\\temp\\validator-sweep\\run-gas-sweep.js"',
+  );
+  process.exit(2);
+}
+const sweepGas = JSON.parse(fs.readFileSync(GAS_SWEEP_RESULTS_PATH, 'utf8'));
 
 // ---------------------------------------------------------------------------
 // Match each ground-truth bill to an extracted record
@@ -235,8 +320,26 @@ function findExtractedBill(gtBill) {
   const wantStart = gtBill.billing_period_start;
   const wantEnd = gtBill.billing_period_end;
 
-  const candidates = (fileResult.bills || []).filter((b) => normAcct(b.AccountNumber) === wantAcct);
+  let candidates = (fileResult.bills || []).filter((b) => normAcct(b.AccountNumber) === wantAcct);
   if (candidates.length === 0) return { status: 'NO_ACCOUNT_MATCH', file, candidateCount: fileResult.bills.length };
+
+  // Disambiguate multiple same-account candidates (e.g. one account with two
+  // simultaneous meters billed for the identical period, such as Louisburg
+  // High School's main meter + Ballfields meter on account 2885731561) using
+  // RateSchedule — a stable identifying field, independent of account/period,
+  // that GT records for every electric bill (54/54) and that ties each GT
+  // record to exactly one extracted record when it billed under a different
+  // rate schedule than its account-mate. Only narrows the candidate set when
+  // it resolves to a SINGLE unambiguous match; otherwise falls through to the
+  // original period-match logic unchanged. See 2026-08-25 validator failure
+  // triage, Class A.
+  if (candidates.length > 1 && gtBill.rate_schedule) {
+    const wantSchedule = gtBill.rate_schedule.toString().trim().toLowerCase();
+    const scheduleMatches = candidates.filter(
+      (b) => (b.RateSchedule || '').toString().trim().toLowerCase() === wantSchedule,
+    );
+    if (scheduleMatches.length === 1) candidates = scheduleMatches;
+  }
 
   // Prefer an exact ISO period match, then fall back to the 5-day fuzz window.
   let best = candidates.find((b) => toISO(b.BillingPeriodStart) === wantStart && toISO(b.BillingPeriodEnd) === wantEnd);
@@ -253,6 +356,145 @@ function findExtractedBill(gtBill) {
     };
   }
   return { status: 'MATCHED', file, bill: best };
+}
+
+// ---------------------------------------------------------------------------
+// Commodity-aware matcher for the municipal (gas ground-truth) bills — same
+// account/period matching as findExtractedBill() above, but also filters on
+// Commodity, since the extractor emits one record per commodity per page.
+// ---------------------------------------------------------------------------
+function findExtractedCommodityBill(gtBill, commodity) {
+  const file = gtBill.source.split('#')[0];
+  const fileResult = sweepGas[file];
+  if (!fileResult) return { status: 'NO_SWEEP_DATA', file };
+  if (!fileResult.ok) return { status: 'SWEEP_FAILED', file, error: fileResult.error };
+
+  const wantAcct = normAcct(gtBill.account_number);
+  const wantStart = gtBill.billing_period_start;
+  const wantEnd = gtBill.billing_period_end;
+
+  const candidates = (fileResult.bills || []).filter(
+    (b) => normAcct(b.AccountNumber) === wantAcct && b.Commodity === commodity,
+  );
+  if (candidates.length === 0)
+    return { status: 'NO_ACCOUNT_MATCH', file, commodity, candidateCount: fileResult.bills.length };
+
+  let best = candidates.find((b) => toISO(b.BillingPeriodStart) === wantStart && toISO(b.BillingPeriodEnd) === wantEnd);
+  if (!best) {
+    best = candidates.find((b) =>
+      periodClose(wantStart, wantEnd, toISO(b.BillingPeriodStart), toISO(b.BillingPeriodEnd)),
+    );
+  }
+  if (!best) {
+    return {
+      status: 'NO_PERIOD_MATCH',
+      file,
+      commodity,
+      candidatePeriods: candidates.map((b) => toISO(b.BillingPeriodStart) + '..' + toISO(b.BillingPeriodEnd)),
+    };
+  }
+  return { status: 'MATCHED', file, commodity, bill: best };
+}
+
+// ---------------------------------------------------------------------------
+// Diff one municipal (gas ground-truth) bill. Unlike diffBill() below, this
+// pulls fields from up to four different Commodity-tagged extracted records
+// (Gas/Water/Sewer/Stormwater), matched independently, since that's how the
+// extractor represents these bills.
+// ---------------------------------------------------------------------------
+function diffMunicipalBill(gtBill) {
+  const fields = []; // { field, extractedField, expected, actual, pass }
+  const unmapped = [];
+  const matchNotes = [];
+
+  function compareOne(dottedGt, extField, expected, actualBill, commodity) {
+    if (expected === undefined || expected === null) return;
+    const actual = actualBill ? actualBill[extField] : undefined;
+    fields.push({
+      field: dottedGt,
+      extractedField: extField,
+      commodity,
+      expected,
+      actual,
+      pass: numbersMatch(expected, actual),
+    });
+  }
+
+  // --- gas / sewer / stormwater: straightforward single-object groups ---
+  for (const [groupName, spec] of Object.entries(MUNICIPAL_COMMODITY_FIELDS)) {
+    const groupHasAnyGtValue = Object.keys(spec.fields).some((gtPath) => getPath(gtBill, gtPath) !== undefined);
+    if (!groupHasAnyGtValue) continue; // GT doesn't record this commodity for this bill (e.g. water-only account)
+    const match = findExtractedCommodityBill(gtBill, spec.commodity);
+    if (match.status !== 'MATCHED') {
+      matchNotes.push({ commodity: spec.commodity, ...match });
+      for (const [gtPath, extField] of Object.entries(spec.fields)) {
+        const expected = getPath(gtBill, gtPath);
+        if (expected === undefined) continue;
+        fields.push({
+          field: gtPath,
+          extractedField: extField,
+          commodity: spec.commodity,
+          expected,
+          actual: undefined,
+          pass: false,
+        });
+      }
+      continue;
+    }
+    for (const [gtPath, extField] of Object.entries(spec.fields)) {
+      compareOne(gtPath, extField, getPath(gtBill, gtPath), match.bill, spec.commodity);
+    }
+  }
+
+  // --- water: object or array-of-meters, plus water_protection_fee which is
+  // either top-level (gas-1 fixture schema) or nested per-meter (gas-2
+  // fixture schema) ---
+  if (gtBill.water !== undefined) {
+    const isMultiMeter = Array.isArray(gtBill.water);
+    const waterMatch = findExtractedCommodityBill(gtBill, 'Water');
+    const waterBill = waterMatch.status === 'MATCHED' ? waterMatch.bill : null;
+    if (waterMatch.status !== 'MATCHED') matchNotes.push({ commodity: 'Water', ...waterMatch });
+
+    if (isMultiMeter) {
+      unmapped.push(
+        `water[] — ${gtBill.water.length} meters, multi-meter account — skipped per-meter read/usage diff (extractor emits one Water record per page, not per meter), summed water_charge/water_protection_fee compared instead`,
+      );
+      const sumCharge = gtBill.water.reduce((s, w) => s + (parseNum(w.water_charge) || 0), 0);
+      compareOne('water[].water_charge (summed)', 'WaterCharge', sumCharge, waterBill, 'Water');
+      if (gtBill.water.some((w) => w.water_protection_fee !== undefined)) {
+        const sumFee = gtBill.water.reduce((s, w) => s + (parseNum(w.water_protection_fee) || 0), 0);
+        compareOne('water[].water_protection_fee (summed)', 'WaterProtectionFee', sumFee, waterBill, 'Water');
+      }
+    } else {
+      compareOne('water.meter_start_read', 'StartRead', gtBill.water.meter_start_read, waterBill, 'Water');
+      compareOne('water.meter_end_read', 'EndRead', gtBill.water.meter_end_read, waterBill, 'Water');
+      compareOne('water.usage', 'WaterUsage', gtBill.water.usage, waterBill, 'Water');
+      compareOne('water.water_charge', 'WaterCharge', gtBill.water.water_charge, waterBill, 'Water');
+      if (gtBill.water.water_protection_fee !== undefined) {
+        compareOne(
+          'water.water_protection_fee',
+          'WaterProtectionFee',
+          gtBill.water.water_protection_fee,
+          waterBill,
+          'Water',
+        );
+      }
+    }
+    // gas-1 fixture schema: top-level water_protection_fee sibling (not nested per-meter)
+    if (gtBill.water_protection_fee !== undefined) {
+      compareOne('water_protection_fee', 'WaterProtectionFee', gtBill.water_protection_fee, waterBill, 'Water');
+    }
+  }
+
+  for (const gtPath of MUNICIPAL_KNOWN_UNMAPPED_TOP) {
+    if (getPath(gtBill, gtPath) !== undefined) {
+      unmapped.push(
+        `${gtPath} (structural — extractor has no single combined-bill-total field across commodities, not compared)`,
+      );
+    }
+  }
+
+  return { fields, unmapped, matchNotes };
 }
 
 // ---------------------------------------------------------------------------
@@ -445,4 +687,105 @@ console.log('='.repeat(78));
 console.log(`Full machine-readable report: ${OUT_PATH}`);
 console.log('='.repeat(78));
 
-process.exit(totalWrong > 0 || unmatchedBills.length > 0 ? 1 : 0);
+// ---------------------------------------------------------------------------
+// GAS run — separate ground-truth fixtures (louisburg-gt-gas-1/-2.json),
+// separate matcher/diff path (findExtractedCommodityBill/diffMunicipalBill
+// above). Does not touch anything in the electric run above.
+// ---------------------------------------------------------------------------
+let gasBills = [];
+const missingGasGtFiles = GAS_GT_PATHS.filter((p) => !fs.existsSync(p));
+if (missingGasGtFiles.length) {
+  console.error('FATAL: gas ground truth not found: ' + missingGasGtFiles.join(', '));
+  process.exit(2);
+}
+for (const p of GAS_GT_PATHS) {
+  const doc = JSON.parse(fs.readFileSync(p, 'utf8'));
+  for (const b of doc.bills) gasBills.push({ ...b, _gtFile: p });
+}
+
+const gasReport = { gasGroundTruthPaths: GAS_GT_PATHS, gasSweepResultsPath: GAS_SWEEP_RESULTS_PATH, bills: [] };
+let gasTotalFields = 0;
+let gasTotalCorrect = 0;
+let gasTotalWrong = 0;
+const gasUnmatchedBills = [];
+const gasFailuresByBill = [];
+
+for (const gtBill of gasBills) {
+  const { fields, unmapped, matchNotes } = diffMunicipalBill(gtBill);
+  if (fields.length === 0 && matchNotes.length) {
+    // No comparable field got a match at all (e.g. whole source file missing from sweep)
+    gasUnmatchedBills.push({ id: gtBill.id, source: gtBill.source, matchNotes });
+  }
+  gasTotalFields += fields.length;
+  const wrong = fields.filter((f) => !f.pass);
+  gasTotalCorrect += fields.length - wrong.length;
+  gasTotalWrong += wrong.length;
+  if (wrong.length) gasFailuresByBill.push({ id: gtBill.id, source: gtBill.source, failures: wrong });
+  gasReport.bills.push({
+    id: gtBill.id,
+    source: gtBill.source,
+    fieldCount: fields.length,
+    wrongCount: wrong.length,
+    fields,
+    unmapped,
+    matchNotes,
+  });
+}
+
+gasReport.summary = {
+  totalGroundTruthBills: gasBills.length,
+  totalFieldsCompared: gasTotalFields,
+  totalFieldsCorrect: gasTotalCorrect,
+  totalFieldsWrong: gasTotalWrong,
+};
+
+const combinedSummary = {
+  totalFieldsCompared: totalFields + gasTotalFields,
+  totalFieldsCorrect: totalCorrect + gasTotalCorrect,
+  totalFieldsWrong: totalWrong + gasTotalWrong,
+};
+
+console.log('');
+console.log('='.repeat(78));
+console.log('GAS EXTRACTION VALIDATION REPORT (louisburg-gt-gas-1/-2.json)');
+console.log('='.repeat(78));
+console.log(`Ground truth bills: ${gasBills.length}`);
+console.log(`Fields compared: ${gasTotalFields}`);
+console.log(`Correct: ${gasTotalCorrect}`);
+console.log(`Wrong: ${gasTotalWrong}`);
+console.log('');
+
+if (gasFailuresByBill.length) {
+  console.log('-'.repeat(78));
+  console.log('GAS FIELD FAILURES (grouped by bill)');
+  console.log('-'.repeat(78));
+  for (const b of gasFailuresByBill) {
+    console.log(`\n  ${b.id}  (source=${b.source})`);
+    for (const f of b.failures) {
+      console.log(
+        `    [${f.commodity}] ${f.field} | expected=${JSON.stringify(f.expected)} | actual=${JSON.stringify(f.actual)}`,
+      );
+    }
+  }
+  console.log('');
+} else {
+  console.log('No gas field failures among matched commodity records.');
+}
+
+console.log('='.repeat(78));
+console.log('COMBINED ELECTRIC + GAS TOTAL');
+console.log('='.repeat(78));
+console.log(
+  `Fields compared: ${combinedSummary.totalFieldsCompared}  |  Correct: ${combinedSummary.totalFieldsCorrect}  |  Wrong: ${combinedSummary.totalFieldsWrong}`,
+);
+console.log('='.repeat(78));
+
+report.gasGroundTruthPaths = GAS_GT_PATHS;
+report.gasBills = gasReport.bills;
+report.gasSummary = gasReport.summary;
+report.combinedSummary = combinedSummary;
+fs.writeFileSync(OUT_PATH, JSON.stringify(report, null, 2));
+console.log(`Full machine-readable report (electric + gas): ${OUT_PATH}`);
+console.log('='.repeat(78));
+
+process.exit(totalWrong > 0 || unmatchedBills.length > 0 || gasTotalWrong > 0 ? 1 : 0);
