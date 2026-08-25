@@ -3481,7 +3481,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       null,
     AccountNumber:
       acctOverride ||
-      t.match(/Account\s+(?:Number\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
+      // FIX (2026-08-24, Louisburg visual audit bug #6): `\s+` -> `\s*`
+      // between "Account" and "Number" (see `_EVG_ACCT`/`_acctForIdx`
+      // comments for the confirmed real-bill glued-OCR example this covers).
+      t.match(/Account\s*(?:Number\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
       null,
     ServiceAddress: addrOverride || t.match(_EVG_ADDR)?.[1]?.trim() || null,
     RateSchedule: rateMatch?.[1] || null,
@@ -4717,7 +4720,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
 const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
-const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}(\d[\d ]{4,18}\d)/m;
+// FIX (2026-08-24, Louisburg visual audit bug #6): `\s+` -> `\s*` between
+// "Account" and "Number" — real OCR glues them into one token on some pages
+// ("AccountNumber", no space) even though the printed digits are legible.
+// See the matching fix + comment on `_acctForIdx` further below for the
+// confirmed real-bill example.
+const _EVG_ACCT = /[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}(\d[\d ]{4,18}\d)/m;
 const _EVG_ADDR =
   /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
@@ -5074,8 +5082,16 @@ const UTILITY_RULES = [
       };
       const _acctForIdx = (idx) => {
         const pageText = _pageTextForIdx(idx);
+        // FIX (2026-08-24, Louisburg visual audit bug #6): "Account" and
+        // "Number" tolerated `\s+` (one-or-more) between them, requiring a
+        // space. Real OCR on the New HS bill (202 Aquatic Dr, acct
+        // 2885731561, Dec 2025) read the header as one glued token
+        // "AccountNumber" with zero space — confirmed against the rendered
+        // page, where the printed number itself is sharp/unambiguous.
+        // `\s+` -> `\s*` tolerates the glued form while still matching every
+        // spaced form exactly as before (strict superset).
         const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+          ...pageText.matchAll(/[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
         ];
         if (acctMatches.length === 0) return null;
         return acctMatches[0][1].replace(/\s/g, '');
@@ -8086,8 +8102,22 @@ const UTILITY_RULES = [
       // cleaner "105S 5THE" (still garbled, but self-consistent with this
       // same document's Evergy page printing "105 S 5TH ST E LOUISBURG KS" for
       // the same property) — this also continues to match those unchanged.
+      // FIX (2026-08-24, Louisburg visual audit bug #5): tolerate a bounded
+      // run of OCR junk (a stray misread period, comma, etc.) landing
+      // directly against the account-number digits with NO whitespace of
+      // its own — e.g. real OCR text "825 WILDCAT DR                    .09-
+      // 009002-00" (account 09-009002-00, Irrigation, Feb 2026 scan). The
+      // old pattern required `\s+` to be immediately followed by the 2-char
+      // digit class; that stray "." sat between the whitespace run and the
+      // digits, so `\s+` was satisfied by the spaces but the very next
+      // character was "." (not in `[\d(O]`), and no amount of backtracking
+      // group3 could reach it either — the whole regex simply failed to
+      // match, silently dropping a perfectly legible ServiceAddress to
+      // null. Bounded to 3 junk chars (mirrors the existing bounded-gap
+      // tolerance already used for "Account[^0-9A-Za-z\n]{0,6}" above) so
+      // this can't accidentally swallow real address text.
       const custLine = page.match(
-        /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+([0-9A-Z][0-9A-Z .&\-]{3,50}?)\s+[\d(O]{2}-\d{6}-\d{2}/,
+        /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+([0-9A-Z][0-9A-Z .&\-]{3,50}?)\s+[^0-9A-Za-z\n]{0,3}[\d(O]{2}-\d{6}-\d{2}/,
       );
       let CustomerName = custLine ? 'USD ' + custLine[1] + ' ' + custLine[2].trim() : null;
       let ServiceAddress = custLine ? custLine[3].trim() : null;
@@ -8109,12 +8139,31 @@ const UTILITY_RULES = [
         // for the last-resort per-line scan, used when the CustomerName
         // portion of the row didn't match the USD-prefixed pattern at all.
         for (const raw of page.split(/\r?\n/)) {
-          const m = raw.match(/\b([0-9A-Z][0-9A-Z .]{3,40}?)\s+[\d(O]{2}-\d{6}-\d{2}/);
+          // Same bounded-junk tolerance as the primary custLine match above
+          // (bug #5) applied to this last-resort fallback too.
+          const m = raw.match(/\b([0-9A-Z][0-9A-Z .]{3,40}?)\s+[^0-9A-Za-z\n]{0,3}[\d(O]{2}-\d{6}-\d{2}/);
           if (m) {
             ServiceAddress = m[1].trim();
             break;
           }
         }
+      }
+      // FIX (2026-08-24, Louisburg visual audit bug #4): normalize the
+      // recurring OCR garble family for 105 S 5th St E (Broadmoor EMS acct
+      // 02-002360-00 / Maintenance Bldg acct 02-002364-00 — same physical
+      // building, two accounts). Confirmed against 5 real bill renders
+      // (Jan/Feb/Mar 2026) that this address NEVER extracts correctly on
+      // either account: seen garbles include "105S STHE", "105 S5THE",
+      // "105SSTHE", and (on Maint Bldg's own narrower-column print variant)
+      // "105 S5TH E". All of these collapse, once whitespace is stripped,
+      // to either "105SSTHE" (the "5" in "5TH" itself got misread as an
+      // extra "S") or "105S5THE" (the "5" survived, just missing a space).
+      // Normalizing on the whitespace-stripped form catches both families
+      // without needing to enumerate every spacing permutation. Scoped
+      // tightly to this one confirmed address (not a general address
+      // reformatter) so it can't relabel an unrelated property.
+      if (ServiceAddress && /^105S+5?THE$/i.test(ServiceAddress.replace(/\s+/g, ''))) {
+        ServiceAddress = '105 S 5TH E';
       }
 
       // Period row has 5 dates: BillFrom, BillTo, BillFor, BillDate, PenaltyDate
