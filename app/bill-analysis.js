@@ -12380,6 +12380,12 @@ async function processPDF(file) {
           const totalMissing = retryBills.reduce((s, b) => s + countCriticalMissing(b, rule.name), 0);
           const missingRatio = retryBills.length > 0 ? totalMissing / retryBills.length : 0;
           const retryWarranted = worstMissing >= 2 || missingRatio >= 0.1;
+          // Bug (eea98fd5 follow-up, retry/merge pipeline): baseline valid-bill
+          // count captured BEFORE any retry-scale replacement runs, so the
+          // "don't lose bills" guard a few lines below always compares against
+          // the true first-pass result — never an already-degraded state left
+          // over from an earlier scale iteration in this same loop.
+          const _origValidBillCount = validBills.length;
           if (worstMissing > 0 && retryWarranted && typeof Tesseract !== 'undefined') {
             statusMsg(
               'Validating extraction... ' +
@@ -12536,7 +12542,39 @@ async function processPDF(file) {
                       const retryValid = retryBills2.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
                       const retryCheck = retryValid.length ? retryValid : retryBills2;
                       const retryMissing = Math.max(...retryCheck.map((b) => countCriticalMissing(b, retryRule.name)));
-                      if (retryMissing < bestMissing) {
+                      // Guard (eea98fd5 follow-up): `retryValid` above uses a
+                      // STRICTER predicate (BillingPeriodStart/kWhConsumed only)
+                      // than the first pass's own `_singleHasKeyField` (which also
+                      // accepts a real charge field — WaterCharge/GasCharge/
+                      // TotalCurrentCharges — without a parsed period). A
+                      // retry-scale re-render can extract a commodity's charge
+                      // correctly while failing to parse THAT SAME page's billing-
+                      // period date row (or vice versa on a different commodity)
+                      // — that bill is real data, not noise, and would have
+                      // passed the first pass's own filter. Comparing only
+                      // `retryMissing` (the worst-case count among whatever
+                      // SURVIVED the strict filter) rewards a retry pass that
+                      // silently drops whole commodities/pages: fewer surviving
+                      // bills means fewer chances to be "missing" something, so
+                      // a fragmented retry can look artificially perfect. Recount
+                      // retry quality with the SAME lenient predicate the first
+                      // pass used, and refuse the wholesale replace when it would
+                      // leave the file with fewer valid bills than the first pass
+                      // already had — confirmed live on the Louisburg
+                      // eea98fd5/02-002364-00 6-page file: a 3.0x retry pass
+                      // parsed billing periods correctly for Gas/Sewer/Stormwater
+                      // but failed to detect the Water line at all, and a
+                      // SEPARATE account's whole 4-commodity page also lost its
+                      // period — `retryValid.length` (3) looked "0 missing" and
+                      // would otherwise have wholesale-replaced 8 good bills with
+                      // 7, silently dropping Water and an unrelated account's
+                      // entire bill set. This does not weaken `_singleHasKeyField`
+                      // itself (still the real validity check) — it only stops a
+                      // worse-count retry from overwriting a better-count first
+                      // pass.
+                      const retryValidLenient = retryBills2.filter((b) => _singleHasKeyField(b));
+                      const retryWouldLoseBills = retryValidLenient.length < _origValidBillCount;
+                      if (retryMissing < bestMissing && !retryWouldLoseBills) {
                         bestText = retryFull;
                         bestMissing = retryMissing;
                         bills = retryBills2;
