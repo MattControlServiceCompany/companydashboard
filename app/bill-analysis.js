@@ -12372,16 +12372,23 @@ async function processPDF(file) {
             b.WaterUsage ||
             b.GasCharge ||
             b.TotalCurrentCharges;
+          // Fix (code review of 0440be6, should-fix): factored out so the retry-accept
+          // branch below can recompute this AFTER `bills` is wholesale-replaced by
+          // `retryBills2`, instead of leaving a stale pre-retry snapshot in place.
+          const _flagDroppedBills = (arr) => {
+            const dropped = arr.filter((b) => !_singleHasKeyField(b) && !b._manualReview);
+            dropped.forEach((b) => {
+              b.parseError = true;
+              b._manualReview = true;
+              const _pg = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
+              const _pageLabel = _pg != null ? 'p.' + _pg : '?';
+              b._manualReviewLabel = 'Parse error — billing period unreadable (' + _pageLabel + ')';
+              b.UtilityCompany = b.UtilityCompany || (rule && rule.name) || 'Unknown';
+            });
+            return dropped;
+          };
           let validBills = bills.filter((b) => _singleHasKeyField(b));
-          const _singleDroppedBills = bills.filter((b) => !_singleHasKeyField(b) && !b._manualReview);
-          _singleDroppedBills.forEach((b) => {
-            b.parseError = true;
-            b._manualReview = true;
-            const _pg = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
-            const _pageLabel = _pg != null ? 'p.' + _pg : '?';
-            b._manualReviewLabel = 'Parse error — billing period unreadable (' + _pageLabel + ')';
-            b.UtilityCompany = b.UtilityCompany || (rule && rule.name) || 'Unknown';
-          });
+          let _singleDroppedBills = _flagDroppedBills(bills);
 
           // ── OCR RETRY: If critical fields are missing, retry with enhanced OCR ──
           // Trigger threshold: only retry when the total missing-field count
@@ -12593,7 +12600,22 @@ async function processPDF(file) {
                         bestText = retryFull;
                         bestMissing = retryMissing;
                         bills = retryBills2;
-                        validBills = retryValid;
+                        // Fix (code review of 0440be6, should-fix): the accept decision
+                        // above (`retryWouldLoseBills`) is made against the LENIENT
+                        // predicate, but `validBills` used to be assigned from `retryValid`
+                        // — the STRICTER filter (BillingPeriodStart/kWhConsumed only). A
+                        // retry bill with a real charge (GasCharge/WaterCharge/
+                        // TotalCurrentCharges) but no parsed BillingPeriodStart passed the
+                        // lenient check that justified accepting this retry, then was
+                        // excluded from `validBills` anyway. `_singleDroppedBills` was also
+                        // a one-time PRE-retry snapshot, never recomputed after `bills` was
+                        // replaced — so that bill vanished from `finalBills` with no
+                        // parseError flag, silently. Use the same lenient predicate here,
+                        // and recompute the dropped/flagged set from the post-replace
+                        // `bills` so any bill that still fails `_singleHasKeyField` is
+                        // flagged for manual review instead of disappearing.
+                        validBills = retryValidLenient;
+                        _singleDroppedBills = _flagDroppedBills(bills);
                         window._pdfRawText = retryFull;
                       }
                       // Also merge: fill in any null fields from retry into original.
