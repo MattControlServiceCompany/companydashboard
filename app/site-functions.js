@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.25.768',
+    date: '2026-08-25',
+    title: 'Bill accuracy: Louisburg meter-read, charge, address, and rate fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Bill accuracy: fixed several Louisburg meter-read, water/gas charge, address, account number, and rate errors on uploaded bills — every fix checked against the printed bill.',
+      },
+      {
+        type: 'fix',
+        text: 'Electric bills: corrected a misread on-peak rate digit and a rare case where an already-correct meter read was being changed by mistake.',
+      },
+      {
+        type: 'fix',
+        text: 'Water/gas bills: fixed a duplicated charge line, a missing minus sign on credits, and a decimal misread that cut off gas cents.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.24.767',
     date: '2026-08-24',
     title: 'Simplified to the Energy Department',
