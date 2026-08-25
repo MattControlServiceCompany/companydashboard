@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.25.769',
+    date: '2026-08-25',
+    title: 'Utility Bills: more Louisburg extraction fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Bills / Bill Analysis: improved Louisburg extraction accuracy — corrected gas/water meter reads, fuel-adjustment signs, therms, and stopped a water bill from being dropped.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.25.768',
     date: '2026-08-25',
     title: 'Bill accuracy: Louisburg meter-read, charge, address, and rate fixes',
