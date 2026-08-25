@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.25.770',
+    date: '2026-08-25',
+    title: 'Utility Bills: electric meter reads corrected on more bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy / Utility Bills: on the electric meter reading fields (Start Read, End Read, Read Difference, Meter Multiplier, kWh), bills where a meter row was misread now read correctly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.25.769',
     date: '2026-08-25',
     title: 'Utility Bills: more Louisburg extraction fixes',
