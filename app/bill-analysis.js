@@ -12912,6 +12912,105 @@ async function processPDF(file) {
             }
           }
 
+          // ── MULTI-PASS OCR CONSENSUS FOR METER-READ FIELDS (highest-scale tiebreak, ACCOUNT-KEYED) ──
+          // Fix (2026-08-25, Circle Grove meter-row digit corruption, acct 3517540689,
+          // SKM_C551i26071613190.pdf#p4). Like the dollar-charge and kWh-identity
+          // consensus blocks above, a meter-row OCR misread can be internally
+          // SELF-CONSISTENT — the digit-correction/checksum engine (_reconcileNumber
+          // in energy-savings.js) can never catch it because nothing LOOKS broken: on
+          // this bill, the OCR'd EndRead/ReadDifference pair (15698.6979/213.8608)
+          // still satisfies EndRead-StartRead=ReadDifference exactly, same as the true
+          // reading (15698.7069/213.8698). Root cause, confirmed by direct render/OCR
+          // testing: the misread is scale-dependent — 150dpi/180dpi passes (scale
+          // 2.0/2.5) misread ReadDifference/EndRead/kWhConsumed; passes at 216dpi+
+          // (scale 3.0 and above) read every meter-row digit correctly. Fix compares
+          // each field across every already-captured OCR pass for THIS SAME PAGE
+          // (window._pdfOcrPasses, zero extra OCR cost) and, only when two or more
+          // independently-matched passes disagree, adopts the highest-scale pass's
+          // reading.
+          //
+          // ACCOUNT-KEYED MATCH — root-cause fix over the abandoned 3042120 prototype
+          // (branch fix/meter-row-ocr, reverted: validator 1084->972, 26 regressions).
+          // That prototype matched an alt pass's re-extracted bill to `b` by BILLING
+          // PERIOD ONLY. window._pdfOcrPasses is keyed by PAGE NUMBER across the WHOLE
+          // pdf, and Evergy's `rule.extract(pageText)` always returns whichever ONE
+          // account is FIRST on that page — so on a multi-bill Louisburg PDF where
+          // several different accounts/buildings share one billing period (the normal
+          // case — Louisburg's buildings are billed on a common monthly cycle), a
+          // period-only match happily adopted another building's meter reading onto
+          // `b`. Requiring the alt pass's own AccountNumber to match `b.AccountNumber`
+          // (same normalization convention used throughout this file:
+          // `.replace(/[\s\-]/g, '')`) restricts candidate passes to the SAME page/
+          // account, eliminating that cross-account clobber by construction. Bills
+          // with no AccountNumber of their own are skipped outright — never guess.
+          if (hasAltPasses && rule.name === 'Evergy') {
+            const METER_FIELDS = [
+              'StartRead',
+              'EndRead',
+              'ReadDifference',
+              'MeterMultiplier',
+              'kWhConsumed',
+              'ActualKW',
+              'ActualRKVA',
+            ];
+            const pf3 = (v) =>
+              v !== undefined && v !== null && v !== '' ? parseFloat(String(v).replace(/,/g, '')) : NaN;
+            const acctKey = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
+            for (const b of finalBills) {
+              if (!METER_FIELDS.some((f) => b[f])) continue; // no meter-read fields on this bill at all
+              const bAcct = acctKey(b.AccountNumber);
+              if (!bAcct) continue; // can't verify same account — never guess across accounts
+              // Gather every captured pass's OWN reading of this bill's meter row,
+              // matched by BOTH billing period AND account number so pooled
+              // multi-page/multi-account pass text can never resolve to a
+              // DIFFERENT account's bill, even when two accounts share a period.
+              const matchedReadings = [];
+              for (const passes of Object.values(passTexts)) {
+                for (const p of passes) {
+                  try {
+                    const altResult = rule.extract(p.text);
+                    const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
+                    if (!altBills.length) continue;
+                    const altBill = altBills.find(
+                      (ab) =>
+                        ab.BillingPeriodStart === b.BillingPeriodStart &&
+                        ab.BillingPeriodEnd === b.BillingPeriodEnd &&
+                        acctKey(ab.AccountNumber) === bAcct,
+                    );
+                    if (!altBill) continue; // this pass's text isn't this bill's account/page — skip, don't guess
+                    matchedReadings.push({ scale: p.scale, label: p.label, altBill });
+                  } catch (e) {
+                    /* alt extraction failed, skip */
+                  }
+                }
+              }
+              if (matchedReadings.length < 2) continue; // not enough independent passes to establish disagreement
+              for (const f of METER_FIELDS) {
+                const curVal = pf3(b[f]);
+                const values = matchedReadings
+                  .map((r) => ({ scale: r.scale, label: r.label, raw: r.altBill[f], val: pf3(r.altBill[f]) }))
+                  .filter((r) => !isNaN(r.val));
+                if (values.length < 2) continue; // need at least 2 independent reads to detect disagreement
+                const allAgree = values.every((r) => Math.abs(r.val - values[0].val) <= 0.0005);
+                if (allAgree) continue; // unanimous across every captured pass — leave untouched
+                // Passes disagree — prefer the reading from the highest-scale pass.
+                const winner = values.reduce((a, r) => (r.scale > a.scale ? r : a), values[0]);
+                if (isNaN(curVal) || Math.abs(winner.val - curVal) <= 0.0005) continue; // already matches winner
+                b['_consensus_recovered_' + f] = {
+                  original: b[f],
+                  corrected: winner.raw,
+                  reason:
+                    'Meter-row OCR passes disagreed on ' +
+                    f +
+                    ' — adopted the reading from the highest-scale captured pass (' +
+                    winner.label +
+                    ') for this same account, over the winning-text pass, which read this digit run at a lower resolution',
+                };
+                b[f] = winner.raw;
+              }
+            }
+          }
+
           // Convert _pageIndex to _pageStart/_pageEnd for extractors that
           // set per-page indices instead of page ranges
           finalBills.forEach((b) => {
