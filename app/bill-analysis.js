@@ -1372,7 +1372,21 @@ function _gateB_billCountCheck(rawText, billCount) {
   // multi-page Evergy bill. Restrict to same-line whitespace only (space/tab).
   const _acctRe = /Account\s*(?:Number)?\s*:?\s*(\d[\d \t\-]{3,20}\d)/i;
   const _addrRe = /Service\s*Address\s*:?\s*([^\n]{5,60})/i;
-  const _dateRe = /(?:Billing|Statement|Invoice)\s*Date\s*:?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i;
+  // FIX (Louisburg audit #10): "Bil{1,2}ing" (not literal "Billing") tolerates
+  // the confirmed Tesseract misread "Biling" (dropped one 'l'). Reproduced on
+  // "February 2026 Electric bills - HS, MS, RES.pdf": 3 accounts x 2 pages =
+  // 6 pages is a CORRECT 3-bill extraction, but the first page of 2 of the 3
+  // bills OCR'd "Billing Date" as "Biling Date" while their sibling page read
+  // it correctly — the strict "Billing" literal then failed to match on just
+  // that one page, so date fell back to '' for it, and the (account|'') key
+  // no longer matched its sibling's (account|03/03/2026) key, inflating the
+  // distinct-group count from 3 to 5 and false-tripping Gate B on a file that
+  // extracted perfectly. Widening only the keyword spelling (never the acct/
+  // addr matching that actually drives group IDENTITY) fixes this without
+  // reducing Gate B's ability to catch a genuine account/page-count mismatch
+  // (e.g. bug #9's dropped meter) — that detection depends entirely on the
+  // acct/addr regexes above, which are unchanged.
+  const _dateRe = /(?:Bil{1,2}ing|Statement|Invoice)\s*Date\s*:?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i;
   const keys = new Set();
   for (const chunk of chunks) {
     const acctM = chunk.match(_acctRe);
@@ -11527,6 +11541,106 @@ async function extractPDFText(ab, statusCb) {
         const _stampCoverage = (pn, txt) => {
           _pageCoverage[pn - 1] = txt.trim().length <= EMPTY_PAGE_MAX_CHARS ? 'ocr-empty' : 'ocr-ok';
         };
+        // ── Per-kWh/per-kW RATE-DIGIT disagreement guard ───────────────────────
+        // scorePage only checks that expected LAYOUT signals are present (keywords,
+        // $ counts, kWh counts) — it cannot tell that a single interior digit inside
+        // a printed "$X.XXXXX per kWh" rate was misread (e.g. Tesseract reading "3"
+        // as "8"), because the misread text still carries the exact same keywords,
+        // $ signs, and kWh counts as a correct reading. Confirmed on the Louisburg
+        // April 2026 Maint Bldg bill (acct 0669287870): the early-exit's own first
+        // two passes (2.5x, 3.5x) both scored 12 (>=10 early-exit threshold) yet
+        // disagreed with EACH OTHER on the "Energy Chg On Pk" charge line's rate —
+        // "$0.03728" vs "$0.087283" — while later un-run passes already in
+        // OCR_PASSES (2x, 3x, 2.5x-psm4, 3.5x-psm4) all read the true "$0.03723"
+        // correctly. When passes already run disagree on a charge line's rate
+        // string, that disagreement is a reliable "don't trust these digits yet"
+        // signal — worth spending the remaining OCR_PASSES on a tie-breaking read
+        // rather than trusting page-layout score alone. Matches by charge-line
+        // keyword only (not tied to Evergy) — has zero effect on providers whose
+        // bills don't carry this "at $X per kWh/kW" shape (Baldwin/Woodriver/KGS/
+        // Louisburg): the regex simply never matches, so their early-exit behavior,
+        // pass count, and OCR runtime are all completely unchanged.
+        // SCOPE (regression-tested): deliberately limited to just "On Pk"/"Off Pk"
+        // — the two keywords the actually-reported bug involves. An earlier,
+        // broader version of this regex also matched ECA/EER/PTS/Demand/
+        // Facilities/TDC/RkVA and, when tested against 5 real SKM_C551i scans,
+        // cross-contaminated UNRELATED charge lines on 3 of them (e.g. patched a
+        // correct "Facilities Chg ... $2.854 per kW" into the wrong "$0.00056 per
+        // kW" — EER's rate bleeding into Facilities' line via the 3-line block
+        // window on a garbled pass). "On Pk"/"Off Pk" are Evergy's two ENERGY
+        // charge lines and, on every sample checked, are printed once per page
+        // with no other "at $X per kWh" line close enough to bleed in — the other
+        // seven keywords are not safe to include without a much stronger per-line
+        // anchor than a 3-line window, which is out of scope for this fix.
+        const _RATE_KEYWORD_RE = /(On\s*Pk|Off\s*Pk)/i;
+        const _RATE_VALUE_RE = /\$?\s*([0-9][0-9,]*\.[0-9]{3,6})\s*p[eo]r\s*k[Ww]/i;
+        const _extractLineRates = (text) => {
+          const out = {};
+          const lines = (text || '').split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            const kwM = lines[i].match(_RATE_KEYWORD_RE);
+            if (!kwM) continue;
+            const block = lines.slice(i, i + 3).join(' ');
+            const rateM = block.match(_RATE_VALUE_RE);
+            if (!rateM) continue;
+            const key = kwM[1].toLowerCase().replace(/\s+/g, '');
+            if (!(key in out)) out[key] = rateM[1].replace(/,/g, '');
+          }
+          return out;
+        };
+        const _pageRatesDisagree = (passesSoFar) => {
+          if (!passesSoFar || passesSoFar.length < 2) return false;
+          const readingsByKey = {};
+          for (const p of passesSoFar) {
+            const rates = _extractLineRates(p.text);
+            for (const key in rates) {
+              if (!readingsByKey[key]) readingsByKey[key] = new Set();
+              readingsByKey[key].add(rates[key]);
+            }
+          }
+          return Object.keys(readingsByKey).some((k) => readingsByKey[k].size > 1);
+        };
+        // Majority-vote patch, applied once all passes for a page are in (only
+        // meaningful when the disagreement guard above forced extra passes to
+        // run — a page with just the normal 2 early-exit passes has too few
+        // votes to reach the majority bar below and this is a safe no-op).
+        // Same majority-vs-coin-flip bar already used elsewhere in this file's
+        // consensus logic (winCount >= 3, see the address-group consensus block's
+        // FIX ocr-958590ee comment) — never "corrects" a field on a mere plurality.
+        const _applyRateConsensus = (bestTextIn, passesForPage) => {
+          if (!passesForPage || passesForPage.length < 3) return bestTextIn;
+          const votes = {};
+          for (const p of passesForPage) {
+            const rates = _extractLineRates(p.text);
+            for (const key in rates) {
+              votes[key] = votes[key] || {};
+              votes[key][rates[key]] = (votes[key][rates[key]] || 0) + 1;
+            }
+          }
+          let patched = bestTextIn;
+          for (const key in votes) {
+            const entries = Object.entries(votes[key]).sort((a, b) => b[1] - a[1]);
+            if (entries.length < 2) continue; // no disagreement for this key — nothing to patch
+            const winner = entries[0][0];
+            const winCount = entries[0][1];
+            if (winCount < 3) continue; // not a real majority — leave bestText's own reading alone
+            const lines = patched.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+              const kwM = lines[i].match(_RATE_KEYWORD_RE);
+              if (!kwM || kwM[1].toLowerCase().replace(/\s+/g, '') !== key) continue;
+              for (let j = i; j < Math.min(i + 3, lines.length); j++) {
+                const rateM = lines[j].match(_RATE_VALUE_RE);
+                if (!rateM) continue;
+                const currentVal = rateM[1].replace(/,/g, '');
+                if (currentVal !== winner) lines[j] = lines[j].replace(rateM[1], winner);
+                break;
+              }
+              break;
+            }
+            patched = lines.join('\n');
+          }
+          return patched;
+        };
         for (let idx = 0; idx < ocrNeeded.length; idx++) {
           if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
@@ -11537,6 +11651,19 @@ async function extractPDFText(ab, statusCb) {
           let bestText = '',
             bestScore = 0;
           allPassTexts[pgNum] = [];
+          // Set only in the exact moment the ORIGINAL score>=10 early-exit
+          // condition is overridden by a rate disagreement (see below). Freezes
+          // bestText/bestScore at exactly what the pre-existing code would have
+          // committed, so the extra passes the override forces to run can feed
+          // _applyRateConsensus's vote-count WITHOUT also being allowed to
+          // silently replace the whole page's canonical text via the normal
+          // score-based bestText selection. Verified necessary by regression:
+          // without this guard, letting a later higher-scoring pass become
+          // bestText on this exact page fixed the rate but corrupted an
+          // unrelated meter number ("1782823769975" -> "1782623763975") — a
+          // strictly worse tradeoff. Stays null (no-op downstream) for every
+          // other page/scenario, where bestText behaves exactly as before.
+          let _earlyExitOverrideSnapshot = null;
 
           for (let pass = 0; pass < OCR_PASSES.length; pass++) {
             if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR pass loop
@@ -11628,7 +11755,20 @@ async function extractPDFText(ab, statusCb) {
             // Early exit after pass 0 (2.5x) if this is a cover page — no meter data to gain from more passes
             if (pass === 0 && isCoverPage(bestText)) break;
             // Early exit after pass 1 (3.5x) if 2.5x + 3.5x already hit a strong score
-            if (pass === 1 && bestScore >= 10) break;
+            // — UNLESS those same two passes disagree with each other on a charge
+            // line's rate digits (see _pageRatesDisagree doc comment above): a high
+            // layout score says nothing about digit accuracy, so a rate disagreement
+            // overrides the early exit and lets the remaining passes run as a
+            // tie-breaker (_applyRateConsensus majority-votes the result below) —
+            // but see _earlyExitOverrideSnapshot above: only the disagreeing rate
+            // line itself gets patched from those extra passes, nothing else.
+            if (pass === 1 && bestScore >= 10) {
+              if (_pageRatesDisagree(allPassTexts[pgNum])) {
+                _earlyExitOverrideSnapshot = bestText;
+              } else {
+                break;
+              }
+            }
             // Baldwin early exit at pass 1: scanned Baldwin pages have a lower max score ceiling than Evergy;
             // score >= 7 after 2 passes means account number + charge codes + dollar amounts are all present —
             // no benefit from running 4 more primary passes on a well-scanned page
@@ -11886,6 +12026,17 @@ async function extractPDFText(ab, statusCb) {
             }
           }
           // ── end triggered passes ───────────────────────────────────────────────
+          // Majority-vote patch for any charge-line rate the disagreement guard
+          // above found unresolved — safe no-op unless that guard actually forced
+          // extra passes to run for this page (see _applyRateConsensus doc
+          // comment). Uses _earlyExitOverrideSnapshot as the base text when the
+          // override fired, so the disagreement-driven extra passes only ever
+          // patch the specific suspect rate line(s), never anything else on the
+          // page (see _earlyExitOverrideSnapshot doc comment above for why).
+          bestText = _applyRateConsensus(
+            _earlyExitOverrideSnapshot !== null ? _earlyExitOverrideSnapshot : bestText,
+            allPassTexts[pgNum],
+          );
           pageTexts[pgNum - 1] = bestText;
           _stampCoverage(pgNum, bestText); // GATE A — normal end-of-iteration commit
           // ── Empty-page detection: if ALL passes returned near-empty text, flag it ──
