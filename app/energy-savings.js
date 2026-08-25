@@ -8197,14 +8197,62 @@ const UTILITY_RULES = [
         // 315.47 vs printed 315.80 — traced to this exact truncation, not a
         // fabricated CustomerCharge split).
         const afterToks = [...after.matchAll(/-?[\d,]+(?:[.:]\d+|-\d{2})?/g)].map((x) => x[0]);
-        const charge = _lbg_cleanCents(afterToks[0] ? afterToks[0].replace(':', '.') : null);
+        // FIX (2026-08-25, backlog 964b13e2): prefer the trailing token that's
+        // actually shaped like a printed charge (2-decimal cents via "." or
+        // ":", or a trailing "-NN" cents suffix) over blindly taking the
+        // first token. A handwritten annotation physically overlapping the
+        // printed row (pen marks scanned into the image) can OCR into a
+        // spurious integer sitting between the label and the real charge —
+        // e.g. real bill text "GAS   248-%>   321.33" where "248" is OCR
+        // noise from handwriting and "321.33" is the printed charge — and
+        // afterToks[0] silently picked up the noise instead. Falls back to
+        // afterToks[0] when no token is cents-shaped (preserves the existing
+        // degraded-OCR path where _lbg_cleanCents infers cents from a bare
+        // 4+-digit run with no decimal marker at all).
+        const _currencyShaped = (s) => /^-?[\d,]+(?:[.:]\d{2}|-\d{2})$/.test(s);
+        let chargeTok = null;
+        for (let i = afterToks.length - 1; i >= 0; i--) {
+          if (_currencyShaped(afterToks[i])) {
+            chargeTok = afterToks[i];
+            break;
+          }
+        }
+        if (!chargeTok) chargeTok = afterToks[0] || null;
+        const charge = _lbg_cleanCents(chargeTok ? chargeTok.replace(':', '.') : null);
+        // FIX (2026-08-25, backlog 964b13e2): Tesseract frequently misreads
+        // the thousands-comma in a 4-digit meter read as a decimal point
+        // ("9,737" OCRs as "9.737") — the same comma/period confusable
+        // already documented and fixed for dollar amounts elsewhere in this
+        // file (_wreFixOcrDollar). Reads in this column are always whole
+        // integers; the only legitimate decimal that appears here is the
+        // 2-decimal-digit CCF-adjusted usage figure (e.g. "9,648.18"),
+        // never a lone digit followed by exactly 3 decimal digits with no
+        // thousands comma. Left uncorrected, "9.737" parses as a non-integer
+        // decimal and silently drops out of integerTokens below, collapsing
+        // a 3-reading line ("9,364 9,737 373 GAS") to just 2 tokens — which
+        // then get treated as prevRead/currRead directly (min/max), swapping
+        // the real Current Reading into StartRead and fabricating a usage of
+        // ~9000 (real bill: StartRead became 374, EndRead 9364, Usage 8990,
+        // instead of StartRead 9364, EndRead 9737, Usage 373).
+        const beforeFixed = before.replace(/(^|[^\d.,])(\d)\.(\d{3})(?!\d)/g, '$1$2,$3');
         // Parse all numeric tokens in the before segment. Integers >=100
         // are meter reads; decimals >=100 are explicit usage columns (gas
         // CCF prints as "9,648.18"). Small decimals are bar-chart axis
         // labels and ignored.
-        const allBefore = [...before.matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) => parseFloat(x[0].replace(/,/g, '')));
+        const allBefore = [...beforeFixed.matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) =>
+          parseFloat(x[0].replace(/,/g, '')),
+        );
         const integerTokens = allBefore.filter((n) => Number.isInteger(n) && n >= 100);
         let usage = 0;
+        // Tracks whether Case A below matched (3+ tokens, last ≈ diff of the
+        // two preceding) so the reads-extraction step further down knows the
+        // reads are at [-3]/[-2] — independent of the exact numeric value
+        // stored in `usage`, which (per the fix below) is no longer always
+        // equal to integerTokens[last]. FIX (2026-08-25, backlog 964b13e2):
+        // previously the reads step re-derived "was this Case A" by checking
+        // `usage === integerTokens[last]`, which broke the moment Case A
+        // started preferring the cross-validated diff over the raw token.
+        let usedThirdTokenAsUsage = false;
         // Case A: 3+ integer tokens with the last one equal to the diff
         // of the two preceding — the line printed "prev curr usage" and
         // the third int IS the explicit usage column. Water bills look
@@ -8216,7 +8264,20 @@ const UTILITY_RULES = [
           const c = integerTokens[integerTokens.length - 1];
           const diffAB = Math.abs(b - a);
           if (diffAB > 0 && Math.abs(c - diffAB) <= Math.max(2, diffAB * 0.05)) {
-            usage = c;
+            // FIX (2026-08-25, backlog 964b13e2): use the cross-validated
+            // diff (a and b are two independently-OCR'd readings) rather than
+            // the printed usage token c itself. Real bill: a diagonal QR-code
+            // line crosses the printed "373" on the Usage column, and OCR
+            // read it as "374" — a single-digit misread on an isolated
+            // number with nothing else to cross-check it against. diffAB
+            // (9,737 − 9,364 = 373) is corroborated by two separate reads
+            // and is already verified within tolerance of c here, so it's
+            // the more reliable value. This branch's own doc comment states
+            // the invariant this format always follows: usage == diff (no
+            // multiplier/pressure-factor case exists for these plain-integer
+            // 3-token lines — that's Case B, decimals, below).
+            usage = diffAB;
+            usedThirdTokenAsUsage = true;
           }
         }
         // Case B: 2 integer reads + a decimal usage column AFTER the
@@ -8253,7 +8314,7 @@ const UTILITY_RULES = [
           currRead = null;
         if (integerTokens.length >= 2) {
           let r1, r2;
-          if (integerTokens.length >= 3 && usage > 0 && usage === integerTokens[integerTokens.length - 1]) {
+          if (integerTokens.length >= 3 && usage > 0 && usedThirdTokenAsUsage) {
             // 3+ tokens with last = usage → reads are at [-3] and [-2]
             r1 = integerTokens[integerTokens.length - 3];
             r2 = integerTokens[integerTokens.length - 2];
