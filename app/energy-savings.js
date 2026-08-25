@@ -8140,8 +8140,15 @@ const UTILITY_RULES = [
         if (!m) return null;
         const before = raw.slice(0, m.index);
         const after = raw.slice(m.index + m[0].length);
-        const afterToks = [...after.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((x) => x[0]);
-        const charge = _lbg_cleanCents(afterToks[0] || null);
+        // Colon-for-decimal-point tolerance ("335:33" -> "335.33") — the same
+        // OCR-confusable already tolerated for TotalAmountDue's loose fallback
+        // below ([.:]\\d{2}). Without it, "335:33"'s digit run stops at "335"
+        // and the printed cents are silently dropped (defect: City of
+        // Louisburg May 2026 Gas TotalCurrentCharges landed $0.33 short,
+        // 315.47 vs printed 315.80 — traced to this exact truncation, not a
+        // fabricated CustomerCharge split).
+        const afterToks = [...after.matchAll(/-?[\d,]+(?:[.:]\d+|-\d{2})?/g)].map((x) => x[0]);
+        const charge = _lbg_cleanCents(afterToks[0] ? afterToks[0].replace(':', '.') : null);
         // Parse all numeric tokens in the before segment. Integers >=100
         // are meter reads; decimals >=100 are explicit usage columns (gas
         // CCF prints as "9,648.18"). Small decimals are bar-chart axis
@@ -8259,7 +8266,27 @@ const UTILITY_RULES = [
             };
           }
         }
-        if (!wpf && /W[A4]TER\s*PROT[E3]CTION/i.test(ln)) wpf = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
+        // Water Protection Fee: accumulate ALL occurrences, not just the
+        // first. A 2-physical-water-meter account (e.g. 16-016001-00, 977 N
+        // Rockville Rd) prints one WATER PROTECTION line PER METER — the old
+        // `!wpf` guard kept only one of the two identical-looking lines,
+        // silently dropping the 2nd meter's fee from the Water sub-total
+        // (defect: Feb/Mar/May 2026 bills each short by exactly one
+        // instance's worth, $2.75/$1.16/$0.69). Mirrors the accumulation
+        // pattern already used for multiple WATER lines above.
+        if (/W[A4]TER\s*PROT[E3]CTION/i.test(ln)) {
+          const wp2 = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
+          if (wpf === null) {
+            wpf = wp2;
+          } else {
+            wpf = {
+              usage: (wpf.usage || 0) + (wp2.usage || 0),
+              charge: wpf.charge != null ? wpf.charge + (wp2.charge || 0) : wp2.charge,
+              prevRead: wpf.prevRead != null ? wpf.prevRead : wp2.prevRead,
+              currRead: wpf.currRead != null ? wpf.currRead : wp2.currRead,
+            };
+          }
+        }
         if (!sewer && /\bS[E3]W[E3]R\b/i.test(ln)) sewer = parseMetered(ln, /\bS[E3]W[E3]R\b/i);
         if (!storm && /STORM\s*W[A4]TER/i.test(ln)) storm = parseMetered(ln, /STORM\s*W[A4]TER/i);
       }
@@ -8312,6 +8339,30 @@ const UTILITY_RULES = [
       const _currentBillRaw = page.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
       const CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
 
+      // WaterProtectionFee sign reconciliation — never a guess. Tesseract can
+      // drop the leading "-" glyph off a printed credit line (confirmed on a
+      // real bill: printed "WATER PROTECTION -$0.69" twice, OCR read both as
+      // positive "0.69" while correctly capturing the minus sign on the
+      // SAME page's negative WATER lines). Cross-validate against the page's
+      // own independently-printed Current Bill total — the same anchor
+      // _lbg_buildGasBill already trusts for gas reconciliation. Only flips
+      // the sign when doing so is the UNIQUE change that makes every line
+      // item sum to the printed total; otherwise leaves it alone.
+      if (CurrentBillTotal != null && wpf.charge) {
+        const _rawSum =
+          (gas.charge || 0) +
+          (signedFuelAdj || 0) +
+          (water.charge || 0) +
+          (wpf.charge || 0) +
+          (sewer.charge || 0) +
+          (storm.charge || 0);
+        const _flippedSum = _rawSum - 2 * wpf.charge;
+        if (Math.abs(_rawSum - CurrentBillTotal) > 0.01 && Math.abs(_flippedSum - CurrentBillTotal) < 0.01) {
+          wpf.charge = -wpf.charge;
+          wpf._signCorrected = true;
+        }
+      }
+
       if (!TotalAmountDue && !gas.charge && !water.charge && !sewer.charge && !storm.charge) return null;
 
       // ── Emit one bill per commodity with a real charge ──
@@ -8346,7 +8397,7 @@ const UTILITY_RULES = [
       if (gasBill) bills.push(gasBill);
       if (water.charge != null && water.charge !== 0) {
         const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
-        bills.push({
+        const waterBill = {
           ...shared,
           Commodity: 'Water',
           StartRead: water.prevRead || null,
@@ -8356,7 +8407,13 @@ const UTILITY_RULES = [
           WaterProtectionFee: wpf.charge,
           TotalCurrentCharges: waterTotal,
           TotalAmountDue: waterTotal,
-        });
+        };
+        if (wpf._signCorrected)
+          waterBill._auto_corrected_WaterProtectionFee = {
+            reason:
+              'Sign flipped to negative — reconciled against printed Current Bill total (OCR dropped the credit minus sign).',
+          };
+        bills.push(waterBill);
       }
       if (sewer.charge != null && sewer.charge !== 0) {
         const sewerTotal = sewer.charge.toFixed(2);
