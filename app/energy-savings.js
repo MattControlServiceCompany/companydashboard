@@ -3820,15 +3820,26 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (ri.parts && ri.parts.length > 1) return ri.parts.reduce((s, p) => s + (p.qty || 0), 0);
     return ri.qty || 0;
   };
-  result.FacilitiesRate = _gr('FacilitiesCharge') || null;
-  result.DemandRate = _gr('BilledKWCharge') || null;
-  result.TDCRate = _gr('TDCCharge') || null;
-  result.RkVARate = _gr('RkVACharge') || null;
-  result.OnPeakRate = _gr('EnergyOnPeakCharge') || null;
-  result.OffPeakRate = _gr('EnergyOffPeakCharge') || null;
-  result.ECARate = _wavg('ECACharge') || null;
-  result.EERRate = _wavg('EERCharge') || null;
-  result.PTSRate = _wavg('PTSCharge') || null;
+  // 2026-08-26 (fix/rate-falsy-zero) — `_gr`/`_wavg` both return the number 0
+  // for two different reasons: (a) the charge line was found and its real
+  // rate is $0.00, or (b) the charge line was never found on the bill at
+  // all (no entry in `_rates[k]`). The old `|| null` pattern could not tell
+  // these apart and collapsed BOTH to null, which broke ground-truth checks
+  // for bills with a genuine $0.00 rate (e.g. Spring Hill EER). Presence in
+  // `_rates[k]` is set only when `xRate()` actually matched that charge line
+  // (see `if (_rXxxOk) _rates.XxxCharge = _rXxxOk;` above) — use THAT as the
+  // gate instead of the numeric result, so a real 0 is preserved and an
+  // absent charge still emits null (never a fabricated 0).
+  const _rateOrNull = (chargeKey, rawVal) => (_rates[chargeKey] ? rawVal : null);
+  result.FacilitiesRate = _rateOrNull('FacilitiesCharge', _gr('FacilitiesCharge'));
+  result.DemandRate = _rateOrNull('BilledKWCharge', _gr('BilledKWCharge'));
+  result.TDCRate = _rateOrNull('TDCCharge', _gr('TDCCharge'));
+  result.RkVARate = _rateOrNull('RkVACharge', _gr('RkVACharge'));
+  result.OnPeakRate = _rateOrNull('EnergyOnPeakCharge', _gr('EnergyOnPeakCharge'));
+  result.OffPeakRate = _rateOrNull('EnergyOffPeakCharge', _gr('EnergyOffPeakCharge'));
+  result.ECARate = _rateOrNull('ECACharge', _wavg('ECACharge'));
+  result.EERRate = _rateOrNull('EERCharge', _wavg('EERCharge'));
+  result.PTSRate = _rateOrNull('PTSCharge', _wavg('PTSCharge'));
   // Total rates: total charges / total quantity (effective rate)
   const _kwhChargeSum =
     _pf(result.EnergyOnPeakCharge) +
