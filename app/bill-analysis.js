@@ -1889,10 +1889,139 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
         ') had already been overwritten by an earlier identity-subtraction guess',
     };
   }
+  // NOTE: no early return here (moved below, AFTER the basis-derived check) —
+  // a SELF-HEAL restore above only fires per-leg when THIS leg's field
+  // diverges from its own rate-derived qty (onQty/offQty) by more than 0.5
+  // kWh; it says nothing about whether the RATE-DERIVED qty itself is
+  // trustworthy. Returning here unconditionally would let a self-heal fix on
+  // ONE leg (e.g. Circle Grove's OnPeakKWh field, corrupted upstream to
+  // 1392.2570 by an unrelated identity-subtraction bug) silently block the
+  // basis-derived check below from ever running for the OTHER leg in the
+  // same pass.
+
+  // ── BASIS-DERIVED SINGLE-LEG CORRECTION (2026-08-26, backlog f776f47b,
+  // Off-Peak kWh OCR misread accepted silently) ──
+  // Root cause: a leg misread by a fraction of a kWh (Circle Grove account
+  // 3517540689, 06/04/2026-07/06/2026: OffPeakKWh OCR'd as 7172.5350,
+  // printed value was 7172.5950) slips past the loose `<=1` "already
+  // consistent" check just below (onQty+offQty vs kwhConsumed differed by
+  // only ~0.07 kWh here) AND slips past onVerified/offVerified above —
+  // _chargeSelfVerifies' shared $0.01 tolerance (_Q_SELFVERIFY_CENTS, kept
+  // untouched here on purpose) treats a computed-vs-printed gap of EXACTLY
+  // one cent as "verified" (411.27 computed vs 411.28 printed), so both legs
+  // read as self-verified even though the off-peak qty was wrong.
+  //
+  // The bill's own self-verified ECA/EER/PTS charge-basis total
+  // (_chargeBasisTotal — already required to self-verify against ITS OWN
+  // printed dollar charge, and to agree with every other present basis line)
+  // is a THIRD, independent witness to the true on+off total. When it
+  // disagrees with onQty+offQty by more than plain rounding noise, use a
+  // STRICTER (local-only, half the shared cents tolerance) self-verify check
+  // to find which single leg is actually wrong, then only correct if the
+  // basis-derived replacement reproduces THAT leg's own printed charge to
+  // the cent. Anything less certain FLAGS instead of guessing.
+  if (onQty > 0 && offQty > 0) {
+    const _BASIS_TIGHT = 0.05; // kWh — tighter than the `<=1` kwhConsumed
+    // check below on purpose: this compares against a SELF-VERIFIED basis
+    // total (not a meter-table read), so it can safely be tight enough to
+    // catch Circle Grove's ~0.06 kWh gap (onQty+offQty=8554.7226 vs
+    // basisTotal=8554.7826) without false-firing on the sub-0.01 kWh
+    // basis-vs-sum rounding _chargeBasisTotal's own comment documents as
+    // normal on clean bills.
+    const _BASIS_FLOOR = 0.02; // kWh — never overwrite for a sub-hundredth
+    // difference; that is noise, not a misread.
+    const _STRICT_LEG_CENTS = 0.005; // half of _Q_SELFVERIFY_CENTS, LOCAL to
+    // this leg-identification step only — does not change the shared
+    // _chargeSelfVerifies/_Q_SELFVERIFY_CENTS constant used everywhere else
+    // in this file (per investigation, lowering that globally is blunt and
+    // unreliable). Needed here because the shared $0.01 tolerance is
+    // inclusive of the exact 1-cent gap this bug produces on the misread
+    // leg, which would otherwise make BOTH legs look "verified".
+    const basisTotal = _chargeBasisTotal(b, pf);
+    if (basisTotal && Math.abs(onQty + offQty - basisTotal) > _BASIS_TIGHT) {
+      const onStrict = onR && Math.abs(_chargeComputedTotal(onR) - pf(b.EnergyOnPeakCharge)) <= _STRICT_LEG_CENTS;
+      const offStrict = offR && Math.abs(_chargeComputedTotal(offR) - pf(b.EnergyOffPeakCharge)) <= _STRICT_LEG_CENTS;
+      const onIsSuspect = !onStrict && offStrict;
+      const offIsSuspect = !offStrict && onStrict;
+      let applied = false;
+      if (onIsSuspect || offIsSuspect) {
+        const suspectR = onIsSuspect ? onR : offR;
+        const suspectQty = onIsSuspect ? onQty : offQty;
+        const trustedQty = onIsSuspect ? offQty : onQty;
+        const suspectChargeVal = pf(onIsSuspect ? b.EnergyOnPeakCharge : b.EnergyOffPeakCharge);
+        // Only correct a single-part (no seasonal changeover) charge line —
+        // with 2+ parts it is ambiguous WHICH part's qty was misread, so
+        // reproducing "the leg's own charge" from one blended rate would be
+        // a guess, not a derivation.
+        const suspectSinglePart = !!(
+          suspectR &&
+          suspectR.parts &&
+          suspectR.parts.length === 1 &&
+          suspectR.parts[0].rate > 0
+        );
+        const derived = basisTotal - trustedQty;
+        const derivedReproducesCharge =
+          suspectSinglePart && derived > 0 && _qtySelfVerifies(derived, suspectR.parts[0].rate, suspectChargeVal);
+        if (derivedReproducesCharge && Math.abs(derived - suspectQty) > _BASIS_FLOOR) {
+          const suspectField = onIsSuspect ? 'OnPeakKWh' : 'OffPeakKWh';
+          const trustedField = onIsSuspect ? 'OffPeakKWh' : 'OnPeakKWh';
+          const reason =
+            suspectField +
+            ' corrected from the self-verified ECA/EER/PTS charge-basis total (' +
+            basisTotal.toFixed(4) +
+            ") minus the OTHER leg's self-verified qty, " +
+            trustedField +
+            ' (' +
+            trustedQty.toFixed(4) +
+            ') = ' +
+            derived.toFixed(4) +
+            " -- reproduces this leg's OWN printed $" +
+            suspectChargeVal.toFixed(2) +
+            ' charge to the cent (' +
+            derived.toFixed(4) +
+            ' x $' +
+            suspectR.parts[0].rate.toFixed(5) +
+            ' = $' +
+            (derived * suspectR.parts[0].rate).toFixed(2) +
+            '), while the OCR-read value (' +
+            suspectQty.toFixed(4) +
+            ') did not reproduce it (' +
+            (suspectQty * suspectR.parts[0].rate).toFixed(2) +
+            ') -- ' +
+            trustedField +
+            ' (' +
+            trustedQty.toFixed(4) +
+            ') already self-verifies and is unchanged';
+          if (onIsSuspect) result.onCorrection = { value: derived, reason };
+          else result.offCorrection = { value: derived, reason };
+          applied = true;
+        }
+      }
+      if (!applied) {
+        result.gate =
+          'OnPeakKWh (' +
+          onQty.toFixed(4) +
+          ') + OffPeakKWh (' +
+          offQty.toFixed(4) +
+          ') = ' +
+          (onQty + offQty).toFixed(4) +
+          ' does not match the self-verified ECA/EER/PTS charge-basis total (' +
+          basisTotal.toFixed(4) +
+          ', gap ' +
+          Math.abs(onQty + offQty - basisTotal).toFixed(4) +
+          ' kWh) and the misread leg could not be uniquely identified — refusing to guess, verify against the source PDF';
+      }
+      return result;
+    }
+  }
+
   if (result.onCorrection || result.offCorrection) {
-    // A restore already resolves this bill's on/off fields to their
-    // strongest evidence — don't also attempt a kWhConsumed-derived guess for
-    // the other leg in the same pass (avoids double-derivation).
+    // Either the self-heal restore above, or the basis-derived check just
+    // above (when it applied but the on+off-vs-basis gap didn't clear
+    // _BASIS_TIGHT so it fell through instead of returning), already
+    // resolved this bill's on/off fields to their strongest evidence — don't
+    // also attempt a weaker kWhConsumed-derived guess for the other leg in
+    // the same pass (avoids double-derivation).
     return result;
   }
 
