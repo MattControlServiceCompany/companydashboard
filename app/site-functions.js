@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.26.776',
+    date: '2026-08-26',
+    title: 'Utility Bills: batch review flags the specific period, not every bill',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy / Utility Bills: on the PDF bill-extraction batch review, a WARN badge now marks only the specific billing period that needs attention, instead of a warning banner showing on every bill in the batch.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.26.775',
     date: '2026-08-26',
     title: 'Utility Bills: more Evergy rate charges read correctly',
