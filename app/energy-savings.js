@@ -2067,6 +2067,41 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (!/\$/.test(line)) return ''; // pure table-noise row -- nothing usable, drop it
     return line; // has a $ but no recognized resume trigger -- leave untouched (fail safe)
   };
+  // ── Blended-rate helper for multi-segment (ECA changeover / on-peak+tiered) charges ──
+  // A charge with 2+ parts (rate-changeover mid-bill, or on-peak/tiered merge) must report
+  // a single representative rate that's consistent with aggComputed/aggQty -- NOT the first
+  // segment's rate. Fixes TDCRate/FacilitiesRate/DemandRate/RkVARate/ECARate/OnPeakRate/
+  // OffPeakRate shipping the wrong (first-segment-only) rate on changeover bills.
+  // - kWh charges: parts SUM to the period total, so qty-weighted avg = aggComputed/aggQty
+  //   (same math _wavg does downstream -- this makes xRate's own .rate agree with it).
+  // - kW charges: parts are NOT additive (each segment reports the same peak kW at a
+  //   different rate for part of the billing period), so blend by DAYS using each part's
+  //   prorationNum/prorationDen fraction. Falls back to computed/qty if proration data
+  //   is missing on any part.
+  const _blendRate = (parts, isKwh, aggQty, aggComputed) => {
+    if (!parts.length) return null;
+    // Single-part charge (the overwhelming majority of bills — no rate changeover):
+    // return the EXACT parsed rate untouched. computed/qty would reintroduce the
+    // cents-level rounding baked into `computed` (Math.round(...*100)/100) as noise
+    // on the rate itself (e.g. 0.01521 -> 0.015209511...) even though there's only
+    // one segment to "blend." Single-segment bills must be byte-identical pre/post fix.
+    if (parts.length === 1) return parts[0].rate;
+    if (isKwh) {
+      return aggQty > 0 ? aggComputed / aggQty : parts[0].rate;
+    }
+    const hasProration = parts.every((p) => p.prorationNum != null && p.prorationDen);
+    if (hasProration) {
+      let wSum = 0,
+        wRateSum = 0;
+      for (const p of parts) {
+        const w = p.prorationNum / p.prorationDen;
+        wSum += w;
+        wRateSum += p.rate * w;
+      }
+      return wSum > 0 ? wRateSum / wSum : parts[0].rate;
+    }
+    return aggQty > 0 ? aggComputed / aggQty : parts[0].rate;
+  };
   // ── Rate extraction: captures rate, quantity, AND OCR'd charge from each charge line ──
   // Evergy charge lines: "[keyword] [qty] kW/kWh at $[rate] per kW/kWh ... $[charge]"
   // Returns {qty, rate, unit, computed, parts[]} or null
@@ -2305,11 +2340,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // rate. The representative "bill period peak" is MAX of parts.
     const aggIsKwh = (results[0].unit || '').toLowerCase().includes('h');
     const aggQty = aggIsKwh ? results.reduce((s, r) => s + r.qty, 0) : Math.max(...results.map((r) => r.qty));
+    const aggComputed = results.reduce((s, r) => s + r.computed, 0);
     return {
       qty: aggQty,
-      rate: results[0].rate,
+      rate: _blendRate(results, aggIsKwh, aggQty, aggComputed),
       unit: results[0].unit,
-      computed: results.reduce((s, r) => s + r.computed, 0),
+      computed: aggComputed,
       parts: results,
     };
   };
@@ -3764,11 +3800,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // Combine on-peak and tiered (changeover bills have both)
     // Flatten inner parts from both sources so each individual charge line is preserved
     const allParts = [_rOnPkOk, _rTieredOk].filter(Boolean).flatMap((r) => r.parts || [r]);
+    const _allPartsQty = allParts.reduce((s, r) => s + r.qty, 0);
+    const _allPartsComputed = allParts.reduce((s, r) => s + r.computed, 0);
     _rates.EnergyOnPeakCharge = {
-      qty: allParts.reduce((s, r) => s + r.qty, 0),
-      rate: allParts[0].rate,
+      qty: _allPartsQty,
+      rate: _blendRate(allParts, true, _allPartsQty, _allPartsComputed),
       unit: allParts[0].unit,
-      computed: allParts.reduce((s, r) => s + r.computed, 0),
+      computed: _allPartsComputed,
       parts: allParts,
     };
   }

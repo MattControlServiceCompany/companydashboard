@@ -1495,11 +1495,11 @@ function _qtySelfVerifies(qty, rate, ocrCharge) {
 
 // Same self-verification check as _qtySelfVerifies, but for charge lines that may
 // span MULTIPLE rate tiers (a "changeover" bill — On-Peak + Tiered both present).
-// _rates.EnergyOnPeakCharge.rate is only the FIRST tier's rate (see
-// energy-savings.js ~3178-3188's `rate: allParts[0].rate`), while .qty is summed
-// across ALL tiers — so `qty * rate` is NOT a valid self-check on a genuine
-// multi-tier bill even when qty is exactly correct (it would spuriously fail and
-// trigger a bogus "correction" by subtraction). `.computed`, by contrast, is
+// _rates.EnergyOnPeakCharge.rate is a QTY-WEIGHTED BLEND across all tiers (see
+// energy-savings.js's `_blendRate()` helper, used by the on-peak/tiered merge),
+// not a simple per-tier rate — so `qty * rate` is still not a reliable per-tier
+// self-check (rounding on each tier's own computed differs from rounding the
+// blended rate × total qty once). `.computed`, by contrast, is
 // summed PER-PART (`allParts.reduce((s, r) => s + r.computed, 0)`, each part's
 // own computed = that part's own qty × that part's own tier rate), so it is the
 // correct total to compare against the bill's printed charge regardless of how
@@ -2708,7 +2708,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               // computed value CREATES a mismatch that didn't exist.
               const xChgParts = b._xChgParts && b._xChgParts[field];
               const xRateParts = ri.parts || [ri];
-              if (xChgParts && xChgParts.length > xRateParts.length) continue;
+              // xChg's own total is the LITERAL printed-dollar sum scraped straight off the
+              // bill; xRate's `.computed` is RE-DERIVED from qty×rate per part and can drift
+              // from the printed total by a few cents on rounding (AMITY acct 1257228027 ECA:
+              // printed $758.28 vs re-derived $758.81). When xChg found the same number of
+              // parts as xRate (or more), trust xChg's printed total and skip the xRate
+              // overwrite. Only let xRate's computed value win when xChg found STRICTLY FEWER
+              // parts than xRate — the original working case where xChg missed a garbled line
+              // that xRate still parsed the rate/qty for.
+              if (xChgParts && xChgParts.length >= xRateParts.length) continue;
               if (sameDirection) {
                 b['_auto_corrected_' + field] = {
                   original: b[field],
@@ -2716,8 +2724,32 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                   rate: ri.rate,
                   qty: ri.qty,
                   unit: ri.unit,
+                  // Per-part breakdown (mirrors _chargeSelfVerifies's use of .computed above)
+                  // so a single synthetic qty×rate line can never misrepresent a multi-segment
+                  // (rate-changeover) charge — each part's own qty/rate/computed is shown.
                   reason:
-                    ri.qty.toFixed(4) + ' ' + ri.unit + ' × $' + ri.rate.toFixed(5) + ' = $' + ri.computed.toFixed(2),
+                    xRateParts.length > 1
+                      ? xRateParts
+                          .map(
+                            (p) =>
+                              p.qty.toFixed(4) +
+                              ' ' +
+                              p.unit +
+                              ' × $' +
+                              p.rate.toFixed(5) +
+                              ' = $' +
+                              p.computed.toFixed(2),
+                          )
+                          .join(' + ') +
+                        ' = $' +
+                        ri.computed.toFixed(2)
+                      : ri.qty.toFixed(4) +
+                        ' ' +
+                        ri.unit +
+                        ' × $' +
+                        ri.rate.toFixed(5) +
+                        ' = $' +
+                        ri.computed.toFixed(2),
                 };
                 b[field] = ri.computed.toFixed(2);
               }
