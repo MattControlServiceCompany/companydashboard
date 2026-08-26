@@ -2155,7 +2155,42 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       if (!rateM) {
         rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww])[ \\t]+at[ \\t]+[$]([0-9,.]+)', 'i'));
       }
-      // 5. Last resort: any unit with junk (no "per" required)
+      // 5/6. Louisburg digit-repair Group 6 (acct 2885731561, 03/02-03/31/2026
+      // "Energy Chg Off Pk Win"): every "$"-requiring tier above can fail when the
+      // printed "$" itself is OCR-garbled away entirely (e.g. "...BE 0.03288 per
+      // KWh" instead of "...$0.03288 per KWh" — the "$" glyph misread as
+      // letters), even though the rate is perfectly legible and confirmed by an
+      // immediately-following "per kWh"/"per kW". Tried BEFORE tier 7 (which
+      // allows a "$" ANYWHERE later with no "per" confirmation) deliberately: on
+      // this exact bill tier 7's unconfirmed lazy "$" search reaches all the way
+      // past the rate to the charge AMOUNT at the end of the block ("$3,071.22")
+      // and wrongly treats the CHARGE as if it were the RATE — that match fails
+      // the maxRate sanity check downstream (a $3,071 "rate" is impossible) and
+      // xRate silently returns null instead of ever trying these tiers, which
+      // would have found the real, confirmed rate. Same lazy/unbounded gap as
+      // tier 1/3, minus the "$" literal — the mandatory "per kWh"/"per kW"
+      // confirmation right after the number is what still protects this from
+      // matching an unrelated number: a lazy gap stops at the FIRST number
+      // immediately followed by that confirmation, and every other number in
+      // this bill's chart-noise block (e.g. "70000") is not immediately
+      // followed by "per kWh" and is correctly skipped.
+      if (!rateM) {
+        rateM = block.match(
+          new RegExp(
+            QTY_RE + GAP + 'k([Ww]h)[ \\t]+at[ \\t]+[\\u0000-\\uFFFF]*?([0-9][0-9,.]*)[ \\t]*p[eo]r[ \\t]+k[Ww]h',
+            'i',
+          ),
+        );
+      }
+      if (!rateM) {
+        rateM = block.match(
+          new RegExp(
+            QTY_RE + GAP + 'k([Ww])[ \\t]+at[ \\t]+[\\u0000-\\uFFFF]*?([0-9][0-9,.]*)[ \\t]*p[eo]r[ \\t]+k[Ww]',
+            'i',
+          ),
+        );
+      }
+      // 7. Last resort: any unit with junk (no "per" required)
       if (!rateM) {
         rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)[ \\t]+at[\\u0000-\\uFFFF]*?[$]([0-9,.]+)', 'i'));
       }
@@ -2451,8 +2486,16 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // turn this into a multi-second scan — measured against the 47-bill and 33-bill harness
   // fixtures after adding this guard (see dashboardlogic entry for this fix).
   if (_meterRows.length === 0 && _meterT.length < 8000) {
+    // Leading-token budget widened 2 -> 3 (Louisburg digit-repair Group 3, account
+    // 1257228027, 01/29-03/02/2026 bill): a badly garbled date pair ("© ois0 os03") can
+    // fragment into FOUR stray tokens after the letter-strip pre-normalize (e.g. "0",
+    // "03", "00", "32") before the real EndRead/StartRead/.../RKVAUsed run of clean
+    // numbers begins — one more than the previous budget (2 generic + 1 optional Days
+    // digit-group = 3) tolerated. Still fully protected by the arithmetic-identity
+    // requirement below (readsChecksum/kwhChecksum) — widening the leading-token
+    // tolerance cannot by itself manufacture a false-positive row match.
     const _meterReLoose =
-      /^[^\S\n]*(?:\S{1,6}[^\S\n]+){0,2}(?:\d{1,3}[^\S\n]+)?([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)(?:[^\S\n]+([\d,.]+))?(?:[^\S\n]+([\d,.]+))?[^\S\n]*$/gm;
+      /^[^\S\n]*(?:\S{1,6}[^\S\n]+){0,3}(?:\d{1,3}[^\S\n]+)?([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)[^\S\n]+([\d,]+(?:\.\d+)?)(?:[^\S\n]+([\d,.]+))?(?:[^\S\n]+([\d,.]+))?[^\S\n]*$/gm;
     let _lm;
     let _looseAttempts = 0;
     while ((_lm = _meterReLoose.exec(_meterT)) !== null && _looseAttempts < 300) {
@@ -2628,8 +2671,20 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       if (!/^\d+$/.test(digits) || digits.length < 7 || digits.length > 9) return null;
       return digits.slice(0, -4) + '.' + digits.slice(-4);
     };
+    // Difference is End-Start, so its integer part is almost always 1-4 digits (vs
+    // EndRead/StartRead's full meter-register length) — same "decimal point OCR'd to
+    // nothing" mechanism, narrower length gate (5-8 digits total: 1-4 integer + 4
+    // decimal). Louisburg digit-repair Group 3 (account 8980291458, 06/08-07/08/2026):
+    // Difference printed as "163577" instead of "16.3577".
+    const _insertDecimal4Diff = (s) => {
+      if (!s || s.includes('.')) return null;
+      const digits = s.replace(/,/g, '');
+      if (!/^\d+$/.test(digits) || digits.length < 5 || digits.length > 8) return null;
+      return digits.slice(0, -4) + '.' + digits.slice(-4);
+    };
     const endCand = _insertDecimal4(row[4]);
     const startCand = _insertDecimal4(row[5]);
+    const diffCand = _insertDecimal4Diff(row[6]);
     if (!endCand && !startCand) continue;
     const pn0 = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
     const rawEnd = pn0(row[4]),
@@ -2637,9 +2692,24 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       rawDiffCol = pn0(row[6]);
     const candEnd = endCand ? parseFloat(endCand) : rawEnd;
     const candStart = startCand ? parseFloat(startCand) : rawStart;
+    // When Difference ALSO lost its decimal point via the same OCR mechanism, the RAW
+    // (undecimaled) End/Start/Difference numbers can satisfy End-Start=Difference by
+    // pure scale coincidence (all three shifted by the same power of 10 cancels out of
+    // the subtraction), which made a strict-improvement check against the raw,
+    // still-undecimaled Difference reject the correct decimal insertion outright (rawGap
+    // was already 0). Compare against the decimal-corrected Difference candidate when
+    // one exists; fall back to the raw column only when Difference already had a real
+    // decimal point (nothing to fix there).
+    const candDiffCol = diffCand ? parseFloat(diffCand) : rawDiffCol;
     const rawGap = Math.abs(rawEnd - rawStart - rawDiffCol);
-    const candGap = Math.abs(candEnd - candStart - rawDiffCol);
-    if (candGap < rawGap) {
+    const candGap = Math.abs(candEnd - candStart - candDiffCol);
+    // <= (not strict <), with a small float-noise epsilon: the scale-coincidence case
+    // above produces candGap === rawGap === 0 in EXACT arithmetic (both are the same
+    // true identity at different decimal scales), but floating-point subtraction of the
+    // decimal-valued candidates lands a few ULPs off zero (e.g. 2.13e-14) even though the
+    // integer-valued raw comparison is exactly 0 — a bare `<=` would still reject the tie
+    // on that noise. 1e-6 is far below any real single-cent/single-kWh OCR discrepancy.
+    if (candGap <= rawGap + 1e-6) {
       if (endCand) {
         row._fixedEndRead = endCand;
         row._endReadOriginal = row[4].replace(/,/g, '');
@@ -2647,6 +2717,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       if (startCand) {
         row._fixedStartRead = startCand;
         row._startReadOriginal = row[5].replace(/,/g, '');
+      }
+      if (diffCand && candDiffCol !== rawDiffCol) {
+        row._fixedDifference = diffCand;
+        row._differenceOriginal = row[6].replace(/,/g, '');
       }
     }
   }
