@@ -2155,42 +2155,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       if (!rateM) {
         rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww])[ \\t]+at[ \\t]+[$]([0-9,.]+)', 'i'));
       }
-      // 5/6. Louisburg digit-repair Group 6 (acct 2885731561, 03/02-03/31/2026
-      // "Energy Chg Off Pk Win"): every "$"-requiring tier above can fail when the
-      // printed "$" itself is OCR-garbled away entirely (e.g. "...BE 0.03288 per
-      // KWh" instead of "...$0.03288 per KWh" — the "$" glyph misread as
-      // letters), even though the rate is perfectly legible and confirmed by an
-      // immediately-following "per kWh"/"per kW". Tried BEFORE tier 7 (which
-      // allows a "$" ANYWHERE later with no "per" confirmation) deliberately: on
-      // this exact bill tier 7's unconfirmed lazy "$" search reaches all the way
-      // past the rate to the charge AMOUNT at the end of the block ("$3,071.22")
-      // and wrongly treats the CHARGE as if it were the RATE — that match fails
-      // the maxRate sanity check downstream (a $3,071 "rate" is impossible) and
-      // xRate silently returns null instead of ever trying these tiers, which
-      // would have found the real, confirmed rate. Same lazy/unbounded gap as
-      // tier 1/3, minus the "$" literal — the mandatory "per kWh"/"per kW"
-      // confirmation right after the number is what still protects this from
-      // matching an unrelated number: a lazy gap stops at the FIRST number
-      // immediately followed by that confirmation, and every other number in
-      // this bill's chart-noise block (e.g. "70000") is not immediately
-      // followed by "per kWh" and is correctly skipped.
-      if (!rateM) {
-        rateM = block.match(
-          new RegExp(
-            QTY_RE + GAP + 'k([Ww]h)[ \\t]+at[ \\t]+[\\u0000-\\uFFFF]*?([0-9][0-9,.]*)[ \\t]*p[eo]r[ \\t]+k[Ww]h',
-            'i',
-          ),
-        );
-      }
-      if (!rateM) {
-        rateM = block.match(
-          new RegExp(
-            QTY_RE + GAP + 'k([Ww])[ \\t]+at[ \\t]+[\\u0000-\\uFFFF]*?([0-9][0-9,.]*)[ \\t]*p[eo]r[ \\t]+k[Ww]',
-            'i',
-          ),
-        );
-      }
-      // 7. Last resort: any unit with junk (no "per" required)
+      // 5. Last resort: any unit with junk (no "per" required)
       if (!rateM) {
         rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)[ \\t]+at[\\u0000-\\uFFFF]*?[$]([0-9,.]+)', 'i'));
       }

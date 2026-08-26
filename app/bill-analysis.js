@@ -2373,57 +2373,6 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       const _acctKey = (b.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
       const hist = _historicalCache[_acctKey] || [];
 
-      // ── CROSS-BILL METER-CHAIN WITNESS (Louisburg digit-repair Group 4) ──
-      // The within-PDF "SEQUENTIAL READ VALIDATION + CROSS-BILL RECOVERY" pass further
-      // below only sees bills extracted from the SAME PDF upload. Real Evergy bills for
-      // one physical meter arrive in SEPARATE monthly PDF uploads, so the immediately
-      // prior period's bill is normally already durably saved (meter.bills, the same
-      // records `hist` above is built from) by the time the next month's PDF is
-      // processed. For the SAME physical meter, this period's StartRead should equal
-      // the immediately-prior period's EndRead — proven exact to 4 decimal places on
-      // every Louisburg case checked (2885731561 NewHS, 2885731561 Ballfields,
-      // 3956167218). Evergy bills multiple meters/buildings under one shared account
-      // number (e.g. Louisburg's "NewHS" and "Ballfields" both bill under account
-      // 2885731561), so account number ALONE is ambiguous — require the saved record's
-      // serviceAddress to match this bill's own ServiceAddress too. Only fills a
-      // MISSING current-bill read (never overwrites a value this bill's own OCR already
-      // read) and only accepts the historical bill whose period end is within 5 days of
-      // this bill's period start (same tolerance as the within-PDF recovery below), so
-      // it can never pull a wrong-period or unrelated-meter value.
-      if (!b.StartRead && b.BillingPeriodStart && hist.length) {
-        const _normAddr = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const _bAddr = _normAddr(b.ServiceAddress);
-        const _curStart = new Date(b.BillingPeriodStart);
-        let _bestHist = null,
-          _bestGap = Infinity;
-        if (_bAddr && !isNaN(_curStart)) {
-          for (const h of hist) {
-            if (!h || !h.endRead || !h.end) continue;
-            if (_normAddr(h.serviceAddress) !== _bAddr) continue;
-            const _hEnd = new Date(h.end);
-            if (isNaN(_hEnd)) continue;
-            const _gap = Math.abs((_curStart - _hEnd) / 86400000);
-            if (_gap <= 5 && _gap < _bestGap) {
-              _bestGap = _gap;
-              _bestHist = h;
-            }
-          }
-        }
-        if (_bestHist) {
-          b.StartRead = String(_bestHist.endRead);
-          b._auto_recovered_StartRead = {
-            original: null,
-            corrected: b.StartRead,
-            reason:
-              "Copied from the prior saved bill's EndRead (" +
-              _bestHist.endRead +
-              ') — same account+service address, billing period continuous (' +
-              _bestGap.toFixed(1) +
-              ' day gap).',
-          };
-        }
-      }
-
       // 1. Auto-recover missing fields using raw text structure + historical data
       //    These fields are 100% present on every bill — if null, it's an OCR garble, not a missing field.
       //    Use structural position in the raw text as primary recovery, historical data as validation.
@@ -2698,47 +2647,6 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const ocrTotal = pf(b.TotalCurrentCharges);
         let compSum = _sumCharges();
 
-        // 3a-bis. TDC CHARGE VERIFICATION FALLBACK (#43, promoted 2026-08-25 to a
-        // PRIMARY unconditional step — item digit-repair Group 1).
-        // Strategy B can only verify charges that have _rates entries (from xRate).
-        // When OCR garbled the TDC rate line so xRate returned nothing, TDC is
-        // unverifiable and any OCR misread on its charge silently persists. Fallback:
-        // if _rates.TDCCharge is missing but we have both the charge amount and the
-        // kW quantity, derive rate = charge / qty and synthesize a _rates entry.
-        // This gives Strategy B a computed value to cross-check against.
-        //
-        // Originally this only ran inside the `else` branch below (total-charge
-        // mismatch ≥ $0.02 reconciliation), which a bill whose charges already sum
-        // correctly never enters — so on 5 confirmed Louisburg bills (accounts
-        // 1257228027, 2885731561, 6699289683) the printed TDC rate ($2.68601) was
-        // fully legible in the OCR text and TDCCharge/TDCkW both extracted correctly,
-        // yet TDCRate stayed null purely because the reconciliation branch never
-        // fired. Moved to run unconditionally for every Evergy bill so a legible
-        // printed rate is never dropped just because the bill's totals already
-        // balance. See docs/dashboardlogic.md and
-        // AI/_context/research/2026-08-25-louisburg-digit-repair-analysis.md Group 1.
-        if (b._rates && !b._rates.TDCCharge && pf(b.TDCCharge) > 0 && pf(b.TDCkW) > 0) {
-          const _tdcChg = pf(b.TDCCharge);
-          const _tdcQty = pf(b.TDCkW);
-          const _tdcRate = _tdcChg / _tdcQty;
-          // Sanity: Evergy TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
-          if (_tdcRate >= 0.1 && _tdcRate <= 50) {
-            b._rates.TDCCharge = {
-              qty: _tdcQty,
-              rate: _tdcRate,
-              unit: 'kW',
-              computed: Math.round(_tdcQty * _tdcRate * 100) / 100,
-              _derived: true,
-            };
-            // Also back-fill b.TDCRate — the field the validator and every
-            // UI/export path actually read. Without this the derived rate
-            // stayed internal to _rates and TDCRate stayed null even though
-            // a sanity-checked value was already computed. Only fill when
-            // not already set by the normal xRate pass.
-            if (!b.TDCRate) b.TDCRate = _tdcRate;
-          }
-        }
-
         if (!ocrTotal) {
           // No OCR'd total — compSum is the only evidence we have.
           if (compSum > 0) {
@@ -2750,6 +2658,35 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // 3a'. Already consistent — done, no mutation needed.
         } else {
           // Disagreement between ocrTotal and compSum. Run principled diagnosis.
+
+          // 3b-pre. TDC CHARGE VERIFICATION FALLBACK (#43)
+          // Strategy B can only verify charges that have _rates entries (from xRate).
+          // When OCR garbled the TDC rate line so xRate returned nothing, TDC is
+          // unverifiable and any OCR misread on its charge silently persists. Fallback:
+          // if _rates.TDCCharge is missing but we have both the charge amount and the
+          // kW quantity, derive rate = charge / qty and synthesize a _rates entry.
+          // This gives Strategy B a computed value to cross-check against.
+          if (b._rates && !b._rates.TDCCharge && pf(b.TDCCharge) > 0 && pf(b.TDCkW) > 0) {
+            const _tdcChg = pf(b.TDCCharge);
+            const _tdcQty = pf(b.TDCkW);
+            const _tdcRate = _tdcChg / _tdcQty;
+            // Sanity: Evergy TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
+            if (_tdcRate >= 0.1 && _tdcRate <= 50) {
+              b._rates.TDCCharge = {
+                qty: _tdcQty,
+                rate: _tdcRate,
+                unit: 'kW',
+                computed: Math.round(_tdcQty * _tdcRate * 100) / 100,
+                _derived: true,
+              };
+              // Also back-fill b.TDCRate — the field the validator and every
+              // UI/export path actually read. Without this the derived rate
+              // stayed internal to _rates and TDCRate stayed null even though
+              // a sanity-checked value was already computed. Only fill when
+              // not already set by the normal xRate pass.
+              if (!b.TDCRate) b.TDCRate = _tdcRate;
+            }
+          }
 
           // 3b. Strategy B — apply ALL rate×qty corrections where the direction
           // matches the gap (charge too low when sum is too low, or too high when
