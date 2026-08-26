@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.25.772',
+    date: '2026-08-25',
+    title: 'Utility Bills: more Louisburg gas/water bills read correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy / Utility Bills: on the utility-bill extraction, municipal bills (gas, water, sewer) now read their base charge, usage, and meter readings correctly on more Louisburg bills.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.25.771',
     date: '2026-08-25',
     title: 'Utility Bills: more electric bills read correctly',
