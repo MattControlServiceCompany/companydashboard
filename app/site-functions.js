@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.26.777',
+    date: '2026-08-26',
+    title: 'Bill extraction review: commodity tabs stay on the right building',
+    items: [
+      {
+        type: 'fix',
+        text: 'Bill extraction review: commodity buttons now stay on the building you are viewing and load its values on the first click, instead of sometimes jumping to a different building or requiring a second click.',
+      },
+      {
+        type: 'fix',
+        text: 'Bill extraction review: starting a new batch of extractions no longer shows leftover commodity tabs from the previous batch.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.26.776',
     date: '2026-08-26',
     title: 'Utility Bills: batch review flags the specific period, not every bill',
