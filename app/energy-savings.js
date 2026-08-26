@@ -3314,6 +3314,39 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (!_franchiseParts.length) return null;
     return _franchiseParts.reduce((a, b) => a + b, 0).toFixed(2);
   })();
+  // Sales tax capture (backlog #13, 2026-08-26). Municipally-taxed Evergy
+  // accounts print one line per taxing jurisdiction below Subtotal, e.g.
+  // "Kansas State Sales Tax @ 6.5% ... $22.57" / "Miami County Sales Tax @
+  // 1.5% ... $5.21" / "Louisburg City Sales Tax @ 1.5% ... $5.21" (Louisburg
+  // Ballfields acct 2885731561, 04/22-05/31/2026 bill — verified against the
+  // rendered PDF). No field previously captured these lines, so
+  // _recompSum below fell short of TotalCurrentCharges by exactly the tax
+  // total, and the gap-inference block fabricated the residual into
+  // BilledKWCharge (a phantom demand charge — 2SGSE has none). Sum ALL
+  // matching lines (state + any number of local jurisdictions), same
+  // sum-all shape as _franchiseParts above.
+  const _salesTaxParts = [];
+  const salesTax = (() => {
+    const lines = t.split('\n');
+    const taxRe = /Sales\s*Tax/i;
+    for (let i = 0; i < lines.length; i++) {
+      if (!taxRe.test(lines[i])) continue;
+      const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
+      if (sameLine) {
+        _salesTaxParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
+        continue;
+      }
+      for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
+        if (nextLine) {
+          _salesTaxParts.push(parseFloat(nextLine[1].replace(/,/g, '')));
+          break;
+        }
+      }
+    }
+    if (!_salesTaxParts.length) return null;
+    return _salesTaxParts.reduce((a, b) => a + b, 0).toFixed(2);
+  })();
   // Subtotal is the second independent total the bill prints (alongside
   // "Current Charges"). For Evergy tax-exempt accounts these two values
   // are always identical, so extracting both gives _postExtractionVerify
@@ -3606,6 +3639,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     BillOffset: billOffset,
     SolarCredit: parallelGenCredit,
     FranchiseFee: franchise,
+    SalesTax: salesTax,
     MiscellaneousCharge: miscCharge,
     TotalCurrentCharges: totalDue,
     MeterNumber: null,
@@ -3764,6 +3798,15 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       unit: null,
       computed: _franchiseParts.reduce((a, b) => a + b, 0),
       parts: _franchiseParts.map((v) => ({ qty: null, rate: null, unit: null, computed: v, ocrCharge: v })),
+    };
+  }
+  if (_salesTaxParts.length > 1) {
+    _rates.SalesTax = {
+      qty: null,
+      rate: null,
+      unit: null,
+      computed: _salesTaxParts.reduce((a, b) => a + b, 0),
+      parts: _salesTaxParts.map((v) => ({ qty: null, rate: null, unit: null, computed: v, ocrCharge: v })),
     };
   }
   for (const [chargeKey, partAmounts] of Object.entries(_xChgParts)) {
@@ -4278,6 +4321,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         _pf(result.TaxExemptDelivery) +
         _pf(result.BillOffset) +
         _pf(result.FranchiseFee) +
+        _pf(result.SalesTax) +
         _pf(result.MiscellaneousCharge);
       const _coreTotal = _pf(result.TotalCurrentCharges);
       const _onPkCharge = Math.round((_coreTotal - _coreSum) * 100) / 100;
@@ -4344,6 +4388,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         _pf(result.TaxExemptDelivery) +
         _pf(result.BillOffset) +
         _pf(result.FranchiseFee) +
+        _pf(result.SalesTax) +
         _pf(result.MiscellaneousCharge);
       const _coreTotal = _pf(result.TotalCurrentCharges);
       const _offPkCharge = Math.round((_coreTotal - _coreSum) * 100) / 100;
@@ -4496,6 +4541,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         _pf(result.TaxExemptDelivery) +
         _pf(result.BillOffset) +
         _pf(result.FranchiseFee) +
+        _pf(result.SalesTax) +
         _pf(result.SolarCredit) +
         _pf(result.RenewableCharge) +
         _pf(result.MiscellaneousCharge)) *
@@ -4568,6 +4614,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     'TaxExemptDelivery',
     'BillOffset',
     'FranchiseFee',
+    'SalesTax',
     'MiscellaneousCharge',
   ];
   const _recompSum = _allChargeFields.reduce((s, f) => s + _pf(result[f]), 0);
@@ -4575,7 +4622,16 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _recompGap = _recompTotal - _recompSum;
   if (_recompTotal > 0 && _recompGap > 0.5) {
     const nullCore = _coreChargeFields.filter((f) => result[f] === null || result[f] === undefined);
-    const target = nullCore.length === 1 ? nullCore[0] : null;
+    let target = nullCore.length === 1 ? nullCore[0] : null;
+    // GUARD (backlog #13, 2026-08-26): a demand charge is meaningless
+    // without a demand quantity — never let gap-inference fabricate
+    // BilledKWCharge when BilledKW (the qty field, populated from the
+    // "Demand Chg <qty> kW at" line) is null/zero/absent. Universally true
+    // (not 2SGSE-specific): belt to the sales-tax-capture fix's suspenders
+    // above — even if some other line is ever left uncaptured on some other
+    // bill, a phantom demand charge still can't be fabricated without a kW
+    // quantity to go with it.
+    if (target === 'BilledKWCharge' && !_pf(result.BilledKW)) target = null;
     if (target) {
       result[target] = _recompGap.toFixed(2);
       result['_auto_recovered_' + target] = {
