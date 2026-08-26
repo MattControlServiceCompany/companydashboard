@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.26.775',
+    date: '2026-08-26',
+    title: 'Utility Bills: more Evergy rate charges read correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy / Utility Bills: on the Evergy utility-bill extraction, more rate charges now read correctly, including RkVA and TDC rates. A parsing issue had been dropping some rate values when another charge line followed them on the bill.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.26.774',
     date: '2026-08-26',
     title: 'Utility Bills: $0.00 Evergy rate charges now captured',
