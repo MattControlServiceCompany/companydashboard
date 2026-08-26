@@ -7788,6 +7788,11 @@ function clearPDFOCR() {
   window._pdfPassScores = null;
   window._pdfOcrEmptyPages = null;
   window._pdfOcrBudgetExceeded = null;
+  // F7: reset batch-review tab state so a new extraction doesn't inherit stale building/commodity tabs
+  window._pdfBuildingTab = null;
+  window._pdfCommTab = null;
+  const _bb = document.getElementById('pdfBldgTabsBar');
+  if (_bb) _bb.remove();
   _clearExtractionState();
   document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
   document.getElementById('pdfInput').value = '';
@@ -12403,6 +12408,10 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
 }
 
 async function processPDF(file) {
+  // F7: single-file entry point never went through clearPDFOCR() before, so a
+  // prior batch's tab state (_pdfBuildingTab/_pdfCommTab/#pdfBldgTabsBar) leaked
+  // into the new extraction. Reset first, before reading the file.
+  clearPDFOCR();
   const box = document.getElementById('pdfAIBox'),
     dz = document.getElementById('dz-title');
   document.getElementById('extractMethodBadge').style.display = 'none';
@@ -13710,6 +13719,17 @@ function renderMultiBillUI(bills, box) {
   });
   // Sort descending by date (newest first)
   periods.sort((a, b) => b.sortDate - a.sortDate);
+  // F6 (multi-account building scoping): resolve which building tab is active
+  // BEFORE computing the commodity list, so the commodity pills for a
+  // multi-account batch only ever show commodities that exist under the
+  // CURRENT building, not the whole batch. Building is now the primary
+  // selector and commodity is a filter within it — the previous order was
+  // reversed (commodity picked the building), which is what let clicking a
+  // commodity pill silently jump to a different building (see selectCommTab).
+  const _acctKeys = [...new Set(bills.map((b) => b.AccountNumber || '_unknown'))];
+  if (_multiAcct && (!window._pdfBuildingTab || !_acctKeys.includes(window._pdfBuildingTab))) {
+    window._pdfBuildingTab = bills[idx]?.AccountNumber || _acctKeys[0];
+  }
   // Commodity tabs: group pills by commodity when multiple types exist
   const _commOrder = ['Gas', 'Water', 'Sewer', 'Stormwater', 'Electric', 'Propane', 'Other'];
   // FIX(2026-07-02, item 219e6828): indexOf() returns -1 for any commodity not
@@ -13722,11 +13742,23 @@ function renderMultiBillUI(bills, box) {
     const i = _commOrder.indexOf(c);
     return i === -1 ? 999 : i;
   };
-  const _uniqueComms = [...new Set(bills.map((b) => b.Commodity || 'Other'))].sort(
+  // F6: scope the commodity pill list to the active building for a multi-account
+  // batch, so a Water-only building never shows a Gas pill that belongs to a
+  // different building in the same batch. The single-account combined-bill path
+  // (e.g. Louisburg Water+Sewer+Storm on one account) keeps the global list.
+  const _commSourceBills =
+    _multiAcct && window._pdfBuildingTab
+      ? bills.filter((b) => (b.AccountNumber || '_unknown') === window._pdfBuildingTab)
+      : bills;
+  const _uniqueComms = [...new Set(_commSourceBills.map((b) => b.Commodity || 'Other'))].sort(
     (a, b) => _commRank(a) - _commRank(b),
   );
   const _hasMultiComm = _uniqueComms.length > 1;
-  if (_hasMultiComm && !window._pdfCommTab) window._pdfCommTab = _uniqueComms[0];
+  // F6: also reset when the persisted comm tab no longer belongs to the (now
+  // building-scoped) list — e.g. after switching to a building that lacks it.
+  if (_hasMultiComm && (!window._pdfCommTab || !_uniqueComms.includes(window._pdfCommTab))) {
+    window._pdfCommTab = _uniqueComms[0];
+  }
   if (window._pdfCommTab === 'All') window._pdfCommTab = _uniqueComms[0];
   const activeCommTab = _hasMultiComm ? window._pdfCommTab || _uniqueComms[0] : 'All';
   const filteredPeriods =
@@ -13821,7 +13853,9 @@ function renderMultiBillUI(bills, box) {
   };
   let nav;
   if (_multiAcct) {
-    const _acctKeys = [...new Set(bills.map((b) => b.AccountNumber || '_unknown'))];
+    // F6: _acctKeys is now computed once, earlier in this function (before
+    // _uniqueComms), so window._pdfBuildingTab is resolved before the
+    // commodity list — see the block above periods.sort().
     const _bldgName = (acct) => {
       // FIX(2026-07-09, item 219e6828 defect 2): '_unknown' is the internal grouping
       // key _acctKeys uses for bills with no AccountNumber — no bill's AccountNumber
@@ -13872,20 +13906,6 @@ function renderMultiBillUI(bills, box) {
       );
     };
     const _hasMultiCommsAcross = new Set(bills.map((b) => b.Commodity || 'Electric')).size > 1;
-    if (!window._pdfBuildingTab || !_acctKeys.includes(window._pdfBuildingTab)) {
-      // FIX(2026-07-09, item 219e6828 defect 1): the building tab used to default to
-      // bills[idx]'s account (the newest bill overall) regardless of which commodity
-      // tab was active. window._pdfCommTab defaults independently (first commodity in
-      // _commOrder) a few lines above — the two defaults could point at incompatible
-      // bill sets (e.g. commTab=Water, buildingTab=a Sewer-only account), so the
-      // account+commodity filters below never overlapped and "Monthly Billing
-      // Periods" rendered empty on first load. Default the building tab from the
-      // first bill under the already-active commodity tab so they always agree.
-      const _defaultAcctForComm = filteredPeriods.length
-        ? bills[filteredPeriods[0].i].AccountNumber || '_unknown'
-        : null;
-      window._pdfBuildingTab = _defaultAcctForComm || bills[idx]?.AccountNumber || _acctKeys[0];
-    }
     let _bldgTabsHtml = '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
     for (const acct of _acctKeys) {
       const isActive = acct === window._pdfBuildingTab;
@@ -14136,23 +14156,26 @@ function selectCommTab(tab) {
   window._pdfCommTab = tab;
   const bills = window._pdfMultiBills;
   if (!bills) return;
-  // FIX(2026-07-09, item 219e6828 defect 1): clicking a commodity tab used to leave
-  // window._pdfBuildingTab pointed at whatever account was selected before the click.
-  // If that account has no bills under the newly-clicked commodity, the building tab
-  // and commodity tab filters never overlap and "Monthly Billing Periods" renders
-  // empty (see investigation-baldwin-2026-07-09.md) — the click looked dead. Re-point
-  // the building tab (and the selected bill) at the first account that actually has
-  // bills under the clicked commodity.
-  const currentAcctHasTab = bills.some(
+  // FIX (F6/F8, replaces the 2026-07-09 item 219e6828 defect-1 patch): that patch
+  // only reassigned window._pdfMultiIdx inside the "current account lacks this
+  // commodity" branch, so (a) on a same-account building the panel kept showing
+  // the STALE prior commodity's bill until a second click, and (b) whenever it
+  // did fire it always jumped to the first bill of that commodity GLOBALLY,
+  // silently switching buildings even when the current building already had
+  // that commodity. Resolve unconditionally on every click instead, preferring
+  // a bill under the CURRENT building tab; only fall back to the first global
+  // bill of that commodity (and move the building tab) when the current
+  // building genuinely has none. Do not reintroduce the old always-jump path.
+  let resolvedIdx = bills.findIndex(
     (b) => (b.AccountNumber || '_unknown') === window._pdfBuildingTab && (b.Commodity || 'Other') === tab,
   );
-  if (!currentAcctHasTab) {
-    const firstBillIdx = bills.findIndex((b) => (b.Commodity || 'Other') === tab);
-    if (firstBillIdx !== -1) {
-      window._pdfBuildingTab = bills[firstBillIdx].AccountNumber || '_unknown';
-      window._pdfMultiIdx = firstBillIdx;
+  if (resolvedIdx === -1) {
+    resolvedIdx = bills.findIndex((b) => (b.Commodity || 'Other') === tab);
+    if (resolvedIdx !== -1) {
+      window._pdfBuildingTab = bills[resolvedIdx].AccountNumber || '_unknown';
     }
   }
+  if (resolvedIdx !== -1) window._pdfMultiIdx = resolvedIdx;
   const box = document.getElementById('pdfAIBox');
   renderMultiBillUI(bills, box);
   const idx = window._pdfMultiIdx || 0;
