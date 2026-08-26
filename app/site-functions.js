@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.26.773',
+    date: '2026-08-26',
+    title: 'Utility Bills: more electric meter readings read correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy / Utility Bills: on the utility-bill extraction, a few more electric meter readings (demand and meter reads) now read correctly on Evergy bills where the meter row was garbled.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.25.772',
     date: '2026-08-25',
     title: 'Utility Bills: more Louisburg gas/water bills read correctly',
