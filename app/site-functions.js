@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.25.771',
+    date: '2026-08-25',
+    title: 'Utility Bills: more electric bills read correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy / Utility Bills: on the electric utility-bill extraction, more electric bills (Evergy) now read their Off-peak / On-peak usage, demand (RKVA), and read-difference values correctly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.25.770',
     date: '2026-08-25',
     title: 'Utility Bills: electric meter reads corrected on more bills',
