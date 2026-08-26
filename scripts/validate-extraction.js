@@ -160,6 +160,21 @@ const MUNICIPAL_COMMODITY_FIELDS = {
   },
 };
 
+// GT's `gas.gas_charge` is the FULL printed "Gas" line (commodity + the
+// $23.33 Louisburg customer/base charge, `_LBG_GAS_BASE`) — confirmed by
+// summing GT's own charge fields against its `total_current_charges` (see
+// 2026-08-25 gas validator failure triage, Class A). The extractor
+// deliberately keeps these as two SEPARATE fields (`GasCharge` = variable
+// commodity only, `CustomerCharge` = base fee) because three separate
+// client-visible UI surfaces show "Base" and "Gas" as their own line items,
+// and the $/Therm rate calc intentionally excludes the base charge (bug
+// d4c78f06). Folding them at the app level would double-count the base
+// charge and re-break that fix — so the fold-in happens HERE, for
+// comparison purposes only, never in app code.
+const MUNICIPAL_ACTUAL_GETTERS = {
+  'gas.gas_charge': (b) => (b ? (parseNum(b.GasCharge) || 0) + (parseNum(b.CustomerCharge) || 0) : undefined),
+};
+
 // total_current_charges / total_amount_due are intentionally NOT compared:
 // the extractor has no single field representing the full combined-bill
 // total across commodities (each commodity's own TotalAmountDue is only
@@ -385,6 +400,22 @@ function findExtractedCommodityBill(gtBill, commodity) {
       periodClose(wantStart, wantEnd, toISO(b.BillingPeriodStart), toISO(b.BillingPeriodEnd)),
     );
   }
+  // Fallback: the extracted billing-period date OCR occasionally fails on an
+  // otherwise-clean page (BillingPeriodStart/End both null), which makes
+  // toISO() return '' and periodClose() short-circuit false, producing a
+  // false NO_PERIOD_MATCH even though the record is unambiguous. Only apply
+  // when account+commodity narrows to exactly ONE candidate (no guessing
+  // among multiple) AND that candidate's own period is null/unparseable
+  // (never used to override a real period mismatch). See 2026-08-25 gas
+  // validator failure triage, Class B.
+  let periodUnverified = false;
+  if (!best && candidates.length === 1) {
+    const cand = candidates[0];
+    if (!toISO(cand.BillingPeriodStart) || !toISO(cand.BillingPeriodEnd)) {
+      best = cand;
+      periodUnverified = true;
+    }
+  }
   if (!best) {
     return {
       status: 'NO_PERIOD_MATCH',
@@ -393,7 +424,7 @@ function findExtractedCommodityBill(gtBill, commodity) {
       candidatePeriods: candidates.map((b) => toISO(b.BillingPeriodStart) + '..' + toISO(b.BillingPeriodEnd)),
     };
   }
-  return { status: 'MATCHED', file, commodity, bill: best };
+  return { status: 'MATCHED', file, commodity, bill: best, periodUnverified };
 }
 
 // ---------------------------------------------------------------------------
@@ -409,7 +440,8 @@ function diffMunicipalBill(gtBill) {
 
   function compareOne(dottedGt, extField, expected, actualBill, commodity) {
     if (expected === undefined || expected === null) return;
-    const actual = actualBill ? actualBill[extField] : undefined;
+    const getActual = MUNICIPAL_ACTUAL_GETTERS[dottedGt];
+    const actual = getActual ? getActual(actualBill) : actualBill ? actualBill[extField] : undefined;
     fields.push({
       field: dottedGt,
       extractedField: extField,
@@ -441,6 +473,14 @@ function diffMunicipalBill(gtBill) {
       }
       continue;
     }
+    if (match.periodUnverified) {
+      matchNotes.push({
+        commodity: spec.commodity,
+        status: 'MATCHED_PERIOD_UNVERIFIED',
+        file: match.file,
+        note: 'Single unambiguous account+commodity candidate; extracted billing period was null/unparseable so period could not be confirmed.',
+      });
+    }
     for (const [gtPath, extField] of Object.entries(spec.fields)) {
       compareOne(gtPath, extField, getPath(gtBill, gtPath), match.bill, spec.commodity);
     }
@@ -454,6 +494,14 @@ function diffMunicipalBill(gtBill) {
     const waterMatch = findExtractedCommodityBill(gtBill, 'Water');
     const waterBill = waterMatch.status === 'MATCHED' ? waterMatch.bill : null;
     if (waterMatch.status !== 'MATCHED') matchNotes.push({ commodity: 'Water', ...waterMatch });
+    if (waterMatch.status === 'MATCHED' && waterMatch.periodUnverified) {
+      matchNotes.push({
+        commodity: 'Water',
+        status: 'MATCHED_PERIOD_UNVERIFIED',
+        file: waterMatch.file,
+        note: 'Single unambiguous account+commodity candidate; extracted billing period was null/unparseable so period could not be confirmed.',
+      });
+    }
 
     if (isMultiMeter) {
       unmapped.push(
