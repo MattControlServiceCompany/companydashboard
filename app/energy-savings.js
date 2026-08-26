@@ -2194,8 +2194,25 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         // Sanity: qty × rate should be in the ballpark of the OCR charge.
         // If computed is < 1% of the OCR charge, the qty was likely garbled
         // (e.g. 15.06 instead of 15,060 — parsed comma as decimal).
-        const _ocrChargeM = block.match(/\$([\d,]+\.\d{2})\s*$/m);
-        const _ocrChargeVal = _ocrChargeM ? parseFloat(_ocrChargeM[1].replace(/,/g, '')) : 0;
+        // Use the same per-line getAmt() lookup as the ocrCharge capture below
+        // (not a block-final `$...$` scrape) so this compares against THIS
+        // charge's own dollar amount. The block can absorb a following non-"Chg"
+        // adjustment line (e.g. "Tax exempt delivery cost from bill ... $2,271.15")
+        // that doesn't trip NEXT_CHG_LINE; a block-final regex would grab that much
+        // larger unrelated amount instead of the target charge's own (e.g. RkVA's
+        // $74.35), fail the ratio, and discard an otherwise-correct rate parse.
+        let _lineOcrCharge = getAmt(lines[i]);
+        if (_lineOcrCharge === null) {
+          // Check next few lines for the charge amount, same as the ocrCharge
+          // capture this feeds below — stop at CHG_STOP so we never cross into
+          // the next charge's own amount.
+          for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+            _lineOcrCharge = getAmt(lines[j]);
+            if (_lineOcrCharge !== null) break;
+            if (CHG_STOP.test(lines[j])) break;
+          }
+        }
+        const _ocrChargeVal = _lineOcrCharge || 0;
         const _computedCheck = qty * adjRate;
         const _qtyChargeRatioOk = !_ocrChargeVal || _ocrChargeVal < 1 || _computedCheck / _ocrChargeVal > 0.1;
         if (
@@ -2261,16 +2278,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
               } catch (e) {}
             }
           }
-          // Also capture the OCR'd dollar charge from this line
-          let ocrCharge = getAmt(lines[i]);
-          if (ocrCharge === null) {
-            // Check next few lines for the charge amount
-            for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-              ocrCharge = getAmt(lines[j]);
-              if (ocrCharge !== null) break;
-              if (CHG_STOP.test(lines[j])) break;
-            }
-          }
+          // OCR'd dollar charge from this line — same value already looked up
+          // above for the ratio-sanity check; reuse it instead of re-deriving.
+          const ocrCharge = _lineOcrCharge;
           const entry = {
             qty,
             rate: adjRate,
