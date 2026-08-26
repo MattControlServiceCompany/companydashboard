@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.26.779',
+    date: '2026-08-26',
+    title: 'Bill extraction: correct blended rate for mid-cycle rate changes',
+    items: [
+      {
+        type: 'fix',
+        text: "Bill extraction: charges that change rate partway through a billing period (like ECA or TDC mid-cycle or seasonal changes) now show the correct blended rate and keep the bill's printed dollar total, instead of collapsing to the first segment.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.26.778',
     date: '2026-08-26',
     title: 'Bill extraction: Evergy sales tax now captured correctly',
