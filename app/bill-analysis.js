@@ -8823,6 +8823,14 @@ function renderQueueResults() {
         _escHtml(dupLocLabel + actLabel) +
         '</span>'
       );
+    } else if (row.bill._warnings && row.bill._warnings.length) {
+      // Per-row warning badge (fix/batch-warning-scoping) — tells the user WHICH
+      // period owns a warning instead of only a batch-wide banner in the detail pane.
+      return (
+        '<span style="color:var(--amber);font-weight:700;font-size:10px" title="' +
+        _escHtml(row.bill._warnings.map((w) => w.message || w.field || '').join(' \xb7 ')) +
+        '">&#9888; WARN</span>'
+      );
     }
     return '<span style="color:#4a4;font-size:10px">READY</span>';
   };
@@ -9044,45 +9052,10 @@ function renderQueueResults() {
       const dup = row.bill ? _getQueueDupInfo(row) : null;
       const bgColor = row._saved ? 'rgba(100,180,100,.08)' : dup ? 'rgba(245,158,11,.07)' : 'transparent';
 
-      // Status badge
-      let statusHtml;
-      if (!row.bill) {
-        statusHtml = '<span style="color:#c44;font-weight:600;font-size:10px">FAILED</span>';
-      } else if (row.bill.parseError) {
-        statusHtml =
-          '<span style="color:#e55;font-weight:600;font-size:10px" title="' +
-          _escHtml(row.bill._manualReviewLabel || 'Billing period could not be parsed — assign manually') +
-          '">PARSE ERR</span>';
-      } else if (row.bill._gateTripped) {
-        statusHtml =
-          '<span style="color:var(--red);font-weight:700;font-size:10px" title="' +
-          _escHtml((row.bill._gateReasons || []).join(' \xb7 ')) +
-          '">&#9888; VERIFY</span>';
-      } else if (row.bill._manualReview) {
-        statusHtml =
-          '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
-      } else if (row._saved) {
-        statusHtml = '<span style="color:var(--text3);font-size:10px">SAVED</span>';
-      } else if (dup) {
-        const dupAct = dup.action;
-        const actLabel =
-          dupAct === 'overwrite' ? ' \xb7 OW' : dupAct === 'merge' ? ' \xb7 MG' : dupAct === 'skip' ? ' \xb7 SK' : '';
-        // Bug 60431cd3: distinguish Saved Bills dup from meter bill dup so user
-        // understands that an empty meter can still show DUP (matching Saved Bills).
-        const dupLocLabel = dup.locationType === 'saved' ? ' (Saved)' : ' (Meter)';
-        const dupTitle =
-          dup.locationType === 'saved'
-            ? 'Duplicate found in Saved Bills — not yet on any meter'
-            : 'Duplicate found in meter bill data: ' + (dup.location || '');
-        statusHtml =
-          '<span style="color:var(--amber);font-weight:700;font-size:10px" title="' +
-          _escHtml(dupTitle) +
-          '">DUP' +
-          _escHtml(dupLocLabel + actLabel) +
-          '</span>';
-      } else {
-        statusHtml = '<span style="color:#4a4;font-size:10px">READY</span>';
-      }
+      // Status badge — shared with the grouped period-matrix table (fix/batch-warning-scoping:
+      // this used to be an inline duplicate of _buildStatusBadge that had drifted, e.g. missing
+      // the WARN case — call the shared builder so the two tables can't drift again).
+      const statusHtml = _buildStatusBadge(row);
 
       // Period label
       let periodHtml = '—';
@@ -16174,14 +16147,18 @@ function renderPDFFields(parsed, warnings) {
       flagLinks +
       '</div>';
   } else if (_pdfIsBatch && _pdfBatchWarnCount > 0) {
-    // This bill is clean, but the batch isn't — never show the green
-    // all-clear here (see FIX comment above).
+    // This bill is clean, but the batch isn't — never show the green all-clear here
+    // (see FIX comment above). FIX (fix/batch-warning-scoping): this used to reuse the
+    // same full-urgency amber banner as a real per-bill warning, which read as "this
+    // bill has a problem" even though it said otherwise. Now that the queue table's
+    // per-row WARN badge (_buildStatusBadge) shows exactly which period is affected,
+    // this note stays light-weight and clearly batch-scoped so a clean bill reads clean.
     summaryHtml =
-      '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(245,158,11,.14);border:1px solid #f59e0b;font-size:12px;color:var(--amber);font-weight:600">⚠️ ' +
+      '<div style="padding:6px 12px;margin:8px 0;border-radius:6px;background:transparent;border:1px solid var(--border);font-size:11px;color:var(--text3)">This period looks clean. ' +
       _pdfBatchWarnCount +
-      ' warning' +
+      ' other warning' +
       (_pdfBatchWarnCount > 1 ? 's' : '') +
-      ' across the batch — review before saving (this bill has none)</div>';
+      ' elsewhere in this batch — see the WARN badge in the file list above.</div>';
   } else if (correctedFields.length && !errorCount && !warnCount) {
     summaryHtml =
       '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:var(--green)">✓ All expected fields present — ' +
