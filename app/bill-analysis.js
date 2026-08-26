@@ -2483,6 +2483,35 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         }
       }
 
+      // ── STORMWATER SNAP-TO-KNOWN-RATE (tiny-digit OCR noise) ──
+      // City of Louisburg stormwater is a known flat $4.00/month on every
+      // bill in the dataset (same rate confirmed above). A single-digit OCR
+      // confusable (real bill: printed "4.00" read as "4.06") is too small
+      // for the decimal-drop check above to catch (that fires on values
+      // >$20). Snap to the known flat rate only within a tight ±$0.50
+      // tolerance band and only when it's not already exactly $4.00 — wide
+      // enough to catch a one-digit cents misread, narrow enough that a
+      // genuine future rate change would fall outside the band and print
+      // untouched.
+      if (
+        b.Commodity === 'Stormwater' &&
+        typeof b.StormWaterCharge === 'number' &&
+        b.StormWaterCharge >= 3.5 &&
+        b.StormWaterCharge <= 4.5 &&
+        b.StormWaterCharge !== 4
+      ) {
+        const original = b.StormWaterCharge;
+        b._auto_corrected_StormWaterCharge = {
+          original: original,
+          corrected: 4,
+          reason: 'Snapped to known flat Louisburg stormwater rate ($4.00): OCR read $' + original,
+        };
+        b.StormWaterCharge = 4;
+        b.TotalCurrentCharges = (4).toFixed(2);
+        b.TotalAmountDue = (4).toFixed(2);
+        console.log('[PostVerify] Stormwater snapped to known rate: $' + original + ' → $4.00');
+      }
+
       // ── GAS CHARGE OCR DECIMAL-DROP FIX (rate-validated) ──
       // Only apply decimal corrections when the corrected values produce
       // an implied rate closer to the known rate. Never blindly divide by

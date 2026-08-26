@@ -8053,8 +8053,12 @@ const UTILITY_RULES = [
           ...shared,
           Commodity: 'Water',
           StartRead: water.prevRead || null,
-          EndRead: water.currRead || null,
-          WaterUsage: water.usage || null,
+          // FIX (2026-08-25, gas-app-extraction batch, backlog TBD): `||
+          // null` silently discarded a genuine zero-usage reading (a
+          // meter that reads identical start/end, e.g. an unused
+          // irrigation line) — `0 || null` evaluates to `null` in JS.
+          // `!= null` preserves 0 while still nulling a real missing value.
+          WaterUsage: water.usage != null ? water.usage : null,
           WaterCharge: water.charge,
           WaterProtectionFee: wpf.charge,
           TotalCurrentCharges: waterTotal,
@@ -8066,7 +8070,7 @@ const UTILITY_RULES = [
         bills.push({
           ...shared,
           Commodity: 'Sewer',
-          SewerUsage: sewer.usage || null,
+          SewerUsage: sewer.usage != null ? sewer.usage : null,
           SewerCharge: sewer.charge,
           TotalCurrentCharges: sewerTotal,
           TotalAmountDue: sewerTotal,
@@ -8295,10 +8299,33 @@ const UTILITY_RULES = [
         // column), so requiring a following digit (when the exception even
         // applies) still safely distinguishes the two shapes without
         // touching the well-established single-digit "9.737" case.
+        // FIX (2026-08-25, gas-app-extraction batch, backlog TBD): Tesseract
+        // sometimes misreads EVERY thousands-comma in a 7+ digit meter read
+        // as a period, producing 2+ dot-separated 3-digit groups with no
+        // genuine decimal at all (real bill: water meter "4,354,383" OCR'd
+        // as "4.354.383"; "4,333,409"/"4,409,255" OCR'd as "4.333.409"/
+        // "4.409.255"). The single-dot fix below only converts the FIRST
+        // dot-group to a comma and correctly leaves a trailing lone dot-group
+        // as a genuine decimal — which is exactly right for gas (pressure-
+        // adjusted usage prints as "2,905 6,456 3,611.367", a real decimal
+        // that must survive) but wrong for water/sewer/stormwater, whose
+        // usage/reads are always whole numbers. Scoped to `!allowDecimalUsage`
+        // (never touches gas lines, so the real-decimal gas case above is
+        // provably unaffected — verified against sweep data) and requires
+        // 2+ dot-groups (a single dot-group is ambiguous between "comma
+        // misread" and "genuine decimal", already handled by the existing
+        // single-dot logic below).
+        let beforeNorm = before;
+        if (!allowDecimalUsage) {
+          beforeNorm = beforeNorm.replace(
+            /(^|[^\d.,])(\d{1,3}(?:\.\d{3}){2,})(?!\d)/g,
+            (m, pre, grp) => pre + grp.replace(/\./g, ','),
+          );
+        }
         const _commaFixRe = allowDecimalUsage
           ? /(^|[^\d.,])(\d+)\.(\d{3})(?!\d)(?=[^\d]*\d)/g
           : /(^|[^\d.,])(\d+)\.(\d{3})(?!\d)/g;
-        const beforeFixed = before.replace(_commaFixRe, '$1$2,$3');
+        const beforeFixed = beforeNorm.replace(_commaFixRe, '$1$2,$3');
         // Parse all numeric tokens in the before segment. Integers >=100
         // are meter reads; decimals >=100 are explicit usage columns (gas
         // CCF prints as "9,648.18"). Small decimals are bar-chart axis
@@ -8342,6 +8369,32 @@ const UTILITY_RULES = [
             // 3-token lines — that's Case B, decimals, below).
             usage = diffAB;
             usedThirdTokenAsUsage = true;
+          } else if (allowDecimalUsage && diffAB > 0 && c >= 1000 && Math.abs(c / 1000 - diffAB) < diffAB * 0.3) {
+            // FIX (2026-08-25, gas-app-extraction batch, backlog TBD): OCR
+            // fully dropped the decimal point (not just miscoded it as a
+            // comma) on a gas pressure-adjusted usage figure, gluing it into
+            // a plain integer 1000x too large — real bill: printed
+            // "1,332.261" (therms) OCR'd as "1,332261" (comma survives,
+            // decimal point vanishes, no dot anywhere to trigger the
+            // single-dot fix above; diffAB=1,197, c/1000=1,332.261, 11.3%
+            // relative error — within tolerance).
+            //
+            // Tolerance MUST stay tight (30%, matching Case B's own
+            // documented — if not literally coded — 30% intent), not the
+            // 100% first tried here: a real near-zero-usage bill with OCR
+            // noise bleeding onto the meter-read line ("1111 10,648 10,649
+            // GAS", where "1111" is column noise and there is no usage
+            // token at all — genuine printed usage was ~1 therm, too small
+            // to survive OCR) produced diffAB=9,537 (from the noise token)
+            // and c=10,649, and a 100% tolerance let 10.649 through as a
+            // "match" (99.9% relative error, pure coincidence of a large
+            // diffAB) — a confirmed regression caught by the gas-app-
+            // extraction sweep, fixed by tightening to 30% before shipping.
+            // Gated strictly to gas (allowDecimalUsage) so a genuine large
+            // water/sewer/stormwater integer read can never be
+            // reinterpreted as a decimal.
+            usage = c / 1000;
+            usedThirdTokenAsUsage = true;
           }
         }
         // Case B: 2 integer reads + a decimal usage column AFTER the
@@ -8383,21 +8436,37 @@ const UTILITY_RULES = [
           if (decimalUsage != null) usage = decimalUsage;
           else usage = computed;
         }
-        // Case C: degraded OCR — fall back to last 3 numbers of any type.
-        if (usage === 0 && integerTokens.length < 2 && allBefore.length >= 2) {
-          const reads = allBefore.slice(-3);
-          if (reads.length >= 3) {
-            usage = reads[2] > 0 && reads[2] < reads[0] ? reads[2] : Math.abs(reads[1] - reads[0]);
-          } else if (reads.length === 2) {
-            usage = Math.abs(reads[1] - reads[0]);
-          }
-        }
         // Extract meter reads: the two integer tokens before the usage
         // column are Previous and Current readings. Format on the bill
         // is "prev curr [usage] LABEL charge". Ensure prevRead <= currRead
         // so StartRead is always the lower/previous reading.
         let prevRead = null,
           currRead = null;
+        // Case C: degraded OCR — fall back to last 3 numbers of any type.
+        // Also handles the genuine zero-usage edge case (real bill:
+        // "1  1  0 WATER $27.56", an unused irrigation meter reading
+        // identical start/end): the >=100 floor on `integerTokens` above
+        // exists to reject bar-chart axis-label noise bleeding onto this
+        // line from an adjacent column, but it also throws away entirely
+        // legitimate small reads like "1" and "1". FIX (2026-08-25,
+        // gas-app-extraction batch, backlog TBD): previously only `usage`
+        // was recovered from the unfiltered `reads` array here — StartRead/
+        // EndRead were left null even though the same two numbers
+        // (reads[0]/reads[1]) are right there and already trusted enough to
+        // derive usage from. Populate them the same way the >=100 path
+        // below does (min/max, so StartRead is always the lower reading).
+        if (usage === 0 && integerTokens.length < 2 && allBefore.length >= 2) {
+          const reads = allBefore.slice(-3);
+          if (reads.length >= 3) {
+            usage = reads[2] > 0 && reads[2] < reads[0] ? reads[2] : Math.abs(reads[1] - reads[0]);
+            prevRead = Math.min(reads[0], reads[1]);
+            currRead = Math.max(reads[0], reads[1]);
+          } else if (reads.length === 2) {
+            usage = Math.abs(reads[1] - reads[0]);
+            prevRead = Math.min(reads[0], reads[1]);
+            currRead = Math.max(reads[0], reads[1]);
+          }
+        }
         if (integerTokens.length >= 2) {
           let r1, r2;
           if (integerTokens.length >= 3 && usage > 0 && usedThirdTokenAsUsage) {
@@ -8508,6 +8577,24 @@ const UTILITY_RULES = [
       wpf = wpf || { usage: null, charge: null };
       if (sewer.charge && (!sewer.usage || sewer.usage < 10) && water.usage > 0) {
         sewer.usage = water.usage;
+      }
+      // STORMWATER OCR DECIMAL-DROP FIX — moved earlier than the mirrored
+      // post-process pass in bill-analysis.js. City of Louisburg stormwater
+      // is always ~$4/month; OCR sometimes drops the decimal, producing
+      // $400 instead of $4.00. Must run BEFORE the Current-Bill-total sign
+      // reconciliation just below, which needs the CORRECTED stormwater
+      // charge to reconcile — a $400 (vs $4.00) stormwater charge broke
+      // that page-total arithmetic check by exactly enough to mask a
+      // genuine FuelAdjustment sign error on the same bill (real bill,
+      // 02-002360-00, 12/15/2025-1/14/2026: printed FUEL ADJUSTMENT credit
+      // OCR'd without its minus sign, AND stormwater OCR'd "400" for
+      // "4.00" — with only the fuel-adjustment fix, the two bugs canceled
+      // out of the reconciliation check and neither got corrected).
+      if (storm.charge != null && storm.charge > 20) {
+        const stormCorrected = storm.charge / 100;
+        if (stormCorrected >= 2 && stormCorrected <= 10) {
+          storm.charge = stormCorrected;
+        }
       }
 
       // Fuel Adjustment — line item on gas bills. Typically negative.
@@ -8659,7 +8746,12 @@ const UTILITY_RULES = [
           Commodity: 'Water',
           StartRead: water.prevRead || null,
           EndRead: water.currRead || null,
-          WaterUsage: water.usage || null,
+          // FIX (2026-08-25, gas-app-extraction batch, backlog TBD): `||
+          // null` silently discarded a genuine zero-usage reading (a
+          // meter that reads identical start/end, e.g. an unused
+          // irrigation line) — `0 || null` evaluates to `null` in JS.
+          // `!= null` preserves 0 while still nulling a real missing value.
+          WaterUsage: water.usage != null ? water.usage : null,
           WaterCharge: water.charge,
           WaterProtectionFee: wpf.charge,
           TotalCurrentCharges: waterTotal,
@@ -8677,7 +8769,7 @@ const UTILITY_RULES = [
         bills.push({
           ...shared,
           Commodity: 'Sewer',
-          SewerUsage: sewer.usage || null,
+          SewerUsage: sewer.usage != null ? sewer.usage : null,
           SewerCharge: sewer.charge,
           TotalCurrentCharges: sewerTotal,
           TotalAmountDue: sewerTotal,
