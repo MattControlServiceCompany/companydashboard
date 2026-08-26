@@ -2046,7 +2046,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // dashboardlogic.md for the full writeup. Only opt in a charge type here
   // after confirming (via a Strategy C simulation, not just "does it parse")
   // that doing so won't suppress a residual-based correction elsewhere.
-  const TABLE_MARKER = /Comparative\s+Usage\s+Information/i;
+  // "Comparative Usage Information" is sometimes OCR'd too badly to match its
+  // own phrase (e.g. "Qomparthve UsEgainormation" — Louisburg acct 2885731561
+  // BALLFIELDS 06/01-06/29/2026), which silently skips the whole table-bleed
+  // cleanup window even for charge lines that opted into it. "Days ... Avg
+  // Temp" is the same comparative-usage-table's column header row and reads
+  // far more reliably (short common words survive OCR); it's specific enough
+  // to this table to be a safe additional trigger.
+  const TABLE_MARKER = /Comparative\s+Usage\s+Information|Days\s+.{0,20}Avg\s+Temp/i;
   const TABLE_RESUME_RE = new RegExp(
     '(?:[0-9,]+[.:][0-9]{2,}\\s*k[Ww]h?\\s+at\\s+\\$)' + // qty tightly bound to "kWh/kW at $"
       '|(?:k[Ww]h?\\s+at\\s+\\$)' + // bare "kWh/kW at $" (qty lives elsewhere in the block)
@@ -2923,12 +2930,16 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     let totalKwh = 0,
       totalDiff = 0,
       maxKw = 0,
-      maxRkva = 0;
+      maxRkva = 0,
+      hasRkva = false;
     for (const r of _meterGroup) {
       totalKwh += pn(r[8]);
       totalDiff += pn(r._fixedDifference || r[6]);
       maxKw = Math.max(maxKw, pn(r[9]));
-      maxRkva = Math.max(maxRkva, pn(r[10]));
+      if (r[10] != null && String(r[10]).trim() !== '') {
+        hasRkva = true;
+        maxRkva = Math.max(maxRkva, pn(r[10]));
+      }
     }
     return {
       type: 'meter_change',
@@ -2941,7 +2952,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       multiplier: first[7]?.replace(/,/g, ''),
       kwh: parseFloat(totalKwh.toFixed(4)),
       kw: maxKw.toFixed(4),
-      rkva: maxRkva.toFixed(4),
+      // Only emit an RKVA figure when at least one meter row actually printed
+      // one — an MGA-schedule bill with no RKVA column on any row is a
+      // genuinely absent field, not a real 0.0000 reading (Louisburg acct
+      // 0669287870).
+      rkva: hasRkva ? maxRkva.toFixed(4) : null,
     };
   })();
 
@@ -3631,7 +3646,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // strip (see xRate's TABLE_MARKER/_cleanTableWindowLine comment above for
   // why ECA deliberately does NOT opt in). Item 5129e92f, 2026-06-30.
   const _rEer = xRate('EER' + SEP + C, null, true);
-  const _rPts = xRate('PTS' + SEP + C);
+  // PTS sits immediately after EER in print order and is bled into by the
+  // same Comparative-Usage-Information table on the same bills (Louisburg
+  // acct 2885731561 BALLFIELDS 06/01-06/29/2026) — opt in for the same
+  // reason EER did above.
+  const _rPts = xRate('PTS' + SEP + C, null, true);
   const _rTdc = xRate('TD[CG]' + SEP + C);
   const _rRkva = xRate('R[kK]VA' + SEP + C);
   // ── UNIT-TYPE VALIDATION ──

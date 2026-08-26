@@ -1720,6 +1720,34 @@ function _gatherKwhWitnesses(b, pf) {
   return witnesses;
 }
 
+// Returns the self-verified ECA/EER/PTS charge-line kWh basis when every
+// present charge line's parts have both qty and rate AND each self-verifies
+// against its own printed dollar amount, AND (when more than one is
+// present) they all agree with each other. Evergy sometimes prints this
+// rate-basis kWh a fraction of a kWh apart from the meter-table kWh Used
+// figure — both are genuinely printed as-is on the bill, not a misread
+// (confirmed on Louisburg bill 2885731561_2026-03-02_2026-03-31: meter kWh
+// Used = 113020.72, but ECA/EER/PTS all print 113021.28 — the ON+OFF peak
+// split is billed against the charge-basis total, not the meter-table one).
+// Used to refine a low-fidelity kWh-identity-derived On/OffPeakKWh split
+// with the more precise total the bill's own dollar math is keyed to.
+function _chargeBasisTotal(b, pf) {
+  const candidates = [];
+  for (const key of ['ECACharge', 'EERCharge', 'PTSCharge']) {
+    const r = b._rates && b._rates[key];
+    if (!r || !r.parts || !r.parts.length) continue;
+    if (!r.parts.every((p) => p.qty > 0 && p.rate > 0)) continue;
+    const qty = r.parts.reduce((a, p) => a + p.qty, 0);
+    const computed = r.parts.reduce((a, p) => a + p.qty * p.rate, 0);
+    if (Math.abs(computed - pf(b[key])) > _Q_SELFVERIFY_CENTS) continue; // must self-verify
+    candidates.push(qty);
+  }
+  if (!candidates.length) return null;
+  const first = candidates[0];
+  if (!candidates.every((v) => Math.abs(v - first) < 0.01)) return null; // disagree — don't guess
+  return first;
+}
+
 // Decides OnPeakKWh/OffPeakKWh AFTER kWhConsumed has already been
 // corroborated. Each leg's OWN charge-line self-check (qty × rate == printed
 // EnergyOnPeakCharge/EnergyOffPeakCharge) outranks a subtraction-from-total
@@ -1774,6 +1802,56 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
       'legible, quantity digits were not) -- refusing to derive OnPeakKWh/OffPeakKWh from kWhConsumed ' +
       'using the other leg, verify against the source PDF';
     return result;
+  }
+
+  // ── PRECISION REFINE: a leg populated by energy-savings.js's own low-
+  // fidelity kWh-identity fallback (kwhConsumed minus the other leg —
+  // result._auto_recovered_On/OffPeakKWh, energy-savings.js ~4200-4247) is
+  // only as precise as kwhConsumed itself. When a self-verified ECA/EER/PTS
+  // charge-basis total is available and differs from kwhConsumed (see
+  // _chargeBasisTotal), the bill's own on/off split is billed against THAT
+  // total, not the meter-table figure — re-derive the fallback-recovered leg
+  // against the more precise basis instead.
+  if (b._auto_recovered_OffPeakKWh || b._auto_recovered_OnPeakKWh) {
+    const basisTotal = _chargeBasisTotal(b, pf);
+    if (basisTotal && kwhConsumed > 0 && Math.abs(basisTotal - kwhConsumed) > 0.01) {
+      if (b._auto_recovered_OffPeakKWh && onQty > 0) {
+        const refined = basisTotal - onQty;
+        if (refined > 0 && Math.abs(refined - offQty) > 0.01) {
+          result.offCorrection = {
+            value: refined,
+            reason:
+              'OffPeakKWh refined from the self-verified ECA/EER/PTS charge-basis total (' +
+              basisTotal.toFixed(4) +
+              ", the bill's on/off split is billed against this total, not the meter-table kWhConsumed of " +
+              kwhConsumed.toFixed(4) +
+              ') minus OnPeakKWh (' +
+              onQty.toFixed(4) +
+              ') = ' +
+              refined.toFixed(4),
+          };
+          return result;
+        }
+      }
+      if (b._auto_recovered_OnPeakKWh && offQty > 0) {
+        const refined = basisTotal - offQty;
+        if (refined > 0 && Math.abs(refined - onQty) > 0.01) {
+          result.onCorrection = {
+            value: refined,
+            reason:
+              'OnPeakKWh refined from the self-verified ECA/EER/PTS charge-basis total (' +
+              basisTotal.toFixed(4) +
+              ", the bill's on/off split is billed against this total, not the meter-table kWhConsumed of " +
+              kwhConsumed.toFixed(4) +
+              ') minus OffPeakKWh (' +
+              offQty.toFixed(4) +
+              ') = ' +
+              refined.toFixed(4),
+          };
+          return result;
+        }
+      }
+    }
   }
 
   // ── SELF-HEAL: restore a field that upstream extraction (energy-savings.js's
@@ -2572,6 +2650,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 computed: Math.round(_tdcQty * _tdcRate * 100) / 100,
                 _derived: true,
               };
+              // Also back-fill b.TDCRate — the field the validator and every
+              // UI/export path actually read. Without this the derived rate
+              // stayed internal to _rates and TDCRate stayed null even though
+              // a sanity-checked value was already computed. Only fill when
+              // not already set by the normal xRate pass.
+              if (!b.TDCRate) b.TDCRate = _tdcRate;
             }
           }
 
@@ -3288,6 +3372,33 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               };
               b.ReadDifference = null;
               b['_likely_missing_ReadDifference'] = true;
+              // RE-DERIVE from the identity Step 1's own kWh/multiplier fallback
+              // (~line 3310) would have applied had ReadDifference been null from
+              // the start, rather than a garbled OCR value ("163577" — a decimal-
+              // point-dropped misread of a real printed figure) that only got
+              // caught here, one step too late for that fallback to have fired.
+              // Only when there's no absolute-read basis to prefer instead
+              // (StartRead/EndRead both absent) and this isn't a multi-meter bill
+              // (see _isMultiMeterKwh0's own guard on the same fallback above).
+              if (!(endR > 0 && startR > 0) && !_isMultiMeterKwh0 && _lockedKwh2 > 0) {
+                const _rederivedDiff = _lockedKwh2 / multNow;
+                if (_rederivedDiff > 0 && _rederivedDiff < 1000000) {
+                  b.ReadDifference = _rederivedDiff.toFixed(4);
+                  b['_auto_recovered_ReadDifference'] = {
+                    original: null,
+                    corrected: b.ReadDifference,
+                    reason:
+                      'kWhConsumed (' +
+                      _lockedKwh2.toFixed(4) +
+                      ') ÷ MeterMultiplier (' +
+                      multNow.toFixed(4) +
+                      ') = ' +
+                      _rederivedDiff.toFixed(4) +
+                      ' — the printed ReadDifference OCR misread was rejected above; re-derived from the corroborated kWhConsumed instead of leaving it null.',
+                  };
+                  delete b._likely_missing_ReadDifference;
+                }
+              }
             }
           }
         } else if (!_isMultiMeterKwh && cascadeDiff > 0 && multNow > 0) {
@@ -12857,8 +12968,18 @@ async function processPDF(file) {
           // together (never one without the other) so the two stay consistent.
           if (hasAltPasses && rule.name === 'Evergy') {
             const KWH_FALLBACK_PAIRS = [
-              { kwhField: 'OnPeakKWh', rateField: 'OnPeakRate', flag: '_auto_recovered_OnPeakKWh' },
-              { kwhField: 'OffPeakKWh', rateField: 'OffPeakRate', flag: '_auto_recovered_OffPeakKWh' },
+              {
+                kwhField: 'OnPeakKWh',
+                rateField: 'OnPeakRate',
+                chargeField: 'EnergyOnPeakCharge',
+                flag: '_auto_recovered_OnPeakKWh',
+              },
+              {
+                kwhField: 'OffPeakKWh',
+                rateField: 'OffPeakRate',
+                chargeField: 'EnergyOffPeakCharge',
+                flag: '_auto_recovered_OffPeakKWh',
+              },
             ];
             const billsNeedingKwhConsensus = finalBills.filter((b) => KWH_FALLBACK_PAIRS.some((p) => b[p.flag]));
             if (billsNeedingKwhConsensus.length > 0) {
@@ -12891,12 +13012,42 @@ async function processPDF(file) {
                       // otherwise this would trade one degraded reading for
                       // another, or introduce a qty/rate pair that don't belong
                       // together.
-                      if (altBill && !altBill[pair.flag] && altBill[pair.kwhField] && altBill[pair.rateField]) {
+                      //
+                      // SELF-VERIFY GUARD (Louisburg acct 2885731561 03/02-03/31):
+                      // "read directly" is not the same as "read correctly" — an
+                      // alt pass can read a charge-line quantity cleanly (no
+                      // fallback flag) while still misreading its digits (e.g. a
+                      // garbled Off-Peak kWh column landing at roughly a third of
+                      // the true value). The bill's own printed charge amount
+                      // (b[chargeField], independently OCR'd) is a witness this
+                      // block was ignoring: qty × rate should reproduce it within
+                      // a dollar. Only overwrite the already-correct identity
+                      // derivation (kWhConsumed − the other leg, which by
+                      // construction already sums correctly) when the alt
+                      // reading actually verifies against the bill's own charge
+                      // line — never trade a self-consistent value for an
+                      // unverified one just because it "looks direct."
+                      const altQty = parseFloat(String(altBill && altBill[pair.kwhField]).replace(/,/g, ''));
+                      const altRate = parseFloat(String(altBill && altBill[pair.rateField]).replace(/,/g, ''));
+                      const ownCharge = parseFloat(String(b[pair.chargeField] || '').replace(/[$,\s]/g, ''));
+                      const altSelfVerifies =
+                        altQty > 0 && altRate > 0 && ownCharge > 0 && Math.abs(altQty * altRate - ownCharge) <= 1.0;
+                      if (
+                        altBill &&
+                        !altBill[pair.flag] &&
+                        altBill[pair.kwhField] &&
+                        altBill[pair.rateField] &&
+                        altSelfVerifies
+                      ) {
                         b['_consensus_recovered_' + pair.kwhField] = {
                           original: b[pair.kwhField],
                           corrected: altBill[pair.kwhField],
                           reason:
-                            'Alternate OCR pass read the charge line directly instead of falling back to the kWh identity',
+                            'Alternate OCR pass read the charge line directly instead of falling back to the kWh identity, and self-verifies against the printed ' +
+                            pair.chargeField +
+                            ' ($' +
+                            ownCharge.toFixed(2) +
+                            ')',
                         };
                         b[pair.kwhField] = altBill[pair.kwhField];
                         b[pair.rateField] = altBill[pair.rateField];
@@ -13104,8 +13255,18 @@ async function processPDF(file) {
           // an array — calling `.length` on it directly is always undefined).
           if (hasAltPasses && _syntheticReviewBills.length) {
             const KWH_FALLBACK_PAIRS_RECOVERED = [
-              { kwhField: 'OnPeakKWh', rateField: 'OnPeakRate', flag: '_auto_recovered_OnPeakKWh' },
-              { kwhField: 'OffPeakKWh', rateField: 'OffPeakRate', flag: '_auto_recovered_OffPeakKWh' },
+              {
+                kwhField: 'OnPeakKWh',
+                rateField: 'OnPeakRate',
+                chargeField: 'EnergyOnPeakCharge',
+                flag: '_auto_recovered_OnPeakKWh',
+              },
+              {
+                kwhField: 'OffPeakKWh',
+                rateField: 'OffPeakRate',
+                chargeField: 'EnergyOffPeakCharge',
+                flag: '_auto_recovered_OffPeakKWh',
+              },
             ];
             const altTextsRecovered = [];
             for (const passes of Object.values(passTexts)) {
@@ -13135,13 +13296,31 @@ async function processPDF(file) {
                     // pass's reading when it read the charge line DIRECTLY (no
                     // fallback flag of its own) AND recovered the paired rate —
                     // never adopt a qty without its rate, or trade one degraded
-                    // reading for another.
-                    if (altBill && !altBill[pair.flag] && altBill[pair.kwhField] && altBill[pair.rateField]) {
+                    // reading for another. Also requires the alt reading to
+                    // self-verify against the bill's own printed charge amount
+                    // (qty × rate ≈ b[chargeField]) — see the self-verify guard
+                    // note in the block above (Louisburg acct 2885731561).
+                    const altQtyR = parseFloat(String(altBill && altBill[pair.kwhField]).replace(/,/g, ''));
+                    const altRateR = parseFloat(String(altBill && altBill[pair.rateField]).replace(/,/g, ''));
+                    const ownChargeR = parseFloat(String(b[pair.chargeField] || '').replace(/[$,\s]/g, ''));
+                    const altSelfVerifiesR =
+                      altQtyR > 0 && altRateR > 0 && ownChargeR > 0 && Math.abs(altQtyR * altRateR - ownChargeR) <= 1.0;
+                    if (
+                      altBill &&
+                      !altBill[pair.flag] &&
+                      altBill[pair.kwhField] &&
+                      altBill[pair.rateField] &&
+                      altSelfVerifiesR
+                    ) {
                       b['_consensus_recovered_' + pair.kwhField] = {
                         original: b[pair.kwhField],
                         corrected: altBill[pair.kwhField],
                         reason:
-                          'Alternate OCR pass read the charge line directly instead of falling back to the kWh identity',
+                          'Alternate OCR pass read the charge line directly instead of falling back to the kWh identity, and self-verifies against the printed ' +
+                          pair.chargeField +
+                          ' ($' +
+                          ownChargeR.toFixed(2) +
+                          ')',
                       };
                       b[pair.kwhField] = altBill[pair.kwhField];
                       b[pair.rateField] = altBill[pair.rateField];
