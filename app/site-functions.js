@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.26.774',
+    date: '2026-08-26',
+    title: 'Utility Bills: $0.00 Evergy rate charges now captured',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy / Utility Bills: on the utility-bill extraction, Evergy bills now correctly capture rate charges that are exactly $0.00 (previously read as missing).',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.26.773',
     date: '2026-08-26',
     title: 'Utility Bills: more electric meter readings read correctly',
