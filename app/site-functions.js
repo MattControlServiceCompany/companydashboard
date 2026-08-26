@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.26.778',
+    date: '2026-08-26',
+    title: 'Bill extraction: Evergy sales tax now captured correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Bill extraction: Evergy sales tax is now captured as its own line item, and an incorrect phantom demand charge no longer appears on small-general-service (2SGSE) bills.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.26.777',
     date: '2026-08-26',
     title: 'Bill extraction review: commodity tabs stay on the right building',
