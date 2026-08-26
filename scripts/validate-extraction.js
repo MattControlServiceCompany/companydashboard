@@ -43,6 +43,18 @@ const SWEEP_RESULTS_PATH =
 const GAS_SWEEP_RESULTS_PATH =
   process.env.GAS_SWEEP_RESULTS ||
   'C:\\Users\\Matt Miller\\AI\\_context\\temp\\validator-sweep\\sweep-results-gas.json';
+// Spring Hill USD #230 electric (Evergy), added 2026-08-26 (milestone #2,
+// phase 2a). Separate ground-truth fixture, separate sweep-results file
+// (own harness: run-springhill-sweep.js), scored via the SAME electric
+// path as Louisburg (findExtractedBill / diffBill / ELECTRIC_FIELD_MAP)
+// after normalizeSpringHillBill() folds Spring Hill's array-shaped charge
+// fields into the scalars that map already understands. Gas (WoodRiver
+// Energy consolidated invoices) is a separate later phase and is NOT wired
+// here.
+const SPRINGHILL_GT_PATH = 'C:\\Users\\Matt Miller\\AI\\_context\\ground-truth\\springhill-bills.json';
+const SPRINGHILL_SWEEP_RESULTS_PATH =
+  process.env.SPRINGHILL_SWEEP_RESULTS ||
+  'C:\\Users\\Matt Miller\\AI\\_context\\temp\\validator-sweep\\sweep-results-springhill.json';
 const OUT_PATH =
   process.env.VALIDATION_OUT || 'C:\\Users\\Matt Miller\\AI\\_context\\temp\\validator-sweep\\validation-results.json';
 
@@ -94,7 +106,44 @@ const ELECTRIC_FIELD_MAP = {
     rkva_rate: 'RkVARate',
     franchise_fee: 'FranchiseFee',
     total_amount_due: 'TotalAmountDue',
+    // --- Spring Hill (Evergy) electric additions, 2026-08-26 ---
+    // `olathe_franchise_fee` is Woodland Spring Middle School's own GT key
+    // name for the same line Louisburg calls `franchise_fee` (both extract
+    // to the same FranchiseFee field) -- kept as a separate map key rather
+    // than renamed in the GT fixture, since the fixture is read-only ground
+    // truth. `parallel_generation_credit` is the Evergy 2LGAEP solar/net-
+    // metering credit line (High School only); the extractor's field for it
+    // is SolarCredit (see app/energy-savings.js ~3249 "Parallel Generation
+    // Credit"). Neither key exists in the Louisburg fixture, so both are
+    // no-ops for Louisburg scoring.
+    olathe_franchise_fee: 'FranchiseFee',
+    parallel_generation_credit: 'SolarCredit',
+    // Spring Hill's GT records each Evergy energy-charge tier as its own
+    // object/array entry (`energy_charge` or `energy_charges[]`) rather than
+    // Louisburg's separate `energy_on_peak_charge`/`energy_off_peak_charge`
+    // keys, because Spring Hill's tiers are sometimes real time-of-use
+    // on/off-peak (Woodland Spring, rate 2LGSE) and sometimes usage-based
+    // tiers with no on/off split at all (High School, rate 2LGAEP, where the
+    // extractor puts the whole combined amount in EnergyOnPeakCharge and
+    // leaves EnergyOffPeakCharge null). Comparing the TOTAL dollar amount
+    // (this key, filled in by normalizeSpringHillBill() below) avoids
+    // guessing which of the extractor's two fields holds which tier -- see
+    // ELECTRIC_ACTUAL_GETTERS. Not present in the Louisburg fixture (no-op
+    // there).
+    energy_charge_total: 'EnergyOnPeakCharge', // label only; actual value comes from the getter
   },
+};
+
+// ---------------------------------------------------------------------------
+// Actual-side getters that compute a value from MULTIPLE extracted fields
+// instead of reading one field directly off `extBill`. Keyed by the same
+// dotted gt-path used in ELECTRIC_FIELD_MAP/GAS_FIELD_MAP. Mirrors the
+// MUNICIPAL_ACTUAL_GETTERS pattern used for the gas fold-in above. Empty for
+// every Louisburg dotted path, so this is a pure addition -- Louisburg
+// scoring is unaffected.
+const ELECTRIC_ACTUAL_GETTERS = {
+  'charges.energy_charge_total': (b) =>
+    b ? (parseNum(b.EnergyOnPeakCharge) || 0) + (parseNum(b.EnergyOffPeakCharge) || 0) : undefined,
 };
 
 // The one bill_type:"gas" record (City of Louisburg combined municipal bill,
@@ -232,6 +281,21 @@ const KNOWN_UNMAPPED = new Set([
   'charges.energy_off_peak_sum_charge',
   'charges.energy_on_peak_win_charge',
   'charges.energy_off_peak_win_charge',
+
+  // --- Spring Hill (Evergy) electric additions, 2026-08-26 ---
+  // Raw array/object-shaped GT keys that normalizeSpringHillBill() folds
+  // into a single scalar under a DIFFERENT key (e.g. `eca_charges[]` ->
+  // `eca_charge`) so the existing ELECTRIC_FIELD_MAP entries can score them.
+  // The raw pre-fold key stays on the normalized bill (nothing is deleted)
+  // and would otherwise show up as a false "no extractor field mapping"
+  // note. None of these key names occur in the Louisburg fixture.
+  'charges.energy_charges',
+  'charges.energy_charge',
+  'charges.eca_charges',
+  'charges.pts_charges',
+  'charges.tdc_charges',
+  'charges.demand_charges',
+  'charges.eer_charges',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -325,9 +389,10 @@ const sweepGas = JSON.parse(fs.readFileSync(GAS_SWEEP_RESULTS_PATH, 'utf8'));
 // ---------------------------------------------------------------------------
 // Match each ground-truth bill to an extracted record
 // ---------------------------------------------------------------------------
-function findExtractedBill(gtBill) {
+function findExtractedBill(gtBill, sweepSource) {
+  const src = sweepSource || sweep;
   const file = gtBill.source.split('#')[0];
-  const fileResult = sweep[file];
+  const fileResult = src[file];
   if (!fileResult) return { status: 'NO_SWEEP_DATA', file };
   if (!fileResult.ok) return { status: 'SWEEP_FAILED', file, error: fileResult.error };
 
@@ -562,6 +627,59 @@ function chargeAmount(v) {
   return v && typeof v === 'object' && !Array.isArray(v) && 'amount' in v ? v.amount : v;
 }
 
+// ---------------------------------------------------------------------------
+// Spring Hill (Evergy) electric normalization, added 2026-08-26.
+//
+// Spring Hill's ground truth prints Evergy's mid-cycle rate-changeover
+// charge lines (ECA, PTS, TDC, Demand, EER) as an ARRAY of per-period
+// objects (`eca_charges[]`, `demand_charges[]`, ...) whenever a rate change
+// fell inside the billing period, instead of Louisburg's single
+// object/number per bill. The app's own extractor already sums these into
+// ONE scalar per bill (confirmed against app/energy-savings.js's charge-line
+// parser, which explicitly sums multi-tier ECA/EER/PTS/TDC/Energy parts —
+// see ~2035-2062 "seasonal ECA charge", ~3097-3102 "ECA/EER/PTS line kWh"),
+// so folding the GT array into the same singular sum BEFORE diffBill() lets
+// the existing ELECTRIC_FIELD_MAP entries (eca_charge/pts_charge/
+// tdc_charge/demand_charge/eer_charge) score it unchanged.
+//
+// `energy_charges[]`/`energy_charge` is folded into a NEW synthetic key,
+// `energy_charge_total` (see ELECTRIC_FIELD_MAP.charges + ELECTRIC_ACTUAL_
+// GETTERS above), rather than into `energy_on_peak_charge`/
+// `energy_off_peak_charge`, because Spring Hill's own extraction proved the
+// tier->field mapping isn't stable: Woodland Spring's real on/off-peak
+// bills (rate 2LGSE) DO extract tier[0]->EnergyOnPeakCharge,
+// tier[1]->EnergyOffPeakCharge (confirmed exactly against the 2025-04-21
+// bill_242976956980.pdf sanity check below), but High School's usage-tiered,
+// no-real-off-peak bills (rate 2LGAEP) extract BOTH tiers combined into
+// EnergyOnPeakCharge alone, leaving EnergyOffPeakCharge null (confirmed
+// against bill_010396692552.pdf). Comparing the combined total sidesteps
+// that ambiguity entirely.
+//
+// Returns a NEW object (shallow-cloned bill, deep-cloned `charges`) —
+// never mutates the ground-truth fixture in place.
+const ARRAY_FOLD_CHARGE_KEYS = ['eca_charge', 'pts_charge', 'tdc_charge', 'demand_charge', 'eer_charge'];
+function sumAmounts(arr) {
+  return arr.reduce((s, part) => s + (parseNum(part.amount) || 0), 0);
+}
+function normalizeSpringHillBill(gtBill) {
+  const charges = { ...(gtBill.charges || {}) };
+
+  for (const key of ARRAY_FOLD_CHARGE_KEYS) {
+    const pluralKey = key + 's'; // e.g. eca_charge -> eca_charges
+    if (charges[key] === undefined && Array.isArray(charges[pluralKey])) {
+      charges[key] = sumAmounts(charges[pluralKey]);
+    }
+  }
+
+  if (Array.isArray(charges.energy_charges)) {
+    charges.energy_charge_total = sumAmounts(charges.energy_charges);
+  } else if (charges.energy_charge !== undefined) {
+    charges.energy_charge_total = chargeAmount(charges.energy_charge);
+  }
+
+  return { ...gtBill, charges };
+}
+
 function diffBill(gtBill, extBill) {
   const fields = []; // { field, expected, actual, pass }
   const unmapped = [];
@@ -574,7 +692,8 @@ function diffBill(gtBill, extBill) {
       let expected = gtGroupObj[gtKey];
       const isChargeObj = expected && typeof expected === 'object' && !Array.isArray(expected) && 'amount' in expected;
       if (isChargeObj) expected = chargeAmount(expected);
-      const actual = extBill ? extBill[extField] : undefined;
+      const getter = ELECTRIC_ACTUAL_GETTERS[dottedGt];
+      const actual = getter ? getter(extBill) : extBill ? extBill[extField] : undefined;
       const pass = numbersMatch(expected, actual);
       fields.push({ field: dottedGt, extractedField: extField, expected, actual, pass });
 
@@ -787,10 +906,119 @@ gasReport.summary = {
   totalFieldsWrong: gasTotalWrong,
 };
 
+// ---------------------------------------------------------------------------
+// SPRING HILL ELECTRIC run — separate ground-truth fixture
+// (springhill-bills.json, electric_high_school + electric_middle_school),
+// separate sweep-results file, but reuses findExtractedBill()/diffBill()/
+// ELECTRIC_FIELD_MAP verbatim (same as the Louisburg electric run above),
+// after normalizeSpringHillBill() folds each bill's array-shaped charge
+// fields. Does not touch the Louisburg electric run, the gas run, or their
+// shared helpers/state (own bill list, own sweep object, own totals).
+// The full 25-bill sweep is run separately (a monitored step) — if
+// sweep-results-springhill.json doesn't exist yet, or only has some bills
+// in it, this section runs with whatever's there; missing bills report
+// NO_SWEEP_DATA exactly like an un-run Louisburg bill would.
+// ---------------------------------------------------------------------------
+let springHillReport = null;
+if (!fs.existsSync(SPRINGHILL_GT_PATH)) {
+  console.error('FATAL: Spring Hill ground truth not found: ' + SPRINGHILL_GT_PATH);
+  process.exit(2);
+}
+const springHillGt = JSON.parse(fs.readFileSync(SPRINGHILL_GT_PATH, 'utf8'));
+const springHillBills = [...(springHillGt.electric_high_school || []), ...(springHillGt.electric_middle_school || [])];
+const springHillSweepExists = fs.existsSync(SPRINGHILL_SWEEP_RESULTS_PATH);
+const springHillSweep = springHillSweepExists ? JSON.parse(fs.readFileSync(SPRINGHILL_SWEEP_RESULTS_PATH, 'utf8')) : {};
+
+let shTotalFields = 0;
+let shTotalCorrect = 0;
+let shTotalWrong = 0;
+const shUnmatchedBills = [];
+const shFailuresByBill = [];
+const shBillReports = [];
+
+for (const rawGtBill of springHillBills) {
+  const gtBill = normalizeSpringHillBill(rawGtBill);
+  const match = findExtractedBill(gtBill, springHillSweep);
+  if (match.status !== 'MATCHED') {
+    shUnmatchedBills.push({ id: gtBill.id, source: gtBill.source, reason: match.status, detail: match });
+    shBillReports.push({ id: gtBill.id, source: gtBill.source, matchStatus: match.status, fields: [], unmapped: [] });
+    continue;
+  }
+  const { fields, unmapped } = diffBill(gtBill, match.bill);
+  shTotalFields += fields.length;
+  const wrong = fields.filter((f) => !f.pass);
+  shTotalCorrect += fields.length - wrong.length;
+  shTotalWrong += wrong.length;
+  if (wrong.length) shFailuresByBill.push({ id: gtBill.id, source: gtBill.source, failures: wrong });
+  shBillReports.push({
+    id: gtBill.id,
+    source: gtBill.source,
+    matchStatus: 'MATCHED',
+    fieldCount: fields.length,
+    wrongCount: wrong.length,
+    fields,
+    unmapped,
+  });
+}
+
+springHillReport = {
+  groundTruthPath: SPRINGHILL_GT_PATH,
+  sweepResultsPath: SPRINGHILL_SWEEP_RESULTS_PATH,
+  sweepResultsFound: springHillSweepExists,
+  bills: shBillReports,
+  summary: {
+    totalGroundTruthBills: springHillBills.length,
+    billsMatched: springHillBills.length - shUnmatchedBills.length,
+    billsUnmatched: shUnmatchedBills.length,
+    totalFieldsCompared: shTotalFields,
+    totalFieldsCorrect: shTotalCorrect,
+    totalFieldsWrong: shTotalWrong,
+  },
+};
+
+console.log('');
+console.log('='.repeat(78));
+console.log('SPRING HILL ELECTRIC VALIDATION REPORT (springhill-bills.json)');
+console.log('='.repeat(78));
+if (!springHillSweepExists) {
+  console.log(`NOTE: ${SPRINGHILL_SWEEP_RESULTS_PATH} not found — treating as an empty/not-yet-run sweep.`);
+}
+console.log(`Ground truth bills: ${springHillBills.length}`);
+console.log(`Matched to an extracted record: ${springHillReport.summary.billsMatched}`);
+console.log(`NOT matched: ${springHillReport.summary.billsUnmatched}`);
+console.log(`Fields compared: ${shTotalFields}`);
+console.log(`Correct: ${shTotalCorrect}`);
+console.log(`Wrong: ${shTotalWrong}`);
+console.log('');
+if (shUnmatchedBills.length) {
+  console.log('-'.repeat(78));
+  console.log('UNMATCHED SPRING HILL BILLS');
+  console.log('-'.repeat(78));
+  for (const u of shUnmatchedBills) {
+    console.log(`  ${u.id}  [${u.reason}]  source=${u.source}`);
+  }
+  console.log('');
+}
+if (shFailuresByBill.length) {
+  console.log('-'.repeat(78));
+  console.log('SPRING HILL FIELD FAILURES (grouped by bill)');
+  console.log('-'.repeat(78));
+  for (const b of shFailuresByBill) {
+    console.log(`\n  ${b.id}  (source=${b.source})`);
+    for (const f of b.failures) {
+      console.log(`    ${f.field} | expected=${JSON.stringify(f.expected)} | actual=${JSON.stringify(f.actual)}`);
+    }
+  }
+  console.log('');
+} else {
+  console.log('No field failures among matched Spring Hill bills.');
+}
+console.log('='.repeat(78));
+
 const combinedSummary = {
-  totalFieldsCompared: totalFields + gasTotalFields,
-  totalFieldsCorrect: totalCorrect + gasTotalCorrect,
-  totalFieldsWrong: totalWrong + gasTotalWrong,
+  totalFieldsCompared: totalFields + gasTotalFields + shTotalFields,
+  totalFieldsCorrect: totalCorrect + gasTotalCorrect + shTotalCorrect,
+  totalFieldsWrong: totalWrong + gasTotalWrong + shTotalWrong,
 };
 
 console.log('');
@@ -821,7 +1049,7 @@ if (gasFailuresByBill.length) {
 }
 
 console.log('='.repeat(78));
-console.log('COMBINED ELECTRIC + GAS TOTAL');
+console.log('COMBINED TOTAL (Louisburg electric + Louisburg gas + Spring Hill electric)');
 console.log('='.repeat(78));
 console.log(
   `Fields compared: ${combinedSummary.totalFieldsCompared}  |  Correct: ${combinedSummary.totalFieldsCorrect}  |  Wrong: ${combinedSummary.totalFieldsWrong}`,
@@ -831,9 +1059,10 @@ console.log('='.repeat(78));
 report.gasGroundTruthPaths = GAS_GT_PATHS;
 report.gasBills = gasReport.bills;
 report.gasSummary = gasReport.summary;
+report.springHill = springHillReport;
 report.combinedSummary = combinedSummary;
 fs.writeFileSync(OUT_PATH, JSON.stringify(report, null, 2));
-console.log(`Full machine-readable report (electric + gas): ${OUT_PATH}`);
+console.log(`Full machine-readable report (Louisburg electric + gas + Spring Hill electric): ${OUT_PATH}`);
 console.log('='.repeat(78));
 
-process.exit(totalWrong > 0 || unmatchedBills.length > 0 || gasTotalWrong > 0 ? 1 : 0);
+process.exit(totalWrong > 0 || unmatchedBills.length > 0 || gasTotalWrong > 0 || shTotalWrong > 0 ? 1 : 0);
