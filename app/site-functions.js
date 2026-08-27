@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.26.780',
+    date: '2026-08-26',
+    title: 'Bill extraction: On-Peak/Off-Peak kWh misreads now self-correct',
+    items: [
+      {
+        type: 'fix',
+        text: "Bill extraction: when a single On-Peak/Off-Peak kWh value is misread, it's now corrected from the bill's own cross-checked charge totals (or flagged for review) instead of being silently accepted.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.26.779',
     date: '2026-08-26',
     title: 'Bill extraction: correct blended rate for mid-cycle rate changes',
