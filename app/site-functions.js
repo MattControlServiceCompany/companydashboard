@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.27.784',
+    date: '2026-08-27',
+    title: 'Bill extraction: correct meter for shared-account bills, ground-truth verified',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the bill review page, bills on a shared utility account now attach to the correct meter — for example, the High School Ball Fields bills no longer attach to the High School meter.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.27.783',
     date: '2026-08-27',
     title: 'Bill extraction: bill-to-meter matching restored',
