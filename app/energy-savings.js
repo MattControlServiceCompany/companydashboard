@@ -3760,7 +3760,42 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _rOnPk = xRate('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]');
   const _rOffPk = xRate('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]');
   const _rTiered = xRate('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
-  const _rEca = xRate('E[CG]A' + SEP + C);
+  let _rEca = xRate('E[CG]A' + SEP + C);
+  // ── ECA changeover segment-2 recovery (item eca-segment-split, 2026-08-27) ──
+  // The base scan above deliberately leaves the table-bleed fix OFF for ECA (see the
+  // enableTableBleedFix comment below, item 5129e92f) because blanket-enabling it can
+  // turn a PARTIAL match into something that looks "verified" and blocks Strategy C's
+  // total-residual recovery for a bill where ECA's first tier has ZERO "ECA" text at
+  // all (a separate bar-chart bleed, not this table).
+  //
+  // But on a rate-CHANGEOVER bill where "ECA" text IS present for every segment (e.g.
+  // Louisburg Field House acct 2129690146, 04/08-05/07/2026: ECA seg1 04-09..04-30 @
+  // $0.01763/kWh, seg2 05-01..05-07 @ $0.01521/kWh), the base scan finds segment 1 fine
+  // but segment 2's qty/rate text sits inside the same Comparative-Usage-Information
+  // table-bleed window that regressed EER/PTS, so segment 2 silently drops its qty/rate
+  // (only its dollar amount survives, via xChg's more tolerant per-line $ scan) and
+  // renders blank in the UI.
+  //
+  // Re-run xRate WITH the table-bleed fix ONLY to look for MORE segments than the base
+  // scan found, and accept the result ONLY if every segment the base scan already
+  // anchored is reproduced byte-for-byte (qty AND rate) in the table-bleed result. That
+  // equality gate is what keeps this from regressing 5129e92f's bill: there, the base
+  // scan returns null (ECA's first tier has no "ECA" text for xRate's keyword match to
+  // even find), so `if (_rEca)` below is false and this block never runs --
+  // `_rates.ECACharge` stays unset exactly as before, still on Strategy C's
+  // `unverified` list, still recovered by the total-residual formula. This can only ADD
+  // a segment the base scan already anchored; it can never replace a base segment's
+  // numbers or manufacture "verified" status from a single table-bled part the way
+  // blanket-enabling the fix for ECA did.
+  if (_rEca) {
+    const _rEcaBled = xRate('E[CG]A' + SEP + C, null, true);
+    if (_rEcaBled && _rEcaBled.parts.length > _rEca.parts.length) {
+      const _baseCovered = _rEca.parts.every((bp) =>
+        _rEcaBled.parts.some((tp) => Math.abs(tp.qty - bp.qty) < 0.0001 && Math.abs(tp.rate - bp.rate) < 0.000001),
+      );
+      if (_baseCovered) _rEca = _rEcaBled;
+    }
+  }
   // 3rd arg `true` opts EER into the Comparative-Usage-Information table-bleed
   // strip (see xRate's TABLE_MARKER/_cleanTableWindowLine comment above for
   // why ECA deliberately does NOT opt in). Item 5129e92f, 2026-06-30.
