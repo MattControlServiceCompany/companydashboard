@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.27.781',
+    date: '2026-08-27',
+    title: 'Bill extraction: ECA rate-change second segment now shows quantity and rate',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the bill review page, Evergy bills that cross an ECA rate change now show the quantity and rate for the second ECA line, instead of only a dollar amount with the quantity and rate left blank.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.26.780',
     date: '2026-08-26',
     title: 'Bill extraction: On-Peak/Off-Peak kWh misreads now self-correct',
