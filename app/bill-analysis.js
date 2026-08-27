@@ -5367,6 +5367,40 @@ function _acctFuzzyMatch(a, b) {
   if (!na || !nb) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
 }
+// Fix D (issue #1 v2, ground-truth review): disambiguates among 2+ meters that
+// all matched a bill by account+commodity alone (a SHARED Evergy account with
+// more than one physical meter — e.g. Louisburg High School + its Ball Field
+// meter). Called ONLY when findMeterMatch already found more than one such
+// candidate; a lone candidate is returned directly by the caller and NEVER
+// reaches this function, so a meter's own short/hand-entered/OCR-garbled
+// maddr can never veto its only possible match (the exact regression that
+// broke 67 real Louisburg bills in the reverted v782 fix — see
+// docs/dashboardlogic.md 2026-08-27 entry). Among genuine multiple
+// candidates, picks the one whose recorded `meter.maddr` best matches the
+// bill's ServiceAddress: an exact street-normalized match wins outright;
+// otherwise the highest fuzzy _addressSimilarity score wins. A candidate
+// with no recorded maddr scores -1 (never preferred over one with a real
+// address signal). If NO candidate has any usable address to compare
+// (every maddr blank), every score is -1 and the first-found candidate wins
+// — matches the pre-782 behavior instead of ever returning null.
+function _pickIdentityCandidate(candidates, billServiceAddress) {
+  if (candidates.length <= 1) return candidates[0] || null;
+  const billAddrNorm = _normalizeAddr(billServiceAddress);
+  let best = candidates[0];
+  let bestScore = -1;
+  for (const c of candidates) {
+    const mAddrNorm = _normalizeAddr(c.meter && c.meter.maddr);
+    let score = -1;
+    if (billAddrNorm && mAddrNorm) {
+      score = billAddrNorm === mAddrNorm ? 1 : _addressSimilarity(billServiceAddress, c.meter.maddr);
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  return best;
+}
 function findMeterMatch(extracted) {
   if (!extracted) return null;
   const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
@@ -5388,6 +5422,15 @@ function findMeterMatch(extracted) {
   // land on the same meter.
   const hasIdentity = !!(acct || meterNum);
   let bestMatch = null;
+  // Fix D (issue #1 v2, ground-truth review): every meter that matches this
+  // bill's account+commodity, collected across ALL buildings instead of
+  // returning on the first hit. A SHARED Evergy account with more than one
+  // meter (Louisburg High School + its Ball Field meter both bill under
+  // 2885731561) cannot be told apart by account+commodity alone — the old
+  // immediate-return silently attached the bill to whichever meter the loop
+  // happened to reach first. Resolved once the full scan completes: see
+  // _pickIdentityCandidate above and its call site below the loop.
+  const identityCandidates = [];
   // Collect every address-fallback candidate building (not just the running
   // best) so that, after the search, we can both pick the top scorer AND
   // detect a cross-building near-tie (Fix 2, second bullet) before deciding.
@@ -5406,9 +5449,17 @@ function findMeterMatch(extracted) {
           // uses this to decide whether a match can render as plain confirmed text
           // or must force an explicit user pick (never silently misattach a
           // lower-confidence address match).
-          if (commMatch)
-            return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id, matchType: 'identity' };
-          if (!bestMatch)
+          if (commMatch) {
+            identityCandidates.push({
+              proj,
+              bldg,
+              meter: m,
+              projId: proj.id,
+              bldgId: bldg.id,
+              meterId: m.id,
+              matchType: 'identity',
+            });
+          } else if (!bestMatch)
             bestMatch = {
               proj,
               bldg,
@@ -5506,6 +5557,14 @@ function findMeterMatch(extracted) {
       }
     }
   }
+  // Fix D resolution: a lone identity candidate is returned exactly as
+  // before this fix (no address check ever applied to it — this is what
+  // keeps a meter's own short/hand-entered/OCR-garbled maddr from vetoing
+  // its only possible match). Two or more candidates means a genuinely
+  // shared account; ServiceAddress disambiguates which physical meter this
+  // bill belongs to, never rejects to null.
+  if (identityCandidates.length === 1) return identityCandidates[0];
+  if (identityCandidates.length > 1) return _pickIdentityCandidate(identityCandidates, extracted.ServiceAddress);
   let addrMatch = null;
   if (addrCandidates.length) {
     addrCandidates.sort((a, b) => b.candidateScore - a.candidateScore);
