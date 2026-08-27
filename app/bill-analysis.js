@@ -157,7 +157,13 @@ function validateBillData(extracted, utilityName) {
             pf(extracted.BillOffset) +
             pf(extracted.FranchiseFee) +
             pf(extracted.SolarCredit) +
-            pf(extracted.RenewableCharge)) *
+            pf(extracted.RenewableCharge) +
+            // Fix B (ballfields-cluster): SalesTax is extracted (municipal
+            // sales-tax lines on Evergy bills) but was missing from this sum,
+            // leaving every taxed bill's compSum short by its tax total and
+            // false-warning a mismatch. Null/absent on non-taxed bills, so
+            // this term is +0 there and does not affect their reconciliation.
+            pf(extracted.SalesTax)) *
             100,
         ) / 100;
       const diff = Math.abs(compSum - total);
@@ -16148,6 +16154,11 @@ function renderPDFFields(parsed, warnings) {
       'SolarCredit',
       'RenewableCharge',
       'MiscellaneousCharge',
+      // Fix B (ballfields-cluster): SalesTax is extracted (municipal sales-tax
+      // lines on Evergy bills) but was missing here, so the printed total was
+      // reported as under-summed by exactly the tax amount on every taxed
+      // bill. Null/absent on non-taxed bills, so this contributes 0 there.
+      'SalesTax',
       // Baldwin City electric bills use ElectricCharge + FuelAdjustment instead of
       // Evergy-style per-charge fields. These are null on Evergy bills so they
       // contribute 0 and do not affect Evergy validation.
