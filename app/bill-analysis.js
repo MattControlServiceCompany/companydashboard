@@ -5406,37 +5406,9 @@ function findMeterMatch(extracted) {
           // uses this to decide whether a match can render as plain confirmed text
           // or must force an explicit user pick (never silently misattach a
           // lower-confidence address match).
-          if (commMatch) {
-            // Fix C (ballfields-cluster, issue #1): account+commodity alone is
-            // not sufficient identity when two meters share an account number
-            // (e.g. Ballfields and High School both billed under the same
-            // Evergy account) — a bare account match here would silently
-            // attach the bill to whichever meter happens to be encountered
-            // first. If BOTH the bill's ServiceAddress and this meter's
-            // recorded maddr are present and materially differ, this is NOT a
-            // safe identity match: skip it and let another meter in this
-            // loop, or the address-based fallback below, take it instead.
-            // Verified against the real bug: Ballfields ("202 AQUATIC DR,
-            // BALLFIELDS LOUISBURG KS") vs the High School meter's own
-            // address ("202 AQUATIC DR, NEW HS LOUISBURG KS") score 0.76 on
-            // the fuzzy _addressSimilarity scale used by the address-fallback
-            // veto below — same street, different site tag, well above that
-            // veto's 0.6 "plausibly the same building" threshold, which
-            // exists to catch OCR typos across genuinely different
-            // addresses, not to disambiguate two real meters sharing one
-            // street address. So the identity veto instead requires an EXACT
-            // match on the normalized address (same tool, _normalizeAddr,
-            // strict equality instead of the fuzzy score) — the only signal
-            // that reliably separates same-account, same-street, different-
-            // site meters. Regression guard: when m.maddr is absent (legacy
-            // meters with no recorded service address) or the normalized
-            // addresses are exactly equal, this matches exactly as before.
-            const mAddrNorm = _normalizeAddr(m.maddr);
-            const addressesDiffer = billAddr && mAddrNorm && billAddr !== mAddrNorm;
-            if (!addressesDiffer) {
-              return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id, matchType: 'identity' };
-            }
-          } else if (!bestMatch)
+          if (commMatch)
+            return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id, matchType: 'identity' };
+          if (!bestMatch)
             bestMatch = {
               proj,
               bldg,
@@ -5512,24 +5484,6 @@ function findMeterMatch(extracted) {
               ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
               : null;
             candidateMeter = commMeter || (bldg.meters || [])[0];
-            // Fix C companion (ballfields-cluster, issue #1): this fallback
-            // used to be unreachable for account+commodity-matched bills
-            // (the identity loop above always returned first). Now that the
-            // identity loop can fall through here, apply the same address
-            // veto: a same-building meter whose own recorded maddr is
-            // present and materially differs from this bill's ServiceAddress
-            // must not be silently picked (whether via commodity match or
-            // the bare meters[0] default) — that would just re-create the
-            // Ballfields/High-School bug one level down. Leaves the building
-            // out of addrCandidates entirely (unresolved -> Manual Assign)
-            // rather than guessing. No effect when maddr is absent (legacy
-            // meters) or when the addresses agree.
-            if (candidateMeter) {
-              const cmAddrNorm = _normalizeAddr(candidateMeter.maddr);
-              if (billAddr && cmAddrNorm && billAddr !== cmAddrNorm) {
-                candidateMeter = null;
-              }
-            }
           } else if (billComm) {
             if (sameCommMeters.length === 1) candidateMeter = sameCommMeters[0];
             else if (sameCommMeters.length > 1) isAmbiguous = true;
