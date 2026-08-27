@@ -5327,6 +5327,94 @@ function _normalizeAddr(a) {
     .replace(/\b(place|pl\.?)\b/g, 'pl')
     .replace(/[^a-z0-9]/g, '');
 }
+// Known US state abbreviations — anchors the trailing "<city> <ST> [ZIP]"
+// suffix in _normalizeAddrStreet below so it can be stripped without ever
+// mistaking a non-state 2-letter token (e.g. the "HS" in a site tag like
+// "NEW HS") for a state code.
+const _US_STATE_ABBRS = new Set([
+  'AL',
+  'AK',
+  'AZ',
+  'AR',
+  'CA',
+  'CO',
+  'CT',
+  'DE',
+  'FL',
+  'GA',
+  'HI',
+  'ID',
+  'IL',
+  'IN',
+  'IA',
+  'KS',
+  'KY',
+  'LA',
+  'ME',
+  'MD',
+  'MA',
+  'MI',
+  'MN',
+  'MS',
+  'MO',
+  'MT',
+  'NE',
+  'NV',
+  'NH',
+  'NJ',
+  'NM',
+  'NY',
+  'NC',
+  'ND',
+  'OH',
+  'OK',
+  'OR',
+  'PA',
+  'RI',
+  'SC',
+  'SD',
+  'TN',
+  'TX',
+  'UT',
+  'VT',
+  'VA',
+  'WA',
+  'WV',
+  'WI',
+  'WY',
+]);
+// Fix C hardening (ballfields-cluster, issue #1 review): the strict
+// _normalizeAddr full-string equality used by the identity veto below
+// false-rejects a METER'S OWN later bills when OCR/format drift adds a zip
+// (or zip+4) or drops the trailing "city ST" tail on an otherwise-unchanged
+// address — neither changes which physical meter the bill belongs to.
+// This variant strips ONLY a trailing zip/zip+4 and a trailing
+// "<city word> <ST>" pair (state anchored against _US_STATE_ABBRS, so a
+// non-state token is never mistaken for one) before falling through to the
+// same suffix/punctuation canonicalization as _normalizeAddr. Everything
+// before that point — including a premise/site tag such as "BALLFIELDS" or
+// "NEW HS" that real Evergy bills print between the street and the city
+// ("202 AQUATIC DR,BALLFIELDS LOUISBURG KS" vs "...,NEW HS LOUISBURG KS")
+// — is preserved, so this still separates two meters that share one street
+// address but carry different site tags (the original Ballfields/High
+// School bug this veto exists to catch).
+// Known limit: strips at most ONE trailing city token (matches every real
+// address seen in this codebase's rule set, e.g. "LOUISBURG"); a two-word
+// city immediately before the state would only have its second word
+// stripped. No current utility rule emits a multi-word city ahead of a
+// 2-letter state on ServiceAddress, so this is not a regression today.
+function _normalizeAddrStreet(a) {
+  if (!a) return '';
+  let s = String(a).trim();
+  // Strip a trailing ZIP or ZIP+4.
+  s = s.replace(/[\s,]*\d{5}(-\d{4})?\s*$/, '');
+  // Strip a trailing "<city word> <ST>" pair, only when ST is a real state
+  // abbreviation — leaves non-state trailing tokens (site tags) untouched.
+  s = s.replace(/[\s,]*([A-Za-z][A-Za-z.'-]*)\s+([A-Za-z]{2})\s*$/, (full, _city, st) =>
+    _US_STATE_ABBRS.has(st.toUpperCase()) ? '' : full,
+  );
+  return _normalizeAddr(s);
+}
 function _levenshtein(a, b) {
   var m = a.length,
     n = b.length;
@@ -5373,6 +5461,11 @@ function findMeterMatch(extracted) {
   const meterNum = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
   const billComm = (extracted.Commodity || '').toLowerCase();
   const billAddr = _normalizeAddr(extracted.ServiceAddress);
+  // Street-only normalization (Fix C hardening, ballfields-cluster review) —
+  // used ONLY by the two identity-veto comparisons below, never by the
+  // fuzzy address-fallback scoring above, which intentionally keeps
+  // comparing full addresses (city/state ARE meaningful signal there).
+  const billAddrStreet = _normalizeAddrStreet(extracted.ServiceAddress);
   // Fix 1 (49928d33): identity-contradiction veto input. A present, non-empty
   // extracted AccountNumber that DEMONSTRABLY DIFFERS (fails _acctFuzzyMatch)
   // from a same-commodity meter's own stored (also present, non-empty) account
@@ -5431,8 +5524,15 @@ function findMeterMatch(extracted) {
             // site meters. Regression guard: when m.maddr is absent (legacy
             // meters with no recorded service address) or the normalized
             // addresses are exactly equal, this matches exactly as before.
-            const mAddrNorm = _normalizeAddr(m.maddr);
-            const addressesDiffer = billAddr && mAddrNorm && billAddr !== mAddrNorm;
+            // Hardening (ballfields-cluster review): compares on
+            // _normalizeAddrStreet, not the plain full-string _normalizeAddr,
+            // so a meter's OWN later bill that only drifts in zip(+4) or a
+            // dropped/added "city ST" tail no longer false-rejects — the
+            // street + any premise/site tag (which is what actually
+            // separates Ballfields from the High School here) still must
+            // match exactly.
+            const mAddrNorm = _normalizeAddrStreet(m.maddr);
+            const addressesDiffer = billAddrStreet && mAddrNorm && billAddrStreet !== mAddrNorm;
             if (!addressesDiffer) {
               return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id, matchType: 'identity' };
             }
@@ -5524,9 +5624,14 @@ function findMeterMatch(extracted) {
             // out of addrCandidates entirely (unresolved -> Manual Assign)
             // rather than guessing. No effect when maddr is absent (legacy
             // meters) or when the addresses agree.
+            // Hardening (ballfields-cluster review): same street-only
+            // normalization as the identity veto above, for the same
+            // reason (tolerate zip/city drift on this meter's own bills,
+            // still separate two meters that share a street via their
+            // premise/site tag).
             if (candidateMeter) {
-              const cmAddrNorm = _normalizeAddr(candidateMeter.maddr);
-              if (billAddr && cmAddrNorm && billAddr !== cmAddrNorm) {
+              const cmAddrNorm = _normalizeAddrStreet(candidateMeter.maddr);
+              if (billAddrStreet && cmAddrNorm && billAddrStreet !== cmAddrNorm) {
                 candidateMeter = null;
               }
             }
