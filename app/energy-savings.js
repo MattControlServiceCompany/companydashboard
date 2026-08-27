@@ -3790,10 +3790,31 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   if (_rEca) {
     const _rEcaBled = xRate('E[CG]A' + SEP + C, null, true);
     if (_rEcaBled && _rEcaBled.parts.length > _rEca.parts.length) {
-      const _baseCovered = _rEca.parts.every((bp) =>
-        _rEcaBled.parts.some((tp) => Math.abs(tp.qty - bp.qty) < 0.0001 && Math.abs(tp.rate - bp.rate) < 0.000001),
-      );
-      if (_baseCovered) _rEca = _rEcaBled;
+      // Consume one distinct bled part per base part (not a plain .some, which would let a
+      // single bled part satisfy multiple base parts) so whatever remains in the pool is the
+      // real "added" set beyond the base count.
+      const _bledPool = _rEcaBled.parts.slice();
+      const _baseCovered = _rEca.parts.every((bp) => {
+        const idx = _bledPool.findIndex(
+          (tp) => Math.abs(tp.qty - bp.qty) < 0.0001 && Math.abs(tp.rate - bp.rate) < 0.000001,
+        );
+        if (idx === -1) return false;
+        _bledPool.splice(idx, 1);
+        return true;
+      });
+      // xRate's block-scan loop (~L2109-2351) does not de-dupe: two nearby lines matching
+      // the charge keyword can push the same segment twice. Require every part left in the
+      // pool after consuming the base matches to be genuinely NEW -- distinct from every base
+      // segment -- so a duplicate of an already-counted segment can never be adopted as an
+      // "extra" segment and inflate the summed ECACharge.
+      const _addedAreDistinct =
+        _baseCovered &&
+        _bledPool.length > 0 &&
+        _bledPool.every(
+          (ap) =>
+            !_rEca.parts.some((bp) => Math.abs(ap.qty - bp.qty) < 0.0001 && Math.abs(ap.rate - bp.rate) < 0.000001),
+        );
+      if (_baseCovered && _addedAreDistinct) _rEca = _rEcaBled;
     }
   }
   // 3rd arg `true` opts EER into the Comparative-Usage-Information table-bleed
