@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.27.782',
+    date: '2026-08-27',
+    title: 'Bill extraction: fewer false warnings, correct meter matching on shared accounts',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the bill review page, certain Evergy bills no longer show a false demand-charge warning.',
+      },
+      {
+        type: 'fix',
+        text: 'On the bill review page, bills on a shared Evergy account now attach to the correct meter instead of another building.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.27.781',
     date: '2026-08-27',
     title: 'Bill extraction: ECA rate-change second segment now shows quantity and rate',
