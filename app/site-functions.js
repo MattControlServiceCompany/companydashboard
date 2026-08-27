@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.27.783',
+    date: '2026-08-27',
+    title: 'Bill extraction: bill-to-meter matching restored',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the bill review page, corrected a matching issue from the previous update where some utility bills could fail to attach to their meter. Bill-to-meter matching is restored to how it worked before.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.27.782',
     date: '2026-08-27',
     title: 'Bill extraction: fewer false warnings, correct meter matching on shared accounts',
