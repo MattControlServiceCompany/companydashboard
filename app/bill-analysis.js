@@ -62,6 +62,17 @@ const EXPECTED_FIELDS = {
   },
 };
 
+// Evergy rate schedules confirmed (2026-08-26 tariff review, see
+// AI/_context/plans/2026-08-26-evergy-rate-schema-model.md) to have NO
+// billed-demand/kW charge by design — their per-kW Facilities Charge is a
+// separate line item and BilledKWCharge is legitimately always null on
+// these codes. Narrowest safe set: only a code read by sight against the
+// actual Evergy Kansas Metro tariff PDF. Do NOT alias suffix variants
+// (2SGSEP/2SGSEW/2SGSEWP/2SUSE) until their meaning is confirmed — an
+// unconfirmed suffix falls back to the flat spec (still warns), which is
+// the safe default.
+const EVERGY_NO_DEMAND_SCHEDULES = new Set(['2SGSE']);
+
 // Validate a single extracted bill — returns array of {level, field, message}
 function validateBillData(extracted, utilityName) {
   const warnings = [];
@@ -90,6 +101,17 @@ function validateBillData(extracted, utilityName) {
           field: f,
           message: 'Auto-recovered ' + extracted['_auto_recovered_' + f],
         });
+      } else if (
+        f === 'BilledKWCharge' &&
+        utilityName === 'Evergy' &&
+        EVERGY_NO_DEMAND_SCHEDULES.has(
+          String(extracted.RateSchedule || '')
+            .trim()
+            .toUpperCase(),
+        )
+      ) {
+        // Fix A (ballfields-cluster, issue #9): this rate schedule has no
+        // billed-demand charge by design — do not false-warn on it.
       } else {
         warnings.push({
           level: 'warn',
