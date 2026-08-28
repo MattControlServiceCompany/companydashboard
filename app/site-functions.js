@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.28.786',
+    date: '2026-08-28',
+    title: 'PDF / OCR: fixed false "missing" and "outlier" warnings',
+    items: [
+      {
+        type: 'fix',
+        text: 'PDF / OCR: correct Evergy bills no longer show false "missing" or "outlier" warnings when they share an account with another meter or appear in a PDF alongside a city utility bill.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.28.785',
     date: '2026-08-28',
     title: 'PDF / OCR: fixed a sales tax display bug on tax-exempt Evergy bills',
