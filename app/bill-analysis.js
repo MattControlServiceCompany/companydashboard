@@ -8489,7 +8489,6 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         }
 
         let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
-        const _gateBResult = _gateB_billCountCheck(text, bills.length); // GATE B
         const _queueUnmatchedPages = bills._unmatchedPages || [];
         // Bug b5951068: Instead of silently dropping bills that fail the key-field
         // filter, flag them with parseError:true so the user sees every billing
@@ -8524,6 +8523,13 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         if (_queueSynthetics.length) {
           finalBills = finalBills.concat(_queueSynthetics);
         }
+
+        // GATE B (61bed8f8): compare against the file's TRUE final bill/record
+        // count — after cross-rule recovery has absorbed every page a local-
+        // utility rule (e.g. City of Louisburg) couldn't parse but another rule
+        // (e.g. Evergy) recovered. Comparing against pre-recovery bills.length
+        // stamped a stale mismatch onto every individually-correct bill.
+        const _gateBResult = _gateB_billCountCheck(text, finalBills.length); // GATE B
 
         if (
           finalBills.length === 0 ||
@@ -13145,13 +13151,6 @@ async function processPDF(file) {
             }
           }
 
-          // GATE B — bill count (18b33d9f). Evaluated here (after the OCR-retry block
-          // above, which can replace `bills` wholesale) rather than immediately after
-          // `rule.extractAll(text)`, so a retry-recovered bill isn't falsely flagged.
-          // `text` is the original extractPDFText output and is never reassigned by
-          // the retry block, so anchor counts stay accurate.
-          const _gateBResult = _gateB_billCountCheck(text, bills.length);
-
           // ── POST-EXTRACTION VERIFICATION: use historical data + logic to fix issues ──
           // Bug b5951068: append parse-error rows (flagged above) so they're never lost.
           let finalBills = validBills.length > 0 ? validBills.concat(_singleDroppedBills || []) : bills;
@@ -13682,6 +13681,16 @@ async function processPDF(file) {
               }
             });
           }
+
+          // GATE B (61bed8f8): compare against the file's TRUE final bill/record
+          // count — evaluated here, after cross-rule recovery (_syntheticReviewBills,
+          // ~13563-13672) has absorbed every page a local-utility rule (e.g. City of
+          // Louisburg) couldn't parse but another rule (e.g. Evergy) recovered.
+          // Comparing against pre-recovery bills.length (the old call site, right
+          // after `rule.extractAll(text)`) stamped a stale mismatch onto every
+          // individually-correct bill. `text` is the original extractPDFText output
+          // and is never reassigned upstream, so anchor counts stay accurate.
+          const _gateBResult = _gateB_billCountCheck(text, finalBills.length); // GATE B
 
           // GATE A/B/C wiring (18b33d9f): stamp every bill from this file with
           // _gateTripped/_gateReasons so the single-file save path can hold flagged
