@@ -5279,7 +5279,18 @@ async function analyzeBillExtraction(bills, utilityName, historicalCache, status
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     const b = bills[i];
-    const vWarnings = validateBillData(b, utilityName || b.UtilityCompany || '_default');
+    // Fix (2026-08-28, backlog 52c4bfb5): a bill recovered by
+    // _unmatchedToSyntheticBills from a rule DIFFERENT than the file's
+    // primary rule (b._recoveredFromFallbackRule, e.g. an Evergy bill
+    // pulled out of a City-of-Louisburg-detected multi-bill file) must be
+    // validated against ITS OWN field spec, not the file-level utilityName
+    // — otherwise a correct Evergy bill gets checked for "Total Amount Due"
+    // (a Louisburg-only field) and false-flags as missing. Non-recovered
+    // bills are unaffected: this only wins when the marker is present.
+    const vWarnings = validateBillData(
+      b,
+      b._recoveredFromFallbackRule || utilityName || b.UtilityCompany || '_default',
+    );
     const sWarnings = detectStatisticalOutliers(b, historicalCache, pdfBillsIndex);
     results.push({ billIndex: i, warnings: [...vWarnings, ...sWarnings] });
   }
