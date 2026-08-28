@@ -3595,8 +3595,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // equal or exceed the bill's own total. If a SalesTax capture still slips
   // through at or above TotalCurrentCharges, it is a mis-attributed total,
   // not a tax amount — discard it rather than propagate a fabricated figure.
+  // Also reset _salesTaxParts (the multi-jurisdiction sum-parts array feeding
+  // _rates.SalesTax below) so a stale part can never leak that total into
+  // the UI either — self-evidently correct rather than relying on "no
+  // fixture triggers the dual condition."
   if (salesTax !== null && totalDue !== null && parseFloat(salesTax) >= parseFloat(totalDue)) {
     salesTax = null;
+    _salesTaxParts.length = 0;
   }
 
   // Post-clean helper for CustomerName: Evergy bills often print other
