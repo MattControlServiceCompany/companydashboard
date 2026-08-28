@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.28.785',
+    date: '2026-08-28',
+    title: 'PDF / OCR: fixed a sales tax display bug on tax-exempt Evergy bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the PDF / OCR bill review page, some tax-exempt Evergy bills incorrectly showed the sales tax amount equal to the full bill total. Sales tax now shows correctly (or blank when the account is tax-exempt) instead of the merged total.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.27.784',
     date: '2026-08-27',
     title: 'Bill extraction: correct meter for shared-account bills, ground-truth verified',
