@@ -2406,9 +2406,41 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // anchor.
   const _meterRe =
     /(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(?:(\d+)|\S{1,4})?[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,.]+)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+(?:([\d,.]+)|\S+)(?:[^\S\n]+(?:([\d,.]+)|\S+))?/g;
+  // ── TABLE-BLEED GUARD (perf fix, 020084cb) ──
+  // _meterRe chains 7 consecutive `(?:(NUM)|\S+)` alternations to parse one clean meter-
+  // read row. On some bills (confirmed: LHS acct 2885731561 09/28-10/27/2025; bes-mb-
+  // field-house acct 0669287870 04/08-05/07/2026) the "Comparative Usage Information"
+  // table's OCR-garbled bar-chart/legend text survives the letter-strip pre-normalize
+  // above and superficially resembles a partial meter row (short digit/dash/degree-
+  // symbol tokens), sending the regex into catastrophic backtracking (measured up to
+  // 275s on a single bill — see dashboardlogic.md for the CPU profile). Reuses the SAME
+  // TABLE_MARKER + 5-line-window pattern already proven safe for xRate's table-bleed
+  // fix above (line 2056/2109-2119) instead of inventing a new heuristic: space-fill
+  // (never remove — length must stay 1:1 char-aligned with `t`, see the comment at
+  // _meterT above and at the page-marker/address lookup ~line 2950 that depends on it)
+  // every line within 5 lines of a "Comparative Usage Information" / "Days ... Avg
+  // Temp" marker in a SEPARATE scan-only copy of _meterT, so _meterRe never attempts a
+  // match starting inside that table's text at all. In every fixture checked (see
+  // dashboardlogic.md for the full-corpus zero-diff sweep) the real "Start/End Read
+  // Date" meter-row table sits 12+ lines away from this marker — well outside the
+  // blanked window — so no genuine meter row is ever touched. `_meterT` itself
+  // (unblanked) is deliberately left untouched and still used by the zero-row fallback
+  // below (line ~2508), which was measured NOT to be part of the pathological backtrack
+  // and already has its own independent bounds (8KB length cap, 300-attempt cap,
+  // arithmetic-checksum acceptance).
+  const _meterTScanLines = _meterT.split('\n');
+  const _origLinesForGuard = t.split('\n');
+  for (let _gli = 0; _gli < _origLinesForGuard.length; _gli++) {
+    if (TABLE_MARKER.test(_origLinesForGuard[_gli])) {
+      for (let _gw = _gli; _gw < Math.min(_gli + 5, _meterTScanLines.length); _gw++) {
+        _meterTScanLines[_gw] = ' '.repeat(_meterTScanLines[_gw].length);
+      }
+    }
+  }
+  const _meterTScan = _meterTScanLines.join('\n');
   const _meterRowsRaw = [];
   let _mm;
-  while ((_mm = _meterRe.exec(_meterT)) !== null) _meterRowsRaw.push(_mm);
+  while ((_mm = _meterRe.exec(_meterTScan)) !== null) _meterRowsRaw.push(_mm);
 
   // Normalize meter row date fields (groups 1 & 2) to MM/DD format
   // OCR commonly reads "/" as "0", so 12/01 → 12001, 9/28 → 9028
@@ -2457,7 +2489,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       const retryStart = row.index + row[1].length;
       _meterRe.lastIndex = retryStart;
       let _retry;
-      while ((_retry = _meterRe.exec(_meterT)) !== null) {
+      while ((_retry = _meterRe.exec(_meterTScan)) !== null) {
         if (_retry.index >= row.index + row[0].length) break;
         if (_isValidMeterDate(_retry[1]) && _isValidMeterDate(_retry[2])) {
           _retry[1] = _normMeterDate(_retry[1]);
