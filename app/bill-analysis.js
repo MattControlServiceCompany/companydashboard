@@ -476,13 +476,34 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
 
   const extComm = (extracted.Commodity || '').toLowerCase();
-  const historicalBills = [];
+  // Fix (2026-08-28, backlog 1a505f4e, reworked after review): gather
+  // {bill, addr} pairs instead of bare bill objects so a same-account/
+  // different-physical-meter candidate (e.g. Louisburg High School + its
+  // Ball Field meter, both billed under Evergy account 2885731561) can be
+  // filtered out below by ServiceAddress. `addr` is ALWAYS the candidate
+  // bill's own recorded address (ServiceAddress/serviceAddress) — never a
+  // meter-level `maddr` proxy. Deliberately not `|| m.maddr`: `maddr` is
+  // typically a short site label ("505 E Amity") while a bill's own
+  // ServiceAddress is the full OCR'd string (street+city+state, since
+  // _EVG_ADDR requires a trailing state code) — comparing a short label
+  // against a long address makes even a genuinely-matching pair score LOW
+  // under Levenshtein-ratio similarity (confirmed: real "202 Aquatic Dr"
+  // vs Ball Field's own long ServiceAddress scores 0.36, while the
+  // legitimate long-vs-long High-School-vs-Ball-Field DIFFERENCE scores
+  // 0.76 — a short-label proxy is not reliably separable from a genuine
+  // cross-site collision with any single threshold). A candidate with no
+  // recorded address of its own is treated as "no data" and passes through
+  // untouched (see absence-never-excludes below) — same treatment already
+  // used for the other two sources, now applied uniformly across all three.
+  const historicalPairs = [];
 
   if (historicalCache && historicalCache[acct]) {
     // Use pre-built cache: filter by commodity match, same as the original walk
     for (const b of historicalCache[acct]) {
       const bc = (b.commodity || b.Commodity || '').toLowerCase();
-      if (!extComm || !bc || extComm === bc) historicalBills.push(b);
+      if (!extComm || !bc || extComm === bc) {
+        historicalPairs.push({ bill: b, addr: b.ServiceAddress || b.serviceAddress || '' });
+      }
     }
   } else {
     // Fallback: original project walk (keeps backward compatibility)
@@ -495,7 +516,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
             const mc = (m.commodity || '').toLowerCase();
             if (!extComm || !mc || extComm === mc) {
               for (const b of m.bills || []) {
-                historicalBills.push(b);
+                historicalPairs.push({ bill: b, addr: b.ServiceAddress || b.serviceAddress || '' });
               }
             }
           }
@@ -508,8 +529,40 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   for (const b of candidates) {
     const ba = (b.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
     const bc = (b.Commodity || b.commodity || '').toLowerCase();
-    if (acct && ba && acct === ba && (!extComm || !bc || extComm === bc)) historicalBills.push(b);
+    if (acct && ba && acct === ba && (!extComm || !bc || extComm === bc)) {
+      historicalPairs.push({ bill: b, addr: b.ServiceAddress || b.serviceAddress || '' });
+    }
   }
+
+  // Address filter: same account number, different physical meter must not be
+  // compared against each other's usage history. Reuse the existing
+  // _addressSimilarity fuzzy comparator (Levenshtein, already relied on by
+  // findMeterMatch's own _pickIdentityCandidate disambiguation — that
+  // machinery itself is untouched, this filter is local to outlier
+  // detection). Fuzzy (not exact) so minor OCR noise on an otherwise-
+  // matching long-form address (a stray punctuation/digit misread) doesn't
+  // false-exclude a meter's own history. ADDR_SIMILARITY_THRESHOLD = 0.85:
+  // comfortably above the real Ball-Field-vs-High-School collision's own
+  // similarity score (0.76, measured against real backup data — both
+  // addresses are long-form and share "202 Aquatic Dr...Louisburg KS",
+  // differing only in the middle "New Hs" vs "Ballfields" segment), so the
+  // genuine collision this fix targets is still excluded; comfortably below
+  // a same-site OCR-noise variant (a 1-2 character typo scores well above
+  // 0.85). Only exclude a candidate when BOTH addresses are present and
+  // score below threshold; missing address data on either side never
+  // excludes, matching _pickIdentityCandidate's own "absence never vetoes"
+  // discipline. If filtering leaves too few candidates for meaningful
+  // stats, the length<3 guard below simply skips flagging — it must never
+  // fall back to the unfiltered, cross-address pool.
+  const ADDR_SIMILARITY_THRESHOLD = 0.85;
+  const billAddrHas = !!_normalizeAddr(extracted.ServiceAddress);
+  const filteredPairs = billAddrHas
+    ? historicalPairs.filter((p) => {
+        if (!_normalizeAddr(p.addr)) return true; // no data on the candidate side -- never excludes
+        return _addressSimilarity(extracted.ServiceAddress, p.addr) >= ADDR_SIMILARITY_THRESHOLD;
+      })
+    : historicalPairs;
+  const historicalBills = filteredPairs.map((p) => p.bill);
 
   if (historicalBills.length < 3) return warnings; // Need at least 3 historical bills for meaningful stats
 
