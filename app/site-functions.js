@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.28.789',
+    date: '2026-08-28',
+    title: 'PDF / OCR: fixed a false review flag on multi-bill scans',
+    items: [
+      {
+        type: 'fix',
+        text: 'PDF / OCR: multi-bill scans that also contain a city utility bill no longer flag every correct bill for review.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.28.788',
     date: '2026-08-28',
     title: 'PDF / OCR: fixed a false mismatch on taxed Evergy bills',
