@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.28.787',
+    date: '2026-08-28',
+    title: 'PDF / OCR: fixed a long hang when reading certain Evergy bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'PDF / OCR: fixed a long hang when reading certain Evergy bills that include a comparative-usage table. These bills now process in under a second instead of taking several minutes.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.28.786',
     date: '2026-08-28',
     title: 'PDF / OCR: fixed false "missing" and "outlier" warnings',
