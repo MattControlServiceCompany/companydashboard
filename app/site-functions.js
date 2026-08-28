@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.28.788',
+    date: '2026-08-28',
+    title: 'PDF / OCR: fixed a false mismatch on taxed Evergy bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'PDF / OCR: bill totals now include sales tax when checking the math, so taxed Evergy bills show a correct match instead of a false mismatch.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.28.787',
     date: '2026-08-28',
     title: 'PDF / OCR: fixed a long hang when reading certain Evergy bills',
