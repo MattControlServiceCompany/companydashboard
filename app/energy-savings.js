@@ -3362,17 +3362,38 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // matching lines (state + any number of local jurisdictions), same
   // sum-all shape as _franchiseParts above.
   const _salesTaxParts = [];
-  const salesTax = (() => {
+  let salesTax = (() => {
     const lines = t.split('\n');
     const taxRe = /Sales\s*Tax/i;
     for (let i = 0; i < lines.length; i++) {
-      if (!taxRe.test(lines[i])) continue;
-      const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
+      const taxM = lines[i].match(taxRe);
+      if (!taxM) continue;
+      const afterTax = lines[i].slice(taxM.index + taxM[0].length);
+      const sameLine = afterTax.match(/\$([\d,]+\.\d{2})/);
       if (sameLine) {
-        _salesTaxParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
+        // A genuine tax CHARGE line always carries a "@ <rate>%" marker between
+        // the "Sales Tax" phrase and its dollar amount (e.g. "Kansas State Sales
+        // Tax @ 6.5% ... $22.57"). Tax-exempt accounts instead print a
+        // boilerplate disclaimer sentence ("...no longer subject to sales tax
+        // per Kansas Statute...") that pdfjs sometimes merges onto the same
+        // text line as an unrelated dollar total (e.g. "Current Charges
+        // (details on back) ... $7,990.74", backlog de949cd8) — that merged
+        // total is NOT a tax amount. Require the "%" marker between the
+        // phrase and the dollar amount to accept a same-line capture; reject
+        // (skip this line entirely, do not fall through to next-line search)
+        // otherwise.
+        const pctIdx = afterTax.indexOf('%');
+        if (pctIdx >= 0 && pctIdx < sameLine.index) {
+          _salesTaxParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
+        }
         continue;
       }
+      // No dollar amount on the tax-phrase line itself — check the next
+      // couple of lines, but stop if an unrelated charge/total label
+      // ("Current Charges", "Utility", "Subtotal") appears first; that means
+      // we've drifted off the tax line onto a different charge's total.
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        if (/Current\s+Charges|Utility|Sub[tl]?ota[l1]/i.test(lines[j])) break;
         const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
         if (nextLine) {
           _salesTaxParts.push(parseFloat(nextLine[1].replace(/,/g, '')));
@@ -3569,6 +3590,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       pf(franchise);
     return sum > 0 ? sum.toFixed(2) : null;
   })();
+
+  // Defensive backstop (backlog de949cd8): a genuine tax line can never
+  // equal or exceed the bill's own total. If a SalesTax capture still slips
+  // through at or above TotalCurrentCharges, it is a mis-attributed total,
+  // not a tax amount — discard it rather than propagate a fabricated figure.
+  if (salesTax !== null && totalDue !== null && parseFloat(salesTax) >= parseFloat(totalDue)) {
+    salesTax = null;
+  }
 
   // Post-clean helper for CustomerName: Evergy bills often print other
   // columns (Page X of Y, the `£` OCR artifact, stray column-separator
