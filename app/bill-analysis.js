@@ -2428,8 +2428,24 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 ? _smAddrW.filter((w) => _lgAddrW.has(w)).length / _smAddrW.length
                 : 1;
             const _addrConflict = _addrOverlap < 0.5;
+            const _smMeterVals = _valsFor(sm, 'MeterNumber');
             const _rateConflict = _setsConflict(_valsFor(sm, 'RateSchedule'), _lgRates);
-            const _meterConflict = _setsConflict(_valsFor(sm, 'MeterNumber'), _lgMeters);
+            const _meterConflict = _setsConflict(_smMeterVals, _lgMeters);
+            // (ballfields-match-gates, 2026-08-31) MeterNumber is never populated by
+            // some providers (Evergy prints no MeterNumber at all), so `_meterConflict`
+            // is structurally FALSE on every one of those bills — not because the
+            // meters agree, but because there is no meter data to disagree with. The
+            // old `_rateConflict && _meterConflict` guard treated that silence as if it
+            // were confirmed same-meter evidence, so a REAL RateSchedule conflict (e.g.
+            // 2LGSF vs 2MGSE — two genuinely different rate classes at one shared
+            // account) never blocked the merge on its own. Distinguish the two cases:
+            // when MeterNumber data actually exists on BOTH sides, a real meter-number
+            // match is trustworthy same-meter evidence that should let a RateSchedule
+            // difference over time slide (kept as the original AND). When MeterNumber
+            // data is ABSENT on either side, there is no such evidence — it is NEUTRAL,
+            // not agreement — and a resolved RateSchedule conflict must block the merge
+            // by itself.
+            const _meterDataPresent = _smMeterVals.length > 0 && _lgMeters.length > 0;
             if (_acctConflict) {
               continue;
             }
@@ -2448,7 +2464,11 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 continue;
               }
             }
-            if (_rateConflict && _meterConflict) {
+            if (_meterDataPresent) {
+              if (_rateConflict && _meterConflict) {
+                continue;
+              }
+            } else if (_rateConflict) {
               continue;
             }
             _addrGroups[largest].push(..._addrGroups[k]);
@@ -5437,6 +5457,56 @@ function _acctFuzzyMatch(a, b) {
   if (!na || !nb) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
 }
+// Fix 2 (ballfields-match-gates, 2026-08-31): _addressSimilarity's normalized-
+// Levenshtein metric divides by the LONGER of the two candidate strings' length,
+// which rewards a verbose stored maddr (one that happens to carry city/state/zip)
+// over a short, exact one. Measured against the real Louisburg data: the High
+// School bill's ServiceAddress scored 0.66 to the Ball Fields meter's long maddr
+// ("202 Aquatic Dr, Ballfields Louisburg, KS 66053") but only 0.43 to the HS
+// meter's short maddr ("202 Aquatic Dr") — the HS bill would misroute to Ball
+// Fields under the old single-metric comparison. The street number/name is
+// identical across every meter at one physical site, so it carries no
+// disambiguating power; what actually distinguishes the two meters is the
+// site-tag/city/state text AFTER the street (e.g. "New HS" vs "Ballfields").
+// `_identityAddressScore` splits each address at its first comma into a street
+// part (compared with the existing character-similarity metric, expected to be
+// ~1.0 for every candidate at the same site) and a tail part (compared by
+// token-set overlap, which is not biased by overall string length the way
+// character-edit-distance is). A tail comparison is NEUTRAL (0.5) whenever
+// either side has no tail data at all — this never penalizes a short/blank
+// site label, matching this function's existing "absence never vetoes"
+// philosophy — and otherwise reflects real word-level agreement or
+// disagreement. Scoped to `_pickIdentityCandidate` only: `_addressSimilarity`
+// itself is left untouched at every other call site (the building-match
+// fallback, the 0.60 threshold in findMeterMatch) per the ocr-trust-campaign
+// fenced path against tuning that shared threshold.
+function _addrTailTokens(a) {
+  const s = (a || '').toLowerCase();
+  const commaIdx = s.indexOf(',');
+  const tail = commaIdx >= 0 ? s.slice(commaIdx + 1) : '';
+  return tail
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+function _addrStreetPart(a) {
+  const s = a || '';
+  const commaIdx = s.indexOf(',');
+  return commaIdx >= 0 ? s.slice(0, commaIdx) : s;
+}
+function _identityAddressScore(billAddr, candidateAddr) {
+  const streetScore = _addressSimilarity(_addrStreetPart(billAddr), _addrStreetPart(candidateAddr));
+  const billTail = _addrTailTokens(billAddr);
+  const candTail = _addrTailTokens(candidateAddr);
+  let tailScore = 0.5; // neutral -- no site-tag/city/state text to compare on one side
+  if (billTail.length && candTail.length) {
+    const tailSet = new Set(candTail);
+    const inter = billTail.filter((w) => tailSet.has(w)).length;
+    const union = new Set([...billTail, ...candTail]).size;
+    tailScore = union === 0 ? 0.5 : inter / union;
+  }
+  return streetScore * 0.6 + tailScore * 0.4;
+}
 // Fix D (issue #1 v2, ground-truth review): disambiguates among 2+ meters that
 // all matched a bill by account+commodity alone (a SHARED Evergy account with
 // more than one physical meter — e.g. Louisburg High School + its Ball Field
@@ -5448,9 +5518,10 @@ function _acctFuzzyMatch(a, b) {
 // docs/dashboardlogic.md 2026-08-27 entry). Among genuine multiple
 // candidates, picks the one whose recorded `meter.maddr` best matches the
 // bill's ServiceAddress: an exact street-normalized match wins outright;
-// otherwise the highest fuzzy _addressSimilarity score wins. A candidate
-// with no recorded maddr scores -1 (never preferred over one with a real
-// address signal). If NO candidate has any usable address to compare
+// otherwise the highest `_identityAddressScore` wins (see comment above — not
+// raw `_addressSimilarity`, which is biased toward verbose candidates). A
+// candidate with no recorded maddr scores -1 (never preferred over one with a
+// real address signal). If NO candidate has any usable address to compare
 // (every maddr blank), every score is -1 and the first-found candidate wins
 // — matches the pre-782 behavior instead of ever returning null.
 function _pickIdentityCandidate(candidates, billServiceAddress) {
@@ -5462,7 +5533,7 @@ function _pickIdentityCandidate(candidates, billServiceAddress) {
     const mAddrNorm = _normalizeAddr(c.meter && c.meter.maddr);
     let score = -1;
     if (billAddrNorm && mAddrNorm) {
-      score = billAddrNorm === mAddrNorm ? 1 : _addressSimilarity(billServiceAddress, c.meter.maddr);
+      score = billAddrNorm === mAddrNorm ? 1 : _identityAddressScore(billServiceAddress, c.meter.maddr);
     }
     if (score > bestScore) {
       bestScore = score;
@@ -18043,32 +18114,35 @@ async function _saveSinglePDFBill(extracted, projId) {
     if (proj) {
       const udProj = getUDProj(proj.id);
       const billComm = (extracted.Commodity || '').toLowerCase();
-      // First try: match by account or meter number (most precise)
+      // First try: match by account or meter number (most precise).
+      // Fix 3 (item 63e43cab, ballfields-match-gates 2026-08-31): this used to be
+      // a hand-duplicated first-match-wins loop over udProj.buildings/meters that
+      // never called the shared findMeterMatch()/_pickIdentityCandidate()
+      // disambiguation, so a bill on a shared Evergy account with more than one
+      // physical meter (e.g. Louisburg High School + its Ball Fields meter, both
+      // account 2885731561) silently landed on whichever meter the loop happened
+      // to reach first, with zero address disambiguation. Not latent anymore now
+      // that a real 2nd same-account meter exists. Routed through the SAME shared
+      // matcher every other save path already uses (saveQueuedBills,
+      // confirmMultiBuildingSave) so it inherits Fix 2's verbosity-unbiased
+      // address scoring (DRY — one matcher, not two). Scoped to an
+      // 'identity'-type result within the SELECTED project only: this dropdown
+      // lets the user pin a specific project, so a cross-project identity
+      // coincidence must never silently move the bill somewhere the user didn't
+      // choose — that case falls through to the existing "second try"/auto-create
+      // logic below, exactly as an unmatched account did before this fix.
       const acctClean = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
       const meterClean = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
       let matched = false;
       let targetMeter = null;
       let targetBldg = null;
       if (acctClean || meterClean) {
-        for (const b of udProj.buildings || []) {
-          for (const m of b.meters || []) {
-            const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
-            const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-            if (_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) {
-              const mComm = (m.commodity || '').toLowerCase();
-              if (billComm && mComm && billComm === mComm) {
-                targetMeter = m;
-                targetBldg = b;
-                matched = true;
-                break;
-              }
-              if (!targetMeter) {
-                targetMeter = m;
-                targetBldg = b;
-              }
-            }
-          }
-          if (matched) break;
+        const _fm = findMeterMatch(extracted);
+        if (_fm && _fm.matchType === 'identity' && _fm.projId === proj.id && _fm.meter && _fm.bldg) {
+          targetMeter = _fm.meter;
+          targetBldg = _fm.bldg;
+          const mComm = (targetMeter.commodity || '').toLowerCase();
+          matched = !!(billComm && mComm && billComm === mComm);
         }
         if (targetMeter && !matched) {
           let mComm = (targetMeter.commodity || '').toLowerCase();
