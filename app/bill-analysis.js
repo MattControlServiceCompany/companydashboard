@@ -11504,44 +11504,79 @@ function _lanczosResize(srcCanvas, dstW, dstH, a) {
   const sctx = srcCanvas.getContext('2d');
   const src = sctx.getImageData(0, 0, srcW, srcH).data;
   // Horizontal pass: srcW x srcH -> dstW x srcH
+  //
+  // FIX (b35c9b09 Step 2, 2026-08-31): reordered from the original ox-outer/
+  // oy-inner loop to oy-outer/ox-inner, with per-output-column taps (left/
+  // right/weights/wsum) precomputed ONCE up front instead of recomputed for
+  // every source row. This is a PURE loop-reorder + precompute — the exact
+  // same weights, same clamped source columns, and same `r/wsum`-style
+  // division are used for every output pixel, so the result is mathematically
+  // identical; only the ORDER in which independent output pixels get computed
+  // changes (each output pixel's value depends only on its own column's taps
+  // and the current source row, never on write order). Verified BYTE-
+  // IDENTICAL (0/23,750,496 byte diffs) against the original ox-outer
+  // implementation on a real rendered SKM page at scale 3.5 before shipping
+  // (see dashboardlogic.md 2026-08-31 Step 2 entry for the A/B script and
+  // output). Why this is faster: the OLD order re-scanned the ENTIRE srcH-tall
+  // source buffer once per OUTPUT COLUMN (dstW times total) — for a
+  // supersampled page this buffer is tens of MB, far exceeding cache, so the
+  // old order was effectively re-reading the whole image from RAM dstW times.
+  // The new order reads the source buffer row-by-row exactly ONCE.
   const scaleX = dstW / srcW;
   const filterScaleX = Math.max(1, 1 / scaleX); // widen kernel support when downscaling
-  const tmp = new Float32Array(dstW * srcH * 4);
+  const colTapCols = new Array(dstW);
+  const colTapWeights = new Array(dstW);
+  const colTapWsum = new Float64Array(dstW);
   for (let ox = 0; ox < dstW; ox++) {
     const srcX = (ox + 0.5) / scaleX - 0.5;
     const left = Math.floor(srcX - a * filterScaleX);
     const right = Math.ceil(srcX + a * filterScaleX);
-    const weights = [];
+    const n = right - left + 1;
+    const cols = new Int32Array(n);
+    const weights = new Float64Array(n);
     let wsum = 0;
-    for (let sx = left; sx <= right; sx++) {
+    for (let i = 0, sx = left; sx <= right; sx++, i++) {
       const w = _lanczosKernel((srcX - sx) / filterScaleX, a);
-      weights.push(w);
+      weights[i] = w;
+      cols[i] = Math.min(srcW - 1, Math.max(0, sx));
       wsum += w;
     }
     if (wsum === 0) wsum = 1;
-    for (let oy = 0; oy < srcH; oy++) {
+    colTapCols[ox] = cols;
+    colTapWeights[ox] = weights;
+    colTapWsum[ox] = wsum;
+  }
+  const tmp = new Float32Array(dstW * srcH * 4);
+  for (let oy = 0; oy < srcH; oy++) {
+    const rowBase = oy * srcW * 4;
+    const tRowBase = oy * dstW * 4;
+    for (let ox = 0; ox < dstW; ox++) {
+      const cols = colTapCols[ox];
+      const weights = colTapWeights[ox];
+      const wsum = colTapWsum[ox];
       let r = 0,
         g = 0,
         b = 0,
         al = 0;
-      let wi = 0;
-      for (let sx = left; sx <= right; sx++) {
-        const cx = Math.min(srcW - 1, Math.max(0, sx));
-        const idx = (oy * srcW + cx) * 4;
-        const w = weights[wi++];
+      for (let i = 0, n = cols.length; i < n; i++) {
+        const idx = rowBase + cols[i] * 4;
+        const w = weights[i];
         r += src[idx] * w;
         g += src[idx + 1] * w;
         b += src[idx + 2] * w;
         al += src[idx + 3] * w;
       }
-      const tIdx = (oy * dstW + ox) * 4;
+      const tIdx = tRowBase + ox * 4;
       tmp[tIdx] = r / wsum;
       tmp[tIdx + 1] = g / wsum;
       tmp[tIdx + 2] = b / wsum;
       tmp[tIdx + 3] = al / wsum;
     }
   }
-  // Vertical pass: dstW x srcH -> dstW x dstH
+  // Vertical pass: dstW x srcH -> dstW x dstH (UNCHANGED — already ox-inner,
+  // which is cache-friendly since `tmp`/`out` are both row-major with `ox`
+  // the fastest-varying index; see dashboardlogic.md for why only the
+  // horizontal pass needed reordering).
   const scaleY = dstH / srcH;
   const filterScaleY = Math.max(1, 1 / scaleY);
   const out = new Uint8ClampedArray(dstW * dstH * 4);
@@ -11597,14 +11632,24 @@ function _lanczosResize(srcCanvas, dstW, dstH, a) {
 // ~34-megapixel/600 DPI danger zone profiled during this fix (see dashboardlogic.md
 // 2026-08-17 entry for full render/OCR timing at 2.5x and 4.0x).
 const OCR_SUPERSAMPLE_FACTOR = 1.6;
-async function _renderPageHQ(pg, targetScale) {
+// FIX (b35c9b09, 2026-08-31, Step 1 instrumentation): optional 3rd arg `_timing`
+// (a plain object, mutated in place) — when provided, splits this function's
+// wall time into `.decodeMs` (the pdf.js page.render() call — CCITT/JBIG2 JS
+// decode of every embedded image strip PLUS rasterizing to the supersampled
+// canvas) and `.resizeMs` (the from-scratch Lanczos-3 downsample below), so
+// the two costs bundled into the old single `renderMs` figure (see the
+// per-pass logging call sites) are never conflated again. Purely additive —
+// omitting `_timing` reproduces the prior behavior exactly.
+async function _renderPageHQ(pg, targetScale, _timing) {
   const superScale = targetScale * OCR_SUPERSAMPLE_FACTOR;
   const vpHi = pg.getViewport({ scale: superScale });
   const rawCanvas = document.createElement('canvas');
   rawCanvas.width = Math.max(1, Math.round(vpHi.width));
   rawCanvas.height = Math.max(1, Math.round(vpHi.height));
   const rawCtx = rawCanvas.getContext('2d');
+  const _decodeT0 = performance.now();
   await pg.render({ canvasContext: rawCtx, viewport: vpHi }).promise;
+  if (_timing) _timing.decodeMs = Math.round(performance.now() - _decodeT0);
   const targetVp = pg.getViewport({ scale: targetScale });
   const dstW = Math.max(1, Math.round(targetVp.width));
   const dstH = Math.max(1, Math.round(targetVp.height));
@@ -11614,6 +11659,7 @@ async function _renderPageHQ(pg, targetScale) {
   // difference. Falls back to the previous drawImage approach if anything throws
   // (e.g. a future browser blocks large ImageData reads) so a resize failure degrades
   // gracefully rather than breaking OCR entirely.
+  const _resizeT0 = performance.now();
   let outCanvas;
   try {
     outCanvas = _lanczosResize(rawCanvas, dstW, dstH, 3);
@@ -11626,6 +11672,7 @@ async function _renderPageHQ(pg, targetScale) {
     outCtx.imageSmoothingQuality = 'high';
     outCtx.drawImage(rawCanvas, 0, 0, rawCanvas.width, rawCanvas.height, 0, 0, dstW, dstH);
   }
+  if (_timing) _timing.resizeMs = Math.round(performance.now() - _resizeT0);
   // Release the intermediate canvas's backing store immediately — only outCanvas is kept.
   rawCanvas.width = 0;
   rawCanvas.height = 0;
@@ -12202,6 +12249,54 @@ async function extractPDFText(ab, statusCb) {
           let bestText = '',
             bestScore = 0;
           allPassTexts[pgNum] = [];
+          // ── Per-page render cache (b35c9b09 Step 2 fix, 2026-08-31) ────────
+          // Step 1 measured (headless, real Tesseract + real pdfjs-dist, no
+          // browser) that _renderPageHQ's cost is ~99% the Lanczos-3 resize,
+          // NOT the pdf.js decode (which pdf.js itself caches internally and
+          // costs ~0.1-5% of total render time regardless of how many times a
+          // page is re-rendered at different scales — see dashboardlogic.md
+          // 2026-08-31 Step 1 entry). Decode-caching therefore buys nothing;
+          // the real, measured waste is calling the EXPENSIVE resize AGAIN
+          // for an IDENTICAL (page, scale) pair: OCR_PASSES intentionally
+          // reuses scale 2.5 and 3.5 twice each (their -psm4 twins differ
+          // only in the Tesseract page-segmentation param, never the image),
+          // and the orientation/binarize refinement checks below both render
+          // at the SAME fixed scale (2.5) primary pass 0 already computed.
+          // This cache eliminates those exact-duplicate renders — it is a
+          // pure redundant-work removal, not a quality or pass-count change:
+          // every OCR pass still gets the identical image it always got,
+          // proven byte-identical against the pre-fix implementation (see
+          // dashboardlogic.md). Scoped fresh to THIS page only, drained via
+          // _releasePageRenderCache() at every exit point of this page's
+          // processing (never leaks across pages, never grows unbounded —
+          // at most one canvas per distinct scale actually used: currently
+          // at most 7 of them: 2.5/3.5/2/3 primary + 1/1.5/4 retry).
+          const _pageRenderCache = new Map();
+          const _renderPageHQCached = async (scale) => {
+            if (_pageRenderCache.has(scale)) return _pageRenderCache.get(scale);
+            const pgForRender = await _withTimeout(
+              pdf.getPage(pgNum),
+              PDFJS_AWAIT_TIMEOUT_MS,
+              'getPage(' + pgNum + ')',
+            );
+            const canvasForRender = await _withTimeout(
+              _renderPageHQ(pgForRender, scale),
+              PDFJS_AWAIT_TIMEOUT_MS,
+              'render(' + pgNum + ')',
+            );
+            if (pgForRender && pgForRender.cleanup) pgForRender.cleanup();
+            _pageRenderCache.set(scale, canvasForRender);
+            return canvasForRender;
+          };
+          const _releasePageRenderCache = () => {
+            for (const c of _pageRenderCache.values()) {
+              if (c) {
+                c.width = 0;
+                c.height = 0;
+              }
+            }
+            _pageRenderCache.clear();
+          };
           // ── Per-page budget (b35c9b09 fix, 2026-08-31) ─────────────────────
           // OCR_TOTAL_BUDGET_MS is a single per-FILE clock shared across every
           // OCR-needed page, consumed in page order. Without a per-page bound,
@@ -12272,22 +12367,20 @@ async function extractPDFText(ab, statusCb) {
                   cfg.label +
                   ')...',
               );
-            let pg, canvas;
+            let canvas;
             try {
-              pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              // Fix (2026-07-22): _renderPageHQ (see its doc comment above) — a plain
-              // scale-based pg.render() at 2x-4x has pdf.js's own internal smoothing
-              // override disable antialiasing for low-DPI scanned bills, degrading OCR
-              // input quality. Two-step high-quality resize fixes this.
-              // b35c9b09 measurement: time decode/render separately from OCR
-              // recognize so the two costs are never conflated again (see
-              // dashboardlogic.md 2026-08-31 for the measured split).
+              // FIX (b35c9b09 Step 2, 2026-08-31): reuse an already-rendered
+              // canvas for this exact scale within this page instead of
+              // always re-decoding+re-resizing — see _renderPageHQCached
+              // above. OCR_PASSES intentionally repeats scale 2.5 and 3.5 for
+              // their -psm4 twin passes (same image, different Tesseract PSM
+              // param), so this call is a cache HIT (near-zero renderMs) on
+              // those two passes and a cache MISS (full cost, unchanged from
+              // before) on every distinct scale. Byte-identical OCR input
+              // either way — proven against the pre-fix always-render
+              // behavior (dashboardlogic.md 2026-08-31 Step 2 entry).
               const _renderT0 = performance.now();
-              canvas = await _withTimeout(
-                _renderPageHQ(pg, cfg.scale),
-                PDFJS_AWAIT_TIMEOUT_MS,
-                'render(' + pgNum + ')',
-              );
+              canvas = await _renderPageHQCached(cfg.scale);
               const renderMs = Math.round(performance.now() - _renderT0);
               const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
               const t0 = performance.now();
@@ -12314,11 +12407,11 @@ async function extractPDFText(ab, statusCb) {
                 // abort — stop this page's passes immediately rather than falling through
                 // to "log as failed pass, try the next one" (which would keep burning time).
                 if (pageErr._budgetExceeded) _ocrBudgetExceeded = true;
-                if (canvas) {
-                  canvas.width = 0;
-                  canvas.height = 0;
-                }
-                if (pg && pg.cleanup) pg.cleanup();
+                // FIX (b35c9b09 Step 2): `canvas` may be a CACHED canvas shared
+                // with other passes of this same page — never free it here
+                // (that would corrupt a later cache hit). The per-page cache
+                // is the sole owner of canvas lifecycle now; it is drained via
+                // _releasePageRenderCache() at every exit point of this page.
                 break;
               }
               // If timeout killed the worker, swap in the fresh replacement
@@ -12333,13 +12426,14 @@ async function extractPDFText(ab, statusCb) {
               });
               if (statusCb) statusCb('OCR failed on page ' + pgNum + ' pass ' + (pass + 1) + ': ' + pageErr.message);
             }
-            // F2: release canvas backing store and PDF page operator list after each pass
-            if (canvas) {
-              canvas.width = 0;
-              canvas.height = 0;
-              canvas = null;
-            }
-            if (pg && pg.cleanup) pg.cleanup();
+            // F2 (superseded by b35c9b09 Step 2's per-page render cache): the
+            // canvas returned above may be SHARED with a later pass (the
+            // -psm4 twin, or the orientation/binarize checks below) — freeing
+            // its backing store here would corrupt that later cache hit.
+            // Lifecycle is now owned entirely by _releasePageRenderCache(),
+            // called at every exit point of this page's processing. Just drop
+            // this pass's local reference.
+            canvas = null;
             // Early exit after pass 0 (2.5x) if this is a cover page — no meter data to gain from more passes
             if (pass === 0 && isCoverPage(bestText)) break;
             // Early exit after pass 1 (3.5x) if 2.5x + 3.5x already hit a strong score
@@ -12414,17 +12508,16 @@ async function extractPDFText(ab, statusCb) {
                     cfg.label +
                     ')...',
                 );
-              let pg, canvas;
+              let canvas;
               try {
-                pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-                // Fix (2026-07-22): see _renderPageHQ doc comment above — defeats pdf.js's
-                // own internal smoothing override for low-DPI scanned source pages.
+                // FIX (b35c9b09 Step 2): see the primary-pass loop's identical
+                // cache-reuse comment above — retry scales (1x/1.5x/4x) never
+                // overlap with primary scales, so this is normally a cache
+                // MISS here (full cost, unchanged), but still shares the
+                // SAME per-page cache so a later orientation/binarize check
+                // at 2.5x can still hit if primary pass 0 already ran it.
                 const _renderT0 = performance.now();
-                canvas = await _withTimeout(
-                  _renderPageHQ(pg, cfg.scale),
-                  PDFJS_AWAIT_TIMEOUT_MS,
-                  'render(' + pgNum + ')',
-                );
+                canvas = await _renderPageHQCached(cfg.scale);
                 const renderMs = Math.round(performance.now() - _renderT0);
                 const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
                 const t0 = performance.now();
@@ -12449,11 +12542,8 @@ async function extractPDFText(ab, statusCb) {
                 if (pageErr._aborted || pageErr._budgetExceeded) {
                   // Overshoot fix: same immediate-stop treatment as the primary pass loop.
                   if (pageErr._budgetExceeded) _ocrBudgetExceeded = true;
-                  if (canvas) {
-                    canvas.width = 0;
-                    canvas.height = 0;
-                  }
-                  if (pg && pg.cleanup) pg.cleanup();
+                  // FIX (b35c9b09 Step 2): canvas is cache-owned — see the
+                  // primary pass loop's identical comment above. Do not free.
                   break;
                 }
                 if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
@@ -12468,13 +12558,9 @@ async function extractPDFText(ab, statusCb) {
                 if (statusCb)
                   statusCb('OCR retry failed on page ' + pgNum + ' (' + cfg.label + '): ' + pageErr.message);
               }
-              // F2: release canvas backing store and PDF page operator list after each retry pass
-              if (canvas) {
-                canvas.width = 0;
-                canvas.height = 0;
-                canvas = null;
-              }
-              if (pg && pg.cleanup) pg.cleanup();
+              // F2 (superseded by b35c9b09 Step 2's per-page render cache):
+              // see the primary pass loop's identical comment above.
+              canvas = null;
             }
           }
           // ── CHANGE 4: 180° upside-down heuristic ──────────────────────────────
@@ -12493,6 +12579,7 @@ async function extractPDFText(ab, statusCb) {
           // a few lines down, would never run). Partial-results policy: keep pages already
           // OCR'd, never throw away work that already succeeded.
           if (window._pdfAbort) {
+            _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
             break;
@@ -12501,6 +12588,7 @@ async function extractPDFText(ab, statusCb) {
             _ocrBudgetExceeded = true;
           }
           if (_ocrBudgetExceeded) {
+            _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
             break;
@@ -12512,12 +12600,16 @@ async function extractPDFText(ab, statusCb) {
             _ocrPageBudgetExceeded = true;
           }
           if (bestScore < ORIENT_SCORE_THRESHOLD && !_ocrPageBudgetExceeded) {
-            let pgO, canvasO, canvas180;
+            let canvas180;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
-              pgO = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              // Fix (2026-07-22): see _renderPageHQ doc comment above.
-              canvasO = await _withTimeout(_renderPageHQ(pgO, 2.5), PDFJS_AWAIT_TIMEOUT_MS, 'render(' + pgNum + ')');
+              // FIX (b35c9b09 Step 2): fixed scale 2.5 — a cache HIT whenever
+              // primary pass 0 (2.5x) already ran for this page (the normal
+              // case; orientation only fires on a very low bestScore, but the
+              // scale is identical either way). canvasO is now a page-cache-
+              // owned reference — never freed here, only via
+              // _releasePageRenderCache() at page exit.
+              const canvasO = await _renderPageHQCached(2.5);
               // Crop top 20% strip for a fast orientation probe
               const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
               const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
@@ -12555,16 +12647,14 @@ async function extractPDFText(ab, statusCb) {
             } catch (_orientErr) {
               /* orientation probe failed — continue with existing best */
             } finally {
-              // F2: release orientation canvases and PDF page after all orient OCR is done
-              if (canvasO) {
-                canvasO.width = 0;
-                canvasO.height = 0;
-              }
+              // F2 (superseded by b35c9b09 Step 2 for canvasO — it is cache-
+              // owned now, see above): canvas180 is a NEW canvas derived from
+              // canvasO via rotateCanvas180() each time, never cached — still
+              // freed immediately here exactly as before.
               if (canvas180) {
                 canvas180.width = 0;
                 canvas180.height = 0;
               }
-              if (pgO && pgO.cleanup) pgO.cleanup();
             }
           }
           // ── CHANGE 5: Otsu binarization triggered pass ────────────────────────
@@ -12575,6 +12665,7 @@ async function extractPDFText(ab, statusCb) {
           // Bug #134 / budget: same missing-checkpoint fix as the orientation block above,
           // including committing bestText-so-far before breaking (same reasoning).
           if (window._pdfAbort) {
+            _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
             break;
@@ -12583,6 +12674,7 @@ async function extractPDFText(ab, statusCb) {
             _ocrBudgetExceeded = true;
           }
           if (_ocrBudgetExceeded) {
+            _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
             break;
@@ -12593,12 +12685,13 @@ async function extractPDFText(ab, statusCb) {
             _ocrPageBudgetExceeded = true;
           }
           if (bestScore < BINARIZE_SCORE_THRESHOLD && !_ocrPageBudgetExceeded) {
-            let pgB, canvasB, binCanvas;
+            let binCanvas;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
-              pgB = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              // Fix (2026-07-22): see _renderPageHQ doc comment above.
-              canvasB = await _withTimeout(_renderPageHQ(pgB, 2.5), PDFJS_AWAIT_TIMEOUT_MS, 'render(' + pgNum + ')');
+              // FIX (b35c9b09 Step 2): fixed scale 2.5 — cache HIT whenever
+              // primary pass 0 or the orientation check already rendered it
+              // for this page. canvasB is cache-owned; never freed here.
+              const canvasB = await _renderPageHQCached(2.5);
               binCanvas = binarizeCanvas(canvasB);
               const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
               const binText = binResult.data.text;
@@ -12618,16 +12711,14 @@ async function extractPDFText(ab, statusCb) {
             } catch (_binErr) {
               /* binarize pass failed — continue with existing best */
             } finally {
-              // F2: release binarize canvases and PDF page after OCR is done
-              if (canvasB) {
-                canvasB.width = 0;
-                canvasB.height = 0;
-              }
+              // F2 (superseded by b35c9b09 Step 2 for canvasB — cache-owned,
+              // see above): binCanvas is a NEW canvas derived from canvasB via
+              // binarizeCanvas() each time, never cached — still freed
+              // immediately here exactly as before.
               if (binCanvas) {
                 binCanvas.width = 0;
                 binCanvas.height = 0;
               }
-              if (pgB && pgB.cleanup) pgB.cleanup();
             }
           }
           // ── end triggered passes ───────────────────────────────────────────────
@@ -12642,6 +12733,7 @@ async function extractPDFText(ab, statusCb) {
             _earlyExitOverrideSnapshot !== null ? _earlyExitOverrideSnapshot : bestText,
             allPassTexts[pgNum],
           );
+          _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache — normal end-of-page path
           pageTexts[pgNum - 1] = bestText;
           _stampCoverage(pgNum, bestText); // GATE A — normal end-of-iteration commit
           // ── Empty-page detection: if ALL passes returned near-empty text, flag it ──
