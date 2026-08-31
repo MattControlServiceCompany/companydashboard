@@ -11919,38 +11919,72 @@ async function extractPDFText(ab, statusCb) {
             (ocrNeeded.length > 1 ? 's' : '') +
             ' — loading OCR engine...',
         );
-      let worker = null;
+      const _ocrLogger = (m) => {
+        if (statusCb) {
+          if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
+          else if (m.status === 'loading language traineddata') statusCb('Loading English language data...');
+        }
+      };
+      // ── Worker pool (fix/ocr-parallel-workers, 2026-08-31) ────────────────
+      // Sequential OCR (one shared `worker` processing every page's full pass
+      // cascade one page at a time) measured 175s for a 5-page bill and 692s
+      // for a 10-page bill in a real browser — ~69s/page x page count. All
+      // pages read correctly (the b35c9b09 page-skip bug is already fixed);
+      // the remaining cost is pure serialization. This creates a small pool
+      // of independent Tesseract workers so multiple pages OCR concurrently.
+      // Capped by hardwareConcurrency-1, the actual page count, and a hard
+      // ceiling of 6 so a huge multi-page file can't spawn unbounded workers.
+      // Nothing about the PASS CASCADE, scoring, early-exit thresholds,
+      // resize algorithm, or budget MATH changes here — only how many pages
+      // run their (unchanged) cascade at the same time. See _processOnePage
+      // and the pool scheduler below for the rest of this fix.
+      const _poolSize = Math.max(
+        1,
+        Math.min(
+          (typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency - 1 : 3) ||
+            1,
+          ocrNeeded.length,
+          6,
+        ),
+      );
+      const workerBoxes = []; // each slot: { current: TesseractWorker } — mutable box so a
+      // mid-page timeout replacement (see recognizeWithTimeout's _replacementWorker)
+      // can swap this slot's worker without disturbing any other slot.
       try {
-        // Dictionary params (load_system_dawg/load_freq_dawg) are init-only and MUST be passed
-        // in createWorker's 4th arg. Setting them via setParameters is silently ignored by Tesseract.
-        worker = await Tesseract.createWorker(
-          'eng',
-          1,
-          {
-            logger: (m) => {
-              if (statusCb) {
-                if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
-                else if (m.status === 'loading language traineddata') statusCb('Loading English language data...');
-              }
+        for (let w = 0; w < _poolSize; w++) {
+          // Dictionary params (load_system_dawg/load_freq_dawg) are init-only and MUST be passed
+          // in createWorker's 4th arg. Setting them via setParameters is silently ignored by Tesseract.
+          const inst = await Tesseract.createWorker(
+            'eng',
+            1,
+            { logger: _ocrLogger },
+            {
+              load_system_dawg: '0',
+              load_freq_dawg: '0',
             },
-          },
-          {
-            load_system_dawg: '0',
-            load_freq_dawg: '0',
-          },
-        );
-        await worker.setParameters({
-          preserve_interword_spaces: '1',
-          user_defined_dpi: '300',
-        });
+          );
+          await inst.setParameters({
+            preserve_interword_spaces: '1',
+            user_defined_dpi: '300',
+          });
+          workerBoxes.push({ current: inst });
+        }
       } catch (workerErr) {
         if (statusCb) statusCb('OCR engine failed to load: ' + workerErr.message);
+        // Tear down any pool workers that DID start before the failure.
+        for (const box of workerBoxes) {
+          if (box.current) {
+            try {
+              await box.current.terminate();
+            } catch (_) {}
+          }
+        }
         // GATE A: every page still queued for OCR never got a chance — record it.
         _finalizePageCoverage();
         // Return whatever native text we got
         return pageTexts.join('\n').trim().length > 50 ? pageTexts.join('\n') : null;
       }
-      // F5: ensure the worker WASM heap is freed even if the OCR loop throws
+      // F5: ensure every pool worker's WASM heap is freed even if the OCR loop throws
       try {
         // Provider-aware scoring: per-provider signal sets + generic bonuses.
         // Evergy signals are the original BILL_SIGNALS verbatim — behavior unchanged.
@@ -12239,13 +12273,23 @@ async function extractPDFText(ab, statusCb) {
           }
           return patched;
         };
-        for (let idx = 0; idx < ocrNeeded.length; idx++) {
-          if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
+        // fix/ocr-parallel-workers: this used to be the body of a strictly
+        // sequential `for (idx of ocrNeeded)` loop driven by one shared
+        // `worker`. It is now a per-page unit of work handed a dedicated
+        // workerBox ({ current: TesseractWorker }) from the pool above so
+        // multiple pages can run their OCR cascades concurrently — see the
+        // pool scheduler right after this function's closing `};` below.
+        // idx is still the page's DEQUEUE order (0..ocrNeeded.length-1,
+        // assigned once per page in the same order the old loop would have
+        // reached it), so the per-page fair-share budget math a few lines
+        // down is completely unchanged; it now just measures real
+        // concurrent wall time instead of serial wall time.
+        const _processOnePage = async (pgNum, idx, workerBox) => {
+          if (window._pdfAbort) return; // Bug #134: honour cancel inside OCR page loop
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
             _ocrBudgetExceeded = true;
           }
-          if (_ocrBudgetExceeded) break;
-          const pgNum = ocrNeeded[idx];
+          if (_ocrBudgetExceeded) return;
           let bestText = '',
             bestScore = 0;
           allPassTexts[pgNum] = [];
@@ -12384,7 +12428,7 @@ async function extractPDFText(ab, statusCb) {
               const renderMs = Math.round(performance.now() - _renderT0);
               const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
               const t0 = performance.now();
-              const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
+              const { result: ocrResult } = await recognizeWithTimeout(workerBox.current, canvas, params);
               const text = ocrResult.data.text;
               const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
               const score = scorePage(text);
@@ -12415,7 +12459,7 @@ async function extractPDFText(ab, statusCb) {
                 break;
               }
               // If timeout killed the worker, swap in the fresh replacement
-              if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
+              if (pageErr._replacementWorker) workerBox.current = pageErr._replacementWorker;
               passScoreLog.push({
                 page: pgNum,
                 pass: cfg.label,
@@ -12521,7 +12565,7 @@ async function extractPDFText(ab, statusCb) {
                 const renderMs = Math.round(performance.now() - _renderT0);
                 const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
                 const t0 = performance.now();
-                const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
+                const { result: ocrResult } = await recognizeWithTimeout(workerBox.current, canvas, params);
                 const text = ocrResult.data.text;
                 const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
                 const score = scorePage(text);
@@ -12546,7 +12590,7 @@ async function extractPDFText(ab, statusCb) {
                   // primary pass loop's identical comment above. Do not free.
                   break;
                 }
-                if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
+                if (pageErr._replacementWorker) workerBox.current = pageErr._replacementWorker;
                 passScoreLog.push({
                   page: pgNum,
                   pass: cfg.label,
@@ -12582,7 +12626,7 @@ async function extractPDFText(ab, statusCb) {
             _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
-            break;
+            return;
           }
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
             _ocrBudgetExceeded = true;
@@ -12591,7 +12635,7 @@ async function extractPDFText(ab, statusCb) {
             _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
-            break;
+            return;
           }
           // Per-page budget (b35c9b09): only skip THIS page's own optional
           // refinement pass, never the outer page loop — a page using up its
@@ -12616,19 +12660,25 @@ async function extractPDFText(ab, statusCb) {
               canvas180 = rotateCanvas180(canvasO);
               // Quick probe: recognize top strip at both orientations
               const [probe0, probe180] = await Promise.all([
-                recognizeWithTimeout(worker, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
-                  result: { data: { text: '' } },
-                })),
-                recognizeWithTimeout(worker, canvas180, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
-                  result: { data: { text: '' } },
-                })),
+                recognizeWithTimeout(workerBox.current, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(
+                  () => ({
+                    result: { data: { text: '' } },
+                  }),
+                ),
+                recognizeWithTimeout(workerBox.current, canvas180, { rotateAuto: false, rectangle: cropRect }).catch(
+                  () => ({
+                    result: { data: { text: '' } },
+                  }),
+                ),
               ]);
               const sig0 = _countOcrSignals(probe0.result.data.text);
               const sig180 = _countOcrSignals(probe180.result.data.text);
               if (sig180 > sig0 * 1.5 + 3) {
                 // 180° clearly wins — run full OCR on the rotated canvas
                 if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — rotating 180° and re-OCR...');
-                const { result: rotResult } = await recognizeWithTimeout(worker, canvas180, { rotateAuto: true });
+                const { result: rotResult } = await recognizeWithTimeout(workerBox.current, canvas180, {
+                  rotateAuto: true,
+                });
                 const rotText = rotResult.data.text;
                 const rotScore = scorePage(rotText);
                 allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-rot180', text: rotText, score: rotScore });
@@ -12668,7 +12718,7 @@ async function extractPDFText(ab, statusCb) {
             _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
-            break;
+            return;
           }
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
             _ocrBudgetExceeded = true;
@@ -12677,7 +12727,7 @@ async function extractPDFText(ab, statusCb) {
             _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
-            break;
+            return;
           }
           // Per-page budget (b35c9b09): see the orientation gate above — same
           // page-scoped skip, never the outer page loop.
@@ -12693,7 +12743,9 @@ async function extractPDFText(ab, statusCb) {
               // for this page. canvasB is cache-owned; never freed here.
               const canvasB = await _renderPageHQCached(2.5);
               binCanvas = binarizeCanvas(canvasB);
-              const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
+              const { result: binResult } = await recognizeWithTimeout(workerBox.current, binCanvas, {
+                rotateAuto: true,
+              });
               const binText = binResult.data.text;
               const binScore = scorePage(binText);
               allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-otsu', text: binText, score: binScore });
@@ -12746,7 +12798,33 @@ async function extractPDFText(ab, statusCb) {
             if (!window._pdfOcrEmptyPages) window._pdfOcrEmptyPages = [];
             window._pdfOcrEmptyPages.push(pgNum);
           }
-        }
+        };
+        // ── Pool scheduler (fix/ocr-parallel-workers) ───────────────────────
+        // Standard bounded-worker-pool pattern: each pool slot repeatedly
+        // pulls the NEXT not-yet-started page off the shared FIFO queue and
+        // runs _processOnePage to completion before pulling another — NOT a
+        // fixed 1:1 page-to-worker assignment (ocrNeeded.length can exceed
+        // _poolSize). `_poolCursor` is only ever read+incremented with no
+        // `await` between the two, so — same as every other shared counter
+        // in this function (_ocrBudgetExceeded, allPassTexts, passScoreLog,
+        // _pageCoverage) — there is no race despite multiple concurrent
+        // async callers: JS never preempts between two synchronous
+        // statements. Page COMPLETION order can now differ from page NUMBER
+        // order (a hard page keeps its slot busy while easier pages
+        // elsewhere finish first) — this is fine and expected, because
+        // every write _processOnePage makes (pageTexts[pgNum-1],
+        // _pageCoverage[pgNum-1] via _stampCoverage) is already indexed by
+        // page number, never by loop/array position.
+        let _poolCursor = 0;
+        const _runPoolSlot = async (workerBox) => {
+          for (;;) {
+            if (window._pdfAbort || _ocrBudgetExceeded) return;
+            const idx = _poolCursor++;
+            if (idx >= ocrNeeded.length) return;
+            await _processOnePage(ocrNeeded[idx], idx, workerBox);
+          }
+        };
+        await Promise.all(workerBoxes.map(_runPoolSlot));
         // Loud-failure signal (subtask 4): consumed once by the caller (processPDF /
         // _extractSingleFileForQueue), same convention as window._pdfOcrEmptyPages.
         window._pdfOcrBudgetExceeded = _ocrBudgetExceeded
@@ -12757,12 +12835,14 @@ async function extractPDFText(ab, statusCb) {
         // Save pass score log for debug output
         window._pdfPassScores = passScoreLog;
       } finally {
-        // F5: terminate worker even if an error was thrown mid-loop
-        if (worker) {
-          try {
-            await worker.terminate();
-          } catch (_) {}
-          worker = null;
+        // F5: terminate every pool worker even if an error was thrown mid-loop
+        for (const box of workerBoxes) {
+          if (box.current) {
+            try {
+              await box.current.terminate();
+            } catch (_) {}
+            box.current = null;
+          }
         }
       }
     }
