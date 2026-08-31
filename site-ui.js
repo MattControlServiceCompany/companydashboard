@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.08.31.790'; // deployed 2026-07-19 (Phase 0 client-prep: Home dashboard Upcoming Events fix, EMS Leads save/reload reliability fix)
+  var CH_VERSION = 'v2026.08.31.791'; // deployed 2026-08-31 (OCR page-skip fix: multi-page utility bills now read every page)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
