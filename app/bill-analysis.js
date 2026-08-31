@@ -11658,7 +11658,44 @@ function _withTimeout(promise, ms, label) {
 const OCR_TIMEOUT_MS = 90000;
 // Wall-clock cap across ALL pages/passes for one OCR phase — prevents an
 // unbounded worst case (many pages x many passes) from hanging forever.
-const OCR_TOTAL_BUDGET_MS = 4 * 60 * 1000; // 4 min
+//
+// FIX (b35c9b09, 2026-08-31) — throughput regression measured on TWO real
+// multi-page scans (headless, real Tesseract + real pdfjs-dist, no browser;
+// see dashboardlogic.md 2026-08-31 for the full harness output):
+//   - "May 2026 Electric Bills - RES, HS, MS.pdf" (6 pages, clean Evergy
+//     layout): every page early-exits after 2 primary passes (2.5x+3.5x,
+//     score>=10) — ~110s/page average including decode.
+//   - "SKM_C551i26050610570.pdf" (10 pages, harder scan): pages routinely
+//     never reach the score>=10 early-exit and run the FULL 6 primary + 3
+//     retry passes — measured ~390s/page (~43s/pass average across zoom
+//     levels) for a complete cascade.
+// ROOT CAUSE (confirmed, not the b79d235 escalation theory — that fired 0
+// times in these measurements): a single per-FILE clock
+// (OCR_TOTAL_BUDGET_MS) was spent in page order with NO per-page ceiling,
+// so early pages' full escalation could exhaust the whole clock before a
+// later page's outer-loop iteration ever started — the outer loop's own
+// budget check (a few lines below) then breaks the ENTIRE loop, so every
+// remaining page is marked 'skipped-budget' having NEVER been attempted,
+// silently dropping whole bills. Two independent, PAIRED fixes:
+//   1. Per-page fair-share division (search "Per-page budget (b35c9b09
+//      fix" below) bounds how much of the remaining clock any ONE page's
+//      own passes/retries/refinement can spend, so a hard page can no
+//      longer starve the pages after it — every OCR-needed page is
+//      GUARANTEED at least one real pass (2.5x) before its own budget can
+//      trip, because the very first per-page check always sees ~0ms
+//      elapsed for that page.
+//   2. The total budget is no longer one fixed number picked without
+//      measurement — it now SCALES with how many pages actually need OCR
+//      (OCR_PER_PAGE_ALLOWANCE_MS below), so a routine ~12-page file gets
+//      proportionally more time than a 3-page one, capped by a hard,
+//      page-count-independent ceiling (OCR_ABSOLUTE_CEILING_MS) so a
+//      pathological 67-page scan still terminates in a bounded time instead
+//      of scaling the wait to hours. See the assignment inside
+//      extractPDFText (search "OCR_TOTAL_BUDGET_MS =") for where the two are
+//      combined once the OCR-needed page count is known.
+const OCR_PER_PAGE_ALLOWANCE_MS = 120 * 1000; // ~2-3 full passes at this project's measured ~43-110s/pass
+const OCR_ABSOLUTE_CEILING_MS = 20 * 60 * 1000; // hard cap regardless of page count — bounds the 67-page worst case
+let OCR_TOTAL_BUDGET_MS = OCR_PER_PAGE_ALLOWANCE_MS; // reassigned per-file below once ocrNeeded.length is known
 // Helper to create a fresh worker with correct params.
 // Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
 const _createOCRWorker = async (loggerCb) => {
@@ -12036,6 +12073,13 @@ async function extractPDFText(ab, statusCb) {
         // `let _ocrStartTime` declaration above extractPDFText for why this is a
         // reassignment, not a fresh const).
         _ocrStartTime = performance.now();
+        // FIX (b35c9b09): scale the total budget to how many pages actually need
+        // OCR, capped by the absolute ceiling — see the OCR_PER_PAGE_ALLOWANCE_MS/
+        // OCR_ABSOLUTE_CEILING_MS doc comment above for the measured justification.
+        OCR_TOTAL_BUDGET_MS = Math.min(
+          OCR_ABSOLUTE_CEILING_MS,
+          OCR_PER_PAGE_ALLOWANCE_MS * Math.max(1, ocrNeeded.length),
+        );
         let _ocrBudgetExceeded = false;
         // Hoisted above the loop (was previously declared right before its one use at
         // the bottom of the per-page block) so GATE A can stamp _pageCoverage at every
@@ -12158,6 +12202,34 @@ async function extractPDFText(ab, statusCb) {
           let bestText = '',
             bestScore = 0;
           allPassTexts[pgNum] = [];
+          // ── Per-page budget (b35c9b09 fix, 2026-08-31) ─────────────────────
+          // OCR_TOTAL_BUDGET_MS is a single per-FILE clock shared across every
+          // OCR-needed page, consumed in page order. Without a per-page bound,
+          // an early page that legitimately needs many passes (a hard scan, or
+          // the _pageRatesDisagree escalation below) can spend most/all of
+          // that shared clock, starving every LATER page of any attempt at
+          // all — confirmed on both "May 2026 Electric Bills - RES, HS,
+          // MS.pdf" (item b35c9b09) and "SKM_C551i26050610570.pdf" (10 of the
+          // file's pages routinely need the full 6-primary + 3-retry cascade;
+          // measured ~390s/page — see the OCR_PER_PAGE_ALLOWANCE_MS doc
+          // comment above). Fix: give each page a fair, shrinking share of
+          // whatever budget remains, computed fresh per page so pages that
+          // finish early hand their unused time to the pages after them —
+          // never a fixed per-page cap that would waste budget on fast pages
+          // while still starving a later slow one. This does NOT touch
+          // OCR_TOTAL_BUDGET_MS itself — it only stops one page's OWN
+          // passes/retries/refinement early so its siblings still get a turn,
+          // exactly the "partial-results policy" already used elsewhere in
+          // this function (keep pages already OCR'd, never throw away
+          // completed work). Because a fresh page's elapsed-time is always
+          // ~0ms the first time this is checked, EVERY OCR-needed page is
+          // guaranteed at least one real pass (2.5x) before its own budget
+          // can trip.
+          const _pageStartTime = performance.now();
+          const _ocrPagesRemaining = Math.max(1, ocrNeeded.length - idx);
+          const _ocrBudgetRemainingMs = Math.max(0, OCR_TOTAL_BUDGET_MS - (performance.now() - _ocrStartTime));
+          const _ocrPageBudgetMs = _ocrBudgetRemainingMs / _ocrPagesRemaining;
+          let _ocrPageBudgetExceeded = false;
           // Set only in the exact moment the ORIGINAL score>=10 early-exit
           // condition is overridden by a rate disagreement (see below). Freezes
           // bestText/bestScore at exactly what the pre-existing code would have
@@ -12177,7 +12249,10 @@ async function extractPDFText(ab, statusCb) {
             if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
               _ocrBudgetExceeded = true;
             }
-            if (_ocrBudgetExceeded) break;
+            if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+              _ocrPageBudgetExceeded = true;
+            }
+            if (_ocrBudgetExceeded || _ocrPageBudgetExceeded) break;
             const cfg = OCR_PASSES[pass];
             if (statusCb)
               statusCb(
@@ -12204,11 +12279,16 @@ async function extractPDFText(ab, statusCb) {
               // scale-based pg.render() at 2x-4x has pdf.js's own internal smoothing
               // override disable antialiasing for low-DPI scanned bills, degrading OCR
               // input quality. Two-step high-quality resize fixes this.
+              // b35c9b09 measurement: time decode/render separately from OCR
+              // recognize so the two costs are never conflated again (see
+              // dashboardlogic.md 2026-08-31 for the measured split).
+              const _renderT0 = performance.now();
               canvas = await _withTimeout(
                 _renderPageHQ(pg, cfg.scale),
                 PDFJS_AWAIT_TIMEOUT_MS,
                 'render(' + pgNum + ')',
               );
+              const renderMs = Math.round(performance.now() - _renderT0);
               const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
               const t0 = performance.now();
               const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
@@ -12221,6 +12301,7 @@ async function extractPDFText(ab, statusCb) {
                 pass: cfg.label,
                 score: score.toFixed(1),
                 time: elapsed + 's',
+                renderMs,
                 chars: text.length,
               });
               if (score > bestScore || (score === bestScore && text.length > bestText.length)) {
@@ -12314,7 +12395,10 @@ async function extractPDFText(ab, statusCb) {
               if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
                 _ocrBudgetExceeded = true;
               }
-              if (_ocrBudgetExceeded) break;
+              if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+                _ocrPageBudgetExceeded = true;
+              }
+              if (_ocrBudgetExceeded || _ocrPageBudgetExceeded) break;
               const cfg = OCR_RETRY_PASSES[pass];
               if (statusCb)
                 statusCb(
@@ -12335,11 +12419,13 @@ async function extractPDFText(ab, statusCb) {
                 pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
                 // Fix (2026-07-22): see _renderPageHQ doc comment above — defeats pdf.js's
                 // own internal smoothing override for low-DPI scanned source pages.
+                const _renderT0 = performance.now();
                 canvas = await _withTimeout(
                   _renderPageHQ(pg, cfg.scale),
                   PDFJS_AWAIT_TIMEOUT_MS,
                   'render(' + pgNum + ')',
                 );
+                const renderMs = Math.round(performance.now() - _renderT0);
                 const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
                 const t0 = performance.now();
                 const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
@@ -12352,6 +12438,7 @@ async function extractPDFText(ab, statusCb) {
                   pass: cfg.label,
                   score: score.toFixed(1),
                   time: elapsed + 's',
+                  renderMs,
                   chars: text.length,
                 });
                 if (score > bestScore || (score === bestScore && text.length > bestText.length)) {
@@ -12418,7 +12505,13 @@ async function extractPDFText(ab, statusCb) {
             _stampCoverage(pgNum, bestText);
             break;
           }
-          if (bestScore < ORIENT_SCORE_THRESHOLD) {
+          // Per-page budget (b35c9b09): only skip THIS page's own optional
+          // refinement pass, never the outer page loop — a page using up its
+          // fair share must not stop its siblings from getting theirs.
+          if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+            _ocrPageBudgetExceeded = true;
+          }
+          if (bestScore < ORIENT_SCORE_THRESHOLD && !_ocrPageBudgetExceeded) {
             let pgO, canvasO, canvas180;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
@@ -12494,7 +12587,12 @@ async function extractPDFText(ab, statusCb) {
             _stampCoverage(pgNum, bestText);
             break;
           }
-          if (bestScore < BINARIZE_SCORE_THRESHOLD) {
+          // Per-page budget (b35c9b09): see the orientation gate above — same
+          // page-scoped skip, never the outer page loop.
+          if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+            _ocrPageBudgetExceeded = true;
+          }
+          if (bestScore < BINARIZE_SCORE_THRESHOLD && !_ocrPageBudgetExceeded) {
             let pgB, canvasB, binCanvas;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
