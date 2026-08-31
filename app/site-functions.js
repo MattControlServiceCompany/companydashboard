@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.31.790',
+    date: '2026-08-31',
+    title: 'Utility bill review: fixed a shared-account meter mix-up',
+    items: [
+      {
+        type: 'fix',
+        text: "Utility bill review: bills that share one account number across two meters (for example, a High School and its Ball Fields) now route to the correct meter, and no longer get falsely held for review.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.28.789',
     date: '2026-08-28',
     title: 'PDF / OCR: fixed a false review flag on multi-bill scans',
