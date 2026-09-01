@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.01.793',
+    date: '2026-09-01',
+    title: 'Bill extraction: mismatch notice now names the specific line',
+    items: [
+      {
+        type: 'fix',
+        text: "Bill extraction: when a bill's charges don't add up, the mismatch notice now shows which specific line was misread — the expected charge (usage x rate) versus the amount the scanner read — instead of just a total dollar difference.",
+      },
+    ],
+  },
+  {
     v: 'v2026.08.31.792',
     date: '2026-08-31',
     title: 'Energy Department: faster OCR on large scanned utility bills',
