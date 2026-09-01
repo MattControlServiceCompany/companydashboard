@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.08.31.792',
+    date: '2026-08-31',
+    title: 'Energy Department: faster OCR on large scanned utility bills',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department: large scanned utility bills now extract several times faster (multi-page OCR runs in parallel) — a 10-page bill dropped from about 11 minutes to under 3 minutes.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.31.791',
     date: '2026-08-31',
     title: 'Energy Department: fixed OCR skipping pages on large scanned bills',

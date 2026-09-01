@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.08.31.791'; // deployed 2026-08-31 (OCR page-skip fix: multi-page utility bills now read every page)
+  var CH_VERSION = 'v2026.08.31.792'; // deployed 2026-08-31 (OCR parallelized across Tesseract worker pool)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
