@@ -3141,6 +3141,68 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       }
     }
 
+    // ── PER-PART CHARGE VALIDATION (provider-agnostic, ungated) — item f776f47b ──
+    // The three-way qty×rate=charge per-part validator inside _extractEvergy
+    // (energy-savings.js ~4225-4289) already computes _part_mismatches_<field>
+    // for every Evergy bill during extraction, but nothing downstream ever
+    // read it, so a single-line OCR digit misread (e.g. Louisburg USD #416
+    // High School Evergy Jun 2026: ECA line 116,233.536 kWh × $0.02059 =
+    // $2,393.25 but OCR read $2,363.25 — off exactly the $30 the bill total
+    // was under) surfaced only as a vague aggregate SUM MISMATCH banner that
+    // couldn't name the offending line.
+    //
+    // This pass is deliberately keyed only off b._rates (not utilityName) so
+    // it applies to any provider whose extractor populates _rates — not just
+    // Evergy — and it is UNGATED on the aggregate compSum/ocrTotal agreement
+    // (unlike Strategy B above, which only runs once those two already
+    // disagree): a bad line can hide inside a total that reconciles by
+    // coincidence, so per-line math must be checked independently every time.
+    //
+    // It recomputes the exact same formula the extractor already applies
+    // (qty × rate × prorationRatio, rounded to cents, 0.05 tolerance), so for
+    // Evergy bills where energy-savings.js already corrected/cleared a flag
+    // during extraction (single-part rate auto-correction, single-part
+    // charge recovery, multi-part null-OCR cleanup — all of which mutate the
+    // underlying _rates data, not just the flag), the recompute here
+    // reproduces the same already-corrected result rather than fighting it.
+    // FLAGS ONLY — this never writes qty/rate/charge, only the diagnostic
+    // _part_mismatches_<field> array that renderPDFFields reads.
+    for (const b of bills) {
+      if (!b._rates) continue;
+      for (const [field, ri] of Object.entries(b._rates)) {
+        // Top-level null-qty/rate skip — TaxExemptDelivery/BillOffset/FranchiseFee/
+        // SalesTax carry {qty:null, rate:null} because they are not rate-based
+        // charges at all; unverifiable by this check, so leave them alone.
+        if (!ri || !(ri.rate > 0)) continue;
+        const parts = ri.parts || [ri];
+        const badParts = [];
+        for (const part of parts) {
+          // Per-part null-qty/rate skip — a mixed-parts charge can have some
+          // parts recovered from the raw dollar text only (xChg), with no
+          // qty/rate of their own (see energy-savings.js ~3990-3996). Those
+          // parts cannot be math-checked; skip rather than false-flag them.
+          if (!(part.qty > 0) || !(part.rate > 0)) continue;
+          const ratio = part.prorationNum && part.prorationDen ? part.prorationNum / part.prorationDen : 1;
+          const expected = Math.round(part.qty * part.rate * ratio * 100) / 100;
+          const actual = part.ocrCharge != null ? part.ocrCharge : part.computed;
+          if (actual == null) continue;
+          const diff = Math.abs(expected - actual);
+          if (diff > 0.05) {
+            badParts.push({
+              qty: part.qty,
+              rate: part.rate,
+              unit: part.unit,
+              computed: expected,
+              ocrCharge: actual,
+              diff,
+              valid: false,
+            });
+          }
+        }
+        if (badParts.length) b['_part_mismatches_' + field] = badParts;
+      }
+    }
+
     // ── CROSS-FIELD VALIDATION: kWhConsumed and ActualKW consensus from charge lines ──
     // Per Evergy bill structure, several charge lines carry the SAME quantity:
     //   - PTS Chg qty = total kWh for the period
@@ -16637,6 +16699,34 @@ function renderPDFFields(parsed, warnings) {
       `<span style="color:#f87171;padding:0 6px">(off by $${Math.abs(_currentSumDiff).toFixed(2)})</span>` +
       `</div>`
     : '';
+  // Item f776f47b: name the SPECIFIC offending line(s) instead of leaving the
+  // user to guess which of the summed fields is wrong. _part_mismatches_<field>
+  // is written by _postExtractionVerify's provider-agnostic per-part validator
+  // (app/bill-analysis.js, "PER-PART CHARGE VALIDATION") for any field whose
+  // qty × rate doesn't reconcile to the OCR'd charge on that line — read it
+  // here for every field in this bill's charge-sum list and render one line
+  // per bad part, e.g. "ECA Charge: expected $2,393.25 (116,233.536 kWh ×
+  // $0.02059) — OCR read $2,363.25 (off $30.00)". Detection-only — never
+  // auto-corrects; which of qty/rate/charge is wrong is ambiguous.
+  const _partMismatchLines = _CHARGE_SUM_KEYS_RPF.flatMap((f) => {
+    const badParts = parsed['_part_mismatches_' + f];
+    if (!badParts || !badParts.length) return [];
+    const label = LABELS[f] || f;
+    return badParts.map((p) => {
+      const qtyStr = p.qty.toLocaleString('en-US', { maximumFractionDigits: 3 });
+      const unitStr = p.unit || '';
+      return (
+        `<div style="margin-top:4px">` +
+        `<strong style="color:#fecaca">${label}:</strong> expected $${p.computed.toFixed(2)} ` +
+        `(${qtyStr} ${unitStr} &times; $${p.rate.toFixed(5)}) &mdash; OCR read $${p.ocrCharge.toFixed(2)} ` +
+        `(off $${p.diff.toFixed(2)})` +
+        `</div>`
+      );
+    });
+  });
+  const _partMismatchHtml = _partMismatchLines.length
+    ? `<div style="font-size:12px;font-family:var(--mono);margin-top:8px;line-height:1.6;color:#fca5a5;border-top:1px solid rgba(239,68,68,.35);padding-top:6px">${_partMismatchLines.join('')}</div>`
+    : '';
   const sumMismatchHtml = hasCurrentSumMismatch
     ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
         <span style="font-size:26px;line-height:1">&#9940;</span>
@@ -16644,6 +16734,7 @@ function renderPDFFields(parsed, warnings) {
           <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">SUM MISMATCH &mdash; $${Math.abs(_currentSumDiff).toFixed(2)} ${_currentSumDiff > 0 ? 'OVER' : 'UNDER'} Total Current Charges</div>
           <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Charge sum is $${_currentChargeSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} but the bill total is $${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.${_labelsMissing ? ' Blank charges: <strong>' + _labelsMissing + '</strong>.' : ''} Check every field below against the source PDF.</div>
           ${_sumMathLine}
+          ${_partMismatchHtml}
         </div>
       </div>`
     : '';
