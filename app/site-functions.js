@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.01.795',
+    date: '2026-09-01',
+    title: "Bill import: never files a bill to the wrong utility's meter",
+    items: [
+      {
+        type: 'fix',
+        text: "Bill import: a bill is never filed to the wrong utility's meter anymore. If a building has no meter for that bill's service (say a gas bill but only an electric meter on file), the bill is shown for you to place instead of being mis-attached.",
+      },
+      {
+        type: 'fix',
+        text: 'Bill import: bills on a renumbered account also still match the right meter by its previous account number.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.01.794',
     date: '2026-09-01',
     title: 'Bill import: no billing period dropped from multi-building PDFs',
