@@ -5560,6 +5560,82 @@ function _addrStreetPart(a) {
   const commaIdx = s.indexOf(',');
   return commaIdx >= 0 ? s.slice(0, commaIdx) : s;
 }
+// Fix (b-46a984a0 Pass-2 rearchitecture, 2026-09-01): structural street
+// number + street name extractor, added because no address-parsing helper
+// in this file exposes number/name as separate tokens (the others --
+// _addrStreetPart/_addrTailTokens -- split only on a comma, for the
+// separate purpose of scoring street-vs-tail; _normalizeAddr concatenates
+// everything, including the house number, into one string with no
+// separator). Used ONLY by the commodity fallback below to replace its
+// fuzzy-threshold gate with an exact match (see that call site for why).
+// Returns {num, name} or null if the string does not start with a house
+// number (never guess a street identity for a prefixed/tagged address like
+// Spring Hill's "BofE - 101 E South St" -- that correctly falls through to
+// null/no-match at the call site). `name` is every token after the number
+// up to and including the first recognized street-type suffix word
+// (st/street/dr/ave/rd/blvd/ln/ct/cir/pl/ter/way/etc.), which discards any
+// trailing city/state/zip whether or not a comma separates them (Spring
+// Hill's real stored addresses have no comma before the city name, e.g.
+// "101 E South St Spring Hill, KS 66083") and drops a trailing directional
+// suffix after the street type (e.g. the "E" in "5th St E") consistently on
+// both sides being compared. `name` is run through the existing
+// _normalizeAddr so "St"/"Street" etc. still fold together and comparison
+// is case/spacing-insensitive.
+const _STREET_SUFFIXES = new Set([
+  'st',
+  'street',
+  'ave',
+  'avenue',
+  'dr',
+  'drive',
+  'rd',
+  'road',
+  'blvd',
+  'boulevard',
+  'ln',
+  'lane',
+  'ct',
+  'court',
+  'cir',
+  'circle',
+  'pl',
+  'place',
+  'ter',
+  'terrace',
+  'way',
+  'pkwy',
+  'parkway',
+  'hwy',
+  'highway',
+  'trl',
+  'trail',
+  'sq',
+  'square',
+  'loop',
+]);
+function _addrStreetIdentity(a) {
+  const s = (a || '').trim();
+  const m = s.match(/^(\d+)\s*(.*)$/);
+  if (!m || !m[1]) return null;
+  const num = m[1];
+  const tokens = m[2].split(/[\s,]+/).filter(Boolean);
+  const nameTokens = [];
+  for (const raw of tokens) {
+    const clean = raw.replace(/[^a-zA-Z]/g, '').toLowerCase();
+    nameTokens.push(raw);
+    if (_STREET_SUFFIXES.has(clean)) break;
+  }
+  if (!nameTokens.length) return null;
+  const name = _normalizeAddr(nameTokens.join(' '));
+  if (!name) return null;
+  return { num, name };
+}
+function _streetIdentityMatch(a, b) {
+  const ia = _addrStreetIdentity(a);
+  const ib = _addrStreetIdentity(b);
+  if (!ia || !ib) return false;
+  return Number(ia.num) === Number(ib.num) && ia.name === ib.name;
+}
 function _identityAddressScore(billAddr, candidateAddr) {
   const streetScore = _addressSimilarity(_addrStreetPart(billAddr), _addrStreetPart(candidateAddr));
   const billTail = _addrTailTokens(billAddr);
@@ -5858,43 +5934,45 @@ function findMeterMatch(extracted) {
         const bldgAddrNorm = _normalizeAddr(bldg.addr);
         const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
         const exactHit = (bldgAddrNorm && bldgAddrNorm === billAddr) || aliases.some((a) => a === billAddr);
-        // Fix (b-46a984a0 Pass-2 gate bias, 2026-09-01): use _identityAddressScore
-        // here instead of raw _addressSimilarity. _addressSimilarity divides the edit
-        // distance by the LONGER string's length, which unfairly penalizes a short
-        // bill ServiceAddress (no city/state/zip -- e.g. City of Louisburg municipal
-        // bills print "202 AQUATIC DR") against a long stored bldg.addr ("202 Aquatic
-        // Dr, Louisburg, KS 66053"): real measured score was 0.429, under the 0.60
-        // gate, silently failing the flagship renumbered-account scenario this
-        // fallback exists for. _identityAddressScore splits street vs. city/state/tail
-        // and scores them separately (60/40 weighting, tail neutral when one side has
-        // no tail data), which is length-unbiased and already proven at its other call
-        // site, _pickIdentityCandidate (~5602).
+        // Fix (b-46a984a0 Pass-2 rearchitecture, 2026-09-01): the fuzzy
+        // _identityAddressScore >= 0.75 gate that used to live here was
+        // proven wrong by an independent stress test run against all 4 real
+        // projects (not just the Louisburg set it was derived from): 61 real
+        // cross-building address pairs score >= 0.75, up to 0.971, almost
+        // entirely on Baker University's dense same-street campus where
+        // adjacent buildings differ only by house number ("604 Dearborn St"
+        // vs "704 Dearborn St") -- Levenshtein-based similarity treats a
+        // one-digit house-number change as a near-match, and raising the
+        // threshold cannot fix that (0.971 pairs exist). Confirmed as a live
+        // misroute: a simulated new Baker Pullium Center Gas bill
+        // ("704 Dearborn St") resolved matchType:'commodity' to Howard
+        // Hall's real existing Gas meter ("604 Dearborn St") at fuzzyScore
+        // 0.7538 -- Pullium Center has zero meters of its own, so it never
+        // entered commodityCandidates to trigger the cross-building tie
+        // check below. Full report:
+        // _context/temp/2026-09-01-pass2-independent-gate.md.
         //
-        // Threshold: NOT the reused 0.60. _pickIdentityCandidate has no numeric
-        // minimum-score gate to carry over (it's a pure argmax among candidates
-        // already narrowed by account/meter identity, not an absolute yes/no gate on
-        // the whole portfolio) -- so there is nothing to copy. Verified empirically
-        // against the real Louisburg building set instead: a short realistic bill
-        // address (street only, no city/state -- how this provider's OCR text
-        // actually reads) scores EXACTLY 0.60*1.0 + 0.40*0.5 = 0.80 against its OWN
-        // correct building every time (street matches exactly, tail neutral because
-        // the short bill text has no city/state to compare). The worst observed
-        // cross-building confusion in the real data is 0.68 (two buildings on the
-        // same street, "105 S 5th St E" vs "201 S 5th St E" -- Broadmoor vs Field
-        // House) and a literal-address collision case (Maintenance's own bill address
-        // vs neighboring Broadmoor) scored 0.627. 0.60 would let both of those
-        // through as false building matches while 0.75 sits comfortably between the
-        // worst real confusion (0.68) and the correct-match constant (0.80), so 0.75
-        // is used here instead of 0.60.
-        let score = bldgAddrNorm ? _identityAddressScore(extracted.ServiceAddress, bldg.addr) : 0;
-        for (const rawAlias of bldg.addrAliases || []) {
-          const s = _identityAddressScore(extracted.ServiceAddress, rawAlias);
-          if (s > score) score = s;
-        }
-        if (!(exactHit || score >= 0.75)) continue; // see threshold derivation in comment above -- NOT the 0.60 used by the address branch above
+        // Replaced with a STRUCTURAL exact match (_streetIdentityMatch,
+        // ~5616): the bill's street NUMBER must match a building's street
+        // number EXACTLY (numeric equality on the leading digits) AND the
+        // street NAME must match after normalization -- no similarity
+        // score, no threshold. A one-digit house-number difference can never
+        // pass this gate, which eliminates every one of the 61 real
+        // cross-building pairs found in the stress test. The one genuine
+        // address COLLISION in the real data (Louisburg Maintenance
+        // Building's alias "105 S 5TH ST E LOUISBURG KS" is the identical
+        // number+street name as Broadmoor Elementary's real address "105 S
+        // 5th St E, Louisburg, KS 66053") still produces two structural
+        // matches with equal score -- left to the unchanged crossBldgTie
+        // 0.03 tie-margin check below, which correctly leaves it unresolved
+        // rather than guessing (same as before this change).
+        const structuralHit =
+          _streetIdentityMatch(extracted.ServiceAddress, bldg.addr) ||
+          (bldg.addrAliases || []).some((rawAlias) => _streetIdentityMatch(extracted.ServiceAddress, rawAlias));
+        if (!(exactHit || structuralHit)) continue; // exact full-address hit, or exact street number+name -- nothing fuzzy
         const sameCommMeters = (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm);
         if (sameCommMeters.length !== 1) continue; // 0 => create path; 2+ => ambiguous, never guess
-        commodityCandidates.push({ proj, bldg, meter: sameCommMeters[0], score: exactHit ? 1.0 : score });
+        commodityCandidates.push({ proj, bldg, meter: sameCommMeters[0], score: 1.0 });
       }
     }
     if (commodityCandidates.length === 1) {
