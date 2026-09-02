@@ -5462,6 +5462,10 @@ let _mbRowState = {};
 // keep purely local before per-bill save required this to persist across
 // separate _mbSaveOneBill() invocations).
 let _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
+// Re-entrancy guard for confirmMultiBuildingSave — the Save All loop awaits
+// _mbSaveOneBill per row while the panel is still visible; without this a
+// double-click (or programmatic re-dispatch) could run the loop twice.
+let _mbSaveAllInProgress = false;
 function _isMultiAcctFile() {
   return new Set((window._pdfMultiBills || []).map((b) => b.AccountNumber).filter(Boolean)).size > 1;
 }
@@ -6039,6 +6043,7 @@ function _mbRowHtml(i) {
       'setMbRowDestBldg',
       'setMbRowDestMeter',
       'setMbRowDestExpand',
+      true,
     );
     const isIdentity = !!(match && match.matchType === 'identity');
     const isManual = !!(match && match.matchType === 'manual');
@@ -6163,10 +6168,40 @@ function setMbRowDestProj(i, val) {
 }
 window.setMbRowDestProj = setMbRowDestProj;
 
+// b-46a984a0: build a "create" row target — no meter yet; the new
+// meter/building is materialized at save time by _autoCreateMeterAndSaveBill.
+// bldgId non-null => create the meter on that EXISTING building; null =>
+// project-level new/sentinel building.
+function _mbSetCreateTarget(i, projId, bldgId) {
+  const proj = (projects || []).find(function (p) {
+    return p.id === projId;
+  });
+  const bldg = proj && bldgId ? getUDBldg(projId, bldgId) : null;
+  _mbRowTargets[i] = {
+    proj: proj || null,
+    projId: projId || null,
+    bldg: bldg || null,
+    bldgId: bldgId || null,
+    meter: null,
+    matchType: 'create',
+    createOnBldgId: bldgId || null,
+  };
+  if (_mbRowState[i]) _mbRowState[i].checked = true;
+  else _mbRowState[i] = { checked: true, skipped: false };
+}
+
 function setMbRowDestBldg(i, val) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  if (val === '__CREATE_NEW__') {
+    ov.bldgId = '__CREATE_NEW__';
+    ov.meterId = '__CREATE_NEW__';
+    bills[i]._meterOverride = ov;
+    _mbSetCreateTarget(i, ov.projId, null); // new building + new meter at save time
+    _mbRerenderRow(i);
+    return;
+  }
   ov.bldgId = val || null;
   ov.meterId = null;
   bills[i]._meterOverride = ov;
@@ -6179,6 +6214,14 @@ function setMbRowDestMeter(i, val) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  if (val === '__CREATE_NEW__') {
+    ov.meterId = '__CREATE_NEW__';
+    bills[i]._meterOverride = ov;
+    const bldgIdForCreate = ov.bldgId && ov.bldgId !== '__CREATE_NEW__' ? ov.bldgId : null;
+    _mbSetCreateTarget(i, ov.projId, bldgIdForCreate);
+    _mbRerenderRow(i);
+    return;
+  }
   ov.meterId = val || null;
   bills[i]._meterOverride = ov;
   if (ov.projId && ov.bldgId && ov.meterId) {
@@ -6274,35 +6317,29 @@ function _mbUpdateSaveAllBtn() {
   if (!btn) return;
   const bills = window._pdfMultiBills || [];
   const dupMap = window._pdfDupMap || {};
-  // Rows this Save All pass would actually touch: not a skipped duplicate,
-  // not manually skipped, not already individually saved, and checked
-  // (ede70be1 3b — Save All now honors the same per-row checked gate the
-  // batch queue table uses instead of blindly walking every row).
-  const included = bills.filter(function (b, i) {
-    if (b._mbSaved) return false;
+  // b-46a984a0: full-accounting readiness. Save All enables ONLY when every
+  // row is accounted for — saved, duplicate-skip, explicit user Skip, or
+  // checked+resolved — AND at least one row will actually save. A row left
+  // merely unchecked (the old silent-drop state) is UNACCOUNTED and now hard-
+  // blocks Save All until the user assigns a destination or explicitly Skips.
+  let willSave = 0;
+  let unaccounted = 0;
+  bills.forEach(function (b, i) {
+    if (b._mbSaved) return;
     const d = dupMap[i];
-    if (d && d.action === 'skip') return false;
-    const st = _mbRowState[i];
-    if (st && (st.skipped || st.checked === false)) return false;
-    return true;
+    if (d && d.action === 'skip') return;
+    const st = _mbRowState[i] || { checked: false, skipped: false };
+    if (st.skipped) return;
+    const t = _mbRowTargets[i];
+    const resolved = !!(t && (t.meter || t.matchType === 'create'));
+    if (st.checked && resolved) {
+      willSave++;
+      return;
+    }
+    unaccounted++;
   });
-  if (!included.length) {
-    btn.disabled = true;
-    return;
-  }
-  const assigned = included.filter(function (b) {
-    // Find the original index in bills array
-    const origIdx = bills.indexOf(b);
-    const t = _mbRowTargets[origIdx];
-    // Fix 2 (review of 1e99a20, PRESERVED): a row is only "ready" when its
-    // target has a truthy .meter (identity, address, or a manual pick). An
-    // 'ambiguous' target is truthy but carries no resolved .meter — it must
-    // NOT satisfy Save-All eligibility, or Save All would enable itself while
-    // a row is still unresolved and _mbSaveOneBill would have nothing safe
-    // to write for it.
-    return !!(t && t.meter);
-  });
-  btn.disabled = !(assigned.length === included.length);
+  btn.disabled = !(willSave > 0 && unaccounted === 0);
+  btn.title = unaccounted > 0 ? unaccounted + ' billing period(s) still need a destination or an explicit Skip' : '';
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
@@ -7057,6 +7094,49 @@ async function _mbSaveOneBill(bi) {
     if (Object.keys(cp).length) billRow._chargeParts = cp;
   }
 
+  // b-46a984a0: explicit "create new meter/building" target from the picker.
+  // A create is a deliberate user action (authoritative like a manual pick),
+  // so it bypasses the identity gate. Routes through the shared
+  // _autoCreateMeterAndSaveBill primitive (dedup + build/meter creation +
+  // "Unmatched Bills" sentinel when no building was chosen). Never drops: if
+  // creation can't key a meter (no account/meter number) it holds for review.
+  if (billMatch.matchType === 'create') {
+    const _cProj = billMatch.projId;
+    if (!_cProj) {
+      return { status: 'unresolved', reason: 'create target has no project' };
+    }
+    const _created = _autoCreateMeterAndSaveBill(bill, _cProj, billRow, billMatch.createOnBldgId || null);
+    if (_created && _created.meter) {
+      const _dest =
+        ((billMatch.proj && billMatch.proj.name) || '') +
+        ' → ' +
+        (_created.bldg.name || _created.bldg.addr || 'building') +
+        ' → ' +
+        (_created.meter.commodity || _created.meter.account || 'meter');
+      bill._mbSaved = true;
+      bill._mbSavedDest = _dest;
+      return { status: 'saved', destination: _dest, projId: _cProj };
+    }
+    const _held = (await sget('en_pdf_bills', [])) || [];
+    _held.push(
+      Object.assign(
+        {
+          id: 'pb' + Date.now() + '_' + bi + '_review',
+          savedAt: new Date().toISOString(),
+          projId: _cProj,
+          projName: (billMatch.proj && billMatch.proj.name) || 'General',
+          hasPDF,
+          pdfKey: hasPDF ? pdfKey : null,
+        },
+        bill,
+      ),
+    );
+    await sset('en_pdf_bills', _held);
+    bill._mbHeld = true;
+    bill._mbHeldReason = 'could not create meter — no account/meter number';
+    return { status: 'held', reason: 'create failed — no identity to key a meter', projId: _cProj };
+  }
+
   // Fix 2 (review of 1e99a20, PRESERVED): a row target can be truthy but
   // meter-less (matchType 'ambiguous' from findMeterMatch, or otherwise
   // malformed) — every line below this dereferences billMatch.meter/.bldg
@@ -7245,11 +7325,12 @@ window._mbSaveOneBill = _mbSaveOneBill;
 // pick (see setMbRowDestMeter) — so Save All only ever acts on rows the user
 // has confirmed one way or another, honest-display gate wiring from 3a/3b.
 async function confirmMultiBuildingSave() {
+  if (_mbSaveAllInProgress) return; // re-entrancy guard (double-click / re-dispatch)
   const bills = window._pdfMultiBills;
   if (!bills || !bills.length) return;
   const dupMap = window._pdfDupMap || {};
 
-  // Dup-unresolved gate
+  // Dup-unresolved gate (unchanged)
   const unresolved = Object.values(dupMap).filter(function (d) {
     return d.action === null;
   });
@@ -7258,65 +7339,83 @@ async function confirmMultiBuildingSave() {
     return;
   }
 
-  // Rows this Save All pass will actually touch.
+  // b-46a984a0: full-accounting pass. Classify EVERY row. A row is going to be
+  // saved (checked + resolved), explicitly excluded (user Skip or dup-skip),
+  // already saved, or UNACCOUNTED. Any unaccounted row hard-blocks the whole
+  // save — no bill may leave this panel silently dropped. This replaces both
+  // the old silent `continue` and the separate downstream unmatched gate.
   const toSave = [];
+  let userSkipped = 0;
+  const unaccountedIdx = [];
   for (let _bi = 0; _bi < bills.length; _bi++) {
+    if (bills[_bi]._mbSaved) continue;
     const billDup = dupMap[_bi];
     if (billDup && billDup.action === 'skip') continue;
-    if (bills[_bi]._mbSaved) continue;
-    const st = _mbRowState[_bi];
-    if (st && (st.skipped || st.checked === false)) continue;
-    toSave.push(_bi);
+    const st = _mbRowState[_bi] || { checked: false, skipped: false };
+    if (st.skipped) {
+      userSkipped++;
+      continue;
+    }
+    const t = _mbRowTargets[_bi];
+    const resolved = !!(t && (t.meter || t.matchType === 'create'));
+    if (st.checked && resolved) {
+      toSave.push(_bi);
+      continue;
+    }
+    unaccountedIdx.push(_bi);
+  }
+  if (unaccountedIdx.length) {
+    showToast(
+      unaccountedIdx.length +
+        ' billing period(s) have no destination — assign a meter, choose "+ New meter", or Skip each before saving',
+    );
+    return;
   }
   if (!toSave.length) {
-    showToast('Nothing checked to save — check a row or use its own Save button');
+    showToast('Nothing to save — every remaining row is skipped');
     return;
   }
 
-  // Unmatched gate — every row Save All is about to touch must have a
-  // resolved destination (truthy .meter — PRESERVED from _mbUpdateSaveAllBtn's
-  // eligibility check, see Fix 2 comment there).
-  for (const _bi of toSave) {
-    if (!_mbRowTargets[_bi] || !_mbRowTargets[_bi].meter) {
-      showToast('All included billing periods need a destination — assign, uncheck, or Skip remaining rows first');
-      return;
-    }
-  }
-
+  _mbSaveAllInProgress = true;
   let saved = 0;
   let flaggedForReview = 0;
   const touchedPids = new Set(); // rows in this batch can target different projects/buildings
-  for (const _bi of toSave) {
-    const result = await _mbSaveOneBill(_bi);
-    if (result.status === 'saved') {
-      saved++;
-      if (result.projId) touchedPids.add(result.projId);
-    } else if (result.status === 'held') {
-      flaggedForReview++;
+  try {
+    for (const _bi of toSave) {
+      const result = await _mbSaveOneBill(_bi);
+      if (result.status === 'saved') {
+        saved++;
+        if (result.projId) touchedPids.add(result.projId);
+      } else if (result.status === 'held') {
+        flaggedForReview++;
+      }
     }
-  }
 
-  // Save once after the loop — never per-bill. Scope to only the projects rows in
-  // this batch actually landed in (a multi-account PDF can span several projects).
-  saveUtilityData(Array.from(touchedPids));
-  window._pdfBillsSaved = true;
-  _inheritBaselinesForProject(udSelProjId);
-  document.getElementById('pdfMultiBldgPanel').style.display = 'none';
-  _mbRowTargets = {};
-  _mbRowState = {};
-  _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
-  _autoAssignTarget = null;
-  showToast(
-    saved +
-      ' bill' +
-      (saved !== 1 ? 's' : '') +
-      ' saved to matched meters' +
-      (flaggedForReview ? ', ' + flaggedForReview + ' flagged for review (account mismatch) — check Saved Bills' : '') +
-      ' ✓',
-  );
-  if (udSelProjId && udSelBldgId) {
-    renderUDDetail();
-    renderUDProjList();
+    // Save once after the loop — never per-bill. Scope to only the projects rows in
+    // this batch actually landed in (a multi-account PDF can span several projects).
+    saveUtilityData(Array.from(touchedPids));
+    window._pdfBillsSaved = true;
+    _inheritBaselinesForProject(udSelProjId);
+    document.getElementById('pdfMultiBldgPanel').style.display = 'none';
+    _mbRowTargets = {};
+    _mbRowState = {};
+    _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
+    _autoAssignTarget = null;
+    showToast(
+      saved +
+        ' bill' +
+        (saved !== 1 ? 's' : '') +
+        ' saved' +
+        (flaggedForReview ? ', ' + flaggedForReview + ' flagged for review (account mismatch)' : '') +
+        (userSkipped ? ', ' + userSkipped + ' skipped by you' : '') +
+        ' ✓',
+    );
+    if (udSelProjId && udSelBldgId) {
+      renderUDDetail();
+      renderUDProjList();
+    }
+  } finally {
+    _mbSaveAllInProgress = false;
   }
 }
 window.confirmMultiBuildingSave = confirmMultiBuildingSave;
@@ -8848,7 +8947,7 @@ function exitPreviewMode() {
 // same honest-match rendering instead of a parallel "Matched" badge that hid
 // non-identity (address/ambiguous) matches behind a false-confident green label.
 // Behavior-preserving hoist — same signature, same branches, same output.
-function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn) {
+function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn, allowCreate) {
   const ov = bill._meterOverride || null;
   const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
   const expanded = !!bill._destExpanded || !isIdentity;
@@ -8899,7 +8998,7 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
           '</option>',
       )
       .join('');
-  const bldgOpts =
+  const bldgOptsBase =
     '<option value="">Select building…</option>' +
     (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
       .map(
@@ -8913,8 +9012,15 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
           '</option>',
       )
       .join('');
+  const createBldgOpt =
+    allowCreate && curProj
+      ? '<option value="__CREATE_NEW__"' +
+        (String(curBldg) === '__CREATE_NEW__' ? ' selected' : '') +
+        '>+ New building (create from this bill)</option>'
+      : '';
+  const bldgOpts = bldgOptsBase + createBldgOpt;
   const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
-  const meterOpts =
+  const meterOptsBase =
     '<option value="">Select meter…</option>' +
     ((bldgObj && bldgObj.meters) || [])
       .map((m) => {
@@ -8931,6 +9037,13 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
         );
       })
       .join('');
+  const createMeterOpt =
+    allowCreate && curProj
+      ? '<option value="__CREATE_NEW__"' +
+        (String(curMeter) === '__CREATE_NEW__' ? ' selected' : '') +
+        '>+ New meter (create from this bill)</option>'
+      : '';
+  const meterOpts = meterOptsBase + createMeterOpt;
   const hint =
     autoMatch && autoMatch.matchType === 'address'
       ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
@@ -18088,7 +18201,7 @@ function confirmManualAssign() {
 // Called when _saveSinglePDFBill cannot find a meter match but the bill has
 // enough identity information (AccountNumber or MeterNumber) to create one.
 // Returns { bldg, meter } on success, or null if creation was skipped.
-function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
+function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   if (!projId) return null;
   const acctNum = extracted.AccountNumber || '';
   const meterNum = extracted.MeterNumber || '';
@@ -18130,9 +18243,19 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
 
   // Step 2: Find the best building match by service address similarity (threshold 0.60).
   // If no building matches, find or create a single "Unmatched Bills" sentinel building.
+  // b-46a984a0: when the caller (multi-building panel "+ New meter") explicitly
+  // chose an existing building, create the new meter ON that building instead
+  // of the address-guess/sentinel path below. Existing single-bill callers
+  // pass no 4th arg (undefined) -> unchanged behavior.
   let targetBldg = null;
+  if (preferBldgId) {
+    targetBldg =
+      udProj.buildings.find(function (b) {
+        return String(b.id) === String(preferBldgId);
+      }) || null;
+  }
   const svcAddr = extracted.ServiceAddress || '';
-  if (svcAddr) {
+  if (!targetBldg && svcAddr) {
     let bestScore = 0;
     let bestBldg = null;
     for (const b of udProj.buildings) {
