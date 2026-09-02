@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.01.794',
+    date: '2026-09-01',
+    title: 'Bill import: no billing period dropped from multi-building PDFs',
+    items: [
+      {
+        type: 'fix',
+        text: "Bill import (multi-building PDFs): no billing period is dropped anymore. A bill for a building that already has a meter now attaches to it even when the utility changed the account number, and any bill we can't place is shown for you to assign — nothing is skipped silently.",
+      },
+      {
+        type: 'fix',
+        text: 'Bill import review panel: a bill assigned to a new meter/building now shows the correct "Will create new meter/building" label and its Save button works, instead of being mislabeled as an unconfirmed match with Save disabled.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.01.793',
     date: '2026-09-01',
     title: 'Bill extraction: mismatch notice now names the specific line',
