@@ -5858,12 +5858,40 @@ function findMeterMatch(extracted) {
         const bldgAddrNorm = _normalizeAddr(bldg.addr);
         const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
         const exactHit = (bldgAddrNorm && bldgAddrNorm === billAddr) || aliases.some((a) => a === billAddr);
-        let score = bldgAddrNorm ? _addressSimilarity(bldg.addr, extracted.ServiceAddress) : 0;
+        // Fix (b-46a984a0 Pass-2 gate bias, 2026-09-01): use _identityAddressScore
+        // here instead of raw _addressSimilarity. _addressSimilarity divides the edit
+        // distance by the LONGER string's length, which unfairly penalizes a short
+        // bill ServiceAddress (no city/state/zip -- e.g. City of Louisburg municipal
+        // bills print "202 AQUATIC DR") against a long stored bldg.addr ("202 Aquatic
+        // Dr, Louisburg, KS 66053"): real measured score was 0.429, under the 0.60
+        // gate, silently failing the flagship renumbered-account scenario this
+        // fallback exists for. _identityAddressScore splits street vs. city/state/tail
+        // and scores them separately (60/40 weighting, tail neutral when one side has
+        // no tail data), which is length-unbiased and already proven at its other call
+        // site, _pickIdentityCandidate (~5602).
+        //
+        // Threshold: NOT the reused 0.60. _pickIdentityCandidate has no numeric
+        // minimum-score gate to carry over (it's a pure argmax among candidates
+        // already narrowed by account/meter identity, not an absolute yes/no gate on
+        // the whole portfolio) -- so there is nothing to copy. Verified empirically
+        // against the real Louisburg building set instead: a short realistic bill
+        // address (street only, no city/state -- how this provider's OCR text
+        // actually reads) scores EXACTLY 0.60*1.0 + 0.40*0.5 = 0.80 against its OWN
+        // correct building every time (street matches exactly, tail neutral because
+        // the short bill text has no city/state to compare). The worst observed
+        // cross-building confusion in the real data is 0.68 (two buildings on the
+        // same street, "105 S 5th St E" vs "201 S 5th St E" -- Broadmoor vs Field
+        // House) and a literal-address collision case (Maintenance's own bill address
+        // vs neighboring Broadmoor) scored 0.627. 0.60 would let both of those
+        // through as false building matches while 0.75 sits comfortably between the
+        // worst real confusion (0.68) and the correct-match constant (0.80), so 0.75
+        // is used here instead of 0.60.
+        let score = bldgAddrNorm ? _identityAddressScore(extracted.ServiceAddress, bldg.addr) : 0;
         for (const rawAlias of bldg.addrAliases || []) {
-          const s = _addressSimilarity(rawAlias, extracted.ServiceAddress);
+          const s = _identityAddressScore(extracted.ServiceAddress, rawAlias);
           if (s > score) score = s;
         }
-        if (!(exactHit || score >= 0.6)) continue; // same 0.60 threshold as the address branch above
+        if (!(exactHit || score >= 0.75)) continue; // see threshold derivation in comment above -- NOT the 0.60 used by the address branch above
         const sameCommMeters = (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm);
         if (sameCommMeters.length !== 1) continue; // 0 => create path; 2+ => ambiguous, never guess
         commodityCandidates.push({ proj, bldg, meter: sameCommMeters[0], score: exactHit ? 1.0 : score });
