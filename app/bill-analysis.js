@@ -5825,7 +5825,85 @@ function findMeterMatch(extracted) {
       };
     }
   }
-  return bestMatch || addrMatch;
+  // PASS 2 (b-46a984a0 commodity fallback, added 2026-09-01): fires ONLY when
+  // the identity AND address branches above both found nothing (bestMatch
+  // and addrMatch are both null/undefined) — it NEVER runs before or
+  // overrides them, so the identity happy path above is untouched. Handles
+  // the "account renumbered, same physical hookup" case: City of Louisburg
+  // re-numbered utility accounts but never updated some meters' stored
+  // account (e.g. High School's gas meter still carries the OLD 900101
+  // while the new bill reads 09-009001-00). That bill hits the Fix-1
+  // identity-contradiction veto above (line ~5708 `continue`) and is
+  // dropped from addrCandidates entirely, so it reaches here with both
+  // bestMatch and addrMatch null even though its ServiceAddress plainly
+  // matches an existing building.
+  //
+  // Rule (Matt-approved, plan.md "PASS 2 REFINEMENT"): resolve by address
+  // to find the building, then match by COMMODITY ALONE (never by account)
+  // — but ONLY when that building has EXACTLY ONE meter of the bill's
+  // commodity. Zero same-commodity meters on a building is left null (Pass
+  // 1's create path handles a genuinely new account/building). Two or more
+  // same-commodity meters on one building — or a near-tie between two
+  // different buildings — is deliberately left unresolved (never guess);
+  // Pass 1's default-unchecked review-panel UI surfaces it for a manual
+  // pick. `adoptAccount` carries the bill's new account number so the save
+  // path can update the meter's stored account (old value preserved as an
+  // alias) — see _mbSaveOneBill.
+  let commodityMatch = null;
+  if (!bestMatch && !addrMatch && billComm && billAddr && billAddr.length >= 5) {
+    const commodityCandidates = [];
+    for (const proj of projects) {
+      const udProj = getUDProj(proj.id);
+      for (const bldg of udProj.buildings || []) {
+        const bldgAddrNorm = _normalizeAddr(bldg.addr);
+        const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
+        const exactHit = (bldgAddrNorm && bldgAddrNorm === billAddr) || aliases.some((a) => a === billAddr);
+        let score = bldgAddrNorm ? _addressSimilarity(bldg.addr, extracted.ServiceAddress) : 0;
+        for (const rawAlias of bldg.addrAliases || []) {
+          const s = _addressSimilarity(rawAlias, extracted.ServiceAddress);
+          if (s > score) score = s;
+        }
+        if (!(exactHit || score >= 0.6)) continue; // same 0.60 threshold as the address branch above
+        const sameCommMeters = (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm);
+        if (sameCommMeters.length !== 1) continue; // 0 => create path; 2+ => ambiguous, never guess
+        commodityCandidates.push({ proj, bldg, meter: sameCommMeters[0], score: exactHit ? 1.0 : score });
+      }
+    }
+    if (commodityCandidates.length === 1) {
+      const c = commodityCandidates[0];
+      commodityMatch = {
+        proj: c.proj,
+        bldg: c.bldg,
+        meter: c.meter,
+        projId: c.proj.id,
+        bldgId: c.bldg.id,
+        meterId: c.meter.id,
+        fuzzyScore: c.score,
+        matchType: 'commodity',
+        adoptAccount: billAcctRaw || null,
+      };
+    } else if (commodityCandidates.length > 1) {
+      commodityCandidates.sort((a, b) => b.score - a.score);
+      const top = commodityCandidates[0];
+      const second = commodityCandidates[1];
+      const crossBldgTie = top.bldg.id !== second.bldg.id || top.proj.id !== second.proj.id;
+      if (!crossBldgTie || top.score - second.score > 0.03) {
+        commodityMatch = {
+          proj: top.proj,
+          bldg: top.bldg,
+          meter: top.meter,
+          projId: top.proj.id,
+          bldgId: top.bldg.id,
+          meterId: top.meter.id,
+          fuzzyScore: top.score,
+          matchType: 'commodity',
+          adoptAccount: billAcctRaw || null,
+        };
+      }
+      // else: near-tie across two different buildings — leave unresolved.
+    }
+  }
+  return bestMatch || addrMatch || commodityMatch;
 }
 // Save a new address alias to a building (called after fuzzy match).
 // Adds aliasString to bldg.addrAliases if not already present, then persists.
@@ -5927,13 +6005,19 @@ function showMultiBuildingReviewPanel() {
     delete bill._mbHeld;
     delete bill._mbHeldReason;
     _mbRowTargets[i] = findMeterMatch(bill) || null;
-    const isIdentity = !!(_mbRowTargets[i] && _mbRowTargets[i].matchType === 'identity');
-    // GATE WIRING (mirrors renderQueueResults' `checked: !b._gateTripped`): a
-    // non-identity match (address/ambiguous/no-match) defaults UNCHECKED — the
+    // PASS 2 (b-46a984a0): a 'commodity' match (building+commodity fallback,
+    // unambiguous single-meter case — see findMeterMatch) is, like
+    // 'identity', a confident auto-attach with no user action required.
+    const isAutoAttach = !!(
+      _mbRowTargets[i] &&
+      (_mbRowTargets[i].matchType === 'identity' || _mbRowTargets[i].matchType === 'commodity')
+    );
+    // GATE WIRING (mirrors renderQueueResults' `checked: !b._gateTripped`): any
+    // other match type (address/ambiguous/no-match) defaults UNCHECKED — the
     // user must ACT (check the box, or make an explicit destination pick,
     // which auto-checks it — see setMbRowDestMeter) to include it in Save
     // All, instead of acting to prevent a wrong silent save.
-    _mbRowState[i] = { checked: isIdentity, skipped: false };
+    _mbRowState[i] = { checked: isAutoAttach, skipped: false };
   });
 
   // Count unique accounts for header
@@ -6046,6 +6130,7 @@ function _mbRowHtml(i) {
       true,
     );
     const isIdentity = !!(match && match.matchType === 'identity');
+    const isCommodity = !!(match && match.matchType === 'commodity');
     const isManual = !!(match && match.matchType === 'manual');
     const isAmbiguous = !!(match && match.matchType === 'ambiguous');
     let statusLbl, statusColor, statusBg;
@@ -6055,6 +6140,13 @@ function _mbRowHtml(i) {
       statusBg = 'rgba(239,68,68,.1)';
     } else if (isIdentity) {
       statusLbl = 'Matched';
+      statusColor = 'var(--em)';
+      statusBg = 'rgba(var(--em-rgb),.1)';
+    } else if (isCommodity) {
+      // PASS 2 (b-46a984a0): building+commodity fallback — unambiguous
+      // single-meter match, account number was renumbered upstream. Auto-
+      // attaches like identity; account update happens at save.
+      statusLbl = 'Matched — account renumbered (will update)';
       statusColor = 'var(--em)';
       statusBg = 'rgba(var(--em-rgb),.1)';
     } else if (isManual) {
@@ -7197,9 +7289,17 @@ async function _mbSaveOneBill(bi) {
   // depend on which same-building, different-commodity sibling meter the
   // bill eventually lands on).
   const _isManualPick = billMatch.matchType === 'manual';
+  // PASS 2 (b-46a984a0): a 'commodity' match (findMeterMatch building+
+  // commodity fallback) is, like a manual pick, authoritative — it was
+  // already proven unambiguous (address-matched building + exactly one
+  // same-commodity meter) inside findMeterMatch, so it deliberately bypasses
+  // the _acctAgrees check below (the whole point is the account NUMBER
+  // legitimately differs — it was renumbered). See the account-adopt block
+  // right after targetMeter is resolved, a few lines down.
+  const _isCommodityPick = billMatch.matchType === 'commodity';
   const _acctAgrees =
     !billMatch.meter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, billMatch.meter.account);
-  const _gateOK = _isManualPick || (billMatch.matchType === 'identity' && _acctAgrees);
+  const _gateOK = _isManualPick || _isCommodityPick || (billMatch.matchType === 'identity' && _acctAgrees);
   if (!_gateOK) {
     console.warn(
       '[_mbSaveOneBill] identity gate failed — refusing to write (would have created/updated a bill on a',
@@ -7276,6 +7376,23 @@ async function _mbSaveOneBill(bi) {
   }
 
   const targetMeter = billMatch.meter;
+  // PASS 2 (b-46a984a0): a 'commodity' match resolved this meter by
+  // building+commodity, not by account — the bill's account number REPLACES
+  // the meter's stale/renumbered one, and the prior value is preserved in
+  // accountAliases[] (never deleted) so older saved bills filed under the
+  // old account number still identity-match on a future extraction. Runs
+  // BEFORE the generic account-extend heuristic below so that heuristic
+  // (which only fires on a substring relationship) sees the now-current
+  // account and is a harmless no-op for this path.
+  if (billMatch.matchType === 'commodity' && billMatch.adoptAccount) {
+    const _oldAcct = (targetMeter.account || '').trim();
+    const _newAcct = billMatch.adoptAccount.trim();
+    if (_oldAcct && _oldAcct !== _newAcct) {
+      if (!Array.isArray(targetMeter.accountAliases)) targetMeter.accountAliases = [];
+      if (!targetMeter.accountAliases.includes(_oldAcct)) targetMeter.accountAliases.push(_oldAcct);
+    }
+    if (_newAcct) targetMeter.account = _newAcct;
+  }
   if (bill.AccountNumber && targetMeter.account) {
     const _extN = bill.AccountNumber.replace(/[\s\-]/g, '')
       .replace(/^0+/, '')
@@ -8950,16 +9067,27 @@ function exitPreviewMode() {
 function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn, allowCreate) {
   const ov = bill._meterOverride || null;
   const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
-  const expanded = !!bill._destExpanded || !isIdentity;
-  if (isIdentity && !expanded) {
+  // PASS 2 (b-46a984a0): a 'commodity' match (findMeterMatch building+
+  // commodity fallback — unambiguous single-meter case) is, like identity,
+  // a confident auto-attach — shown the same compact confirmed-text way so
+  // the row doesn't LOOK unresolved when it will in fact auto-save. Purely
+  // additive: does not change the isIdentity branch's own condition/output.
+  const isCommodity = !!(autoMatch && autoMatch.matchType === 'commodity');
+  const expanded = !!bill._destExpanded || !(isIdentity || isCommodity);
+  if ((isIdentity || isCommodity) && !expanded) {
     const destText =
       autoMatch.proj.name +
       ' → ' +
       autoMatch.bldg.name +
       ' → ' +
       (autoMatch.meter.provider || autoMatch.meter.meter || 'meter');
+    const title = isIdentity
+      ? 'Identity match — account/meter number found'
+      : 'Building + commodity match — account number will update on save (old kept as alias)';
     return (
-      '<div style="font-size:10px;color:var(--text)" title="Identity match — account/meter number found">' +
+      '<div style="font-size:10px;color:var(--text)" title="' +
+      title +
+      '">' +
       _escHtml(destText) +
       ' <a href="javascript:void(0)" onclick="' +
       setExpandFn +
@@ -8976,11 +9104,12 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
   const curProj =
     ov && ov.projId != null
       ? ov.projId
-      : isIdentity && autoMatch
+      : (isIdentity || isCommodity) && autoMatch
         ? autoMatch.projId
         : bill._projOverride || (window._pdfQueue && window._pdfQueue.batchProjId) || '';
-  const curBldg = ov && ov.bldgId ? ov.bldgId : isIdentity && autoMatch && !ov ? autoMatch.bldgId : '';
-  const curMeter = ov && ov.meterId ? ov.meterId : isIdentity && autoMatch && !ov ? autoMatch.meterId : '';
+  const curBldg = ov && ov.bldgId ? ov.bldgId : (isIdentity || isCommodity) && autoMatch && !ov ? autoMatch.bldgId : '';
+  const curMeter =
+    ov && ov.meterId ? ov.meterId : (isIdentity || isCommodity) && autoMatch && !ov ? autoMatch.meterId : '';
   const selStyle =
     'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
     'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
@@ -9045,20 +9174,25 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
       : '';
   const meterOpts = meterOptsBase + createMeterOpt;
   const hint =
-    autoMatch && autoMatch.matchType === 'address'
-      ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
+    autoMatch && autoMatch.matchType === 'commodity'
+      ? '<div style="font-size:9px;color:var(--em);margin-bottom:2px" title="Building + commodity match — account number will update on save (old kept as alias)">Building + commodity match: ' +
         _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
         '</div>'
-      : !autoMatch
-        ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
-        : '';
-  const changeLink = isIdentity
-    ? '<a href="javascript:void(0)" onclick="' +
-      setExpandFn +
-      '(' +
-      handlerArg +
-      ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
-    : '';
+      : autoMatch && autoMatch.matchType === 'address'
+        ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
+          _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
+          '</div>'
+        : !autoMatch
+          ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
+          : '';
+  const changeLink =
+    isIdentity || isCommodity
+      ? '<a href="javascript:void(0)" onclick="' +
+        setExpandFn +
+        '(' +
+        handlerArg +
+        ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
+      : '';
   return (
     hint +
     '<select style="' +
