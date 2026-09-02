@@ -5916,98 +5916,72 @@ function findMeterMatch(extracted) {
   //
   // Rule (Matt-approved, plan.md "PASS 2 REFINEMENT"): resolve by address
   // to find the building, then match by COMMODITY ALONE (never by account)
-  // — but ONLY when that building has EXACTLY ONE meter of the bill's
-  // commodity. Zero same-commodity meters on a building is left null (Pass
-  // 1's create path handles a genuinely new account/building). Two or more
-  // same-commodity meters on one building — or a near-tie between two
-  // different buildings — is deliberately left unresolved (never guess);
-  // Pass 1's default-unchecked review-panel UI surfaces it for a manual
-  // pick. `adoptAccount` carries the bill's new account number so the save
-  // path can update the meter's stored account (old value preserved as an
-  // alias) — see _mbSaveOneBill.
+  // — but ONLY when EXACTLY ONE building's address matches AND that
+  // building has EXACTLY ONE meter of the bill's commodity. Zero
+  // same-commodity meters on the matched building is left null (Pass 1's
+  // create path handles a genuinely new account/building). Two or more
+  // same-commodity meters on the matched building, or the address matching
+  // more than one distinct building, is deliberately left unresolved (never
+  // guess); Pass 1's default-unchecked review-panel UI surfaces it for a
+  // manual pick. `adoptAccount` carries the bill's new account number so the
+  // save path can update the meter's stored account (old value preserved as
+  // an alias) — see _mbSaveOneBill.
+  //
+  // Fix (b-46a984a0 building-level ambiguity guard, 2026-09-01): a
+  // structural street match (_streetIdentityMatch, ~5616) can be exact for
+  // TWO distinct buildings at once — Louisburg Maintenance Building carries
+  // an alias ("105 S 5TH ST E LOUISBURG KS") that is structurally identical
+  // to Broadmoor Elementary's real address ("105 S 5th St E, Louisburg, KS
+  // 66053"). The prior version filtered each building by its OWN
+  // same-commodity meter count (0 or 2+ => skip) before ever comparing
+  // buildings against each other, so for Electric (Maintenance has 2 meters,
+  // Broadmoor has 1) Maintenance dropped out of the candidate list first,
+  // leaving Broadmoor as the sole "uncontested" candidate — a confirmed
+  // misroute to Broadmoor's real meter m1776962667307 with no ambiguity flag
+  // (see _context/temp/2026-09-01-pass2-independent-gate.md, "Check 4").
+  // Building-level matching is now resolved FIRST, across every building on
+  // every project, before any per-building meter-count filtering runs — a
+  // building with 0 or 2+ same-commodity meters still COUNTS as a matching
+  // building here, so it still blocks a lone structurally-tied neighbor from
+  // winning by default. Only once exactly one building's address matches do
+  // we look at that building's own meter count.
   let commodityMatch = null;
   if (!bestMatch && !addrMatch && billComm && billAddr && billAddr.length >= 5) {
-    const commodityCandidates = [];
+    const matchingBuildings = [];
     for (const proj of projects) {
       const udProj = getUDProj(proj.id);
       for (const bldg of udProj.buildings || []) {
         const bldgAddrNorm = _normalizeAddr(bldg.addr);
         const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
         const exactHit = (bldgAddrNorm && bldgAddrNorm === billAddr) || aliases.some((a) => a === billAddr);
-        // Fix (b-46a984a0 Pass-2 rearchitecture, 2026-09-01): the fuzzy
-        // _identityAddressScore >= 0.75 gate that used to live here was
-        // proven wrong by an independent stress test run against all 4 real
-        // projects (not just the Louisburg set it was derived from): 61 real
-        // cross-building address pairs score >= 0.75, up to 0.971, almost
-        // entirely on Baker University's dense same-street campus where
-        // adjacent buildings differ only by house number ("604 Dearborn St"
-        // vs "704 Dearborn St") -- Levenshtein-based similarity treats a
-        // one-digit house-number change as a near-match, and raising the
-        // threshold cannot fix that (0.971 pairs exist). Confirmed as a live
-        // misroute: a simulated new Baker Pullium Center Gas bill
-        // ("704 Dearborn St") resolved matchType:'commodity' to Howard
-        // Hall's real existing Gas meter ("604 Dearborn St") at fuzzyScore
-        // 0.7538 -- Pullium Center has zero meters of its own, so it never
-        // entered commodityCandidates to trigger the cross-building tie
-        // check below. Full report:
-        // _context/temp/2026-09-01-pass2-independent-gate.md.
-        //
-        // Replaced with a STRUCTURAL exact match (_streetIdentityMatch,
-        // ~5616): the bill's street NUMBER must match a building's street
-        // number EXACTLY (numeric equality on the leading digits) AND the
-        // street NAME must match after normalization -- no similarity
-        // score, no threshold. A one-digit house-number difference can never
-        // pass this gate, which eliminates every one of the 61 real
-        // cross-building pairs found in the stress test. The one genuine
-        // address COLLISION in the real data (Louisburg Maintenance
-        // Building's alias "105 S 5TH ST E LOUISBURG KS" is the identical
-        // number+street name as Broadmoor Elementary's real address "105 S
-        // 5th St E, Louisburg, KS 66053") still produces two structural
-        // matches with equal score -- left to the unchanged crossBldgTie
-        // 0.03 tie-margin check below, which correctly leaves it unresolved
-        // rather than guessing (same as before this change).
         const structuralHit =
           _streetIdentityMatch(extracted.ServiceAddress, bldg.addr) ||
           (bldg.addrAliases || []).some((rawAlias) => _streetIdentityMatch(extracted.ServiceAddress, rawAlias));
         if (!(exactHit || structuralHit)) continue; // exact full-address hit, or exact street number+name -- nothing fuzzy
-        const sameCommMeters = (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm);
-        if (sameCommMeters.length !== 1) continue; // 0 => create path; 2+ => ambiguous, never guess
-        commodityCandidates.push({ proj, bldg, meter: sameCommMeters[0], score: 1.0 });
+        matchingBuildings.push({ proj, bldg });
       }
     }
-    if (commodityCandidates.length === 1) {
-      const c = commodityCandidates[0];
-      commodityMatch = {
-        proj: c.proj,
-        bldg: c.bldg,
-        meter: c.meter,
-        projId: c.proj.id,
-        bldgId: c.bldg.id,
-        meterId: c.meter.id,
-        fuzzyScore: c.score,
-        matchType: 'commodity',
-        adoptAccount: billAcctRaw || null,
-      };
-    } else if (commodityCandidates.length > 1) {
-      commodityCandidates.sort((a, b) => b.score - a.score);
-      const top = commodityCandidates[0];
-      const second = commodityCandidates[1];
-      const crossBldgTie = top.bldg.id !== second.bldg.id || top.proj.id !== second.proj.id;
-      if (!crossBldgTie || top.score - second.score > 0.03) {
+    if (matchingBuildings.length === 1) {
+      const { proj, bldg } = matchingBuildings[0];
+      const sameCommMeters = (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm);
+      if (sameCommMeters.length === 1) {
         commodityMatch = {
-          proj: top.proj,
-          bldg: top.bldg,
-          meter: top.meter,
-          projId: top.proj.id,
-          bldgId: top.bldg.id,
-          meterId: top.meter.id,
-          fuzzyScore: top.score,
+          proj,
+          bldg,
+          meter: sameCommMeters[0],
+          projId: proj.id,
+          bldgId: bldg.id,
+          meterId: sameCommMeters[0].id,
+          fuzzyScore: 1.0,
           matchType: 'commodity',
           adoptAccount: billAcctRaw || null,
         };
       }
-      // else: near-tie across two different buildings — leave unresolved.
+      // else: 0 => create path (Pass 1); 2+ same-commodity meters on the
+      // one matched building => ambiguous, never guess.
     }
+    // else: 0 matching buildings (no address hit), or 2+ distinct matching
+    // buildings (building-level ambiguity/collision) — leave unresolved.
   }
   return bestMatch || addrMatch || commodityMatch;
 }
