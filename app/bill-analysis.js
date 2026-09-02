@@ -5724,7 +5724,15 @@ function findMeterMatch(extracted) {
       for (const m of bldg.meters || []) {
         const mAcct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
         const mMeter = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-        if (_acctFuzzyMatch(acct, mAcct) || (meterNum && mMeter && meterNum === mMeter)) {
+        // Fix 2 (8c9c7ccc): accountAliases[] holds prior account numbers a
+        // meter was renumbered FROM (PASS 2 adoptAccount, ~7476). A later
+        // bill still carrying the OLD account must identity-match this
+        // meter exactly like a direct m.account hit — never left to fall
+        // through to the weaker address fallback or an unresolved bill.
+        const mAliasHit = (m.accountAliases || []).some((a) =>
+          _acctFuzzyMatch(acct, (a || '').replace(/[\s\-]/g, '').toLowerCase()),
+        );
+        if (_acctFuzzyMatch(acct, mAcct) || mAliasHit || (meterNum && mMeter && meterNum === mMeter)) {
           const mComm = (m.commodity || '').toLowerCase();
           const commMatch = billComm && mComm && billComm === mComm;
           // matchType: 'identity' — account/meter-number hit, as opposed to the
@@ -5814,10 +5822,16 @@ function findMeterMatch(extracted) {
           let candidateMeter = null;
           let isAmbiguous = false;
           if (hasIdentity) {
-            const commMeter = billComm
+            // Fix 1 (409830ae): never fall back to bldg.meters[0] — that
+            // silently attaches a bill to a meter of a DIFFERENT commodity
+            // (e.g. a Gas bill landing on the building's Electric meter)
+            // whenever this building has no same-commodity meter of its
+            // own. With no same-commodity meter to disambiguate to, this
+            // building yields no candidate and the bill falls through to
+            // surface/create instead of a wrong-commodity attach.
+            candidateMeter = billComm
               ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
               : null;
-            candidateMeter = commMeter || (bldg.meters || [])[0];
           } else if (billComm) {
             if (sameCommMeters.length === 1) candidateMeter = sameCommMeters[0];
             else if (sameCommMeters.length > 1) isAmbiguous = true;
