@@ -6213,6 +6213,7 @@ function _mbRowHtml(i) {
     const isCommodity = !!(match && match.matchType === 'commodity');
     const isManual = !!(match && match.matchType === 'manual');
     const isAmbiguous = !!(match && match.matchType === 'ambiguous');
+    const isCreate = !!(match && match.matchType === 'create');
     let statusLbl, statusColor, statusBg;
     if (bill._mbHeld) {
       statusLbl = 'Held — ' + (bill._mbHeldReason || 'needs review');
@@ -6237,6 +6238,10 @@ function _mbRowHtml(i) {
       statusLbl = 'Needs selection';
       statusColor = 'var(--amber)';
       statusBg = 'rgba(245,158,11,.1)';
+    } else if (isCreate) {
+      statusLbl = 'Will create new meter/building';
+      statusColor = 'var(--em)';
+      statusBg = 'rgba(var(--em-rgb),.1)';
     } else if (match) {
       // 'address' matchType — fuzzy, unconfirmed
       statusLbl = 'Address match (unconfirmed)';
@@ -6265,7 +6270,7 @@ function _mbRowHtml(i) {
         i +
         ')">Undo skip</button>';
     } else {
-      const canSave = !!(match && match.meter);
+      const canSave = !!(match && (match.meter || match.matchType === 'create'));
       actionCell =
         '<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-bottom:4px;white-space:nowrap">' +
         '<input type="checkbox" onchange="_mbToggleRowChecked(' +
