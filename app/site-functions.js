@@ -1742,6 +1742,95 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.03.796',
+    date: '2026-09-03',
+    title: 'Bill Import: one save bar, and Save All no longer skips bills',
+    items: [
+      {
+        type: 'feature',
+        text: "Bill Import: the save controls are now one bar at the bottom of the review screen, with Save All, Overwrite All, and Merge All in one place instead of scattered per-bill buttons.",
+      },
+      {
+        type: 'fix',
+        text: "Bill Import: Save All and Overwrite All now save every bill in the batch. Previously some bills could be silently skipped without any warning.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.01.795',
+    date: '2026-09-01',
+    title: "Bill import: never files a bill to the wrong utility's meter",
+    items: [
+      {
+        type: 'fix',
+        text: "Bill import: a bill is never filed to the wrong utility's meter anymore. If a building has no meter for that bill's service (say a gas bill but only an electric meter on file), the bill is shown for you to place instead of being mis-attached.",
+      },
+      {
+        type: 'fix',
+        text: 'Bill import: bills on a renumbered account also still match the right meter by its previous account number.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.01.794',
+    date: '2026-09-01',
+    title: 'Bill import: no billing period dropped from multi-building PDFs',
+    items: [
+      {
+        type: 'fix',
+        text: "Bill import (multi-building PDFs): no billing period is dropped anymore. A bill for a building that already has a meter now attaches to it even when the utility changed the account number, and any bill we can't place is shown for you to assign — nothing is skipped silently.",
+      },
+      {
+        type: 'fix',
+        text: 'Bill import review panel: a bill assigned to a new meter/building now shows the correct "Will create new meter/building" label and its Save button works, instead of being mislabeled as an unconfirmed match with Save disabled.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.01.793',
+    date: '2026-09-01',
+    title: 'Bill extraction: mismatch notice now names the specific line',
+    items: [
+      {
+        type: 'fix',
+        text: "Bill extraction: when a bill's charges don't add up, the mismatch notice now shows which specific line was misread — the expected charge (usage x rate) versus the amount the scanner read — instead of just a total dollar difference.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.08.31.792',
+    date: '2026-08-31',
+    title: 'Energy Department: faster OCR on large scanned utility bills',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department: large scanned utility bills now extract several times faster (multi-page OCR runs in parallel) — a 10-page bill dropped from about 11 minutes to under 3 minutes.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.08.31.791',
+    date: '2026-08-31',
+    title: 'Energy Department: fixed OCR skipping pages on large scanned bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department: multi-page utility bills now read every page during OCR (was skipping pages on large scanned bills).',
+      },
+    ],
+  },
+  {
+    v: 'v2026.08.31.790',
+    date: '2026-08-31',
+    title: 'Utility bill review: fixed a shared-account meter mix-up',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility bill review: bills that share one account number across two meters (for example, a High School and its Ball Fields) now route to the correct meter, and no longer get falsely held for review.',
+      },
+    ],
+  },
+  {
     v: 'v2026.08.28.789',
     date: '2026-08-28',
     title: 'PDF / OCR: fixed a false review flag on multi-bill scans',

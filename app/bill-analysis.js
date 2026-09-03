@@ -2428,8 +2428,24 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 ? _smAddrW.filter((w) => _lgAddrW.has(w)).length / _smAddrW.length
                 : 1;
             const _addrConflict = _addrOverlap < 0.5;
+            const _smMeterVals = _valsFor(sm, 'MeterNumber');
             const _rateConflict = _setsConflict(_valsFor(sm, 'RateSchedule'), _lgRates);
-            const _meterConflict = _setsConflict(_valsFor(sm, 'MeterNumber'), _lgMeters);
+            const _meterConflict = _setsConflict(_smMeterVals, _lgMeters);
+            // (ballfields-match-gates, 2026-08-31) MeterNumber is never populated by
+            // some providers (Evergy prints no MeterNumber at all), so `_meterConflict`
+            // is structurally FALSE on every one of those bills — not because the
+            // meters agree, but because there is no meter data to disagree with. The
+            // old `_rateConflict && _meterConflict` guard treated that silence as if it
+            // were confirmed same-meter evidence, so a REAL RateSchedule conflict (e.g.
+            // 2LGSF vs 2MGSE — two genuinely different rate classes at one shared
+            // account) never blocked the merge on its own. Distinguish the two cases:
+            // when MeterNumber data actually exists on BOTH sides, a real meter-number
+            // match is trustworthy same-meter evidence that should let a RateSchedule
+            // difference over time slide (kept as the original AND). When MeterNumber
+            // data is ABSENT on either side, there is no such evidence — it is NEUTRAL,
+            // not agreement — and a resolved RateSchedule conflict must block the merge
+            // by itself.
+            const _meterDataPresent = _smMeterVals.length > 0 && _lgMeters.length > 0;
             if (_acctConflict) {
               continue;
             }
@@ -2448,7 +2464,11 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 continue;
               }
             }
-            if (_rateConflict && _meterConflict) {
+            if (_meterDataPresent) {
+              if (_rateConflict && _meterConflict) {
+                continue;
+              }
+            } else if (_rateConflict) {
               continue;
             }
             _addrGroups[largest].push(..._addrGroups[k]);
@@ -3118,6 +3138,68 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             }
           }
         }
+      }
+    }
+
+    // ── PER-PART CHARGE VALIDATION (provider-agnostic, ungated) — item f776f47b ──
+    // The three-way qty×rate=charge per-part validator inside _extractEvergy
+    // (energy-savings.js ~4225-4289) already computes _part_mismatches_<field>
+    // for every Evergy bill during extraction, but nothing downstream ever
+    // read it, so a single-line OCR digit misread (e.g. Louisburg USD #416
+    // High School Evergy Jun 2026: ECA line 116,233.536 kWh × $0.02059 =
+    // $2,393.25 but OCR read $2,363.25 — off exactly the $30 the bill total
+    // was under) surfaced only as a vague aggregate SUM MISMATCH banner that
+    // couldn't name the offending line.
+    //
+    // This pass is deliberately keyed only off b._rates (not utilityName) so
+    // it applies to any provider whose extractor populates _rates — not just
+    // Evergy — and it is UNGATED on the aggregate compSum/ocrTotal agreement
+    // (unlike Strategy B above, which only runs once those two already
+    // disagree): a bad line can hide inside a total that reconciles by
+    // coincidence, so per-line math must be checked independently every time.
+    //
+    // It recomputes the exact same formula the extractor already applies
+    // (qty × rate × prorationRatio, rounded to cents, 0.05 tolerance), so for
+    // Evergy bills where energy-savings.js already corrected/cleared a flag
+    // during extraction (single-part rate auto-correction, single-part
+    // charge recovery, multi-part null-OCR cleanup — all of which mutate the
+    // underlying _rates data, not just the flag), the recompute here
+    // reproduces the same already-corrected result rather than fighting it.
+    // FLAGS ONLY — this never writes qty/rate/charge, only the diagnostic
+    // _part_mismatches_<field> array that renderPDFFields reads.
+    for (const b of bills) {
+      if (!b._rates) continue;
+      for (const [field, ri] of Object.entries(b._rates)) {
+        // Top-level null-qty/rate skip — TaxExemptDelivery/BillOffset/FranchiseFee/
+        // SalesTax carry {qty:null, rate:null} because they are not rate-based
+        // charges at all; unverifiable by this check, so leave them alone.
+        if (!ri || !(ri.rate > 0)) continue;
+        const parts = ri.parts || [ri];
+        const badParts = [];
+        for (const part of parts) {
+          // Per-part null-qty/rate skip — a mixed-parts charge can have some
+          // parts recovered from the raw dollar text only (xChg), with no
+          // qty/rate of their own (see energy-savings.js ~3990-3996). Those
+          // parts cannot be math-checked; skip rather than false-flag them.
+          if (!(part.qty > 0) || !(part.rate > 0)) continue;
+          const ratio = part.prorationNum && part.prorationDen ? part.prorationNum / part.prorationDen : 1;
+          const expected = Math.round(part.qty * part.rate * ratio * 100) / 100;
+          const actual = part.ocrCharge != null ? part.ocrCharge : part.computed;
+          if (actual == null) continue;
+          const diff = Math.abs(expected - actual);
+          if (diff > 0.05) {
+            badParts.push({
+              qty: part.qty,
+              rate: part.rate,
+              unit: part.unit,
+              computed: expected,
+              ocrCharge: actual,
+              diff,
+              valid: false,
+            });
+          }
+        }
+        if (badParts.length) b['_part_mismatches_' + field] = badParts;
       }
     }
 
@@ -5380,6 +5462,10 @@ let _mbRowState = {};
 // keep purely local before per-bill save required this to persist across
 // separate _mbSaveOneBill() invocations).
 let _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
+// Re-entrancy guard for confirmMultiBuildingSave — the Save All loop awaits
+// _mbSaveOneBill per row while the panel is still visible; without this a
+// double-click (or programmatic re-dispatch) could run the loop twice.
+let _mbSaveAllInProgress = false;
 function _isMultiAcctFile() {
   return new Set((window._pdfMultiBills || []).map((b) => b.AccountNumber).filter(Boolean)).size > 1;
 }
@@ -5437,6 +5523,132 @@ function _acctFuzzyMatch(a, b) {
   if (!na || !nb) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
 }
+// Fix 2 (ballfields-match-gates, 2026-08-31): _addressSimilarity's normalized-
+// Levenshtein metric divides by the LONGER of the two candidate strings' length,
+// which rewards a verbose stored maddr (one that happens to carry city/state/zip)
+// over a short, exact one. Measured against the real Louisburg data: the High
+// School bill's ServiceAddress scored 0.66 to the Ball Fields meter's long maddr
+// ("202 Aquatic Dr, Ballfields Louisburg, KS 66053") but only 0.43 to the HS
+// meter's short maddr ("202 Aquatic Dr") — the HS bill would misroute to Ball
+// Fields under the old single-metric comparison. The street number/name is
+// identical across every meter at one physical site, so it carries no
+// disambiguating power; what actually distinguishes the two meters is the
+// site-tag/city/state text AFTER the street (e.g. "New HS" vs "Ballfields").
+// `_identityAddressScore` splits each address at its first comma into a street
+// part (compared with the existing character-similarity metric, expected to be
+// ~1.0 for every candidate at the same site) and a tail part (compared by
+// token-set overlap, which is not biased by overall string length the way
+// character-edit-distance is). A tail comparison is NEUTRAL (0.5) whenever
+// either side has no tail data at all — this never penalizes a short/blank
+// site label, matching this function's existing "absence never vetoes"
+// philosophy — and otherwise reflects real word-level agreement or
+// disagreement. Scoped to `_pickIdentityCandidate` only: `_addressSimilarity`
+// itself is left untouched at every other call site (the building-match
+// fallback, the 0.60 threshold in findMeterMatch) per the ocr-trust-campaign
+// fenced path against tuning that shared threshold.
+function _addrTailTokens(a) {
+  const s = (a || '').toLowerCase();
+  const commaIdx = s.indexOf(',');
+  const tail = commaIdx >= 0 ? s.slice(commaIdx + 1) : '';
+  return tail
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+function _addrStreetPart(a) {
+  const s = a || '';
+  const commaIdx = s.indexOf(',');
+  return commaIdx >= 0 ? s.slice(0, commaIdx) : s;
+}
+// Fix (b-46a984a0 Pass-2 rearchitecture, 2026-09-01): structural street
+// number + street name extractor, added because no address-parsing helper
+// in this file exposes number/name as separate tokens (the others --
+// _addrStreetPart/_addrTailTokens -- split only on a comma, for the
+// separate purpose of scoring street-vs-tail; _normalizeAddr concatenates
+// everything, including the house number, into one string with no
+// separator). Used ONLY by the commodity fallback below to replace its
+// fuzzy-threshold gate with an exact match (see that call site for why).
+// Returns {num, name} or null if the string does not start with a house
+// number (never guess a street identity for a prefixed/tagged address like
+// Spring Hill's "BofE - 101 E South St" -- that correctly falls through to
+// null/no-match at the call site). `name` is every token after the number
+// up to and including the first recognized street-type suffix word
+// (st/street/dr/ave/rd/blvd/ln/ct/cir/pl/ter/way/etc.), which discards any
+// trailing city/state/zip whether or not a comma separates them (Spring
+// Hill's real stored addresses have no comma before the city name, e.g.
+// "101 E South St Spring Hill, KS 66083") and drops a trailing directional
+// suffix after the street type (e.g. the "E" in "5th St E") consistently on
+// both sides being compared. `name` is run through the existing
+// _normalizeAddr so "St"/"Street" etc. still fold together and comparison
+// is case/spacing-insensitive.
+const _STREET_SUFFIXES = new Set([
+  'st',
+  'street',
+  'ave',
+  'avenue',
+  'dr',
+  'drive',
+  'rd',
+  'road',
+  'blvd',
+  'boulevard',
+  'ln',
+  'lane',
+  'ct',
+  'court',
+  'cir',
+  'circle',
+  'pl',
+  'place',
+  'ter',
+  'terrace',
+  'way',
+  'pkwy',
+  'parkway',
+  'hwy',
+  'highway',
+  'trl',
+  'trail',
+  'sq',
+  'square',
+  'loop',
+]);
+function _addrStreetIdentity(a) {
+  const s = (a || '').trim();
+  const m = s.match(/^(\d+)\s*(.*)$/);
+  if (!m || !m[1]) return null;
+  const num = m[1];
+  const tokens = m[2].split(/[\s,]+/).filter(Boolean);
+  const nameTokens = [];
+  for (const raw of tokens) {
+    const clean = raw.replace(/[^a-zA-Z]/g, '').toLowerCase();
+    nameTokens.push(raw);
+    if (_STREET_SUFFIXES.has(clean)) break;
+  }
+  if (!nameTokens.length) return null;
+  const name = _normalizeAddr(nameTokens.join(' '));
+  if (!name) return null;
+  return { num, name };
+}
+function _streetIdentityMatch(a, b) {
+  const ia = _addrStreetIdentity(a);
+  const ib = _addrStreetIdentity(b);
+  if (!ia || !ib) return false;
+  return Number(ia.num) === Number(ib.num) && ia.name === ib.name;
+}
+function _identityAddressScore(billAddr, candidateAddr) {
+  const streetScore = _addressSimilarity(_addrStreetPart(billAddr), _addrStreetPart(candidateAddr));
+  const billTail = _addrTailTokens(billAddr);
+  const candTail = _addrTailTokens(candidateAddr);
+  let tailScore = 0.5; // neutral -- no site-tag/city/state text to compare on one side
+  if (billTail.length && candTail.length) {
+    const tailSet = new Set(candTail);
+    const inter = billTail.filter((w) => tailSet.has(w)).length;
+    const union = new Set([...billTail, ...candTail]).size;
+    tailScore = union === 0 ? 0.5 : inter / union;
+  }
+  return streetScore * 0.6 + tailScore * 0.4;
+}
 // Fix D (issue #1 v2, ground-truth review): disambiguates among 2+ meters that
 // all matched a bill by account+commodity alone (a SHARED Evergy account with
 // more than one physical meter — e.g. Louisburg High School + its Ball Field
@@ -5448,9 +5660,10 @@ function _acctFuzzyMatch(a, b) {
 // docs/dashboardlogic.md 2026-08-27 entry). Among genuine multiple
 // candidates, picks the one whose recorded `meter.maddr` best matches the
 // bill's ServiceAddress: an exact street-normalized match wins outright;
-// otherwise the highest fuzzy _addressSimilarity score wins. A candidate
-// with no recorded maddr scores -1 (never preferred over one with a real
-// address signal). If NO candidate has any usable address to compare
+// otherwise the highest `_identityAddressScore` wins (see comment above — not
+// raw `_addressSimilarity`, which is biased toward verbose candidates). A
+// candidate with no recorded maddr scores -1 (never preferred over one with a
+// real address signal). If NO candidate has any usable address to compare
 // (every maddr blank), every score is -1 and the first-found candidate wins
 // — matches the pre-782 behavior instead of ever returning null.
 function _pickIdentityCandidate(candidates, billServiceAddress) {
@@ -5462,7 +5675,7 @@ function _pickIdentityCandidate(candidates, billServiceAddress) {
     const mAddrNorm = _normalizeAddr(c.meter && c.meter.maddr);
     let score = -1;
     if (billAddrNorm && mAddrNorm) {
-      score = billAddrNorm === mAddrNorm ? 1 : _addressSimilarity(billServiceAddress, c.meter.maddr);
+      score = billAddrNorm === mAddrNorm ? 1 : _identityAddressScore(billServiceAddress, c.meter.maddr);
     }
     if (score > bestScore) {
       bestScore = score;
@@ -5511,7 +5724,15 @@ function findMeterMatch(extracted) {
       for (const m of bldg.meters || []) {
         const mAcct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
         const mMeter = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-        if (_acctFuzzyMatch(acct, mAcct) || (meterNum && mMeter && meterNum === mMeter)) {
+        // Fix 2 (8c9c7ccc): accountAliases[] holds prior account numbers a
+        // meter was renumbered FROM (PASS 2 adoptAccount, ~7476). A later
+        // bill still carrying the OLD account must identity-match this
+        // meter exactly like a direct m.account hit — never left to fall
+        // through to the weaker address fallback or an unresolved bill.
+        const mAliasHit = (m.accountAliases || []).some((a) =>
+          _acctFuzzyMatch(acct, (a || '').replace(/[\s\-]/g, '').toLowerCase()),
+        );
+        if (_acctFuzzyMatch(acct, mAcct) || mAliasHit || (meterNum && mMeter && meterNum === mMeter)) {
           const mComm = (m.commodity || '').toLowerCase();
           const commMatch = billComm && mComm && billComm === mComm;
           // matchType: 'identity' — account/meter-number hit, as opposed to the
@@ -5601,10 +5822,16 @@ function findMeterMatch(extracted) {
           let candidateMeter = null;
           let isAmbiguous = false;
           if (hasIdentity) {
-            const commMeter = billComm
+            // Fix 1 (409830ae): never fall back to bldg.meters[0] — that
+            // silently attaches a bill to a meter of a DIFFERENT commodity
+            // (e.g. a Gas bill landing on the building's Electric meter)
+            // whenever this building has no same-commodity meter of its
+            // own. With no same-commodity meter to disambiguate to, this
+            // building yields no candidate and the bill falls through to
+            // surface/create instead of a wrong-commodity attach.
+            candidateMeter = billComm
               ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
               : null;
-            candidateMeter = commMeter || (bldg.meters || [])[0];
           } else if (billComm) {
             if (sameCommMeters.length === 1) candidateMeter = sameCommMeters[0];
             else if (sameCommMeters.length > 1) isAmbiguous = true;
@@ -5688,7 +5915,89 @@ function findMeterMatch(extracted) {
       };
     }
   }
-  return bestMatch || addrMatch;
+  // PASS 2 (b-46a984a0 commodity fallback, added 2026-09-01): fires ONLY when
+  // the identity AND address branches above both found nothing (bestMatch
+  // and addrMatch are both null/undefined) — it NEVER runs before or
+  // overrides them, so the identity happy path above is untouched. Handles
+  // the "account renumbered, same physical hookup" case: City of Louisburg
+  // re-numbered utility accounts but never updated some meters' stored
+  // account (e.g. High School's gas meter still carries the OLD 900101
+  // while the new bill reads 09-009001-00). That bill hits the Fix-1
+  // identity-contradiction veto above (line ~5708 `continue`) and is
+  // dropped from addrCandidates entirely, so it reaches here with both
+  // bestMatch and addrMatch null even though its ServiceAddress plainly
+  // matches an existing building.
+  //
+  // Rule (Matt-approved, plan.md "PASS 2 REFINEMENT"): resolve by address
+  // to find the building, then match by COMMODITY ALONE (never by account)
+  // — but ONLY when EXACTLY ONE building's address matches AND that
+  // building has EXACTLY ONE meter of the bill's commodity. Zero
+  // same-commodity meters on the matched building is left null (Pass 1's
+  // create path handles a genuinely new account/building). Two or more
+  // same-commodity meters on the matched building, or the address matching
+  // more than one distinct building, is deliberately left unresolved (never
+  // guess); Pass 1's default-unchecked review-panel UI surfaces it for a
+  // manual pick. `adoptAccount` carries the bill's new account number so the
+  // save path can update the meter's stored account (old value preserved as
+  // an alias) — see _mbSaveOneBill.
+  //
+  // Fix (b-46a984a0 building-level ambiguity guard, 2026-09-01): a
+  // structural street match (_streetIdentityMatch, ~5616) can be exact for
+  // TWO distinct buildings at once — Louisburg Maintenance Building carries
+  // an alias ("105 S 5TH ST E LOUISBURG KS") that is structurally identical
+  // to Broadmoor Elementary's real address ("105 S 5th St E, Louisburg, KS
+  // 66053"). The prior version filtered each building by its OWN
+  // same-commodity meter count (0 or 2+ => skip) before ever comparing
+  // buildings against each other, so for Electric (Maintenance has 2 meters,
+  // Broadmoor has 1) Maintenance dropped out of the candidate list first,
+  // leaving Broadmoor as the sole "uncontested" candidate — a confirmed
+  // misroute to Broadmoor's real meter m1776962667307 with no ambiguity flag
+  // (see _context/temp/2026-09-01-pass2-independent-gate.md, "Check 4").
+  // Building-level matching is now resolved FIRST, across every building on
+  // every project, before any per-building meter-count filtering runs — a
+  // building with 0 or 2+ same-commodity meters still COUNTS as a matching
+  // building here, so it still blocks a lone structurally-tied neighbor from
+  // winning by default. Only once exactly one building's address matches do
+  // we look at that building's own meter count.
+  let commodityMatch = null;
+  if (!bestMatch && !addrMatch && billComm && billAddr && billAddr.length >= 5) {
+    const matchingBuildings = [];
+    for (const proj of projects) {
+      const udProj = getUDProj(proj.id);
+      for (const bldg of udProj.buildings || []) {
+        const bldgAddrNorm = _normalizeAddr(bldg.addr);
+        const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
+        const exactHit = (bldgAddrNorm && bldgAddrNorm === billAddr) || aliases.some((a) => a === billAddr);
+        const structuralHit =
+          _streetIdentityMatch(extracted.ServiceAddress, bldg.addr) ||
+          (bldg.addrAliases || []).some((rawAlias) => _streetIdentityMatch(extracted.ServiceAddress, rawAlias));
+        if (!(exactHit || structuralHit)) continue; // exact full-address hit, or exact street number+name -- nothing fuzzy
+        matchingBuildings.push({ proj, bldg });
+      }
+    }
+    if (matchingBuildings.length === 1) {
+      const { proj, bldg } = matchingBuildings[0];
+      const sameCommMeters = (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm);
+      if (sameCommMeters.length === 1) {
+        commodityMatch = {
+          proj,
+          bldg,
+          meter: sameCommMeters[0],
+          projId: proj.id,
+          bldgId: bldg.id,
+          meterId: sameCommMeters[0].id,
+          fuzzyScore: 1.0,
+          matchType: 'commodity',
+          adoptAccount: billAcctRaw || null,
+        };
+      }
+      // else: 0 => create path (Pass 1); 2+ same-commodity meters on the
+      // one matched building => ambiguous, never guess.
+    }
+    // else: 0 matching buildings (no address hit), or 2+ distinct matching
+    // buildings (building-level ambiguity/collision) — leave unresolved.
+  }
+  return bestMatch || addrMatch || commodityMatch;
 }
 // Save a new address alias to a building (called after fuzzy match).
 // Adds aliasString to bldg.addrAliases if not already present, then persists.
@@ -5790,13 +6099,19 @@ function showMultiBuildingReviewPanel() {
     delete bill._mbHeld;
     delete bill._mbHeldReason;
     _mbRowTargets[i] = findMeterMatch(bill) || null;
-    const isIdentity = !!(_mbRowTargets[i] && _mbRowTargets[i].matchType === 'identity');
-    // GATE WIRING (mirrors renderQueueResults' `checked: !b._gateTripped`): a
-    // non-identity match (address/ambiguous/no-match) defaults UNCHECKED — the
+    // PASS 2 (b-46a984a0): a 'commodity' match (building+commodity fallback,
+    // unambiguous single-meter case — see findMeterMatch) is, like
+    // 'identity', a confident auto-attach with no user action required.
+    const isAutoAttach = !!(
+      _mbRowTargets[i] &&
+      (_mbRowTargets[i].matchType === 'identity' || _mbRowTargets[i].matchType === 'commodity')
+    );
+    // GATE WIRING (mirrors renderQueueResults' `checked: !b._gateTripped`): any
+    // other match type (address/ambiguous/no-match) defaults UNCHECKED — the
     // user must ACT (check the box, or make an explicit destination pick,
     // which auto-checks it — see setMbRowDestMeter) to include it in Save
     // All, instead of acting to prevent a wrong silent save.
-    _mbRowState[i] = { checked: isIdentity, skipped: false };
+    _mbRowState[i] = { checked: isAutoAttach, skipped: false };
   });
 
   // Count unique accounts for header
@@ -5843,8 +6158,15 @@ function showMultiBuildingReviewPanel() {
     '</tbody>',
     '</table>',
     '</div>',
-    '<div style="display:flex;gap:8px;margin-top:12px;">',
-    '<button class="btn btn-primary btn-sm" id="mbSaveAllBtn" onclick="confirmMultiBuildingSave()" disabled>Save All</button>',
+    // 2026-09-02 consolidation: this is the ONE bottom save location for a
+    // multi-account file — Save All / Overwrite All / Merge All, same trio the
+    // single-account bottom bar (#pdfBottomSaveBar) shows. All three route
+    // through confirmMultiBuildingSave(action) -> _mbSaveOneBill(bi, action);
+    // see there for what each action does to an existing period match.
+    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">',
+    '<button class="btn btn-primary btn-sm" id="mbSaveAllBtn" onclick="confirmMultiBuildingSave(\'save\')" disabled>Save All</button>',
+    '<button class="btn btn-ghost btn-sm" id="mbOverwriteAllBtn" onclick="confirmMultiBuildingSave(\'overwrite\')" disabled title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>',
+    '<button class="btn btn-ghost btn-sm" id="mbMergeAllBtn" onclick="confirmMultiBuildingSave(\'merge\')" disabled title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>',
     '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'pdfMultiBldgPanel\').style.display=\'none\'">Cancel</button>',
     '</div>',
     '</div>',
@@ -5906,10 +6228,13 @@ function _mbRowHtml(i) {
       'setMbRowDestBldg',
       'setMbRowDestMeter',
       'setMbRowDestExpand',
+      true,
     );
     const isIdentity = !!(match && match.matchType === 'identity');
+    const isCommodity = !!(match && match.matchType === 'commodity');
     const isManual = !!(match && match.matchType === 'manual');
     const isAmbiguous = !!(match && match.matchType === 'ambiguous');
+    const isCreate = !!(match && match.matchType === 'create');
     let statusLbl, statusColor, statusBg;
     if (bill._mbHeld) {
       statusLbl = 'Held — ' + (bill._mbHeldReason || 'needs review');
@@ -5917,6 +6242,13 @@ function _mbRowHtml(i) {
       statusBg = 'rgba(239,68,68,.1)';
     } else if (isIdentity) {
       statusLbl = 'Matched';
+      statusColor = 'var(--em)';
+      statusBg = 'rgba(var(--em-rgb),.1)';
+    } else if (isCommodity) {
+      // PASS 2 (b-46a984a0): building+commodity fallback — unambiguous
+      // single-meter match, account number was renumbered upstream. Auto-
+      // attaches like identity; account update happens at save.
+      statusLbl = 'Matched — account renumbered (will update)';
       statusColor = 'var(--em)';
       statusBg = 'rgba(var(--em-rgb),.1)';
     } else if (isManual) {
@@ -5927,6 +6259,10 @@ function _mbRowHtml(i) {
       statusLbl = 'Needs selection';
       statusColor = 'var(--amber)';
       statusBg = 'rgba(245,158,11,.1)';
+    } else if (isCreate) {
+      statusLbl = 'Will create new meter/building';
+      statusColor = 'var(--em)';
+      statusBg = 'rgba(var(--em-rgb),.1)';
     } else if (match) {
       // 'address' matchType — fuzzy, unconfirmed
       statusLbl = 'Address match (unconfirmed)';
@@ -5955,7 +6291,7 @@ function _mbRowHtml(i) {
         i +
         ')">Undo skip</button>';
     } else {
-      const canSave = !!(match && match.meter);
+      const canSave = !!(match && (match.meter || match.matchType === 'create'));
       actionCell =
         '<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-bottom:4px;white-space:nowrap">' +
         '<input type="checkbox" onchange="_mbToggleRowChecked(' +
@@ -6030,10 +6366,40 @@ function setMbRowDestProj(i, val) {
 }
 window.setMbRowDestProj = setMbRowDestProj;
 
+// b-46a984a0: build a "create" row target — no meter yet; the new
+// meter/building is materialized at save time by _autoCreateMeterAndSaveBill.
+// bldgId non-null => create the meter on that EXISTING building; null =>
+// project-level new/sentinel building.
+function _mbSetCreateTarget(i, projId, bldgId) {
+  const proj = (projects || []).find(function (p) {
+    return p.id === projId;
+  });
+  const bldg = proj && bldgId ? getUDBldg(projId, bldgId) : null;
+  _mbRowTargets[i] = {
+    proj: proj || null,
+    projId: projId || null,
+    bldg: bldg || null,
+    bldgId: bldgId || null,
+    meter: null,
+    matchType: 'create',
+    createOnBldgId: bldgId || null,
+  };
+  if (_mbRowState[i]) _mbRowState[i].checked = true;
+  else _mbRowState[i] = { checked: true, skipped: false };
+}
+
 function setMbRowDestBldg(i, val) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  if (val === '__CREATE_NEW__') {
+    ov.bldgId = '__CREATE_NEW__';
+    ov.meterId = '__CREATE_NEW__';
+    bills[i]._meterOverride = ov;
+    _mbSetCreateTarget(i, ov.projId, null); // new building + new meter at save time
+    _mbRerenderRow(i);
+    return;
+  }
   ov.bldgId = val || null;
   ov.meterId = null;
   bills[i]._meterOverride = ov;
@@ -6046,6 +6412,14 @@ function setMbRowDestMeter(i, val) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
+  if (val === '__CREATE_NEW__') {
+    ov.meterId = '__CREATE_NEW__';
+    bills[i]._meterOverride = ov;
+    const bldgIdForCreate = ov.bldgId && ov.bldgId !== '__CREATE_NEW__' ? ov.bldgId : null;
+    _mbSetCreateTarget(i, ov.projId, bldgIdForCreate);
+    _mbRerenderRow(i);
+    return;
+  }
   ov.meterId = val || null;
   bills[i]._meterOverride = ov;
   if (ov.projId && ov.bldgId && ov.meterId) {
@@ -6137,39 +6511,51 @@ async function _mbSaveRowClick(i) {
 window._mbSaveRowClick = _mbSaveRowClick;
 
 function _mbUpdateSaveAllBtn() {
-  const btn = document.getElementById('mbSaveAllBtn');
-  if (!btn) return;
+  // 2026-09-02 consolidation: Save All, Overwrite All, and Merge All are the
+  // SAME bulk loop (confirmMultiBuildingSave) with a different upsert action —
+  // all three share exactly one readiness gate, so all three get disabled/
+  // enabled together. Each keeps its own explanatory tooltip when enabled;
+  // when blocked, all three show the same "what's unaccounted for" reason.
+  const BTN_DEFS = [
+    { id: 'mbSaveAllBtn', baseTitle: '' },
+    {
+      id: 'mbOverwriteAllBtn',
+      baseTitle: 'Replace existing records with newly extracted values, including blanks',
+    },
+    { id: 'mbMergeAllBtn', baseTitle: 'Fill only empty fields — keeps existing non-empty values intact' },
+  ];
+  const btns = BTN_DEFS.map((d) => ({ el: document.getElementById(d.id), baseTitle: d.baseTitle })).filter((b) => b.el);
+  if (!btns.length) return;
   const bills = window._pdfMultiBills || [];
   const dupMap = window._pdfDupMap || {};
-  // Rows this Save All pass would actually touch: not a skipped duplicate,
-  // not manually skipped, not already individually saved, and checked
-  // (ede70be1 3b — Save All now honors the same per-row checked gate the
-  // batch queue table uses instead of blindly walking every row).
-  const included = bills.filter(function (b, i) {
-    if (b._mbSaved) return false;
+  // b-46a984a0: full-accounting readiness. Save All enables ONLY when every
+  // row is accounted for — saved, duplicate-skip, explicit user Skip, or
+  // checked+resolved — AND at least one row will actually save. A row left
+  // merely unchecked (the old silent-drop state) is UNACCOUNTED and now hard-
+  // blocks Save All until the user assigns a destination or explicitly Skips.
+  let willSave = 0;
+  let unaccounted = 0;
+  bills.forEach(function (b, i) {
+    if (b._mbSaved) return;
     const d = dupMap[i];
-    if (d && d.action === 'skip') return false;
-    const st = _mbRowState[i];
-    if (st && (st.skipped || st.checked === false)) return false;
-    return true;
+    if (d && d.action === 'skip') return;
+    const st = _mbRowState[i] || { checked: false, skipped: false };
+    if (st.skipped) return;
+    const t = _mbRowTargets[i];
+    const resolved = !!(t && (t.meter || t.matchType === 'create'));
+    if (st.checked && resolved) {
+      willSave++;
+      return;
+    }
+    unaccounted++;
   });
-  if (!included.length) {
-    btn.disabled = true;
-    return;
-  }
-  const assigned = included.filter(function (b) {
-    // Find the original index in bills array
-    const origIdx = bills.indexOf(b);
-    const t = _mbRowTargets[origIdx];
-    // Fix 2 (review of 1e99a20, PRESERVED): a row is only "ready" when its
-    // target has a truthy .meter (identity, address, or a manual pick). An
-    // 'ambiguous' target is truthy but carries no resolved .meter — it must
-    // NOT satisfy Save-All eligibility, or Save All would enable itself while
-    // a row is still unresolved and _mbSaveOneBill would have nothing safe
-    // to write for it.
-    return !!(t && t.meter);
+  const disabled = !(willSave > 0 && unaccounted === 0);
+  const blockedTitle =
+    unaccounted > 0 ? unaccounted + ' billing period(s) still need a destination or an explicit Skip' : '';
+  btns.forEach(({ el, baseTitle }) => {
+    el.disabled = disabled;
+    el.title = disabled ? blockedTitle : baseTitle;
   });
-  btn.disabled = !(assigned.length === included.length);
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
@@ -6686,7 +7072,14 @@ async function confirmAutoAssign() {
 // an agreeing AccountNumber, or an explicit 'manual' pick (from the forced
 // picker's destination selects), may write to targetMeter.bills — anything
 // else is diverted to Saved Bills for review instead of silently applied.
-async function _mbSaveOneBill(bi) {
+async function _mbSaveOneBill(bi, action) {
+  // 2026-09-02 consolidation: action is 'save' (default), 'overwrite', or
+  // 'merge' — see the upsert block near targetMeter.bills below for what each
+  // one does when this bill's period already exists on the target meter.
+  // 'save' behaves like 'merge' (fills blanks only, never clobbers a value the
+  // user corrected) — mirrors Bug #135's fix on the single-account path, where
+  // an unresolved dup defaults to merge, never a blind overwrite.
+  action = action || 'save';
   const bills = window._pdfMultiBills;
   if (!bills || !bills[bi]) return { status: 'error', reason: 'no bill' };
   const bill = bills[bi];
@@ -6924,6 +7317,54 @@ async function _mbSaveOneBill(bi) {
     if (Object.keys(cp).length) billRow._chargeParts = cp;
   }
 
+  // b-46a984a0: explicit "create new meter/building" target from the picker.
+  // A create is a deliberate user action (authoritative like a manual pick),
+  // so it bypasses the identity gate. Routes through the shared
+  // _autoCreateMeterAndSaveBill primitive (dedup + build/meter creation +
+  // "Unmatched Bills" sentinel when no building was chosen). Never drops: if
+  // creation can't key a meter (no account/meter number) it holds for review.
+  if (billMatch.matchType === 'create') {
+    const _cProj = billMatch.projId;
+    if (!_cProj) {
+      return { status: 'unresolved', reason: 'create target has no project' };
+    }
+    const _created = _autoCreateMeterAndSaveBill(bill, _cProj, billRow, billMatch.createOnBldgId || null);
+    if (_created && _created.meter) {
+      const _dest =
+        ((billMatch.proj && billMatch.proj.name) || '') +
+        ' → ' +
+        (_created.bldg.name || _created.bldg.addr || 'building') +
+        ' → ' +
+        (_created.meter.commodity || _created.meter.account || 'meter');
+      bill._mbSaved = true;
+      bill._mbSavedDest = _dest;
+      // Coordinate saved state across the two review UIs (2026-09-02 fix — the
+      // _batchSaved/_mbSaved split let one UI think a bill was unsaved after the
+      // OTHER UI already saved it). Each path stamps BOTH flags on success so
+      // neither UI can show a phantom-unsaved row or re-save the same bill.
+      bill._batchSaved = true;
+      return { status: 'saved', destination: _dest, projId: _cProj };
+    }
+    const _held = (await sget('en_pdf_bills', [])) || [];
+    _held.push(
+      Object.assign(
+        {
+          id: 'pb' + Date.now() + '_' + bi + '_review',
+          savedAt: new Date().toISOString(),
+          projId: _cProj,
+          projName: (billMatch.proj && billMatch.proj.name) || 'General',
+          hasPDF,
+          pdfKey: hasPDF ? pdfKey : null,
+        },
+        bill,
+      ),
+    );
+    await sset('en_pdf_bills', _held);
+    bill._mbHeld = true;
+    bill._mbHeldReason = 'could not create meter — no account/meter number';
+    return { status: 'held', reason: 'create failed — no identity to key a meter', projId: _cProj };
+  }
+
   // Fix 2 (review of 1e99a20, PRESERVED): a row target can be truthy but
   // meter-less (matchType 'ambiguous' from findMeterMatch, or otherwise
   // malformed) — every line below this dereferences billMatch.meter/.bldg
@@ -6984,9 +7425,17 @@ async function _mbSaveOneBill(bi) {
   // depend on which same-building, different-commodity sibling meter the
   // bill eventually lands on).
   const _isManualPick = billMatch.matchType === 'manual';
+  // PASS 2 (b-46a984a0): a 'commodity' match (findMeterMatch building+
+  // commodity fallback) is, like a manual pick, authoritative — it was
+  // already proven unambiguous (address-matched building + exactly one
+  // same-commodity meter) inside findMeterMatch, so it deliberately bypasses
+  // the _acctAgrees check below (the whole point is the account NUMBER
+  // legitimately differs — it was renumbered). See the account-adopt block
+  // right after targetMeter is resolved, a few lines down.
+  const _isCommodityPick = billMatch.matchType === 'commodity';
   const _acctAgrees =
     !billMatch.meter.account || !bill.AccountNumber || _acctFuzzyMatch(bill.AccountNumber, billMatch.meter.account);
-  const _gateOK = _isManualPick || (billMatch.matchType === 'identity' && _acctAgrees);
+  const _gateOK = _isManualPick || _isCommodityPick || (billMatch.matchType === 'identity' && _acctAgrees);
   if (!_gateOK) {
     console.warn(
       '[_mbSaveOneBill] identity gate failed — refusing to write (would have created/updated a bill on a',
@@ -7063,6 +7512,23 @@ async function _mbSaveOneBill(bi) {
   }
 
   const targetMeter = billMatch.meter;
+  // PASS 2 (b-46a984a0): a 'commodity' match resolved this meter by
+  // building+commodity, not by account — the bill's account number REPLACES
+  // the meter's stale/renumbered one, and the prior value is preserved in
+  // accountAliases[] (never deleted) so older saved bills filed under the
+  // old account number still identity-match on a future extraction. Runs
+  // BEFORE the generic account-extend heuristic below so that heuristic
+  // (which only fires on a substring relationship) sees the now-current
+  // account and is a harmless no-op for this path.
+  if (billMatch.matchType === 'commodity' && billMatch.adoptAccount) {
+    const _oldAcct = (targetMeter.account || '').trim();
+    const _newAcct = billMatch.adoptAccount.trim();
+    if (_oldAcct && _oldAcct !== _newAcct) {
+      if (!Array.isArray(targetMeter.accountAliases)) targetMeter.accountAliases = [];
+      if (!targetMeter.accountAliases.includes(_oldAcct)) targetMeter.accountAliases.push(_oldAcct);
+    }
+    if (_newAcct) targetMeter.account = _newAcct;
+  }
   if (bill.AccountNumber && targetMeter.account) {
     const _extN = bill.AccountNumber.replace(/[\s\-]/g, '')
       .replace(/^0+/, '')
@@ -7085,7 +7551,21 @@ async function _mbSaveOneBill(bi) {
     return r.start === billRow.start && r.end === billRow.end;
   });
   if (dup) {
-    Object.assign(dup, billRow);
+    if (action === 'overwrite') {
+      // Explicit "Overwrite All" (or a per-row Save forced to overwrite) —
+      // replace every field, including blanks, exactly like the tooltip says.
+      Object.assign(dup, billRow);
+    } else {
+      // 'save' (default) and 'merge' both fill only currently-blank fields —
+      // never clobber a value already on the record (matches "Merge All"
+      // tooltip: "keeps existing non-empty values intact"; 0/'0' counts as a
+      // real value, only null/undefined/'' count as blank).
+      for (const k of Object.keys(billRow)) {
+        const v = billRow[k];
+        if (v == null || v === '') continue;
+        if (dup[k] == null || dup[k] === '') dup[k] = v;
+      }
+    }
   } else {
     targetMeter.bills.push(billRow);
     targetMeter.bills.sort(function (a, b) {
@@ -7100,6 +7580,9 @@ async function _mbSaveOneBill(bi) {
     (targetMeter.commodity || targetMeter.account || targetMeter.id || 'meter');
   bill._mbSaved = true;
   bill._mbSavedDest = destination;
+  // Coordinate saved state across the two review UIs — see comment on the
+  // 'create' branch above for why both flags are stamped on every success path.
+  bill._batchSaved = true;
   return { status: 'saved', destination, projId: billMatch.projId };
 }
 window._mbSaveOneBill = _mbSaveOneBill;
@@ -7111,12 +7594,18 @@ window._mbSaveOneBill = _mbSaveOneBill;
 // (see showMultiBuildingReviewPanel) or the user made an explicit manual
 // pick (see setMbRowDestMeter) — so Save All only ever acts on rows the user
 // has confirmed one way or another, honest-display gate wiring from 3a/3b.
-async function confirmMultiBuildingSave() {
+async function confirmMultiBuildingSave(action) {
+  // 2026-09-02 consolidation: action is 'save' (default), 'overwrite', or
+  // 'merge' — threaded straight through to _mbSaveOneBill, which decides what
+  // each one does to an existing period match. Row selection/accounting below
+  // is identical for all three; only the per-bill upsert behavior differs.
+  action = action || 'save';
+  if (_mbSaveAllInProgress) return; // re-entrancy guard (double-click / re-dispatch)
   const bills = window._pdfMultiBills;
   if (!bills || !bills.length) return;
   const dupMap = window._pdfDupMap || {};
 
-  // Dup-unresolved gate
+  // Dup-unresolved gate (unchanged)
   const unresolved = Object.values(dupMap).filter(function (d) {
     return d.action === null;
   });
@@ -7125,65 +7614,85 @@ async function confirmMultiBuildingSave() {
     return;
   }
 
-  // Rows this Save All pass will actually touch.
+  // b-46a984a0: full-accounting pass. Classify EVERY row. A row is going to be
+  // saved (checked + resolved), explicitly excluded (user Skip or dup-skip),
+  // already saved, or UNACCOUNTED. Any unaccounted row hard-blocks the whole
+  // save — no bill may leave this panel silently dropped. This replaces both
+  // the old silent `continue` and the separate downstream unmatched gate.
   const toSave = [];
+  let userSkipped = 0;
+  const unaccountedIdx = [];
   for (let _bi = 0; _bi < bills.length; _bi++) {
+    if (bills[_bi]._mbSaved) continue;
     const billDup = dupMap[_bi];
     if (billDup && billDup.action === 'skip') continue;
-    if (bills[_bi]._mbSaved) continue;
-    const st = _mbRowState[_bi];
-    if (st && (st.skipped || st.checked === false)) continue;
-    toSave.push(_bi);
+    const st = _mbRowState[_bi] || { checked: false, skipped: false };
+    if (st.skipped) {
+      userSkipped++;
+      continue;
+    }
+    const t = _mbRowTargets[_bi];
+    const resolved = !!(t && (t.meter || t.matchType === 'create'));
+    if (st.checked && resolved) {
+      toSave.push(_bi);
+      continue;
+    }
+    unaccountedIdx.push(_bi);
+  }
+  if (unaccountedIdx.length) {
+    showToast(
+      unaccountedIdx.length +
+        ' billing period(s) have no destination — assign a meter, choose "+ New meter", or Skip each before saving',
+    );
+    return;
   }
   if (!toSave.length) {
-    showToast('Nothing checked to save — check a row or use its own Save button');
+    showToast('Nothing to save — every remaining row is skipped');
     return;
   }
 
-  // Unmatched gate — every row Save All is about to touch must have a
-  // resolved destination (truthy .meter — PRESERVED from _mbUpdateSaveAllBtn's
-  // eligibility check, see Fix 2 comment there).
-  for (const _bi of toSave) {
-    if (!_mbRowTargets[_bi] || !_mbRowTargets[_bi].meter) {
-      showToast('All included billing periods need a destination — assign, uncheck, or Skip remaining rows first');
-      return;
-    }
-  }
-
+  _mbSaveAllInProgress = true;
   let saved = 0;
   let flaggedForReview = 0;
   const touchedPids = new Set(); // rows in this batch can target different projects/buildings
-  for (const _bi of toSave) {
-    const result = await _mbSaveOneBill(_bi);
-    if (result.status === 'saved') {
-      saved++;
-      if (result.projId) touchedPids.add(result.projId);
-    } else if (result.status === 'held') {
-      flaggedForReview++;
+  try {
+    for (const _bi of toSave) {
+      const result = await _mbSaveOneBill(_bi, action);
+      if (result.status === 'saved') {
+        saved++;
+        if (result.projId) touchedPids.add(result.projId);
+      } else if (result.status === 'held') {
+        flaggedForReview++;
+      }
     }
-  }
 
-  // Save once after the loop — never per-bill. Scope to only the projects rows in
-  // this batch actually landed in (a multi-account PDF can span several projects).
-  saveUtilityData(Array.from(touchedPids));
-  window._pdfBillsSaved = true;
-  _inheritBaselinesForProject(udSelProjId);
-  document.getElementById('pdfMultiBldgPanel').style.display = 'none';
-  _mbRowTargets = {};
-  _mbRowState = {};
-  _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
-  _autoAssignTarget = null;
-  showToast(
-    saved +
-      ' bill' +
-      (saved !== 1 ? 's' : '') +
-      ' saved to matched meters' +
-      (flaggedForReview ? ', ' + flaggedForReview + ' flagged for review (account mismatch) — check Saved Bills' : '') +
-      ' ✓',
-  );
-  if (udSelProjId && udSelBldgId) {
-    renderUDDetail();
-    renderUDProjList();
+    // Save once after the loop — never per-bill. Scope to only the projects rows in
+    // this batch actually landed in (a multi-account PDF can span several projects).
+    saveUtilityData(Array.from(touchedPids));
+    window._pdfBillsSaved = true;
+    _inheritBaselinesForProject(udSelProjId);
+    document.getElementById('pdfMultiBldgPanel').style.display = 'none';
+    _mbRowTargets = {};
+    _mbRowState = {};
+    _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
+    _autoAssignTarget = null;
+    const _verb = action === 'overwrite' ? 'overwritten' : action === 'merge' ? 'merged' : 'saved';
+    showToast(
+      saved +
+        ' bill' +
+        (saved !== 1 ? 's' : '') +
+        ' ' +
+        _verb +
+        (flaggedForReview ? ', ' + flaggedForReview + ' flagged for review (account mismatch)' : '') +
+        (userSkipped ? ', ' + userSkipped + ' skipped by you' : '') +
+        ' ✓',
+    );
+    if (udSelProjId && udSelBldgId) {
+      renderUDDetail();
+      renderUDProjList();
+    }
+  } finally {
+    _mbSaveAllInProgress = false;
   }
 }
 window.confirmMultiBuildingSave = confirmMultiBuildingSave;
@@ -7579,6 +8088,33 @@ async function _ensureBatchPdfStored(bills) {
   return key;
 }
 
+// 2026-09-02 (routing gate fix, requirement 5): a 'commodity' matchType from
+// findMeterMatch (building+commodity fallback — unambiguous single-meter case,
+// account was renumbered) carries `adoptAccount`, the bill's new account
+// number. _mbSaveOneBill has always adopted it inline for the multi-building
+// review panel; this shared helper gives _saveBillToMatchedMeter (used by
+// _resolveBillDestination's callers, saveQueuedBills, and _applyDupUpdate's
+// Saved-Bills promotion) the same behavior — update the meter's stored account
+// to the new number, preserving the old one in accountAliases[] (never
+// deleted) so older saved bills filed under the old account still
+// identity-match a future extraction. No-op for any other matchType, so every
+// existing caller that never passes a 'commodity' match is unaffected. MUST
+// run before the strongMismatch check below — that check compares the bill's
+// account against match.meter.account, which is exactly the field a
+// 'commodity' match legitimately disagrees with until this adoption runs.
+function _applyCommodityAccountAdopt(match) {
+  if (!match || match.matchType !== 'commodity' || !match.meter) return;
+  const newAcct = (match.adoptAccount || '').trim();
+  if (!newAcct) return;
+  const targetMeter = match.meter;
+  const oldAcct = (targetMeter.account || '').trim();
+  if (oldAcct && oldAcct !== newAcct) {
+    if (!Array.isArray(targetMeter.accountAliases)) targetMeter.accountAliases = [];
+    if (!targetMeter.accountAliases.includes(oldAcct)) targetMeter.accountAliases.push(oldAcct);
+  }
+  targetMeter.account = newAcct;
+}
+
 // Save a single extracted bill directly to a matched meter (from findMeterMatch).
 // Reuses the same billRow shape as _saveSinglePDFBill and confirmAutoAssign so the
 // record lands in the same storage structure. Returns a destination description
@@ -7590,6 +8126,9 @@ async function _ensureBatchPdfStored(bills) {
 // place.
 function _saveBillToMatchedMeter(extracted, match) {
   if (!extracted || !match || !match.proj || !match.bldg || !match.meter) return null;
+  // Requirement 5 (2026-09-02): adopt a renumbered account BEFORE the
+  // strongMismatch check below — see _applyCommodityAccountAdopt.
+  _applyCommodityAccountAdopt(match);
   // Fix 3 (49928d33/409830ae) — defense-in-depth. Even on an 'identity' call,
   // refuse to write when the bill's own AccountNumber strongly contradicts
   // the target meter's stored account. Guards against a bad match slipping
@@ -7923,7 +8462,18 @@ function _resolveBillDestination(bill, dup, projId) {
   // the same safe fallback (project-scoped account match, or Saved Bills for
   // manual review) that saveQueuedBills falls through to when its identity gate
   // fails.
-  if (match && match.matchType === 'identity') {
+  //
+  // Requirement 5 (2026-09-02): also accept a 'commodity' match — the same
+  // building+commodity fallback the multi-building review panel already
+  // trusts as auto-attach (see showMultiBuildingReviewPanel's isAutoAttach).
+  // It is unambiguous by construction (findMeterMatch only returns it when
+  // exactly one building address-matched and exactly one same-commodity meter
+  // exists there) — the account merely differs because it was renumbered.
+  // _saveBillToMatchedMeter adopts the new account (via
+  // _applyCommodityAccountAdopt) before its own mismatch guard runs, so this
+  // routes the same way a manual pick would instead of falling through to the
+  // weaker project-scoped/unassigned path below.
+  if (match && (match.matchType === 'identity' || match.matchType === 'commodity')) {
     return {
       method: 'match',
       destination:
@@ -8715,19 +9265,30 @@ function exitPreviewMode() {
 // same honest-match rendering instead of a parallel "Matched" badge that hid
 // non-identity (address/ambiguous) matches behind a false-confident green label.
 // Behavior-preserving hoist — same signature, same branches, same output.
-function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn) {
+function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn, allowCreate) {
   const ov = bill._meterOverride || null;
   const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
-  const expanded = !!bill._destExpanded || !isIdentity;
-  if (isIdentity && !expanded) {
+  // PASS 2 (b-46a984a0): a 'commodity' match (findMeterMatch building+
+  // commodity fallback — unambiguous single-meter case) is, like identity,
+  // a confident auto-attach — shown the same compact confirmed-text way so
+  // the row doesn't LOOK unresolved when it will in fact auto-save. Purely
+  // additive: does not change the isIdentity branch's own condition/output.
+  const isCommodity = !!(autoMatch && autoMatch.matchType === 'commodity');
+  const expanded = !!bill._destExpanded || !(isIdentity || isCommodity);
+  if ((isIdentity || isCommodity) && !expanded) {
     const destText =
       autoMatch.proj.name +
       ' → ' +
       autoMatch.bldg.name +
       ' → ' +
       (autoMatch.meter.provider || autoMatch.meter.meter || 'meter');
+    const title = isIdentity
+      ? 'Identity match — account/meter number found'
+      : 'Building + commodity match — account number will update on save (old kept as alias)';
     return (
-      '<div style="font-size:10px;color:var(--text)" title="Identity match — account/meter number found">' +
+      '<div style="font-size:10px;color:var(--text)" title="' +
+      title +
+      '">' +
       _escHtml(destText) +
       ' <a href="javascript:void(0)" onclick="' +
       setExpandFn +
@@ -8744,11 +9305,12 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
   const curProj =
     ov && ov.projId != null
       ? ov.projId
-      : isIdentity && autoMatch
+      : (isIdentity || isCommodity) && autoMatch
         ? autoMatch.projId
         : bill._projOverride || (window._pdfQueue && window._pdfQueue.batchProjId) || '';
-  const curBldg = ov && ov.bldgId ? ov.bldgId : isIdentity && autoMatch && !ov ? autoMatch.bldgId : '';
-  const curMeter = ov && ov.meterId ? ov.meterId : isIdentity && autoMatch && !ov ? autoMatch.meterId : '';
+  const curBldg = ov && ov.bldgId ? ov.bldgId : (isIdentity || isCommodity) && autoMatch && !ov ? autoMatch.bldgId : '';
+  const curMeter =
+    ov && ov.meterId ? ov.meterId : (isIdentity || isCommodity) && autoMatch && !ov ? autoMatch.meterId : '';
   const selStyle =
     'font-size:10px;padding:1px 2px;max-width:112px;background:var(--s2);border:1px solid var(--border2);' +
     'border-radius:3px;color:var(--text);margin-bottom:1px;display:block';
@@ -8766,7 +9328,7 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
           '</option>',
       )
       .join('');
-  const bldgOpts =
+  const bldgOptsBase =
     '<option value="">Select building…</option>' +
     (curProj ? getUDBldgs(parseInt(curProj)) || [] : [])
       .map(
@@ -8780,8 +9342,15 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
           '</option>',
       )
       .join('');
+  const createBldgOpt =
+    allowCreate && curProj
+      ? '<option value="__CREATE_NEW__"' +
+        (String(curBldg) === '__CREATE_NEW__' ? ' selected' : '') +
+        '>+ New building (create from this bill)</option>'
+      : '';
+  const bldgOpts = bldgOptsBase + createBldgOpt;
   const bldgObj = curProj && curBldg ? getUDBldg(parseInt(curProj), curBldg) : null;
-  const meterOpts =
+  const meterOptsBase =
     '<option value="">Select meter…</option>' +
     ((bldgObj && bldgObj.meters) || [])
       .map((m) => {
@@ -8798,21 +9367,33 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
         );
       })
       .join('');
+  const createMeterOpt =
+    allowCreate && curProj
+      ? '<option value="__CREATE_NEW__"' +
+        (String(curMeter) === '__CREATE_NEW__' ? ' selected' : '') +
+        '>+ New meter (create from this bill)</option>'
+      : '';
+  const meterOpts = meterOptsBase + createMeterOpt;
   const hint =
-    autoMatch && autoMatch.matchType === 'address'
-      ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
+    autoMatch && autoMatch.matchType === 'commodity'
+      ? '<div style="font-size:9px;color:var(--em);margin-bottom:2px" title="Building + commodity match — account number will update on save (old kept as alias)">Building + commodity match: ' +
         _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
         '</div>'
-      : !autoMatch
-        ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
-        : '';
-  const changeLink = isIdentity
-    ? '<a href="javascript:void(0)" onclick="' +
-      setExpandFn +
-      '(' +
-      handlerArg +
-      ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
-    : '';
+      : autoMatch && autoMatch.matchType === 'address'
+        ? '<div style="font-size:9px;color:var(--amber);margin-bottom:2px" title="Address similarity only — not confirmed by account/meter number">Address match (unconfirmed): ' +
+          _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
+          '</div>'
+        : !autoMatch
+          ? '<div style="font-size:9px;color:#c44;margin-bottom:2px">No match — pick destination</div>'
+          : '';
+  const changeLink =
+    isIdentity || isCommodity
+      ? '<a href="javascript:void(0)" onclick="' +
+        setExpandFn +
+        '(' +
+        handlerArg +
+        ',false)" style="font-size:9px;color:var(--text3);text-decoration:underline">Cancel</a>'
+      : '';
   return (
     hint +
     '<select style="' +
@@ -9939,7 +10520,12 @@ async function saveQueuedBills() {
       // meter number within the batch project, never by address, so an unconfirmed
       // address guess can never silently misattach a bill to the wrong building.
       const meterMatch = row._autoMatch !== undefined ? row._autoMatch : findMeterMatch(row.bill);
-      if (meterMatch && meterMatch.matchType === 'identity') {
+      // Requirement 5 (2026-09-02): also accept 'commodity' — see the matching
+      // comment in _resolveBillDestination. If _saveBillToMatchedMeter still
+      // can't reconcile the account it returns null and this falls through to
+      // the same project-scoped fallback as before, so widening this check
+      // can only ever help, never misroute.
+      if (meterMatch && (meterMatch.matchType === 'identity' || meterMatch.matchType === 'commodity')) {
         try {
           const dest = _saveBillToMatchedMeter(row.bill, meterMatch);
           if (dest) {
@@ -10732,6 +11318,10 @@ async function _dupBulkAction(action) {
         status = 'saved';
         saved++;
         bills[i]._batchSaved = true;
+        // Coordinate saved state across the two review UIs (2026-09-02 fix —
+        // see _mbSaveOneBill for the matching sync in the other direction).
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = dest;
       } else {
         status = 'failed';
         failed++;
@@ -10758,6 +11348,8 @@ async function _dupBulkAction(action) {
         status = 'saved';
         saved++;
         bills[i]._batchSaved = true;
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = destination;
       } else {
         status = 'failed';
         failed++;
@@ -11433,44 +12025,79 @@ function _lanczosResize(srcCanvas, dstW, dstH, a) {
   const sctx = srcCanvas.getContext('2d');
   const src = sctx.getImageData(0, 0, srcW, srcH).data;
   // Horizontal pass: srcW x srcH -> dstW x srcH
+  //
+  // FIX (b35c9b09 Step 2, 2026-08-31): reordered from the original ox-outer/
+  // oy-inner loop to oy-outer/ox-inner, with per-output-column taps (left/
+  // right/weights/wsum) precomputed ONCE up front instead of recomputed for
+  // every source row. This is a PURE loop-reorder + precompute — the exact
+  // same weights, same clamped source columns, and same `r/wsum`-style
+  // division are used for every output pixel, so the result is mathematically
+  // identical; only the ORDER in which independent output pixels get computed
+  // changes (each output pixel's value depends only on its own column's taps
+  // and the current source row, never on write order). Verified BYTE-
+  // IDENTICAL (0/23,750,496 byte diffs) against the original ox-outer
+  // implementation on a real rendered SKM page at scale 3.5 before shipping
+  // (see dashboardlogic.md 2026-08-31 Step 2 entry for the A/B script and
+  // output). Why this is faster: the OLD order re-scanned the ENTIRE srcH-tall
+  // source buffer once per OUTPUT COLUMN (dstW times total) — for a
+  // supersampled page this buffer is tens of MB, far exceeding cache, so the
+  // old order was effectively re-reading the whole image from RAM dstW times.
+  // The new order reads the source buffer row-by-row exactly ONCE.
   const scaleX = dstW / srcW;
   const filterScaleX = Math.max(1, 1 / scaleX); // widen kernel support when downscaling
-  const tmp = new Float32Array(dstW * srcH * 4);
+  const colTapCols = new Array(dstW);
+  const colTapWeights = new Array(dstW);
+  const colTapWsum = new Float64Array(dstW);
   for (let ox = 0; ox < dstW; ox++) {
     const srcX = (ox + 0.5) / scaleX - 0.5;
     const left = Math.floor(srcX - a * filterScaleX);
     const right = Math.ceil(srcX + a * filterScaleX);
-    const weights = [];
+    const n = right - left + 1;
+    const cols = new Int32Array(n);
+    const weights = new Float64Array(n);
     let wsum = 0;
-    for (let sx = left; sx <= right; sx++) {
+    for (let i = 0, sx = left; sx <= right; sx++, i++) {
       const w = _lanczosKernel((srcX - sx) / filterScaleX, a);
-      weights.push(w);
+      weights[i] = w;
+      cols[i] = Math.min(srcW - 1, Math.max(0, sx));
       wsum += w;
     }
     if (wsum === 0) wsum = 1;
-    for (let oy = 0; oy < srcH; oy++) {
+    colTapCols[ox] = cols;
+    colTapWeights[ox] = weights;
+    colTapWsum[ox] = wsum;
+  }
+  const tmp = new Float32Array(dstW * srcH * 4);
+  for (let oy = 0; oy < srcH; oy++) {
+    const rowBase = oy * srcW * 4;
+    const tRowBase = oy * dstW * 4;
+    for (let ox = 0; ox < dstW; ox++) {
+      const cols = colTapCols[ox];
+      const weights = colTapWeights[ox];
+      const wsum = colTapWsum[ox];
       let r = 0,
         g = 0,
         b = 0,
         al = 0;
-      let wi = 0;
-      for (let sx = left; sx <= right; sx++) {
-        const cx = Math.min(srcW - 1, Math.max(0, sx));
-        const idx = (oy * srcW + cx) * 4;
-        const w = weights[wi++];
+      for (let i = 0, n = cols.length; i < n; i++) {
+        const idx = rowBase + cols[i] * 4;
+        const w = weights[i];
         r += src[idx] * w;
         g += src[idx + 1] * w;
         b += src[idx + 2] * w;
         al += src[idx + 3] * w;
       }
-      const tIdx = (oy * dstW + ox) * 4;
+      const tIdx = tRowBase + ox * 4;
       tmp[tIdx] = r / wsum;
       tmp[tIdx + 1] = g / wsum;
       tmp[tIdx + 2] = b / wsum;
       tmp[tIdx + 3] = al / wsum;
     }
   }
-  // Vertical pass: dstW x srcH -> dstW x dstH
+  // Vertical pass: dstW x srcH -> dstW x dstH (UNCHANGED — already ox-inner,
+  // which is cache-friendly since `tmp`/`out` are both row-major with `ox`
+  // the fastest-varying index; see dashboardlogic.md for why only the
+  // horizontal pass needed reordering).
   const scaleY = dstH / srcH;
   const filterScaleY = Math.max(1, 1 / scaleY);
   const out = new Uint8ClampedArray(dstW * dstH * 4);
@@ -11526,14 +12153,24 @@ function _lanczosResize(srcCanvas, dstW, dstH, a) {
 // ~34-megapixel/600 DPI danger zone profiled during this fix (see dashboardlogic.md
 // 2026-08-17 entry for full render/OCR timing at 2.5x and 4.0x).
 const OCR_SUPERSAMPLE_FACTOR = 1.6;
-async function _renderPageHQ(pg, targetScale) {
+// FIX (b35c9b09, 2026-08-31, Step 1 instrumentation): optional 3rd arg `_timing`
+// (a plain object, mutated in place) — when provided, splits this function's
+// wall time into `.decodeMs` (the pdf.js page.render() call — CCITT/JBIG2 JS
+// decode of every embedded image strip PLUS rasterizing to the supersampled
+// canvas) and `.resizeMs` (the from-scratch Lanczos-3 downsample below), so
+// the two costs bundled into the old single `renderMs` figure (see the
+// per-pass logging call sites) are never conflated again. Purely additive —
+// omitting `_timing` reproduces the prior behavior exactly.
+async function _renderPageHQ(pg, targetScale, _timing) {
   const superScale = targetScale * OCR_SUPERSAMPLE_FACTOR;
   const vpHi = pg.getViewport({ scale: superScale });
   const rawCanvas = document.createElement('canvas');
   rawCanvas.width = Math.max(1, Math.round(vpHi.width));
   rawCanvas.height = Math.max(1, Math.round(vpHi.height));
   const rawCtx = rawCanvas.getContext('2d');
+  const _decodeT0 = performance.now();
   await pg.render({ canvasContext: rawCtx, viewport: vpHi }).promise;
+  if (_timing) _timing.decodeMs = Math.round(performance.now() - _decodeT0);
   const targetVp = pg.getViewport({ scale: targetScale });
   const dstW = Math.max(1, Math.round(targetVp.width));
   const dstH = Math.max(1, Math.round(targetVp.height));
@@ -11543,6 +12180,7 @@ async function _renderPageHQ(pg, targetScale) {
   // difference. Falls back to the previous drawImage approach if anything throws
   // (e.g. a future browser blocks large ImageData reads) so a resize failure degrades
   // gracefully rather than breaking OCR entirely.
+  const _resizeT0 = performance.now();
   let outCanvas;
   try {
     outCanvas = _lanczosResize(rawCanvas, dstW, dstH, 3);
@@ -11555,6 +12193,7 @@ async function _renderPageHQ(pg, targetScale) {
     outCtx.imageSmoothingQuality = 'high';
     outCtx.drawImage(rawCanvas, 0, 0, rawCanvas.width, rawCanvas.height, 0, 0, dstW, dstH);
   }
+  if (_timing) _timing.resizeMs = Math.round(performance.now() - _resizeT0);
   // Release the intermediate canvas's backing store immediately — only outCanvas is kept.
   rawCanvas.width = 0;
   rawCanvas.height = 0;
@@ -11587,7 +12226,44 @@ function _withTimeout(promise, ms, label) {
 const OCR_TIMEOUT_MS = 90000;
 // Wall-clock cap across ALL pages/passes for one OCR phase — prevents an
 // unbounded worst case (many pages x many passes) from hanging forever.
-const OCR_TOTAL_BUDGET_MS = 4 * 60 * 1000; // 4 min
+//
+// FIX (b35c9b09, 2026-08-31) — throughput regression measured on TWO real
+// multi-page scans (headless, real Tesseract + real pdfjs-dist, no browser;
+// see dashboardlogic.md 2026-08-31 for the full harness output):
+//   - "May 2026 Electric Bills - RES, HS, MS.pdf" (6 pages, clean Evergy
+//     layout): every page early-exits after 2 primary passes (2.5x+3.5x,
+//     score>=10) — ~110s/page average including decode.
+//   - "SKM_C551i26050610570.pdf" (10 pages, harder scan): pages routinely
+//     never reach the score>=10 early-exit and run the FULL 6 primary + 3
+//     retry passes — measured ~390s/page (~43s/pass average across zoom
+//     levels) for a complete cascade.
+// ROOT CAUSE (confirmed, not the b79d235 escalation theory — that fired 0
+// times in these measurements): a single per-FILE clock
+// (OCR_TOTAL_BUDGET_MS) was spent in page order with NO per-page ceiling,
+// so early pages' full escalation could exhaust the whole clock before a
+// later page's outer-loop iteration ever started — the outer loop's own
+// budget check (a few lines below) then breaks the ENTIRE loop, so every
+// remaining page is marked 'skipped-budget' having NEVER been attempted,
+// silently dropping whole bills. Two independent, PAIRED fixes:
+//   1. Per-page fair-share division (search "Per-page budget (b35c9b09
+//      fix" below) bounds how much of the remaining clock any ONE page's
+//      own passes/retries/refinement can spend, so a hard page can no
+//      longer starve the pages after it — every OCR-needed page is
+//      GUARANTEED at least one real pass (2.5x) before its own budget can
+//      trip, because the very first per-page check always sees ~0ms
+//      elapsed for that page.
+//   2. The total budget is no longer one fixed number picked without
+//      measurement — it now SCALES with how many pages actually need OCR
+//      (OCR_PER_PAGE_ALLOWANCE_MS below), so a routine ~12-page file gets
+//      proportionally more time than a 3-page one, capped by a hard,
+//      page-count-independent ceiling (OCR_ABSOLUTE_CEILING_MS) so a
+//      pathological 67-page scan still terminates in a bounded time instead
+//      of scaling the wait to hours. See the assignment inside
+//      extractPDFText (search "OCR_TOTAL_BUDGET_MS =") for where the two are
+//      combined once the OCR-needed page count is known.
+const OCR_PER_PAGE_ALLOWANCE_MS = 120 * 1000; // ~2-3 full passes at this project's measured ~43-110s/pass
+const OCR_ABSOLUTE_CEILING_MS = 20 * 60 * 1000; // hard cap regardless of page count — bounds the 67-page worst case
+let OCR_TOTAL_BUDGET_MS = OCR_PER_PAGE_ALLOWANCE_MS; // reassigned per-file below once ocrNeeded.length is known
 // Helper to create a fresh worker with correct params.
 // Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
 const _createOCRWorker = async (loggerCb) => {
@@ -11764,38 +12440,72 @@ async function extractPDFText(ab, statusCb) {
             (ocrNeeded.length > 1 ? 's' : '') +
             ' — loading OCR engine...',
         );
-      let worker = null;
+      const _ocrLogger = (m) => {
+        if (statusCb) {
+          if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
+          else if (m.status === 'loading language traineddata') statusCb('Loading English language data...');
+        }
+      };
+      // ── Worker pool (fix/ocr-parallel-workers, 2026-08-31) ────────────────
+      // Sequential OCR (one shared `worker` processing every page's full pass
+      // cascade one page at a time) measured 175s for a 5-page bill and 692s
+      // for a 10-page bill in a real browser — ~69s/page x page count. All
+      // pages read correctly (the b35c9b09 page-skip bug is already fixed);
+      // the remaining cost is pure serialization. This creates a small pool
+      // of independent Tesseract workers so multiple pages OCR concurrently.
+      // Capped by hardwareConcurrency-1, the actual page count, and a hard
+      // ceiling of 6 so a huge multi-page file can't spawn unbounded workers.
+      // Nothing about the PASS CASCADE, scoring, early-exit thresholds,
+      // resize algorithm, or budget MATH changes here — only how many pages
+      // run their (unchanged) cascade at the same time. See _processOnePage
+      // and the pool scheduler below for the rest of this fix.
+      const _poolSize = Math.max(
+        1,
+        Math.min(
+          (typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency - 1 : 3) ||
+            1,
+          ocrNeeded.length,
+          6,
+        ),
+      );
+      const workerBoxes = []; // each slot: { current: TesseractWorker } — mutable box so a
+      // mid-page timeout replacement (see recognizeWithTimeout's _replacementWorker)
+      // can swap this slot's worker without disturbing any other slot.
       try {
-        // Dictionary params (load_system_dawg/load_freq_dawg) are init-only and MUST be passed
-        // in createWorker's 4th arg. Setting them via setParameters is silently ignored by Tesseract.
-        worker = await Tesseract.createWorker(
-          'eng',
-          1,
-          {
-            logger: (m) => {
-              if (statusCb) {
-                if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
-                else if (m.status === 'loading language traineddata') statusCb('Loading English language data...');
-              }
+        for (let w = 0; w < _poolSize; w++) {
+          // Dictionary params (load_system_dawg/load_freq_dawg) are init-only and MUST be passed
+          // in createWorker's 4th arg. Setting them via setParameters is silently ignored by Tesseract.
+          const inst = await Tesseract.createWorker(
+            'eng',
+            1,
+            { logger: _ocrLogger },
+            {
+              load_system_dawg: '0',
+              load_freq_dawg: '0',
             },
-          },
-          {
-            load_system_dawg: '0',
-            load_freq_dawg: '0',
-          },
-        );
-        await worker.setParameters({
-          preserve_interword_spaces: '1',
-          user_defined_dpi: '300',
-        });
+          );
+          await inst.setParameters({
+            preserve_interword_spaces: '1',
+            user_defined_dpi: '300',
+          });
+          workerBoxes.push({ current: inst });
+        }
       } catch (workerErr) {
         if (statusCb) statusCb('OCR engine failed to load: ' + workerErr.message);
+        // Tear down any pool workers that DID start before the failure.
+        for (const box of workerBoxes) {
+          if (box.current) {
+            try {
+              await box.current.terminate();
+            } catch (_) {}
+          }
+        }
         // GATE A: every page still queued for OCR never got a chance — record it.
         _finalizePageCoverage();
         // Return whatever native text we got
         return pageTexts.join('\n').trim().length > 50 ? pageTexts.join('\n') : null;
       }
-      // F5: ensure the worker WASM heap is freed even if the OCR loop throws
+      // F5: ensure every pool worker's WASM heap is freed even if the OCR loop throws
       try {
         // Provider-aware scoring: per-provider signal sets + generic bonuses.
         // Evergy signals are the original BILL_SIGNALS verbatim — behavior unchanged.
@@ -11965,6 +12675,13 @@ async function extractPDFText(ab, statusCb) {
         // `let _ocrStartTime` declaration above extractPDFText for why this is a
         // reassignment, not a fresh const).
         _ocrStartTime = performance.now();
+        // FIX (b35c9b09): scale the total budget to how many pages actually need
+        // OCR, capped by the absolute ceiling — see the OCR_PER_PAGE_ALLOWANCE_MS/
+        // OCR_ABSOLUTE_CEILING_MS doc comment above for the measured justification.
+        OCR_TOTAL_BUDGET_MS = Math.min(
+          OCR_ABSOLUTE_CEILING_MS,
+          OCR_PER_PAGE_ALLOWANCE_MS * Math.max(1, ocrNeeded.length),
+        );
         let _ocrBudgetExceeded = false;
         // Hoisted above the loop (was previously declared right before its one use at
         // the bottom of the per-page block) so GATE A can stamp _pageCoverage at every
@@ -12077,16 +12794,102 @@ async function extractPDFText(ab, statusCb) {
           }
           return patched;
         };
-        for (let idx = 0; idx < ocrNeeded.length; idx++) {
-          if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
+        // fix/ocr-parallel-workers: this used to be the body of a strictly
+        // sequential `for (idx of ocrNeeded)` loop driven by one shared
+        // `worker`. It is now a per-page unit of work handed a dedicated
+        // workerBox ({ current: TesseractWorker }) from the pool above so
+        // multiple pages can run their OCR cascades concurrently — see the
+        // pool scheduler right after this function's closing `};` below.
+        // idx is still the page's DEQUEUE order (0..ocrNeeded.length-1,
+        // assigned once per page in the same order the old loop would have
+        // reached it), so the per-page fair-share budget math a few lines
+        // down is completely unchanged; it now just measures real
+        // concurrent wall time instead of serial wall time.
+        const _processOnePage = async (pgNum, idx, workerBox) => {
+          if (window._pdfAbort) return; // Bug #134: honour cancel inside OCR page loop
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
             _ocrBudgetExceeded = true;
           }
-          if (_ocrBudgetExceeded) break;
-          const pgNum = ocrNeeded[idx];
+          if (_ocrBudgetExceeded) return;
           let bestText = '',
             bestScore = 0;
           allPassTexts[pgNum] = [];
+          // ── Per-page render cache (b35c9b09 Step 2 fix, 2026-08-31) ────────
+          // Step 1 measured (headless, real Tesseract + real pdfjs-dist, no
+          // browser) that _renderPageHQ's cost is ~99% the Lanczos-3 resize,
+          // NOT the pdf.js decode (which pdf.js itself caches internally and
+          // costs ~0.1-5% of total render time regardless of how many times a
+          // page is re-rendered at different scales — see dashboardlogic.md
+          // 2026-08-31 Step 1 entry). Decode-caching therefore buys nothing;
+          // the real, measured waste is calling the EXPENSIVE resize AGAIN
+          // for an IDENTICAL (page, scale) pair: OCR_PASSES intentionally
+          // reuses scale 2.5 and 3.5 twice each (their -psm4 twins differ
+          // only in the Tesseract page-segmentation param, never the image),
+          // and the orientation/binarize refinement checks below both render
+          // at the SAME fixed scale (2.5) primary pass 0 already computed.
+          // This cache eliminates those exact-duplicate renders — it is a
+          // pure redundant-work removal, not a quality or pass-count change:
+          // every OCR pass still gets the identical image it always got,
+          // proven byte-identical against the pre-fix implementation (see
+          // dashboardlogic.md). Scoped fresh to THIS page only, drained via
+          // _releasePageRenderCache() at every exit point of this page's
+          // processing (never leaks across pages, never grows unbounded —
+          // at most one canvas per distinct scale actually used: currently
+          // at most 7 of them: 2.5/3.5/2/3 primary + 1/1.5/4 retry).
+          const _pageRenderCache = new Map();
+          const _renderPageHQCached = async (scale) => {
+            if (_pageRenderCache.has(scale)) return _pageRenderCache.get(scale);
+            const pgForRender = await _withTimeout(
+              pdf.getPage(pgNum),
+              PDFJS_AWAIT_TIMEOUT_MS,
+              'getPage(' + pgNum + ')',
+            );
+            const canvasForRender = await _withTimeout(
+              _renderPageHQ(pgForRender, scale),
+              PDFJS_AWAIT_TIMEOUT_MS,
+              'render(' + pgNum + ')',
+            );
+            if (pgForRender && pgForRender.cleanup) pgForRender.cleanup();
+            _pageRenderCache.set(scale, canvasForRender);
+            return canvasForRender;
+          };
+          const _releasePageRenderCache = () => {
+            for (const c of _pageRenderCache.values()) {
+              if (c) {
+                c.width = 0;
+                c.height = 0;
+              }
+            }
+            _pageRenderCache.clear();
+          };
+          // ── Per-page budget (b35c9b09 fix, 2026-08-31) ─────────────────────
+          // OCR_TOTAL_BUDGET_MS is a single per-FILE clock shared across every
+          // OCR-needed page, consumed in page order. Without a per-page bound,
+          // an early page that legitimately needs many passes (a hard scan, or
+          // the _pageRatesDisagree escalation below) can spend most/all of
+          // that shared clock, starving every LATER page of any attempt at
+          // all — confirmed on both "May 2026 Electric Bills - RES, HS,
+          // MS.pdf" (item b35c9b09) and "SKM_C551i26050610570.pdf" (10 of the
+          // file's pages routinely need the full 6-primary + 3-retry cascade;
+          // measured ~390s/page — see the OCR_PER_PAGE_ALLOWANCE_MS doc
+          // comment above). Fix: give each page a fair, shrinking share of
+          // whatever budget remains, computed fresh per page so pages that
+          // finish early hand their unused time to the pages after them —
+          // never a fixed per-page cap that would waste budget on fast pages
+          // while still starving a later slow one. This does NOT touch
+          // OCR_TOTAL_BUDGET_MS itself — it only stops one page's OWN
+          // passes/retries/refinement early so its siblings still get a turn,
+          // exactly the "partial-results policy" already used elsewhere in
+          // this function (keep pages already OCR'd, never throw away
+          // completed work). Because a fresh page's elapsed-time is always
+          // ~0ms the first time this is checked, EVERY OCR-needed page is
+          // guaranteed at least one real pass (2.5x) before its own budget
+          // can trip.
+          const _pageStartTime = performance.now();
+          const _ocrPagesRemaining = Math.max(1, ocrNeeded.length - idx);
+          const _ocrBudgetRemainingMs = Math.max(0, OCR_TOTAL_BUDGET_MS - (performance.now() - _ocrStartTime));
+          const _ocrPageBudgetMs = _ocrBudgetRemainingMs / _ocrPagesRemaining;
+          let _ocrPageBudgetExceeded = false;
           // Set only in the exact moment the ORIGINAL score>=10 early-exit
           // condition is overridden by a rate disagreement (see below). Freezes
           // bestText/bestScore at exactly what the pre-existing code would have
@@ -12106,7 +12909,10 @@ async function extractPDFText(ab, statusCb) {
             if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
               _ocrBudgetExceeded = true;
             }
-            if (_ocrBudgetExceeded) break;
+            if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+              _ocrPageBudgetExceeded = true;
+            }
+            if (_ocrBudgetExceeded || _ocrPageBudgetExceeded) break;
             const cfg = OCR_PASSES[pass];
             if (statusCb)
               statusCb(
@@ -12126,21 +12932,24 @@ async function extractPDFText(ab, statusCb) {
                   cfg.label +
                   ')...',
               );
-            let pg, canvas;
+            let canvas;
             try {
-              pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              // Fix (2026-07-22): _renderPageHQ (see its doc comment above) — a plain
-              // scale-based pg.render() at 2x-4x has pdf.js's own internal smoothing
-              // override disable antialiasing for low-DPI scanned bills, degrading OCR
-              // input quality. Two-step high-quality resize fixes this.
-              canvas = await _withTimeout(
-                _renderPageHQ(pg, cfg.scale),
-                PDFJS_AWAIT_TIMEOUT_MS,
-                'render(' + pgNum + ')',
-              );
+              // FIX (b35c9b09 Step 2, 2026-08-31): reuse an already-rendered
+              // canvas for this exact scale within this page instead of
+              // always re-decoding+re-resizing — see _renderPageHQCached
+              // above. OCR_PASSES intentionally repeats scale 2.5 and 3.5 for
+              // their -psm4 twin passes (same image, different Tesseract PSM
+              // param), so this call is a cache HIT (near-zero renderMs) on
+              // those two passes and a cache MISS (full cost, unchanged from
+              // before) on every distinct scale. Byte-identical OCR input
+              // either way — proven against the pre-fix always-render
+              // behavior (dashboardlogic.md 2026-08-31 Step 2 entry).
+              const _renderT0 = performance.now();
+              canvas = await _renderPageHQCached(cfg.scale);
+              const renderMs = Math.round(performance.now() - _renderT0);
               const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
               const t0 = performance.now();
-              const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
+              const { result: ocrResult } = await recognizeWithTimeout(workerBox.current, canvas, params);
               const text = ocrResult.data.text;
               const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
               const score = scorePage(text);
@@ -12150,6 +12959,7 @@ async function extractPDFText(ab, statusCb) {
                 pass: cfg.label,
                 score: score.toFixed(1),
                 time: elapsed + 's',
+                renderMs,
                 chars: text.length,
               });
               if (score > bestScore || (score === bestScore && text.length > bestText.length)) {
@@ -12162,15 +12972,15 @@ async function extractPDFText(ab, statusCb) {
                 // abort — stop this page's passes immediately rather than falling through
                 // to "log as failed pass, try the next one" (which would keep burning time).
                 if (pageErr._budgetExceeded) _ocrBudgetExceeded = true;
-                if (canvas) {
-                  canvas.width = 0;
-                  canvas.height = 0;
-                }
-                if (pg && pg.cleanup) pg.cleanup();
+                // FIX (b35c9b09 Step 2): `canvas` may be a CACHED canvas shared
+                // with other passes of this same page — never free it here
+                // (that would corrupt a later cache hit). The per-page cache
+                // is the sole owner of canvas lifecycle now; it is drained via
+                // _releasePageRenderCache() at every exit point of this page.
                 break;
               }
               // If timeout killed the worker, swap in the fresh replacement
-              if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
+              if (pageErr._replacementWorker) workerBox.current = pageErr._replacementWorker;
               passScoreLog.push({
                 page: pgNum,
                 pass: cfg.label,
@@ -12181,13 +12991,14 @@ async function extractPDFText(ab, statusCb) {
               });
               if (statusCb) statusCb('OCR failed on page ' + pgNum + ' pass ' + (pass + 1) + ': ' + pageErr.message);
             }
-            // F2: release canvas backing store and PDF page operator list after each pass
-            if (canvas) {
-              canvas.width = 0;
-              canvas.height = 0;
-              canvas = null;
-            }
-            if (pg && pg.cleanup) pg.cleanup();
+            // F2 (superseded by b35c9b09 Step 2's per-page render cache): the
+            // canvas returned above may be SHARED with a later pass (the
+            // -psm4 twin, or the orientation/binarize checks below) — freeing
+            // its backing store here would corrupt that later cache hit.
+            // Lifecycle is now owned entirely by _releasePageRenderCache(),
+            // called at every exit point of this page's processing. Just drop
+            // this pass's local reference.
+            canvas = null;
             // Early exit after pass 0 (2.5x) if this is a cover page — no meter data to gain from more passes
             if (pass === 0 && isCoverPage(bestText)) break;
             // Early exit after pass 1 (3.5x) if 2.5x + 3.5x already hit a strong score
@@ -12243,7 +13054,10 @@ async function extractPDFText(ab, statusCb) {
               if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
                 _ocrBudgetExceeded = true;
               }
-              if (_ocrBudgetExceeded) break;
+              if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+                _ocrPageBudgetExceeded = true;
+              }
+              if (_ocrBudgetExceeded || _ocrPageBudgetExceeded) break;
               const cfg = OCR_RETRY_PASSES[pass];
               if (statusCb)
                 statusCb(
@@ -12259,19 +13073,20 @@ async function extractPDFText(ab, statusCb) {
                     cfg.label +
                     ')...',
                 );
-              let pg, canvas;
+              let canvas;
               try {
-                pg = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-                // Fix (2026-07-22): see _renderPageHQ doc comment above — defeats pdf.js's
-                // own internal smoothing override for low-DPI scanned source pages.
-                canvas = await _withTimeout(
-                  _renderPageHQ(pg, cfg.scale),
-                  PDFJS_AWAIT_TIMEOUT_MS,
-                  'render(' + pgNum + ')',
-                );
+                // FIX (b35c9b09 Step 2): see the primary-pass loop's identical
+                // cache-reuse comment above — retry scales (1x/1.5x/4x) never
+                // overlap with primary scales, so this is normally a cache
+                // MISS here (full cost, unchanged), but still shares the
+                // SAME per-page cache so a later orientation/binarize check
+                // at 2.5x can still hit if primary pass 0 already ran it.
+                const _renderT0 = performance.now();
+                canvas = await _renderPageHQCached(cfg.scale);
+                const renderMs = Math.round(performance.now() - _renderT0);
                 const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm, rotateAuto: true } : { rotateAuto: true };
                 const t0 = performance.now();
-                const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
+                const { result: ocrResult } = await recognizeWithTimeout(workerBox.current, canvas, params);
                 const text = ocrResult.data.text;
                 const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
                 const score = scorePage(text);
@@ -12281,6 +13096,7 @@ async function extractPDFText(ab, statusCb) {
                   pass: cfg.label,
                   score: score.toFixed(1),
                   time: elapsed + 's',
+                  renderMs,
                   chars: text.length,
                 });
                 if (score > bestScore || (score === bestScore && text.length > bestText.length)) {
@@ -12291,14 +13107,11 @@ async function extractPDFText(ab, statusCb) {
                 if (pageErr._aborted || pageErr._budgetExceeded) {
                   // Overshoot fix: same immediate-stop treatment as the primary pass loop.
                   if (pageErr._budgetExceeded) _ocrBudgetExceeded = true;
-                  if (canvas) {
-                    canvas.width = 0;
-                    canvas.height = 0;
-                  }
-                  if (pg && pg.cleanup) pg.cleanup();
+                  // FIX (b35c9b09 Step 2): canvas is cache-owned — see the
+                  // primary pass loop's identical comment above. Do not free.
                   break;
                 }
-                if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
+                if (pageErr._replacementWorker) workerBox.current = pageErr._replacementWorker;
                 passScoreLog.push({
                   page: pgNum,
                   pass: cfg.label,
@@ -12310,13 +13123,9 @@ async function extractPDFText(ab, statusCb) {
                 if (statusCb)
                   statusCb('OCR retry failed on page ' + pgNum + ' (' + cfg.label + '): ' + pageErr.message);
               }
-              // F2: release canvas backing store and PDF page operator list after each retry pass
-              if (canvas) {
-                canvas.width = 0;
-                canvas.height = 0;
-                canvas = null;
-              }
-              if (pg && pg.cleanup) pg.cleanup();
+              // F2 (superseded by b35c9b09 Step 2's per-page render cache):
+              // see the primary pass loop's identical comment above.
+              canvas = null;
             }
           }
           // ── CHANGE 4: 180° upside-down heuristic ──────────────────────────────
@@ -12335,44 +13144,62 @@ async function extractPDFText(ab, statusCb) {
           // a few lines down, would never run). Partial-results policy: keep pages already
           // OCR'd, never throw away work that already succeeded.
           if (window._pdfAbort) {
+            _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
-            break;
+            return;
           }
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
             _ocrBudgetExceeded = true;
           }
           if (_ocrBudgetExceeded) {
+            _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
-            break;
+            return;
           }
-          if (bestScore < ORIENT_SCORE_THRESHOLD) {
-            let pgO, canvasO, canvas180;
+          // Per-page budget (b35c9b09): only skip THIS page's own optional
+          // refinement pass, never the outer page loop — a page using up its
+          // fair share must not stop its siblings from getting theirs.
+          if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+            _ocrPageBudgetExceeded = true;
+          }
+          if (bestScore < ORIENT_SCORE_THRESHOLD && !_ocrPageBudgetExceeded) {
+            let canvas180;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
-              pgO = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              // Fix (2026-07-22): see _renderPageHQ doc comment above.
-              canvasO = await _withTimeout(_renderPageHQ(pgO, 2.5), PDFJS_AWAIT_TIMEOUT_MS, 'render(' + pgNum + ')');
+              // FIX (b35c9b09 Step 2): fixed scale 2.5 — a cache HIT whenever
+              // primary pass 0 (2.5x) already ran for this page (the normal
+              // case; orientation only fires on a very low bestScore, but the
+              // scale is identical either way). canvasO is now a page-cache-
+              // owned reference — never freed here, only via
+              // _releasePageRenderCache() at page exit.
+              const canvasO = await _renderPageHQCached(2.5);
               // Crop top 20% strip for a fast orientation probe
               const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
               const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
               canvas180 = rotateCanvas180(canvasO);
               // Quick probe: recognize top strip at both orientations
               const [probe0, probe180] = await Promise.all([
-                recognizeWithTimeout(worker, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
-                  result: { data: { text: '' } },
-                })),
-                recognizeWithTimeout(worker, canvas180, { rotateAuto: false, rectangle: cropRect }).catch(() => ({
-                  result: { data: { text: '' } },
-                })),
+                recognizeWithTimeout(workerBox.current, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(
+                  () => ({
+                    result: { data: { text: '' } },
+                  }),
+                ),
+                recognizeWithTimeout(workerBox.current, canvas180, { rotateAuto: false, rectangle: cropRect }).catch(
+                  () => ({
+                    result: { data: { text: '' } },
+                  }),
+                ),
               ]);
               const sig0 = _countOcrSignals(probe0.result.data.text);
               const sig180 = _countOcrSignals(probe180.result.data.text);
               if (sig180 > sig0 * 1.5 + 3) {
                 // 180° clearly wins — run full OCR on the rotated canvas
                 if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — rotating 180° and re-OCR...');
-                const { result: rotResult } = await recognizeWithTimeout(worker, canvas180, { rotateAuto: true });
+                const { result: rotResult } = await recognizeWithTimeout(workerBox.current, canvas180, {
+                  rotateAuto: true,
+                });
                 const rotText = rotResult.data.text;
                 const rotScore = scorePage(rotText);
                 allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-rot180', text: rotText, score: rotScore });
@@ -12391,16 +13218,14 @@ async function extractPDFText(ab, statusCb) {
             } catch (_orientErr) {
               /* orientation probe failed — continue with existing best */
             } finally {
-              // F2: release orientation canvases and PDF page after all orient OCR is done
-              if (canvasO) {
-                canvasO.width = 0;
-                canvasO.height = 0;
-              }
+              // F2 (superseded by b35c9b09 Step 2 for canvasO — it is cache-
+              // owned now, see above): canvas180 is a NEW canvas derived from
+              // canvasO via rotateCanvas180() each time, never cached — still
+              // freed immediately here exactly as before.
               if (canvas180) {
                 canvas180.width = 0;
                 canvas180.height = 0;
               }
-              if (pgO && pgO.cleanup) pgO.cleanup();
             }
           }
           // ── CHANGE 5: Otsu binarization triggered pass ────────────────────────
@@ -12411,27 +13236,37 @@ async function extractPDFText(ab, statusCb) {
           // Bug #134 / budget: same missing-checkpoint fix as the orientation block above,
           // including committing bestText-so-far before breaking (same reasoning).
           if (window._pdfAbort) {
+            _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
-            break;
+            return;
           }
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
             _ocrBudgetExceeded = true;
           }
           if (_ocrBudgetExceeded) {
+            _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
-            break;
+            return;
           }
-          if (bestScore < BINARIZE_SCORE_THRESHOLD) {
-            let pgB, canvasB, binCanvas;
+          // Per-page budget (b35c9b09): see the orientation gate above — same
+          // page-scoped skip, never the outer page loop.
+          if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+            _ocrPageBudgetExceeded = true;
+          }
+          if (bestScore < BINARIZE_SCORE_THRESHOLD && !_ocrPageBudgetExceeded) {
+            let binCanvas;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — binarize pass...');
-              pgB = await _withTimeout(pdf.getPage(pgNum), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + pgNum + ')');
-              // Fix (2026-07-22): see _renderPageHQ doc comment above.
-              canvasB = await _withTimeout(_renderPageHQ(pgB, 2.5), PDFJS_AWAIT_TIMEOUT_MS, 'render(' + pgNum + ')');
+              // FIX (b35c9b09 Step 2): fixed scale 2.5 — cache HIT whenever
+              // primary pass 0 or the orientation check already rendered it
+              // for this page. canvasB is cache-owned; never freed here.
+              const canvasB = await _renderPageHQCached(2.5);
               binCanvas = binarizeCanvas(canvasB);
-              const { result: binResult } = await recognizeWithTimeout(worker, binCanvas, { rotateAuto: true });
+              const { result: binResult } = await recognizeWithTimeout(workerBox.current, binCanvas, {
+                rotateAuto: true,
+              });
               const binText = binResult.data.text;
               const binScore = scorePage(binText);
               allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-otsu', text: binText, score: binScore });
@@ -12449,16 +13284,14 @@ async function extractPDFText(ab, statusCb) {
             } catch (_binErr) {
               /* binarize pass failed — continue with existing best */
             } finally {
-              // F2: release binarize canvases and PDF page after OCR is done
-              if (canvasB) {
-                canvasB.width = 0;
-                canvasB.height = 0;
-              }
+              // F2 (superseded by b35c9b09 Step 2 for canvasB — cache-owned,
+              // see above): binCanvas is a NEW canvas derived from canvasB via
+              // binarizeCanvas() each time, never cached — still freed
+              // immediately here exactly as before.
               if (binCanvas) {
                 binCanvas.width = 0;
                 binCanvas.height = 0;
               }
-              if (pgB && pgB.cleanup) pgB.cleanup();
             }
           }
           // ── end triggered passes ───────────────────────────────────────────────
@@ -12473,6 +13306,7 @@ async function extractPDFText(ab, statusCb) {
             _earlyExitOverrideSnapshot !== null ? _earlyExitOverrideSnapshot : bestText,
             allPassTexts[pgNum],
           );
+          _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache — normal end-of-page path
           pageTexts[pgNum - 1] = bestText;
           _stampCoverage(pgNum, bestText); // GATE A — normal end-of-iteration commit
           // ── Empty-page detection: if ALL passes returned near-empty text, flag it ──
@@ -12485,7 +13319,33 @@ async function extractPDFText(ab, statusCb) {
             if (!window._pdfOcrEmptyPages) window._pdfOcrEmptyPages = [];
             window._pdfOcrEmptyPages.push(pgNum);
           }
-        }
+        };
+        // ── Pool scheduler (fix/ocr-parallel-workers) ───────────────────────
+        // Standard bounded-worker-pool pattern: each pool slot repeatedly
+        // pulls the NEXT not-yet-started page off the shared FIFO queue and
+        // runs _processOnePage to completion before pulling another — NOT a
+        // fixed 1:1 page-to-worker assignment (ocrNeeded.length can exceed
+        // _poolSize). `_poolCursor` is only ever read+incremented with no
+        // `await` between the two, so — same as every other shared counter
+        // in this function (_ocrBudgetExceeded, allPassTexts, passScoreLog,
+        // _pageCoverage) — there is no race despite multiple concurrent
+        // async callers: JS never preempts between two synchronous
+        // statements. Page COMPLETION order can now differ from page NUMBER
+        // order (a hard page keeps its slot busy while easier pages
+        // elsewhere finish first) — this is fine and expected, because
+        // every write _processOnePage makes (pageTexts[pgNum-1],
+        // _pageCoverage[pgNum-1] via _stampCoverage) is already indexed by
+        // page number, never by loop/array position.
+        let _poolCursor = 0;
+        const _runPoolSlot = async (workerBox) => {
+          for (;;) {
+            if (window._pdfAbort || _ocrBudgetExceeded) return;
+            const idx = _poolCursor++;
+            if (idx >= ocrNeeded.length) return;
+            await _processOnePage(ocrNeeded[idx], idx, workerBox);
+          }
+        };
+        await Promise.all(workerBoxes.map(_runPoolSlot));
         // Loud-failure signal (subtask 4): consumed once by the caller (processPDF /
         // _extractSingleFileForQueue), same convention as window._pdfOcrEmptyPages.
         window._pdfOcrBudgetExceeded = _ocrBudgetExceeded
@@ -12496,12 +13356,14 @@ async function extractPDFText(ab, statusCb) {
         // Save pass score log for debug output
         window._pdfPassScores = passScoreLog;
       } finally {
-        // F5: terminate worker even if an error was thrown mid-loop
-        if (worker) {
-          try {
-            await worker.terminate();
-          } catch (_) {}
-          worker = null;
+        // F5: terminate every pool worker even if an error was thrown mid-loop
+        for (const box of workerBoxes) {
+          if (box.current) {
+            try {
+              await box.current.terminate();
+            } catch (_) {}
+            box.current = null;
+          }
         }
       }
     }
@@ -14333,29 +15195,40 @@ function renderMultiBillUI(bills, box) {
       legendParts.push(
         `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#f43f5e;display:inline-block"></span><span style="color:var(--text2)">Conflict (manual resolution): ${conflictCount}</span></span>`,
       );
+    // 2026-09-02 consolidation: the banner now shows the informational summary +
+    // legend only. The Skip All / Overwrite All / Merge All ACTIONS that used to
+    // live here moved to the single bottom save bar (#pdfBottomSaveBar, built
+    // below) — see dashboardlogic.md for why (Matt's directive: exactly ONE save
+    // location, at the bottom, with Save All / Overwrite All / Merge All).
     dupBannerHtml = `<div style="padding:8px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:var(--amber)">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:${legendParts.length ? '6px' : '0'}">
           <span style="flex:1;min-width:0"><strong>&#9888; Duplicate Bills Found &mdash; ${dupIndices.length} of ${bills.length} already exist</strong> &mdash; ${parts.join(', ')}</span>
-          <div style="display:flex;gap:6px;flex-shrink:0">
-            <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Skip All</button>
-            <button onclick="_dupBulkAction('overwrite')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer" title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>
-            <button onclick="_dupBulkAction('merge')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>
-          </div>
         </div>
         ${legendParts.length ? `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;padding-top:4px;border-top:1px solid rgba(245,158,11,.2)">${legendParts.join('')}</div>` : ''}
       </div>`;
   }
-  // Move "Save All" button + per-commodity buttons into the extraction method badge area.
-  // fix ede70be1 (3e) — suppressed for a multi-account file: showMultiBuildingReviewPanel
-  // is the SINGLE save source there (it has its own per-row + bulk Save All), so this
-  // second "Save All Periods" row would be a duplicate/confusing save control for the
-  // same extraction. The per-pill "Save" quick action above is suppressed the same way.
+  // extractMethodBadge (top-right of Extraction Output) is used by OTHER render
+  // paths (single-bill display, "loaded from saved records") for a small method
+  // label — but for this multi-bill review it must stay empty/hidden so there is
+  // never a second save control up top. All save actions for THIS view live in
+  // the single bottom bar (#pdfBottomSaveBar) below instead.
   const badgeEl = document.getElementById('extractMethodBadge');
-  if (badgeEl && _isMultiAcctFile()) {
+  if (badgeEl) {
     badgeEl.style.display = 'none';
     badgeEl.innerHTML = '';
-  } else if (badgeEl) {
-    badgeEl.style.display = 'inline-block';
+  }
+  // ── Single bottom save bar (2026-09-02 consolidation) ──────────────────────
+  // fix ede70be1 (3e) — suppressed for a multi-account file: showMultiBuildingReviewPanel
+  // is the SINGLE save source there (it has its own per-row + bulk Save All/Overwrite
+  // All/Merge All, see showMultiBuildingReviewPanel), so this bar would be a duplicate/
+  // confusing second save control for the same extraction. The per-pill "Save" quick
+  // action above is suppressed the same way.
+  const bottomBarEl = document.getElementById('pdfBottomSaveBar');
+  if (bottomBarEl && _isMultiAcctFile()) {
+    bottomBarEl.style.display = 'none';
+    bottomBarEl.innerHTML = '';
+  } else if (bottomBarEl) {
+    bottomBarEl.style.display = 'block';
     const commodities = {};
     bills.forEach((b, i) => {
       const c = b.Commodity || 'Other';
@@ -14363,6 +15236,8 @@ function renderMultiBillUI(bills, box) {
     });
     const commKeys = Object.keys(commodities);
     let btns = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
+    btns += `<button onclick="_dupBulkAction('overwrite')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>`;
+    btns += `<button onclick="_dupBulkAction('merge')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>`;
     if (commKeys.length > 1) {
       btns += commKeys
         .map(
@@ -14386,7 +15261,7 @@ function renderMultiBillUI(bills, box) {
         `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
         `</div>`;
     }
-    badgeEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
+    bottomBarEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
   }
   // The Month / Billing Periods header + duplicate banner are written to the frozen
   // #pdfPillsHdr (outside the scroll area) so they stay pinned at the top. The pills
@@ -14744,6 +15619,10 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
         saved++;
         status = 'saved';
         bills[i]._batchSaved = true;
+        // Coordinate saved state across the two review UIs (2026-09-02 fix —
+        // see _mbSaveOneBill for the matching sync in the other direction).
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = dest;
       } else {
         failed++;
         status = 'failed';
@@ -14761,6 +15640,8 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
         saved++;
         status = 'saved';
         bills[i]._batchSaved = true;
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = destination;
       } else {
         failed++;
         status = 'failed';
@@ -15105,7 +15986,12 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     // if the promoted bill's period collides with an existing bill on the guessed
     // meter. On a non-identity match, leave the bill in Saved Bills — that is
     // already the safe review location, no extra action needed.
-    if (meterMatch && meterMatch.matchType === 'identity') {
+    //
+    // Requirement 5 (2026-09-02): also promote on a 'commodity' match — same
+    // unambiguous building+commodity fallback as the other two gates. If
+    // _saveBillToMatchedMeter can't reconcile it, dest is null and the record
+    // simply stays in Saved Bills, same as today.
+    if (meterMatch && (meterMatch.matchType === 'identity' || meterMatch.matchType === 'commodity')) {
       const dest = _saveBillToMatchedMeter(sb, meterMatch);
       if (dest) {
         const removeIdx = pdfBills.indexOf(sb);
@@ -16296,6 +17182,34 @@ function renderPDFFields(parsed, warnings) {
       `<span style="color:#f87171;padding:0 6px">(off by $${Math.abs(_currentSumDiff).toFixed(2)})</span>` +
       `</div>`
     : '';
+  // Item f776f47b: name the SPECIFIC offending line(s) instead of leaving the
+  // user to guess which of the summed fields is wrong. _part_mismatches_<field>
+  // is written by _postExtractionVerify's provider-agnostic per-part validator
+  // (app/bill-analysis.js, "PER-PART CHARGE VALIDATION") for any field whose
+  // qty × rate doesn't reconcile to the OCR'd charge on that line — read it
+  // here for every field in this bill's charge-sum list and render one line
+  // per bad part, e.g. "ECA Charge: expected $2,393.25 (116,233.536 kWh ×
+  // $0.02059) — OCR read $2,363.25 (off $30.00)". Detection-only — never
+  // auto-corrects; which of qty/rate/charge is wrong is ambiguous.
+  const _partMismatchLines = _CHARGE_SUM_KEYS_RPF.flatMap((f) => {
+    const badParts = parsed['_part_mismatches_' + f];
+    if (!badParts || !badParts.length) return [];
+    const label = LABELS[f] || f;
+    return badParts.map((p) => {
+      const qtyStr = p.qty.toLocaleString('en-US', { maximumFractionDigits: 3 });
+      const unitStr = p.unit || '';
+      return (
+        `<div style="margin-top:4px">` +
+        `<strong style="color:#fecaca">${label}:</strong> expected $${p.computed.toFixed(2)} ` +
+        `(${qtyStr} ${unitStr} &times; $${p.rate.toFixed(5)}) &mdash; OCR read $${p.ocrCharge.toFixed(2)} ` +
+        `(off $${p.diff.toFixed(2)})` +
+        `</div>`
+      );
+    });
+  });
+  const _partMismatchHtml = _partMismatchLines.length
+    ? `<div style="font-size:12px;font-family:var(--mono);margin-top:8px;line-height:1.6;color:#fca5a5;border-top:1px solid rgba(239,68,68,.35);padding-top:6px">${_partMismatchLines.join('')}</div>`
+    : '';
   const sumMismatchHtml = hasCurrentSumMismatch
     ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
         <span style="font-size:26px;line-height:1">&#9940;</span>
@@ -16303,6 +17217,7 @@ function renderPDFFields(parsed, warnings) {
           <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">SUM MISMATCH &mdash; $${Math.abs(_currentSumDiff).toFixed(2)} ${_currentSumDiff > 0 ? 'OVER' : 'UNDER'} Total Current Charges</div>
           <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Charge sum is $${_currentChargeSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} but the bill total is $${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.${_labelsMissing ? ' Blank charges: <strong>' + _labelsMissing + '</strong>.' : ''} Check every field below against the source PDF.</div>
           ${_sumMathLine}
+          ${_partMismatchHtml}
         </div>
       </div>`
     : '';
@@ -17656,7 +18571,7 @@ function confirmManualAssign() {
 // Called when _saveSinglePDFBill cannot find a meter match but the bill has
 // enough identity information (AccountNumber or MeterNumber) to create one.
 // Returns { bldg, meter } on success, or null if creation was skipped.
-function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
+function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   if (!projId) return null;
   const acctNum = extracted.AccountNumber || '';
   const meterNum = extracted.MeterNumber || '';
@@ -17698,9 +18613,19 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
 
   // Step 2: Find the best building match by service address similarity (threshold 0.60).
   // If no building matches, find or create a single "Unmatched Bills" sentinel building.
+  // b-46a984a0: when the caller (multi-building panel "+ New meter") explicitly
+  // chose an existing building, create the new meter ON that building instead
+  // of the address-guess/sentinel path below. Existing single-bill callers
+  // pass no 4th arg (undefined) -> unchanged behavior.
   let targetBldg = null;
+  if (preferBldgId) {
+    targetBldg =
+      udProj.buildings.find(function (b) {
+        return String(b.id) === String(preferBldgId);
+      }) || null;
+  }
   const svcAddr = extracted.ServiceAddress || '';
-  if (svcAddr) {
+  if (!targetBldg && svcAddr) {
     let bestScore = 0;
     let bestBldg = null;
     for (const b of udProj.buildings) {
@@ -18043,32 +18968,35 @@ async function _saveSinglePDFBill(extracted, projId) {
     if (proj) {
       const udProj = getUDProj(proj.id);
       const billComm = (extracted.Commodity || '').toLowerCase();
-      // First try: match by account or meter number (most precise)
+      // First try: match by account or meter number (most precise).
+      // Fix 3 (item 63e43cab, ballfields-match-gates 2026-08-31): this used to be
+      // a hand-duplicated first-match-wins loop over udProj.buildings/meters that
+      // never called the shared findMeterMatch()/_pickIdentityCandidate()
+      // disambiguation, so a bill on a shared Evergy account with more than one
+      // physical meter (e.g. Louisburg High School + its Ball Fields meter, both
+      // account 2885731561) silently landed on whichever meter the loop happened
+      // to reach first, with zero address disambiguation. Not latent anymore now
+      // that a real 2nd same-account meter exists. Routed through the SAME shared
+      // matcher every other save path already uses (saveQueuedBills,
+      // confirmMultiBuildingSave) so it inherits Fix 2's verbosity-unbiased
+      // address scoring (DRY — one matcher, not two). Scoped to an
+      // 'identity'-type result within the SELECTED project only: this dropdown
+      // lets the user pin a specific project, so a cross-project identity
+      // coincidence must never silently move the bill somewhere the user didn't
+      // choose — that case falls through to the existing "second try"/auto-create
+      // logic below, exactly as an unmatched account did before this fix.
       const acctClean = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
       const meterClean = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
       let matched = false;
       let targetMeter = null;
       let targetBldg = null;
       if (acctClean || meterClean) {
-        for (const b of udProj.buildings || []) {
-          for (const m of b.meters || []) {
-            const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
-            const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-            if (_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) {
-              const mComm = (m.commodity || '').toLowerCase();
-              if (billComm && mComm && billComm === mComm) {
-                targetMeter = m;
-                targetBldg = b;
-                matched = true;
-                break;
-              }
-              if (!targetMeter) {
-                targetMeter = m;
-                targetBldg = b;
-              }
-            }
-          }
-          if (matched) break;
+        const _fm = findMeterMatch(extracted);
+        if (_fm && _fm.matchType === 'identity' && _fm.projId === proj.id && _fm.meter && _fm.bldg) {
+          targetMeter = _fm.meter;
+          targetBldg = _fm.bldg;
+          const mComm = (targetMeter.commodity || '').toLowerCase();
+          matched = !!(billComm && mComm && billComm === mComm);
         }
         if (targetMeter && !matched) {
           let mComm = (targetMeter.commodity || '').toLowerCase();
