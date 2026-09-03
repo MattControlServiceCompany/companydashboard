@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.03.796',
+    date: '2026-09-03',
+    title: 'Bill Import: one save bar, and Save All no longer skips bills',
+    items: [
+      {
+        type: 'feature',
+        text: "Bill Import: the save controls are now one bar at the bottom of the review screen, with Save All, Overwrite All, and Merge All in one place instead of scattered per-bill buttons.",
+      },
+      {
+        type: 'fix',
+        text: "Bill Import: Save All and Overwrite All now save every bill in the batch. Previously some bills could be silently skipped without any warning.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.01.795',
     date: '2026-09-01',
     title: "Bill import: never files a bill to the wrong utility's meter",
