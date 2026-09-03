@@ -6158,8 +6158,15 @@ function showMultiBuildingReviewPanel() {
     '</tbody>',
     '</table>',
     '</div>',
-    '<div style="display:flex;gap:8px;margin-top:12px;">',
-    '<button class="btn btn-primary btn-sm" id="mbSaveAllBtn" onclick="confirmMultiBuildingSave()" disabled>Save All</button>',
+    // 2026-09-02 consolidation: this is the ONE bottom save location for a
+    // multi-account file — Save All / Overwrite All / Merge All, same trio the
+    // single-account bottom bar (#pdfBottomSaveBar) shows. All three route
+    // through confirmMultiBuildingSave(action) -> _mbSaveOneBill(bi, action);
+    // see there for what each action does to an existing period match.
+    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">',
+    '<button class="btn btn-primary btn-sm" id="mbSaveAllBtn" onclick="confirmMultiBuildingSave(\'save\')" disabled>Save All</button>',
+    '<button class="btn btn-ghost btn-sm" id="mbOverwriteAllBtn" onclick="confirmMultiBuildingSave(\'overwrite\')" disabled title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>',
+    '<button class="btn btn-ghost btn-sm" id="mbMergeAllBtn" onclick="confirmMultiBuildingSave(\'merge\')" disabled title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>',
     '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'pdfMultiBldgPanel\').style.display=\'none\'">Cancel</button>',
     '</div>',
     '</div>',
@@ -6504,8 +6511,21 @@ async function _mbSaveRowClick(i) {
 window._mbSaveRowClick = _mbSaveRowClick;
 
 function _mbUpdateSaveAllBtn() {
-  const btn = document.getElementById('mbSaveAllBtn');
-  if (!btn) return;
+  // 2026-09-02 consolidation: Save All, Overwrite All, and Merge All are the
+  // SAME bulk loop (confirmMultiBuildingSave) with a different upsert action —
+  // all three share exactly one readiness gate, so all three get disabled/
+  // enabled together. Each keeps its own explanatory tooltip when enabled;
+  // when blocked, all three show the same "what's unaccounted for" reason.
+  const BTN_DEFS = [
+    { id: 'mbSaveAllBtn', baseTitle: '' },
+    {
+      id: 'mbOverwriteAllBtn',
+      baseTitle: 'Replace existing records with newly extracted values, including blanks',
+    },
+    { id: 'mbMergeAllBtn', baseTitle: 'Fill only empty fields — keeps existing non-empty values intact' },
+  ];
+  const btns = BTN_DEFS.map((d) => ({ el: document.getElementById(d.id), baseTitle: d.baseTitle })).filter((b) => b.el);
+  if (!btns.length) return;
   const bills = window._pdfMultiBills || [];
   const dupMap = window._pdfDupMap || {};
   // b-46a984a0: full-accounting readiness. Save All enables ONLY when every
@@ -6529,8 +6549,13 @@ function _mbUpdateSaveAllBtn() {
     }
     unaccounted++;
   });
-  btn.disabled = !(willSave > 0 && unaccounted === 0);
-  btn.title = unaccounted > 0 ? unaccounted + ' billing period(s) still need a destination or an explicit Skip' : '';
+  const disabled = !(willSave > 0 && unaccounted === 0);
+  const blockedTitle =
+    unaccounted > 0 ? unaccounted + ' billing period(s) still need a destination or an explicit Skip' : '';
+  btns.forEach(({ el, baseTitle }) => {
+    el.disabled = disabled;
+    el.title = disabled ? blockedTitle : baseTitle;
+  });
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
@@ -7047,7 +7072,14 @@ async function confirmAutoAssign() {
 // an agreeing AccountNumber, or an explicit 'manual' pick (from the forced
 // picker's destination selects), may write to targetMeter.bills — anything
 // else is diverted to Saved Bills for review instead of silently applied.
-async function _mbSaveOneBill(bi) {
+async function _mbSaveOneBill(bi, action) {
+  // 2026-09-02 consolidation: action is 'save' (default), 'overwrite', or
+  // 'merge' — see the upsert block near targetMeter.bills below for what each
+  // one does when this bill's period already exists on the target meter.
+  // 'save' behaves like 'merge' (fills blanks only, never clobbers a value the
+  // user corrected) — mirrors Bug #135's fix on the single-account path, where
+  // an unresolved dup defaults to merge, never a blind overwrite.
+  action = action || 'save';
   const bills = window._pdfMultiBills;
   if (!bills || !bills[bi]) return { status: 'error', reason: 'no bill' };
   const bill = bills[bi];
@@ -7306,6 +7338,11 @@ async function _mbSaveOneBill(bi) {
         (_created.meter.commodity || _created.meter.account || 'meter');
       bill._mbSaved = true;
       bill._mbSavedDest = _dest;
+      // Coordinate saved state across the two review UIs (2026-09-02 fix — the
+      // _batchSaved/_mbSaved split let one UI think a bill was unsaved after the
+      // OTHER UI already saved it). Each path stamps BOTH flags on success so
+      // neither UI can show a phantom-unsaved row or re-save the same bill.
+      bill._batchSaved = true;
       return { status: 'saved', destination: _dest, projId: _cProj };
     }
     const _held = (await sget('en_pdf_bills', [])) || [];
@@ -7514,7 +7551,21 @@ async function _mbSaveOneBill(bi) {
     return r.start === billRow.start && r.end === billRow.end;
   });
   if (dup) {
-    Object.assign(dup, billRow);
+    if (action === 'overwrite') {
+      // Explicit "Overwrite All" (or a per-row Save forced to overwrite) —
+      // replace every field, including blanks, exactly like the tooltip says.
+      Object.assign(dup, billRow);
+    } else {
+      // 'save' (default) and 'merge' both fill only currently-blank fields —
+      // never clobber a value already on the record (matches "Merge All"
+      // tooltip: "keeps existing non-empty values intact"; 0/'0' counts as a
+      // real value, only null/undefined/'' count as blank).
+      for (const k of Object.keys(billRow)) {
+        const v = billRow[k];
+        if (v == null || v === '') continue;
+        if (dup[k] == null || dup[k] === '') dup[k] = v;
+      }
+    }
   } else {
     targetMeter.bills.push(billRow);
     targetMeter.bills.sort(function (a, b) {
@@ -7529,6 +7580,9 @@ async function _mbSaveOneBill(bi) {
     (targetMeter.commodity || targetMeter.account || targetMeter.id || 'meter');
   bill._mbSaved = true;
   bill._mbSavedDest = destination;
+  // Coordinate saved state across the two review UIs — see comment on the
+  // 'create' branch above for why both flags are stamped on every success path.
+  bill._batchSaved = true;
   return { status: 'saved', destination, projId: billMatch.projId };
 }
 window._mbSaveOneBill = _mbSaveOneBill;
@@ -7540,7 +7594,12 @@ window._mbSaveOneBill = _mbSaveOneBill;
 // (see showMultiBuildingReviewPanel) or the user made an explicit manual
 // pick (see setMbRowDestMeter) — so Save All only ever acts on rows the user
 // has confirmed one way or another, honest-display gate wiring from 3a/3b.
-async function confirmMultiBuildingSave() {
+async function confirmMultiBuildingSave(action) {
+  // 2026-09-02 consolidation: action is 'save' (default), 'overwrite', or
+  // 'merge' — threaded straight through to _mbSaveOneBill, which decides what
+  // each one does to an existing period match. Row selection/accounting below
+  // is identical for all three; only the per-bill upsert behavior differs.
+  action = action || 'save';
   if (_mbSaveAllInProgress) return; // re-entrancy guard (double-click / re-dispatch)
   const bills = window._pdfMultiBills;
   if (!bills || !bills.length) return;
@@ -7598,7 +7657,7 @@ async function confirmMultiBuildingSave() {
   const touchedPids = new Set(); // rows in this batch can target different projects/buildings
   try {
     for (const _bi of toSave) {
-      const result = await _mbSaveOneBill(_bi);
+      const result = await _mbSaveOneBill(_bi, action);
       if (result.status === 'saved') {
         saved++;
         if (result.projId) touchedPids.add(result.projId);
@@ -7617,11 +7676,13 @@ async function confirmMultiBuildingSave() {
     _mbRowState = {};
     _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
     _autoAssignTarget = null;
+    const _verb = action === 'overwrite' ? 'overwritten' : action === 'merge' ? 'merged' : 'saved';
     showToast(
       saved +
         ' bill' +
         (saved !== 1 ? 's' : '') +
-        ' saved' +
+        ' ' +
+        _verb +
         (flaggedForReview ? ', ' + flaggedForReview + ' flagged for review (account mismatch)' : '') +
         (userSkipped ? ', ' + userSkipped + ' skipped by you' : '') +
         ' ✓',
@@ -8027,6 +8088,33 @@ async function _ensureBatchPdfStored(bills) {
   return key;
 }
 
+// 2026-09-02 (routing gate fix, requirement 5): a 'commodity' matchType from
+// findMeterMatch (building+commodity fallback — unambiguous single-meter case,
+// account was renumbered) carries `adoptAccount`, the bill's new account
+// number. _mbSaveOneBill has always adopted it inline for the multi-building
+// review panel; this shared helper gives _saveBillToMatchedMeter (used by
+// _resolveBillDestination's callers, saveQueuedBills, and _applyDupUpdate's
+// Saved-Bills promotion) the same behavior — update the meter's stored account
+// to the new number, preserving the old one in accountAliases[] (never
+// deleted) so older saved bills filed under the old account still
+// identity-match a future extraction. No-op for any other matchType, so every
+// existing caller that never passes a 'commodity' match is unaffected. MUST
+// run before the strongMismatch check below — that check compares the bill's
+// account against match.meter.account, which is exactly the field a
+// 'commodity' match legitimately disagrees with until this adoption runs.
+function _applyCommodityAccountAdopt(match) {
+  if (!match || match.matchType !== 'commodity' || !match.meter) return;
+  const newAcct = (match.adoptAccount || '').trim();
+  if (!newAcct) return;
+  const targetMeter = match.meter;
+  const oldAcct = (targetMeter.account || '').trim();
+  if (oldAcct && oldAcct !== newAcct) {
+    if (!Array.isArray(targetMeter.accountAliases)) targetMeter.accountAliases = [];
+    if (!targetMeter.accountAliases.includes(oldAcct)) targetMeter.accountAliases.push(oldAcct);
+  }
+  targetMeter.account = newAcct;
+}
+
 // Save a single extracted bill directly to a matched meter (from findMeterMatch).
 // Reuses the same billRow shape as _saveSinglePDFBill and confirmAutoAssign so the
 // record lands in the same storage structure. Returns a destination description
@@ -8038,6 +8126,9 @@ async function _ensureBatchPdfStored(bills) {
 // place.
 function _saveBillToMatchedMeter(extracted, match) {
   if (!extracted || !match || !match.proj || !match.bldg || !match.meter) return null;
+  // Requirement 5 (2026-09-02): adopt a renumbered account BEFORE the
+  // strongMismatch check below — see _applyCommodityAccountAdopt.
+  _applyCommodityAccountAdopt(match);
   // Fix 3 (49928d33/409830ae) — defense-in-depth. Even on an 'identity' call,
   // refuse to write when the bill's own AccountNumber strongly contradicts
   // the target meter's stored account. Guards against a bad match slipping
@@ -8371,7 +8462,18 @@ function _resolveBillDestination(bill, dup, projId) {
   // the same safe fallback (project-scoped account match, or Saved Bills for
   // manual review) that saveQueuedBills falls through to when its identity gate
   // fails.
-  if (match && match.matchType === 'identity') {
+  //
+  // Requirement 5 (2026-09-02): also accept a 'commodity' match — the same
+  // building+commodity fallback the multi-building review panel already
+  // trusts as auto-attach (see showMultiBuildingReviewPanel's isAutoAttach).
+  // It is unambiguous by construction (findMeterMatch only returns it when
+  // exactly one building address-matched and exactly one same-commodity meter
+  // exists there) — the account merely differs because it was renumbered.
+  // _saveBillToMatchedMeter adopts the new account (via
+  // _applyCommodityAccountAdopt) before its own mismatch guard runs, so this
+  // routes the same way a manual pick would instead of falling through to the
+  // weaker project-scoped/unassigned path below.
+  if (match && (match.matchType === 'identity' || match.matchType === 'commodity')) {
     return {
       method: 'match',
       destination:
@@ -10418,7 +10520,12 @@ async function saveQueuedBills() {
       // meter number within the batch project, never by address, so an unconfirmed
       // address guess can never silently misattach a bill to the wrong building.
       const meterMatch = row._autoMatch !== undefined ? row._autoMatch : findMeterMatch(row.bill);
-      if (meterMatch && meterMatch.matchType === 'identity') {
+      // Requirement 5 (2026-09-02): also accept 'commodity' — see the matching
+      // comment in _resolveBillDestination. If _saveBillToMatchedMeter still
+      // can't reconcile the account it returns null and this falls through to
+      // the same project-scoped fallback as before, so widening this check
+      // can only ever help, never misroute.
+      if (meterMatch && (meterMatch.matchType === 'identity' || meterMatch.matchType === 'commodity')) {
         try {
           const dest = _saveBillToMatchedMeter(row.bill, meterMatch);
           if (dest) {
@@ -11211,6 +11318,10 @@ async function _dupBulkAction(action) {
         status = 'saved';
         saved++;
         bills[i]._batchSaved = true;
+        // Coordinate saved state across the two review UIs (2026-09-02 fix —
+        // see _mbSaveOneBill for the matching sync in the other direction).
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = dest;
       } else {
         status = 'failed';
         failed++;
@@ -11237,6 +11348,8 @@ async function _dupBulkAction(action) {
         status = 'saved';
         saved++;
         bills[i]._batchSaved = true;
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = destination;
       } else {
         status = 'failed';
         failed++;
@@ -15082,29 +15195,40 @@ function renderMultiBillUI(bills, box) {
       legendParts.push(
         `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#f43f5e;display:inline-block"></span><span style="color:var(--text2)">Conflict (manual resolution): ${conflictCount}</span></span>`,
       );
+    // 2026-09-02 consolidation: the banner now shows the informational summary +
+    // legend only. The Skip All / Overwrite All / Merge All ACTIONS that used to
+    // live here moved to the single bottom save bar (#pdfBottomSaveBar, built
+    // below) — see dashboardlogic.md for why (Matt's directive: exactly ONE save
+    // location, at the bottom, with Save All / Overwrite All / Merge All).
     dupBannerHtml = `<div style="padding:8px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:var(--amber)">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:${legendParts.length ? '6px' : '0'}">
           <span style="flex:1;min-width:0"><strong>&#9888; Duplicate Bills Found &mdash; ${dupIndices.length} of ${bills.length} already exist</strong> &mdash; ${parts.join(', ')}</span>
-          <div style="display:flex;gap:6px;flex-shrink:0">
-            <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Skip All</button>
-            <button onclick="_dupBulkAction('overwrite')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer" title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>
-            <button onclick="_dupBulkAction('merge')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>
-          </div>
         </div>
         ${legendParts.length ? `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;padding-top:4px;border-top:1px solid rgba(245,158,11,.2)">${legendParts.join('')}</div>` : ''}
       </div>`;
   }
-  // Move "Save All" button + per-commodity buttons into the extraction method badge area.
-  // fix ede70be1 (3e) — suppressed for a multi-account file: showMultiBuildingReviewPanel
-  // is the SINGLE save source there (it has its own per-row + bulk Save All), so this
-  // second "Save All Periods" row would be a duplicate/confusing save control for the
-  // same extraction. The per-pill "Save" quick action above is suppressed the same way.
+  // extractMethodBadge (top-right of Extraction Output) is used by OTHER render
+  // paths (single-bill display, "loaded from saved records") for a small method
+  // label — but for this multi-bill review it must stay empty/hidden so there is
+  // never a second save control up top. All save actions for THIS view live in
+  // the single bottom bar (#pdfBottomSaveBar) below instead.
   const badgeEl = document.getElementById('extractMethodBadge');
-  if (badgeEl && _isMultiAcctFile()) {
+  if (badgeEl) {
     badgeEl.style.display = 'none';
     badgeEl.innerHTML = '';
-  } else if (badgeEl) {
-    badgeEl.style.display = 'inline-block';
+  }
+  // ── Single bottom save bar (2026-09-02 consolidation) ──────────────────────
+  // fix ede70be1 (3e) — suppressed for a multi-account file: showMultiBuildingReviewPanel
+  // is the SINGLE save source there (it has its own per-row + bulk Save All/Overwrite
+  // All/Merge All, see showMultiBuildingReviewPanel), so this bar would be a duplicate/
+  // confusing second save control for the same extraction. The per-pill "Save" quick
+  // action above is suppressed the same way.
+  const bottomBarEl = document.getElementById('pdfBottomSaveBar');
+  if (bottomBarEl && _isMultiAcctFile()) {
+    bottomBarEl.style.display = 'none';
+    bottomBarEl.innerHTML = '';
+  } else if (bottomBarEl) {
+    bottomBarEl.style.display = 'block';
     const commodities = {};
     bills.forEach((b, i) => {
       const c = b.Commodity || 'Other';
@@ -15112,6 +15236,8 @@ function renderMultiBillUI(bills, box) {
     });
     const commKeys = Object.keys(commodities);
     let btns = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
+    btns += `<button onclick="_dupBulkAction('overwrite')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>`;
+    btns += `<button onclick="_dupBulkAction('merge')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>`;
     if (commKeys.length > 1) {
       btns += commKeys
         .map(
@@ -15135,7 +15261,7 @@ function renderMultiBillUI(bills, box) {
         `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
         `</div>`;
     }
-    badgeEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
+    bottomBarEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
   }
   // The Month / Billing Periods header + duplicate banner are written to the frozen
   // #pdfPillsHdr (outside the scroll area) so they stay pinned at the top. The pills
@@ -15493,6 +15619,10 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
         saved++;
         status = 'saved';
         bills[i]._batchSaved = true;
+        // Coordinate saved state across the two review UIs (2026-09-02 fix —
+        // see _mbSaveOneBill for the matching sync in the other direction).
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = dest;
       } else {
         failed++;
         status = 'failed';
@@ -15510,6 +15640,8 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
         saved++;
         status = 'saved';
         bills[i]._batchSaved = true;
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = destination;
       } else {
         failed++;
         status = 'failed';
@@ -15854,7 +15986,12 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     // if the promoted bill's period collides with an existing bill on the guessed
     // meter. On a non-identity match, leave the bill in Saved Bills — that is
     // already the safe review location, no extra action needed.
-    if (meterMatch && meterMatch.matchType === 'identity') {
+    //
+    // Requirement 5 (2026-09-02): also promote on a 'commodity' match — same
+    // unambiguous building+commodity fallback as the other two gates. If
+    // _saveBillToMatchedMeter can't reconcile it, dest is null and the record
+    // simply stays in Saved Bills, same as today.
+    if (meterMatch && (meterMatch.matchType === 'identity' || meterMatch.matchType === 'commodity')) {
       const dest = _saveBillToMatchedMeter(sb, meterMatch);
       if (dest) {
         const removeIdx = pdfBills.indexOf(sb);
