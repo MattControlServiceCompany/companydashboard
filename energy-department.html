@@ -9016,6 +9016,26 @@
                 >
                   Upload a PDF and select document type.
                 </div>
+                <!-- Single save location (2026-09-02 consolidation): for a single-account
+                     multi-bill extraction, this is the ONE place Save All / Overwrite All /
+                     Merge All live — pinned at the bottom of the review area, never at the
+                     top-right of Extraction Output. Populated by renderMultiBillUI(); stays
+                     hidden for a multi-account file, where showMultiBuildingReviewPanel's own
+                     bottom bar (in pdfMultiBldgPanel) is the single save location instead. -->
+                <div
+                  id="pdfBottomSaveBar"
+                  style="
+                    display: none;
+                    flex-shrink: 0;
+                    position: sticky;
+                    bottom: 0;
+                    z-index: var(--z-sticky, 2);
+                    background: var(--s2);
+                    padding-top: 8px;
+                    margin-top: 8px;
+                    border-top: 1px solid var(--s3);
+                  "
+                ></div>
               </div>
             </div>
           </div>
