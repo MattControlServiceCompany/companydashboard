@@ -1619,6 +1619,13 @@ function _qtyBuckets(witnesses) {
   const buckets = [];
   for (const w of witnesses) {
     if (!(w.value > 0)) continue;
+    // A witness explicitly tagged as a PRIOR-period / Previous-Year comparative
+    // figure (e.g. a future "Comparative Usage Information" Last-Year-row
+    // witness) is never a candidate for the CURRENT billing period's quantity —
+    // exclude it from consensus entirely rather than let it out-vote or dilute
+    // the real current-period witnesses. No existing witness source sets this
+    // today; this is the hook a future prior-period witness must use.
+    if (w.period === 'prior') continue;
     const bkt = buckets.find((b2) => Math.abs(b2.value - w.value) / w.value < _Q_BUCKET_TOL);
     if (bkt) {
       bkt.items.push(w);
@@ -1627,7 +1634,11 @@ function _qtyBuckets(witnesses) {
       buckets.push({ value: w.value, items: [w], strongCount: w.strong ? 1 : 0 });
     }
   }
-  buckets.sort((a, b2) => b2.strongCount - a.strongCount || b2.items.length - a.items.length);
+  // Tie-break (equal strong-witness count AND equal total item count): prefer
+  // the LARGER current-period usage candidate over an arbitrary insertion-order
+  // pick — an under-extracted quantity (e.g. only one sub-line of a split
+  // charge) under-reports usage, it never over-reports it.
+  buckets.sort((a, b2) => b2.strongCount - a.strongCount || b2.items.length - a.items.length || b2.value - a.value);
   return buckets;
 }
 
@@ -1700,6 +1711,51 @@ function _decideQuantityCorrection(fieldName, currentValue, witnesses) {
     };
   }
   if (pctChange > _QTY_CORRECTION_PCT_THRESHOLD) {
+    // UNANIMOUS OVERRIDE: every strong witness in existence agrees with the
+    // winner (no strong witness anywhere disagrees), AND the only other
+    // bucket is a "self-echo" of the extracted current value itself — i.e.
+    // the extraction error is EXPLAINED (the bill's own printed figure only
+    // captured part of a split charge line, e.g. Broadmoor's split-ECA
+    // second sub-line), not just contradicted by an unexplained third value.
+    // A genuine 3-way conflict (a second, non-current-matching bucket also
+    // present — buckets.length > 2) or a swing with no self-echo bucket at
+    // all (buckets.length === 1, e.g. LMS bill 30) must still fall through
+    // to the ordinary hold below.
+    const otherEchoesCurrent =
+      runnerUp && currentValue > 0 && Math.abs(runnerUp.value - currentValue) / currentValue < _Q_BUCKET_TOL;
+    const allStrongInWinner = winner.strongCount === witnesses.filter((w) => w.strong).length;
+    const unanimousOverride =
+      buckets.length === 2 &&
+      otherEchoesCurrent &&
+      runnerUp.strongCount === 0 &&
+      winner.strongCount >= 2 &&
+      allStrongInWinner;
+    if (unanimousOverride) {
+      return {
+        hold: false,
+        apply: true,
+        unanimousOverride: true,
+        corrected: winner.representative,
+        buckets,
+        pctChange,
+        reason:
+          fieldName +
+          ': ' +
+          winner.items
+            .filter((w) => w.strong)
+            .map((w) => w.source)
+            .join(', ') +
+          ' unanimously agree on ' +
+          winner.representative.toFixed(4) +
+          ' — the extracted ' +
+          currentValue.toFixed(4) +
+          ' matches only ' +
+          runnerUp.items.map((w) => w.source).join(', ') +
+          ', explaining the discrepancy — auto-applying despite the ' +
+          pctChange.toFixed(1) +
+          '% swing (unanimous strong consensus, no genuine conflict)',
+      };
+    }
     return {
       hold: true,
       apply: false,
