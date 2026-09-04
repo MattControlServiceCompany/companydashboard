@@ -14165,7 +14165,21 @@ async function processPDF(file) {
                 flag: '_auto_recovered_OffPeakKWh',
               },
             ];
-            const billsNeedingKwhConsensus = finalBills.filter((b) => KWH_FALLBACK_PAIRS.some((p) => b[p.flag]));
+            // Widened (2026-09-04, Bug 3): originally gated ONLY on b[p.flag] --
+            // i.e. only when the kWh QUANTITY fell back to identity math. That
+            // missed the case where the quantity was read fine (or independently
+            // recovered) but the RATE-specific "at $X per kWh" phrase failed on its
+            // own, leaving OnPeakRate/OffPeakRate null with no flag ever set (see
+            // energy-savings.js's new charge/qty rate-derivation, which now covers
+            // the common case directly at extraction time -- this alt-pass
+            // consensus remains as a second line of defense for bills where even
+            // the charge or qty needed for that direct derivation isn't available).
+            // Also require the paired dollar charge to be present -- with no charge
+            // to self-verify against (altSelfVerifies below), there's nothing this
+            // block can safely reconcile.
+            const billsNeedingKwhConsensus = finalBills.filter((b) =>
+              KWH_FALLBACK_PAIRS.some((p) => b[p.flag] || (!b[p.rateField] && b[p.chargeField])),
+            );
             if (billsNeedingKwhConsensus.length > 0) {
               const altTexts2 = [];
               for (const passes of Object.values(passTexts)) {
@@ -14175,7 +14189,7 @@ async function processPDF(file) {
               }
               for (const b of billsNeedingKwhConsensus) {
                 for (const pair of KWH_FALLBACK_PAIRS) {
-                  if (!b[pair.flag]) continue;
+                  if (!b[pair.flag] && !(!b[pair.rateField] && b[pair.chargeField])) continue;
                   for (const altText of altTexts2) {
                     try {
                       // Fix (8b6342e9): same array-normalization as the
