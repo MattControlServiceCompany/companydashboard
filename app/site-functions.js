@@ -1742,17 +1742,28 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.04.797',
+    date: '2026-09-04',
+    title: 'PDF / OCR (Bill Import): Evergy per-unit rates no longer come back blank',
+    items: [
+      {
+        type: 'fix',
+        text: "PDF / OCR (Bill Import): some Evergy bills were saving with a blank on-peak or off-peak $/kWh rate even though the dollar charge and usage were read correctly. The rate is now filled in from the charge and usage when the rate text itself couldn't be read.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.03.796',
     date: '2026-09-03',
     title: 'Bill Import: one save bar, and Save All no longer skips bills',
     items: [
       {
         type: 'feature',
-        text: "Bill Import: the save controls are now one bar at the bottom of the review screen, with Save All, Overwrite All, and Merge All in one place instead of scattered per-bill buttons.",
+        text: 'Bill Import: the save controls are now one bar at the bottom of the review screen, with Save All, Overwrite All, and Merge All in one place instead of scattered per-bill buttons.',
       },
       {
         type: 'fix',
-        text: "Bill Import: Save All and Overwrite All now save every bill in the batch. Previously some bills could be silently skipped without any warning.",
+        text: 'Bill Import: Save All and Overwrite All now save every bill in the batch. Previously some bills could be silently skipped without any warning.',
       },
     ],
   },

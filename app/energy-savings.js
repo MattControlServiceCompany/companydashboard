@@ -4685,6 +4685,57 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   });
 
+  // ── Bug 3 (2026-09-04): derive a missing per-unit rate from charge ÷ qty ──
+  // xChg() and xRate() are two INDEPENDENT OCR passes over the same charge line
+  // (see the header comment above `xRate`'s definition). xChg() only needs to find
+  // a keyword + a trailing "$X.XX" and is tolerant of OCR noise in between, so it
+  // regularly succeeds even when xRate()'s much more specific "<qty> kWh at
+  // $<rate> per kWh" phrase fails to match at all (root-caused on the Louisburg
+  // Circle Grove Elementary acct 3517540689 May 05/05-06/04/2026 bill, Off-Peak
+  // line: OCR degraded "at $0.04960 per kWh" past all 5 of xRate's fallback
+  // patterns). When that happens, `_rates[chargeField]` is never populated (xRate
+  // found nothing at all for that charge), so `OnPeakRate`/`OffPeakRate` come back
+  // permanently null via `_rateOrNull` above (~line 4046) even though the dollar
+  // charge (from xChg, captured into `result[chargeField]`) is present, and by
+  // this point in the function `result[qtyField]` is also usually known -- either
+  // read directly from the meter table, mirrored from the charge line by the
+  // KWH_QTY_MAP block above (only when xRate succeeded), or recovered by the
+  // kWh-identity blocks above (`OnPeakKWh = kWhConsumed - OffPeakKWh` or the
+  // reverse, ~line 4465-4530), which do NOT require xRate to have parsed the rate
+  // for THIS charge -- only for its paired peak. Derive the rate directly from
+  // charge / qty rather than leaving it permanently blank. Only fires when the
+  // rate is genuinely absent (never overwrites a rate xRate actually read, even a
+  // suspect one -- that's the separate SINGLE-PART RATE AUTO-CORRECTION path
+  // above, which requires xRate to have matched in the first place).
+  const RATE_FROM_CHARGE_QTY = {
+    OnPeakRate: { chargeField: 'EnergyOnPeakCharge', qtyField: 'OnPeakKWh' },
+    OffPeakRate: { chargeField: 'EnergyOffPeakCharge', qtyField: 'OffPeakKWh' },
+  };
+  Object.entries(RATE_FROM_CHARGE_QTY).forEach(([rateField, { chargeField, qtyField }]) => {
+    if (!result[rateField]) {
+      const charge = _pf(result[chargeField]);
+      const qty = _pf(result[qtyField]);
+      if (charge > 0 && qty > 0) {
+        const derivedRate = charge / qty;
+        // Same sanity ceiling xRate itself uses for kWh rates (~line 2216): Evergy
+        // on/off-peak energy rates are always well under $1/kWh.
+        if (derivedRate > 0 && derivedRate < 1) {
+          result[rateField] = derivedRate;
+          result['_auto_derived_' + rateField] = {
+            from: chargeField + ' / ' + qtyField,
+            charge: result[chargeField],
+            qty: result[qtyField],
+            rate: derivedRate,
+          };
+        }
+      }
+    }
+  });
+  // NOTE: TotalKWhRate (computed above, ~line 4064) is derived from the dollar
+  // charges and kWhConsumed only -- never from OnPeakRate/OffPeakRate directly --
+  // so it is already correct at this point regardless of whether xRate parsed the
+  // per-unit rate text; nothing to recompute here.
+
   // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
   const _compSum =
     Math.round(
