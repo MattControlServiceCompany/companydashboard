@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.04.798',
+    date: '2026-09-04',
+    title: 'PDF / OCR (Bill Import): split-period Evergy bills now auto-resolve their total usage',
+    items: [
+      {
+        type: 'fix',
+        text: "PDF / OCR (Bill Import): when a utility splits one bill's usage across rate periods (e.g. a seasonal charge printed in two parts), the total usage now fills in automatically from the bill's own charge lines instead of being flagged for manual review.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.04.797',
     date: '2026-09-04',
     title: 'PDF / OCR (Bill Import): Evergy per-unit rates no longer come back blank',
