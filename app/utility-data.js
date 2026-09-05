@@ -2631,17 +2631,26 @@ function renderMeterWorkspace() {
   // push the scrollbar ~1000px off the bottom of the viewport.
   if (udActiveTab === 'bills') {
     requestAnimationFrame(() => {
-      const ws = document.getElementById('maMeterWorkspace');
-      const scrollBody = document.getElementById('billsScrollBody');
+      // d2fe8e5e (reopened): `pane`'s parent IS #maMeterWorkspace (ws.innerHTML above
+      // set exactly two children: .ma-tabs and #maPane) — use that instead of a global
+      // getElementById('maMeterWorkspace'), which silently grabs the WRONG element once
+      // more than one #maMeterWorkspace exists in the DOM at once (the standalone
+      // view-utility copy plus any opened project's embedded ptab-utility copy).
+      const ws = pane.parentElement;
+      const scrollBody = pane.querySelector('#billsScrollBody');
       if (!ws || !scrollBody) return;
-      const maTabsEl = ws.querySelector('.ma-tabs');
-      const stickyHdrEl = pane.querySelector('.bills-sticky-hdr');
-      const theadWrapEl = document.getElementById('billsTheadWrap');
-      const avail =
-        ws.clientHeight -
-        (maTabsEl ? maTabsEl.offsetHeight : 36) -
-        (stickyHdrEl ? stickyHdrEl.offsetHeight : 0) -
-        (theadWrapEl ? theadWrapEl.offsetHeight : 0);
+      // d2fe8e5e (reopened): this used to sum each sibling's offsetHeight individually
+      // (.ma-tabs + .bills-sticky-hdr + .bills-thead-wrap) and missed the flagBanner div
+      // entirely on meters with flagged billing periods — offsetHeight also doesn't
+      // capture margins, so even after adding flagBanner the cap was still off by its
+      // 8px+8px margin. Measuring the actual pixel gap between ws's top edge and the
+      // scroll body's top edge via getBoundingClientRect() captures every sibling's
+      // height AND margins in one shot, and can't drift out of sync the next time a
+      // banner/badge/row gets added between them.
+      const wsRect = ws.getBoundingClientRect();
+      const sbRect = scrollBody.getBoundingClientRect();
+      const offsetFromTop = sbRect.top - wsRect.top + ws.scrollTop;
+      const avail = ws.clientHeight - offsetFromTop;
       if (avail > 60) scrollBody.style.maxHeight = avail + 'px';
     });
   }
@@ -3575,6 +3584,14 @@ function renderBillsPane(pane, m, bills, incl) {
     '</div>';
 
   // Flag banner
+  // d2fe8e5e (reopened): this banner sits between .bills-sticky-hdr and
+  // .bills-thead-wrap. The avail-height calc in renderMeterWorkspace used to sum
+  // fixed sibling offsetHeights and never accounted for this banner (or margins on
+  // any sibling), so on any meter with flagged billing periods the .bills-scroll-body
+  // maxHeight cap came out too tall — pushing the horizontal scrollbar past the
+  // bottom edge of #maMeterWorkspace's clip boundary (only reachable by scrolling
+  // the workspace itself). Fixed by switching that calc to a getBoundingClientRect
+  // measurement, which accounts for this banner automatically — no class hook needed.
   const flagBanner =
     flagCount > 0
       ? '<div style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500;display:flex;align-items:center;gap:8px">' +

@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.04.799',
+    date: '2026-09-04',
+    title: 'Utility Data → Bills: horizontal scroll bar fixed on wide bill tables',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data → Bills: the horizontal scroll bar now stays visible on wide bill tables (such as gas meters with flagged periods) instead of hiding below all the rows.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.04.798',
     date: '2026-09-04',
     title: 'PDF / OCR (Bill Import): split-period Evergy bills now auto-resolve their total usage',
