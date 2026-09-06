@@ -67,17 +67,23 @@ function openCsvImportForMeter(mid) {
     isGas = m.commodity === 'Gas';
   let cols = '',
     note = '';
+  const fullSchemaNote =
+    ' Also accepts the full "Export Utility Data" CSV schema — any column whose header exactly ' +
+    'matches an app field name (e.g. onPeakKwh, offPeakKwh, demandCharge, onPeakRate, offPeakRate, ' +
+    'rateSchedule, customerCharge, accountNumber, startRead, endRead) is imported too, so an ' +
+    'exported CSV re-imports with every field intact.';
   if (isElec) {
     cols =
       'start_date, end_date, kwh, actual_kw, billed_kw, facilities_kw, actual_kw_cost, facilities_kw_cost, kwh_cost, total_cost';
     note =
-      'start_date and end_date required. Numeric columns: kwh, actual_kw, billed_kw, facilities_kw, actual_kw_cost, facilities_kw_cost, kwh_cost, total_cost.';
+      'start_date and end_date required. Numeric columns: kwh, actual_kw, billed_kw, facilities_kw, actual_kw_cost, facilities_kw_cost, kwh_cost, total_cost.' +
+      fullSchemaNote;
   } else if (isGas) {
     cols = 'start_date, end_date, therms, therm_cost';
-    note = 'start_date and end_date required. Optional: therms, therm_cost.';
+    note = 'start_date and end_date required. Optional: therms, therm_cost.' + fullSchemaNote;
   } else {
     cols = 'start_date, end_date, usage, cost';
-    note = 'start_date and end_date required. Optional: usage, cost.';
+    note = 'start_date and end_date required. Optional: usage, cost.' + fullSchemaNote;
   }
 
   document.getElementById('billCsvColGuide').textContent = cols;
@@ -183,6 +189,18 @@ function parseBillCsv(text, fname) {
     : null;
   const ci = (names) => {
     if (!hdr) return -1;
+    // Exact match first (b4b257cd): try every candidate name for an EXACT
+    // header-cell match before falling back to substring. Needed now that
+    // full-schema export headers coexist on one row — e.g. "demandCharge"
+    // and "meterReadStart" both CONTAIN "demand"/"start", so a pure
+    // substring scan for row.demandKW/row.start could grab the wrong column.
+    // An exact match against the real column name always wins; substring
+    // stays as the fallback for hand-built CSVs using loose header text
+    // like "start_date" or "actual_kw" that isn't an exact schema key.
+    for (const n of names) {
+      const i = hdr.indexOf(n);
+      if (i >= 0) return i;
+    }
     for (const n of names) {
       const i = hdr.findIndex((h) => h.includes(n));
       if (i >= 0) return i;
@@ -225,6 +243,18 @@ function parseBillCsv(text, fname) {
   const iThCost = hdr ? ci(['therm_cost', 'therm cost', 'gas cost', 'gas$', 'thermcost']) : 3;
   const iUsage = hdr ? ci(['usage', 'consumption', 'hcf', 'kgal', 'mlb']) : 2;
   const iCost = hdr ? ci(['cost', 'total', 'amount', 'bill$']) : 3;
+
+  // Full-schema exact-name columns (b4b257cd): BILL_SCHEMA is the single
+  // source of truth for every field the app's own "Export Utility Data" CSV
+  // can emit (the exporter's headers ARE these camelCase keys — see
+  // _getExportSelectedBills/_doExport in utility-data.js). Any CSV header
+  // that matches one of these keys EXACTLY (case-insensitive; no substring
+  // fuzz like the ci() aliases above) gets copied straight onto the row, so
+  // an exported CSV round-trips every field — reads, rates, demand,
+  // on/off-peak, account info — not just the minimal set above.
+  const _schemaEntries = hdr
+    ? _billSchemaFor(m.commodity).filter((e) => e.key && e.key !== 'start' && e.key !== 'end')
+    : [];
 
   const parsed = [];
   const warnings = [];
@@ -273,6 +303,29 @@ function parseBillCsv(text, fname) {
       row.usage = g(iUsage);
       row.cost = g(iCost);
     }
+
+    // Full-schema exact-name pass. Runs AFTER the alias assignments above so
+    // it can fill in everything the aliases don't cover (account info, reads,
+    // on/off-peak, per-unit rates, demand/facilities/tax/fee charges, etc.)
+    // without a blank alias column ever clobbering a value found here, or
+    // vice versa: skip entirely when the column is blank (stays unset, never
+    // coerced to 0) and skip when the row already holds a real value for
+    // that key from the alias pass.
+    _schemaEntries.forEach((entry) => {
+      const idx = hdr.indexOf(entry.key.toLowerCase());
+      if (idx < 0) return;
+      const raw = cols[idx];
+      if (raw === undefined || raw.trim() === '') return; // blank cell — leave unset
+      if (row[entry.key] !== undefined && row[entry.key] !== null) return; // already set — don't clobber
+      const isNumericType =
+        entry.type === 'number' || entry.type === 'currency' || entry.type === 'rate5' || entry.type === 'rate3';
+      if (isNumericType) {
+        const n = parseFloat(raw.replace(/[$,]/g, ''));
+        if (!isNaN(n)) row[entry.key] = n;
+      } else {
+        row[entry.key] = raw.trim().replace(/"/g, '');
+      }
+    });
 
     parsed.push(row);
   });

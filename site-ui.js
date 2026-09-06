@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.06.801'; // deployed 2026-09-06 (Utility Audit / EUI Report added to Utility Data)
+  var CH_VERSION = 'v2026.09.06.802'; // deployed 2026-09-06 (Utility Audit / EUI Report added to Utility Data)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

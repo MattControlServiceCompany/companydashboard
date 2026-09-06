@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.06.802',
+    date: '2026-09-06',
+    title: 'Utility Data: CSV bill import now accepts the full export field set',
+    items: [
+      {
+        type: 'feature',
+        text: 'Utility Data — CSV bill import now accepts the full set of bill fields, so a file exported from the app (with meter reads, rates, demand, and on-peak/off-peak values) imports back complete; the simple date/usage/cost columns still work too.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.06.801',
     date: '2026-09-06',
     title: 'Utility Data: new Audit / Energy Use Intensity report',
