@@ -1210,7 +1210,13 @@ function udSelectBldg(bid) {
     }
     const wrap = document.getElementById('udDetailWrap');
     if (wrap) wrap.style.display = '';
-    ['ud-proj-baseline-btn', 'ud-proj-savproj-btn', 'ud-proj-perf-btn', 'ud-proj-compare-btn'].forEach((id) => {
+    [
+      'ud-proj-baseline-btn',
+      'ud-proj-savproj-btn',
+      'ud-proj-perf-btn',
+      'ud-proj-compare-btn',
+      'ud-proj-audit-btn',
+    ].forEach((id) => {
       const btn = document.getElementById(id);
       if (btn) {
         btn.style.borderColor = '';
@@ -1230,6 +1236,7 @@ function toggleUDProjPanel(key) {
     savproj: 'ud-proj-savproj-btn',
     perf: 'ud-proj-perf-btn',
     compare: 'ud-proj-compare-btn',
+    audit: 'ud-proj-audit-btn',
   };
   Object.entries(map).forEach(([k, id]) => {
     const btn = document.getElementById(id);
@@ -1756,6 +1763,8 @@ function renderUDProjAggPanel(content) {
     });
   } else if (_udProjPanel === 'compare') {
     renderBldgComparisonPanel(content, bldgs, projName, udSelProjId);
+  } else if (_udProjPanel === 'audit') {
+    renderUtilityAuditPanel(content, bldgs, projName, udSelProjId);
   }
 }
 
@@ -2108,6 +2117,113 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
       });
     }
   });
+}
+
+// ── UTILITY AUDIT / EUI REPORT PANEL ─────────────────────────────────────────
+// v1 (2026-09-06): per-building annual spend-by-commodity + campus roll-up, and
+// per-building EUI where sq ft exists, from the app's own loaded utility data.
+// Data comes entirely from collectUtilityAuditData() (computations/report-data.js) —
+// this function is display-only. See docs/dashboardlogic.md for the flagging rules.
+function renderUtilityAuditPanel(content, bldgs, projName, projId) {
+  const $f = (v, d = 0) =>
+    v != null ? '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+  const $n = (v, d = 0) =>
+    v != null ? v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+
+  if (!bldgs.length) {
+    content.innerHTML =
+      '<div style="padding:20px;font-size:13px;color:var(--text2)">No buildings in this project yet.</div>';
+    return;
+  }
+
+  const data = collectUtilityAuditData(projId, null);
+  if (!data) {
+    content.innerHTML =
+      '<div style="padding:20px;font-size:13px;color:var(--text2)">Could not build audit data for this project.</div>';
+    return;
+  }
+
+  const thS =
+    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
+  const tdS = (color = 'var(--text)') =>
+    `padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap`;
+
+  const noSqftList = data.campus.flags.noSqft;
+  const noMeterList = data.campus.flags.noMeter;
+
+  const rows = data.buildings
+    .map((b) => {
+      const e = b.commodities.Electric,
+        g = b.commodities.Gas,
+        pr = b.commodities.Propane;
+      const wsss =
+        (b.commodities.Water.cost || 0) +
+        (b.commodities.Sewer.cost || 0) +
+        (b.commodities.Stormwater.cost || 0) +
+        (b.commodities.Steam.cost || 0);
+      const noMeter = !b.hasMeter;
+      const euiCell = !b.hasSqft ? '— (no sqft)' : noMeter ? '— (no meter data)' : b.eui != null ? $n(b.eui, 1) : '—';
+      const flags = [];
+      if (!b.hasSqft) flags.push('No Sq Ft');
+      if (noMeter) flags.push('No Meter Data');
+      return `<tr>
+              <td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s2)">${b.name}</td>
+              <td style="${tdS()}">${b.hasSqft ? $n(b.sqft) : '— (no sqft)'}</td>
+              <td style="${tdS('var(--em2)')}">${noMeter ? '— (no meter)' : `${$n(e.kwh, 0)} / ${$f(e.cost, 0)}`}</td>
+              <td style="${tdS('var(--warn)')}">${noMeter ? '— (no meter)' : `${$n(g.therms, 0)} / ${$f(g.cost, 0)}`}</td>
+              <td style="${tdS()}">${noMeter ? '— (no meter)' : `${$n(pr.gal, 0)} / ${$f(pr.cost, 0)}`}</td>
+              <td style="${tdS()}">${noMeter ? '— (no meter)' : $f(wsss, 0)}</td>
+              <td style="${tdS('var(--em)')};font-weight:700">${noMeter ? '— (no meter)' : $f(b.totalCost, 0)}</td>
+              <td style="${tdS('var(--violet)')}">${euiCell}</td>
+              <td style="padding:6px 10px;font-size:11px;border:1px solid var(--border);color:var(--text2)">${flags.join(', ')}</td>
+            </tr>`;
+    })
+    .join('');
+
+  const totRow = `<tr style="background:var(--s1)">
+          <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Campus Total</td>
+          <td style="${tdS()};font-weight:700">${$n(data.campus.totalSqft)}</td>
+          <td style="${tdS()}"></td>
+          <td style="${tdS()}"></td>
+          <td style="${tdS()}"></td>
+          <td style="${tdS()}"></td>
+          <td style="${tdS('var(--em)')};font-weight:700">${$f(data.campus.totalCost, 0)}</td>
+          <td style="${tdS('var(--violet)')};font-weight:700">${data.campus.campusEUI != null ? $n(data.campus.campusEUI, 1) : '—'}</td>
+          <td></td>
+        </tr>`;
+
+  const footnotes = `
+        ${
+          noSqftList.length
+            ? `<div style="padding:8px 18px 0;font-size:11px;color:var(--text2)">⚠ ${noSqftList.length} of ${data.buildings.length} buildings excluded from campus EUI — no square footage on file: ${noSqftList.join(', ')}</div>`
+            : ''
+        }
+        ${
+          noMeterList.length
+            ? `<div style="padding:4px 18px 8px;font-size:11px;color:var(--text2)">⚠ ${noMeterList.length} of ${data.buildings.length} buildings have no meter/bill data on file: ${noMeterList.join(', ')}</div>`
+            : ''
+        }`;
+
+  content.innerHTML = `
+        <div style="padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--border)">
+          <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">🧾 ${projName} — Utility Audit / EUI Report</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">
+            ${data.campus.totalSqft ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Campus Sq Ft</div><div style="font-size:15px;font-weight:800">${$n(data.campus.totalSqft)}</div></div>` : ''}
+            <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Annual Spend</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(data.campus.totalCost)}</div></div>
+            ${data.campus.campusEUI != null ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Campus Blended EUI</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(data.campus.campusEUI, 1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>` : ''}
+          </div>
+        </div>
+        <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
+          <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Building</th>
+            <th style="${thS}">Sq Ft</th><th style="${thS}">Electric (kWh / $)</th><th style="${thS}">Gas (Therms / $)</th>
+            <th style="${thS}">Propane (Gal / $)</th><th style="${thS}">Water/Sewer/Steam/Storm $</th>
+            <th style="${thS}">Total Spend</th><th style="${thS}">Site EUI</th><th style="${thS};text-align:left">Flags</th></tr></thead>
+          <tbody>${rows}${totRow}</tbody>
+        </table></div>
+        ${footnotes}
+        <div style="padding:16px 18px 20px">
+          <button class="btn btn-primary btn-sm" onclick="printUtilityAudit(${projId})">🖨 Print / Export Report</button>
+        </div>`;
 }
 
 /* ── RENDER RIGHT DETAIL: Building header + Meters ── */

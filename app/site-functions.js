@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.06.801',
+    date: '2026-09-06',
+    title: 'Utility Data: new Audit / Energy Use Intensity report',
+    items: [
+      {
+        type: 'feature',
+        text: "Utility Data — new Audit / Energy Use Intensity report: shows each building's annual utility spend and Energy Use Intensity with a whole-project total, and prints or exports to PDF and Word.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.05.800',
     date: '2026-09-05',
     title: 'Utility Data: CSV bill import no longer fails silently',

@@ -1762,6 +1762,41 @@ function printBoardSummary(projId) {
 }
 window.printBoardSummary = printBoardSummary;
 
+/**
+ * printUtilityAudit — Utility Audit / EUI Report v1 (2026-09-06). Generates and displays
+ * a 2-page report (annual spend by commodity + campus roll-up, then per-building EUI
+ * ranking + campus blended EUI) in the report preview overlay. Mirrors printBoardSummary
+ * above: same validation, same _injectPageNumbers/showReportOverlay pipeline. Data comes
+ * from collectUtilityAuditData() (computations/report-data.js) — baseline-free, trailing
+ * 12-month window, reused as-is.
+ * @param {number} projId - Project ID
+ */
+function printUtilityAudit(projId) {
+  const p = projects.find((x) => x.id === projId);
+  if (!p) {
+    showToast('Project not found', 'error');
+    return;
+  }
+  const bldgs = getUDBldgs(projId);
+  if (!bldgs.length) {
+    showToast('No utility data — add buildings and bill data first', 'error');
+    return;
+  }
+  try {
+    const data = collectUtilityAuditData(projId, null);
+    if (!data) {
+      showToast('Could not build report data for this project', 'error');
+      return;
+    }
+    const html = _injectPageNumbers([rptPageAuditSpend(1, data), rptPageAuditEUI(2, data)].join('\n'));
+    showReportOverlay(html, (p.client || p.name || 'Project') + ' — Utility Audit / EUI Report');
+  } catch (e) {
+    showToast('Error generating utility audit report: ' + e.message, 'error');
+    console.error('printUtilityAudit error:', e);
+  }
+}
+window.printUtilityAudit = printUtilityAudit;
+
 // -- Stub page template functions (replaced by Tasks 6–17) --
 function rptPageCover(n, d) {
   const $c = function (v) {
@@ -3299,6 +3334,245 @@ function rptPageEUI(n, d) {
 
   return rptPage(n, 'Site EUI Benchmarking', bodyHTML, { data: d, label: 'Page ' + n + ' — Site EUI Benchmarking' });
 }
+
+/**
+ * _auditRptHdrData — adapts collectUtilityAuditData()'s minimal { project:{name,id},
+ * period:{startYm,endYm} } shape into the { project:{client}, period:{label,reportDate} }
+ * shape rptPage() reads for its interior header/footer chrome. Same pattern used
+ * throughout this file for reports whose content data doesn't match the full
+ * collectReportData() shape (grep "fakeData" for other examples).
+ * @param {object} d - collectUtilityAuditData() result
+ */
+function _auditRptHdrData(d) {
+  return {
+    project: { client: d.project.name, name: d.project.name, id: d.project.id },
+    period: {
+      label: d.period.startYm && d.period.endYm ? d.period.startYm + ' to ' + d.period.endYm : 'Trailing 12 Months',
+      reportDate: '',
+    },
+  };
+}
+
+/**
+ * rptPageAuditSpend — Utility Audit / EUI Report v1, page 1: per-building annual spend
+ * by commodity (Electric/Gas/Propane/Water+Sewer+Stormwater+Steam combined) + a campus
+ * total row. Table style copied from rptPageFinancial above. Flags buildings with no
+ * meter/bill data instead of silently showing $0.
+ * @param {number} n - page number
+ * @param {object} d - collectUtilityAuditData() result
+ */
+function rptPageAuditSpend(n, d) {
+  const $c = function (v) {
+    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+  };
+  const $n = function (v) {
+    return Math.round(v || 0).toLocaleString();
+  };
+
+  const rows = d.buildings
+    .map(function (b) {
+      const wsss =
+        (b.commodities.Water.cost || 0) +
+        (b.commodities.Sewer.cost || 0) +
+        (b.commodities.Stormwater.cost || 0) +
+        (b.commodities.Steam.cost || 0);
+      const noMeter = !b.hasMeter;
+      return (
+        '<tr>' +
+        '<td contenteditable="true">' +
+        (b.name || '—') +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        (b.hasSqft ? $n(b.sqft) : '—') +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        (noMeter ? '—' : $c(b.commodities.Electric.cost)) +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        (noMeter ? '—' : $c(b.commodities.Gas.cost)) +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        (noMeter ? '—' : $c(b.commodities.Propane.cost)) +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        (noMeter ? '—' : $c(wsss)) +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        (noMeter ? '—' : $c(b.totalCost)) +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  const totRow =
+    '<tr class="rpt-tot">' +
+    '<td contenteditable="true">Campus Total</td>' +
+    '<td class="rpt-n" contenteditable="true">' +
+    $n(d.campus.totalSqft) +
+    '</td>' +
+    '<td class="rpt-n" contenteditable="true"></td>' +
+    '<td class="rpt-n" contenteditable="true"></td>' +
+    '<td class="rpt-n" contenteditable="true"></td>' +
+    '<td class="rpt-n" contenteditable="true"></td>' +
+    '<td class="rpt-n" contenteditable="true">' +
+    $c(d.campus.totalCost) +
+    '</td>' +
+    '</tr>';
+
+  const table =
+    '<table class="rpt-table rpt-table-wrap" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
+    '<th style="width:22%">Building</th>' +
+    '<th class="rpt-n" style="width:10%">Sq Ft</th>' +
+    '<th class="rpt-n" style="width:14%">Electric $</th>' +
+    '<th class="rpt-n" style="width:14%">Gas $</th>' +
+    '<th class="rpt-n" style="width:14%">Propane $</th>' +
+    '<th class="rpt-n" style="width:14%">Water/Sewer/<br>Steam/Storm $</th>' +
+    '<th class="rpt-n" style="width:12%">Total Spend</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    rows +
+    totRow +
+    '</tbody>' +
+    '</table>';
+
+  const noMeterList = d.campus.flags.noMeter;
+  const flagNote = noMeterList.length
+    ? '<p contenteditable="true" style="font-size:11px;color:var(--rpt-page-text);margin:8px 0 0">' +
+      noMeterList.length +
+      ' of ' +
+      d.buildings.length +
+      ' buildings have no meter/bill data on file: ' +
+      noMeterList.join(', ') +
+      '</p>'
+    : '';
+
+  const bodyHTML =
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Annual utility spend by commodity for every building in the project, trailing 12 months of billed data.</p>' +
+    '<h2>Annual Spend by Commodity</h2>' +
+    table +
+    flagNote;
+
+  return rptPage(n, 'Utility Audit — Annual Spend', bodyHTML, {
+    data: _auditRptHdrData(d),
+    label: 'Page ' + n + ' — Utility Audit — Annual Spend',
+  });
+}
+
+/**
+ * rptPageAuditEUI — Utility Audit / EUI Report v1, page 2: per-building Site EUI ranking
+ * (buildings without sq ft or meter data listed separately, not ranked) + campus blended
+ * EUI. No CBECS/ENERGY STAR columns (v1 scope) — table style borrowed from rptPageEUI
+ * above but stripped down.
+ * @param {number} n - page number
+ * @param {object} d - collectUtilityAuditData() result
+ */
+function rptPageAuditEUI(n, d) {
+  const $n = function (v) {
+    return Math.round(v || 0).toLocaleString();
+  };
+
+  const ranked = d.buildings
+    .filter(function (b) {
+      return b.eui != null;
+    })
+    .sort(function (a, b) {
+      return a.eui - b.eui;
+    });
+  const unranked = d.buildings.filter(function (b) {
+    return b.eui == null;
+  });
+
+  const rankRows = ranked
+    .map(function (b, i) {
+      return (
+        '<tr>' +
+        '<td contenteditable="true">' +
+        (i + 1) +
+        '</td>' +
+        '<td contenteditable="true">' +
+        (b.name || '—') +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        $n(b.sqft) +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        b.eui.toFixed(1) +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  const unrankedRows = unranked
+    .map(function (b) {
+      const reason = !b.hasSqft ? 'No sq ft on file' : !b.hasMeter ? 'No meter data' : 'Insufficient data';
+      return (
+        '<tr>' +
+        '<td contenteditable="true">—</td>' +
+        '<td contenteditable="true">' +
+        (b.name || '—') +
+        '</td>' +
+        '<td class="rpt-n" contenteditable="true">' +
+        (b.hasSqft ? $n(b.sqft) : '—') +
+        '</td>' +
+        '<td contenteditable="true">' +
+        reason +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  const rankTable =
+    '<table class="rpt-table rpt-table-wrap" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<colgroup><col style="width:6%"><col style="width:44%"><col style="width:20%"><col style="width:30%"></colgroup>' +
+    '<thead><tr>' +
+    '<th>#</th><th>Building</th><th class="rpt-n">Square Feet</th><th class="rpt-n">Site EUI (kBtu/ft&sup2;/yr)</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    rankRows +
+    '</tbody>' +
+    '</table>';
+
+  const unrankedTable = unranked.length
+    ? '<h2>Excluded from Ranking</h2>' +
+      '<table class="rpt-table rpt-table-wrap" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
+      '<colgroup><col style="width:6%"><col style="width:44%"><col style="width:20%"><col style="width:30%"></colgroup>' +
+      '<thead><tr><th>#</th><th>Building</th><th class="rpt-n">Square Feet</th><th>Reason</th></tr></thead>' +
+      '<tbody>' +
+      unrankedRows +
+      '</tbody>' +
+      '</table>'
+    : '';
+
+  const campusEUICell = d.campus.campusEUI != null ? d.campus.campusEUI.toFixed(1) : '—';
+  const campusBlock =
+    '<div class="rpt-chart-box">' +
+    '<div class="rpt-chart-title">Campus Blended Site EUI</div>' +
+    '<div style="font-size:22px;font-weight:800;color:var(--rpt-eui-purple)">' +
+    campusEUICell +
+    ' <span style="font-size:12px;font-weight:400">kBtu/ft&sup2;/yr</span></div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Campus total kBtu &divide; total sq ft across all buildings with square footage on file (' +
+    $n(d.campus.totalSqft) +
+    ' ft&sup2;).</div>' +
+    '</div>';
+
+  const bodyHTML =
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft&sup2;, computed from Electric, Gas, and Propane usage over the trailing 12 months of billed data. Lower EUI indicates a more efficient building.</p>' +
+    '<h2>Building EUI Ranking</h2>' +
+    rankTable +
+    unrankedTable +
+    '<h2>Campus Blended EUI</h2>' +
+    campusBlock;
+
+  return rptPage(n, 'Utility Audit — Energy Use Intensity', bodyHTML, {
+    data: _auditRptHdrData(d),
+    label: 'Page ' + n + ' — Utility Audit — EUI',
+  });
+}
+
 function rptPageEnvironmentalImpact(n, d) {
   var _annualize = d.reportOptions && d.reportOptions.annualizePollution && d.period && d.period.type === 'quarterly';
   var _annFactor = _annualize ? 4 : 1;
