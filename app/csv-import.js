@@ -101,27 +101,59 @@ function handleBillCsvDrop(e) {
   document.getElementById('billCsvDrop').classList.remove('drag');
   const f = e.dataTransfer.files[0];
   if (f) processBillCsvFile(f);
+  else showToast('No file detected in drop — try again', 'warn');
 }
 function handleBillCsvFile(e) {
   const f = e.target.files[0];
   if (f) processBillCsvFile(f);
+  else showToast('No file selected', 'warn');
 }
 
 function processBillCsvFile(file) {
   const reader = new FileReader();
-  reader.onload = (e) => parseBillCsv(e.target.result, file.name);
+  reader.onload = (e) => {
+    try {
+      parseBillCsv(e.target.result, file.name);
+    } catch (err) {
+      console.error('parseBillCsv failed', err);
+      showToast('CSV parse error: ' + (err && err.message ? err.message : String(err)), 'warn');
+    }
+  };
+  reader.onerror = () => {
+    showToast('Could not read the file — try again', 'warn');
+  };
   reader.readAsText(file);
 }
 
-function parseBillCsv(text, fname) {
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  if (!b) {
-    showToast('Building context lost — close and re-open the import dialog', 'warn');
-    return;
+// Searches every project/building for a meter by id. Used as a fallback in parseBillCsv when
+// udSelProjId/udSelBldgId are stale or unset (e.g. the CSV modal was opened for a meter inside an
+// embedded project view, then a re-render elsewhere reset the active project/building globals
+// before the file was actually read). Returns { b, m } or null.
+function _findMeterAcrossProjects(mid) {
+  for (const pid in utilityData) {
+    const bldgs = (utilityData[pid] && utilityData[pid].buildings) || [];
+    for (const b of bldgs) {
+      const m = (b.meters || []).find((mm) => mm.id === mid);
+      if (m) return { b, m };
+    }
   }
-  const m = b.meters.find((m) => m.id === _csvImportMid);
+  return null;
+}
+
+function parseBillCsv(text, fname) {
+  _syncEmbedUDContext();
+  let b = getUDBldg(udSelProjId, udSelBldgId);
+  let m = b ? b.meters.find((mm) => mm.id === _csvImportMid) : null;
   if (!m) {
-    showToast('Meter context lost — close and re-open the import dialog', 'warn');
+    // Project/building globals may be stale — fall back to a direct meter-id search.
+    const found = _findMeterAcrossProjects(_csvImportMid);
+    if (found) {
+      b = found.b;
+      m = found.m;
+    }
+  }
+  if (!b || !m) {
+    showToast('Meter not found — close and re-open the import dialog for this meter', 'warn');
     return;
   }
   const isElec = m.commodity === 'Electric',
@@ -133,7 +165,7 @@ function parseBillCsv(text, fname) {
     .map((l) => l.trim())
     .filter((l) => l);
   if (lines.length < 2) {
-    showToast('CSV appears empty');
+    showToast('CSV appears empty — file has no data rows', 'warn');
     return;
   }
 
@@ -246,7 +278,11 @@ function parseBillCsv(text, fname) {
   });
 
   if (!parsed.length) {
-    showToast('No valid rows found in CSV');
+    showToast(
+      'No valid rows found in CSV — could not find a usable start date column' +
+        (hasHeader ? ' (checked header: "' + hdr.join(', ') + '")' : ' (no header row detected)'),
+      'warn',
+    );
     return;
   }
 
@@ -368,11 +404,24 @@ function showBillCsvPreview(rows, m, fname, warnings) {
 }
 
 function importBillCsvRows() {
-  if (!_csvImportRows.length || !_csvImportMid) return;
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  if (!b) return;
-  const m = b.meters.find((m) => m.id === _csvImportMid);
-  if (!m) return;
+  if (!_csvImportRows.length || !_csvImportMid) {
+    showToast('Nothing to import — re-open the import dialog and choose a CSV', 'warn');
+    return;
+  }
+  _syncEmbedUDContext();
+  let b = getUDBldg(udSelProjId, udSelBldgId);
+  let m = b ? b.meters.find((mm) => mm.id === _csvImportMid) : null;
+  if (!m) {
+    const found = _findMeterAcrossProjects(_csvImportMid);
+    if (found) {
+      b = found.b;
+      m = found.m;
+    }
+  }
+  if (!b || !m) {
+    showToast('Meter not found — close and re-open the import dialog for this meter', 'warn');
+    return;
+  }
   m.bills = m.bills || [];
 
   // Merge on exact start date — split-month bills (e.g. 2/1 and 2/15) are distinct rows
@@ -403,9 +452,10 @@ function importBillCsvRows() {
     });
   }
   // Run building-level cross-meter validation (water vs sewer parity, etc.)
-  if (typeof runBuildingValidation === 'function' && typeof getUDBldg === 'function') {
-    const _csvBldg = getUDBldg(udSelProjId, udSelBldgId);
-    if (_csvBldg) runBuildingValidation(_csvBldg);
+  // Uses the already-resolved `b` (not a fresh udSelProjId/udSelBldgId lookup) so it stays
+  // correct even when the fallback meter search above was needed.
+  if (typeof runBuildingValidation === 'function') {
+    runBuildingValidation(b);
   }
   saveUtilityData();
   closeBillCsvModal();

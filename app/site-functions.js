@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.05.800',
+    date: '2026-09-05',
+    title: 'Utility Data: CSV bill import no longer fails silently',
+    items: [
+      {
+        type: 'fix',
+        text: "Utility Data — fixed CSV bill import so it now shows the import preview (and a clear message if a file can't be read) instead of silently doing nothing.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.04.799',
     date: '2026-09-04',
     title: 'Utility Data → Bills: horizontal scroll bar fixed on wide bill tables',
