@@ -701,20 +701,16 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
         utilName,
       });
     }
-    // Wood River: $/MMbtu rate check
-    const mmbtuUsage = pf(extracted.NaturalGasMMbtu);
-    const mmbtuCharge = pf(extracted.TotalCurrentCharges);
-    if (mmbtuUsage > 0 && mmbtuCharge > 0) {
-      const utilName = extracted._utilityName || extracted.UtilityCompany || '';
-      _rateChecks.push({
-        field: 'NaturalGasMMbtu',
-        usage: mmbtuUsage,
-        charge: mmbtuCharge,
-        label: '$/MMbtu',
-        comm: 'Gas',
-        utilName,
-      });
-    }
+    // Fix (2026-09-06, WRE false high-rate warning): Wood River's $/MMbtu rate is
+    // NOT routed through `_rateChecks` / the generic `validateImpliedRate('Gas', ...)`
+    // below — that call compares against KNOWN_RATES.Gas.therm (typical ~$0.798/Therm)
+    // with no unit conversion, a 10x mismatch that false-flagged every WRE bill
+    // ("$5.25/MMbtu higher than typical $0.798/MMbtu"). The correct WRE-specific
+    // $1-$20/MMbtu check already lives in validateBillData (bill-analysis.js ~247-260,
+    // its own severity/warning path) and does NOT false-fire; both functions' warnings
+    // are combined per-bill in analyzeBillExtraction, so no separate check is skipped —
+    // only this redundant, wrongly-scaled duplicate is removed. Do not re-add a
+    // therm-scaled MMbtu push here.
   } else if (_comm === 'electric' || _comm === '') {
     const kwhUsage = pf(extracted.kWhConsumed);
     const kwhCharge = pf(extracted.EnergyOnPeakCharge) + pf(extracted.EnergyOffPeakCharge);

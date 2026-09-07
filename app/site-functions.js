@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.06.803',
+    date: '2026-09-06',
+    title: 'PDF / OCR: WoodRiver Energy gas bill reading improved',
+    items: [
+      {
+        type: 'fix',
+        text: "PDF / OCR — improved WoodRiver Energy gas bill reading: recovers the billing month on lower-quality scans, keeps the service address clean for meter matching, and removes a false 'rate too high' warning.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.06.802',
     date: '2026-09-06',
     title: 'Utility Data: CSV bill import now accepts the full export field set',

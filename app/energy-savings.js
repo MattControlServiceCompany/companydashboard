@@ -6617,25 +6617,38 @@ const UTILITY_RULES = [
       let ProductionMonth = null;
       {
         const _lines = t.split(/\r?\n/);
-        // First try: inline match (some OCR may join them)
+        // Fix (2026-09-06, WRE billing-period false-null bug): the inline regex used to
+        // accept ANY alphabetic token before the year (e.g. OCR-garbled "Mary 2025" on
+        // Inv 452084's page-1 pass), which then failed the WRE_MONTH_MAP lookup below and
+        // left BillingPeriodStart/End null for all 10 sites. monthRe (restricted to real
+        // month names) is now defined up front and used to VALIDATE the inline capture —
+        // an invalid token is rejected and we fall through to the line scan below, which
+        // can recover a clean month name elsewhere in the OCR text (WRE repeats the
+        // "Production Month" header on every invoice page; a later page's OCR pass — e.g.
+        // page 2's "Production Month: May 2025" — can read it correctly even when an
+        // earlier page's pass garbled it).
+        const monthRe =
+          /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i;
+        // First try: inline match (some OCR may join label+value on one line)
         const pmInlineM = t.match(/Production\s+Month[\s:]*([A-Za-z]+\s+\d{4})/i);
-        if (pmInlineM) {
+        if (pmInlineM && monthRe.test(pmInlineM[1])) {
           ProductionMonth = pmInlineM[1];
         } else {
-          // Two-line match: find the label line, then scan the next few lines
-          // for a month name followed by a 4-digit year
-          const monthRe =
-            /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i;
-          for (let _i = 0; _i < _lines.length; _i++) {
+          // Line scan: find each "Production Month" label line, then check that line
+          // ITSELF first (OCR commonly joins label+value on one line, as above) and then
+          // the next few lines (pdftotext commonly puts label+value on separate lines)
+          // for a real month name followed by a 4-digit year. Keeps trying subsequent
+          // "Production Month" occurrences (multi-page invoices repeat the header) until
+          // a valid month is found.
+          for (let _i = 0; _i < _lines.length && !ProductionMonth; _i++) {
             if (/Production\s+Month/i.test(_lines[_i])) {
-              for (let _j = _i + 1; _j < Math.min(_i + 5, _lines.length); _j++) {
+              for (let _j = _i; _j < Math.min(_i + 5, _lines.length); _j++) {
                 const _mM = _lines[_j].match(monthRe);
                 if (_mM) {
                   ProductionMonth = _mM[1] + ' ' + _mM[2];
                   break;
                 }
               }
-              if (ProductionMonth) break;
             }
           }
         }
@@ -6820,8 +6833,20 @@ const UTILITY_RULES = [
               _acct = _saM[2].trim();
               _meter = _saM[3].trim();
             } else {
-              // Fallback: no Acct/Meter on same line (shouldn't happen but be safe)
-              const _saOnly = ln.match(/Service\s+Address\s*[:;,.]?\s*(.+)/i);
+              // Fallback: primary acct/meter regex didn't match on this line (illegible
+              // scan or non-slash-separated value). Fix (2026-09-06, WRE ServiceAddress
+              // garbage bug): the old fallback captured `.+` to END OF LINE, which
+              // swallowed the garbled "Acct/Meter: ..." tail INTO ServiceAddress (e.g.
+              // "BofE - 101 E South St                    AcctMeter:  SE0TOMGO0T E1340"),
+              // breaking the downstream address-based meter matcher (findMeterMatch,
+              // bill-analysis.js). Bound the capture to stop before the "Acct...Meter"
+              // label — same boundary the primary regex above already respects — via a
+              // lookahead, so ServiceAddress holds only the clean site name/address even
+              // when the account/meter VALUE is unreadable. Falls through to end-of-line
+              // when no Acct/Meter label is present at all (unchanged from before).
+              const _saOnly = ln.match(
+                /Service\s+Address\s*[:;,.]?\s*(.+?)(?=\s+Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\b|$)/i,
+              );
               _addr = _saOnly ? _saOnly[1].trim() : null;
               _acct = null;
               _meter = null;
