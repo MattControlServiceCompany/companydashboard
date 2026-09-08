@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.07.804',
+    date: '2026-09-07',
+    title: 'Reports: quarterly report now opens on the cover page',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly report now opens on the cover page. The Board Executive Summary section is no longer selected by default, so it no longer displaces the cover as page 1 — it can still be added back from the section picker.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.06.803',
     date: '2026-09-06',
     title: 'PDF / OCR: WoodRiver Energy gas bill reading improved',

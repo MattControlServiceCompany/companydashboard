@@ -9672,7 +9672,7 @@ let _reportProjId = null,
   _reportType = null;
 
 const REPORT_SECTIONS = [
-  { key: 'boardSummary', label: 'Board Executive Summary', group: 'Executive' },
+  { key: 'boardSummary', label: 'Board Executive Summary', group: 'Executive', defaultOff: true },
   { key: 'cover', label: 'Cover Page', group: 'Main' },
   { key: 'financial', label: 'Financial Summary', group: 'Main' },
   { key: 'savingsPerformance', label: 'Savings Performance', group: 'Main' },
