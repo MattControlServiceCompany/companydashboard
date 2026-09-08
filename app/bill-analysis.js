@@ -11931,6 +11931,34 @@ function rotateCanvas180(srcCanvas) {
   ctx.drawImage(srcCanvas, 0, 0);
   return dst;
 }
+// rotateCanvas90 / rotateCanvas270 (item 2e310b63, 2026-09-08): returns a new
+// canvas that is the source rotated 90° clockwise / counter-clockwise.
+// Added alongside rotateCanvas180 so the CHANGE-4 orientation heuristic below
+// can probe a full 0°/90°/180°/270° set — image-only scanned PDFs sometimes
+// carry a stray /Rotate 90 or /Rotate 270 flag on otherwise-upright content,
+// which the previous 0°/180°-only probe could never detect. Dimensions swap
+// (dst.width/height = src.height/width) because a 90°/270° turn is not
+// square-preserving on a portrait/landscape page.
+function rotateCanvas90(srcCanvas) {
+  const dst = document.createElement('canvas');
+  dst.width = srcCanvas.height;
+  dst.height = srcCanvas.width;
+  const ctx = dst.getContext('2d');
+  ctx.translate(dst.width, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(srcCanvas, 0, 0);
+  return dst;
+}
+function rotateCanvas270(srcCanvas) {
+  const dst = document.createElement('canvas');
+  dst.width = srcCanvas.height;
+  dst.height = srcCanvas.width;
+  const ctx = dst.getContext('2d');
+  ctx.translate(0, dst.height);
+  ctx.rotate(-Math.PI / 2);
+  ctx.drawImage(srcCanvas, 0, 0);
+  return dst;
+}
 // binarizeCanvas: Otsu threshold → pure B/W.  Returns a new canvas.
 // Used as a triggered extra pass for low-scoring pages (CHANGE 5).
 function binarizeCanvas(srcCanvas) {
@@ -11992,6 +12020,107 @@ function binarizeCanvas(srcCanvas) {
 // the upside-down orientation test (CHANGE 4).
 function _countOcrSignals(txt) {
   return (txt.match(/[\d$]/g) || []).length;
+}
+// _pickBestPageOrientation (item 2e310b63, 2026-09-08): the CHANGE-4 orientation
+// probe's race/selection logic, extracted out of the big per-page OCR loop so it
+// can be exercised directly by a regression test (see
+// _context/reference/ocr-harness/orientation-harness.js, outside this repo —
+// see that folder's own note on why real client PDFs never get copied into git)
+// without needing the loop's surrounding state (workerBox, statusCb, budgets).
+//
+// Extended from a 0°/180° probe to a full 0°/90°/180°/270° probe — image-only
+// scanned PDFs (e.g. Louisburg Kansas School District water/sewer bills) can
+// carry a stray /Rotate 90 or /Rotate 270 flag on otherwise-upright content,
+// which the previous 0°/180°-only probe could never detect: those pages always
+// OCR'd sideways, scored ~0, and fell through to Generic Utility with every
+// field null. Same crop/race/threshold shape as the original 180°-only version,
+// just two more rotation candidates in the same Promise.all race.
+//
+// `canvasO` is the page rendered at 0° (2.5x, page-cache-owned — never freed
+// here). `recognizeFn` is (canvas, params) => Promise<{ result: { data: { text
+// } } }> — production passes a closure over recognizeWithTimeout bound to
+// workerBox.current; a test can pass a real Tesseract worker's .recognize
+// wrapped the same way.
+//
+// SELECTION RULE (revised 2026-09-08, item 2e310b64 — the original 1.5x+3
+// fixed-multiplier-over-0° rule was too conservative and left genuinely
+// rotated scans undetected): argmax over all four candidates (0/90/180/270),
+// with a deliberate small bias toward 0° so a near-tie never rotates a page
+// that's already upright. A non-0° winner is only accepted when it clears
+// BOTH:
+//   (a) ROT_MARGIN_RATIO (winner.sig >= sig0 * 1.35) — a relative margin, and
+//   (b) ROT_MARGIN_ABS (winner.sig - sig0 >= 8) — an absolute floor, so a
+//       near-empty 0° crop (sig0 near 0) can't be "beaten" by a couple of
+//       stray OCR-noise digits on a rotated candidate.
+// 1.35 (35%) was derived from real fixture measurements, not guessed — the
+// task's suggested "~15%" was tried first and REJECTED because it falsely
+// rotates a genuine upright Louisburg bill (see below). Measured top-20%-crop
+// signal counts (_countOcrSignals, real Tesseract OCR, real bills):
+//   USD 416 High School   (truly /Rotate 270): sig0=48, sig90=77 → ratio 1.60 (must ACCEPT)
+//   USD 416 Primary       (truly /Rotate 270): sig0=42, sig90=64 → ratio 1.52 (must ACCEPT — this was the bug)
+//   Control (USD 416 MS, genuinely upright):    sig0=46, sig90=57 → ratio 1.24 (must REJECT)
+// A 15% margin (1.15x) would accept all three, including the control —
+// a false rotation of an already-correct page. 1.35x sits strictly between
+// the lowest true-positive ratio (1.52) and the true-negative ratio (1.24),
+// with margin on both sides, so it clears the two rotated bills, holds the
+// control at 0°, and generalizes better than a value tuned to the exact
+// boundary. Returns { winnerLabel, winnerCanvas, sig0, sigs } when a rotated
+// candidate wins by this margin — caller owns winnerCanvas and must free it
+// after use. Returns null if 0° wins or no candidate clears the margin (the
+// two/three losing rotated canvases are freed internally either way,
+// mirroring the original canvas180 lifecycle).
+async function _pickBestPageOrientation(canvasO, recognizeFn) {
+  const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
+  const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
+  const canvas90 = rotateCanvas90(canvasO);
+  const canvas180 = rotateCanvas180(canvasO);
+  const canvas270 = rotateCanvas270(canvasO);
+  const cropRect90 = {
+    left: 0,
+    top: 0,
+    width: canvas90.width,
+    height: Math.max(1, Math.floor(canvas90.height * 0.2)),
+  };
+  const cropRect270 = {
+    left: 0,
+    top: 0,
+    width: canvas270.width,
+    height: Math.max(1, Math.floor(canvas270.height * 0.2)),
+  };
+  const safe = (p) => p.catch(() => ({ result: { data: { text: '' } } }));
+  const [probe0, probe90, probe180, probe270] = await Promise.all([
+    safe(recognizeFn(canvasO, { rotateAuto: false, rectangle: cropRect })),
+    safe(recognizeFn(canvas90, { rotateAuto: false, rectangle: cropRect90 })),
+    safe(recognizeFn(canvas180, { rotateAuto: false, rectangle: cropRect })),
+    safe(recognizeFn(canvas270, { rotateAuto: false, rectangle: cropRect270 })),
+  ]);
+  const sig0 = _countOcrSignals(probe0.result.data.text);
+  const sigs = {
+    90: _countOcrSignals(probe90.result.data.text),
+    180: _countOcrSignals(probe180.result.data.text),
+    270: _countOcrSignals(probe270.result.data.text),
+  };
+  const candidates = [
+    { label: '90', canvas: canvas90, sig: sigs[90] },
+    { label: '180', canvas: canvas180, sig: sigs[180] },
+    { label: '270', canvas: canvas270, sig: sigs[270] },
+  ];
+  candidates.sort((a, b) => b.sig - a.sig);
+  const winner = candidates.shift();
+  // Losing candidates are never used again — free them immediately.
+  for (const c of candidates) {
+    c.canvas.width = 0;
+    c.canvas.height = 0;
+  }
+  const ROT_MARGIN_RATIO = 1.35; // see selection-rule comment above _pickBestPageOrientation
+  const ROT_MARGIN_ABS = 8;
+  if (winner.sig >= sig0 * ROT_MARGIN_RATIO && winner.sig - sig0 >= ROT_MARGIN_ABS) {
+    return { winnerLabel: winner.label, winnerCanvas: winner.canvas, sig0, sigs };
+  }
+  // No rotated candidate wins — free the would-be winner's canvas too.
+  winner.canvas.width = 0;
+  winner.canvas.height = 0;
+  return null;
 }
 // _renderPageHQ: renders `pg` at `targetScale` for OCR, using a supersample-then-
 // downsample process that defeats pdf.js's own internal image-smoothing heuristic
@@ -13180,12 +13309,14 @@ async function extractPDFText(ab, statusCb) {
               canvas = null;
             }
           }
-          // ── CHANGE 4: 180° upside-down heuristic ──────────────────────────────
+          // ── CHANGE 4: 0°/90°/180°/270° orientation heuristic ───────────────────
           // Only fires when primary+retry passes all scored very low (<3).
-          // Renders the page at 2.5x, crops a small strip from the top, and
-          // runs a quick recognize at 0° vs 180°.  If the rotated crop yields
-          // significantly more digits/dollar-signs, we rotate the full canvas
-          // 180° and run a full OCR pass to replace the best result.
+          // Renders the page at 2.5x, crops a small strip from the top, and runs
+          // a quick recognize race across all four rotations (see
+          // _pickBestPageOrientation above — extended 2026-09-08, item 2e310b63,
+          // from the original 0°/180°-only probe). If a rotated crop yields
+          // significantly more digits/dollar-signs, we rotate the full canvas to
+          // that orientation and run a full OCR pass to replace the best result.
           const ORIENT_SCORE_THRESHOLD = 3;
           // Bug #134 / budget: neither was checked here before — a Cancel click or an
           // exceeded budget wouldn't stop this refinement pass until the outer page loop's
@@ -13217,7 +13348,7 @@ async function extractPDFText(ab, statusCb) {
             _ocrPageBudgetExceeded = true;
           }
           if (bestScore < ORIENT_SCORE_THRESHOLD && !_ocrPageBudgetExceeded) {
-            let canvas180;
+            let _pickedForCleanup;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
               // FIX (b35c9b09 Step 2): fixed scale 2.5 — a cache HIT whenever
@@ -13227,37 +13358,30 @@ async function extractPDFText(ab, statusCb) {
               // owned reference — never freed here, only via
               // _releasePageRenderCache() at page exit.
               const canvasO = await _renderPageHQCached(2.5);
-              // Crop top 20% strip for a fast orientation probe
-              const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
-              const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
-              canvas180 = rotateCanvas180(canvasO);
-              // Quick probe: recognize top strip at both orientations
-              const [probe0, probe180] = await Promise.all([
-                recognizeWithTimeout(workerBox.current, canvasO, { rotateAuto: false, rectangle: cropRect }).catch(
-                  () => ({
-                    result: { data: { text: '' } },
-                  }),
-                ),
-                recognizeWithTimeout(workerBox.current, canvas180, { rotateAuto: false, rectangle: cropRect }).catch(
-                  () => ({
-                    result: { data: { text: '' } },
-                  }),
-                ),
-              ]);
-              const sig0 = _countOcrSignals(probe0.result.data.text);
-              const sig180 = _countOcrSignals(probe180.result.data.text);
-              if (sig180 > sig0 * 1.5 + 3) {
-                // 180° clearly wins — run full OCR on the rotated canvas
-                if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — rotating 180° and re-OCR...');
-                const { result: rotResult } = await recognizeWithTimeout(workerBox.current, canvas180, {
+              const picked = await _pickBestPageOrientation(canvasO, (canvas, params) =>
+                recognizeWithTimeout(workerBox.current, canvas, params),
+              );
+              if (picked) {
+                _pickedForCleanup = picked.winnerCanvas;
+                // A rotated candidate clearly wins — run full OCR on it
+                if (statusCb)
+                  statusCb(
+                    'OCR page ' + pgNum + '/' + maxPages + ' — rotating ' + picked.winnerLabel + '° and re-OCR...',
+                  );
+                const { result: rotResult } = await recognizeWithTimeout(workerBox.current, picked.winnerCanvas, {
                   rotateAuto: true,
                 });
                 const rotText = rotResult.data.text;
                 const rotScore = scorePage(rotText);
-                allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-rot180', text: rotText, score: rotScore });
+                allPassTexts[pgNum].push({
+                  scale: 2.5,
+                  label: '2.5x-rot' + picked.winnerLabel,
+                  text: rotText,
+                  score: rotScore,
+                });
                 passScoreLog.push({
                   page: pgNum,
-                  pass: '2.5x-rot180',
+                  pass: '2.5x-rot' + picked.winnerLabel,
                   score: rotScore.toFixed(1),
                   time: '—',
                   chars: rotText.length,
@@ -13271,12 +13395,14 @@ async function extractPDFText(ab, statusCb) {
               /* orientation probe failed — continue with existing best */
             } finally {
               // F2 (superseded by b35c9b09 Step 2 for canvasO — it is cache-
-              // owned now, see above): canvas180 is a NEW canvas derived from
-              // canvasO via rotateCanvas180() each time, never cached — still
-              // freed immediately here exactly as before.
-              if (canvas180) {
-                canvas180.width = 0;
-                canvas180.height = 0;
+              // owned now, see above): the winning rotated canvas returned by
+              // _pickBestPageOrientation is a NEW canvas derived from canvasO,
+              // never cached — still freed immediately here exactly as before.
+              // The losing candidate(s) are already freed inside
+              // _pickBestPageOrientation itself.
+              if (_pickedForCleanup) {
+                _pickedForCleanup.width = 0;
+                _pickedForCleanup.height = 0;
               }
             }
           }
