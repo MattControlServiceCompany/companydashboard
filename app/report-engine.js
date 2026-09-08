@@ -396,50 +396,39 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         if (inPeriod) periodSavings += totalCostSav;
       });
 
-      // Annual EUI — baseline and current (rolling 12 months)
-      const blBills = _dashGetBaselineBills(m);
-      if (m.commodity === 'Gas') {
-        blBills.forEach((bill) => {
-          annBlKBtu += toKBtu(0, parseFloat(bill.therms) || 0, 0);
+      // Annual EUI accumulation — all-fuel (Electric + Gas + Propane; Water/Sewer/
+      // Stormwater are excluded above by energyCommodities). Baseline uses the SAME
+      // per-calendar-month baseline (blByCalMo, built via buildMoMap just above) that
+      // getMeterSavings() uses for $ savings, so the reported Baseline EUI is
+      // consistent with reported savings and does not depend on which report
+      // period/quarter is selected (quarter-invariant). Current uses the trailing
+      // 12 months of actual post-baseline usage. Canonical eui.js functions
+      // (computeKBtu/computeBaselineEUI/computeRolling12EUI) do the unit math;
+      // sqft=1 here is a pure kBtu-annualization call — the real building sqft is
+      // applied once, below, when blEUI/curEUI are derived from these totals.
+      const blCalMoCt = Object.keys(blByCalMo).length;
+      if (blCalMoCt > 0) {
+        let meterBlKBtu = 0;
+        Object.values(blByCalMo).forEach((v) => {
+          meterBlKBtu +=
+            m.commodity === 'Gas' ? computeKBtu(0, v, 0) : isPropane ? computeKBtu(0, 0, v) : computeKBtu(v, 0, 0);
         });
-        const last12 = bills.filter((bill) => {
-          const ym = normMonth(bill.start, bill.end, incl, bills);
-          return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
+        annBlKBtu += computeBaselineEUI(meterBlKBtu, blCalMoCt, 1);
+      }
+
+      const last12Rows = postRows.slice(-12);
+      if (last12Rows.length) {
+        let meterCurKBtu = 0;
+        last12Rows.forEach((r) => {
+          const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+          meterCurKBtu +=
+            m.commodity === 'Gas'
+              ? computeKBtu(0, actUsage, 0)
+              : isPropane
+                ? computeKBtu(0, 0, actUsage)
+                : computeKBtu(actUsage, 0, 0);
         });
-        last12.forEach((bill) => {
-          annCurKBtu += toKBtu(0, parseFloat(bill.therms) || 0, 0);
-        });
-      } else if (m.commodity === 'Propane') {
-        blBills.forEach((bill) => {
-          annBlKBtu += toKBtu(
-            0,
-            0,
-            parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
-          );
-        });
-        const last12 = bills.filter((bill) => {
-          const ym = normMonth(bill.start, bill.end, incl, bills);
-          return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
-        });
-        last12.forEach((bill) => {
-          annCurKBtu += toKBtu(
-            0,
-            0,
-            parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
-          );
-        });
-      } else {
-        // Electric
-        blBills.forEach((bill) => {
-          annBlKBtu += toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
-        });
-        const last12 = bills.filter((bill) => {
-          const ym = normMonth(bill.start, bill.end, incl, bills);
-          return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
-        });
-        last12.forEach((bill) => {
-          annCurKBtu += toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
-        });
+        annCurKBtu += computeRolling12EUI(meterCurKBtu, last12Rows.length, 1);
       }
     });
 
@@ -477,53 +466,17 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       savings: (propaneMonthly[ym] || {}).savings || 0,
     }));
 
-    // EUI calculations — period-matched comparison (same months for baseline and current)
-    const reportCalMonths = reportYMs.map((ym) => parseInt(ym.split('-')[1]));
-    let periodBlKBtu = 0,
-      periodCurKBtu = 0;
-    let periodBlMoCt = 0,
-      periodCurMoCt = 0;
-    const blMoSet = new Set();
-    const curMoSet = new Set();
-    bMeters.forEach(({ m: mt, bills: mtBills, bl: mtBl, incl: mtIncl }) => {
-      const mtBlBills = _dashGetBaselineBills(mt);
-      mtBlBills.forEach((bill) => {
-        const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
-        if (!ym) return;
-        blMoSet.add(ym);
-        const calMo = parseInt(ym.split('-')[1]);
-        if (reportCalMonths.includes(calMo)) {
-          const kbtu =
-            mt.commodity === 'Gas'
-              ? toKBtu(0, parseFloat(bill.therms) || 0, 0)
-              : mt.commodity === 'Propane'
-                ? toKBtu(0, 0, parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0)
-                : toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
-          periodBlKBtu += kbtu;
-          periodBlMoCt++;
-        }
-      });
-      mtBills
-        .filter((bill) => {
-          const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
-          return ym && reportYMs.includes(ym);
-        })
-        .forEach((bill) => {
-          const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
-          if (!ym) return;
-          curMoSet.add(ym);
-          const kbtu =
-            mt.commodity === 'Gas'
-              ? toKBtu(0, parseFloat(bill.therms) || 0, 0)
-              : mt.commodity === 'Propane'
-                ? toKBtu(0, 0, parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0)
-                : toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
-          periodCurKBtu += kbtu;
-          periodCurMoCt++;
-        });
-    });
-    const blEUI = sqft > 0 && periodBlMoCt > 0 ? ((periodBlKBtu / periodBlMoCt) * 12) / sqft : 0;
-    const curEUI = sqft > 0 && periodCurMoCt > 0 ? ((periodCurKBtu / periodCurMoCt) * 12) / sqft : 0;
+    // EUI — single source of truth: computations/eui.js. Baseline is the
+    // normalized annual all-fuels total (annBlKBtu, accumulated per-meter above
+    // from the SAME blByCalMo baseline getMeterSavings() uses); Current is the
+    // trailing-12-months-actual all-fuels total (annCurKBtu). Both are already
+    // annualized (12-month-equivalent) sums across every energy meter on this
+    // building, so passing monthCount=12 here is a straight kBtu→EUI conversion,
+    // not a second annualization. This makes Baseline EUI independent of which
+    // report period/quarter is selected (quarter-invariant) — it no longer
+    // slices baseline bills down to only the report's 3 calendar months.
+    const blEUI = computeBaselineEUI(annBlKBtu, 12, sqft);
+    const curEUI = computeRolling12EUI(annCurKBtu, 12, sqft);
     const cbecsEUI = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
     const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'] || [28, 52.4, 80];
     let pctileLabel = '';
@@ -599,20 +552,11 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
 
   // --- Project totals ---
   const totSavingsPct = totBlCost > 0 ? (totSavings / totBlCost) * 100 : 0;
-  // Annualize project EUI: weighted average of per-building annualized EUIs
-  let _euiBlWt = 0,
-    _euiCurWt = 0,
-    _euiSqftSum = 0;
-  buildingsData.forEach(function (bd) {
-    var s = bd.sqft || 0;
-    if (s > 0) {
-      _euiBlWt += (bd.eui.baseline || 0) * s;
-      _euiCurWt += (bd.eui.current || 0) * s;
-      _euiSqftSum += s;
-    }
-  });
-  const euiBaseline = _euiSqftSum > 0 ? _euiBlWt / _euiSqftSum : 0;
-  const euiCurrent = _euiSqftSum > 0 ? _euiCurWt / _euiSqftSum : 0;
+  // Project EUI: sqft-weighted average of per-building EUIs, via the canonical
+  // computeProjectEUI (computations/eui.js) — same rollup used elsewhere in the app.
+  const _projEUI = computeProjectEUI(buildingsData);
+  const euiBaseline = _projEUI.baseline;
+  const euiCurrent = _projEUI.current;
 
   // Quarterly targets from measures only — no percentage fallback
   const annualBaseline = Object.values(baselineMoMap).reduce((s, v) => s + v, 0);
