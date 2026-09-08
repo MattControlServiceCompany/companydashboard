@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.08.805',
+    date: '2026-09-08',
+    title: 'Bill Analysis: sideways scanned utility bills now read correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Bill Analysis (utility bill PDF extraction) — scanned utility bills that came in rotated sideways now extract correctly instead of returning blank fields. Fixes Louisburg USD 416 water/sewer scans and any similar rotated scan.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.07.804',
     date: '2026-09-07',
     title: 'Reports: quarterly report now opens on the cover page',
