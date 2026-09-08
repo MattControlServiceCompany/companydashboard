@@ -12042,11 +12042,33 @@ function _countOcrSignals(txt) {
 // workerBox.current; a test can pass a real Tesseract worker's .recognize
 // wrapped the same way.
 //
-// Returns { winnerLabel, winnerCanvas, sig0, sigs } if a rotated candidate
-// clearly wins (sig > sig0*1.5+3, same threshold as before) — caller owns
-// winnerCanvas and must free it after use. Returns null if 0° already wins or
-// no candidate clears the threshold (the two/three losing rotated canvases are
-// freed internally either way, mirroring the original canvas180 lifecycle).
+// SELECTION RULE (revised 2026-09-08, item 2e310b64 — the original 1.5x+3
+// fixed-multiplier-over-0° rule was too conservative and left genuinely
+// rotated scans undetected): argmax over all four candidates (0/90/180/270),
+// with a deliberate small bias toward 0° so a near-tie never rotates a page
+// that's already upright. A non-0° winner is only accepted when it clears
+// BOTH:
+//   (a) ROT_MARGIN_RATIO (winner.sig >= sig0 * 1.35) — a relative margin, and
+//   (b) ROT_MARGIN_ABS (winner.sig - sig0 >= 8) — an absolute floor, so a
+//       near-empty 0° crop (sig0 near 0) can't be "beaten" by a couple of
+//       stray OCR-noise digits on a rotated candidate.
+// 1.35 (35%) was derived from real fixture measurements, not guessed — the
+// task's suggested "~15%" was tried first and REJECTED because it falsely
+// rotates a genuine upright Louisburg bill (see below). Measured top-20%-crop
+// signal counts (_countOcrSignals, real Tesseract OCR, real bills):
+//   USD 416 High School   (truly /Rotate 270): sig0=48, sig90=77 → ratio 1.60 (must ACCEPT)
+//   USD 416 Primary       (truly /Rotate 270): sig0=42, sig90=64 → ratio 1.52 (must ACCEPT — this was the bug)
+//   Control (USD 416 MS, genuinely upright):    sig0=46, sig90=57 → ratio 1.24 (must REJECT)
+// A 15% margin (1.15x) would accept all three, including the control —
+// a false rotation of an already-correct page. 1.35x sits strictly between
+// the lowest true-positive ratio (1.52) and the true-negative ratio (1.24),
+// with margin on both sides, so it clears the two rotated bills, holds the
+// control at 0°, and generalizes better than a value tuned to the exact
+// boundary. Returns { winnerLabel, winnerCanvas, sig0, sigs } when a rotated
+// candidate wins by this margin — caller owns winnerCanvas and must free it
+// after use. Returns null if 0° wins or no candidate clears the margin (the
+// two/three losing rotated canvases are freed internally either way,
+// mirroring the original canvas180 lifecycle).
 async function _pickBestPageOrientation(canvasO, recognizeFn) {
   const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
   const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
@@ -12090,7 +12112,9 @@ async function _pickBestPageOrientation(canvasO, recognizeFn) {
     c.canvas.width = 0;
     c.canvas.height = 0;
   }
-  if (winner.sig > sig0 * 1.5 + 3) {
+  const ROT_MARGIN_RATIO = 1.35; // see selection-rule comment above _pickBestPageOrientation
+  const ROT_MARGIN_ABS = 8;
+  if (winner.sig >= sig0 * ROT_MARGIN_RATIO && winner.sig - sig0 >= ROT_MARGIN_ABS) {
     return { winnerLabel: winner.label, winnerCanvas: winner.canvas, sig0, sigs };
   }
   // No rotated candidate wins — free the would-be winner's canvas too.
