@@ -1742,6 +1742,72 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.07.804',
+    date: '2026-09-07',
+    title: 'Reports: quarterly report now opens on the cover page',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly report now opens on the cover page. The Board Executive Summary section is no longer selected by default, so it no longer displaces the cover as page 1 — it can still be added back from the section picker.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.06.803',
+    date: '2026-09-06',
+    title: 'PDF / OCR: WoodRiver Energy gas bill reading improved',
+    items: [
+      {
+        type: 'fix',
+        text: "PDF / OCR — improved WoodRiver Energy gas bill reading: recovers the billing month on lower-quality scans, keeps the service address clean for meter matching, and removes a false 'rate too high' warning.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.06.802',
+    date: '2026-09-06',
+    title: 'Utility Data: CSV bill import now accepts the full export field set',
+    items: [
+      {
+        type: 'feature',
+        text: 'Utility Data — CSV bill import now accepts the full set of bill fields, so a file exported from the app (with meter reads, rates, demand, and on-peak/off-peak values) imports back complete; the simple date/usage/cost columns still work too.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.06.801',
+    date: '2026-09-06',
+    title: 'Utility Data: new Audit / Energy Use Intensity report',
+    items: [
+      {
+        type: 'feature',
+        text: "Utility Data — new Audit / Energy Use Intensity report: shows each building's annual utility spend and Energy Use Intensity with a whole-project total, and prints or exports to PDF and Word.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.05.800',
+    date: '2026-09-05',
+    title: 'Utility Data: CSV bill import no longer fails silently',
+    items: [
+      {
+        type: 'fix',
+        text: "Utility Data — fixed CSV bill import so it now shows the import preview (and a clear message if a file can't be read) instead of silently doing nothing.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.04.799',
+    date: '2026-09-04',
+    title: 'Utility Data → Bills: horizontal scroll bar fixed on wide bill tables',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data → Bills: the horizontal scroll bar now stays visible on wide bill tables (such as gas meters with flagged periods) instead of hiding below all the rows.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.04.798',
     date: '2026-09-04',
     title: 'PDF / OCR (Bill Import): split-period Evergy bills now auto-resolve their total usage',

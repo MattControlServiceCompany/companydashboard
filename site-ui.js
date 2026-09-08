@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.04.798'; // deployed 2026-08-31 (OCR parallelized across Tesseract worker pool)
+  var CH_VERSION = 'v2026.09.07.804'; // deployed 2026-09-06 (Utility Audit / EUI Report added to Utility Data)
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
