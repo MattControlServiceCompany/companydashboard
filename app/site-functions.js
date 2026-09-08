@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.08.807',
+    date: '2026-09-08',
+    title: 'Performance Report and Building Scorecard: energy figures now match across the board',
+    items: [
+      {
+        type: 'fix',
+        text: 'Performance report — the kW Baseline column now matches the savings calculation for every meter.',
+      },
+      {
+        type: 'fix',
+        text: 'Building scorecard — buildings that use propane now include it in their Energy Use Intensity and score.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.08.806',
     date: '2026-09-08',
     title: 'Performance Report: Energy Use Intensity now consistent across every quarter',
