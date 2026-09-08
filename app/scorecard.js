@@ -364,7 +364,8 @@ function renderBuildingScorecardPane(pane, b, projId) {
         if (!last12YM.length || last12YM.includes(ym) || ymKeys.length === 0) {
           if (m.commodity === 'Electric') kwhLast += parseFloat(bill.kwh || bill.kWh) || 0;
           else if (m.commodity === 'Gas') thermsLast += parseFloat(bill.therms) || 0;
-          else if (m.commodity === 'Propane') propLast += parseFloat(bill.gallons) || 0;
+          // Bug #139: propane usage lives in gallonsDelivered, not gallons (see utility-data.js:5412)
+          else if (m.commodity === 'Propane') propLast += parseFloat(bill.gallonsDelivered) || 0;
         }
       });
     });
@@ -374,11 +375,12 @@ function renderBuildingScorecardPane(pane, b, projId) {
         (m.bills || []).slice(-12).forEach(function (bill) {
           if (m.commodity === 'Electric') kwhLast += parseFloat(bill.kwh || bill.kWh) || 0;
           else if (m.commodity === 'Gas') thermsLast += parseFloat(bill.therms) || 0;
-          else if (m.commodity === 'Propane') propLast += parseFloat(bill.gallons) || 0;
+          else if (m.commodity === 'Propane') propLast += parseFloat(bill.gallonsDelivered) || 0;
         });
       });
     }
-    var kBtu = kwhLast * 3.412 + thermsLast * 100 + propLast * 91.5;
+    // Route through canonical computations/eui.js (single source of truth for kBtu factors)
+    var kBtu = computeKBtu(kwhLast, thermsLast, propLast);
     var months = last12YM.length || 12;
     euiVal = months > 0 ? Math.round(((kBtu / months) * 12) / sqft) : 0;
   }
@@ -394,7 +396,8 @@ function renderBuildingScorecardPane(pane, b, projId) {
         (m.bills || []).slice(-12).forEach(function (bill) {
           if (m.commodity === 'Electric') kwhY += parseFloat(bill.kwh || bill.kWh) || 0;
           else if (m.commodity === 'Gas') thermsY += parseFloat(bill.therms) || 0;
-          else if (m.commodity === 'Propane') propY += parseFloat(bill.gallons) || 0;
+          // Bug #139: propane usage lives in gallonsDelivered, not gallons (see utility-data.js:5412)
+          else if (m.commodity === 'Propane') propY += parseFloat(bill.gallonsDelivered) || 0;
         });
       });
       sourceEUI = computeSourceEUI(kwhY, thermsY, propY, sqft);
