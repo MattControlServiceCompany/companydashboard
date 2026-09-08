@@ -7565,7 +7565,10 @@ function rptPageAppendixBills(n, d, appLetter) {
         var _kwh = bill.kwh || bill.kwhUsage || 0;
         var _kw = bill.kw || bill.kwDemand || 0;
         var _therms = bill.therms || 0;
-        var _gal = bill.gallons || bill.propaneGal || 0;
+        var _gal = bill.gallons || 0; // bill here is a collectReportData rawBills entry (line ~756),
+        // whose .gallons field is already sourced from bill.gallonsDelivered upstream — NOT a raw
+        // utility bill object. bill.gallonsDelivered does not exist on this shape (empirically
+        // verified: reading it produced 0 for a known-good Circle Grove propane bill).
         var rowHTML =
           '<tr>' +
           '<td contenteditable="true">' +
