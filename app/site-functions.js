@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.08.806',
+    date: '2026-09-08',
+    title: 'Performance Report: Energy Use Intensity now consistent across every quarter',
+    items: [
+      {
+        type: 'fix',
+        text: "Quarterly/Annual Performance Report, EUI Trend — Energy Use Intensity (EUI) now uses the full annual baseline instead of just the selected quarter's months, so the same building shows the same baseline EUI no matter which quarter you view. Savings and cost figures are unchanged.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.08.805',
     date: '2026-09-08',
     title: 'Bill Analysis: sideways scanned utility bills now read correctly',
