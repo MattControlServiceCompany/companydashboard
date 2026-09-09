@@ -288,20 +288,73 @@ function parseBillCsv(text, fname) {
     const gs = (i) => (i >= 0 && cols[i] ? cols[i].trim().replace(/"/g, '') : '');
 
     if (isElec) {
+      // Write-side keys must match BILL_SCHEMA.Electric so the schema-driven Bills
+      // table / Edit modal display these values (kwCost/kwhCost were legacy names
+      // the current display path never reads — see LEGACY_PASSTHROUGH below).
       row.kwh = g(iKwh);
       row.demandKW = g(iDemand);
       row.billedKW = g(iBilledKW);
       row.facKW = g(iFacKW);
-      row.kwCost = g(iKwCost);
-      row.facKWCost = g(iFacKWCst);
-      row.kwhCost = g(iKwhCst);
+      row.demandCharge = g(iKwCost); // schema: 'Billed kW Charge'
+      row.facKWCost = g(iFacKWCst); // schema fallbackKey of 'facilitiesCharge'
+      row.onPeakCost = g(iKwhCst); // schema: 'Energy On-Peak Charge' — CONDENSED_CATEGORIES.Electric
+      // sums onPeakCost+offPeakCost for "kWh Cost $", so a single non-split energy
+      // cost column is fully represented by onPeakCost alone.
       row.totalCost = g(iTotCst);
     } else if (isGas) {
-      row.therms = g(iTherms);
-      row.thermCost = g(iThCost);
+      // schema keys: naturalGasTherms/naturalGasCCF, gasCharge, totalCost (BILL_SCHEMA.Gas).
+      const gThermVal = g(iTherms);
+      const thermsHdrText = hdr && iTherms >= 0 ? hdr[iTherms] : '';
+      if (/\bccf\b/.test(thermsHdrText)) {
+        row.naturalGasCCF = gThermVal;
+      } else {
+        row.naturalGasTherms = gThermVal;
+      }
+      row.gasCharge = g(iThCost);
+      // No dedicated total_cost column in the basic gas CSV format (start_date,end_date,
+      // therms,therm_cost) — therm_cost IS the total bill in that case. Prefer an explicit
+      // total-cost column (full-schema export re-import) when one is actually detected.
+      const gTotCst = g(iTotCst);
+      row.totalCost = gTotCst != null ? gTotCst : row.gasCharge;
+      // Derive totalGasRate ($/Therm) directly at import time. getStoredRate('gas') in the
+      // shared computations/rates.js only checks PascalCase bill.NaturalGasTherms/NaturalGasCCF
+      // (the PDF-extractor's field-name convention) — it does NOT recognize the camelCase
+      // naturalGasTherms/naturalGasCCF keys BILL_SCHEMA (and this import) uses, so its
+      // charge/usage fallback silently returns 0 for CSV-imported bills. That's a pre-existing
+      // gap in a shared file outside this fix's scope (app/csv-import.js only) — compute the
+      // rate here instead so the Gas Rates section shows a real value rather than blank.
+      const gThermsForRate =
+        row.naturalGasTherms != null
+          ? row.naturalGasTherms
+          : row.naturalGasCCF != null
+            ? row.naturalGasCCF * 1.037
+            : null;
+      if (gThermsForRate > 0 && row.gasCharge > 0) {
+        row.totalGasRate = Math.round((row.gasCharge / gThermsForRate) * 100000) / 100000;
+      }
     } else {
-      row.usage = g(iUsage);
-      row.cost = g(iCost);
+      // Water / Sewer / Stormwater / Propane — write the exact BILL_SCHEMA key per
+      // commodity so the schema-driven display reads real values instead of the
+      // legacy generic row.usage/row.cost (never read by the current display path).
+      const gCostVal = g(iCost);
+      const gTotCst2 = g(iTotCst);
+      if (m.commodity === 'Water') {
+        row.waterUsage = g(iUsage);
+        row.waterCharge = gCostVal;
+      } else if (m.commodity === 'Sewer') {
+        row.sewerUsage = g(iUsage);
+        row.sewerCharge = gCostVal;
+      } else if (m.commodity === 'Stormwater') {
+        row.stormWaterCharge = gCostVal;
+      } else if (m.commodity === 'Propane') {
+        row.gallonsDelivered = g(iUsage);
+      } else {
+        // Unrecognized commodity — no schema to target, keep legacy fields as a
+        // last-resort so the raw numbers aren't silently dropped.
+        row.usage = g(iUsage);
+        row.cost = gCostVal;
+      }
+      row.totalCost = gTotCst2 != null ? gTotCst2 : gCostVal;
     }
 
     // Full-schema exact-name pass. Runs AFTER the alias assignments above so
@@ -426,13 +479,30 @@ function showBillCsvPreview(rows, m, fname, warnings) {
       const _dc2 = (v) =>
         v != null ? '$' + (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
       if (isElec)
-        cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.kwCost)}</td><td>${_dc(r.facKWCost)}</td><td>${_dc2(r.totalCost)}</td>`;
-      else if (isGas)
+        cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.demandCharge)}</td><td>${_dc(r.facKWCost)}</td><td>${_dc2(r.totalCost)}</td>`;
+      else if (isGas) {
+        const thermsVal = r.naturalGasTherms != null ? r.naturalGasTherms : r.naturalGasCCF;
         cells =
-          '<td>' + (r.therms != null ? (+r.therms).toLocaleString() : '—') + '</td><td>' + _dc(r.thermCost) + '</td>';
-      else
-        cells =
-          '<td>' + (r.usage != null ? r.usage : '—') + '</td><td>' + (r.cost != null ? '$' + r.cost : '—') + '</td>';
+          '<td>' + (thermsVal != null ? (+thermsVal).toLocaleString() : '—') + '</td><td>' + _dc(r.gasCharge) + '</td>';
+      } else {
+        const usageVal =
+          r.waterUsage != null
+            ? r.waterUsage
+            : r.sewerUsage != null
+              ? r.sewerUsage
+              : r.gallonsDelivered != null
+                ? r.gallonsDelivered
+                : r.usage;
+        const costVal =
+          r.waterCharge != null
+            ? r.waterCharge
+            : r.sewerCharge != null
+              ? r.sewerCharge
+              : r.stormWaterCharge != null
+                ? r.stormWaterCharge
+                : r.cost;
+        cells = '<td>' + (usageVal != null ? usageVal : '—') + '</td><td>' + _dc(costVal) + '</td>';
+      }
       return (
         '<tr><td>' + fmtDate(r.start) + '</td><td>' + fmtDate(r.end) + '</td><td>' + days + '</td>' + cells + '</tr>'
       );
@@ -1079,7 +1149,7 @@ const BILL_SCHEMA = {
     { key: 'fuelAdjustment', label: 'Fuel Adjustment', type: 'currency', pdfKey: 'FuelAdjustment' },
     { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
     { section: 'Rates' },
-    { key: 'totalGasRate', label: 'Total $/Therm Rate', type: 'rate5' },
+    { key: 'totalGasRate', label: 'Total $/Therm Rate', type: 'rate5', pdfKey: 'TotalGasRate' },
   ],
   Water: [
     { section: 'Account Info' },
@@ -1105,7 +1175,7 @@ const BILL_SCHEMA = {
     },
     { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
     { section: 'Rates' },
-    { key: 'totalWaterRate', label: 'Total $/Gal Rate', type: 'rate5' },
+    { key: 'totalWaterRate', label: 'Total $/Gal Rate', type: 'rate5', pdfKey: 'TotalWaterRate' },
   ],
   Sewer: [
     { section: 'Account Info' },
@@ -1125,7 +1195,7 @@ const BILL_SCHEMA = {
     { key: 'sewerCharge', label: 'Sewer Charge', type: 'currency', pdfKey: 'SewerCharge' },
     { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
     { section: 'Rates' },
-    { key: 'totalSewerRate', label: 'Total $/Gal Rate', type: 'rate5' },
+    { key: 'totalSewerRate', label: 'Total $/Gal Rate', type: 'rate5', pdfKey: 'TotalSewerRate' },
   ],
   Stormwater: [
     { section: 'Account Info' },
@@ -1161,7 +1231,7 @@ const BILL_SCHEMA = {
     { key: 'tax', label: 'Tax', type: 'currency', pdfKey: 'Tax' },
     { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
     { section: 'Rates' },
-    { key: 'totalPropaneRate', label: 'Total $/Gal Rate', type: 'rate5' },
+    { key: 'totalPropaneRate', label: 'Total $/Gal Rate', type: 'rate5', pdfKey: 'TotalPropaneRate' },
   ],
 };
 // Pick a schema for a meter's commodity. Falls back to a minimal
@@ -1345,6 +1415,8 @@ const BILL_MODAL_LAYOUTS = {
     { type: 'charge-line', label: 'Gas', chargeField: 'GasCharge', qtyField: 'NaturalGasCCF', unit: 'CCF' },
     { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment' },
     { type: 'total', chargeField: 'TotalCurrentCharges' },
+    { section: 'Rates' },
+    { type: 'wide', fields: ['TotalGasRate'] },
   ],
   water: [
     { section: 'Account Info' },
@@ -1361,6 +1433,8 @@ const BILL_MODAL_LAYOUTS = {
     { type: 'charge-line', label: 'Water', chargeField: 'WaterCharge', qtyField: 'WaterUsage', unit: 'gal' },
     { type: 'charge-line', label: 'Water Protection Fee', chargeField: 'WaterProtectionFee' },
     { type: 'total', chargeField: 'TotalCurrentCharges' },
+    { section: 'Rates' },
+    { type: 'wide', fields: ['TotalWaterRate'] },
   ],
   sewer: [
     { section: 'Account Info' },
@@ -1376,6 +1450,8 @@ const BILL_MODAL_LAYOUTS = {
     { section: 'Charges' },
     { type: 'charge-line', label: 'Sewer', chargeField: 'SewerCharge', qtyField: 'SewerUsage', unit: 'gal' },
     { type: 'total', chargeField: 'TotalCurrentCharges' },
+    { section: 'Rates' },
+    { type: 'wide', fields: ['TotalSewerRate'] },
   ],
   stormwater: [
     { section: 'Account Info' },
@@ -1403,6 +1479,8 @@ const BILL_MODAL_LAYOUTS = {
     { type: 'charge-line', label: 'Propane', chargeField: 'Subtotal', qtyField: 'GallonsDelivered', unit: 'gal' },
     { type: 'charge-line', label: 'Tax', chargeField: 'Tax' },
     { type: 'total', chargeField: 'TotalCurrentCharges' },
+    { section: 'Rates' },
+    { type: 'wide', fields: ['TotalPropaneRate'] },
   ],
 };
 // Build PascalCase (extractor/pdfKey) → camelCase (saved-row key) resolver
@@ -1622,10 +1700,12 @@ function openBillModal(mid, editRowId) {
     return;
   }
   const row = editRowId ? m.bills.find((r) => r.id === editRowId) : null;
-  // When adding a new bill (row is null), pre-populate Account Info fields
-  // from the meter's existing bills using consensus (most common value).
+  // Pre-populate/prefill Account Info fields from the meter's OTHER bills using
+  // consensus (most common value) — computed regardless of add-vs-edit so an
+  // existing bill with a blank Customer Name / Service Address / Account Number
+  // can also fall back to the meter's consensus value (see readVal below).
   const _acctDefaults = {};
-  if (!row && m.bills && m.bills.length > 0) {
+  if (m.bills && m.bills.length > 0) {
     const ACCT_KEYS = ['utilityCompany', 'customerName', 'serviceAddress', 'accountNumber', 'commodity'];
     for (const key of ACCT_KEYS) {
       const counts = {};
@@ -1683,8 +1763,9 @@ function openBillModal(mid, editRowId) {
   const readVal = (pdfKey) => {
     const entry = schemaEntry(pdfKey);
     const val = _billReadValue(row, entry);
-    // If no row (new bill) and field is empty, check account defaults
-    if (!row && !val && _acctDefaults[entry.key]) return _acctDefaults[entry.key];
+    // Field empty (new bill, or an existing bill missing this value) — fall
+    // back to the meter's consensus value from its other bills.
+    if (!val && _acctDefaults[entry.key]) return _acctDefaults[entry.key];
     return val;
   };
   // Build a single labeled input cell (used by wide + pair rows)
@@ -1712,7 +1793,7 @@ function openBillModal(mid, editRowId) {
       displayVal = escapeAttr(rawVal != null && rawVal !== '' ? _billFmtCurrency(rawVal) : '');
       extraAttr += ` onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"`;
     }
-    return `<div class="ef-item"><div class="ef-key">${e.label}${required}</div><input class="ef-input" id="${id}" type="${inputType}"${step} placeholder="${ph}" value="${displayVal}"${extraAttr}></div>`;
+    return `<div class="ef-item"><div class="ef-key">${e.label}${required}</div><input class="ef-input" id="${id}" type="${inputType}"${step} placeholder="${ph}" value="${displayVal}"${extraAttr} autocomplete="off"></div>`;
   };
   // Build a 3-column charge-line row: qty | rate | charge | running
   const buildChargeLine = (r) => {
@@ -1730,15 +1811,15 @@ function openBillModal(mid, editRowId) {
       const qtyRaw = readVal(r.qtyField);
       const qtyVal = escapeAttr(qtyRaw != null && qtyRaw !== '' ? _billFmtNumber(qtyRaw) : '');
       const qtyLabel = r.label + (unit ? ' ' + unit : '');
-      qtyHtml = `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input bl-qty-input" id="${qtyId}" type="text" inputmode="decimal" placeholder="0" value="${qtyVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"></div>`;
+      qtyHtml = `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input bl-qty-input" id="${qtyId}" type="text" inputmode="decimal" placeholder="0" value="${qtyVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)" autocomplete="off"></div>`;
     } else {
       qtyHtml =
-        '<div class="ef-item" style="opacity:.5"><div class="ef-key">—</div><input class="ef-input" disabled placeholder="—"></div>';
+        '<div class="ef-item" style="opacity:.5"><div class="ef-key">—</div><input class="ef-input" disabled placeholder="—" autocomplete="off"></div>';
     }
     const rateLabel = r.label + (unit ? ' ' + unit : '') + ' Rate';
-    const rateHtml = `<div class="ef-item"><div class="ef-key">${rateLabel}</div><input class="ef-input bl-rate-input" readonly tabindex="-1" style="color:var(--text2);font-size:11px" value=""></div>`;
+    const rateHtml = `<div class="ef-item"><div class="ef-key">${rateLabel}</div><input class="ef-input bl-rate-input" readonly tabindex="-1" style="color:var(--text2);font-size:11px" value="" autocomplete="off"></div>`;
     const chargeLabel = r.label + ' Charge';
-    const chargeHtml = `<div class="ef-item center"><div class="ef-key">${chargeLabel}</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div>`;
+    const chargeHtml = `<div class="ef-item center"><div class="ef-key">${chargeLabel}</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)" autocomplete="off"></div>`;
     return `<div class="ef-charge-row" data-charge-key="${r.chargeField}" data-unit="${unit}" data-rate-dp="${dp}">${qtyHtml}${rateHtml}${chargeHtml}<div class="ef-running">$0.00</div></div>`;
   };
   // Build charge-line-with-kw: kW cell | blank | charge | running
@@ -1754,12 +1835,12 @@ function openBillModal(mid, editRowId) {
       const kwId = 'bl-' + kwEntry.key;
       const kwRaw = readVal(r.kwField);
       const kwVal = escapeAttr(kwRaw != null && kwRaw !== '' ? _billFmtNumber(kwRaw) : '');
-      kwHtml = `<div class="ef-item"><div class="ef-key">${kwEntry.label}</div><input class="ef-input" id="${kwId}" type="text" inputmode="decimal" placeholder="0" value="${kwVal}" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"></div>`;
+      kwHtml = `<div class="ef-item"><div class="ef-key">${kwEntry.label}</div><input class="ef-input" id="${kwId}" type="text" inputmode="decimal" placeholder="0" value="${kwVal}" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)" autocomplete="off"></div>`;
     } else {
       kwHtml = '<div></div>';
     }
     const chargeLabel = r.label + ' Charge';
-    const chargeHtml = `<div class="ef-item center"><div class="ef-key">${chargeLabel}</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div>`;
+    const chargeHtml = `<div class="ef-item center"><div class="ef-key">${chargeLabel}</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)" autocomplete="off"></div>`;
     return `<div class="ef-charge-row" data-charge-key="${r.chargeField}"><div>${kwHtml}</div><div></div>${chargeHtml}<div class="ef-running">$0.00</div></div>`;
   };
   // Build total row
@@ -1773,7 +1854,7 @@ function openBillModal(mid, editRowId) {
     const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billTotalManualEdit(this);_billRecalcRow('${r.chargeField}')"`;
     // If there's already a value loaded (editing existing bill), mark as manual so we don't overwrite
     const manualAttr = chargeRaw != null && chargeRaw !== '' ? ' data-manual-total="1"' : '';
-    return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"${manualAttr}><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
+    return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"${manualAttr}><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)" autocomplete="off"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
   };
   // Assemble the body
   let body = '';
@@ -2104,12 +2185,24 @@ function saveBillRow() {
   const _actx = _auditCtxFromIds(udSelProjId, udSelBldgId, udSelMeterId);
   if (row) {
     const _before = { ...row };
+    const _editDiffs = _auditDiffBillFields(_before, data);
     Object.assign(row, data);
+    // Mark every field that actually changed as user-corrected so it gets the
+    // same gold-star indicator as a Value Correction Mode edit (see
+    // submitValueCorrection's identical row._userCorrected write, and the
+    // star rendering at the _corr = row._userCorrected[...] check above).
+    if (_editDiffs && _editDiffs.length) {
+      if (!row._userCorrected) row._userCorrected = {};
+      const _editAt = new Date().toISOString();
+      for (const d of _editDiffs) {
+        row._userCorrected[d.field] = { original: d.from, at: _editAt };
+      }
+    }
     logUtilityAudit({
       action: 'edit',
       ..._actx,
       period: _auditPeriodLabel(row),
-      changes: _auditDiffBillFields(_before, data),
+      changes: _editDiffs,
       source: 'manual',
     });
     showToast('Record updated ✓');
