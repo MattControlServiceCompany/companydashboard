@@ -761,6 +761,31 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     });
   });
 
+  // --- Approved changes: body page = current period only, YTD count = whole calendar year ---
+  // fix/report-quarterly-restructure (2026-09-09): the BODY "Approved Changes" page must list only
+  // changes approved within this report's reportYMs (Part B item 4); older-in-year changes still
+  // count toward the "N changes approved year-to-date" rollup line in the closing YTD section
+  // (Part A) via approvedChangesYTDCount, they just don't get their own row in the Q-scoped body
+  // table. Undated approved changes can't be proven to belong to this quarter, so they are left out
+  // of the body table, but ARE kept in the YTD count rather than silently dropped.
+  var _apprAll = (p.approvedChanges || []).filter(function (c) {
+    return c.approvalStatus && c.approvalStatus.toLowerCase() === 'ok';
+  });
+  function _apprYm(c) {
+    var cd = c.completedDate || c.approvedDate || c.date || '';
+    return (cd + '').slice(0, 7);
+  }
+  var approvedChangesPeriod = reportYMs.length
+    ? _apprAll.filter(function (c) {
+        return reportYMs.includes(_apprYm(c));
+      })
+    : _apprAll.slice();
+  var approvedChangesYTD = _apprAll.filter(function (c) {
+    var ym = _apprYm(c);
+    if (!ym) return true;
+    return periodYear ? ym.slice(0, 4) === String(periodYear) : true;
+  });
+
   // --- Assemble final object ---
   return {
     project: {
@@ -821,9 +846,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     weather,
     setpoints,
     meetings,
-    approvedChanges: (p.approvedChanges || []).filter(
-      (c) => c.approvalStatus && c.approvalStatus.toLowerCase() === 'ok',
-    ),
+    approvedChanges: approvedChangesPeriod,
+    approvedChangesYTDCount: approvedChangesYTD.length,
     rawBills,
   };
 }
@@ -1437,6 +1461,48 @@ function _injectPageNumbers(html) {
 }
 
 /**
+ * _scopeMonthlyToPeriod — single source of truth for restricting a raw monthly array (elec/gas/
+ * propane b.electric.monthly etc., which collectReportData deliberately builds for the WHOLE
+ * post-baseline history — see the "Always populate monthly map (full year for charts)" / "Build
+ * monthly arrays from ALL available months (full year for charts)" comments there, ~344/366/389/
+ * 447) down to just the months this report's body is about (d.period.yearMonths).
+ *
+ * fix/report-quarterly-restructure (2026-09-09): the report is restructured so every BODY page is
+ * about the CURRENT reporting period only, with a single closing Year-to-Date/Overall Performance
+ * section for anything genuinely cumulative. Every body page that reads a *.monthly array must
+ * call this first. Only the closing YTD section (and the annual-report month list already
+ * populated in d.period.yearMonths — annual reports are unaffected since collectReportData
+ * already scopes reportYMs to the target year) may see a wider window.
+ * @param {Array<{month:string}>} monthlyArr - raw monthly entries, each {month:'YYYY-MM', ...}
+ * @param {Array<string>} yearMonths - the allowed 'YYYY-MM' months (d.period.yearMonths)
+ * @returns {Array} filtered monthly array — same shape, only allowed months kept
+ */
+function _scopeMonthlyToPeriod(monthlyArr, yearMonths) {
+  if (!yearMonths || !yearMonths.length) return monthlyArr || [];
+  var allowed = {};
+  yearMonths.forEach(function (ym) {
+    allowed[ym] = true;
+  });
+  return (monthlyArr || []).filter(function (mo) {
+    return mo && allowed[mo.month];
+  });
+}
+
+/**
+ * _rptYtdKicker — small uppercase eyebrow label prepended to each page inside the closing
+ * "Year-to-Date / Overall Performance" section (EUI Benchmarking, the new YTD Trend page, and
+ * Contract Projection) so a reader understands the three pages are one grouped section, distinct
+ * from the current-quarter body above it. fix/report-quarterly-restructure (2026-09-09).
+ */
+function _rptYtdKicker() {
+  return (
+    '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">' +
+    'Year-to-Date / Overall Performance' +
+    '</div>'
+  );
+}
+
+/**
  * _rptDocumentDateLong — the one date every generated client document prints on its cover.
  *
  * Reads the SAME instant and the SAME calendar day the export filename is built from
@@ -1490,7 +1556,9 @@ function generateReportHTML(data, selectedSections) {
   if (s.financial !== false) pages.push(_tagSection(rptPageFinancial(pageNum++, data), 'financial'));
   if (s.savingsPerformance !== false)
     pages.push(_tagSection(rptPageSavingsPerformance(pageNum++, data), 'savingsPerformance'));
-  if (s.euiBenchmarking !== false) pages.push(_tagSection(rptPageEUI(pageNum++, data), 'euiBenchmarking'));
+  // euiBenchmarking moved to the closing Year-to-Date / Overall Performance section, below
+  // (fix/report-quarterly-restructure, 2026-09-09, Part A) — it is quarter-invariant content, not
+  // current-quarter body content.
   if (s.environmentalImpact !== false)
     pages.push(_tagSection(rptPageEnvironmentalImpact(pageNum++, data), 'environmentalImpact'));
   if (s.observations !== false) {
@@ -1504,8 +1572,9 @@ function generateReportHTML(data, selectedSections) {
     pageNum += _obsResult.pageCount;
   }
   if (s.approvedChanges !== false) pages.push(_tagSection(rptPageApprovedChanges(pageNum++, data), 'approvedChanges'));
-  if (s.contractProjection !== false)
-    pages.push(_tagSection(rptPageContractProjection(pageNum++, data), 'contractProjection'));
+  // contractProjection moved to the closing Year-to-Date / Overall Performance section, below
+  // (fix/report-quarterly-restructure, 2026-09-09, Part A) — it is whole-contract "how are we
+  // doing" content, not current-quarter body content.
   if (s.setpoints !== false) pages.push(_tagSection(rptPageSetPoints(pageNum++, data), 'setpoints'));
 
   // Per-building summaries
@@ -1578,6 +1647,16 @@ function generateReportHTML(data, selectedSections) {
     if (s.propaneDetail !== false && _hasPropBldgs)
       pages.push(_tagSection(rptPagePropane(pageNum++, data), 'propaneDetail'));
   }
+
+  // Closing Year-to-Date / Overall Performance section (fix/report-quarterly-restructure,
+  // 2026-09-09, Part A) — the ONE place genuinely-cumulative/whole-year content lives, as the
+  // LAST body section before the appendices: Site EUI Benchmarking (quarter-invariant, moved
+  // as-is), the Year-to-Date Monthly Trend table + approved-changes YTD rollup (new page), and
+  // Contract Projection (whole-contract, moved as-is, carries the Cumulative vs Projected chart).
+  if (s.euiBenchmarking !== false) pages.push(_tagSection(rptPageEUI(pageNum++, data), 'euiBenchmarking'));
+  if (s.yearToDate !== false) pages.push(_tagSection(rptPageYearToDate(pageNum++, data), 'yearToDate'));
+  if (s.contractProjection !== false)
+    pages.push(_tagSection(rptPageContractProjection(pageNum++, data), 'contractProjection'));
 
   // Appendices
   var _appLtr = 'A';
@@ -1696,6 +1775,7 @@ function printBoardSummary(projId) {
       environmentalImpact: false,
       observations: false,
       approvedChanges: false,
+      yearToDate: false,
       contractProjection: false,
       setpoints: false,
       buildingSummaries: false,
@@ -2405,240 +2485,13 @@ function rptPageFinancial(n, d) {
     '</tbody>' +
     '</table>';
 
-  // -- Cumulative vs Projection SVG chart (quarterly) --
-  // svgW updated from 700 to 716 to use available body width (816 - 48px×2 padding = 720; 716 matches prior rptPageContractProjection value for consistent chart sizing)
-  const svgW = 716,
-    svgH = 110;
-  const yrs = d.contract.years || 5;
-  const annTarget = d.contract.annualTarget || 1;
-  const qTargets = d.contract.quarterlyTargets || [0, 0, 0, 0];
-  const totalQtrs = yrs * 4;
-  const _esc = d.contract.escalation || 0;
-  const cumPoints = [];
-  var _cumP = 0;
-  for (var qi = 1; qi <= totalQtrs; qi++) {
-    var _yrIdx = Math.ceil(qi / 4);
-    var _escFactor = Math.pow(1 + _esc / 100, _yrIdx - 1);
-    var _qIdx = (qi - 1) % 4;
-    _cumP += (qTargets[_qIdx] || 0) * _escFactor;
-    cumPoints.push({ q: qi, proj: _cumP });
-  }
-  const maxY = (_cumP || annTarget * yrs) * 1.1;
-  const padL = 35,
-    padR = 20,
-    padT = 10,
-    padB = 30;
-  const cW = svgW - padL - padR;
-  const cH = svgH - padT - padB;
-  const xScale = function (q) {
-    return padL + ((q - 1) / Math.max(1, totalQtrs - 1)) * cW;
-  };
-  const yScale = function (v) {
-    return padT + cH - (v / maxY) * cH;
-  };
-
-  // Per-quarter projected savings using actual quarterly targets
-  const qtrProjVals = [];
-  for (var qi2 = 1; qi2 <= totalQtrs; qi2++) {
-    var _yrIdx2 = Math.ceil(qi2 / 4);
-    var _escF2 = Math.pow(1 + _esc / 100, _yrIdx2 - 1);
-    var _qIdx2 = (qi2 - 1) % 4;
-    qtrProjVals.push((qTargets[_qIdx2] || 0) * _escF2);
-  }
-  const maxBarVal = Math.max.apply(null, qtrProjVals) * 1.3 || 1;
-
-  // Current actual point — use cumulative savings across all completed quarters, not just this period
-  const curQtr = ((d.contract.currentYear || 1) - 1) * 4 + (d.period.quarter || 1);
-  const actCumVal = d.totals.cumulativeSavings != null ? d.totals.cumulativeSavings : d.totals.savings || 0;
-
-  // Y-axis labels
-  const yAxisLabels = [0, 0.25, 0.5, 0.75, 1.0]
-    .map(function (f) {
-      const val = f * annTarget * yrs;
-      const y = yScale(val);
-      return (
-        '<text x="' +
-        4 +
-        '" y="' +
-        y.toFixed(1) +
-        '" text-anchor="start" font-size="8" fill="var(--rpt-page-text)" dominant-baseline="middle">$' +
-        Math.round(val / 1000) +
-        'k</text>'
-      );
-    })
-    .join('');
-
-  // X-axis labels — Q1-Q4 for each year
-  const xAxisLabels = cumPoints
-    .map(function (pt) {
-      var qNum = ((pt.q - 1) % 4) + 1;
-      var yrNum = Math.ceil(pt.q / 4);
-      var label = qNum === 1 ? 'Y' + yrNum + ' Q1' : 'Q' + qNum;
-      return (
-        '<text x="' +
-        (padL + ((pt.q - 0.5) / totalQtrs) * cW).toFixed(1) +
-        '" y="' +
-        (svgH - 8) +
-        '" text-anchor="middle" font-size="' +
-        (totalQtrs > 12 ? '6' : '7') +
-        '" fill="var(--rpt-page-text)">' +
-        label +
-        '</text>'
-      );
-    })
-    .join('');
-
-  // Bar width and spacing
-  const barGap = 2;
-  const barW = Math.max(4, cW / totalQtrs - barGap);
-  const barYScale = function (v) {
-    return padT + cH - (v / maxBarVal) * cH;
-  };
-
-  // Projected quarterly bars
-  const projBars = qtrProjVals
-    .map(function (val, i) {
-      var x = padL + (i / totalQtrs) * cW + barGap / 2;
-      var h = (val / maxBarVal) * cH;
-      var y = padT + cH - h;
-      var isFuture = i + 1 > curQtr;
-      return (
-        '<rect x="' +
-        x.toFixed(1) +
-        '" y="' +
-        y.toFixed(1) +
-        '" width="' +
-        barW.toFixed(1) +
-        '" height="' +
-        h.toFixed(1) +
-        '" fill="' +
-        (isFuture ? 'var(--rpt-blue-tint)' : 'var(--rpt-blue-btn)') +
-        '" opacity="0.6" rx="1"/>'
-      );
-    })
-    .join('');
-
-  // Actual cumulative line + green fill
-  var actLinePts = [];
-  if (curQtr >= 1) {
-    actLinePts.push({ q: 0, v: 0 });
-    actLinePts.push({ q: curQtr, v: Math.abs(actCumVal) });
-  }
-  var actLinePath = actLinePts
-    .map(function (pt, i) {
-      var x = padL + (pt.q / totalQtrs) * cW;
-      var y = barYScale(Math.min(pt.v, maxBarVal));
-      return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
-    })
-    .join(' ');
-  var actFillPath =
-    actLinePath +
-    ' L' +
-    (padL + (curQtr / totalQtrs) * cW).toFixed(1) +
-    ',' +
-    (padT + cH) +
-    ' L' +
-    padL +
-    ',' +
-    (padT + cH) +
-    ' Z';
-
-  // Y-axis for bar chart
-  const barYLabels = [0, 0.25, 0.5, 0.75, 1.0]
-    .map(function (f) {
-      var val = f * maxBarVal;
-      var y = barYScale(val);
-      return (
-        '<text x="' +
-        4 +
-        '" y="' +
-        y.toFixed(1) +
-        '" text-anchor="start" font-size="8" fill="var(--rpt-page-text)" dominant-baseline="middle">$' +
-        Math.round(val / 1000) +
-        'k</text>'
-      );
-    })
-    .join('');
-
-  const cumulativeSVG =
-    '<svg width="' +
-    svgW +
-    '" height="' +
-    svgH +
-    '" xmlns="http://www.w3.org/2000/svg">' +
-    '<line x1="' +
-    padL +
-    '" y1="' +
-    padT +
-    '" x2="' +
-    padL +
-    '" y2="' +
-    (padT + cH) +
-    '" stroke="var(--rpt-divider)" stroke-width="1"/>' +
-    '<line x1="' +
-    padL +
-    '" y1="' +
-    (padT + cH) +
-    '" x2="' +
-    (padL + cW) +
-    '" y2="' +
-    (padT + cH) +
-    '" stroke="var(--rpt-divider)" stroke-width="1"/>' +
-    [0.25, 0.5, 0.75]
-      .map(function (f) {
-        var y = barYScale(f * maxBarVal);
-        return (
-          '<line x1="' +
-          padL +
-          '" y1="' +
-          y.toFixed(1) +
-          '" x2="' +
-          (padL + cW) +
-          '" y2="' +
-          y.toFixed(1) +
-          '" stroke="#eee" stroke-width="1" opacity="0.12"/>'
-        );
-      })
-      .join('') +
-    projBars +
-    (actLinePts.length > 1 ? '<path d="' + actFillPath + '" fill="rgba(39,174,96,0.2)"/>' : '') +
-    (actLinePts.length > 1 ? '<path d="' + actFillPath + '" fill="var(--rpt-chart-green-fill)"/>' : '') +
-    (actLinePts.length > 1
-      ? '<path d="' + actLinePath + '" fill="none" stroke="var(--rpt-chart-green)" stroke-width="2.5"/>'
-      : '') +
-    (actLinePts.length > 1
-      ? '<circle cx="' +
-        (padL + (curQtr / totalQtrs) * cW).toFixed(1) +
-        '" cy="' +
-        barYScale(Math.min(Math.abs(actCumVal), maxBarVal)).toFixed(1) +
-        '" r="4" fill="var(--rpt-chart-green)" stroke="var(--rpt-page-bg)" stroke-width="1.5"/>'
-      : '') +
-    (actLinePts.length > 1
-      ? '<text x="' +
-        (padL + (curQtr / totalQtrs) * cW + 8).toFixed(1) +
-        '" y="' +
-        (barYScale(Math.min(Math.abs(actCumVal), maxBarVal)) - 5).toFixed(1) +
-        '" font-size="9" fill="var(--rpt-chart-green-dk)" font-weight="bold">' +
-        $c(actCumVal) +
-        '</text>'
-      : '') +
-    barYLabels +
-    xAxisLabels +
-    '<rect x="' +
-    (padL + cW - 140) +
-    '" y="6" width="10" height="8" fill="var(--rpt-blue-btn)" opacity="0.6" rx="1"/>' +
-    '<text x="' +
-    (padL + cW - 126) +
-    '" y="14" font-size="8" fill="var(--rpt-page-text)">Projected/Qtr</text>' +
-    '<line x1="' +
-    (padL + cW - 60) +
-    '" y1="10" x2="' +
-    (padL + cW - 46) +
-    '" y2="10" stroke="var(--rpt-chart-green)" stroke-width="2.5"/>' +
-    '<text x="' +
-    (padL + cW - 42) +
-    '" y="14" font-size="8" fill="var(--rpt-page-text)">Actual</text>' +
-    '</svg>';
+  // fix/report-quarterly-restructure (2026-09-09): a "Cumulative vs Projection SVG chart" used to
+  // be built here (svgW/annTarget/cumPoints/... through cumulativeSVG) but was DEAD CODE — the
+  // resulting `cumulativeSVG` variable was never referenced by bodyHTML below (grep-verified: only
+  // definition site, no usage), so nothing changes visually by removing it. The live, rendered
+  // equivalent — "Cumulative vs Projected" — already exists in rptPageContractProjection and is
+  // now relocated into the closing Year-to-Date / Overall Performance section (Part A); it is not
+  // duplicated here.
 
   const bodyHTML =
     '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
@@ -2648,65 +2501,16 @@ function rptPageFinancial(n, d) {
     qtrTable +
     '<h2>CSC Compensation</h2>' +
     cscTable +
-    (function () {
-      var _moNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      var _moData = {};
-      (d.buildings || []).forEach(function (b) {
-        ['electric', 'gas', 'propane'].forEach(function (com) {
-          var mo = (b[com] && b[com].monthly) || [];
-          mo.forEach(function (m) {
-            if (!_moData[m.month]) _moData[m.month] = { bl: 0, cur: 0, sav: 0 };
-            _moData[m.month].bl += m.blCost || 0;
-            _moData[m.month].cur += m.curCost || 0;
-            // Use canonical savings (Baseline Usage - Actual Usage) × Current Rate; fall back to dollar delta
-            _moData[m.month].sav += m.savings != null ? m.savings : (m.blCost || 0) - (m.curCost || 0);
-          });
-        });
-      });
-      var _sorted = Object.keys(_moData).sort();
-      if (_sorted.length < 2) return '';
-      var _rows = '',
-        _tBl = 0,
-        _tCur = 0,
-        _tSav = 0;
-      _sorted.forEach(function (ym) {
-        var mi = parseInt(ym.split('-')[1]) - 1;
-        var bl = _moData[ym].bl,
-          cur = _moData[ym].cur,
-          sav = _moData[ym].sav;
-        var pct = bl > 0 ? ((sav / bl) * 100).toFixed(1) + '%' : '—';
-        _tBl += bl;
-        _tCur += cur;
-        _tSav += sav;
-        _rows +=
-          '<tr><td>' +
-          _moNames[mi] +
-          ' ' +
-          ym.split('-')[0] +
-          '</td><td class="rpt-n">' +
-          $c(bl) +
-          '</td><td class="rpt-n">' +
-          $c(cur) +
-          '</td><td class="rpt-n">' +
-          $c(sav) +
-          '</td></tr>';
-      });
-      var _tPct = _tBl > 0 ? ((_tSav / _tBl) * 100).toFixed(1) + '%' : '—';
-      _rows +=
-        '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
-        $c(_tBl) +
-        '</td><td class="rpt-n">' +
-        $c(_tCur) +
-        '</td><td class="rpt-n">' +
-        $c(_tSav) +
-        '</td></tr>';
-      return (
-        '<h2>Monthly Cost Breakdown</h2><table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Savings $</th></tr></thead><tbody>' +
-        _rows +
-        '</tbody></table>'
-      );
-    })() +
     '';
+  // fix/report-quarterly-restructure (2026-09-09), Part B item 1: the "Monthly Cost Breakdown"
+  // table that used to render here read every b[com].monthly entry (the RAW full-post-baseline-
+  // history array — see the "full year for charts" comments in collectReportData) with no period
+  // filter, so a Q2 report could show Jan-Mar (and beyond) rows unlabeled — the exact leak this
+  // restructure fixes. It duplicated the "Quarterly Savings vs Baseline" table immediately above
+  // (same $ totals, just split by month instead of aggregated), so it is dropped from this
+  // current-quarter body page rather than re-filtered in place. The month-by-month breakdown now
+  // lives ONCE, correctly labeled "Year-to-Date Monthly Trend", in the closing Year-to-Date /
+  // Overall Performance section (see rptPageYearToDate) — it is not duplicated here.
 
   return rptPage(n, 'Financial Summary', bodyHTML, { data: d, label: 'Page ' + n + ' — Financial Summary' });
 }
@@ -3278,6 +3082,12 @@ function rptPageEUI(n, d) {
     '</table>';
 
   const bodyHTML =
+    // fix/report-quarterly-restructure (2026-09-09), Part A: this page is quarter-invariant
+    // (rolling-12-month EUI, unaffected by which quarter is selected — see collectReportData's
+    // annBlKBtu/annCurKBtu comments) so its math is untouched; it now renders inside the closing
+    // Year-to-Date / Overall Performance section instead of the current-quarter body (see
+    // generateReportHTML's page order).
+    _rptYtdKicker() +
     '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
     '<h2>Building Performance Rankings</h2>' +
     rankTable +
@@ -4432,6 +4242,11 @@ function rptPageContractProjection(n, d) {
     '</svg></div>';
 
   const bodyHTML =
+    // fix/report-quarterly-restructure (2026-09-09), Part A: whole-contract "how are we doing"
+    // content (multi-year targets, cumulative savings vs projection) — moved to the closing
+    // Year-to-Date / Overall Performance section (see generateReportHTML's page order). Math
+    // (d.totals.cumulativeSavings, the multi-year target math) is untouched — only placement moved.
+    _rptYtdKicker() +
     '<h2 contenteditable="true">Quarterly Targets</h2>' +
     qtTable +
     '<h2 contenteditable="true">' +
@@ -4453,6 +4268,111 @@ function rptPageContractProjection(n, d) {
     label: 'Page ' + n + ' — Contract Projection',
   });
 }
+
+/**
+ * rptPageYearToDate — Part A of fix/report-quarterly-restructure (2026-09-09). The report body
+ * (Financial Summary, Savings Performance, commodity detail pages, per-building summaries) is now
+ * scoped to the CURRENT report period only. This page carries the one piece of genuinely-
+ * cumulative content that does not already have its own page: a "Year-to-Date Monthly Trend"
+ * table (the relabeled former "Monthly Cost Breakdown" table that used to render inside Financial
+ * Summary — see rptPageFinancial — now explicitly bounded to the report's calendar year instead
+ * of silently reading the full post-baseline history) and the approved-changes year-to-date
+ * rollup line. It renders between Site EUI Benchmarking and Contract Projection inside the
+ * closing Year-to-Date / Overall Performance section (see generateReportHTML's page order).
+ */
+function rptPageYearToDate(n, d) {
+  const $c = function (v) {
+    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+  };
+
+  var periodYear = (d.period && d.period.year) || new Date().getFullYear();
+  var _moNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var _moData = {};
+  (d.buildings || []).forEach(function (b) {
+    ['electric', 'gas', 'propane'].forEach(function (com) {
+      var mo = (b[com] && b[com].monthly) || [];
+      mo.forEach(function (m) {
+        // Year-to-date is bounded to the report's calendar year (not the current quarter) — the
+        // one intentional read of a raw "full year for charts" monthly array (see
+        // collectReportData) that is not scoped to d.period.yearMonths, because this table is
+        // explicitly labeled Year-to-Date, not a current-quarter figure.
+        if (String(periodYear) !== (m.month || '').slice(0, 4)) return;
+        if (!_moData[m.month]) _moData[m.month] = { bl: 0, cur: 0, sav: 0 };
+        _moData[m.month].bl += m.blCost || 0;
+        _moData[m.month].cur += m.curCost || 0;
+        _moData[m.month].sav += m.savings != null ? m.savings : (m.blCost || 0) - (m.curCost || 0);
+      });
+    });
+  });
+  var _sorted = Object.keys(_moData).sort();
+  var _rows = '',
+    _tBl = 0,
+    _tCur = 0,
+    _tSav = 0;
+  _sorted.forEach(function (ym) {
+    var mi = parseInt(ym.split('-')[1]) - 1;
+    var bl = _moData[ym].bl,
+      cur = _moData[ym].cur,
+      sav = _moData[ym].sav;
+    _tBl += bl;
+    _tCur += cur;
+    _tSav += sav;
+    _rows +=
+      '<tr><td>' +
+      _moNames[mi] +
+      ' ' +
+      ym.split('-')[0] +
+      '</td><td class="rpt-n">' +
+      $c(bl) +
+      '</td><td class="rpt-n">' +
+      $c(cur) +
+      '</td><td class="rpt-n">' +
+      $c(sav) +
+      '</td></tr>';
+  });
+  var trendTable;
+  if (_sorted.length) {
+    _rows +=
+      '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
+      $c(_tBl) +
+      '</td><td class="rpt-n">' +
+      $c(_tCur) +
+      '</td><td class="rpt-n">' +
+      $c(_tSav) +
+      '</td></tr>';
+    trendTable =
+      '<table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Savings $</th></tr></thead><tbody>' +
+      _rows +
+      '</tbody></table>';
+  } else {
+    trendTable =
+      '<p style="font-size:11px;color:var(--rpt-page-text);font-style:italic">No billed months yet for ' +
+      periodYear +
+      '.</p>';
+  }
+
+  var ytdApprovedCount = (d && d.approvedChangesYTDCount) || 0;
+  var rollupLine =
+    '<p style="font-size:13px;color:var(--rpt-page-text);margin-top:10px" contenteditable="true">' +
+    ytdApprovedCount +
+    (ytdApprovedCount === 1 ? ' change approved year-to-date.' : ' changes approved year-to-date.') +
+    '</p>';
+
+  var bodyHTML =
+    _rptYtdKicker() +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This table shows the month-by-month baseline cost, actual cost, and savings for every billed month in ' +
+    periodYear +
+    ' to date, across the full portfolio.</p>' +
+    '<h2>Year-to-Date Monthly Trend</h2>' +
+    trendTable +
+    rollupLine;
+
+  return rptPage(n, 'Year-to-Date Monthly Trend', bodyHTML, {
+    data: d,
+    label: 'Page ' + n + ' — Year-to-Date Monthly Trend',
+  });
+}
+
 function rptPageSetPoints(n, d) {
   const $c = function (v) {
     return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
@@ -4856,7 +4776,13 @@ function rptPageBuildingSummary(n, d, b) {
     '</div>' +
     '</div>';
 
-  // Monthly EUI mini-chart (kBtu/sqft per month) — full 12 months
+  // Monthly EUI mini-chart (kBtu/sqft per month) — scoped to this report's period months (below),
+  // not the whole calendar year. fix/report-quarterly-restructure (2026-09-09): this is the same
+  // buildFullYear() the Electric/Gas/Propane Consumption charts just below already scope to
+  // d.period.yearMonths (see _periodYMs a few lines down); this mini-chart used buildFullYear's
+  // raw 12-month output directly and was the one remaining unscoped call, so a Q2 report could show
+  // Jan-Mar bars here even though the sibling consumption charts on the same page correctly showed
+  // only Apr-Jun. Scoped for consistency with the rest of this body page.
   if (b.sqft > 0) {
     var euiMonthly = [];
     var _elFull = buildFullYear(b.electric && b.electric.monthly, _bm.elecByMo, 'kwh');
@@ -4867,8 +4793,11 @@ function rptPageBuildingSummary(n, d, b) {
       var _curKBtu = toKBtu(_elFull[_ei].cur || 0, _gaFull[_ei].cur || 0, _prFull[_ei].cur || 0);
       euiMonthly.push({ month: _elFull[_ei].month, bl: _blKBtu / b.sqft, cur: _curKBtu / b.sqft });
     }
+    var _euiPeriodYMs = (d && d.period && d.period.yearMonths) || null;
     euiMonthly = euiMonthly.filter(function (mo) {
-      return mo.cur > 0;
+      if (mo.cur <= 0) return false;
+      if (_euiPeriodYMs && _euiPeriodYMs.length) return _euiPeriodYMs.indexOf(mo.month) !== -1;
+      return true;
     });
     if (euiMonthly.length > 1) {
       var euiMax =
@@ -5711,26 +5640,39 @@ function rptPageElectric(n, d) {
     return b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0;
   });
 
-  // Combined monthly kWh (bl + cur) across all buildings — full 12-month year using baselineMaps
+  // Combined monthly kWh (bl + cur) across all buildings — scoped to this report's period months
+  // (d.period.yearMonths), NOT the whole calendar year. fix/report-quarterly-restructure
+  // (2026-09-09), Part B item 3: this used to always build/show all 12 months of _rptYear
+  // regardless of report period, leaking prior-quarter data into a "Year over Year" chart on a
+  // single-quarter body page. _scopeMonthlyToPeriod is the shared helper (see its definition
+  // near _injectPageNumbers) used at every leak site this restructure fixes.
   var _rptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
+  var _elecPeriodYMs =
+    d.period && d.period.yearMonths && d.period.yearMonths.length
+      ? d.period.yearMonths.slice()
+      : (function () {
+          var arr = [];
+          for (var i = 0; i < 12; i++) arr.push(_rptYear + '-' + String(i + 1).padStart(2, '0'));
+          return arr;
+        })();
   var kwhByMonth = {};
   var kwByMonth = {};
-  // Initialise all 12 slots
-  for (var _ei = 0; _ei < 12; _ei++) {
-    var _eym = _rptYear + '-' + String(_ei + 1).padStart(2, '0');
+  // Initialise one slot per period month only
+  _elecPeriodYMs.forEach(function (_eym) {
     kwhByMonth[_eym] = { month: _eym, bl: 0, cur: 0 };
     kwByMonth[_eym] = { month: _eym, bl: 0, cur: 0 };
-  }
-  // For each building build a full-year array (mirrors buildFullYear in rptPageBuildingSummary)
+  });
+  // For each building, accumulate only the period's months (mirrors buildFullYear in
+  // rptPageBuildingSummary, but scoped instead of full-year)
   elecBldgs.forEach(function (b) {
     var blMap = (b.baselineMaps && b.baselineMaps.elecByMo) || {};
     var curByMo = {};
-    (b.electric.monthly || []).forEach(function (mo) {
+    _scopeMonthlyToPeriod(b.electric.monthly, _elecPeriodYMs).forEach(function (mo) {
       var idx = parseInt(mo.month.split('-')[1], 10) - 1;
       curByMo[idx] = mo;
     });
-    for (var _mi = 0; _mi < 12; _mi++) {
-      var _ym = _rptYear + '-' + String(_mi + 1).padStart(2, '0');
+    _elecPeriodYMs.forEach(function (_ym) {
+      var _mi = parseInt(_ym.split('-')[1], 10) - 1;
       var blKwh = (blMap[_mi] && blMap[_mi].kwh) || 0;
       var blKw =
         (blMap[_mi] && (blMap[_mi].billedKW || blMap[_mi].demandKW || blMap[_mi].kw || blMap[_mi].kwPeak)) || 0;
@@ -5746,7 +5688,7 @@ function rptPageElectric(n, d) {
       kwhByMonth[_ym].cur += curKwh;
       kwByMonth[_ym].bl += blKw;
       kwByMonth[_ym].cur += curKw;
-    }
+    });
   });
   var kwhMonthly = Object.values(kwhByMonth).sort(function (a, b) {
     return a.month < b.month ? -1 : 1;
@@ -5756,13 +5698,19 @@ function rptPageElectric(n, d) {
   });
 
   // -- Charts ------------------------------------------------------------
+  // Titles retitled from "Year over Year" to this report's period label (e.g. "Q2 2026") since the
+  // chart now shows only this period's months, not a year-over-year comparison.
+  var _elecPeriodChartLabel =
+    d.period && d.period.type === 'quarterly'
+      ? 'Q' + (d.period.quarter || '') + ' ' + (d.period.year || '')
+      : (d.period && d.period.label) || '';
   var kwhChart = elecBldgs.length
     ? buildElecBarChart(
         kwhMonthly,
         'var(--rpt-elec-bl)',
         'var(--rpt-elec-cur)',
         'kWh',
-        'Monthly Electric kWh — Year over Year',
+        'Monthly Electric kWh — ' + _elecPeriodChartLabel,
       )
     : '<p style="font-size:10px;color:var(--rpt-page-text)">No electric data</p>';
 
@@ -5776,7 +5724,7 @@ function rptPageElectric(n, d) {
           'var(--rpt-elec-bl)',
           'var(--rpt-elec-cur)',
           'kW',
-          'Monthly Peak kW — Year over Year',
+          'Monthly Peak kW — ' + _elecPeriodChartLabel,
         )
       : '';
 
@@ -6032,40 +5980,53 @@ function rptPageGas(n, d) {
     return b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
   });
 
-  // Use full-year aggregation: fill baseline-only months using baselineMaps so chart shows all 12 months
+  // Scoped to this report's period months (d.period.yearMonths), not the whole calendar year —
+  // fix/report-quarterly-restructure (2026-09-09), Part B item 3. See the matching comment in
+  // rptPageElectric for the full rationale; _scopeMonthlyToPeriod is the shared helper.
   var _gasRptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
+  var _gasPeriodYMs =
+    d.period && d.period.yearMonths && d.period.yearMonths.length
+      ? d.period.yearMonths.slice()
+      : (function () {
+          var arr = [];
+          for (var i = 0; i < 12; i++) arr.push(_gasRptYear + '-' + String(i + 1).padStart(2, '0'));
+          return arr;
+        })();
   var thermsByMonth = {};
-  for (var _gi = 0; _gi < 12; _gi++) {
-    var _gym = _gasRptYear + '-' + String(_gi + 1).padStart(2, '0');
+  _gasPeriodYMs.forEach(function (_gym) {
     thermsByMonth[_gym] = { month: _gym, bl: 0, cur: 0 };
-  }
+  });
   gasBldgs.forEach(function (b) {
     var blMap = (b.baselineMaps && b.baselineMaps.gasByMo) || {};
     var curByMo = {};
-    (b.gas.monthly || []).forEach(function (mo) {
+    _scopeMonthlyToPeriod(b.gas.monthly, _gasPeriodYMs).forEach(function (mo) {
       var idx = parseInt(mo.month.split('-')[1], 10) - 1;
       curByMo[idx] = mo;
     });
-    for (var _mi = 0; _mi < 12; _mi++) {
-      var _ym = _gasRptYear + '-' + String(_mi + 1).padStart(2, '0');
+    _gasPeriodYMs.forEach(function (_ym) {
+      var _mi = parseInt(_ym.split('-')[1], 10) - 1;
       var blTherms = blMap[_mi]?.therms ?? 0;
       var curMo = curByMo[_mi];
       if (curMo) blTherms = curMo.bl || blTherms;
       thermsByMonth[_ym].bl += blTherms;
       thermsByMonth[_ym].cur += curMo ? curMo.cur || 0 : 0;
-    }
+    });
   });
   var thermsMonthly = Object.values(thermsByMonth).sort(function (a, b) {
     return a.month < b.month ? -1 : 1;
   });
 
+  var _gasPeriodChartLabel =
+    d.period && d.period.type === 'quarterly'
+      ? 'Q' + (d.period.quarter || '') + ' ' + (d.period.year || '')
+      : (d.period && d.period.label) || '';
   var thermsChart = gasBldgs.length
     ? buildGasBarChart(
         thermsMonthly,
         'var(--rpt-gas-bl)',
         'var(--rpt-gas-cur)',
         'Therms',
-        'Monthly Natural Gas Therms — Year over Year',
+        'Monthly Natural Gas Therms — ' + _gasPeriodChartLabel,
       )
     : '<p style="font-size:10px;color:var(--rpt-page-text)">No gas data</p>';
 
@@ -6289,40 +6250,53 @@ function rptPagePropane(n, d) {
     );
   });
 
-  // Use full-year aggregation: fill baseline-only months using baselineMaps
+  // Scoped to this report's period months (d.period.yearMonths), not the whole calendar year —
+  // fix/report-quarterly-restructure (2026-09-09), Part B item 3. See the matching comment in
+  // rptPageElectric for the full rationale; _scopeMonthlyToPeriod is the shared helper.
   var _propRptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
+  var _propPeriodYMs =
+    d.period && d.period.yearMonths && d.period.yearMonths.length
+      ? d.period.yearMonths.slice()
+      : (function () {
+          var arr = [];
+          for (var i = 0; i < 12; i++) arr.push(_propRptYear + '-' + String(i + 1).padStart(2, '0'));
+          return arr;
+        })();
   var galByMonth = {};
-  for (var _pi = 0; _pi < 12; _pi++) {
-    var _pym = _propRptYear + '-' + String(_pi + 1).padStart(2, '0');
+  _propPeriodYMs.forEach(function (_pym) {
     galByMonth[_pym] = { month: _pym, bl: 0, cur: 0 };
-  }
+  });
   propBldgs.forEach(function (b) {
     var blMap = (b.baselineMaps && b.baselineMaps.propaneByMo) || {};
     var curByMo = {};
-    (b.propane.monthly || []).forEach(function (mo) {
+    _scopeMonthlyToPeriod(b.propane.monthly, _propPeriodYMs).forEach(function (mo) {
       var idx = parseInt(mo.month.split('-')[1], 10) - 1;
       curByMo[idx] = mo;
     });
-    for (var _pmi = 0; _pmi < 12; _pmi++) {
-      var _pym2 = _propRptYear + '-' + String(_pmi + 1).padStart(2, '0');
+    _propPeriodYMs.forEach(function (_pym2) {
+      var _pmi = parseInt(_pym2.split('-')[1], 10) - 1;
       var blGal = blMap[_pmi]?.gallons ?? 0;
       var curMo = curByMo[_pmi];
       if (curMo) blGal = curMo.bl || blGal;
       galByMonth[_pym2].bl += blGal;
       galByMonth[_pym2].cur += curMo ? curMo.cur || 0 : 0;
-    }
+    });
   });
   var galMonthly = Object.values(galByMonth).sort(function (a, b) {
     return a.month < b.month ? -1 : 1;
   });
 
+  var _propPeriodChartLabel =
+    d.period && d.period.type === 'quarterly'
+      ? 'Q' + (d.period.quarter || '') + ' ' + (d.period.year || '')
+      : (d.period && d.period.label) || '';
   var galChart = propBldgs.length
     ? buildPropBarChart(
         galMonthly,
         'var(--rpt-prop-bl)',
         'var(--rpt-prop-cur)',
         'Gal',
-        'Monthly Propane Gallons — Year over Year',
+        'Monthly Propane Gallons — ' + _propPeriodChartLabel,
       )
     : '<p style="font-size:10px;color:var(--rpt-page-text)">No propane data</p>';
 
@@ -6619,9 +6593,13 @@ function rptPageGasPropane(n, d) {
       b.propane.monthly.length > 0
     );
   });
+  // Scoped to this report's period months (d.period.yearMonths), not the whole post-baseline
+  // history — fix/report-quarterly-restructure (2026-09-09), Part B item 3. _scopeMonthlyToPeriod
+  // is the shared helper (see its definition near _injectPageNumbers).
+  var _gpPeriodYMs = d.period && d.period.yearMonths ? d.period.yearMonths : null;
   var thermsByMonth = {};
   gasBldgs.forEach(function (b) {
-    (b.gas.monthly || []).forEach(function (mo) {
+    _scopeMonthlyToPeriod(b.gas.monthly, _gpPeriodYMs).forEach(function (mo) {
       if (!thermsByMonth[mo.month]) thermsByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
       thermsByMonth[mo.month].bl += mo.bl || 0;
       thermsByMonth[mo.month].cur += mo.cur || 0;
@@ -6629,7 +6607,7 @@ function rptPageGasPropane(n, d) {
   });
   var galByMonth = {};
   propBldgs.forEach(function (b) {
-    (b.propane.monthly || []).forEach(function (mo) {
+    _scopeMonthlyToPeriod(b.propane.monthly, _gpPeriodYMs).forEach(function (mo) {
       if (!galByMonth[mo.month]) galByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
       galByMonth[mo.month].bl += mo.bl || 0;
       galByMonth[mo.month].cur += mo.cur || 0;
@@ -6642,9 +6620,19 @@ function rptPageGasPropane(n, d) {
     return a.month < b.month ? -1 : 1;
   });
   var periodLabel = (d.period && d.period.label) || '';
+  var _gpChartLabel =
+    d.period && d.period.type === 'quarterly'
+      ? 'Q' + (d.period.quarter || '') + ' ' + (d.period.year || '')
+      : periodLabel;
   var bodyHTML =
     '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
-    _barChart(thermsMonthly, 'var(--rpt-gas-bl)', 'var(--rpt-gas-cur)', 'Therms', 'Natural Gas Therms') +
+    _barChart(
+      thermsMonthly,
+      'var(--rpt-gas-bl)',
+      'var(--rpt-gas-cur)',
+      'Therms',
+      'Natural Gas Therms — ' + _gpChartLabel,
+    ) +
     '<h2 style="font-size:11px;font-weight:700;color:var(--rpt-gas-head);margin:8px 0 3px">Natural Gas by Building</h2>' +
     _table(
       gasBldgs,
@@ -6660,7 +6648,7 @@ function rptPageGasPropane(n, d) {
       },
       'Therms',
     ) +
-    _barChart(galMonthly, 'var(--rpt-prop-bl)', 'var(--rpt-prop-cur)', 'Gal', 'Propane Gallons') +
+    _barChart(galMonthly, 'var(--rpt-prop-bl)', 'var(--rpt-prop-cur)', 'Gal', 'Propane Gallons — ' + _gpChartLabel) +
     '<h2 style="font-size:11px;font-weight:700;color:var(--rpt-prop-head);margin:8px 0 3px">Propane by Building</h2>' +
     _table(
       propBldgs,
@@ -9633,17 +9621,21 @@ const REPORT_SECTIONS = [
   { key: 'cover', label: 'Cover Page', group: 'Main' },
   { key: 'financial', label: 'Financial Summary', group: 'Main' },
   { key: 'savingsPerformance', label: 'Savings Performance', group: 'Main' },
-  { key: 'euiBenchmarking', label: 'Site EUI Benchmarking', group: 'Main' },
   { key: 'environmentalImpact', label: 'Environmental Impact', group: 'Main' },
   { key: 'observations', label: 'Observations & Recommendations', group: 'Main' },
   { key: 'approvedChanges', label: 'Approved Changes', group: 'Main' },
-  { key: 'contractProjection', label: 'Contract Projection', group: 'Main' },
   { key: 'setpoints', label: 'BAS Set Points & Schedules', group: 'Main' },
   { key: 'buildingSummaries', label: 'Per-Building Summaries (all)', group: 'Buildings' },
   { key: 'meterPerformance', label: 'Per-Building Meter Performance', group: 'Buildings' },
   { key: 'electricDetail', label: 'Electric Consumption Detail', group: 'Commodity' },
   { key: 'gasDetail', label: 'Gas Consumption Detail', group: 'Commodity' },
   { key: 'propaneDetail', label: 'Propane Consumption Detail', group: 'Commodity' },
+  // fix/report-quarterly-restructure (2026-09-09), Part A: these three render together as the
+  // closing "Year-to-Date / Overall Performance" section (see generateReportHTML page order) —
+  // grouped here so the section picker reflects that.
+  { key: 'euiBenchmarking', label: 'Site EUI Benchmarking', group: 'Year-to-Date' },
+  { key: 'yearToDate', label: 'Year-to-Date Monthly Trend', group: 'Year-to-Date' },
+  { key: 'contractProjection', label: 'Contract Projection', group: 'Year-to-Date' },
   { key: 'appendixA', label: 'Appendix A: Normalization & Baseline', group: 'Appendices' },
   { key: 'appendixB', label: 'Appendix B: Regression Model Methodology', group: 'Appendices' },
   { key: 'appendixC', label: 'Appendix C: Weather Data', group: 'Appendices' },
