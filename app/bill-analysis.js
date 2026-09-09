@@ -8702,6 +8702,12 @@ function clearPDFOCR() {
   window._pdfPassScores = null;
   window._pdfOcrEmptyPages = null;
   window._pdfOcrBudgetExceeded = null;
+  // ocr-orientprobe-reserve (2026-09-09): clear the orientation-probe log and both
+  // *ForDebug snapshots too, so a fresh extraction never shows a stale prior file's
+  // debug data.
+  window._pdfOrientProbeLog = null;
+  window._pdfPassScoresForDebug = null;
+  window._pdfOrientProbeLogForDebug = null;
   // F7: reset batch-review tab state so a new extraction doesn't inherit stale building/commodity tabs
   window._pdfBuildingTab = null;
   window._pdfCommTab = null;
@@ -11779,8 +11785,12 @@ function savePDFDebug() {
       ') ---\n';
     output += JSON.stringify(bills[i] || {}, null, 2) + '\n';
   }
-  // Include OCR pass scores if available
-  const passScores = window._pdfPassScores || [];
+  // Include OCR pass scores if available. FIX (ocr-orientprobe-reserve,
+  // 2026-09-09): window._pdfPassScores is nulled per-file right after
+  // processPDF's consensus step (see the *ForDebug snapshot at that cleanup
+  // site) — prefer the snapshot, which survives that cleanup, falling back to
+  // the live var for any code path that never goes through that cleanup.
+  const passScores = window._pdfPassScoresForDebug || window._pdfPassScores || [];
   if (passScores.length) {
     output += '\n=== OCR PASS SCORES ===\n';
     output += 'Page | Pass       | Score | Time   | Chars | Error\n';
@@ -11797,6 +11807,35 @@ function savePDFDebug() {
         ' | ' +
         String(p.chars).padStart(5) +
         (p.error ? ' | ' + p.error : '') +
+        '\n';
+    }
+  }
+  // Include the CHANGE-4 orientation-probe log if available (ocr-orientprobe-reserve,
+  // 2026-09-09) — same *ForDebug snapshot-first pattern as passScores above. Shows,
+  // per page the probe ran on: whether it fired, each orientation's raw signal score
+  // (0/90/180/270), and the chosen winner — so a re-uploaded rotated bill's debug file
+  // makes it directly visible whether the FIX 1 rescue ran and what it decided.
+  const orientLog = window._pdfOrientProbeLogForDebug || window._pdfOrientProbeLog || [];
+  if (orientLog.length) {
+    output += '\n=== ORIENTATION PROBE LOG ===\n';
+    output += 'Page | Fired | Sig0 | Sig90 | Sig180 | Sig270 | Winner | Error\n';
+    output += '-----+-------+------+-------+--------+--------+--------+------\n';
+    for (const o of orientLog) {
+      output +=
+        String(o.page).padStart(4) +
+        ' | ' +
+        (o.fired ? 'yes' : 'no').padEnd(5) +
+        ' | ' +
+        String(o.sig0 === null || o.sig0 === undefined ? '—' : o.sig0).padStart(4) +
+        ' | ' +
+        String(o.sig90 === null || o.sig90 === undefined ? '—' : o.sig90).padStart(5) +
+        ' | ' +
+        String(o.sig180 === null || o.sig180 === undefined ? '—' : o.sig180).padStart(6) +
+        ' | ' +
+        String(o.sig270 === null || o.sig270 === undefined ? '—' : o.sig270).padStart(6) +
+        ' | ' +
+        (o.winner || '0 (none)').padEnd(6) +
+        (o.error ? ' | ' + o.error : '') +
         '\n';
     }
   }
@@ -12069,7 +12108,14 @@ function _countOcrSignals(txt) {
 // after use. Returns null if 0° wins or no candidate clears the margin (the
 // two/three losing rotated canvases are freed internally either way,
 // mirroring the original canvas180 lifecycle).
-async function _pickBestPageOrientation(canvasO, recognizeFn) {
+// `onScores` (added ocr-orientprobe-reserve, 2026-09-09): optional 3rd param,
+// (scores) => void, called with { sig0, sigs } right after the four candidate
+// scores are computed but BEFORE the accept/reject margin decision — lets a
+// caller log the raw per-orientation scores for debug output even on the
+// "no rotation, 0° wins" (null-return) path, without changing this
+// function's return contract at all. Omitting it (as the orientation-harness
+// test and all pre-existing callers do) is a no-op — 100% backward compatible.
+async function _pickBestPageOrientation(canvasO, recognizeFn, onScores) {
   const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
   const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
   const canvas90 = rotateCanvas90(canvasO);
@@ -12100,6 +12146,13 @@ async function _pickBestPageOrientation(canvasO, recognizeFn) {
     180: _countOcrSignals(probe180.result.data.text),
     270: _countOcrSignals(probe270.result.data.text),
   };
+  if (onScores) {
+    try {
+      onScores({ sig0, sigs });
+    } catch (_) {
+      /* debug callback must never break the real selection logic */
+    }
+  }
   const candidates = [
     { label: '90', canvas: canvas90, sig: sigs[90] },
     { label: '180', canvas: canvas180, sig: sigs[180] },
@@ -12849,6 +12902,12 @@ async function extractPDFText(ab, statusCb) {
         // processPDF's OCR-retry block can call recognizeWithTimeout too — a00af2f4.
         // Track pass scores for debug output
         const passScoreLog = [];
+        // Track CHANGE-4 orientation-probe attempts for debug output (ocr-orientprobe-reserve,
+        // 2026-09-09) — one entry per page where the probe actually ran, recording whether it
+        // fired, each orientation's raw signal score (0/90/180/270), and the chosen winner (or
+        // null if 0° won / no candidate cleared the margin). See savePDFDebug's "ORIENTATION
+        // PROBE LOG" section below for how this renders.
+        const orientProbeLog = [];
 
         // Store all OCR pass texts for consensus re-extraction on mismatched values
         const allPassTexts = {};
@@ -13318,6 +13377,33 @@ async function extractPDFText(ab, statusCb) {
           // significantly more digits/dollar-signs, we rotate the full canvas to
           // that orientation and run a full OCR pass to replace the best result.
           const ORIENT_SCORE_THRESHOLD = 3;
+          // FIX (ocr-orientprobe-reserve, 2026-09-09): a genuinely sideways scanned
+          // page (e.g. Louisburg /Rotate 270 CCITT Group-4 fax bills) never reaches
+          // the primary loop's score>=10 early-exit — every rotated-wrong pass scores
+          // near 0 — so it burns ALL 6 primary + 3 retry passes (OCR_PASSES /
+          // OCR_RETRY_PASSES, ~43-110s/pass measured — see OCR_PER_PAGE_ALLOWANCE_MS
+          // doc above) before ever reaching this block. By the time it got here,
+          // _ocrPageBudgetExceeded (this page's OWN fair-share clock, b35c9b09) was
+          // already true, so the old `!_ocrPageBudgetExceeded` condition on this gate
+          // SKIPPED the orientation rescue entirely and kept the garbage 0° text as
+          // bestText — confirmed live on two real Louisburg scans, v2026.09.08.807,
+          // both extracting 0 fields.
+          //
+          // Fix: the orientation gate below no longer depends on
+          // _ocrPageBudgetExceeded at all — when bestScore is this low, the 4-way
+          // probe is now GUARANTEED to run at least once regardless of how much time
+          // the primary/retry cascade already spent on this page. This does NOT
+          // remove the budget system: the file-level _ocrBudgetExceeded / abort
+          // checks immediately above (unchanged) still gate entry to this whole
+          // block, and the probe's own worst-case duration is separately bounded by
+          // ORIENT_PROBE_RESERVE_MS via _withTimeout so one bad page still can't run
+          // away indefinitely — it only stops the CASCADE's per-page budget from
+          // starving a block that must fire to have any chance of recovering a
+          // sideways page. _ocrPageBudgetExceeded itself is still computed below
+          // exactly as before (needed by CHANGE 5 / binarize, which keeps its
+          // existing lower-priority budget gate — only this orientation block is
+          // exempted).
+          const ORIENT_PROBE_RESERVE_MS = 45000; // 4-way crop race + one full re-OCR pass on the winner
           // Bug #134 / budget: neither was checked here before — a Cancel click or an
           // exceeded budget wouldn't stop this refinement pass until the outer page loop's
           // next iteration. Check immediately before spending more OCR time on this page.
@@ -13343,12 +13429,16 @@ async function extractPDFText(ab, statusCb) {
           }
           // Per-page budget (b35c9b09): only skip THIS page's own optional
           // refinement pass, never the outer page loop — a page using up its
-          // fair share must not stop its siblings from getting theirs.
+          // fair share must not stop its siblings from getting theirs. Still
+          // computed here — CHANGE 5 (binarize) below still gates on it — but,
+          // per the fix note above, no longer gates CHANGE 4 itself.
           if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
             _ocrPageBudgetExceeded = true;
           }
-          if (bestScore < ORIENT_SCORE_THRESHOLD && !_ocrPageBudgetExceeded) {
+          if (bestScore < ORIENT_SCORE_THRESHOLD) {
             let _pickedForCleanup;
+            let _orientScores = null; // {sig0, sigs} snapshot for debug output, via onScores below
+            let _orientPicked = null;
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — orientation check...');
               // FIX (b35c9b09 Step 2): fixed scale 2.5 — a cache HIT whenever
@@ -13358,9 +13448,24 @@ async function extractPDFText(ab, statusCb) {
               // owned reference — never freed here, only via
               // _releasePageRenderCache() at page exit.
               const canvasO = await _renderPageHQCached(2.5);
-              const picked = await _pickBestPageOrientation(canvasO, (canvas, params) =>
-                recognizeWithTimeout(workerBox.current, canvas, params),
+              // ORIENT_PROBE_RESERVE_MS-bounded (see fix note above): guarantees this
+              // page's probe attempt regardless of the cascade's own spend, while still
+              // keeping a hard ceiling on its own worst-case cost (_withTimeout does not
+              // cancel the underlying recognize calls, same convention as every other
+              // _withTimeout use in this file — it only stops this code from waiting on
+              // them past the reserve).
+              const picked = await _withTimeout(
+                _pickBestPageOrientation(
+                  canvasO,
+                  (canvas, params) => recognizeWithTimeout(workerBox.current, canvas, params),
+                  (scores) => {
+                    _orientScores = scores;
+                  },
+                ),
+                ORIENT_PROBE_RESERVE_MS,
+                'orientation probe page ' + pgNum,
               );
+              _orientPicked = picked;
               if (picked) {
                 _pickedForCleanup = picked.winnerCanvas;
                 // A rotated candidate clearly wins — run full OCR on it
@@ -13391,8 +13496,31 @@ async function extractPDFText(ab, statusCb) {
                   bestScore = rotScore;
                 }
               }
+              // Debug observability (ocr-orientprobe-reserve, 2026-09-09): record that the
+              // probe fired for this page plus each orientation's raw score and the winner,
+              // so savePDFDebug's ORIENTATION PROBE LOG section can show Matt whether the
+              // probe ran and what it decided on his next re-upload of a rotated bill.
+              orientProbeLog.push({
+                page: pgNum,
+                fired: true,
+                sig0: _orientScores ? _orientScores.sig0 : null,
+                sig90: _orientScores ? _orientScores.sigs[90] : null,
+                sig180: _orientScores ? _orientScores.sigs[180] : null,
+                sig270: _orientScores ? _orientScores.sigs[270] : null,
+                winner: _orientPicked ? _orientPicked.winnerLabel : null,
+              });
             } catch (_orientErr) {
               /* orientation probe failed — continue with existing best */
+              orientProbeLog.push({
+                page: pgNum,
+                fired: true,
+                sig0: _orientScores ? _orientScores.sig0 : null,
+                sig90: _orientScores ? _orientScores.sigs[90] : null,
+                sig180: _orientScores ? _orientScores.sigs[180] : null,
+                sig270: _orientScores ? _orientScores.sigs[270] : null,
+                winner: null,
+                error: _orientErr && _orientErr.message ? _orientErr.message : String(_orientErr),
+              });
             } finally {
               // F2 (superseded by b35c9b09 Step 2 for canvasO — it is cache-
               // owned now, see above): the winning rotated canvas returned by
@@ -13533,6 +13661,8 @@ async function extractPDFText(ab, statusCb) {
         window._pdfOcrPasses = allPassTexts;
         // Save pass score log for debug output
         window._pdfPassScores = passScoreLog;
+        // Save orientation-probe log for debug output (ocr-orientprobe-reserve, 2026-09-09)
+        window._pdfOrientProbeLog = orientProbeLog;
       } finally {
         // F5: terminate every pool worker even if an error was thrown mid-loop
         for (const box of workerBoxes) {
@@ -14710,9 +14840,23 @@ async function processPDF(file) {
               }
             }
           }
+          // FIX (ocr-orientprobe-reserve, 2026-09-09): savePDFDebug() reads
+          // window._pdfPassScores/_pdfOrientProbeLog to render the debug file's
+          // OCR PASS SCORES / ORIENTATION PROBE LOG sections, but this per-file
+          // cleanup (a few lines below) nulls them before the user ever gets a
+          // chance to click "Save Debug" — in batch-scan mode this ran for every
+          // file in the queue, so by the time all files finished, both were
+          // ALWAYS null and the saved debug .txt silently omitted both sections.
+          // Snapshot into a *ForDebug variable first (same per-file-overwrite
+          // semantics already used by window._pdfRawText/_pdfSourceFileName
+          // elsewhere in this file) so savePDFDebug can still read the last
+          // processed file's data after this cleanup runs.
+          window._pdfPassScoresForDebug = window._pdfPassScores;
+          window._pdfOrientProbeLogForDebug = window._pdfOrientProbeLog;
           // F3: pass texts only needed during consensus — free them now
           window._pdfOcrPasses = null;
           window._pdfPassScores = null;
+          window._pdfOrientProbeLog = null;
 
           if (_syntheticReviewBills.length) {
             finalBills = finalBills.concat(_syntheticReviewBills);

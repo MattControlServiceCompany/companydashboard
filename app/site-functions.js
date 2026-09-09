@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.09.808',
+    date: '2026-09-09',
+    title: 'Bill OCR: sideways-scanned bills now get a guaranteed orientation fix attempt',
+    items: [
+      {
+        type: 'fix',
+        text: 'PDF bill upload — a scanned bill stored sideways in the file (e.g. some Louisburg water/sewer scans) now always gets its automatic straighten-and-retry attempt, even on a bill that needed a lot of OCR time first. Previously that attempt could be skipped, leaving the bill with zero extracted fields.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.08.807',
     date: '2026-09-08',
     title: 'Performance Report and Building Scorecard: energy figures now match across the board',
