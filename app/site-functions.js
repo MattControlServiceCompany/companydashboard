@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.09.810',
+    date: '2026-09-09',
+    title: 'Bill data — CSV imports and $/kW rate fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Spreadsheet (CSV) bill imports now fill in every field, including gas usage — a blank-field bug affecting some June 2026 imports and the Edit Billing Period screen is fixed.',
+      },
+      {
+        type: 'fix',
+        text: 'The demand ($/kW) rate shown on Energy Graphics now matches the rate on the Bills tab, instead of being calculated against the wrong usage number.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.09.809',
     date: '2026-09-09',
     title: 'Utility Data — meter buttons with an unrecognized type no longer disappear when clicked',
