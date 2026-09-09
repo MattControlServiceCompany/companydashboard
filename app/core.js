@@ -2838,13 +2838,17 @@ function updateProg(id, val) {
 const ALL_COMMODITIES = ['Electric', 'Gas', 'Water', 'Steam', 'Sewer', 'Stormwater', 'Propane'];
 
 function isShownCommodity(projectId, commodity) {
-  const p = projects.find((x) => x.id === projectId);
+  // Fix 35571527-p0: unrecognized commodities ('Unknown', '', null) are never
+  // toggled by the shownCommodities UI (only the 7 ALL_COMMODITIES types are),
+  // so they must always be shown — never hidden by this filter.
+  if (!ALL_COMMODITIES.includes(commodity)) return true;
+  const p = projects.find((x) => String(x.id) === String(projectId));
   if (!p || !Array.isArray(p.shownCommodities)) return true;
   return p.shownCommodities.includes(commodity);
 }
 
 function isCalcCommodity(projectId, commodity) {
-  const p = projects.find((x) => x.id === projectId);
+  const p = projects.find((x) => String(x.id) === String(projectId));
   if (!p || !Array.isArray(p.calcCommodities)) return true;
   return p.calcCommodities.includes(commodity);
 }

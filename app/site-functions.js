@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.09.809',
+    date: '2026-09-09',
+    title: 'Utility Data — meter buttons with an unrecognized type no longer disappear when clicked',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data — a meter chip with an unrecognized or blank commodity type (e.g. "Unknown Electric") no longer vanishes or moves after you click it. The show/hide filter now always displays meters of an unrecognized type, and the project lookup behind it no longer flips based on how the page called it.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.09.808',
     date: '2026-09-09',
     title: 'Bill OCR: sideways-scanned bills now get a guaranteed orientation fix attempt',

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.09.808'; // deployed 2026-09-06 (Utility Audit / EUI Report added to Utility Data)
+  var CH_VERSION = 'v2026.09.09.809'; // Utility Data — meter buttons with an unrecognized type no longer disappear when clicked
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
