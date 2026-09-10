@@ -57,8 +57,15 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     }
     (b.meters || []).forEach((m) => {
       if (m.baselineInclude === false) return;
+      // Scope to energy commodities only (EUI/kBtu math below assumes Electric/Gas/Propane
+      // units — Water/Sewer/Stormwater have no kBtu conversion and must never enter this
+      // baseline/post accumulation). WITHIN that energy set, honor the project's
+      // calcCommodities toggle (isCalcCommodity) instead of always assuming all three are on
+      // — matches the canonical gather pattern already used in core.js (baselineInclude +
+      // isCalcCommodity, no hardcoded array).
       const energyCommodities = ['Electric', 'Gas', 'Propane'];
       if (!energyCommodities.includes(m.commodity)) return;
+      if (typeof isCalcCommodity === 'function' && !isCalcCommodity(projId, m.commodity)) return;
       const bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
       const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
@@ -1489,6 +1496,22 @@ function _scopeMonthlyToPeriod(monthlyArr, yearMonths) {
 }
 
 /**
+ * _rptFilenamePeriodTag — H/13 fix (2026-09-09): quarterly exports (PDF/.doc/.docx) previously
+ * used a bare "Quarterly" type label with no actual quarter/year in the filename (e.g.
+ * "Client - Quarterly Savings Report 2026.09.09" — the date is EXPORT date, not the period the
+ * report covers). Returns " Q2-2026" for a quarterly report, " 2026" for an annual report, or ''
+ * if the period isn't known, so every export filename names the period it actually reports on.
+ * @param {object} data - collectReportData() output (reads data.period)
+ */
+function _rptFilenamePeriodTag(data) {
+  var per = data && data.period;
+  if (!per) return '';
+  if (per.type === 'quarterly' && per.quarter && per.year) return ' Q' + per.quarter + '-' + per.year;
+  if (per.type !== 'quarterly' && per.year) return ' ' + per.year;
+  return '';
+}
+
+/**
  * _rptYtdKicker — small uppercase eyebrow label prepended to each page inside the closing
  * "Year-to-Date / Overall Performance" section (EUI Benchmarking, the new YTD Trend page, and
  * Contract Projection) so a reader understands the three pages are one grouped section, distinct
@@ -1694,9 +1717,57 @@ function generateReportHTML(data, selectedSections) {
 }
 
 /**
+ * _rptInjectUiPassOverrides — feat/report-ui-pass (2026-09-09): a handful of table-styling
+ * fixes (A1 header word-break, A2 squared corners, D2#15 no gap under the Baseline Data title
+ * bar, D2#16 Baseline Data header gridlines white-only) target CSS that lives in
+ * energy-department.html's #report-styles block, which this pass is scoped to leave untouched.
+ * Applying the fix as a small, targeted stylesheet AUTHORED HERE and injected once into the
+ * live document (the same document #report-styles/#report-print-overrides already style) keeps
+ * every byte of the change inside this file while still reaching the on-screen preview AND
+ * window.print() (both read the live DOM). Idempotent — checks its own id before inserting.
+ *
+ * A1 note (measured via headless render + getComputedStyle, not guessed): the per-table
+ * word-break:keep-all fix applied inline on each table's <thead><tr style="..."> was NOT
+ * enough on its own for any header using the .rpt-table-wrap class — #report-styles has
+ * `.rpt-table-wrap th, .rpt-table-wrap td { overflow-wrap: break-word; word-wrap: break-word }`
+ * as a rule targeting <th> DIRECTLY, and a direct rule on an element always wins over an
+ * INHERITED value from an ancestor's inline style, regardless of which one is more specific —
+ * inheritance is the lowest-priority source in the cascade. Confirmed: computed
+ * overflow-wrap was still "break-word" on the Financial Summary table's "Projected Cost"
+ * header even with word-break:keep-all inherited from its <tr>, and it kept breaking
+ * mid-word ("PROJECTE"/"D"/"COST") until overridden here with !important.
+ */
+function _rptInjectUiPassOverrides() {
+  if (document.getElementById('rpt-ui-pass-overrides')) return;
+  var css =
+    /* A1: every report-table header word stays whole — no mid-word breaks. !important beats
+       #report-styles' .rpt-table-wrap th direct rule (overflow-wrap/word-wrap: break-word). */
+    '#reportPages .rpt-table th,#reportPages .rpt-table-wrap th,#reportPages .rpt-table-bl th' +
+    '{word-break:keep-all !important;overflow-wrap:normal !important;word-wrap:normal !important;hyphens:none !important}' +
+    /* A2: squared-off corners on every report table */
+    '#reportPages .rpt-table,#reportPages .rpt-table-bl,#reportPages .rpt-table-wrap,' +
+    '#reportPages .rpt-table-dark,#reportPages .rpt-table-compact{border-radius:0 !important}' +
+    /* D2#15: no gap between the "Building Baseline Data" title bar and the table below it */
+    '#reportPages .rpt-table-bl{margin:0 !important}' +
+    /* D2#16: Baseline Data table header gridlines white only — no colored/grey shade */
+    '#reportPages .rpt-table-bl th,#reportPages .rpt-table-bl th.bl-elec,' +
+    '#reportPages .rpt-table-bl th.bl-gas,#reportPages .rpt-table-bl th.bl-prop,' +
+    '#reportPages .rpt-table-bl th.bl-water,#reportPages .rpt-table-bl th.bl-total' +
+    '{border-color:#ffffff !important}' +
+    '#reportPages .rpt-table-bl th.bl-grp{border-bottom-color:#ffffff !important}' +
+    /* D2#17: clearer separation between the top stats bar and the table below it */
+    '#reportPages .rpt-bl-stats{border-bottom:2px solid var(--rpt-page-text) !important}';
+  var styleEl = document.createElement('style');
+  styleEl.id = 'rpt-ui-pass-overrides';
+  styleEl.textContent = css;
+  document.head.appendChild(styleEl);
+}
+
+/**
  * showReportOverlay — displays the report preview overlay with generated HTML.
  */
 function showReportOverlay(html, title) {
+  _rptInjectUiPassOverrides();
   var pagesEl = document.getElementById('reportPages');
   pagesEl.innerHTML = html;
   document.getElementById('reportOverlayTitle').textContent = title || 'Report Preview';
@@ -2069,6 +2140,17 @@ function rptPageCover(n, d) {
   // Energy reduction %
   const energyRedPct = d.totals.kwhBl > 0 ? Math.round(((d.totals.kwhBl - d.totals.kwhCur) / d.totals.kwhBl) * 100) : 0;
 
+  // Building Status column count — an unconstrained flex-wrap let content-width cards land
+  // uneven (e.g. 6 buildings wrapping 4+2). Force an even grid instead: up to 6 buildings fit
+  // one row (matches "one row of 6" — the common case); beyond that, use whichever of 4 or 3
+  // columns divides evenly so every row is full width, never a short orphan row.
+  // Cap at 2 rows for up to 8 buildings (matches the vertical space the old 4+2 layout used —
+  // a 3rd row (measured, 7-building portfolio) pushed the last card onto a spillover page).
+  // Balance columns across those rows as evenly as possible: 6 -> 3+3, 7 -> 4+3, 8 -> 4+4.
+  const _statusCardCount = (d.buildings || []).length;
+  const _statusRows = _statusCardCount <= 1 ? 1 : _statusCardCount <= 4 ? 1 : _statusCardCount <= 8 ? 2 : 3;
+  const _statusCols = _statusCardCount <= 1 ? 1 : Math.ceil(_statusCardCount / _statusRows);
+
   // Building status grid cards (all buildings)
   const gridBldgs = d.buildings;
   const statusCards = gridBldgs
@@ -2225,7 +2307,9 @@ function rptPageCover(n, d) {
     // Building Status (full width, below — cards side by side)
     '<div style="margin-top:6px">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Building Status</div>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
+    '<div style="display:grid;grid-template-columns:repeat(' +
+    _statusCols +
+    ',1fr);gap:6px">' +
     statusCards +
     '</div>' +
     '</div>' +
@@ -2341,7 +2425,7 @@ function rptPageFinancial(n, d) {
 
   const bldgTable =
     '<table class="rpt-table rpt-table-wrap" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
-    '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
+    '<thead><tr style="text-align:center;white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
     '<th style="width:18%">Building</th>' +
     '<th class="rpt-n" style="width:10%">Sq Ft</th>' +
     '<th class="rpt-n" style="width:12%">Baseline<br>Cost</th>' +
@@ -2467,16 +2551,16 @@ function rptPageFinancial(n, d) {
     '<col style="width:12%">' +
     '</colgroup>' +
     '<thead><tr style="text-align:center;line-height:1.2">' +
-    '<th style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Quarter</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Baseline<br>kWh</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Actual<br>kWh</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Baseline<br>Therms</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Actual<br>Therms</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Baseline<br>Gal</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Actual<br>Gal</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Baseline<br>Cost</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">Actual<br>Cost</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:break-word;overflow-wrap:break-word">' +
+    '<th style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Quarter</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>kWh</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>kWh</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>Therms</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>Therms</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>Gal</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>Gal</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>Cost</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>Cost</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">' +
     qLabel +
     '<br>Actual Savings</th>' +
     '</tr></thead>' +
@@ -2567,12 +2651,12 @@ function rptPageSavingsPerformance(n, d) {
     const bars = periodYMs
       .map(function (ym) {
         const moIdx = parseInt(ym.split('-')[1]) - 1;
-        const moLabel = monthNames[moIdx] + ' ' + ym.split('-')[0].slice(2);
+        const moLabel = monthNames[moIdx] + ' ' + ym.split('-')[0];
         const projPct = Math.min(100, ((moProj[ym] || 0) / maxVal) * 100).toFixed(1);
         const actPct = Math.min(100, ((moActual[ym] || 0) / maxVal) * 100).toFixed(1);
         return (
           '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">' +
-          '<div style="width:40px;text-align:right;font-size:9px;color:var(--rpt-page-text)">' +
+          '<div style="width:52px;text-align:right;font-size:9px;color:var(--rpt-page-text)">' +
           moLabel +
           '</div>' +
           '<div style="flex:1">' +
@@ -2737,7 +2821,7 @@ function rptPageSavingsPerformance(n, d) {
 
   const annTable =
     '<table class="rpt-table" contenteditable="true" style="width:100%;table-layout:fixed">' +
-    '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
+    '<thead><tr style="text-align:center;white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
     '<th style="width:12%">Year</th>' +
     '<th class="rpt-n" style="width:14%">kWh</th>' +
     '<th class="rpt-n" style="width:10%">Peak kW</th>' +
@@ -2951,7 +3035,7 @@ function rptPageEUI(n, d) {
     '<col style="width:6%">' +
     '<col style="width:12%">' +
     '</colgroup>' +
-    '<thead><tr style="white-space:normal;word-wrap:break-word;line-height:1.2">' +
+    '<thead><tr style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
     '<th>#</th>' +
     '<th>Building</th>' +
     '<th>Type</th>' +
@@ -2962,7 +3046,7 @@ function rptPageEUI(n, d) {
     '<th class="rpt-n">vs CBECS %</th>' +
     '<th>Percentile</th>' +
     '<th class="rpt-n">$/ft²</th>' +
-    '<th>ENERGY STAR</th>' +
+    '<th>ENERGY STAR Eligible</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rankRows +
@@ -3091,6 +3175,11 @@ function rptPageEUI(n, d) {
     '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
     '<h2>Building Performance Rankings</h2>' +
     rankTable +
+    '<div style="font-size:9px;color:var(--rpt-page-text);margin:2px 0 6px;line-height:1.3">' +
+    '<strong>ENERGY STAR Eligible</strong>: current Site EUI in the top quartile (most efficient 25%) of ' +
+    'the CBECS national benchmark for its building type — the threshold ENERGY STAR certification ' +
+    'requires. "Yes" = eligible; "—" = not eligible at this time.' +
+    '</div>' +
     '<h2>Site EUI vs CBECS Benchmark</h2>' +
     euiChart +
     '<h2>Site EUI Trend</h2>' +
@@ -3186,7 +3275,7 @@ function rptPageAuditSpend(n, d) {
 
   const table =
     '<table class="rpt-table rpt-table-wrap" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
-    '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
+    '<thead><tr style="text-align:center;white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
     '<th style="width:22%">Building</th>' +
     '<th class="rpt-n" style="width:10%">Sq Ft</th>' +
     '<th class="rpt-n" style="width:14%">Electric $</th>' +
@@ -3420,8 +3509,19 @@ function rptPageEnvironmentalImpact(n, d) {
   const bodyHTML =
     '<div contenteditable="true">' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
-    '<div style="font-size:12px;color:var(--rpt-page-text);margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
-    (_annualize ? ' (values annualized ×4 from quarterly data)' : '') +
+    // F11 fix (2026-09-09): state the basis explicitly — the pollutant/equivalent figures
+    // below are computed from this period's ACTUAL energy savings (kwhSaved/thermsSaved/
+    // propaneGalSaved, quarter-scoped via collectReportData's inPeriod accumulation — see
+    // totKwhSaved etc.), never a cumulative/total-through-current figure. "Annualized" only
+    // multiplies that quarter total by 4 to estimate a full year; it is not a second,
+    // independently-measured annual figure.
+    '<div style="font-size:12px;color:var(--rpt-page-text);margin-bottom:10px;text-align:center">Emission reductions from energy savings achieved during ' +
+    ((d.period && d.period.label) || 'the reporting period') +
+    (d.period && d.period.type === 'quarterly'
+      ? _annualize
+        ? ' — quarterly savings, annualized (×4) to estimate a full-year impact.'
+        : ' — quarterly total, not annualized.'
+      : ' — full reporting-year total.') +
     '</div>' +
     '<div style="display:flex;flex-direction:column;gap:10px">' +
     '<div style="padding:4px 0;text-align:center">' +
@@ -4695,12 +4795,14 @@ function rptPageBuildingSummary(n, d, b) {
       '</span>' +
       '</div>';
 
+    // D7 fix (2026-09-09): was writing-mode:vertical-rl PLUS transform:rotate(180deg) — the
+    // extra 180deg flip left the unit text upside down (rendered/confirmed via headless
+    // render). vertical-rl alone already reads correctly top-to-bottom for a left-side axis
+    // label; dropping the added rotate is the fix.
     var yAxisLabel =
-      '<div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;color:var(--rpt-page-text);text-align:center;white-space:nowrap;padding-right:2px">' +
+      '<div style="writing-mode:vertical-rl;font-size:9px;color:var(--rpt-page-text);text-align:center;white-space:nowrap;padding-right:2px">' +
       unit +
       '</div>';
-    var axisCaption =
-      '<div style="font-size:9px;color:var(--rpt-page-text);text-align:center;margin-top:1px">← Month →</div>';
     return (
       titleHtml +
       '<div style="display:flex;align-items:center">' +
@@ -4710,7 +4812,6 @@ function rptPageBuildingSummary(n, d, b) {
       bars +
       '</div>' +
       legend +
-      axisCaption +
       '</div>' +
       '</div>'
     );
@@ -4834,14 +4935,22 @@ function rptPageBuildingSummary(n, d, b) {
             '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
             euiChartH +
             'px">' +
-            '<div style="width:100%;max-width:15px;height:' +
+            // D6 fix (2026-09-09): was width:100%;max-width:15px. This bar's immediate parent is
+            // an auto-width flex column (align-items:center, no width/flex-basis of its own) —
+            // width:100% of an unresolved auto-width parent computes to 0 per CSS spec, which is
+            // exactly what was happening (confirmed: DOM markup showed correct non-zero px
+            // heights and correct background colors, but PDF vector-fill inspection showed ZERO
+            // paint rects for these bars — a real render bug, not a data bug). Fixed px width
+            // (matching every OTHER bar chart in this file, e.g. buildBarChart's 10px bars)
+            // resolves unambiguously regardless of the parent's width.
+            '<div style="width:15px;height:' +
             blH +
             'px;background:var(--rpt-orange);border-radius:1px 1px 0 0"></div>' +
             '</div>' +
             '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
             euiChartH +
             'px">' +
-            '<div style="width:100%;max-width:15px;height:' +
+            '<div style="width:15px;height:' +
             curH +
             'px;background:var(--rpt-green-dark);border-radius:1px 1px 0 0"></div>' +
             '</div>' +
@@ -5109,25 +5218,28 @@ function rptPageBuildingSummary(n, d, b) {
     '</tbody>' +
     '</table>';
 
-  // Filter to only months with data (baseline or current > 0)
-  function filterToDataMonths(fullYear) {
+  // D8 fix (2026-09-09): these three per-building Consumption charts previously clipped to
+  // just the report's 3 quarter months (e.g. Apr-Jun for a Q2 report) via _periodYMs. Matt
+  // wants the full baseline+current trend through the current month instead — NOT quarter-
+  // scoped (that's the one deliberate exception to the Q2-restructure's period-scoping; the
+  // top-level financial/YoY tables/charts stay quarter-scoped). buildFullYear() is limited to
+  // one calendar year (d.period.end's year) with baseline aligned by calendar month, so "full
+  // timeline through current month" here means every calendar month from Jan through the
+  // report period's end month that has baseline and/or current data — not filtered down to
+  // just the 3 selected-quarter months, and not showing months AFTER the current period
+  // (which would be empty anyway).
+  var _periodEndMoIdx = d && d.period && d.period.end ? parseInt(d.period.end.split('-')[1], 10) - 1 : 11;
+  function filterThroughCurrentMonth(fullYear) {
     return fullYear.filter(function (mo) {
-      return (mo.bl || 0) > 0 || (mo.cur || 0) > 0;
+      var moIdx = parseInt(mo.month.split('-')[1], 10) - 1;
+      return moIdx <= _periodEndMoIdx && ((mo.bl || 0) > 0 || (mo.cur || 0) > 0);
     });
   }
 
-  // Period months array — used to align baseline and actual to the same reporting window
-  var _periodYMs = (d.period && d.period.yearMonths) || [];
-
-  // Electricity Consumption chart — period months only (both baseline and actual)
+  // Electricity Consumption chart — full baseline+current timeline through the current month
   if (hasElec) {
     var elFullYear = buildFullYear(b.electric.monthly, _bm.elecByMo, 'kwh');
-    var elDataMonths =
-      _periodYMs.length > 0
-        ? elFullYear.filter(function (mo) {
-            return _periodYMs.includes(mo.month);
-          })
-        : filterToDataMonths(elFullYear);
+    var elDataMonths = filterThroughCurrentMonth(elFullYear);
     var elChart = buildBarChart(elDataMonths, 'var(--rpt-elec-bl)', 'var(--rpt-elec-cur)', 'kWh');
     rightHTML +=
       '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-blue);margin:6px 0 2px">' +
@@ -5138,15 +5250,10 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>';
   }
 
-  // Natural Gas Consumption chart — period months only (both baseline and actual)
+  // Natural Gas Consumption chart — full baseline+current timeline through the current month
   if (hasGas) {
     var gasFullYear = buildFullYear(b.gas.monthly, _bm.gasByMo, 'therms');
-    var gasDataMonths =
-      _periodYMs.length > 0
-        ? gasFullYear.filter(function (mo) {
-            return _periodYMs.includes(mo.month);
-          })
-        : filterToDataMonths(gasFullYear);
+    var gasDataMonths = filterThroughCurrentMonth(gasFullYear);
     var gasChart = buildBarChart(gasDataMonths, 'var(--rpt-gas-bl)', 'var(--rpt-gas-cur)', 'Therms');
     rightHTML +=
       '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-gas-head);margin:6px 0 2px">' +
@@ -5157,15 +5264,10 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>';
   }
 
-  // Propane Consumption chart — period months only (both baseline and actual)
+  // Propane Consumption chart — full baseline+current timeline through the current month
   if (hasPropane) {
     var propFullYear = buildFullYear(b.propane.monthly, _bm.propaneByMo, 'gallons');
-    var propDataMonths =
-      _periodYMs.length > 0
-        ? propFullYear.filter(function (mo) {
-            return _periodYMs.includes(mo.month);
-          })
-        : filterToDataMonths(propFullYear);
+    var propDataMonths = filterThroughCurrentMonth(propFullYear);
     var propChart = buildBarChart(propDataMonths, 'var(--rpt-prop-bl)', 'var(--rpt-prop-cur)', 'Gal');
     rightHTML +=
       '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-prop-head);margin:6px 0 2px">' +
@@ -5380,6 +5482,9 @@ function rptPageBuildingSummary(n, d, b) {
       '<th class="rpt-n bl-water">kGal</th><th class="rpt-n bl-water" style="white-space:normal;line-height:1.2">Water<br>Cost</th><th class="rpt-n bl-water">$/kGal</th>';
 
   // Statistics summary — light bordered grid for print-ready report
+  // D2#18/#19 fix (2026-09-09): clearer label wording, and Utility Cost/SF now formatted
+  // $#.## (2 decimals) — it was $c(Math.round(...)), which rounded a small per-sqft dollar
+  // value (typically $1-6) down to a whole dollar and lost almost all its precision.
   var blStats = '';
   if (blDataRows) {
     var _statItems = [];
@@ -5391,37 +5496,37 @@ function rptPageBuildingSummary(n, d, b) {
       );
     if (b.sqft > 0 && _tKwh > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">kWh / sf</div><div class="bl-stat-val">' +
+        '<div><div class="bl-stat-label">Electric Use / SF (kWh)</div><div class="bl-stat-val">' +
           (_tKwh / b.sqft).toFixed(2) +
           '</div></div>',
       );
     if (b.sqft > 0 && _tTotalCost > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">Utility Cost / sf</div><div class="bl-stat-val">' +
-          $c(Math.round(_tTotalCost / b.sqft)) +
+        '<div><div class="bl-stat-label">Utility Cost / SF</div><div class="bl-stat-val">$' +
+          (_tTotalCost / b.sqft).toFixed(2) +
           '</div></div>',
       );
     if (_tKwh > 0 && _tElecCost > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">Avg $/kWh</div><div class="bl-stat-val">$' +
+        '<div><div class="bl-stat-label">Avg Electric Rate ($/kWh)</div><div class="bl-stat-val">$' +
           (_tElecCost / _tKwh).toFixed(4) +
           '</div></div>',
       );
     if (_tTherms > 0 && _tGasCost > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">Avg $/Therm</div><div class="bl-stat-val">$' +
+        '<div><div class="bl-stat-label">Avg Gas Rate ($/Therm)</div><div class="bl-stat-val">$' +
           (_tGasCost / _tTherms).toFixed(4) +
           '</div></div>',
       );
     var _totalKbtu = toKBtu(_tKwh, _tTherms, _tGal);
     if (b.sqft > 0 && _totalKbtu > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">kBtu / sf</div><div class="bl-stat-val">' +
+        '<div><div class="bl-stat-label">Site EUI (kBtu/SF)</div><div class="bl-stat-val">' +
           (_totalKbtu / b.sqft).toFixed(2) +
           '</div></div>',
       );
     _statItems.push(
-      '<div><div class="bl-stat-label">Utility Costs / Year</div><div class="bl-stat-val">' +
+      '<div><div class="bl-stat-label">Total Annual Utility Cost</div><div class="bl-stat-val">' +
         $c(_tTotalCost) +
         '</div></div>',
     );
@@ -5526,9 +5631,15 @@ function rptPageBuildingSummary(n, d, b) {
     label: 'Page ' + n + ' — ' + (b.name || 'Building'),
   });
 
+  // D2#14 fix (2026-09-09): user-facing toggle (rptOptIncludeBlTable, injected into the
+  // Generate Report modal by openReportModal) for whether the Building Baseline Data table
+  // renders at all. Defaults to included (!== false) so existing behavior is unchanged unless
+  // the user explicitly turns it off.
+  var _includeBlTable = !d.reportOptions || d.reportOptions.includeBlTable !== false;
+
   // If there is baseline data, render it on its own separate page to prevent
   // overflow clipping in the html2canvas PDF export (bug 9ff83f06).
-  if (blDataTable) {
+  if (blDataTable && _includeBlTable) {
     var blPageNum = n + 1;
     var blPageResult = rptPage(blPageNum, (b.name || 'Building') + ' — Baseline Data', blDataTable, {
       data: d,
@@ -5856,7 +5967,7 @@ function rptPageElectric(n, d) {
     '<col style="width:10%">' +
     '<col style="width:8%">' +
     '</colgroup>' +
-    '<thead><tr style="white-space:normal;word-wrap:break-word;line-height:1.2">' +
+    '<thead><tr style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
     '<th>Building</th><th class="rpt-n">Baseline kWh</th><th class="rpt-n">Actual kWh</th>' +
     '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
     '<th class="rpt-n">Baseline Peak kW</th><th class="rpt-n">Actual kW</th>' +
@@ -7870,7 +7981,7 @@ async function exportReportToPDF() {
         : client + ' - ASHRAE 36 Audit Report ' + dateStr;
   } else {
     const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-    filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr;
+    filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr;
   }
   const originalTitle = document.title;
   document.title = filename;
@@ -8666,7 +8777,7 @@ async function exportReportToWord() {
           : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.doc';
     } else {
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.doc';
+      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.doc';
     }
 
     // Word-only page setup + chrome overrides (2026-07-22 fix, Matt: "the word files footer
@@ -9282,7 +9393,7 @@ async function exportReportToDocx() {
           : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.docx';
     } else {
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.docx';
+      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.docx';
     }
 
     await _docxAssemble(translated.xml, {
@@ -10076,6 +10187,43 @@ function openReportModal(projId, type) {
   });
   sectionList.innerHTML = sectionHTML;
 
+  // D2#14 fix (2026-09-09): inject a master "Include Building Baseline Data table" toggle
+  // into the static Report Generation Settings panel (energy-department.html markup is
+  // off-limits to edit directly — this DOM-authored insertion keeps the change entirely in
+  // report-engine.js). Idempotent: only inserted once per page load; re-opening the modal
+  // does not duplicate it.
+  (function () {
+    var _blElecCb = document.getElementById('rptOptBlElectric');
+    var _blCommodityLabel = _blElecCb ? _blElecCb.closest('label') : null;
+    var _blHeadingDiv = _blCommodityLabel ? _blCommodityLabel.previousElementSibling : null;
+    if (_blHeadingDiv && !document.getElementById('rptOptIncludeBlTable')) {
+      var _toggleLabel = document.createElement('label');
+      _toggleLabel.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 8px 4px 0;cursor:pointer';
+      _toggleLabel.innerHTML =
+        '<input type="checkbox" id="rptOptIncludeBlTable" checked style="accent-color:var(--em);width:14px;height:14px">' +
+        '<span style="font-size:12px;color:var(--text);font-weight:600">Include Building Baseline Data table</span>';
+      _blHeadingDiv.parentNode.insertBefore(_toggleLabel, _blHeadingDiv);
+      var _blCommodityGroup = [
+        document.getElementById('rptOptBlElectric'),
+        document.getElementById('rptOptBlGas'),
+        document.getElementById('rptOptBlPropane'),
+        document.getElementById('rptOptBlWater'),
+      ];
+      var _syncBlCommodityState = function () {
+        var on = document.getElementById('rptOptIncludeBlTable').checked;
+        _blHeadingDiv.style.opacity = on ? '1' : '0.4';
+        _blCommodityGroup.forEach(function (cb) {
+          if (!cb) return;
+          cb.disabled = !on;
+          var lbl = cb.closest('label');
+          if (lbl) lbl.style.opacity = on ? '1' : '0.4';
+        });
+      };
+      document.getElementById('rptOptIncludeBlTable').addEventListener('change', _syncBlCommodityState);
+      _syncBlCommodityState();
+    }
+  })();
+
   // Set modal title and defaults
   document.querySelector('#reportBldgModal .modal-title').textContent =
     type === 'quarterly' ? 'Generate Quarterly Report' : 'Generate Annual Report';
@@ -10139,8 +10287,11 @@ async function launchNewReport() {
   }
 
   // Get report generation settings
+  var _blTableToggle = document.getElementById('rptOptIncludeBlTable');
   var rptOpts = {
     annualizePollution: !!(document.getElementById('rptOptAnnualizePollution') || {}).checked,
+    // D2#14: defaults to included (element absent, e.g. non-modal callers, counts as "on")
+    includeBlTable: _blTableToggle ? !!_blTableToggle.checked : true,
     blCommodities: {
       electric: !!(document.getElementById('rptOptBlElectric') || {}).checked,
       gas: !!(document.getElementById('rptOptBlGas') || {}).checked,
