@@ -154,9 +154,14 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       const blExpKW = _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
       const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
       const actDemKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0;
-      const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
-      const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
-      const moKwRate = actBilKW > 0 ? (kwCostAmt + facKWCostAmt) / actBilKW : 0;
+      // Bug (2026-09-10, Circle Grove 2026-05): the $/kW rate was derived purely from
+      // bill.kwCost+bill.facKWCost, which are blank on newer-schema bills that store the
+      // same dollars under demandCharge/tdcCharge/facilitiesCharge instead — silently
+      // zeroing the kW savings term even though the bill's own totalKwRate (and the Bills
+      // table) had a real rate. getStoredKwRate() (computations/rates.js) is the SSOT:
+      // stored totalKwRate -> granular charge fields -> legacy kwCost+facKWCost.
+      const _kwRates = bfr.map((b) => getStoredKwRate(b)).filter((rt) => rt > 0);
+      const moKwRate = _kwRates.length ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length : 0;
       const kwSaved = blExpKW - actBilKW;
       const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
       totalCostSav = kwhCostSav + kwCostSav;
@@ -382,9 +387,10 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
         const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
         const blExpKW = _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
         const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
-        const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
-        const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
-        const moKwRate = actBilKW > 0 ? (kwCostAmt + facKWCostAmt) / actBilKW : 0;
+        // Bug (2026-09-10, Circle Grove 2026-05): see legacy-path fix above — getStoredKwRate()
+        // is the SSOT own-bill $/kW rate; cascade fills the genuinely-missing case.
+        const _kwRates = bfr.map((b) => getStoredKwRate(b)).filter((rt) => rt > 0);
+        const moKwRate = _kwRates.length ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length : 0;
         const kwSaved = blExpKW - actBilKW;
         const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
         totalCostSav = kwhCostSav + kwCostSav;

@@ -2835,15 +2835,14 @@ const CONDENSED_CATEGORIES = {
       compute: (r) => _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + _pfBills(r.facilitiesCharge || r.facKWCost),
     },
     {
-      // Blended kW rate = sum of kW charges / billed kW
+      // Blended kW rate — SSOT getStoredKwRate() (computations/rates.js): stored
+      // totalKwRate -> granular charge fields (demandCharge+tdcCharge+facilitiesCharge)
+      // -> legacy kwCost+facKWCost. Bills, Meter Performance, and the savings engine all
+      // call this same function so the three surfaces can never diverge (2026-09-10).
       label: 'kW Rate $/kW',
       type: 'rate',
       w: 110,
-      compute: (r) => {
-        const cost = _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + _pfBills(r.facilitiesCharge || r.facKWCost);
-        const kw = _pfBills(r.demandKW);
-        return kw > 0 ? cost / kw : 0;
-      },
+      compute: (r) => (typeof getStoredKwRate === 'function' ? getStoredKwRate(r) : 0),
     },
     {
       label: 'Other Charges $',

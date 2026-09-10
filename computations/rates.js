@@ -88,6 +88,34 @@ function getStoredRate(bill, type) {
   }
 }
 
+// getStoredKwRate(bill) — canonical $/kW (demand) rate for ONE bill.
+// SSOT for the Bills table, Meter Performance, and the savings engine (all three must
+// return the same number for the same bill — see missing-rate-cascade.md step 1).
+// Bug (2026-09-10, Circle Grove 2026-05): savings.js and perf-table.js both derived
+// $/kW purely from (bill.kwCost + bill.facKWCost) / billedKW. Newer-schema bills store
+// the same dollars under granular fields (demandCharge, tdcCharge, facilitiesCharge)
+// instead — kwCost/facKWCost are blank on those bills — so the blind sum silently
+// produced 0 even though the bill's own totalKwRate (and the Bills table, which already
+// reads demandCharge+tdcCharge+facilitiesCharge — app/utility-data.js ~2842-2846) had a
+// real rate. Precedence: stored totalKwRate first (cheapest, already validated at save
+// time by ensureBillRates), then the granular charge fields, then the legacy
+// kwCost+facKWCost sum for older-schema bills that only ever populated those two fields.
+function getStoredKwRate(bill) {
+  var pf = function (v) {
+    return parseFloat(v) || 0;
+  };
+  var stored = pf(bill.totalKwRate);
+  if (stored > 0) return stored;
+  var billedKW = pf(bill.billedKW) || pf(bill.demandKW) || 0;
+  if (billedKW > 0) {
+    var granularCost = pf(bill.demandCharge) + pf(bill.tdcCharge) + pf(bill.facilitiesCharge || bill.facKWCost);
+    if (granularCost > 0) return granularCost / billedKW;
+    var legacyCost = pf(bill.kwCost) + pf(bill.facKWCost);
+    if (legacyCost > 0) return legacyCost / billedKW;
+  }
+  return 0;
+}
+
 // Populate missing derived rate fields on a bill from its usage + cost data.
 // Returns true if any field was added/updated, false if bill was already complete.
 function ensureBillRates(bill) {
