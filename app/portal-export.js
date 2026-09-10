@@ -113,7 +113,7 @@ function publishClientPortal(projId) {
         month: 'short',
         year: 'numeric',
       });
-      return { month: ym, label, savingsDollars: Math.round(savings) };
+      return { month: ym, label, savingsDollars: Math.round(savings * 100) / 100 };
     });
 
   // ── 6. Compute period label and contract info ────────────────
@@ -147,7 +147,14 @@ function publishClientPortal(projId) {
     });
   }
 
-  const totalSavings = monthlySavings.reduce((s, m) => s + m.savingsDollars, 0);
+  // Sum RAW (unrounded) per-month values from savByYM, then round once —
+  // never sum already-rounded monthlySavings.savingsDollars (round-before-sum
+  // bug: Math.round(a)+Math.round(b) != Math.round(a+b)).
+  const totalSavings = Math.round(
+    Object.entries(savByYM)
+      .filter(([, v]) => v !== 0)
+      .reduce((s, [, v]) => s + v, 0),
+  );
 
   // ── 7. Build sanitized JSON — explicitly exclude sensitive fields ──
   const snapshot = {

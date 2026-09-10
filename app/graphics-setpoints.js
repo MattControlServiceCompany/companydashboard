@@ -2138,7 +2138,16 @@ function egfxRefresh(projId) {
             tooltip: {
               callbacks: {
                 label: (ctx) =>
-                  ctx.dataset.label + ': $' + (ctx.raw != null ? Math.round(ctx.raw).toLocaleString() : '—'),
+                  ctx.dataset.label +
+                  ': ' +
+                  (ctx.raw == null
+                    ? '—'
+                    : (ctx.raw < 0 ? '-' : '') +
+                      '$' +
+                      Math.abs(ctx.raw).toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })),
               },
             },
           },
