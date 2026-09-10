@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.10.816',
+    date: '2026-09-10',
+    title: 'Quarterly Report fixes: letterhead, excluded meters, and progress figures',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly Report: the logo and letterhead now appear only on the first two pages instead of every page.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: meters you excluded from a building (like ball fields) no longer show up in the Meter Performance table.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: contract-progress percentage and the savings-vs-target figures on the cover and board summary now agree, and both are corrected.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.10.815',
     date: '2026-09-10',
     title: 'Propane usage no longer estimated after the last delivery',
