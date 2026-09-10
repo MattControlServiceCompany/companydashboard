@@ -2339,14 +2339,17 @@ function rptPageCover(n, d) {
     gaugeSVG(contractDonePct, 'var(--rpt-eui-purple)', 'Contract Progress', contractDonePct + '%') +
     '</div>' +
     '</div>' +
-    // Building Status (full width, below — cards side by side)
-    '<div style="margin-top:6px">' +
+    '</div>';
+
+  // Building Status grid — moved off the hero page entirely, see the report-pass2 FOLLOW-UP
+  // comment below for why.
+  const buildingStatusBody =
+    '<div style="padding:16px 50px 4px;">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Building Status</div>' +
     '<div style="display:grid;grid-template-columns:repeat(' +
     _statusCols +
     ',1fr);gap:6px">' +
     statusCards +
-    '</div>' +
     '</div>' +
     '</div>';
 
@@ -2356,8 +2359,29 @@ function rptPageCover(n, d) {
   // has no page-number div positioned until the true end of its content, the overflow was
   // invisible in the footer scan (page 1 legitimately has none) but landed 2-3 stray "Key
   // Findings" bullets on an otherwise near-blank physical page 2, which DID carry a footer,
-  // confusingly reading "Page 1 of N". Moving Key Findings onto its own continuation page fixes
-  // this without touching the hero page's design.
+  // confusingly reading "Page 1 of N". Moving Key Findings onto its own continuation page fixed
+  // THAT overflow without touching the hero page's design.
+  //
+  // report-pass2 FOLLOW-UP fix (2026-09-10, same-day re-review of the RENDERED print output):
+  // removing Key Findings was not enough — hero + narrative + vs-box + 4 gauges + a 2-row,
+  // up-to-7-card Building Status grid STILL overflowed the physical page on its own, on a real
+  // 7-building portfolio (Louisburg USD #416). Unlike the Key Findings bullets (which landed on
+  // an otherwise-blank physical page 2 and were merely visible-but-misnumbered), this overflow
+  // was WORSE: PyMuPDF text-position extraction on the rendered PDF confirmed the 2nd row's
+  // savings-%/status-badge divs for the buildings past the 4th (e.g. Broadmoor Elementary, Field
+  // House, Maintenance Building on the Louisburg portfolio) never appear in the page's text layer
+  // at all — only their name div painted before the footer graphic's absolute-positioned band
+  // overlapped and obscured the rest of that row. Root cause: `.rpt-page`'s SCREEN-preview CSS
+  // (feature/report-layer-isolation-and-theme, 2026-07-28 — see that rule's own comment) makes it
+  // a FIXED-height box with the header/footer furniture layer pinned via position:absolute against
+  // that fixed box; print CSS restores normal flow for the page height itself but the footer
+  // graphic's own `bottom:16px` offset is still relative to `.rpt-page`'s nearest positioned
+  // ancestor, so once total content exceeds the fixed design height the trailing rows land
+  // UNDERNEATH the footer band's paint layer instead of pushing it (or a page break) down with
+  // them. Fix: move the entire Building Status grid onto the same continuation page as Key
+  // Findings (that page measured mostly blank in the render — ample room for both sections), the
+  // same "move fixed/semi-fixed content off the hero page" approach as the first fix above, just
+  // extended to cover the section that first fix's own measurement didn't account for.
   const keyFindingsBody =
     '<div style="padding:16px 50px;">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key Findings</div>' +
@@ -2365,9 +2389,9 @@ function rptPageCover(n, d) {
     '</div>';
 
   const page1 = rptPage(n, 'Cover', heroHTML + bodyHTML, { hero: true, data: d, label: 'Page ' + n + ' — Cover' });
-  const page2 = rptPage(n + 1, 'Key Findings', keyFindingsBody, {
+  const page2 = rptPage(n + 1, 'Building Status & Key Findings', buildingStatusBody + keyFindingsBody, {
     data: d,
-    label: 'Page ' + (n + 1) + ' — Key Findings',
+    label: 'Page ' + (n + 1) + ' — Building Status & Key Findings',
   });
 
   return { html: page1 + page2, pageCount: 2 };
@@ -3050,7 +3074,7 @@ function rptPageEUI(n, d) {
         '<td contenteditable="true">' +
         (b.name || '—') +
         '</td>' +
-        '<td contenteditable="true">' +
+        '<td contenteditable="true" style="overflow-wrap:normal;word-break:keep-all">' +
         (b.type || '—') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
@@ -3085,19 +3109,19 @@ function rptPageEUI(n, d) {
     .join('');
 
   const rankTable =
-    '<table class="rpt-table rpt-table-wrap" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
+    '<table class="rpt-table rpt-table-wrap rpt-mp-dense" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<colgroup>' +
     '<col style="width:4%">' +
-    '<col style="width:21%">' +
-    '<col style="width:7%">' +
-    '<col style="width:8%">' +
+    '<col style="width:16%">' +
     '<col style="width:9%">' +
-    '<col style="width:9%">' +
-    '<col style="width:5%">' +
     '<col style="width:8%">' +
     '<col style="width:10%">' +
+    '<col style="width:9%">' +
+    '<col style="width:7%">' +
     '<col style="width:7%">' +
     '<col style="width:12%">' +
+    '<col style="width:8%">' +
+    '<col style="width:10%">' +
     '</colgroup>' +
     // report-pass2 fix (2026-09-10): a single long header word like "PERCENTILE" overflowed its
     // narrow column and visually bled into the next column ("$/FT²"); reviewer also flagged
@@ -3106,27 +3130,52 @@ function rptPageEUI(n, d) {
     // 2026-09-09, the "A1" fix) injects a `#reportPages .rpt-table th{word-break:keep-all
     // !important;overflow-wrap:normal !important}` stylesheet rule that GLOBALLY blocks mid-word
     // breaks on every report table header, on purpose (so no header word ever splits awkwardly
-    // mid-letter) — that rule beats any local inline style, `!important` or not. The dropped
-    // inline `word-break:keep-all;overflow-wrap:normal` on this table's own `<tr>` (removed below)
-    // was therefore already INERT before this fix and stays removed only for clarity, not because
-    // it changes behavior. The actual fix is column-width + font-size: colgroup widened Percentile
-    // 8%->10% and $/ft² 6%->7% (taking 1% each from Type/CBECS/vs-CBECS%) and every header font
-    // shrunk to 9px, so the full word fits on ONE line inside its column without ever needing to
-    // wrap. font-size must be set on each <th> directly, not the <tr>, because the external
+    // mid-letter) — that rule beats any local inline style, `!important` or not.
+    //
+    // report-pass2 FOLLOW-UP fix (2026-09-10, same-day re-review of the RENDERED print output):
+    // the first pass's plan — shrink the header text to 9px inline — never actually rendered,
+    // because `showReportOverlay()` always runs `_rptApplyMinFontFloor()` on the live DOM, and
+    // this `<table>` was never marked `.rpt-mp-dense`. Without that class every element in the
+    // table floors to the NORMAL 13.34px minimum (RPT_MIN_TEXT_PX, 10pt) — well above the
+    // intended 9px — so the header text was silently bumped back up and the exact same collision
+    // reappeared in the actual print/PDF output (confirmed via PyMuPDF text-position extraction:
+    // "PERCENTILE$/FT²", "BASELINECURRENT", "CBECSSBECS" all rendered as single merged tokens with
+    // zero gap). This is the SAME `.rpt-mp-dense` opt-in already used by the Appendix B/
+    // Normalization tables in this same pass (see those call sites' identical comment) — added
+    // here so the floor lands at DENSE_MIN (12.00px / 9pt) instead. Header font-size is set to
+    // 12px (not 9px) to match DENSE_MIN exactly, so `_rptApplyMinFontFloor` treats it as
+    // already-at-floor and leaves it alone (own < elMin is false when own===elMin) instead of
+    // silently overriding an inline value the floor pass would otherwise have to guess at.
+    // Colgroup widths were re-derived from scratch for a 12px header/body font (not the never-
+    // actually-rendered 9px), using each column's single LONGEST UNBREAKABLE WORD (not its full
+    // header phrase — multi-word headers like "SQUARE FEET" wrap fine at the space as long as each
+    // individual word fits) at ~6.6px/char + 14px cell padding/border overhead, plus a safety
+    // margin: #4%, Building 21%->16% (still 35px+ of slack over its longest word, "Elementary"),
+    // Type 7%->9%, Square Feet 8%->8%, Baseline Site EUI 9%->10%, Current Site EUI 9%->9%,
+    // CBECS 5%->7%, vs CBECS % 8%->7%, Percentile 10%->12%, $/ft² 7%->8%, Energy Star Eligible
+    // 12%->10% (needs room for "ELIGIBLE"). Every column now carries several px of slack above its
+    // measured minimum. Type: "K-12 School" wraps at the space to
+    // "K-12"/"School", but "School" alone did not fit the old 7% column at the floored font size —
+    // see the Type <td>'s own `overflow-wrap:normal;word-break:keep-all` inline style below, which
+    // fixes the resulting "Scho/ol" mid-word break this same narrow-column problem caused in the
+    // table BODY: the ui-pass A1 override above only targets `<th>`, never `<td>`, and this
+    // table's own `.rpt-table-wrap` class sets `overflow-wrap:break-word` on `td` (report-styles),
+    // which is exactly what let "School" split mid-word once its column got too tight.
+    // font-size must be set on each <th> directly, not the <tr>, because the external
     // ".rpt-table th{font-size:12px}" rule targets <th> directly and beats an inherited value from
     // the parent <tr> regardless of any inline style set there.
     '<thead><tr style="white-space:normal;line-height:1.35">' +
-    '<th style="font-size:9px">#</th>' +
-    '<th style="font-size:9px">Building</th>' +
-    '<th style="font-size:9px">Type</th>' +
-    '<th class="rpt-n" style="font-size:9px">Square Feet</th>' +
-    '<th class="rpt-n" style="font-size:9px">Baseline Site EUI</th>' +
-    '<th class="rpt-n" style="font-size:9px">Current Site EUI</th>' +
-    '<th class="rpt-n" style="font-size:9px">CBECS</th>' +
-    '<th class="rpt-n" style="font-size:9px">vs CBECS %</th>' +
-    '<th style="font-size:9px">Percentile</th>' +
-    '<th class="rpt-n" style="font-size:9px">$/ft²</th>' +
-    '<th style="font-size:9px">ENERGY STAR Eligible</th>' +
+    '<th style="font-size:12px">#</th>' +
+    '<th style="font-size:12px">Building</th>' +
+    '<th style="font-size:12px">Type</th>' +
+    '<th class="rpt-n" style="font-size:12px">Square Feet</th>' +
+    '<th class="rpt-n" style="font-size:12px">Baseline Site EUI</th>' +
+    '<th class="rpt-n" style="font-size:12px">Current Site EUI</th>' +
+    '<th class="rpt-n" style="font-size:12px">CBECS</th>' +
+    '<th class="rpt-n" style="font-size:12px">vs CBECS %</th>' +
+    '<th style="font-size:12px">Percentile</th>' +
+    '<th class="rpt-n" style="font-size:12px">$/ft²</th>' +
+    '<th style="font-size:12px">ENERGY STAR Eligible</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rankRows +
@@ -7994,7 +8043,16 @@ function rptPageAppendixBills(n, d, appLetter) {
       // case guaranteed to need it); a mid-month split pays this same real cost again on its
       // continuation page, which is why per-row estH also carries its own safety margin above
       // the bare measured row height.
-      var GROUP_HEADER_OVERHEAD = 46; // month label (~20px) + table thead (~26px)
+      // report-pass2 FOLLOW-UP fix (2026-09-10, same-day re-review of the RENDERED print
+      // output): 46px was still short. Confirmed via a real print-media render of the Louisburg
+      // Q2 report (3 month-groups, ~10 bill rows each, all landing on the section's FIRST page):
+      // the LAST 1-2 rows of the 3rd month-group (June) still overflowed onto a near-blank
+      // trailing physical page with no footer of its own — the page-1 budget itself, not just a
+      // continuation page's re-render cost, was packed right to its estimated limit and still
+      // came up short in the real DOM. Bumped to 54px (month label + thead were under-budgeted,
+      // not per-row height) with matching per-row/first-page bumps below — see those constants'
+      // own comments.
+      var GROUP_HEADER_OVERHEAD = 54; // month label (~22px) + table thead (~32px)
       if (!bills.length) {
         billRowTokens.push({
           type: 'row',
@@ -8049,7 +8107,10 @@ function rptPageAppendixBills(n, d, appLetter) {
         billRowTokens.push({
           type: 'row',
           moLabel: moLabel,
-          estH: 24 + (billIdx === 0 ? GROUP_HEADER_OVERHEAD : 0),
+          // report-pass2 FOLLOW-UP fix (2026-09-10): row height bumped 24px->28px alongside the
+          // GROUP_HEADER_OVERHEAD bump above — same real-print-render measurement (see that
+          // constant's comment).
+          estH: 28 + (billIdx === 0 ? GROUP_HEADER_OVERHEAD : 0),
           html: rowHTML,
         });
       });
@@ -8147,8 +8208,16 @@ function rptPageAppendixBills(n, d, appLetter) {
   // reserve that same overhead as a standing safety margin on every continuation page's budget —
   // worst case (a continuation page that happens to start on a fresh month, no re-render cost) it
   // is slightly under-filled, never overflowing.
-  var BILLS_FIRST_CHROME = 40;
-  var BILLS_CONT_CHROME = 20 + 46;
+  //
+  // report-pass2 FOLLOW-UP fix (2026-09-10, same-day re-review of the RENDERED print output): a
+  // real print-media render of the Louisburg Q2 report still overflowed by 1-2 rows on the
+  // section's FIRST page (3 month-groups packed tight, not just a continuation page) — this was
+  // a general under-budget, not only the continuation-page re-render gap this comment originally
+  // fixed. BILLS_FIRST_CHROME bumped 40->56 (the intro line's own real height plus a safety
+  // margin) on top of the GROUP_HEADER_OVERHEAD/row-height bumps above; BILLS_CONT_CHROME's own
+  // +46 term now reads +54 to match the bumped GROUP_HEADER_OVERHEAD constant it mirrors.
+  var BILLS_FIRST_CHROME = 56;
+  var BILLS_CONT_CHROME = 20 + 54;
   var _billsBudgetFirst = _rptContentBudget('standard') - BILLS_FIRST_CHROME;
   var _billsBudgetCont = _rptContentBudget('standard') - BILLS_CONT_CHROME;
   var billsChunks = _rptPaginateTokens(billRowTokens.concat(imageTokens), _billsBudgetFirst, _billsBudgetCont);
