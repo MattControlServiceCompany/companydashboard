@@ -1575,10 +1575,22 @@ function generateReportHTML(data, selectedSections) {
   if (s.boardSummary) pages.push(_tagSection(rptPageBoardSummary(pageNum++, data), 'boardSummary'));
 
   // Main pages
-  if (s.cover !== false) pages.push(_tagSection(rptPageCover(pageNum++, data), 'cover'));
+  if (s.cover !== false) {
+    // report-pass2 fix (2026-09-10): rptPageCover now returns {html, pageCount} — see that
+    // function's comment for why (a real overflow measured that stranded Key Findings bullets on
+    // a near-blank physical page).
+    var _coverResult = rptPageCover(pageNum, data);
+    pages.push(_tagSection(_coverResult.html, 'cover'));
+    pageNum += _coverResult.pageCount;
+  }
   if (s.financial !== false) pages.push(_tagSection(rptPageFinancial(pageNum++, data), 'financial'));
-  if (s.savingsPerformance !== false)
-    pages.push(_tagSection(rptPageSavingsPerformance(pageNum++, data), 'savingsPerformance'));
+  if (s.savingsPerformance !== false) {
+    // report-pass2 fix (2026-09-10): rptPageSavingsPerformance now returns {html, pageCount} —
+    // see that function's comment for why (a real overflow measured on a 7-building report).
+    var _savPerfResult = rptPageSavingsPerformance(pageNum, data);
+    pages.push(_tagSection(_savPerfResult.html, 'savingsPerformance'));
+    pageNum += _savPerfResult.pageCount;
+  }
   // euiBenchmarking moved to the closing Year-to-Date / Overall Performance section, below
   // (fix/report-quarterly-restructure, 2026-09-09, Part A) — it is quarter-invariant content, not
   // current-quarter body content.
@@ -1598,7 +1610,15 @@ function generateReportHTML(data, selectedSections) {
   // contractProjection moved to the closing Year-to-Date / Overall Performance section, below
   // (fix/report-quarterly-restructure, 2026-09-09, Part A) — it is whole-contract "how are we
   // doing" content, not current-quarter body content.
-  if (s.setpoints !== false) pages.push(_tagSection(rptPageSetPoints(pageNum++, data), 'setpoints'));
+  if (s.setpoints !== false) {
+    // report-pass2 fix (2026-09-10): rptPageSetPoints now paginates internally (row-budget
+    // paginator, same as Observations/Appendix D) instead of dumping every zone from every
+    // building into one unbounded rptPage() call — see that function's own comment for why.
+    var _spResult = rptPageSetPoints(pageNum, data);
+    var _spTagged = _spResult.html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="setpoints"');
+    pages.push(_spTagged);
+    pageNum += _spResult.pageCount;
+  }
 
   // Per-building summaries
   if (s.buildingSummaries !== false) {
@@ -1633,7 +1653,10 @@ function generateReportHTML(data, selectedSections) {
     });
     // One building per page to prevent table overflow
     for (var _mpI = 0; _mpI < _mpBlocks.length; _mpI++) {
-      var _mpTitle = _mpI === 0 ? 'Meter Performance ( All Buildings' : 'Meter Performance (continued)';
+      // report-pass2 fix (2026-09-10): fixes the stray-space/missing-close-paren typo flagged as
+      // a known gap in the 2026-09-10 lib/perf-table.js dashboardlogic entry ("Meter Performance (
+      // All Buildings" -> "Meter Performance (All Buildings)").
+      var _mpTitle = _mpI === 0 ? 'Meter Performance (All Buildings)' : 'Meter Performance (continued)';
       var _mpKey = _mpI === 0 ? 'meterPerformance' : 'meterPerformance-cont';
       var _mpPageNum = pageNum++;
       pages.push(
@@ -1676,7 +1699,13 @@ function generateReportHTML(data, selectedSections) {
   // LAST body section before the appendices: Site EUI Benchmarking (quarter-invariant, moved
   // as-is), the Year-to-Date Monthly Trend table + approved-changes YTD rollup (new page), and
   // Contract Projection (whole-contract, moved as-is, carries the Cumulative vs Projected chart).
-  if (s.euiBenchmarking !== false) pages.push(_tagSection(rptPageEUI(pageNum++, data), 'euiBenchmarking'));
+  if (s.euiBenchmarking !== false) {
+    // report-pass2 fix (2026-09-10): rptPageEUI now returns {html, pageCount} — see that
+    // function's comment for why (a real overflow measured on a 7-building report).
+    var _euiResult = rptPageEUI(pageNum, data);
+    pages.push(_tagSection(_euiResult.html, 'euiBenchmarking'));
+    pageNum += _euiResult.pageCount;
+  }
   if (s.yearToDate !== false) pages.push(_tagSection(rptPageYearToDate(pageNum++, data), 'yearToDate'));
   if (s.contractProjection !== false)
     pages.push(_tagSection(rptPageContractProjection(pageNum++, data), 'contractProjection'));
@@ -1703,8 +1732,14 @@ function generateReportHTML(data, selectedSections) {
     pages.push(_tagSection(_apB.html, 'appendixB'));
     pageNum += _apB.pageCount;
   }
-  if (s.appendixC !== false)
-    pages.push(_tagSection(rptPageAppendixWeather(pageNum++, data, _nextAppLtr('weather')), 'appendixC'));
+  if (s.appendixC !== false) {
+    // report-pass2 fix (2026-09-10): rptPageAppendixWeather now returns {html, pageCount} — it
+    // splits its fixed-size "degree day" explainer onto its own page to stop a consistent ~150px
+    // overflow (see that function's comment).
+    var _apC = rptPageAppendixWeather(pageNum, data, _nextAppLtr('weather'));
+    pages.push(_tagSection(_apC.html, 'appendixC'));
+    pageNum += _apC.pageCount;
+  }
   if (s.appendixD !== false) {
     var _apD = rptPageAppendixBills(pageNum, data, _nextAppLtr('bills'));
     pages.push(_tagSection(_apD.html, 'appendixD'));
@@ -2313,14 +2348,29 @@ function rptPageCover(n, d) {
     statusCards +
     '</div>' +
     '</div>' +
-    // Key Findings
-    '<div style="margin-top:6px;">' +
-    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key Findings</div>' +
-    findingsHTML +
-    '</div>' +
     '</div>';
 
-  return rptPage(n, 'Cover', heroHTML + bodyHTML, { hero: true, data: d, label: 'Page ' + n + ' — Cover' });
+  // report-pass2 fix (2026-09-10, UX review): hero image + narrative + vs-box + 4 portfolio
+  // gauges + up to 7 building-status cards + Key Findings bullets, all on one .rpt-page, was
+  // measured (headless, print media) to reliably overflow the physical page — because the cover
+  // has no page-number div positioned until the true end of its content, the overflow was
+  // invisible in the footer scan (page 1 legitimately has none) but landed 2-3 stray "Key
+  // Findings" bullets on an otherwise near-blank physical page 2, which DID carry a footer,
+  // confusingly reading "Page 1 of N". Moving Key Findings onto its own continuation page fixes
+  // this without touching the hero page's design.
+  const keyFindingsBody =
+    '<div style="padding:16px 50px;">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key Findings</div>' +
+    findingsHTML +
+    '</div>';
+
+  const page1 = rptPage(n, 'Cover', heroHTML + bodyHTML, { hero: true, data: d, label: 'Page ' + n + ' — Cover' });
+  const page2 = rptPage(n + 1, 'Key Findings', keyFindingsBody, {
+    data: d,
+    label: 'Page ' + (n + 1) + ' — Key Findings',
+  });
+
+  return { html: page1 + page2, pageCount: 2 };
 }
 
 function rptPageFinancial(n, d) {
@@ -2930,16 +2980,30 @@ function rptPageSavingsPerformance(n, d) {
     '</tbody>' +
     '</table>';
 
-  const bodyHTML =
+  // report-pass2 fix (2026-09-10, UX review): headless measurement (print media, floor-aware)
+  // found this page reliably overflows the physical page by ~76px on a real 7-building report
+  // (Louisburg USD #416) — chart + two per-building tables (Annual Summary by Year runs 2 rows
+  // per building) is too much for one page once there are more than a handful of buildings, and
+  // would only get worse on a larger portfolio. Split "Annual Summary by Building" onto its own
+  // page — same fixed-split approach as rptPageAppendixWeather/rptPageEUI in this pass.
+  const page1Body =
     '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
     '<h2>Monthly Savings: Projected vs Actual</h2>' +
     chartSection +
     '<h2>Annual Summary by Year</h2>' +
-    annTable +
-    '<h2>Annual Summary by Building</h2>' +
-    bldgTable;
+    annTable;
+  const page2Body = '<h2>Annual Summary by Building</h2>' + bldgTable;
 
-  return rptPage(n, 'Savings Performance', bodyHTML, { data: d, label: 'Page ' + n + ' — Savings Performance' });
+  const page1 = rptPage(n, 'Savings Performance', page1Body, {
+    data: d,
+    label: 'Page ' + n + ' — Savings Performance',
+  });
+  const page2 = rptPage(n + 1, 'Savings Performance (cont.)', page2Body, {
+    data: d,
+    label: 'Page ' + (n + 1) + ' — Savings Performance',
+  });
+
+  return { html: page1 + page2, pageCount: 2 };
 }
 function rptPageEUI(n, d) {
   const $c = function (v) {
@@ -3025,28 +3089,44 @@ function rptPageEUI(n, d) {
     '<colgroup>' +
     '<col style="width:4%">' +
     '<col style="width:21%">' +
-    '<col style="width:8%">' +
+    '<col style="width:7%">' +
     '<col style="width:8%">' +
     '<col style="width:9%">' +
     '<col style="width:9%">' +
-    '<col style="width:6%">' +
-    '<col style="width:9%">' +
+    '<col style="width:5%">' +
     '<col style="width:8%">' +
-    '<col style="width:6%">' +
+    '<col style="width:10%">' +
+    '<col style="width:7%">' +
     '<col style="width:12%">' +
     '</colgroup>' +
-    '<thead><tr style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
-    '<th>#</th>' +
-    '<th>Building</th>' +
-    '<th>Type</th>' +
-    '<th class="rpt-n">Square Feet</th>' +
-    '<th class="rpt-n">Baseline Site EUI</th>' +
-    '<th class="rpt-n">Current Site EUI</th>' +
-    '<th class="rpt-n">CBECS</th>' +
-    '<th class="rpt-n">vs CBECS %</th>' +
-    '<th>Percentile</th>' +
-    '<th class="rpt-n">$/ft²</th>' +
-    '<th>ENERGY STAR Eligible</th>' +
+    // report-pass2 fix (2026-09-10): a single long header word like "PERCENTILE" overflowed its
+    // narrow column and visually bled into the next column ("$/FT²"); reviewer also flagged
+    // "BASELINE"/"CURRENT" sitting flush with no breathing room. IMPORTANT: this table can never
+    // rely on mid-word wrapping to fix that — `_rptInjectUiPassOverrides()` (feat/report-ui-pass,
+    // 2026-09-09, the "A1" fix) injects a `#reportPages .rpt-table th{word-break:keep-all
+    // !important;overflow-wrap:normal !important}` stylesheet rule that GLOBALLY blocks mid-word
+    // breaks on every report table header, on purpose (so no header word ever splits awkwardly
+    // mid-letter) — that rule beats any local inline style, `!important` or not. The dropped
+    // inline `word-break:keep-all;overflow-wrap:normal` on this table's own `<tr>` (removed below)
+    // was therefore already INERT before this fix and stays removed only for clarity, not because
+    // it changes behavior. The actual fix is column-width + font-size: colgroup widened Percentile
+    // 8%->10% and $/ft² 6%->7% (taking 1% each from Type/CBECS/vs-CBECS%) and every header font
+    // shrunk to 9px, so the full word fits on ONE line inside its column without ever needing to
+    // wrap. font-size must be set on each <th> directly, not the <tr>, because the external
+    // ".rpt-table th{font-size:12px}" rule targets <th> directly and beats an inherited value from
+    // the parent <tr> regardless of any inline style set there.
+    '<thead><tr style="white-space:normal;line-height:1.35">' +
+    '<th style="font-size:9px">#</th>' +
+    '<th style="font-size:9px">Building</th>' +
+    '<th style="font-size:9px">Type</th>' +
+    '<th class="rpt-n" style="font-size:9px">Square Feet</th>' +
+    '<th class="rpt-n" style="font-size:9px">Baseline Site EUI</th>' +
+    '<th class="rpt-n" style="font-size:9px">Current Site EUI</th>' +
+    '<th class="rpt-n" style="font-size:9px">CBECS</th>' +
+    '<th class="rpt-n" style="font-size:9px">vs CBECS %</th>' +
+    '<th style="font-size:9px">Percentile</th>' +
+    '<th class="rpt-n" style="font-size:9px">$/ft²</th>' +
+    '<th style="font-size:9px">ENERGY STAR Eligible</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rankRows +
@@ -3165,7 +3245,16 @@ function rptPageEUI(n, d) {
     '</tbody>' +
     '</table>';
 
-  const bodyHTML =
+  // report-pass2 fix (2026-09-10, UX review): headless measurement (print media) found this page
+  // reliably overflows the physical page by ~150px on a real multi-building report (Louisburg USD
+  // #416, 7 buildings) — the rankings table + ENERGY STAR note + EUI-vs-CBECS chart + trend table
+  // + intro paragraph simply don't fit one page once there are more than a handful of buildings.
+  // Split into two pages (rankings on page 1; benchmark chart + trend table on page 2) — the same
+  // "move fixed/semi-fixed content onto its own page rather than relying on native-overflow" fix
+  // as rptPageAppendixWeather. NOTE for a much larger building count (e.g. JOCO's 26 buildings)
+  // even page 1's rankings table alone could still overflow — this split does not add per-row
+  // pagination, so a portfolio that large should be re-verified separately.
+  const page1Body =
     // fix/report-quarterly-restructure (2026-09-09), Part A: this page is quarter-invariant
     // (rolling-12-month EUI, unaffected by which quarter is selected — see collectReportData's
     // annBlKBtu/annCurKBtu comments) so its math is untouched; it now renders inside the closing
@@ -3179,13 +3268,19 @@ function rptPageEUI(n, d) {
     '<strong>ENERGY STAR Eligible</strong>: current Site EUI in the top quartile (most efficient 25%) of ' +
     'the CBECS national benchmark for its building type — the threshold ENERGY STAR certification ' +
     'requires. "Yes" = eligible; "—" = not eligible at this time.' +
-    '</div>' +
-    '<h2>Site EUI vs CBECS Benchmark</h2>' +
-    euiChart +
-    '<h2>Site EUI Trend</h2>' +
-    trendTable;
+    '</div>';
+  const page2Body = '<h2>Site EUI vs CBECS Benchmark</h2>' + euiChart + '<h2>Site EUI Trend</h2>' + trendTable;
 
-  return rptPage(n, 'Site EUI Benchmarking', bodyHTML, { data: d, label: 'Page ' + n + ' — Site EUI Benchmarking' });
+  const page1 = rptPage(n, 'Site EUI Benchmarking', page1Body, {
+    data: d,
+    label: 'Page ' + n + ' — Site EUI Benchmarking',
+  });
+  const page2 = rptPage(n + 1, 'Site EUI Benchmarking (cont.)', page2Body, {
+    data: d,
+    label: 'Page ' + (n + 1) + ' — Site EUI Benchmarking',
+  });
+
+  return { html: page1 + page2, pageCount: 2 };
 }
 
 /**
@@ -4473,6 +4568,27 @@ function rptPageYearToDate(n, d) {
   });
 }
 
+/**
+ * rptPageSetPoints — report-pass2 fix (2026-09-10, UX review of the rendered PDF): this used to
+ * concatenate every zone from every building into ONE giant <table> handed to a single rptPage()
+ * call, with zero pagination. On a real multi-building district (Louisburg USD #416, 7 buildings)
+ * that one unbounded table overflowed .rpt-body and relied entirely on the browser's native print
+ * pagination "safety net" (see the @media print block comment in energy-department.html above
+ * .rpt-table) to carry it across as many physical pages as it needed — measured at 18 physical
+ * pages for what the footer counted as a single logical page. Because rptPage()'s own footer only
+ * renders once, at the true end of that one logical page's content, 17 of those 18 physical pages
+ * printed with NO "Page N of M" footer at all, and the M denominator (a count of logical .rpt-page
+ * divs) never reflected the real physical page count — the single largest contributor to the
+ * reported "Page N of 48" vs. 64-physical-page mismatch.
+ *
+ * Fixed the same way every other multi-row report table in this file already handles this
+ * (rptPageObservations, rptPageAppendixBills, rptPageAppendixNormalization/Baseline): tokenize per
+ * TABLE ROW and hand the token list to the shared pixel-height paginator (_rptPaginateTokens), so
+ * the section emits as many real rptPage() calls as it needs, each with its own header/footer
+ * chrome and a repeated table thead (_spGroupRowsByBuilding, same "reopen the table on every page"
+ * convention as _billsGroupRowsByMonth).
+ * @returns {{html: string, pageCount: number}}
+ */
 function rptPageSetPoints(n, d) {
   const $c = function (v) {
     return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
@@ -4515,141 +4631,224 @@ function rptPageSetPoints(n, d) {
     return sched;
   }
 
-  let bodyContent = '';
+  const introHTML =
+    '<p style="font-size:12px;color:var(--rpt-page-text);margin:0 0 8px">Baseline setpoints and operating schedules per building — from uploaded BAS exports (' +
+    (setpoints.length && setpoints[0].viewMode === 'average' ? 'building averages' : 'individual zones') +
+    ')</p>';
+  const sourceNoteHTML =
+    '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>';
+  const pageTitleBase = 'BAS Set Points & Schedules' + vLabel;
 
   if (!setpoints || setpoints.length === 0) {
-    bodyContent =
-      '<p style="padding:16px;color:var(--rpt-page-text);font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>';
-  } else {
-    // Scan all zones to determine which optional columns have at least one real value
-    var hasUnoccHeat = false;
-    var hasUnoccCool = false;
-    var hasSchedule = false;
-    setpoints.forEach(function (sp) {
-      const zones = sp.zones || [];
-      const useAvg = sp.viewMode === 'average';
-      if (useAvg && zones.length) {
-        var bldgObj = buildings.filter(function (b) {
-          return b.id === sp.buildingId || b.buildingId === sp.buildingId;
-        })[0];
-        var avg = _spComputeAvgRow(zones, bldgObj);
-        if (avg) {
-          if (avg.unoccHeat != null) hasUnoccHeat = true;
-          if (avg.unoccCool != null) hasUnoccCool = true;
-          if (avg.schedule) hasSchedule = true;
-        }
-      } else {
-        zones.forEach(function (z) {
-          if (z.unoccHeat != null) hasUnoccHeat = true;
-          if (z.unoccCool != null) hasUnoccCool = true;
-          if (z.schedule) hasSchedule = true;
-        });
-      }
-    });
-
-    // Check if ALL setpoints use average mode — if so, hide Zone/System column
-    var allAvgMode = setpoints.every(function (sp) {
-      return sp.viewMode === 'average';
-    });
-
-    let allRows = '';
-    setpoints.forEach(function (sp) {
-      const bldgName = getBldgName(sp.buildingId);
-      const zones = sp.zones || [];
-      const useAvg = sp.viewMode === 'average';
-      if (useAvg && zones.length) {
-        var bldgObj = buildings.filter(function (b) {
-          return b.id === sp.buildingId || b.buildingId === sp.buildingId;
-        })[0];
-        var avg = _spComputeAvgRow(zones, bldgObj);
-        if (avg) {
-          allRows +=
-            '<tr>' +
-            '<td contenteditable="true">' +
-            bldgName +
-            '</td>' +
-            (allAvgMode ? '' : '<td contenteditable="true">' + (avg.name || 'Average') + '</td>') +
-            '<td class="rpt-n" contenteditable="true">' +
-            (avg.occHeat != null ? avg.occHeat + '°F' : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (avg.occCool != null ? avg.occCool + '°F' : '—') +
-            '</td>' +
-            (hasUnoccHeat
-              ? '<td class="rpt-n" contenteditable="true">' +
-                (avg.unoccHeat != null ? avg.unoccHeat + '°F' : '—') +
-                '</td>'
-              : '') +
-            (hasUnoccCool
-              ? '<td class="rpt-n" contenteditable="true">' +
-                (avg.unoccCool != null ? avg.unoccCool + '°F' : '—') +
-                '</td>'
-              : '') +
-            (hasSchedule ? '<td contenteditable="true">' + scheduleLabel(avg.schedule) + '</td>' : '') +
-            '</tr>';
-        }
-      } else {
-        zones.forEach(function (z) {
-          allRows +=
-            '<tr>' +
-            '<td contenteditable="true">' +
-            bldgName +
-            '</td>' +
-            (allAvgMode ? '' : '<td contenteditable="true">' + (z.name || '—') + '</td>') +
-            '<td class="rpt-n" contenteditable="true">' +
-            (z.occHeat != null ? z.occHeat + '°F' : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (z.occCool != null ? z.occCool + '°F' : '—') +
-            '</td>' +
-            (hasUnoccHeat
-              ? '<td class="rpt-n" contenteditable="true">' + (z.unoccHeat != null ? z.unoccHeat + '°F' : '—') + '</td>'
-              : '') +
-            (hasUnoccCool
-              ? '<td class="rpt-n" contenteditable="true">' + (z.unoccCool != null ? z.unoccCool + '°F' : '—') + '</td>'
-              : '') +
-            (hasSchedule ? '<td contenteditable="true">' + scheduleLabel(z.schedule) + '</td>' : '') +
-            '</tr>';
-        });
-      }
-    });
-    var colCount = (allAvgMode ? 3 : 4) + (hasUnoccHeat ? 1 : 0) + (hasUnoccCool ? 1 : 0) + (hasSchedule ? 1 : 0);
-    if (!allRows) {
-      allRows =
-        '<tr><td colspan="' +
-        colCount +
-        '" style="color:var(--rpt-page-text);font-style:italic">No zones recorded</td></tr>';
-    }
-    bodyContent =
-      '<table class="rpt-table" contenteditable="true">' +
-      '<thead><tr>' +
-      '<th>Building</th>' +
-      (allAvgMode ? '' : '<th>Zone / System</th>') +
-      '<th class="rpt-n">Occ Heat</th>' +
-      '<th class="rpt-n">Occ Cool</th>' +
-      (hasUnoccHeat ? '<th class="rpt-n">Unocc Heat</th>' : '') +
-      (hasUnoccCool ? '<th class="rpt-n">Unocc Cool</th>' : '') +
-      (hasSchedule ? '<th>Schedule</th>' : '') +
-      '</tr></thead>' +
-      '<tbody>' +
-      allRows +
-      '</tbody>' +
-      '</table>';
+    var emptyBody =
+      introHTML +
+      '<p style="padding:16px;color:var(--rpt-page-text);font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>' +
+      sourceNoteHTML;
+    return {
+      html: rptPage(n, pageTitleBase, emptyBody, { data: d, label: 'Page ' + n + ' — Set Points' }),
+      pageCount: 1,
+    };
   }
 
-  const rptViewMode =
-    setpoints.length && setpoints[0].viewMode === 'average' ? 'building averages' : 'individual zones';
-  const bodyHTML =
-    '<p style="font-size:12px;color:var(--rpt-page-text);margin:0 0 8px">Baseline setpoints and operating schedules per building — from uploaded BAS exports (' +
-    rptViewMode +
-    ')</p>' +
-    bodyContent +
-    '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>';
-
-  return rptPage(n, 'BAS Set Points & Schedules' + vLabel, bodyHTML, {
-    data: d,
-    label: 'Page ' + n + ' — Set Points',
+  // Scan all zones to determine which optional columns have at least one real value
+  var hasUnoccHeat = false;
+  var hasUnoccCool = false;
+  var hasSchedule = false;
+  setpoints.forEach(function (sp) {
+    const zones = sp.zones || [];
+    const useAvg = sp.viewMode === 'average';
+    if (useAvg && zones.length) {
+      var bldgObj = buildings.filter(function (b) {
+        return b.id === sp.buildingId || b.buildingId === sp.buildingId;
+      })[0];
+      var avg = _spComputeAvgRow(zones, bldgObj);
+      if (avg) {
+        if (avg.unoccHeat != null) hasUnoccHeat = true;
+        if (avg.unoccCool != null) hasUnoccCool = true;
+        if (avg.schedule) hasSchedule = true;
+      }
+    } else {
+      zones.forEach(function (z) {
+        if (z.unoccHeat != null) hasUnoccHeat = true;
+        if (z.unoccCool != null) hasUnoccCool = true;
+        if (z.schedule) hasSchedule = true;
+      });
+    }
   });
+
+  // Check if ALL setpoints use average mode — if so, hide Zone/System column
+  var allAvgMode = setpoints.every(function (sp) {
+    return sp.viewMode === 'average';
+  });
+  var colCount = (allAvgMode ? 3 : 4) + (hasUnoccHeat ? 1 : 0) + (hasUnoccCool ? 1 : 0) + (hasSchedule ? 1 : 0);
+
+  var THEAD_HTML =
+    '<thead><tr>' +
+    '<th>Building</th>' +
+    (allAvgMode ? '' : '<th>Zone / System</th>') +
+    '<th class="rpt-n">Occ Heat</th>' +
+    '<th class="rpt-n">Occ Cool</th>' +
+    (hasUnoccHeat ? '<th class="rpt-n">Unocc Heat</th>' : '') +
+    (hasUnoccCool ? '<th class="rpt-n">Unocc Cool</th>' : '') +
+    (hasSchedule ? '<th>Schedule</th>' : '') +
+    '</tr></thead>';
+
+  // Tokenize per TABLE ROW (one token = one building-average row or one zone row) instead of
+  // building one unbounded <table> — see the function-level comment above for why. Every row
+  // carries `groupLabel` (the building name) so _spGroupRowsByBuilding can re-open a <table> with
+  // a fresh thead + building label at the start of every page (or mid-page building change), the
+  // same convention _billsGroupRowsByMonth uses for Appendix D.
+  var GROUP_HEADER_OVERHEAD = 20 + 30; // building label (~17px measured) + table thead (~27px measured), rounded up
+  var rowTokens = [];
+  setpoints.forEach(function (sp) {
+    const bldgName = getBldgName(sp.buildingId);
+    const zones = sp.zones || [];
+    const useAvg = sp.viewMode === 'average';
+    var bldgRowCount = 0;
+    if (useAvg && zones.length) {
+      var bldgObj = buildings.filter(function (b) {
+        return b.id === sp.buildingId || b.buildingId === sp.buildingId;
+      })[0];
+      var avg = _spComputeAvgRow(zones, bldgObj);
+      if (avg) {
+        var rowHTML =
+          '<tr>' +
+          '<td contenteditable="true">' +
+          bldgName +
+          '</td>' +
+          (allAvgMode ? '' : '<td contenteditable="true">' + (avg.name || 'Average') + '</td>') +
+          '<td class="rpt-n" contenteditable="true">' +
+          (avg.occHeat != null ? avg.occHeat + '°F' : '—') +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (avg.occCool != null ? avg.occCool + '°F' : '—') +
+          '</td>' +
+          (hasUnoccHeat
+            ? '<td class="rpt-n" contenteditable="true">' +
+              (avg.unoccHeat != null ? avg.unoccHeat + '°F' : '—') +
+              '</td>'
+            : '') +
+          (hasUnoccCool
+            ? '<td class="rpt-n" contenteditable="true">' +
+              (avg.unoccCool != null ? avg.unoccCool + '°F' : '—') +
+              '</td>'
+            : '') +
+          (hasSchedule ? '<td contenteditable="true">' + scheduleLabel(avg.schedule) + '</td>' : '') +
+          '</tr>';
+        rowTokens.push({
+          type: 'row',
+          groupLabel: bldgName,
+          estH: 30 + GROUP_HEADER_OVERHEAD, // first (only) row of this building's group
+          html: rowHTML,
+        });
+        bldgRowCount++;
+      }
+    } else {
+      zones.forEach(function (z, zIdx) {
+        var rowHTML =
+          '<tr>' +
+          '<td contenteditable="true">' +
+          bldgName +
+          '</td>' +
+          (allAvgMode ? '' : '<td contenteditable="true">' + (z.name || '—') + '</td>') +
+          '<td class="rpt-n" contenteditable="true">' +
+          (z.occHeat != null ? z.occHeat + '°F' : '—') +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (z.occCool != null ? z.occCool + '°F' : '—') +
+          '</td>' +
+          (hasUnoccHeat
+            ? '<td class="rpt-n" contenteditable="true">' + (z.unoccHeat != null ? z.unoccHeat + '°F' : '—') + '</td>'
+            : '') +
+          (hasUnoccCool
+            ? '<td class="rpt-n" contenteditable="true">' + (z.unoccCool != null ? z.unoccCool + '°F' : '—') + '</td>'
+            : '') +
+          (hasSchedule ? '<td contenteditable="true">' + scheduleLabel(z.schedule) + '</td>' : '') +
+          '</tr>';
+        rowTokens.push({
+          type: 'row',
+          groupLabel: bldgName,
+          // Only the FIRST row of each building's group pays the group-header overhead — a
+          // mid-building split pays it again on the continuation page (see GROUP_HEADER_OVERHEAD
+          // comment / _billsGroupRowsByMonth's identical pattern for Appendix D).
+          estH: 30 + (zIdx === 0 ? GROUP_HEADER_OVERHEAD : 0),
+          html: rowHTML,
+        });
+        bldgRowCount++;
+      });
+    }
+    if (!bldgRowCount) {
+      rowTokens.push({
+        type: 'row',
+        groupLabel: bldgName,
+        estH: 30 + GROUP_HEADER_OVERHEAD,
+        html:
+          '<tr><td' +
+          (colCount > 1 ? ' colspan="' + colCount + '"' : '') +
+          ' style="color:var(--rpt-page-text);font-style:italic">No zones recorded</td></tr>',
+      });
+    }
+  });
+
+  // _spGroupRowsByBuilding — mirrors _billsGroupRowsByMonth (rptPageAppendixBills): given one
+  // page's worth of already-paginated row tokens, groups consecutive same-building rows and wraps
+  // each group in its own building label + fresh <table> (thead repeated per group) so every
+  // page's table is independently valid, complete HTML.
+  function _spGroupRowsByBuilding(tokens) {
+    var out = '';
+    var i = 0;
+    while (i < tokens.length) {
+      var groupLabel = tokens[i].groupLabel;
+      var groupRows = '';
+      while (i < tokens.length && tokens[i].groupLabel === groupLabel) {
+        groupRows += tokens[i].html;
+        i++;
+      }
+      out +=
+        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">' +
+        groupLabel +
+        '</div>' +
+        '<table class="rpt-table" contenteditable="true" style="margin-bottom:6px">' +
+        THEAD_HTML +
+        '<tbody>' +
+        groupRows +
+        '</tbody></table>';
+    }
+    return out;
+  }
+
+  // SP_FIRST_CHROME: intro paragraph (~20px) + safety margin. SP_CONT_CHROME: safety margin only
+  // (continuation pages carry no extra heading — building/table labels speak for themselves).
+  //
+  // report-pass2 fix (2026-09-10, same overhead-repay issue measured on rptPageAppendixBills —
+  // see BILLS_CONT_CHROME's comment): only the FIRST row of each building's group is budgeted for
+  // GROUP_HEADER_OVERHEAD, but _spGroupRowsByBuilding re-emits the building label + table thead on
+  // every page a building's rows land on, including a continuation page starting mid-building.
+  // Reserve that overhead as a standing continuation-page safety margin so no page can overflow.
+  var SP_FIRST_CHROME = 40;
+  var SP_CONT_CHROME = 20 + GROUP_HEADER_OVERHEAD;
+  var spChunks = _rptPaginateTokens(
+    rowTokens,
+    _rptContentBudget('standard') - SP_FIRST_CHROME,
+    _rptContentBudget('standard') - SP_CONT_CHROME,
+  );
+
+  var resultPages = [];
+  var currentPageNum = n;
+  spChunks.forEach(function (chunk, idx) {
+    var isFirst = idx === 0;
+    var isLast = idx === spChunks.length - 1;
+    var pageBody = (isFirst ? introHTML : '') + _spGroupRowsByBuilding(chunk) + (isLast ? sourceNoteHTML : '');
+    resultPages.push(
+      rptPage(currentPageNum, pageTitleBase + (isFirst ? '' : ' (cont.)'), pageBody, {
+        data: d,
+        label: 'Page ' + currentPageNum + ' — Set Points' + (isFirst ? '' : ' (cont.)'),
+      }),
+    );
+    currentPageNum++;
+  });
+
+  return { html: resultPages.join(''), pageCount: resultPages.length };
 }
 function rptPageBuildingSummary(n, d, b) {
   const $c = function (v) {
@@ -5222,18 +5421,27 @@ function rptPageBuildingSummary(n, d, b) {
   // just the report's 3 quarter months (e.g. Apr-Jun for a Q2 report) via _periodYMs. Matt
   // wants the full baseline+current trend through the current month instead — NOT quarter-
   // scoped (that's the one deliberate exception to the Q2-restructure's period-scoping; the
-  // top-level financial/YoY tables/charts stay quarter-scoped). buildFullYear() is limited to
-  // one calendar year (d.period.end's year) with baseline aligned by calendar month, so "full
-  // timeline through current month" here means every calendar month from Jan through the
-  // report period's end month that has baseline and/or current data — not filtered down to
-  // just the 3 selected-quarter months, and not showing months AFTER the current period
-  // (which would be empty anyway).
+  // top-level financial/YoY tables/charts stay quarter-scoped).
+  //
+  // report-pass2 fix (2026-09-10, UX review): the D8 fix above still DROPPED any month past
+  // _periodEndMoIdx entirely — including BASELINE months, so a Q2 report (period end = June)
+  // only ever showed Jan-Jun even though the spec is "full baseline year" (all 12 baseline
+  // months) PLUS current-year actuals through the current month. Baseline is a full prior year
+  // and is meaningful context for every calendar month, not just the ones the current year has
+  // reached yet — only the CURRENT-year actual bars have "not happened yet" for future months.
+  // Fix: keep every month that has baseline and/or current data (full 12-month baseline window),
+  // and zero out (not drop) the current-year value for any month after the report period's end
+  // month, since that data genuinely doesn't exist yet.
   var _periodEndMoIdx = d && d.period && d.period.end ? parseInt(d.period.end.split('-')[1], 10) - 1 : 11;
   function filterThroughCurrentMonth(fullYear) {
-    return fullYear.filter(function (mo) {
-      var moIdx = parseInt(mo.month.split('-')[1], 10) - 1;
-      return moIdx <= _periodEndMoIdx && ((mo.bl || 0) > 0 || (mo.cur || 0) > 0);
-    });
+    return fullYear
+      .map(function (mo) {
+        var moIdx = parseInt(mo.month.split('-')[1], 10) - 1;
+        return moIdx <= _periodEndMoIdx ? mo : { month: mo.month, bl: mo.bl, cur: 0 };
+      })
+      .filter(function (mo) {
+        return (mo.bl || 0) > 0 || (mo.cur || 0) > 0;
+      });
   }
 
   // Electricity Consumption chart — full baseline+current timeline through the current month
@@ -5533,11 +5741,38 @@ function rptPageBuildingSummary(n, d, b) {
     blStats = '<div class="rpt-bl-stats">' + _statItems.join('') + '</div>';
   }
 
+  // report-pass2 fix (2026-09-10): this table can carry up to 18 columns (Month + 7 Electric +
+  // 3 Gas + 3 Propane + 3 Water + Total Cost). With table-layout:auto and 6px/side cell padding,
+  // the browser let the table grow WIDER than the page's printable content area whenever a real
+  // building had enough columns (elec+gas is the common case), and the overflow — the trailing
+  // column(s), e.g. Gas $/Therm — was physically sliced off at the page edge in print (reviewer:
+  // "$0.7" instead of "$0.798"). table-layout:fixed with an explicit colgroup summing to 100%
+  // makes the table width mathematically bounded to the page, so no column can ever be cut off;
+  // the trade is that a value which doesn't fit its fixed column wraps instead (the existing
+  // '.rpt-table td{overflow-wrap:anywhere}' rule already provides that fallback). Also tightens
+  // font-size/padding for this table only (scoped via .rpt-bl-tight, not the shared .rpt-table-bl
+  // rule) so a full 18-column row still reads cleanly at the narrower per-column width.
+  var _blDetailColCount = (_showElec ? 7 : 0) + (_showGas ? 3 : 0) + (_showProp ? 3 : 0) + (_showWater ? 3 : 0);
+  var _blMonthW = 7;
+  var _blTotalW = 8;
+  var _blDetailW = _blDetailColCount > 0 ? (100 - _blMonthW - _blTotalW) / _blDetailColCount : 0;
+  function _blCol(w) {
+    return '<col style="width:' + w.toFixed(2) + '%">';
+  }
+  var blColgroup = '<colgroup>' + _blCol(_blMonthW);
+  if (_showElec) for (var _i = 0; _i < 7; _i++) blColgroup += _blCol(_blDetailW);
+  if (_showGas) for (var _j = 0; _j < 3; _j++) blColgroup += _blCol(_blDetailW);
+  if (_showProp) for (var _k = 0; _k < 3; _k++) blColgroup += _blCol(_blDetailW);
+  if (_showWater) for (var _l = 0; _l < 3; _l++) blColgroup += _blCol(_blDetailW);
+  blColgroup += _blCol(_blTotalW) + '</colgroup>';
+
   var blDataTable = blDataRows
     ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text);page-break-inside:avoid;break-inside:avoid">' +
+      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px}.rpt-bl-tight{font-size:8.5px}</style>' +
       blStats +
       '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
-      '<table class="rpt-table rpt-table-bl" style="font-size:10px;width:100%">' +
+      '<table class="rpt-table rpt-table-bl rpt-bl-tight" style="width:100%;table-layout:fixed">' +
+      blColgroup +
       '<thead><tr>' +
       blGrpHdr +
       '</tr><tr>' +
@@ -5557,6 +5792,19 @@ function rptPageBuildingSummary(n, d, b) {
   if (_rptBldg && _rptBldg.meters) {
     var _rptProj = getUDProj(d.project.id);
     var _rptIncl = (_rptProj && _rptProj.inclMonths) || {};
+    // report-pass2 fix (2026-09-10, UX review): a building with a SECOND meter of the same
+    // commodity (e.g. a stub/replacement meter with near-empty baseline) rendered as an
+    // indistinguishable second "Electric Performance" block — the label only ever showed the
+    // commodity name, never which meter. Reviewer saw this as an unlabeled orphaned table.
+    // Pre-count same-commodity meters that will actually render; when there's more than one,
+    // append the meter's own identifier (meter/account number, else its service address) so each
+    // block is attributable to a specific meter instead of looking like a duplicate.
+    var _rptCommCounts = {};
+    _rptBldg.meters.forEach(function (meter) {
+      if (!isCalcCommodity(d.project.id, meter.commodity)) return;
+      if (!meter.baseline || !meter.baseline.months || meter.baseline.months.length < 3) return;
+      _rptCommCounts[meter.commodity] = (_rptCommCounts[meter.commodity] || 0) + 1;
+    });
     _rptBldg.meters.forEach(function (meter) {
       if (!isCalcCommodity(d.project.id, meter.commodity)) return;
       if (!meter.baseline || !meter.baseline.months || meter.baseline.months.length < 3) return;
@@ -5579,6 +5827,10 @@ function rptPageBuildingSummary(n, d, b) {
               : meter.commodity === 'Propane'
                 ? 'Propane'
                 : meter.commodity;
+        if (_rptCommCounts[meter.commodity] > 1) {
+          var meterTag = meter.meter || meter.account || meter.maddr || '';
+          commLabel += meterTag ? ' — Meter ' + meterTag : ' — ' + (meter.maddr || meter.id || 'Additional Meter');
+        }
         var commColor =
           meter.commodity === 'Electric'
             ? 'var(--rpt-elec-head)'
@@ -6881,16 +7133,20 @@ function rptPageAppendixNormalization(n, d, appLetter) {
       '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>' +
-      '<table class="rpt-table" style="font-size:10px;margin-bottom:6px">' +
+      // report-pass2 fix (2026-09-10): 'rpt-mp-dense' opts this multi-page table into the lower
+      // 12px _rptApplyMinFontFloor ceiling — see the identical fix/comment on Appendix B's table.
+      // Without it this font-size:10px table was silently floored to 13.34px at render time,
+      // undercutting the row-height estimate below and contributing to a measured ~57px overflow.
+      '<table class="rpt-table rpt-mp-dense" style="font-size:10px;margin-bottom:6px">' +
       '<thead><tr>' +
       '<th>Meter</th><th>Baseline Period</th><th>Regression</th><th class="rpt-n">R²</th>' +
       '<th class="rpt-n">HDD</th><th class="rpt-n">CDD</th><th class="rpt-n">Usage/Year</th><th class="rpt-n">Cost/Year</th>' +
       '</tr></thead><tbody>' +
       meterRows +
       '</tbody></table>';
-    // estH: building-name label (~20px) + table thead (~26px) + one row per meter (~22px,
-    // conservative for 10px-font table rows) + table margin-bottom (~6px) + safety margin.
-    var estH = 20 + 26 + details.length * 22 + 6 + 10;
+    // estH: building-name label (~20px) + table thead (~30px, floor-aware) + one row per meter
+    // (~28px, floor-aware) + table margin-bottom (~6px) + safety margin.
+    var estH = 20 + 30 + details.length * 28 + 6 + 20;
     bldgTokens.push({ type: 'block', html: blockHTML, estH: estH });
   });
 
@@ -6993,6 +7249,49 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   // along with that building's first meter token); _rptPaginateTokens (same shared
   // paginator as rptPageObservations/rptPageASHRAE36Executive) splits them across as many
   // pages as needed, each carrying full rptPage() header/footer chrome.
+  //
+  // report-pass2 fix (2026-09-10): the metersWithCoeffs (regression) path below used to build
+  // ONE atomic 'block' token per meter (its whole table as a single un-splittable unit). That
+  // works fine while every meter's combined baseline+reporting-period row count is small, but a
+  // meter with a long combined history (measured: 19-20 rows on Louisburg USD #416's real data)
+  // produces a table taller than one physical page ALL BY ITSELF — no amount of estH tuning on an
+  // atomic block can fix that, since _rptPaginateTokens can only decide whether a block STARTS a
+  // new chunk, never split one down the middle. The browser's native-overflow safety net still
+  // had to split it, and because the split point fell arbitrarily wherever the physical page ran
+  // out, it left 1-2 rows stranded on an otherwise-blank continuation page — exactly the defect
+  // this pass is fixing. Fixed the same way Setpoints/Bills already are: tokenize per ROW, with
+  // _apbGroupRowsByMeter (mirrors _billsGroupRowsByMonth / _spGroupRowsByBuilding) re-opening the
+  // meter's table (fresh thead) — and re-printing its equation box — at the start of every page
+  // its rows land on, via the apbMeterMeta side-table keyed by a stable per-meter groupKey.
+  var apbMeterMeta = {};
+  function _apbGroupRowsByMeter(tokens) {
+    var out = '';
+    var i = 0;
+    while (i < tokens.length) {
+      // metersWithBlOnly (no regression) still pushes plain 'block' tokens — pass those through
+      // unchanged, same as _billsGroupRowsByMonth does for its non-'row' tokens.
+      if (tokens[i].type !== 'row') {
+        out += tokens[i].html;
+        i++;
+        continue;
+      }
+      var gk = tokens[i].groupKey;
+      var meta = apbMeterMeta[gk] || { labelHTML: '', theadHTML: '<thead></thead>' };
+      var groupRows = '';
+      while (i < tokens.length && tokens[i].type === 'row' && tokens[i].groupKey === gk) {
+        groupRows += tokens[i].html;
+        i++;
+      }
+      out +=
+        meta.labelHTML +
+        '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="font-size:9px;margin-bottom:10px;table-layout:fixed;width:100%">' +
+        meta.theadHTML +
+        '<tbody>' +
+        groupRows +
+        '</tbody></table>';
+    }
+    return out;
+  }
   var meterTokens = [];
   (d.buildings || []).forEach(function (b) {
     var meters = b.meterDetails || [];
@@ -7063,11 +7362,52 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
       if (!combined.length) return;
 
-      var rows = '';
+      // report-pass2 fix (2026-09-10): row-level tokenization (see the block comment above
+      // apbMeterMeta) replaces the old single-string `rows` accumulator — each month is now its
+      // own 'row' token so _rptPaginateTokens can split a long meter's table across pages instead
+      // of handing it one giant unsplittable block. THEAD_HTML/labelHTML are stored once in
+      // apbMeterMeta (keyed by groupKey below) instead of duplicated per token.
+      var groupKey = (b.id || b.name || 'bldg') + '|' + md.commodity + '|' + (md.account || md.meter || '');
+      var THEAD_HTML =
+        '<thead><tr>' +
+        '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
+        '<th style="width:180px">Calculation</th>' +
+        '<th class="rpt-n">Predicted<br>Baseline ' +
+        unit +
+        '</th><th class="rpt-n">Actual<br>' +
+        unit +
+        '</th>' +
+        '<th class="rpt-n">' +
+        unit +
+        '<br>Saved</th>' +
+        '</tr></thead>';
+      // report-pass2 fix (2026-09-10): 'rpt-mp-dense' opts this real multi-page table into the
+      // lower 12px _rptApplyMinFontFloor ceiling instead of the site-wide 13.34px floor — see
+      // that function's doc comment. Without it, showReportOverlay()'s font-floor pass (which
+      // runs on every real report, including the PDF export path) silently re-inflated this
+      // table's font-size:9px up to 13.34px at render time, making every row far taller than any
+      // pagination estimate assumed and reliably overflowing 300+ px onto near-blank continuation
+      // pages (measured, print-media, on Louisburg USD #416's real regression data).
+      apbMeterMeta[groupKey] = {
+        labelHTML: (isFirstBlockForBuilding ? bldgHeaderHTML : '') + meterBlockHTML,
+        theadHTML: THEAD_HTML,
+      };
+      isFirstBlockForBuilding = false;
+
+      // estH per row: 45px — headless DOM measurement (print media, with the floor applied) found
+      // a real regression-coefficient string like "4125.6583 × 30 + -24.2812 × 0 + 81.4947 × 0"
+      // reliably wraps to 2 lines inside the fixed 180px Calculation column once floored to 12px.
+      // GROUP_OVERHEAD (label + thead, ~140px measured: eqn box ~50px + thead 81px) is paid by
+      // the first row of each meter's group AND again by SP_CONT_CHROME/BL_CONT_CHROME below as a
+      // continuation-page safety margin, since _apbGroupRowsByMeter re-opens the table (fresh
+      // label+thead) on every page a meter's rows land on — the same "only the literal first row
+      // can be budgeted for it, but every page-start row needs it" gap documented on Setpoints'
+      // GROUP_HEADER_OVERHEAD above.
+      var APB_GROUP_OVERHEAD = 140;
       var totBl = 0,
         totCur = 0,
         totSav = 0;
-      combined.forEach(function (entry) {
+      combined.forEach(function (entry, entryIdx) {
         var ym = entry.ym || '';
         var moIdx = ym ? parseInt(ym.split('-')[1], 10) - 1 : -1;
         var moName = moIdx >= 0 ? MO_FULL[moIdx] : ym;
@@ -7113,10 +7453,11 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           formulaParts += ' + ' + rc.slope.toFixed(2) + '×' + Math.round(cdd);
         }
 
+        var rowHTML;
         if (entry.isBaseline) {
           // Baseline reference row — show predicted only, mark Actual/Saved as BL reference
           totBl += predicted;
-          rows +=
+          rowHTML =
             '<tr style="background:var(--rpt-chart-bg);color:var(--rpt-page-text)">' +
             '<td>' +
             moName +
@@ -7146,7 +7487,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           totCur += actual;
           totSav += saved;
 
-          rows +=
+          rowHTML =
             '<tr>' +
             '<td>' +
             moName +
@@ -7176,9 +7517,15 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '</td>' +
             '</tr>';
         }
+        meterTokens.push({
+          type: 'row',
+          groupKey: groupKey,
+          estH: 45 + (entryIdx === 0 ? APB_GROUP_OVERHEAD : 0),
+          html: rowHTML,
+        });
       });
 
-      rows +=
+      var totalsRowHTML =
         '<tr class="rpt-tot">' +
         '<td>Total</td><td></td><td></td><td></td><td></td>' +
         '<td class="rpt-n">' +
@@ -7193,38 +7540,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         $n(totSav) +
         '</td>' +
         '</tr>';
-
-      meterBlockHTML +=
-        '<table class="rpt-table rpt-table-wrap" style="font-size:9px;margin-bottom:10px;table-layout:fixed;width:100%">' +
-        '<thead><tr>' +
-        '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
-        '<th style="width:180px">Calculation</th>' +
-        '<th class="rpt-n">Predicted<br>Baseline ' +
-        unit +
-        '</th><th class="rpt-n">Actual<br>' +
-        unit +
-        '</th>' +
-        '<th class="rpt-n">' +
-        unit +
-        '<br>Saved</th>' +
-        '</tr></thead><tbody>' +
-        rows +
-        '</tbody></table>';
-
-      // estH: eqn block (~48px) + table thead (~36px, header text wraps to 2 lines on several
-      // columns) + one row per combined month (~24px — DOM-measured: 9px font * 1.5 inherited
-      // line-height + 8px vertical padding + ~2px border ≈ 23.5px, the original 16px estimate
-      // undercounted every row and compounded into a real overflow on stress-tested pages) +
-      // totals row (~24px) + table margin-bottom (~10px) + safety margin; building-name header
-      // (~24px) added only for the first block per building.
-      var meterEstH = 48 + 36 + (combined.length + 1) * 24 + 10 + 14;
-      var tokenHTML = meterBlockHTML;
-      if (isFirstBlockForBuilding) {
-        tokenHTML = bldgHeaderHTML + tokenHTML;
-        meterEstH += 24;
-        isFirstBlockForBuilding = false;
-      }
-      meterTokens.push({ type: 'block', html: tokenHTML, estH: meterEstH });
+      meterTokens.push({ type: 'row', groupKey: groupKey, estH: 45, html: totalsRowHTML });
     });
 
     // Render baseline-only meters (have blMonths but no regression coefficients)
@@ -7269,7 +7585,9 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
       });
 
       blOnlyBlockHTML +=
-        '<table class="rpt-table" style="font-size:9px;margin-bottom:10px">' +
+        // report-pass2 fix (2026-09-10): same 'rpt-mp-dense' floor fix as the regression table
+        // above — this baseline-only table is font-size:9px too and gets the same floor re-inflation.
+        '<table class="rpt-table rpt-mp-dense" style="font-size:9px;margin-bottom:10px">' +
         '<thead><tr>' +
         '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
         '<th>Calculation</th>' +
@@ -7286,8 +7604,13 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         rows +
         '</tbody></table>';
 
-      // Same DOM-measured per-row correction as meterEstH above (24px/row, not 16px).
-      var blOnlyEstH = 24 + 36 + blMonthsForMeter.length * 24 + 10 + 14;
+      // report-pass2 fix (2026-09-10): same 'rpt-mp-dense' font-floor issue as meterEstH above —
+      // this table is also font-size:9px and was getting silently re-inflated to 13.34px before
+      // adding the class. Its Calculation column only ever holds "—" (no regression, so no
+      // wrapping-formula risk like meterEstH's table), but the floored 12px thead/row are still
+      // taller than the un-floored 9px estimate this constant was originally based on; widened
+      // accordingly with extra safety margin since this path is less exhaustively measured.
+      var blOnlyEstH = 30 + 50 + blMonthsForMeter.length * 30 + 10 + 30;
       var blOnlyTokenHTML = blOnlyBlockHTML;
       if (isFirstBlockForBuilding) {
         blOnlyTokenHTML = bldgHeaderHTML + blOnlyTokenHTML;
@@ -7308,8 +7631,13 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   // BL_FIRST_CHROME: intro line (~20px) + regressionExplainer (~140px, 4 lines @ 11px/1.7
   // line-height + padding) + section heading (~28px) + safety margin. BL_CONT_CHROME:
   // continuation heading only + safety margin.
+  //
+  // report-pass2 fix (2026-09-10): +140 on BL_CONT_CHROME reserves room for the meter
+  // label+thead (APB_GROUP_OVERHEAD, same value used per-row above) that _apbGroupRowsByMeter
+  // re-prints at the start of every continuation page a meter's rows land on — only that row's
+  // OWN per-row estH could ever be budgeted for it (see the identical Setpoints/Bills pattern).
   var BL_FIRST_CHROME = 220;
-  var BL_CONT_CHROME = 58;
+  var BL_CONT_CHROME = 58 + 140;
   var _blBudgetFirst = _rptContentBudget('standard') - BL_FIRST_CHROME;
   var _blBudgetCont = _rptContentBudget('standard') - BL_CONT_CHROME;
   var blChunks = _rptPaginateTokens(meterTokens, _blBudgetFirst, _blBudgetCont);
@@ -7333,11 +7661,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
   blChunks.forEach(function (chunk, idx) {
     var isFirst = idx === 0;
-    var chunkHTML = chunk
-      .map(function (tok) {
-        return tok.html;
-      })
-      .join('');
+    var chunkHTML = _apbGroupRowsByMeter(chunk);
     var pageBody = (isFirst ? baselineHeadHTML : baselineContHeadHTML) + chunkHTML;
     resultPages.push(
       rptPage(currentPageNum, pageTitle + (isFirst ? '' : ' (cont.)'), pageBody, {
@@ -7506,8 +7830,10 @@ function rptPageAppendixWeather(n, d, appLetter) {
     'Weather-normalized savings figures reflect genuine performance improvements and are not attributable to weather effects. ' +
     'Balance point: 60°F per contract specification.';
 
+  // report-pass2 fix (2026-09-10): tightened line-height (1.7->1.5) to close a measured ~17px
+  // overflow on this page (weather table + narrative + HDD/CDD paragraph).
   var narrativeBox =
-    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:var(--rpt-page-text);margin-top:10px">' +
+    '<div contenteditable="true" style="padding:6px 12px;font-size:11px;line-height:1.45;color:var(--rpt-page-text);margin-top:6px">' +
     narrativeText +
     '</div>';
 
@@ -7550,25 +7876,43 @@ function rptPageAppendixWeather(n, d, appLetter) {
       'Normalized savings figures account for weather variance using regression-based baseline adjustment.' +
       '</div>';
   }
-  var bodyHTML =
+  // report-pass2 fix (2026-09-10, UX review): this page's content (weather table + narrative +
+  // the fixed "What is a degree day?" explainer with 3 worked examples) is close-to-constant size
+  // regardless of client/report — headless measurement (print media) found it reliably overflows
+  // the physical page by ~150px REGARDLESS of data, since the explainer text alone runs ~200
+  // words. Splitting the explainer onto its own second page (instead of relying on the browser's
+  // native-overflow safety net, which was spilling its last couple lines onto a near-blank third
+  // physical page) fixes this deterministically without needing per-row pagination for what is
+  // otherwise fixed-size content.
+  var page1Body =
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
     weatherTable +
     '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
     narrativeBox +
-    hddCddParagraph +
-    '<div style="margin-top:16px;padding:10px 12px;font-size:11px;color:var(--rpt-page-text);line-height:1.5">' +
-    '<div style="font-weight:700;font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">What is a degree day?</div>' +
-    '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
-    '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80-60=20)</div>' +
-    '<div style="margin-bottom:6px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60-45=15)</div>' +
-    '<div style="margin-bottom:6px"><strong>Example 3:</strong> Average daily temperature = 60. Balance point = 60. No degree days.</div>' +
+    hddCddParagraph;
+  var page2Body =
+    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px;text-transform:uppercase;letter-spacing:0.04em">Understanding Degree Days</h3>' +
+    // report-pass2 fix (2026-09-10): tightened line-height/margins (1.5->1.4, 6px->4px) to close
+    // a measured ~17px overflow on this page — small enough not to need a further page split.
+    '<div style="padding:8px 12px;font-size:11px;color:var(--rpt-page-text);line-height:1.4">' +
+    '<div style="font-weight:700;font-size:11px;color:var(--rpt-page-text);margin-bottom:4px">What is a degree day?</div>' +
+    '<div style="margin-bottom:4px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
+    '<div style="margin-bottom:4px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80-60=20)</div>' +
+    '<div style="margin-bottom:4px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60-45=15)</div>' +
+    '<div style="margin-bottom:4px"><strong>Example 3:</strong> Average daily temperature = 60. Balance point = 60. No degree days.</div>' +
     '<div>You may ask, &quot;Why not use average temperature instead of degree days?&quot; The problem with average temperature is that highs and lows cancel each other out. A warm day (80 average temp) combined with a cold day (40 average temp) averages 60. So do two mild days of 59 and 61. But in the first case there are 20 CDD and 20 HDD while in the second there are 1 CDD and 1 HDD. The further the average temperature deviates from the balance point, the greater the energy needed to keep the building in a comfortable temperature range.</div>' +
     '</div>';
 
-  return rptPage(n, 'Appendix ' + appLetter + ': Weather Data', bodyHTML, {
+  var page1 = rptPage(n, 'Appendix ' + appLetter + ': Weather Data', page1Body, {
     data: d,
     label: 'Page ' + n + ' — Appendix ' + appLetter,
   });
+  var page2 = rptPage(n + 1, 'Appendix ' + appLetter + ': Weather Data (cont.)', page2Body, {
+    data: d,
+    label: 'Page ' + (n + 1) + ' — Appendix ' + appLetter,
+  });
+
+  return { html: page1 + page2, pageCount: 2 };
 }
 
 function rptPageAppendixBills(n, d, appLetter) {
@@ -7791,8 +8135,20 @@ function rptPageAppendixBills(n, d, appLetter) {
 
   // BILLS_FIRST_CHROME: intro line (~20px) + safety margin. BILLS_CONT_CHROME: safety margin
   // only (continuation pages carry no extra heading — month/image tokens speak for themselves).
+  //
+  // report-pass2 fix (2026-09-10, UX review — measured via headless render): the per-row estH
+  // only budgets GROUP_HEADER_OVERHEAD (month label + table thead, ~46px) on a month's very FIRST
+  // row (billIdx === 0), because that's the only row _rptPaginateTokens can know in advance will
+  // need it. But _billsGroupRowsByMonth re-EMITS that same label+thead at the start of EVERY page
+  // a month's rows land on — including a continuation page that starts mid-month, whose first row
+  // is NOT billIdx 0 and so was never budgeted for it. Every continuation page therefore rendered
+  // ~46px (about 2 rows) taller than its budget assumed, reliably overflowing by 1-2 rows onto a
+  // near-blank extra physical page (measured: every continuation page in a stress render). Fix:
+  // reserve that same overhead as a standing safety margin on every continuation page's budget —
+  // worst case (a continuation page that happens to start on a fresh month, no re-render cost) it
+  // is slightly under-filled, never overflowing.
   var BILLS_FIRST_CHROME = 40;
-  var BILLS_CONT_CHROME = 20;
+  var BILLS_CONT_CHROME = 20 + 46;
   var _billsBudgetFirst = _rptContentBudget('standard') - BILLS_FIRST_CHROME;
   var _billsBudgetCont = _rptContentBudget('standard') - BILLS_CONT_CHROME;
   var billsChunks = _rptPaginateTokens(billRowTokens.concat(imageTokens), _billsBudgetFirst, _billsBudgetCont);
