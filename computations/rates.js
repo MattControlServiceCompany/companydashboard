@@ -297,3 +297,296 @@ function getExtractedRate(parsed, type) {
       return 0;
   }
 }
+/* ══════════════════════════════════════════════════════════════════════════
+   Missing-rate resolution cascade (SSOT) — resolveMeterRate()
+   Spec: _context/plans/2026-09-10-missing-rate-resolution-cascade.md
+   Rates: _context/research/2026-09-10-louisburg-published-utility-rates/findings.md
+
+   5-step cascade, stop at first hit:
+     1. Own bill rate for the month (getStoredRate / getStoredKwRate)
+     2. Published seasonal tariff rate (table below; Evergy Metro + Louisburg gas only)
+     3. Peer meter on the SAME rate schedule with a rate for the SAME month
+     4. Same-meter previous month WITHIN the same rate season (never crosses the
+        Jun-Sep / Oct-May boundary)
+     5. Rate-escalation-normalized historical average (last resort — modeled)
+
+   computations/savings.js and lib/perf-table.js both call this for the
+   missing-rate case only (own-bill / step 1 is already resolved inline by each
+   consumer for the fast path — this function re-derives step 1 too so it can
+   be called standalone, e.g. by the gate test).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// Evergy Metro tariff season: Summer = Jun-Sep, Winter = Oct-May (Docket
+// 23-EKCE-775-RTS + bill cross-check — NOT the May-Sep initial assumption).
+var _EVERGY_METRO_SUMMER_MONTHS = [6, 7, 8, 9];
+
+// Published rates ($/kWh energy on/off-peak, $/kW demand, $/kW facilities).
+// Building -> code: High School=2LGSF, Middle School & Rockville=2LGSE,
+// Circle Grove=2MGSE. Penny-exact cross-check against Louisburg bills.
+var PUBLISHED_ELECTRIC_RATES = {
+  '2LGSE': {
+    onPkSu: 0.07852,
+    onPkWi: 0.04146,
+    offPkSu: 0.04182,
+    offPkWi: 0.03538,
+    demSu: 11.683,
+    demWi: 5.598,
+    facil: 2.979,
+  },
+  '2LGSF': {
+    onPkSu: 0.07299,
+    onPkWi: 0.03854,
+    offPkSu: 0.03888,
+    offPkWi: 0.03288,
+    demSu: 11.744,
+    demWi: 5.698,
+    facil: 2.501,
+  },
+  '2MGSE': {
+    onPkSu: 0.10304,
+    onPkWi: 0.05436,
+    offPkSu: 0.05734,
+    offPkWi: 0.04769,
+    demSu: 11.54,
+    demWi: 2.171,
+    facil: 2.854,
+  },
+};
+// Broadmoor (2LGAE) / Field House (2MGAE): energy matches 2LGSE / 2MGSE exactly
+// (bill cross-check); demand does NOT — no public AE demand sheet was found, so
+// per the plan we never hardcode a guessed AE demand. Energy-only alias; the kW
+// (demand) component for these two codes falls through to cascade steps 3-5.
+var PUBLISHED_ELECTRIC_ENERGY_ALIAS = { '2LGAE': '2LGSE', '2MGAE': '2MGSE' };
+
+// City of Louisburg municipal gas: flat, non-seasonal.
+var PUBLISHED_GAS_FLAT_RATES = { louisburg: 0.798062 };
+
+function _evergyMetroSeason(ym) {
+  var mo = parseInt((ym || '').split('-')[1], 10);
+  return _EVERGY_METRO_SUMMER_MONTHS.indexOf(mo) >= 0 ? 'summer' : 'winter';
+}
+
+// Season for a given electric rate schedule + month. 'none' = no known seasonal
+// split for this schedule (whole year is one season) — the safe default for a
+// schedule this cascade doesn't recognize.
+function _seasonForSchedule(rateSchedule, ym) {
+  var code = rateSchedule || '';
+  if (PUBLISHED_ELECTRIC_RATES[code] || PUBLISHED_ELECTRIC_ENERGY_ALIAS[code]) {
+    return _evergyMetroSeason(ym);
+  }
+  return 'none';
+}
+
+// Step 1: the meter's own bill(s) for month `ym`, blended (mean of the nonzero
+// per-bill rates — matches the existing kwh-rate blending pattern in
+// savings.js/perf-table.js). Works standalone (doesn't require resolveMeterRate).
+function _cascadeOwnBillRate(bills, incl, ym, component) {
+  if (!bills || !bills.length || !ym) return null;
+  var bfr = bills.filter(function (b) {
+    return normMonth(b.start, b.end, incl, bills) === ym;
+  });
+  if (!bfr.length) return null;
+  var rates = bfr
+    .map(function (b) {
+      return component === 'kw' ? getStoredKwRate(b) : getStoredRate(b, component);
+    })
+    .filter(function (r) {
+      return r > 0;
+    });
+  if (!rates.length) return null;
+  var avg =
+    rates.reduce(function (s, r) {
+      return s + r;
+    }, 0) / rates.length;
+  return avg > 0 ? avg : null;
+}
+
+// Step 2: published seasonal tariff rate. component: 'kwh' | 'kw' | 'gas'.
+// Propane/Water/Sewer/Stormwater have no confirmed public rate — returns null so
+// the cascade proceeds to steps 3-5, per the research findings.
+function _cascadePublishedRate(meter, ym) {
+  return function (component) {
+    if (meter.commodity === 'Electric' && (component === 'kwh' || component === 'kw')) {
+      var code = meter.rateSchedule || '';
+      var energyCode = PUBLISHED_ELECTRIC_RATES[code] ? code : PUBLISHED_ELECTRIC_ENERGY_ALIAS[code];
+      if (!energyCode) return null;
+      var t = PUBLISHED_ELECTRIC_RATES[energyCode];
+      var season = _evergyMetroSeason(ym);
+      if (component === 'kwh') {
+        var onPk = season === 'summer' ? t.onPkSu : t.onPkWi;
+        var offPk = season === 'summer' ? t.offPkSu : t.offPkWi;
+        // No per-month on/off-peak usage split is knowable for a month with zero
+        // bills — the simple average of the two published legs is the best
+        // available blended $/kWh estimate (consumers only use one blended rate).
+        return { rate: (onPk + offPk) / 2, season: season };
+      }
+      // component === 'kw': only for schedules with a CONFIRMED demand sheet —
+      // energyCode !== code means `code` was an AE alias (demand unconfirmed).
+      if (energyCode !== code) return null;
+      var dem = season === 'summer' ? t.demSu : t.demWi;
+      return { rate: dem + t.facil, season: season };
+    }
+    if (meter.commodity === 'Gas' && component === 'gas') {
+      var provider = (meter.provider || '').toLowerCase();
+      if (/louisburg/.test(provider)) return { rate: PUBLISHED_GAS_FLAT_RATES.louisburg, season: 'none' };
+      return null;
+    }
+    return null;
+  };
+}
+
+// Step 3: a peer meter on the SAME rate schedule with a rate for the SAME month.
+function _cascadePeerRate(allMeters, meter, incl, ym, component) {
+  if (!allMeters || !allMeters.length || !meter.rateSchedule) return null;
+  for (var i = 0; i < allMeters.length; i++) {
+    var peer = allMeters[i];
+    if (peer === meter || peer.id === meter.id) continue;
+    if (peer.commodity !== meter.commodity) continue;
+    if ((peer.rateSchedule || '') !== meter.rateSchedule) continue;
+    var r = _cascadeOwnBillRate(peer.bills || [], incl, ym, component);
+    if (r != null && r > 0) return { rate: r, peerMeterId: peer.id };
+  }
+  return null;
+}
+
+// Step 4: same-meter previous month WITHIN the same rate season. Never crosses
+// the season boundary (a gapped May pulls a WINTER month; a gapped July pulls a
+// SUMMER month; never the reverse).
+function _cascadeSameSeasonCarry(bills, incl, ym, component, meter) {
+  if (!bills || !bills.length) return null;
+  var season = _seasonForSchedule(meter.rateSchedule, ym);
+  var allYms = Array.from(
+    new Set(
+      bills
+        .map(function (b) {
+          return normMonth(b.start, b.end, incl, bills);
+        })
+        .filter(Boolean),
+    ),
+  );
+  var candidates = allYms
+    .filter(function (y) {
+      return y < ym;
+    })
+    .sort()
+    .reverse();
+  for (var i = 0; i < candidates.length; i++) {
+    var cym = candidates[i];
+    if (season !== 'none' && _seasonForSchedule(meter.rateSchedule, cym) !== season) continue;
+    var r = _cascadeOwnBillRate(bills, incl, cym, component);
+    if (r != null && r > 0) return { rate: r, fromYm: cym };
+  }
+  return null;
+}
+
+// Step 5 (last resort): rate-escalation-normalized historical average.
+// histRate(M) = avg of the rate for the SAME calendar month across prior years
+// (falls back to the same SEASON if that exact month never has a real rate).
+// escalation = (current year's known avg rate for the same known months) /
+//              (the same prior-years' avg rate for those months).
+// estimatedRate(M) = histRate(M) x escalation.
+function _cascadeEscalationEstimate(bills, incl, ym, component, meter) {
+  if (!bills || !bills.length) return null;
+  var targetMo = ym.split('-')[1];
+  var targetYear = parseInt(ym.split('-')[0], 10);
+  var season = _seasonForSchedule(meter.rateSchedule, ym);
+  var allYms = Array.from(
+    new Set(
+      bills
+        .map(function (b) {
+          return normMonth(b.start, b.end, incl, bills);
+        })
+        .filter(Boolean),
+    ),
+  );
+  var pairs = allYms
+    .map(function (y) {
+      return { ym: y, rate: _cascadeOwnBillRate(bills, incl, y, component) };
+    })
+    .filter(function (p) {
+      return p.rate != null && p.rate > 0;
+    });
+  if (!pairs.length) return null;
+
+  var sameMonthPrior = pairs.filter(function (p) {
+    return p.ym.split('-')[1] === targetMo && parseInt(p.ym.split('-')[0], 10) < targetYear;
+  });
+  var histPool = sameMonthPrior.length
+    ? sameMonthPrior
+    : pairs.filter(function (p) {
+        return _seasonForSchedule(meter.rateSchedule, p.ym) === season && parseInt(p.ym.split('-')[0], 10) < targetYear;
+      });
+  if (!histPool.length) return null;
+  var histRate =
+    histPool.reduce(function (s, p) {
+      return s + p.rate;
+    }, 0) / histPool.length;
+
+  // escalation = (current year's known average rate for this meter/schedule) /
+  // (the same prior-years' average rate for THOSE SAME known months) — the
+  // "known months" set is driven by whatever the CURRENT year actually has data
+  // for (not restricted to the target month M's own history pool above).
+  var curYearPairs = pairs.filter(function (p) {
+    return parseInt(p.ym.split('-')[0], 10) === targetYear;
+  });
+  var escalation = 1;
+  if (curYearPairs.length) {
+    var curAvg =
+      curYearPairs.reduce(function (s, p) {
+        return s + p.rate;
+      }, 0) / curYearPairs.length;
+    var curMonths = curYearPairs.map(function (p) {
+      return p.ym.split('-')[1];
+    });
+    // Prior-years' average for those SAME known months (searched across ALL prior
+    // years in `pairs`, not just the target month's histPool).
+    var priorForSameMonths = pairs.filter(function (p) {
+      return curMonths.indexOf(p.ym.split('-')[1]) >= 0 && parseInt(p.ym.split('-')[0], 10) < targetYear;
+    });
+    var priorAvg = priorForSameMonths.length
+      ? priorForSameMonths.reduce(function (s, p) {
+          return s + p.rate;
+        }, 0) / priorForSameMonths.length
+      : histRate;
+    escalation = priorAvg > 0 ? curAvg / priorAvg : 1;
+  }
+  var estimated = histRate * escalation;
+  return estimated > 0 ? { rate: estimated, histRate: histRate, escalation: escalation } : null;
+}
+
+// resolveMeterRate(projId, meter, ym, opts) — the canonical entry point.
+// opts: { bills, incl, allMeters, component }
+//   bills:      meter.bills (or an override — e.g. a synthetic gap-test copy)
+//   incl:       proj.inclMonths (normMonth's inclusive/exclusive setting)
+//   allMeters:  sibling meters in the same building (step 3 peer lookup) — pass
+//               the building's full meters array (any commodity; filtered internally)
+//   component:  'kwh' | 'kw' | 'gas' | 'propane' | 'water' | 'sewer' (required)
+// Returns { rate, step, source, ...stepDetail } or null if every step fails (the
+// caller must NOT invent a number on null — let the completeness-warning path
+// flag it, per the plan).
+function resolveMeterRate(projId, meter, ym, opts) {
+  opts = opts || {};
+  var component = opts.component;
+  if (!meter || !ym || !component) return null;
+  var bills = opts.bills || meter.bills || [];
+  var incl = opts.incl || {};
+  var allMeters = opts.allMeters || [];
+
+  var s1 = _cascadeOwnBillRate(bills, incl, ym, component);
+  if (s1 != null && s1 > 0) return { rate: s1, step: 1, source: 'own-bill' };
+
+  var s2 = _cascadePublishedRate(meter, ym)(component);
+  if (s2 && s2.rate > 0) return { rate: s2.rate, step: 2, source: 'published-' + s2.season };
+
+  var s3 = _cascadePeerRate(allMeters, meter, incl, ym, component);
+  if (s3 && s3.rate > 0) return { rate: s3.rate, step: 3, source: 'peer:' + s3.peerMeterId };
+
+  var s4 = _cascadeSameSeasonCarry(bills, incl, ym, component, meter);
+  if (s4 && s4.rate > 0) return { rate: s4.rate, step: 4, source: 'carry-forward:' + s4.fromYm };
+
+  var s5 = _cascadeEscalationEstimate(bills, incl, ym, component, meter);
+  if (s5 && s5.rate > 0)
+    return { rate: s5.rate, step: 5, source: 'modeled', histRate: s5.histRate, escalation: s5.escalation };
+
+  return null;
+}

@@ -161,7 +161,15 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       // table) had a real rate. getStoredKwRate() (computations/rates.js) is the SSOT:
       // stored totalKwRate -> granular charge fields -> legacy kwCost+facKWCost.
       const _kwRates = bfr.map((b) => getStoredKwRate(b)).filter((rt) => rt > 0);
-      const moKwRate = _kwRates.length ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length : 0;
+      let moKwRate = _kwRates.length ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length : 0;
+      // Missing-rate cascade (steps 2-5, computations/rates.js resolveMeterRate): only when
+      // the own-bill rate above is genuinely absent AND there is real billed kW that month
+      // (a savings-feeding month) — see _context/plans/2026-09-10-missing-rate-resolution-cascade.md.
+      if (!(moKwRate > 0) && actBilKW > 0 && typeof resolveMeterRate === 'function') {
+        const _allMeters = typeof getUDBldg === 'function' ? (getUDBldg(projId, bldgId) || {}).meters || [] : [];
+        const _resolved = resolveMeterRate(projId, m, r.ym, { bills, incl, allMeters: _allMeters, component: 'kw' });
+        if (_resolved && _resolved.rate > 0) moKwRate = _resolved.rate;
+      }
       const kwSaved = blExpKW - actBilKW;
       const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
       totalCostSav = kwhCostSav + kwCostSav;
@@ -390,7 +398,12 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
         // Bug (2026-09-10, Circle Grove 2026-05): see legacy-path fix above — getStoredKwRate()
         // is the SSOT own-bill $/kW rate; cascade fills the genuinely-missing case.
         const _kwRates = bfr.map((b) => getStoredKwRate(b)).filter((rt) => rt > 0);
-        const moKwRate = _kwRates.length ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length : 0;
+        let moKwRate = _kwRates.length ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length : 0;
+        if (!(moKwRate > 0) && actBilKW > 0 && typeof resolveMeterRate === 'function') {
+          const _allMeters = typeof getUDBldg === 'function' ? (getUDBldg(projId, bldgId) || {}).meters || [] : [];
+          const _resolved = resolveMeterRate(projId, m, r.ym, { bills, incl, allMeters: _allMeters, component: 'kw' });
+          if (_resolved && _resolved.rate > 0) moKwRate = _resolved.rate;
+        }
         const kwSaved = blExpKW - actBilKW;
         const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
         totalCostSav = kwhCostSav + kwCostSav;
