@@ -1300,6 +1300,17 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // .rpt-int-hdr title bar on non-hero pages.
   const noPageNum = options.noPageNum === true;
   const hideIntHdr = options.hideIntHdr === true;
+  // letterhead (2026-09-10, Q2 report fix punch-list item 1, Matt live review 2026-09-10): gates
+  // the hero CSC letterhead logo (csc-header-img, full-bleed hero image) AND the wave-graphic
+  // footer (footerImgHtml below) TOGETHER, as one unit. Defaults true so every existing rptPage()
+  // caller across every OTHER report type (ASHRAE 36 Audit Report, Service Proposal, EMS
+  // Agreement, the standalone Utility Audit report) renders exactly as before — none of them
+  // asked to change. The energy-department quarterly/annual report (generateReportHTML) is the
+  // one caller tree that opts OUT explicitly (letterhead:false) on every one of its pages except
+  // its two hero pages (Board Executive Summary, Cover) — Matt: "logo + wave on the FIRST 2 PAGES
+  // ONLY, pages 3+ get a plain Page N of M footer." smallHeaderImg (below) is a distinct, unrelated
+  // feature (the JOCO Agreement's inset non-hero letterhead) and is not gated by this flag.
+  const letterhead = options.letterhead !== false;
   // smallHeaderImg (2026-07-28, Energy Management Services Agreement fidelity fix): additive
   // opt-in flag, default false, so every existing caller renders exactly as before. The JOCO
   // Agreement's Word original places the SAME CSC_HEADER_B64 letterhead graphic (also used
@@ -1332,8 +1343,11 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     }
   }
   // Rule 2.2: rpt-pg-footer class on every page (including cover) for DOM check compliance.
-  const footerImgHtml =
-    '<div class="rpt-footer rpt-pg-footer"><img src="' + CSC_FOOTER_B64 + '" alt="CSC Footer"></div>';
+  // Gated by `letterhead` (see comment above) — '' on any page that opts out, so pages 3+ of the
+  // energy-department report carry no wave graphic at all (just the plain Page N of M div below).
+  const footerImgHtml = letterhead
+    ? '<div class="rpt-footer rpt-pg-footer"><img src="' + CSC_FOOTER_B64 + '" alt="CSC Footer"></div>'
+    : '';
   // 2026-07-12 fix (item 118682b2, footer redundant text cleanup): date text removed
   // from the footer entirely per Matt's request. "Page N of M" (footerImgHtml's sibling
   // pagenum div, emitted separately below) is the only footer text that remains.
@@ -1376,9 +1390,11 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       '<div class="rpt-page rpt-cover" data-page="' +
       pageNum +
       '">' +
-      '<img src="' +
-      CSC_HEADER_B64 +
-      '" alt="CSC Letterhead" class="csc-header-img" style="width:100%;display:block">' +
+      (letterhead
+        ? '<img src="' +
+          CSC_HEADER_B64 +
+          '" alt="CSC Letterhead" class="csc-header-img" style="width:100%;display:block">'
+        : '') +
       bodyHTML +
       footerTextHtml +
       footerLabelHtml +
@@ -1663,6 +1679,7 @@ function generateReportHTML(data, selectedSections) {
         _tagSection(
           rptPage(_mpPageNum, _mpTitle, _mpBlocks[_mpI], {
             data: data,
+            letterhead: false,
             label: 'Page ' + _mpPageNum + ' — Meter Performance',
           }),
           _mpKey,
@@ -1937,6 +1954,45 @@ function printUtilityAudit(projId) {
 }
 window.printUtilityAudit = printUtilityAudit;
 
+/**
+ * _rptContractProgressPct — single source of truth for "how far through the contract are we",
+ * shared by rptPageCover's gauge and rptPageBoardSummary's progress bar (2026-09-10, Q2 report
+ * fix punch-list item 4a, Matt live review). Before this fix the two pages disagreed: the board
+ * summary used a year-index method (round(currentYear/years*100), ~33% for a Q2 report) while the
+ * cover used this same elapsed-time method (~18%, the correct one) — this is now the ONE method
+ * both pages call. Anchored to the report's PERIOD END date (d.period.end, a 'YYYY-MM' string),
+ * NOT wall-clock `new Date()`, so a historical report's percentage is stable across re-renders —
+ * re-rendering a Q2 2026 report next quarter must still read ~18%, not whatever "today" is then.
+ * @param {object} d - collectReportData() output (reads d.contract.start/end/years, d.period.end)
+ * @returns {number} 0-100 whole-percent elapsed-time contract progress
+ */
+function _rptContractProgressPct(d) {
+  if (!d || !d.contract || !d.contract.start) return 0;
+  var start = new Date(d.contract.start + 'T00:00:00');
+  var end;
+  if (d.contract.end) {
+    end = new Date(d.contract.end + 'T00:00:00');
+  } else {
+    end = new Date(start);
+    end.setFullYear(end.getFullYear() + (d.contract.years || 3));
+  }
+  if (isNaN(start) || isNaN(end) || end <= start) return 0;
+  var asOf = null;
+  if (d.period && d.period.end) {
+    var _pe = String(d.period.end).split('-');
+    if (_pe.length >= 2) {
+      var _peYr = parseInt(_pe[0], 10);
+      var _peMo = parseInt(_pe[1], 10);
+      // Last day of the period-end month (day 0 of the NEXT month).
+      if (!isNaN(_peYr) && !isNaN(_peMo)) asOf = new Date(_peYr, _peMo, 0);
+    }
+  }
+  if (!asOf || isNaN(asOf)) asOf = new Date();
+  if (asOf >= end) return 100;
+  if (asOf <= start) return 0;
+  return Math.round(((asOf - start) / (end - start)) * 100);
+}
+
 // -- Stub page template functions (replaced by Tasks 6–17) --
 function rptPageCover(n, d) {
   const $c = function (v) {
@@ -2153,25 +2209,10 @@ function rptPageCover(n, d) {
     d.totals.euiBaseline > 0
       ? Math.round(((d.totals.euiBaseline - d.totals.euiCurrent) / d.totals.euiBaseline) * 100)
       : 0;
-  // Contract progress % — use actual dates like dashboard calcAutoProgress
-  var contractDonePct = 0;
-  if (d.contract.start && d.contract.end) {
-    var _cStart = new Date(d.contract.start + 'T00:00:00');
-    var _cEnd = new Date(d.contract.end + 'T00:00:00');
-    var _cNow = new Date();
-    if (!isNaN(_cStart) && !isNaN(_cEnd) && _cEnd > _cStart) {
-      if (_cNow >= _cEnd) contractDonePct = 100;
-      else if (_cNow <= _cStart) contractDonePct = 0;
-      else contractDonePct = Math.round(((_cNow - _cStart) / (_cEnd - _cStart)) * 100);
-    }
-  } else if (d.contract.start) {
-    var _cStart2 = new Date(d.contract.start + 'T00:00:00');
-    var _cEnd2 = new Date(_cStart2);
-    _cEnd2.setFullYear(_cEnd2.getFullYear() + (d.contract.years || 3));
-    var _cNow2 = new Date();
-    if (_cNow2 >= _cEnd2) contractDonePct = 100;
-    else if (_cNow2 > _cStart2) contractDonePct = Math.round(((_cNow2 - _cStart2) / (_cEnd2 - _cStart2)) * 100);
-  }
+  // Contract progress % — elapsed-time method, anchored to the report's period end. See
+  // _rptContractProgressPct's own comment (2026-09-10, Q2 report fix item 4a): this is now the
+  // ONE shared method rptPageBoardSummary also calls, so both pages agree.
+  var contractDonePct = _rptContractProgressPct(d);
   // Energy reduction %
   const energyRedPct = d.totals.kwhBl > 0 ? Math.round(((d.totals.kwhBl - d.totals.kwhCur) / d.totals.kwhBl) * 100) : 0;
 
@@ -2391,6 +2432,7 @@ function rptPageCover(n, d) {
   const page1 = rptPage(n, 'Cover', heroHTML + bodyHTML, { hero: true, data: d, label: 'Page ' + n + ' — Cover' });
   const page2 = rptPage(n + 1, 'Building Status & Key Findings', buildingStatusBody + keyFindingsBody, {
     data: d,
+    letterhead: false,
     label: 'Page ' + (n + 1) + ' — Building Status & Key Findings',
   });
 
@@ -2670,7 +2712,11 @@ function rptPageFinancial(n, d) {
   // lives ONCE, correctly labeled "Year-to-Date Monthly Trend", in the closing Year-to-Date /
   // Overall Performance section (see rptPageYearToDate) — it is not duplicated here.
 
-  return rptPage(n, 'Financial Summary', bodyHTML, { data: d, label: 'Page ' + n + ' — Financial Summary' });
+  return rptPage(n, 'Financial Summary', bodyHTML, {
+    data: d,
+    letterhead: false,
+    label: 'Page ' + n + ' — Financial Summary',
+  });
 }
 function rptPageSavingsPerformance(n, d) {
   const $c = function (v) {
@@ -3020,10 +3066,12 @@ function rptPageSavingsPerformance(n, d) {
 
   const page1 = rptPage(n, 'Savings Performance', page1Body, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Savings Performance',
   });
   const page2 = rptPage(n + 1, 'Savings Performance (cont.)', page2Body, {
     data: d,
+    letterhead: false,
     label: 'Page ' + (n + 1) + ' — Savings Performance',
   });
 
@@ -3322,10 +3370,12 @@ function rptPageEUI(n, d) {
 
   const page1 = rptPage(n, 'Site EUI Benchmarking', page1Body, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Site EUI Benchmarking',
   });
   const page2 = rptPage(n + 1, 'Site EUI Benchmarking (cont.)', page2Body, {
     data: d,
+    letterhead: false,
     label: 'Page ' + (n + 1) + ' — Site EUI Benchmarking',
   });
 
@@ -3630,18 +3680,28 @@ function rptPageEnvironmentalImpact(n, d) {
     polLine(pol.voc_oz, 'ounces', 'VOC (volatile organic compounds)') +
     polLine(pol.co_oz, 'ounces', 'CO (carbon monoxide)');
 
+  // F11 continued (2026-09-10, Q2 report fix item 4c): reconcile these suffixes with the basis
+  // statement rendered just above them (bodyHTML below). Matt, 2026-09-10 live review: when that
+  // basis reads "quarterly total, not annualized," a "per year"/"for one year" rate suffix on
+  // every equivalent line below it reads inconsistently — it implies an annual rate for a figure
+  // that was explicitly NOT annualized. Labels-only fix: eq.* values are untouched (already
+  // correctly quarterly, no ×4 anywhere in this file — see the basis comment above bodyHTML).
+  var _eqPerYear = !(d.period && d.period.type === 'quarterly' && !_annualize);
+  var _eqYrSuffix = _eqPerYear ? 'per year' : 'this quarter';
+  var _eqOneYrSuffix = _eqPerYear ? 'for one year' : 'for the quarter';
+
   var eqLines =
-    eqLine('Removing', eq.carsRemoved, 'cars from the road per year') +
-    eqLine('Conserving', eq.gallonsGasoline, 'gallons of gasoline per year') +
-    eqLine('Conserving', eq.tankerTrucks, 'tanker trucks of gasoline per year') +
-    eqLine('Conserving', eq.barrelsOil, 'barrels of oil per year') +
-    eqLine('Powering', eq.households, 'households for one year') +
+    eqLine('Removing', eq.carsRemoved, 'cars from the road ' + _eqYrSuffix) +
+    eqLine('Conserving', eq.gallonsGasoline, 'gallons of gasoline ' + _eqYrSuffix) +
+    eqLine('Conserving', eq.tankerTrucks, 'tanker trucks of gasoline ' + _eqYrSuffix) +
+    eqLine('Conserving', eq.barrelsOil, 'barrels of oil ' + _eqYrSuffix) +
+    eqLine('Powering', eq.households, 'households ' + _eqOneYrSuffix) +
     eqLine('Growing', eq.treeSeedlings, 'tree seedlings for 10 years') +
     eqLine('Preserving', eq.acresForest, 'acres of forest from deforestation') +
-    eqLine('Displacing', eq.railcarsCoal, 'railcars of coal per year') +
+    eqLine('Displacing', eq.railcarsCoal, 'railcars of coal ' + _eqYrSuffix) +
     eqLine('Recycling', eq.tonsRecycled, 'tons of waste instead of landfilling') +
-    eqLine('Replacing', eq.propaneCylinders, 'propane cylinders per year') +
-    eqLine('Offsetting', eq.coalPlants, 'coal-fired power plant emissions per year');
+    eqLine('Replacing', eq.propaneCylinders, 'propane cylinders ' + _eqYrSuffix) +
+    eqLine('Offsetting', eq.coalPlants, 'coal-fired power plant emissions ' + _eqYrSuffix);
 
   if (!polLines)
     polLines =
@@ -3692,6 +3752,7 @@ function rptPageEnvironmentalImpact(n, d) {
 
   return rptPage(n, 'Environmental Impact', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Environmental Impact',
   });
 }
@@ -3936,6 +3997,7 @@ function rptPageObservations(n, d) {
     resultPages.push(
       rptPage(currentPageNum, 'Observations & Recommendations', emptyPageBody, {
         data: d,
+        letterhead: false,
         label: 'Page ' + currentPageNum + ' — Observations',
       }),
     );
@@ -3979,6 +4041,7 @@ function rptPageObservations(n, d) {
         pageBody,
         {
           data: d,
+          letterhead: false,
           label: 'Page ' + currentPageNum + ' — Observations' + (isFirst ? '' : ' (cont.)'),
         },
       ),
@@ -4087,6 +4150,7 @@ function rptPageApprovedChanges(n, d) {
 
   return rptPage(n, 'Approved Changes', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Approved Changes',
   });
 }
@@ -4509,6 +4573,7 @@ function rptPageContractProjection(n, d) {
 
   return rptPage(n, 'Contract Projection', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Contract Projection',
   });
 }
@@ -4613,6 +4678,7 @@ function rptPageYearToDate(n, d) {
 
   return rptPage(n, 'Year-to-Date Monthly Trend', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Year-to-Date Monthly Trend',
   });
 }
@@ -4694,7 +4760,11 @@ function rptPageSetPoints(n, d) {
       '<p style="padding:16px;color:var(--rpt-page-text);font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>' +
       sourceNoteHTML;
     return {
-      html: rptPage(n, pageTitleBase, emptyBody, { data: d, label: 'Page ' + n + ' — Set Points' }),
+      html: rptPage(n, pageTitleBase, emptyBody, {
+        data: d,
+        letterhead: false,
+        label: 'Page ' + n + ' — Set Points',
+      }),
       pageCount: 1,
     };
   }
@@ -4891,6 +4961,7 @@ function rptPageSetPoints(n, d) {
     resultPages.push(
       rptPage(currentPageNum, pageTitleBase + (isFirst ? '' : ' (cont.)'), pageBody, {
         data: d,
+        letterhead: false,
         label: 'Page ' + currentPageNum + ' — Set Points' + (isFirst ? '' : ' (cont.)'),
       }),
     );
@@ -5850,11 +5921,18 @@ function rptPageBuildingSummary(n, d, b) {
     // block is attributable to a specific meter instead of looking like a duplicate.
     var _rptCommCounts = {};
     _rptBldg.meters.forEach(function (meter) {
+      // 2026-09-10 (Q2 report fix, punch-list item 3): this section builds its own meter list
+      // straight from _rptBldg.meters instead of the pre-filtered allBldgMeters/bd.meterDetails
+      // collectReportData() already builds (which honors baselineInclude at line ~59) — so an
+      // excluded meter (e.g. HS ball-fields m1787758507080) rendered here anyway. Same
+      // baselineInclude===false check as the canonical gather loop.
+      if (meter.baselineInclude === false) return;
       if (!isCalcCommodity(d.project.id, meter.commodity)) return;
       if (!meter.baseline || !meter.baseline.months || meter.baseline.months.length < 3) return;
       _rptCommCounts[meter.commodity] = (_rptCommCounts[meter.commodity] || 0) + 1;
     });
     _rptBldg.meters.forEach(function (meter) {
+      if (meter.baselineInclude === false) return;
       if (!isCalcCommodity(d.project.id, meter.commodity)) return;
       if (!meter.baseline || !meter.baseline.months || meter.baseline.months.length < 3) return;
       var mBills = (meter.bills || []).slice().sort(function (a, c) {
@@ -5929,6 +6007,7 @@ function rptPageBuildingSummary(n, d, b) {
 
   var result = rptPage(n, (b.name || 'Building') + ' — Building Summary', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — ' + (b.name || 'Building'),
   });
 
@@ -5944,6 +6023,7 @@ function rptPageBuildingSummary(n, d, b) {
     var blPageNum = n + 1;
     var blPageResult = rptPage(blPageNum, (b.name || 'Building') + ' — Baseline Data', blDataTable, {
       data: d,
+      letterhead: false,
       label: 'Page ' + blPageNum + ' — ' + (b.name || 'Building') + ' Baseline Data',
     });
     return { html: result + blPageResult, summaryPageCount: 2, meterPerfHTML: meterPerfHTML || '' };
@@ -6294,6 +6374,7 @@ function rptPageElectric(n, d) {
 
   return rptPage(n, 'Electric Consumption Detail', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Electric Detail',
   });
 }
@@ -6557,6 +6638,7 @@ function rptPageGas(n, d) {
 
   return rptPage(n, 'Natural Gas Consumption Detail', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Gas Detail',
   });
 }
@@ -6838,6 +6920,7 @@ function rptPagePropane(n, d) {
 
   return rptPage(n, 'Propane Consumption Detail', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Propane Detail',
   });
 }
@@ -7078,6 +7161,7 @@ function rptPageGasPropane(n, d) {
     );
   return rptPage(n, 'Gas & Propane Consumption Detail', bodyHTML, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Gas & Propane Detail',
   });
 }
@@ -7219,6 +7303,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
     resultPages.push(
       rptPage(currentPageNum, pageTitle, emptyBody, {
         data: d,
+        letterhead: false,
         label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter,
       }),
     );
@@ -7236,6 +7321,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
     resultPages.push(
       rptPage(currentPageNum, pageTitle + (isFirst ? '' : ' (cont.)'), pageBody, {
         data: d,
+        letterhead: false,
         label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter + (isFirst ? '' : ' (cont.)'),
       }),
     );
@@ -7702,6 +7788,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     resultPages.push(
       rptPage(currentPageNum, pageTitle, emptyBody, {
         data: d,
+        letterhead: false,
         label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter,
       }),
     );
@@ -7715,6 +7802,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     resultPages.push(
       rptPage(currentPageNum, pageTitle + (isFirst ? '' : ' (cont.)'), pageBody, {
         data: d,
+        letterhead: false,
         label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter + (isFirst ? '' : ' (cont.)'),
       }),
     );
@@ -7954,10 +8042,12 @@ function rptPageAppendixWeather(n, d, appLetter) {
 
   var page1 = rptPage(n, 'Appendix ' + appLetter + ': Weather Data', page1Body, {
     data: d,
+    letterhead: false,
     label: 'Page ' + n + ' — Appendix ' + appLetter,
   });
   var page2 = rptPage(n + 1, 'Appendix ' + appLetter + ': Weather Data (cont.)', page2Body, {
     data: d,
+    letterhead: false,
     label: 'Page ' + (n + 1) + ' — Appendix ' + appLetter,
   });
 
@@ -8234,6 +8324,7 @@ function rptPageAppendixBills(n, d, appLetter) {
     resultPages.push(
       rptPage(currentPageNum, pageTitle + (isFirst ? '' : ' (cont.)'), pageBody, {
         data: d,
+        letterhead: false,
         label: 'Page ' + currentPageNum + ' — Appendix ' + appLetter + (isFirst ? '' : ' (cont.)'),
       }),
     );
@@ -8697,7 +8788,21 @@ async function exportReportToWord() {
     let rawBodyHtml = '';
     let hasPageNum = false;
     let footerLabelText = '';
+    // letterheadAny (2026-09-10, Q2 report fix punch-list item 1): Word's HTML-to-OOXML importer
+    // only supports ONE default footer part per document section (see the ROOT CAUSE 2/TRAILING-
+    // DUPLICATE-PAGE comments below — a real per-page-different Word footer was tried and reverted
+    // as a structural, unfixable-via-markup limitation), so footerImgHtmlWord cannot be scoped to
+    // "pages 1-2 only" the way the live/PDF path's `letterhead` option (rptPage()) now is. Rather
+    // than re-deriving "should this doc show the wave" as a fresh, unscoped decision, this reads
+    // the SAME per-page flag rptPage() already encoded in the DOM (rpt-footer's presence — absent
+    // on any page rendered with letterhead:false) and includes the Word wave footer only if AT
+    // LEAST ONE page in this document actually wants it. For the energy-department quarterly/
+    // annual report that is always true (Board Summary + Cover keep letterhead:true), so today's
+    // Word export is unchanged; a hypothetical future report with letterhead:false on literally
+    // every page would correctly get no wave in Word either, instead of an unconditional one.
+    let letterheadAny = false;
     pages.forEach((pageEl, i) => {
+      if (!letterheadAny && pageEl.querySelector('.rpt-footer img[alt="CSC Footer"]')) letterheadAny = true;
       if (i > 0) {
         // Word page-break marker recognized by the mso HTML-to-doc conversion.
         rawBodyHtml += '<br clear="all" style="page-break-before:always" />';
@@ -9291,10 +9396,11 @@ async function exportReportToWord() {
     // above) carries both classic width/height HTML attributes AND an inline
     // `style="width:8.5in;height:auto"` — belt-and-suspenders since this is the one part of the
     // whole export Word has been least consistent about honoring.
-    const footerImgHtmlWord =
-      '<img src="' +
-      CSC_FOOTER_B64 +
-      '" alt="CSC Footer" width="816" height="108" style="width:8.5in;height:auto;display:block">';
+    const footerImgHtmlWord = letterheadAny
+      ? '<img src="' +
+        CSC_FOOTER_B64 +
+        '" alt="CSC Footer" width="816" height="108" style="width:8.5in;height:auto;display:block">'
+      : '';
     // footerLabelText / hasPageNum were computed above while stripping each page's body (from
     // whatever rptPage() actually emitted for THIS report), so this footer content only shows
     // what each report type's design calls for. 2026-07-29 (Matt: "all reports should always
@@ -9975,19 +10081,29 @@ function rptPageBoardSummary(n, d) {
     return Math.round(Math.abs(v || 0)).toLocaleString();
   };
 
-  // Contract progress
+  // Contract progress — elapsed-time method (2026-09-10, Q2 report fix item 4a), the SAME shared
+  // helper rptPageCover's gauge calls, so the two pages never disagree again.
   var contractYears = (d.contract && d.contract.years) || 1;
   var currentYear = (d.contract && d.contract.currentYear) || 1;
-  var pctDone = Math.min(100, Math.round((currentYear / contractYears) * 100));
+  var pctDone = _rptContractProgressPct(d);
 
-  // Savings vs annual target
+  // Savings vs period target (2026-09-10, Q2 report fix item 4b): use the PERIOD's own target —
+  // the quarterly target for a quarterly report (same lookup rptPageCover already uses), annual
+  // target only for an annual report. Previously this always divided by annualTarget regardless
+  // of period type, understating a quarterly report's progress (30% instead of the correct 143%).
   var totalSavings = (d.totals && d.totals.savings) || 0;
   var annualTarget = (d.contract && d.contract.annualTarget) || 0;
-  var savingsPct = annualTarget > 0 ? Math.min(100, Math.round((totalSavings / annualTarget) * 100)) : 0;
+  var _bsQ = (d.period && d.period.quarter) || 1;
+  var periodTarget =
+    d.period && d.period.type === 'quarterly' && d.contract && d.contract.quarterlyTargets
+      ? d.contract.quarterlyTargets[_bsQ - 1] || annualTarget
+      : annualTarget;
+  var periodTargetWord = d.period && d.period.type === 'quarterly' ? 'quarterly' : 'annual';
+  var savingsPct = periodTarget > 0 ? Math.min(100, Math.round((totalSavings / periodTarget) * 100)) : 0;
   var savingsColor =
-    totalSavings >= annualTarget * 0.9
+    totalSavings >= periodTarget * 0.9
       ? 'var(--rpt-green-dark)'
-      : totalSavings >= annualTarget * 0.6
+      : totalSavings >= periodTarget * 0.6
         ? 'var(--rpt-orange)'
         : '#c0392b';
 
@@ -10098,7 +10214,11 @@ function rptPageBoardSummary(n, d) {
       'var(--rpt-blue-btn)',
       'Year ' + currentYear + ' of ' + contractYears + ' — Contract Completion',
     ) +
-    progressBar(savingsPct, 'var(--rpt-green)', 'Annual Savings Target Progress') +
+    progressBar(
+      savingsPct,
+      'var(--rpt-green)',
+      (periodTargetWord === 'quarterly' ? 'Quarterly' : 'Annual') + ' Savings Target Progress',
+    ) +
     '</div>' +
     // Total savings column
     '<div style="flex:1;border:1px solid var(--rpt-progress-bg);border-radius:6px;padding:12px;text-align:center">' +
@@ -10108,8 +10228,10 @@ function rptPageBoardSummary(n, d) {
     ';font-family:monospace;line-height:1.1">' +
     $c(totalSavings) +
     '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:4px">vs annual target of <strong>' +
-    $c(annualTarget) +
+    '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:4px">vs ' +
+    periodTargetWord +
+    ' target of <strong>' +
+    $c(periodTarget) +
     '</strong></div>' +
     '</div>' +
     '</div>' +
