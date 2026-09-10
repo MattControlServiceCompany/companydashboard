@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.10.814',
+    date: '2026-09-10',
+    title: 'Performance savings now refresh automatically',
+    items: [
+      {
+        type: 'fix',
+        text: 'Performance savings figures now refresh automatically after every update, so you always see the corrected numbers on a normal page refresh instead of an old stored amount.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.10.813',
     date: '2026-09-10',
     title: 'Meter Performance — demand (kW) rate fix',

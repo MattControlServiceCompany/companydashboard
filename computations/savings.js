@@ -10,7 +10,7 @@
 // clear or an unrelated data edit to bust it. CH_VERSION (site-ui.js) is not
 // reachable here (scoped inside an IIFE, not exposed on window), so this file
 // carries its own version marker.
-const SAVINGS_CALC_VERSION = '2026.09.10.813';
+const SAVINGS_CALC_VERSION = '2026.09.10.814';
 
 /* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl)
