@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.10.813',
+    date: '2026-09-10',
+    title: 'Meter Performance — demand (kW) rate fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Meter Performance now shows the demand (kW) rate on every electric month, including months that previously showed a blank rate.',
+      },
+      {
+        type: 'fix',
+        text: 'Corrected the kW-savings amount in performance reports so it always uses the right demand rate instead of falling back to a blank or wrong value.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.10.812',
     date: '2026-09-10',
     title: 'Savings dollar amounts — rounding precision fixes',
