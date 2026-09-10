@@ -357,58 +357,19 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
     }
   }
 
-  // Last delivery: estimate forward consumption from the delivery date using
-  // the gal/HDD rate from the last measured inter-delivery period.
-  // The main loop already distributed the last delivery's gallons backward into
-  // the pre-delivery span (delivery[N-1] → delivery[N]). This block adds
-  // projected gallons for POST-delivery months (delivery date forward), using
-  // the consumption rate as a model. These are estimated values, capped at
-  // galLast to avoid over-projecting beyond the tank capacity.
-  if (sorted.length >= 2) {
-    const dLast = sorted[sorted.length - 1];
-    const dPrev = sorted[sorted.length - 2];
-    const galLast = parseFloat(dLast.gallonsDelivered || dLast.kwh) || 0;
-    const lastCost =
-      parseFloat(dLast.totalCost) || parseFloat(dLast.subtotal) || (parseFloat(dLast.unitPrice) || 0) * galLast || 0;
-    const costPerGal = galLast > 0 ? lastCost / galLast : 0;
-    if (galLast > 0) {
-      // Derive gal/HDD rate from the last measured inter-delivery period
-      const galSecondLast = parseFloat(dPrev.gallonsDelivered || dPrev.kwh) || 0;
-      const sLast = _parseISO(dPrev.start);
-      const eLast = _parseISO(dLast.start);
-      const prevPeriodSpans = monthSpans(sLast, eLast);
-      let prevPeriodHDD = 0;
-      prevPeriodSpans.forEach(function (s) {
-        const w = hddByMonth && hddByMonth[s.ym];
-        const calDays = calDaysInMonth(s.ym);
-        prevPeriodHDD += w && w.hdd ? w.hdd * (s.days / calDays) : 0;
-      });
-      const galPerHDD = prevPeriodHDD > 0 && galSecondLast > 0 ? galSecondLast / prevPeriodHDD : 0;
-      if (galPerHDD > 0) {
-        // Walk forward from delivery date, up to 6 months, capped at galLast total
-        let projAccum = 0;
-        const deliveryDateFwd = _parseISO(dLast.start);
-        for (let mo = 0; mo < 6 && projAccum < galLast; mo++) {
-          const dt = new Date(deliveryDateFwd);
-          dt.setMonth(dt.getMonth() + mo);
-          const ym = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
-          const w = hddByMonth && hddByMonth[ym];
-          const moHDD = w && w.hdd ? w.hdd : 0;
-          const calDays = calDaysInMonth(ym);
-          // First month: only count days FROM delivery date to end of month
-          const frac = mo === 0 ? Math.max(1, calDays - deliveryDateFwd.getDate() + 1) / calDays : 1;
-          const hdd = moHDD * frac;
-          const projGal = Math.min(galPerHDD * hdd, galLast - projAccum);
-          if (projGal > 0) {
-            if (!result[ym]) result[ym] = { gallons: 0, cost: 0 };
-            result[ym].gallons += projGal;
-            result[ym].cost += projGal * costPerGal;
-            projAccum += projGal;
-          }
-        }
-      }
-    }
-  }
+  // db012044: NO forward estimation past the last confirmed delivery.
+  // A propane delivery refills the tank AFTER consumption — its gallons
+  // represent usage over the period BEFORE it, back to the previous
+  // delivery (the main loop above). Consumption after the LAST delivery has
+  // not happened yet as far as the data knows: no refill has occurred to
+  // measure it. Months after the last delivery are therefore left with NO
+  // entry in `result` at all (zero gallons, zero cost, no row) until a real
+  // future delivery arrives — at which point the main loop above picks up
+  // that now-confirmed interval on the next recompute. A "last delivery
+  // forward estimation" block previously lived here and invented monthly
+  // gallons/cost past the last delivery using a borrowed gal/HDD rate; it
+  // was removed because it fabricated unconfirmed usage that fed directly
+  // into client-facing savings dollars (db012044).
 
   return Object.entries(result)
     .sort((a, b) => a[0].localeCompare(b[0]))
