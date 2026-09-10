@@ -318,6 +318,47 @@ const REGISTRY = [
       };
     },
   },
+  {
+    // 2026-09-10 (Q2 report fix, punch-list item 2, Matt live review): the CSC letterhead (hero
+    // logo + wave footer) locked to the energy-department quarterly/annual report's FIRST 2
+    // PHYSICAL PAGES ONLY (Board Executive Summary + Cover) -- see report-engine.js rptPage()'s
+    // `letterhead` option comment. Deploy-blocking so this can't silently drift or re-spread to
+    // every page again (encode-standards-as-gates).
+    id: 'letterhead-scoped-to-pages-1-2',
+    doc: 'Energy department quarterly/annual report (generateReportHTML, all sections ON)',
+    checkType: 'letterhead',
+    site: 'report-engine.js rptPage() letterhead option (2026-09-10)',
+    predicate:
+      '.rpt-page index 0 and index 1 each carry BOTH .csc-header-img AND .rpt-footer img[alt="CSC Footer"]; every .rpt-page at index >= 2 carries NEITHER',
+    run(b) {
+      const lh = b.letterhead;
+      if (lh && lh.skip) {
+        return { pass: true, expected: 'letterhead scoping (SKIPPED)', actual: lh.skipReason };
+      }
+      if (!lh || !lh.perPage || !lh.perPage.length) {
+        return { pass: false, expected: 'letterhead page data present', actual: lh && lh.errors ? lh.errors : lh };
+      }
+      const bad = [];
+      lh.perPage.forEach((p) => {
+        const shouldHaveLetterhead = p.index === 0 || p.index === 1;
+        if (shouldHaveLetterhead && (!p.hasLogo || !p.hasWave)) {
+          bad.push(Object.assign({ reason: 'page 1-2 missing required logo/wave' }, p));
+        } else if (!shouldHaveLetterhead && (p.hasLogo || p.hasWave)) {
+          bad.push(Object.assign({ reason: 'page 3+ has unexpected logo/wave' }, p));
+        }
+      });
+      return {
+        pass: bad.length === 0,
+        expected:
+          'pages 0-1 have logo+wave, pages 2..' +
+          (lh.pageCount - 1) +
+          ' have neither (' +
+          lh.pageCount +
+          ' total pages)',
+        actual: bad.length === 0 ? 'all ' + lh.pageCount + ' pages correctly scoped' : bad,
+      };
+    },
+  },
 ];
 
 // ── In-page data gathering (ONE evaluate call -- report-engine.js globals can go away after any
@@ -554,6 +595,53 @@ async function gatherPageData(page, projId) {
   }, projId);
 }
 
+// ── Letterhead gate data gathering (2026-09-10, Q2 report fix punch-list item 2) ──────────────
+// Generates the REAL energy-department quarterly/annual report (generateReportHTML, all sections
+// ON incl. the default-off boardSummary section so both hero pages -- Board Executive Summary and
+// Cover -- are present) into a real detached DOM node, exactly like gatherPageData() does for the
+// ASHRAE Audit/Proposal above, and reads each .rpt-page's letterhead markup straight from the DOM.
+async function gatherLetterheadData(page, projId) {
+  return page.evaluate((projId) => {
+    const out = { errors: [] };
+    try {
+      const sections = {};
+      (typeof REPORT_SECTIONS !== 'undefined' ? REPORT_SECTIONS : []).forEach((s) => {
+        sections[s.key] = true;
+      });
+      // collectReportData() needs Utility Data buildings (getUDBldgs) -- a genuinely different
+      // data shape than the Equipment Matrix data the ASHRAE checks above use. The default JOCO
+      // oracle fixture (joco-harness-config.json) was built for the ASHRAE registry entries and
+      // has zero Utility Data buildings, so generateReportHTML legitimately cannot run against
+      // it. That is not a letterhead defect -- SKIP (not fail) rather than false-failing the gate
+      // every time it runs against that fixture. Run with --data/--proj pointed at a project that
+      // HAS Utility Data buildings (e.g. Louisburg) to actually exercise this check.
+      const data = collectReportData(projId, null, null, 'quarterly');
+      if (!data) {
+        out.skip = true;
+        out.skipReason =
+          'collectReportData returned null for this project (no Utility Data buildings) -- not an energy-department report project';
+        return out;
+      }
+      const html = generateReportHTML(data, sections);
+      const container = document.createElement('div');
+      container.style.cssText = 'position:absolute;left:-99999px;top:0';
+      container.innerHTML = html;
+      document.body.appendChild(container);
+      const rptPages = Array.from(container.querySelectorAll('.rpt-page'));
+      out.pageCount = rptPages.length;
+      out.perPage = rptPages.map((pg, i) => ({
+        index: i,
+        hasLogo: !!pg.querySelector('.csc-header-img'),
+        hasWave: !!pg.querySelector('.rpt-footer img[alt="CSC Footer"]'),
+      }));
+      document.body.removeChild(container);
+    } catch (e) {
+      out.errors.push(String((e && e.stack) || e));
+    }
+    return out;
+  }, projId);
+}
+
 // ── Run the checks + print a readable table ─────────────────────────────────────────────────
 function runRegistry(bundle) {
   return REGISTRY.map((entry) => {
@@ -598,7 +686,7 @@ function printReport(label, results, bundle) {
     console.log('[' + status + '] (' + r.checkType + ') ' + r.id + '  --  ' + r.doc);
     console.log('        site: ' + r.site);
     console.log('        expected: ' + JSON.stringify(r.expected));
-    if (!r.pass) console.log('        actual:   ' + JSON.stringify(r.actual));
+    if (!r.pass || r.checkType === 'letterhead') console.log('        actual:   ' + JSON.stringify(r.actual));
   });
   console.log('-'.repeat(100));
 
@@ -686,9 +774,12 @@ function printReport(label, results, bundle) {
     if (!projId) throw new Error('No project resolved after seeding');
 
     const bundle = await gatherPageData(page, projId);
-    if (bundle.errors && bundle.errors.length) {
+    const letterhead = await gatherLetterheadData(page, projId);
+    bundle.letterhead = letterhead;
+    const harnessErrors = (bundle.errors || []).concat(letterhead.errors || []);
+    if (harnessErrors.length) {
       console.error('HARNESS ERROR(S) inside page.evaluate:');
-      bundle.errors.forEach((e) => console.error(e));
+      harnessErrors.forEach((e) => console.error(e));
       exitCode = 1;
     } else {
       const results = runRegistry(bundle);
