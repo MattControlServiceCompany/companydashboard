@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.10.811',
+    date: '2026-09-10',
+    title: 'Meter Performance — propane rate fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Meter Performance now shows the propane fuel cost rate ($/Gal) on every savings month, including delivery-spread months that previously showed a blank rate.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.09.810',
     date: '2026-09-09',
     title: 'Bill data — CSV imports and $/kW rate fixes',
