@@ -4,6 +4,14 @@
 // Phase 1 multi-baseline: getMeterSavings() checks for m.baselines and routes to
 //             _getMeterSavingsMulti() when present. Falls back to legacy path when absent.
 
+// SAVINGS_CALC_VERSION — bump this any time the savings math in this file changes.
+// It is folded into the _savingsCache fingerprint (_blFp) below so a code deploy
+// invalidates every browser's stale in-memory cache instead of requiring a manual
+// clear or an unrelated data edit to bust it. CH_VERSION (site-ui.js) is not
+// reachable here (scoped inside an IIFE, not exposed on window), so this file
+// carries its own version marker.
+const SAVINGS_CALC_VERSION = '2026.09.10.813';
+
 /* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl)
    Unified savings function — single pass, populates both byYM
@@ -34,6 +42,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   // superseding the old _ovrHash-only key. The 'v2|' prefix is also the purge mechanism for every
   // pre-existing persisted v1 cache (see saveUtilityData() strip-on-save + bcbc84e0).
   const _blFp = JSON.stringify({
+    ver: SAVINGS_CALC_VERSION,
     reg: bl.reg || null,
     months: bl.months || null,
     overrides: bl.overrides || null,
