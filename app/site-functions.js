@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.10.815',
+    date: '2026-09-10',
+    title: 'Propane usage no longer estimated after the last delivery',
+    items: [
+      {
+        type: 'fix',
+        text: 'Propane usage is no longer estimated for months after the most recent delivery. Only months with a confirmed delivery show usage and cost, so figures reflect actual deliveries instead of a projection.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.10.814',
     date: '2026-09-10',
     title: 'Performance savings now refresh automatically',
