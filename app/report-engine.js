@@ -1416,6 +1416,27 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
 
   if (isHero) {
     // Rule 2.1: rpt-cover class on hero pages; csc-header-img class on the letterhead image.
+    // rpt-hero-body wrapper (2026-09-10, hero letterhead-overlap fix, Q2 report fix punch-list):
+    // bodyHTML is wrapped in this single new div instead of relying on the old
+    // `.csc-header-img + *` adjacent-sibling CSS selector to margin-top the first content child
+    // down below the letterhead. That old mechanism (a bare margin-top on whatever normal-flow
+    // element happened to come right after the <img>) rendered correctly in the live on-screen
+    // preview and in the native window.print() path (which resets it to position:static / normal
+    // flow entirely — see the print override below), but was measured to silently NOT apply on
+    // the html2canvas export path (#rptPreviewPages -> downloadReportPDF() in
+    // app/report-preview.js): the exported PDF's Board Executive Summary and Cover pages had
+    // their title + KPI cards rendered starting at y=0, underneath/behind the letterhead image,
+    // with only the bottom sliver of the first card peeking out below the letterhead's bottom
+    // edge (PyMuPDF-rendered evidence: _context/temp/2026-09-10-report-fixes-implement/
+    // AFTER-PDF-page1-boardSummary.png). Every OTHER piece of hero-page furniture that already
+    // uses position:absolute + a fixed top/bottom offset (the letterhead <img> itself, top:0; the
+    // wave footer, bottom:0; the page-number div) rendered correctly in that same html2canvas
+    // capture — only the margin-based flow offset failed — so this wrapper switches the content
+    // zone to the SAME position:absolute + top/bottom scheme non-hero pages' .rpt-body already
+    // uses (see the "Page Body (content layer)" rule below), reusing the existing
+    // --rpt-hero-hdr-h / --rpt-ftr-h tokens rather than a new literal. See the matching CSS rule
+    // (`.rpt-page.rpt-cover > .rpt-hero-body`) and its print override in energy-department.html's
+    // #report-styles / #report-print-overrides blocks for the other half of this fix.
     return (
       '<div class="rpt-pl">' +
       pageLabel +
@@ -1428,7 +1449,9 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
           CSC_HEADER_B64 +
           '" alt="CSC Letterhead" class="csc-header-img" style="width:100%;display:block">'
         : '') +
+      '<div class="rpt-hero-body">' +
       bodyHTML +
+      '</div>' +
       footerTextHtml +
       footerLabelHtml +
       footerImgHtml +

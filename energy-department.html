@@ -2231,13 +2231,24 @@
 
       /* -- Hero / Cover Page Letterhead (furniture) --
          Full-bleed letterhead image on hero (.rpt-cover) pages. rptPage() emits this <img> as the
-         first child of .rpt-page.rpt-cover, always immediately followed by exactly one wrapper div
-         holding the rest of the page's content (rptPageCover's .rpt-hero, rptPageASHRAE36Cover's
-         bare inset div, rptPageBoardSummary's contenteditable wrapper — see app/report-engine.js).
-         Furniture treatment: position:absolute, fixed height, out of flow. The adjacent-sibling
-         selector below reserves that same height as a top offset on whatever content div follows
-         it, without requiring a new wrapper class in the JS templates (kept intentionally generic
-         so it works across all hero-page content shapes). */
+         first child of .rpt-page.rpt-cover, followed by a single .rpt-hero-body wrapper div that
+         rptPage() itself adds around whatever content the caller (rptPageCover, rptPageBoardSummary,
+         rptPageASHRAE36Cover, ASHRAE 36 Proposal Summary) passed as bodyHTML — see app/report-
+         engine.js. Furniture treatment: position:absolute, fixed height, out of flow.
+         2026-09-10 (hero letterhead-overlap fix, Q2 report fix punch-list): .rpt-hero-body used to
+         be a bare `.csc-header-img + *` adjacent-sibling selector giving the first content child a
+         margin-top instead of a dedicated wrapper/class. That margin-based reservation rendered
+         correctly on screen and in the native window.print() path, but was measured to silently NOT
+         apply on the html2canvas export path (#rptPreviewPages -> downloadReportPDF() in app/
+         report-preview.js) — the exported Board Executive Summary/Cover pages had their title + KPI
+         cards start at y=0, hidden under the letterhead (see
+         _context/temp/2026-09-10-report-fixes-implement/AFTER-PDF-page1-boardSummary.png). Every
+         OTHER hero furniture piece that already uses position:absolute + a fixed offset (this same
+         letterhead <img>, top:0; the wave footer, bottom:0) rendered correctly in that same
+         html2canvas capture, so .rpt-hero-body now reserves its zone the same way — position:
+         absolute with a fixed top AND bottom offset — instead of a margin on a normal-flow sibling,
+         reusing the SAME --rpt-hero-hdr-h / --rpt-ftr-h tokens (not new literals), matching the
+         "Page Body (content layer)" .rpt-body rule below for non-hero pages. */
       .rpt-page.rpt-cover > .csc-header-img {
         position: absolute;
         top: 0;
@@ -2248,9 +2259,16 @@
         object-fit: contain;
         z-index: 2;
       }
-      .rpt-page.rpt-cover > .csc-header-img + * {
+      .rpt-page.rpt-cover > .rpt-hero-body {
         display: block;
-        margin-top: var(--rpt-hero-hdr-h);
+        position: absolute;
+        top: var(--rpt-hero-hdr-h);
+        left: 0;
+        right: 0;
+        bottom: var(--rpt-ftr-h);
+        box-sizing: border-box;
+        overflow: visible;
+        z-index: 1;
       }
 
       /* -- Page Body (content layer) --
@@ -3133,7 +3151,15 @@
           position: static !important;
           height: auto !important;
         }
-        .rpt-page.rpt-cover > .csc-header-img + * {
+        /* 2026-09-10 (hero letterhead-overlap fix): .rpt-hero-body replaces the old
+           `.csc-header-img + *` selector (see the screen-rule comment above) — print still resets
+           it back to plain normal-flow (the native window.print() path was never affected by the
+           html2canvas bug this fix targets, and print's own pagination needs normal flow, same as
+           .rpt-body's print override just below reserves its zone via padding instead of position). */
+        .rpt-page.rpt-cover > .rpt-hero-body {
+          position: static !important;
+          top: auto !important;
+          bottom: auto !important;
           margin-top: 0 !important;
         }
         /* Keep table rows/headers intact across a page boundary on the rare page whose
