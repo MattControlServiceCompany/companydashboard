@@ -2103,7 +2103,11 @@ function egfxRefresh(projId) {
         const ym = curYear + '-' + String(mo + 1).padStart(2, '0');
         return egfxSavByMo[ym] != null ? egfxSavByMo[ym] : null;
       });
-      _maCharts[savChartId] = new Chart(savChartCv, {
+      // Fix 5 (2026-09-10, report export speed): willReadFrequently on the FIRST getContext('2d')
+      // call — see the same fix's comment on SharedCharts._ctx2d() in lib/shared-charts.js for why.
+      // This chart (egfx-savChart) is one of the ones report-preview.js downloadReportPDF()
+      // explicitly hides/still touches during PDF export.
+      _maCharts[savChartId] = new Chart(savChartCv.getContext('2d', { willReadFrequently: true }), {
         type: 'bar',
         data: {
           labels: months,

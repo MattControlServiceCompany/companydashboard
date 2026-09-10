@@ -633,13 +633,24 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   const weather = collectWeatherData(allBldgMeters, reportYMs);
 
   // --- Setpoints ---
+  // Fix 4 (2026-09-10): report-local default only. `sp.viewMode` is the shared setting written by
+  // the live Set Points tab (graphics-setpoints.js `spSetViewMode()`, own independent 'individual'
+  // fallback at graphics-setpoints.js:2219) and persisted on `p.setpoints[]` in the project record.
+  // We do NOT touch that shared field or its fallback — this file never writes back to
+  // `p.setpoints[].viewMode`, only reads it into this report-time object. Changing the fallback
+  // HERE (from 'individual' to 'average') only affects what `rptPageSetpoints()` renders for a
+  // building that has no viewMode saved yet; it does not change the Set Points tab's own default,
+  // does not touch any other project, and does not affect any other report type (ASHRAE 36 audit
+  // reports use a separate data-gather path, not collectReportData()). A building with an
+  // EXPLICIT saved viewMode (either 'individual' or 'average') always keeps that exact value —
+  // only the true fallback (no viewMode saved at all) changes.
   const setpoints = (p.setpoints || []).map((sp) => {
     const bldg = bldgs.find((b) => String(b.id) === String(sp.buildingId));
     return {
       buildingId: sp.buildingId,
       buildingName: bldg ? bldg.name : 'Unknown',
       zones: sp.zones || [],
-      viewMode: sp.viewMode || 'individual',
+      viewMode: sp.viewMode || 'average',
     };
   });
 
@@ -1801,12 +1812,16 @@ function _rptInjectUiPassOverrides() {
     '#reportPages .rpt-table-dark,#reportPages .rpt-table-compact{border-radius:0 !important}' +
     /* D2#15: no gap between the "Building Baseline Data" title bar and the table below it */
     '#reportPages .rpt-table-bl{margin:0 !important}' +
-    /* D2#16: Baseline Data table header gridlines white only — no colored/grey shade */
+    /* Fix 3 (2026-09-10): D2#16's original #ffffff gridlines read as washed-out grey against the
+       colored header band, violating the standing "darker table headers / near-black gridlines"
+       standard. Switched to var(--rpt-table-th-border) (#144a6a dark navy) — the same token
+       .rpt-table th already uses for its own header border, so the Baseline Data table's header
+       gridlines now match every other report table's header border instead of standing out white. */
     '#reportPages .rpt-table-bl th,#reportPages .rpt-table-bl th.bl-elec,' +
     '#reportPages .rpt-table-bl th.bl-gas,#reportPages .rpt-table-bl th.bl-prop,' +
     '#reportPages .rpt-table-bl th.bl-water,#reportPages .rpt-table-bl th.bl-total' +
-    '{border-color:#ffffff !important}' +
-    '#reportPages .rpt-table-bl th.bl-grp{border-bottom-color:#ffffff !important}' +
+    '{border-color:var(--rpt-table-th-border) !important}' +
+    '#reportPages .rpt-table-bl th.bl-grp{border-bottom-color:var(--rpt-table-th-border) !important}' +
     /* D2#17: clearer separation between the top stats bar and the table below it */
     '#reportPages .rpt-bl-stats{border-bottom:2px solid var(--rpt-page-text) !important}';
   var styleEl = document.createElement('style');
@@ -10275,7 +10290,7 @@ let _reportProjId = null,
   _reportType = null;
 
 const REPORT_SECTIONS = [
-  { key: 'boardSummary', label: 'Board Executive Summary', group: 'Executive', defaultOff: true },
+  { key: 'boardSummary', label: 'Board Executive Summary', group: 'Executive' },
   { key: 'cover', label: 'Cover Page', group: 'Main' },
   { key: 'financial', label: 'Financial Summary', group: 'Main' },
   { key: 'savingsPerformance', label: 'Savings Performance', group: 'Main' },
@@ -10407,10 +10422,24 @@ function openReportModalV2(projId) {
   html += '</div></div>';
   html += '<div style="display:flex;flex-direction:column;gap:3px;max-height:120px;overflow-y:auto">';
   bldgs.forEach(function (b) {
+    // Fix (2026-09-10): default-check a building only if it has at least one meter that is
+    // both baseline-included AND a calc commodity for this project — same gather pattern used
+    // in collectReportData() (baselineInclude !== false + isCalcCommodity, no hardcoded list).
+    // A fully-excluded building (e.g. Maintenance Building, all calc meters baselineInclude:false)
+    // still appears in the list so the user can manually check it, but should not ride along by
+    // default. Do NOT remove excluded buildings from the list — only change the default checked state.
+    var bHasIncludedCalcMeter = (b.meters || []).some(function (m) {
+      if (m.baselineInclude === false) return false;
+      // Same permissive fallback as the collectReportData() gather loop (~line 68): if
+      // isCalcCommodity isn't loaded, don't filter on commodity at all.
+      return typeof isCalcCommodity !== 'function' || isCalcCommodity(projId, m.commodity);
+    });
     html +=
       '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">';
     html +=
-      '<input type="checkbox" checked class="rptV2Bldg" data-bid="' +
+      '<input type="checkbox" ' +
+      (bHasIncludedCalcMeter ? 'checked ' : '') +
+      'class="rptV2Bldg" data-bid="' +
       b.id +
       '" style="accent-color:var(--em);width:14px;height:14px">';
     html += '<span style="font-size:12px;color:var(--text)">' + (b.name || 'Unnamed') + '</span>';
