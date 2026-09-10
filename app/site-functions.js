@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.10.812',
+    date: '2026-09-10',
+    title: 'Savings dollar amounts — rounding precision fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Graphics savings chart hover now shows the exact dollar and cent amount instead of a rounded figure.',
+      },
+      {
+        type: 'fix',
+        text: 'Client portal savings totals now add up correctly — fixed a rounding order bug that could shift the total by a few cents.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.10.811',
     date: '2026-09-10',
     title: 'Meter Performance — propane rate fix',
