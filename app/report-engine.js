@@ -633,24 +633,46 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   const weather = collectWeatherData(allBldgMeters, reportYMs);
 
   // --- Setpoints ---
-  // Fix 4 (2026-09-10): report-local default only. `sp.viewMode` is the shared setting written by
-  // the live Set Points tab (graphics-setpoints.js `spSetViewMode()`, own independent 'individual'
-  // fallback at graphics-setpoints.js:2219) and persisted on `p.setpoints[]` in the project record.
-  // We do NOT touch that shared field or its fallback — this file never writes back to
-  // `p.setpoints[].viewMode`, only reads it into this report-time object. Changing the fallback
-  // HERE (from 'individual' to 'average') only affects what `rptPageSetpoints()` renders for a
-  // building that has no viewMode saved yet; it does not change the Set Points tab's own default,
-  // does not touch any other project, and does not affect any other report type (ASHRAE 36 audit
-  // reports use a separate data-gather path, not collectReportData()). A building with an
-  // EXPLICIT saved viewMode (either 'individual' or 'average') always keeps that exact value —
-  // only the true fallback (no viewMode saved at all) changes.
+  // Fix 4 (2026-09-10): REPORT-LOCAL AGGREGATION, unconditional — not a fallback.
+  //
+  // First attempt (kept in git history) changed only the missing-value fallback
+  // (`sp.viewMode || 'individual'` -> `sp.viewMode || 'average'`). Verified against the REAL
+  // Louisburg backup (CompanyHub-localdatafile-20260910.json) before shipping and found that
+  // fallback fix to be a no-op for this project: all 6 of Louisburg's `p.setpoints[]` records
+  // already carry an EXPLICIT `viewMode:"individual"` (written only by
+  // graphics-setpoints.js `spSetViewMode()`, itself only reachable from the "Individual
+  // Zones"/"Building Average" toggle buttons on the live Set Points tab — so someone did click
+  // that button at some point, almost certainly for zone-by-zone data entry convenience, not as a
+  // deliberate "I want my reports per-zone" decision). Since a fallback only fires on a truly
+  // missing value, and the real value here is never missing, the report would have kept rendering
+  // per-zone for Louisburg — failing the actual ask.
+  //
+  // Fix actually shipped: the report's `viewMode` is now assigned unconditionally to 'average',
+  // ignoring `sp.viewMode` entirely for report purposes. Blast radius:
+  //   - Every quarterly/annual report, every project, with a BAS Set Points section now renders
+  //     building-by-building (aggregated) by default — this is now true regardless of whatever
+  //     the project's Set Points tab happens to have saved, not just for blank/new projects.
+  //   - `p.setpoints[].viewMode` is NEVER written by this file (grep-verified: the only writer in
+  //     the whole repo is `spSetViewMode()`) — the underlying saved value and the live Set Points
+  //     tab's own rendering (graphics-setpoints.js, a completely separate code path with its own
+  //     independent 'individual' fallback at graphics-setpoints.js:2223) are 100% untouched. Data
+  //     entry / zone-by-zone editing on the tab looks and behaves exactly as before.
+  //   - Other report types (ASHRAE 36 audit, etc.) do not call collectReportData() and are
+  //     unaffected.
+  //   - Net effect on "per-building override": `rptPageSetpoints()` itself still branches per
+  //     setpoints record on `sp.viewMode === 'average'` (unchanged, ~line 4804/4826/4851) — that
+  //     per-record structural capability is intentionally left in place. But since every record
+  //     built here is now always 'average', there is currently no way to get a per-zone REPORT
+  //     view for any project; that would need a new, separate report-only control (out of scope —
+  //     not built silently). Flag this for Matt/reviewer: if a per-zone report is ever wanted
+  //     again, this is the tradeoff to revisit, not a hidden regression.
   const setpoints = (p.setpoints || []).map((sp) => {
     const bldg = bldgs.find((b) => String(b.id) === String(sp.buildingId));
     return {
       buildingId: sp.buildingId,
       buildingName: bldg ? bldg.name : 'Unknown',
       zones: sp.zones || [],
-      viewMode: sp.viewMode || 'average',
+      viewMode: 'average',
     };
   });
 
@@ -1816,12 +1838,23 @@ function _rptInjectUiPassOverrides() {
        colored header band, violating the standing "darker table headers / near-black gridlines"
        standard. Switched to var(--rpt-table-th-border) (#144a6a dark navy) — the same token
        .rpt-table th already uses for its own header border, so the Baseline Data table's header
-       gridlines now match every other report table's header border instead of standing out white. */
+       gridlines now match every other report table's header border instead of standing out white.
+       Also widened this one rule pair to #rptPreviewPages (found while verifying this fix):
+       _rptInjectUiPassOverrides() was ONLY ever scoped to #reportPages (the legacy showReportOverlay
+       overlay), never to #rptPreviewPages (the V2 modal's preview container — the ONLY path wired to
+       a live UI button per the 2026-09-07 dashboardlogic entry). Without this, the gridline fix would
+       be dead code in the report Matt actually generates. Scoped narrowly to just the two rules this
+       task touches — NOT widening A1/A2/D2#15/D2#17 to #rptPreviewPages, that's separate pre-existing
+       behavior out of this task's scope. */
     '#reportPages .rpt-table-bl th,#reportPages .rpt-table-bl th.bl-elec,' +
     '#reportPages .rpt-table-bl th.bl-gas,#reportPages .rpt-table-bl th.bl-prop,' +
-    '#reportPages .rpt-table-bl th.bl-water,#reportPages .rpt-table-bl th.bl-total' +
+    '#reportPages .rpt-table-bl th.bl-water,#reportPages .rpt-table-bl th.bl-total,' +
+    '#rptPreviewPages .rpt-table-bl th,#rptPreviewPages .rpt-table-bl th.bl-elec,' +
+    '#rptPreviewPages .rpt-table-bl th.bl-gas,#rptPreviewPages .rpt-table-bl th.bl-prop,' +
+    '#rptPreviewPages .rpt-table-bl th.bl-water,#rptPreviewPages .rpt-table-bl th.bl-total' +
     '{border-color:var(--rpt-table-th-border) !important}' +
-    '#reportPages .rpt-table-bl th.bl-grp{border-bottom-color:var(--rpt-table-th-border) !important}' +
+    '#reportPages .rpt-table-bl th.bl-grp,#rptPreviewPages .rpt-table-bl th.bl-grp' +
+    '{border-bottom-color:var(--rpt-table-th-border) !important}' +
     /* D2#17: clearer separation between the top stats bar and the table below it */
     '#reportPages .rpt-bl-stats{border-bottom:2px solid var(--rpt-page-text) !important}';
   var styleEl = document.createElement('style');

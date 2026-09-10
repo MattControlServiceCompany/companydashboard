@@ -81,6 +81,13 @@ function generateReportPreview() {
 }
 
 function _showPreview(config, pagesHTML) {
+  // Fix 3 (2026-09-10): _rptInjectUiPassOverrides() (report-engine.js) was previously only ever
+  // called by showReportOverlay() (the legacy #reportPages overlay). The V2 preview populates a
+  // different container (#rptPreviewPages) and never triggered it, so its injected <style> tag
+  // (and therefore the Baseline Data gridline fix) never existed for the live report path unless
+  // some other report type happened to open the legacy overlay first in the same session. Call is
+  // idempotent (checks its own style-tag id) and cheap — safe to call on every preview render.
+  if (typeof _rptInjectUiPassOverrides === 'function') _rptInjectUiPassOverrides();
   var container = document.getElementById('reportPreviewContainer');
   var pagesEl = document.getElementById('rptPreviewPages');
   var sidebarEl = document.getElementById('rptPreviewSidebar');
