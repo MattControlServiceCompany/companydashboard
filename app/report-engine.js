@@ -826,6 +826,37 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     return periodYear ? ym.slice(0, 4) === String(periodYear) : true;
   });
 
+  // --- FIX 1 (2026-09-11): per-quarter REALIZED actuals for the current year, used by
+  // rptPageFinancial's CSC Compensation "Annualized" column. Recurses into
+  // collectReportData() for each already-completed quarter (1..periodQuarter-1) of the
+  // SAME calendar year to get that quarter's own period-scoped totSavings — the identical
+  // mechanism this function already uses for the CURRENT quarter's totSavings (the
+  // `inPeriod` gate above). Deliberately NOT totals.cumulativeSavings, which sums every
+  // post-baseline month regardless of calendar quarter and would double-count months
+  // beyond the report's own quarter (e.g. Jul/Aug bleeding into a Q2 report). Recursion is
+  // bounded (at most 3 extra calls, for a Q4 report) and self-terminates: each recursive
+  // sub-call passes selectedPeriod._noQuarterlyActuals so it never recurses again.
+  var quarterlyActuals = null;
+  if (reportType === 'quarterly' && periodQuarter && !(selectedPeriod && selectedPeriod._noQuarterlyActuals)) {
+    quarterlyActuals = [null, null, null, null];
+    quarterlyActuals[periodQuarter - 1] = totSavings;
+    var _qaBuildingIds = bldgs.map(function (b) {
+      return String(b.id);
+    });
+    for (var _qi = 1; _qi < periodQuarter; _qi++) {
+      try {
+        var _qd = collectReportData(projId, _qaBuildingIds, null, 'quarterly', {
+          quarter: _qi,
+          year: periodYear,
+          _noQuarterlyActuals: true,
+        });
+        quarterlyActuals[_qi - 1] = _qd ? _qd.totals.savings : 0;
+      } catch (e) {
+        quarterlyActuals[_qi - 1] = 0;
+      }
+    }
+  }
+
   // --- Assemble final object ---
   return {
     project: {
@@ -848,6 +879,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       clientPct: clientPct,
       escalation: escalation,
       quarterlyTargets: quarterlyTargets,
+      quarterlyActuals: quarterlyActuals,
     },
     period: {
       type: reportType,
@@ -2523,13 +2555,39 @@ function rptPageFinancial(n, d) {
 
   const q = d.period.quarter || 1;
   const qLabel = d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : d.period.year || '';
-  const annFactor = d.period.type === 'quarterly' ? 4 : 1;
-  const annSavings = d.totals.savings * annFactor;
+  // FIX 1 (2026-09-11): Annualized used to be a naive Q-times-4 (annFactor=4 * this
+  // quarter's savings) — wildly overstates a quarter running above/below its neighbors.
+  // Correct figure = realized YTD (sum of ACTUAL savings for quarters 1..this quarter,
+  // from d.contract.quarterlyActuals — collectReportData's own period-scoped totSavings
+  // for each completed quarter, NOT cumulativeSavings which leaks months beyond this
+  // quarter) + projected remaining quarters (sum of contract quarterly TARGETS for
+  // quarters after this one). Annual reports are unchanged: d.totals.savings already IS
+  // the full-year actual, so Annualized = that figure with no adjustment.
+  var annSavings;
+  var qActuals = d.contract.quarterlyActuals;
+  if (d.period.type === 'quarterly' && qActuals) {
+    var _ytdActual = 0;
+    for (var _q = 1; _q <= q; _q++) {
+      _ytdActual += qActuals[_q - 1] != null ? qActuals[_q - 1] : 0;
+    }
+    var _remainingTarget = 0;
+    for (var _rq = q + 1; _rq <= 4; _rq++) {
+      _remainingTarget += d.contract.quarterlyTargets[_rq - 1] || 0;
+    }
+    annSavings = _ytdActual + _remainingTarget;
+  } else {
+    annSavings = d.totals.savings;
+  }
   const contractYrs = d.contract.years || 3;
   const yrTotalSavings = annSavings * contractYrs;
   var _split = computeCscSplit(d.totals.savings, d.contract.cscPct, 'pct');
   var cscAmt = _split.csc;
   var clientAmt = _split.client;
+  // CSC/Client split of the corrected Annualized figure (same cscPct/clientPct applied to
+  // annSavings, replacing the old cscAmt*annFactor / clientAmt*annFactor naive-x4 math).
+  var _annSplit = computeCscSplit(annSavings, d.contract.cscPct, 'pct');
+  var cscAnnAmt = _annSplit.csc;
+  var clientAnnAmt = _annSplit.client;
 
   // -- Building Performance table --
   const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
@@ -2664,10 +2722,10 @@ function rptPageFinancial(n, d) {
     $c(cscAmt) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(cscAmt * annFactor) +
+    $c(cscAnnAmt) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(cscAmt * annFactor * contractYrs) +
+    $c(cscAnnAmt * contractYrs) +
     '</td>' +
     '</tr>' +
     '<tr class="rpt-tot">' +
@@ -2678,10 +2736,10 @@ function rptPageFinancial(n, d) {
     $c(clientAmt) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(clientAmt * annFactor) +
+    $c(clientAnnAmt) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(clientAmt * annFactor * contractYrs) +
+    $c(clientAnnAmt * contractYrs) +
     '</td>' +
     '</tr>' +
     '</tbody>' +
@@ -2883,10 +2941,43 @@ function rptPageSavingsPerformance(n, d) {
       '</div>';
   }
 
-  // -- Annual Summary by Year table --
-  // We have baseline totals and current period; build rows accordingly
-  const _blYearStr = d.project.blEnd ? d.project.blEnd.split(' ').pop() : '';
-  const blYearLabel = _blYearStr ? _blYearStr + ' Baseline' : 'Baseline';
+  // -- Quarterly/Annual Summary vs Baseline table --
+  // FIX 2 (2026-09-11, Matt's explicit decision): this table used to bucket EVERY month of
+  // the calendar year seen in monthly data (_yoyByYear below) into one unscoped "2026" row,
+  // shown next to blRow's period-scoped (this report's quarter) baseline row — a 3-month row
+  // next to an up-to-8-month row under one "Annual Summary by Year" heading. Now a straight
+  // baseline-period vs report-period comparison: blRow and curRow are both scoped to
+  // d.period.yearMonths (3 months for a quarterly report, 12 for annual) — see
+  // rptPageFinancial's "Quarterly Savings vs Baseline" section for the $ analog of this same
+  // scoping; this table is the USAGE/consumption breakdown (kWh/kW/Therms/Gal/Cost/EUI), not
+  // a duplicate of that $ summary.
+  //
+  // EUI period-consistency: d.totals.euiBaseline/euiCurrent (computeProjectEUI) are BOTH
+  // trailing/annualized 12-month figures independent of the selected report period (baseline
+  // is always the fixed baseline year; current is always the trailing-12-months-as-of-
+  // generation-time) — investigated and confirmed neither is actually period-scoped to this
+  // report's quarter, contrary to the initial assumption that euiCurrent already was. Putting
+  // either one next to this row's own 3-month kWh/Therms/Gal/Cost totals is dimensionally
+  // inconsistent (a 12-month annualized EUI next to a 3-month consumption total). Fixed by
+  // computing a fresh period-scoped EUI for EACH row from that row's own period totals via
+  // computeKBtu()/computePeriodEUI() (computations/eui.js) — same annualization formula,
+  // applied to the period's own kBtu instead of a trailing-12 kBtu, so blRow and curRow are
+  // both dimensionally comparable to their own consumption columns AND to each other.
+  const _periodMonths = (d.period && d.period.months) || (d.period && d.period.type === 'quarterly' ? 3 : 12);
+  const _periodSqft = d.project.sqft || 0;
+  const _blKBtuPeriod = toKBtu(d.totals.kwhBl, d.totals.thermsBl, d.totals.propaneBl);
+  const _curKBtuPeriod = toKBtu(d.totals.kwhCur, d.totals.thermsCur, d.totals.propaneCur);
+  const _blEuiPeriod =
+    typeof computePeriodEUI === 'function' ? computePeriodEUI(_blKBtuPeriod, _periodMonths, _periodSqft) : 0;
+  const _curEuiPeriod =
+    typeof computePeriodEUI === 'function' ? computePeriodEUI(_curKBtuPeriod, _periodMonths, _periodSqft) : 0;
+
+  const isQtrPeriod = d.period.type === 'quarterly' && d.period.quarter;
+  const blYearLabel = isQtrPeriod
+    ? 'Baseline (Q' + d.period.quarter + ')'
+    : d.project.blEnd
+      ? d.project.blEnd.split(' ').pop() + ' Baseline'
+      : 'Baseline';
   const blRow =
     '<tr>' +
     '<td contenteditable="true">' +
@@ -2908,13 +2999,17 @@ function rptPageSavingsPerformance(n, d) {
     $c(d.totals.blCost) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    (d.totals.euiBaseline > 0 ? d.totals.euiBaseline.toFixed(1) : '—') +
+    (_blEuiPeriod > 0 ? _blEuiPeriod.toFixed(1) : '—') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">—</td>' +
     '</tr>';
 
   const savPct = d.totals.savingsPct || 0;
-  const curYrLabel = d.period.year ? String(d.period.year) + ' Q' + (d.period.quarter || 1) : 'Current';
+  const curYrLabel = isQtrPeriod
+    ? 'Q' + d.period.quarter + ' ' + (d.period.year || '')
+    : d.period.year
+      ? String(d.period.year)
+      : 'Current';
   const curRow =
     '<tr>' +
     '<td contenteditable="true">' +
@@ -2936,7 +3031,7 @@ function rptPageSavingsPerformance(n, d) {
     $c(d.totals.curCost) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    (d.totals.euiCurrent > 0 ? d.totals.euiCurrent.toFixed(1) : '—') +
+    (_curEuiPeriod > 0 ? _curEuiPeriod.toFixed(1) : '—') +
     '</td>' +
     '<td class="rpt-n ' +
     (savPct >= 0 ? 'rpt-g' : 'rpt-r') +
@@ -2945,75 +3040,12 @@ function rptPageSavingsPerformance(n, d) {
     '</td>' +
     '</tr>';
 
-  // Build year-over-year rows from monthly data across all buildings
-  var _yoyByYear = {};
-  (d.buildings || []).forEach(function (b) {
-    ['electric', 'gas', 'propane'].forEach(function (com) {
-      var monthly = (b[com] && b[com].monthly) || [];
-      monthly.forEach(function (mo) {
-        if (!mo.month) return;
-        var yr = mo.month.split('-')[0];
-        if (!_yoyByYear[yr]) _yoyByYear[yr] = { kwh: 0, kw: 0, therms: 0, gal: 0, cost: 0, sav: 0, kbtu: 0 };
-        if (com === 'electric') {
-          _yoyByYear[yr].kwh += mo.cur || 0;
-          _yoyByYear[yr].kw += mo.kwCur || 0;
-          _yoyByYear[yr].cost += mo.curCost || 0;
-          _yoyByYear[yr].sav += mo.savings || 0;
-          _yoyByYear[yr].kbtu += toKBtu(mo.cur || 0, 0, 0);
-        } else if (com === 'gas') {
-          _yoyByYear[yr].therms += mo.cur || 0;
-          _yoyByYear[yr].cost += mo.curCost || 0;
-          _yoyByYear[yr].sav += mo.savings || 0;
-          _yoyByYear[yr].kbtu += toKBtu(0, mo.cur || 0, 0);
-        } else {
-          _yoyByYear[yr].gal += mo.cur || 0;
-          _yoyByYear[yr].cost += mo.curCost || 0;
-          _yoyByYear[yr].sav += mo.savings || 0;
-          _yoyByYear[yr].kbtu += toKBtu(0, 0, mo.cur || 0);
-        }
-      });
-    });
-  });
-  var _yoyYears = Object.keys(_yoyByYear).sort();
-  var _totalSqft =
-    d.buildings.reduce(function (s, b) {
-      return s + (b.sqft || 0);
-    }, 0) || 1;
-  var _yoyRows = '';
-  _yoyYears.forEach(function (yr) {
-    var y = _yoyByYear[yr];
-    var eui = _totalSqft > 0 ? (y.kbtu / _totalSqft).toFixed(1) : '—';
-    // NOTE: denominator is current-period baseline cost, not full-year baseline. YoY rows covering
-    // calendar years outside the reporting period are directionally correct but not dimensionally
-    // comparable — this is a pre-existing limitation, not introduced here.
-    var vsBl = d.totals.blCost > 0 ? (y.sav / d.totals.blCost) * 100 : 0;
-    _yoyRows +=
-      '<tr><td contenteditable="true">' +
-      yr +
-      '</td><td class="rpt-n" contenteditable="true">' +
-      $n(y.kwh) +
-      '</td><td class="rpt-n" contenteditable="true">' +
-      $n(y.kw) +
-      '</td><td class="rpt-n" contenteditable="true">' +
-      $n(y.therms) +
-      '</td><td class="rpt-n" contenteditable="true">' +
-      $n(y.gal) +
-      '</td><td class="rpt-n" contenteditable="true">' +
-      $c(y.cost) +
-      '</td><td class="rpt-n" contenteditable="true">' +
-      eui +
-      '</td><td class="rpt-n ' +
-      (vsBl >= 0 ? 'rpt-g' : 'rpt-r') +
-      '" contenteditable="true">' +
-      $p(vsBl) +
-      '</td></tr>';
-  });
-  var annTableBody = blRow + (_yoyRows || curRow);
+  var annTableBody = blRow + curRow;
 
   const annTable =
     '<table class="rpt-table" contenteditable="true" style="width:100%;table-layout:fixed">' +
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
-    '<th style="width:12%">Year</th>' +
+    '<th style="width:12%">Period</th>' +
     '<th class="rpt-n" style="width:14%">kWh</th>' +
     '<th class="rpt-n" style="width:10%">Peak kW</th>' +
     '<th class="rpt-n" style="width:12%">Therms</th>' +
@@ -3127,11 +3159,17 @@ function rptPageSavingsPerformance(n, d) {
   // per building) is too much for one page once there are more than a handful of buildings, and
   // would only get worse on a larger portfolio. Split "Annual Summary by Building" onto its own
   // page — same fixed-split approach as rptPageAppendixWeather/rptPageEUI in this pass.
+  // FIX 2 (2026-09-11): title and intro copy no longer claim a year-over-year trend — this
+  // section now compares this report's period directly against the same-period baseline
+  // (e.g. Q2 baseline vs Q2 actual for a quarterly report).
+  const _usageSummaryTitle = isQtrPeriod ? 'Quarterly Usage Summary vs Baseline' : 'Annual Usage Summary vs Baseline';
   const page1Body =
-    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The usage summary table below compares consumption, demand, and cost data across all commodities for this reporting period against the same period in the baseline.</p>' +
     '<h2>Monthly Savings: Projected vs Actual</h2>' +
     chartSection +
-    '<h2>Annual Summary by Year</h2>' +
+    '<h2>' +
+    _usageSummaryTitle +
+    '</h2>' +
     annTable;
   const page2Body = '<h2>Annual Summary by Building</h2>' + bldgTable;
 

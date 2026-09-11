@@ -136,6 +136,13 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
     });
   }
 
+  // 2026-09-11 (FIX 3, propane zeroFill savings booking): carry-forward propane rate —
+  // updated to the most recent real galRate seen as postRows (sorted ascending by ym) are
+  // walked, so a zeroFill month (no delivery yet) can book real savings using the last
+  // known delivered rate instead of galRate=0 forcing totalCostSav to 0. Matches the
+  // identical carry-forward this same fix adds to lib/perf-table.js (display) and the
+  // _getMeterSavingsMulti propane branch below.
+  let _lastGalRate = 0;
   postRows.forEach((r) => {
     const calMo = parseInt(r.ym.split('-')[1]) - 1;
     const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
@@ -188,7 +195,12 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       const actGallons = actUsage;
       const actCost = r.cost;
       const _sPropRate = bfr.length ? parseFloat(bfr[0].totalPropaneRate) || 0 : 0;
-      const galRate = _sPropRate || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
+      let galRate = _sPropRate || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
+      if (galRate > 0) {
+        _lastGalRate = galRate;
+      } else if (r.zeroFill && _lastGalRate > 0) {
+        galRate = _lastGalRate;
+      }
       totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
       unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
     } else {
@@ -378,6 +390,10 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
       }
     }
 
+    // 2026-09-11 (FIX 3, propane zeroFill savings booking): same carry-forward as the legacy
+    // path above — see that comment. Reset per baseline (this loop is inside
+    // validBaselines.forEach), since postRows here are scoped to this baseline's own window.
+    let _lastGalRate = 0;
     postRows.forEach((r) => {
       const calMo = parseInt(r.ym.split('-')[1]) - 1;
       const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
@@ -422,7 +438,12 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
         const actGallons = actUsage;
         const actCost = r.cost;
         const _sPropRate = bfr.length ? parseFloat(bfr[0].totalPropaneRate) || 0 : 0;
-        const galRate = _sPropRate || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
+        let galRate = _sPropRate || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
+        if (galRate > 0) {
+          _lastGalRate = galRate;
+        } else if (r.zeroFill && _lastGalRate > 0) {
+          galRate = _lastGalRate;
+        }
         totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
         unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
       } else {
