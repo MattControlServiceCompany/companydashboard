@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.10.818',
+    date: '2026-09-10',
+    title: 'Meter Performance: propane now shows every month',
+    items: [
+      {
+        type: 'fix',
+        text: 'Meter Performance now shows every month for propane, including months with no delivery yet (shown with no usage), without affecting savings or other charts.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.10.817',
     date: '2026-09-10',
     title: 'Quarterly Report: Executive Summary defaults, excluded buildings, and letterhead overlap',
