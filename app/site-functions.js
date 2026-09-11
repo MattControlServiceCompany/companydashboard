@@ -1742,6 +1742,33 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.10.817',
+    date: '2026-09-10',
+    title: 'Quarterly Report: Executive Summary defaults, excluded buildings, and letterhead overlap',
+    items: [
+      {
+        type: 'change',
+        text: 'Quarterly Report: the Executive Summary page is now included by default when generating a report.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: buildings you already excluded (like the Maintenance Building) no longer show up pre-checked in the building picker.',
+      },
+      {
+        type: 'change',
+        text: 'Quarterly Report: BAS Set Points & Schedules now summarizes one row per building instead of listing every individual zone.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: Baseline Data table gridlines are now dark navy instead of white, so they are visible.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: title and summary cards on the Executive Summary and Cover pages no longer overlap the letterhead at the top of the page.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.10.816',
     date: '2026-09-10',
     title: 'Quarterly Report fixes: letterhead, excluded meters, and progress figures',
