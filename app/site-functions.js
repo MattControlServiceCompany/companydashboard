@@ -1742,6 +1742,30 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.11.819',
+    date: '2026-09-11',
+    title:
+      'Quarterly Report: CSC Compensation Annualized, usage summary, propane savings, and Maintenance Building exclusion',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly Report: the CSC Compensation Annualized figure now shows year-to-date actual savings plus projected Q3/Q4, instead of a misleading full-year estimate.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: the Quarterly Usage Summary table now compares the quarter against the correct baseline period.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: propane savings now show up for months with no delivery yet, instead of being left blank.',
+      },
+      {
+        type: 'fix',
+        text: 'Quarterly Report: the Maintenance Building is now fully excluded from the report everywhere, not just in some tables.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.10.818',
     date: '2026-09-10',
     title: 'Meter Performance: propane now shows every month',
