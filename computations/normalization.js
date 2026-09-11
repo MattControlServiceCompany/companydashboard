@@ -371,6 +371,38 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
   // was removed because it fabricated unconfirmed usage that fed directly
   // into client-facing savings dollars (db012044).
 
+  // 2026-09-10: SHOW the months after the last delivery instead of DROPPING
+  // them, so the Performance Verification / Meter Performance table renders
+  // one row per calendar month like electric/gas (mirrors the "zero out,
+  // don't drop, months that haven't happened" pattern used for
+  // electric/gas in app/report-engine.js filterThroughCurrentMonth()).
+  // These are EXPLICIT HARD ZEROS — never a borrowed/estimated gal or rate
+  // figure. That distinction is what makes this safe where the removed
+  // db012044 forward-projection block was not: a hard { gallons: 0, cost: 0 }
+  // row feeds the savings.js `galRate > 0` guard and forces totalCostSav to
+  // 0 for that month, so it cannot fabricate savings dollars.
+  // Window: month AFTER the last confirmed delivery, through the last
+  // COMPLETE calendar month (the current, still-in-progress month is
+  // excluded — no delivery could have happened for it yet, same reason
+  // electric/gas bills for the in-progress month don't exist yet either).
+  {
+    const lastYm = sorted[sorted.length - 1].start.slice(0, 7);
+    const now = new Date();
+    const prevMoDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const windowEndYm = prevMoDate.getFullYear() + '-' + String(prevMoDate.getMonth() + 1).padStart(2, '0');
+    let [zy, zm] = lastYm.split('-').map(Number);
+    while (true) {
+      zm++;
+      if (zm > 12) {
+        zm = 1;
+        zy++;
+      }
+      const ym = zy + '-' + String(zm).padStart(2, '0');
+      if (ym > windowEndYm) break;
+      if (!result[ym]) result[ym] = { gallons: 0, cost: 0 };
+    }
+  }
+
   return Object.entries(result)
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([month, v]) => ({ month, gallons: v.gallons, cost: v.cost }));
