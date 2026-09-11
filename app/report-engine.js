@@ -20,6 +20,24 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
 
   let bldgs = getUDBldgs(projId);
   if (buildingIds && buildingIds.length) bldgs = bldgs.filter((b) => buildingIds.includes(String(b.id)));
+  // Matt's #1 rule (2026-09-11): a building with zero included meters (every meter
+  // baselineInclude:false, e.g. Maintenance Building) must NEVER render anywhere in the
+  // report, regardless of which caller/selection produced `bldgs` — "Select All" in the
+  // report modal, a saved template, or a caller that bypasses the modal entirely (a script/
+  // harness passing every project building id). Mirrors the report picker's own eligibility
+  // test verbatim (openReportModalV2, ~line 10525-10530, bHasIncludedCalcMeter) so a building
+  // the picker would leave unchecked by default is excluded exactly the same way here.
+  // Filtered ONCE, at the source, before any downstream use of `bldgs` in this function
+  // (totalSqft, baselineMoMap, buildingsData/d.buildings, setpoints, the quarterlyActuals
+  // recursion's building-id list) — no per-table patch needed, every consumer inherits it.
+  bldgs = bldgs.filter((b) =>
+    (b.meters || []).some((m) => {
+      if (m.baselineInclude === false) return false;
+      // Same permissive fallback as the picker: if isCalcCommodity isn't loaded in this
+      // context, don't filter on commodity at all rather than throwing.
+      return typeof isCalcCommodity !== 'function' || isCalcCommodity(projId, m.commodity);
+    }),
+  );
   const useNormalized = p.baselineComparison === 'normalized';
   if (!bldgs.length) return null;
 
