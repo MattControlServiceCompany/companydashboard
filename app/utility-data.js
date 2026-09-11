@@ -1830,8 +1830,11 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
 
       // Use getNormRows to get trailing-12-month normalised rows
       const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
-      // trailing 12 months
-      const t12 = allRows.slice(-12);
+      // trailing 12 months — exclude propane's explicit zero-fill rows
+      // (2026-09-10 guard) so they don't displace real months out of the
+      // window (a zero-fill row has no bill behind it; letting it occupy a
+      // trailing-12 slot silently drops a real historical month instead).
+      const t12 = allRows.filter((r) => !r.zeroFill).slice(-12);
       t12.forEach((r) => {
         totalCost += r.cost || 0;
         if (isElec) {
@@ -4759,14 +4762,21 @@ function renderNormPane(pane, m, bills, incl) {
     const hasEUI = isElec && sqft > 0;
 
     // ── Stats ──
+    // 2026-09-10 (zero-fill guard): totalUsage/totalCost sum ALL displayed
+    // rows (summing a propane zero-fill row's {0,0} is a harmless no-op), but
+    // every AVERAGE or trailing-window stat below must use statRows (rows
+    // minus zero-fill) — dividing by rows.length or windowing with slice(-12)
+    // would otherwise dilute the average / displace real months with
+    // no-delivery-yet months that have real weather (hdd) but 0 usage.
+    const statRows = rows.filter((r) => !r.zeroFill);
     const totalUsage = rows.reduce((s, r) => s + r.usage, 0);
     const totalCost = rows.reduce((s, r) => s + r.cost, 0);
-    const avgPerDay = rows.reduce((s, r) => s + r.usagePerDay, 0) / rows.length;
-    const wRows = rows.filter((r) => r.weatherNorm != null);
+    const avgPerDay = statRows.length ? statRows.reduce((s, r) => s + r.usagePerDay, 0) / statRows.length : 0;
+    const wRows = statRows.filter((r) => r.weatherNorm != null);
     const avgWeather = wRows.length ? wRows.reduce((s, r) => s + r.weatherNorm, 0) / wRows.length : null;
-    const avgMonthly = totalUsage / rows.length;
+    const avgMonthly = statRows.length ? statRows.reduce((s, r) => s + r.usage, 0) / statRows.length : 0;
     const avgEuiPerMo = hasEUI ? avgMonthly / sqft : null;
-    const last12 = rows.slice(-12);
+    const last12 = statRows.slice(-12);
     const rolling12kWh = last12.reduce((s, r) => s + r.usage, 0);
     const rolling12EUI = hasEUI && last12.length === 12 ? toKBtu(rolling12kWh, 0, 0) / sqft : null;
     // Avg regression baseline
@@ -6893,7 +6903,14 @@ function renderBuildingStatsPane(pane, b) {
   const eBlRows = elec ? (elec.blRows.length >= 3 ? elec.blRows : elec.allRows.slice(-12)) : [];
   const gBlRows = gas ? (gas.blRows.length >= 3 ? gas.blRows : gas.allRows.slice(-12)) : [];
   const wBlRows = water ? (water.blRows.length >= 3 ? water.blRows : water.allRows.slice(-12)) : [];
-  const pBlRows = propane ? (propane.blRows.length >= 3 ? propane.blRows : propane.allRows.slice(-12)) : [];
+  // 2026-09-10 (zero-fill guard): when this meter has no real baseline yet,
+  // the trailing-12 fallback must skip propane's explicit zero-fill rows —
+  // same fix as the Building Comparison radar's trailing-12 gather.
+  const pBlRows = propane
+    ? propane.blRows.length >= 3
+      ? propane.blRows
+      : propane.allRows.filter((r) => !r.zeroFill).slice(-12)
+    : [];
 
   // Baseline span label
   function blSpan(rows) {
@@ -7523,7 +7540,9 @@ function renderMeterDataPane(pane, m, bills, incl) {
   const bl = m.baseline || null;
   const blMonths = bl && bl.months ? bl.months : [];
   const blRowsFull = allRows.filter((r) => blMonths.includes(r.ym));
-  const blRows = blRowsFull.length >= 3 ? blRowsFull : allRows.slice(-12);
+  // 2026-09-10 (zero-fill guard): trailing-12 fallback must skip propane's
+  // explicit zero-fill rows — same fix as the Building Comparison radar.
+  const blRows = blRowsFull.length >= 3 ? blRowsFull : allRows.filter((r) => !r.zeroFill).slice(-12);
 
   if (!blRows.length) {
     pane.innerHTML =
@@ -9527,18 +9546,27 @@ function renderPerfPane(pane, m, bills, incl) {
     });
   }
 
-  // Stats — use raw bill totals for actual, regression for expected
-  const postRawMos = filteredPostRows.map((r) => (rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage));
+  // Stats — use raw bill totals for actual, regression for expected.
+  // 2026-09-10 (zero-fill guard): stats use statsRows (filteredPostRows minus
+  // propane's explicit zero-fill months) — NOT filteredPostRows itself, which
+  // stays unfiltered because it also feeds filterYMs below (the Meter
+  // Performance table must still display every zero-fill row). Without this,
+  // a zero-fill row's real Baseline vs its 0 Actual would fabricate "Post-BL
+  // Avg" and "Reduction %" pill values for months nothing has been measured
+  // on yet (the dollar Cost Delta pill is unaffected — it already sums the
+  // per-row Savings ($) column, which lib/perf-table.js zeroes for these rows).
+  const statsRows = filteredPostRows.filter((r) => !r.zeroFill);
+  const postRawMos = statsRows.map((r) => (rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage));
   const postAvgMo = postRawMos.length ? postRawMos.reduce((s, v) => s + v, 0) / postRawMos.length : 0;
-  const postAvgDay = filteredPostRows.length
-    ? filteredPostRows.reduce((s, r) => {
+  const postAvgDay = statsRows.length
+    ? statsRows.reduce((s, r) => {
         const raw = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
         return s + (r.normDays > 0 ? raw / r.normDays : r.usagePerDay);
-      }, 0) / filteredPostRows.length
+      }, 0) / statsRows.length
     : 0;
 
   // Expected usage: baseline normalized value for matching calendar month
-  const totalExpected = filteredPostRows.reduce((s, r) => {
+  const totalExpected = statsRows.reduce((s, r) => {
     const calMo = parseInt(r.ym.split('-')[1]) - 1;
     const exp =
       hasBlCalMap && blByCalMo[calMo] != null
@@ -9556,7 +9584,7 @@ function renderPerfPane(pane, m, bills, incl) {
   // pre-computation (see below the column visibility flags) so the Cost Delta
   // pill is guaranteed to equal the sum of the Total Savings column.
 
-  const last12post = truePostRows.slice(-12);
+  const last12post = truePostRows.filter((r) => !r.zeroFill).slice(-12);
   const rolling12kWh = last12post.reduce((s, r) => s + (rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage), 0);
   const rolling12EUI = hasEUI_p && last12post.length === 12 ? toKBtu(rolling12kWh, 0, 0) / sqft5 : null;
   const blEUI = hasEUI_p && blRows.length ? (toKBtu(blAvgMo, 0, 0) * 12) / sqft5 : null;

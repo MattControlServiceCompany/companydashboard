@@ -27,8 +27,12 @@ function computeAnomalyScores(m, allRows, blRows, bills, incl) {
 
   const blEnd = bl.months.slice().sort().pop();
 
-  // Post-baseline rows only — skip partial months
-  const postRows = allRows.filter((r) => r.ym > blEnd && !r.partial);
+  // Post-baseline rows only — skip partial months and propane's explicit
+  // zero-fill rows (2026-09-10 guard). A zero-fill row is a real 0 actual
+  // usage but NOT an observation of anything unusual — scoring it against
+  // the residual population would flag every real post-baseline month as an
+  // anomaly once enough zero-fill months pull the mean/stddev toward zero.
+  const postRows = allRows.filter((r) => r.ym > blEnd && !r.partial && !r.zeroFill);
   if (postRows.length < 2) return {};
 
   // Build residuals: actual - predicted for each post-baseline month
@@ -129,7 +133,10 @@ function getBaseloadTrend(m, allRows, blRows) {
   if (!reg) return null;
 
   const blEnd = bl.months.slice().sort().pop();
-  const postRows = allRows.filter((r) => r.ym > blEnd && !r.partial);
+  // Skip propane's explicit zero-fill rows (2026-09-10 guard) — a month with
+  // no real usage observation should not anchor the weather-independent
+  // baseload trend line.
+  const postRows = allRows.filter((r) => r.ym > blEnd && !r.partial && !r.zeroFill);
   if (postRows.length < 6) return null; // need enough data for trend
 
   // Isolate weather-independent portion: actual_normalized - slope*DD

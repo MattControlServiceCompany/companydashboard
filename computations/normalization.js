@@ -399,13 +399,20 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
       }
       const ym = zy + '-' + String(zm).padStart(2, '0');
       if (ym > windowEndYm) break;
-      if (!result[ym]) result[ym] = { gallons: 0, cost: 0 };
+      // 2026-09-10 (zero-fill guard): mark these rows zeroFill:true so every
+      // downstream statistical/aggregation consumer (regression fitting,
+      // anomaly detection, trailing-N window gathers, calendar-month averages)
+      // can tell a real observation apart from an explicit hard zero and skip
+      // it. The Meter Performance / Performance Verification DISPLAY path
+      // (lib/perf-table.js) still SHOWS these rows — it does not filter on
+      // this flag, only zeroes its own derived per-row savings fields for them.
+      if (!result[ym]) result[ym] = { gallons: 0, cost: 0, zeroFill: true };
     }
   }
 
   return Object.entries(result)
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([month, v]) => ({ month, gallons: v.gallons, cost: v.cost }));
+    .map(([month, v]) => ({ month, gallons: v.gallons, cost: v.cost, zeroFill: !!v.zeroFill }));
 }
 
 function getNormRows(m, bills, incl, weatherByYm) {
@@ -449,6 +456,9 @@ function getNormRows(m, bills, incl, weatherByYm) {
         hasCdd: false,
         hasTmp: false,
         _ids: ['propane_norm'],
+        // 2026-09-10 (zero-fill guard): carries normalizePropaneDeliveries()'s
+        // zeroFill flag through so statistical consumers below can skip it.
+        zeroFill: !!nr.zeroFill,
       };
     });
   } else {
@@ -580,6 +590,13 @@ function getNormRows(m, bills, incl, weatherByYm) {
         days: r.days,
         normDays,
         partial,
+        // 2026-09-10 (zero-fill guard): true only for propane's explicit
+        // hard-zero fill-in rows (normalizePropaneDeliveries). Never true for
+        // Electric/Gas/Water/Sewer rows. Statistical/aggregation consumers
+        // (regression fit, anomaly detection, trailing-N windows, calendar-
+        // month averages) must skip rows where this is true; the Meter
+        // Performance display table does NOT filter on it.
+        zeroFill: !!r.zeroFill,
         usage: r.usage,
         usagePerDay,
         cost: r.cost,

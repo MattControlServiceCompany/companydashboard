@@ -70,7 +70,10 @@ function collectUtilityAuditData(projId, buildingIds) {
       const incl = m.inclusive !== false;
       const allRows = getNormRows(m, bills, incl, null);
       // Trailing 12 months — mirrors the shipped loop at app/utility-data.js:1815-1848.
-      const t12 = allRows.slice(-12);
+      // Exclude propane's explicit zero-fill rows (2026-09-10 guard) so they
+      // don't displace real months out of the window — same fix as the
+      // Building Comparison radar's trailing-12 gather.
+      const t12 = allRows.filter((r) => !r.zeroFill).slice(-12);
       if (!t12.length) return;
       hasMeter = true;
 

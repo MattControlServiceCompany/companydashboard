@@ -101,11 +101,19 @@ function olsRegression(x, y) {
 function computeMeterRegression(rows) {
   // Include ALL months with weather data, including zero-DD months (they anchor the intercept).
   // Exclude partial months (first/last billing period that doesn't cover ≥90% of the calendar month).
+  // Exclude zeroFill rows (2026-09-10 guard): propane's explicit hard-zero
+  // fill-in rows have real weather data (hdd/cdd populated for future/
+  // no-delivery-yet months) but no real usage observation. Fitting on them
+  // would fabricate a "usage=0 at high HDD" data point and drag the slope/
+  // intercept/R² toward zero for any meter whose live (non-frozen) regression
+  // is in use. Baseline-only callers (saveBaseline, saveBaselineToAllMeters,
+  // saveBaselineToAllProjectMeters) are unaffected — zero-fill rows are never
+  // baseline months.
   var hddPts = rows.filter(function (r) {
-    return !r.partial && r.hdd != null && r.normDays > 0;
+    return !r.partial && !r.zeroFill && r.hdd != null && r.normDays > 0;
   });
   var cddPts = rows.filter(function (r) {
-    return !r.partial && r.cdd != null && r.normDays > 0;
+    return !r.partial && !r.zeroFill && r.cdd != null && r.normDays > 0;
   });
 
   function fitWithBias(pts, ddKey) {
@@ -150,7 +158,7 @@ function computeMeterRegression(rows) {
   var cddReg = fitWithBias(cddPts, 'cdd');
 
   var dualPts = rows.filter(function (r) {
-    return !r.partial && r.hdd != null && r.cdd != null && r.normDays > 0;
+    return !r.partial && !r.zeroFill && r.hdd != null && r.cdd != null && r.normDays > 0;
   });
   var dualReg = null;
   if (dualPts.length >= 4) {
