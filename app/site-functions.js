@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.13.821',
+    date: '2026-09-13',
+    title: 'Energy Department: rotated scanned bills now extract correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'Scanned bills whose pages are rotated sideways now extract correctly instead of returning no data.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.13.820',
     date: '2026-09-13',
     title: 'Energy Department: Bills tab scrollbar fix',
