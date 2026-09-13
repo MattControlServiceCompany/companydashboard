@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.13.824',
+    date: '2026-09-13',
+    title: 'Louisburg gas bills: fuel-adjustment charge no longer silently dropped',
+    items: [
+      {
+        type: 'fix',
+        text: "Louisburg gas bill extraction no longer silently records an unreadable fuel-adjustment charge as $0 -- it now works out the correct value when the rest of the bill is clear, or flags the bill for manual review when it can't.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.13.823',
     date: '2026-09-13',
     title: 'Quarterly report: Appendix B now shows only the reporting quarter',
