@@ -11998,6 +11998,33 @@ function rotateCanvas270(srcCanvas) {
   ctx.drawImage(srcCanvas, 0, 0);
   return dst;
 }
+// _cropCanvasTop (item ea3091c3, 2026-09-13): returns a NEW small canvas
+// containing the top `height`px strip of srcCanvas, built via drawImage —
+// the manual-crop replacement for tesseract.js's `recognize(canvas,
+// {rectangle})` option. FIX: `rectangle`-cropped recognize() calls returned
+// near-zero-signal garbage in the REAL browser (tesseract.js@5, live
+// <canvas>) for a genuinely-rotated scan at ALL four orientations (sig
+// 0/0/0/1 — no winner, page OCR'd sideways, 0 fields extracted), even though
+// the identical pixel region scored real signal when cropped manually first.
+// Confirmed by bit-for-bit reproduction of a live failing debug log, and by
+// this exact discrepancy inside the ocr-harness's own Tier B integration
+// test (`_context/reference/ocr-harness/orientation-harness.mjs`,
+// `makeRecognizeFn`'s pre-existing rectangle→manual-crop workaround, added
+// 2026-09-08 for a DIFFERENT reason — a Node/Buffer input quirk — that
+// happened to also paper over this real-browser bug, which is why the
+// harness passed twice while production kept failing). Used by
+// `_pickBestPageOrientation` below to crop every probe candidate itself,
+// BEFORE calling `recognizeFn`, so `recognizeFn` never receives a
+// `rectangle` option at all.
+function _cropCanvasTop(srcCanvas, height) {
+  const h = Math.max(1, Math.min(height, srcCanvas.height));
+  const dst = document.createElement('canvas');
+  dst.width = srcCanvas.width;
+  dst.height = h;
+  const ctx = dst.getContext('2d');
+  ctx.drawImage(srcCanvas, 0, 0, srcCanvas.width, h, 0, 0, srcCanvas.width, h);
+  return dst;
+}
 // binarizeCanvas: Otsu threshold → pure B/W.  Returns a new canvas.
 // Used as a triggered extra pass for low-scoring pages (CHANGE 5).
 function binarizeCanvas(srcCanvas) {
@@ -12093,17 +12120,30 @@ function _countOcrSignals(txt) {
 //       stray OCR-noise digits on a rotated candidate.
 // 1.35 (35%) was derived from real fixture measurements, not guessed — the
 // task's suggested "~15%" was tried first and REJECTED because it falsely
-// rotates a genuine upright Louisburg bill (see below). Measured top-20%-crop
-// signal counts (_countOcrSignals, real Tesseract OCR, real bills):
-//   USD 416 High School   (truly /Rotate 270): sig0=48, sig90=77 → ratio 1.60 (must ACCEPT)
-//   USD 416 Primary       (truly /Rotate 270): sig0=42, sig90=64 → ratio 1.52 (must ACCEPT — this was the bug)
-//   Control (USD 416 MS, genuinely upright):    sig0=46, sig90=57 → ratio 1.24 (must REJECT)
-// A 15% margin (1.15x) would accept all three, including the control —
-// a false rotation of an already-correct page. 1.35x sits strictly between
-// the lowest true-positive ratio (1.52) and the true-negative ratio (1.24),
-// with margin on both sides, so it clears the two rotated bills, holds the
-// control at 0°, and generalizes better than a value tuned to the exact
-// boundary. Returns { winnerLabel, winnerCanvas, sig0, sigs } when a rotated
+// rotates a genuine upright Louisburg bill (see below).
+//
+// RE-ANCHORED 2026-09-13, item ea3091c3: the margin ratio ITSELF was never
+// the bug — the SIGNAL feeding it was. The 2026-09-08 measurements below
+// (sig0=42/sig90=64 for USD 416 Primary, etc.) were captured via the
+// ocr-harness's `makeRecognizeFn`, which — for an unrelated Node/Buffer
+// reason — ALREADY cropped the probe region manually via drawImage and
+// dropped the `rectangle` key before calling Tesseract (see that function's
+// header comment, `_context/reference/ocr-harness/orientation-harness.mjs`).
+// The real production code path never did that: it passed `rectangle`
+// straight through to `w.recognize(canvas, params)` against a real live
+// <canvas>, which is the ONE input shape the harness's workaround never
+// exercised. Node-repro comparison on the real failing PDF's rasterized
+// page (Scan_20260908114831.pdf / USD 416 Primary, same pixels, same
+// Tesseract worker, both paths run back-to-back — verified 2026-09-13):
+//   OLD (production): recognize(canvas, {rectangle}) → sig0=0 sig90=0
+//     sig180=0 sig270=0 — no candidate clears any margin, page OCR'd
+//     sideways, 0 fields extracted. This is the actual bug.
+//   NEW (this fix): _cropCanvasTop then recognize(crop, {rotateAuto:false})
+//     with no `rectangle` key → sig0=42 sig90=64 sig180=0 sig270=0 → 90°
+//     clears BOTH margins (64 >= 42*1.35=56.7, 64-42=22 >= 8) and wins,
+//     exactly the numbers this comment already documented pre-fix — the
+//     1.35x/8 margin was correct the whole time once fed a real signal.
+// Returns { winnerLabel, winnerCanvas, sig0, sigs } when a rotated
 // candidate wins by this margin — caller owns winnerCanvas and must free it
 // after use. Returns null if 0° wins or no candidate clears the margin (the
 // two/three losing rotated canvases are freed internally either way,
@@ -12117,29 +12157,37 @@ function _countOcrSignals(txt) {
 // test and all pre-existing callers do) is a no-op — 100% backward compatible.
 async function _pickBestPageOrientation(canvasO, recognizeFn, onScores) {
   const cropH = Math.max(1, Math.floor(canvasO.height * 0.2));
-  const cropRect = { left: 0, top: 0, width: canvasO.width, height: cropH };
   const canvas90 = rotateCanvas90(canvasO);
   const canvas180 = rotateCanvas180(canvasO);
   const canvas270 = rotateCanvas270(canvasO);
-  const cropRect90 = {
-    left: 0,
-    top: 0,
-    width: canvas90.width,
-    height: Math.max(1, Math.floor(canvas90.height * 0.2)),
-  };
-  const cropRect270 = {
-    left: 0,
-    top: 0,
-    width: canvas270.width,
-    height: Math.max(1, Math.floor(canvas270.height * 0.2)),
-  };
+  // FIX (ea3091c3, 2026-09-13): crop the probe region OURSELVES via
+  // _cropCanvasTop (drawImage-based, new small canvas) instead of asking
+  // recognizeFn/Tesseract to crop it via the `rectangle` option — see
+  // _cropCanvasTop's header comment above for why `rectangle` cannot be
+  // trusted here. `recognizeFn` below is now called with NO `rectangle` key
+  // at all, ever, for any of the four candidates.
+  const crop0 = _cropCanvasTop(canvasO, cropH);
+  const crop90 = _cropCanvasTop(canvas90, Math.max(1, Math.floor(canvas90.height * 0.2)));
+  const crop180 = _cropCanvasTop(canvas180, cropH);
+  const crop270 = _cropCanvasTop(canvas270, Math.max(1, Math.floor(canvas270.height * 0.2)));
   const safe = (p) => p.catch(() => ({ result: { data: { text: '' } } }));
   const [probe0, probe90, probe180, probe270] = await Promise.all([
-    safe(recognizeFn(canvasO, { rotateAuto: false, rectangle: cropRect })),
-    safe(recognizeFn(canvas90, { rotateAuto: false, rectangle: cropRect90 })),
-    safe(recognizeFn(canvas180, { rotateAuto: false, rectangle: cropRect })),
-    safe(recognizeFn(canvas270, { rotateAuto: false, rectangle: cropRect270 })),
+    safe(recognizeFn(crop0, { rotateAuto: false })),
+    safe(recognizeFn(crop90, { rotateAuto: false })),
+    safe(recognizeFn(crop180, { rotateAuto: false })),
+    safe(recognizeFn(crop270, { rotateAuto: false })),
   ]);
+  // Probe crops are throwaway (small, single-use) — free immediately. The
+  // full-size rotated canvases (canvas90/180/270) stay alive: the winner
+  // among them still needs a full-page re-OCR pass by the caller.
+  crop0.width = 0;
+  crop0.height = 0;
+  crop90.width = 0;
+  crop90.height = 0;
+  crop180.width = 0;
+  crop180.height = 0;
+  crop270.width = 0;
+  crop270.height = 0;
   const sig0 = _countOcrSignals(probe0.result.data.text);
   const sigs = {
     90: _countOcrSignals(probe90.result.data.text),
