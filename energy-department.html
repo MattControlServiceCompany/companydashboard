@@ -6261,9 +6261,13 @@
         flex-shrink: 0;
         overflow-x: auto;
         background: var(--s2);
-        position: sticky;
-        top: 36px; /* sits just below .ma-tabs (36px tall) when #maMeterWorkspace scrolls */
-        z-index: 4;
+        /* Fix 2026-09-13 (scrollbar-bounded-flex): position:sticky is no longer
+           needed here. #maPane (this element's flex-column parent) is now the
+           single CSS-bounded scroll region for the bills tab — see #maPane /
+           .bills-scroll-body below — so this header is ALREADY always visible
+           as a plain flex-shrink:0 sibling above .bills-scroll-body. It never
+           scrolls out of view, so it needs no sticky/top/z-index to hold it in
+           place. */
       }
       .bills-thead-wrap .ud-bill-tbl {
         margin: 0;
@@ -6271,7 +6275,18 @@
       .bills-scroll-body {
         overflow-y: auto;
         overflow-x: auto;
-        flex: 0 0 auto; /* content-sized — no void below last row; #maMeterWorkspace handles tall-content scroll */
+        /* Fix 2026-09-13 (scrollbar-bounded-flex, ui-standards.md "Scroll rules —
+           canonical panel pattern"): this is now the ONE CSS-bounded scroll
+           region for the bills tab (flex:1 + min-height:0 — NOT flex:0 0 auto).
+           Previously this was content-sized (flex:0 0 auto) and relied on a
+           fragile one-shot requestAnimationFrame max-height patch in
+           renderMeterWorkspace() that raced against layout and often left the
+           box full table-height, pushing the horizontal scrollbar hundreds of
+           px below the fold until the user scrolled all the way down. That JS
+           patch has been deleted — flex:1 on a min-height:0 flex-column parent
+           (#maPane, below) bounds this box to the available viewport height on
+           every render, no measurement/race possible. */
+        flex: 1;
         min-height: 0;
         min-width: 0;
       }
@@ -6939,7 +6954,12 @@
         flex: 1;
         min-height: 0;
         min-width: 0;
-        overflow-y: auto; /* scroll container — content-sized children scroll here */
+        /* Fix 2026-09-13 (scrollbar-bounded-flex): overflow:hidden, not
+           overflow-y:auto. The single scroll region moved DOWN to #maPane
+           (and, for the bills tab, down again to .bills-scroll-body) so the
+           .ma-tabs bar directly below stays pinned as a plain flex-shrink:0
+           header — per ui-standards.md "one scroll region per panel". */
+        overflow: hidden;
       }
       .ma-tabs {
         display: flex;
@@ -6981,6 +7001,12 @@
         border-bottom-color: var(--em);
       }
       #maPane {
+        /* Fix 2026-09-13 (scrollbar-bounded-flex): this is the single scroll
+           region for #maMeterWorkspace (Normalized/Baseline/Meter Data/Meter
+           Performance/Pipeline tabs scroll here directly). The Bills tab
+           overrides overflow-y to hidden inline (renderMeterWorkspace) because
+           its own scroll region is nested one level deeper at
+           .bills-scroll-body — see that class's comment. */
         overflow-y: auto;
         flex: 1;
         min-height: 0;
