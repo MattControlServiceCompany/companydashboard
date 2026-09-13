@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.13.822',
+    date: '2026-09-13',
+    title: 'Quarterly report now exports to Word',
+    items: [
+      {
+        type: 'feature',
+        text: 'The quarterly report now exports to Microsoft Word -- it opens cleanly with fully editable text and the charts as images.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.13.821',
     date: '2026-09-13',
     title: 'Energy Department: rotated scanned bills now extract correctly',
