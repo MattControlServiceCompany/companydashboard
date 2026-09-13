@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.13.825',
+    date: '2026-09-13',
+    title: "Saved Bills: new \"Resolve Missing Meters from Roster\" tool",
+    items: [
+      {
+        type: 'feature',
+        text: "Saved Bills now has a \"Resolve Missing Meters from Roster\" button -- it creates the missing meters from your roster (with a review step before anything is created) and assigns the matching bills to them. New meters start excluded from baselines.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.13.824',
     date: '2026-09-13',
     title: 'Louisburg gas bills: fuel-adjustment charge no longer silently dropped',
