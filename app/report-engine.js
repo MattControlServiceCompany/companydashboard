@@ -9939,6 +9939,143 @@ function _rptSwapScoreBarsForPng(pageEls, scale) {
 }
 
 /**
+ * _rptSwapChartSvgForPng — Quarterly/Annual Board report chart-SVG counterpart to
+ * _rptSwapGaugeRingForPng (2026-09-13, item "Word quarterly charts"). Same data-URL Image ->
+ * canvas -> toDataURL technique, --rpt-* resolved against the live root before serializing,
+ * generalized for a bar/line chart <svg> (boardSummaryBarChartSVG on the Board Executive
+ * Summary page; rptPageContractProjection's projected-bars-vs-actual-line chart) instead of a
+ * single ring/dial. Kept as a SEPARATE function rather than merged into
+ * _rptSwapGaugeRingForPng so the gauge path -- shared with the ASHRAE Audit/Proposal cover,
+ * explicitly out of scope for this fix -- is never touched.
+ *
+ * Height fallback: some chart svg markup here only sets the `width` attribute and relies on
+ * the `viewBox` for intrinsic height (ordinary browser sizing rule) --
+ * rptPageContractProjection's chart is exactly this shape (`width="720"`, no `height`
+ * attribute, `viewBox="0 0 720 120"`). _rptSwapGaugeRingForPng requires both attributes
+ * explicitly present and silently no-ops on an svg missing one (by design, for gauge rings);
+ * this derives the missing dimension from the viewBox aspect ratio instead of skipping, so
+ * this chart is not left unrasterized.
+ */
+function _rptSwapChartSvgForPng(svgEl, scale) {
+  var vb = (svgEl.getAttribute('viewBox') || '').trim().split(/\s+/).map(parseFloat);
+  var vbW = vb.length === 4 ? vb[2] : 0;
+  var vbH = vb.length === 4 ? vb[3] : 0;
+  var wCss = parseFloat(svgEl.getAttribute('width'));
+  var hCss = parseFloat(svgEl.getAttribute('height'));
+  if (!hCss && wCss && vbW > 0) hCss = wCss * (vbH / vbW);
+  if (!wCss && hCss && vbH > 0) wCss = hCss * (vbW / vbH);
+  if (!wCss || !hCss || !svgEl.parentNode) return Promise.resolve(false);
+
+  var chart = svgEl.cloneNode(true);
+  chart.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  if (!chart.getAttribute('viewBox') && vbW > 0 && vbH > 0) chart.setAttribute('viewBox', '0 0 ' + vbW + ' ' + vbH);
+  var pxW = Math.round(wCss * scale);
+  var pxH = Math.round(hCss * scale);
+  chart.setAttribute('width', String(pxW));
+  chart.setAttribute('height', String(pxH));
+  // Resolve --rpt-* AFTER serializing, against the live root -- same reason as the gauge pass.
+  var markup = _rptResolveCssVarsAgainstRoot(new XMLSerializer().serializeToString(chart));
+
+  return new Promise(function (resolve) {
+    var settled = false;
+    var finish = function (ok) {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    // A data-URL SVG cannot hit the network, but never let a stuck decode block the export.
+    var timer = setTimeout(function () {
+      finish(false);
+    }, 5000);
+    var img = new Image();
+    img.onload = function () {
+      clearTimeout(timer);
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = pxW;
+        canvas.height = pxH;
+        var c2d = canvas.getContext('2d');
+        c2d.drawImage(img, 0, 0, pxW, pxH);
+        var out = document.createElement('img');
+        out.setAttribute('src', canvas.toDataURL('image/png'));
+        out.setAttribute('alt', 'Chart');
+        // Placed at the SVG's own CSS size, so 3x raster data lands in a 1x box and prints sharp.
+        out.setAttribute('style', 'display:block;width:' + wCss + 'px;height:' + hCss + 'px');
+        svgEl.parentNode.insertBefore(out, svgEl);
+        // Detached page CLONE only -- the live preview is never touched. Removing the source
+        // <svg> means docx-writer.js's existing 'svg' tag handler (block-position path, keeps
+        // only the first <text>) and the plain inline-walk path (which, for a multi-<text>
+        // chart svg with no OOXML equivalent for <rect>/<line>, was leaking every axis/month
+        // label through as a separate fragmented paragraph -- confirmed 2026-09-13 against a
+        // real Q2 2026 Louisburg .docx baseline) never sees this element at all.
+        svgEl.parentNode.removeChild(svgEl);
+        finish(true);
+      } catch (e) {
+        finish(false);
+      }
+    };
+    img.onerror = function () {
+      clearTimeout(timer);
+      finish(false);
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  });
+}
+
+/**
+ * _rptSwapBoardChartsForPng — DEFECTS 2026-09-13 ("Word quarterly charts"): the plain
+ * Quarterly/Annual Board report's own bar/line chart <svg> elements were never given the
+ * same rasterize-and-swap treatment the gauge rings/score bars got (D-25 / true-Word review
+ * 2026-08-03) -- the Word Export Rebuild plan scoped only the ASHRAE 36 Audit Report, Service
+ * Proposal, and EMS Agreement (see the companyhub-word-export-flex-svg-construct-inventory
+ * wiki article), leaving this report family's own charts untouched.
+ *
+ * Targets every <svg> that has at least one <rect> child -- the bar/line chart signature in
+ * this file (gauge/dial rings never draw a <rect>, only <circle>, so this set is disjoint
+ * from what _rptRasterizeGaugeRingsForDocx already handles). rptPageContractProjection's
+ * chart also contains one small <circle> marker dot; it is rasterized here as part of the
+ * SAME image rather than double-processed, because _rptSwapGaugeRingForPng already no-ops on
+ * it earlier in the pipeline (it lacks an explicit `height` attribute, see
+ * _rptSwapChartSvgForPng's header comment) and never removes it.
+ *
+ * Only called for the plain Quarterly/Annual report -- see the `!data._agreement &&
+ * !data._ashrae` guard at the call site in exportReportToDocx() -- so the ASHRAE Audit/
+ * Proposal/EMS Agreement export paths never reach this pass.
+ *
+ * @returns {Promise<{found:number, rasterized:number}>}
+ */
+async function _rptSwapBoardChartsForPng(pageEls, scale) {
+  scale = scale || RPT_DOCX_GAUGE_RASTER_SCALE;
+  var charts = [];
+  pageEls.forEach(function (pageEl) {
+    if (!pageEl.querySelectorAll) return;
+    Array.prototype.forEach.call(pageEl.querySelectorAll('svg'), function (svg) {
+      if (svg.querySelector('rect')) charts.push(svg);
+    });
+  });
+  var rasterized = 0;
+  for (var i = 0; i < charts.length; i++) {
+    var ok = false;
+    try {
+      ok = await _rptSwapChartSvgForPng(charts[i], scale);
+    } catch (e) {
+      ok = false;
+    }
+    if (ok) rasterized++;
+  }
+  if (charts.length && rasterized < charts.length && typeof console !== 'undefined' && console.warn) {
+    console.warn(
+      'Word export: ' +
+        (charts.length - rasterized) +
+        ' of ' +
+        charts.length +
+        ' board charts could not be rasterized; their labels still export as fragmented text.',
+    );
+  }
+  return { found: charts.length, rasterized: rasterized };
+}
+
+/**
  * exportReportToDocx — Word Export Rebuild plan Step 6 (first shipped document), wired for the
  * EMS Agreement (data._agreement). AI/_context/plans/word-export-rebuild-2026-07-30.md Part D
  * lines 306-311. Style authority: AI/_context/specs/csc-document-style-spec-2026-07-29.md.
@@ -10028,6 +10165,15 @@ async function exportReportToDocx() {
     // Score bars (background-only divs flatten to nothing in table cells) — bake each bar as a
     // PNG on the clones before translation. See _rptSwapScoreBarsForPng.
     _rptSwapScoreBarsForPng(pageEls);
+
+    // 2026-09-13 ("Word quarterly charts"): the plain Quarterly/Annual Board report's own
+    // bar/line chart <svg>s (Board Executive Summary, Contract Projection) never got this
+    // treatment — the Word Export Rebuild plan scoped only Audit/Proposal/Agreement. Scoped
+    // here to the plain report (neither ._agreement nor ._ashrae) so those three paths are
+    // never touched. See _rptSwapBoardChartsForPng.
+    if (!data._agreement && !data._ashrae) {
+      await _rptSwapBoardChartsForPng(pageEls);
+    }
 
     const translated = _docxTranslatePages(pageEls);
 
