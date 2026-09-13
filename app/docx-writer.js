@@ -252,12 +252,17 @@ function _docxListItem(text, numId, opts) {
  *   text/bold/align/sizeHalfPt  -- shorthand for a single paragraph
  *   vAlign      'top'|'center'|'bottom' -- default 'center' (spec §5c)
  *   gridSpan    number -- merge N grid columns
+ *   vMerge      'restart'|'continue' -- vertical cell merge (HTML rowspan equivalent,
+ *               added 2026-09-13). 'restart' on the spanning cell, 'continue' on each
+ *               covered row's placeholder cell at the same grid column -- see
+ *               _docxTranslateTable's vMergeState tracking, the only caller that sets this.
  */
 function _docxTableCell(opts) {
   opts = opts || {};
   var tcPr = '<w:tcPr>';
   tcPr += '<w:tcW w:w="' + opts.widthTwips + '" w:type="dxa"/>';
   if (opts.gridSpan) tcPr += '<w:gridSpan w:val="' + opts.gridSpan + '"/>';
+  if (opts.vMerge) tcPr += '<w:vMerge w:val="' + opts.vMerge + '"/>';
   tcPr += '<w:vAlign w:val="' + (opts.vAlign || 'center') + '"/>';
   tcPr += '</w:tcPr>';
 
@@ -272,6 +277,19 @@ function _docxTableCell(opts) {
       sizeHalfPt: opts.sizeHalfPt,
       spacingAfter: 0,
     });
+  }
+  // OOXML's CT_Tc content model is (w:tbl | w:p)+ but MUST end in a w:p -- a <w:tc> whose
+  // last child is a <w:tbl> (no trailing paragraph) is schema-invalid and strict Word refuses
+  // to open the WHOLE document ("file appears to be corrupted"), not just repair this one cell
+  // (ECMA-376 SS17.4.66). Guarded HERE at the primitive level (moved 2026-09-13 from the single
+  // call site in _docxTranslateTable's cell-delegation branch, which had this exact comment) so
+  // every current and future caller into _docxTableCell inherits the fix for free --
+  // _docxTranslateFlexRowTable's cell loop fed a nested <w:tbl> straight through unguarded and
+  // was the confirmed root cause of "corrupted" prompts on the Quarterly report's nested
+  // flex-row tables (339 occurrences of </w:tbl></w:tc> with no trailing <w:p>, wiki
+  // companyhub-docx-writer-translator-gotchas.md #10).
+  if (/<\/w:tbl>\s*$/.test(content)) {
+    content += _docxParagraph({ runs: [], spacingAfter: 0 });
   }
   return '<w:tc>' + tcPr + content + '</w:tc>';
 }
@@ -1748,6 +1766,20 @@ function _docxTranslateTable(tableEl, ctx) {
 
   var colWidths = _docxDeriveColWidths(tableEl, colCount);
 
+  // vMergeState[col] = number of REMAINING rows (after this one) a prior row's
+  // rowspan="N" cell still covers at that grid column. Populated only when an
+  // actual HTML rowspan attribute is seen below -- for every table with no
+  // rowspan anywhere (the vast majority) this stays all-zero and the covered-
+  // column insertion loops below never fire, so behavior is byte-identical to
+  // before this change. Added 2026-09-13: docx-writer.js previously had ZERO
+  // rowspan handling -- a rowspan="2" row's continuation row supplied one
+  // fewer <w:tc> than colCount with nothing (gridSpan/vMerge) to reconcile the
+  // shortfall (Quarterly report's "Annual Summary by Building" table and the
+  // Building Baseline Data 2-row header, report-engine.js). Fixed at the
+  // translator level (not by changing the report's HTML) so the on-screen/PDF
+  // rendering, which still relies on real HTML rowspan/CSS, is untouched.
+  var vMergeState = new Array(colCount).fill(0);
+
   var rowsXml = trEls
     .map(function (tr, rIdx) {
       var cells = Array.prototype.slice.call(tr.children).filter(function (c) {
@@ -1794,11 +1826,27 @@ function _docxTranslateTable(tableEl, ctx) {
       }
 
       var colIdx = 0;
-      var cellsXml = cells.map(function (cell, cIdx) {
+      var cellsXml = [];
+      cells.forEach(function (cell, cIdx) {
+        // A prior row's rowspan="N" cell covers this grid column -- emit the
+        // required <w:vMerge/> continuation placeholder(s) before this row's
+        // own next real cell, so the row's total <w:tc> count still matches
+        // colCount (see vMergeState comment above).
+        while (colIdx < colCount && vMergeState[colIdx] > 0) {
+          cellsXml.push(
+            _docxTableCell({
+              widthTwips: colWidths[colIdx] || 0,
+              vMerge: 'continue',
+              paragraphs: [_docxParagraph({ runs: [], spacingAfter: 0 })],
+            }),
+          );
+          vMergeState[colIdx]--;
+          colIdx++;
+        }
+
         var span = spans[cIdx];
         var widthTwips = 0;
         for (var k = 0; k < span; k++) widthTwips += colWidths[colIdx + k] || 0;
-        colIdx += span;
 
         var isHeaderCell = cell.tagName === 'TH';
         // Seed with the <td>/<th>'s OWN inline style (font-size is common on report tables, e.g.
@@ -1872,21 +1920,13 @@ function _docxTranslateTable(tableEl, ctx) {
               _docxParagraph({ runs: [_docxRun({ text: '', bold: isHeaderCell })], align: align, spacingAfter: 0 }),
             ];
           }
-          // OOXML's CT_Tc content model is (w:tbl | w:p)+ but MUST end in a w:p -- a <w:tc> whose
-          // last child is a <w:tbl> (no trailing paragraph) is schema-invalid and Word refuses to
-          // open the whole document ("file appears to be corrupted"), not just repair this one
-          // cell. A block child can legitimately BE a table here -- found 2026-07-31 merge-
+          // Trailing-<w:tbl>-with-no-w:p guard (2026-07-31) MOVED into _docxTableCell() itself
+          // (2026-09-13) so every call site inherits it, not just this one -- see the comment
+          // there. A block child can legitimately BE a table here -- found 2026-07-31 merge-
           // verifying the Audit Report: the 27-building compliance table's Status column nests a
           // small per-building gap-detail <table> directly inside the <td> (report-engine.js
           // _buildRowHTML), which _docxTranslateBlock's TABLE branch correctly returns as raw
-          // '<w:tbl>...</w:tbl>' XML with no paragraph of its own (a page-level table never needs
-          // one; only this nested-in-a-cell position does). This nesting was previously invisible
-          // because _docxCollectRuns' inline-only walk silently DROPPED any nested <table> before
-          // Step 8's block-child delegation existed to translate it at all -- content that used to
-          // vanish now renders, but needs this trailing paragraph to stay valid OOXML.
-          if (/<\/w:tbl>\s*$/.test(cellParagraphs[cellParagraphs.length - 1])) {
-            cellParagraphs.push(_docxParagraph({ runs: [], align: align, spacingAfter: 0 }));
-          }
+          // '<w:tbl>...</w:tbl>' XML with no paragraph of its own.
         } else {
           var runs = _docxCollectRuns(cell, cellBaseFmt, ctx);
           cellParagraphs = [
@@ -1897,13 +1937,35 @@ function _docxTranslateTable(tableEl, ctx) {
             }),
           ];
         }
-        return _docxTableCell({
-          widthTwips: widthTwips,
-          paragraphs: cellParagraphs,
-          gridSpan: span > 1 ? span : undefined,
-          vAlign: 'center',
-        });
+        var rowSpanAttr = parseInt(cell.getAttribute('rowspan'), 10) || 1;
+        cellsXml.push(
+          _docxTableCell({
+            widthTwips: widthTwips,
+            paragraphs: cellParagraphs,
+            gridSpan: span > 1 ? span : undefined,
+            vAlign: 'center',
+            vMerge: rowSpanAttr > 1 ? 'restart' : undefined,
+          }),
+        );
+        if (rowSpanAttr > 1) {
+          for (var k2 = 0; k2 < span; k2++) vMergeState[colIdx + k2] = rowSpanAttr - 1;
+        }
+        colIdx += span;
       });
+      // A rowspan cell at the END of a row (no trailing real cells after it)
+      // still owes the grid its covered-column placeholder(s) on THIS row if
+      // an earlier row's span reaches this far; flush any that remain.
+      while (colIdx < colCount && vMergeState[colIdx] > 0) {
+        cellsXml.push(
+          _docxTableCell({
+            widthTwips: colWidths[colIdx] || 0,
+            vMerge: 'continue',
+            paragraphs: [_docxParagraph({ runs: [], spacingAfter: 0 })],
+          }),
+        );
+        vMergeState[colIdx]--;
+        colIdx++;
+      }
       return _docxTableRow(cellsXml, { header: rIdx === 0 });
     })
     .join('');
