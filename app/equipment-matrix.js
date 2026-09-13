@@ -11775,9 +11775,42 @@ var EM_EQUIP_CONFIG_FLAGS = {
   ],
   vav: [
     { key: 'hasReheat', label: 'Has Reheat Coil', default: true },
+    // SOO Generator Phase 2 (item 3f1415af): reheat actuator MECHANISM is not
+    // safely inferable from point presence (blueprint "HARD LESSON" — a
+    // reheatValve point proves a wire exists, not what the program does with
+    // it). Manual flag, defaulted to the most common JOCO type (pid-valve),
+    // never auto-detected from point names. Consumed by
+    // soo-generator.js SOO_TEMPLATES.vav reheat-modulating/reheat-staged/
+    // reheat-floating-motor appliesWhen.
+    {
+      key: 'reheatActuator',
+      label: 'Reheat Actuator',
+      type: 'select',
+      options: ['pid-valve', 'linear-valve', 'floating-motor', 'electric-binary'],
+      default: 'pid-valve',
+    },
     // M4 Part C: default true so missing CO2 lowers audit coverage for VAV zones
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
+    // SOO Generator Phase 2: CO2 FUNCTION (full demand-control-ventilation
+    // reset vs a plain high-CO2 alarm) is a program-structure decision, not
+    // derivable from the co2 point being mapped (same hard-lesson class as
+    // reheatActuator — JOCO NE Offices VAV-10b was upgraded alarm-only ->
+    // full DCV reset with no point-side change). Manual flag, defaulted to
+    // the more complete behavior (dcv-reset).
+    {
+      key: 'co2Function',
+      label: 'CO2 Function',
+      type: 'select',
+      options: ['dcv-reset', 'alarm-only'],
+      default: 'dcv-reset',
+    },
     { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
+    // SOO Generator Phase 2: series fan-powered VAV boxes are field-tagged as
+    // plain VAV (JOCO rev19 gap A, findings.md §2/§4 item A — ~63 boxes still
+    // unconfirmed) so this must be a manual override, not inferred from
+    // category. Mirrors the existing fpb.isSeries flag; adding it here does
+    // NOT force recategorization of the row (blueprint explicit constraint).
+    { key: 'isSeries', label: 'Series Fan-Powered (vs Parallel/None)', default: false },
     // Phase 2 (setpoint-value-compliance): zone classification for GL36 §3.1.1.1 + §3.1.1.3.
     // type:'select' — renderer not yet built (Phase 2.3). options/default stored here for later.
     {

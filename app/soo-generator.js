@@ -1,10 +1,21 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   app/soo-generator.js — Sequence of Operations (SOO) Generator, Phase 1
+   app/soo-generator.js — Sequence of Operations (SOO) Generator
    Item 3f1415af. Design: AI/_context/research/2026-09-13-soo-in-site-design/
    blueprint.md. Clause source: AI/_context/research/
    2026-09-13-master-soo-template-inventory.md, cross-checked directly
    against "Master Sequences of Operation 2023.docx" paragraph-by-paragraph
    (python-docx + raw OOXML inspection) during implementation.
+
+   PHASE 2 (2026-09-13, this pass) added, on top of Phase 1's unchanged
+   render/selection machinery: reheatActuator (4-way, wired into
+   EM_EQUIP_CONFIG_FLAGS.vav) selecting reheat-modulating vs reheat-staged;
+   co2Function (2-way) gating min-vent-co2 on 'dcv-reset' only; a new
+   occ-standby clause (JOCO-authored, no master text) gated on hasOccSensor;
+   isSeries added to EM_EQUIP_CONFIG_FLAGS.vav (previously fpb-only) wiring
+   the already-built fan-series clause for real VAV rows. All 3
+   SOO_BEHAVIOR_DEFAULTS settings (standbyAirflowMode, datFloorFailureMode,
+   seriesFanRunMode) were already wired end-to-end in Phase 1 — unchanged
+   here, only exercised against the new flag combinations in verification.
 
    SCOPE (Phase 1 — smallest end-to-end slice, per blueprint's build
    sequence): one equipment type (vav), the hot-water reheat VAV path,
@@ -249,11 +260,57 @@ var SOO_TEMPLATES = {
       },
     },
     {
+      id: 'occ-standby',
+      order: 75,
+      title: 'Zone Occupancy Standby',
+      // Phase 2, JOCO-only — NO master-doc equivalent (inventory §2 row
+      // "occ-sensor-standby": "(no equivalent text exists)"; findings.md §3
+      // item 8 lists "occupancy-standby software preference" as an
+      // unresolved minor open item — there is no JOCO-decided wording to
+      // lift either). Authored fresh, gated strictly on the manual
+      // hasOccSensor flag (default:false) AND the occSensor point actually
+      // being mapped — same two-part gate as every other flag-driven clause
+      // in this file. No numeric default is invented; the standby delay
+      // stays a plain "(adj.)" phrase with no bold styling, matching the
+      // plain (non-bolded) style of the master's own Zone Unoccupied
+      // Override clause it sits next to, since neither has a stated
+      // master-doc default to bold.
+      appliesWhen: function (ctx) {
+        return !!ctx.flags.hasOccSensor && !!ctx.points.occSensor;
+      },
+      paragraphs: function () {
+        return [
+          _sooPara([
+            _sooRun('Zone Occupancy Standby:', true),
+            _sooRun(
+              ' When the zone is scheduled occupied and the zone occupancy sensor indicates the ' +
+                'space has been vacant for an adjustable period of time (adj.), the zone will enter ' +
+                'a standby mode and control to the unoccupied setpoints. When the occupancy sensor ' +
+                'again indicates the space is occupied, the zone will immediately return to the ' +
+                'occupied setpoints.',
+              false,
+            ),
+          ]),
+        ];
+      },
+    },
+    {
       id: 'min-vent-co2',
       order: 80,
       title: 'Minimum Ventilation on Carbon Dioxide (CO2) Concentration',
+      // Phase 2: co2Function is a manual flag (EM_EQUIP_CONFIG_FLAGS.vav,
+      // default 'dcv-reset') — NOT inferable from the co2 point being mapped
+      // (blueprint hard lesson; JOCO rev19 gap G: NE Offices VAV-10b was
+      // upgraded alarm-only -> full DCV reset with zero point-side change).
+      // 'alarm-only' selects THIS clause OUT — the master doc's own Alarms
+      // block "High Zone Carbon Dioxide Concentration" row (below, gated
+      // solely on hasCO2+co2 point) already IS the alarm-only behavior, so
+      // no separate "alarm-only clause" body is fabricated; alarm-only rows
+      // stay present either way since a DCV-reset zone still alarms on
+      // failure.
       appliesWhen: function (ctx) {
-        return ctx.flags.hasCO2 !== false && !!ctx.points.co2;
+        var co2Fn = (ctx.flags && ctx.flags.co2Function) || 'dcv-reset';
+        return ctx.flags.hasCO2 !== false && !!ctx.points.co2 && co2Fn === 'dcv-reset';
       },
       // Master doc, "Minimum Ventilation on Carbon Dioxide (CO2)
       // Concentration:" paragraph — bold label, normal continuation, bold
@@ -372,10 +429,14 @@ var SOO_TEMPLATES = {
       title: 'Reheating Coil Valve',
       // hasReheat + reheatValve point present -> reheat clause family
       // (blueprint §"Point signal -> clause mapping"). reheatActuator is a
-      // manual flag (NOT point-derived); the 3 modulating mechanisms
-      // (pid-valve/linear-valve/floating-motor) read as IDENTICAL master-doc
-      // prose — only electric-binary gets distinct staged text (reheat-
-      // staged, below). UNCHANGED selection logic from Phase 1a.
+      // manual flag (Phase 2: now a real EM_EQUIP_CONFIG_FLAGS.vav select,
+      // default 'pid-valve' — NOT point-derived); the 3 modulating
+      // mechanisms (pid-valve/linear-valve/floating-motor, incl. the JOCO
+      // "Three-Point Floating-Motor Reheat" type, findings.md coverage
+      // table, 35 boxes) read as IDENTICAL master-doc prose — inventory §6:
+      // "don't build three near-duplicate clause bodies for the three
+      // modulating variants." Only electric-binary gets distinct staged
+      // text (reheat-staged, below). Selection logic unchanged from Phase 1.
       appliesWhen: function (ctx) {
         if (ctx.flags.hasReheat === false || !ctx.points.reheatValve) return false;
         var actuator = ctx.flags.reheatActuator || 'pid-valve';
@@ -500,11 +561,12 @@ var SOO_TEMPLATES = {
       id: 'fan-series',
       order: 140,
       title: 'Fan Control – Series',
-      // isSeries is not yet an EM_EQUIP_CONFIG_FLAGS.vav entry (Phase 2 per
-      // blueprint) — reads ctx.flags.isSeries if a caller has set it;
-      // defaults false (Phase 1 target variant has no fan), so this clause
-      // normally does not render. Kept so seriesFanRunMode has a clause to
-      // resolve into (all 3 SOO_BEHAVIOR settings must be wired).
+      // Phase 2: isSeries is now a real EM_EQUIP_CONFIG_FLAGS.vav entry
+      // (default false — JOCO rev19 gap A: series fan-powered boxes are
+      // field-tagged plain VAV, so this must be a manual override, never
+      // inferred; setting it does NOT force EM to recategorize the row as
+      // fpb, per blueprint's explicit constraint). Defaults false, so this
+      // clause normally does not render for a plain VAV box.
       appliesWhen: function (ctx) {
         return ctx.flags.isSeries === true;
       },
