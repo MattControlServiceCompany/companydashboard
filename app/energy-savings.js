@@ -5216,13 +5216,79 @@ function _lbg_reconcileGasFromCurrentBill(currentBillTotal, otherCommoditySum, g
   };
 }
 
+// Resolves a null FuelAdjustment when its own printed label OCR'd to noise
+// (e.g. real bill text "kus apustvnt...") that _faRe's regex tolerance can
+// never safely match without risking a false hit on unrelated text (backlog
+// 37d5fb0e-fueladj, 2026-09-13). Derives the value as the reconciling
+// residual ONLY when every other commodity charge on the page independently
+// extracted with confidence AND the printed Current Bill total is known —
+// otherwise refuses, so the caller holds the bill for manual review instead
+// of guessing. Mirrors _lbg_reconcileGasFromCurrentBill's "never guess"
+// contract; the two differ only in which single field is being solved for.
+function _lbg_resolveFuelAdj(preAdjustmentGasTotal, otherCommoditySum, currentBillTotal, otherCommoditiesConfident) {
+  if (!otherCommoditiesConfident) {
+    return {
+      resolved: false,
+      reason:
+        'One or more other commodity charges on this page could not be read, so the residual would not isolate Fuel Adjustment alone.',
+    };
+  }
+  if (currentBillTotal == null) {
+    return { resolved: false, reason: 'No Current Bill total was printed/legible on this page to reconcile against.' };
+  }
+  const derived = Math.round((currentBillTotal - otherCommoditySum - preAdjustmentGasTotal) * 100) / 100;
+  // Plausibility ceiling: a fuel adjustment should never exceed the Gas
+  // charge it's adjusting. Guards against a subtly-wrong "confident" charge
+  // elsewhere on the page still producing an in-range-looking but bogus
+  // residual (the reconciliation math alone can't tell the difference).
+  if (Math.abs(derived) > Math.abs(preAdjustmentGasTotal)) {
+    return {
+      resolved: false,
+      reason:
+        'Derived Fuel Adjustment ($' +
+        derived.toFixed(2) +
+        ') exceeds the Gas charge itself ($' +
+        preAdjustmentGasTotal.toFixed(2) +
+        ') — not plausible, not applied.',
+    };
+  }
+  return {
+    resolved: true,
+    value: derived,
+    reason:
+      'Derived from Current Bill ($' +
+      currentBillTotal.toFixed(2) +
+      ') − other commodities ($' +
+      otherCommoditySum.toFixed(2) +
+      ') − Gas charge ($' +
+      preAdjustmentGasTotal.toFixed(2) +
+      ') = $' +
+      derived.toFixed(2) +
+      '.',
+  };
+}
+
 // Builds the split "Gas" bill for a Louisburg new-format page, or null when
 // there's genuinely no Gas commodity on the page. Centralizes the garbled-
 // charge (rate exceeds $2.00/therm ceiling) and missing-charge (label
 // matched, no charge token parsed) recovery paths so both go through the
 // same reconcile-or-hold logic (backlog 5884be3d, 37f76621) — never a
 // silent guess, never a silent drop.
-function _lbg_buildGasBill(shared, gas, gasLineSeen, otherCommoditySum, currentBillTotal, signedFuelAdj, billDate) {
+// `fuelAdjMeta` ({ lineSeen, otherCommoditiesConfident, unresolvedCommodities })
+// drives the FuelAdjustment derive-or-hold guard (backlog 37d5fb0e-fueladj) —
+// see _lbg_resolveFuelAdj above. Optional; a bill built without it behaves
+// exactly as before (null FuelAdjustment still contributes 0, unchanged).
+function _lbg_buildGasBill(
+  shared,
+  gas,
+  gasLineSeen,
+  otherCommoditySum,
+  currentBillTotal,
+  signedFuelAdj,
+  billDate,
+  fuelAdjMeta,
+) {
+  fuelAdjMeta = fuelAdjMeta || { lineSeen: false, otherCommoditiesConfident: true, unresolvedCommodities: [] };
   const r = _lbg_gasRate(billDate);
   const base = {
     ...shared,
@@ -5244,6 +5310,51 @@ function _lbg_buildGasBill(shared, gas, gasLineSeen, otherCommoditySum, currentB
     _manualReviewLabel: 'Gas charge could not be verified — held for manual confirmation',
     _correction_pending_GasCharge: { original: originalCharge, reason },
   });
+  // FIX (2026-09-13, backlog 37d5fb0e-fueladj): a held bill built when
+  // FuelAdjustment (not GasCharge) is the unresolved field — preserves the
+  // already-confident GasCharge instead of nulling it out, and labels the
+  // actual unreadable field(s) by name.
+  const heldBillFuelAdj = (reason, unresolvedNames, gasChargeValue) => ({
+    ...base,
+    GasCharge: gasChargeValue,
+    TotalCurrentCharges: null,
+    TotalAmountDue: null,
+    _gateTripped: true,
+    _gateReasons: [reason],
+    _manualReview: true,
+    _manualReviewLabel: unresolvedNames.join(' and ') + ' unreadable — verify',
+    _correction_pending_FuelAdjustment: { original: null, reason },
+  });
+  // A null FuelAdjustment that reached this function is NEVER treated as $0
+  // once its printed line is known to exist (fuelAdjMeta.lineSeen) — that
+  // silently shipped the pre-adjustment total as final on a real bill (HS,
+  // acct 09-009001-00, 7/15/2026: shipped $540.33 instead of the true
+  // $507.96, printed Fuel Adjustment -$32.37). Resolve once, up front, using
+  // the pre-adjustment Gas total each branch below already computes for
+  // itself as `preAdjGasTotal`.
+  const resolveFuelAdjOrHold = (preAdjGasTotal, gasChargeValue) => {
+    if (signedFuelAdj != null || !fuelAdjMeta.lineSeen) {
+      return { value: signedFuelAdj, held: null };
+    }
+    const faResolve = _lbg_resolveFuelAdj(
+      preAdjGasTotal,
+      otherCommoditySum,
+      currentBillTotal,
+      fuelAdjMeta.otherCommoditiesConfident,
+    );
+    if (faResolve.resolved) {
+      return { value: faResolve.value, held: null, derivedReason: faResolve.reason };
+    }
+    const unresolvedNames = ['Fuel Adjustment'].concat(fuelAdjMeta.unresolvedCommodities || []);
+    return {
+      value: null,
+      held: heldBillFuelAdj(
+        unresolvedNames.join(' and ') + ' unreadable — verify. ' + faResolve.reason,
+        unresolvedNames,
+        gasChargeValue,
+      ),
+    };
+  };
 
   if (gas.charge == null) {
     if (!gasLineSeen) return null; // no Gas section on this page — nothing to report
@@ -5259,14 +5370,26 @@ function _lbg_buildGasBill(shared, gas, gasLineSeen, otherCommoditySum, currentB
     if (!recon.corrected) {
       return heldBill('Gas charge could not be parsed. ' + recon.reason, null);
     }
-    const gasTotal = recon.total + (signedFuelAdj || 0);
-    return {
+    const _fa1 = resolveFuelAdjOrHold(recon.total, recon.variable);
+    if (_fa1.held) return _fa1.held;
+    const resolvedFuelAdj1 = _fa1.value;
+    const gasTotal = recon.total + (resolvedFuelAdj1 || 0);
+    const result1 = {
       ...base,
+      FuelAdjustment: resolvedFuelAdj1,
       GasCharge: recon.variable,
       TotalCurrentCharges: gasTotal.toFixed(2),
       TotalAmountDue: gasTotal.toFixed(2),
       _auto_corrected_GasCharge: { original: null, corrected: recon.variable, reason: recon.reason },
     };
+    if (_fa1.derivedReason) {
+      result1._auto_derived_FuelAdjustment = {
+        original: null,
+        corrected: resolvedFuelAdj1,
+        reason: _fa1.derivedReason,
+      };
+    }
+    return result1;
   }
   if (gas.charge === 0) return null; // no charge printed for this commodity
 
@@ -5321,15 +5444,29 @@ function _lbg_buildGasBill(shared, gas, gasLineSeen, otherCommoditySum, currentB
     );
     return null;
   }
-  gasTotal = gasTotal + (signedFuelAdj || 0);
+  // FIX (2026-09-13, backlog 37d5fb0e-fueladj): this used to be
+  // `gasTotal = gasTotal + (signedFuelAdj || 0)` unconditionally — a null
+  // signedFuelAdj (garbled label, never regex-matched) silently fell
+  // through the `|| 0` and shipped `gasTotal` (the PRE-adjustment total) as
+  // final. Real bill: HS, acct 09-009001-00, 7/15/2026 — printed Gas
+  // $540.33, Fuel Adjustment -$32.37, true Gas total $507.96; the old code
+  // shipped $540.33. Resolve-or-hold before ever touching gasTotal.
+  const _fa2 = resolveFuelAdjOrHold(gasTotal, gasVariable);
+  if (_fa2.held) return _fa2.held;
+  const resolvedFuelAdj2 = _fa2.value;
+  gasTotal = gasTotal + (resolvedFuelAdj2 || 0);
   const gasBill = {
     ...base,
+    FuelAdjustment: resolvedFuelAdj2,
     GasCharge: gasVariable,
     TotalCurrentCharges: gasTotal.toFixed(2),
     TotalAmountDue: gasTotal.toFixed(2),
   };
   if (corrected && corrected.corrected) {
     gasBill._auto_corrected_GasCharge = { original: gas.charge, corrected: gasVariable, reason: corrected.reason };
+  }
+  if (_fa2.derivedReason) {
+    gasBill._auto_derived_FuelAdjustment = { original: null, corrected: resolvedFuelAdj2, reason: _fa2.derivedReason };
   }
   return gasBill;
 }
@@ -8846,7 +8983,17 @@ const UTILITY_RULES = [
       // charge — see backlog 37f76621). Distinguishes "Gas section exists but
       // its charge is unrecoverable" (must be flagged) from "this page simply
       // has no Gas commodity" (nothing to flag).
+      // FIX (2026-09-13, backlog 37d5fb0e-fueladj): generalized to the other
+      // commodities so a printed-but-unparsed WATER/SEWER/STORMWATER/WATER
+      // PROTECTION line is just as detectable as a printed-but-unparsed GAS
+      // line was — see the Fuel-Adjustment derive-or-hold guard below, which
+      // needs to know whether EVERY other commodity on the page confidently
+      // extracted before it will ever derive a residual value.
       let gasLineSeen = false;
+      let waterLineSeen = false;
+      let wpfLineSeen = false;
+      let sewerLineSeen = false;
+      let stormLineSeen = false;
       for (const ln of lines) {
         // Skip section-header lines like "100- Water" and "300 - Gas":
         // those are column titles at the top of the bill layout and
@@ -8886,6 +9033,7 @@ const UTILITY_RULES = [
         // tolerated elsewhere in this file (S[E3]W[E3]R, PROT[E3]CTION) —
         // so this can't drift into matching an unrelated 5-letter word.
         if (/\bM?W?[A4][TI][E3F][RB]\b/i.test(ln) && !/PROTECTION/i.test(ln)) {
+          waterLineSeen = true;
           const wp = parseMetered(ln, /\bM?W?[A4][TI][E3F][RB]\b/i);
           if (water === null) {
             water = wp;
@@ -8907,6 +9055,7 @@ const UTILITY_RULES = [
         // instance's worth, $2.75/$1.16/$0.69). Mirrors the accumulation
         // pattern already used for multiple WATER lines above.
         if (/W[A4]TER\s*PROT[E3]CTION/i.test(ln)) {
+          wpfLineSeen = true;
           const wp2 = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
           if (wpf === null) {
             wpf = wp2;
@@ -8919,9 +9068,24 @@ const UTILITY_RULES = [
             };
           }
         }
-        if (!sewer && /\bS[E3]W[E3]R\b/i.test(ln)) sewer = parseMetered(ln, /\bS[E3]W[E3]R\b/i);
-        if (!storm && /STORM\s*W[A4]TER/i.test(ln)) storm = parseMetered(ln, /STORM\s*W[A4]TER/i);
+        if (/\bS[E3]W[E3]R\b/i.test(ln)) {
+          sewerLineSeen = true;
+          if (!sewer) sewer = parseMetered(ln, /\bS[E3]W[E3]R\b/i);
+        }
+        if (/STORM\s*W[A4]TER/i.test(ln)) {
+          stormLineSeen = true;
+          if (!storm) storm = parseMetered(ln, /STORM\s*W[A4]TER/i);
+        }
       }
+      // Fuel Adjustment is a permanent line on every Louisburg new-format
+      // Gas bill (confirmed on every real bill on file — dashboardlogic
+      // Updates 74/99/142/146 all treat it as a standard field of this
+      // layout). Its own label can OCR into pure noise (e.g. real bill
+      // "kus apustvnt...") that no further regex tolerance can safely match
+      // without risking a false hit elsewhere on the page, so its presence
+      // is inferred structurally (this page has a Gas section at all) —
+      // never from matching its own possibly-garbled label.
+      const fuelAdjLineSeen = gasLineSeen;
       gas = gas || { usage: null, charge: null };
       water = water || { usage: null, charge: null };
       sewer = sewer || { usage: null, charge: null };
@@ -9074,6 +9238,22 @@ const UTILITY_RULES = [
       const bills = [];
       const _otherCommoditySum = (water.charge || 0) + (wpf.charge || 0) + (sewer.charge || 0) + (storm.charge || 0);
       const _gasBillDate = BillingPeriodEnd || BillingPeriodStart || BillDate;
+      // Backlog 37d5fb0e-fueladj (2026-09-13): names every OTHER commodity
+      // whose label was seen on the page but whose charge still parsed to
+      // null — feeds the FuelAdjustment derive-or-hold guard inside
+      // _lbg_buildGasBill (never derive a residual when a component of that
+      // residual might itself be missing; on the HS bill this catches
+      // Water, which also failed to extract on the same degraded scan).
+      const _faUnresolvedCommodities = [];
+      if (waterLineSeen && water.charge == null) _faUnresolvedCommodities.push('Water');
+      if (wpfLineSeen && wpf.charge == null) _faUnresolvedCommodities.push('Water Protection');
+      if (sewerLineSeen && sewer.charge == null) _faUnresolvedCommodities.push('Sewer');
+      if (stormLineSeen && storm.charge == null) _faUnresolvedCommodities.push('Stormwater');
+      const _fuelAdjMeta = {
+        lineSeen: fuelAdjLineSeen,
+        otherCommoditiesConfident: _faUnresolvedCommodities.length === 0,
+        unresolvedCommodities: _faUnresolvedCommodities,
+      };
       const gasBill = _lbg_buildGasBill(
         shared,
         gas,
@@ -9082,6 +9262,7 @@ const UTILITY_RULES = [
         CurrentBillTotal,
         signedFuelAdj,
         _gasBillDate,
+        _fuelAdjMeta,
       );
       if (gasBill) {
         if (_faSignCorrected)
