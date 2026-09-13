@@ -7458,6 +7458,168 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   return { html: resultPages.join(''), pageCount: resultPages.length };
 }
 
+/**
+ * _apbWeatherHddCddChartSVG — compact, reoriented (horizontal-bar) HDD/CDD chart with a Year
+ * column, used by rptPageAppendixBaseline (item 837822a1, requirement 4) to replace per-meter
+ * Month/HDD/CDD tables whose Calculation/Predicted/Actual/Saved columns were always empty for
+ * baseline-only meters. Follows the SVG chart style of boardSummaryBarChartSVG (report-engine.js
+ * ~10082): CSS-var colors only, thin axis lines, grayscale-safe (two series are also
+ * distinguished by row order/labels, not color alone), data labels on every bar.
+ * @param {Array<{label:string, year:string, hdd:number, cdd:number, isBaseline:boolean}>} rows
+ */
+function _apbWeatherHddCddChartSVG(rows) {
+  // report-pass2 fix (2026-09-13): first cut of this chart crammed the legend text ("Heating
+  // Degree Days" / "Cooling Degree Days") into a ~107px gap (overlapping itself) and packed
+  // bars/labels into a 16px row with only a 2px gap between the HDD and CDD sub-bars
+  // (measured headless render: text visibly collided across rows). Widened row height, added a
+  // dedicated legend row using the short "HDD"/"CDD" labels already used as this same page's
+  // table column headers (not new jargon), and gave every text element real breathing room.
+  var W = 620;
+  var padL = 112,
+    padR = 60,
+    padT = 30,
+    padB = 24;
+  var rowH = 26;
+  var barH = 8;
+  var barGap = 3;
+  var n = rows.length;
+  if (!n) return '';
+  var chartW = W - padL - padR;
+  var H = padT + n * rowH + padB;
+
+  var maxVal = 1;
+  rows.forEach(function (r) {
+    maxVal = Math.max(maxVal, r.hdd || 0, r.cdd || 0);
+  });
+
+  var header =
+    '<text x="0" y="12" font-size="8" font-weight="700" fill="var(--rpt-page-text)">Month</text>' +
+    '<text x="60" y="12" font-size="8" font-weight="700" fill="var(--rpt-page-text)">Year</text>' +
+    '<rect x="' +
+    padL +
+    '" y="4" width="9" height="9" fill="var(--rpt-chart-orange)"/>' +
+    '<text x="' +
+    (padL + 13) +
+    '" y="12" font-size="8" fill="var(--rpt-page-text)">HDD</text>' +
+    '<rect x="' +
+    (padL + 50) +
+    '" y="4" width="9" height="9" fill="var(--rpt-chart-blue)"/>' +
+    '<text x="' +
+    (padL + 63) +
+    '" y="12" font-size="8" fill="var(--rpt-page-text)">CDD</text>' +
+    '<line x1="0" y1="20" x2="' +
+    W +
+    '" y2="20" stroke="var(--rpt-divider)" stroke-width="0.5"/>';
+
+  var body = '';
+  rows.forEach(function (r, i) {
+    var rowY = padT + i * rowH;
+    if (r.isBaseline) {
+      body += '<rect x="0" y="' + rowY + '" width="' + W + '" height="' + rowH + '" fill="var(--rpt-chart-bg)"/>';
+    }
+    body +=
+      '<text x="0" y="' +
+      (rowY + rowH / 2 + 3) +
+      '" font-size="8" fill="var(--rpt-page-text)">' +
+      r.label +
+      '</text>' +
+      '<text x="60" y="' +
+      (rowY + rowH / 2 + 3) +
+      '" font-size="8" fill="var(--rpt-page-text)">' +
+      r.year +
+      (r.isBaseline ? ' BL' : '') +
+      '</text>';
+    var hddW = Math.max(0, (r.hdd / maxVal) * chartW);
+    var cddW = Math.max(0, (r.cdd / maxVal) * chartW);
+    var hddY = rowY + (rowH - 2 * barH - barGap) / 2;
+    var cddY = hddY + barH + barGap;
+    body +=
+      '<rect x="' +
+      padL +
+      '" y="' +
+      hddY.toFixed(1) +
+      '" width="' +
+      hddW.toFixed(1) +
+      '" height="' +
+      barH +
+      '" fill="var(--rpt-chart-orange)" rx="1"/>' +
+      '<text x="' +
+      (padL + hddW + 4) +
+      '" y="' +
+      (hddY + barH - 1).toFixed(1) +
+      '" font-size="7.5" fill="var(--rpt-page-text)">' +
+      Math.round(r.hdd).toLocaleString() +
+      '</text>' +
+      '<rect x="' +
+      padL +
+      '" y="' +
+      cddY.toFixed(1) +
+      '" width="' +
+      cddW.toFixed(1) +
+      '" height="' +
+      barH +
+      '" fill="var(--rpt-chart-blue)" rx="1"/>' +
+      '<text x="' +
+      (padL + cddW + 4) +
+      '" y="' +
+      (cddY + barH - 1).toFixed(1) +
+      '" font-size="7.5" fill="var(--rpt-page-text)">' +
+      Math.round(r.cdd).toLocaleString() +
+      '</text>';
+  });
+
+  var axisY = H - padB + 10;
+  var axis =
+    '<line x1="' +
+    padL +
+    '" y1="' +
+    padT +
+    '" x2="' +
+    padL +
+    '" y2="' +
+    (H - padB) +
+    '" stroke="var(--rpt-page-text)" stroke-width="0.5"/>' +
+    '<line x1="' +
+    padL +
+    '" y1="' +
+    (H - padB) +
+    '" x2="' +
+    (padL + chartW) +
+    '" y2="' +
+    (H - padB) +
+    '" stroke="var(--rpt-page-text)" stroke-width="0.5"/>' +
+    '<text x="' +
+    padL +
+    '" y="' +
+    axisY +
+    '" font-size="7" fill="var(--rpt-page-text)">0</text>' +
+    '<text x="' +
+    (padL + chartW) +
+    '" y="' +
+    axisY +
+    '" text-anchor="end" font-size="7" fill="var(--rpt-page-text)">' +
+    Math.round(maxVal).toLocaleString() +
+    ' degree days</text>';
+
+  return (
+    '<svg width="' +
+    W +
+    '" height="' +
+    H +
+    '" viewBox="0 0 ' +
+    W +
+    ' ' +
+    H +
+    '" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:' +
+    W +
+    'px;height:auto">' +
+    header +
+    body +
+    axis +
+    '</svg>'
+  );
+}
+
 function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   appLetter = appLetter || 'B';
   appMap = appMap || {};
@@ -7501,6 +7663,35 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   ((d.weather && d.weather.monthly) || []).forEach(function (w) {
     wxByYm[w.month] = w;
   });
+
+  // fix/appendixB-quarterly-scope (2026-09-13, item 837822a1): scope every table on this page
+  // to the REPORT'S OWN period instead of showing all 12 baseline months plus every
+  // post-baseline month through generation time. md.blMonths is the meter's full baseline
+  // YEAR (collectReportData line ~742); b.electric/gas/propane.monthly is built from "ALL
+  // available months (full year for charts)" (collectReportData ~line 472) — neither was ever
+  // period-scoped, so a Q2 (Apr-Jun) report showed baseline Jan-Dec AND reporting rows through
+  // whatever month the report was generated in (e.g. July). periodMoNums is the set of
+  // calendar month-of-year values in this report's period (e.g. ['04','05','06'] for Q2) —
+  // used to keep only the matching calendar months from the baseline year, so a Q2 report
+  // compares Q2-to-Q2. Reporting-period rows are scoped directly to d.period.yearMonths (the
+  // exact months this report covers), same source rptPageSavingsPerformance's period-scoped
+  // EUI fix already uses (report-engine.js ~2984).
+  var periodYMs = (d.period && d.period.yearMonths) || [];
+  var periodMoNums = periodYMs.map(function (ym) {
+    return ym.split('-')[1];
+  });
+  function _apbInPeriodMonth(ym) {
+    return periodMoNums.length === 0 || periodMoNums.indexOf(ym.split('-')[1]) !== -1;
+  }
+  // Shared HDD/CDD weather chart data (item 4): collectWeatherData (csv-import.js) produces ONE
+  // project-wide averaged weather series, not a per-meter series — every meter's Month/HDD/CDD
+  // table below was reading the exact same wxByYm regardless of building or meter. Baseline-only
+  // meters (no regression fit) additionally had their Calculation/Predicted/Actual/Saved columns
+  // ALWAYS "—" (report-design rule: no empty columns). Both problems are fixed by dropping the
+  // per-meter empty table and building ONE compact chart from the union of scoped baseline
+  // months across baseline-only meters, collected below.
+  var anyBlOnlyMeters = false;
+  var blOnlyChartYMsSet = {};
 
   // Build full calculation tables per building per commodity.
   // fix/report-content-pagination (2026-07-28): this used to concatenate ALL buildings' and
@@ -7601,17 +7792,22 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         '</div>' +
         '</div>';
 
-      // Get monthly data for this commodity (reporting-period months)
-      var monthly = [];
-      if (md.commodity === 'Electric') monthly = (b.electric && b.electric.monthly) || [];
-      else if (md.commodity === 'Gas') monthly = (b.gas && b.gas.monthly) || [];
-      else if (md.commodity === 'Propane') monthly = (b.propane && b.propane.monthly) || [];
-
-      // Build combined list: baseline months first, then reporting-period months
-      var blMonthsForMeter = md.blMonths || [];
-      var reportMonthYMs = monthly.map(function (mo) {
-        return mo.month;
+      // Get monthly data for this commodity, scoped to the report's own period — this array
+      // is built from "ALL available months" (collectReportData ~line 472), unscoped by
+      // design (it also feeds full-year charts elsewhere); Appendix B must not show
+      // out-of-period months (fix/appendixB-quarterly-scope, item 837822a1).
+      var monthlyAll = [];
+      if (md.commodity === 'Electric') monthlyAll = (b.electric && b.electric.monthly) || [];
+      else if (md.commodity === 'Gas') monthlyAll = (b.gas && b.gas.monthly) || [];
+      else if (md.commodity === 'Propane') monthlyAll = (b.propane && b.propane.monthly) || [];
+      var monthly = monthlyAll.filter(function (mo) {
+        return periodYMs.indexOf(mo.month) !== -1;
       });
+
+      // Build combined list: baseline months first, then reporting-period months — baseline
+      // months scoped to the SAME calendar months as the report period (a Q2 report compares
+      // Q2-of-baseline-year to Q2-of-current-year, not the full 12-month baseline).
+      var blMonthsForMeter = (md.blMonths || []).filter(_apbInPeriodMonth);
 
       // Build combined entries: {ym, isBaseline, moData (may be null for BL rows)}
       var combined = [];
@@ -7806,82 +8002,102 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     });
 
     // Render baseline-only meters (have blMonths but no regression coefficients)
+    // fix/appendixB-quarterly-scope (2026-09-13, item 837822a1, requirements 2 & 4): this used
+    // to render one Month/Days/HDD/CDD/Calculation/Predicted/Actual/Saved table PER baseline-
+    // only meter, but a baseline-only meter has no regression fit — Calculation, Predicted,
+    // Actual, and Saved were unconditionally "—" for every row, i.e. 4 of 8 columns were
+    // always empty (report-design rule: no empty columns). The HDD/CDD values themselves were
+    // also identical across every meter and building, since collectWeatherData (csv-import.js)
+    // produces one project-wide averaged weather series, not a per-meter one. Replaced with a
+    // one-line note per meter (which commodity lacks a regression fit) plus ONE shared,
+    // period-scoped HDD/CDD chart built once below from the union of these meters' baseline
+    // months.
     metersWithBlOnly.forEach(function (md) {
-      var unit = md.commodity === 'Electric' ? 'kWh' : md.commodity === 'Gas' ? 'Therms' : 'Gal';
-      var blMonthsForMeter = md.blMonths || [];
+      var blMonthsForMeter = (md.blMonths || []).filter(_apbInPeriodMonth);
       if (!blMonthsForMeter.length) return;
-
-      var blOnlyBlockHTML =
-        '<div style="margin:6px 0 4px">' +
-        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text)">' +
-        md.commodity +
-        ' — Baseline Data (no regression model)</div>' +
-        '</div>';
-
-      var rows = '';
+      anyBlOnlyMeters = true;
       blMonthsForMeter.forEach(function (ym) {
-        var moIdx = ym ? parseInt(ym.split('-')[1], 10) - 1 : -1;
-        var moName = moIdx >= 0 ? MO_FULL[moIdx] : ym;
-        var days = ym ? _daysInMonth(ym) : 30;
-        var wx = wxByYm[ym] || {};
-        rows +=
-          '<tr style="background:var(--rpt-chart-bg);color:var(--rpt-page-text)">' +
-          '<td>' +
-          moName +
-          ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span>' +
-          '</td>' +
-          '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
-          days +
-          '</td>' +
-          '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
-          Math.round(wx.hddBl || 0).toLocaleString() +
-          '</td>' +
-          '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
-          Math.round(wx.cddBl || 0).toLocaleString() +
-          '</td>' +
-          '<td style="font-size:9px;color:var(--rpt-page-text)">—</td>' +
-          '<td class="rpt-n" style="color:var(--rpt-page-text)">—</td>' +
-          '<td class="rpt-n" style="color:var(--rpt-page-text)">—</td>' +
-          '<td class="rpt-n" style="color:var(--rpt-page-text)">—</td>' +
-          '</tr>';
+        blOnlyChartYMsSet[ym] = true;
       });
 
-      blOnlyBlockHTML +=
-        // report-pass2 fix (2026-09-10): same 'rpt-mp-dense' floor fix as the regression table
-        // above — this baseline-only table is font-size:9px too and gets the same floor re-inflation.
-        '<table class="rpt-table rpt-mp-dense" style="font-size:9px;margin-bottom:10px">' +
-        '<thead><tr>' +
-        '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
-        '<th>Calculation</th>' +
-        '<th class="rpt-n">Predicted<br>Baseline ' +
-        unit +
-        '</th>' +
-        '<th class="rpt-n">Actual<br>' +
-        unit +
-        '</th>' +
-        '<th class="rpt-n">' +
-        unit +
-        '<br>Saved</th>' +
-        '</tr></thead><tbody>' +
-        rows +
-        '</tbody></table>';
-
-      // report-pass2 fix (2026-09-10): same 'rpt-mp-dense' font-floor issue as meterEstH above —
-      // this table is also font-size:9px and was getting silently re-inflated to 13.34px before
-      // adding the class. Its Calculation column only ever holds "—" (no regression, so no
-      // wrapping-formula risk like meterEstH's table), but the floored 12px thead/row are still
-      // taller than the un-floored 9px estimate this constant was originally based on; widened
-      // accordingly with extra safety margin since this path is less exhaustively measured.
-      var blOnlyEstH = 30 + 50 + blMonthsForMeter.length * 30 + 10 + 30;
-      var blOnlyTokenHTML = blOnlyBlockHTML;
+      var noteHTML =
+        '<div style="font-size:10px;color:var(--rpt-page-text);margin:2px 0 8px">' +
+        md.commodity +
+        ' — insufficient baseline variance for a regression fit; usage is compared to the ' +
+        'baseline period directly. Weather (heating and cooling degree days) for this period ' +
+        'is shown in the chart below.' +
+        '</div>';
+      var noteTokenHTML = noteHTML;
+      var noteEstH = 24;
       if (isFirstBlockForBuilding) {
-        blOnlyTokenHTML = bldgHeaderHTML + blOnlyTokenHTML;
-        blOnlyEstH += 24;
+        noteTokenHTML = bldgHeaderHTML + noteTokenHTML;
+        noteEstH += 24;
         isFirstBlockForBuilding = false;
       }
-      meterTokens.push({ type: 'block', html: blOnlyTokenHTML, estH: blOnlyEstH });
+      meterTokens.push({ type: 'block', html: noteTokenHTML, estH: noteEstH });
     });
   });
+
+  // item 837822a1, requirement 4: single compact, reoriented HDD/CDD chart with a year column,
+  // replacing the per-meter empty-column tables removed above. Built once (not per building/
+  // meter) from the union of scoped baseline months collected during the loop, paired with this
+  // report's own period months — both already period-scoped so no out-of-period month can leak
+  // into it (same guarantee as the calculation tables above).
+  if (anyBlOnlyMeters) {
+    var blOnlyChartYMs = Object.keys(blOnlyChartYMsSet).sort();
+    var weatherChartRows = [];
+    blOnlyChartYMs.forEach(function (ym) {
+      var wx = wxByYm[ym] || {};
+      var moIdx = parseInt(ym.split('-')[1], 10) - 1;
+      weatherChartRows.push({
+        label: MO_FULL[moIdx] || ym,
+        year: ym.split('-')[0],
+        hdd: wx.hddBl || 0,
+        cdd: wx.cddBl || 0,
+        isBaseline: true,
+      });
+    });
+    periodYMs.forEach(function (ym) {
+      var wx = wxByYm[ym] || {};
+      var moIdx = parseInt(ym.split('-')[1], 10) - 1;
+      weatherChartRows.push({
+        label: MO_FULL[moIdx] || ym,
+        year: ym.split('-')[0],
+        hdd: wx.hddCur || 0,
+        cdd: wx.cddCur || 0,
+        isBaseline: false,
+      });
+    });
+    if (weatherChartRows.length) {
+      var _wcTotBlHdd = 0,
+        _wcTotCurHdd = 0;
+      weatherChartRows.forEach(function (r) {
+        if (r.isBaseline) _wcTotBlHdd += r.hdd;
+        else _wcTotCurHdd += r.hdd;
+      });
+      var _wcHddVarPct = _wcTotBlHdd > 0 ? Math.round(((_wcTotCurHdd - _wcTotBlHdd) / _wcTotBlHdd) * 100) : 0;
+      var weatherChartTitle =
+        Math.abs(_wcHddVarPct) >= 5
+          ? 'Reporting Period Was ' +
+            Math.abs(_wcHddVarPct) +
+            '% ' +
+            (_wcHddVarPct > 0 ? 'Colder' : 'Warmer') +
+            ' Than Baseline (Heating Degree Days)'
+          : 'Heating and Cooling Degree Days — Baseline vs. Reporting Period';
+      var weatherChartHTML =
+        '<div class="rpt-chart-box">' +
+        '<div class="rpt-chart-title">' +
+        weatherChartTitle +
+        '</div>' +
+        _apbWeatherHddCddChartSVG(weatherChartRows) +
+        '</div>';
+      meterTokens.push({
+        type: 'block',
+        html: weatherChartHTML,
+        estH: 46 + weatherChartRows.length * 26 + 30,
+      });
+    }
+  }
 
   var baselineHeadHTML =
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
