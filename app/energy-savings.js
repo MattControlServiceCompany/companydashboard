@@ -5225,12 +5225,34 @@ function _lbg_reconcileGasFromCurrentBill(currentBillTotal, otherCommoditySum, g
 // otherwise refuses, so the caller holds the bill for manual review instead
 // of guessing. Mirrors _lbg_reconcileGasFromCurrentBill's "never guess"
 // contract; the two differ only in which single field is being solved for.
-function _lbg_resolveFuelAdj(preAdjustmentGasTotal, otherCommoditySum, currentBillTotal, otherCommoditiesConfident) {
+function _lbg_resolveFuelAdj(
+  preAdjustmentGasTotal,
+  otherCommoditySum,
+  currentBillTotal,
+  otherCommoditiesConfident,
+  gasTotalConfident,
+) {
   if (!otherCommoditiesConfident) {
     return {
       resolved: false,
       reason:
         'One or more other commodity charges on this page could not be read, so the residual would not isolate Fuel Adjustment alone.',
+    };
+  }
+  // FIX (2026-09-13, backlog 37d5fb0e-fueladj, review follow-up): when the
+  // Gas charge itself was ALSO unreadable and had to be reconciled via
+  // _lbg_reconcileGasFromCurrentBill, that reconciliation already solved
+  // `preAdjustmentGasTotal = currentBillTotal - otherCommoditySum` treating
+  // FuelAdjustment as 0 (it has no other anchor). Feeding that same value
+  // back in here makes the residual `currentBillTotal - otherCommoditySum -
+  // preAdjustmentGasTotal` collapse to 0 ALWAYS — a circular derivation that
+  // fabricates a confident-looking $0 Fuel Adjustment instead of holding.
+  // Never derive when the Gas total wasn't independently, directly parsed.
+  if (!gasTotalConfident) {
+    return {
+      resolved: false,
+      reason:
+        'Gas charge itself was also reconciled/derived (not directly read), so a Fuel Adjustment residual would be circular — it would always compute to $0 rather than the true value.',
     };
   }
   if (currentBillTotal == null) {
@@ -5332,7 +5354,7 @@ function _lbg_buildGasBill(
   // $507.96, printed Fuel Adjustment -$32.37). Resolve once, up front, using
   // the pre-adjustment Gas total each branch below already computes for
   // itself as `preAdjGasTotal`.
-  const resolveFuelAdjOrHold = (preAdjGasTotal, gasChargeValue) => {
+  const resolveFuelAdjOrHold = (preAdjGasTotal, gasChargeValue, gasTotalConfident) => {
     if (signedFuelAdj != null || !fuelAdjMeta.lineSeen) {
       return { value: signedFuelAdj, held: null };
     }
@@ -5341,6 +5363,7 @@ function _lbg_buildGasBill(
       otherCommoditySum,
       currentBillTotal,
       fuelAdjMeta.otherCommoditiesConfident,
+      gasTotalConfident,
     );
     if (faResolve.resolved) {
       return { value: faResolve.value, held: null, derivedReason: faResolve.reason };
@@ -5370,7 +5393,12 @@ function _lbg_buildGasBill(
     if (!recon.corrected) {
       return heldBill('Gas charge could not be parsed. ' + recon.reason, null);
     }
-    const _fa1 = resolveFuelAdjOrHold(recon.total, recon.variable);
+    // gasTotalConfident=false: this branch only runs when GasCharge itself
+    // was unreadable and had to be reconciled from the Current Bill total
+    // (which treats FuelAdjustment as 0, having no other anchor) — deriving
+    // FuelAdjustment from that same reconciled total would be circular
+    // (always computes to $0). Never derive here; hold instead if unresolved.
+    const _fa1 = resolveFuelAdjOrHold(recon.total, recon.variable, false);
     if (_fa1.held) return _fa1.held;
     const resolvedFuelAdj1 = _fa1.value;
     const gasTotal = recon.total + (resolvedFuelAdj1 || 0);
@@ -5394,6 +5422,12 @@ function _lbg_buildGasBill(
   if (gas.charge === 0) return null; // no charge printed for this commodity
 
   let gasTotal = gas.charge;
+  // Tracks whether gasTotal/gasVariable are the DIRECTLY-parsed printed Gas
+  // charge, or were substituted with a Current-Bill-total reconciliation
+  // (the impliedRate ceiling branch below) — reconciled values already treat
+  // FuelAdjustment as 0 internally, so deriving FuelAdjustment from them
+  // afterward would be circular (backlog 37d5fb0e-fueladj, review follow-up).
+  let gasTotalConfident = true;
   let gasVariable = Math.round(Math.max(0, gasTotal - r.baseCharge) * 100) / 100;
   if ((!gas.usage || gas.usage === 0) && gasVariable > 0 && r.rate > 0) {
     gas.usage = Math.round(gasVariable / r.rate);
@@ -5428,6 +5462,7 @@ function _lbg_buildGasBill(
     }
     gasVariable = recon.variable;
     gasTotal = recon.total;
+    gasTotalConfident = false;
     corrected = { corrected: true, reason: recon.reason };
   }
   if (gasTotal < r.baseCharge && gas.usage > 0) {
@@ -5451,7 +5486,7 @@ function _lbg_buildGasBill(
   // final. Real bill: HS, acct 09-009001-00, 7/15/2026 — printed Gas
   // $540.33, Fuel Adjustment -$32.37, true Gas total $507.96; the old code
   // shipped $540.33. Resolve-or-hold before ever touching gasTotal.
-  const _fa2 = resolveFuelAdjOrHold(gasTotal, gasVariable);
+  const _fa2 = resolveFuelAdjOrHold(gasTotal, gasVariable, gasTotalConfident);
   if (_fa2.held) return _fa2.held;
   const resolvedFuelAdj2 = _fa2.value;
   gasTotal = gasTotal + (resolvedFuelAdj2 || 0);
