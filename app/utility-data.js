@@ -2729,50 +2729,25 @@ function renderMeterWorkspace() {
     '<div id="maPane" style="padding:18px 20px;overflow-y:auto;"></div>';
 
   const pane = ws.querySelector('#maPane') || document.getElementById('maPane');
-  // Reset pane styles — bills tab needs the pane to be a flex column so the inner
-  // .bills-scroll-body gets flex:1 and its horizontal scrollbar lands at the bottom
-  // of the visible area. min-width:0 on the pane is mandatory alongside min-height:0
-  // so the bills-scroll-body can shrink below the table's intrinsic content width
-  // and show its horizontal scrollbar instead of letting the table push the whole
-  // column wider than .ud-layout can accommodate.
+  // Fix 2026-09-13 (scrollbar-bounded-flex, ui-standards.md "Scroll rules — canonical
+  // panel pattern"): #maPane is CSS-bounded (flex:1;min-height:0;overflow-y:auto — see
+  // the #maPane rule in energy-department.html) and #maMeterWorkspace is overflow:hidden,
+  // so #maPane is ALWAYS the correct height on every render with no JS measurement.
+  // The bills tab still needs its OWN nested scroll region one level deeper
+  // (.bills-scroll-body, inside .ud-bill-tbl's split header/body table layout) — for
+  // that tab #maPane itself must not scroll, so it gets overflow:hidden here instead
+  // and stays a flex column so its .bills-thead-wrap / .bills-scroll-body children lay
+  // out top-to-bottom with the scroll region flexed to fill the remainder.
+  // min-width:0 is mandatory alongside min-height:0 on both this pane and
+  // .bills-scroll-body so the table can shrink below its intrinsic content width and
+  // show a horizontal scrollbar instead of pushing the whole column wider than
+  // .ud-layout can accommodate.
   if (udActiveTab === 'bills') {
-    // flex:0 0 auto — content-sized so no forced void; overflow:visible so position:sticky
-    // children (.bills-thead-wrap) can stick relative to #maMeterWorkspace scroll container
-    pane.style.cssText = 'display:flex;flex-direction:column;min-height:0;min-width:0;overflow:visible;flex:0 0 auto;';
+    pane.style.cssText = 'display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;flex:1;';
   } else {
-    // flex:0 0 auto — overrides CSS flex:1; content sizes naturally; #maMeterWorkspace scrolls
-    pane.style.cssText = 'display:block;padding:18px 20px;overflow-y:visible;flex:0 0 auto;min-height:0;';
+    pane.style.cssText = 'display:block;padding:18px 20px;overflow-y:auto;flex:1;min-height:0;';
   }
   if (udActiveTab === 'bills') renderBillsPane(pane, m, bills, incl);
-  // After bills pane renders, cap .bills-scroll-body to the remaining visible height so
-  // its horizontal scrollbar lands at the bottom of the workspace and stays on-screen.
-  // Without this, flex:0 0 auto makes the body content-sized and a 33-bill table would
-  // push the scrollbar ~1000px off the bottom of the viewport.
-  if (udActiveTab === 'bills') {
-    requestAnimationFrame(() => {
-      // d2fe8e5e (reopened): `pane`'s parent IS #maMeterWorkspace (ws.innerHTML above
-      // set exactly two children: .ma-tabs and #maPane) — use that instead of a global
-      // getElementById('maMeterWorkspace'), which silently grabs the WRONG element once
-      // more than one #maMeterWorkspace exists in the DOM at once (the standalone
-      // view-utility copy plus any opened project's embedded ptab-utility copy).
-      const ws = pane.parentElement;
-      const scrollBody = pane.querySelector('#billsScrollBody');
-      if (!ws || !scrollBody) return;
-      // d2fe8e5e (reopened): this used to sum each sibling's offsetHeight individually
-      // (.ma-tabs + .bills-sticky-hdr + .bills-thead-wrap) and missed the flagBanner div
-      // entirely on meters with flagged billing periods — offsetHeight also doesn't
-      // capture margins, so even after adding flagBanner the cap was still off by its
-      // 8px+8px margin. Measuring the actual pixel gap between ws's top edge and the
-      // scroll body's top edge via getBoundingClientRect() captures every sibling's
-      // height AND margins in one shot, and can't drift out of sync the next time a
-      // banner/badge/row gets added between them.
-      const wsRect = ws.getBoundingClientRect();
-      const sbRect = scrollBody.getBoundingClientRect();
-      const offsetFromTop = sbRect.top - wsRect.top + ws.scrollTop;
-      const avail = ws.clientHeight - offsetFromTop;
-      if (avail > 60) scrollBody.style.maxHeight = avail + 'px';
-    });
-  }
   if (udActiveTab === 'norm') renderNormPane(pane, m, bills, incl);
   if (udActiveTab === 'baseline') renderBaselinePane(pane, m, bills, incl);
   if (udActiveTab === 'stats') renderMeterDataPane(pane, m, bills, incl);
