@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.13.820',
+    date: '2026-09-13',
+    title: 'Energy Department: Bills tab scrollbar fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department -> Bills tab: the horizontal scrollbar for the utility bills table now shows right away, instead of only appearing after scrolling all the way to the bottom of the table.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.11.819',
     date: '2026-09-11',
     title:
