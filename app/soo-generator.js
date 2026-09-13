@@ -2,42 +2,69 @@
    app/soo-generator.js — Sequence of Operations (SOO) Generator, Phase 1
    Item 3f1415af. Design: AI/_context/research/2026-09-13-soo-in-site-design/
    blueprint.md. Clause source: AI/_context/research/
-   2026-09-13-master-soo-template-inventory.md (verbatim excerpts from
-   "Master Sequences of Operation 2023.docx", cross-checked directly against
-   the docx paragraphs during implementation).
+   2026-09-13-master-soo-template-inventory.md, cross-checked directly
+   against "Master Sequences of Operation 2023.docx" paragraph-by-paragraph
+   (python-docx + raw OOXML inspection) during implementation.
 
-   SCOPE (Phase 1 — smallest end-to-end slice, per blueprint's build sequence):
-   one equipment type (vav), the hot-water reheat VAV path, point/flag-driven
-   clause selection, .rpt-page preview via the EXISTING report-engine page
-   shell, .docx export via the EXISTING docx pipeline. No new UI view (that is
-   Phase 3) — only a TEMPORARY entry point (see sooGenerateForRow below).
+   SCOPE (Phase 1 — smallest end-to-end slice, per blueprint's build
+   sequence): one equipment type (vav), the hot-water reheat VAV path,
+   point/flag-driven clause selection. No new UI view (that is Phase 3) —
+   only a TEMPORARY entry point (see sooGenerateForRow below).
 
-   Load order: after app/equipment-matrix.js (reads emGetNormalizedPoints /
-   emComputeCompliance / emLoadEquipConfigFlags / emLoadCustomMappings /
-   emLoadMatrix / emHtmlEsc) and after app/report-engine.js (reads rptPage /
-   showReportOverlay / _rptContentBudget / _rptPaginateTokens /
-   _injectPageNumbers). See energy-department.html script tag comment.
+   FORMAT-CORRECTION PASS (2026-09-13, Matt's review): the FIRST cut of this
+   file rendered the SOO through the CompanyHub report engine's `.rpt-page`
+   shell (rptPage()/showReportOverlay()) and exported via the shared
+   exportReportToDocx()/_docxTranslatePages() report pipeline. Matt: that is
+   WRONG — the output must reproduce the MASTER SEQUENCES OF OPERATION
+   document's own Word format (Heading 1 section headers, Normal paragraphs
+   with a bold-label-colon lead-in, bold "(adj.)" value spans, no report
+   chrome at all), not a branded report page. This pass replaces BOTH
+   render layers (preview + Word export) while leaving the clause-selection
+   logic (appliesWhen/ctx.points/ctx.flags) byte-for-byte unchanged — see
+   `sooBuildContext`/`sooSelectClauses` below, untouched from Phase 1a.
+
+   Clause data model: each clause's `paragraphs(ctx)` returns an array of
+   paragraph objects `{ tight, runs: [{ text, bold }, ...] }`:
+     - `runs` — a paragraph's content as bold/normal spans, matching the
+       master doc's OWN run-level bold usage exactly (verified per clause
+       against the real OOXML — see inline citations below). This is NOT a
+       universal "bold everything ending in (adj.)" rule; the master itself
+       is inconsistent between clauses (Flow Control/Reheat bold every
+       "(adj.)" phrase; the VAV Alarms block bolds none of them) — each
+       clause replicates its OWN observed pattern.
+     - `tight` — true when the master's own paragraph has
+       `<w:spacing w:after="0"/>` (paragraphs that visually hug the next
+       line, e.g. a clause's own sub-rows); false uses the document
+       default spacing (~8pt, docDefaults `w:after="160"`).
+   Two renderers consume the same paragraph array with zero duplicated
+   content: `sooParaToPreviewHtml` (plain on-screen preview) and
+   `_sooParaToDocxXml` (real Heading 1/Normal/bold-run OOXML, spliced into
+   SOO_DOCX_SKELETON_B64 — see app/soo-docx-skeleton.js — via
+   `_sooDocxAssemble`, a SEPARATE assembler from app/docx-writer.js's
+   `_docxAssemble`/CSC_DOCX_SKELETON_B64, which is report-specific and must
+   never be reused here).
 
    HARD LESSON (blueprint, JOCO): reheat-actuator mechanism and CO2 function
-   are NOT safely inferable from point presence — point presence only proves a
-   wire exists, not what the program does with it. Phase 1 reads
+   are NOT safely inferable from point presence — point presence only proves
+   a wire exists, not what the program does with it. Phase 1 reads
    flags.reheatActuator / flags.co2Function if a caller has set them, but
    defaults them (pid-valve / dcv-reset) rather than guessing from points.
    Never add auto-detect-actuator-from-point-name logic here.
 
    Adjustable numeric values render literally where the master doc itself
-   states a default (e.g. "74°F (adj.)") — that is the master template's own
-   stated default, not an invented number. Where the master doc gives no
-   default (box-specific airflow CFMs, runtimes), the clause text keeps the
-   master's own descriptive "(adj.)" phrasing with no numeric fill — never
-   invented.
+   states a default (e.g. the Zone Setpoints table's "74 Degrees F (adj.)")
+   — that is the master template's own stated default, not an invented
+   number. Where the master doc gives no default (box-specific airflow
+   CFMs, runtimes), the clause text keeps the master's own descriptive
+   "(adj.)" phrasing with no numeric fill — never invented.
    ───────────────────────────────────────────────────────────────────────── */
 
 /* ── 1. SOO_BEHAVIOR_DEFAULTS — the 3 open JOCO decisions ───────────────────
-   None of the 3 non-default options exist in the master doc (see inventory
-   §3) — they are authored, sourced from 2026-09-13-joco-vav-soo-review/
-   findings.md, never presented as docx quotations. Stored at en_soo_settings
-   via sset/sget (never localStorage directly — architecture contract §6). */
+   Unchanged from Phase 1a. None of the 3 non-default options exist in the
+   master doc (see inventory §3) — they are authored, sourced from
+   2026-09-13-joco-vav-soo-review/findings.md, never presented as docx
+   quotations. Stored at en_soo_settings via sset/sget (never localStorage
+   directly — architecture contract §6). */
 var SOO_BEHAVIOR_DEFAULTS = {
   standbyAirflowMode: 'minimum', // | 'sameAsOccupiedMax'
   datFloorFailureMode: 'increaseAirflowToMax', // | 'dropToMinAndAlarm'
@@ -69,29 +96,10 @@ function sooSetSetting(key, value) {
   return s;
 }
 
-/* ── 2. Master-doc-sourced verbatim numeric defaults ────────────────────────
-   Only variables the master doc itself states a number for. Source: docx
-   paragraphs 353-354, 361-362, 370, 407 ("Variable Air Volume – Terminal
-   Units" heading). HIGH_CO2_ALARM is left blank in the master doc itself
-   (never filled in) — rendered as a blank placeholder, not invented. */
-var SOO_VAR_DEFAULTS = {
-  OCC_CLG_SP: '74°F',
-  OCC_HTG_SP: '70°F',
-  UNOCC_CLG_SP: '80°F',
-  UNOCC_HTG_SP: '60°F',
-  CO2_SETPOINT: '1000 ppm',
-  REHEAT_OAT_LOCKOUT: '65°F',
-  HIGH_CO2_ALARM: '____',
-  // DAT_FLOOR is JOCO working-document text, not master-doc text — see
-  // 2026-09-13-joco-vav-soo-review/findings.md line 40 ("drive to max heating
-  // airflow if valve 100% and DAT still below 50°F floor").
-  DAT_FLOOR: '50°F',
-};
-
-/* ── 3. Zone types excluded from public-facing occupant controls ───────────
-   Master doc (Zone Setpoint Adjust / Zone Unoccupied Override, docx 367/369):
-   "Sensors in public areas will not have this functionality unless
-   specifically requested." Excluded set per inventory §2 row 70. */
+/* ── 2. Zone types excluded from public-facing occupant controls ───────────
+   Master doc (Zone Setpoint Adjust / Zone Unoccupied Override): "Sensors in
+   public areas will not have this functionality unless specifically
+   requested." Excluded set per inventory §2 row 70. Unchanged from Phase 1a. */
 var SOO_PUBLIC_AREA_EXCLUDED_ZONE_TYPES = [
   'corridor',
   'restroom',
@@ -102,45 +110,26 @@ var SOO_PUBLIC_AREA_EXCLUDED_ZONE_TYPES = [
   'secure_cell',
 ];
 
-/* ── 4. Clause text resolver ─────────────────────────────────────────────────
-   clause.text is a template string with {{VAR}} tokens. clause.vars(ctx), if
-   present, supplies per-render dynamic values (behavior-setting selectors,
-   conditional row blocks) that take priority over SOO_VAR_DEFAULTS. Any token
-   with neither resolves to a blank "(adj.)"-style placeholder — never an
-   invented number. */
-function sooResolveClauseText(clause, ctx) {
-  var dynamicVars = typeof clause.vars === 'function' ? clause.vars(ctx) || {} : {};
-  var tokenRe = /\{\{([A-Z0-9_]+)\}\}/g;
-  function resolveOnce(str) {
-    return String(str).replace(tokenRe, function (_m, key) {
-      if (dynamicVars.hasOwnProperty(key)) return dynamicVars[key];
-      if (SOO_VAR_DEFAULTS.hasOwnProperty(key)) return SOO_VAR_DEFAULTS[key];
-      return '____';
-    });
-  }
-  // A dynamic var's own value (e.g. ZONE_SETPOINT_ROWS) can itself contain {{TOKEN}}
-  // placeholders (e.g. the occ/unocc setpoint rows) — a single pass would leave those
-  // literal. Re-run until no token remains or a hard iteration cap is hit (defends
-  // against an accidental self-referencing token; 5 passes is far more than any real
-  // clause nests).
-  var out = String(clause.text);
-  for (var i = 0; i < 5 && /\{\{[A-Z0-9_]+\}\}/.test(out); i++) {
-    out = resolveOnce(out);
-  }
-  return out;
+/* ── 3. Paragraph/run helpers ────────────────────────────────────────────── */
+function _sooRun(text, bold) {
+  return { text: text, bold: !!bold };
+}
+function _sooPara(runs, tight) {
+  return { runs: runs, tight: !!tight };
 }
 
-/* ── 5. SOO_TEMPLATES.vav — Phase 1 clause library ──────────────────────────
-   Verbatim master-doc text (docx "Variable Air Volume – Terminal Units"
-   heading) except where noted "JOCO-only" (no master-doc equivalent exists —
-   see inventory §3). appliesWhen(ctx) reads ctx.flags (emLoadEquipConfigFlags
-   output) and ctx.points (categoryKey -> true, from emComputeCompliance's
-   coveredPoints — i.e. a point is actually present on this row, not just
-   configured). reheatActuator/co2Function are read from flags if a caller
-   has set them but are NOT yet EM_EQUIP_CONFIG_FLAGS.vav entries (that is
-   Phase 2, per blueprint) — they default to the modulating/DCV-reset case
-   rather than being inferred from points, per the hard lesson in the file
-   header. */
+/* ── 4. SOO_TEMPLATES.vav — Phase 1 clause library ──────────────────────────
+   appliesWhen(ctx) is UNCHANGED from Phase 1a (this is the point/flag-driven
+   selection logic Matt confirmed is correct) — reads ctx.flags
+   (emLoadEquipConfigFlags output) and ctx.points (categoryKey -> true, from
+   emComputeCompliance's coveredPoints, i.e. a point actually present on this
+   row). reheatActuator/co2Function are read from flags if a caller has set
+   them but are NOT yet EM_EQUIP_CONFIG_FLAGS.vav entries (Phase 2) — default
+   to the modulating/DCV-reset case, never inferred from points.
+
+   paragraphs(ctx) replaces the old text/vars {{TOKEN}} model — each clause
+   below cites the exact master-doc paragraph(s) it reproduces, or "JOCO-only"
+   where no master text exists. */
 var SOO_TEMPLATES = {
   vav: [
     {
@@ -150,18 +139,29 @@ var SOO_TEMPLATES = {
       appliesWhen: function () {
         return true;
       },
-      text:
-        'There are 5 modes for each zone: occupied and unoccupied as determined by an ' +
-        'operator-defined schedule, and 3 override demand levels as determined by the ' +
-        'kilowatt meter and operator-defined parameters. Each mode has individually ' +
-        'adjustable heating and cooling setpoints. Each zone will have a color associated ' +
-        'with the condition of the zone with respect to temperature and the applicable ' +
-        'setpoint. The color will be green when the temperature is between the heating ' +
-        'and cooling setpoint. The color will change progressively from green to yellow, ' +
-        'orange, and then red as the temperature rises progressively above the cooling ' +
-        'setpoint. The color will change progressively from green to light blue, dark ' +
-        'blue, and then red as the temperature drops progressively below the heating ' +
-        'setpoint. Gray will represent the unoccupied mode.',
+      // Master doc, "Zone Control Modes:" paragraph — bold label, normal
+      // continuation, default (non-tight) spacing.
+      paragraphs: function () {
+        return [
+          _sooPara([
+            _sooRun('Zone Control Modes:', true),
+            _sooRun(
+              ' There are 5 modes for each zone: occupied and unoccupied as determined by an ' +
+                'operator defined schedule, and 3 override demand levels as determined by the ' +
+                'kilowatt meter and operator defined parameters. Each mode has individually ' +
+                'adjustable heating and cooling setpoints. Each zone will have a color associated ' +
+                'with the condition of the zone with respect to temperature and the applicable ' +
+                'setpoint. The color will be green when the temperature is between the heating and ' +
+                'cooling setpoint. The color will change progressively from green to yellow, ' +
+                'orange, and then red as the temperature rises progressively above the cooling ' +
+                'setpoint. The color will change progressively from green to light blue, dark blue, ' +
+                'and then red as the temperature drops progressively below the heating setpoint. ' +
+                'Gray will represent the unoccupied mode.',
+              false,
+            ),
+          ]),
+        ];
+      },
     },
     {
       id: 'zone-setpoints',
@@ -170,24 +170,35 @@ var SOO_TEMPLATES = {
       appliesWhen: function () {
         return true;
       },
-      // Demand Level 1-3 rows only render when a demandLevel point is actually mapped on
-      // this row (inventory §2 row 20) — otherwise the table is occ/unocc only.
-      vars: function (ctx) {
-        var rows = ['Occupied Cooling – {{OCC_CLG_SP}} (adj.)', 'Occupied Heating – {{OCC_HTG_SP}} (adj.)'];
-        if (ctx.points.demandLevel) {
-          rows.push(
-            'Demand Level 1 Cooling – 76°F (adj.)',
-            'Demand Level 1 Heating – 68°F (adj.)',
-            'Demand Level 2 Cooling – 78°F (adj.)',
-            'Demand Level 2 Heating – 66°F (adj.)',
-            'Demand Level 3 Cooling – 80°F (adj.)',
-            'Demand Level 3 Heating – 64°F (adj.)',
-          );
+      // Master doc, "Zone Setpoints:" + the 10-row default table — EVERY row
+      // (including the intro line) is its own tight paragraph (spacing
+      // after=0) in the master; Demand Level 1-3 rows only render when a
+      // demandLevel point is actually mapped on this row (inventory §2 row
+      // 20), matching Phase 1a's gating exactly.
+      paragraphs: function (ctx) {
+        var paras = [
+          _sooPara(
+            [_sooRun('Zone Setpoints:', true), _sooRun(' The default space setpoints for each state shall be:', false)],
+            true,
+          ),
+        ];
+        function row(label, value) {
+          paras.push(_sooPara([_sooRun(label + ' – ', false), _sooRun(value, true)], true));
         }
-        rows.push('Unoccupied Cooling – {{UNOCC_CLG_SP}} (adj.)', 'Unoccupied Heating – {{UNOCC_HTG_SP}} (adj.)');
-        return { ZONE_SETPOINT_ROWS: rows.join('\n') };
+        row('Occupied Cooling', '74 Degrees F (adj.)');
+        row('Occupied Heating', '70 Degrees F (adj.)');
+        if (ctx.points.demandLevel) {
+          row('Demand Level 1 Cooling', '76 Degrees F (adj.)');
+          row('Demand Level 1 Heating', '68 Degrees F (adj.)');
+          row('Demand Level 2 Cooling', '78 Degrees F (adj.)');
+          row('Demand Level 2 Heating', '66 Degrees F (adj.)');
+          row('Demand Level 3 Cooling', '80 Degrees F (adj.)');
+          row('Demand Level 3 Heating', '64 Degrees F (adj.)');
+        }
+        row('Unoccupied Cooling', '80 Degrees F (adj.)');
+        row('Unoccupied Heating', '60 Degrees F (adj.)');
+        return paras;
       },
-      text: 'The space setpoints for each state shall be:\n{{ZONE_SETPOINT_ROWS}}',
     },
     {
       id: 'schedule',
@@ -196,7 +207,16 @@ var SOO_TEMPLATES = {
       appliesWhen: function () {
         return true;
       },
-      text: 'Zone will operate according to a user-definable schedule.',
+      // Master doc, "Schedule:" paragraph — bold label, normal continuation,
+      // default (non-tight) spacing.
+      paragraphs: function () {
+        return [
+          _sooPara([
+            _sooRun('Schedule:', true),
+            _sooRun(' Zone will operate according to a user-definable schedule.', false),
+          ]),
+        ];
+      },
     },
     {
       id: 'unocc-override',
@@ -206,11 +226,27 @@ var SOO_TEMPLATES = {
         var zt = (ctx.flags && ctx.flags.zoneType) || 'vav';
         return SOO_PUBLIC_AREA_EXCLUDED_ZONE_TYPES.indexOf(zt) === -1;
       },
-      text:
-        'A timed local override control will allow an occupant to override the schedule ' +
-        'and place the unit into an occupied mode for an adjustable period of time (adj.). ' +
-        'At the expiration of this time, control of the unit will automatically return to ' +
-        'the schedule.',
+      // Master doc, "Zone Unoccupied Override:" paragraph — bold label,
+      // normal continuation (no bold spans in the master's own text),
+      // default (non-tight) spacing. The master's trailing italic caveat
+      // sentence ("Sensors in public areas will not have this
+      // functionality...") is represented instead by this clause's
+      // appliesWhen gate (Phase 1a's design decision, kept unchanged) rather
+      // than shown as italic text.
+      paragraphs: function () {
+        return [
+          _sooPara([
+            _sooRun('Zone Unoccupied Override:', true),
+            _sooRun(
+              ' A timed local override control will allow an occupant to override the schedule ' +
+                'and place the unit into an occupied mode for an adjustable period of time. At the ' +
+                'expiration of this time, control of the unit will automatically return to the ' +
+                'schedule.',
+              false,
+            ),
+          ]),
+        ];
+      },
     },
     {
       id: 'min-vent-co2',
@@ -219,10 +255,23 @@ var SOO_TEMPLATES = {
       appliesWhen: function (ctx) {
         return ctx.flags.hasCO2 !== false && !!ctx.points.co2;
       },
-      text:
-        'When in the occupied mode, the controller will measure the zone CO2 concentration ' +
-        'and modulate the zone damper open on rising CO2 concentrations, overriding normal ' +
-        'damper operation to maintain a CO2 setpoint of not more than {{CO2_SETPOINT}} (adj.).',
+      // Master doc, "Minimum Ventilation on Carbon Dioxide (CO2)
+      // Concentration:" paragraph — bold label, normal continuation, bold
+      // "1000 ppm (adj.)." value span, default (non-tight) spacing.
+      paragraphs: function () {
+        return [
+          _sooPara([
+            _sooRun('Minimum Ventilation on Carbon Dioxide (CO2) Concentration:', true),
+            _sooRun(
+              ' When in the occupied mode, the controller will measure the zone CO2 concentration ' +
+                'and modulate the zone damper open on rising CO2 concentrations, overriding normal ' +
+                'damper operation to maintain a CO2 setpoint of not more than ',
+              false,
+            ),
+            _sooRun('1000 ppm (adj.).', true),
+          ]),
+        ];
+      },
     },
     {
       id: 'flow-control',
@@ -231,50 +280,137 @@ var SOO_TEMPLATES = {
       appliesWhen: function () {
         return true;
       },
-      // standbyAirflowMode selector (SOO_BEHAVIOR_DEFAULTS) — 'minimum' is the ONLY option
-      // with master-doc text (docx 383-384); 'sameAsOccupiedMax' is authored, JOCO-sourced,
-      // never presented as a docx quotation (inventory §3.1).
-      vars: function (ctx) {
+      // Master doc, "Variable Volume Terminal Unit - Flow Control:" — 5
+      // paragraphs, ALL tight (spacing after=0) in the master, each bolding
+      // its own "(adj.)" airflow phrase(s) plus the "Occupied:"/"Unoccupied:"
+      // sub-labels. standbyAirflowMode selector (SOO_BEHAVIOR_DEFAULTS)
+      // swaps the Unoccupied block: 'minimum' is the ONLY option with
+      // master-doc text; 'sameAsOccupiedMax' is authored/JOCO-sourced
+      // (inventory §3.1), never presented as a docx quotation.
+      paragraphs: function (ctx) {
         var mode = (ctx.settings && ctx.settings.standbyAirflowMode) || 'minimum';
-        var unoccText =
-          mode === 'sameAsOccupiedMax'
-            ? 'Unoccupied: the zone damper will control to the same maximum cooling airflow ' +
-              '(adj.) used in occupied mode — the unoccupied minimum airflow is not reduced.'
-            : 'Unoccupied: when the zone is unoccupied the zone damper will control to its ' +
-              'minimum unoccupied airflow (adj.). When the zone temperature is greater than ' +
-              'its cooling setpoint, the zone damper will modulate between the minimum ' +
-              'unoccupied airflow (adj.) and the maximum cooling airflow (adj.) until the ' +
-              'zone is satisfied.';
-        return { UNOCC_FLOW_TEXT: unoccText };
+        var paras = [
+          _sooPara(
+            [
+              _sooRun('Variable Volume Terminal Unit – Flow Control:', true),
+              _sooRun(
+                ' The unit will maintain zone setpoints by controlling the airflow through one of the following:',
+                false,
+              ),
+            ],
+            true,
+          ),
+          _sooPara(
+            [
+              _sooRun('Occupied:  ', true),
+              _sooRun(
+                'When zone temperature is greater than its cooling setpoint, the zone damper will modulate between the ',
+                false,
+              ),
+              _sooRun('minimum occupied airflow (adj.)', true),
+              _sooRun(' and the ', false),
+              _sooRun('maximum cooling airflow (adj.)', true),
+              _sooRun(' until the zone is satisfied.', false),
+            ],
+            true,
+          ),
+          _sooPara(
+            [
+              _sooRun(
+                'When the zone temperature is less than the cooling setpoint, the zone damper will maintain the ',
+                false,
+              ),
+              _sooRun('minimum required zone ventilation (adj.).', true),
+            ],
+            true,
+          ),
+        ];
+        if (mode === 'sameAsOccupiedMax') {
+          // Authored alternate (JOCO review) — no master-doc equivalent.
+          paras.push(
+            _sooPara(
+              [
+                _sooRun('Unoccupied:  ', true),
+                _sooRun('the zone damper will control to the same ', false),
+                _sooRun('maximum cooling airflow (adj.)', true),
+                _sooRun(' used in occupied mode — the unoccupied minimum airflow is not reduced.', false),
+              ],
+              true,
+            ),
+          );
+        } else {
+          paras.push(
+            _sooPara(
+              [
+                _sooRun('Unoccupied:  ', true),
+                _sooRun('When the zone is unoccupied the zone damper will control to its ', false),
+                _sooRun('minimum unoccupied airflow (adj.).', true),
+              ],
+              true,
+            ),
+            _sooPara(
+              [
+                _sooRun(
+                  'When the zone temperature is greater than its cooling setpoint, the zone damper will modulate between the ',
+                  false,
+                ),
+                _sooRun('minimum unoccupied airflow (adj.)', true),
+                _sooRun(' and the ', false),
+                _sooRun('maximum cooling airflow (adj.)', true),
+                _sooRun(' until the zone is satisfied.', false),
+              ],
+              true,
+            ),
+          );
+        }
+        return paras;
       },
-      text:
-        'The unit will maintain zone setpoints by controlling the airflow through the ' +
-        'following: Occupied: when zone temperature is greater than its cooling setpoint, ' +
-        'the zone damper will modulate between the minimum occupied airflow (adj.) and the ' +
-        'maximum cooling airflow (adj.) until the zone is satisfied. When the zone ' +
-        'temperature is less than the cooling setpoint, the zone damper will maintain the ' +
-        'minimum required zone ventilation (adj.).\n{{UNOCC_FLOW_TEXT}}',
     },
     {
       id: 'reheat-modulating',
       order: 120,
       title: 'Reheating Coil Valve',
-      // hasReheat + reheatValve point present -> reheat clause family (blueprint §"Point
-      // signal -> clause mapping"). reheatActuator is a manual flag (NOT point-derived —
-      // see file header); the 3 modulating mechanisms (pid-valve/linear-valve/
-      // floating-motor) read as IDENTICAL master-doc prose (inventory §2 row 120) — only
-      // electric-binary gets distinct staged text (reheat-staged, below).
+      // hasReheat + reheatValve point present -> reheat clause family
+      // (blueprint §"Point signal -> clause mapping"). reheatActuator is a
+      // manual flag (NOT point-derived); the 3 modulating mechanisms
+      // (pid-valve/linear-valve/floating-motor) read as IDENTICAL master-doc
+      // prose — only electric-binary gets distinct staged text (reheat-
+      // staged, below). UNCHANGED selection logic from Phase 1a.
       appliesWhen: function (ctx) {
         if (ctx.flags.hasReheat === false || !ctx.points.reheatValve) return false;
         var actuator = ctx.flags.reheatActuator || 'pid-valve';
         return actuator !== 'electric-binary';
       },
-      text:
-        'The controller will measure the zone temperature and modulate the reheating coil ' +
-        'valve open on dropping temperature to maintain its heating setpoint. When cold air ' +
-        'is available from the AHU and there is no fan present in the box, the zone damper ' +
-        'will modulate to the minimum occupied airflow (adj.). If more heat is required, the ' +
-        'zone damper will modulate to the auxiliary heating airflow (adj.).',
+      // Master doc, "Reheating Coil Valve:" paragraph pair — both tight,
+      // bolding the two airflow "(adj.)" phrases.
+      paragraphs: function () {
+        return [
+          _sooPara(
+            [
+              _sooRun('Reheating Coil Valve:', true),
+              _sooRun(
+                ' The controller will measure the zone temperature and modulate the reheating coil valve ' +
+                  'open on dropping temperature to maintain its heating setpoint.',
+                false,
+              ),
+            ],
+            true,
+          ),
+          _sooPara(
+            [
+              _sooRun(
+                'When cold air is available from the AHU and there is no fan present in the box, the zone ' +
+                  'damper will modulate to the ',
+                false,
+              ),
+              _sooRun('minimum occupied airflow (adj.).', true),
+              _sooRun(' If more heat is required, the zone damper will modulate to the ', false),
+              _sooRun('auxiliary heating airflow (adj.).', true),
+            ],
+            true,
+          ),
+        ];
+      },
     },
     {
       id: 'reheat-staged',
@@ -285,64 +421,115 @@ var SOO_TEMPLATES = {
         var actuator = ctx.flags.reheatActuator || 'pid-valve';
         return actuator === 'electric-binary';
       },
-      text:
-        'The controller will measure the zone temperature and stage the reheating to ' +
-        'maintain its setpoint. To prevent short cycling, the stage will have a user-' +
-        'definable minimum runtime (adj.). The reheating will be enabled whenever: outside ' +
-        'air temperature is less than {{REHEAT_OAT_LOCKOUT}} (adj.); AND the zone ' +
-        'temperature is below setpoint; AND sufficient airflow is provided.',
+      // Master doc, "Electric Reheating Stage:" — 5 tight paragraphs. Note
+      // the master does NOT bold "a user definable (adj.) minimum runtime"
+      // (unlike Flow Control's airflow phrases) — only the stated "65°F
+      // (adj.)" OAT lockout number is bold. Replicated exactly, not
+      // normalized to one universal bold rule.
+      paragraphs: function () {
+        return [
+          _sooPara(
+            [
+              _sooRun('Electric Reheating Stage: ', true),
+              _sooRun(
+                'The controller will measure the zone temperature and stage the reheating to maintain its ' +
+                  'setpoint. To prevent short cycling, the stage will have a user definable (adj.) minimum ' +
+                  'runtime.',
+                false,
+              ),
+            ],
+            true,
+          ),
+          _sooPara([_sooRun('The reheating will be enabled whenever:', false)], true),
+          _sooPara([_sooRun('Outside air temperature is less than ', false), _sooRun('65°F (adj.).', true)], true),
+          _sooPara([_sooRun('AND the zone temperature is below setpoint.', false)], true),
+          _sooPara([_sooRun('AND sufficient airflow is provided.', false)], true),
+        ];
+      },
     },
     {
       id: 'dat-floor-failure',
       order: 125,
       title: 'Discharge Air Temperature (DAT) Floor Interlock',
-      // JOCO-only clause — no master-doc equivalent (inventory §2/§3). Gated purely on the
-      // dat point being present (blueprint: "highest reach: ~100% of reheat boxes").
+      // JOCO-only clause — no master-doc equivalent (inventory §2/§3). Gated
+      // purely on the dat point being present (blueprint: "highest reach:
+      // ~100% of reheat boxes"). Authored in the same visual convention as
+      // Flow Control/Reheating Coil Valve (bold label, bold "(adj.)"
+      // phrases) since it belongs to the same functional family.
       appliesWhen: function (ctx) {
         return !!ctx.points.dat;
       },
-      vars: function (ctx) {
+      paragraphs: function (ctx) {
         var mode = (ctx.settings && ctx.settings.datFloorFailureMode) || 'increaseAirflowToMax';
-        var t =
+        var tailRuns =
           mode === 'dropToMinAndAlarm'
-            ? 'If the reheat valve is fully open (100%) and the discharge air temperature ' +
-              'remains below {{DAT_FLOOR}} (adj.), the zone damper will reduce to the ' +
-              'minimum occupied airflow (adj.) and the controller will generate an alarm.'
-            : 'If the reheat valve is fully open (100%) and the discharge air temperature ' +
-              'remains below {{DAT_FLOOR}} (adj.), the zone damper will increase airflow ' +
-              'toward the maximum heating airflow (adj.) until the discharge air ' +
-              'temperature recovers above the floor.';
-        // {{DAT_FLOOR}} inside t resolves automatically — sooResolveClauseText re-scans
-        // dynamic-var output for nested tokens (see its header comment).
-        return { DAT_FLOOR_TEXT: t };
+            ? [
+                _sooRun(
+                  'If the reheat valve is fully open (100%) and the discharge air temperature remains below ',
+                  false,
+                ),
+                _sooRun('50°F (adj.)', true),
+                _sooRun(', the zone damper will reduce to the ', false),
+                _sooRun('minimum occupied airflow (adj.)', true),
+                _sooRun(' and the controller will generate an alarm.', false),
+              ]
+            : [
+                _sooRun(
+                  'If the reheat valve is fully open (100%) and the discharge air temperature remains below ',
+                  false,
+                ),
+                _sooRun('50°F (adj.)', true),
+                _sooRun(', the zone damper will increase airflow toward the ', false),
+                _sooRun('maximum heating airflow (adj.)', true),
+                _sooRun(' until the discharge air temperature recovers above the floor.', false),
+              ];
+        return [
+          _sooPara(
+            [
+              _sooRun('Discharge Air Temperature (DAT) Floor Interlock:', true),
+              _sooRun(
+                ' The controller will monitor the discharge air temperature (DAT) leaving the reheat coil. ',
+                false,
+              ),
+            ].concat(tailRuns),
+          ),
+        ];
       },
-      text: 'The controller will monitor the discharge air temperature (DAT) leaving the reheat coil. {{DAT_FLOOR_TEXT}}',
     },
     {
       id: 'fan-series',
       order: 140,
       title: 'Fan Control – Series',
-      // isSeries is not yet an EM_EQUIP_CONFIG_FLAGS.vav entry (Phase 2 per blueprint) — reads
-      // ctx.flags.isSeries if a caller has set it; defaults false (Phase 1 target variant has
-      // no fan), so this clause normally does not render. Kept here so seriesFanRunMode has a
-      // clause to resolve into (requirement: all 3 SOO_BEHAVIOR settings must be wired).
+      // isSeries is not yet an EM_EQUIP_CONFIG_FLAGS.vav entry (Phase 2 per
+      // blueprint) — reads ctx.flags.isSeries if a caller has set it;
+      // defaults false (Phase 1 target variant has no fan), so this clause
+      // normally does not render. Kept so seriesFanRunMode has a clause to
+      // resolve into (all 3 SOO_BEHAVIOR settings must be wired).
       appliesWhen: function (ctx) {
         return ctx.flags.isSeries === true;
       },
-      vars: function (ctx) {
+      paragraphs: function (ctx) {
         var mode = (ctx.settings && ctx.settings.seriesFanRunMode) || 'continuous';
-        var t =
+        var body =
           mode === 'occupiedOnly'
-            ? 'The fan will run only when the zone is in occupied mode. The fan will run for ' +
-              'a minimum user-definable time (adj.).'
-            : 'The fan will run anytime the unit is commanded to run. The fan will run for a ' +
-              'minimum user-definable time (adj.).';
-        return { FAN_SERIES_MODE_TEXT: t };
+            ? 'The fan will run only when the zone is in occupied mode. The fan will run for a minimum ' +
+              'user definable time (adj.).'
+            : 'The fan will run anytime the unit is commanded to run. The fan will run for a minimum ' +
+              'user definable time (adj.).';
+        return [
+          _sooPara([
+            _sooRun('Fan Control – Series:', true),
+            _sooRun(
+              ' ' +
+                body +
+                ' The zone damper will close completely before the fan starts to prevent air from the AHU ' +
+                'from causing the fan to spin backward. The zone damper will return to automatic control ' +
+                'after the fan starts.',
+              false,
+            ),
+          ]),
+        ];
       },
-      text:
-        '{{FAN_SERIES_MODE_TEXT}} The zone damper will close completely before the fan ' +
-        'starts to prevent air from the AHU from causing the fan to spin backward. The zone ' +
-        'damper will return to automatic control after the fan starts.',
     },
     {
       id: 'alarms',
@@ -351,30 +538,61 @@ var SOO_TEMPLATES = {
       appliesWhen: function () {
         return true;
       },
-      vars: function (ctx) {
-        var co2Row =
-          ctx.flags.hasCO2 !== false && ctx.points.co2
-            ? '\nHigh Zone Carbon Dioxide Concentration: if the zone CO2 concentration is ' +
-              'greater than {{HIGH_CO2_ALARM}} ppm (adj.).'
-            : '';
-        return { CO2_ALARM_ROW: co2Row };
+      // Master doc, VAV-specific alarms block — "Alarms will be provided as
+      // follows:" bold label (tight), then each alarm row its OWN tight
+      // paragraph with NO bold anywhere (unlike Flow Control, the master
+      // does not bold the "(adj.)" phrases in this block — replicated
+      // exactly). CO2 row gated on hasCO2 + the co2 point, matching Phase
+      // 1a. VOC row omitted — inventory §5 gap (no EM hasVOC/vocSensor flag
+      // exists yet).
+      paragraphs: function (ctx) {
+        var paras = [
+          _sooPara([_sooRun('Alarms will be provided as follows:', true)], true),
+          _sooPara(
+            [
+              _sooRun(
+                'High Zone Temp: If the zone temperature is greater than the cooling setpoint by a user definable amount (adj.).',
+                false,
+              ),
+            ],
+            true,
+          ),
+          _sooPara(
+            [
+              _sooRun(
+                'Low Zone Temp: If the zone temperature is less than the heating setpoint by a user definable amount (adj.).',
+                false,
+              ),
+            ],
+            true,
+          ),
+        ];
+        if (ctx.flags.hasCO2 !== false && ctx.points.co2) {
+          paras.push(
+            _sooPara(
+              [
+                _sooRun(
+                  'High Zone Carbon Dioxide Concentration: If the zone CO2 concentration is greater than ____ ppm (adj.).',
+                  false,
+                ),
+              ],
+              true,
+            ),
+          );
+        }
+        return paras;
       },
-      text:
-        'Alarms will be provided as follows:\n' +
-        'High Zone Temp: if the zone temperature is greater than the cooling setpoint by a ' +
-        'user-definable amount (adj.).\n' +
-        'Low Zone Temp: if the zone temperature is less than the heating setpoint by a ' +
-        'user-definable amount (adj.).{{CO2_ALARM_ROW}}',
     },
   ],
 };
 
-/* ── 6. Context builder — reuses EM's existing point/flag machinery ─────────
-   Zero re-derivation of point presence: emGetNormalizedPoints (indirectly, via
-   emComputeCompliance) and emLoadEquipConfigFlags are the SAME functions the
-   Equipment Matrix audit/compliance view already uses. ctx.points is built
-   from compliance.coveredPoints (a point actually matched on this row), not
-   from configFlag defaults — a flag can say hasReheat:true with no reheatValve
+/* ── 5. Context builder — reuses EM's existing point/flag machinery ─────────
+   UNCHANGED from Phase 1a. Zero re-derivation of point presence:
+   emGetNormalizedPoints (indirectly, via emComputeCompliance) and
+   emLoadEquipConfigFlags are the SAME functions the Equipment Matrix
+   audit/compliance view already uses. ctx.points is built from
+   compliance.coveredPoints (a point actually matched on this row), not from
+   configFlag defaults — a flag can say hasReheat:true with no reheatValve
    point actually mapped, and the reheat clause correctly will not render. */
 function sooBuildContext(pid, rowId) {
   var data = emLoadMatrix(pid);
@@ -406,10 +624,7 @@ function sooBuildContext(pid, rowId) {
   };
 }
 
-/* ── 7. Clause selection + page rendering ────────────────────────────────────
-   Renders selected clauses into .rpt-page-shaped HTML via the EXISTING
-   rptPage()/_rptPaginateTokens()/_rptContentBudget() report-engine helpers —
-   zero new visual language, per blueprint. */
+/* ── 6. Clause selection — UNCHANGED from Phase 1a ──────────────────────── */
 function sooSelectClauses(category, ctx) {
   var lib = SOO_TEMPLATES[category] || [];
   var selected = lib.filter(function (c) {
@@ -421,79 +636,201 @@ function sooSelectClauses(category, ctx) {
   return selected;
 }
 
-function sooBuildPagesHTML(ctx) {
+/* ── 7. Master-format paragraph list for one equipment row ─────────────────
+   Builds the FULL ordered paragraph list for the document: an identifying
+   line for which equipment this covers (the master template has no
+   per-box identification — it is a library, not a project deliverable),
+   then the equipment-type Heading 1 (verbatim master section title), then
+   each selected clause's paragraphs in order. */
+function sooBuildDocParagraphs(ctx) {
   var row = ctx.row;
-  var category = row.category || 'vav';
-  var clauses = sooSelectClauses(category, ctx);
+  var idLabel = (row.equipName || row.name || row.id) + (row.building ? ' — ' + row.building : '');
+  var clauses = sooSelectClauses(row.category || 'vav', ctx);
 
-  // Uses ONLY existing report-engine tokens (--rpt-border, --rpt-page-text — both defined in
-  // energy-department.html's #report-styles) — zero new hex/tokens, per report-standard.md
-  // Rule 4.1 (no grey/faded text in report chrome) and the "one shade of blue for titles"
-  // convention (--rpt-blue stays reserved for .rpt-pg-title; body/sub-headings inherit
-  // .rpt-page's --rpt-page-text like every other report body section, e.g.
-  // rptPageObservations's per-building paragraphs).
-  var idBlockHTML =
-    '<div style="margin-bottom:20px;padding-bottom:10px;border-bottom:1px solid var(--rpt-border)">' +
-    '<div style="font:700 13px Arial,Helvetica,sans-serif">' +
-    emHtmlEsc(row.equipName || row.name || row.id) +
-    '</div>' +
-    '<div style="font:11px Arial,Helvetica,sans-serif">' +
-    emHtmlEsc(row.building || '') +
-    (row.location ? ' — ' + emHtmlEsc(row.location) : '') +
-    '</div>' +
-    '</div>';
-
-  var idBlockEstH = 60;
-
-  var tokens = clauses.map(function (clause) {
-    var body = sooResolveClauseText(clause, ctx);
-    var html =
-      '<div class="soo-clause" style="margin-bottom:16px">' +
-      '<h3 style="font:700 12px Arial,Helvetica,sans-serif;margin:0 0 6px">' +
-      emHtmlEsc(clause.title) +
-      '</h3>' +
-      '<div style="font:11px/1.4 Georgia,\'Times New Roman\',serif;white-space:pre-line">' +
-      emHtmlEsc(body) +
-      '</div></div>';
-    // Hand-estimated height (same convention as other rptPage* builders in report-engine.js):
-    // ~20px heading line + ~20px per ~95-char wrapped line of body text + padding.
-    var estH = 30 + Math.ceil(body.length / 95) * 18 + 16;
-    return { type: 'block', html: html, estH: estH };
+  var paras = [];
+  paras.push(_sooPara([_sooRun(idLabel, true)], false));
+  paras.push({ heading1: true, runs: [_sooRun('Variable Air Volume – Terminal Units', false)], tight: false });
+  clauses.forEach(function (clause) {
+    var clauseParas = clause.paragraphs(ctx) || [];
+    for (var i = 0; i < clauseParas.length; i++) paras.push(clauseParas[i]);
   });
-
-  var budget = typeof _rptContentBudget === 'function' ? _rptContentBudget() : 500;
-  var firstPageBudget = Math.max(budget - idBlockEstH, 100);
-  var chunks =
-    typeof _rptPaginateTokens === 'function' ? _rptPaginateTokens(tokens, firstPageBudget, budget) : [tokens];
-  if (!chunks.length) chunks = [[]];
-
-  var fakeData = { project: { client: ctx.projectName || '', name: ctx.projectName || '' } };
-
-  var pagesHTML = [];
-  for (var p = 0; p < chunks.length; p++) {
-    var bodyHTML =
-      (p === 0 ? idBlockHTML : '') +
-      chunks[p]
-        .map(function (t) {
-          return t.html;
-        })
-        .join('');
-    pagesHTML.push(
-      rptPage(p + 1, 'Sequence of Operations', bodyHTML, {
-        data: fakeData,
-        label: 'Page ' + (p + 1),
-      }),
-    );
-  }
-
-  return typeof _injectPageNumbers === 'function' ? _injectPageNumbers(pagesHTML.join('\n')) : pagesHTML.join('\n');
+  return paras;
 }
 
-/* ── 8. TEMPORARY entry point (Phase 1 only — Phase 3 builds the real UI) ───
-   Generates a SOO for one VAV row, previews it in the existing report
-   overlay (#reportPages / #reportOverlay, same chrome/export buttons every
-   other report type uses), and marks the report data with `_soo` so
-   exportReportToDocx() picks the right filename branch. */
+/* ── 8. Plain preview renderer (NOT .rpt-page) ──────────────────────────────
+   Per Matt's correction: the preview must be a plain white document page —
+   heading + bold-label paragraphs — not the branded report shell. No
+   pagination (the overlay's own .report-pages container already scrolls);
+   "fine for the preview to be simple" per the correction brief. */
+function sooParaToPreviewHtml(para) {
+  if (para.heading1) {
+    var htext = para.runs
+      .map(function (r) {
+        return emHtmlEsc(r.text);
+      })
+      .join('');
+    return (
+      '<h2 style="font-family:Calibri,Arial,sans-serif;font-size:16pt;font-weight:700;' +
+      'color:#2E74B5;margin:16pt 0 0 0">' +
+      htext +
+      '</h2>'
+    );
+  }
+  var inner = para.runs
+    .map(function (r) {
+      var t = emHtmlEsc(r.text);
+      return r.bold ? '<strong>' + t + '</strong>' : t;
+    })
+    .join('');
+  var marginBottom = para.tight ? '0' : '8pt';
+  return (
+    '<p style="font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.15;' +
+    'color:#000;margin:0 0 ' +
+    marginBottom +
+    ' 0">' +
+    inner +
+    '</p>'
+  );
+}
+
+function sooBuildPreviewHtml(ctx) {
+  var paras = sooBuildDocParagraphs(ctx);
+  var body = paras.map(sooParaToPreviewHtml).join('');
+  return (
+    '<div class="soo-doc-page" style="background:#fff;width:8.5in;min-height:11in;' +
+    'box-sizing:border-box;padding:0.5in;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.25)">' +
+    body +
+    '</div>'
+  );
+}
+
+/* ── 9. Word export — real Heading 1 / Normal / bold-run OOXML ─────────────
+   Splices into SOO_DOCX_SKELETON_B64 (app/soo-docx-skeleton.js, built
+   directly from the master .docx's own styles.xml/numbering.xml/theme1.xml
+   so Heading 1's color/font and Normal's default font come from the master
+   itself, not a hand-authored approximation). This is a SEPARATE assembler
+   from app/docx-writer.js's _docxAssemble()/CSC_DOCX_SKELETON_B64 — that
+   pipeline is report-specific (CSC letterhead, "Page N of M" footers,
+   report-table numbering) and must never be reused here. */
+function _sooXmlEsc(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function _sooRunToDocxXml(run) {
+  var rPr = run.bold ? '<w:rPr><w:b/></w:rPr>' : '';
+  return '<w:r>' + rPr + '<w:t xml:space="preserve">' + _sooXmlEsc(run.text) + '</w:t></w:r>';
+}
+
+function _sooParaToDocxXml(para) {
+  var pPrParts = [];
+  if (para.heading1) pPrParts.push('<w:pStyle w:val="Heading1"/>');
+  if (para.tight) pPrParts.push('<w:spacing w:after="0"/>');
+  var pPr = pPrParts.length ? '<w:pPr>' + pPrParts.join('') + '</w:pPr>' : '';
+  var runsXml = para.runs.map(_sooRunToDocxXml).join('');
+  return '<w:p>' + pPr + runsXml + '</w:p>';
+}
+
+function sooBuildDocxBodyXml(ctx) {
+  var paras = sooBuildDocParagraphs(ctx);
+  return paras.map(_sooParaToDocxXml).join('');
+}
+
+/**
+ * _sooDocxAssemble — splice bodyXml into SOO_DOCX_SKELETON_B64 and trigger a
+ * download. Mirrors app/docx-writer.js's _docxAssemble() splice technique
+ * (locate <w:body>/<w:sectPr>, preserve the skeleton's tail verbatim) but
+ * against the SOO's own plain-document skeleton — no letterhead spacer, no
+ * "Page N of M" footer rewrite, no report-table numbering splice, none of
+ * which apply to a plain master-format document.
+ */
+async function _sooDocxAssemble(bodyXml, opts) {
+  opts = opts || {};
+  if (typeof JSZip === 'undefined') throw new Error('_sooDocxAssemble: JSZip is not loaded');
+  if (typeof SOO_DOCX_SKELETON_B64 === 'undefined') {
+    throw new Error('_sooDocxAssemble: SOO_DOCX_SKELETON_B64 is not loaded (app/soo-docx-skeleton.js)');
+  }
+  if (typeof _docxBase64ToUint8Array !== 'function') {
+    throw new Error('_sooDocxAssemble: _docxBase64ToUint8Array is not loaded (app/docx-writer.js)');
+  }
+
+  var skeletonBytes = _docxBase64ToUint8Array(SOO_DOCX_SKELETON_B64);
+  var zip = await JSZip.loadAsync(skeletonBytes);
+  var skeletonDocXml = await zip.file('word/document.xml').async('string');
+
+  var bodyOpenTag = '<w:body>';
+  var bodyOpenIdx = skeletonDocXml.indexOf(bodyOpenTag);
+  var sectPrIdx = skeletonDocXml.indexOf('<w:sectPr');
+  if (bodyOpenIdx === -1 || sectPrIdx === -1) {
+    throw new Error('_sooDocxAssemble: skeleton word/document.xml missing <w:body> or <w:sectPr>');
+  }
+  var head = skeletonDocXml.slice(0, bodyOpenIdx + bodyOpenTag.length);
+  var tail = skeletonDocXml.slice(sectPrIdx);
+
+  zip.file('word/document.xml', head + bodyXml + tail);
+
+  var blob = await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+
+  if (opts.download !== false && typeof document !== 'undefined') {
+    var filename = opts.filename || 'Sequence of Operations.docx';
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
+
+  return blob;
+}
+
+/**
+ * sooExportToDocx — the SOO's own Word-export entry point. Called by
+ * exportReportToDocx() (app/report-engine.js) when window._currentReportData
+ * carries `_soo`, BEFORE that function reads any `.rpt-page` DOM — the SOO
+ * export never touches the report translator.
+ */
+async function sooExportToDocx() {
+  if (!_sooLastCtx) {
+    if (typeof showToast === 'function') showToast('No Sequence of Operations generated yet');
+    return;
+  }
+  if (typeof showToast === 'function') showToast('Generating Word document...');
+  try {
+    var bodyXml = sooBuildDocxBodyXml(_sooLastCtx);
+    var client = _sooLastCtx.projectName || '';
+    var _fnNow = new Date();
+    var dateStr =
+      _fnNow.getFullYear() +
+      '.' +
+      String(_fnNow.getMonth() + 1).padStart(2, '0') +
+      '.' +
+      String(_fnNow.getDate()).padStart(2, '0');
+    var filename = (client ? client + ' - ' : '') + 'Sequence of Operations ' + dateStr + '.docx';
+    await _sooDocxAssemble(bodyXml, { filename: filename });
+    if (typeof showToast === 'function') showToast('Word document generated ✓');
+  } catch (err) {
+    console.error('SOO Word export failed:', err);
+    if (typeof showToast === 'function')
+      showToast('Word export failed: ' + (err && err.message ? err.message : err), 'error');
+  }
+}
+
+/* ── 10. TEMPORARY entry point (Phase 1 only — Phase 3 builds the real UI) ─
+   Generates a SOO for one VAV row and previews it in the existing report
+   overlay (#reportPages / #reportOverlay, same Save/Export toolbar every
+   other report type uses) — but the CONTENT rendered inside is the plain
+   master-format document (sooBuildPreviewHtml), not `.rpt-page` markup.
+   window._currentReportData._soo tells exportReportToDocx() to delegate to
+   sooExportToDocx() instead of its own report translator. */
+var _sooLastCtx = null;
+
 function sooGenerateForRow(rowId) {
   var pid = window._emActivePid || '';
   if (!pid) {
@@ -519,7 +856,9 @@ function sooGenerateForRow(rowId) {
   })[0];
   ctx.projectName = proj ? proj.name || proj.id : pid;
 
-  var html = sooBuildPagesHTML(ctx);
+  _sooLastCtx = ctx;
+
+  var html = sooBuildPreviewHtml(ctx);
   var title = ctx.projectName + ' — Sequence of Operations (' + (ctx.row.equipName || ctx.row.id) + ')';
 
   window._currentReportData = {
@@ -535,13 +874,14 @@ function sooGenerateForRow(rowId) {
 }
 
 window.SOO_BEHAVIOR_DEFAULTS = SOO_BEHAVIOR_DEFAULTS;
-window.SOO_VAR_DEFAULTS = SOO_VAR_DEFAULTS;
 window.SOO_TEMPLATES = SOO_TEMPLATES;
 window.sooLoadSettings = sooLoadSettings;
 window.sooSaveSettings = sooSaveSettings;
 window.sooSetSetting = sooSetSetting;
-window.sooResolveClauseText = sooResolveClauseText;
 window.sooBuildContext = sooBuildContext;
 window.sooSelectClauses = sooSelectClauses;
-window.sooBuildPagesHTML = sooBuildPagesHTML;
+window.sooBuildDocParagraphs = sooBuildDocParagraphs;
+window.sooBuildPreviewHtml = sooBuildPreviewHtml;
+window.sooBuildDocxBodyXml = sooBuildDocxBodyXml;
+window.sooExportToDocx = sooExportToDocx;
 window.sooGenerateForRow = sooGenerateForRow;

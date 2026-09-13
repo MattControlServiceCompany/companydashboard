@@ -15366,8 +15366,11 @@
     <script src="app/equipment-matrix.js?v=823"></script>
     <!-- soo-generator.js (SOO Phase 1, item 3f1415af): reads points/config flags via the
          EXISTING emGetNormalizedPoints/emComputeCompliance/emLoadEquipConfigFlags (equipment-
-         matrix.js, loaded above) and renders via rptPage/showReportOverlay (report-engine.js,
-         loaded above) — must load after both. -->
+         matrix.js, loaded above). Format-correction pass (2026-09-13): renders the MASTER
+         SEQUENCES OF OPERATION document's own Word format directly (Heading 1/Normal/bold-label
+         runs), NOT the report-engine .rpt-page shell — soo-docx-skeleton.js supplies the
+         master-doc-derived skeleton its own Word export splices into. -->
+    <script src="app/soo-docx-skeleton.js?v=823"></script>
     <script src="app/soo-generator.js?v=823"></script>
     <script src="app/graphics-setpoints.js?v=823"></script>
     <script src="app/budget.js?v=823"></script>

@@ -10327,6 +10327,20 @@ async function exportReportToDocx() {
     return;
   }
 
+  // SOO Generator format-correction pass (2026-09-13, item 3f1415af): a Sequence of
+  // Operations must reproduce the MASTER SEQUENCES OF OPERATION document's own Word format
+  // (Heading 1/Normal/bold-label runs) -- NOT this function's .rpt-page -> _docxTranslatePages
+  // report pipeline. Delegate entirely to app/soo-generator.js's own assembler and return
+  // before any `.rpt-page` DOM is read below.
+  if (data._soo) {
+    if (typeof sooExportToDocx === 'function') {
+      await sooExportToDocx();
+    } else {
+      showToast('SOO export function not available -- app/soo-generator.js not loaded', 'error');
+    }
+    return;
+  }
+
   const pagesContainer = document.getElementById('reportPages');
   const pages = pagesContainer ? pagesContainer.querySelectorAll('.rpt-page') : [];
   if (!pages.length) {
@@ -10411,10 +10425,6 @@ async function exportReportToDocx() {
         data._ashrae.type === 'proposal'
           ? client + ' - Service Proposal ' + dateStr + '.docx'
           : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.docx';
-    } else if (data._soo) {
-      // SOO Generator Phase 1 (item 3f1415af): reuses this same docx pipeline unchanged —
-      // only the filename branch is new. See app/soo-generator.js.
-      filename = client + ' - Sequence of Operations ' + dateStr + '.docx';
     } else {
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
       filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.docx';
