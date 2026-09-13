@@ -8651,6 +8651,14 @@ function _emAttachPanelDelegatedListeners() {
     var toggleEl = e.target && e.target.closest ? e.target.closest('[data-em-toggle-all-points]') : null;
     if (toggleEl) {
       emToggleAllPointsInDetail(toggleEl.dataset.rowId);
+      return;
+    }
+    // TEMPORARY (SOO Generator Phase 1, item 3f1415af): console/temp-button entry point only
+    // — Phase 3 builds the real Equipment Matrix "sequence" view. Remove this handler once
+    // that view ships.
+    var sooEl = e.target && e.target.closest ? e.target.closest('[data-soo-generate-row]') : null;
+    if (sooEl && typeof sooGenerateForRow === 'function') {
+      sooGenerateForRow(sooEl.dataset.rowId);
     }
   });
 }
@@ -8993,8 +9001,19 @@ function emShowComplianceDetail(rowId) {
     emHtmlEsc(catLabel) +
     ' &mdash; ASHRAE 36 Detail</div>' +
     '</div>' +
+    '<div style="display:flex;align-items:center;gap:6px">' +
+    // TEMPORARY (SOO Generator Phase 1, item 3f1415af): temp entry point only, VAV-only,
+    // no full sequence UI yet (that is Phase 3). Remove/replace once Phase 3 ships.
+    (category === 'vav'
+      ? '<button data-soo-generate-row="1" data-row-id="' +
+        emHtmlEsc(rowId) +
+        '" style="font-size:10px;padding:3px 8px;background:var(--s2);border:1px solid var(--border);' +
+        'color:var(--text2);border-radius:3px;cursor:pointer" ' +
+        'title="TEMP (Phase 1): generate a draft Sequence of Operations for this VAV">Generate Sequence (temp)</button>'
+      : '') +
     '<button onclick="emCloseComplianceDetail()" style="background:none;border:none;font-size:18px;' +
     'cursor:pointer;color:var(--text2);padding:4px;line-height:1" title="Close">&times;</button>' +
+    '</div>' +
     '</div>' +
     '<div style="flex:1;overflow-y:auto;padding:16px">' +
     covHtml +

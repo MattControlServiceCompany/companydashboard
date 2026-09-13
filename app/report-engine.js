@@ -10411,6 +10411,10 @@ async function exportReportToDocx() {
         data._ashrae.type === 'proposal'
           ? client + ' - Service Proposal ' + dateStr + '.docx'
           : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.docx';
+    } else if (data._soo) {
+      // SOO Generator Phase 1 (item 3f1415af): reuses this same docx pipeline unchanged —
+      // only the filename branch is new. See app/soo-generator.js.
+      filename = client + ' - Sequence of Operations ' + dateStr + '.docx';
     } else {
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
       filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.docx';
