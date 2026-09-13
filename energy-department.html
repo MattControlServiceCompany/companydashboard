@@ -3181,6 +3181,20 @@
           break-after: avoid;
           page-break-after: avoid;
         }
+        /* SOO Generator Phase 3 (item 3f1415af): a Sequence of Operations preview renders
+           inside `.soo-doc-page` (soo-generator.js's own plain master-format shell), never
+           `.rpt-page` — none of the `.rpt-page`-scoped rules above apply to it. The generic
+           chrome-hiding rules above (#reportOverlay, .report-toolbar, .report-pages) already
+           cover this document too since they aren't scoped to `.rpt-page`; this block only
+           needs to strip the screen-only centering/shadow/width so the plain document fills
+           the physical page, and let its normal-flow height (already `min-height`, not fixed)
+           paginate naturally across as many physical pages as the clause text needs. */
+        .soo-doc-page {
+          width: auto !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          box-shadow: none !important;
+        }
       }
     </style>
 

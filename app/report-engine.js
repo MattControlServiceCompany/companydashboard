@@ -8809,7 +8809,14 @@ async function exportReportToPDF() {
     return;
   }
 
-  const pages = document.querySelectorAll('#reportPages .rpt-page');
+  // SOO Generator Phase 3 (item 3f1415af): a Sequence of Operations preview renders inside
+  // `.soo-doc-page` (soo-generator.js's own plain master-format shell), never `.rpt-page` — this
+  // selector previously always matched `.rpt-page` only, so Print/Export-to-PDF silently found
+  // zero pages for every SOO document and aborted with "No report pages to export" before
+  // window.print() was ever called. Same print-to-PDF mechanism either way, just the right
+  // selector for what's actually in the live DOM.
+  const pageSelector = data._soo ? '.soo-doc-page' : '.rpt-page';
+  const pages = document.querySelectorAll('#reportPages ' + pageSelector);
   if (!pages.length) {
     showToast('No report pages to export');
     return;
@@ -8838,6 +8845,8 @@ async function exportReportToPDF() {
       data._ashrae.type === 'proposal'
         ? client + ' - Service Proposal ' + dateStr
         : client + ' - ASHRAE 36 Audit Report ' + dateStr;
+  } else if (data._soo) {
+    filename = client + ' - Sequence of Operations ' + dateStr;
   } else {
     const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
     filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr;

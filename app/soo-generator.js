@@ -17,10 +17,29 @@
    seriesFanRunMode) were already wired end-to-end in Phase 1 — unchanged
    here, only exercised against the new flag combinations in verification.
 
+   PHASE 3 (2026-09-13, this pass) added the real Equipment Matrix "Sequence"
+   view (app/equipment-matrix.js: emSetSequenceView/emRenderSequenceView) on
+   top of this file's UNCHANGED clause-selection logic (appliesWhen/paragraphs
+   — zero edits below this note). New in this file: `sooRowSignature`/
+   `sooGroupRowsBySignature` (auto-groups equipment by identical selected
+   clause-id set, mirroring the JOCO base-program collapse, so one clause set
+   covers many boxes instead of one wall of text per box); `sooBuildGroupDocParagraphs`
+   (same clause body a single-row doc gets, headed by an "Applies to:" box
+   list instead of one box name); `sooGenerateForRows` (the Sequence view's
+   multi-box entry point, sibling to the existing single-row
+   `sooGenerateForRow`, reusing the identical preview/overlay/export
+   machinery); and a `_sooLastGroups` export path inside the EXISTING
+   `sooExportToDocx()` (no new report-engine.js branch — still the one
+   `data._soo` hook). The per-row temp button (`data-soo-generate-row`) is now
+   the PERMANENT per-row entry point named in the Phase 3 task spec — its
+   "(temp)"/Phase-1-only framing is removed, its handler is unchanged.
+
    SCOPE (Phase 1 — smallest end-to-end slice, per blueprint's build
    sequence): one equipment type (vav), the hot-water reheat VAV path,
-   point/flag-driven clause selection. No new UI view (that is Phase 3) —
-   only a TEMPORARY entry point (see sooGenerateForRow below).
+   point/flag-driven clause selection. Phase 1 shipped this with only a
+   temporary per-row entry point (no Sequence view yet); Phase 3 (see the
+   note above) built the real view and promoted that entry point to
+   permanent (see sooGenerateForRow below).
 
    FORMAT-CORRECTION PASS (2026-09-13, Matt's review): the FIRST cut of this
    file rendered the SOO through the CompanyHub report engine's `.rpt-page`
@@ -703,20 +722,106 @@ function sooSelectClauses(category, ctx) {
    line for which equipment this covers (the master template has no
    per-box identification — it is a library, not a project deliverable),
    then the equipment-type Heading 1 (verbatim master section title), then
-   each selected clause's paragraphs in order. */
-function sooBuildDocParagraphs(ctx) {
-  var row = ctx.row;
-  var idLabel = (row.equipName || row.name || row.id) + (row.building ? ' — ' + row.building : '');
-  var clauses = sooSelectClauses(row.category || 'vav', ctx);
+   each selected clause's paragraphs in order.
 
+   Phase 3: the clause-body loop (select clauses -> concat their paragraphs)
+   is factored into `_sooClauseBodyParagraphs` so the Sequence view's
+   multi-box path (`sooBuildGroupDocParagraphs`, below) shares the identical
+   clause output with zero duplication — only the identifying header line
+   differs (one box name here vs. an "Applies to:" box list there). */
+function _sooClauseBodyParagraphs(ctx) {
+  var clauses = sooSelectClauses((ctx.row && ctx.row.category) || 'vav', ctx);
   var paras = [];
-  paras.push(_sooPara([_sooRun(idLabel, true)], false));
-  paras.push({ heading1: true, runs: [_sooRun('Variable Air Volume – Terminal Units', false)], tight: false });
   clauses.forEach(function (clause) {
     var clauseParas = clause.paragraphs(ctx) || [];
     for (var i = 0; i < clauseParas.length; i++) paras.push(clauseParas[i]);
   });
   return paras;
+}
+
+function sooBuildDocParagraphs(ctx) {
+  var row = ctx.row;
+  var idLabel = (row.equipName || row.name || row.id) + (row.building ? ' — ' + row.building : '');
+  var paras = [];
+  paras.push(_sooPara([_sooRun(idLabel, true)], false));
+  paras.push({ heading1: true, runs: [_sooRun('Variable Air Volume – Terminal Units', false)], tight: false });
+  return paras.concat(_sooClauseBodyParagraphs(ctx));
+}
+
+/* ── 7b. Sequence view: structural-signature grouping (Phase 3) ─────────────
+   Blueprint: "auto-group equipment with an identical structural signature
+   (same clause-id set) so one clause set covers many boxes — mirror the
+   JOCO base-program collapse; do NOT render one wall of text per box."
+
+   The signature is the ordered list of SELECTED clause ids (reuses
+   `sooSelectClauses` — zero re-derivation of Phase 1/2 selection logic) plus
+   one extra bit for `ctx.points.demandLevel`: the always-applies
+   'zone-setpoints' clause renders 6 additional Demand Level sub-rows when
+   that point is present, so two rows that select the identical clause SET
+   can still produce different paragraph TEXT under 'zone-setpoints' — the
+   signature must capture that or two structurally different boxes would be
+   silently merged under one clause set. No other clause varies its rendered
+   text per-row (the rest vary only by the global SOO_BEHAVIOR_DEFAULTS
+   settings, which are the same for every row in one generation pass). */
+function sooRowSignature(ctx) {
+  var clauses = sooSelectClauses((ctx.row && ctx.row.category) || 'vav', ctx);
+  var ids = clauses.map(function (c) {
+    return c.id;
+  });
+  return ids.join(',') + '|dl:' + !!ctx.points.demandLevel;
+}
+
+/**
+ * sooGroupRowsBySignature — builds one ctx per rowId (reusing
+ * `sooBuildContext`, same EM point/flag machinery every other consumer of
+ * this file uses) and buckets rows sharing a signature into one group.
+ * Returns an array (bucket-creation order) of
+ * `{ signature, ctx, boxLabels: [...], rowIds: [...] }` — `ctx` is the
+ * FIRST row's context in that bucket, used as the representative context
+ * for rendering the shared clause body (every row in the bucket produces
+ * byte-identical clause paragraphs by construction of the signature above).
+ */
+function sooGroupRowsBySignature(pid, rowIds) {
+  var buckets = {};
+  var order = [];
+  (rowIds || []).forEach(function (rowId) {
+    var ctx = sooBuildContext(pid, rowId);
+    if (!ctx) return;
+    var sig = sooRowSignature(ctx);
+    if (!buckets[sig]) {
+      buckets[sig] = { signature: sig, ctx: ctx, boxLabels: [], rowIds: [] };
+      order.push(sig);
+    }
+    buckets[sig].boxLabels.push(ctx.row.equipName || ctx.row.name || ctx.row.id);
+    buckets[sig].rowIds.push(rowId);
+  });
+  return order.map(function (sig) {
+    return buckets[sig];
+  });
+}
+
+/**
+ * sooBuildGroupDocParagraphs — same shape as `sooBuildDocParagraphs` (id line
+ * + Heading 1 + clause body) but the id line lists every box the group
+ * covers instead of one box name, since a group can represent many
+ * structurally-identical boxes.
+ */
+function sooBuildGroupDocParagraphs(ctx, boxLabels) {
+  var idLabel = 'Applies to: ' + boxLabels.join(', ');
+  var paras = [];
+  paras.push(_sooPara([_sooRun(idLabel, true)], false));
+  paras.push({ heading1: true, runs: [_sooRun('Variable Air Volume – Terminal Units', false)], tight: false });
+  return paras.concat(_sooClauseBodyParagraphs(ctx));
+}
+
+/* Shared helper: pick the single-row vs. group paragraph builder for one
+   bucket — a bucket of exactly one box keeps the plain single-row id line
+   (matching the per-row "Generate Sequence for this equipment" entry point's
+   output byte-for-byte) rather than an "Applies to:" line naming just itself. */
+function _sooGroupParagraphs(group) {
+  return group.boxLabels.length > 1
+    ? sooBuildGroupDocParagraphs(group.ctx, group.boxLabels)
+    : sooBuildDocParagraphs(group.ctx);
 }
 
 /* ── 8. Plain preview renderer (NOT .rpt-page) ──────────────────────────────
@@ -766,6 +871,34 @@ function sooBuildPreviewHtml(ctx) {
   );
 }
 
+/**
+ * sooBuildMultiPreviewHtml — Phase 3 Sequence view preview: one `.soo-doc-page`
+ * (same plain-white master-format shell `sooBuildPreviewHtml` uses — NOT
+ * `.rpt-page` chrome, per scope) containing every group's id line + Heading 1
+ * + clause body, one after another. "Fine for the preview to be simple" (the
+ * Phase 1 correction brief) — a plain spacer div between groups, no fake
+ * per-group page breaks; the browser's own print pagination (see
+ * energy-department.html `.soo-doc-page` print rules) breaks it across
+ * physical pages naturally when printed/exported.
+ */
+function sooBuildMultiPreviewHtml(groups) {
+  var body = (groups || [])
+    .map(function (group, gi) {
+      var paras = _sooGroupParagraphs(group);
+      var groupHtml = paras.map(sooParaToPreviewHtml).join('');
+      return gi > 0
+        ? '<div style="height:28px;border-top:1px solid #ccc;margin-top:20px"></div>' + groupHtml
+        : groupHtml;
+    })
+    .join('');
+  return (
+    '<div class="soo-doc-page" style="background:#fff;width:8.5in;min-height:11in;' +
+    'box-sizing:border-box;padding:0.5in;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.25)">' +
+    body +
+    '</div>'
+  );
+}
+
 /* ── 9. Word export — real Heading 1 / Normal / bold-run OOXML ─────────────
    Splices into SOO_DOCX_SKELETON_B64 (app/soo-docx-skeleton.js, built
    directly from the master .docx's own styles.xml/numbering.xml/theme1.xml
@@ -795,6 +928,21 @@ function _sooParaToDocxXml(para) {
 function sooBuildDocxBodyXml(ctx) {
   var paras = sooBuildDocParagraphs(ctx);
   return paras.map(_sooParaToDocxXml).join('');
+}
+
+/**
+ * sooBuildDocxBodyXmlMulti — Phase 3 Sequence view Word export: every group's
+ * paragraphs (id line + Heading 1 + clause body, via `_sooGroupParagraphs`)
+ * concatenated in generation order, spliced through the same
+ * `_sooParaToDocxXml` every other SOO export path uses. No new OOXML
+ * technique — one call per group instead of one call for a single ctx.
+ */
+function sooBuildDocxBodyXmlMulti(groups) {
+  var allParas = [];
+  (groups || []).forEach(function (group) {
+    allParas = allParas.concat(_sooGroupParagraphs(group));
+  });
+  return allParas.map(_sooParaToDocxXml).join('');
 }
 
 /**
@@ -857,16 +1005,28 @@ async function _sooDocxAssemble(bodyXml, opts) {
  * exportReportToDocx() (app/report-engine.js) when window._currentReportData
  * carries `_soo`, BEFORE that function reads any `.rpt-page` DOM — the SOO
  * export never touches the report translator.
+ *
+ * Phase 3: checks `_sooLastGroups` (Sequence view, multi-box) before
+ * `_sooLastCtx` (single-row entry point) — whichever entry point ran last
+ * set one and cleared the other (see sooGenerateForRow/sooGenerateForRows
+ * below), so exactly one of the two is ever populated at export time. Same
+ * `_sooDocxAssemble` splice either way — no forked export mechanics.
  */
 async function sooExportToDocx() {
-  if (!_sooLastCtx) {
+  if (!_sooLastGroups && !_sooLastCtx) {
     if (typeof showToast === 'function') showToast('No Sequence of Operations generated yet');
     return;
   }
   if (typeof showToast === 'function') showToast('Generating Word document...');
   try {
-    var bodyXml = sooBuildDocxBodyXml(_sooLastCtx);
-    var client = _sooLastCtx.projectName || '';
+    var bodyXml, client;
+    if (_sooLastGroups) {
+      bodyXml = sooBuildDocxBodyXmlMulti(_sooLastGroups.groups);
+      client = _sooLastGroups.projectName || '';
+    } else {
+      bodyXml = sooBuildDocxBodyXml(_sooLastCtx);
+      client = _sooLastCtx.projectName || '';
+    }
     var _fnNow = new Date();
     var dateStr =
       _fnNow.getFullYear() +
@@ -884,14 +1044,30 @@ async function sooExportToDocx() {
   }
 }
 
-/* ── 10. TEMPORARY entry point (Phase 1 only — Phase 3 builds the real UI) ─
+/* ── 10. Per-row entry point (permanent — Phase 3) ──────────────────────────
    Generates a SOO for one VAV row and previews it in the existing report
    overlay (#reportPages / #reportOverlay, same Save/Export toolbar every
    other report type uses) — but the CONTENT rendered inside is the plain
    master-format document (sooBuildPreviewHtml), not `.rpt-page` markup.
    window._currentReportData._soo tells exportReportToDocx() to delegate to
-   sooExportToDocx() instead of its own report translator. */
+   sooExportToDocx() instead of its own report translator. Called from the
+   "Generate Sequence for this equipment" action in emShowComplianceDetail's
+   compliance panel (app/equipment-matrix.js). */
 var _sooLastCtx = null;
+/* Sequence view (Phase 3) multi-box export state — `{ groups, projectName }`
+   or null. Mutually exclusive with `_sooLastCtx` (see sooExportToDocx). */
+var _sooLastGroups = null;
+
+function _sooResolveProjectName(pid) {
+  var projects = typeof sget === 'function' ? sget('en_projects', []) : [];
+  // String() coercion: project ids in en_projects can be stored as JS numbers (Date.now()-based)
+  // while window._emActivePid is always a string (DOM value attributes are strings) — a strict
+  // === here silently fails to match and falls through to showing the raw id in the filename.
+  var proj = projects.filter(function (p) {
+    return String(p.id) === String(pid);
+  })[0];
+  return proj ? proj.name || proj.id : pid;
+}
 
 function sooGenerateForRow(rowId) {
   var pid = window._emActivePid || '';
@@ -905,20 +1081,15 @@ function sooGenerateForRow(rowId) {
     return;
   }
   if ((ctx.row.category || '') !== 'vav') {
-    if (typeof showToast === 'function') showToast('SOO Generator (Phase 1, temp): VAV only for now');
+    if (typeof showToast === 'function')
+      showToast('Sequence of Operations generation only supports VAV terminal units right now');
     return;
   }
 
-  var projects = typeof sget === 'function' ? sget('en_projects', []) : [];
-  // String() coercion: project ids in en_projects can be stored as JS numbers (Date.now()-based)
-  // while window._emActivePid is always a string (DOM value attributes are strings) — a strict
-  // === here silently fails to match and falls through to showing the raw id in the filename.
-  var proj = projects.filter(function (p) {
-    return String(p.id) === String(pid);
-  })[0];
-  ctx.projectName = proj ? proj.name || proj.id : pid;
+  ctx.projectName = _sooResolveProjectName(pid);
 
   _sooLastCtx = ctx;
+  _sooLastGroups = null; // mutually exclusive with the Sequence view's multi-box export state
 
   var html = sooBuildPreviewHtml(ctx);
   var title = ctx.projectName + ' — Sequence of Operations (' + (ctx.row.equipName || ctx.row.id) + ')';
@@ -926,6 +1097,61 @@ function sooGenerateForRow(rowId) {
   window._currentReportData = {
     _soo: { rowId: rowId, equipName: ctx.row.equipName || ctx.row.id },
     project: { client: ctx.projectName, name: ctx.projectName },
+  };
+
+  if (typeof showReportOverlay === 'function') {
+    showReportOverlay(html, title);
+  } else if (typeof showToast === 'function') {
+    showToast('showReportOverlay not available — report-engine.js not loaded');
+  }
+}
+
+/**
+ * sooGenerateForRows — Phase 3 Sequence view entry point. Sibling to
+ * `sooGenerateForRow` (same overlay/export machinery, same
+ * window._currentReportData._soo hook) but for a multi-box selection: groups
+ * the rows by structural signature (sooGroupRowsBySignature) so the preview
+ * shows one clause set per group instead of one wall of text per box, then
+ * previews the concatenated result exactly like the single-row path does.
+ */
+function sooGenerateForRows(pid, rowIds) {
+  if (!pid) {
+    if (typeof showToast === 'function') showToast('No active project — open a project in Equipment Matrix first');
+    return;
+  }
+  if (!rowIds || !rowIds.length) {
+    if (typeof showToast === 'function') showToast('Select at least one piece of equipment first');
+    return;
+  }
+
+  var groups = sooGroupRowsBySignature(pid, rowIds);
+  if (!groups.length) {
+    if (typeof showToast === 'function') showToast('Equipment rows not found');
+    return;
+  }
+
+  var projectName = _sooResolveProjectName(pid);
+
+  _sooLastGroups = { groups: groups, projectName: projectName };
+  _sooLastCtx = null; // mutually exclusive with the per-row export state
+
+  var html = sooBuildMultiPreviewHtml(groups);
+  var totalBoxes = groups.reduce(function (sum, g) {
+    return sum + g.boxLabels.length;
+  }, 0);
+  var title =
+    projectName +
+    ' — Sequence of Operations (' +
+    totalBoxes +
+    ' equipment, ' +
+    groups.length +
+    ' clause set' +
+    (groups.length === 1 ? '' : 's') +
+    ')';
+
+  window._currentReportData = {
+    _soo: { sequence: true, rowIds: rowIds },
+    project: { client: projectName, name: projectName },
   };
 
   if (typeof showReportOverlay === 'function') {
@@ -947,3 +1173,9 @@ window.sooBuildPreviewHtml = sooBuildPreviewHtml;
 window.sooBuildDocxBodyXml = sooBuildDocxBodyXml;
 window.sooExportToDocx = sooExportToDocx;
 window.sooGenerateForRow = sooGenerateForRow;
+window.sooRowSignature = sooRowSignature;
+window.sooGroupRowsBySignature = sooGroupRowsBySignature;
+window.sooBuildGroupDocParagraphs = sooBuildGroupDocParagraphs;
+window.sooBuildMultiPreviewHtml = sooBuildMultiPreviewHtml;
+window.sooBuildDocxBodyXmlMulti = sooBuildDocxBodyXmlMulti;
+window.sooGenerateForRows = sooGenerateForRows;
