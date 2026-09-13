@@ -467,78 +467,95 @@ function _macRenderPlan() {
 async function confirmMeterAutoCreate() {
   const st = _macState;
   if (!st || !st.plan) return;
+  // Re-entrancy guard: the confirm button is not disabled until this line
+  // runs, so a double-click before the first await resolves would otherwise
+  // re-enter this function with the same un-cleared st.plan.willCreate and
+  // push a duplicate set of meters, bypassing the dedupe engine entirely.
+  if (st._confirming) return;
+  st._confirming = true;
+  const btn = document.getElementById('macCreateBtn');
+  if (btn) btn.disabled = true;
+
   const projId = st.projId;
   let createdCount = 0;
 
-  st.plan.willCreate.forEach((w) => {
-    if (!st.selectedCreate[w._key]) return;
-    const meter = {
-      id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      commodity: w.commodity,
-      provider: w.provider,
-      account: w.account,
-      meter: w.meterNumber || '',
-      maddr: w.maddr || '',
-      inclusive: true,
-      // Deliberate deviation from _autoCreateMeterAndSaveBill's live
-      // baselineInclude:true default — plan §4.1(e)/§5: per the 2026-09-10
-      // standing rule, a newly created meter must never be counted
-      // automatically; the user opts it into the baseline afterward.
-      baselineInclude: false,
-      billUnit: '',
-      displayUnit: '',
-      bills: [],
-    };
-    w.building.meters = w.building.meters || [];
-    w.building.meters.push(meter);
-    createdCount++;
-  });
-
-  st.plan.duplicates.forEach((d) => {
-    const choice = st.dupChoice[d._key] || 'merge';
-    if (choice === 'create') {
+  try {
+    st.plan.willCreate.forEach((w) => {
+      if (!st.selectedCreate[w._key]) return;
       const meter = {
         id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        commodity: d.commodity,
-        provider: /gas/i.test(d.commodity) ? 'Kansas Gas Service' : '',
-        account: d.account,
-        meter: d.meterNumber || '',
-        maddr: '',
+        commodity: w.commodity,
+        provider: w.provider,
+        account: w.account,
+        meter: w.meterNumber || '',
+        maddr: w.maddr || '',
         inclusive: true,
+        // Deliberate deviation from _autoCreateMeterAndSaveBill's live
+        // baselineInclude:true default — plan §4.1(e)/§5: per the 2026-09-10
+        // standing rule, a newly created meter must never be counted
+        // automatically; the user opts it into the baseline afterward.
         baselineInclude: false,
         billUnit: '',
         displayUnit: '',
         bills: [],
       };
-      d.building.meters = d.building.meters || [];
-      d.building.meters.push(meter);
+      w.building.meters = w.building.meters || [];
+      w.building.meters.push(meter);
       createdCount++;
-    } else {
-      // Merge: additive-only accountAliases entry on the existing meter, the
-      // same field findMeterMatch already checks (bill-analysis.js ~5784,
-      // fix 8c9c7ccc) — never overwrites the existing account field, never
-      // deletes anything.
-      const existing = (d.building.meters || []).find(
-        (m) =>
-          _macNormAcct(m.meter) === _macNormAcct(d.meterNumber) &&
-          (m.commodity || '').toLowerCase() === (d.commodity || '').toLowerCase(),
-      );
-      if (existing) {
-        existing.accountAliases = existing.accountAliases || [];
-        if (!existing.accountAliases.some((a) => _macNormAcct(a) === _macNormAcct(d.account))) {
-          existing.accountAliases.push(d.account);
+    });
+
+    st.plan.duplicates.forEach((d) => {
+      const choice = st.dupChoice[d._key] || 'merge';
+      if (choice === 'create') {
+        const meter = {
+          id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          commodity: d.commodity,
+          provider: /gas/i.test(d.commodity) ? 'Kansas Gas Service' : '',
+          account: d.account,
+          meter: d.meterNumber || '',
+          maddr: '',
+          inclusive: true,
+          baselineInclude: false,
+          billUnit: '',
+          displayUnit: '',
+          bills: [],
+        };
+        d.building.meters = d.building.meters || [];
+        d.building.meters.push(meter);
+        createdCount++;
+      } else {
+        // Merge: additive-only accountAliases entry on the existing meter, the
+        // same field findMeterMatch already checks (bill-analysis.js ~5784,
+        // fix 8c9c7ccc) — never overwrites the existing account field, never
+        // deletes anything.
+        const existing = (d.building.meters || []).find(
+          (m) =>
+            _macNormAcct(m.meter) === _macNormAcct(d.meterNumber) &&
+            (m.commodity || '').toLowerCase() === (d.commodity || '').toLowerCase(),
+        );
+        if (existing) {
+          existing.accountAliases = existing.accountAliases || [];
+          if (!existing.accountAliases.some((a) => _macNormAcct(a) === _macNormAcct(d.account))) {
+            existing.accountAliases.push(d.account);
+          }
         }
       }
-    }
-  });
+    });
 
-  saveUtilityData(projId);
-  showToast(createdCount + ' meter(s) created — assigning matching bills…');
-  if (typeof autoAssignAllSavedBills === 'function') {
-    await autoAssignAllSavedBills(projId);
+    saveUtilityData(projId);
+    showToast(createdCount + ' meter(s) created — assigning matching bills…');
+    if (typeof autoAssignAllSavedBills === 'function') {
+      await autoAssignAllSavedBills(projId);
+    }
+    closeMeterAutoCreateModal();
+    if (typeof renderProjSavedBills === 'function') renderProjSavedBills(projId);
+    if (typeof renderUDDetail === 'function') renderUDDetail();
+  } finally {
+    // On success closeMeterAutoCreateModal() already nulled _macState, so
+    // this is a no-op; on a thrown error it re-enables the button so the
+    // user isn't permanently locked out.
+    st._confirming = false;
+    if (btn) btn.disabled = false;
   }
-  closeMeterAutoCreateModal();
-  if (typeof renderProjSavedBills === 'function') renderProjSavedBills(projId);
-  if (typeof renderUDDetail === 'function') renderUDDetail();
 }
 window.confirmMeterAutoCreate = confirmMeterAutoCreate;
