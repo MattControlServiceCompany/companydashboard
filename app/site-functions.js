@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.13.823',
+    date: '2026-09-13',
+    title: 'Quarterly report: Appendix B now shows only the reporting quarter',
+    items: [
+      {
+        type: 'change',
+        text: "The quarterly report's Appendix B now shows only the reporting quarter, with a compact heating/cooling degree-day chart in place of the monthly tables.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.13.822',
     date: '2026-09-13',
     title: 'Quarterly report now exports to Word',
