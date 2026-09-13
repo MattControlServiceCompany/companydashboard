@@ -13712,6 +13712,43 @@ async function extractPDFText(ab, statusCb) {
                       }
                     }
                   }
+                  // FIX (rotation-multiscale provider-regression, 2026-09-13): the
+                  // multi-scale cascade above adds more candidate passes at the
+                  // corrected orientation, so a purely score-driven pick can now land
+                  // on a pass whose garbling happens to DROP the provider-identifying
+                  // footer text (e.g. Louisburg's "louisburgkansas.gov"/"City of
+                  // Louisburg") while still scoring highest on the generic $/date/kWh
+                  // metric — root-caused on Scan_20260908114811.pdf, where
+                  // 2.5x-psm4-rot90 (score 3.2) beat every other rotated pass but reads
+                  // as Generic downstream (UTILITY_RULES.detect() finds no footer text),
+                  // so the bill fell through to parseError:true with every field null,
+                  // instead of correctly detecting City of Louisburg the way the
+                  // pre-multiscale single-pass code did. scorePage's own
+                  // detectedProvider LOCK (see makeScorePage above) is shared across
+                  // this page's WHOLE pass cascade (upright + rotated) and is
+                  // deliberately left untouched here — that lock is a separate,
+                  // cross-provider concern (Evergy/KGS/Constellation/WoodRiver/
+                  // Baldwin/Propane all rely on it) needing its own review. Instead,
+                  // re-run the SAME pure, standalone _detectProvider() the lock itself
+                  // calls against only the rotated-orientation candidates gathered by
+                  // THIS block, and — only when the currently-selected bestText no
+                  // longer detects a real provider — prefer the best-scoring rotated
+                  // candidate that still does. Never downgrades a legitimately-generic
+                  // bill (nothing to prefer, so bestText is left alone), and never
+                  // fights the upright path's own scoring/locking behavior.
+                  if (_detectProvider(bestText) === 'generic') {
+                    const _rotLabelSuffix = '-rot' + picked.winnerLabel;
+                    let _bestRealProviderPass = null;
+                    for (const _p of allPassTexts[pgNum]) {
+                      if (!_p.label || _p.label.indexOf(_rotLabelSuffix) === -1) continue;
+                      if (_detectProvider(_p.text) === 'generic') continue;
+                      if (!_bestRealProviderPass || _p.score > _bestRealProviderPass.score) _bestRealProviderPass = _p;
+                    }
+                    if (_bestRealProviderPass) {
+                      bestText = _bestRealProviderPass.text;
+                      bestScore = _bestRealProviderPass.score;
+                    }
+                  }
                   // Same majority-vote rate-consensus patch the upright path applies
                   // once >=3 passes are available for this page — now legitimately
                   // reachable for a rotated page too, since it can accumulate >=3
