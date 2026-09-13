@@ -1945,6 +1945,17 @@ function showReportOverlay(html, title) {
   pagesEl.innerHTML = html;
   document.getElementById('reportOverlayTitle').textContent = title || 'Report Preview';
   document.getElementById('reportOverlay').style.display = 'flex';
+  // Code review fix (BLOCKING, 2026-09-13, SOO Phase 3 review): a SOO document's
+  // window._currentReportData.project has no .id (app/soo-generator.js:1097-1100,
+  // 1152-1155), so it has no report-history identity — hide Save so a user previewing a
+  // Sequence document can't write a malformed entry into the SYNCED en_report_history
+  // store. Mirrors the data._soo branches already used in exportReportToPDF/Docx. Export to
+  // Word/PDF remain the correct path for SOO and are untouched.
+  var saveBtn = document.getElementById('rptSaveBtn');
+  if (saveBtn) {
+    var isSoo = !!(window._currentReportData && window._currentReportData._soo);
+    saveBtn.style.display = isSoo ? 'none' : '';
+  }
   // U2 / RC-A (2026-08-02, D-05): enforce the 10pt printed-text floor on the live DOM before
   // anything reads it. This is the ONE place report HTML enters the document, so every report
   // type and every downstream export (print-to-PDF, .doc, .docx — all of which serialize
@@ -8682,6 +8693,19 @@ function saveReportToHistory() {
   const data = window._currentReportData;
   if (!data || !pagesHTML) {
     showToast('No report to save');
+    return;
+  }
+
+  // Code review fix (BLOCKING, 2026-09-13, SOO Phase 3 review): a SOO document sets
+  // project = { client, name } with NO .id (app/soo-generator.js:1097-1100, 1152-1155), so
+  // reaching the write below produced projectId: "undefined", a blank period, and a
+  // mislabeled "Annual" type in the SYNCED en_report_history store — polluting the OTHER
+  // user's shared history. Mirrors the data._soo early-return already used in
+  // exportReportToDocx/exportReportToPDF in this same file. Sequence documents have no
+  // report-history identity; the user exports to Word/PDF instead. The Save button is also
+  // hidden for SOO previews in showReportOverlay() — this is the defense-in-depth backstop.
+  if (data._soo) {
+    showToast("Sequence documents aren't saved to report history — use Export to Word or PDF");
     return;
   }
 
