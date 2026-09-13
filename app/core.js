@@ -3706,6 +3706,7 @@ function renderProjSavedBills(projId) {
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${hasMultiPeriodGroup ? `<button class="btn btn-ghost btn-sm" title="${toggleTitle}" onclick="_sbGroupState[${JSON.stringify(projId)}]=!_sbGroupState[${JSON.stringify(projId)}];renderProjSavedBills(${JSON.stringify(projId)})">${toggleLabel}</button>` : ''}
         ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" onclick="autoAssignAllSavedBills(${JSON.stringify(projId)})">Auto-Assign All (${unassignedCount})</button>` : ''}
+        ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" onclick="openMeterAutoCreateModal(${JSON.stringify(projId)})" title="Read the roster file and propose missing meters for unassigned bills">Resolve Missing Meters from Roster</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="sv('view-pdf');showToast('Go to PDF/OCR page to extract new bills')">+ Extract PDF Bill</button>
         ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteAllSavedBills(${JSON.stringify(projId)})">Delete All (${unassignedCount})</button>` : ''}
         <button class="btn btn-ghost btn-sm" style="color:var(--text2);border-color:var(--border)" onclick="cleanupOrphanedBills(${JSON.stringify(projId)})" title="Find saved bills assigned to deleted projects and unassign them">Clean up orphaned</button>

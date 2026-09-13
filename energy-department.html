@@ -14291,6 +14291,76 @@
         </div>
       </div>
 
+      <!-- RESOLVE MISSING METERS FROM ROSTER MODAL (c8880ce7) -->
+      <div class="modal-bg" id="macModal">
+        <div class="modal" style="width: 860px; max-width: 96vw">
+          <div class="modal-hdr">
+            <span class="modal-title">🏷 Resolve Missing Meters from Roster</span>
+            <button class="modal-x" onclick="closeMeterAutoCreateModal()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div
+              style="
+                background: var(--s3);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 12px 14px;
+                margin-bottom: 14px;
+                font-size: 12px;
+                line-height: 1.7;
+              "
+            >
+              <div style="font-weight: 700; margin-bottom: 4px; color: var(--text)">
+                Upload the building/account roster file you already keep in OneDrive.
+              </div>
+              <div style="color: var(--text2)">
+                Nothing is created yet. This reads the file and shows you exactly which meters it would create, which
+                look like a possible duplicate of an existing meter, and which bills it cannot match to anything in the
+                roster. You choose what to create.
+              </div>
+            </div>
+            <div
+              class="drop-zone"
+              id="macDrop"
+              style="padding: 20px; margin-bottom: 12px"
+              onclick="document.getElementById('macInput').click()"
+              ondragover="
+                event.preventDefault();
+                this.classList.add('drag');
+              "
+              ondragleave="this.classList.remove('drag')"
+              ondrop="
+                event.preventDefault();
+                this.classList.remove('drag');
+                if (event.dataTransfer.files[0]) handleMeterRosterFile({ files: event.dataTransfer.files });
+              "
+            >
+              <span class="dz-ico" style="font-size: 26px">📋</span>
+              <div class="dz-title" id="macDropLabel" style="font-size: 13px">
+                Drop the meter/account roster .xlsx or .csv file, or click to browse
+              </div>
+              <div class="dz-sub" style="font-size: 11px">
+                Same building-list file format used by Import Building List
+              </div>
+              <input
+                type="file"
+                id="macInput"
+                accept=".xlsx,.xls,.csv"
+                style="display: none"
+                onchange="handleMeterRosterFile(this)"
+              />
+            </div>
+            <div id="macPreviewWrap" style="display: none"></div>
+          </div>
+          <div class="modal-ftr">
+            <button class="btn btn-ghost" onclick="closeMeterAutoCreateModal()">Cancel</button>
+            <button class="btn btn-em" id="macCreateBtn" style="display: none" onclick="confirmMeterAutoCreate()">
+              Create Meters &amp; Assign Bills
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- TASK MODAL -->
       <div class="modal-bg" id="taskModal" role="presentation" aria-label="Task dialog">
         <div class="modal" role="dialog" aria-modal="true" style="width: 420px">
@@ -15348,6 +15418,7 @@
     <script src="app/utility-data.js?v=824"></script>
     <script src="app/pipeline-diagram.js?v=824"></script>
     <script src="app/csv-import.js?v=824"></script>
+    <script src="app/meter-autocreate.js?v=824"></script>
     <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
          wired into this page's script list -- exportReportToDocx() (report-engine.js) calls
          _docxTranslatePages()/_docxAssemble() (docx-writer.js) and CSC_DOCX_SKELETON_B64
