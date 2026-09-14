@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.14.828',
+    date: '2026-09-14',
+    title: 'Quarterly Report: Contract Projection page now matches Financial Summary',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly Report, Contract Projection page: the Year-1 projection row and the cumulative-savings chart now include prior completed quarters, so both match the Financial Summary page.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.13.827',
     date: '2026-09-13',
     title: 'Scanned bills rotated 90 degrees now read more reliably',
