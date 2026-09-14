@@ -13733,9 +13733,46 @@ async function extractPDFText(ab, statusCb) {
                   // calls against only the rotated-orientation candidates gathered by
                   // THIS block, and — only when the currently-selected bestText no
                   // longer detects a real provider — prefer the best-scoring rotated
-                  // candidate that still does. Never downgrades a legitimately-generic
-                  // bill (nothing to prefer, so bestText is left alone), and never
-                  // fights the upright path's own scoring/locking behavior.
+                  // candidate that still does.
+                  //
+                  // CODE-REVIEW FIX (2026-09-13, BLOCKING): this used to overwrite
+                  // bestText/bestScore UNCONDITIONALLY whenever it found ANY non-generic
+                  // rotated candidate, with no check that the candidate scored as well as
+                  // the pass it was replacing — unlike every sibling branch in this same
+                  // cascade (2.5x-rot at :13542, remaining-scale passes at :13629, retry
+                  // passes at :13692, Otsu binarize at :13846), which only ever overwrite
+                  // on monotonic improvement (strictly higher score, or a tied score with
+                  // longer text). A noisy low-score pass that merely happened to contain a
+                  // weak provider signal could silently stomp a clean, high-scoring read.
+                  // This block now NEVER accepts a candidate that scored strictly lower
+                  // than bestScore — that half of the sibling convention is absolute, no
+                  // exceptions (this alone kills the reported failure mode: a score-4 pass
+                  // can never displace a score-16 pass again).
+                  //
+                  // On an exact SCORE TIE, the sibling branches' own tie-break (longer text
+                  // wins) is deliberately NOT reused here: measured on the real
+                  // Scan_20260908114811.pdf regression fixture, the tied-score rotated pass
+                  // that keeps the Louisburg footer ("3.5x-psm4-rot90", 3629 chars) is
+                  // SHORTER than the tied-score pass that drops it ("2.5x-psm4-rot90", 3920
+                  // chars) — a pure length tie-break would keep the block permanently unable
+                  // to recover provider detection for the exact bill this guard exists for,
+                  // regressing UtilityCompany back to Generic/parseError (empirically
+                  // confirmed with temporary instrumentation: bestScoreBefore 3.2,
+                  // candidateScore 3.2, agreed true, swap never fires under a length-only
+                  // tie-break). Instead, on a tie, require pass-to-pass AGREEMENT — at least
+                  // one OTHER rotated candidate independently detecting the SAME provider —
+                  // before preferring the provider-bearing candidate. Independent agreement
+                  // is a strictly stronger, more targeted signal for "is this really the
+                  // provider" than raw character count, and it is exactly the corroboration
+                  // fix #2 (BLOCKING review, same date) calls for: it stops a single pass's
+                  // weak/non-exclusive signal (e.g. "FRANCHISE FEE", which is NOT
+                  // Baldwin-exclusive — KGS bills carry franchise-fee lines too, see the
+                  // FranchiseFee1/2 comment ~:6794) from hijacking the output alone, while
+                  // still letting a genuinely-corroborated tie win. Net effect: the swap
+                  // condition is "candidate.score >= bestScore AND agreed" — never a
+                  // downgrade, ties only with independent corroboration. A legitimately
+                  // generic bill is left alone (nothing to prefer), and the upright path's
+                  // own scoring/locking behavior is never touched.
                   if (_detectProvider(bestText) === 'generic') {
                     const _rotLabelSuffix = '-rot' + picked.winnerLabel;
                     let _bestRealProviderPass = null;
@@ -13745,8 +13782,20 @@ async function extractPDFText(ab, statusCb) {
                       if (!_bestRealProviderPass || _p.score > _bestRealProviderPass.score) _bestRealProviderPass = _p;
                     }
                     if (_bestRealProviderPass) {
-                      bestText = _bestRealProviderPass.text;
-                      bestScore = _bestRealProviderPass.score;
+                      const _chosenProvider = _detectProvider(_bestRealProviderPass.text);
+                      let _agreed = false;
+                      for (const _p of allPassTexts[pgNum]) {
+                        if (_p === _bestRealProviderPass) continue;
+                        if (!_p.label || _p.label.indexOf(_rotLabelSuffix) === -1) continue;
+                        if (_detectProvider(_p.text) === _chosenProvider) {
+                          _agreed = true;
+                          break;
+                        }
+                      }
+                      if (_agreed && _bestRealProviderPass.score >= bestScore) {
+                        bestText = _bestRealProviderPass.text;
+                        bestScore = _bestRealProviderPass.score;
+                      }
                     }
                   }
                   // Same majority-vote rate-consensus patch the upright path applies
