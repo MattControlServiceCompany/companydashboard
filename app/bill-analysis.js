@@ -1494,6 +1494,46 @@ function _gateB_billCountCheck(rawText, billCount) {
   };
 }
 
+// FIX (fix/bill-review-gate-lifecycle, item f359edaa/817dd434): the gate
+// lifecycle had a write side (_applyExtractionGates, _decideQuantityCorrection,
+// _decideOnOffPeakKWh, the cross-bill consensus loop) but no clear side —
+// _gateTripped/_gateReasons were set once at extraction time and NEVER dropped,
+// so a bill the user had already fixed still rendered the red "not auto-saved"
+// banner forever. Every _gateReasons string is written starting with the field
+// name it's about (e.g. "kWhConsumed: witnesses disagree...", "OnPeakKWh: ...",
+// "<field> disagrees across bills...") except the TotalCurrentCharges
+// correction-held reason, which the caller matches separately since it starts
+// with "Total needs correction:" instead of the raw field key. Call this after
+// the user corrects a field's value; it drops that field's own reason(s) and
+// clears _gateTripped once none remain. Returns true if anything changed.
+function _clearGateReasonForField(b, fieldKey) {
+  if (!b || !Array.isArray(b._gateReasons) || !b._gateReasons.length) return false;
+  const before = b._gateReasons.length;
+  b._gateReasons = b._gateReasons.filter(
+    (r) => typeof r === 'string' && r.indexOf(fieldKey + ':') !== 0 && r.indexOf(fieldKey + ' ') !== 0,
+  );
+  if (fieldKey === 'TotalCurrentCharges') {
+    b._gateReasons = b._gateReasons.filter((r) => typeof r === 'string' && r.indexOf('Total needs correction:') !== 0);
+    delete b._correction_pending_TotalCurrentCharges;
+  }
+  if (!b._gateReasons.length) {
+    b._gateTripped = false;
+    delete b._gateReasons;
+  }
+  return b._gateReasons ? b._gateReasons.length !== before : true;
+}
+
+// FIX (fix/bill-review-gate-lifecycle, item 817dd434): the aggregate "N of M
+// flagged" notices (toasts + the "Save All" blocking banner) named only a count
+// and the first gate reason — the user had no way to tell WHICH billing period(s)
+// were being held without hunting through the pill list. Reuses the exact
+// { period } shape _dupBulkAction's summary-modal rows already build (was
+// duplicated inline at the per-bill loop below) so every held-bill surface
+// (toast, banner, summary modal) describes periods identically.
+function _billPeriodLabel(b) {
+  return (b.BillingPeriodStart || b.DeliveryDate || '?') + ' → ' + (b.BillingPeriodEnd || b.DeliveryDate || '?');
+}
+
 // Applies GATE A + GATE B (file-level facts, passed in) and GATE C (per-bill —
 // already stamped onto the bill by _postExtractionVerify as
 // _correction_pending_TotalCurrentCharges, see Stage 3 below) to every bill
@@ -2553,7 +2593,11 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           if (winCount >= 3) {
             let corrected = 0;
             for (const b of group) {
-              if (b[field] && b[field] !== winner) {
+              // FIX (fix/bill-review-gate-lifecycle, item f359edaa): never overwrite a
+              // value the user already hand-corrected on this exact bill — this decision
+              // and the gate it can trip (see the else branch below) share one field, so
+              // a corrected value must never come back on a later verify pass.
+              if (b[field] && b[field] !== winner && !b['_userCorrected_' + field]) {
                 b['_auto_corrected_' + field] = {
                   original: b[field],
                   corrected: winner,
@@ -3299,7 +3343,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const curKwh0 = pf(b.kWhConsumed);
           const kwhDecision = _decideQuantityCorrection('kWhConsumed', curKwh0, kwhWitnesses);
           b._kwhConsumedLocked = true; // nothing downstream may overwrite kWhConsumed after this
-          if (kwhDecision.apply) {
+          // FIX (fix/bill-review-gate-lifecycle, item f359edaa): never let a
+          // witness-derived value come back over a value the user already
+          // hand-corrected on this exact bill.
+          if (kwhDecision.apply && !b._userCorrected_kWhConsumed) {
             const strongSources = kwhDecision.buckets[0].items
               .filter((w) => w.strong)
               .map((w) => w.source)
@@ -3318,7 +3365,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // SAME corroborated total instead of a stale pre-correction value
           // (the exact bug pattern in energy-savings.js:3742-3763).
           const onoffDecision = _decideOnOffPeakKWh(b, pf, pf(b.kWhConsumed), kwhDecision.hold);
-          if (onoffDecision.onCorrection) {
+          // FIX (fix/bill-review-gate-lifecycle, item f359edaa): same "never revert a
+          // user correction" guard as kWhConsumed above.
+          if (onoffDecision.onCorrection && !b._userCorrected_OnPeakKWh) {
             b['_auto_corrected_OnPeakKWh'] = {
               original: b.OnPeakKWh,
               corrected: onoffDecision.onCorrection.value.toFixed(4),
@@ -3326,7 +3375,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             };
             b.OnPeakKWh = onoffDecision.onCorrection.value.toFixed(4);
           }
-          if (onoffDecision.offCorrection) {
+          if (onoffDecision.offCorrection && !b._userCorrected_OffPeakKWh) {
             b['_auto_corrected_OffPeakKWh'] = {
               original: b.OffPeakKWh,
               corrected: onoffDecision.offCorrection.value.toFixed(4),
@@ -6158,12 +6207,26 @@ function showMultiBuildingReviewPanel() {
       _mbRowTargets[i] &&
       (_mbRowTargets[i].matchType === 'identity' || _mbRowTargets[i].matchType === 'commodity')
     );
+    // FIX (fix/bill-review-gate-lifecycle, item 817dd434, SAFETY hole): this
+    // panel's own "GATE WIRING" comment below only ever mirrored MATCH
+    // confidence — it never actually looked at b._gateTripped/_gateReasons, so a
+    // gate-tripped bill on a multi-building file was silently checked and
+    // "Overwrite All"-able with no warning. Stamp _mbHeld/_mbHeldReason (the
+    // same fields the identity-mismatch hold below already uses, so
+    // _mbRowHtml's "Held — <reason>" status needs no new code path) and force
+    // the row unchecked. _mbSaveOneBill also independently refuses to save a
+    // gate-tripped-and-unconfirmed bill even if re-checked — defense in depth.
+    const isGatedUnconfirmed = !!(bill._gateTripped && !bill._gateOverrideConfirmed);
+    if (isGatedUnconfirmed) {
+      bill._mbHeld = true;
+      bill._mbHeldReason = (bill._gateReasons || []).join(' · ');
+    }
     // GATE WIRING (mirrors renderQueueResults' `checked: !b._gateTripped`): any
     // other match type (address/ambiguous/no-match) defaults UNCHECKED — the
     // user must ACT (check the box, or make an explicit destination pick,
     // which auto-checks it — see setMbRowDestMeter) to include it in Save
     // All, instead of acting to prevent a wrong silent save.
-    _mbRowState[i] = { checked: isAutoAttach, skipped: false };
+    _mbRowState[i] = { checked: isAutoAttach && !isGatedUnconfirmed, skipped: false };
   });
 
   // Count unique accounts for header
@@ -6221,6 +6284,10 @@ function showMultiBuildingReviewPanel() {
     '<button class="btn btn-ghost btn-sm" id="mbMergeAllBtn" onclick="confirmMultiBuildingSave(\'merge\')" disabled title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>',
     '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'pdfMultiBldgPanel\').style.display=\'none\'">Cancel</button>',
     '</div>',
+    // FIX (fix/bill-review-gate-lifecycle, item 817dd434): gate-tripped rows'
+    // "Save Anyway" notice — populated by _mbUpdateSaveAllBtn, mirrors the
+    // single-account bottom bar's gateNotice.
+    '<div id="mbGateNotice"></div>',
     '</div>',
   ].join('');
 
@@ -6343,7 +6410,13 @@ function _mbRowHtml(i) {
         i +
         ')">Undo skip</button>';
     } else {
-      const canSave = !!(match && (match.meter || match.matchType === 'create'));
+      // FIX (fix/bill-review-gate-lifecycle, item 817dd434): a gate-tripped,
+      // unconfirmed bill's per-row Save must be disabled too — the bulk "Save
+      // Anyway" button is the one sanctioned override path (see
+      // _confirmGatedBillsForSave), otherwise the per-row button would be a
+      // second, unguarded route around the same gate.
+      const isGatedUnconfirmed = !!(bill._gateTripped && !bill._gateOverrideConfirmed);
+      const canSave = !!(match && (match.meter || match.matchType === 'create')) && !isGatedUnconfirmed;
       actionCell =
         '<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-bottom:4px;white-space:nowrap">' +
         '<input type="checkbox" onchange="_mbToggleRowChecked(' +
@@ -6356,6 +6429,7 @@ function _mbRowHtml(i) {
         i +
         ')"' +
         (canSave ? '' : ' disabled') +
+        (isGatedUnconfirmed ? ' title="Flagged for review — use Save Anyway below to confirm"' : '') +
         '>Save</button>' +
         '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="_mbSkipRow(' +
         i +
@@ -6587,12 +6661,22 @@ function _mbUpdateSaveAllBtn() {
   // blocks Save All until the user assigns a destination or explicitly Skips.
   let willSave = 0;
   let unaccounted = 0;
+  // FIX (fix/bill-review-gate-lifecycle, item 817dd434, SAFETY hole): a
+  // gate-tripped-and-unconfirmed row is tracked SEPARATELY from "unaccounted"
+  // (wrong destination/no Skip) — it has a destination, it needs explicit
+  // gate confirmation, and it must ALSO hard-block Save/Overwrite/Merge All
+  // exactly like the single-account bottom bar's gateNotice does.
+  let unconfirmedGated = 0;
   bills.forEach(function (b, i) {
     if (b._mbSaved) return;
     const d = dupMap[i];
     if (d && d.action === 'skip') return;
     const st = _mbRowState[i] || { checked: false, skipped: false };
     if (st.skipped) return;
+    if (b._gateTripped && !b._gateOverrideConfirmed) {
+      unconfirmedGated++;
+      return;
+    }
     const t = _mbRowTargets[i];
     const resolved = !!(t && (t.meter || t.matchType === 'create'));
     if (st.checked && resolved) {
@@ -6601,13 +6685,33 @@ function _mbUpdateSaveAllBtn() {
     }
     unaccounted++;
   });
-  const disabled = !(willSave > 0 && unaccounted === 0);
+  const disabled = !(willSave > 0 && unaccounted === 0 && unconfirmedGated === 0);
   const blockedTitle =
-    unaccounted > 0 ? unaccounted + ' billing period(s) still need a destination or an explicit Skip' : '';
+    unconfirmedGated > 0
+      ? unconfirmedGated + ' billing period(s) flagged for review — click "Save Anyway" below to confirm'
+      : unaccounted > 0
+        ? unaccounted + ' billing period(s) still need a destination or an explicit Skip'
+        : '';
   btns.forEach(({ el, baseTitle }) => {
     el.disabled = disabled;
     el.title = disabled ? blockedTitle : baseTitle;
   });
+  const noticeEl = document.getElementById('mbGateNotice');
+  if (noticeEl) {
+    if (unconfirmedGated > 0) {
+      const periods = bills
+        .filter((b) => b._gateTripped && !b._gateOverrideConfirmed)
+        .map((b) => _billPeriodLabel(b))
+        .join(', ');
+      noticeEl.innerHTML =
+        `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
+        `&#9888; ${unconfirmedGated} of ${bills.length} bill(s) flagged for review and held out of "Save All" (${_escHtml(periods)}) — verify against the source PDF. ` +
+        `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
+        `</div>`;
+    } else {
+      noticeEl.innerHTML = '';
+    }
+  }
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
@@ -7144,6 +7248,22 @@ async function _mbSaveOneBill(bi, action) {
     return { status: 'saved', destination: bill._mbSavedDest || '', alreadySaved: true, projId: null };
   }
 
+  // GATE WIRING (fix/bill-review-gate-lifecycle, item 817dd434, SAFETY hole):
+  // this multi-building/multi-account save path had NO connection to the
+  // _gateTripped/_gateReasons contract every other save entry point (savePDFData,
+  // savePDFAllBills, _dupBulkAction) already enforces — a gate-tripped bill here
+  // was overwritten with zero warning. Same per-bill _gateOverrideConfirmed
+  // contract: hold here, let the user click the panel's "Save Anyway" button
+  // (_confirmGatedBillsForSave, wired to re-render this panel's rows too), then
+  // re-click Save/Overwrite/Merge All. Reuses the existing bill._mbHeld/
+  // _mbHeldReason fields so _mbRowHtml's "Held — <reason>" status rendering
+  // and _mbUpdateSaveAllBtn's readiness gate need no separate code path.
+  if (bill._gateTripped && !bill._gateOverrideConfirmed) {
+    bill._mbHeld = true;
+    bill._mbHeldReason = (bill._gateReasons || []).join(' · ');
+    return { status: 'held', reason: bill._mbHeldReason, projId: null };
+  }
+
   let billMatch = _mbRowTargets[bi];
   if (!billMatch) {
     return { status: 'unresolved', reason: 'no destination assigned' };
@@ -7674,6 +7794,13 @@ async function confirmMultiBuildingSave(action) {
   const toSave = [];
   let userSkipped = 0;
   const unaccountedIdx = [];
+  // FIX (fix/bill-review-gate-lifecycle, item 817dd434, SAFETY hole): a
+  // gate-tripped-and-unconfirmed row must NOT fall into the generic
+  // "unaccounted, needs a destination" bucket below — that toast is wrong
+  // (the row already has a destination) and its early return used to block
+  // the ENTIRE batch, including clean rows, on a gate hold. Held separately
+  // so the rest of the batch still saves, mirroring _dupBulkAction's pattern.
+  const unconfirmedGatedIdx = [];
   for (let _bi = 0; _bi < bills.length; _bi++) {
     if (bills[_bi]._mbSaved) continue;
     const billDup = dupMap[_bi];
@@ -7681,6 +7808,10 @@ async function confirmMultiBuildingSave(action) {
     const st = _mbRowState[_bi] || { checked: false, skipped: false };
     if (st.skipped) {
       userSkipped++;
+      continue;
+    }
+    if (bills[_bi]._gateTripped && !bills[_bi]._gateOverrideConfirmed) {
+      unconfirmedGatedIdx.push(_bi);
       continue;
     }
     const t = _mbRowTargets[_bi];
@@ -7698,8 +7829,22 @@ async function confirmMultiBuildingSave(action) {
     );
     return;
   }
+  if (unconfirmedGatedIdx.length) {
+    const periods = unconfirmedGatedIdx.map((i) => _billPeriodLabel(bills[i])).join(', ');
+    showToast(
+      unconfirmedGatedIdx.length +
+        ' of ' +
+        bills.length +
+        ' bill(s) held for review (not saved) — ' +
+        periods +
+        '. ' +
+        (toSave.length
+          ? 'The rest of the batch is being saved now.'
+          : 'Verify against the source PDF, then click "Save Anyway" to confirm and save them.'),
+    );
+  }
   if (!toSave.length) {
-    showToast('Nothing to save — every remaining row is skipped');
+    if (!unconfirmedGatedIdx.length) showToast('Nothing to save — every remaining row is skipped');
     return;
   }
 
@@ -11190,11 +11335,16 @@ async function _dupBulkAction(action) {
     gatedIdx.forEach((gi) => gatedIdxSet.add(gi));
     if (gatedIdx.length > 0) {
       const reasons = [...new Set(gatedIdx.flatMap((gi) => bills[gi]._gateReasons || []))];
+      // FIX (fix/bill-review-gate-lifecycle, item 817dd434): name which billing
+      // period(s) are held, not just a count.
+      const periods = gatedIdx.map((gi) => _billPeriodLabel(bills[gi]));
       showToast(
         gatedIdx.length +
           ' of ' +
           bills.length +
           ' bill(s) held for review (not saved) — ' +
+          periods.join(', ') +
+          ' — ' +
           reasons[0] +
           (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
           '. The rest of the batch is being processed now.',
@@ -11274,10 +11424,7 @@ async function _dupBulkAction(action) {
   for (let i = 0; i < bills.length; i++) {
     if (commFilter && (bills[i].Commodity || 'Other') !== commFilter) continue;
     if (gatedIdxSet.has(i)) {
-      const period =
-        (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
-        ' → ' +
-        (bills[i].BillingPeriodEnd || bills[i].DeliveryDate || '?');
+      const period = _billPeriodLabel(bills[i]);
       summaryEntries.push({
         period,
         status: 'held',
@@ -11676,6 +11823,13 @@ async function overwriteDupBill() {
   }
   dup.action = 'overwrite';
   closeDupModal();
+  // FIX (fix/bill-review-gate-lifecycle, item b072a752): _dupBulkAction already
+  // stores the shared PDF before its save loop, but this per-bill Overwrite
+  // button called _applyDupUpdate directly — the PDF blob never stored, so
+  // hasPDF/pdfKey/pdfBillId were never set and the Bills table showed "no PDF
+  // available" forever. _ensureBatchPdfStored is idempotent (no-ops once
+  // bills[0]._pdfSharedKey is set), so this is safe to call unconditionally.
+  await _ensureBatchPdfStored(bills);
   let ok = false;
   try {
     ok = await _applyDupUpdate(billIdx, bills[billIdx], dup);
@@ -11711,6 +11865,10 @@ async function mergeDupBill() {
   }
   dup.action = 'merge';
   closeDupModal();
+  // FIX (fix/bill-review-gate-lifecycle, item b072a752): same PDF-storage gap
+  // as overwriteDupBill above — see its comment for why this is needed and why
+  // it's safe to call unconditionally.
+  await _ensureBatchPdfStored(bills);
   let ok = false;
   try {
     ok = await _applyDupUpdate(billIdx, bills[billIdx], dup);
@@ -16121,9 +16279,12 @@ function renderMultiBillUI(bills, box) {
     const _unconfirmedGated = bills.filter((b) => b._gateTripped && !b._gateOverrideConfirmed);
     let gateNotice = '';
     if (_unconfirmedGated.length > 0) {
+      // FIX (fix/bill-review-gate-lifecycle, item 817dd434): name which billing
+      // period(s) are held, not just a count.
+      const _gatedPeriods = _unconfirmedGated.map((b) => _billPeriodLabel(b)).join(', ');
       gateNotice =
         `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
-        `&#9888; ${_unconfirmedGated.length} of ${bills.length} bill(s) flagged for review and held out of "Save All" — verify against the source PDF. ` +
+        `&#9888; ${_unconfirmedGated.length} of ${bills.length} bill(s) flagged for review and held out of "Save All" (${_escHtml(_gatedPeriods)}) — verify against the source PDF. ` +
         `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
         `</div>`;
     }
@@ -16291,14 +16452,26 @@ function _confirmGatedBillsForSave() {
   const bills = window._pdfMultiBills;
   if (!bills || !bills.length) return;
   let n = 0;
-  bills.forEach((b) => {
+  const confirmedIdx = [];
+  bills.forEach((b, i) => {
     if (b._gateTripped && !b._gateOverrideConfirmed) {
       b._gateOverrideConfirmed = true;
       n++;
+      confirmedIdx.push(i);
     }
   });
   const box = document.getElementById('pdfAIBox');
   if (box) renderMultiBillUI(bills, box);
+  // FIX (fix/bill-review-gate-lifecycle, item 817dd434): the multi-building/
+  // multi-account panel (_mbRowHtml/_mbUpdateSaveAllBtn) is a SEPARATE table
+  // from the single-account pill view re-rendered above — refresh its rows and
+  // readiness gate too whenever that panel is the one actually open, so its
+  // per-row "Held" status and Save/Overwrite/Merge All buttons unblock.
+  const mbPanel = document.getElementById('pdfMultiBldgPanel');
+  if (mbPanel && mbPanel.style.display !== 'none') {
+    confirmedIdx.forEach((i) => _mbRerenderRow(i));
+    _mbUpdateSaveAllBtn();
+  }
   showToast(
     n +
       ' flagged bill' +
@@ -16341,11 +16514,16 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
   );
   if (gatedIdxSet.size > 0) {
     const reasons = [...new Set([...gatedIdxSet].flatMap((i) => allBills[i]._gateReasons || []))];
+    // FIX (fix/bill-review-gate-lifecycle, item 817dd434): name which billing
+    // period(s) are held, not just a count.
+    const periods = [...gatedIdxSet].map((i) => _billPeriodLabel(allBills[i]));
     showToast(
       gatedIdxSet.size +
         ' of ' +
         billIndices.length +
         ' bill(s) held for review (not saved) — ' +
+        periods.join(', ') +
+        ' — ' +
         reasons[0] +
         (reasons.length > 1 ? ' (+' + (reasons.length - 1) + ' more)' : '') +
         '. The rest of the batch is being saved now.',
@@ -16387,10 +16565,7 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
     failed = 0,
     held = 0;
   for (const i of billIndices) {
-    const period =
-      (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
-      ' → ' +
-      (bills[i].BillingPeriodEnd || bills[i].DeliveryDate || '?');
+    const period = _billPeriodLabel(bills[i]);
     if (gatedIdxSet.has(i)) {
       summaryEntries.push({
         period,
@@ -18117,17 +18292,29 @@ function renderPDFFields(parsed, warnings) {
   // GATE A/B/C — extraction flagged for review (18b33d9f). Non-collapsed, always
   // visible — the user must ACT (check the box) to save a flagged bill, instead of
   // acting to prevent one from saving.
-  const _gateReasonsForBanner = parsed['_gateReasons'];
-  const gateBannerHtml =
-    Array.isArray(_gateReasonsForBanner) && _gateReasonsForBanner.length
-      ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
+  // FIX (fix/bill-review-gate-lifecycle, item f359edaa): the banner used to render
+  // off _gateReasons.length alone, so it kept shouting "not auto-saved" even after
+  // the user had clicked Save Anyway (_gateOverrideConfirmed) or corrected every
+  // flagged field down to zero remaining reasons (see the .ef-input change handler
+  // below, which now drops a reason once its field is corrected). Once either is
+  // true there is nothing left for the user to act on — show a quiet accepted note
+  // instead of the red alarm.
+  const _gateReasonsForBanner = Array.isArray(parsed['_gateReasons']) ? parsed['_gateReasons'] : [];
+  const _gateOverriddenForBanner = !!parsed['_gateOverrideConfirmed'];
+  const gateBannerHtml = _gateReasonsForBanner.length
+    ? _gateOverriddenForBanner
+      ? `<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);font-size:11px;color:var(--green);display:flex;align-items:center;gap:8px">
+          <span style="font-weight:700">&#10003;</span>
+          <span>Flagged bill accepted for save — original review reasons: ${_gateReasonsForBanner.join(' · ')}</span>
+        </div>`
+      : `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
         <span style="font-size:26px;line-height:1">&#9940;</span>
         <div style="flex:1">
           <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">EXTRACTION FLAGGED FOR REVIEW — not auto-saved</div>
           <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">${_gateReasonsForBanner.join('<br>')}</div>
         </div>
       </div>`
-      : '';
+    : '';
 
   // Show auto-correction banner if any fields were corrected (rate×qty or OCR consensus)
   const correctedFields = Object.keys(parsed)
@@ -18371,6 +18558,17 @@ function renderPDFFields(parsed, warnings) {
   elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${gateBannerHtml}${sumMismatchHtml}${sumMismatchKgsHtml}${chargeExceedsTotalHtml}${correctionPendingHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${manualAssignHtml}`;
   el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
+  // FIX (fix/bill-review-gate-lifecycle, item f359edaa): the single-bill review
+  // screen had no VISIBLE accept control for a gated bill — savePDFData() silently
+  // armed _gateOverrideConfirmed on the first Save click and required an unlabeled
+  // second click. Surface a real "Save Anyway" button next to Save whenever THIS
+  // bill is gate-tripped and not yet confirmed, mirroring the batch path's
+  // _confirmGatedBillsForSave()/"Save Anyway" button.
+  const _saveAnywayBtn = document.getElementById('pdfSaveAnywayBtn');
+  if (_saveAnywayBtn) {
+    _saveAnywayBtn.style.display = parsed._gateTripped && !parsed._gateOverrideConfirmed ? 'inline-block' : 'none';
+  }
+
   // ── Wire up change handlers: update data + recalculate total when user edits ──
   el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
     inp.addEventListener('change', () => {
@@ -18383,7 +18581,16 @@ function renderPDFFields(parsed, warnings) {
       const idx = window._pdfMultiIdx || 0;
       if (!bills || !bills[idx]) return;
       const b = bills[idx];
+      const _prevVal = b[key];
       b[key] = val;
+      // FIX (fix/bill-review-gate-lifecycle, item f359edaa): a corrected field must
+      // drop its OWN gate reason instead of leaving "not auto-saved" up forever, and
+      // must be stamped so a later re-verify pass never silently reverts the user's
+      // manual value (mirrors the existing _auto_corrected_/_ocr_consensus_ stamps).
+      if (_prevVal !== val) {
+        b['_userCorrected_' + key] = { original: _prevVal, corrected: val, ts: Date.now() };
+        _clearGateReasonForField(b, key);
+      }
       // Recalculate TotalCurrentCharges from charge sum when a charge field changes
       const CHARGE_SUM_FIELDS = [
         'CustomerCharge',
@@ -18406,6 +18613,11 @@ function renderPDFFields(parsed, warnings) {
         const compSum = CHARGE_SUM_FIELDS.reduce((s, f) => s + pf2(b[f]), 0);
         if (compSum > 0) {
           b.TotalCurrentCharges = compSum.toFixed(2);
+          // A corrected component recomputes the total live, so the "Total needs
+          // correction" hold (which compared the OLD total against this same
+          // component sum) is moot — clear it the same way a direct edit to
+          // TotalCurrentCharges itself would (_clearGateReasonForField).
+          _clearGateReasonForField(b, 'TotalCurrentCharges');
         }
         // Clear stale sum mismatch since user manually corrected a value
         delete b._sum_mismatch;
@@ -20099,6 +20311,23 @@ function pdfBannerUpdateMeterOpts() {
   ) {
     meterSel.value = String(_autoAssignTarget.meterId);
   }
+}
+
+// FIX (fix/bill-review-gate-lifecycle, item f359edaa): visible accept control for
+// the single-bill review screen, mirroring the batch path's
+// _confirmGatedBillsForSave(). Confirms THIS bill only (per-bill
+// _gateOverrideConfirmed, never a global flag — see savePDFData below for why),
+// re-renders so the red banner clears, then proceeds with the save immediately —
+// one visible click instead of a hidden two-click toast.
+function pdfSaveAnyway() {
+  const bills = window._pdfMultiBills;
+  const idx = window._pdfMultiIdx || 0;
+  const extracted = bills && bills[idx];
+  if (!extracted) return;
+  extracted._gateOverrideConfirmed = true;
+  const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
+  renderPDFFields(extracted, billWarnings);
+  savePDFData();
 }
 
 function savePDFData() {
