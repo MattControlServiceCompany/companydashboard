@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.14.830',
+    date: '2026-09-14',
+    title: 'Energy Department: Bill import — Louisburg Fuel Adjustment fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department, Bill import (PDF extraction): Louisburg utility bills where the Fuel Adjustment charge was too small to read now extract automatically instead of stopping for manual review.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.14.829',
     date: '2026-09-14',
     title: 'Energy Department: Meters — Sewer and Stormwater fix',
