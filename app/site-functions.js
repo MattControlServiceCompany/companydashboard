@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.13.827',
+    date: '2026-09-13',
+    title: 'Scanned bills rotated 90 degrees now read more reliably',
+    items: [
+      {
+        type: 'fix',
+        text: 'Scanned bills rotated 90 degrees: the charges column now reads more reliably, and rotated bills no longer fall back to a generic parser.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.13.826',
     date: '2026-09-13',
     title: 'Equipment Matrix: new "Sequence" view generates Sequences of Operation',
