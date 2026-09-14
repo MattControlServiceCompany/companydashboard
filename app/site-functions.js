@@ -1742,6 +1742,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.14.831',
+    date: '2026-09-14',
+    title: 'Energy Department: Bill import / review — fixed stuck reviews and a multi-building safety gap',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department, Bill import / review: correcting values on a flagged bill now saves properly, with a clear "Save Anyway" button when you want to override the warning.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department, Bill import / review: the review warning now tells you which billing period and which field need attention, instead of a generic message.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department, Bill import: re-saving over an existing bill now keeps its PDF attached instead of losing it.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department, Bill import: multi-building imports now flag questionable bills for review instead of silently overwriting them.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.14.830',
     date: '2026-09-14',
     title: 'Energy Department: Bill import — Louisburg Fuel Adjustment fix',
