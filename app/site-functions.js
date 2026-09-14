@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.14.834',
+    date: '2026-09-14',
+    title: 'Energy Department: Bill review now flags and can auto-fix charge/quantity mismatches',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department, Bill import / review: a charge line that does not match its quantity times rate is now flagged right at that line, not just at the bill total.',
+      },
+      {
+        type: 'feature',
+        text: 'Energy Department, Bill import / review: when the bill total confirms the same error is on exactly one line, that line is automatically corrected to the computed value. Auto-corrected values are clearly badged and you can change them back at any time. Values you have entered yourself are never overwritten.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.14.833',
     date: '2026-09-14',
     title: 'Quarterly Report: fixed CSC Compensation 3-Year Total',
