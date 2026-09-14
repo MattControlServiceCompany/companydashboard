@@ -3350,25 +3350,40 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       if (!b._rates) continue;
       // Check 2 signal (item cd999d9f): the whole-bill compSum-vs-printed-total
       // discrepancy, signed, captured once per bill from the SAME reconciliation
-      // that (for Evergy) already ran above in this function. Deliberately a
-      // snapshot taken before any of this loop's own corrections — each field's
-      // corroboration test below compares against the ORIGINAL whole-bill gap,
-      // not a partially-corrected one, so two unrelated lines can never chain
-      // into corroborating each other.
+      // that (for Evergy) already ran above in this function. A snapshot taken
+      // before any of this loop's own corrections — every candidate below is
+      // tested against this SAME original whole-bill gap, never a
+      // partially-corrected one.
       const _wholeBillSignedDelta = b._sum_mismatch ? b._sum_mismatch.signedDiff : null;
-      for (const [field, ri] of Object.entries(b._rates)) {
+      const _rateEntries = Object.entries(b._rates);
+
+      // Pass 1 — scan EVERY part of EVERY field on this bill and record every
+      // Check-1 (per-line qty×rate) mismatch, whether or not it also passes
+      // Check 2, and whether or not it's user-locked. Adversarial-review fix
+      // (defect A, 2026-09-14): corroboration must be decided ACROSS THE WHOLE
+      // BILL, not per field — two unrelated bad lines can each coincidentally
+      // land within a cent of the SAME stale whole-bill delta (e.g. one real
+      // $30 charge misread plus a second, unrelated bad-rate line that also
+      // happens to be $30 off), and auto-fixing either one from a per-field
+      // view alone cannot tell them apart.
+      const _allFlagged = [];
+      for (const [field, ri] of _rateEntries) {
         // Top-level null-qty/rate skip — TaxExemptDelivery/BillOffset/FranchiseFee/
         // SalesTax carry {qty:null, rate:null} because they are not rate-based
         // charges at all; unverifiable by this check, so leave them alone.
         if (!ri || !(ri.rate > 0)) continue;
         const parts = ri.parts || [ri];
-        const badParts = [];
-        const corroboratedFixes = [];
         // Guardrail (mandatory): the user's own correction always wins. Never
-        // auto-fix a field the user has already stamped via the .ef-input
-        // change handler (_userCorrected_<field>, stamped at ~18698) — still
-        // WARN below if the math disagrees, but never touch the value.
-        const _userLocked = !!b['_userCorrected_' + field];
+        // auto-fix a value the user has already stamped via the .ef-input
+        // change handler — for a single-part row that's the bare
+        // _userCorrected_<field> (data-key === field), but for a multi-part
+        // row the change handler stamps the literal input data-key,
+        // _chg_<field>_<idx> (~line 18189), giving _userCorrected__chg_<field>_<idx>
+        // — a DIFFERENT key that _userCorrected_<field> alone never matches
+        // (adversarial-review fix, defect B, 2026-09-14). Check both: the
+        // bare field lock (covers single-part rows and any whole-field lock)
+        // and the specific part's own lock key.
+        const _fieldLocked = !!b['_userCorrected_' + field];
         for (let idx = 0; idx < parts.length; idx++) {
           const part = parts[idx];
           // Per-part null-qty/rate skip — a mixed-parts charge can have some
@@ -3383,59 +3398,89 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const diff = Math.abs(expected - actual);
           if (diff <= 0.05) continue;
 
-          // Check 1 (per-line) has fired. Test Check 2 (bill-total reconciliation):
-          // does correcting THIS line from `actual` to `expected` close the SAME
-          // whole-bill gap already on record? deltaLine is signed the same way
-          // _wholeBillSignedDelta is (compSum − ocrTotal): raising this one line's
-          // charge from actual to expected raises compSum by (expected − actual),
-          // i.e. moves the gap by −deltaLine. Reconciliation requires the existing
-          // gap to equal exactly that movement's negation, i.e. gap === deltaLine.
+          // deltaLine is signed the same way _wholeBillSignedDelta is
+          // (compSum − ocrTotal): raising this one line's charge from actual
+          // to expected raises compSum by (expected − actual), i.e. moves the
+          // gap by −deltaLine. Reconciliation requires the existing gap to
+          // equal exactly that movement's negation, i.e. gap === deltaLine.
           const deltaLine = actual - expected;
-          const corroborated =
-            !_userLocked && _wholeBillSignedDelta != null && Math.abs(_wholeBillSignedDelta - deltaLine) <= 0.01;
-
-          if (corroborated) {
-            corroboratedFixes.push({
-              idx,
-              qty: part.qty,
-              rate: part.rate,
-              unit: part.unit,
-              original: actual,
-              corrected: expected,
-              diff,
-              reason:
-                'Corrected: computed from qty × rate (' +
-                part.qty.toFixed(4) +
-                ' ' +
-                (part.unit || '') +
-                ' × $' +
-                part.rate.toFixed(5) +
-                '), confirmed by bill total reconciliation (was $' +
-                actual.toFixed(2) +
-                ').',
-            });
-            // Reversible mutation — the original is preserved in the stamp above,
-            // and the field stays a normal editable input (renderPDFFields reads
-            // part.ocrCharge first, same as it always has), so the user can revert
-            // by simply typing the old value back in.
-            part.ocrCharge = expected;
-          } else {
-            badParts.push({
-              idx,
-              qty: part.qty,
-              rate: part.rate,
-              unit: part.unit,
-              computed: expected,
-              ocrCharge: actual,
-              diff,
-              valid: false,
-            });
-          }
+          const partLocked = _fieldLocked || !!b['_userCorrected__chg_' + field + '_' + idx];
+          const check2Match = _wholeBillSignedDelta != null && Math.abs(_wholeBillSignedDelta - deltaLine) <= 0.01;
+          _allFlagged.push({
+            field,
+            idx,
+            part,
+            qty: part.qty,
+            rate: part.rate,
+            unit: part.unit,
+            expected,
+            actual,
+            diff,
+            locked: partLocked,
+            check2Match,
+          });
         }
-        if (badParts.length) b['_part_mismatches_' + field] = badParts;
+      }
+
+      // Pass 2 — candidates are Check-1 mismatches that ALSO pass Check 2 and
+      // are not user-locked. Auto-fix ONLY when EXACTLY ONE candidate exists
+      // across the whole bill; the whole-bill gap cannot be unambiguously
+      // attributed to a single line otherwise, so ambiguous cases stay
+      // warn-only (defect A fix).
+      const _candidates = _allFlagged.filter((e) => e.check2Match && !e.locked);
+      const _toFix = _candidates.length === 1 ? _candidates[0] : null;
+
+      // Pass 3 — apply the (at most one) fix; everything else becomes a
+      // warn-only per-part mismatch, grouped back by field.
+      const _badPartsByField = {};
+      const _fixedByField = {};
+      for (const e of _allFlagged) {
+        if (e === _toFix) {
+          (_fixedByField[e.field] = _fixedByField[e.field] || []).push({
+            idx: e.idx,
+            qty: e.qty,
+            rate: e.rate,
+            unit: e.unit,
+            original: e.actual,
+            corrected: e.expected,
+            diff: e.diff,
+            reason:
+              'Corrected: computed from qty × rate (' +
+              e.qty.toFixed(4) +
+              ' ' +
+              (e.unit || '') +
+              ' × $' +
+              e.rate.toFixed(5) +
+              '), confirmed by bill total reconciliation (was $' +
+              e.actual.toFixed(2) +
+              ').',
+          });
+          // Reversible mutation — the original is preserved in the stamp above,
+          // and the field stays a normal editable input (renderPDFFields reads
+          // part.ocrCharge first, same as it always has), so the user can revert
+          // by simply typing the old value back in.
+          e.part.ocrCharge = e.expected;
+        } else {
+          (_badPartsByField[e.field] = _badPartsByField[e.field] || []).push({
+            idx: e.idx,
+            qty: e.qty,
+            rate: e.rate,
+            unit: e.unit,
+            computed: e.expected,
+            ocrCharge: e.actual,
+            diff: e.diff,
+            valid: false,
+          });
+        }
+      }
+      for (const [field, ri] of _rateEntries) {
+        if (!ri || !(ri.rate > 0)) continue;
+        const parts = ri.parts || [ri];
+        if (_badPartsByField[field] && _badPartsByField[field].length)
+          b['_part_mismatches_' + field] = _badPartsByField[field];
         else delete b['_part_mismatches_' + field];
-        if (corroboratedFixes.length) {
-          b['_corroborated_corrected_' + field] = corroboratedFixes;
+        if (_fixedByField[field] && _fixedByField[field].length) {
+          b['_corroborated_corrected_' + field] = _fixedByField[field];
           // Recompute the top-level charge field from the now-corrected parts so
           // the bill's stored/exported charge (and every downstream compSum check)
           // reconciles with TotalCurrentCharges — never leave the field-level
@@ -3443,9 +3488,28 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const _newFieldSum =
             Math.round(parts.reduce((s, p) => s + (p.ocrCharge != null ? p.ocrCharge : p.computed), 0) * 100) / 100;
           b[field] = _newFieldSum.toFixed(2);
-          // The whole-bill mismatch this fix explained is now resolved — same
-          // lifecycle as the existing delete b._sum_mismatch sites (~15205, ~18733).
+        }
+      }
+
+      // Defect A fix, second half: only clear the whole-bill _sum_mismatch by
+      // RE-DERIVING the actual post-fix reconciliation, never by assuming the
+      // pre-fix corroboration snapshot proves it. Exactly one field changed
+      // (the one line just fixed), so the new compSum is the old compSum plus
+      // exactly that line's own delta — an exact recompute, not an
+      // approximation, and it never touches any other field's contribution.
+      if (_toFix && b._sum_mismatch) {
+        const _newCompSum = b._sum_mismatch.compSum + (_toFix.expected - _toFix.actual);
+        const _newSignedDiff = _newCompSum - b._sum_mismatch.total;
+        if (Math.abs(_newSignedDiff) <= 0.02) {
           delete b._sum_mismatch;
+        } else {
+          // Fix applied but the bill still doesn't truly reconcile (shouldn't
+          // normally happen given the 1-cent corroboration test, but never
+          // blindly trust it) — keep the mismatch visible, updated to reflect
+          // the post-fix state so it isn't stale either.
+          b._sum_mismatch.compSum = _newCompSum;
+          b._sum_mismatch.diff = Math.abs(_newSignedDiff);
+          b._sum_mismatch.signedDiff = _newSignedDiff;
         }
       }
     }
