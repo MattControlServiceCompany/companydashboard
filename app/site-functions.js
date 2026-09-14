@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.14.833',
+    date: '2026-09-14',
+    title: 'Quarterly Report: fixed CSC Compensation 3-Year Total',
+    items: [
+      {
+        type: 'fix',
+        text: 'Quarterly Report, Financial Summary / CSC Compensation: the 3-Year Total now applies the contract annual escalation, matching the Multi-Year Projection table. Previously it multiplied the annual figure flat, which understated the 3-year total.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.14.832',
     date: '2026-09-14',
     title: 'Energy Department: Bill import + Meters — fewer false warnings, no more duplicate water meters',
