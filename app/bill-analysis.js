@@ -14028,7 +14028,42 @@ async function extractPDFText(ab, statusCb) {
           if (_lbgNeedsCropFallback(bestText)) {
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — Louisburg targeted-crop fallback...');
-              const LBG_CROP_ZOOM = 8;
+              // FIX (2026-09-14, verified against the real scan Scan_20260908114811.pdf
+              // via a real pdfjs-dist+tesseract.js Node harness — see
+              // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md):
+              // the first version of this fallback cropped the WHOLE charges column
+              // (one wide region spanning every row) at 8x zoom with psm 6. That measured
+              // as GARBLED on the real bill — the pen circle/strike marks and ruled table
+              // lines running through the wider region confuse psm 6's block layout
+              // analysis even at high zoom, corrupting rows that have no handwriting on
+              // them at all (WATER's own label OCR'd as "AWALER"). The research's own
+              // winning config was a TIGHT crop of a SINGLE value cell at 12x zoom with
+              // psm 8 (SINGLE_WORD) — isolating just the digit run is what lets Tesseract
+              // ignore the surrounding ink; a wider multi-row crop reintroduces the exact
+              // noise the tight crop exists to avoid. Two such isolated cells, at ratios
+              // re-measured directly off a real 12x-zoom render of this bill (not the
+              // lower-zoom reference screenshot), are used below instead of one wide one:
+              //   - WATER's charge value — this bill's own main-pass OCR also failed to
+              //     read the WATER line (label AND value), which the original wide crop
+              //     never actually fixed either (confirmed empirically).
+              //   - the "Total Amount Due" value — this bill's known-good winning cell.
+              //     "Current Bill" (the OTHER printed total, one row above) was tried too
+              //     but the pen circle's ink crosses directly through ITS digits (not just
+              //     nearby, as with Total Amount Due) on this scan — no crop rectangle
+              //     could isolate it cleanly, matching this research doc's own test (b)
+              //     finding ("a strikethrough pen line runs through part of it in this
+              //     specific scan"). energy-savings.js's merge block below bridges Total
+              //     Amount Due into CurrentBillTotal ONLY when the page's own printed
+              //     "Account Balance $0.00" proves there is no carried-over balance
+              //     (i.e. the two totals are provably the same number) — see that file's
+              //     comment for the full reasoning; this never touches an account with a
+              //     real balance forward.
+              // Synthetic "WATER "/"Total Amount Due " labels are prepended to each cell's
+              // bare OCR'd number before appending, so energy-savings.js's EXISTING
+              // label+value line-matching regexes (parseMetered / the Current Bill/Total
+              // Amount Due matches) pick them up unchanged — no parser-side special case
+              // for "this text came from a crop".
+              const LBG_CROP_ZOOM = 12;
               const _lbgHighRes = await _renderPageHQCached(LBG_CROP_ZOOM);
               const _lbgOriented =
                 _lbgOrientWinnerLabel === '90'
@@ -14038,35 +14073,66 @@ async function extractPDFText(ab, statusCb) {
                     : _lbgOrientWinnerLabel === '180'
                       ? rotateCanvas180(_lbgHighRes)
                       : _lbgHighRes;
-              // Charges-column region, as a ratio of the CORRECTLY-ORIENTED
-              // page — ratios measured directly off
-              // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-full-page-correctly-oriented.png
-              // (the "Previous/Current Reading/Usage" header down through
-              // "Amount Due After", right-hand charges column). Generous
-              // margins so scan-to-scan layout jitter doesn't clip a value —
-              // this is a fallback pass, not a precision single-cell crop, so
-              // a slightly larger region costs a little OCR time but never
-              // correctness.
-              const _lbgCrop = _cropCanvasRegion(_lbgOriented, 0.45, 0.2, 0.55, 0.32);
-              const _lbgGray = _grayscaleCanvas(_lbgCrop);
-              _lbgCrop.width = 0;
-              _lbgCrop.height = 0;
+              const _lbgCells = [
+                { label: 'WATER', x: 0.855, y: 0.28, w: 0.145, h: 0.019 },
+                { label: 'Total Amount Due', x: 0.87, y: 0.41, w: 0.13, h: 0.021 },
+                // GASUSAGE (not a real printed label — see energy-savings.js's
+                // GasUsage merge branch for why this exists): the Gas row's
+                // PRINTED decimal usage cell (Previous/Current Reading/Usage
+                // columns, "Usage" position, same row as the GAS charge — a
+                // pressure-corrected CCF value, e.g. "647.41", NOT the raw
+                // meter-read integer difference). On the real bill this fix
+                // was verified against, the main-pass OCR never captured this
+                // decimal token, so downstream code fell back to the raw
+                // integer read-difference (616) as gas.usage — close enough
+                // to look plausible but off by ~5%, which was enough to trip
+                // energy-savings.js's rate-sanity correction into silently
+                // REPLACING the confidently-read printed Gas charge with a
+                // usage-derived one, corrupting the Fuel Adjustment residual
+                // this whole fallback exists to recover. "GASUSAGE" (one
+                // word, no space) is a synthetic sentinel label, not the real
+                // "Usage" column header — deliberately chosen so it can never
+                // collide with the real \bG[A4]S\b charge-line regex (that
+                // regex requires a word boundary right after S; "GASUSAGE"
+                // has no boundary there) while still reading unambiguously
+                // in bestText for a human debugging pdfDebugBtn output.
+                { label: 'GASUSAGE', x: 0.69, y: 0.296, w: 0.11, h: 0.028 },
+              ];
+              const _lbgCellLines = [];
+              for (const cell of _lbgCells) {
+                const _lbgCrop = _cropCanvasRegion(_lbgOriented, cell.x, cell.y, cell.w, cell.h);
+                const _lbgGray = _grayscaleCanvas(_lbgCrop);
+                _lbgCrop.width = 0;
+                _lbgCrop.height = 0;
+                const { result: _lbgCropResult } = await recognizeWithTimeout(workerBox.current, _lbgGray, {
+                  tessedit_pageseg_mode: 8,
+                  rotateAuto: false,
+                });
+                _lbgGray.width = 0;
+                _lbgGray.height = 0;
+                const _lbgCellText = (_lbgCropResult.data.text || '').trim();
+                // Extract ONLY the dollar-amount substring, discarding any stray
+                // character psm 8 tacks on immediately before it (confirmed on the
+                // real scan: the pen circle around this exact cell occasionally
+                // OCRs as a leading "{"/"," glyph right against the "$", e.g.
+                // "{$2,823.63") — appending the RAW cell text would leave that
+                // glyph sitting between the synthetic label and the "$", breaking
+                // energy-savings.js's `Label\s*\$?\s*([\d,]+\.\d{2})` match (its
+                // `\$?` only tolerates a bare optional $, not arbitrary noise).
+                // Anchoring on the amount pattern itself means the synthetic line
+                // this fallback appends is always clean regardless of what noise
+                // surrounds it.
+                const _lbgValMatch = _lbgCellText.match(/\$?[\d,]+\.\d{2}/);
+                if (_lbgValMatch) {
+                  _lbgCellLines.push(cell.label + ' ' + _lbgValMatch[0]);
+                }
+              }
               if (_lbgOriented !== _lbgHighRes) {
                 _lbgOriented.width = 0;
                 _lbgOriented.height = 0;
               }
-              const { result: _lbgCropResult } = await recognizeWithTimeout(workerBox.current, _lbgGray, {
-                tessedit_pageseg_mode: 6,
-                rotateAuto: false,
-              });
-              _lbgGray.width = 0;
-              _lbgGray.height = 0;
-              const _lbgCropText = _lbgCropResult.data.text || '';
-              // Only append if the crop actually recovered SOMETHING
-              // dollar-shaped — an empty/garbage crop must not pollute
-              // bestText with a useless sentinel block.
-              if (/[\d,]+\.\d{2}/.test(_lbgCropText)) {
-                bestText += '\n%%LBG_CROP_FALLBACK%%\n' + _lbgCropText + '\n%%LBG_CROP_FALLBACK_END%%\n';
+              if (_lbgCellLines.length) {
+                bestText += '\n%%LBG_CROP_FALLBACK%%\n' + _lbgCellLines.join('\n') + '\n%%LBG_CROP_FALLBACK_END%%\n';
                 if (!window._pdfLbgCropFallbackPages) window._pdfLbgCropFallbackPages = [];
                 window._pdfLbgCropFallbackPages.push(pgNum);
               }

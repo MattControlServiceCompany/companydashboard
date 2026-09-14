@@ -9312,6 +9312,50 @@ const UTILITY_RULES = [
             _lbgCropRecoveredFields.push('TotalAmountDue');
           }
         }
+        // Zero-carryover bridge (2026-09-14 crop-fallback follow-up): the
+        // targeted-crop fallback (bill-analysis.js, same backlog ID) does not
+        // crop "Current Bill" itself — on the real bill this fix was verified
+        // against (Scan_20260908114811.pdf), a pen circle's ink crosses
+        // directly through THAT cell's digits (not just nearby, as with Total
+        // Amount Due), so no crop rectangle could isolate it cleanly. Current
+        // Bill and Total Amount Due are the SAME number whenever nothing
+        // carried forward from a prior period (Total Amount Due = Current
+        // Bill + PreviousBalance - Payments +/- Adjustments/Penalty, and that
+        // carryover term is printed directly as "Account Balance" on every
+        // Louisburg new-format bill) — so once Total Amount Due is known and
+        // the page's own printed Account Balance reads exactly $0.00, it is
+        // safe to use it as CurrentBillTotal too. Never applied when Account
+        // Balance is unknown/nonzero/unread — the existing "never reconcile
+        // against Total Amount Due, it may include a carried balance" guard
+        // above (see the comment on _currentBillRaw) still holds in every
+        // other case, crop-fallback or not.
+        if (CurrentBillTotal == null && TotalAmountDue && /Account\s*Balance\s*\$?\s*0\.00/i.test(page)) {
+          CurrentBillTotal = parseFloat(String(TotalAmountDue).replace(/,/g, ''));
+          _lbgCropRecoveredFields.push('CurrentBillTotal(viaZeroBalance)');
+        }
+        // Gas usage decimal-cell recovery (2026-09-14 crop-fallback follow-up):
+        // Louisburg's printed Gas usage column is a pressure-corrected decimal
+        // (see the `allowDecimalUsage=true` note on the GAS line-parsing loop
+        // above) — on the real bill this fix was verified against, the
+        // main-pass OCR never captured that decimal token, so gas.usage fell
+        // back to the raw INTEGER meter-read difference (616, vs the true
+        // printed 647.41). That integer was close enough to look plausible
+        // but off by ~5%, which was enough to trip bill-analysis.js's
+        // rate-sanity correction (_lbg_correctGasCharge) into silently
+        // REPLACING the confidently-read printed Gas charge with a
+        // usage-derived one — corrupting the Fuel Adjustment residual this
+        // whole fallback exists to recover correctly (it computed to $-6.98
+        // instead of the printed $-32.37 with the wrong usage). Only
+        // replaces an INTEGER gas.usage — the fallback's own tell, since the
+        // genuine printed value is always a decimal — never a usage that
+        // already parsed as a decimal (which is already trustworthy).
+        if (gas.usage != null && Number.isInteger(gas.usage)) {
+          const _gum = _lbgCropFallbackText.match(/GASUSAGE\s+([\d,]+\.\d+)/i);
+          if (_gum) {
+            gas.usage = parseFloat(_gum[1].replace(/,/g, ''));
+            _lbgCropRecoveredFields.push('GasUsage');
+          }
+        }
       }
 
       // Sign reconciliation (WaterProtectionFee, FuelAdjustment) — never a
