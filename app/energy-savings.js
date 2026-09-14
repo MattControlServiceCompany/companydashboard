@@ -8616,6 +8616,19 @@ const UTILITY_RULES = [
       return bills;
     },
     _extractNew: function (page) {
+      // Strip the Louisburg targeted-crop OCR fallback block (backlog
+      // 37d5fb0e-fueladj follow-up, 2026-09-14 — bill-analysis.js
+      // _lbgNeedsCropFallback / the page-processing loop's crop-fallback
+      // block) OUT of the main page text before ANY parsing below ever sees
+      // it. The crop block is consulted separately, later, near
+      // CurrentBillTotal — and ONLY to fill fields the main pass below found
+      // nothing for at all. Leaving it inline here would let the main
+      // per-line loop pick up a duplicate WATER/SEWER/etc. line from the
+      // crop and double-count a field a multi-meter account genuinely prints
+      // twice.
+      const _lbgCropFallbackText =
+        page.match(/%%LBG_CROP_FALLBACK%%\n([\s\S]*?)\n%%LBG_CROP_FALLBACK_END%%/)?.[1] || null;
+      page = page.replace(/%%LBG_CROP_FALLBACK%%\n[\s\S]*?\n%%LBG_CROP_FALLBACK_END%%\n?/, '');
       // New account number shape: "NN-NNNNNN-NN". Tolerate OCR "(" or
       // "O" in place of leading zero.
       const acctRaw = page.match(/([\d(O]{2}-\d{6}-\d{2})/)?.[1] || null;
@@ -9211,7 +9224,95 @@ const UTILITY_RULES = [
       // Reconciling against Total Amount Due instead would false-flag any
       // account carrying a balance forward.
       const _currentBillRaw = page.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
-      const CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
+      let CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
+
+      // ── Louisburg targeted-crop OCR fallback merge (backlog 37d5fb0e-fueladj
+      // follow-up, 2026-09-14) ─────────────────────────────────────────────
+      // Fills in ONLY fields the main OCR pass above found NOTHING for at
+      // all — every fill below is guarded by that field's own *LineSeen flag
+      // (or, for CurrentBillTotal/TotalAmountDue, `== null`/falsy) being
+      // false, so this can NEVER overwrite or double-count a commodity the
+      // main pass already read (e.g. a genuine 2-meter WATER PROTECTION
+      // account still accumulates correctly — this only ever fires for the
+      // meter the main pass never saw at all). _lbgCropFallbackText was
+      // produced by bill-analysis.js's targeted-crop OCR fallback
+      // (_lbgNeedsCropFallback / high-zoom charges-column crop — see that
+      // file's comment and
+      // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md)
+      // ONLY when the normal pass could not read the Current Bill/Total
+      // Amount Due total and/or a Water line at all. Reuses the SAME
+      // parseMetered/regex constructs already used above, just against the
+      // extra high-zoom crop text — no parallel derivation.
+      const _lbgCropRecoveredFields = [];
+      if (_lbgCropFallbackText) {
+        const _lbgCropLines = _lbgCropFallbackText.split(/\r?\n/);
+        if (!waterLineSeen) {
+          for (const ln of _lbgCropLines) {
+            if (/\bM?W?[A4][TI][E3F][RB]\b/i.test(ln) && !/PROTECTION/i.test(ln)) {
+              const _wp = parseMetered(ln, /\bM?W?[A4][TI][E3F][RB]\b/i);
+              if (_wp && _wp.charge != null) {
+                waterLineSeen = true;
+                water = _wp;
+                _lbgCropRecoveredFields.push('Water');
+                break;
+              }
+            }
+          }
+        }
+        if (!wpfLineSeen) {
+          for (const ln of _lbgCropLines) {
+            if (/W[A4]TER\s*PROT[E3]CTION/i.test(ln)) {
+              const _wp2 = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
+              if (_wp2 && _wp2.charge != null) {
+                wpfLineSeen = true;
+                wpf = _wp2;
+                _lbgCropRecoveredFields.push('Water Protection');
+                break;
+              }
+            }
+          }
+        }
+        if (!sewerLineSeen) {
+          for (const ln of _lbgCropLines) {
+            if (/\bS[E3]W[E3]R\b/i.test(ln)) {
+              const _sp = parseMetered(ln, /\bS[E3]W[E3]R\b/i);
+              if (_sp && _sp.charge != null) {
+                sewerLineSeen = true;
+                sewer = _sp;
+                _lbgCropRecoveredFields.push('Sewer');
+                break;
+              }
+            }
+          }
+        }
+        if (!stormLineSeen) {
+          for (const ln of _lbgCropLines) {
+            if (/STORM\s*W[A4]TER/i.test(ln)) {
+              const _stp = parseMetered(ln, /STORM\s*W[A4]TER/i);
+              if (_stp && _stp.charge != null) {
+                stormLineSeen = true;
+                storm = _stp;
+                _lbgCropRecoveredFields.push('Stormwater');
+                break;
+              }
+            }
+          }
+        }
+        if (CurrentBillTotal == null) {
+          const _cbm = _lbgCropFallbackText.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i);
+          if (_cbm) {
+            CurrentBillTotal = parseFloat(_cbm[1].replace(/,/g, ''));
+            _lbgCropRecoveredFields.push('CurrentBillTotal');
+          }
+        }
+        if (!TotalAmountDue) {
+          const _tadm = _lbgCropFallbackText.match(/Total\s*Amount\s*Due\s*\$?\s*([\d,]+\.\d{2})/i);
+          if (_tadm) {
+            TotalAmountDue = _tadm[1].replace(/,/g, '');
+            _lbgCropRecoveredFields.push('TotalAmountDue');
+          }
+        }
+      }
 
       // Sign reconciliation (WaterProtectionFee, FuelAdjustment) — never a
       // guess. Tesseract can drop the leading "-" glyph off a printed
@@ -9299,12 +9400,26 @@ const UTILITY_RULES = [
         _gasBillDate,
         _fuelAdjMeta,
       );
+      // Provenance note (backlog 37d5fb0e-fueladj follow-up, 2026-09-14):
+      // reused on every bill built from a field the targeted-crop OCR
+      // fallback recovered — auditable marker naming which fields came from
+      // the crop, same _auto_* naming discipline as the existing
+      // _auto_derived_FuelAdjustment / _auto_corrected_* markers above.
+      const _lbgCropNote = (fields) => ({
+        fields,
+        reason:
+          'Full-page OCR could not read this at normal zoom; recovered via the Louisburg targeted-crop OCR fallback ' +
+          '(high-zoom charges-column crop, backlog 37d5fb0e-fueladj follow-up).',
+      });
       if (gasBill) {
         if (_faSignCorrected)
           gasBill._auto_corrected_FuelAdjustment = {
             reason:
               'Sign flipped to negative — reconciled against printed Current Bill total (OCR dropped the credit minus sign).',
           };
+        if (_lbgCropRecoveredFields.length) {
+          gasBill._auto_recovered_via_crop = _lbgCropNote(_lbgCropRecoveredFields.slice());
+        }
         bills.push(gasBill);
       }
       if (water.charge != null && water.charge !== 0) {
@@ -9330,28 +9445,40 @@ const UTILITY_RULES = [
             reason:
               'Sign flipped to negative — reconciled against printed Current Bill total (OCR dropped the credit minus sign).',
           };
+        const _waterCropFields = _lbgCropRecoveredFields.filter((f) => f === 'Water' || f === 'Water Protection');
+        if (_waterCropFields.length) {
+          waterBill._auto_recovered_via_crop = _lbgCropNote(_waterCropFields);
+        }
         bills.push(waterBill);
       }
       if (sewer.charge != null && sewer.charge !== 0) {
         const sewerTotal = sewer.charge.toFixed(2);
-        bills.push({
+        const sewerBill = {
           ...shared,
           Commodity: 'Sewer',
           SewerUsage: sewer.usage != null ? sewer.usage : null,
           SewerCharge: sewer.charge,
           TotalCurrentCharges: sewerTotal,
           TotalAmountDue: sewerTotal,
-        });
+        };
+        if (_lbgCropRecoveredFields.includes('Sewer')) {
+          sewerBill._auto_recovered_via_crop = _lbgCropNote(['Sewer']);
+        }
+        bills.push(sewerBill);
       }
       if (storm.charge != null && storm.charge !== 0) {
         const stormTotal = storm.charge.toFixed(2);
-        bills.push({
+        const stormBill = {
           ...shared,
           Commodity: 'Stormwater',
           StormWaterCharge: storm.charge,
           TotalCurrentCharges: stormTotal,
           TotalAmountDue: stormTotal,
-        });
+        };
+        if (_lbgCropRecoveredFields.includes('Stormwater')) {
+          stormBill._auto_recovered_via_crop = _lbgCropNote(['Stormwater']);
+        }
+        bills.push(stormBill);
       }
       // If nothing parsed cleanly but the bill has a Total Amount Due,
       // emit a single "Other" bill so the user sees SOMETHING rather than

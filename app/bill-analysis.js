@@ -12025,6 +12025,78 @@ function _cropCanvasTop(srcCanvas, height) {
   ctx.drawImage(srcCanvas, 0, 0, srcCanvas.width, h, 0, 0, srcCanvas.width, h);
   return dst;
 }
+// _cropCanvasRegion (backlog 37d5fb0e-fueladj follow-up, 2026-09-14): generalizes
+// _cropCanvasTop above to an arbitrary rectangle expressed as RATIOS of
+// srcCanvas's own width/height (not fixed pixels) — so the same crop call
+// works whether srcCanvas is a 1x preview or a 12x-zoom render. Same
+// manual-drawImage-crop discipline as _cropCanvasTop (never pass a
+// `rectangle` option to Tesseract — see that function's header comment for
+// why). Used by the Louisburg targeted-crop OCR fallback
+// (_lbgNeedsCropFallback below) to isolate just the charges-column value
+// cells at high zoom, instead of OCR'ing the whole page at that zoom (slow
+// and unnecessary — the fallback only needs one small region).
+function _cropCanvasRegion(srcCanvas, xRatio, yRatio, wRatio, hRatio) {
+  const sx = Math.max(0, Math.min(srcCanvas.width - 1, Math.round(srcCanvas.width * xRatio)));
+  const sy = Math.max(0, Math.min(srcCanvas.height - 1, Math.round(srcCanvas.height * yRatio)));
+  const sw = Math.max(1, Math.min(srcCanvas.width - sx, Math.round(srcCanvas.width * wRatio)));
+  const sh = Math.max(1, Math.min(srcCanvas.height - sy, Math.round(srcCanvas.height * hRatio)));
+  const dst = document.createElement('canvas');
+  dst.width = sw;
+  dst.height = sh;
+  const ctx = dst.getContext('2d');
+  ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  return dst;
+}
+// _grayscaleCanvas (backlog 37d5fb0e-fueladj follow-up, 2026-09-14): plain
+// luminance grayscale, no thresholding (unlike binarizeCanvas's Otsu B/W
+// above) — the targeted-crop research
+// (_context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md)
+// found grayscale alone (no binarize) was the stable, reproducible winner
+// for reading the Total Amount Due cell at high zoom; Otsu was interchangeable
+// but not required. Returns a new canvas.
+function _grayscaleCanvas(srcCanvas) {
+  const w = srcCanvas.width,
+    h = srcCanvas.height;
+  const dst = document.createElement('canvas');
+  dst.width = w;
+  dst.height = h;
+  const srcCtx = srcCanvas.getContext('2d');
+  const dstCtx = dst.getContext('2d');
+  const imageData = srcCtx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+  for (let i = 0; i < w * h; i++) {
+    const r = data[i * 4],
+      g = data[i * 4 + 1],
+      b = data[i * 4 + 2];
+    const v = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    data[i * 4] = v;
+    data[i * 4 + 1] = v;
+    data[i * 4 + 2] = v;
+  }
+  dstCtx.putImageData(imageData, 0, 0);
+  return dst;
+}
+// _lbgNeedsCropFallback (backlog 37d5fb0e-fueladj follow-up, 2026-09-14):
+// decides whether a page's full-page OCR text is missing the SPECIFIC fields
+// the Louisburg Fuel-Adjustment residual derivation needs
+// (_lbg_resolveFuelAdj / _faUnresolvedCommodities, app/energy-savings.js) —
+// i.e. whether this page would otherwise be HELD for manual review. Mirrors
+// (does not duplicate/reimplement) that guard's own field checks so the
+// fallback fires ONLY as a true fallback: never on a bill that already reads
+// cleanly (hard gate — see task's regression requirement). Deliberately
+// conservative: requires the Louisburg detect signature AND a Gas section
+// AND (no Current Bill/Total Amount Due total OR no Water line at all).
+function _lbgNeedsCropFallback(txt) {
+  if (!txt) return false;
+  if (!/louisburgkansas\.gov|City\s*of\s*Louisburg/i.test(txt)) return false;
+  if (!/ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information|Amount\s*Due\s*After|DETACH\s*AND\s*RETURN/i.test(txt))
+    return false;
+  if (!/\bG[A4]S\b/i.test(txt)) return false; // only Gas pages carry a Fuel Adjustment residual to solve
+  const hasCurrentBillOrTotal =
+    /Current\s*Bill\s*\$?\s*[\d,]+\.\d{2}/i.test(txt) || /Total\s*Amount\s*Due\s*\$?\s*[\d,]+\.\d{2}/i.test(txt);
+  const hasWater = /\bM?W?[A4][TI][E3F][RB]\b/i.test(txt) && !/PROTECTION/i.test(txt);
+  return !hasCurrentBillOrTotal || !hasWater;
+}
 // binarizeCanvas: Otsu threshold → pure B/W.  Returns a new canvas.
 // Used as a triggered extra pass for low-scoring pages (CHANGE 5).
 function binarizeCanvas(srcCanvas) {
@@ -13101,6 +13173,12 @@ async function extractPDFText(ab, statusCb) {
           if (_ocrBudgetExceeded) return;
           let bestText = '',
             bestScore = 0;
+          // Winning orientation label ('90'/'180'/'270'/null) from the
+          // CHANGE-4 probe below — captured here (outer page scope) so the
+          // Louisburg targeted-crop fallback near the end of this page's
+          // processing (backlog 37d5fb0e-fueladj follow-up, 2026-09-14) can
+          // re-render at the SAME corrected orientation without re-probing.
+          let _lbgOrientWinnerLabel = null;
           allPassTexts[pgNum] = [];
           // ── Per-page render cache (b35c9b09 Step 2 fix, 2026-08-31) ────────
           // Step 1 measured (headless, real Tesseract + real pdfjs-dist, no
@@ -13516,6 +13594,7 @@ async function extractPDFText(ab, statusCb) {
               _orientPicked = picked;
               if (picked) {
                 _pickedForCleanup = picked.winnerCanvas;
+                _lbgOrientWinnerLabel = picked.winnerLabel;
                 // A rotated candidate clearly wins — run full OCR on it
                 if (statusCb)
                   statusCb(
@@ -13921,6 +14000,82 @@ async function extractPDFText(ab, statusCb) {
             _earlyExitOverrideSnapshot !== null ? _earlyExitOverrideSnapshot : bestText,
             allPassTexts[pgNum],
           );
+          // ── Louisburg targeted-crop OCR fallback (backlog 37d5fb0e-fueladj
+          // follow-up, 2026-09-14) ────────────────────────────────────────────
+          // Fires ONLY when this page's full-page OCR (everything above —
+          // primary/retry passes, orientation, binarize, rate-consensus) still
+          // could not read the fields the Fuel-Adjustment residual derivation
+          // needs (_lbg_resolveFuelAdj / _faUnresolvedCommodities,
+          // app/energy-savings.js): the Current Bill / Total Amount Due total
+          // and/or a Water charge line. Root cause (see
+          // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md):
+          // full-page OCR tops out at 4x zoom and the charges-column font is
+          // too small/thin to survive at that scale; a tight, high-zoom crop of
+          // just that column reliably reads it. Renders the page FRESH at a
+          // much higher zoom (8x — the research found 8-12x reliable; 8x keeps
+          // this rare, already-degraded-bill-only fallback's added cost
+          // bounded), rotated to the SAME orientation the page already won
+          // (_lbgOrientWinnerLabel), crops just the charges-column region, and
+          // OCRs it with psm 6 (uniform block — multiple stacked value lines).
+          // The recovered text is appended to bestText behind a sentinel
+          // delimiter, NOT blended into the main text — energy-savings.js's
+          // Louisburg _extractNew strips it back out and merges it through the
+          // SAME parseMetered/regex constructs already used for the main page,
+          // filling in ONLY fields the main pass found nothing for at all (see
+          // that file's merge block). This never fires on a bill that already
+          // reads cleanly — _lbgNeedsCropFallback requires a missing
+          // Current-Bill/Total-Amount-Due total or a missing Water line.
+          if (_lbgNeedsCropFallback(bestText)) {
+            try {
+              if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — Louisburg targeted-crop fallback...');
+              const LBG_CROP_ZOOM = 8;
+              const _lbgHighRes = await _renderPageHQCached(LBG_CROP_ZOOM);
+              const _lbgOriented =
+                _lbgOrientWinnerLabel === '90'
+                  ? rotateCanvas90(_lbgHighRes)
+                  : _lbgOrientWinnerLabel === '270'
+                    ? rotateCanvas270(_lbgHighRes)
+                    : _lbgOrientWinnerLabel === '180'
+                      ? rotateCanvas180(_lbgHighRes)
+                      : _lbgHighRes;
+              // Charges-column region, as a ratio of the CORRECTLY-ORIENTED
+              // page — ratios measured directly off
+              // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-full-page-correctly-oriented.png
+              // (the "Previous/Current Reading/Usage" header down through
+              // "Amount Due After", right-hand charges column). Generous
+              // margins so scan-to-scan layout jitter doesn't clip a value —
+              // this is a fallback pass, not a precision single-cell crop, so
+              // a slightly larger region costs a little OCR time but never
+              // correctness.
+              const _lbgCrop = _cropCanvasRegion(_lbgOriented, 0.45, 0.2, 0.55, 0.32);
+              const _lbgGray = _grayscaleCanvas(_lbgCrop);
+              _lbgCrop.width = 0;
+              _lbgCrop.height = 0;
+              if (_lbgOriented !== _lbgHighRes) {
+                _lbgOriented.width = 0;
+                _lbgOriented.height = 0;
+              }
+              const { result: _lbgCropResult } = await recognizeWithTimeout(workerBox.current, _lbgGray, {
+                tessedit_pageseg_mode: 6,
+                rotateAuto: false,
+              });
+              _lbgGray.width = 0;
+              _lbgGray.height = 0;
+              const _lbgCropText = _lbgCropResult.data.text || '';
+              // Only append if the crop actually recovered SOMETHING
+              // dollar-shaped — an empty/garbage crop must not pollute
+              // bestText with a useless sentinel block.
+              if (/[\d,]+\.\d{2}/.test(_lbgCropText)) {
+                bestText += '\n%%LBG_CROP_FALLBACK%%\n' + _lbgCropText + '\n%%LBG_CROP_FALLBACK_END%%\n';
+                if (!window._pdfLbgCropFallbackPages) window._pdfLbgCropFallbackPages = [];
+                window._pdfLbgCropFallbackPages.push(pgNum);
+              }
+            } catch (_lbgCropErr) {
+              // Fallback failing must never break normal extraction — page
+              // proceeds with whatever bestText already held.
+              console.warn('[Louisburg targeted-crop fallback] page ' + pgNum + ' failed:', _lbgCropErr);
+            }
+          }
           _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache — normal end-of-page path
           pageTexts[pgNum - 1] = bestText;
           _stampCoverage(pgNum, bestText); // GATE A — normal end-of-iteration commit
