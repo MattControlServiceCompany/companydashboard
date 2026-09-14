@@ -2502,6 +2502,10 @@ function saveMeter() {
   if (editId) {
     const m = b.meters.find((m) => m.id === editId);
     if (m) {
+      // Never blank an existing non-empty commodity — a dropdown value that
+      // doesn't match any <option> (e.g. legacy 'Unknown') reads back as ''
+      // and must not overwrite what's already stored.
+      if (!data.commodity && m.commodity) data.commodity = m.commodity;
       Object.assign(m, data);
       const moveToBldgId = document.getElementById('mm-move-bldg')?.value || '';
       if (moveToBldgId && moveToBldgId !== _targetBldgId) {

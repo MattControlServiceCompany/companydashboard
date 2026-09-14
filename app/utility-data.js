@@ -91,6 +91,34 @@ function loadUtilityData() {
       _lastSavedSnapshot[p.id] = JSON.stringify(d);
     }
   });
+  // Heal meters whose commodity got blanked by the mm-commodity dropdown bug
+  // (2026-09-14, fix/meter-commodity-sewer-stormwater — see dashboardlogic.md).
+  // Self-deactivating: only touches meters with commodity blank/missing, so
+  // once healed there are no blanks left and this is a permanent no-op —
+  // no version flag needed. Fills only when the meter's own bill rows
+  // unanimously agree on exactly one non-blank, non-'Unknown' commodity;
+  // never touches a meter that already has a commodity.
+  let _commodityHealed = 0;
+  for (const pid of Object.keys(utilityData)) {
+    const ud = utilityData[pid];
+    for (const b of ud.buildings || []) {
+      for (const mt of b.meters || []) {
+        if (mt.commodity) continue; // never overwrite an existing value
+        const bills = mt.bills || [];
+        if (!bills.length) continue; // no evidence -> leave blank
+        const vals = new Set(bills.map((bl) => bl.commodity || ''));
+        if (vals.size !== 1) continue; // disagreement -> leave blank
+        const only = [...vals][0];
+        if (!only || only === 'Unknown') continue; // no guessing
+        mt.commodity = only;
+        _commodityHealed++;
+      }
+    }
+  }
+  if (_commodityHealed > 0) {
+    saveUtilityData(SAVE_ALL_PROJECTS); // heal touches multiple projects' meters
+    console.log('[commodity heal] Restored commodity on ' + _commodityHealed + ' meter(s) from bill row evidence');
+  }
   // One-time migration: fix 2-digit year ISO dates (e.g. "24-03-15" → "2024-03-15")
   // produced by the old toISO function. Without this, date comparisons, sorting,
   // normMonth, and duplicate detection all break.
