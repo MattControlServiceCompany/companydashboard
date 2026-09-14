@@ -4312,11 +4312,32 @@ function rptPageContractProjection(n, d) {
   const escalation = contract.escalation || 0;
   const contractYears = contract.years || 5;
   const currentYear = contract.currentYear || 1;
-  // Use cumulative savings across all completed quarters for the chart (not just current period)
+  const q = (d && d.period && d.period.quarter) || 1;
+  // Use cumulative REALIZED savings thru the reported quarter for the chart's "Actual
+  // Cumulative" endpoint (not d.totals.cumulativeSavings, which sums every post-baseline
+  // month regardless of calendar quarter and leaks months beyond the report's own quarter
+  // — see FIX 1 comment above, ~line 847).
+  //
+  // FIX 2 (2026-09-13): for contract year 1 (currentYear === 1), the chart's x-position
+  // for this point is curQtr === q (see below), so the correct value is "cumulative
+  // realized savings through quarter q of year 1" — exactly what
+  // d.contract.quarterlyActuals[0..q-1] sums to (same mechanism the Year-1 row in the
+  // Multi-Year Projection table below already uses, ~line 4430, and rptPageFinancial's
+  // FIX 1, ~line 2591). For contract years 2+, quarterlyActuals only covers the CURRENT
+  // calendar year (per its own doc comment ~line 847) — prior-year realized totals
+  // aren't available anywhere on `d`, so a correct cross-year cumulative can't be
+  // computed here without inventing numbers. Those years keep the prior (leaky)
+  // d.totals.cumulativeSavings fallback; this is a known, reported limitation, not a
+  // silent gap.
   const actualSavings = (d && d.totals && d.totals.savings) || 0;
   const actCumSavings =
-    d && d.totals && d.totals.cumulativeSavings != null ? d.totals.cumulativeSavings : actualSavings;
-  const q = (d && d.period && d.period.quarter) || 1;
+    currentYear === 1 && contract.quarterlyActuals
+      ? contract.quarterlyActuals.slice(0, q).reduce(function (s, v) {
+          return s + (v != null ? v : 0);
+        }, 0)
+      : d && d.totals && d.totals.cumulativeSavings != null
+        ? d.totals.cumulativeSavings
+        : actualSavings;
 
   // -- Quarterly Targets table --
   const qTarget = qTargets[q - 1] || 0;
