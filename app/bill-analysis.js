@@ -12025,6 +12025,78 @@ function _cropCanvasTop(srcCanvas, height) {
   ctx.drawImage(srcCanvas, 0, 0, srcCanvas.width, h, 0, 0, srcCanvas.width, h);
   return dst;
 }
+// _cropCanvasRegion (backlog 37d5fb0e-fueladj follow-up, 2026-09-14): generalizes
+// _cropCanvasTop above to an arbitrary rectangle expressed as RATIOS of
+// srcCanvas's own width/height (not fixed pixels) — so the same crop call
+// works whether srcCanvas is a 1x preview or a 12x-zoom render. Same
+// manual-drawImage-crop discipline as _cropCanvasTop (never pass a
+// `rectangle` option to Tesseract — see that function's header comment for
+// why). Used by the Louisburg targeted-crop OCR fallback
+// (_lbgNeedsCropFallback below) to isolate just the charges-column value
+// cells at high zoom, instead of OCR'ing the whole page at that zoom (slow
+// and unnecessary — the fallback only needs one small region).
+function _cropCanvasRegion(srcCanvas, xRatio, yRatio, wRatio, hRatio) {
+  const sx = Math.max(0, Math.min(srcCanvas.width - 1, Math.round(srcCanvas.width * xRatio)));
+  const sy = Math.max(0, Math.min(srcCanvas.height - 1, Math.round(srcCanvas.height * yRatio)));
+  const sw = Math.max(1, Math.min(srcCanvas.width - sx, Math.round(srcCanvas.width * wRatio)));
+  const sh = Math.max(1, Math.min(srcCanvas.height - sy, Math.round(srcCanvas.height * hRatio)));
+  const dst = document.createElement('canvas');
+  dst.width = sw;
+  dst.height = sh;
+  const ctx = dst.getContext('2d');
+  ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  return dst;
+}
+// _grayscaleCanvas (backlog 37d5fb0e-fueladj follow-up, 2026-09-14): plain
+// luminance grayscale, no thresholding (unlike binarizeCanvas's Otsu B/W
+// above) — the targeted-crop research
+// (_context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md)
+// found grayscale alone (no binarize) was the stable, reproducible winner
+// for reading the Total Amount Due cell at high zoom; Otsu was interchangeable
+// but not required. Returns a new canvas.
+function _grayscaleCanvas(srcCanvas) {
+  const w = srcCanvas.width,
+    h = srcCanvas.height;
+  const dst = document.createElement('canvas');
+  dst.width = w;
+  dst.height = h;
+  const srcCtx = srcCanvas.getContext('2d');
+  const dstCtx = dst.getContext('2d');
+  const imageData = srcCtx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+  for (let i = 0; i < w * h; i++) {
+    const r = data[i * 4],
+      g = data[i * 4 + 1],
+      b = data[i * 4 + 2];
+    const v = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    data[i * 4] = v;
+    data[i * 4 + 1] = v;
+    data[i * 4 + 2] = v;
+  }
+  dstCtx.putImageData(imageData, 0, 0);
+  return dst;
+}
+// _lbgNeedsCropFallback (backlog 37d5fb0e-fueladj follow-up, 2026-09-14):
+// decides whether a page's full-page OCR text is missing the SPECIFIC fields
+// the Louisburg Fuel-Adjustment residual derivation needs
+// (_lbg_resolveFuelAdj / _faUnresolvedCommodities, app/energy-savings.js) —
+// i.e. whether this page would otherwise be HELD for manual review. Mirrors
+// (does not duplicate/reimplement) that guard's own field checks so the
+// fallback fires ONLY as a true fallback: never on a bill that already reads
+// cleanly (hard gate — see task's regression requirement). Deliberately
+// conservative: requires the Louisburg detect signature AND a Gas section
+// AND (no Current Bill/Total Amount Due total OR no Water line at all).
+function _lbgNeedsCropFallback(txt) {
+  if (!txt) return false;
+  if (!/louisburgkansas\.gov|City\s*of\s*Louisburg/i.test(txt)) return false;
+  if (!/ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information|Amount\s*Due\s*After|DETACH\s*AND\s*RETURN/i.test(txt))
+    return false;
+  if (!/\bG[A4]S\b/i.test(txt)) return false; // only Gas pages carry a Fuel Adjustment residual to solve
+  const hasCurrentBillOrTotal =
+    /Current\s*Bill\s*\$?\s*[\d,]+\.\d{2}/i.test(txt) || /Total\s*Amount\s*Due\s*\$?\s*[\d,]+\.\d{2}/i.test(txt);
+  const hasWater = /\bM?W?[A4][TI][E3F][RB]\b/i.test(txt) && !/PROTECTION/i.test(txt);
+  return !hasCurrentBillOrTotal || !hasWater;
+}
 // binarizeCanvas: Otsu threshold → pure B/W.  Returns a new canvas.
 // Used as a triggered extra pass for low-scoring pages (CHANGE 5).
 function binarizeCanvas(srcCanvas) {
@@ -13101,6 +13173,12 @@ async function extractPDFText(ab, statusCb) {
           if (_ocrBudgetExceeded) return;
           let bestText = '',
             bestScore = 0;
+          // Winning orientation label ('90'/'180'/'270'/null) from the
+          // CHANGE-4 probe below — captured here (outer page scope) so the
+          // Louisburg targeted-crop fallback near the end of this page's
+          // processing (backlog 37d5fb0e-fueladj follow-up, 2026-09-14) can
+          // re-render at the SAME corrected orientation without re-probing.
+          let _lbgOrientWinnerLabel = null;
           allPassTexts[pgNum] = [];
           // ── Per-page render cache (b35c9b09 Step 2 fix, 2026-08-31) ────────
           // Step 1 measured (headless, real Tesseract + real pdfjs-dist, no
@@ -13516,6 +13594,7 @@ async function extractPDFText(ab, statusCb) {
               _orientPicked = picked;
               if (picked) {
                 _pickedForCleanup = picked.winnerCanvas;
+                _lbgOrientWinnerLabel = picked.winnerLabel;
                 // A rotated candidate clearly wins — run full OCR on it
                 if (statusCb)
                   statusCb(
@@ -13921,6 +14000,148 @@ async function extractPDFText(ab, statusCb) {
             _earlyExitOverrideSnapshot !== null ? _earlyExitOverrideSnapshot : bestText,
             allPassTexts[pgNum],
           );
+          // ── Louisburg targeted-crop OCR fallback (backlog 37d5fb0e-fueladj
+          // follow-up, 2026-09-14) ────────────────────────────────────────────
+          // Fires ONLY when this page's full-page OCR (everything above —
+          // primary/retry passes, orientation, binarize, rate-consensus) still
+          // could not read the fields the Fuel-Adjustment residual derivation
+          // needs (_lbg_resolveFuelAdj / _faUnresolvedCommodities,
+          // app/energy-savings.js): the Current Bill / Total Amount Due total
+          // and/or a Water charge line. Root cause (see
+          // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md):
+          // full-page OCR tops out at 4x zoom and the charges-column font is
+          // too small/thin to survive at that scale; a tight, high-zoom crop of
+          // just that column reliably reads it. Renders the page FRESH at a
+          // much higher zoom (8x — the research found 8-12x reliable; 8x keeps
+          // this rare, already-degraded-bill-only fallback's added cost
+          // bounded), rotated to the SAME orientation the page already won
+          // (_lbgOrientWinnerLabel), crops just the charges-column region, and
+          // OCRs it with psm 6 (uniform block — multiple stacked value lines).
+          // The recovered text is appended to bestText behind a sentinel
+          // delimiter, NOT blended into the main text — energy-savings.js's
+          // Louisburg _extractNew strips it back out and merges it through the
+          // SAME parseMetered/regex constructs already used for the main page,
+          // filling in ONLY fields the main pass found nothing for at all (see
+          // that file's merge block). This never fires on a bill that already
+          // reads cleanly — _lbgNeedsCropFallback requires a missing
+          // Current-Bill/Total-Amount-Due total or a missing Water line.
+          if (_lbgNeedsCropFallback(bestText)) {
+            try {
+              if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — Louisburg targeted-crop fallback...');
+              // FIX (2026-09-14, verified against the real scan Scan_20260908114811.pdf
+              // via a real pdfjs-dist+tesseract.js Node harness — see
+              // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md):
+              // the first version of this fallback cropped the WHOLE charges column
+              // (one wide region spanning every row) at 8x zoom with psm 6. That measured
+              // as GARBLED on the real bill — the pen circle/strike marks and ruled table
+              // lines running through the wider region confuse psm 6's block layout
+              // analysis even at high zoom, corrupting rows that have no handwriting on
+              // them at all (WATER's own label OCR'd as "AWALER"). The research's own
+              // winning config was a TIGHT crop of a SINGLE value cell at 12x zoom with
+              // psm 8 (SINGLE_WORD) — isolating just the digit run is what lets Tesseract
+              // ignore the surrounding ink; a wider multi-row crop reintroduces the exact
+              // noise the tight crop exists to avoid. Two such isolated cells, at ratios
+              // re-measured directly off a real 12x-zoom render of this bill (not the
+              // lower-zoom reference screenshot), are used below instead of one wide one:
+              //   - WATER's charge value — this bill's own main-pass OCR also failed to
+              //     read the WATER line (label AND value), which the original wide crop
+              //     never actually fixed either (confirmed empirically).
+              //   - the "Total Amount Due" value — this bill's known-good winning cell.
+              //     "Current Bill" (the OTHER printed total, one row above) was tried too
+              //     but the pen circle's ink crosses directly through ITS digits (not just
+              //     nearby, as with Total Amount Due) on this scan — no crop rectangle
+              //     could isolate it cleanly, matching this research doc's own test (b)
+              //     finding ("a strikethrough pen line runs through part of it in this
+              //     specific scan"). energy-savings.js's merge block below bridges Total
+              //     Amount Due into CurrentBillTotal ONLY when the page's own printed
+              //     "Account Balance $0.00" proves there is no carried-over balance
+              //     (i.e. the two totals are provably the same number) — see that file's
+              //     comment for the full reasoning; this never touches an account with a
+              //     real balance forward.
+              // Synthetic "WATER "/"Total Amount Due " labels are prepended to each cell's
+              // bare OCR'd number before appending, so energy-savings.js's EXISTING
+              // label+value line-matching regexes (parseMetered / the Current Bill/Total
+              // Amount Due matches) pick them up unchanged — no parser-side special case
+              // for "this text came from a crop".
+              const LBG_CROP_ZOOM = 12;
+              const _lbgHighRes = await _renderPageHQCached(LBG_CROP_ZOOM);
+              const _lbgOriented =
+                _lbgOrientWinnerLabel === '90'
+                  ? rotateCanvas90(_lbgHighRes)
+                  : _lbgOrientWinnerLabel === '270'
+                    ? rotateCanvas270(_lbgHighRes)
+                    : _lbgOrientWinnerLabel === '180'
+                      ? rotateCanvas180(_lbgHighRes)
+                      : _lbgHighRes;
+              const _lbgCells = [
+                { label: 'WATER', x: 0.855, y: 0.28, w: 0.145, h: 0.019 },
+                { label: 'Total Amount Due', x: 0.87, y: 0.41, w: 0.13, h: 0.021 },
+                // GASUSAGE (not a real printed label — see energy-savings.js's
+                // GasUsage merge branch for why this exists): the Gas row's
+                // PRINTED decimal usage cell (Previous/Current Reading/Usage
+                // columns, "Usage" position, same row as the GAS charge — a
+                // pressure-corrected CCF value, e.g. "647.41", NOT the raw
+                // meter-read integer difference). On the real bill this fix
+                // was verified against, the main-pass OCR never captured this
+                // decimal token, so downstream code fell back to the raw
+                // integer read-difference (616) as gas.usage — close enough
+                // to look plausible but off by ~5%, which was enough to trip
+                // energy-savings.js's rate-sanity correction into silently
+                // REPLACING the confidently-read printed Gas charge with a
+                // usage-derived one, corrupting the Fuel Adjustment residual
+                // this whole fallback exists to recover. "GASUSAGE" (one
+                // word, no space) is a synthetic sentinel label, not the real
+                // "Usage" column header — deliberately chosen so it can never
+                // collide with the real \bG[A4]S\b charge-line regex (that
+                // regex requires a word boundary right after S; "GASUSAGE"
+                // has no boundary there) while still reading unambiguously
+                // in bestText for a human debugging pdfDebugBtn output.
+                { label: 'GASUSAGE', x: 0.69, y: 0.296, w: 0.11, h: 0.028 },
+              ];
+              const _lbgCellLines = [];
+              for (const cell of _lbgCells) {
+                const _lbgCrop = _cropCanvasRegion(_lbgOriented, cell.x, cell.y, cell.w, cell.h);
+                const _lbgGray = _grayscaleCanvas(_lbgCrop);
+                _lbgCrop.width = 0;
+                _lbgCrop.height = 0;
+                const { result: _lbgCropResult } = await recognizeWithTimeout(workerBox.current, _lbgGray, {
+                  tessedit_pageseg_mode: 8,
+                  rotateAuto: false,
+                });
+                _lbgGray.width = 0;
+                _lbgGray.height = 0;
+                const _lbgCellText = (_lbgCropResult.data.text || '').trim();
+                // Extract ONLY the dollar-amount substring, discarding any stray
+                // character psm 8 tacks on immediately before it (confirmed on the
+                // real scan: the pen circle around this exact cell occasionally
+                // OCRs as a leading "{"/"," glyph right against the "$", e.g.
+                // "{$2,823.63") — appending the RAW cell text would leave that
+                // glyph sitting between the synthetic label and the "$", breaking
+                // energy-savings.js's `Label\s*\$?\s*([\d,]+\.\d{2})` match (its
+                // `\$?` only tolerates a bare optional $, not arbitrary noise).
+                // Anchoring on the amount pattern itself means the synthetic line
+                // this fallback appends is always clean regardless of what noise
+                // surrounds it.
+                const _lbgValMatch = _lbgCellText.match(/\$?[\d,]+\.\d{2}/);
+                if (_lbgValMatch) {
+                  _lbgCellLines.push(cell.label + ' ' + _lbgValMatch[0]);
+                }
+              }
+              if (_lbgOriented !== _lbgHighRes) {
+                _lbgOriented.width = 0;
+                _lbgOriented.height = 0;
+              }
+              if (_lbgCellLines.length) {
+                bestText += '\n%%LBG_CROP_FALLBACK%%\n' + _lbgCellLines.join('\n') + '\n%%LBG_CROP_FALLBACK_END%%\n';
+                if (!window._pdfLbgCropFallbackPages) window._pdfLbgCropFallbackPages = [];
+                window._pdfLbgCropFallbackPages.push(pgNum);
+              }
+            } catch (_lbgCropErr) {
+              // Fallback failing must never break normal extraction — page
+              // proceeds with whatever bestText already held.
+              console.warn('[Louisburg targeted-crop fallback] page ' + pgNum + ' failed:', _lbgCropErr);
+            }
+          }
           _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache — normal end-of-page path
           pageTexts[pgNum - 1] = bestText;
           _stampCoverage(pgNum, bestText); // GATE A — normal end-of-iteration commit
