@@ -13543,6 +13543,267 @@ async function extractPDFText(ab, statusCb) {
                   bestText = rotText;
                   bestScore = rotScore;
                 }
+                // FIX (rotation-multiscale, 2026-09-13): the single 2.5x-rot pass above
+                // gives the corrected orientation only ONE read — an upright page gets
+                // up to 6 primary passes (OCR_PASSES: 2.5x/3.5x/2x/3x + psm4 variants)
+                // plus up to 3 retry passes (OCR_RETRY_PASSES: 1x/1.5x/4x) before its
+                // text is trusted. A genuinely-rotated scan (e.g. Louisburg /Rotate 270
+                // fax bills) never got that same corroboration at its TRUE orientation,
+                // so a single garbled digit in the $ column (the charges column) had no
+                // second read to out-vote it. Root-caused in
+                // ocr-debug_Scan_20260908114811_20260913_151402.txt: every standard pass
+                // scored 0.0 (wrong orientation) and only 2.5x-rot90 scored anything, so
+                // the winning image got zero corroboration. Reuses the SAME OCR_PASSES /
+                // OCR_RETRY_PASSES definitions and the SAME scorePage/bestText-bestScore
+                // consensus rule already used above and in the primary loop — no new pass
+                // configs, no new scoring logic, no regex changes. Gated on rotScore still
+                // being low (mirrors the primary loop's own pass===1 bestScore>=10 early-
+                // exit bar) so an already-good single rotated read costs nothing extra.
+                const ROT_MULTISCALE_THRESHOLD = 10;
+                if (rotScore < ROT_MULTISCALE_THRESHOLD) {
+                  const _rotateToWinner = (canvas) =>
+                    picked.winnerLabel === '90'
+                      ? rotateCanvas90(canvas)
+                      : picked.winnerLabel === '270'
+                        ? rotateCanvas270(canvas)
+                        : rotateCanvas180(canvas);
+                  // Remaining primary passes (index 0, 2.5x, already ran above as the
+                  // orientation winner's first read) at the corrected orientation.
+                  for (let rpass = 1; rpass < OCR_PASSES.length; rpass++) {
+                    if (window._pdfAbort) break;
+                    if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
+                      _ocrBudgetExceeded = true;
+                    }
+                    if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+                      _ocrPageBudgetExceeded = true;
+                    }
+                    if (_ocrBudgetExceeded || _ocrPageBudgetExceeded) break;
+                    const rcfg = OCR_PASSES[rpass];
+                    if (statusCb)
+                      statusCb(
+                        'OCR page ' +
+                          pgNum +
+                          '/' +
+                          maxPages +
+                          ' — rot' +
+                          picked.winnerLabel +
+                          ' pass ' +
+                          (rpass + 1) +
+                          '/' +
+                          OCR_PASSES.length +
+                          ' (' +
+                          rcfg.label +
+                          ')...',
+                      );
+                    let rotCanvas;
+                    try {
+                      // _renderPageHQCached is a cache HIT here whenever the primary/
+                      // retry cascade above already rendered this scale (the normal
+                      // case — orientation only fires after bestScore<3, which means
+                      // most/all OCR_PASSES/OCR_RETRY_PASSES scales already ran
+                      // upright and are sitting in _pageRenderCache). Rotating that
+                      // cached upright canvas is a cheap canvas-copy, not a re-render.
+                      const upright = await _renderPageHQCached(rcfg.scale);
+                      rotCanvas = _rotateToWinner(upright);
+                      const rparams = rcfg.psm
+                        ? { tessedit_pageseg_mode: rcfg.psm, rotateAuto: true }
+                        : { rotateAuto: true };
+                      const rt0 = performance.now();
+                      const { result: rResult } = await recognizeWithTimeout(workerBox.current, rotCanvas, rparams);
+                      const rText = rResult.data.text;
+                      const rElapsed = ((performance.now() - rt0) / 1000).toFixed(1);
+                      const rScore = scorePage(rText);
+                      allPassTexts[pgNum].push({
+                        scale: rcfg.scale,
+                        label: rcfg.label + '-rot' + picked.winnerLabel,
+                        text: rText,
+                        score: rScore,
+                      });
+                      passScoreLog.push({
+                        page: pgNum,
+                        pass: rcfg.label + '-rot' + picked.winnerLabel,
+                        score: rScore.toFixed(1),
+                        time: rElapsed + 's',
+                        chars: rText.length,
+                      });
+                      if (rScore > bestScore || (rScore === bestScore && rText.length > bestText.length)) {
+                        bestText = rText;
+                        bestScore = rScore;
+                      }
+                    } catch (rotPassErr) {
+                      if (rotPassErr._budgetExceeded) _ocrBudgetExceeded = true;
+                      if (rotPassErr._replacementWorker) workerBox.current = rotPassErr._replacementWorker;
+                      passScoreLog.push({
+                        page: pgNum,
+                        pass: rcfg.label + '-rot' + picked.winnerLabel,
+                        score: 'FAIL',
+                        time: '—',
+                        chars: 0,
+                        error: rotPassErr.message,
+                      });
+                    } finally {
+                      if (rotCanvas) {
+                        rotCanvas.width = 0;
+                        rotCanvas.height = 0;
+                      }
+                    }
+                    // Mirror the primary loop's own early-exit bar: once the 2.5x+3.5x
+                    // rotated reads (index 0 above + index 1 here) already agree on a
+                    // strong score, the remaining scales/psm4 variants buy little.
+                    if (rpass === 1 && bestScore >= ROT_MULTISCALE_THRESHOLD) break;
+                  }
+                  // Retry passes (1x/1.5x/4x), same generic low-score bar the upright
+                  // path's `needsRetry` uses as its final fallback rule (bestScore < 5).
+                  if (!_ocrBudgetExceeded && !_ocrPageBudgetExceeded && !window._pdfAbort && bestScore < 5) {
+                    for (const rcfg of OCR_RETRY_PASSES) {
+                      if (window._pdfAbort) break;
+                      if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
+                        _ocrBudgetExceeded = true;
+                      }
+                      if (!_ocrPageBudgetExceeded && performance.now() - _pageStartTime > _ocrPageBudgetMs) {
+                        _ocrPageBudgetExceeded = true;
+                      }
+                      if (_ocrBudgetExceeded || _ocrPageBudgetExceeded) break;
+                      let rotCanvas;
+                      try {
+                        const upright = await _renderPageHQCached(rcfg.scale);
+                        rotCanvas = _rotateToWinner(upright);
+                        const rparams = rcfg.psm
+                          ? { tessedit_pageseg_mode: rcfg.psm, rotateAuto: true }
+                          : { rotateAuto: true };
+                        const rt0 = performance.now();
+                        const { result: rResult } = await recognizeWithTimeout(workerBox.current, rotCanvas, rparams);
+                        const rText = rResult.data.text;
+                        const rElapsed = ((performance.now() - rt0) / 1000).toFixed(1);
+                        const rScore = scorePage(rText);
+                        allPassTexts[pgNum].push({
+                          scale: rcfg.scale,
+                          label: rcfg.label + '-rot' + picked.winnerLabel,
+                          text: rText,
+                          score: rScore,
+                        });
+                        passScoreLog.push({
+                          page: pgNum,
+                          pass: rcfg.label + '-rot' + picked.winnerLabel,
+                          score: rScore.toFixed(1),
+                          time: rElapsed + 's',
+                          chars: rText.length,
+                        });
+                        if (rScore > bestScore || (rScore === bestScore && rText.length > bestText.length)) {
+                          bestText = rText;
+                          bestScore = rScore;
+                        }
+                      } catch (rotRetryErr) {
+                        if (rotRetryErr._budgetExceeded) _ocrBudgetExceeded = true;
+                        if (rotRetryErr._replacementWorker) workerBox.current = rotRetryErr._replacementWorker;
+                        passScoreLog.push({
+                          page: pgNum,
+                          pass: rcfg.label + '-rot' + picked.winnerLabel,
+                          score: 'FAIL',
+                          time: '—',
+                          chars: 0,
+                          error: rotRetryErr.message,
+                        });
+                      } finally {
+                        if (rotCanvas) {
+                          rotCanvas.width = 0;
+                          rotCanvas.height = 0;
+                        }
+                      }
+                    }
+                  }
+                  // FIX (rotation-multiscale provider-regression, 2026-09-13): the
+                  // multi-scale cascade above adds more candidate passes at the
+                  // corrected orientation, so a purely score-driven pick can now land
+                  // on a pass whose garbling happens to DROP the provider-identifying
+                  // footer text (e.g. Louisburg's "louisburgkansas.gov"/"City of
+                  // Louisburg") while still scoring highest on the generic $/date/kWh
+                  // metric — root-caused on Scan_20260908114811.pdf, where
+                  // 2.5x-psm4-rot90 (score 3.2) beat every other rotated pass but reads
+                  // as Generic downstream (UTILITY_RULES.detect() finds no footer text),
+                  // so the bill fell through to parseError:true with every field null,
+                  // instead of correctly detecting City of Louisburg the way the
+                  // pre-multiscale single-pass code did. scorePage's own
+                  // detectedProvider LOCK (see makeScorePage above) is shared across
+                  // this page's WHOLE pass cascade (upright + rotated) and is
+                  // deliberately left untouched here — that lock is a separate,
+                  // cross-provider concern (Evergy/KGS/Constellation/WoodRiver/
+                  // Baldwin/Propane all rely on it) needing its own review. Instead,
+                  // re-run the SAME pure, standalone _detectProvider() the lock itself
+                  // calls against only the rotated-orientation candidates gathered by
+                  // THIS block, and — only when the currently-selected bestText no
+                  // longer detects a real provider — prefer the best-scoring rotated
+                  // candidate that still does.
+                  //
+                  // CODE-REVIEW FIX (2026-09-13, BLOCKING): this used to overwrite
+                  // bestText/bestScore UNCONDITIONALLY whenever it found ANY non-generic
+                  // rotated candidate, with no check that the candidate scored as well as
+                  // the pass it was replacing — unlike every sibling branch in this same
+                  // cascade (2.5x-rot at :13542, remaining-scale passes at :13629, retry
+                  // passes at :13692, Otsu binarize at :13846), which only ever overwrite
+                  // on monotonic improvement (strictly higher score, or a tied score with
+                  // longer text). A noisy low-score pass that merely happened to contain a
+                  // weak provider signal could silently stomp a clean, high-scoring read.
+                  // This block now NEVER accepts a candidate that scored strictly lower
+                  // than bestScore — that half of the sibling convention is absolute, no
+                  // exceptions (this alone kills the reported failure mode: a score-4 pass
+                  // can never displace a score-16 pass again).
+                  //
+                  // On an exact SCORE TIE, the sibling branches' own tie-break (longer text
+                  // wins) is deliberately NOT reused here: measured on the real
+                  // Scan_20260908114811.pdf regression fixture, the tied-score rotated pass
+                  // that keeps the Louisburg footer ("3.5x-psm4-rot90", 3629 chars) is
+                  // SHORTER than the tied-score pass that drops it ("2.5x-psm4-rot90", 3920
+                  // chars) — a pure length tie-break would keep the block permanently unable
+                  // to recover provider detection for the exact bill this guard exists for,
+                  // regressing UtilityCompany back to Generic/parseError (empirically
+                  // confirmed with temporary instrumentation: bestScoreBefore 3.2,
+                  // candidateScore 3.2, agreed true, swap never fires under a length-only
+                  // tie-break). Instead, on a tie, require pass-to-pass AGREEMENT — at least
+                  // one OTHER rotated candidate independently detecting the SAME provider —
+                  // before preferring the provider-bearing candidate. Independent agreement
+                  // is a strictly stronger, more targeted signal for "is this really the
+                  // provider" than raw character count, and it is exactly the corroboration
+                  // fix #2 (BLOCKING review, same date) calls for: it stops a single pass's
+                  // weak/non-exclusive signal (e.g. "FRANCHISE FEE", which is NOT
+                  // Baldwin-exclusive — KGS bills carry franchise-fee lines too, see the
+                  // FranchiseFee1/2 comment ~:6794) from hijacking the output alone, while
+                  // still letting a genuinely-corroborated tie win. Net effect: the swap
+                  // condition is "candidate.score >= bestScore AND agreed" — never a
+                  // downgrade, ties only with independent corroboration. A legitimately
+                  // generic bill is left alone (nothing to prefer), and the upright path's
+                  // own scoring/locking behavior is never touched.
+                  if (_detectProvider(bestText) === 'generic') {
+                    const _rotLabelSuffix = '-rot' + picked.winnerLabel;
+                    let _bestRealProviderPass = null;
+                    for (const _p of allPassTexts[pgNum]) {
+                      if (!_p.label || _p.label.indexOf(_rotLabelSuffix) === -1) continue;
+                      if (_detectProvider(_p.text) === 'generic') continue;
+                      if (!_bestRealProviderPass || _p.score > _bestRealProviderPass.score) _bestRealProviderPass = _p;
+                    }
+                    if (_bestRealProviderPass) {
+                      const _chosenProvider = _detectProvider(_bestRealProviderPass.text);
+                      let _agreed = false;
+                      for (const _p of allPassTexts[pgNum]) {
+                        if (_p === _bestRealProviderPass) continue;
+                        if (!_p.label || _p.label.indexOf(_rotLabelSuffix) === -1) continue;
+                        if (_detectProvider(_p.text) === _chosenProvider) {
+                          _agreed = true;
+                          break;
+                        }
+                      }
+                      if (_agreed && _bestRealProviderPass.score >= bestScore) {
+                        bestText = _bestRealProviderPass.text;
+                        bestScore = _bestRealProviderPass.score;
+                      }
+                    }
+                  }
+                  // Same majority-vote rate-consensus patch the upright path applies
+                  // once >=3 passes are available for this page — now legitimately
+                  // reachable for a rotated page too, since it can accumulate >=3
+                  // passes at its true orientation instead of just 1.
+                  bestText = _applyRateConsensus(bestText, allPassTexts[pgNum]);
+                }
               }
               // Debug observability (ocr-orientprobe-reserve, 2026-09-09): record that the
               // probe fired for this page plus each orientation's raw score and the winner,
