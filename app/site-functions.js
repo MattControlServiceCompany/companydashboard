@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.14.832',
+    date: '2026-09-14',
+    title: 'Energy Department: Bill import + Meters — fewer false warnings, no more duplicate water meters',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department, Bill import: fixed false "rate out of range" warnings on electric bills. The check now adds up all energy charges instead of missing some, so valid bills no longer get flagged by mistake.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department, Bill import: importing a bill with a blank commodity field no longer creates a duplicate meter. It now matches to the correct existing meter.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department, Meters: automatically merged existing duplicate Sewer/Stormwater meters at Louisburg where the billing periods did not overlap, so bill history now shows under one meter instead of being split across two.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.14.831',
     date: '2026-09-14',
     title: 'Energy Department: Bill import / review — fixed stuck reviews and a multi-building safety gap',
