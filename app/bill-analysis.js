@@ -1499,28 +1499,77 @@ function _gateB_billCountCheck(rawText, billCount) {
 // _decideOnOffPeakKWh, the cross-bill consensus loop) but no clear side —
 // _gateTripped/_gateReasons were set once at extraction time and NEVER dropped,
 // so a bill the user had already fixed still rendered the red "not auto-saved"
-// banner forever. Every _gateReasons string is written starting with the field
-// name it's about (e.g. "kWhConsumed: witnesses disagree...", "OnPeakKWh: ...",
-// "<field> disagrees across bills...") except the TotalCurrentCharges
-// correction-held reason, which the caller matches separately since it starts
-// with "Total needs correction:" instead of the raw field key. Call this after
-// the user corrects a field's value; it drops that field's own reason(s) and
-// clears _gateTripped once none remain. Returns true if anything changed.
+// banner forever.
+//
+// ROUND 2 REVIEW FIX: the first version of this matched a reason to a field by
+// string-prefix ("does this reason start with '<field>:'"). That silently
+// assumed every reason is about exactly one field. It is not — the four
+// on/off-peak reconciliation reasons in _decideOnOffPeakKWh each span BOTH
+// OnPeakKWh and OffPeakKWh (one also spans kWhConsumed), but are WRITTEN
+// starting with just "OnPeakKWh (...)" or "OnPeakKWh and...". Prefix-matching
+// on "OnPeakKWh" therefore dropped the WHOLE compound reason the moment the
+// user edited OnPeakKWh alone — a false gate-clear that let an unverified
+// OffPeakKWh (or kWhConsumed) leg save with the banner already gone. And
+// editing OffPeakKWh alone never matched the "OnPeakKWh" prefix at all, so
+// the banner could get stuck even after the named field was fixed.
+//
+// Fix: every reason now carries an explicit array of the field keys it
+// depends on in the PARALLEL b._gateReasonFields array (same index as
+// b._gateReasons) — see _pushGateReason, which is the only place that writes
+// to either array, so they can never desync. A reason clears ONLY when EVERY
+// field it depends on has been user-corrected (b._userCorrected_<field> is
+// stamped on every field edit — see the .ef-input change handler). A reason
+// with no fields entry (file-level GATE A/B facts, the fail-open
+// _postExtractionVerify catch-block reason) NEVER auto-clears from a field
+// edit — it requires an explicit Save-Anyway, which is intentional: those
+// reasons aren't about any single field's value.
+//
+// Call this after ANY field edit; it re-evaluates ALL reasons against the
+// CURRENT full set of _userCorrected_ stamps on the bill (not just the field
+// just edited) so a compound reason correctly waits for every dependency.
+// Clears _gateTripped once no reasons remain. Returns true if anything changed.
 function _clearGateReasonForField(b, fieldKey) {
   if (!b || !Array.isArray(b._gateReasons) || !b._gateReasons.length) return false;
   const before = b._gateReasons.length;
-  b._gateReasons = b._gateReasons.filter(
-    (r) => typeof r === 'string' && r.indexOf(fieldKey + ':') !== 0 && r.indexOf(fieldKey + ' ') !== 0,
-  );
-  if (fieldKey === 'TotalCurrentCharges') {
-    b._gateReasons = b._gateReasons.filter((r) => typeof r === 'string' && r.indexOf('Total needs correction:') !== 0);
+  const depsList = Array.isArray(b._gateReasonFields) ? b._gateReasonFields : b._gateReasons.map(() => null);
+  const keepReasons = [];
+  const keepFields = [];
+  for (let i = 0; i < b._gateReasons.length; i++) {
+    const deps = depsList[i];
+    if (Array.isArray(deps) && deps.length && deps.every((f) => !!b['_userCorrected_' + f])) {
+      continue; // every field this reason depends on has been corrected — drop it
+    }
+    keepReasons.push(b._gateReasons[i]);
+    keepFields.push(deps || null);
+  }
+  b._gateReasons = keepReasons;
+  b._gateReasonFields = keepFields;
+  // TotalCurrentCharges's correction-held banner (rendered separately from the
+  // gate reason list) is keyed off this flag directly — clear it in lockstep
+  // whenever the field it's about has been corrected, same trigger as above.
+  if (b['_userCorrected_TotalCurrentCharges']) {
     delete b._correction_pending_TotalCurrentCharges;
   }
   if (!b._gateReasons.length) {
     b._gateTripped = false;
     delete b._gateReasons;
+    delete b._gateReasonFields;
   }
   return b._gateReasons ? b._gateReasons.length !== before : true;
+}
+
+// Single write path for b._gateReasons/_gateReasonFields (round 2 review fix) —
+// every gate-tripping call site must go through this so the two arrays can
+// never desync. `fields` is the array of field keys this reason depends on
+// (pass null/omit for a file-level reason that only Save-Anyway can resolve).
+function _pushGateReason(b, reasonText, fields) {
+  if (!Array.isArray(b._gateReasons)) b._gateReasons = [];
+  if (!Array.isArray(b._gateReasonFields) || b._gateReasonFields.length !== b._gateReasons.length) {
+    b._gateReasonFields = b._gateReasons.map(() => null);
+  }
+  b._gateReasons.push(reasonText);
+  b._gateReasonFields.push(Array.isArray(fields) && fields.length ? fields : null);
+  b._gateTripped = true;
 }
 
 // FIX (fix/bill-review-gate-lifecycle, item 817dd434): the aggregate "N of M
@@ -1547,10 +1596,14 @@ function _applyExtractionGates(bills, gateA, gateB) {
     // if _postExtractionVerify's catch block already stamped a
     // "verification did not complete" reason onto this bill, that reason must
     // survive even when gateA/gateB/gateC ALSO trip on top of it, so the exact
-    // failure is never silently dropped from what the user sees.
-    const reasons = Array.isArray(b._gateReasons) ? b._gateReasons.slice() : [];
-    if (gateA) reasons.push(gateA.message);
-    if (gateB) reasons.push(gateB.message);
+    // failure is never silently dropped from what the user sees. _pushGateReason
+    // appends in place (round 2 review fix), so this is automatic — no manual
+    // slice-then-reassign needed.
+    // GATE A/B are file-level facts (whole-file page/date-group counts), not
+    // about any single field's value — no fields dependency, so only an
+    // explicit Save-Anyway (never a field edit) can resolve them.
+    if (gateA) _pushGateReason(b, gateA.message, null);
+    if (gateB) _pushGateReason(b, gateB.message, null);
     const gc = b._correction_pending_TotalCurrentCharges;
     if (gc) {
       // REVIEW FIX (18b33d9f round 3, BLOCKING 1): gc is set ONLY when the
@@ -1560,7 +1613,8 @@ function _applyExtractionGates(bills, gateA, gateB) {
       // happened: it told Matt the app already fixed it, in exactly the
       // scenario where the app explicitly refused to touch the value and is
       // waiting on him. Never say "corrected" here — say NOT applied.
-      reasons.push(
+      _pushGateReason(
+        b,
         'Total needs correction: $' +
           gc.original +
           ' → $' +
@@ -1568,11 +1622,8 @@ function _applyExtractionGates(bills, gateA, gateB) {
           ' (' +
           gc.pctChange +
           '%) — NOT applied, verify against the source PDF and confirm',
+        ['TotalCurrentCharges'],
       );
-    }
-    if (reasons.length) {
-      b._gateTripped = true;
-      b._gateReasons = reasons;
     }
   }
 }
@@ -1974,6 +2025,10 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
       ': a seasonal (Sum/Win) tier kWh quantity could not be read from the bill (dollar amount was ' +
       'legible, quantity digits were not) -- refusing to derive OnPeakKWh/OffPeakKWh from kWhConsumed ' +
       'using the other leg, verify against the source PDF';
+    // FIX (fix/bill-review-gate-lifecycle round 2, review bug): explicit field-
+    // dependency tag instead of relying on the caller to re-derive it from the
+    // string prefix — see _clearGateReasonForField.
+    result.gateFields = [onIncompleteTier ? 'OnPeakKWh' : 'OffPeakKWh'];
     return result;
   }
 
@@ -2183,6 +2238,10 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
           ', gap ' +
           Math.abs(onQty + offQty - basisTotal).toFixed(4) +
           ' kWh) and the misread leg could not be uniquely identified — refusing to guess, verify against the source PDF';
+        // FIX (fix/bill-review-gate-lifecycle round 2, review bug): this reason
+        // spans BOTH legs (onQty+offQty vs basisTotal) — must not clear until
+        // BOTH OnPeakKWh and OffPeakKWh are corrected, not on the first edit.
+        result.gateFields = ['OnPeakKWh', 'OffPeakKWh'];
       }
       return result;
     }
@@ -2215,6 +2274,10 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
         ' but kWhConsumed (' +
         kwhConsumed.toFixed(4) +
         ') is itself unresolved — refusing to derive either leg from a disputed total, verify against the source PDF';
+      // FIX (fix/bill-review-gate-lifecycle round 2, review bug): this reason
+      // spans THREE fields — must not clear until OnPeakKWh, OffPeakKWh, AND
+      // kWhConsumed are all corrected.
+      result.gateFields = ['OnPeakKWh', 'OffPeakKWh', 'kWhConsumed'];
     }
     return result;
   }
@@ -2268,6 +2331,9 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
         ', not kWhConsumed (' +
         kwhConsumed.toFixed(4) +
         ') — verify against the source PDF';
+      // FIX (fix/bill-review-gate-lifecycle round 2, review bug): spans BOTH
+      // legs — must not clear until both OnPeakKWh and OffPeakKWh are corrected.
+      result.gateFields = ['OnPeakKWh', 'OffPeakKWh'];
     }
     return result;
   }
@@ -2283,6 +2349,9 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
       ', not kWhConsumed (' +
       kwhConsumed.toFixed(4) +
       '), and neither self-verifies against its own charge line — refusing to guess, verify against the source PDF';
+    // FIX (fix/bill-review-gate-lifecycle round 2, review bug): spans BOTH
+    // legs — must not clear until both OnPeakKWh and OffPeakKWh are corrected.
+    result.gateFields = ['OnPeakKWh', 'OffPeakKWh'];
   }
   return result;
 }
@@ -2621,8 +2690,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               ') — verify against source PDF.';
             for (const b of group) {
               if (b[field] !== null && b[field] !== undefined && b[field] !== '') {
-                b._gateTripped = true;
-                b._gateReasons = (Array.isArray(b._gateReasons) ? b._gateReasons : []).concat([reason]);
+                _pushGateReason(b, reason, [field]);
               }
             }
           }
@@ -3358,8 +3426,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             };
             b.kWhConsumed = kwhDecision.corrected.toFixed(4);
           } else if (kwhDecision.hold) {
-            b._gateTripped = true;
-            b._gateReasons = (Array.isArray(b._gateReasons) ? b._gateReasons : []).concat([kwhDecision.reason]);
+            _pushGateReason(b, kwhDecision.reason, ['kWhConsumed']);
           }
           // On/Off-peak: decided AFTER kWhConsumed is locked, so both use the
           // SAME corroborated total instead of a stale pre-correction value
@@ -3384,8 +3451,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             b.OffPeakKWh = onoffDecision.offCorrection.value.toFixed(4);
           }
           if (onoffDecision.gate) {
-            b._gateTripped = true;
-            b._gateReasons = (Array.isArray(b._gateReasons) ? b._gateReasons : []).concat([onoffDecision.gate]);
+            // ROUND 2 REVIEW FIX: use the explicit gateFields _decideOnOffPeakKWh
+            // now attaches to each of its 5 gate messages (see there) instead of
+            // letting the caller guess the dependent field(s) from the string —
+            // several of these reasons span BOTH OnPeakKWh and OffPeakKWh (one
+            // also spans kWhConsumed), so a single-field guess was wrong.
+            _pushGateReason(b, onoffDecision.gate, onoffDecision.gateFields || null);
           }
           b._onOffPeakLocked = true;
         }
@@ -5482,11 +5553,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // anything — a gate that fails OPEN on an exception is false confidence,
     // worse than a visible failure.
     for (const b of bills) {
-      b._gateTripped = true;
-      b._gateReasons = (Array.isArray(b._gateReasons) ? b._gateReasons : []).concat(
+      // No fields dependency (round 2 review fix) — this reason is about the
+      // WHOLE verification pass failing, not any one field's value, so only
+      // an explicit Save-Anyway may resolve it, never a field edit.
+      _pushGateReason(
+        b,
         'Post-extraction verification did not complete (' +
           (e && e.message ? e.message : 'unknown error') +
           ') — totals and corrections on this bill were not fully validated.',
+        null,
       );
     }
     return { bills, historicalCache: {} }; // Return bills unchanged (but gate-flagged) if verification crashes
@@ -18615,8 +18690,11 @@ function renderPDFFields(parsed, warnings) {
           b.TotalCurrentCharges = compSum.toFixed(2);
           // A corrected component recomputes the total live, so the "Total needs
           // correction" hold (which compared the OLD total against this same
-          // component sum) is moot — clear it the same way a direct edit to
-          // TotalCurrentCharges itself would (_clearGateReasonForField).
+          // component sum) is moot — stamp the same _userCorrected_ flag a direct
+          // edit to TotalCurrentCharges itself would, so the generic
+          // all-dependencies-corrected check in _clearGateReasonForField (round 2
+          // review fix) sees it as resolved, then re-evaluate.
+          b['_userCorrected_TotalCurrentCharges'] = { derivedFrom: key, value: b.TotalCurrentCharges, ts: Date.now() };
           _clearGateReasonForField(b, 'TotalCurrentCharges');
         }
         // Clear stale sum mismatch since user manually corrected a value
