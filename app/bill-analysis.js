@@ -3290,6 +3290,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 compSum,
                 total: ocrTotal,
                 diff: Math.abs(finalDelta),
+                // signedDiff (item cd999d9f): compSum − ocrTotal, sign preserved. The
+                // PER-PART CHARGE VALIDATION pass below reads this as the whole-bill
+                // reconciliation signal for its corroboration check — a single bad
+                // line's Delta_line (ocrCharge − expected) must equal THIS value
+                // (within a cent) before that line is trusted enough to auto-correct.
+                signedDiff: finalDelta,
                 reason:
                   'Charges sum to $' +
                   compSum.toFixed(2) +
@@ -3331,18 +3337,55 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // charge recovery, multi-part null-OCR cleanup — all of which mutate the
     // underlying _rates data, not just the flag), the recompute here
     // reproduces the same already-corrected result rather than fighting it.
-    // FLAGS ONLY — this never writes qty/rate/charge, only the diagnostic
-    // _part_mismatches_<field> array that renderPDFFields reads.
+    // WARN-ONLY by default (writes only the diagnostic _part_mismatches_<field>
+    // array that renderPDFFields now renders at the ROW level unconditionally —
+    // item f776f47b) — EXCEPT for the narrow corroborated case below (item
+    // cd999d9f): when a SECOND, independent signal (the whole-bill total
+    // reconciliation already computed above as b._sum_mismatch.signedDiff)
+    // agrees with this line's own qty×rate math to within a cent, the mismatch
+    // is promoted from a warning to an auto-fix. Two independent checks pointing
+    // at the same line, same amount, is what overrides "trust the ink"; a lone
+    // per-line signal never does.
     for (const b of bills) {
       if (!b._rates) continue;
-      for (const [field, ri] of Object.entries(b._rates)) {
+      // Check 2 signal (item cd999d9f): the whole-bill compSum-vs-printed-total
+      // discrepancy, signed, captured once per bill from the SAME reconciliation
+      // that (for Evergy) already ran above in this function. A snapshot taken
+      // before any of this loop's own corrections — every candidate below is
+      // tested against this SAME original whole-bill gap, never a
+      // partially-corrected one.
+      const _wholeBillSignedDelta = b._sum_mismatch ? b._sum_mismatch.signedDiff : null;
+      const _rateEntries = Object.entries(b._rates);
+
+      // Pass 1 — scan EVERY part of EVERY field on this bill and record every
+      // Check-1 (per-line qty×rate) mismatch, whether or not it also passes
+      // Check 2, and whether or not it's user-locked. Adversarial-review fix
+      // (defect A, 2026-09-14): corroboration must be decided ACROSS THE WHOLE
+      // BILL, not per field — two unrelated bad lines can each coincidentally
+      // land within a cent of the SAME stale whole-bill delta (e.g. one real
+      // $30 charge misread plus a second, unrelated bad-rate line that also
+      // happens to be $30 off), and auto-fixing either one from a per-field
+      // view alone cannot tell them apart.
+      const _allFlagged = [];
+      for (const [field, ri] of _rateEntries) {
         // Top-level null-qty/rate skip — TaxExemptDelivery/BillOffset/FranchiseFee/
         // SalesTax carry {qty:null, rate:null} because they are not rate-based
         // charges at all; unverifiable by this check, so leave them alone.
         if (!ri || !(ri.rate > 0)) continue;
         const parts = ri.parts || [ri];
-        const badParts = [];
-        for (const part of parts) {
+        // Guardrail (mandatory): the user's own correction always wins. Never
+        // auto-fix a value the user has already stamped via the .ef-input
+        // change handler — for a single-part row that's the bare
+        // _userCorrected_<field> (data-key === field), but for a multi-part
+        // row the change handler stamps the literal input data-key,
+        // _chg_<field>_<idx> (~line 18189), giving _userCorrected__chg_<field>_<idx>
+        // — a DIFFERENT key that _userCorrected_<field> alone never matches
+        // (adversarial-review fix, defect B, 2026-09-14). Check both: the
+        // bare field lock (covers single-part rows and any whole-field lock)
+        // and the specific part's own lock key.
+        const _fieldLocked = !!b['_userCorrected_' + field];
+        for (let idx = 0; idx < parts.length; idx++) {
+          const part = parts[idx];
           // Per-part null-qty/rate skip — a mixed-parts charge can have some
           // parts recovered from the raw dollar text only (xChg), with no
           // qty/rate of their own (see energy-savings.js ~3990-3996). Those
@@ -3353,19 +3396,121 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const actual = part.ocrCharge != null ? part.ocrCharge : part.computed;
           if (actual == null) continue;
           const diff = Math.abs(expected - actual);
-          if (diff > 0.05) {
-            badParts.push({
-              qty: part.qty,
-              rate: part.rate,
-              unit: part.unit,
-              computed: expected,
-              ocrCharge: actual,
-              diff,
-              valid: false,
-            });
-          }
+          if (diff <= 0.05) continue;
+
+          // deltaLine is signed the same way _wholeBillSignedDelta is
+          // (compSum − ocrTotal): raising this one line's charge from actual
+          // to expected raises compSum by (expected − actual), i.e. moves the
+          // gap by −deltaLine. Reconciliation requires the existing gap to
+          // equal exactly that movement's negation, i.e. gap === deltaLine.
+          const deltaLine = actual - expected;
+          const partLocked = _fieldLocked || !!b['_userCorrected__chg_' + field + '_' + idx];
+          const check2Match = _wholeBillSignedDelta != null && Math.abs(_wholeBillSignedDelta - deltaLine) <= 0.01;
+          _allFlagged.push({
+            field,
+            idx,
+            part,
+            qty: part.qty,
+            rate: part.rate,
+            unit: part.unit,
+            expected,
+            actual,
+            diff,
+            locked: partLocked,
+            check2Match,
+          });
         }
-        if (badParts.length) b['_part_mismatches_' + field] = badParts;
+      }
+
+      // Pass 2 — candidates are Check-1 mismatches that ALSO pass Check 2 and
+      // are not user-locked. Auto-fix ONLY when EXACTLY ONE candidate exists
+      // across the whole bill; the whole-bill gap cannot be unambiguously
+      // attributed to a single line otherwise, so ambiguous cases stay
+      // warn-only (defect A fix).
+      const _candidates = _allFlagged.filter((e) => e.check2Match && !e.locked);
+      const _toFix = _candidates.length === 1 ? _candidates[0] : null;
+
+      // Pass 3 — apply the (at most one) fix; everything else becomes a
+      // warn-only per-part mismatch, grouped back by field.
+      const _badPartsByField = {};
+      const _fixedByField = {};
+      for (const e of _allFlagged) {
+        if (e === _toFix) {
+          (_fixedByField[e.field] = _fixedByField[e.field] || []).push({
+            idx: e.idx,
+            qty: e.qty,
+            rate: e.rate,
+            unit: e.unit,
+            original: e.actual,
+            corrected: e.expected,
+            diff: e.diff,
+            reason:
+              'Corrected: computed from qty × rate (' +
+              e.qty.toFixed(4) +
+              ' ' +
+              (e.unit || '') +
+              ' × $' +
+              e.rate.toFixed(5) +
+              '), confirmed by bill total reconciliation (was $' +
+              e.actual.toFixed(2) +
+              ').',
+          });
+          // Reversible mutation — the original is preserved in the stamp above,
+          // and the field stays a normal editable input (renderPDFFields reads
+          // part.ocrCharge first, same as it always has), so the user can revert
+          // by simply typing the old value back in.
+          e.part.ocrCharge = e.expected;
+        } else {
+          (_badPartsByField[e.field] = _badPartsByField[e.field] || []).push({
+            idx: e.idx,
+            qty: e.qty,
+            rate: e.rate,
+            unit: e.unit,
+            computed: e.expected,
+            ocrCharge: e.actual,
+            diff: e.diff,
+            valid: false,
+          });
+        }
+      }
+      for (const [field, ri] of _rateEntries) {
+        if (!ri || !(ri.rate > 0)) continue;
+        const parts = ri.parts || [ri];
+        if (_badPartsByField[field] && _badPartsByField[field].length)
+          b['_part_mismatches_' + field] = _badPartsByField[field];
+        else delete b['_part_mismatches_' + field];
+        if (_fixedByField[field] && _fixedByField[field].length) {
+          b['_corroborated_corrected_' + field] = _fixedByField[field];
+          // Recompute the top-level charge field from the now-corrected parts so
+          // the bill's stored/exported charge (and every downstream compSum check)
+          // reconciles with TotalCurrentCharges — never leave the field-level
+          // aggregate stale after fixing one of its lines.
+          const _newFieldSum =
+            Math.round(parts.reduce((s, p) => s + (p.ocrCharge != null ? p.ocrCharge : p.computed), 0) * 100) / 100;
+          b[field] = _newFieldSum.toFixed(2);
+        }
+      }
+
+      // Defect A fix, second half: only clear the whole-bill _sum_mismatch by
+      // RE-DERIVING the actual post-fix reconciliation, never by assuming the
+      // pre-fix corroboration snapshot proves it. Exactly one field changed
+      // (the one line just fixed), so the new compSum is the old compSum plus
+      // exactly that line's own delta — an exact recompute, not an
+      // approximation, and it never touches any other field's contribution.
+      if (_toFix && b._sum_mismatch) {
+        const _newCompSum = b._sum_mismatch.compSum + (_toFix.expected - _toFix.actual);
+        const _newSignedDiff = _newCompSum - b._sum_mismatch.total;
+        if (Math.abs(_newSignedDiff) <= 0.02) {
+          delete b._sum_mismatch;
+        } else {
+          // Fix applied but the bill still doesn't truly reconcile (shouldn't
+          // normally happen given the 1-cent corroboration test, but never
+          // blindly trust it) — keep the mismatch visible, updated to reflect
+          // the post-fix state so it isn't stale either.
+          b._sum_mismatch.compSum = _newCompSum;
+          b._sum_mismatch.diff = Math.abs(_newSignedDiff);
+          b._sum_mismatch.signedDiff = _newSignedDiff;
+        }
       }
     }
 
@@ -17999,6 +18144,30 @@ function renderPDFFields(parsed, warnings) {
       ]);
       const unitLabel = ENERGY_CHARGES.has(row.chargeField) ? 'kWh' : parts[0]?.unit || ri?.unit || 'kW';
 
+      // Item f776f47b / cd999d9f: per-line mismatch and corroborated-fix notes,
+      // rendered at the ROW itself — independent of the aggregate SUM MISMATCH
+      // banner above (which only appears when the WHOLE bill's charges don't add
+      // up). A single bad line can hide inside a total that reconciles by
+      // coincidence, so this must be visible here every time the underlying
+      // qty×rate math disagrees with the extracted charge, not just when the
+      // aggregate banner happens to be showing. _corroborated_corrected_<field>
+      // (green, already fixed) takes precedence over _part_mismatches_<field>
+      // (amber, warn-only — two independent checks did not agree, so the value
+      // was left untouched for the user to verify against the source PDF).
+      const _rowMismatches = parsed['_part_mismatches_' + row.chargeField] || [];
+      const _rowCorrected = parsed['_corroborated_corrected_' + row.chargeField] || [];
+      const _partNote = (idx) => {
+        const fixed = _rowCorrected.find((c) => c.idx === idx);
+        if (fixed) {
+          return `<div style="grid-column:1/-1;font-size:10px;font-weight:700;color:var(--green);padding:2px 4px 4px;line-height:1.4">&#10003; Corrected: computed from qty &times; rate, confirmed by bill total (was $${fixed.original.toFixed(2)})</div>`;
+        }
+        const bad = _rowMismatches.find((m) => m.idx === idx);
+        if (bad) {
+          return `<div style="grid-column:1/-1;font-size:10px;font-weight:700;color:#f59e0b;padding:2px 4px 4px;line-height:1.4">&#9888; Expected $${bad.computed.toFixed(2)} (qty &times; rate) vs extracted $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}) — not auto-corrected, verify against the source PDF</div>`;
+        }
+        return '';
+      };
+
       // No rate data — still show editable qty & rate boxes so user can fill them in.
       // rateKey:null means this is a flat-dollar line (Tax Exempt / Bill Offset /
       // Franchise Fee / Gas / Water / etc.) — don't append a kW/kWh unit suffix
@@ -18053,7 +18222,7 @@ function renderPDFFields(parsed, warnings) {
         const qtyHtml = row.qtyField
           ? buildCell(row.qtyField)
           : `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input" value="${fmtQty(p.qty, unitLabel)}" data-key="_qty_${row.chargeField}"></div>`;
-        return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate', fmtRate(p.rate, unitLabel))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+        return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate', fmtRate(p.rate, unitLabel))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>${_partNote(0)}`;
       }
 
       // Multiple parts — each part gets its own running total
@@ -18082,7 +18251,7 @@ function renderPDFFields(parsed, warnings) {
               ? buildCell(row.qtyField)
               : `<div class="ef-item"><div class="ef-key">${qtyLabel}${suffix}</div><input class="ef-input" value="${fmtQty(p.qty, unitLabel)}" data-key="_qty_${row.chargeField}_${idx}"></div>`;
           const chargeHtml = `<div class="ef-item center"><div class="ef-key">${base} Charge${suffix}</div><input class="ef-input" value="${fmtDollar(partCharge)}" data-key="_chg_${row.chargeField}_${idx}" style="text-align:center"></div>`;
-          return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate' + suffix, fmtRate(p.rate, unitLabel))}${chargeHtml}<div class="ef-running">$${rtFmt}</div></div>`;
+          return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate' + suffix, fmtRate(p.rate, unitLabel))}${chargeHtml}<div class="ef-running">$${rtFmt}</div></div>${_partNote(idx)}`;
         })
         .join('');
       return partRows;
