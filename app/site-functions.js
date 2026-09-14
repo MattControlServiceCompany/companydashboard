@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.14.829',
+    date: '2026-09-14',
+    title: 'Energy Department: Meters — Sewer and Stormwater fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department, Meters: Sewer and Stormwater meters could lose their utility type when edited. The meter editor now lists Sewer and Stormwater directly, and past meters that lost their type are repaired automatically.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.14.828',
     date: '2026-09-14',
     title: 'Quarterly Report: Contract Projection page now matches Financial Summary',
