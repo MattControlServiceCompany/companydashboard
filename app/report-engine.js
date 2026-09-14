@@ -2608,7 +2608,6 @@ function rptPageFinancial(n, d) {
     annSavings = d.totals.savings;
   }
   const contractYrs = d.contract.years || 3;
-  const yrTotalSavings = annSavings * contractYrs;
   var _split = computeCscSplit(d.totals.savings, d.contract.cscPct, 'pct');
   var cscAmt = _split.csc;
   var clientAmt = _split.client;
@@ -2617,6 +2616,28 @@ function rptPageFinancial(n, d) {
   var _annSplit = computeCscSplit(annSavings, d.contract.cscPct, 'pct');
   var cscAnnAmt = _annSplit.csc;
   var clientAnnAmt = _annSplit.client;
+  // FIX 2 (2026-09-14): 3-Year Total used to be a flat annSavings * contractYrs — no
+  // escalation, so it disagreed with the Multi-Year Projection table on the Contract
+  // Projection page, which DOES compound the contract's escalation %/yr. Both tables now
+  // call the same computeMultiYearCscTotals() (computations/csc.js) so they can't drift
+  // apart. Uses contract.annualTarget (falling back to the sum of quarterlyTargets, same
+  // fallback rptPageContractProjection uses) and contract.escalation.
+  var _qTargetsForAnn = d.contract.quarterlyTargets || [0, 0, 0, 0];
+  var _annualTarget =
+    d.contract.annualTarget ||
+    _qTargetsForAnn.reduce(function (s, v) {
+      return s + (v || 0);
+    }, 0);
+  var _multiYr = computeMultiYearCscTotals(
+    _annualTarget,
+    d.contract.escalation || 0,
+    contractYrs,
+    d.contract.cscPct || 0,
+    d.contract.clientPct || 0,
+  );
+  const yrTotalSavings = _multiYr.totalSavings;
+  const yrTotalCsc = _multiYr.totalCsc;
+  const yrTotalClient = _multiYr.totalClient;
 
   // -- Building Performance table --
   const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
@@ -2754,7 +2775,7 @@ function rptPageFinancial(n, d) {
     $c(cscAnnAmt) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(cscAnnAmt * contractYrs) +
+    $c(yrTotalCsc) +
     '</td>' +
     '</tr>' +
     '<tr class="rpt-tot">' +
@@ -2768,7 +2789,7 @@ function rptPageFinancial(n, d) {
     $c(clientAnnAmt) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(clientAnnAmt * contractYrs) +
+    $c(yrTotalClient) +
     '</td>' +
     '</tr>' +
     '</tbody>' +
@@ -4423,16 +4444,21 @@ function rptPageContractProjection(n, d) {
     '</div>';
 
   // -- Multi-Year Projection table --
+  // Escalation-compounded per-year figures now come from the SAME shared helper
+  // rptPageFinancial's CSC Compensation "3-Year Total" calls (computations/csc.js
+  // computeMultiYearCscTotals) — the two tables used to compute this independently and
+  // could disagree; now there's exactly one place the compounding math lives.
   let fiveYrRows = '';
-  let totalProj = 0,
-    totalCsc = 0,
-    totalClient = 0,
-    totalActual = 0;
+  let totalActual = 0;
   var isQuarterly = d.period && d.period.type === 'quarterly';
+  var _multiYrProj = computeMultiYearCscTotals(annualTarget, escalation, contractYears, cscPct, clientPct);
+  var totalProj = _multiYrProj.totalSavings;
+  var totalCsc = _multiYrProj.totalCsc;
+  var totalClient = _multiYrProj.totalClient;
   for (var yr = 1; yr <= contractYears; yr++) {
-    const yearProj = annualTarget * Math.pow(1 + escalation / 100, yr - 1);
-    const yearCsc = (yearProj * cscPct) / 100;
-    const yearClient = (yearProj * clientPct) / 100;
+    const yearProj = _multiYrProj.years[yr - 1].savings;
+    const yearCsc = _multiYrProj.years[yr - 1].csc;
+    const yearClient = _multiYrProj.years[yr - 1].client;
     const isCurrentYr = yr === currentYear;
     var displayProj = yearProj;
     var displayCsc = yearCsc;
@@ -4475,9 +4501,6 @@ function rptPageContractProjection(n, d) {
           }, 0)
         : displayProj;
     const pace = isCurrentYr && projToDate > 0 ? Math.round((actualSavings / projToDate) * 100) : null;
-    totalProj += yearProj;
-    totalCsc += yearCsc;
-    totalClient += yearClient;
     if (isCurrentYr) totalActual += actualSavings;
     fiveYrRows +=
       '<tr' +
