@@ -4420,14 +4420,28 @@ function rptPageContractProjection(n, d) {
     if (isCurrentYr && isQuarterly) {
       // Blend actual savings for completed quarters with projected for remaining
       // q = reported (last completed) quarter (1-based)
-      // Quarters 1..q are completed → use actualSavings for their total
-      // Quarters 1..q are completed ? use actualSavings for their total
+      // FIX (2026-09-13): this row was using actualSavings (CURRENT quarter only, e.g. Q2)
+      // as the "completed quarters" basis, silently dropping every prior completed quarter
+      // (e.g. Q1). Same defect rptPageFinancial's FIX 1 (2026-09-11, ~line 2587) already
+      // fixed for the "Annualized" figure — copy that pattern: sum realized per-quarter
+      // actuals from d.contract.quarterlyActuals for quarters 1..q (NOT
+      // d.totals.cumulativeSavings, which leaks months beyond the quarter — see FIX 1
+      // comment above), then add remaining-quarter targets.
+      var qActuals = d.contract.quarterlyActuals;
+      var ytdActual = 0;
+      if (qActuals) {
+        for (var _yq = 1; _yq <= q; _yq++) {
+          ytdActual += qActuals[_yq - 1] != null ? qActuals[_yq - 1] : 0;
+        }
+      } else {
+        ytdActual = actualSavings;
+      }
       // Quarters (q+1)..4 are future ? sum their projected targets
       var remainingProj = 0;
       for (var qi = q; qi < 4; qi++) {
         remainingProj += qTargets[qi] || 0;
       }
-      displayProj = actualSavings + remainingProj;
+      displayProj = ytdActual + remainingProj;
       displayCsc = (displayProj * cscPct) / 100;
       displayClient = (displayProj * clientPct) / 100;
       periodNote = ' (thru Q' + q + ')';
