@@ -9000,6 +9000,16 @@
                       <option value="">Auto-detect meter</option>
                     </select>
                     <button class="btn btn-em" onclick="savePDFData()" data-fb="energy.pdf.save-btn">Save</button>
+                    <button
+                      class="btn btn-ghost"
+                      id="pdfSaveAnywayBtn"
+                      onclick="pdfSaveAnyway()"
+                      style="display: none; color: var(--red); border-color: rgba(239, 68, 68, 0.4)"
+                      title="This bill was flagged for review. Save it as-is anyway."
+                      data-fb="energy.pdf.save-anyway-btn"
+                    >
+                      &#9888; Save Anyway
+                    </button>
                     <button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
                       ✕ Clear
                     </button>
