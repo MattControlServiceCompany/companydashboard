@@ -132,6 +132,11 @@ const SyncClassification = (() => {
       prefix: false,
       note: 'debug/dev-tooling scratch key, not user data — made explicit so it no longer hits the default-unclassified warn path.',
     },
+    {
+      pattern: 'en_soo_settings',
+      prefix: false,
+      note: 'app/soo-generator.js:105/118 — per-machine Sequence-of-Operations generator preferences (behavior toggles, template choice). Previously fell through to the default-unclassified local-only path (code-review finding, SOO Phase 3); made explicit so it no longer hits the console.warn path.',
+    },
   ];
 
   // ── CRITICAL — sync-engine-internal ch_ keys that MUST win over the ──────

@@ -1742,13 +1742,24 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.13.825',
+    v: 'v2026.09.13.826',
     date: '2026-09-13',
-    title: "Saved Bills: new \"Resolve Missing Meters from Roster\" tool",
+    title: 'Equipment Matrix: new "Sequence" view generates Sequences of Operation',
     items: [
       {
         type: 'feature',
-        text: "Saved Bills now has a \"Resolve Missing Meters from Roster\" button -- it creates the missing meters from your roster (with a review step before anything is created) and assigns the matching bills to them. New meters start excluded from baselines.",
+        text: 'Equipment Matrix has a new "Sequence" view -- it generates a Sequence of Operation from your equipment\'s points, formatted to match the master document, with Word and PDF export.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.13.825',
+    date: '2026-09-13',
+    title: 'Saved Bills: new "Resolve Missing Meters from Roster" tool',
+    items: [
+      {
+        type: 'feature',
+        text: 'Saved Bills now has a "Resolve Missing Meters from Roster" button -- it creates the missing meters from your roster (with a review step before anything is created) and assigns the matching bills to them. New meters start excluded from baselines.',
       },
     ],
   },

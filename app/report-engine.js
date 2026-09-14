@@ -1945,6 +1945,17 @@ function showReportOverlay(html, title) {
   pagesEl.innerHTML = html;
   document.getElementById('reportOverlayTitle').textContent = title || 'Report Preview';
   document.getElementById('reportOverlay').style.display = 'flex';
+  // Code review fix (BLOCKING, 2026-09-13, SOO Phase 3 review): a SOO document's
+  // window._currentReportData.project has no .id (app/soo-generator.js:1097-1100,
+  // 1152-1155), so it has no report-history identity — hide Save so a user previewing a
+  // Sequence document can't write a malformed entry into the SYNCED en_report_history
+  // store. Mirrors the data._soo branches already used in exportReportToPDF/Docx. Export to
+  // Word/PDF remain the correct path for SOO and are untouched.
+  var saveBtn = document.getElementById('rptSaveBtn');
+  if (saveBtn) {
+    var isSoo = !!(window._currentReportData && window._currentReportData._soo);
+    saveBtn.style.display = isSoo ? 'none' : '';
+  }
   // U2 / RC-A (2026-08-02, D-05): enforce the 10pt printed-text floor on the live DOM before
   // anything reads it. This is the ONE place report HTML enters the document, so every report
   // type and every downstream export (print-to-PDF, .doc, .docx — all of which serialize
@@ -8685,6 +8696,19 @@ function saveReportToHistory() {
     return;
   }
 
+  // Code review fix (BLOCKING, 2026-09-13, SOO Phase 3 review): a SOO document sets
+  // project = { client, name } with NO .id (app/soo-generator.js:1097-1100, 1152-1155), so
+  // reaching the write below produced projectId: "undefined", a blank period, and a
+  // mislabeled "Annual" type in the SYNCED en_report_history store — polluting the OTHER
+  // user's shared history. Mirrors the data._soo early-return already used in
+  // exportReportToDocx/exportReportToPDF in this same file. Sequence documents have no
+  // report-history identity; the user exports to Word/PDF instead. The Save button is also
+  // hidden for SOO previews in showReportOverlay() — this is the defense-in-depth backstop.
+  if (data._soo) {
+    showToast("Sequence documents aren't saved to report history — use Export to Word or PDF");
+    return;
+  }
+
   const history = DB.get('en_report_history', []);
   const cleanHTML = pagesHTML.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, '');
   // ASHRAE reports have no .period; use the report type label instead
@@ -8809,7 +8833,14 @@ async function exportReportToPDF() {
     return;
   }
 
-  const pages = document.querySelectorAll('#reportPages .rpt-page');
+  // SOO Generator Phase 3 (item 3f1415af): a Sequence of Operations preview renders inside
+  // `.soo-doc-page` (soo-generator.js's own plain master-format shell), never `.rpt-page` — this
+  // selector previously always matched `.rpt-page` only, so Print/Export-to-PDF silently found
+  // zero pages for every SOO document and aborted with "No report pages to export" before
+  // window.print() was ever called. Same print-to-PDF mechanism either way, just the right
+  // selector for what's actually in the live DOM.
+  const pageSelector = data._soo ? '.soo-doc-page' : '.rpt-page';
+  const pages = document.querySelectorAll('#reportPages ' + pageSelector);
   if (!pages.length) {
     showToast('No report pages to export');
     return;
@@ -8838,6 +8869,8 @@ async function exportReportToPDF() {
       data._ashrae.type === 'proposal'
         ? client + ' - Service Proposal ' + dateStr
         : client + ' - ASHRAE 36 Audit Report ' + dateStr;
+  } else if (data._soo) {
+    filename = client + ' - Sequence of Operations ' + dateStr;
   } else {
     const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
     filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr;
@@ -10324,6 +10357,20 @@ async function exportReportToDocx() {
   const data = window._currentReportData;
   if (!data) {
     showToast('No report data available');
+    return;
+  }
+
+  // SOO Generator format-correction pass (2026-09-13, item 3f1415af): a Sequence of
+  // Operations must reproduce the MASTER SEQUENCES OF OPERATION document's own Word format
+  // (Heading 1/Normal/bold-label runs) -- NOT this function's .rpt-page -> _docxTranslatePages
+  // report pipeline. Delegate entirely to app/soo-generator.js's own assembler and return
+  // before any `.rpt-page` DOM is read below.
+  if (data._soo) {
+    if (typeof sooExportToDocx === 'function') {
+      await sooExportToDocx();
+    } else {
+      showToast('SOO export function not available -- app/soo-generator.js not loaded', 'error');
+    }
     return;
   }
 

@@ -275,6 +275,23 @@ function emSetSummaryView() {
   emRenderTable(data, _emFilters);
 }
 
+/* ── emSetSequenceView (SOO Phase 3, item 3f1415af) ─────────────────────────
+   Activates the Sequence of Operations generator view. Mirrors
+   emSetSummaryView's toggle-back-to-audit pattern exactly. */
+function emSetSequenceView() {
+  _emDrillBuilding = null;
+  if (_emViewMode === 'sequence') {
+    _emViewMode = 'audit';
+  } else {
+    _emViewMode = 'sequence';
+  }
+  emSyncViewModeControls();
+  emRefreshBldgFilterOptions();
+  var data = emLoadMatrix(window._emActivePid);
+  if (!data) return; // DB not ready yet — user will re-click after load
+  emRenderTable(data, _emFilters);
+}
+
 /* ── emDrillBuilding ────────────────────────────────────────────────────────
    Enters per-building detail view within the Summary view.
    Sets _emDrillBuilding to the building name and re-renders.             */
@@ -308,6 +325,7 @@ function emSyncViewModeControls() {
   var summaryBtn = document.getElementById('em-summary-btn');
   var auditBtn = document.getElementById('em-audit-btn');
   var rawBtn = document.getElementById('em-raw-btn');
+  var sequenceBtn = document.getElementById('em-sequence-btn');
 
   // Helper: set active accent style on a button
   function setActive(btn) {
@@ -331,17 +349,23 @@ function emSyncViewModeControls() {
     setActive(auditBtn);
     setInactive(rawBtn);
     setInactive(summaryBtn);
+    setInactive(sequenceBtn);
   } else if (_emViewMode === 'summary') {
     if (rawToggles) rawToggles.style.display = 'none';
     if (dynControls) dynControls.style.display = 'none';
     if (auditInfo) auditInfo.style.display = 'none';
     setInactive(auditBtn);
     setInactive(rawBtn);
-    if (summaryBtn) {
-      summaryBtn.style.background = 'var(--accent)';
-      summaryBtn.style.color = '#fff';
-      summaryBtn.style.borderColor = 'transparent';
-    }
+    setActive(summaryBtn);
+    setInactive(sequenceBtn);
+  } else if (_emViewMode === 'sequence') {
+    if (rawToggles) rawToggles.style.display = 'none';
+    if (dynControls) dynControls.style.display = 'none';
+    if (auditInfo) auditInfo.style.display = 'none';
+    setInactive(auditBtn);
+    setInactive(rawBtn);
+    setInactive(summaryBtn);
+    setActive(sequenceBtn);
   } else {
     // raw mode
     if (rawToggles) rawToggles.style.display = 'inline-flex';
@@ -350,6 +374,7 @@ function emSyncViewModeControls() {
     setInactive(auditBtn);
     setActive(rawBtn);
     setInactive(summaryBtn);
+    setInactive(sequenceBtn);
   }
 }
 
@@ -3663,7 +3688,11 @@ var _emCurrentPage = 0;
 var _emPageSize = 100;
 var _emShowAllDynCols = false; // when false, limit dynamic point columns to top 20 by frequency
 var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
-var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view
+var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view; 'sequence' = Sequence of Operations generator (SOO Phase 3, item 3f1415af)
+// Sequence view (Phase 3) state — module-level so it survives re-renders within the view, reset when the building/equipment-type scope changes (see emRenderSequenceView).
+var _emSeqUnchecked = new Set(); // rowIds explicitly excluded from the current building/type scope's default "all checked" selection
+var _emSeqLastKey = ''; // building+'|'+category, used to detect a scope change and reset _emSeqUnchecked
+var _emSeqListenersAttached = false;
 var _emZoomLevel = 100; // zoom percentage, 50–150
 var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
 // space-type-classifier-2026-07-29: projId -> {rowId: row} lookup, rebuilt on every
@@ -4297,6 +4326,7 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button id="em-audit-btn" class="btn btn-sm" onclick="emSetAuditView()" style="height:28px;font-size:11px;background:var(--accent);color:#fff;border-color:transparent">Audit View</button>' +
     '<button id="em-raw-btn" class="btn btn-ghost btn-sm" onclick="emSetRawView()" style="height:28px;font-size:11px">Raw View</button>' +
     '<button id="em-summary-btn" class="btn btn-ghost btn-sm" onclick="emSetSummaryView()" title="Aggregated stats grouped by building and equipment type" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Summary</button>' +
+    '<button id="em-sequence-btn" class="btn btn-ghost btn-sm" onclick="emSetSequenceView()" title="Generate a Sequence of Operations document for selected equipment" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Sequence</button>' +
     '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">Edit</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
     '<button id="em-delete-all-btn" class="btn btn-ghost btn-sm" onclick="emDeleteAllRows(\'' +
@@ -6137,6 +6167,11 @@ function emRenderTable(data, filters) {
     emRenderSummaryView(data, filters);
     return;
   }
+  // Route to the Sequence of Operations generator when in sequence view mode (SOO Phase 3, item 3f1415af)
+  if (_emViewMode === 'sequence') {
+    emRenderSequenceView(data, filters);
+    return;
+  }
   emSyncViewModeControls();
 
   var wrap = document.getElementById('em-table-wrap');
@@ -6952,6 +6987,277 @@ function emComputeBuildingZoneStats(rows, seedRows) {
     sorted[b] = s;
   }
   return sorted;
+}
+
+/* ── _emAttachSequenceDelegatedListeners (SOO Phase 3, item 3f1415af) ───────
+   Same delegated-listener pattern as _emAttachPanelDelegatedListeners (the
+   Sequence view's row checklist and generate button are rebuilt from an HTML
+   string on every render, so per-node listeners would need re-attaching
+   every time anyway — one document-level delegate survives that for free). */
+function _emAttachSequenceDelegatedListeners() {
+  if (_emSeqListenersAttached) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  _emSeqListenersAttached = true;
+
+  document.addEventListener('change', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('[data-em-seq-row-toggle]') : null;
+    if (!el) return;
+    var rowId = el.dataset.rowId;
+    if (el.checked) {
+      _emSeqUnchecked.delete(rowId);
+    } else {
+      _emSeqUnchecked.add(rowId);
+    }
+    emSeqRefresh();
+  });
+
+  document.addEventListener('click', function (e) {
+    var allEl = e.target && e.target.closest ? e.target.closest('[data-em-seq-select-all]') : null;
+    if (allEl) {
+      _emSeqUnchecked.clear();
+      emSeqRefresh();
+      return;
+    }
+    var noneEl = e.target && e.target.closest ? e.target.closest('[data-em-seq-select-none]') : null;
+    if (noneEl) {
+      var ids = (noneEl.dataset.rowIds || '').split(',').filter(Boolean);
+      ids.forEach(function (id) {
+        _emSeqUnchecked.add(id);
+      });
+      emSeqRefresh();
+      return;
+    }
+    var genEl = e.target && e.target.closest ? e.target.closest('[data-em-seq-generate]') : null;
+    if (genEl && typeof sooGenerateForRows === 'function') {
+      var selectedIds = (genEl.dataset.selectedRowIds || '').split(',').filter(Boolean);
+      sooGenerateForRows(window._emActivePid, selectedIds);
+    }
+  });
+}
+
+/* ── emSeqRefresh ────────────────────────────────────────────────────────────
+   Re-renders the Sequence view in place after a checkbox/select-all/select-
+   none change — same full-re-render-on-state-change pattern every other EM
+   view mode uses (e.g. emToggleColGroup, emSetSummaryView). */
+function emSeqRefresh() {
+  var data = emLoadMatrix(window._emActivePid);
+  if (!data) return;
+  emRenderTable(data, _emFilters);
+}
+
+/* ── emRenderSequenceView (SOO Phase 3, item 3f1415af) ──────────────────────
+   Equipment Matrix's real Sequence of Operations generator UI: building +
+   equipment-type picker (REUSES the toolbar's existing #em-filter-bldg/
+   #em-filter-type dropdowns — same shared controls Audit/Raw/Summary already
+   use, per the stable-control-placement rule; no new picker widgets), a
+   row-multiselect checklist, a live auto-grouped clause-set summary
+   (sooGroupRowsBySignature — same structural-signature collapse the preview
+   itself uses, so this list always agrees with what "Generate" will
+   produce), and a "Generate Sequence" button that hands the current
+   selection to sooGenerateForRows() (app/soo-generator.js), which opens the
+   existing report overlay with a live preview + Print/PDF/Word buttons —
+   exactly the toolbar every other report type uses (reuse, not a new one).
+
+   Equipment-type picker is driven by `Object.keys(SOO_TEMPLATES)` rather
+   than a hardcoded 'vav' — Phase 4 adding ahu/fpb templates needs zero
+   changes here.                                                          */
+function emRenderSequenceView(data, filters) {
+  _emAttachNavDelegatedListeners();
+  _emAttachSequenceDelegatedListeners();
+  emSyncViewModeControls();
+
+  var wrap = document.getElementById('em-table-wrap');
+  if (!wrap) return;
+
+  // Remove any pagination bar left over from Audit/Raw view
+  var tableWrap = document.getElementById('em-table-wrap');
+  if (tableWrap && tableWrap.parentNode) {
+    var existingPag = tableWrap.parentNode.querySelector('.em-pagination');
+    if (existingPag) existingPag.parentNode.removeChild(existingPag);
+  }
+
+  var rows = (data.rows || []).filter(function (r) {
+    return !emIsPhantomRow(r);
+  });
+
+  var availableCats = typeof SOO_TEMPLATES !== 'undefined' ? Object.keys(SOO_TEMPLATES) : [];
+  var requestedType = (filters && filters.type) || '';
+  var activeCat, unsupportedRequestedType;
+  if (requestedType) {
+    if (availableCats.indexOf(requestedType) !== -1) {
+      activeCat = requestedType;
+    } else {
+      activeCat = '';
+      unsupportedRequestedType = requestedType;
+    }
+  } else {
+    activeCat = availableCats[0] || '';
+  }
+
+  var bldg = (filters && filters.building) || '';
+
+  var bodyHtml;
+  if (unsupportedRequestedType) {
+    bodyHtml =
+      '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
+      'Sequence of Operations generation for ' +
+      emHtmlEsc(EM_CATEGORY_LABELS[unsupportedRequestedType] || unsupportedRequestedType) +
+      ' equipment is not available yet — VAV Terminal Units only for now.</div>';
+  } else if (!activeCat) {
+    bodyHtml =
+      '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
+      'Sequence of Operations generation is not available for any equipment type in this project yet.</div>';
+  } else if (!bldg) {
+    bodyHtml =
+      '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
+      'Select a building from the filter above to generate a Sequence of Operations.</div>';
+  } else {
+    var scopeRows = rows.filter(function (r) {
+      return (r.category || '') === activeCat && (r.building || '') === bldg;
+    });
+
+    if (!scopeRows.length) {
+      bodyHtml =
+        '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
+        'No ' +
+        emHtmlEsc(EM_CATEGORY_LABELS[activeCat] || activeCat) +
+        ' equipment found in ' +
+        emHtmlEsc(bldg) +
+        '.</div>';
+    } else {
+      // Reset the checklist's default selection whenever the building/type scope changes —
+      // otherwise a rowId unchecked in a PREVIOUS building could leak into this one.
+      var scopeKey = bldg + '|' + activeCat;
+      if (scopeKey !== _emSeqLastKey) {
+        _emSeqUnchecked = new Set();
+        _emSeqLastKey = scopeKey;
+      }
+
+      var selectedRows = scopeRows.filter(function (r) {
+        return !_emSeqUnchecked.has(r.id);
+      });
+      var pid = window._emActivePid;
+      var groups =
+        selectedRows.length && typeof sooGroupRowsBySignature === 'function'
+          ? sooGroupRowsBySignature(
+              pid,
+              selectedRows.map(function (r) {
+                return r.id;
+              }),
+            )
+          : [];
+
+      var allIdsCsv = scopeRows
+        .map(function (r) {
+          return r.id;
+        })
+        .join(',');
+      var selectedIdsCsv = selectedRows
+        .map(function (r) {
+          return r.id;
+        })
+        .join(',');
+
+      var rowListHtml = scopeRows
+        .map(function (r) {
+          var checked = !_emSeqUnchecked.has(r.id);
+          return (
+            '<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 4px;cursor:pointer;border-radius:3px" onmouseover="this.style.background=\'var(--s3)\'" onmouseout="this.style.background=\'\'">' +
+            '<input type="checkbox" data-em-seq-row-toggle data-row-id="' +
+            emHtmlEsc(r.id) +
+            '" ' +
+            (checked ? 'checked' : '') +
+            '>' +
+            emHtmlEsc(r.equipName || r.name || r.id) +
+            '</label>'
+          );
+        })
+        .join('');
+
+      var groupsHtml = groups.length
+        ? groups
+            .map(function (g, gi) {
+              return (
+                '<div style="font-size:12px;padding:6px 0;border-bottom:1px dashed var(--border)">' +
+                '<strong>Clause set ' +
+                (gi + 1) +
+                '</strong> — ' +
+                g.boxLabels.length +
+                ' unit' +
+                (g.boxLabels.length === 1 ? '' : 's') +
+                ': ' +
+                '<span style="color:var(--text2)">' +
+                emHtmlEsc(g.boxLabels.join(', ')) +
+                '</span>' +
+                '</div>'
+              );
+            })
+            .join('')
+        : '<div style="font-size:12px;color:var(--text3);font-style:italic;padding:6px 0">No equipment selected</div>';
+
+      var previewHtml =
+        groups.length && typeof sooBuildMultiPreviewHtml === 'function'
+          ? sooBuildMultiPreviewHtml(groups)
+          : '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">Select equipment on the left to preview its Sequence of Operations.</div>';
+
+      // Layout note: #em-table-wrap is itself the ONE scroll region every view mode shares
+      // (`.em-table-wrap { overflow: scroll }`, see emInjectMatrixCSS) — this view does not add
+      // a second full-height scroll region competing with it. The row checklist is the one
+      // bounded-height sibling scroll zone (documented pattern: ui-standards.md "Cost Estimate
+      // tab — Top ROI card + pricing table" exception), everything else grows naturally and the
+      // wrap itself scrolls the whole view.
+      bodyHtml =
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">' +
+        '<span style="font-size:12px;color:var(--text2)">' +
+        selectedRows.length +
+        ' of ' +
+        scopeRows.length +
+        ' ' +
+        emHtmlEsc(EM_CATEGORY_LABELS[activeCat] || activeCat) +
+        ' units selected in ' +
+        emHtmlEsc(bldg) +
+        ' — ' +
+        groups.length +
+        ' clause set' +
+        (groups.length === 1 ? '' : 's') +
+        '</span>' +
+        '<button data-em-seq-generate data-selected-row-ids="' +
+        emHtmlEsc(selectedIdsCsv) +
+        '" class="btn btn-em btn-sm" ' +
+        (groups.length ? '' : 'disabled') +
+        ' style="height:28px;font-size:11px">Generate Sequence</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:0;align-items:flex-start">' +
+        '<div style="width:260px;flex-shrink:0;border-right:1px solid var(--border);padding:10px">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+        '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--text3)">Equipment (' +
+        scopeRows.length +
+        ')</span>' +
+        '<span style="display:flex;gap:6px">' +
+        '<a href="#" data-em-seq-select-all style="font-size:10px;color:var(--accent)">All</a>' +
+        '<a href="#" data-em-seq-select-none data-row-ids="' +
+        emHtmlEsc(allIdsCsv) +
+        '" style="font-size:10px;color:var(--accent)">None</a>' +
+        '</span>' +
+        '</div>' +
+        '<div style="max-height:420px;overflow-y:auto">' +
+        rowListHtml +
+        '</div>' +
+        '</div>' +
+        '<div style="flex:1;min-width:0;padding:16px;background:var(--s1)">' +
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--text3);margin-bottom:8px">Auto-Grouped Clause Sets (' +
+        groups.length +
+        ')</div>' +
+        groupsHtml +
+        '</div>' +
+        '</div>' +
+        '<div style="padding:24px;background:var(--s2);border-top:1px solid var(--border)">' +
+        previewHtml +
+        '</div>';
+    }
+  }
+
+  wrap.innerHTML = bodyHtml;
 }
 
 /* ── emRenderSummaryView ────────────────────────────────────────────────────
@@ -8651,6 +8957,14 @@ function _emAttachPanelDelegatedListeners() {
     var toggleEl = e.target && e.target.closest ? e.target.closest('[data-em-toggle-all-points]') : null;
     if (toggleEl) {
       emToggleAllPointsInDetail(toggleEl.dataset.rowId);
+      return;
+    }
+    // Per-row Sequence of Operations entry point (SOO Generator, item 3f1415af): opens the
+    // same preview/overlay/export machinery as the Sequence view's multi-box "Generate
+    // Sequence" button (emRenderSequenceView), scoped to just this one box.
+    var sooEl = e.target && e.target.closest ? e.target.closest('[data-soo-generate-row]') : null;
+    if (sooEl && typeof sooGenerateForRow === 'function') {
+      sooGenerateForRow(sooEl.dataset.rowId);
     }
   });
 }
@@ -8993,8 +9307,19 @@ function emShowComplianceDetail(rowId) {
     emHtmlEsc(catLabel) +
     ' &mdash; ASHRAE 36 Detail</div>' +
     '</div>' +
+    '<div style="display:flex;align-items:center;gap:6px">' +
+    // Per-row Sequence of Operations entry point (SOO Generator, item 3f1415af). VAV-only —
+    // matches sooGenerateForRow's own category guard in app/soo-generator.js.
+    (category === 'vav'
+      ? '<button data-soo-generate-row="1" data-row-id="' +
+        emHtmlEsc(rowId) +
+        '" style="font-size:10px;padding:3px 8px;background:var(--s2);border:1px solid var(--border);' +
+        'color:var(--text2);border-radius:3px;cursor:pointer" ' +
+        'title="Generate a Sequence of Operations document for this equipment">Generate Sequence</button>'
+      : '') +
     '<button onclick="emCloseComplianceDetail()" style="background:none;border:none;font-size:18px;' +
     'cursor:pointer;color:var(--text2);padding:4px;line-height:1" title="Close">&times;</button>' +
+    '</div>' +
     '</div>' +
     '<div style="flex:1;overflow-y:auto;padding:16px">' +
     covHtml +
@@ -11756,9 +12081,42 @@ var EM_EQUIP_CONFIG_FLAGS = {
   ],
   vav: [
     { key: 'hasReheat', label: 'Has Reheat Coil', default: true },
+    // SOO Generator Phase 2 (item 3f1415af): reheat actuator MECHANISM is not
+    // safely inferable from point presence (blueprint "HARD LESSON" — a
+    // reheatValve point proves a wire exists, not what the program does with
+    // it). Manual flag, defaulted to the most common JOCO type (pid-valve),
+    // never auto-detected from point names. Consumed by
+    // soo-generator.js SOO_TEMPLATES.vav reheat-modulating/reheat-staged/
+    // reheat-floating-motor appliesWhen.
+    {
+      key: 'reheatActuator',
+      label: 'Reheat Actuator',
+      type: 'select',
+      options: ['pid-valve', 'linear-valve', 'floating-motor', 'electric-binary'],
+      default: 'pid-valve',
+    },
     // M4 Part C: default true so missing CO2 lowers audit coverage for VAV zones
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
+    // SOO Generator Phase 2: CO2 FUNCTION (full demand-control-ventilation
+    // reset vs a plain high-CO2 alarm) is a program-structure decision, not
+    // derivable from the co2 point being mapped (same hard-lesson class as
+    // reheatActuator — JOCO NE Offices VAV-10b was upgraded alarm-only ->
+    // full DCV reset with no point-side change). Manual flag, defaulted to
+    // the more complete behavior (dcv-reset).
+    {
+      key: 'co2Function',
+      label: 'CO2 Function',
+      type: 'select',
+      options: ['dcv-reset', 'alarm-only'],
+      default: 'dcv-reset',
+    },
     { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
+    // SOO Generator Phase 2: series fan-powered VAV boxes are field-tagged as
+    // plain VAV (JOCO rev19 gap A, findings.md §2/§4 item A — ~63 boxes still
+    // unconfirmed) so this must be a manual override, not inferred from
+    // category. Mirrors the existing fpb.isSeries flag; adding it here does
+    // NOT force recategorization of the row (blueprint explicit constraint).
+    { key: 'isSeries', label: 'Series Fan-Powered (vs Parallel/None)', default: false },
     // Phase 2 (setpoint-value-compliance): zone classification for GL36 §3.1.1.1 + §3.1.1.3.
     // type:'select' — renderer not yet built (Phase 2.3). options/default stored here for later.
     {
