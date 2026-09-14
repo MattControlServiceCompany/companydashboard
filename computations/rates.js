@@ -251,18 +251,33 @@ function toKBtu(kwh, therms, gallons) {
   return (parseFloat(kwh) || 0) * 3.412 + (parseFloat(therms) || 0) * 100 + (parseFloat(gallons) || 0) * 91.5;
 }
 
+// Canonical electric energy-charge sum — the 5 charge fields that make up the
+// implied $/kWh rate (OnPeak + OffPeak + ECA + EER + PTS). SSOT for
+// getExtractedRate('kwh'), validateBillData's electric branch, and
+// detectStatisticalOutliers's electric rate check (bill-analysis.js) — all
+// three must sum the same fields or a bill's "checked" rate can disagree with
+// its "displayed" rate and false-flag a valid bill (item 377ea7f0).
+function sumElectricEnergyCharges(parsed) {
+  var pf = function (v) {
+    return parseFloat(v) || 0;
+  };
+  parsed = parsed || {};
+  return (
+    pf(parsed.EnergyOnPeakCharge) +
+    pf(parsed.EnergyOffPeakCharge) +
+    pf(parsed.ECACharge) +
+    pf(parsed.EERCharge) +
+    pf(parsed.PTSCharge)
+  );
+}
+
 function getExtractedRate(parsed, type) {
   var pf = function (v) {
     return parseFloat(v) || 0;
   };
   switch (type) {
     case 'kwh': {
-      var cost =
-        pf(parsed.EnergyOnPeakCharge) +
-        pf(parsed.EnergyOffPeakCharge) +
-        pf(parsed.ECACharge) +
-        pf(parsed.EERCharge) +
-        pf(parsed.PTSCharge);
+      var cost = sumElectricEnergyCharges(parsed);
       var usage = pf(parsed.kWhConsumed);
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }

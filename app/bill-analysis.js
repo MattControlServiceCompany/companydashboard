@@ -273,12 +273,10 @@ function validateBillData(extracted, utilityName) {
     }
   } else if (_vComm === 'electric' || _vComm === '') {
     const _vKwh = pf(extracted.kWhConsumed);
-    const _vKwhCharge =
-      pf(extracted.EnergyOnPeakCharge) +
-      pf(extracted.EnergyOffPeakCharge) +
-      pf(extracted.ECACharge) +
-      pf(extracted.EERCharge) +
-      pf(extracted.PTSCharge);
+    // Canonical 5-charge sum (rates.js sumElectricEnergyCharges) — shared with
+    // getExtractedRate('kwh') and detectStatisticalOutliers below so displayed
+    // and checked rates always agree (item 377ea7f0).
+    const _vKwhCharge = sumElectricEnergyCharges(extracted);
     if (_vKwh > 0 && _vKwhCharge > 0) {
       const rr = validateImpliedRate('Electric', _vKwh, _vKwhCharge, _vUtilName);
       if (rr && rr.severity) {
@@ -713,7 +711,11 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
     // therm-scaled MMbtu push here.
   } else if (_comm === 'electric' || _comm === '') {
     const kwhUsage = pf(extracted.kWhConsumed);
-    const kwhCharge = pf(extracted.EnergyOnPeakCharge) + pf(extracted.EnergyOffPeakCharge);
+    // Canonical 5-charge sum (rates.js sumElectricEnergyCharges) — was
+    // OnPeak+OffPeak only, which dropped ECA+EER+PTS and made the implied
+    // rate disagree with the displayed rate, false-flagging valid Evergy
+    // bills as "lower than typical" (item 377ea7f0).
+    const kwhCharge = sumElectricEnergyCharges(extracted);
     if (kwhUsage > 0 && kwhCharge > 0) {
       _rateChecks.push({
         field: 'kWhConsumed',
@@ -5910,13 +5912,30 @@ function findMeterMatch(extracted) {
         );
         if (_acctFuzzyMatch(acct, mAcct) || mAliasHit || (meterNum && mMeter && meterNum === mMeter)) {
           const mComm = (m.commodity || '').toLowerCase();
-          const commMatch = billComm && mComm && billComm === mComm;
+          // Fix (item 1c98be9c): an existing meter with a blank/empty
+          // commodity is a WILDCARD on an identity (account/meter-number)
+          // hit — its commodity was never labeled, so it must not be
+          // invisible to a same-account bill of ANY commodity. Without this,
+          // a blank-commodity meter fails commMatch, a wrong-commodity
+          // sibling can claim `bestMatch` first (see the fallback fix
+          // below), and the bill spawns a brand-new duplicate meter instead
+          // of landing on the real one.
+          const wildcardMatch = !!(billComm && !mComm);
+          const commMatch = !!(billComm && mComm && billComm === mComm);
           // matchType: 'identity' — account/meter-number hit, as opposed to the
           // fuzzy address-only fallback below. Fix b-46a984a0: the batch queue UI
           // uses this to decide whether a match can render as plain confirmed text
           // or must force an explicit user pick (never silently misattach a
           // lower-confidence address match).
-          if (commMatch) {
+          if (commMatch || wildcardMatch) {
+            // Adoption is deferred to the final chosen candidate (below,
+            // where identityCandidates.length is resolved to a single
+            // match) — NOT applied here in the collection loop. With 2+
+            // identityCandidates in this building (e.g. an already-labeled
+            // same-commodity meter AND an unrelated blank-commodity sibling
+            // under the same shared account), mutating m.commodity here
+            // would relabel the LOSING candidate too, even when it's a
+            // different physical meter that was never actually selected.
             identityCandidates.push({
               proj,
               bldg,
@@ -5925,8 +5944,13 @@ function findMeterMatch(extracted) {
               bldgId: bldg.id,
               meterId: m.id,
               matchType: 'identity',
+              _wildcardAdopt: wildcardMatch,
             });
-          } else if (!bestMatch)
+          } else if (!bestMatch && !billComm)
+            // Only fall back here when the BILL's commodity is unknown —
+            // with billComm known and mComm known-and-different, this is a
+            // confirmed WRONG-commodity meter and must never be returned as
+            // matchType 'identity' (item 1c98be9c fallback fix).
             bestMatch = {
               proj,
               bldg,
@@ -6036,8 +6060,16 @@ function findMeterMatch(extracted) {
   // its only possible match). Two or more candidates means a genuinely
   // shared account; ServiceAddress disambiguates which physical meter this
   // bill belongs to, never rejects to null.
-  if (identityCandidates.length === 1) return identityCandidates[0];
-  if (identityCandidates.length > 1) return _pickIdentityCandidate(identityCandidates, extracted.ServiceAddress);
+  // Adoption applies ONLY to the final chosen candidate — a blank-commodity
+  // wildcard hit that loses out to a better identity/address candidate must
+  // never have its commodity mutated (item 1c98be9c side-effect fix).
+  const _adoptIfWildcard = (cand) => {
+    if (cand && cand._wildcardAdopt && cand.meter) cand.meter.commodity = extracted.Commodity || billComm;
+    return cand;
+  };
+  if (identityCandidates.length === 1) return _adoptIfWildcard(identityCandidates[0]);
+  if (identityCandidates.length > 1)
+    return _adoptIfWildcard(_pickIdentityCandidate(identityCandidates, extracted.ServiceAddress));
   let addrMatch = null;
   if (addrCandidates.length) {
     addrCandidates.sort((a, b) => b.candidateScore - a.candidateScore);
@@ -19747,7 +19779,13 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
       const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
       const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
       const mComm = (m.commodity || '').toLowerCase();
-      if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && mComm === billComm) {
+      // Fix (item 1c98be9c): a blank meter commodity is a WILDCARD on an
+      // account/meter-number identity hit — same rule as findMeterMatch
+      // above. Without it this guard missed blank-commodity meters and
+      // spawned a duplicate via Step 4 below instead of landing here.
+      const _commOK = mComm === billComm || (!mComm && billComm);
+      if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && _commOK) {
+        if (!mComm && billComm) m.commodity = extracted.Commodity || billComm; // adopt, label going forward
         // Already exists — save bill to the existing meter instead of creating a duplicate
         m.bills = m.bills || [];
         const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
@@ -19838,7 +19876,10 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
     const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
     const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
     const mComm = (m.commodity || '').toLowerCase();
-    if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && mComm === billComm) {
+    // Fix (item 1c98be9c): same blank-commodity wildcard rule as Step 1 above.
+    const _commOK2 = mComm === billComm || (!mComm && billComm);
+    if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && _commOK2) {
+      if (!mComm && billComm) m.commodity = extracted.Commodity || billComm; // adopt, label going forward
       m.bills = m.bills || [];
       const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
       if (dup) {

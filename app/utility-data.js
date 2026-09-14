@@ -409,6 +409,158 @@ function loadUtilityData() {
     }
     DB.set(_thermsFixKey, '1');
   }
+  // Guarded, idempotent, self-deactivating dedupe of duplicate meters (item
+  // 1c98be9c, Matt-approved "guarded dedupe now"). Same posture as the
+  // v829 commodity heal above: runs every load, but once a duplicate pair
+  // merges there is nothing left to merge next time, so it self-deactivates
+  // with no version flag. Placed AFTER the commodity heal (so "now-labeled"
+  // commodity is available) and AFTER the 2-digit-year date migration (so
+  // bill periods are already 4-digit ISO before the overlap check below).
+  //
+  // A pair of meters at the SAME building qualifies ONLY if: same
+  // normalized account number, same (now-labeled) commodity, AND their
+  // bill periods are FULLY DISJOINT (no overlapping start/end range) —
+  // exactly the "older full-history meter + newer 1-bill meter filling a
+  // gap" shape confirmed in the real Louisburg snapshot (HS/Rockville
+  // Sewer + Stormwater). HARD GATE: any overlapping period is real
+  // conflicting data, not a clean split — never merge, only flag.
+  {
+    const _normAcct = (a) => (a || '').replace(/[\s\-]/g, '').toLowerCase();
+    const _billRange = (bill) => {
+      const s = bill && bill.start ? _parseISO(bill.start) : null;
+      const e = bill && bill.end ? _parseISO(bill.end) : null;
+      if (!s || !e || isNaN(s) || isNaN(e)) return null; // no usable date -- never blocks, never sorted specially
+      return [s, e];
+    };
+    const _periodsOverlap = (billsA, billsB) => {
+      const rangesA = billsA.map(_billRange).filter(Boolean);
+      const rangesB = billsB.map(_billRange).filter(Boolean);
+      for (const ra of rangesA) {
+        for (const rb of rangesB) {
+          // Strict inequality: utility billing periods are stored end-
+          // inclusive-of-next-start (period N's end date === period N+1's
+          // start date, the shared meter-read day) — that boundary touch is
+          // NOT a real overlap, only two periods that both cover the SAME
+          // interior day are. Confirmed against the real Louisburg snapshot:
+          // "2026-05-15..2026-06-15" then "2026-06-15..2026-07-15" are
+          // adjacent, not overlapping.
+          if (ra[0] < rb[1] && rb[0] < ra[1]) return true;
+        }
+      }
+      return false;
+    };
+    let _meterDedupeMerged = 0;
+    const _meterDedupeFlagged = [];
+    for (const pid of Object.keys(utilityData)) {
+      const ud = utilityData[pid];
+      for (const bldg of ud.buildings || []) {
+        const meters = bldg.meters || [];
+        // Group by normalized account + commodity within this building only.
+        const groups = {};
+        for (const m of meters) {
+          const acct = _normAcct(m.account);
+          const comm = (m.commodity || '').trim().toLowerCase();
+          if (!acct || !comm) continue; // never merge unlabeled/unaccounted meters
+          const key = acct + '|' + comm;
+          (groups[key] = groups[key] || []).push(m);
+        }
+        const toDelete = new Set();
+        for (const key of Object.keys(groups)) {
+          const group = groups[key];
+          if (group.length < 2) continue;
+          if (group.length > 2) {
+            // 3+ same-account/same-commodity meters at one building is
+            // unexpected — never guess which two (if any) pair up.
+            _meterDedupeFlagged.push({
+              pid,
+              building: bldg.name || bldg.id,
+              key,
+              reason: group.length + ' candidates (>2) — not auto-merged',
+              meterIds: group.map((m) => m.id).join(', '),
+            });
+            continue;
+          }
+          const [m1, m2] = group;
+          const bills1 = m1.bills || [];
+          const bills2 = m2.bills || [];
+          if (_periodsOverlap(bills1, bills2)) {
+            _meterDedupeFlagged.push({
+              pid,
+              building: bldg.name || bldg.id,
+              key,
+              reason: 'overlapping bill periods — not merged',
+              meterIds: m1.id + ', ' + m2.id,
+            });
+            continue;
+          }
+          // Larger/older-history meter survives (more bills; ties broken by
+          // earliest bill date). Smaller/newer meter's bills are appended,
+          // re-sorted by date, then the smaller meter is deleted. Survivor's
+          // own id/provider/baselineInclude are never touched.
+          const _earliest = (bills) => {
+            const ranges = bills.map(_billRange).filter(Boolean);
+            return ranges.length ? Math.min(...ranges.map((r) => +r[0])) : Infinity;
+          };
+          let survivor = m1,
+            absorbed = m2;
+          if (
+            bills2.length > bills1.length ||
+            (bills2.length === bills1.length && _earliest(bills2) < _earliest(bills1))
+          ) {
+            survivor = m2;
+            absorbed = m1;
+          }
+          const survivorBills = survivor === m1 ? bills1 : bills2;
+          const absorbedBills = survivor === m1 ? bills2 : bills1;
+          const mergedCount = survivorBills.length + absorbedBills.length;
+          survivor.bills = survivorBills.concat(absorbedBills).sort((a, b) => {
+            const ra = _billRange(a),
+              rb = _billRange(b);
+            if (!ra && !rb) return 0;
+            if (!ra) return -1;
+            if (!rb) return 1;
+            return ra[0] - rb[0];
+          });
+          toDelete.add(absorbed.id);
+          _meterDedupeMerged++;
+          console.log(
+            '[meter dedupe] ' +
+              (bldg.name || bldg.id) +
+              ': merged meter ' +
+              absorbed.id +
+              ' (' +
+              absorbedBills.length +
+              ' bills) into ' +
+              survivor.id +
+              ' (' +
+              survivorBills.length +
+              ' bills) — commodity=' +
+              survivor.commodity +
+              ', account=' +
+              (survivor.account || '') +
+              ', result=' +
+              mergedCount +
+              ' bills',
+          );
+        }
+        if (toDelete.size) {
+          bldg.meters = meters.filter((m) => !toDelete.has(m.id));
+        }
+      }
+    }
+    if (_meterDedupeMerged > 0) {
+      saveUtilityData(SAVE_ALL_PROJECTS); // dedupe touches every loaded project's meters
+      console.log('[meter dedupe] Merged ' + _meterDedupeMerged + ' duplicate meter pair(s). See details above.');
+    }
+    if (_meterDedupeFlagged.length) {
+      console.warn(
+        '[meter dedupe] Flagged ' +
+          _meterDedupeFlagged.length +
+          ' candidate pair(s) NOT merged (overlapping periods or ambiguous group size):',
+      );
+      console.table(_meterDedupeFlagged);
+    }
+  }
   // Auto-inherit baselines: any meter with bills but no baseline gets
   // the majority baseline from same-commodity meters in the same project
   for (const pid of Object.keys(utilityData)) {
