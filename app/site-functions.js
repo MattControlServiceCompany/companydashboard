@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.835',
+    date: '2026-09-15',
+    title: 'Energy Department: Bill import — "Confirm & Save" and "Overwrite All" now save right away',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department, Bill import / review: clicking "Confirm & Save to This Meter" or "Overwrite All" now saves the bill immediately. Before, these buttons could be silently blocked and tell you to click yellow-dot pills that were not actually on screen.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.14.834',
     date: '2026-09-14',
     title: 'Energy Department: Bill review now flags and can auto-fix charge/quantity mismatches',

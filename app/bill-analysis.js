@@ -7062,16 +7062,17 @@ async function confirmAutoAssign() {
   }
   const { proj, bldg, meter, projId } = _autoAssignTarget;
   const bills = window._pdfMultiBills;
+  // FIX (live bug, v831 gate-lifecycle follow-up): this used to hard-block the
+  // whole save whenever ANY dup entry had action===null (unresolved), telling
+  // the user to "click yellow-dot pills to resolve" — pills that don't exist
+  // in this single-meter banner context and, even where they do exist
+  // elsewhere (the multi-bill nav pills), only navigate to the bill and never
+  // resolve anything. Clicking "Confirm & Save to This Meter" IS the user's
+  // explicit resolution: the per-bill loop below already upserts by billing
+  // period (Object.assign to overwrite a matching period, else push) with no
+  // dependency on dupMap[i].action being non-null — only an explicit
+  // dup.action === 'skip' (set via the dup modal) is still honored below.
   const dupMap = window._pdfDupMap || {};
-  const hasDups = Object.keys(dupMap).length > 0;
-  if (hasDups) {
-    // If any bills have unresolved dup actions, warn the user
-    const unresolved = Object.values(dupMap).filter((d) => d.action === null);
-    if (unresolved.length > 0) {
-      showToast(unresolved.length + ' duplicate bill(s) need review — click yellow-dot pills to resolve');
-      return;
-    }
-  }
   let saved = 0;
   for (let _bi = 0; _bi < bills.length; _bi++) {
     const bill = bills[_bi];
@@ -8029,14 +8030,18 @@ async function confirmMultiBuildingSave(action) {
   if (!bills || !bills.length) return;
   const dupMap = window._pdfDupMap || {};
 
-  // Dup-unresolved gate (unchanged)
-  const unresolved = Object.values(dupMap).filter(function (d) {
-    return d.action === null;
-  });
-  if (unresolved.length > 0) {
-    showToast(unresolved.length + ' duplicate bill(s) need review — click yellow-dot pills to resolve');
-    return;
-  }
+  // FIX (live bug, v831 gate-lifecycle follow-up): removed the old "Dup-unresolved
+  // gate" that hard-blocked Save/Overwrite/Merge All whenever ANY dup entry had
+  // action===null, directing the user to "click yellow-dot pills to resolve" —
+  // pills that don't exist in this multi-building review panel (_mbRowHtml has
+  // no dot/pill UI at all) and, even in the one view that does have them (the
+  // single-account nav pills), clicking one only navigates to that bill, it
+  // never resolves anything. Clicking "Overwrite All" (or Save All / Merge All)
+  // IS the user's explicit resolution for this batch: _mbSaveOneBill's upsert
+  // below is driven entirely by the `action` param passed to THIS function
+  // ('save'/'overwrite'/'merge'), not by dupMap[i].action — the only dupMap
+  // value it still honors is an explicit action === 'skip' (set via the dup
+  // modal), checked per-row below.
 
   // b-46a984a0: full-accounting pass. Classify EVERY row. A row is going to be
   // saved (checked + resolved), explicitly excluded (user Skip or dup-skip),
