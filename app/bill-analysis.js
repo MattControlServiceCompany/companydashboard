@@ -6219,7 +6219,16 @@ function _inferProjectFromCustomerName(customerName, allProjects) {
     return { p, score: shared.length };
   });
   const top = scored.reduce((a, b) => (b.score > a.score ? b : a), { score: 0 });
-  if (top.score < 1) return null;
+  // Fix (adversarial review, 2026-09-15): require 2+ corroborating shared
+  // tokens, not 1. A single shared generic token (e.g. a future 3rd WRE
+  // district that also happens to share the word "spring" with an existing
+  // project, or a truncated CustomerName OCR) is not enough to confidently
+  // scope to a district — _wreResolveBuilding never re-validates the winning
+  // building's own address against this project choice, so a bad single-
+  // token scope could otherwise produce a confident WRONG-district match.
+  // Below threshold degrades to unscoped (null), identical to "can't infer"
+  // — never a wrong guess, just no extra safety net that round.
+  if (top.score < 2) return null;
   const winners = scored.filter((s) => s.score === top.score);
   return winners.length === 1 ? winners[0].p : null;
 }
