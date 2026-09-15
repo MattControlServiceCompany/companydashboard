@@ -6007,6 +6007,285 @@ function _pickIdentityCandidate(candidates, billServiceAddress) {
   }
   return best;
 }
+// Fix (fix/wre-building-name-match, 2026-09-15): building-NAME match path for
+// Wood River Energy (and any other provider) consolidated invoices whose
+// ServiceAddress is a site-nickname TAG plus a bare street ("High Schl -
+// 19701 S Ridgeview", "BoE - 101 E South St") with no city/zip. The existing
+// _addressSimilarity whole-string fallback above scores these ~0.04-0.21
+// against the stored "street, city, state zip" building/meter addresses (a
+// pure format mismatch, not a real dissimilarity) so they never clear the
+// 0.60 threshold and always land unmatched. That threshold and every other
+// address-fallback path above is left completely untouched — this block only
+// ADDS a fallback that findMeterMatch's return statement tries LAST, after
+// identity, address-similarity, and structural-street/commodity have all
+// already come back empty (see the call site below).
+//
+// Gate: only fires when the ServiceAddress contains " - " with a non-numeric
+// prefix (_tagSplit below returns null for anything else, including a normal
+// "123 Main St - Suite 4" address, since that prefix starts with a digit) —
+// so this can never hijack Evergy/City of Louisburg/any provider whose
+// addresses don't carry this tag shape, and never overrides a bill that
+// already matched normally.
+//
+// Design (verified against the real Spring Hill Schools backup + the real
+// WRE OCR debug file for Inv 447604 — see the implementer report for the
+// full 10-site routing table): building identity is decided from the TAG
+// against building NAMES only (never addresses) via _buildingNameScore, with
+// a small, standard K-12 abbreviation table (elem/mid/hs/sch/boe/etc.) and
+// per-token fuzzy matching (reusing the existing _levenshtein helper) so OCR
+// noise on the tag doesn't block a real match. Because several Spring Hill
+// buildings share generic tokens ("Spring Hill X" appears in most names),
+// a NAME-only score can tie across buildings or even point at the WRONG
+// sibling building outright (e.g. "Mid Sch Mo" name-scores highest against
+// "Spring Hill Middle School" even though the real site is "Spring Hill
+// Early Learning Academy") — so the street NUMBER from the tag's own street
+// text is cross-checked against every building's OWN stored street number
+// (_addrStreetIdentity, already used elsewhere in this file for exact
+// structural matches). A name/address disagreement, or a tie the address
+// number can't break, is a NO-MATCH (never guess between two real
+// candidates). Once a building is uniquely resolved, a same-commodity meter
+// is picked the same way: skip straight through when the building has only
+// one, otherwise require the incoming street number to uniquely pick one
+// meter over the others — two meters sharing an identical stored address
+// (Spring Hill's Board of Education and its Elementary both have two gas
+// meters at ONE street address each) correctly returns null so the bill
+// falls to manual instead of a 50/50 guess.
+const _BLDG_TAG_ABBR = {
+  elem: ['elementary'],
+  elm: ['elementary'],
+  mid: ['middle'],
+  ms: ['middle'],
+  hs: ['high'],
+  sch: ['school'],
+  schl: ['school'],
+  jr: ['junior'],
+  sr: ['senior'],
+  crk: ['creek'],
+  spg: ['spring'],
+  spgs: ['spring'],
+  boe: ['board', 'education'],
+  bofe: ['board', 'education'],
+};
+function _tagSplit(serviceAddress) {
+  const s = (serviceAddress || '').replace(/[‘’“”'"]/g, '').trim();
+  const idx = s.indexOf(' - ');
+  if (idx < 1) return null;
+  const tag = s.slice(0, idx).trim();
+  let streetPart = s.slice(idx + 3).trim();
+  if (!tag || !streetPart) return null;
+  if (/^\d/.test(tag)) return null; // a real "123 Main St - Suite 4" address, not a site tag
+  streetPart = streetPart.replace(/^[^0-9A-Za-z]+/, '');
+  return { tag, streetPart };
+}
+function _wreTokenize(s) {
+  return (s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter(Boolean);
+}
+function _wreTokenFuzzyEq(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 3 && b.length >= 3 && (a.startsWith(b) || b.startsWith(a))) return true;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen < 4) return false; // too short to safely fuzz (site suffixes like "so"/"mo"/"no")
+  return 1 - _levenshtein(a, b) / maxLen >= 0.7;
+}
+function _wreTagTokenCandidates(tok) {
+  const cands = [tok];
+  if (_BLDG_TAG_ABBR[tok]) {
+    cands.push(..._BLDG_TAG_ABBR[tok]);
+    return cands;
+  }
+  for (const key of Object.keys(_BLDG_TAG_ABBR)) {
+    if (tok.length >= 3 && key.length >= 3) {
+      const maxLen = Math.max(tok.length, key.length);
+      if (1 - _levenshtein(tok, key) / maxLen >= 0.7) {
+        cands.push(..._BLDG_TAG_ABBR[key]);
+        break;
+      }
+    }
+  }
+  return cands;
+}
+function _buildingNameScore(tag, bldgName) {
+  const tagToks = _wreTokenize(tag);
+  const nameToks = _wreTokenize(bldgName);
+  if (!tagToks.length || !nameToks.length) return 0;
+  let matched = 0;
+  for (const t of tagToks) {
+    const cands = _wreTagTokenCandidates(t);
+    if (cands.some((c) => nameToks.some((n) => _wreTokenFuzzyEq(c, n)))) matched++;
+  }
+  return matched / tagToks.length;
+}
+const _WRE_MIN_NAME_SCORE = 0.5;
+// Resolves the unique building for `tag`/`streetPart`, or null (never guess).
+// buildings: [{proj, bldg}] flattened across every project (mirrors the loop
+// shape findMeterMatch already uses everywhere else in this file).
+function _wreResolveBuilding(tag, streetPart, buildings) {
+  const scored = buildings.map((pb) => ({ pb, score: _buildingNameScore(tag, pb.bldg.name) }));
+  const top = scored.length ? Math.max(...scored.map((s) => s.score)) : 0;
+  const nameWinners = top >= _WRE_MIN_NAME_SCORE ? scored.filter((s) => s.score === top).map((s) => s.pb) : [];
+  const incomingIdentity = _addrStreetIdentity(streetPart);
+  const addressOwners = incomingIdentity
+    ? buildings.filter((pb) => {
+        const id = _addrStreetIdentity(pb.bldg.addr);
+        return id && Number(id.num) === Number(incomingIdentity.num);
+      })
+    : [];
+  if (nameWinners.length === 1) {
+    if (addressOwners.length === 0) return nameWinners[0];
+    if (addressOwners.length === 1 && addressOwners[0] === nameWinners[0]) return nameWinners[0];
+    return null; // name winner conflicts with a different building's exact street number
+  }
+  if (nameWinners.length > 1 && addressOwners.length === 1 && nameWinners.includes(addressOwners[0])) {
+    return addressOwners[0]; // address number breaks an otherwise-tied name score
+  }
+  return null; // no confident unique building — never guess
+}
+// Resolves the unique same-commodity meter on an already-uniquely-resolved
+// building, or null (never guess between 2+ meters that share one address).
+function _wreResolveMeter(bldg, streetPart, commodity) {
+  const sameComm = (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === commodity.toLowerCase());
+  if (sameComm.length === 0) return null;
+  if (sameComm.length === 1) return sameComm[0];
+  const incomingIdentity = _addrStreetIdentity(streetPart);
+  if (!incomingIdentity) return null;
+  const winners = sameComm.filter((m) => {
+    const id = _addrStreetIdentity(m.maddr || bldg.addr);
+    return id && Number(id.num) === Number(incomingIdentity.num);
+  });
+  return winners.length === 1 ? winners[0] : null;
+}
+// Fix (fix/wre-building-name-match, review round 2, 2026-09-15): district
+// scoping. The unscoped version above searches every project's buildings,
+// so a generic building-type token ("high"+"school") can collide across
+// DIFFERENT districts (Louisburg USD #416 has its own "High School" and
+// "Middle School" buildings, unrelated to Spring Hill's WRE invoice) —
+// verified against the real backup, this silently pushed 2 real Spring Hill
+// sites to manual that a human would resolve instantly from context. Two
+// ways to know which district a WRE bill belongs to, tried in this order
+// (never guessed — an inconclusive result at either step just leaves the
+// search unscoped, exactly like before this fix, never worse):
+//   1. An explicit destination project already selected in the PDF/OCR UI
+//      (the `pdfProjSel` dropdown, or its batch-mode mirror
+//      `window._pdfQueue.batchProjId`) — the same value every other
+//      identity/address/commodity-fallback UI branch in this file already
+//      treats as the user's chosen destination.
+//   2. The invoice's own customer/district name (WRE prints "Spring Hill
+//      ISD 230" right after "Customer #:" — captured into CustomerName by
+//      the WRE extractor in energy-savings.js) fuzzy-matched against every
+//      project's name, dropping generic organizational-suffix tokens
+//      (isd/usd/school/schools/district/etc.) that would otherwise blur
+//      every K-12 project together. Requires a UNIQUE top scorer with at
+//      least one real (non-stopword) token in common — a tie or zero
+//      matches leaves scoping off rather than guessing a district.
+const _ORG_STOPWORDS = new Set([
+  'isd',
+  'usd',
+  'school',
+  'schools',
+  'schl',
+  'district',
+  'county',
+  'co',
+  'inc',
+  'llc',
+  'university',
+  'college',
+  'of',
+  'the',
+  'and',
+]);
+function _explicitSelectedProjectId() {
+  try {
+    const sel = typeof document !== 'undefined' ? document.getElementById('pdfProjSel') : null;
+    const selVal = sel && sel.value ? parseInt(sel.value) : null;
+    if (selVal) return selVal;
+  } catch (e) {
+    /* no DOM in this context — fall through */
+  }
+  const q = typeof window !== 'undefined' ? window._pdfQueue : null;
+  return (q && q.batchProjId) || null;
+}
+function _inferProjectFromCustomerName(customerName, allProjects) {
+  const custToks = _wreTokenize(customerName).filter((t) => !_ORG_STOPWORDS.has(t) && !/^\d+$/.test(t));
+  if (!custToks.length) return null;
+  const scored = (allProjects || []).map((p) => {
+    const nameToks = _wreTokenize(p.name).filter((t) => !_ORG_STOPWORDS.has(t));
+    const shared = custToks.filter((t) => nameToks.some((n) => _wreTokenFuzzyEq(t, n)));
+    return { p, score: shared.length };
+  });
+  const top = scored.reduce((a, b) => (b.score > a.score ? b : a), { score: 0 });
+  // Fix (adversarial review, 2026-09-15): require 2+ corroborating shared
+  // tokens, not 1. A single shared generic token (e.g. a future 3rd WRE
+  // district that also happens to share the word "spring" with an existing
+  // project, or a truncated CustomerName OCR) is not enough to confidently
+  // scope to a district — _wreResolveBuilding never re-validates the winning
+  // building's own address against this project choice, so a bad single-
+  // token scope could otherwise produce a confident WRONG-district match.
+  // Below threshold degrades to unscoped (null), identical to "can't infer"
+  // — never a wrong guess, just no extra safety net that round.
+  if (top.score < 2) return null;
+  const winners = scored.filter((s) => s.score === top.score);
+  return winners.length === 1 ? winners[0].p : null;
+}
+// Entry point called from findMeterMatch's final return, LAST, only after
+// identity/address-similarity/structural-commodity have all found nothing.
+// Returns a match object shaped like the existing 'address' matchType (reuses
+// it rather than inventing a new one so every existing UI branch that reads
+// match.matchType — the review-panel status label, the cascading-picker
+// hint, the single-bill banner header — already renders it correctly as an
+// unconfirmed, savable-but-flagged suggestion with zero new code). fuzzyScore
+// is pinned to 1.0 so the tag-prefixed ServiceAddress ("High Schl - 19701 S
+// Ridgeview") is never persisted as a bldg.addrAliases entry by the
+// fuzzyScore<1.0 alias-learning branch in the PDF-drop handler — that alias
+// format doesn't match this building's real address shape and would only add
+// noise. `_wreTagMatch: true` is a harmless marker for audit/debugging only;
+// nothing else reads it.
+function _wreBuildingTagMatch(extracted) {
+  const billComm = (extracted.Commodity || '').toLowerCase();
+  if (!billComm) return null;
+  const split = _tagSplit(extracted.ServiceAddress);
+  if (!split) return null;
+  // District scoping (see comment above _explicitSelectedProjectId): prefer
+  // an explicit UI selection, then customer-name inference. Either one, when
+  // it resolves to a real project, narrows candidates to that project ONLY.
+  // Neither resolving is not a failure — it just leaves the search unscoped,
+  // identical to this path's behavior before this fix.
+  let scopedProj = null;
+  const explicitPid = _explicitSelectedProjectId();
+  if (explicitPid != null) {
+    scopedProj = projects.find((p) => String(p.id) === String(explicitPid)) || null;
+  }
+  if (!scopedProj && extracted.CustomerName) {
+    scopedProj = _inferProjectFromCustomerName(extracted.CustomerName, projects);
+  }
+  const scopedProjects = scopedProj ? [scopedProj] : projects;
+  const buildings = [];
+  for (const proj of scopedProjects) {
+    const udProj = getUDProj(proj.id);
+    for (const bldg of udProj.buildings || []) buildings.push({ proj, bldg });
+  }
+  const bldgHit = _wreResolveBuilding(split.tag, split.streetPart, buildings);
+  if (!bldgHit) return null;
+  const meter = _wreResolveMeter(bldgHit.bldg, split.streetPart, billComm);
+  if (!meter) return null;
+  return {
+    proj: bldgHit.proj,
+    bldg: bldgHit.bldg,
+    meter,
+    projId: bldgHit.proj.id,
+    bldgId: bldgHit.bldg.id,
+    meterId: meter.id,
+    matchType: 'address',
+    fuzzyScore: 1.0,
+    isAlias: false,
+    _wreTagMatch: true,
+  };
+}
 function findMeterMatch(extracted) {
   if (!extracted) return null;
   const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
@@ -6350,7 +6629,10 @@ function findMeterMatch(extracted) {
     // else: 0 matching buildings (no address hit), or 2+ distinct matching
     // buildings (building-level ambiguity/collision) — leave unresolved.
   }
-  return bestMatch || addrMatch || commodityMatch;
+  // Fix (fix/wre-building-name-match, 2026-09-15): tag+building-name fallback,
+  // tried only when every match above found nothing. See _wreBuildingTagMatch
+  // above for the full design/gating rationale.
+  return bestMatch || addrMatch || commodityMatch || _wreBuildingTagMatch(extracted);
 }
 // Save a new address alias to a building (called after fuzzy match).
 // Adds aliasString to bldg.addrAliases if not already present, then persists.

@@ -6781,6 +6781,38 @@ const UTILITY_RULES = [
       const billDateM = t.match(/Bill\s*Date[\s:]*(\d{2}\/\d{2}\/\d{4})/i);
       const BillDate = billDateM ? billDateM[1] : null;
 
+      // Fix (fix/wre-building-name-match, 2026-09-15): CustomerName — the
+      // district/customer display name ("Spring Hill ISD 230") that WRE
+      // prints on the line right after "Customer #: <number>", used ONLY by
+      // findMeterMatch's building-name fallback (bill-analysis.js) to scope
+      // its candidate buildings to the invoice's own district and avoid a
+      // cross-district name collision (e.g. Louisburg USD #416 also has its
+      // own "High School"/"Middle School" buildings). Never used for
+      // anything else — no existing consumer reads CustomerName from a WRE
+      // bill, so this is purely additive. The name and the "Invoice #:"
+      // label are OCR'd onto the SAME line in this two-column pdftotext
+      // dump, separated by the wide gap pdftotext uses for column
+      // positioning ("Spring Hill ISD 230 <lots of spaces> Ioice #: ..."),
+      // so the name is captured as the text before the first 2+-space gap
+      // on the line immediately following the "Customer #:" label line.
+      let CustomerName = null;
+      {
+        const _lines = t.split(/\r?\n/);
+        for (let _i = 0; _i < _lines.length; _i++) {
+          if (!/Customer\s*#/i.test(_lines[_i])) continue;
+          for (let _j = _i + 1; _j < Math.min(_i + 3, _lines.length); _j++) {
+            const _line = _lines[_j];
+            if (!_line || !_line.trim()) continue;
+            const _m = _line.match(/^\s*([A-Za-z][A-Za-z0-9.,'&#-]*(?:\s[A-Za-z0-9.,'&#-]+)*?)\s{2,}/);
+            if (_m && _m[1] && _m[1].trim().length >= 3) {
+              CustomerName = _m[1].trim();
+              break;
+            }
+          }
+          break;
+        }
+      }
+
       // ProductionMonth: the label and value appear on SEPARATE lines in pdftotext.
       // Label line: "Customer #: Invoice #: Production Month: Acct Rep: Bill Date: Pmt Due Date:"
       // Value line: "13027 478203 November 2025 Alan Pederson 12/10/2025 12/25/2025"
@@ -7293,6 +7325,7 @@ const UTILITY_RULES = [
             _utilityName: 'Wood River Energy',
             InvoiceNumber,
             CustomerNumber,
+            CustomerName,
             AccountNumber: null,
             MeterNumber: null,
             ServiceAddress: blk.ServiceAddress || null,
@@ -7396,6 +7429,7 @@ const UTILITY_RULES = [
           _utilityName: 'Wood River Energy',
           InvoiceNumber,
           CustomerNumber,
+          CustomerName,
           AccountNumber: blk.AccountNumber,
           MeterNumber: blk.MeterNumber,
           ServiceAddress: blk.ServiceAddress,
@@ -7447,6 +7481,7 @@ const UTILITY_RULES = [
           _utilityName: 'Wood River Energy',
           InvoiceNumber,
           CustomerNumber,
+          CustomerName,
           AccountNumber: CustomerNumber,
           ServiceAddress: 'Multi-Site District Account (aggregate)',
           BillingPeriodStart,
