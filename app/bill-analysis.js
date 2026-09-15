@@ -12485,19 +12485,20 @@ setInterval(() => {
   if (bill) localStorage.setItem('_claude_bill_dump', JSON.stringify(bill));
 }, 2000);
 
-// FIX (ocr-debug-no-autodownload-prod, 2026-09-15): the two AUTOMATIC callers
-// below (queue extraction and single-file extraction) used to trigger a real
-// Downloads-folder file on every extraction in production, cluttering it.
-// isManualSave distinguishes the "💾 Save Debug" button's own call (which
-// must keep working on every host, production included) from the automatic
-// calls, which now skip the download step on production hosts only. The
+// FIX (ocr-debug-no-autodownload-prod, 2026-09-15; narrowed to Netlify-only
+// 2026-09-15): the AUTOMATIC callers below (queue extraction and single-file
+// extraction) used to trigger a real Downloads-folder file on every
+// extraction, cluttering it. isManualSave distinguishes the "💾 Save Debug"
+// button's own call (which must keep working on every host) from the
+// automatic calls, which now skip the download step on the Netlify
+// stable/demo mirror only — GitHub Pages (the working site) keeps
+// auto-downloading, same as dev (localhost/127.0.0.1/file://). The
 // debug-capture logic itself (building `output`, window._debugFileContent/
-// _debugFileName) is never removed — dev (localhost/127.0.0.1/file://) keeps
-// auto-downloading exactly as before, and the manual button can still produce
+// _debugFileName) is never removed, and the manual button can still produce
 // a file on demand on any host.
-function _isProdHost() {
+function _isDebugAutoSuppressedHost() {
   const h = (window.location && window.location.hostname) || '';
-  return h.endsWith('github.io') || h.endsWith('netlify.app');
+  return h.endsWith('netlify.app');
 }
 function savePDFDebug(isManualSave) {
   const raw = window._pdfRawText || '(no raw text)';
@@ -12588,11 +12589,12 @@ function savePDFDebug(isManualSave) {
   window._debugFileContent = output;
   window._debugFileName = debugFilename;
   // ocr-debug-no-autodownload-prod: an AUTOMATIC call (isManualSave falsy) on
-  // a production host stops here — the capture above already ran (so
-  // window._debugFileContent/_debugFileName are current for any other code
-  // that reads them), it just skips the actual Downloads-folder write. A
-  // manual "Save Debug" button click, or ANY call on a dev host, still saves.
-  if (!isManualSave && _isProdHost()) return;
+  // the Netlify stable/demo mirror stops here — the capture above already ran
+  // (so window._debugFileContent/_debugFileName are current for any other
+  // code that reads them), it just skips the actual Downloads-folder write. A
+  // manual "Save Debug" button click, or ANY call on GitHub Pages or a dev
+  // host, still saves.
+  if (!isManualSave && _isDebugAutoSuppressedHost()) return;
   // Save to Downloads as a file
   const blob = new Blob([output], { type: 'text/plain' });
   const a = document.createElement('a');
