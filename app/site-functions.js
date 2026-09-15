@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.837',
+    date: '2026-09-15',
+    title: 'Energy Department: three PDF/OCR extraction fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department, PDF import: a rotated or sideways scanned bill that failed to extract on your first try after a hard refresh now gets its automatic re-try at the correct orientation, instead of skipping it.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department, PDF import: the page no longer freezes while a scanned bill is being processed. Large bills that take longer to prepare are now given up to 60 seconds instead of being dropped early.',
+      },
+      {
+        type: 'change',
+        text: 'Energy Department, PDF import: the OCR debug file no longer downloads automatically on the live website. The "Save Debug" button still saves it any time you click it.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.836',
     date: '2026-09-15',
     title: 'Energy Department: fixed phantom savings from incomplete post-baseline bills',
