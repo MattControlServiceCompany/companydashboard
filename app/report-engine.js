@@ -8235,10 +8235,19 @@ function rptPageAppendixWeather(n, d, appLetter) {
 
   var weatherMonthly = (d.weather && d.weather.monthly) || [];
   var tableRows = '';
-  var totHddBl = 0,
-    totHddCur = 0,
-    totCddBl = 0,
-    totCddCur = 0;
+  // Single source of truth (fix 5e43c081): totals come straight from d.weather.totals
+  // (collectWeatherData, csv-import.js), the SAME object the narrative paragraph below
+  // reads from, so the table and narrative can never disagree. Previously this function
+  // re-derived its own totHddBl by unconditionally summing every month in weatherMonthly
+  // (12 months, annual sum) while totHddCur/totCddBl/totCddCur were only summed for
+  // inPeriod months (quarter sum) — an apples-to-annual-oranges-to-quarter mismatch that
+  // produced "Baseline Period Avg" 5,535 in the table vs. "baseline average of 2,114" in
+  // the narrative for the same certified report.
+  var _wTotals = (d.weather && d.weather.totals) || { hddBl: 0, hddCur: 0, cddBl: 0, cddCur: 0 };
+  var totHddBl = _wTotals.hddBl || 0,
+    totHddCur = _wTotals.hddCur || 0,
+    totCddBl = _wTotals.cddBl || 0,
+    totCddCur = _wTotals.cddCur || 0;
   var _wMoNames = [
     'January',
     'February',
@@ -8266,12 +8275,6 @@ function rptPageAppendixWeather(n, d, appLetter) {
     var cddBl = mo.cddBl || 0;
     var cddCur = mo.cddCur || 0;
     var ip = mo.inPeriod;
-    totHddBl += hddBl;
-    if (ip) {
-      totHddCur += hddCur;
-      totCddBl += cddBl;
-      totCddCur += cddCur;
-    }
     var rowStyle = ip ? '' : 'color:var(--rpt-page-text);background:var(--rpt-chart-bg)';
     var hddVal = ip ? hddCur : hddBl;
     var cddVal = ip ? cddCur : cddBl;
@@ -8388,22 +8391,16 @@ function rptPageAppendixWeather(n, d, appLetter) {
 
   var hddCddParagraph = '';
   if (d.weather) {
-    var pHDD =
-      d.weather.totals && d.weather.totals.hddCur ? Math.round(d.weather.totals.hddCur).toLocaleString() : '\u2014';
-    var bHDD =
-      d.weather.totals && d.weather.totals.hddBl ? Math.round(d.weather.totals.hddBl).toLocaleString() : '\u2014';
-    var hddPctChg =
-      d.weather.totals && d.weather.totals.hddBl > 0
-        ? Math.round(((d.weather.totals.hddCur - d.weather.totals.hddBl) / d.weather.totals.hddBl) * 100)
-        : 0;
-    var pCDD =
-      d.weather.totals && d.weather.totals.cddCur ? Math.round(d.weather.totals.cddCur).toLocaleString() : '\u2014';
-    var bCDD =
-      d.weather.totals && d.weather.totals.cddBl ? Math.round(d.weather.totals.cddBl).toLocaleString() : '\u2014';
-    var cddPctChg =
-      d.weather.totals && d.weather.totals.cddBl > 0
-        ? Math.round(((d.weather.totals.cddCur - d.weather.totals.cddBl) / d.weather.totals.cddBl) * 100)
-        : 0;
+    // Fix 5e43c081: reuse the SAME totHddBl/totHddCur/totCddBl/totCddCur/totHddVarFinal/
+    // totCddVarFinal computed above (from d.weather.totals) instead of re-reading
+    // d.weather.totals a second time here \u2014 one calculation feeds both the table and this
+    // paragraph, so they cannot diverge again.
+    var pHDD = totHddCur ? Math.round(totHddCur).toLocaleString() : '\u2014';
+    var bHDD = totHddBl ? Math.round(totHddBl).toLocaleString() : '\u2014';
+    var hddPctChg = totHddBl > 0 ? Math.round(totHddVarFinal) : 0;
+    var pCDD = totCddCur ? Math.round(totCddCur).toLocaleString() : '\u2014';
+    var bCDD = totCddBl ? Math.round(totCddBl).toLocaleString() : '\u2014';
+    var cddPctChg = totCddBl > 0 ? Math.round(totCddVarFinal) : 0;
     hddCddParagraph =
       '<div contenteditable="true" style="margin-top:10px;font-size:11px;color:var(--rpt-page-text);line-height:1.7">' +
       'Heating degree days (HDD) for the period were ' +
