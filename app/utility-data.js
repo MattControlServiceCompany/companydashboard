@@ -10195,6 +10195,15 @@ function renderPerfPane(pane, m, bills, incl) {
     filterYMs: filteredPostRows.length ? filteredPostRows.map((r) => r.ym) : truePostRows.map((r) => r.ym),
     effectiveRows: _useNormalWeather ? _effectiveRows : null,
   });
+  // 2026-09-15 (partial-row display gate fix): the table must show whenever
+  // _perfResult actually built rows — NOT just when filteredPostRows (which
+  // excludes partial-coverage months) is non-empty. buildMeterPerfTableHTML
+  // already falls back to partial rows when the non-partial set is empty
+  // (lib/perf-table.js:44-56), and savings.js counts partial rows with no
+  // exclusion — so gating display on filteredPostRows.length hid data the
+  // savings tile was already counting. Only show "No post-baseline data yet"
+  // when there are genuinely zero post-baseline rows.
+  const _perfHasRows = !!(_perfResult && _perfResult.html && _perfResult.rows && _perfResult.rows.length);
   const _perfRowSavings = (_perfResult.rows || []).map((r) => ({
     ym: r.ym,
     savings: r.savings,
@@ -10451,7 +10460,7 @@ function renderPerfPane(pane, m, bills, incl) {
     '<div style="margin-bottom:14px">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:4px">' +
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Post-Baseline Monthly vs Baseline</div>' +
-    (filteredPostRows.length && _perfResult.html && typeof tableZoomControlHTML === 'function'
+    (_perfHasRows && typeof tableZoomControlHTML === 'function'
       ? tableZoomControlHTML('perf-table-wrap', 'en_perf_zoom', 'perf-zoom-lbl')
       : '') +
     '</div>' +
@@ -10460,7 +10469,7 @@ function renderPerfPane(pane, m, bills, incl) {
       ? 'Baseline = weather-normalized calendar month value · <span style="color:var(--violet)">🔬 R</span> = regression-derived'
       : 'Baseline = calendar month normalized value (simple avg)') +
     '</div>' +
-    (filteredPostRows.length && _perfResult.html
+    (_perfHasRows
       ? _perfResult.html
       : '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>' +
         fmtMon(blEnd + '-01') +
@@ -10472,7 +10481,7 @@ function renderPerfPane(pane, m, bills, incl) {
     demandSection;
 
   // Apply persisted zoom to perf table (restores stored zoom level on every tab open)
-  if (filteredPostRows.length && _perfResult.html && typeof setTableZoom === 'function') {
+  if (_perfHasRows && typeof setTableZoom === 'function') {
     requestAnimationFrame(function () {
       setTableZoom('perf-table-wrap', null, 'en_perf_zoom', 'perf-zoom-lbl');
     });
