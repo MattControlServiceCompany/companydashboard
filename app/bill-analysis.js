@@ -6159,6 +6159,70 @@ function _wreResolveMeter(bldg, streetPart, commodity) {
   });
   return winners.length === 1 ? winners[0] : null;
 }
+// Fix (fix/wre-building-name-match, review round 2, 2026-09-15): district
+// scoping. The unscoped version above searches every project's buildings,
+// so a generic building-type token ("high"+"school") can collide across
+// DIFFERENT districts (Louisburg USD #416 has its own "High School" and
+// "Middle School" buildings, unrelated to Spring Hill's WRE invoice) —
+// verified against the real backup, this silently pushed 2 real Spring Hill
+// sites to manual that a human would resolve instantly from context. Two
+// ways to know which district a WRE bill belongs to, tried in this order
+// (never guessed — an inconclusive result at either step just leaves the
+// search unscoped, exactly like before this fix, never worse):
+//   1. An explicit destination project already selected in the PDF/OCR UI
+//      (the `pdfProjSel` dropdown, or its batch-mode mirror
+//      `window._pdfQueue.batchProjId`) — the same value every other
+//      identity/address/commodity-fallback UI branch in this file already
+//      treats as the user's chosen destination.
+//   2. The invoice's own customer/district name (WRE prints "Spring Hill
+//      ISD 230" right after "Customer #:" — captured into CustomerName by
+//      the WRE extractor in energy-savings.js) fuzzy-matched against every
+//      project's name, dropping generic organizational-suffix tokens
+//      (isd/usd/school/schools/district/etc.) that would otherwise blur
+//      every K-12 project together. Requires a UNIQUE top scorer with at
+//      least one real (non-stopword) token in common — a tie or zero
+//      matches leaves scoping off rather than guessing a district.
+const _ORG_STOPWORDS = new Set([
+  'isd',
+  'usd',
+  'school',
+  'schools',
+  'schl',
+  'district',
+  'county',
+  'co',
+  'inc',
+  'llc',
+  'university',
+  'college',
+  'of',
+  'the',
+  'and',
+]);
+function _explicitSelectedProjectId() {
+  try {
+    const sel = typeof document !== 'undefined' ? document.getElementById('pdfProjSel') : null;
+    const selVal = sel && sel.value ? parseInt(sel.value) : null;
+    if (selVal) return selVal;
+  } catch (e) {
+    /* no DOM in this context — fall through */
+  }
+  const q = typeof window !== 'undefined' ? window._pdfQueue : null;
+  return (q && q.batchProjId) || null;
+}
+function _inferProjectFromCustomerName(customerName, allProjects) {
+  const custToks = _wreTokenize(customerName).filter((t) => !_ORG_STOPWORDS.has(t) && !/^\d+$/.test(t));
+  if (!custToks.length) return null;
+  const scored = (allProjects || []).map((p) => {
+    const nameToks = _wreTokenize(p.name).filter((t) => !_ORG_STOPWORDS.has(t));
+    const shared = custToks.filter((t) => nameToks.some((n) => _wreTokenFuzzyEq(t, n)));
+    return { p, score: shared.length };
+  });
+  const top = scored.reduce((a, b) => (b.score > a.score ? b : a), { score: 0 });
+  if (top.score < 1) return null;
+  const winners = scored.filter((s) => s.score === top.score);
+  return winners.length === 1 ? winners[0].p : null;
+}
 // Entry point called from findMeterMatch's final return, LAST, only after
 // identity/address-similarity/structural-commodity have all found nothing.
 // Returns a match object shaped like the existing 'address' matchType (reuses
@@ -6177,8 +6241,22 @@ function _wreBuildingTagMatch(extracted) {
   if (!billComm) return null;
   const split = _tagSplit(extracted.ServiceAddress);
   if (!split) return null;
+  // District scoping (see comment above _explicitSelectedProjectId): prefer
+  // an explicit UI selection, then customer-name inference. Either one, when
+  // it resolves to a real project, narrows candidates to that project ONLY.
+  // Neither resolving is not a failure — it just leaves the search unscoped,
+  // identical to this path's behavior before this fix.
+  let scopedProj = null;
+  const explicitPid = _explicitSelectedProjectId();
+  if (explicitPid != null) {
+    scopedProj = projects.find((p) => String(p.id) === String(explicitPid)) || null;
+  }
+  if (!scopedProj && extracted.CustomerName) {
+    scopedProj = _inferProjectFromCustomerName(extracted.CustomerName, projects);
+  }
+  const scopedProjects = scopedProj ? [scopedProj] : projects;
   const buildings = [];
-  for (const proj of projects) {
+  for (const proj of scopedProjects) {
     const udProj = getUDProj(proj.id);
     for (const bldg of udProj.buildings || []) buildings.push({ proj, bldg });
   }
