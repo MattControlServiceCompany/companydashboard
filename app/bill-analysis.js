@@ -9149,6 +9149,11 @@ function clearPDFOCR() {
   _mbRowTargets = {};
   _mbRowState = {};
   _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
+  // Cleanup (review, 2026-09-15): also reset the Save-All re-entrancy guard —
+  // if the user clicks Clear mid-Save-All, this stayed true and would block
+  // a future Save-All on the next extraction. Matches its declared initial
+  // value (`let _mbSaveAllInProgress = false;`, ~5791).
+  _mbSaveAllInProgress = false;
   const box = document.getElementById('pdfAIBox');
   box._showingRaw = false;
   box.textContent = 'Upload a PDF and select document type.';
@@ -12321,10 +12326,14 @@ function savePDFDebug(isManualSave) {
 // (module-scope `pdfB64` for a single-file extraction; per-file
 // `window._pdfQueue.results[i].pdfB64` for batch/queue mode) but there was
 // previously no way to see it while reviewing extracted fields. Reuses the
-// existing `_showPdfModal` viewer (bill-analysis.js) and the SAME page-
-// resolution logic `togglePDFRawText()` uses just below (bill._pageIndex /
+// existing `_showPdfModal` viewer (bill-analysis.js) and an EQUIVALENT
+// page-range resolution to `togglePDFRawText()` just below (bill._pageIndex /
 // _pageStart / _pageEnd against the currently active bill in
-// window._pdfMultiBills[window._pdfMultiIdx]) — that global pair is set
+// window._pdfMultiBills[window._pdfMultiIdx]) — equivalent-in-effect, not
+// identical: togglePDFRawText() additionally clamps its pageIdx against
+// validSections.length and handles the Evergy non-page-marker text-split
+// case, neither of which applies here (PDFLib already clamps start/end
+// against the PDF's own total page count below). That global pair is set
 // identically by both the single-file path and renderQueueResults(), so one
 // implementation covers both review modes without branching on which mode
 // is active.
@@ -12345,8 +12354,9 @@ async function viewCurrentExtractionPDF(event) {
       return;
     }
 
-    // Resolve the active bill's page range — same fields/precedence as
-    // togglePDFRawText()'s _pageStart/_pageEnd/_pageIndex handling above.
+    // Resolve the active bill's page range — equivalent field/precedence to
+    // togglePDFRawText()'s _pageStart/_pageEnd/_pageIndex handling above
+    // (not identical; see the function-level comment above).
     const bills = window._pdfMultiBills || [];
     const idx = window._pdfMultiIdx || 0;
     const currentBill = bills[idx] || null;
@@ -15493,9 +15503,27 @@ async function processPDF(file) {
                           // false at that time). When this retry pass supplies real usage or
                           // charge data, that stale gate flag survived next to now-good data,
                           // hiding a savable bill behind a manual-review block. Re-evaluate
-                          // with the same generic gate used for this pass (_singleHasKeyField
-                          // — usage OR charge present) and clear the stale flags once the
-                          // merged bill actually has real data.
+                          // and clear the stale flags once the merged bill actually has real
+                          // SITE data.
+                          // Correction (review NO-GO, 2026-09-15): the first version of this
+                          // guard used `_singleHasKeyField(orig)`, which also counts
+                          // `BillingPeriodStart` — on a Wood River Energy multi-site invoice
+                          // that field is stamped INVOICE-LEVEL onto every site block
+                          // (energy-savings.js ~6831-6868, shared across all sites),
+                          // including genuinely-unreadable ones. That let a site with NO
+                          // account, NO usage, and NO charge still pass `_singleHasKeyField`
+                          // (via BillingPeriodStart alone) and get un-gated with all-null
+                          // data — defeating the WRE "site block unreadable" gate. Require a
+                          // SITE-identifying or SITE-quantifying field instead — never the
+                          // shared invoice-level date fields.
+                          const _mergedHasSiteData =
+                            orig.AccountNumber ||
+                            orig.MeterNumber ||
+                            orig.NaturalGasMMbtu ||
+                            orig.NaturalGasTherms ||
+                            orig.NaturalGasCCF ||
+                            orig.GasCharge ||
+                            orig.TotalCurrentCharges;
                           // Guard: never clear a manual-review flag that TASK 3's rate/sum
                           // cross-check (blk._mmbtuRateMismatch, energy-savings.js) set on
                           // PURPOSE because a printed rate didn't match a printed charge —
@@ -15505,7 +15533,7 @@ async function processPDF(file) {
                           if (
                             (orig.parseError || orig._manualReview) &&
                             !orig._mmbtuRateMismatch &&
-                            _singleHasKeyField(orig)
+                            _mergedHasSiteData
                           ) {
                             orig.parseError = false;
                             orig._manualReview = false;
