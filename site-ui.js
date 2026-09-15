@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.15.839'; // Utility Data — meter buttons with an unrecognized type no longer disappear when clicked
+  var CH_VERSION = 'v2026.09.15.840'; // Utility Data — meter buttons with an unrecognized type no longer disappear when clicked
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

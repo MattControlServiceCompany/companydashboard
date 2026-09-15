@@ -7106,7 +7106,13 @@ const UTILITY_RULES = [
             // Without this, any Trigger charge >= $1,000 silently parsed as null, causing
             // _wreTriggerCharge to stay null and the per-site Sum Mismatch banner to fire
             // even though GasCharge/TotalCurrentCharges themselves were correct.
-            const _trigDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+            // Fix (2026-09-15, WRE OCR-tolerance sweep): OCR misread "$" as "£" on a
+            // real, legible High School charge (Inv 447604, site #3) — verified the
+            // amount itself (90.68) was correct, only the currency glyph was wrong.
+            // Widen the currency anchor to accept "£" too; the amount shape
+            // (\d+\.\d{2}) is unchanged so this can't start matching non-currency
+            // numbers.
+            const _trigDollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
             if (_trigDollarM) _cur.triggerCharge = parseFloat(_wreFixOcrDollar(_trigDollarM[1]).replace(/,/g, ''));
             const _trigMmbtuM = ln.match(/Trigger\s*-?\s*Fixed\s+([\d,]+\.?\d*)/i);
             if (_trigMmbtuM) _cur.triggerMMbtu = parseFloat(_trigMmbtuM[1].replace(/,/g, ''));
@@ -7127,7 +7133,9 @@ const UTILITY_RULES = [
             // Fix (2026-07-22): same OCR comma→period corruption fix as the Trigger line
             // above — Index charges are frequently >= $1,000 (e.g. "$1,337.90" misread as
             // "$1.337.90"), which the old plain-comma regex silently failed to match.
-            const _idxDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+            // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
+            // tolerance as the Trigger charge above.
+            const _idxDollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
             if (_idxDollarM) _cur.indexCharge = parseFloat(_wreFixOcrDollar(_idxDollarM[1]).replace(/,/g, ''));
             const _idxMmbtuM = ln.match(/Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]+([\d,]+\.?\d*)/i);
             if (_idxMmbtuM) _cur.indexMMbtu = parseFloat(_idxMmbtuM[1].replace(/,/g, ''));
@@ -7145,8 +7153,63 @@ const UTILITY_RULES = [
           if (_inSites && _cur && /Special\s+Weather\s+Event/i.test(ln)) {
             // Fix (2026-07-22): same OCR comma→period corruption fix as Trigger/Index above,
             // applied here too since SWE surcharges can also exceed $1,000 (e.g. JAN 26 invoice).
-            const _sweDollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+            // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
+            // tolerance as the Trigger/Index charges above.
+            const _sweDollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
             if (_sweDollarM) _cur.sweCharge = parseFloat(_wreFixOcrDollar(_sweDollarM[1]).replace(/,/g, ''));
+            continue;
+          }
+
+          // Fix (2026-09-15, WRE OCR-tolerance sweep): tolerant fallback for a
+          // component-charge line whose LABEL is too OCR-garbled to match Trigger/
+          // Index/SWE above (verified: "Mcker (FIM)" for "Trigger (FIM)" on Inv
+          // 447604 site #6; "Inher (FOR)" for "Index (FOR)" on site #7) but whose
+          // NUMBER columns are still legible. Fires ONLY when nothing has already
+          // claimed a component charge for this block (so it can only ever fill an
+          // otherwise-empty site, never override a value the stricter label-matched
+          // branches already read) and the line carries a rate-shaped token
+          // (\d{1,3}\.\d{4}, tolerating one stray leading digit from a "$"→digit
+          // misread, e.g. "34.7550") that signals this is a real charge/rate row.
+          if (
+            _inSites &&
+            _cur &&
+            _cur.indexCharge == null &&
+            _cur.triggerCharge == null &&
+            !/^\s*Sub[\s.\-]{0,2}Total/i.test(ln) &&
+            /\d{1,3}\.\d{4}/.test(ln)
+          ) {
+            // Charge: try the standard $/£-anchored patterns first (Fix 1's widened
+            // currency class) — covers a clean "$417.16" (site #6). If none match,
+            // fall back to a last-resort split-number pattern anchored to end-of-
+            // line (no currency sign, no decimal point at all) — covers site #7's
+            // "3082 38" -> "3082.38". The (?<![.\d]) guard is required: without it
+            // this matched digits carved out of the MIDDLE of an unrelated rate
+            // token (verified misfire: "34.7550             47" on Inv 447604 site
+            // #10 matched "7550"+"47" as a fake $7,550.47 charge) — the guard
+            // forces group 1 to start at a real token boundary, not mid-decimal.
+            const _tolDollarM =
+              ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) ||
+              ln.match(/[$£]([\d,]+\.\d{2})\s*$/) ||
+              ln.match(/(?<![.\d])(\d{3,5})\s+(\d{2})\s*$/);
+            if (_tolDollarM) {
+              const _tolLowConfidence = _tolDollarM.length === 3; // last-resort split match fired
+              const _tolRaw = _tolLowConfidence ? _tolDollarM[1] + '.' + _tolDollarM[2] : _tolDollarM[1];
+              _cur.indexCharge = parseFloat(_wreFixOcrDollar(_tolRaw).replace(/,/g, ''));
+              // MMbtu: first plain number on the line. Only trusted alongside a
+              // captured charge — never invent a usage number from a line where
+              // even the charge couldn't be recovered.
+              const _tolMmbtuM = ln.match(/(\d{1,4}(?:,\d{3})*\.?\d*)/);
+              if (_tolMmbtuM) {
+                _cur.indexMMbtu = parseFloat(_tolMmbtuM[1].replace(/,/g, ''));
+                // Low-confidence path (charge had no currency sign/decimal at all —
+                // site #7): there is no printed rate or Sub-Total on this invoice to
+                // cross-check the usage against, so don't silently trust it. Reuse
+                // the existing _mmbtuRateMismatch manual-review flag (below, near
+                // TASK 3's rate cross-check) rather than inventing a second
+                // mechanism.
+                if (_tolLowConfidence) _cur._tolUnverifiedMMbtu = true;
+              }
+            }
             continue;
           }
 
@@ -7169,7 +7232,10 @@ const UTILITY_RULES = [
             const _mmbtuM = ln.match(/Sub[\s.\-]{0,2}Total\s*[:;,.]?\s*([\d,]+\.?\d*)/i);
             // Last dollar value on the line = site charge.
             // Accept both clean form ($1,425.42) and OCR-corrupted form ($1.425.42).
-            const _dollarM = ln.match(/\$(\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/\$([\d,]+\.\d{2})\s*$/);
+            // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
+            // tolerance as the component-charge patterns above (verified: Inv 447604
+            // site #3's Sub-Total prints "£90.68").
+            const _dollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
             if (_mmbtuM) _cur.mmbtu = parseFloat(_mmbtuM[1].replace(/,/g, ''));
             if (_dollarM) _cur.dollar = _wreFixOcrDollar(_dollarM[1]);
             // Do NOT clear _cur here — a stray non-closing line before the next
@@ -7407,7 +7473,13 @@ const UTILITY_RULES = [
           return sum > subTotal + tolerance;
         };
         const _sumMismatch = _wreComponentSumMismatch(blk.mmbtu, blk.triggerMMbtu, blk.indexMMbtu);
-        const _mmbtuRateMismatch = _trigMismatch || _idxMismatch || _sumMismatch;
+        // Fix (2026-09-15, WRE OCR-tolerance sweep): the tolerant component-line
+        // fallback above can recover a usage number with NO printed rate and NO
+        // Sub-Total to cross-check it against (Inv 447604 site #7) — the rate/sum
+        // checks below go blind in that case (nothing to compare), so the fallback
+        // marks that specific case via _tolUnverifiedMMbtu; fold it into the same
+        // existing manual-review flag rather than inventing a second mechanism.
+        const _mmbtuRateMismatch = _trigMismatch || _idxMismatch || _sumMismatch || !!blk._tolUnverifiedMMbtu;
         if (_mmbtuRateMismatch) {
           console.log(
             '[WRE] Rate/sum cross-check FAILED for site #' +

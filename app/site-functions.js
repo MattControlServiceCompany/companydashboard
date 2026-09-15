@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.840',
+    date: '2026-09-15',
+    title: 'Energy Department: Wood River Energy invoice charges no longer silently dropped by OCR glitches',
+    items: [
+      {
+        type: 'fix',
+        text: "Energy Department, PDF import: Wood River Energy invoices with a scan glitch that misreads the dollar sign are now read correctly instead of silently dropping that site's charge. Sites whose charge line is too garbled to read normally are now recovered when the dollar amount is still legible, and are flagged for manual review if nothing else on the invoice confirms the number.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.839',
     date: '2026-09-15',
     title: 'Energy Department: Wood River Energy invoices auto-match buildings by name',
