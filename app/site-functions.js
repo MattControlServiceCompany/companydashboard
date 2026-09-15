@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.839',
+    date: '2026-09-15',
+    title: 'Energy Department: Wood River Energy invoices auto-match buildings by name',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department, PDF import: a Wood River Energy multi-site invoice now auto-matches each site to the correct building by reading its service-address building-name tag (for example "High Schl" or "Mid Sch So"), checked only against buildings in that invoice\'s own district so same-named buildings in other districts are never mixed up. If a site\'s address is ambiguous, it is left for you to assign manually instead of being guessed.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.838',
     date: '2026-09-15',
     title: 'Energy Department: four PDF extraction-review fixes',
