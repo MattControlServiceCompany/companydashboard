@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.836',
+    date: '2026-09-15',
+    title: 'Energy Department: fixed phantom savings from incomplete post-baseline bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department: a project with only a stub or genuinely short bill after the baseline period no longer shows fake savings. The dashboard, scorecard, reports, and client portal now all agree and show "No post-baseline data yet" with zero savings until a real full bill comes in.',
+      },
+      {
+        type: 'change',
+        text: 'Meter Performance tab: water/sewer bills that are complete but simply straddle a calendar-month boundary still show their table and real savings as before. Only bills that are actually too short to be a full billing cycle are excluded.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.835',
     date: '2026-09-15',
     title: 'Energy Department: Bill import — "Confirm & Save" and "Overwrite All" now save right away',
