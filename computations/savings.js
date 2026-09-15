@@ -28,6 +28,15 @@ const SAVINGS_CALC_VERSION = '2026.09.10.814';
 function getMeterSavings(m, bills, incl, projId, bldgId) {
   const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {} };
 
+  // 2026-09-15 (SA-gate fix): savings only compute for a CONTRACTED project. The contract
+  // signal is the project record's `sa` field (Service Agreement #) — a project with no SA
+  // (Spring Hill, JOCO, Baker: sa="") must show ZERO savings everywhere, not a phantom
+  // number from a bill that happens to look complete. String(x.id) === String(projId) is
+  // required because app/portal-export.js:67 passes projId as a String while projects[].id
+  // are numbers — a strict === here would silently fail that caller.
+  const _proj = typeof projects !== 'undefined' ? projects.find((x) => String(x.id) === String(projId)) : null;
+  if (!_proj || !_proj.sa) return empty;
+
   // Phase 1 multi-baseline dispatch: if the meter has a baselines array, route to
   // the multi-baseline path. Falls back to legacy single-baseline logic below.
   if (m.baselines && m.baselines.length > 0) {
