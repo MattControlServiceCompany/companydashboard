@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.841',
+    date: '2026-09-15',
+    title: 'Energy Department: OCR debug file auto-download restored on GitHub Pages',
+    items: [
+      {
+        type: 'fix',
+        text: "Energy Department, PDF import: the OCR debug file now auto-downloads again when you use CompanyHub on GitHub Pages (and on your local computer). Auto-download is turned off only on the Netlify copy of the site. The manual 'Save Debug' button still works everywhere.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.840',
     date: '2026-09-15',
     title: 'Energy Department: Wood River Energy invoice charges no longer silently dropped by OCR glitches',
