@@ -1742,6 +1742,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.838',
+    date: '2026-09-15',
+    title: 'Energy Department: four PDF extraction-review fixes',
+    items: [
+      {
+        type: 'fix',
+        text: "Energy Department, PDF import: a Wood River Energy multi-site invoice no longer drops a site's usage and charges just because its account number could not be read. That site now saves with a warning you can edit, instead of being discarded.",
+      },
+      {
+        type: 'fix',
+        text: "Energy Department, PDF import: after an OCR retry recovers a site's real data, the extraction screen no longer keeps showing that site as unreadable.",
+      },
+      {
+        type: 'feature',
+        text: 'Energy Department, PDF import: a new "View PDF" button on the extraction screen opens the source page in the PDF viewer so you can check it while reviewing.',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Department, PDF import: clicking Clear now fully resets the multi-building review table instead of leaving old rows on screen.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.837',
     date: '2026-09-15',
     title: 'Energy Department: three PDF/OCR extraction fixes',

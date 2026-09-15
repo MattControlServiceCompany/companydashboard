@@ -9134,6 +9134,26 @@ function clearPDFOCR() {
     dbg.style.display = 'none';
     dbg.textContent = '🔍 Raw Text';
   }
+  const viewBtn = document.getElementById('pdfViewBtn');
+  if (viewBtn) viewBtn.style.display = 'none';
+  // Fix (2026-09-15, extraction-review-sweep): Clear reset everything EXCEPT
+  // the multi-building review panel (showMultiBuildingReviewPanel), which
+  // stayed display:block with the PREVIOUS extraction's rows/content still
+  // in the DOM after Clear. Hide it and wipe its content + row state, same
+  // as every other panel reset above.
+  const mbPanel = document.getElementById('pdfMultiBldgPanel');
+  if (mbPanel) {
+    mbPanel.style.display = 'none';
+    mbPanel.innerHTML = '';
+  }
+  _mbRowTargets = {};
+  _mbRowState = {};
+  _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
+  // Cleanup (review, 2026-09-15): also reset the Save-All re-entrancy guard —
+  // if the user clicks Clear mid-Save-All, this stayed true and would block
+  // a future Save-All on the next extraction. Matches its declared initial
+  // value (`let _mbSaveAllInProgress = false;`, ~5791).
+  _mbSaveAllInProgress = false;
   const box = document.getElementById('pdfAIBox');
   box._showingRaw = false;
   box.textContent = 'Upload a PDF and select document type.';
@@ -9907,6 +9927,8 @@ function renderQueueResults() {
   if (dbgBtn) dbgBtn.style.display = '';
   const saveDbgBtn = document.getElementById('pdfSaveDebugBtn');
   if (saveDbgBtn) saveDbgBtn.style.display = '';
+  const queueViewBtn = document.getElementById('pdfViewBtn');
+  if (queueViewBtn) queueViewBtn.style.display = '';
 
   if (q._activeFileIdx == null) q._activeFileIdx = 0;
 
@@ -12298,6 +12320,102 @@ function savePDFDebug(isManualSave) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
   showToast('Debug file saved to Downloads');
+}
+// Fix 3 (2026-09-15, extraction-review-sweep): "View PDF" button on the
+// extraction review screen. The source PDF is already retained on the page
+// (module-scope `pdfB64` for a single-file extraction; per-file
+// `window._pdfQueue.results[i].pdfB64` for batch/queue mode) but there was
+// previously no way to see it while reviewing extracted fields. Reuses the
+// existing `_showPdfModal` viewer (bill-analysis.js) and an EQUIVALENT
+// page-range resolution to `togglePDFRawText()` just below (bill._pageIndex /
+// _pageStart / _pageEnd against the currently active bill in
+// window._pdfMultiBills[window._pdfMultiIdx]) — equivalent-in-effect, not
+// identical: togglePDFRawText() additionally clamps its pageIdx against
+// validSections.length and handles the Evergy non-page-marker text-split
+// case, neither of which applies here (PDFLib already clamps start/end
+// against the PDF's own total page count below). That global pair is set
+// identically by both the single-file path and renderQueueResults(), so one
+// implementation covers both review modes without branching on which mode
+// is active.
+async function viewCurrentExtractionPDF(event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  try {
+    // Resolve the source PDF: queue/batch mode keeps its own per-file pdfB64
+    // on the active queue result; single-file mode uses the module-scope
+    // `pdfB64` set when the file was dropped/selected.
+    let b64 = pdfB64;
+    const q = window._pdfQueue;
+    if (q && q.results && q._activeFileIdx != null) {
+      const activeResult = q.results[q._activeFileIdx];
+      if (activeResult && activeResult.pdfB64) b64 = activeResult.pdfB64;
+    }
+    if (!b64) {
+      showToast('No PDF available for this extraction');
+      return;
+    }
+
+    // Resolve the active bill's page range — equivalent field/precedence to
+    // togglePDFRawText()'s _pageStart/_pageEnd/_pageIndex handling above
+    // (not identical; see the function-level comment above).
+    const bills = window._pdfMultiBills || [];
+    const idx = window._pdfMultiIdx || 0;
+    const currentBill = bills[idx] || null;
+    let pageStart = null;
+    let pageEnd = null;
+    if (currentBill) {
+      if (currentBill._pageStart != null && currentBill._pageEnd != null) {
+        pageStart = currentBill._pageStart;
+        pageEnd = currentBill._pageEnd;
+      } else if (currentBill._pageIndex != null) {
+        pageStart = currentBill._pageIndex;
+        pageEnd = currentBill._pageIndex;
+      }
+    }
+
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    let outBytes = bytes;
+    let statusMsg = 'Opening full PDF (no page range for this bill)';
+    if (pageStart != null && pageEnd != null && window.PDFLib) {
+      try {
+        const srcDoc = await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+        const total = srcDoc.getPageCount();
+        let start = Math.max(1, parseInt(pageStart, 10) || 1);
+        let end = Math.min(total, parseInt(pageEnd, 10) || total);
+        if (start > end) {
+          const t = start;
+          start = end;
+          end = t;
+        }
+        if (start <= total) {
+          const idxs = [];
+          for (let p = start; p <= end; p++) {
+            const pidx = p - 1;
+            if (pidx >= 0 && pidx < total) idxs.push(pidx);
+          }
+          if (idxs.length) {
+            const outDoc = await window.PDFLib.PDFDocument.create();
+            const copied = await outDoc.copyPages(srcDoc, idxs);
+            copied.forEach((pg) => outDoc.addPage(pg));
+            outBytes = await outDoc.save();
+            statusMsg = 'Showing page' + (start === end ? ' ' + start : 's ' + start + '–' + end) + ' of ' + total;
+          } else {
+            statusMsg = 'Stored page range is outside the PDF (' + total + ' pages). Showing full PDF.';
+          }
+        } else {
+          statusMsg = 'Stored page range is outside the PDF (' + total + ' pages). Showing full PDF.';
+        }
+      } catch (sliceErr) {
+        console.error('[viewCurrentExtractionPDF] pdf-lib slice failed, showing full PDF:', sliceErr);
+        statusMsg = 'Slice failed (' + (sliceErr.message || 'pdf-lib error') + ') — showing full PDF';
+      }
+    }
+    const blob = new Blob([outBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    _showPdfModal(url, statusMsg);
+  } catch (e) {
+    console.error('[viewCurrentExtractionPDF] failed:', e);
+    showToast('Could not open PDF: ' + e.message);
+  }
 }
 function togglePDFRawText() {
   const box = document.getElementById('pdfAIBox');
@@ -15045,6 +15163,8 @@ async function processPDF(file) {
         window._pdfRawText = text;
         document.getElementById('pdfDebugBtn').style.display = 'inline-block';
         document.getElementById('pdfSaveDebugBtn').style.display = 'inline-block';
+        const _singleViewBtn = document.getElementById('pdfViewBtn');
+        if (_singleViewBtn) _singleViewBtn.style.display = 'inline-block';
         let rule = UTILITY_RULES.find((r) => r.name && /Louisburg/i.test(r.name) && r.detect(text));
         if (!rule) rule = UTILITY_RULES.find((r) => r.detect(text));
         if (rule) {
@@ -15375,6 +15495,49 @@ async function processPDF(file) {
                             ) {
                               orig[k] = v; // fill gap from retry
                             }
+                          }
+                          // Fix (2026-09-15, extraction-review-sweep): the gap-fill above
+                          // only fills fields that were null on `orig` — it never re-checks
+                          // the parseError/_manualReview flags a FIRST pass already stamped
+                          // (e.g. the b5951068/WRE "no usage" gate above, _singleHasKeyField
+                          // false at that time). When this retry pass supplies real usage or
+                          // charge data, that stale gate flag survived next to now-good data,
+                          // hiding a savable bill behind a manual-review block. Re-evaluate
+                          // and clear the stale flags once the merged bill actually has real
+                          // SITE data.
+                          // Correction (review NO-GO, 2026-09-15): the first version of this
+                          // guard used `_singleHasKeyField(orig)`, which also counts
+                          // `BillingPeriodStart` — on a Wood River Energy multi-site invoice
+                          // that field is stamped INVOICE-LEVEL onto every site block
+                          // (energy-savings.js ~6831-6868, shared across all sites),
+                          // including genuinely-unreadable ones. That let a site with NO
+                          // account, NO usage, and NO charge still pass `_singleHasKeyField`
+                          // (via BillingPeriodStart alone) and get un-gated with all-null
+                          // data — defeating the WRE "site block unreadable" gate. Require a
+                          // SITE-identifying or SITE-quantifying field instead — never the
+                          // shared invoice-level date fields.
+                          const _mergedHasSiteData =
+                            orig.AccountNumber ||
+                            orig.MeterNumber ||
+                            orig.NaturalGasMMbtu ||
+                            orig.NaturalGasTherms ||
+                            orig.NaturalGasCCF ||
+                            orig.GasCharge ||
+                            orig.TotalCurrentCharges;
+                          // Guard: never clear a manual-review flag that TASK 3's rate/sum
+                          // cross-check (blk._mmbtuRateMismatch, energy-savings.js) set on
+                          // PURPOSE because a printed rate didn't match a printed charge —
+                          // that flag means the data IS present but suspect, which is a
+                          // completely different condition than "no usage/charge at all",
+                          // and clearing it here would silently un-flag a genuine misread.
+                          if (
+                            (orig.parseError || orig._manualReview) &&
+                            !orig._mmbtuRateMismatch &&
+                            _mergedHasSiteData
+                          ) {
+                            orig.parseError = false;
+                            orig._manualReview = false;
+                            orig._manualReviewLabel = undefined;
                           }
                         }
                         // Recount after merge
