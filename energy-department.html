@@ -9040,6 +9040,27 @@
                   <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
                   <div style="display: flex; align-items: center; gap: 7px">
                     <button
+                      id="pdfViewBtn"
+                      style="
+                        display: none;
+                        font-size: 11px;
+                        padding: 3px 9px;
+                        border-radius: 6px;
+                        border: 1px solid var(--border2);
+                        background: transparent;
+                        color: var(--text2);
+                        cursor: pointer;
+                        font-family: var(--font);
+                      "
+                      onclick="
+                        event.stopPropagation();
+                        viewCurrentExtractionPDF(event);
+                      "
+                      title="View the source PDF page for the currently selected bill"
+                    >
+                      📄 View PDF
+                    </button>
+                    <button
                       id="pdfDebugBtn"
                       style="
                         display: none;

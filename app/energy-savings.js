@@ -7276,7 +7276,16 @@ const UTILITY_RULES = [
         // it the same way: a flagged manual-review record carrying whatever was legible
         // (ServiceAddress fragment, dollar-from-components fallback if any) so the user sees
         // every site the invoice lists, even ones OCR couldn't fully read.
-        if (!blk.AccountNumber && blk.mmbtu == null) {
+        // Fix (2026-09-15, extraction-review-sweep): the gate below only
+        // checked usage (mmbtu), not charge (dollar) — a site with a real
+        // charge but no account/usage was discarded to manual-review even
+        // though a captured charge is real, savable data. Fire this gate
+        // only when NEITHER usage NOR charge exists; a missing AccountNumber
+        // alone is surfaced as a non-blocking warning via the existing
+        // validateBillData "important field" check (AccountNumber is in
+        // WRE's `important` list, EXPECTED_FIELDS['Wood River Energy'] —
+        // bill-analysis.js), not as a parseError/manual-review block.
+        if (!blk.AccountNumber && blk.mmbtu == null && blk.dollar == null) {
           if (!blk.ServiceAddress && blk.dollar == null) continue; // truly nothing legible — not even a stub worth showing
           results.push({
             UtilityCompany: 'Wood River Energy',
