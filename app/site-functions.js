@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.842',
+    date: '2026-09-15',
+    title: 'Report Appendix A: weather table now always matches the narrative',
+    items: [
+      {
+        type: 'fix',
+        text: "Report Appendix A weather page: the 'Baseline Period Avg' HDD/CDD figure in the table and the heating/cooling degree day narrative paragraph below it now always read the same numbers. Previously the table could show a different total than the narrative for the same report.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.841',
     date: '2026-09-15',
     title: 'Energy Department: OCR debug file auto-download restored on GitHub Pages',
