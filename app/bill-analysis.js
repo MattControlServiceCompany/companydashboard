@@ -12181,7 +12181,21 @@ setInterval(() => {
   if (bill) localStorage.setItem('_claude_bill_dump', JSON.stringify(bill));
 }, 2000);
 
-function savePDFDebug() {
+// FIX (ocr-debug-no-autodownload-prod, 2026-09-15): the two AUTOMATIC callers
+// below (queue extraction and single-file extraction) used to trigger a real
+// Downloads-folder file on every extraction in production, cluttering it.
+// isManualSave distinguishes the "💾 Save Debug" button's own call (which
+// must keep working on every host, production included) from the automatic
+// calls, which now skip the download step on production hosts only. The
+// debug-capture logic itself (building `output`, window._debugFileContent/
+// _debugFileName) is never removed — dev (localhost/127.0.0.1/file://) keeps
+// auto-downloading exactly as before, and the manual button can still produce
+// a file on demand on any host.
+function _isProdHost() {
+  const h = (window.location && window.location.hostname) || '';
+  return h.endsWith('github.io') || h.endsWith('netlify.app');
+}
+function savePDFDebug(isManualSave) {
   const raw = window._pdfRawText || '(no raw text)';
   const bills = window._pdfMultiBills || [];
   const srcFile = window._pdfSourceFileName || 'unknown';
@@ -12269,6 +12283,12 @@ function savePDFDebug() {
   const debugFilename = 'ocr-debug_' + safeName + '_' + ts + '.txt';
   window._debugFileContent = output;
   window._debugFileName = debugFilename;
+  // ocr-debug-no-autodownload-prod: an AUTOMATIC call (isManualSave falsy) on
+  // a production host stops here — the capture above already ran (so
+  // window._debugFileContent/_debugFileName are current for any other code
+  // that reads them), it just skips the actual Downloads-folder write. A
+  // manual "Save Debug" button click, or ANY call on a dev host, still saves.
+  if (!isManualSave && _isProdHost()) return;
   // Save to Downloads as a file
   const blob = new Blob([output], { type: 'text/plain' });
   const a = document.createElement('a');
@@ -12787,7 +12807,20 @@ function _lanczosKernel(x, a) {
   const px = Math.PI * x;
   return (a * Math.sin(px) * Math.sin(px / a)) / (px * px);
 }
-function _lanczosResize(srcCanvas, dstW, dstH, a) {
+// FIX (ocr-lanczos-yield, 2026-09-15): this was a fully synchronous double-
+// nested pixel loop with no yields, run on the main thread (pdf.js is
+// deliberately worker-less here: workerSrc=''). On a full-page render it held
+// the main thread up to ~40s per pass, freezing the whole tab — even the
+// Cancel button stopped responding, since Cancel is a click handler that
+// can't run until the main thread is free. Fix: made async and yields to the
+// event loop every LANCZOS_YIELD_ROWS output rows in both passes, using the
+// same chunk-and-yield convention already used elsewhere in this file (see
+// YIELD_EVERY / `await new Promise((resolve) => setTimeout(resolve, 0))`
+// above, ~line 2760). The resampling MATH below (kernel, taps, weights) is
+// byte-for-byte UNCHANGED — only the yield points were added, so output
+// pixels are identical to before.
+const LANCZOS_YIELD_ROWS = 24;
+async function _lanczosResize(srcCanvas, dstW, dstH, a) {
   a = a || 3;
   const srcW = srcCanvas.width,
     srcH = srcCanvas.height;
@@ -12838,6 +12871,12 @@ function _lanczosResize(srcCanvas, dstW, dstH, a) {
   }
   const tmp = new Float32Array(dstW * srcH * 4);
   for (let oy = 0; oy < srcH; oy++) {
+    // ocr-lanczos-yield: yield every LANCZOS_YIELD_ROWS rows so a long resize
+    // can't starve the main thread (Cancel button, progress UI) for its full
+    // duration. Does not touch the math below.
+    if (oy > 0 && oy % LANCZOS_YIELD_ROWS === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     const rowBase = oy * srcW * 4;
     const tRowBase = oy * dstW * 4;
     for (let ox = 0; ox < dstW; ox++) {
@@ -12871,6 +12910,10 @@ function _lanczosResize(srcCanvas, dstW, dstH, a) {
   const filterScaleY = Math.max(1, 1 / scaleY);
   const out = new Uint8ClampedArray(dstW * dstH * 4);
   for (let oy = 0; oy < dstH; oy++) {
+    // ocr-lanczos-yield: same yield convention as the horizontal pass above.
+    if (oy > 0 && oy % LANCZOS_YIELD_ROWS === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     const srcY = (oy + 0.5) / scaleY - 0.5;
     const top = Math.floor(srcY - a * filterScaleY);
     const bottom = Math.ceil(srcY + a * filterScaleY);
@@ -12952,7 +12995,10 @@ async function _renderPageHQ(pg, targetScale, _timing) {
   const _resizeT0 = performance.now();
   let outCanvas;
   try {
-    outCanvas = _lanczosResize(rawCanvas, dstW, dstH, 3);
+    // ocr-lanczos-yield: _lanczosResize is now async (yields internally so it
+    // can't freeze the tab) — awaited here; _renderPageHQ is already async and
+    // every caller already awaits its result, so this adds no new blocking.
+    outCanvas = await _lanczosResize(rawCanvas, dstW, dstH, 3);
   } catch (_lanczosErr) {
     outCanvas = document.createElement('canvas');
     outCanvas.width = dstW;
@@ -13962,7 +14008,24 @@ async function extractPDFText(ab, statusCb) {
           if (!_ocrBudgetExceeded && performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
             _ocrBudgetExceeded = true;
           }
-          if (_ocrBudgetExceeded) {
+          // FIX (ocr-orientprobe-file-reserve, 2026-09-15): mirrors the per-page
+          // reserve above (ORIENT_PROBE_RESERVE_MS, ocr-orientprobe-reserve
+          // 2026-09-09) but at the FILE level, which that fix never covered. A
+          // genuinely sideways page (bestScore < ORIENT_SCORE_THRESHOLD) must
+          // get its one orientation-probe attempt even when the file-level
+          // clock is already exhausted — the old unconditional return here
+          // skipped the probe block entirely on a cold run whenever render
+          // timeouts (30s each) burned through OCR_TOTAL_BUDGET_MS (120000)
+          // before this page reached the probe stage — confirmed: a /Rotate
+          // 270 scanned bill extracts 0 fields cold, then succeeds warm once
+          // OCR_TOTAL_BUDGET_MS is no longer the bottleneck. _ocrBudgetExceeded
+          // itself is left set so every OTHER budget-gated step below (CHANGE 5
+          // / binarize, the checks further down this page's processing) still
+          // treats the file budget as spent; only this entry point now lets a
+          // low-scoring page through for its guaranteed probe shot, which is
+          // separately capped by ORIENT_PROBE_RESERVE_MS via _withTimeout so it
+          // still cannot run away.
+          if (_ocrBudgetExceeded && bestScore >= ORIENT_SCORE_THRESHOLD) {
             _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache before leaving it
             pageTexts[pgNum - 1] = bestText;
             _stampCoverage(pgNum, bestText);
