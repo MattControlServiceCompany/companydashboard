@@ -12981,7 +12981,11 @@ async function _renderPageHQ(pg, targetScale, _timing) {
   rawCanvas.height = Math.max(1, Math.round(vpHi.height));
   const rawCtx = rawCanvas.getContext('2d');
   const _decodeT0 = performance.now();
-  await pg.render({ canvasContext: rawCtx, viewport: vpHi }).promise;
+  // FIX (ocr-lanczos-yield-budget, 2026-09-15 correction A): decode gets its
+  // own explicit PDFJS_AWAIT_TIMEOUT_MS (30s) budget here — see the resize
+  // budget note below for why decode and resize can no longer share one
+  // timeout at the call sites.
+  await _withTimeout(pg.render({ canvasContext: rawCtx, viewport: vpHi }).promise, PDFJS_AWAIT_TIMEOUT_MS, 'decode');
   if (_timing) _timing.decodeMs = Math.round(performance.now() - _decodeT0);
   const targetVp = pg.getViewport({ scale: targetScale });
   const dstW = Math.max(1, Math.round(targetVp.width));
@@ -12998,7 +13002,26 @@ async function _renderPageHQ(pg, targetScale, _timing) {
     // ocr-lanczos-yield: _lanczosResize is now async (yields internally so it
     // can't freeze the tab) — awaited here; _renderPageHQ is already async and
     // every caller already awaits its result, so this adds no new blocking.
-    outCanvas = await _lanczosResize(rawCanvas, dstW, dstH, 3);
+    //
+    // FIX (ocr-lanczos-yield-budget, 2026-09-15 correction A): this used to be
+    // covered ONLY by the caller's single _withTimeout(_renderPageHQ(...),
+    // PDFJS_AWAIT_TIMEOUT_MS) wrapping decode+resize together. While the
+    // resize was synchronous, that 30s outer timer could never actually fire
+    // DURING the resize (it blocked the event loop the timer itself runs on)
+    // — a slow ~40s resize just finished late but never got cut off. Now that
+    // the resize yields (this fix's own change), the outer 30s timer CAN fire
+    // mid-resize, and the scale-4.0 pass's ~20-megapixel supersampled canvas
+    // (see OCR_SUPERSAMPLE_FACTOR doc above: ~6.4x at targetScale 4.0) was
+    // measured taking close to/over 30s — the retry-cascade pass that exists
+    // specifically to rescue hard/low-scoring scans would start losing its
+    // own render to a timeout that used to be harmless. Fix: give the resize
+    // its OWN LANCZOS_RESIZE_TIMEOUT_MS (60s) budget, wrapped here, separate
+    // from decode's 30s above; the call sites' outer wrapper around this
+    // whole function was widened to RENDER_HQ_TIMEOUT_MS (decode + resize
+    // budgets combined, 90s) so it can never fire before either inner budget
+    // gets its fair share. A resize timeout still degrades gracefully via the
+    // existing drawImage fallback below, exactly like any other resize error.
+    outCanvas = await _withTimeout(_lanczosResize(rawCanvas, dstW, dstH, 3), LANCZOS_RESIZE_TIMEOUT_MS, 'resize');
   } catch (_lanczosErr) {
     outCanvas = document.createElement('canvas');
     outCanvas.width = dstW;
@@ -13022,6 +13045,21 @@ async function _renderPageHQ(pg, targetScale, _timing) {
 // Module-level (not nested in extractPDFText) so processPDF's separate
 // OCR-retry block (a sibling function) can use it too.
 const PDFJS_AWAIT_TIMEOUT_MS = 30000; // 30s
+// FIX (ocr-lanczos-yield-budget, 2026-09-15 correction A): the Lanczos-3
+// resize (see _lanczosResize/ _renderPageHQ above) now yields to the event
+// loop instead of blocking it, so it needs its OWN timeout budget — it can
+// no longer silently run past PDFJS_AWAIT_TIMEOUT_MS the way a fully
+// synchronous call did (a blocked event loop can't fire its own setTimeout).
+// 60s was chosen with margin over the measured scale-4.0 (the pipeline's
+// largest OCR pass, ~6.4x supersample, ~20 megapixels) resize wall-clock —
+// see dashboardlogic.md 2026-09-15 entry for the measured figure.
+const LANCZOS_RESIZE_TIMEOUT_MS = 60000; // 60s
+// Combined budget for the call sites that wrap the WHOLE _renderPageHQ call
+// (decode + resize, run sequentially inside it) in one _withTimeout — must be
+// at least PDFJS_AWAIT_TIMEOUT_MS + LANCZOS_RESIZE_TIMEOUT_MS so this OUTER
+// wrapper can never fire before either of _renderPageHQ's own INNER
+// timeouts gets its fair share.
+const RENDER_HQ_TIMEOUT_MS = PDFJS_AWAIT_TIMEOUT_MS + LANCZOS_RESIZE_TIMEOUT_MS; // 90s
 function _withTimeout(promise, ms, label) {
   return Promise.race([
     promise,
@@ -13102,7 +13140,23 @@ const _createOCRWorker = async (loggerCb) => {
 let _ocrStartTime = 0;
 // On timeout: terminate the hung worker and create a fresh one.
 // Returns { result, newWorker } — newWorker is set only if the worker was replaced.
-const recognizeWithTimeout = async (w, canvas, params) => {
+// FIX (ocr-orientprobe-recognize-reserve, 2026-09-15 correction B): optional
+// 4th arg `budgetDeadlineMs` — an ABSOLUTE performance.now()-scale deadline
+// that overrides the default `_ocrStartTime + OCR_TOTAL_BUDGET_MS` check
+// below. Every existing caller omits it (undefined), so their behavior is
+// byte-for-byte unchanged. It exists because the file-level orientation-
+// probe reserve fix (ocr-orientprobe-file-reserve, same date) lets a
+// low-scoring page's probe REACH this function's recognize() calls even
+// after the file's total OCR budget is already exhausted — but this
+// function's own abort-poll below used to immediately reject any such call
+// on the very next 250ms tick (the SAME already-true exhausted-budget
+// condition), so the probe's 4-way race and its one full re-OCR pass on the
+// winner would self-abort into empty text before ever producing a usable
+// result, silently defeating that fix. The probe call sites now pass a
+// deadline anchored to ORIENT_PROBE_RESERVE_MS from "now" (with a floor of
+// the normal exhausted-budget mark, so it never grants LESS time than a
+// non-exhausted page would get) instead of the shared file-wide budget.
+const recognizeWithTimeout = async (w, canvas, params, budgetDeadlineMs) => {
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -13117,7 +13171,10 @@ const recognizeWithTimeout = async (w, canvas, params) => {
       // gate-(a) tolerance by up to the full 90s OCR_TIMEOUT_MS. Reuse this same
       // 250ms poll (already proven safe for abort) so a budget trip interrupts an
       // in-flight recognize() just as promptly as a user Cancel does.
-      else if (performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS)
+      //
+      // budgetDeadlineMs (correction B, above) overrides the default deadline
+      // when the caller is the orientation-probe rescue path — see doc comment.
+      else if (performance.now() > (budgetDeadlineMs != null ? budgetDeadlineMs : _ocrStartTime + OCR_TOTAL_BUDGET_MS))
         reject(Object.assign(new Error('OCR budget exceeded mid-recognize'), { _budgetExceeded: true }));
     }, 250); // poll every 250ms — cheap, imperceptible worst-case delay to Cancel/budget
   });
@@ -13671,9 +13728,14 @@ async function extractPDFText(ab, statusCb) {
               PDFJS_AWAIT_TIMEOUT_MS,
               'getPage(' + pgNum + ')',
             );
+            // FIX (ocr-lanczos-yield-budget, 2026-09-15 correction A): was
+            // PDFJS_AWAIT_TIMEOUT_MS (30s) — now RENDER_HQ_TIMEOUT_MS (90s) so
+            // this outer wrapper can't fire before _renderPageHQ's own inner
+            // decode (30s) + resize (60s) budgets get their fair share. See
+            // RENDER_HQ_TIMEOUT_MS doc comment above for why.
             const canvasForRender = await _withTimeout(
               _renderPageHQ(pgForRender, scale),
-              PDFJS_AWAIT_TIMEOUT_MS,
+              RENDER_HQ_TIMEOUT_MS,
               'render(' + pgNum + ')',
             );
             if (pgForRender && pgForRender.cleanup) pgForRender.cleanup();
@@ -14058,10 +14120,25 @@ async function extractPDFText(ab, statusCb) {
               // cancel the underlying recognize calls, same convention as every other
               // _withTimeout use in this file — it only stops this code from waiting on
               // them past the reserve).
+              // FIX (ocr-orientprobe-recognize-reserve, 2026-09-15 correction B):
+              // recognizeWithTimeout's own abort-poll rejects any recognize() call the
+              // instant `performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS` — the
+              // SAME condition that let this low-scoring page reach this block in the
+              // first place (file budget already exhausted). Without an override, every
+              // recognize() call below would self-abort into empty text within one
+              // 250ms poll tick, so the probe would always report all-zero signals and
+              // pick nothing — reaching this block would be a no-op. _orientDeadline
+              // grants a fresh ORIENT_PROBE_RESERVE_MS window from right now (floored at
+              // the normal exhausted-budget mark, so an exhausted page never gets LESS
+              // time than usual) to both the 4-way probe race below AND the one
+              // immediately-following full re-OCR pass on the winner — the same two
+              // things ORIENT_PROBE_RESERVE_MS's own doc comment says it budgets for.
+              const _orientDeadline =
+                Math.max(performance.now(), _ocrStartTime + OCR_TOTAL_BUDGET_MS) + ORIENT_PROBE_RESERVE_MS;
               const picked = await _withTimeout(
                 _pickBestPageOrientation(
                   canvasO,
-                  (canvas, params) => recognizeWithTimeout(workerBox.current, canvas, params),
+                  (canvas, params) => recognizeWithTimeout(workerBox.current, canvas, params, _orientDeadline),
                   (scores) => {
                     _orientScores = scores;
                   },
@@ -14078,9 +14155,12 @@ async function extractPDFText(ab, statusCb) {
                   statusCb(
                     'OCR page ' + pgNum + '/' + maxPages + ' — rotating ' + picked.winnerLabel + '° and re-OCR...',
                   );
-                const { result: rotResult } = await recognizeWithTimeout(workerBox.current, picked.winnerCanvas, {
-                  rotateAuto: true,
-                });
+                const { result: rotResult } = await recognizeWithTimeout(
+                  workerBox.current,
+                  picked.winnerCanvas,
+                  { rotateAuto: true },
+                  _orientDeadline,
+                );
                 const rotText = rotResult.data.text;
                 const rotScore = scorePage(rotText);
                 allPassTexts[pgNum].push({
@@ -15120,11 +15200,10 @@ async function processPDF(file) {
                       // Fix (2026-07-22): see _renderPageHQ doc comment above — same
                       // low-DPI upscale quality issue applies to this separate
                       // processPDF retry-scale render path.
-                      canvas = await _withTimeout(
-                        _renderPageHQ(pg, scale),
-                        PDFJS_AWAIT_TIMEOUT_MS,
-                        'render(' + i + ')',
-                      );
+                      // FIX (ocr-lanczos-yield-budget, 2026-09-15 correction A):
+                      // was PDFJS_AWAIT_TIMEOUT_MS (30s) — now RENDER_HQ_TIMEOUT_MS
+                      // (90s), same reasoning as the primary-pass call site above.
+                      canvas = await _withTimeout(_renderPageHQ(pg, scale), RENDER_HQ_TIMEOUT_MS, 'render(' + i + ')');
                     } catch (renderErr) {
                       // Treat a getPage/render timeout the same as "this page needs OCR
                       // retry but failed" — don't let it abort the whole retry batch.
