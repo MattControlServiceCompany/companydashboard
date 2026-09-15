@@ -63,7 +63,13 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   const allRows = bills.length ? getNormRows(m, bills, incl, weatherByYm) : [];
   const blRows = allRows.filter((r) => bl.months.includes(r.ym));
   const blEnd = bl.months.slice().sort().pop();
-  const postRows = allRows.filter((r) => r.ym > blEnd);
+  // 2026-09-15 (phantom-savings fix): exclude incompleteCycle rows — a genuinely short/stub
+  // bill that hasn't completed a real billing cycle yet must not book savings (Spring Hill:
+  // baseline-only project with only a partial artifact bill after baseline end -> $0
+  // savings everywhere, not a phantom number). incompleteCycle does NOT exclude complete
+  // bills that merely straddle a calendar-month boundary (water/sewer irregular cycles),
+  // so those keep booking real savings. See computations/normalization.js getNormRows().
+  const postRows = allRows.filter((r) => r.ym > blEnd && !r.incompleteCycle);
   if (!postRows.length) {
     const result = empty;
     m._savingsCache = result;
@@ -323,8 +329,11 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
     const winStart = bl.savingsWindow.start;
     const winEnd = bl.savingsWindow.end || null;
 
-    // Rows that fall inside this baseline's savings window
-    const postRows = allRows.filter((r) => r.ym >= winStart && (!winEnd || r.ym <= winEnd));
+    // Rows that fall inside this baseline's savings window. Excludes incompleteCycle rows
+    // for the same reason as the legacy path above (2026-09-15 phantom-savings fix) — a
+    // stub bill must not book savings, but a complete water/sewer irregular-cycle bill
+    // still does.
+    const postRows = allRows.filter((r) => r.ym >= winStart && (!winEnd || r.ym <= winEnd) && !r.incompleteCycle);
     if (!postRows.length) return;
 
     // Build the calendar-month baseline usage map for this baseline.

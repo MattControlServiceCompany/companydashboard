@@ -514,6 +514,10 @@ function getNormRows(m, bills, incl, weatherByYm) {
           byMonth[ym].usage += pUsage;
           byMonth[ym].cost += pCost;
           byMonth[ym].days += pDays;
+          // Longest single contributing bill's own total span (start-to-end, not
+          // prorated into this month) — used below to tell a genuinely short/stub
+          // bill apart from a complete bill that just straddles a month boundary.
+          byMonth[ym].maxBillDays = Math.max(byMonth[ym].maxBillDays || 0, totalDays);
           // Only accumulate bill-level weather if no ZIP weather cache
           if (!weatherByYm) {
             if (hdd) {
@@ -547,6 +551,7 @@ function getNormRows(m, bills, incl, weatherByYm) {
             hasCdd: !weatherByYm && !!cdd,
             hasTmp: !weatherByYm && !!avgTmp,
             _ids: [row.id],
+            maxBillDays: totalDays,
           };
         }
       });
@@ -561,6 +566,25 @@ function getNormRows(m, bills, incl, weatherByYm) {
       const calDays = calDaysInMonth(ym);
       // Flag months where bill coverage is less than 90% of calendar days — partial first/last months
       const partial = r.days < calDays * 0.9;
+      // 2026-09-15 (genuinely-incomplete vs irregular-but-complete): 'partial' above only
+      // measures this calendar month's OWN day coverage, so it conflates two different
+      // situations — (a) a genuinely short/stub bill that doesn't reach the end of its
+      // month (no real post-baseline data yet — the Spring Hill baseline-only case) vs.
+      // (b) a complete bill that's simply long enough to straddle a calendar-month
+      // boundary (water/sewer bi-monthly cycles), so no single month gets 90% of it even
+      // though the underlying bill is a full, complete cycle. incompleteCycle distinguishes
+      // them using the longest contributing bill's own total span (maxBillDays, its raw
+      // start-to-end length — not its prorated share of this one month): only a row whose
+      // longest contributing bill is itself shorter than a full cycle is "genuinely
+      // incomplete". MIN_FULL_CYCLE_DAYS reuses the same 90%-of-a-month logic as 'partial',
+      // applied to the shortest possible calendar month (28 days) as a fixed reference
+      // instead of whichever month the bill happens to land in.
+      // Consumers that must not book/display phantom savings from a stub bill
+      // (computations/savings.js postRows, lib/perf-table.js's partial-row fallback) key
+      // off this flag instead of the raw 'partial' flag. Regression/anomaly-detection
+      // callers keep using the raw 'partial' flag — unaffected, out of scope for this fix.
+      const MIN_FULL_CYCLE_DAYS = 25; // ~90% of 28 (shortest calendar month)
+      const incompleteCycle = partial && (r.maxBillDays || 0) < MIN_FULL_CYCLE_DAYS;
       let hdd, cdd, avgTemp;
       if (weatherByYm && weatherByYm[ym]) {
         const w = weatherByYm[ym];
@@ -590,6 +614,7 @@ function getNormRows(m, bills, incl, weatherByYm) {
         days: r.days,
         normDays,
         partial,
+        incompleteCycle,
         // 2026-09-10 (zero-fill guard): true only for propane's explicit
         // hard-zero fill-in rows (normalizePropaneDeliveries). Never true for
         // Electric/Gas/Water/Sewer rows. Statistical/aggregation consumers

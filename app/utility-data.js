@@ -9676,8 +9676,11 @@ function renderPerfPane(pane, m, bills, incl) {
   // Year filter
   const maxYears = Math.max(1, Math.ceil(truePostRows.length / 12));
   const yearOptions = ['all', ...Array.from({ length: maxYears }, (_, i) => String(i + 1))];
-  // Filter out partial months (< 90% of calendar days) so they don't skew the display
-  const fullPostRows = truePostRows.filter((r) => !r.partial);
+  // Filter out genuinely-incomplete months (no complete billing cycle yet) so they don't
+  // skew the display. Uses incompleteCycle rather than the raw partial flag so a complete
+  // bill that merely straddles a calendar-month boundary (water/sewer irregular cycles)
+  // stays in — see computations/normalization.js getNormRows() for the distinction.
+  const fullPostRows = truePostRows.filter((r) => !r.incompleteCycle);
   let filteredPostRows = fullPostRows;
   if (_perfYearFilter !== 'all') {
     const n = parseInt(_perfYearFilter);
