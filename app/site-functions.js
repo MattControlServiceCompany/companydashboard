@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.16.845',
+    date: '2026-09-16',
+    title: 'Multi-site bill extraction: fixed cross-site data mixing and Wood River missed sites',
+    items: [
+      {
+        type: 'fix',
+        text: 'Constellation gas bills covering multiple sites in one PDF no longer mix up account numbers and totals between neighboring sites — each site now correctly shows its own charges and usage.',
+      },
+      {
+        type: 'fix',
+        text: 'Wood River Energy gas bills with 10 sites per invoice no longer silently drop sites during extraction — a new check catches missing sites so they can be re-reviewed instead of vanishing.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.16.844',
     date: '2026-09-16',
     title: 'Quarterly Report: Monthly Savings chart fix',
