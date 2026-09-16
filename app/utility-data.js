@@ -4827,6 +4827,254 @@ function _exportTriggerDownload(blob, filename) {
   }, 3000);
 }
 
+/* ============================================================
+ * All-projects CSV export — Buildings / Meters inventory.
+ * Iterates en_projects + en_utility_<projId> across every project
+ * (live data, via sget so it reads IndexedDB/localStorage the same
+ * way the rest of the app does). Reuses _exportTriggerDownload for
+ * the actual file download — no new download mechanism.
+ * ============================================================ */
+function _csvEscField(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+// US state 2-letter codes (incl. DC) — used only to force-uppercase a state
+// token inside an exported address string. Never mutates stored data.
+const _US_STATE_CODES = new Set([
+  'AL',
+  'AK',
+  'AZ',
+  'AR',
+  'CA',
+  'CO',
+  'CT',
+  'DE',
+  'FL',
+  'GA',
+  'HI',
+  'ID',
+  'IL',
+  'IN',
+  'IA',
+  'KS',
+  'KY',
+  'LA',
+  'ME',
+  'MD',
+  'MA',
+  'MI',
+  'MN',
+  'MS',
+  'MO',
+  'MT',
+  'NE',
+  'NV',
+  'NH',
+  'NJ',
+  'NM',
+  'NY',
+  'NC',
+  'ND',
+  'OH',
+  'OK',
+  'OR',
+  'PA',
+  'RI',
+  'SC',
+  'SD',
+  'TN',
+  'TX',
+  'UT',
+  'VT',
+  'VA',
+  'WA',
+  'WV',
+  'WI',
+  'WY',
+  'DC',
+]);
+
+function _titleCaseWord(w) {
+  if (!w) return w;
+  if (w.charAt(0) === '#') return w; // unit tokens like #101 — left intact
+  const bare = w.replace(/[.,]/g, '');
+  if (bare.length === 2 && _US_STATE_CODES.has(bare.toUpperCase())) return w.toUpperCase();
+  const ord = w.match(/^(\d+)(st|nd|rd|th)$/i); // 6TH -> 6th, 1ST -> 1st, etc.
+  if (ord) return ord[1] + ord[2].toLowerCase();
+  return w.replace(/[A-Za-z]+/g, function (chunk) {
+    return chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase();
+  });
+}
+
+// Export-only formatting helper. Never writes back to stored data — only
+// applied to values as they are placed into a CSV row.
+function _titleCaseAddress(str) {
+  if (!str) return '';
+  return String(str)
+    .split(/(\s+)/)
+    .map(function (tok) {
+      return /^\s+$/.test(tok) ? tok : _titleCaseWord(tok);
+    })
+    .join('');
+}
+
+function exportAllBuildingsCSV() {
+  const projs = sget('en_projects', []) || [];
+  const headers = [
+    'Project',
+    'Project Type',
+    'Building Name',
+    'Address',
+    'City',
+    'State',
+    'ZIP',
+    'Square Footage',
+    'Building Type',
+  ];
+  const rows = [headers.map(_csvEscField).join(',')];
+  let count = 0;
+  projs.forEach(function (p) {
+    const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
+    (ud.buildings || []).forEach(function (b) {
+      if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
+      const addrRaw = b.addr !== undefined && b.addr !== null ? b.addr : b.address;
+      const sqft = b.sqft !== undefined && b.sqft !== null ? b.sqft : '';
+      rows.push(
+        [
+          p.name,
+          p.type || '',
+          b.name,
+          _titleCaseAddress(addrRaw),
+          _titleCaseAddress(b.city || ''),
+          (b.state || '').toUpperCase(),
+          b.zip || '',
+          sqft,
+          b.type || '',
+        ]
+          .map(_csvEscField)
+          .join(','),
+      );
+      count++;
+    });
+  });
+  _exportTriggerDownload(new Blob([rows.join('\r\n')], { type: 'text/csv' }), 'companyhub-buildings-export.csv');
+  if (typeof showToast === 'function') showToast('Exported ' + count + ' building' + (count !== 1 ? 's' : '') + '.');
+}
+
+// Derives an Active Yes/No status per meter since there is no stored active
+// flag. Meters are grouped by (building + account number + commodity); within
+// a group the meter with the latest most-recent bill period-end date is "Yes"
+// (the others are older/replaced meter numbers -> "No"). A group of one is
+// always "Yes". Ties or groups where no member has any bill date are flagged
+// ambiguous and all members in that group are marked "Yes" (never guess which
+// one is current). Returns a Map keyed by meter object -> {active, ambiguous}.
+function _deriveMeterActiveMap(projs) {
+  const groups = new Map();
+  projs.forEach(function (p) {
+    const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
+    (ud.buildings || []).forEach(function (b) {
+      if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
+      (b.meters || []).forEach(function (m) {
+        const key = b.id + '|' + (m.account || '') + '|' + (m.commodity || '');
+        let latest = null;
+        (m.bills || []).forEach(function (bill) {
+          if (!bill || !bill.end) return;
+          const d = _parseISO(bill.end);
+          if (!isNaN(d.getTime()) && (!latest || d.getTime() > latest.getTime())) latest = d;
+        });
+        if (!groups.has(key)) groups.set(key, []);
+        // Keyed by m.id (stable data field), not the meter object itself —
+        // callers typically re-fetch via sget(), which re-parses JSON and
+        // returns new object instances, so object-identity lookups would miss.
+        groups.get(key).push({ id: m.id, latest: latest });
+      });
+    });
+  });
+
+  const result = new Map();
+  const ambiguousGroups = [];
+  groups.forEach(function (arr, key) {
+    if (arr.length === 1) {
+      result.set(arr[0].id, { active: 'Yes', ambiguous: false });
+      return;
+    }
+    const withDates = arr.filter(function (e) {
+      return !!e.latest;
+    });
+    if (!withDates.length) {
+      arr.forEach(function (e) {
+        result.set(e.id, { active: 'Yes', ambiguous: true });
+      });
+      ambiguousGroups.push(key);
+      return;
+    }
+    const maxTime = Math.max.apply(
+      null,
+      withDates.map(function (e) {
+        return e.latest.getTime();
+      }),
+    );
+    const winners = withDates.filter(function (e) {
+      return e.latest.getTime() === maxTime;
+    });
+    if (winners.length > 1) {
+      arr.forEach(function (e) {
+        result.set(e.id, { active: 'Yes', ambiguous: true });
+      });
+      ambiguousGroups.push(key);
+      return;
+    }
+    arr.forEach(function (e) {
+      const isWinner = e.latest && e.latest.getTime() === maxTime;
+      result.set(e.id, { active: isWinner ? 'Yes' : 'No', ambiguous: false });
+    });
+  });
+  return { map: result, ambiguousGroups: ambiguousGroups };
+}
+
+function exportAllMetersCSV() {
+  const projs = sget('en_projects', []) || [];
+  const headers = [
+    'Project',
+    'Building Name',
+    'Account Number',
+    'Meter Number',
+    'Utility Type',
+    'Utility Provider',
+    'Meter Name',
+    'Active',
+    'Include in Baseline',
+  ];
+  const rows = [headers.map(_csvEscField).join(',')];
+  const activeInfo = _deriveMeterActiveMap(projs);
+  let count = 0;
+  projs.forEach(function (p) {
+    const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
+    (ud.buildings || []).forEach(function (b) {
+      if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
+      (b.meters || []).forEach(function (m) {
+        const activeEntry = activeInfo.map.get(m.id);
+        const active = activeEntry ? activeEntry.active : 'Yes';
+        const inBaseline = m.baselineInclude !== false ? 'Yes' : 'No';
+        rows.push(
+          [p.name, b.name, m.account, m.meter, m.commodity, m.provider, _titleCaseAddress(m.maddr), active, inBaseline]
+            .map(_csvEscField)
+            .join(','),
+        );
+        count++;
+      });
+    });
+  });
+  _exportTriggerDownload(new Blob([rows.join('\r\n')], { type: 'text/csv' }), 'companyhub-meters-export.csv');
+  if (typeof showToast === 'function') showToast('Exported ' + count + ' meter' + (count !== 1 ? 's' : '') + '.');
+  if (activeInfo.ambiguousGroups.length && typeof console !== 'undefined') {
+    console.warn('Meter export: ambiguous Active groups (building|account|commodity):', activeInfo.ambiguousGroups);
+  }
+}
+
 /* Derive a human-friendly base filename from the current selection.
  * Degrades by scope level: single meter → Project_Building_Commodity_<Mtr|Acct>id_date,
  * single building → Project_Building_date, single project → Project_date,

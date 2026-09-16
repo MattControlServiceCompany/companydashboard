@@ -2277,6 +2277,9 @@ function openBldgModal(editId) {
     document.getElementById('bldgModalTitle').textContent = '✏️ Edit Building';
     document.getElementById('bm-name').value = b?.name || '';
     document.getElementById('bm-addr').value = b?.addr || '';
+    document.getElementById('bm-city').value = b?.city || '';
+    document.getElementById('bm-state').value = b?.state || '';
+    document.getElementById('bm-type').value = b?.type || '';
     document.getElementById('bm-sqft').value = b?.sqft || '';
     document.getElementById('bm-zip').value = b?.zip || '';
     _bmRenderAliasTags(b?.addrAliases || []);
@@ -2286,6 +2289,9 @@ function openBldgModal(editId) {
     document.getElementById('bldgModalTitle').textContent = '+ Add Building';
     document.getElementById('bm-name').value = '';
     document.getElementById('bm-addr').value = '';
+    document.getElementById('bm-city').value = '';
+    document.getElementById('bm-state').value = '';
+    document.getElementById('bm-type').value = '';
     document.getElementById('bm-sqft').value = '';
     document.getElementById('bm-zip').value = '';
     _bmRenderAliasTags([]);
@@ -2317,6 +2323,9 @@ function saveBuilding() {
     if (b) {
       b.name = name;
       b.addr = document.getElementById('bm-addr').value;
+      b.city = (document.getElementById('bm-city').value || '').trim();
+      b.state = (document.getElementById('bm-state').value || '').trim();
+      b.type = (document.getElementById('bm-type').value || '').trim();
       b.sqft = parseInt(document.getElementById('bm-sqft').value) || 0;
       b.zip = (document.getElementById('bm-zip').value || '').trim();
       b.addrAliases = aliases;
@@ -2328,6 +2337,9 @@ function saveBuilding() {
       id: 'b' + Date.now(),
       name,
       addr: document.getElementById('bm-addr').value,
+      city: (document.getElementById('bm-city').value || '').trim(),
+      state: (document.getElementById('bm-state').value || '').trim(),
+      type: (document.getElementById('bm-type').value || '').trim(),
       sqft: parseInt(document.getElementById('bm-sqft').value) || 0,
       zip: (document.getElementById('bm-zip').value || '').trim(),
       addrAliases: aliases,
