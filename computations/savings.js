@@ -13,6 +13,20 @@
 const SAVINGS_CALC_VERSION = '2026.09.10.814';
 
 /* ─────────────────────────────────────────────────────────────
+   projHasContract(projId)
+   Single source of truth: does this project have a Service
+   Agreement (sa) number? No SA means no savings/compensation
+   dollars should ever be shown for the project, anywhere in the
+   app. Every savings-% fallback gate (perf-table, bpRecalc,
+   bspRecalc, graphics-setpoints, etc.) must route through this
+   instead of re-implementing the projects.find lookup.
+───────────────────────────────────────────────────────────── */
+function projHasContract(projId) {
+  const p = (typeof projects !== 'undefined' ? projects : []).find((x) => String(x.id) === String(projId));
+  return !!(p && p.sa);
+}
+
+/* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl)
    Unified savings function — single pass, populates both byYM
    and byCalMo, applies costSavOverrides to BOTH formats.
