@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.16.846',
+    date: '2026-09-16',
+    title: 'Wood River Energy: per-site account numbers now captured on garbled invoices',
+    items: [
+      {
+        type: 'fix',
+        text: 'Wood River Energy multi-site gas invoices with poor scan quality now capture an account number for every site instead of leaving it blank — this lets those sites route to the correct building during bill review instead of landing in General.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.16.845',
     date: '2026-09-16',
     title: 'Multi-site bill extraction: fixed cross-site data mixing and Wood River missed sites',
