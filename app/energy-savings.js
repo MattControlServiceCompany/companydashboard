@@ -6546,8 +6546,14 @@ const UTILITY_RULES = [
         // the correct Customer ID) PLUS the invoice header (for Invoice Date / BG Account).
         for (let i = 1; i < siteChunks.length; i++) {
           const prevTail = siteChunks[i - 1].slice(-600);
-          const siteText = invoiceHeader + '\n' + prevTail + '\n' + siteChunks[i];
-          const bill = this.extract(siteText);
+          // identityPortion is invoiceHeader + prevTail ONLY — this is where site i's
+          // OWN identity block (Customer ID, LDC Account, address) lives. siteChunks[i]
+          // itself must never be searched for identity fields: its own trailing text
+          // holds site (i+1)'s leaked identity header, not site i's (2026-09-16 fix,
+          // item 62a38985 — identity fields were resolving one site ahead of the money).
+          const identityPortion = invoiceHeader + '\n' + prevTail;
+          const siteText = identityPortion + '\n' + siteChunks[i];
+          const bill = this.extract(siteText, identityPortion.length);
           if (bill && !bill._skipRecord) results.push(bill);
         }
       }
@@ -6571,13 +6577,27 @@ const UTILITY_RULES = [
       }
       return dedupedResults.length > 0 ? dedupedResults : [this.extract(t)];
     },
-    extract: function (t) {
+    extract: function (t, identityBoundary) {
       // ── Number cleaning helper ──
       // Remove commas, handle "$" prefix, handle bare ":" misread as "." in OCR.
       const fixNum = (s) => {
         if (!s) return null;
         return s.replace(/,/g, '').replace(/(\d):(\d)/, '$1.$2');
       };
+
+      // ── Identity search window (2026-09-16 fix, item 62a38985) ──
+      // identityBoundary (when passed by extractAll) marks the end of
+      // invoiceHeader+prevTail — the ONLY region that can legitimately hold
+      // THIS site's own Customer ID / LDC Account / address. siteChunks[i]
+      // (everything after the boundary) holds this site's own charges PLUS
+      // the NEXT site's leaked trailing identity header, so identity fields
+      // must never search past the boundary. Money fields (Total/usage,
+      // below) intentionally keep searching the full text — they are
+      // already correct via first-match within siteChunks[i].
+      const _identityText =
+        typeof identityBoundary === 'number' && identityBoundary >= 0 && identityBoundary <= t.length
+          ? t.slice(0, identityBoundary)
+          : t;
 
       // ── AccountNumber ──
       // Priority: Customer ID (unique per building) > LDC Account (shared across
@@ -6593,13 +6613,13 @@ const UTILITY_RULES = [
       // IMPORTANT: the siteText passed to extract() is structured as:
       //   invoiceHeader (has site 1's Customer ID) + prevTail (has THIS site's Customer ID) + site charges
       // We must use the LAST Customer ID found in the text, not the first.
-      const _custIdAll = [...t.matchAll(/Customer\s+ID:\s*(RG-?\d+)/gi)];
+      const _custIdAll = [..._identityText.matchAll(/Customer\s+ID:\s*(RG-?\d+)/gi)];
       const custIdM = _custIdAll.length > 0 ? _custIdAll[_custIdAll.length - 1] : null;
       // C1 fix: capture full multi-segment LDC Account (e.g. "<REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>").
       // Old regex ([0-9]+) stopped at first space, capturing only "<REDACTED-ACCT-SEG1>".
       // New pattern allows digits + spaces up to 30 chars, then trim trailing spaces.
       // Similarly use the LAST match to get the per-site LDC Account (not the header's).
-      const _ldcAll = [...t.matchAll(/LDC\s*Account:\s*([0-9][0-9 ]{5,30})/gi)];
+      const _ldcAll = [..._identityText.matchAll(/LDC\s*Account:\s*([0-9][0-9 ]{5,30})/gi)];
       const ldcM = _ldcAll.length > 0 ? _ldcAll[_ldcAll.length - 1] : null;
       const bgM = t.match(/Account\s*ID:\s*(BG-\d+)/i);
       const AccountNumber =
@@ -6630,19 +6650,24 @@ const UTILITY_RULES = [
       // contains the invoice-level billing address (e.g. "<REDACTED-ADDR>") which appears
       // before the current site's own address. Searching the full siteText with /im
       // always matched the header's address, giving all 14 sites the same address.
-      // Fix: restrict the address search to the portion AFTER the LAST "Service for"
-      // line — which is where the current site's content begins. This mirrors how
-      // AccountNumber already uses the LAST Customer ID match (C2 fix above).
-      // Using the LAST match (not first) prevents prevTail from anchoring to a
-      // previous site's "Service for" line when siteChunks[i-1] is <= 600 chars.
-      const _svcForAll = [...t.matchAll(/Service\s+for\s+[A-Z][a-z]{2,}-\d{4}/gi)];
-      const _lastSvcFor = _svcForAll.length > 0 ? _svcForAll[_svcForAll.length - 1] : null;
-      const _addrSearchText = _lastSvcFor ? t.slice(_lastSvcFor.index) : t;
+      //
+      // 2026-09-16 fix (item 62a38985): address search is now restricted to
+      // _identityText (invoiceHeader + prevTail, never siteChunks[i] — see note above
+      // AccountNumber). Within that window, take the LAST match (closest to the
+      // boundary) so an invoice-level billing address earlier in the header does not
+      // win over the current site's own address sitting at the end of prevTail.
+      const _addrAllBaldwin = [..._identityText.matchAll(/^(\d+\s+[A-Za-z0-9 #]+,\s*Baldwin\s*City[^\n]*)/gim)];
+      const _addrAllGeneric = [
+        ..._identityText.matchAll(
+          /^(\d+\s+[A-Za-z0-9 .#]+,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm,
+        ),
+      ];
       const addrM =
-        _addrSearchText.match(/^(\d+\s+[A-Za-z0-9 #]+,\s*Baldwin\s*City[^\n]*)/im) ||
-        _addrSearchText.match(
-          /^(\d+\s+[A-Za-z0-9 .#]+,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/m,
-        );
+        _addrAllBaldwin.length > 0
+          ? _addrAllBaldwin[_addrAllBaldwin.length - 1]
+          : _addrAllGeneric.length > 0
+            ? _addrAllGeneric[_addrAllGeneric.length - 1]
+            : null;
       const ServiceAddress = addrM ? addrM[1].trim() : null;
 
       // ── BillingPeriod ──
@@ -7613,6 +7638,13 @@ const UTILITY_RULES = [
           );
         }
       }
+
+      // Surface the parsed site-block count as a gate input (18b33d9f gap 2,
+      // 2026-09-16) — previously this was ONLY a console.log, never seen by
+      // the app or the user. bill-analysis.js's GATE WRE reads this property
+      // (same attach-to-array pattern already used for `_unmatchedPages`) and
+      // compares it to the known Spring Hill baseline of 10 sites/invoice.
+      results._wreSiteBlockCount = siteBlocks.length;
 
       return results;
     },
