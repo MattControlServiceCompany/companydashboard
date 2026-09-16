@@ -10739,7 +10739,10 @@ function rptPageBoardSummary(n, d) {
         return periodYMs.indexOf(ym) >= 0;
       })
     : allSortedYMs.slice(-12);
-  if (!sortedYMs.length) sortedYMs = allSortedYMs.slice(-12);
+  // Only fall back to the last-12-months view when there is NO active period filter at all.
+  // A period filter that legitimately yields zero savings months (e.g. a quarter with no
+  // bills yet) must stay empty — falling back here defeats the filter (item b4c12a9b).
+  if (!periodYMs.length && !sortedYMs.length) sortedYMs = allSortedYMs.slice(-12);
   var chartData = sortedYMs.map(function (ym) {
     var mo = parseInt(ym.split('-')[1]) - 1;
     return { label: moNames[mo] || ym, value: moMap[ym] };
