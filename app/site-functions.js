@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.16.847',
+    date: '2026-09-16',
+    title: 'Bill routing: garbled OCR account numbers no longer misroute meters',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility bill routing on the Energy Department page now ignores a garbled or unreadable account number captured from a scanned invoice instead of using it to pick a meter — buildings with more than one meter now correctly flag for manual review instead of silently routing to the wrong meter.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.16.846',
     date: '2026-09-16',
     title: 'Wood River Energy: per-site account numbers now captured on garbled invoices',
