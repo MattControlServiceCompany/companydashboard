@@ -8452,6 +8452,22 @@
                 Compact PDF Storage
               </button>
             </div>
+            <div class="sb-btn-row">
+              <button
+                class="sb-btn"
+                onclick="exportAllBuildingsCSV()"
+                title="Download a CSV of every building across all projects"
+              >
+                Export Buildings (CSV)
+              </button>
+              <button
+                class="sb-btn"
+                onclick="exportAllMetersCSV()"
+                title="Download a CSV of every meter across all projects"
+              >
+                Export Meters (CSV)
+              </button>
+            </div>
             <button
               class="sb-btn danger"
               style="width: 100%"
@@ -13886,6 +13902,30 @@
                   Add
                 </button>
               </div>
+            </div>
+            <div class="f2">
+              <div class="fg">
+                <label class="fl">City</label><input class="fi" id="bm-city" placeholder="e.g. Independence" />
+              </div>
+              <div class="fg">
+                <label class="fl">State</label><input class="fi" id="bm-state" placeholder="e.g. MO" maxlength="2" />
+              </div>
+            </div>
+            <div class="fg">
+              <label class="fl">Building Type</label
+              ><input class="fi" id="bm-type" list="bm-type-options" placeholder="e.g. Elementary" />
+              <datalist id="bm-type-options">
+                <option value="Elementary"></option>
+                <option value="Middle School"></option>
+                <option value="High School"></option>
+                <option value="Gymnasium"></option>
+                <option value="Field House"></option>
+                <option value="Maintenance"></option>
+                <option value="Administration"></option>
+                <option value="Office"></option>
+                <option value="Apartment"></option>
+                <option value="Other"></option>
+              </datalist>
             </div>
             <div class="fg">
               <label class="fl">Square Footage</label
