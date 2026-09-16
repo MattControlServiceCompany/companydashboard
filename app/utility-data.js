@@ -1799,6 +1799,11 @@ function renderUDProjAggPanel(content) {
     const annBase = Object.values(moBase).reduce((s, v) => s + v, 0);
 
     // Compute actual monthly projected savings from measures (with % fallback)
+    // 2026-09-15 (SA-gate fix): the % fallback below never checked the project's `sa`
+    // (Service Agreement #). Same gate as getMeterSavings/getBldgMeasureSavingsByMo —
+    // no contract means no projected savings.
+    const _perfProj = projects.find((x) => String(x.id) === String(udSelProjId));
+    const _hasSA = !!(_perfProj && _perfProj.sa);
     const _perfProjSavByMo = Array(12).fill(0);
     bldgs.forEach((b) => {
       const msrSav = getBldgMeasureSavingsByMo(udSelProjId, b.id);
@@ -1806,7 +1811,7 @@ function renderUDProjAggPanel(content) {
         msrSav.forEach((v, mo) => {
           _perfProjSavByMo[mo] += v;
         });
-      } else {
+      } else if (_hasSA) {
         const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
         const bspCfg = DB.get(bspKey, {});
         const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
@@ -8713,6 +8718,11 @@ function bpRecalc() {
   const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
   const _msrSavByMo = _bpMsrSavByMo;
   const _useMeasures = !!_msrSavByMo;
+  // 2026-09-15 (SA-gate fix): the manual "savings %" projection fallback (used when no
+  // measures exist) never checked the project's `sa` (Service Agreement #). Same gate as
+  // getMeterSavings/getBldgMeasureSavingsByMo — no contract means no projected savings.
+  const _bpProj = projects.find((x) => String(x.id) === String(udSelProjId));
+  const _hasSA = !!(_bpProj && _bpProj.sa);
 
   // Actual savings per calendar month (re-computed from stored data if available, or from b)
   // We re-use _bpActualSavingsByCalMo if set, else re-derive
@@ -8788,7 +8798,7 @@ function bpRecalc() {
       if (col.mos) return col.mos.reduce((s, mo) => s + (_msrSavByMo[mo] || 0), 0);
       return 0;
     }
-    return getBase(col) * savPct;
+    return _hasSA ? getBase(col) * savPct : 0;
   };
   function getActSav(col) {
     if (!hasActual) return null;
@@ -8833,7 +8843,7 @@ function bpRecalc() {
 
   // Row definitions
   const annActSav = hasActual ? Object.values(actByMo).reduce((s, v) => s + v, 0) : null;
-  const annProjSav = _useMeasures ? _msrSavByMo.reduce((s, v) => s + v, 0) : annBase * savPct;
+  const annProjSav = _useMeasures ? _msrSavByMo.reduce((s, v) => s + v, 0) : _hasSA ? annBase * savPct : 0;
   const projPct = annBase > 0 ? ((annProjSav / annBase) * 100).toFixed(0) + '%' : null;
   const actPct = hasActual && annBase > 0 ? ((annActSav / annBase) * 100).toFixed(1) + '%' : null;
 
@@ -9325,6 +9335,11 @@ function bspRecalc() {
   // Measure-based savings (if available)
   const _msrSav = _bspMsrSavByMo;
   const _useM = !!_msrSav;
+  // 2026-09-15 (SA-gate fix): the manual "savings %" projection fallback (used when no
+  // measures exist) never checked the project's `sa` (Service Agreement #). Same gate as
+  // getMeterSavings/getBldgMeasureSavingsByMo — no contract means no projected savings.
+  const _bspProj = projects.find((x) => String(x.id) === String(udSelProjId));
+  const _hasSA = !!(_bspProj && _bspProj.sa);
   function bspGetProjSav(col) {
     if (_useM) {
       if (col.isTotal) return _msrSav.reduce((s, v) => s + v, 0);
@@ -9332,6 +9347,7 @@ function bspRecalc() {
       if (col.mos) return col.mos.reduce((s, mo) => s + (_msrSav[mo] || 0), 0);
       return 0;
     }
+    if (!_hasSA) return 0;
     const base = view === 'monthly' ? (col.isTotal ? annBase : moBase[col.mo]) : colBaseQ(col);
     return base * savPct;
   }
