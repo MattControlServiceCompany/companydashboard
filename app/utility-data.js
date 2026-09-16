@@ -4967,77 +4967,6 @@ function exportAllBuildingsCSV() {
     showToast('Exported ' + bldgRows.length + ' building' + (bldgRows.length !== 1 ? 's' : '') + '.');
 }
 
-// Derives an Active Yes/No status per meter since there is no stored active
-// flag. Meters are grouped by (building + account number + commodity); within
-// a group the meter with the latest most-recent bill period-end date is "Yes"
-// (the others are older/replaced meter numbers -> "No"). A group of one is
-// always "Yes". Ties or groups where no member has any bill date are flagged
-// ambiguous and all members in that group are marked "Yes" (never guess which
-// one is current). Returns a Map keyed by meter object -> {active, ambiguous}.
-function _deriveMeterActiveMap(projs) {
-  const groups = new Map();
-  projs.forEach(function (p) {
-    const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
-    (ud.buildings || []).forEach(function (b) {
-      if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
-      (b.meters || []).forEach(function (m) {
-        const key = b.id + '|' + (m.account || '') + '|' + (m.commodity || '');
-        let latest = null;
-        (m.bills || []).forEach(function (bill) {
-          if (!bill || !bill.end) return;
-          const d = _parseISO(bill.end);
-          if (!isNaN(d.getTime()) && (!latest || d.getTime() > latest.getTime())) latest = d;
-        });
-        if (!groups.has(key)) groups.set(key, []);
-        // Keyed by m.id (stable data field), not the meter object itself —
-        // callers typically re-fetch via sget(), which re-parses JSON and
-        // returns new object instances, so object-identity lookups would miss.
-        groups.get(key).push({ id: m.id, latest: latest });
-      });
-    });
-  });
-
-  const result = new Map();
-  const ambiguousGroups = [];
-  groups.forEach(function (arr, key) {
-    if (arr.length === 1) {
-      result.set(arr[0].id, { active: 'Yes', ambiguous: false });
-      return;
-    }
-    const withDates = arr.filter(function (e) {
-      return !!e.latest;
-    });
-    if (!withDates.length) {
-      arr.forEach(function (e) {
-        result.set(e.id, { active: 'Yes', ambiguous: true });
-      });
-      ambiguousGroups.push(key);
-      return;
-    }
-    const maxTime = Math.max.apply(
-      null,
-      withDates.map(function (e) {
-        return e.latest.getTime();
-      }),
-    );
-    const winners = withDates.filter(function (e) {
-      return e.latest.getTime() === maxTime;
-    });
-    if (winners.length > 1) {
-      arr.forEach(function (e) {
-        result.set(e.id, { active: 'Yes', ambiguous: true });
-      });
-      ambiguousGroups.push(key);
-      return;
-    }
-    arr.forEach(function (e) {
-      const isWinner = e.latest && e.latest.getTime() === maxTime;
-      result.set(e.id, { active: isWinner ? 'Yes' : 'No', ambiguous: false });
-    });
-  });
-  return { map: result, ambiguousGroups: ambiguousGroups };
-}
-
 /* ------------------------------------------------------------------------
  * Deterministic UUID v5 (RFC 4122, SHA-1 based) for the Meter UUID export
  * column. No npm dependency — this is a no-build static app — so SHA-1 is
@@ -5170,14 +5099,12 @@ function exportAllMetersCSV() {
     'Meter UUID',
   ];
   const meterRows = [];
-  const activeInfo = _deriveMeterActiveMap(projs);
   projs.forEach(function (p) {
     const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
     (ud.buildings || []).forEach(function (b) {
       if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
       (b.meters || []).forEach(function (m) {
-        const activeEntry = activeInfo.map.get(m.id);
-        const active = m.active !== false ? (activeEntry ? activeEntry.active : 'Yes') : 'No';
+        const active = m.active !== false ? 'Yes' : 'No';
         const inBaseline = m.baselineInclude !== false ? 'Yes' : 'No';
         const includedTag = m.baselineInclude === false ? 'Excluded' : 'Included';
         const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), includedTag].join(' - ');
@@ -5218,9 +5145,6 @@ function exportAllMetersCSV() {
   _exportTriggerDownload(new Blob([rows.join('\r\n')], { type: 'text/csv' }), 'companyhub-meters-export.csv');
   if (typeof showToast === 'function')
     showToast('Exported ' + meterRows.length + ' meter' + (meterRows.length !== 1 ? 's' : '') + '.');
-  if (activeInfo.ambiguousGroups.length && typeof console !== 'undefined') {
-    console.warn('Meter export: ambiguous Active groups (building|account|commodity):', activeInfo.ambiguousGroups);
-  }
 }
 
 /* Derive a human-friendly base filename from the current selection.
