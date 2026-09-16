@@ -5630,9 +5630,13 @@ function rptPageBuildingSummary(n, d, b) {
       '</td>' +
       '</tr>';
     var elDemSavPct = b.electric.kwBl > 0 ? ((b.electric.kwBl - b.electric.kwCur) / b.electric.kwBl) * 100 : 0;
-    // Derive demand cost saved from monthly data: sum (kwBl - kwCur) * avg kW rate per month
+    // Derive demand cost saved from monthly data: sum (kwBl - kwCur) * avg kW rate per month.
+    // 2026-09-15 (SA-gate fix): this $ is derived here from usage, not from getMeterSavings,
+    // so it needs its own contract gate — no Service Agreement means $0.
     var _elDemCostSaved = 0;
+    var _demHasSA = projHasContract(d.project && d.project.id);
     (b.electric.monthly || []).forEach(function (mo) {
+      if (!_demHasSA) return;
       var kwSav = (mo.kwBl || 0) - (mo.kwCur || 0);
       var blCostMo = mo.blCost || 0;
       var curCostMo = mo.curCost || 0;

@@ -1374,7 +1374,7 @@ function renderDetail(p) {
               <div class="pd-cell"><div class="pd-cell-lbl">Square Feet</div><div class="pd-cell-val" id="pd-sqft-cell-${p.id}">${p.sqft ? Number(p.sqft).toLocaleString() + ' sf' : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Service Agreement #</div><div class="pd-cell-val mono">${p.sa || '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Contract Value</div><div class="pd-cell-val mono">${p.contract ? '$' + Number(p.contract).toLocaleString() : '—'}</div></div>
-              <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings ? '$' + Number(p.savings).toLocaleString() : '—'}</div></div>
+              <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Start Date</div><div class="pd-cell-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Target End</div><div class="pd-cell-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Contacts</div><div class="pd-cell-val">${p.contacts && p.contacts.length ? p.contacts.length + ' contact' + (p.contacts.length !== 1 ? 's' : '') : '—'}</div></div>
@@ -1388,7 +1388,7 @@ function renderDetail(p) {
             <span class="phc-sep">|</span>
             <span>SA# <span class="phc-val">${p.sa || '—'}</span></span>
             <span class="phc-sep">|</span>
-            <span>Savings <span class="phc-val">${p.savings ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
+            <span>Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
             <span class="phc-sep">|</span>
             <span><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
             <span class="phc-sep">|</span>
@@ -1888,7 +1888,10 @@ function initDashboardTab(projId) {
   const perfWrap = document.getElementById('dash-perf-' + projId);
   if (!perfWrap) return;
   const bldgs = getUDBldgs(projId);
-  const estSavings = parseFloat(p.savings) || 0;
+  // 2026-09-15 (SA-gate fix): the project-form "Est. Savings $/yr" target and the ECM
+  // projected $ are savings dollars — hidden for a project with no Service Agreement.
+  const _hasSA = projHasContract(projId);
+  const estSavings = _hasSA ? parseFloat(p.savings) || 0 : 0;
   const useNormalized = p.baselineComparison === 'normalized';
 
   // Render header bar (like HVAC Load Est)
@@ -2249,7 +2252,7 @@ function initDashboardTab(projId) {
   // ECM projected savings
   const _ecmResult =
     typeof getProjectEcmTotal === 'function' ? getProjectEcmTotal(projId) : { total: 0, count: 0, ecms: [] };
-  const ecmTotal = _ecmResult.total || 0;
+  const ecmTotal = _hasSA ? _ecmResult.total || 0 : 0;
   const ecmCount = _ecmResult.count || 0;
 
   perfWrap.innerHTML = `

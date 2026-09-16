@@ -242,6 +242,10 @@ function renderSavingsMatrix(projId) {
   const bldgs = getUDBldgs(projId);
   const tbody = document.getElementById('sv-matrix-body-' + projId);
   if (!tbody) return;
+  // 2026-09-15 (SA-gate fix): projected-savings DOLLARS only render for a CONTRACTED project
+  // (project record `sa`). Measure inputs (kWh/kW/therms/gal, rates) stay editable; only the
+  // $ cost cells, per-measure total, payback and $/sf zero out. Same rule as getMeterSavings.
+  const _hasSA = projHasContract(projId);
   const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
   if (!sd.measures.length) {
     tbody.innerHTML = `<tr><td colspan="200" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
@@ -296,7 +300,7 @@ function renderSavingsMatrix(projId) {
     let total = 0;
     const moCells = vals
       .map((v, i) => {
-        const cost = (parseFloat(v) || 0) * rateFn(i);
+        const cost = _hasSA ? (parseFloat(v) || 0) * rateFn(i) : 0;
         total += cost;
         return `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor};font-family:var(--mono);font-size:10px;text-align:right;color:var(--text2)">${cost ? '$' + Math.round(cost).toLocaleString() : ''}</td>`;
       })
@@ -317,14 +321,17 @@ function renderSavingsMatrix(projId) {
       if (!m.propane) m.propane = Array(12).fill(0);
       const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
 
-      // Compute projected savings $ for this measure
+      // Compute projected savings $ for this measure (SA-gated: $0 with no contract)
       let projSavings = 0;
-      for (let mo = 0; mo < 12; mo++) {
-        projSavings += (parseFloat(m.kwh[mo]) || 0) * _kwhRateFn(r)(mo);
-        projSavings += (parseFloat(m.kw[mo]) || 0) * _kwRateFn(r)(mo);
-        projSavings += (parseFloat(m.gas[mo]) || 0) * _gasRateFn(r)();
-        projSavings += (parseFloat(m.propane[mo]) || 0) * _propRateFn(r)();
+      if (_hasSA) {
+        for (let mo = 0; mo < 12; mo++) {
+          projSavings += (parseFloat(m.kwh[mo]) || 0) * _kwhRateFn(r)(mo);
+          projSavings += (parseFloat(m.kw[mo]) || 0) * _kwRateFn(r)(mo);
+          projSavings += (parseFloat(m.gas[mo]) || 0) * _gasRateFn(r)();
+          projSavings += (parseFloat(m.propane[mo]) || 0) * _propRateFn(r)();
+        }
       }
+      const _msrDollar = _hasSA ? m.totalDollar || 0 : 0;
 
       const dollarStr = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
       return `<tr id="sv-msr-row-${projId}-${m.id}">
@@ -371,7 +378,7 @@ function renderSavingsMatrix(projId) {
                   </div>
                   <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
                     <div>Net Cost: <span class="sv-intensity" style="color:var(--text);font-weight:700">${(m.implCost || 0) - (m.incentive || 0) > 0 ? '$' + Math.round((m.implCost || 0) - (m.incentive || 0)).toLocaleString() : '—'}</span></div>
-                    <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${m.totalDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / m.totalDollar).toFixed(1) + ' yrs' : '—'}</span></div>
+                    <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${_msrDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / _msrDollar).toFixed(1) + ' yrs' : '—'}</span></div>
                   </div>
                 </div>
                 <div>
@@ -379,7 +386,7 @@ function renderSavingsMatrix(projId) {
                   <div style="display:flex;flex-direction:column;gap:6px">
                     <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft ? Number(m.sqft).toLocaleString() : '—'}</span></div>
                     <div>kWh/sf saved: <span class="sv-intensity" style="color:var(--accent)">${m.sqft > 0 && annMsrKwh > 0 ? (annMsrKwh / m.sqft).toFixed(1) : '—'}</span></div>
-                    <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft > 0 && m.totalDollar > 0 ? '$' + (m.totalDollar / m.sqft).toFixed(2) : '—'}</span></div>
+                    <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft > 0 && _msrDollar > 0 ? '$' + (_msrDollar / m.sqft).toFixed(2) : '—'}</span></div>
                   </div>
                 </div>
               </div>
@@ -397,6 +404,8 @@ function renderSavingsMatrix(projId) {
 function renderSavingsFooter(projId, sd) {
   const tfoot = document.getElementById('sv-matrix-foot-' + projId);
   if (!tfoot) return;
+  // SA-gate: usage totals always sum; $ totals (grandTotal + per-commodity cost) only for a contracted project.
+  const _hasSA = projHasContract(projId);
   const selMsrs = sd.measures.filter((m) => m.selected !== false);
   const totKwh = Array(12).fill(0),
     totKw = Array(12).fill(0),
@@ -414,6 +423,7 @@ function renderSavingsFooter(projId, sd) {
     m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
     m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
     (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
+    if (!_hasSA) return;
     const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
     for (let mo = 0; mo < 12; mo++) {
       const s = SUMMER_MOS.includes(mo);
@@ -478,6 +488,9 @@ function renderSavingsFooter(projId, sd) {
 function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal) {
   const el = document.getElementById('sv-summary-' + projId);
   if (!el) return;
+  // SA-gate: no contract => Projected Savings $, quarterly $ and payback all zero/blank.
+  const _hasSA = projHasContract(projId);
+  if (!_hasSA) grandTotal = 0;
   const annKwh = totKwh.reduce((a, b) => a + b, 0);
   const annKwAvg = totKw.reduce((a, b) => a + b, 0) / 12;
   const annGas = totGas.reduce((a, b) => a + b, 0);
@@ -495,6 +508,7 @@ function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, gra
   // Compute quarterly savings totals (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec)
   const qtrs = [0, 0, 0, 0];
   selMsrs.forEach((m) => {
+    if (!_hasSA) return;
     const r = m.rates || {};
     for (let mo = 0; mo < 12; mo++) {
       const qi = Math.floor(mo / 3);
@@ -573,6 +587,7 @@ function autoSaveMsr(projId) {
 
 function calcProjSavingsMatrix(projId) {
   const sd = getProjSavingsData(projId);
+  const _hasSA = projHasContract(projId);
   // Read live DOM values back into data (check both project-tab and sidebar row IDs)
   sd.measures.forEach((m) => {
     const row =
@@ -600,7 +615,8 @@ function calcProjSavingsMatrix(projId) {
     m.totalDollar = total;
     const cell =
       document.getElementById('sv-msr-total-' + projId + '-' + m.id) || document.getElementById('sv-pg-total-' + m.id);
-    if (cell) cell.textContent = total > 0 ? '$' + Math.round(total).toLocaleString() : '—';
+    // SA-gate: stored totalDollar keeps the raw computation; the displayed $ is zero with no contract.
+    if (cell) cell.textContent = _hasSA && total > 0 ? '$' + Math.round(total).toLocaleString() : '—';
   });
   sset('en_projects', projects);
   renderSavingsFooter(projId, sd);
@@ -920,6 +936,9 @@ function _renderSavingsContent(wrap, projId) {
     return `<th id="sv-cg-hdr-${grp}" colspan="${isOpen ? colspan : 1}" style="text-align:center;border-left:2px solid var(--border2);background:${bg};cursor:pointer;user-select:none" onclick="svToggleColGroup('${grp}')"><span id="sv-cg-tog-${grp}" style="font-size:10px;margin-right:3px">${isOpen ? '▾' : '▸'}</span>${label}</th>`;
   };
 
+  // 2026-09-15 (SA-gate fix): same rule as renderSavingsMatrix — $ outputs only for a contracted project.
+  const _hasSA = projHasContract(projId);
+
   // ── Rate functions for cost calc ──
   const kwhRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwhSummer || 0 : r.kwhWinter || 0);
   const kwRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwSummer || 0 : r.kwWinter || 0);
@@ -950,7 +969,7 @@ function _renderSavingsContent(wrap, projId) {
     let total = 0;
     const moCells = vals
       .map((v, i) => {
-        const cost = (parseFloat(v) || 0) * rateFn(i);
+        const cost = _hasSA ? (parseFloat(v) || 0) * rateFn(i) : 0;
         total += cost;
         return `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor};font-family:var(--mono);font-size:10px;text-align:right;color:var(--text2)">${cost ? '$' + Math.round(cost).toLocaleString() : ''}</td>`;
       })
@@ -985,14 +1004,17 @@ function _renderSavingsContent(wrap, projId) {
         if (!m.propane) m.propane = Array(12).fill(0);
         const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
 
-        // Compute projected savings $ for this measure
+        // Compute projected savings $ for this measure (SA-gated: $0 with no contract)
         let projSavings = 0;
-        for (let mo = 0; mo < 12; mo++) {
-          projSavings += (parseFloat(m.kwh[mo]) || 0) * kwhRateFn(r)(mo);
-          projSavings += (parseFloat(m.kw[mo]) || 0) * kwRateFn(r)(mo);
-          projSavings += (parseFloat(m.gas[mo]) || 0) * gasRateFn(r)();
-          projSavings += (parseFloat(m.propane[mo]) || 0) * propRateFn(r)();
+        if (_hasSA) {
+          for (let mo = 0; mo < 12; mo++) {
+            projSavings += (parseFloat(m.kwh[mo]) || 0) * kwhRateFn(r)(mo);
+            projSavings += (parseFloat(m.kw[mo]) || 0) * kwRateFn(r)(mo);
+            projSavings += (parseFloat(m.gas[mo]) || 0) * gasRateFn(r)();
+            projSavings += (parseFloat(m.propane[mo]) || 0) * propRateFn(r)();
+          }
         }
+        const _msrDollar = _hasSA ? m.totalDollar || 0 : 0;
 
         const dollar = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
         const selOpts = bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`);
@@ -1044,7 +1066,7 @@ function _renderSavingsContent(wrap, projId) {
                     </div>
                     <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
                       <div>Net Cost: <span class="sv-intensity" style="color:var(--text);font-weight:700">${(m.implCost || 0) - (m.incentive || 0) > 0 ? '$' + Math.round((m.implCost || 0) - (m.incentive || 0)).toLocaleString() : '—'}</span></div>
-                      <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${m.totalDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / m.totalDollar).toFixed(1) + ' yrs' : '—'}</span></div>
+                      <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${_msrDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / _msrDollar).toFixed(1) + ' yrs' : '—'}</span></div>
                     </div>
                   </div>
                   <div>
@@ -1052,7 +1074,7 @@ function _renderSavingsContent(wrap, projId) {
                     <div style="display:flex;flex-direction:column;gap:6px">
                       <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft ? Number(m.sqft).toLocaleString() : '—'}</span></div>
                       <div>kWh/sf saved: <span class="sv-intensity" style="color:var(--accent)">${m.sqft > 0 && annMsrKwh > 0 ? (annMsrKwh / m.sqft).toFixed(1) : '—'}</span></div>
-                      <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft > 0 && m.totalDollar > 0 ? '$' + (m.totalDollar / m.sqft).toFixed(2) : '—'}</span></div>
+                      <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft > 0 && _msrDollar > 0 ? '$' + (_msrDollar / m.sqft).toFixed(2) : '—'}</span></div>
                     </div>
                   </div>
                 </div>
@@ -1085,6 +1107,7 @@ function _renderSavingsContent(wrap, projId) {
     m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
     m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
     (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
+    if (!_hasSA) return;
     const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
     for (let mo = 0; mo < 12; mo++) {
       const s = SUMMER_MOS.includes(mo);

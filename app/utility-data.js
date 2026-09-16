@@ -1527,7 +1527,9 @@ function renderUDProjAggPanel(content) {
       });
       if (msrSav) {
         wtSav += msrSav.reduce((s, v) => s + v, 0);
-      } else {
+      } else if (projHasContract(udSelProjId)) {
+        // 2026-09-15 (SA-gate fix): dead code (unreferenced in this file), but gated
+        // anyway as cheap insurance against the same fallback leak if it's ever wired up.
         const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
         const bspCfg = DB.get(bspKey, {});
         const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
@@ -1799,6 +1801,10 @@ function renderUDProjAggPanel(content) {
     const annBase = Object.values(moBase).reduce((s, v) => s + v, 0);
 
     // Compute actual monthly projected savings from measures (with % fallback)
+    // 2026-09-15 (SA-gate fix): the % fallback below never checked the project's `sa`
+    // (Service Agreement #). Same gate as getMeterSavings/getBldgMeasureSavingsByMo —
+    // no contract means no projected savings.
+    const _hasSA = projHasContract(udSelProjId);
     const _perfProjSavByMo = Array(12).fill(0);
     bldgs.forEach((b) => {
       const msrSav = getBldgMeasureSavingsByMo(udSelProjId, b.id);
@@ -1806,7 +1812,7 @@ function renderUDProjAggPanel(content) {
         msrSav.forEach((v, mo) => {
           _perfProjSavByMo[mo] += v;
         });
-      } else {
+      } else if (_hasSA) {
         const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
         const bspCfg = DB.get(bspKey, {});
         const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
@@ -8713,6 +8719,10 @@ function bpRecalc() {
   const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
   const _msrSavByMo = _bpMsrSavByMo;
   const _useMeasures = !!_msrSavByMo;
+  // 2026-09-15 (SA-gate fix): the manual "savings %" projection fallback (used when no
+  // measures exist) never checked the project's `sa` (Service Agreement #). Same gate as
+  // getMeterSavings/getBldgMeasureSavingsByMo — no contract means no projected savings.
+  const _hasSA = projHasContract(udSelProjId);
 
   // Actual savings per calendar month (re-computed from stored data if available, or from b)
   // We re-use _bpActualSavingsByCalMo if set, else re-derive
@@ -8788,7 +8798,7 @@ function bpRecalc() {
       if (col.mos) return col.mos.reduce((s, mo) => s + (_msrSavByMo[mo] || 0), 0);
       return 0;
     }
-    return getBase(col) * savPct;
+    return _hasSA ? getBase(col) * savPct : 0;
   };
   function getActSav(col) {
     if (!hasActual) return null;
@@ -8833,7 +8843,7 @@ function bpRecalc() {
 
   // Row definitions
   const annActSav = hasActual ? Object.values(actByMo).reduce((s, v) => s + v, 0) : null;
-  const annProjSav = _useMeasures ? _msrSavByMo.reduce((s, v) => s + v, 0) : annBase * savPct;
+  const annProjSav = _useMeasures ? _msrSavByMo.reduce((s, v) => s + v, 0) : _hasSA ? annBase * savPct : 0;
   const projPct = annBase > 0 ? ((annProjSav / annBase) * 100).toFixed(0) + '%' : null;
   const actPct = hasActual && annBase > 0 ? ((annActSav / annBase) * 100).toFixed(1) + '%' : null;
 
@@ -9325,6 +9335,10 @@ function bspRecalc() {
   // Measure-based savings (if available)
   const _msrSav = _bspMsrSavByMo;
   const _useM = !!_msrSav;
+  // 2026-09-15 (SA-gate fix): the manual "savings %" projection fallback (used when no
+  // measures exist) never checked the project's `sa` (Service Agreement #). Same gate as
+  // getMeterSavings/getBldgMeasureSavingsByMo — no contract means no projected savings.
+  const _hasSA = projHasContract(udSelProjId);
   function bspGetProjSav(col) {
     if (_useM) {
       if (col.isTotal) return _msrSav.reduce((s, v) => s + v, 0);
@@ -9332,6 +9346,7 @@ function bspRecalc() {
       if (col.mos) return col.mos.reduce((s, mo) => s + (_msrSav[mo] || 0), 0);
       return 0;
     }
+    if (!_hasSA) return 0;
     const base = view === 'monthly' ? (col.isTotal ? annBase : moBase[col.mo]) : colBaseQ(col);
     return base * savPct;
   }
@@ -9348,9 +9363,10 @@ function bspRecalc() {
         case 'savings':
           return projSav;
         case 'client':
-          return base * cliPct;
+          // 2026-09-15 (SA-gate fix): compensation cannot exist without a contract.
+          return _hasSA ? base * cliPct : 0;
         case 'csc':
-          return base * cscPct;
+          return _hasSA ? base * cscPct : 0;
       }
     });
     const labels = {
@@ -9445,7 +9461,7 @@ function bspRecalc() {
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Projected Spend</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase - (_useM ? _msrSav.reduce((s, v) => s + v, 0) : annBase * savPct))}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase - (_useM ? _msrSav.reduce((s, v) => s + v, 0) : _hasSA ? annBase * savPct : 0))}</div>
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Total Projected Savings</div>
@@ -9454,7 +9470,7 @@ function bspRecalc() {
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Cumulative</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(annBase * cscPct * years)}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(_hasSA ? annBase * cscPct * years : 0)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">over ${years} yr${years > 1 ? 's' : ''}</div>
             </div>
           </div>

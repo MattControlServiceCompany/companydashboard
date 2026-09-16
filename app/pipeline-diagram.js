@@ -402,12 +402,15 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
             }).length
           : null;
 
+        // 2026-09-15 (SA-gate fix): unit savings still show; $ savings only for a contracted
+        // project (project record `sa`) — same rule as computations/savings.js getMeterSavings.
+        const _hasSA = projHasContract(udSelProjId);
         let totalSav = 0;
         let monthRows = '';
         last12.forEach((r) => {
           const sav = r.regrBaseline - r.usage;
           const rate = avgRate || 0;
-          const savDol = sav * rate;
+          const savDol = _hasSA ? sav * rate : 0;
           totalSav += savDol;
           monthRows +=
             '<tr>' +
@@ -441,7 +444,11 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
           _pdStatCard(
             'Est. Annual Savings',
             avgRate ? _pdFmtMoney(totalSav) : 'Rate unknown',
-            avgRate ? '(last ' + last12.length + ' months)' : 'Add rates in Savings tab',
+            !_hasSA
+              ? 'no Service Agreement — $ savings not booked'
+              : avgRate
+                ? '(last ' + last12.length + ' months)'
+                : 'Add rates in Savings tab',
           ) +
           _pdStatCard('Rate Used', avgRate ? '$' + avgRate.toFixed(4) + '/' + unit : '—', 'avg from baseline period') +
           '</div>' +

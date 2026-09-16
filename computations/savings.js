@@ -13,6 +13,20 @@
 const SAVINGS_CALC_VERSION = '2026.09.10.814';
 
 /* ─────────────────────────────────────────────────────────────
+   projHasContract(projId)
+   Single source of truth: does this project have a Service
+   Agreement (sa) number? No SA means no savings/compensation
+   dollars should ever be shown for the project, anywhere in the
+   app. Every savings-% fallback gate (perf-table, bpRecalc,
+   bspRecalc, graphics-setpoints, etc.) must route through this
+   instead of re-implementing the projects.find lookup.
+───────────────────────────────────────────────────────────── */
+function projHasContract(projId) {
+  const p = (typeof projects !== 'undefined' ? projects : []).find((x) => String(x.id) === String(projId));
+  return !!(p && p.sa);
+}
+
+/* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl)
    Unified savings function — single pass, populates both byYM
    and byCalMo, applies costSavOverrides to BOTH formats.
@@ -27,6 +41,15 @@ const SAVINGS_CALC_VERSION = '2026.09.10.814';
 ───────────────────────────────────────────────────────────── */
 function getMeterSavings(m, bills, incl, projId, bldgId) {
   const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {} };
+
+  // 2026-09-15 (SA-gate fix): savings only compute for a CONTRACTED project. The contract
+  // signal is the project record's `sa` field (Service Agreement #) — a project with no SA
+  // (Spring Hill, JOCO, Baker: sa="") must show ZERO savings everywhere, not a phantom
+  // number from a bill that happens to look complete. String(x.id) === String(projId) is
+  // required because app/portal-export.js:67 passes projId as a String while projects[].id
+  // are numbers — a strict === here would silently fail that caller.
+  const _proj = typeof projects !== 'undefined' ? projects.find((x) => String(x.id) === String(projId)) : null;
+  if (!_proj || !_proj.sa) return empty;
 
   // Phase 1 multi-baseline dispatch: if the meter has a baselines array, route to
   // the multi-baseline path. Falls back to legacy single-baseline logic below.
@@ -548,8 +571,14 @@ function getProjectSavingsByYM(projId) {
    Returns Array(12) of monthly dollar savings, or null if no measures.
 ───────────────────────────────────────────────────────────── */
 function getBldgMeasureSavingsByMo(projId, bldgId) {
-  const p = projects.find((x) => x.id === projId);
-  if (!p || !p.savingsData) return null;
+  // 2026-09-15 (SA-gate fix): String(x.id) === String(projId) matches the getMeterSavings
+  // gate above — portal-export passes projId as a String while projects[].id are numbers,
+  // so a strict === here silently failed that caller. Also gate on the project's `sa`
+  // (Service Agreement #): no contract means no projected savings either, same rule as
+  // actual savings — a project with no SA must return the function's existing "nothing to
+  // show" shape (null), not phantom measure-based numbers.
+  const p = projects.find((x) => String(x.id) === String(projId));
+  if (!p || !p.savingsData || !p.sa) return null;
   const measures = (p.savingsData.measures || []).filter((m) => m.bldgId === bldgId && m.selected !== false);
   if (!measures.length) return null;
   const monthlySavings = Array(12).fill(0);

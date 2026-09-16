@@ -182,6 +182,9 @@ function _pvRenderBldgPerf(b, projId) {
   var bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
   var bspCfg = DB.get(bspKey, {});
   var savPct = (bspCfg.savingsPct || 11) / 100;
+  // 2026-09-15 (SA-gate fix): the % fallback below never checked the project's `sa`
+  // (Service Agreement #). No contract means no projected savings.
+  var _hasSA = projHasContract(projId);
   var $f = function (v) {
     return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
@@ -200,7 +203,7 @@ function _pvRenderBldgPerf(b, projId) {
   var annAct = 0;
   var rows = MN.map(function (mn, mo) {
     var base = moBase[mo];
-    var projSav = msrSav ? msrSav[mo] || 0 : base * savPct;
+    var projSav = msrSav ? msrSav[mo] || 0 : _hasSA ? base * savPct : 0;
     var act = actualSavByCalMo[mo] != null ? actualSavByCalMo[mo] : null;
     if (act != null) annAct += act;
     var pct = act != null && base > 0 ? (act / base) * 100 : null;
@@ -269,7 +272,9 @@ function _pvRenderBldgPerf(b, projId) {
         ? msrSav.reduce(function (s, v) {
             return s + v;
           }, 0)
-        : annBase * savPct,
+        : _hasSA
+          ? annBase * savPct
+          : 0,
     ) +
     '</td>' +
     '<td style="' +
@@ -2090,7 +2095,9 @@ function egfxRefresh(projId) {
           msrSav.forEach((v, mo) => {
             _egfxProjSavByMo[mo] += v;
           });
-        } else {
+        } else if (projHasContract(projId)) {
+          // 2026-09-15 (SA-gate fix): no contract means no projected savings — skip
+          // the % fallback accumulation entirely so the chart shows $0 for that building.
           const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
           const bspCfg = DB.get(bspKey, {});
           const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
