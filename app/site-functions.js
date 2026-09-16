@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.16.849',
+    date: '2026-09-16',
+    title: 'Energy Department: Buildings/Meters CSV export format corrected',
+    items: [
+      {
+        type: 'fix',
+        text: 'Export Buildings (CSV) and Export Meters (CSV) on the Energy Department page now use the corrected final column layout — Buildings export combines City/State/ZIP into one Address column, and Meters export includes a readable Meter Description and moves Meter UUID to the last column.',
+      },
+      {
+        type: 'fix',
+        text: 'The Active column in the Meters CSV export now only shows "No" when a meter has been explicitly marked inactive, instead of guessing based on recent bill activity.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.16.848',
     date: '2026-09-16',
     title: 'Energy Department: export Buildings and Meters to CSV',
