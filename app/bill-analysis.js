@@ -1437,8 +1437,43 @@ function _gateA_evaluateCoverage() {
 // distinguishable date in the text, but that tradeoff is intentional: a gate
 // that cries wolf on routine input gets ignored, which is worse than
 // occasionally missing a genuinely ambiguous case.
-function _gateB_billCountCheck(rawText, billCount) {
+// FIX (18b33d9f, 2026-09-16, item 18b33d9f gap 1): the per-page-single-match
+// logic below assumes AT MOST ONE identity anchor per physical page, which is
+// correct for Evergy/Louisburg/Rockville-style bills (one account per page)
+// but silently wrong for providers whose extractAll legitimately produces
+// MANY bills per physical page — Wood River Energy prints ~10 "Service
+// Address:" site blocks on one or two pages (known-good-values/
+// spring-hill.md). For those providers, `expected` from the per-page tally
+// below could never exceed 1-2, so GATE B never tripped even when only 2 of
+// 10 sites were actually extracted. Fix: for known multi-site-per-page
+// providers, count the provider's OWN block-opening anchor with matchAll
+// across the WHOLE raw text instead of one match per page, and compare that
+// count directly to billCount.
+const _MULTI_SITE_PER_PAGE_ANCHORS = {
+  'Wood River Energy': /Service\s+Address\s*[:;,.]?/gi,
+};
+function _gateB_billCountCheck(rawText, billCount, providerName) {
   if (!rawText || billCount == null) return null;
+  if (providerName && _MULTI_SITE_PER_PAGE_ANCHORS[providerName]) {
+    const anchorRe = _MULTI_SITE_PER_PAGE_ANCHORS[providerName];
+    const expected = [...rawText.matchAll(anchorRe)].length;
+    if (expected <= billCount) return null;
+    return {
+      gate: 'B',
+      expected,
+      actual: billCount,
+      message:
+        'This file produced ' +
+        billCount +
+        ' bill' +
+        (billCount === 1 ? '' : 's') +
+        '; ' +
+        expected +
+        ' site anchor' +
+        (expected === 1 ? '' : 's') +
+        ' found in the text (expected one bill per site)',
+    };
+  }
   const pageChunks = rawText.split(/%%PAGE_\d+%%/).slice(1);
   // No page markers found (shouldn't happen — extractPDFText always inserts them,
   // but degrade gracefully rather than mis-splitting on unfamiliar input shape).
@@ -1493,6 +1528,40 @@ function _gateB_billCountCheck(rawText, billCount) {
       ' distinct account/date group' +
       (expected === 1 ? '' : 's') +
       ' found in the text',
+  };
+}
+
+// GATE WRE — known per-invoice site-count baseline for Wood River Energy.
+// (18b33d9f gap 2, 2026-09-16.) `_parseWRESiteBlocks` (energy-savings.js)
+// can fail to open a site block at all when OCR garbles the "Service
+// Address:" line badly enough that even its tolerant regex misses it — in
+// that case the anchor never appears in the raw text either, so GATE B's
+// matchAll anchor count above (which counts the SAME anchor) cannot catch
+// it. Wood River / Spring Hill invoices are ALWAYS exactly 10 per-site
+// sub-totals (AI/_context/reference/known-good-values/spring-hill.md,
+// invoice #478203 Nov 2025 ground truth) — this is a fixed, known baseline
+// for this provider, not a guess. Any invoice whose parsed site-block count
+// comes in under that baseline must HOLD for review via the existing gate
+// mechanism, not silently auto-save.
+const _WRE_EXPECTED_SITE_COUNT = 10;
+function _gateWRE_siteCountCheck(providerName, wreSiteBlockCount, billCount) {
+  if (providerName !== 'Wood River Energy') return null;
+  if (wreSiteBlockCount == null) return null;
+  if (wreSiteBlockCount >= _WRE_EXPECTED_SITE_COUNT) return null;
+  return {
+    gate: 'WRE',
+    expected: _WRE_EXPECTED_SITE_COUNT,
+    actual: wreSiteBlockCount,
+    message:
+      'This file yielded ' +
+      wreSiteBlockCount +
+      ' of the ' +
+      _WRE_EXPECTED_SITE_COUNT +
+      ' sites Wood River / Spring Hill invoices always have (' +
+      billCount +
+      ' bill' +
+      (billCount === 1 ? '' : 's') +
+      ' produced) — scan may be too poor to read; obtain a better copy or verify manually',
   };
 }
 
@@ -1591,7 +1660,7 @@ function _billPeriodLabel(b) {
 // from this extraction. Sets b._gateTripped + b._gateReasons, which is the
 // ONLY thing the save paths and row rendering need to read. Implemented once;
 // called identically from both the queue and single-file paths.
-function _applyExtractionGates(bills, gateA, gateB) {
+function _applyExtractionGates(bills, gateA, gateB, gateWRE) {
   if (!bills) return;
   for (const b of bills) {
     // Additive, not replacing (18b33d9f round 2, also-address: fail-open fix) —
@@ -1601,11 +1670,12 @@ function _applyExtractionGates(bills, gateA, gateB) {
     // failure is never silently dropped from what the user sees. _pushGateReason
     // appends in place (round 2 review fix), so this is automatic — no manual
     // slice-then-reassign needed.
-    // GATE A/B are file-level facts (whole-file page/date-group counts), not
-    // about any single field's value — no fields dependency, so only an
-    // explicit Save-Anyway (never a field edit) can resolve them.
+    // GATE A/B/WRE are file-level facts (whole-file page/date-group/site
+    // counts), not about any single field's value — no fields dependency, so
+    // only an explicit Save-Anyway (never a field edit) can resolve them.
     if (gateA) _pushGateReason(b, gateA.message, null);
     if (gateB) _pushGateReason(b, gateB.message, null);
+    if (gateWRE) _pushGateReason(b, gateWRE.message, null);
     const gc = b._correction_pending_TotalCurrentCharges;
     if (gc) {
       // REVIEW FIX (18b33d9f round 3, BLOCKING 1): gc is set ONLY when the
@@ -9802,6 +9872,10 @@ async function _extractSingleFileForQueue(file, fileIdx) {
 
         let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
         const _queueUnmatchedPages = bills._unmatchedPages || [];
+        // GATE WRE input (18b33d9f gap 2): captured from the raw extractAll()
+        // return before any downstream reassignment (_postExtractionVerify,
+        // etc.) can drop the array-attached property.
+        const _queueWreSiteBlockCount = bills._wreSiteBlockCount;
         // Bug b5951068: Instead of silently dropping bills that fail the key-field
         // filter, flag them with parseError:true so the user sees every billing
         // period from the PDF — even ones the parser couldn't understand.
@@ -9841,7 +9915,8 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         // utility rule (e.g. City of Louisburg) couldn't parse but another rule
         // (e.g. Evergy) recovered. Comparing against pre-recovery bills.length
         // stamped a stale mismatch onto every individually-correct bill.
-        const _gateBResult = _gateB_billCountCheck(text, finalBills.length); // GATE B
+        const _gateBResult = _gateB_billCountCheck(text, finalBills.length, rule.name); // GATE B
+        const _gateWREResult = _gateWRE_siteCountCheck(rule.name, _queueWreSiteBlockCount, finalBills.length); // GATE WRE
 
         if (
           finalBills.length === 0 ||
@@ -9890,10 +9965,10 @@ async function _extractSingleFileForQueue(file, fileIdx) {
           });
         }
 
-        // GATE A/B/C wiring (18b33d9f): stamp every bill from this file with
+        // GATE A/B/WRE/C wiring (18b33d9f): stamp every bill from this file with
         // _gateTripped/_gateReasons so the save queue can default flagged rows
         // to unchecked instead of relying on the user to notice a badge.
-        _applyExtractionGates(finalBills, _gateAResult, _gateBResult);
+        _applyExtractionGates(finalBills, _gateAResult, _gateBResult, _gateWREResult);
 
         // Run analysis for warnings (stored on each bill as _warnings)
         const analysisResults = await analyzeBillExtraction(finalBills, rule.name, undefined, statusCb);
@@ -16422,12 +16497,17 @@ async function processPDF(file) {
           // after `rule.extractAll(text)`) stamped a stale mismatch onto every
           // individually-correct bill. `text` is the original extractPDFText output
           // and is never reassigned upstream, so anchor counts stay accurate.
-          const _gateBResult = _gateB_billCountCheck(text, finalBills.length); // GATE B
+          const _gateBResult = _gateB_billCountCheck(text, finalBills.length, rule.name); // GATE B
+          // GATE WRE input (18b33d9f gap 2): read from the current `bills`
+          // reference here (post any OCR-retry reassignment) so a retried
+          // Wood River extraction is checked against its OWN fresh site-block
+          // count, not a stale pre-retry snapshot.
+          const _gateWREResult = _gateWRE_siteCountCheck(rule.name, bills._wreSiteBlockCount, finalBills.length); // GATE WRE
 
-          // GATE A/B/C wiring (18b33d9f): stamp every bill from this file with
+          // GATE A/B/WRE/C wiring (18b33d9f): stamp every bill from this file with
           // _gateTripped/_gateReasons so the single-file save path can hold flagged
           // bills for review instead of including them in "Save All" by default.
-          _applyExtractionGates(finalBills, _gateAResult, _gateBResult);
+          _applyExtractionGates(finalBills, _gateAResult, _gateBResult, _gateWREResult);
 
           const analysisResults = await analyzeBillExtraction(finalBills, rule.name, _pevCache, statusMsg);
           window._pdfBillWarnings = analysisResults;
