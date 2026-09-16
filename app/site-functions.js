@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.16.848',
+    date: '2026-09-16',
+    title: 'Energy Department: export Buildings and Meters to CSV',
+    items: [
+      {
+        type: 'feature',
+        text: 'New Export Buildings (CSV) and Export Meters (CSV) buttons on the Energy Department page — download every building or every meter across all projects as a spreadsheet, including a unique Meter UUID and whether each meter is currently active.',
+      },
+      {
+        type: 'feature',
+        text: 'Buildings now support Building Type, City, and State fields on the Add/Edit Building form, in addition to Address and ZIP.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.16.847',
     date: '2026-09-16',
     title: 'Bill routing: garbled OCR account numbers no longer misroute meters',
