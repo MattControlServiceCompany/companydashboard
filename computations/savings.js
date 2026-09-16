@@ -557,8 +557,14 @@ function getProjectSavingsByYM(projId) {
    Returns Array(12) of monthly dollar savings, or null if no measures.
 ───────────────────────────────────────────────────────────── */
 function getBldgMeasureSavingsByMo(projId, bldgId) {
-  const p = projects.find((x) => x.id === projId);
-  if (!p || !p.savingsData) return null;
+  // 2026-09-15 (SA-gate fix): String(x.id) === String(projId) matches the getMeterSavings
+  // gate above — portal-export passes projId as a String while projects[].id are numbers,
+  // so a strict === here silently failed that caller. Also gate on the project's `sa`
+  // (Service Agreement #): no contract means no projected savings either, same rule as
+  // actual savings — a project with no SA must return the function's existing "nothing to
+  // show" shape (null), not phantom measure-based numbers.
+  const p = projects.find((x) => String(x.id) === String(projId));
+  if (!p || !p.savingsData || !p.sa) return null;
   const measures = (p.savingsData.measures || []).filter((m) => m.bldgId === bldgId && m.selected !== false);
   if (!measures.length) return null;
   const monthlySavings = Array(12).fill(0);
