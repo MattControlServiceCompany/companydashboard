@@ -4921,47 +4921,50 @@ function _titleCaseAddress(str) {
     .join('');
 }
 
+// Folds street + city + state + zip into one address string for export.
+// "123 Main St, Independence, MO 64050" — missing parts are dropped cleanly
+// (no stray commas). Title-casing is applied by the caller on the result.
+function _composeFullAddress(street, city, state, zip) {
+  const street_ = (street || '').trim();
+  const city_ = (city || '').trim();
+  const state_ = (state || '').trim();
+  const zip_ = (zip || '').trim();
+  let cityStateZip = city_;
+  if (state_) cityStateZip = cityStateZip ? cityStateZip + ', ' + state_ : state_;
+  if (zip_) cityStateZip = cityStateZip ? cityStateZip + ' ' + zip_ : zip_;
+  if (street_ && cityStateZip) return street_ + ', ' + cityStateZip;
+  return street_ || cityStateZip;
+}
+
 function exportAllBuildingsCSV() {
   const projs = sget('en_projects', []) || [];
-  const headers = [
-    'Project',
-    'Project Type',
-    'Building Name',
-    'Address',
-    'City',
-    'State',
-    'ZIP',
-    'Square Footage',
-    'Building Type',
-  ];
-  const rows = [headers.map(_csvEscField).join(',')];
-  let count = 0;
+  const headers = ['Project', 'Project Type', 'Building Name', 'Address', 'Square Footage', 'Building Type'];
+  const bldgRows = [];
   projs.forEach(function (p) {
     const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
     (ud.buildings || []).forEach(function (b) {
       if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
       const addrRaw = b.addr !== undefined && b.addr !== null ? b.addr : b.address;
       const sqft = b.sqft !== undefined && b.sqft !== null ? b.sqft : '';
-      rows.push(
-        [
-          p.name,
-          p.type || '',
-          b.name,
-          _titleCaseAddress(addrRaw),
-          _titleCaseAddress(b.city || ''),
-          (b.state || '').toUpperCase(),
-          b.zip || '',
-          sqft,
-          b.type || '',
-        ]
-          .map(_csvEscField)
-          .join(','),
-      );
-      count++;
+      const fullAddr = _titleCaseAddress(_composeFullAddress(addrRaw, b.city, b.state, b.zip));
+      bldgRows.push({
+        projName: p.name || '',
+        bldgName: b.name || '',
+        cells: [p.name, p.type || '', b.name, fullAddr, sqft, b.type || ''],
+      });
     });
   });
+  bldgRows.sort(function (a, b) {
+    return a.projName.localeCompare(b.projName) || a.bldgName.localeCompare(b.bldgName);
+  });
+  const rows = [headers.map(_csvEscField).join(',')].concat(
+    bldgRows.map(function (r) {
+      return r.cells.map(_csvEscField).join(',');
+    }),
+  );
   _exportTriggerDownload(new Blob([rows.join('\r\n')], { type: 'text/csv' }), 'companyhub-buildings-export.csv');
-  if (typeof showToast === 'function') showToast('Exported ' + count + ' building' + (count !== 1 ? 's' : '') + '.');
+  if (typeof showToast === 'function')
+    showToast('Exported ' + bldgRows.length + ' building' + (bldgRows.length !== 1 ? 's' : '') + '.');
 }
 
 // Derives an Active Yes/No status per meter since there is no stored active
@@ -5035,6 +5038,123 @@ function _deriveMeterActiveMap(projs) {
   return { map: result, ambiguousGroups: ambiguousGroups };
 }
 
+/* ------------------------------------------------------------------------
+ * Deterministic UUID v5 (RFC 4122, SHA-1 based) for the Meter UUID export
+ * column. No npm dependency — this is a no-build static app — so SHA-1 is
+ * implemented inline. Matches Python's
+ *   uuid.uuid5(uuid.uuid5(uuid.NAMESPACE_URL, "companyhub:meter"), str(m.id))
+ * byte-for-byte (cross-checked against the reference generator). Given the
+ * same m.id, this always produces the same UUID on any device — it is NOT
+ * random. ------------------------------------------------------------- */
+function _sha1Bytes(bytes) {
+  function rotl(n, s) {
+    return ((n << s) | (n >>> (32 - s))) >>> 0;
+  }
+  const ml = bytes.length * 8;
+  const withOne = new Uint8Array((bytes.length + 9 + 63) & ~63);
+  withOne.set(bytes);
+  withOne[bytes.length] = 0x80;
+  const dv = new DataView(withOne.buffer);
+  const lenOffset = withOne.length - 8;
+  dv.setUint32(lenOffset, Math.floor(ml / 0x100000000), false);
+  dv.setUint32(lenOffset + 4, ml >>> 0, false);
+
+  let h0 = 0x67452301,
+    h1 = 0xefcdab89,
+    h2 = 0x98badcfe,
+    h3 = 0x10325476,
+    h4 = 0xc3d2e1f0;
+  const w = new Uint32Array(80);
+  for (let chunk = 0; chunk < withOne.length; chunk += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(chunk + i * 4, false);
+    for (let i = 16; i < 80; i++) w[i] = rotl(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+    let a = h0,
+      b = h1,
+      c = h2,
+      d = h3,
+      e = h4;
+    for (let i = 0; i < 80; i++) {
+      let f, k;
+      if (i < 20) {
+        f = (b & c) | (~b & d);
+        k = 0x5a827999;
+      } else if (i < 40) {
+        f = b ^ c ^ d;
+        k = 0x6ed9eba1;
+      } else if (i < 60) {
+        f = (b & c) | (b & d) | (c & d);
+        k = 0x8f1bbcdc;
+      } else {
+        f = b ^ c ^ d;
+        k = 0xca62c1d6;
+      }
+      const temp = (rotl(a, 5) + f + e + k + w[i]) >>> 0;
+      e = d;
+      d = c;
+      c = rotl(b, 30);
+      b = a;
+      a = temp;
+    }
+    h0 = (h0 + a) >>> 0;
+    h1 = (h1 + b) >>> 0;
+    h2 = (h2 + c) >>> 0;
+    h3 = (h3 + d) >>> 0;
+    h4 = (h4 + e) >>> 0;
+  }
+  const out = new Uint8Array(20);
+  const outDv = new DataView(out.buffer);
+  outDv.setUint32(0, h0, false);
+  outDv.setUint32(4, h1, false);
+  outDv.setUint32(8, h2, false);
+  outDv.setUint32(12, h3, false);
+  outDv.setUint32(16, h4, false);
+  return out;
+}
+function _uuidToBytes(uuid) {
+  const hex = uuid.replace(/-/g, '');
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+function _bytesToUuid(bytes) {
+  const hex = Array.from(bytes)
+    .map(function (b) {
+      return b.toString(16).padStart(2, '0');
+    })
+    .join('');
+  return (
+    hex.substr(0, 8) +
+    '-' +
+    hex.substr(8, 4) +
+    '-' +
+    hex.substr(12, 4) +
+    '-' +
+    hex.substr(16, 4) +
+    '-' +
+    hex.substr(20, 12)
+  );
+}
+function _uuidv5FromBytes(name, namespaceBytes) {
+  const nameBytes = new TextEncoder().encode(String(name));
+  const combined = new Uint8Array(namespaceBytes.length + nameBytes.length);
+  combined.set(namespaceBytes, 0);
+  combined.set(nameBytes, namespaceBytes.length);
+  const hash = _sha1Bytes(combined);
+  const b = hash.slice(0, 16);
+  b[6] = (b[6] & 0x0f) | 0x50; // version 5
+  b[8] = (b[8] & 0x3f) | 0x80; // variant RFC 4122
+  return _bytesToUuid(b);
+}
+// uuid.NAMESPACE_URL, then "companyhub:meter" derives the app-specific
+// meter namespace, matching the reference generator's uuidv5.URL usage.
+const _UUID_NAMESPACE_URL_BYTES = _uuidToBytes('6ba7b811-9dad-11d1-80b4-00c04fd430c8');
+const _METER_UUID_NAMESPACE = _uuidv5FromBytes('companyhub:meter', _UUID_NAMESPACE_URL_BYTES);
+const _METER_UUID_NAMESPACE_BYTES = _uuidToBytes(_METER_UUID_NAMESPACE);
+function _companyHubMeterUuid(id) {
+  if (id === undefined || id === null || id === '') return '';
+  return _uuidv5FromBytes(String(id), _METER_UUID_NAMESPACE_BYTES);
+}
+
 function exportAllMetersCSV() {
   const projs = sget('en_projects', []) || [];
   const headers = [
@@ -5042,46 +5162,62 @@ function exportAllMetersCSV() {
     'Building Name',
     'Account Number',
     'Meter Number',
-    'Meter UUID',
     'Utility Type',
     'Utility Provider',
-    'Meter Name',
+    'Meter Description',
     'Active',
     'Include in Baseline',
+    'Meter UUID',
   ];
-  const rows = [headers.map(_csvEscField).join(',')];
+  const meterRows = [];
   const activeInfo = _deriveMeterActiveMap(projs);
-  let count = 0;
   projs.forEach(function (p) {
     const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
     (ud.buildings || []).forEach(function (b) {
       if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
       (b.meters || []).forEach(function (m) {
         const activeEntry = activeInfo.map.get(m.id);
-        const active = activeEntry ? activeEntry.active : 'Yes';
+        const active = m.active !== false ? (activeEntry ? activeEntry.active : 'Yes') : 'No';
         const inBaseline = m.baselineInclude !== false ? 'Yes' : 'No';
-        rows.push(
-          [
+        const includedTag = m.baselineInclude === false ? 'Excluded' : 'Included';
+        const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), includedTag].join(' - ');
+        meterRows.push({
+          projName: p.name || '',
+          bldgName: b.name || '',
+          utilType: m.commodity || '',
+          provider: m.provider || '',
+          cells: [
             p.name,
             b.name,
             m.account,
             m.meter,
-            m.id,
             m.commodity,
             m.provider,
-            _titleCaseAddress(m.maddr),
+            description,
             active,
             inBaseline,
-          ]
-            .map(_csvEscField)
-            .join(','),
-        );
-        count++;
+            _companyHubMeterUuid(m.id),
+          ],
+        });
       });
     });
   });
+  meterRows.sort(function (a, b) {
+    return (
+      a.projName.localeCompare(b.projName) ||
+      a.bldgName.localeCompare(b.bldgName) ||
+      a.utilType.localeCompare(b.utilType) ||
+      a.provider.localeCompare(b.provider)
+    );
+  });
+  const rows = [headers.map(_csvEscField).join(',')].concat(
+    meterRows.map(function (r) {
+      return r.cells.map(_csvEscField).join(',');
+    }),
+  );
   _exportTriggerDownload(new Blob([rows.join('\r\n')], { type: 'text/csv' }), 'companyhub-meters-export.csv');
-  if (typeof showToast === 'function') showToast('Exported ' + count + ' meter' + (count !== 1 ? 's' : '') + '.');
+  if (typeof showToast === 'function')
+    showToast('Exported ' + meterRows.length + ' meter' + (meterRows.length !== 1 ? 's' : '') + '.');
   if (activeInfo.ambiguousGroups.length && typeof console !== 'undefined') {
     console.warn('Meter export: ambiguous Active groups (building|account|commodity):', activeInfo.ambiguousGroups);
   }
