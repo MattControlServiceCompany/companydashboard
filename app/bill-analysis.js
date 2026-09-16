@@ -5916,6 +5916,34 @@ function _acctFuzzyMatch(a, b) {
   if (!na || !nb) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
 }
+// Plausibility guard (item 63a151a2): _parseWRESiteBlocks' raw-value OCR
+// fallback (energy-savings.js) can capture garbled text as an AccountNumber
+// when the slash-separated account/meter value is too illegible to split
+// (real tokens captured from Spring Hill invoice 447604: "S601 RTS ToC",
+// "RAS 122474", "a PN 1 edo"). Left unguarded, that garbage still satisfies
+// findMeterMatch's hasIdentity = !!(acct || meterNum) and can win the
+// identity-match branch ABOVE the safe _wreBuildingTagMatch name fallback,
+// or veto an otherwise-correct address/name match via the Fix-1
+// account-contradiction check below. Derived from every real account format
+// seen in this codebase (never hardcode one client's specific numbers):
+//   - Evergy / Wood River bare digits: "560189", "8000210803"
+//   - Wood River dash-segmented: "60-736484"
+//   - KGS space-segmented digit groups: "510000123 2051604 18"
+//   - Constellation short-letter-prefix + digits: "RG233590", "BG-96832"
+// None of these real formats ever contain a whitespace-separated token made
+// of letters only (a "word" fragment) — that shape only shows up in
+// garbled OCR text. A single-token value may carry a short (1-3 char)
+// letter prefix (Constellation) or one internal dash (Wood River); a
+// multi-token value (KGS) must be pure digit groups throughout.
+function _isPlausibleAccountNumber(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return false;
+  const tokens = s.split(/\s+/);
+  const digitsOnly = /^[0-9]+$/;
+  if (tokens.length > 1) return tokens.every((t) => digitsOnly.test(t));
+  const t = tokens[0];
+  return digitsOnly.test(t) || /^[0-9]+-[0-9]+$/.test(t) || /^[A-Za-z]{1,3}-?[0-9]{4,}$/.test(t);
+}
 // Fix 2 (ballfields-match-gates, 2026-08-31): _addressSimilarity's normalized-
 // Levenshtein metric divides by the LONGER of the two candidate strings' length,
 // which rewards a verbose stored maddr (one that happens to carry city/state/zip)
@@ -6358,7 +6386,14 @@ function _wreBuildingTagMatch(extracted) {
 }
 function findMeterMatch(extracted) {
   if (!extracted) return null;
-  const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
+  // Fix (63a151a2): an implausible/garbled OCR AccountNumber (see
+  // _isPlausibleAccountNumber above) is treated as ABSENT everywhere in this
+  // function — it must never win identity and never veto an otherwise-
+  // correct match below. Extraction falls through to the safe address/name
+  // (_wreBuildingTagMatch) fallbacks instead, exactly as if AccountNumber
+  // had never been captured.
+  const _acctPlausible = _isPlausibleAccountNumber(extracted.AccountNumber);
+  const acct = _acctPlausible ? (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase() : '';
   const meterNum = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
   const billComm = (extracted.Commodity || '').toLowerCase();
   const billAddr = _normalizeAddr(extracted.ServiceAddress);
@@ -6369,7 +6404,7 @@ function findMeterMatch(extracted) {
   // known, by account number, to belong to a DIFFERENT meter. Absence of data
   // on either side is never treated as a contradiction (mirrors the
   // present-and-different-only discipline used by _setsConflict at ~2083).
-  const billAcctRaw = (extracted.AccountNumber || '').trim();
+  const billAcctRaw = _acctPlausible ? (extracted.AccountNumber || '').trim() : '';
   // Fix 2 (409830ae) input: does this bill carry ANY usable identity at all
   // (account or meter number)? If not, address-fallback must never silently
   // resolve to bldg.meters[0] when more than one same-commodity meter exists —
