@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.15.843',
+    date: '2026-09-15',
+    title: 'Savings now require a Service Agreement',
+    items: [
+      {
+        type: 'change',
+        text: "Savings now show $0 for projects without a Service Agreement number — applied across Meter Performance, Building Performance, the Energy Savings Measures editor, project cards, the pipeline savings node, and PDF reports. Projects with a Service Agreement are unchanged. Pre-contract estimation tools (Solar/BAS/ECM calculators, Cost Estimate pricing, BAS Trends) are unaffected.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.842',
     date: '2026-09-15',
     title: 'Report Appendix A: weather table now always matches the narrative',
