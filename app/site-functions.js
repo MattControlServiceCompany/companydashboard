@@ -1742,13 +1742,24 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.16.844',
+    date: '2026-09-16',
+    title: 'Quarterly Report: Monthly Savings chart fix',
+    items: [
+      {
+        type: 'fix',
+        text: "Quarterly Report: the Monthly Savings chart now correctly shows the selected quarter's result — it no longer falls back to the last 12 months when the quarter has no savings data.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.15.843',
     date: '2026-09-15',
     title: 'Savings now require a Service Agreement',
     items: [
       {
         type: 'change',
-        text: "Savings now show $0 for projects without a Service Agreement number — applied across Meter Performance, Building Performance, the Energy Savings Measures editor, project cards, the pipeline savings node, and PDF reports. Projects with a Service Agreement are unchanged. Pre-contract estimation tools (Solar/BAS/ECM calculators, Cost Estimate pricing, BAS Trends) are unaffected.",
+        text: 'Savings now show $0 for projects without a Service Agreement number — applied across Meter Performance, Building Performance, the Energy Savings Measures editor, project cards, the pipeline savings node, and PDF reports. Projects with a Service Agreement are unchanged. Pre-contract estimation tools (Solar/BAS/ECM calculators, Cost Estimate pricing, BAS Trends) are unaffected.',
       },
     ],
   },
