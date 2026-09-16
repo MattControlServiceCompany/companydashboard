@@ -5042,6 +5042,7 @@ function exportAllMetersCSV() {
     'Building Name',
     'Account Number',
     'Meter Number',
+    'Meter UUID',
     'Utility Type',
     'Utility Provider',
     'Meter Name',
@@ -5060,7 +5061,18 @@ function exportAllMetersCSV() {
         const active = activeEntry ? activeEntry.active : 'Yes';
         const inBaseline = m.baselineInclude !== false ? 'Yes' : 'No';
         rows.push(
-          [p.name, b.name, m.account, m.meter, m.commodity, m.provider, _titleCaseAddress(m.maddr), active, inBaseline]
+          [
+            p.name,
+            b.name,
+            m.account,
+            m.meter,
+            m.id,
+            m.commodity,
+            m.provider,
+            _titleCaseAddress(m.maddr),
+            active,
+            inBaseline,
+          ]
             .map(_csvEscField)
             .join(','),
         );
