@@ -7065,7 +7065,13 @@ const UTILITY_RULES = [
           // Schl..."), which with the old strict-colon regex meant that site's block
           // never opened at all (not even a stub), silently shrinking the whole
           // downstream site array by one and shifting every later site's position.
-          if (/Service\s+Address\s*[:;,.]?/i.test(ln)) {
+          // Fix (f631c1f8, 2026-09-16): OCR also misreads the word "Address" itself
+          // on real Spring Hill invoices (verified on Inv 447604/452084: "Service
+          // Addiness:" for 3 of that invoice's 10 sites) — the old literal-"Address"
+          // anchor meant those sites' blocks never opened at all, so there was no
+          // record for their AccountNumber to ever attach to. "Add\w*" keeps matching
+          // clean "Address" (unchanged) while also accepting the corrupted variant.
+          if (/Service\s+Add\w*\s*[:;,.]?/i.test(ln)) {
             _inSites = true;
             // Extract building name (text between "Service Address:" and "Acct/Meter:")
             // Fix (2026-07-28, gas-bill-ocr-extraction): the "Acct/Meter" LABEL's slash is
@@ -7076,8 +7082,16 @@ const UTILITY_RULES = [
             // only the label's punctuation was corrupted. Tolerate 0-2 stray characters
             // (U/1/l/I/|/./space/etc, OCR's common misreads of "/") between "Acct" and
             // "Meter" in the LABEL only; the VALUE separator below is unchanged.
+            // Fix (f631c1f8, 2026-09-16): the "Acct" word itself is also frequently
+            // misread beyond this tolerance — verified: "Aeocu Meter", "Accu Meter",
+            // "Acti Meter", "Acc Meter" (real Spring Hill Apr/May 2025 invoices). The
+            // literal "Acct" requirement meant the LABEL never matched on any of these,
+            // so AccountNumber capture failed even when the value itself was legible.
+            // "Meter" is the one word that reads correctly in every sample seen, so
+            // anchor on it and widen the preceding label to any short (2-8 letter)
+            // garbled word instead of requiring literal "Acct".
             const _saM = ln.match(
-              /Service\s+Address\s*[:;,.]?\s*(.+?)\s+Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
+              /Service\s+Add\w*\s*[:;,.]?\s*(.+?)\s+[A-Za-z]{2,8}[\s\/\\|Uu1IlL.,;:]{0,4}Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
             );
             let _addr, _acct, _meter;
             if (_saM) {
@@ -7096,12 +7110,32 @@ const UTILITY_RULES = [
               // lookahead, so ServiceAddress holds only the clean site name/address even
               // when the account/meter VALUE is unreadable. Falls through to end-of-line
               // when no Acct/Meter label is present at all (unchanged from before).
+              // Fix (f631c1f8, 2026-09-16): lookahead widened to the same "any short
+              // word + Meter" label tolerance as the primary regex above, so a garbled
+              // "Aeocu Meter:" label still stops ServiceAddress at the right boundary
+              // instead of swallowing the whole illegible tail into the address field.
               const _saOnly = ln.match(
-                /Service\s+Address\s*[:;,.]?\s*(.+?)(?=\s+Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\b|$)/i,
+                /Service\s+Add\w*\s*[:;,.]?\s*(.+?)(?=\s+[A-Za-z]{2,8}[\s\/\\|Uu1IlL.,;:]{0,4}Meter\b|$)/i,
               );
               _addr = _saOnly ? _saOnly[1].trim() : null;
               _acct = null;
               _meter = null;
+              // Fix (f631c1f8, 2026-09-16): the primary regex above requires a literal
+              // "/" between the account and meter VALUES, but real garbled invoices
+              // (e.g. "Aeocu Meter: S601 RTS ToC") drop that separator along with the
+              // label punctuation — the value is still THERE in the OCR text, just not
+              // splittable into distinct account/meter tokens. Capture the raw token(s)
+              // after the "...Meter:" label as a best-effort AccountNumber rather than
+              // leaving this site permanently null/unidentifiable. This is the same OCR
+              // text already on the page, not invented data — it only ever helps
+              // findMeterMatch's identity routing (bill-analysis.js) when it happens to
+              // align with a stored meter's account/alias, and is harmless when it does
+              // not (falls through to the existing address-based fallback there).
+              const _rawAcctM = ln.match(/[A-Za-z]{2,8}[\s\/\\|Uu1IlL.,;:]{0,4}Meter\s*[:;,.]?\s*(.+)\s*$/i);
+              if (_rawAcctM) {
+                const _rawAcct = _rawAcctM[1].replace(/\s+/g, ' ').trim();
+                if (_rawAcct.length >= 3) _acct = _rawAcct.slice(0, 30);
+              }
             }
             // Fix (2026-07-22, per-site OCR consensus): push the block IMMEDIATELY on
             // open rather than only when a Sub-Total line later closes it. This keeps
@@ -7133,13 +7167,27 @@ const UTILITY_RULES = [
           // Inline Acct/Meter on a line after Service Address (safety fallback)
           // Fix (2026-07-28, gas-bill-ocr-extraction): same label-slash OCR tolerance as
           // the primary Service Address match above.
-          if (_inSites && _cur && !_cur.AccountNumber && /Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?/i.test(ln)) {
+          // Fix (f631c1f8, 2026-09-16): same "Acct" word widened to any short garbled
+          // label anchored on "Meter", plus a raw-value fallback when no "/" separator
+          // is present — same reasoning as the primary Service Address match above.
+          if (
+            _inSites &&
+            _cur &&
+            !_cur.AccountNumber &&
+            /[A-Za-z]{2,8}[\s\/\\|Uu1IlL.,;:]{0,4}Meter\s*[:;,.]?/i.test(ln)
+          ) {
             const _amM = ln.match(
-              /Acct[\s\/\\|Uu1IlL.,;:]{0,3}Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
+              /[A-Za-z]{2,8}[\s\/\\|Uu1IlL.,;:]{0,4}Meter\s*[:;,.]?\s*([\w\d][\w\d\-]{2,11})\/([\w\d\-]{3,15})/i,
             );
             if (_amM) {
               _cur.AccountNumber = _amM[1].trim();
               _cur.MeterNumber = _amM[2].trim();
+            } else {
+              const _rawAmM = ln.match(/[A-Za-z]{2,8}[\s\/\\|Uu1IlL.,;:]{0,4}Meter\s*[:;,.]?\s*(.+)\s*$/i);
+              if (_rawAmM) {
+                const _rawAcct = _rawAmM[1].replace(/\s+/g, ' ').trim();
+                if (_rawAcct.length >= 3) _cur.AccountNumber = _rawAcct.slice(0, 30);
+              }
             }
             continue;
           }
