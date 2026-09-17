@@ -6755,6 +6755,22 @@ function saveAddressAlias(projId, bldgId, aliasString) {
 }
 window.saveAddressAlias = saveAddressAlias;
 function showAutoAssignBanner(match, extracted) {
+  // Fix 4 (review of 1e99a20): the multi-account check must run BEFORE the
+  // ambiguous/no-meter guard below. A genuinely multi-account batch whose
+  // bill[0] happens to resolve 'ambiguous' would otherwise hit `return` here
+  // and never open the review panel, silently dropping the whole batch.
+  // Fix 5 (single-file save fix, 2026-09-17): also run this BEFORE the
+  // `!match` bail. When a single dropped PDF has multiple meters but the
+  // first bill's OCR account doesn't resolve at all (findMeterMatch returns
+  // null => match is null, not just 'ambiguous'), the old `if (!match)
+  // return;` above this check bailed out before the multi-account file was
+  // ever detected, stranding the user in one-meter-at-a-time save mode. The
+  // multi-account check depends only on window._pdfMultiBills, not on
+  // `match`, so it is safe to evaluate first regardless of match's value.
+  if (_isMultiAcctFile()) {
+    showMultiBuildingReviewPanel();
+    return;
+  }
   if (!match) return;
   // Fix 2 (409830ae) call-site guard: an 'ambiguous' match carries no single
   // resolved meter by design (findMeterMatch found >1 equally-plausible
@@ -6764,14 +6780,6 @@ function showAutoAssignBanner(match, extracted) {
   // project/building/meter picker. Does not change 'identity' or 'address'
   // handling in any way — this matchType did not exist before this fix, so
   // this branch was previously unreachable.
-  // Fix 4 (review of 1e99a20): the multi-account check must run BEFORE the
-  // ambiguous/no-meter guard below. A genuinely multi-account batch whose
-  // bill[0] happens to resolve 'ambiguous' would otherwise hit `return` here
-  // and never open the review panel, silently dropping the whole batch.
-  if (_isMultiAcctFile()) {
-    showMultiBuildingReviewPanel();
-    return;
-  }
   if (match.matchType === 'ambiguous' || !match.meter) return;
   _autoAssignTarget = match;
   const banner = document.getElementById('pdfAutoAssignBanner');
@@ -18358,6 +18366,13 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Billing Period' },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
     { type: 'pair', fields: ['BillDate', 'ProductionMonth'] },
+    // Fix (field-placement, 2026-09-17): InvoiceNumber/NumberOfDays weren't listed anywhere
+    // in this layout, so they fell into the generic extraKeys tail (~line 18636), which
+    // splices unlisted fields in as pair rows immediately before the {type:'total'} row —
+    // i.e. inside Charges. Neither is a charge; both are per-bill billing-period metadata.
+    // Declaring them explicitly here removes them from extraKeys and renders them with the
+    // rest of the Billing Period fields instead.
+    { type: 'pair', fields: ['InvoiceNumber', 'NumberOfDays'] },
     { section: 'Charges' },
     // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): usage (NaturalGasMMbtu) used to
     // render under its own "Meter Readings" section ABOVE "Charges" — the exact "gas usage

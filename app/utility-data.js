@@ -5089,14 +5089,14 @@ function exportAllMetersCSV() {
   const headers = [
     'Project',
     'Building Name',
-    'Account Number',
-    'Meter Number',
     'Utility Type',
     'Utility Provider',
     'Meter Description',
+    'Account Number',
+    'Meter Number',
     'Active',
-    'Include in Baseline',
     'Meter UUID',
+    'Included in Baseline',
   ];
   const meterRows = [];
   projs.forEach(function (p) {
@@ -5108,6 +5108,7 @@ function exportAllMetersCSV() {
         const inBaseline = m.baselineInclude !== false ? 'Yes' : 'No';
         const includedTag = m.baselineInclude === false ? 'Excluded' : 'Included';
         const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), includedTag].join(' - ');
+        const utilTypeLabel = m.commodity === 'Gas' ? 'Natural Gas' : m.commodity;
         meterRows.push({
           projName: p.name || '',
           bldgName: b.name || '',
@@ -5116,14 +5117,14 @@ function exportAllMetersCSV() {
           cells: [
             p.name,
             b.name,
-            m.account,
-            m.meter,
-            m.commodity,
+            utilTypeLabel,
             m.provider,
             description,
+            m.account,
+            m.meter,
             active,
-            inBaseline,
             _companyHubMeterUuid(m.id),
+            inBaseline,
           ],
         });
       });
