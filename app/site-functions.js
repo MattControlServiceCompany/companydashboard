@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.17.850',
+    date: '2026-09-17',
+    title: 'Energy Department: batch bill upload no longer splits a meter across rows',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the batch bill upload queue, bills for the same meter (like consecutive months from Spring Hill or WRE) now group together correctly even when the OCR-read account number comes out slightly different from month to month. Previously those bills could land in separate rows and get skipped.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.16.849',
     date: '2026-09-16',
     title: 'Energy Department: Buildings/Meters CSV export format corrected',
