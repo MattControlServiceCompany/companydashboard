@@ -5104,10 +5104,9 @@ function exportAllMetersCSV() {
     (ud.buildings || []).forEach(function (b) {
       if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
       (b.meters || []).forEach(function (m) {
-        const active = m.active !== false ? 'Yes' : 'No';
-        const inBaseline = m.baselineInclude !== false ? 'Yes' : 'No';
-        const includedTag = m.baselineInclude === false ? 'Excluded' : 'Included';
-        const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), includedTag].join(' - ');
+        const active = m.active !== false ? 'Active' : 'Inactive';
+        const inBaseline = m.baselineInclude !== false ? 'Included' : 'Excluded';
+        const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), active].join(' - ');
         const utilTypeLabel = m.commodity === 'Gas' ? 'Natural Gas' : m.commodity;
         meterRows.push({
           projName: p.name || '',
