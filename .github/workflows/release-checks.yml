@@ -1,0 +1,85 @@
+name: Release Checks
+
+# Minimal V2 "Stage 5" release CI. Additive only — does not touch the app,
+# the deploy path, or scripts/stamp-version.py.
+#
+# Job A (version-consistency) is a no-network, repo-local re-check that
+# CH_VERSION / ?v= tags / RELEASE_NOTES[0].v all agree post-checkout —
+# the class of bug that causes a permanent stale "update available" banner.
+# Job B (post-deploy-live-check) confirms the live GitHub Pages site
+# actually shipped the version that's in the repo, polling because Pages
+# deploys asynchronously after the push that triggers this workflow.
+#
+# Deliberately NOT included: running the 16 local `node test_*.js` files.
+# None of them are git-tracked (.gitignore blanket-excludes test_*.js by
+# security policy — see CLAUDE.md and 2026-09-15 real-data-fixture
+# incident), so a hosted runner's checkout would not even have them.
+# Committing synthetic-fixture copies of those tests to make them
+# CI-runnable is a separate, gated follow-up — not part of this scope.
+# See: AI/_context/audits/2026-09-17-stage5-u5-ci-permissions-check.md
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  version-consistency:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run version consistency check
+        run: node scripts/ci-version-check.js
+
+  post-deploy-live-check:
+    name: Live Pages deploy check
+    runs-on: ubuntu-latest
+    needs: version-consistency
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Poll live site-ui.js for matching CH_VERSION
+        run: |
+          set -eu
+
+          REPO_VERSION=$(grep -oP "var CH_VERSION\s*=\s*'\K[^']+" site-ui.js)
+          if [ -z "$REPO_VERSION" ]; then
+            echo "Could not read CH_VERSION from repo's site-ui.js" >&2
+            exit 1
+          fi
+          echo "Repo CH_VERSION: $REPO_VERSION"
+
+          LIVE_URL="https://mattcontrolservice.github.io/companydashboard/site-ui.js"
+          MAX_ATTEMPTS=18   # ~18 * 10s = 3 min, covers Pages' async build lag
+          ATTEMPT=1
+
+          while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: fetching $LIVE_URL"
+            LIVE_CONTENT=$(curl -fsSL "$LIVE_URL" || true)
+            LIVE_VERSION=$(echo "$LIVE_CONTENT" | grep -oP "var CH_VERSION\s*=\s*'\K[^']+" || true)
+
+            if [ "$LIVE_VERSION" = "$REPO_VERSION" ]; then
+              echo "Live CH_VERSION ($LIVE_VERSION) matches repo ($REPO_VERSION)."
+              exit 0
+            fi
+
+            echo "  live=$LIVE_VERSION repo=$REPO_VERSION (not yet matching)"
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep 10
+          done
+
+          echo "Live CH_VERSION never matched repo CH_VERSION ($REPO_VERSION) after $MAX_ATTEMPTS attempts." >&2
+          echo "Last observed live value: $LIVE_VERSION" >&2
+          exit 1
