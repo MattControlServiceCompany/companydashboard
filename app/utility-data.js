@@ -5089,14 +5089,14 @@ function exportAllMetersCSV() {
   const headers = [
     'Project',
     'Building Name',
-    'Account Number',
-    'Meter Number',
     'Utility Type',
     'Utility Provider',
     'Meter Description',
+    'Account Number',
+    'Meter Number',
     'Active',
     'Meter UUID',
-    'Include in Baseline',
+    'Included in Baseline',
   ];
   const meterRows = [];
   projs.forEach(function (p) {
@@ -5117,11 +5117,11 @@ function exportAllMetersCSV() {
           cells: [
             p.name,
             b.name,
-            m.account,
-            m.meter,
             utilTypeLabel,
             m.provider,
             description,
+            m.account,
+            m.meter,
             active,
             _companyHubMeterUuid(m.id),
             inBaseline,
