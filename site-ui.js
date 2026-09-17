@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.17.852'; // Energy Graphics — Year over Year charts no longer double-draw baseline months as bars
+  var CH_VERSION = 'v2026.09.17.854'; // Wood River Energy / Spring Hill multi-site bill matching fixes
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

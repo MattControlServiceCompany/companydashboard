@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.17.854',
+    date: '2026-09-17',
+    title: 'Energy Department: Wood River Energy / Spring Hill multi-site bill matching',
+    items: [
+      {
+        type: 'fix',
+        text: 'When you upload a Wood River Energy multi-site invoice, each of the 10 sites on the invoice now shows as its own row in the upload queue instead of all sites merging into one row.',
+      },
+      {
+        type: 'fix',
+        text: 'A Wood River Energy invoice now only matches buildings in its own district. If the district cannot be read from the invoice, the bill is held for manual review instead of risking a match to the wrong district.',
+      },
+      {
+        type: 'fix',
+        text: 'Building matching for Wood River Energy sites that share a street number with another building on the same invoice is now more accurate.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.17.852',
     date: '2026-09-17',
     title: 'Energy Graphics: Year over Year charts no longer double-count baseline months',
