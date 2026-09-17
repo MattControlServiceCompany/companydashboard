@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.17.851'; // Utility Data — meter buttons with an unrecognized type no longer disappear when clicked
+  var CH_VERSION = 'v2026.09.17.852'; // Energy Graphics — Year over Year charts no longer double-draw baseline months as bars
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

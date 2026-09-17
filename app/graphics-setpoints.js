@@ -1332,6 +1332,7 @@ function egfxRefresh(projId) {
         yearData: yearData,
         yrsToShow: yrsToShow,
         blYears: blYears,
+        blYmPerMo: blYmPerMo,
         blAvgArr: blAvgArr,
       },
       { interactive: true },

@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.17.852',
+    date: '2026-09-17',
+    title: 'Energy Graphics: Year over Year charts no longer double-count baseline months',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Energy Graphics tab, Year over Year charts no longer draw a bar for a month that is still inside your baseline period — those months now show only the dashed baseline line, so a baseline period that runs into the current calendar year no longer looks like non-baseline data.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.17.851',
     date: '2026-09-17',
     title: 'Energy Department: multi-meter bill saving, Wood River Energy field placement, Meters CSV export',
