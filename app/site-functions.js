@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.17.855',
+    date: '2026-09-17',
+    title: 'Energy Department: Wood River Energy address-collision fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'When a Wood River Energy multi-site invoice has two buildings sharing the same street number on different streets (e.g. Spring Hill Elementary and Spring Hill Early Learning Academy, both "300"), a bill for one of them no longer gets stuck at "No match — pick destination" when its building name is otherwise unique.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.17.854',
     date: '2026-09-17',
     title: 'Energy Department: Wood River Energy / Spring Hill multi-site bill matching',

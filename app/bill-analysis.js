@@ -6057,6 +6057,57 @@ function _streetIdentityMatch(a, b) {
   if (!ia || !ib) return false;
   return Number(ia.num) === Number(ib.num) && ia.name === ib.name;
 }
+// Fix (b0b40258, 2026-09-17): space-preserving companion to _addrStreetIdentity.
+// _addrStreetIdentity's `name` field is produced by _normalizeAddr, which strips
+// ALL whitespace (`.replace(/[^a-z0-9]/g, '')`), gluing multi-word street names
+// into one token (e.g. "s webster st" -> "swebsterst"). A prior attempt at this
+// fix compared those glued strings with whole-string Levenshtein and regressed
+// "High Schl - 19701 5 Ridgedew" (OCR "S"->"5", dropped "Rd" suffix) from a
+// resolved match to null, because one leading-character OCR misread pollutes an
+// entire glued-string comparison instead of staying isolated to one short token
+// (see docs/dashboardlogic.md 2026-09-17 and the wre-batch-matcher wiki article
+// for the full reproduction). This helper returns the SAME token span as
+// _addrStreetIdentity (house number's trailing tokens through the first street
+// suffix) but as a lowercase word ARRAY, never glued, so a per-word fuzzy
+// compare can isolate a single bad token instead of corrupting the whole
+// comparison.
+function _addrStreetNameTokens(a) {
+  const s = (a || '').trim();
+  const m = s.match(/^(\d+)\s*(.*)$/);
+  if (!m || !m[1]) return [];
+  const tokens = m[2].split(/[\s,]+/).filter(Boolean);
+  const nameTokens = [];
+  for (const raw of tokens) {
+    const clean = raw.replace(/[^a-zA-Z]/g, '').toLowerCase();
+    if (!clean) continue;
+    nameTokens.push(clean);
+    if (_STREET_SUFFIXES.has(clean)) break;
+  }
+  return nameTokens;
+}
+// Per-word fuzzy comparison of two street-name token arrays (see
+// _addrStreetNameTokens above for why this must NOT glue words together).
+// Reuses the existing _wreTokenFuzzyEq per-token fuzz (same 0.7 bar already
+// trusted elsewhere in this file for OCR'd site tags) so a single garbled
+// word doesn't sink the whole comparison, but different street names (e.g.
+// "webster" vs "south") still fail to match. Majority-of-tokens agreement,
+// measured against `aToks` (the INCOMING, possibly OCR-corrupted address)
+// alone -- not `Math.max(aToks.length, bToks.length)`. Real WRE OCR routinely
+// destroys the directional prefix and the street-type suffix down to a
+// digit-only token ("S"->"5", "St"->"51"), which _addrStreetNameTokens
+// already drops (no letters survive), often leaving only ONE real word
+// (e.g. "webster") to compare. Denominating by the incoming side's own
+// surviving word count means that one clean word deciding the match isn't
+// diluted by the (larger, but bogus for this purpose) stored building
+// address's token count.
+function _streetNameTokensFuzzyMatch(aToks, bToks) {
+  if (!aToks.length || !bToks.length) return false;
+  let matched = 0;
+  for (const t of aToks) {
+    if (bToks.some((o) => _wreTokenFuzzyEq(t, o))) matched++;
+  }
+  return matched / aToks.length >= 0.6;
+}
 function _identityAddressScore(billAddr, candidateAddr) {
   const streetScore = _addressSimilarity(_addrStreetPart(billAddr), _addrStreetPart(candidateAddr));
   const billTail = _addrTailTokens(billAddr);
@@ -6222,18 +6273,50 @@ const _WRE_MIN_NAME_SCORE = 0.5;
 // Resolves the unique building for `tag`/`streetPart`, or null (never guess).
 // buildings: [{proj, bldg}] flattened across every project (mirrors the loop
 // shape findMeterMatch already uses everywhere else in this file).
+//
+// Fix (b0b40258, 2026-09-17): `numOwners` (house-NUMBER-only cross-check) is
+// kept as the PRIMARY filter — a unique house-number match is trusted outright,
+// exactly as before, so single-collision-free rows (e.g. "High Schl - 19701
+// ...") are completely unaffected. Only when numOwners finds MORE THAN ONE
+// building sharing the incoming house number (a genuine collision, e.g. Spring
+// Hill Elementary "300 S Webster St" vs Spring Hill Early Learning Academy
+// "300 E South St", both house number 300) do we additionally disambiguate
+// among THOSE candidates by fuzzy street-NAME token comparison
+// (_streetNameTokensFuzzyMatch, space-preserving — see comment there for why
+// gluing via _normalizeAddr broke a prior attempt at this fix). If exactly one
+// collision candidate's own address name-matches the incoming street name,
+// that candidate becomes `addressOwners` (length 1) and flows through the
+// existing checks below unchanged. If the name comparison can't cleanly
+// narrow the collision to one candidate, `addressOwners` becomes empty AND
+// `collisionUnresolved` is set — distinct from the "no data at all" empty
+// case, which still safely returns nameWinners[0] below.
 function _wreResolveBuilding(tag, streetPart, buildings) {
   const scored = buildings.map((pb) => ({ pb, score: _buildingNameScore(tag, pb.bldg.name) }));
   const top = scored.length ? Math.max(...scored.map((s) => s.score)) : 0;
   const nameWinners = top >= _WRE_MIN_NAME_SCORE ? scored.filter((s) => s.score === top).map((s) => s.pb) : [];
   const incomingIdentity = _addrStreetIdentity(streetPart);
-  const addressOwners = incomingIdentity
+  const numOwners = incomingIdentity
     ? buildings.filter((pb) => {
         const id = _addrStreetIdentity(pb.bldg.addr);
         return id && Number(id.num) === Number(incomingIdentity.num);
       })
     : [];
+  let addressOwners = numOwners;
+  let collisionUnresolved = false;
+  if (numOwners.length > 1) {
+    const incomingNameToks = _addrStreetNameTokens(streetPart);
+    const nameMatched = numOwners.filter((pb) =>
+      _streetNameTokensFuzzyMatch(incomingNameToks, _addrStreetNameTokens(pb.bldg.addr)),
+    );
+    if (nameMatched.length === 1) {
+      addressOwners = nameMatched;
+    } else {
+      addressOwners = [];
+      collisionUnresolved = true; // ambiguous house-number collision the street name couldn't break — never a "no data" pass-through
+    }
+  }
   if (nameWinners.length === 1) {
+    if (collisionUnresolved) return null; // house-number collision the street name couldn't disambiguate — never guess
     if (addressOwners.length === 0) return nameWinners[0];
     if (addressOwners.length === 1 && addressOwners[0] === nameWinners[0]) return nameWinners[0];
     return null; // name winner conflicts with a different building's exact street number

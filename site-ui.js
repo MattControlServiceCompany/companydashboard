@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.17.854'; // Wood River Energy / Spring Hill multi-site bill matching fixes
+  var CH_VERSION = 'v2026.09.17.855'; // Wood River Energy address-collision fix
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
