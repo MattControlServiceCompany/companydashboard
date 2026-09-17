@@ -6856,6 +6856,27 @@ const UTILITY_RULES = [
               CustomerName = _m[1].trim();
               break;
             }
+            // Fix (companion to 8ad232c1/b0b40258/15da4714 cluster,
+            // 2026-09-17): one sampled OCR pass (Inv 478203) joined the two
+            // columns with a SINGLE space instead of the usual wide gap
+            // ("Spring Hill USD 230 Invoice #: 478203"), so the 2+-space
+            // rule above never matches and CustomerName stays null for the
+            // whole invoice. Fall back to cutting at the "Invoice #:" /
+            // "Ioice #:" label text itself (present, if garbled, on every
+            // sampled fixture) instead of requiring a wide gap. Verified
+            // against all 4 real sampled WRE fixtures (still captures the 3
+            // that already worked, now also captures 478203) and against
+            // real non-WRE fixtures (MFA propane, Evergy, City of
+            // Louisburg gas) with zero false captures — moot in practice
+            // since this whole extractor only runs after the WRE-specific
+            // `detect()` gate, but checked directly regardless.
+            const _m2 = _line.match(
+              /^\s*([A-Za-z][A-Za-z0-9.,'&#-]*(?:\s[A-Za-z0-9.,'&#-]+)*?)\s+(?:Invoice|Ioice)\b/i,
+            );
+            if (_m2 && _m2[1] && _m2[1].trim().length >= 3) {
+              CustomerName = _m2[1].trim();
+              break;
+            }
           }
           break;
         }
