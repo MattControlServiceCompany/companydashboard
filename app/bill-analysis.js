@@ -6755,6 +6755,22 @@ function saveAddressAlias(projId, bldgId, aliasString) {
 }
 window.saveAddressAlias = saveAddressAlias;
 function showAutoAssignBanner(match, extracted) {
+  // Fix 4 (review of 1e99a20): the multi-account check must run BEFORE the
+  // ambiguous/no-meter guard below. A genuinely multi-account batch whose
+  // bill[0] happens to resolve 'ambiguous' would otherwise hit `return` here
+  // and never open the review panel, silently dropping the whole batch.
+  // Fix 5 (single-file save fix, 2026-09-17): also run this BEFORE the
+  // `!match` bail. When a single dropped PDF has multiple meters but the
+  // first bill's OCR account doesn't resolve at all (findMeterMatch returns
+  // null => match is null, not just 'ambiguous'), the old `if (!match)
+  // return;` above this check bailed out before the multi-account file was
+  // ever detected, stranding the user in one-meter-at-a-time save mode. The
+  // multi-account check depends only on window._pdfMultiBills, not on
+  // `match`, so it is safe to evaluate first regardless of match's value.
+  if (_isMultiAcctFile()) {
+    showMultiBuildingReviewPanel();
+    return;
+  }
   if (!match) return;
   // Fix 2 (409830ae) call-site guard: an 'ambiguous' match carries no single
   // resolved meter by design (findMeterMatch found >1 equally-plausible
@@ -6764,14 +6780,6 @@ function showAutoAssignBanner(match, extracted) {
   // project/building/meter picker. Does not change 'identity' or 'address'
   // handling in any way — this matchType did not exist before this fix, so
   // this branch was previously unreachable.
-  // Fix 4 (review of 1e99a20): the multi-account check must run BEFORE the
-  // ambiguous/no-meter guard below. A genuinely multi-account batch whose
-  // bill[0] happens to resolve 'ambiguous' would otherwise hit `return` here
-  // and never open the review panel, silently dropping the whole batch.
-  if (_isMultiAcctFile()) {
-    showMultiBuildingReviewPanel();
-    return;
-  }
   if (match.matchType === 'ambiguous' || !match.meter) return;
   _autoAssignTarget = match;
   const banner = document.getElementById('pdfAutoAssignBanner');
