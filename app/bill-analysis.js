@@ -6361,7 +6361,8 @@ function _wreBuildingTagMatch(extracted) {
   if (!scopedProj && extracted.CustomerName) {
     scopedProj = _inferProjectFromCustomerName(extracted.CustomerName, projects);
   }
-  const scopedProjects = scopedProj ? [scopedProj] : projects;
+  if (!scopedProj) return null; // never search building NAMES across every project - no district signal, no guess
+  const scopedProjects = [scopedProj];
   const buildings = [];
   for (const proj of scopedProjects) {
     const udProj = getUDProj(proj.id);
