@@ -61,7 +61,7 @@ jobs:
           fi
           echo "Repo CH_VERSION: $REPO_VERSION"
 
-          LIVE_URL="https://mattcontrolservice.github.io/companydashboard/site-ui.js"
+          LIVE_URL="https://mattcontrolservicecompany.github.io/companydashboard/site-ui.js"
           MAX_ATTEMPTS=18   # ~18 * 10s = 3 min, covers Pages' async build lag
           ATTEMPT=1
 
