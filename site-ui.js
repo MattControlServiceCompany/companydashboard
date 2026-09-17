@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.17.852'; // Energy Graphics — Year over Year charts no longer double-draw baseline months as bars
+  var CH_VERSION = 'v2026.09.17.853'; // Energy Graphics — baseline period label shows actual months
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

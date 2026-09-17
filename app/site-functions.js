@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.17.853',
+    date: '2026-09-17',
+    title: 'Energy Graphics: baseline period label now shows actual months',
+    items: [
+      {
+        type: 'change',
+        text: 'On the Energy Graphics tab, the Baseline Monthly Data — Project Level subtitle now shows the real first and last month of your baseline period (e.g. "May 2025 – April 2026") instead of just the years.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.17.852',
     date: '2026-09-17',
     title: 'Energy Graphics: Year over Year charts no longer double-count baseline months',

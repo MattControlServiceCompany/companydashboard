@@ -475,6 +475,7 @@ function egfxRefresh(projId) {
     blPropane = new Array(12).fill(0);
   let blCost = new Array(12).fill(0);
   let blYmPerMo = Array.from({ length: 12 }, () => new Set());
+  let blYmAll = new Set(); // every actual YM ('YYYY-MM') counted as baseline, for the real first->last month range
   // Year-over-year: collect by year
   let yearData = {}; // {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}
   let blYears = new Set();
@@ -539,6 +540,7 @@ function egfxRefresh(projId) {
           }
           if (yr) blYears.add(yr);
           if (ym) blYmPerMo[mi].add(ym);
+          if (ym) blYmAll.add(ym);
         }
 
         // Collect year-over-year (project-level and per-building)
@@ -1563,8 +1565,29 @@ function egfxRefresh(projId) {
           ${(() => {
             if (blEui === 0) return '';
             const blYearList = [...blYears].sort();
-            const blPeriod =
-              blYearList.length === 1 ? String(blYearList[0]) : blYearList[0] + '–' + blYearList[blYearList.length - 1];
+            const _monthNamesFull = [
+              'January',
+              'February',
+              'March',
+              'April',
+              'May',
+              'June',
+              'July',
+              'August',
+              'September',
+              'October',
+              'November',
+              'December',
+            ];
+            const _fmtYm = (ym) => _monthNamesFull[parseInt(ym.slice(5, 7), 10) - 1] + ' ' + ym.slice(0, 4);
+            const blYmSorted = [...blYmAll].sort();
+            const blPeriod = blYmSorted.length
+              ? blYmSorted.length === 1
+                ? _fmtYm(blYmSorted[0])
+                : _fmtYm(blYmSorted[0]) + ' – ' + _fmtYm(blYmSorted[blYmSorted.length - 1])
+              : blYearList.length === 1
+                ? String(blYearList[0])
+                : blYearList[0] + '–' + blYearList[blYearList.length - 1];
             const hasPropaneBL = totalBlPropane > 0;
             const blCostAvg2 = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
             let tbl = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
