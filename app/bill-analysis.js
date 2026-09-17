@@ -10108,14 +10108,31 @@ function _groupQueueRows(rows) {
     // exact-string key scattered one meter's bills across multiple orphan
     // rows (e.g. Spring Hill April/May).
     const am = row._autoMatch;
-    const confident = am && (am.matchType === 'identity' || am.matchType === 'commodity') && am.meterId != null;
+    // Fix (15da4714): also trust matchType === 'address' when it carries the
+    // _wreTagMatch marker (_wreBuildingTagMatch, only ever paired with a
+    // uniquely-resolved building AND a uniquely-resolved same-commodity
+    // meter, fuzzyScore 1.0) -- NOT a blanket 'address' inclusion, which
+    // would also pull in the generic 0.60-threshold _addressSimilarity fuzzy
+    // hit that really can be a weak guess. Purely a display-grouping change;
+    // the separate save-trust gate in _mbSaveOneBill still does not
+    // auto-save an 'address' matchType regardless of _wreTagMatch.
+    const confident =
+      am &&
+      am.meterId != null &&
+      (am.matchType === 'identity' ||
+        am.matchType === 'commodity' ||
+        (am.matchType === 'address' && am._wreTagMatch === true));
     const key = confident
       ? 'meterid:' + am.projId + ':' + am.bldgId + ':' + am.meterId
       : acctClean
         ? acctClean
         : meterClean
           ? 'meter:' + meterClean
-          : '_unknown';
+          : // Fix (15da4714): a per-row key, not a shared '_unknown' literal --
+            // bills with no confident match AND no usable OCR account/meter
+            // text (e.g. blank-OCR Wood River rows) must not silently merge
+            // just because they share the same blank string.
+            '_unknown:' + row.resultIdx + ':' + row.billIdx;
 
     if (!groups.has(key)) {
       const displayLabel = confident
