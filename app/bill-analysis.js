@@ -18366,6 +18366,13 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Billing Period' },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
     { type: 'pair', fields: ['BillDate', 'ProductionMonth'] },
+    // Fix (field-placement, 2026-09-17): InvoiceNumber/NumberOfDays weren't listed anywhere
+    // in this layout, so they fell into the generic extraKeys tail (~line 18636), which
+    // splices unlisted fields in as pair rows immediately before the {type:'total'} row —
+    // i.e. inside Charges. Neither is a charge; both are per-bill billing-period metadata.
+    // Declaring them explicitly here removes them from extraKeys and renders them with the
+    // rest of the Billing Period fields instead.
+    { type: 'pair', fields: ['InvoiceNumber', 'NumberOfDays'] },
     { section: 'Charges' },
     // Fix (2026-07-28, gas-bill-ocr-extraction, Defect 3): usage (NaturalGasMMbtu) used to
     // render under its own "Meter Readings" section ABOVE "Charges" — the exact "gas usage
