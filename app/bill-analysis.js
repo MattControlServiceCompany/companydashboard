@@ -6057,35 +6057,6 @@ function _streetIdentityMatch(a, b) {
   if (!ia || !ib) return false;
   return Number(ia.num) === Number(ib.num) && ia.name === ib.name;
 }
-// Fix (b0b40258): house-number-only address-owner matching wrongly grouped
-// two different buildings that share a street number (e.g. Spring Hill
-// Elementary and Spring Hill Early Learning Academy both at house number
-// 300) into one ambiguous set, defeating the name-score tie-break even when
-// it already uniquely favored one of them. A blind swap to the EXACT
-// _streetIdentityMatch is also wrong -- OCR corrupts the street-type suffix
-// often enough ("St" -> "SU") that the exact parse drops the whole street
-// name, producing a false EMPTY owner set instead of a false ambiguous one.
-// This helper keeps the house number exact (never fuzzed) and fuzzes only
-// the street-NAME tokens (reusing _wreTokenFuzzyEq, already tuned for this
-// OCR-noise class), dropping the trailing name token first whenever it is
-// short (<=3 chars) or a recognized suffix -- exactly where OCR corrupts a
-// street-type word into 1-2 garbage characters.
-function _addrStreetNameCore(identity) {
-  if (!identity) return [];
-  const toks = _wreTokenize(identity.name);
-  const last = toks[toks.length - 1];
-  if (toks.length > 1 && (last.length <= 3 || _STREET_SUFFIXES.has(last))) toks.pop();
-  return toks;
-}
-function _streetIdentityFuzzyMatch(a, b) {
-  const ia = _addrStreetIdentity(a);
-  const ib = _addrStreetIdentity(b);
-  if (!ia || !ib || Number(ia.num) !== Number(ib.num)) return false;
-  const ta = _addrStreetNameCore(ia);
-  const tb = _addrStreetNameCore(ib);
-  if (!ta.length || !tb.length) return false;
-  return ta.length === tb.length && ta.every((t, i) => _wreTokenFuzzyEq(t, tb[i]));
-}
 function _identityAddressScore(billAddr, candidateAddr) {
   const streetScore = _addressSimilarity(_addrStreetPart(billAddr), _addrStreetPart(candidateAddr));
   const billTail = _addrTailTokens(billAddr);
@@ -6257,7 +6228,10 @@ function _wreResolveBuilding(tag, streetPart, buildings) {
   const nameWinners = top >= _WRE_MIN_NAME_SCORE ? scored.filter((s) => s.score === top).map((s) => s.pb) : [];
   const incomingIdentity = _addrStreetIdentity(streetPart);
   const addressOwners = incomingIdentity
-    ? buildings.filter((pb) => _streetIdentityFuzzyMatch(streetPart, pb.bldg.addr))
+    ? buildings.filter((pb) => {
+        const id = _addrStreetIdentity(pb.bldg.addr);
+        return id && Number(id.num) === Number(incomingIdentity.num);
+      })
     : [];
   if (nameWinners.length === 1) {
     if (addressOwners.length === 0) return nameWinners[0];
