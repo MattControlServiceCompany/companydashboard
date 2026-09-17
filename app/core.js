@@ -2181,7 +2181,13 @@ function initDashboardTab(projId) {
       });
     });
     const _curMoCt = _curMoSet.size || 12;
-    const curEUI = computePeriodEUI(curKBtu, _curMoCt, sqft);
+    // Require a full 12 current-period months before annualizing Current Site EUI.
+    // No existing min-months convention was found in computations/eui.js or the Baseline
+    // EUI path (computeBaselineEUI/computePeriodEUI have no sufficiency floor), so this
+    // matches the closest existing pattern: a full year. Prevents e.g. 1 month × 12
+    // producing a fake/misleading annualized value below baseline (bug 177e378d).
+    // curEUI === 0 renders as the existing "—" placeholder at the table row below.
+    const curEUI = _curMoSet.size >= 12 ? computePeriodEUI(curKBtu, _curMoCt, sqft) : 0;
     let status = 'No Data',
       statusColor = 'var(--text3)';
     if (useCost > 0 && curCost > 0) {
@@ -2270,7 +2276,7 @@ function initDashboardTab(projId) {
                             i,
                           ) => `<div style="flex:1;text-align:center;background:rgba(147,51,234,0.12);border-radius:6px;padding:6px 4px">
                         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:#c084fc">${$c2(v)}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:#c084fc">${v !== 0 ? $c2(v) : '—'}</div>
                       </div>`,
                         )
                         .join('')}
