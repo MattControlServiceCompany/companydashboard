@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.17.851',
+    date: '2026-09-17',
+    title: 'Energy Department: multi-meter bill saving, Wood River Energy field placement, Meters CSV export',
+    items: [
+      {
+        type: 'fix',
+        text: 'You can now save every meter from a multi-meter utility bill in one step — the Save-All review panel now opens for these bills.',
+      },
+      {
+        type: 'change',
+        text: 'In bill extraction, Invoice Number and Number of Days now appear under Billing Period instead of Charges.',
+      },
+      {
+        type: 'change',
+        text: "Export Meters CSV: columns reordered and gas now labeled 'Natural Gas'.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.17.850',
     date: '2026-09-17',
     title: 'Energy Department: batch bill upload no longer splits a meter across rows',
