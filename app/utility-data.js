@@ -5106,8 +5106,7 @@ function exportAllMetersCSV() {
       (b.meters || []).forEach(function (m) {
         const active = m.active !== false ? 'Active' : 'Inactive';
         const inBaseline = m.baselineInclude !== false ? 'Included' : 'Excluded';
-        const includedTag = m.baselineInclude === false ? 'Excluded' : 'Included';
-        const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), includedTag].join(' - ');
+        const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), active].join(' - ');
         const utilTypeLabel = m.commodity === 'Gas' ? 'Natural Gas' : m.commodity;
         meterRows.push({
           projName: p.name || '',
