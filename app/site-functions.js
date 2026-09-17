@@ -1755,8 +1755,8 @@ var RELEASE_NOTES = [
         text: 'A Wood River Energy invoice now only matches buildings in its own district. If the district cannot be read from the invoice, the bill is held for manual review instead of risking a match to the wrong district.',
       },
       {
-        type: 'fix',
-        text: 'Building matching for Wood River Energy sites that share a street number with another building on the same invoice is now more accurate.',
+        type: 'change',
+        text: 'Wood River Energy district detection now also reads invoices where the customer-name column runs together with the invoice-number column.',
       },
     ],
   },
