@@ -10061,10 +10061,31 @@ function _groupQueueRows(rows) {
     const meterRaw = b.MeterNumber || b.meterNumber || '';
     const acctClean = acctRaw.replace(/[\s\-]/g, '').toLowerCase();
     const meterClean = meterRaw.replace(/[\s\-]/g, '').toLowerCase();
-    const key = acctClean ? acctClean : meterClean ? 'meter:' + meterClean : '_unknown';
+    // Fix (f9616040): prefer the already-stamped confident meter identity
+    // (row._autoMatch, set in renderQueueResults before this function runs)
+    // over the raw OCR AccountNumber string. Mirrors the exact same
+    // confidence gate _mbSaveOneBill already trusts enough to auto-save on
+    // (~lines 8239-8250: identity/commodity matchTypes only) — 'address'
+    // (fuzzy-only) and 'ambiguous' (no single meterId) are excluded on
+    // purpose and fall through to the untouched exact-string key below.
+    // Root cause: some utilities (Wood River Energy) OCR the AccountNumber
+    // differently on every scan of the same physical meter, so the old
+    // exact-string key scattered one meter's bills across multiple orphan
+    // rows (e.g. Spring Hill April/May).
+    const am = row._autoMatch;
+    const confident = am && (am.matchType === 'identity' || am.matchType === 'commodity') && am.meterId != null;
+    const key = confident
+      ? 'meterid:' + am.projId + ':' + am.bldgId + ':' + am.meterId
+      : acctClean
+        ? acctClean
+        : meterClean
+          ? 'meter:' + meterClean
+          : '_unknown';
 
     if (!groups.has(key)) {
-      const displayLabel = acctRaw || meterRaw || 'Unknown Account';
+      const displayLabel = confident
+        ? am.meter.account || am.meter.meter || acctRaw || meterRaw || 'Unknown Account'
+        : acctRaw || meterRaw || 'Unknown Account';
       // Detect mixed commodity within the group later
       groups.set(key, {
         key,
