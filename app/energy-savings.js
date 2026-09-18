@@ -6994,7 +6994,14 @@ const UTILITY_RULES = [
         const _sumLines = t.split(/\r?\n/);
         // Inline fallback first — match the longest plausible dollar string
         // (allow up to 2 periods so we can capture the OCR-corrupted form too)
-        const inlineMMbtu = t.match(/Total\s+Natural\s+Gas[\s:]*([\d,]+\.?\d*)/i);
+        // Fix (2026-09-18, WRE usage-capture sweep, TASK 6): the old `[\s:]*`
+        // gate between the label and the value tolerated whitespace/colon ONLY —
+        // verified failure: "Total Natural Gas:    TEE    1223    $3,657.31"
+        // (a garbled token, "TEE", sits between the label and the number on this
+        // OCR pass). Tolerate one short (2-6 letter) garbled word before the
+        // digit group; a direct label->digits shape (no garbled word) still
+        // matches unchanged since the group is optional.
+        const inlineMMbtu = t.match(/Total\s+Natural\s+Gas\s*:?\s*(?:[A-Za-z]{2,6}\s+)?([\d,]+\.?\d*)/i);
         if (inlineMMbtu && /\d/.test(inlineMMbtu[1])) {
           summaryMMbtu = parseFloat(inlineMMbtu[1].replace(/,/g, ''));
         }
@@ -7033,6 +7040,25 @@ const UTILITY_RULES = [
                 if (_sM) {
                   summaryTotalCC = _wreFixOcrDollar(_sM[1].replace(/,/g, ''));
                 }
+              }
+            }
+            // Fix (2026-09-18, WRE usage-capture sweep, TASK 6, third fallback
+            // tier): on some OCR passes the label AND both values land on the
+            // SAME line (e.g. "Total Natural Gas:    TEE    1223    $3,657.31"),
+            // which the two-line scan above never looks at (it only scans lines
+            // AFTER the label) and the line-initial `^\s*\$` patterns above don't
+            // match (the dollar value is mid-line, not line-initial). Search the
+            // label line itself for a dollar value, non-line-anchored, as a last
+            // resort. This is the field that actually matters here — the summary
+            // MMbtu is informational/cross-check-only (see doc comment above),
+            // but recovering the dollar total lets the existing per-site-sum-vs-
+            // invoice-total cross-check run instead of comparing against null.
+            if (!summaryTotalCC) {
+              const _sameLineCCs = _sumLines[_i].match(/\$([\d,]+\.\d{2})/g);
+              if (_sameLineCCs && _sameLineCCs.length) {
+                summaryTotalCC = _wreFixOcrDollar(
+                  _sameLineCCs[_sameLineCCs.length - 1].replace(/^\$/, '').replace(/,/g, ''),
+                );
               }
             }
             break;
@@ -7229,14 +7255,20 @@ const UTILITY_RULES = [
             // Widen the currency anchor to accept "£" too; the amount shape
             // (\d+\.\d{2}) is unchanged so this can't start matching non-currency
             // numbers.
-            const _trigDollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
+            // Fix (2026-09-18, WRE usage-capture sweep): OCR also misreads "$" as a
+            // capital "S" (verified: "S47850", "S356" on real invoices) — same class
+            // as the £ fix above, add it to the glyph set. Shape guard unchanged
+            // (digit immediately follows), so a stray unrelated "S" elsewhere on the
+            // line still can't start a match.
+            const _trigDollarM = ln.match(/[$£S](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£S]([\d,]+\.\d{2})\s*$/);
             if (_trigDollarM) _cur.triggerCharge = parseFloat(_wreFixOcrDollar(_trigDollarM[1]).replace(/,/g, ''));
             const _trigMmbtuM = ln.match(/Trigger\s*-?\s*Fixed\s+([\d,]+\.?\d*)/i);
             if (_trigMmbtuM) _cur.triggerMMbtu = parseFloat(_trigMmbtuM[1].replace(/,/g, ''));
             // Capture printed rate — second-to-last $ value on the line (Rate column)
-            const _trigRateMs = ln.match(/\$([\d,]+\.\d{4})/g);
+            // Fix (2026-09-18): same S-for-$ tolerance as the charge capture above.
+            const _trigRateMs = ln.match(/[$£S]([\d,]+\.\d{4})/g);
             if (_trigRateMs && _trigRateMs.length >= 1) {
-              _cur.triggerRate = _trigRateMs[_trigRateMs.length - 1].replace(/^\$/, '');
+              _cur.triggerRate = _trigRateMs[_trigRateMs.length - 1].replace(/^[$£S]/, '');
             }
             continue;
           }
@@ -7252,14 +7284,31 @@ const UTILITY_RULES = [
             // "$1.337.90"), which the old plain-comma regex silently failed to match.
             // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
             // tolerance as the Trigger charge above.
-            const _idxDollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
+            // Fix (2026-09-18, WRE usage-capture sweep): add "S" to the currency
+            // glyph set (same S-for-$ misread as the Trigger fix above; verified:
+            // "S47850").
+            const _idxDollarM = ln.match(/[$£S](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£S]([\d,]+\.\d{2})\s*$/);
             if (_idxDollarM) _cur.indexCharge = parseFloat(_wreFixOcrDollar(_idxDollarM[1]).replace(/,/g, ''));
-            const _idxMmbtuM = ln.match(/Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]+([\d,]+\.?\d*)/i);
+            // Fix (2026-09-18, WRE usage-capture sweep): the old `[)\s]+` gate
+            // required a paren/whitespace character IMMEDIATELY after "FOM" before
+            // digits could start matching — verified failure: "(FOMY 00000" (a
+            // stray OCR'd "Y" sits between "FOM" and the digits, e.g. Timber Sage
+            // on Inv 447604). Insert a short (0-2 letter) stray-character
+            // tolerance BETWEEN two `[)\s]*` runs rather than replacing them —
+            // `[)\s]*` must stay unbounded (`*`, not a capped count) because real
+            // OCR passes pad this column with dozens of spaces (verified: Inv
+            // 447604's Wall Crk site has ~70 spaces between "FOM)" and its
+            // digits) — a capped skip recovers the stray-letter case but silently
+            // breaks the far more common wide-padding case, which is a real
+            // regression caught by testing against real debug files, not a
+            // hypothetical.
+            const _idxMmbtuM = ln.match(/Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]*[A-Za-z]{0,2}[)\s]*([\d,]+\.?\d*)/i);
             if (_idxMmbtuM) _cur.indexMMbtu = parseFloat(_idxMmbtuM[1].replace(/,/g, ''));
             // Capture printed rate — last 4-decimal $ value before the 2-decimal charge
-            const _idxRateMs = ln.match(/\$([\d,]+\.\d{4})/g);
+            // Fix (2026-09-18): same S-for-$ tolerance as the charge capture above.
+            const _idxRateMs = ln.match(/[$£S]([\d,]+\.\d{4})/g);
             if (_idxRateMs && _idxRateMs.length >= 1) {
-              _cur.indexRate = _idxRateMs[_idxRateMs.length - 1].replace(/^\$/, '');
+              _cur.indexRate = _idxRateMs[_idxRateMs.length - 1].replace(/^[$£S]/, '');
             }
             continue;
           }
@@ -7326,6 +7375,20 @@ const UTILITY_RULES = [
                 // mechanism.
                 if (_tolLowConfidence) _cur._tolUnverifiedMMbtu = true;
               }
+              // Fix (2026-09-18, WRE usage-capture sweep, highest leverage): this
+              // fallback previously captured charge + MMbtu but NEVER a rate, which
+              // meant the real math-based cross-check (_wreRateMismatch, below) could
+              // never run for any site whose label was too garbled to hit the
+              // PRIMARY Trigger/Index branches — on real invoices that's most sites.
+              // Capture the same trailing 4-decimal $-anchored rate token the
+              // primary branches already capture (same S/£ currency tolerance as
+              // Fix 2 above), so a silently-wrong usage number (e.g. site #6's 6.34
+              // vs a rate-implied ~88) gets flagged for manual review instead of
+              // passing through with no check at all.
+              const _tolRateMs = ln.match(/[$£S]([\d,]+\.\d{4})/g);
+              if (_tolRateMs && _tolRateMs.length >= 1) {
+                _cur.indexRate = _tolRateMs[_tolRateMs.length - 1].replace(/^[$£S]/, '');
+              }
             }
             continue;
           }
@@ -7346,7 +7409,15 @@ const UTILITY_RULES = [
           // period) between "Sub" and "Total".
           if (_cur && /^\s*Sub[\s.\-]{0,2}Total\s*[:;,.]?/i.test(ln)) {
             // First number after the colon = MMbtu
-            const _mmbtuM = ln.match(/Sub[\s.\-]{0,2}Total\s*[:;,.]?\s*([\d,]+\.?\d*)/i);
+            // Fix (2026-09-18, WRE usage-capture sweep): the old pattern required the
+            // digit group to start IMMEDIATELY after the label — verified failure:
+            // "Sub Total:  H366  103 ... $307.60" (an OCR'd leading "H" sits right
+            // before the real digits). The sibling dollar capture below is already
+            // tolerant of leading garbage because it's anchored to end-of-line; give
+            // the MMbtu capture the same tolerance via a short, lazy, non-digit skip
+            // (0-3 chars) so it can step over one stray glyph without being loose
+            // enough to jump ahead to an unrelated later number.
+            const _mmbtuM = ln.match(/Sub[\s.\-]{0,2}Total\s*[:;,.]?\s*[^\d]{0,3}?([\d,]+\.?\d*)/i);
             // Last dollar value on the line = site charge.
             // Accept both clean form ($1,425.42) and OCR-corrupted form ($1.425.42).
             // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
@@ -7355,6 +7426,87 @@ const UTILITY_RULES = [
             const _dollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
             if (_mmbtuM) _cur.mmbtu = parseFloat(_mmbtuM[1].replace(/,/g, ''));
             if (_dollarM) _cur.dollar = _wreFixOcrDollar(_dollarM[1]);
+            // Fix (2026-09-18, WRE usage-capture sweep, TASK 5): a Sub-Total MMbtu
+            // captured as a bare digit run with NO decimal point at all (e.g.
+            // "14614") is a well-documented Tesseract failure mode (the decimal
+            // point character itself dropped), not a genuine 5-digit monthly
+            // reading — every legible Sub-Total on file prints exactly 2 decimals
+            // (e.g. "13.49"). Only repair it when re-inserting a 2-decimal point
+            // produces a value that independently checks out against THIS site's
+            // own printed rate/charge (mmbtu ≈ charge / rate) — never guess without
+            // that math confirming it. When the math can't confirm it (no rate
+            // captured on this block, or the repaired value doesn't line up), flag
+            // for manual review instead of silently keeping the implausible
+            // 5-digit reading as fact.
+            if (_mmbtuM && _cur.mmbtu != null && !/\./.test(_mmbtuM[1]) && _cur.mmbtu > 999) {
+              const _digits = _mmbtuM[1].replace(/[^\d]/g, '');
+              let _repaired = null;
+              if (_digits.length > 2) {
+                _repaired = parseFloat(_digits.slice(0, -2) + '.' + _digits.slice(-2));
+              }
+              const _rate =
+                _cur.indexRate != null
+                  ? parseFloat(_cur.indexRate)
+                  : _cur.triggerRate != null
+                    ? parseFloat(_cur.triggerRate)
+                    : null;
+              // Fix (2026-09-18): the Sub-Total line's OWN dollar figure can fail
+              // to parse on the SAME line whose MMbtu just failed (verified: Inv
+              // 452084 "Sub-Total; 1158 018 £4510" — no decimal point printed in
+              // the charge either) — that's exactly the case the post-loop
+              // component-sum fallback (below, after this function returns) is
+              // built to recover from, but this check runs too early to see it.
+              // Fall back to the same already-legible component charge(s) here so
+              // the repair math isn't blocked by a charge that will be filled in
+              // moments later anyway.
+              const _chargeFallback =
+                _cur.dollar != null
+                  ? parseFloat(_cur.dollar)
+                  : [_cur.triggerCharge, _cur.indexCharge, _cur.sweCharge].some((v) => v != null)
+                    ? [_cur.triggerCharge, _cur.indexCharge, _cur.sweCharge]
+                        .filter((v) => v != null)
+                        .reduce((s, v) => s + v, 0)
+                    : null;
+              const _charge = _chargeFallback;
+              let _repairConfirmed = false;
+              if (_repaired != null && _rate && _charge) {
+                const _implied = _charge / _rate;
+                if (_implied > 0 && Math.abs(_repaired - _implied) / _implied < 0.1) {
+                  _cur.mmbtu = _repaired;
+                  _cur._mmbtuDecimalRepaired = true;
+                  _repairConfirmed = true;
+                  // The Sub-Total's OCR corruption (a dropped decimal point) is a
+                  // whole-line OCR failure, not specific to this one column — the
+                  // component line whose rate/charge just CONFIRMED this repair
+                  // (verified: Inv 452084 site "Elem-Wishsler", Index line read
+                  // "2671" for a true 26.71) typically carries the exact same
+                  // corrupted bare-digit reading. Apply the identical repair to
+                  // that sibling field too; otherwise the independent rate-
+                  // mismatch check below compares the rate/charge against the
+                  // STILL-corrupted component number and wrongly flags a value
+                  // this math check just confirmed is correct.
+                  if (
+                    _cur.indexRate != null &&
+                    _cur.indexMMbtu != null &&
+                    Number.isInteger(_cur.indexMMbtu) &&
+                    _cur.indexMMbtu > 999
+                  ) {
+                    const _idxDigits = String(_cur.indexMMbtu);
+                    _cur.indexMMbtu = parseFloat(_idxDigits.slice(0, -2) + '.' + _idxDigits.slice(-2));
+                  }
+                  if (
+                    _cur.triggerRate != null &&
+                    _cur.triggerMMbtu != null &&
+                    Number.isInteger(_cur.triggerMMbtu) &&
+                    _cur.triggerMMbtu > 999
+                  ) {
+                    const _trigDigits = String(_cur.triggerMMbtu);
+                    _cur.triggerMMbtu = parseFloat(_trigDigits.slice(0, -2) + '.' + _trigDigits.slice(-2));
+                  }
+                }
+              }
+              if (!_repairConfirmed) _cur._mmbtuNoDecimalUnverified = true;
+            }
             // Do NOT clear _cur here — a stray non-closing line before the next
             // "Service Address:" should not lose the block; the next open replaces it.
             continue;
@@ -7378,7 +7530,19 @@ const UTILITY_RULES = [
           }
           if (b.mmbtu == null) {
             const mparts = [b.triggerMMbtu, b.indexMMbtu].filter((v) => v != null);
-            if (mparts.length > 0) b.mmbtu = mparts.reduce((s, v) => s + v, 0);
+            if (mparts.length > 0) {
+              b.mmbtu = mparts.reduce((s, v) => s + v, 0);
+              // Fix (2026-09-18, WRE usage-capture sweep, TASK 4): mark that this
+              // block's mmbtu was ITSELF derived from summing the same
+              // triggerMMbtu/indexMMbtu component values, so the downstream
+              // Sub-Total-vs-components identity check (_wreComponentSumMismatch)
+              // can recognize it would otherwise be comparing this value to
+              // itself (circular/tautological — verified: Inv 447604 site #6,
+              // where Sub-Total's own line never parsed, so its "Sub-Total MMbtu"
+              // was silently just the same wrong Index-line reading it's meant to
+              // be checked against).
+              b._mmbtuFromComponentFallback = true;
+            }
           }
         }
 
@@ -7589,14 +7753,45 @@ const UTILITY_RULES = [
           // Only one component legible: a non-negative component can never exceed the total.
           return sum > subTotal + tolerance;
         };
-        const _sumMismatch = _wreComponentSumMismatch(blk.mmbtu, blk.triggerMMbtu, blk.indexMMbtu);
+        // Fix (2026-09-18, WRE usage-capture sweep, TASK 4): when blk.mmbtu was
+        // ITSELF filled by the post-loop component-sum fallback (see
+        // _mmbtuFromComponentFallback above), running this identity check against
+        // the SAME triggerMMbtu/indexMMbtu it was derived from is circular — it
+        // can only ever compare a value to itself and will never catch a real
+        // misread (verified: Inv 447604 site #6, where this was true and the
+        // check always silently passed). Skip the tautological comparison in
+        // that case; the block below decides whether that leaves the site with
+        // no independent verification at all.
+        const _sumMismatch = blk._mmbtuFromComponentFallback
+          ? false
+          : _wreComponentSumMismatch(blk.mmbtu, blk.triggerMMbtu, blk.indexMMbtu);
+        // When mmbtu came from the component-sum fallback AND neither component
+        // has a real rate+charge to run the math-based check above (i.e. Fix 3's
+        // new tolerant-fallback rate capture, or a primary Trigger/Index rate,
+        // never came through for this site either), there is NO independent way
+        // left to verify this number — flag it for manual review rather than
+        // silently trust a value that was never actually cross-checked against
+        // anything.
+        const _rateCheckAvailable =
+          (blk.triggerRate != null && blk.triggerMMbtu != null && blk.triggerCharge != null) ||
+          (blk.indexRate != null && blk.indexMMbtu != null && blk.indexCharge != null);
+        const _circularUnverified = !!blk._mmbtuFromComponentFallback && !_rateCheckAvailable;
         // Fix (2026-09-15, WRE OCR-tolerance sweep): the tolerant component-line
         // fallback above can recover a usage number with NO printed rate and NO
         // Sub-Total to cross-check it against (Inv 447604 site #7) — the rate/sum
         // checks below go blind in that case (nothing to compare), so the fallback
         // marks that specific case via _tolUnverifiedMMbtu; fold it into the same
         // existing manual-review flag rather than inventing a second mechanism.
-        const _mmbtuRateMismatch = _trigMismatch || _idxMismatch || _sumMismatch || !!blk._tolUnverifiedMMbtu;
+        // Fix (2026-09-18, TASK 5): a bare-digit-run Sub-Total MMbtu with no
+        // decimal point that could NOT be math-confirmed after decimal repair
+        // (_mmbtuNoDecimalUnverified, set above) folds in the same way.
+        const _mmbtuRateMismatch =
+          _trigMismatch ||
+          _idxMismatch ||
+          _sumMismatch ||
+          !!blk._tolUnverifiedMMbtu ||
+          _circularUnverified ||
+          !!blk._mmbtuNoDecimalUnverified;
         if (_mmbtuRateMismatch) {
           console.log(
             '[WRE] Rate/sum cross-check FAILED for site #' +
@@ -7608,6 +7803,10 @@ const UTILITY_RULES = [
               _idxMismatch +
               ', sub-total-vs-components mismatch=' +
               _sumMismatch +
+              ', circular-unverified=' +
+              _circularUnverified +
+              ', no-decimal-unverified=' +
+              !!blk._mmbtuNoDecimalUnverified +
               '. NaturalGasMMbtu suppressed, flagged for manual review.',
           );
         }
