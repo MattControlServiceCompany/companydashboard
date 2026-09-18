@@ -14170,6 +14170,27 @@ async function extractPDFText(ab, statusCb) {
           { scale: 3.0, psm: null, label: '3x' },
           { scale: 2.5, psm: '4', label: '2.5x-psm4' },
           { scale: 3.5, psm: '4', label: '3.5x-psm4' },
+          // Fix (45005474, 2026-09-18): PSM-6 (uniform block) appended after the
+          // existing 6 entries — never insert earlier, the early-exit checks above
+          // hardcode indices 0/1 as the 2.5x/3.5x default-PSM passes. An initial
+          // exploratory pass-level test (regex substring match, not the real
+          // scorePage/parser) suggested PSM-6 might read WRE's dense 4-column
+          // table better — see
+          // _context/temp/2026-09-18-wre-ocr-image-quality-investigation.md.
+          // FOLLOW-UP VERIFICATION (2026-09-18, real scorePage + real
+          // _parseWRESiteBlocks, real Tesseract, real invoice 447604 — see
+          // _context/temp/2026-09-18-wre-psm6-verify-results.md): PSM-6 does
+          // NOT win WRE scoring on this invoice (unmodified scoring, confirmed
+          // across two render pipelines), and direct single-pass parsing shows
+          // its own per-site accuracy ties (never beats) the pass that already
+          // wins today. No WRE scoring change was made — see that file for why
+          // forcing a win would not be an honest signal. Kept here anyway
+          // because it is a safe, purely additive, self-selecting candidate
+          // (identical guarantee as the -psm4 pair above) — it may still help
+          // on a DIFFERENT WRE invoice/scan than the one tested; it is
+          // confirmed not to regress this one.
+          { scale: 2.5, psm: '6', label: '2.5x-psm6' },
+          { scale: 3.5, psm: '6', label: '3.5x-psm6' },
         ];
         // Retry passes — only run if primary passes have issues (low score or missing values)
         const OCR_RETRY_PASSES = [
