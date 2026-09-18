@@ -7444,10 +7444,15 @@ const UTILITY_RULES = [
               if (_digits.length > 2) {
                 _repaired = parseFloat(_digits.slice(0, -2) + '.' + _digits.slice(-2));
               }
+              // Track WHICH rate (index or trigger) is used to confirm the repair —
+              // needed below so sibling-field propagation only ever touches the
+              // one component the confirming rate actually came from (see
+              // 2026-09-18 review follow-up comment further down).
+              const _rateSource = _cur.indexRate != null ? 'index' : _cur.triggerRate != null ? 'trigger' : null;
               const _rate =
-                _cur.indexRate != null
+                _rateSource === 'index'
                   ? parseFloat(_cur.indexRate)
-                  : _cur.triggerRate != null
+                  : _rateSource === 'trigger'
                     ? parseFloat(_cur.triggerRate)
                     : null;
               // Fix (2026-09-18): the Sub-Total line's OWN dollar figure can fail
@@ -7481,21 +7486,28 @@ const UTILITY_RULES = [
                   // (verified: Inv 452084 site "Elem-Wishsler", Index line read
                   // "2671" for a true 26.71) typically carries the exact same
                   // corrupted bare-digit reading. Apply the identical repair to
-                  // that sibling field too; otherwise the independent rate-
+                  // THAT SAME sibling field only; otherwise the independent rate-
                   // mismatch check below compares the rate/charge against the
                   // STILL-corrupted component number and wrongly flags a value
                   // this math check just confirmed is correct.
+                  // Fix (2026-09-18, review follow-up, Priority 3c): scope this to
+                  // ONLY the component whose rate actually confirmed the repair
+                  // (`_rateSource`) — previously both index and trigger fields were
+                  // repaired unconditionally whenever EITHER rate confirmed it, so
+                  // a site with both components present could get a wrong-
+                  // direction repair applied to the sibling whose rate did NOT do
+                  // the confirming (no real case observed in the 14-invoice
+                  // corpus, but not a proven-safe assumption either).
                   if (
-                    _cur.indexRate != null &&
+                    _rateSource === 'index' &&
                     _cur.indexMMbtu != null &&
                     Number.isInteger(_cur.indexMMbtu) &&
                     _cur.indexMMbtu > 999
                   ) {
                     const _idxDigits = String(_cur.indexMMbtu);
                     _cur.indexMMbtu = parseFloat(_idxDigits.slice(0, -2) + '.' + _idxDigits.slice(-2));
-                  }
-                  if (
-                    _cur.triggerRate != null &&
+                  } else if (
+                    _rateSource === 'trigger' &&
                     _cur.triggerMMbtu != null &&
                     Number.isInteger(_cur.triggerMMbtu) &&
                     _cur.triggerMMbtu > 999
@@ -7776,6 +7788,63 @@ const UTILITY_RULES = [
           (blk.triggerRate != null && blk.triggerMMbtu != null && blk.triggerCharge != null) ||
           (blk.indexRate != null && blk.indexMMbtu != null && blk.indexCharge != null);
         const _circularUnverified = !!blk._mmbtuFromComponentFallback && !_rateCheckAvailable;
+        // Fix (2026-09-18, review follow-up, Priority 2 MUST-FIX): Sub-Total-level
+        // rate check. Every check above requires a per-COMPONENT charge
+        // (triggerCharge/indexCharge) to run — but the component charge line
+        // frequently fails to parse (no $/decimal on that specific line) even
+        // when the component's own RATE (a clean 4-decimal $-anchored token,
+        // e.g. "$4.7550") and the Sub-Total's own reliably-captured blk.dollar
+        // BOTH parsed fine. Verified hole (Wall Crk, Inv 447604 site #9):
+        // mmbtu=366, dollar=$307.60, indexRate=$4.7550, indexCharge=null (the
+        // Index line ends "2307 60" — no $/decimal, so _idxDollarM never
+        // matches) — every check above no-ops (rate check needs indexCharge;
+        // sum-mismatch's "only one component legible" branch only flags when
+        // the component EXCEEDS the total, and 356 < 366; the decimal-repair
+        // gate only fires above a 999 bare-integer floor, and 366 has 3
+        // digits) while $307.60 / $4.7550 = 64.69 MMbtu is a ~5.6x mismatch
+        // against the captured 366. This check compares blk.mmbtu (the
+        // Sub-Total's own captured usage — the SAME value that ships as
+        // NaturalGasMMbtu) directly against blk.dollar (the Sub-Total's own
+        // reliably-captured charge), independent of whether any per-component
+        // charge parsed. When BOTH Trigger and Index are present with BOTH
+        // their own rates, use the weighted two-rate sum instead of a single
+        // flat rate, so a genuine two-component site isn't false-flagged by
+        // assuming one uniform rate across both components.
+        let _subTotalMismatch = false;
+        if (blk.mmbtu != null && blk.dollar != null) {
+          // blk.dollar can carry a thousands comma ("1,743.43" — _wreFixOcrDollar
+          // only REPAIRS a corrupted double-period form, it doesn't strip an
+          // already-clean comma) — parseFloat alone stops at the first non-numeric
+          // char, so "1,743.43" would silently become 1. Strip commas first, same
+          // as every other dollar-parsing call site in this file.
+          const _subTotalCharge = parseFloat(String(blk.dollar).replace(/,/g, ''));
+          if (!isNaN(_subTotalCharge) && _subTotalCharge !== 0) {
+            if (
+              blk.triggerMMbtu != null &&
+              blk.indexMMbtu != null &&
+              blk.triggerRate != null &&
+              blk.indexRate != null
+            ) {
+              const _expected =
+                blk.triggerMMbtu * parseFloat(blk.triggerRate) + blk.indexMMbtu * parseFloat(blk.indexRate);
+              const _deltaPct = (Math.abs(_expected - _subTotalCharge) / Math.abs(_subTotalCharge)) * 100;
+              _subTotalMismatch = _deltaPct > 5 && Math.abs(_expected - _subTotalCharge) > 1;
+            } else {
+              // Exactly one component present (the common case) — use ITS rate
+              // directly against blk.mmbtu, the Sub-Total's own captured value,
+              // reusing the same tolerance as the general rate-mismatch check.
+              const _singleRate =
+                blk.triggerMMbtu != null && blk.indexMMbtu == null && blk.triggerRate != null
+                  ? parseFloat(blk.triggerRate)
+                  : blk.indexMMbtu != null && blk.triggerMMbtu == null && blk.indexRate != null
+                    ? parseFloat(blk.indexRate)
+                    : null;
+              if (_singleRate != null) {
+                _subTotalMismatch = _wreRateMismatch(blk.mmbtu, _singleRate, _subTotalCharge);
+              }
+            }
+          }
+        }
         // Fix (2026-09-15, WRE OCR-tolerance sweep): the tolerant component-line
         // fallback above can recover a usage number with NO printed rate and NO
         // Sub-Total to cross-check it against (Inv 447604 site #7) — the rate/sum
@@ -7785,13 +7854,19 @@ const UTILITY_RULES = [
         // Fix (2026-09-18, TASK 5): a bare-digit-run Sub-Total MMbtu with no
         // decimal point that could NOT be math-confirmed after decimal repair
         // (_mmbtuNoDecimalUnverified, set above) folds in the same way.
+        // Fix (2026-09-18, review follow-up): the new Sub-Total-level rate
+        // check (_subTotalMismatch, above) folds in the same way — it's an
+        // independent math check like _trigMismatch/_idxMismatch, just using
+        // blk.mmbtu/blk.dollar directly instead of requiring a per-component
+        // charge.
         const _mmbtuRateMismatch =
           _trigMismatch ||
           _idxMismatch ||
           _sumMismatch ||
           !!blk._tolUnverifiedMMbtu ||
           _circularUnverified ||
-          !!blk._mmbtuNoDecimalUnverified;
+          !!blk._mmbtuNoDecimalUnverified ||
+          _subTotalMismatch;
         if (_mmbtuRateMismatch) {
           console.log(
             '[WRE] Rate/sum cross-check FAILED for site #' +
@@ -7807,6 +7882,8 @@ const UTILITY_RULES = [
               _circularUnverified +
               ', no-decimal-unverified=' +
               !!blk._mmbtuNoDecimalUnverified +
+              ', sub-total-rate-mismatch=' +
+              _subTotalMismatch +
               '. NaturalGasMMbtu suppressed, flagged for manual review.',
           );
         }
