@@ -2209,7 +2209,50 @@ function egfxRefresh(projId) {
   }
 }
 function egfxExport(projId) {
-  showToast('Export coming soon');
+  const chartsEl = document.getElementById(`egfx-charts-${projId}`);
+  const table = chartsEl ? chartsEl.querySelector('table') : null;
+  if (!chartsEl || !table) {
+    showToast('Open the Energy Graphics tab and let it load first');
+    return;
+  }
+
+  const esc = function (v) {
+    if (v == null) return '';
+    const s = String(v);
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+
+  const lines = [];
+
+  lines.push('KPI,Value');
+  const kpis = [
+    [`egfx-blEui-${projId}`, 'Baseline EUI'],
+    [`egfx-curEui-${projId}`, 'Rolling 12-mo EUI'],
+    [`egfx-estarScore-${projId}`, 'Est. ENERGY STAR Score'],
+    [`egfx-projSav-${projId}`, 'Projected Savings'],
+    [`egfx-curSav-${projId}`, 'Current Savings'],
+  ];
+  kpis.forEach(([id, label]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    lines.push(`${esc(label)},${esc(el.textContent.trim())}`);
+  });
+
+  lines.push('');
+  lines.push('Annual Summary by Year');
+  Array.from(table.querySelectorAll('tr')).forEach((tr) => {
+    const cells = Array.from(tr.querySelectorAll('th,td')).map((c) => esc(c.textContent.trim()));
+    lines.push(cells.join(','));
+  });
+
+  const p = projects.find((x) => String(x.id) === String(projId));
+  const projLabel = (p && p.name ? p.name : String(projId)).trim().replace(/\s+/g, '-');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = `energy-graphics-${projLabel}-${dateStr}.csv`;
+
+  _exportTriggerDownload(new Blob([lines.join('\r\n')], { type: 'text/csv' }), filename);
+  showToast('Exported energy graphics data');
 }
 
 /* ══════════════════════════════════════════════════════

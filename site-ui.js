@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.18.856'; // Wood River Energy address-collision fix
+  var CH_VERSION = 'v2026.09.18.857'; // Energy Graphics tab export CSV
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
