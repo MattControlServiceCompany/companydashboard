@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.18.856',
+    date: '2026-09-18',
+    title: 'Energy Department: Wood River Energy bill import — gas usage accuracy',
+    items: [
+      {
+        type: 'fix',
+        text: 'Wood River Energy natural-gas bill import now captures the MMbtu usage reading more reliably, so meter rates calculate correctly.',
+      },
+      {
+        type: 'fix',
+        text: "When a Wood River Energy bill's usage reading looks inconsistent with its own dollar charge and rate, the bill import now flags it for manual review instead of silently accepting a wrong number.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.17.855',
     date: '2026-09-17',
     title: 'Energy Department: Wood River Energy address-collision fix',
