@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.18.857',
+    date: '2026-09-18',
+    title: 'Energy Department: Energy Graphics tab export',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Graphics tab: the Export button now downloads a CSV of the KPI cards and the Annual Summary by Year table.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.18.856',
     date: '2026-09-18',
     title: 'Energy Department: Wood River Energy bill import — gas usage accuracy',
