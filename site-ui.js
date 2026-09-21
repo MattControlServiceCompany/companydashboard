@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.21.859'; // Energy Graphics tab export CSV
+  var CH_VERSION = 'v2026.09.21.860'; // Energy Graphics tab export CSV
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

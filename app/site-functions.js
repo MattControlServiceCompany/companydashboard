@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.21.860',
+    date: '2026-09-21',
+    title: 'Utility bill import: Wood River gas OCR retry improvement',
+    items: [
+      {
+        type: 'fix',
+        text: "The importer now retries harder on Wood River Energy gas bills when it can't read a usage value the first time, running higher-resolution and cleaned-up scan passes. A recovered value is only accepted after it passes the importer's own math check.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.21.859',
     date: '2026-09-21',
     title: 'Utility bill import: Wood River gas bill fix',
