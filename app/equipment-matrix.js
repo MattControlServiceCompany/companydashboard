@@ -674,8 +674,12 @@ var EM_POINT_MAP = [
     patterns: [/cooling.*setpoint/i, /cooling.*set\s+point/i, /clg setpoint/i],
     // M1A: added exclusions for PID sub-objects, integration parameters, mismatch alarms,
     // remote/network transmitted copies, and SAT-level cooling setpoints (route to satCoolSpLive).
+    // fix/em-point-mapping-1to1: added 'effective' — this entry was shadowing the already-
+    // existing effectiveCoolSetpoint entry (below) because this entry appears earlier in
+    // EM_POINT_MAP (first-match-wins). "Effective Cooling Setpoint" now falls through to
+    // effectiveCoolSetpoint so it stays distinct from the Occupied setpoint mapped here.
     negativePatterns: [
-      /adjust|unoccupied/i,
+      /adjust|unoccupied|effective/i,
       /\b(bacnet\s*pid|integration|mismatch|alarm|remote|command|mcs|bas\b)\b/i,
       /supply\s+air/i,
     ],
@@ -699,8 +703,12 @@ var EM_POINT_MAP = [
     patterns: [/heating.*setpoint/i, /heating.*set\s+point/i, /htg setpoint/i],
     // M1A: added exclusions for PID sub-objects, mismatch alarms, remote/network copies,
     // and SAT-level heating setpoints (route to satHtgSpLive).
+    // fix/em-point-mapping-1to1: added 'effective' — this entry was shadowing the already-
+    // existing effectiveHtgSetpoint entry (below) because this entry appears earlier in
+    // EM_POINT_MAP (first-match-wins). "Effective Heating Setpoint" now falls through to
+    // effectiveHtgSetpoint so it stays distinct from the Occupied setpoint mapped here.
     negativePatterns: [
-      /adjust|unoccupied/i,
+      /adjust|unoccupied|effective/i,
       /\b(bacnet\s*pid|mismatch|alarm|remote|command|mcs|diagnostic)\b/i,
       /supply\s+air/i,
     ],
@@ -5166,16 +5174,36 @@ function emBuildAllPointsTableHtml(row) {
       '<th style="padding:3px 10px 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
       '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">ASHRAE Category</th>' +
       '</tr></thead><tbody>';
+    // fix/em-point-mapping-1to1: split the per-column count into real vs. virtual tallies so
+    // the collision warning below can mirror the real-overwrites-virtual priority already
+    // applied in emGetNormalizedPoints (see that function's _isVirtual/_virtualFilledCols
+    // logic above). A virtual point that is silently superseded by a real point for the same
+    // column is a by-design fallback, not a genuine collision, and must not raise the badge.
     var _apColCount = {};
+    var _apColRealCount = {};
+    var _apColVirtualCount = {};
     for (var _aci = 0; _aci < _apKeys.length; _aci++) {
       var _acMapped = emMapPointToColumn(_apKeys[_aci], null, row.category);
-      if (_acMapped) _apColCount[_acMapped] = (_apColCount[_acMapped] || 0) + 1;
+      if (_acMapped) {
+        _apColCount[_acMapped] = (_apColCount[_acMapped] || 0) + 1;
+        if (/^\s*virtual\s+/i.test(_apKeys[_aci])) {
+          _apColVirtualCount[_acMapped] = (_apColVirtualCount[_acMapped] || 0) + 1;
+        } else {
+          _apColRealCount[_acMapped] = (_apColRealCount[_acMapped] || 0) + 1;
+        }
+      }
     }
     for (var _ari = 0; _ari < _apKeys.length; _ari++) {
       var _arKey = _apKeys[_ari];
       var _arVal = row.pointsRaw[_arKey];
       var _arMapped = emMapPointToColumn(_arKey, null, row.category);
-      var _arHasCollision = _arMapped && (_apColCount[_arMapped] || 0) > 1;
+      var _arRealCt = _arMapped ? _apColRealCount[_arMapped] || 0 : 0;
+      var _arVirtCt = _arMapped ? _apColVirtualCount[_arMapped] || 0 : 0;
+      var _arIsVirtual = /^\s*virtual\s+/i.test(_arKey);
+      // Real point: collides only against other real points for this column (real count > 1).
+      // Virtual point: collides only if no real point exists AND more than one virtual maps
+      // here — once a real point is present, this virtual is superseded, not colliding.
+      var _arHasCollision = !_arMapped ? false : _arIsVirtual ? _arRealCt === 0 && _arVirtCt > 1 : _arRealCt > 1;
       // Plain-language rule (ui-standards.md): show the human label ("Mixed Air Temp"), never the
       // internal camelCase key ("mixedAirTemp"). Full key still available via title tooltip.
       var _arLabel = _arMapped ? emColLabel(_arMapped) : '';
