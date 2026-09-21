@@ -484,7 +484,11 @@ function egfxRefresh(projId) {
   // 3-lowest-month baseload subtraction method — mirrors the Excel "HVAC End-Use Estimate" sheet).
   // Indexed Jan(0)..Dec(11), keyed by building id. Do NOT reuse getBaseloadTrend()/m._reg here —
   // that is the CDD/HDD regression method and will not match the Excel numbers.
-  let bldgHvac = {}; // {bldgId: {name, kwh:[12], gasTherms:[12], kwSum:[12], kwCount:[12]}}
+  // IMPORTANT: baselines can span 12-36 months (app/utility-data.js:6679), so multiple bills can
+  // land in the same calendar-month bucket across baseline years. kwhSum/kwhCount, gasSum/gasCount,
+  // and kwSum/kwCount track sum+count per bucket so computeHvacEnduse() gets a true per-calendar-
+  // month AVERAGE, not a multi-year total mislabeled as one month's value.
+  let bldgHvac = {}; // {bldgId: {name, kwhSum:[12], kwhCount:[12], gasSum:[12], gasCount:[12], kwSum:[12], kwCount:[12]}}
 
   const _pfe = (v) => parseFloat(v) || 0;
   const _elecCommodityCost = (bill) => _pfe(bill.kwhCost) + _pfe(bill.kwCost) + _pfe(bill.facKWCost);
@@ -497,8 +501,10 @@ function egfxRefresh(projId) {
     if (!bldgHvac[b.id])
       bldgHvac[b.id] = {
         name: bName,
-        kwh: new Array(12).fill(0),
-        gasTherms: new Array(12).fill(0),
+        kwhSum: new Array(12).fill(0),
+        kwhCount: new Array(12).fill(0),
+        gasSum: new Array(12).fill(0),
+        gasCount: new Array(12).fill(0),
         kwSum: new Array(12).fill(0),
         kwCount: new Array(12).fill(0),
       };
@@ -546,17 +552,20 @@ function egfxRefresh(projId) {
             const _kwhVal = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
             blKwh[mi] += _kwhVal;
             blCost[mi] += _elecCommodityCost(bill);
-            bh.kwh[mi] += _kwhVal;
+            // Sum + count per calendar-month bucket (not a raw += into a "monthly" slot) so a
+            // baseline spanning multiple years averages correctly instead of summing N years
+            // of usage into what computeHvacEnduse() treats as a single month's value.
+            bh.kwhSum[mi] += _kwhVal;
+            bh.kwhCount[mi]++;
             const _dKw = parseFloat(bill.demandKW) || 0;
-            if (_dKw > 0) {
-              bh.kwSum[mi] += _dKw;
-              bh.kwCount[mi]++;
-            }
+            bh.kwSum[mi] += _dKw;
+            bh.kwCount[mi]++;
           }
           if (isGas) {
             const _gasVal = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
             blGas[mi] += _gasVal;
-            bh.gasTherms[mi] += _gasVal;
+            bh.gasSum[mi] += _gasVal;
+            bh.gasCount[mi]++;
           }
           if (isGas) blCost[mi] += _gasCommodityCost(bill);
           if (isPropane) {
@@ -1375,8 +1384,14 @@ function egfxRefresh(projId) {
     const cards = bldgIds
       .map((bId) => {
         const bh = bldgHvac[bId];
-        const kwArr = bh.kwSum.map((s, i) => (bh.kwCount[i] ? s / bh.kwCount[i] : 0));
-        const r = computeHvacEnduse(bh.kwh, kwArr, bh.gasTherms);
+        // Average sum/count per calendar-month bucket. A month with zero bills stays `null`
+        // ("no data") so computeHvacEnduse() excludes it entirely rather than treating a
+        // missing month as a real 0 usage month (which would wrongly make it eligible to be
+        // one of the "3 lowest" baseload months).
+        const kwhArr = bh.kwhSum.map((s, i) => (bh.kwhCount[i] ? s / bh.kwhCount[i] : null));
+        const kwArr = bh.kwSum.map((s, i) => (bh.kwCount[i] ? s / bh.kwCount[i] : null));
+        const gasArr = bh.gasSum.map((s, i) => (bh.gasCount[i] ? s / bh.gasCount[i] : null));
+        const r = computeHvacEnduse(kwhArr, kwArr, gasArr);
         if (!r.elecValid && !r.gasValid) return '';
         const pct1 = (v) => (v * 100).toFixed(1) + '%';
         const rows = [];
