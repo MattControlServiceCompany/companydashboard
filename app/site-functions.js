@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.20.858',
+    date: '2026-09-20',
+    title: 'Energy Graphics tab: HVAC End-Use Estimate card',
+    items: [
+      {
+        type: 'feature',
+        text: "Energy Graphics tab: new HVAC End-Use Estimate card shows each building's heating Therms %, cooling kWh %, and cooling-attributable demand, calculated from the 3-lowest-month baseload method.",
+      },
+      {
+        type: 'fix',
+        text: 'Fixed a bug where buildings with more than one year of billing history could double-count baseload months, skewing the heating/cooling split for those buildings.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.18.857',
     date: '2026-09-18',
     title: 'Energy Department: Energy Graphics tab export',
