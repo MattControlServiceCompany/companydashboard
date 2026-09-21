@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.21.859',
+    date: '2026-09-21',
+    title: 'Utility bill import: Wood River gas bill fix',
+    items: [
+      {
+        type: 'fix',
+        text: "Fixed a bug where Wood River Energy gas bills with a Special Weather Event line were wrongly flagged as bad data, even though the usage on them was correct. The importer now reads that line's usage amount instead of skipping it.",
+      },
+      {
+        type: 'fix',
+        text: "Fixed a false 'mismatched usage' warning on Wood River gas bills where OCR dropped a decimal point in one usage number but the bill's own total already showed the correct value.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.20.858',
     date: '2026-09-20',
     title: 'Energy Graphics tab: HVAC End-Use Estimate card',
