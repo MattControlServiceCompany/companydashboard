@@ -133,6 +133,12 @@ Desktop.ini
 *.pdf
 
 # ---------------------------------------------------------------------------
+# Local-only regression fixtures (real client bill OCR text — account/meter
+# numbers, dollar figures; never committed, verified locally only)
+# ---------------------------------------------------------------------------
+tools/fixtures/
+
+# ---------------------------------------------------------------------------
 # Logs, debug output, crash reports
 # ---------------------------------------------------------------------------
 *.log

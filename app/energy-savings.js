@@ -7204,6 +7204,7 @@ const UTILITY_RULES = [
               sweCharge: null,
               triggerMMbtu: null,
               indexMMbtu: null,
+              sweMMbtu: null,
               triggerRate: null,
               indexRate: null,
             };
@@ -7321,8 +7322,22 @@ const UTILITY_RULES = [
             // applied here too since SWE surcharges can also exceed $1,000 (e.g. JAN 26 invoice).
             // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
             // tolerance as the Trigger/Index charges above.
-            const _sweDollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
+            // Fix (2026-09-21, WRE SWE-omitted-from-validation fix): the SWE dollar
+            // figure can itself print NEGATIVE (verified: Inv 486834/Jan 2026 site
+            // #10 prints "$-293.47", not a positive surcharge like every other site
+            // on the same invoice) — allow an optional leading "-" inside the
+            // captured group so parseFloat carries the sign through.
+            const _sweDollarM = ln.match(/[$£](-?\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£](-?[\d,]+\.\d{2})\s*$/);
             if (_sweDollarM) _cur.sweCharge = parseFloat(_wreFixOcrDollar(_sweDollarM[1]).replace(/,/g, ''));
+            // Fix (2026-09-21, WRE SWE-omitted-from-validation fix): capture the SWE
+            // MMbtu quantity the same way Trigger/Index do — the first number after
+            // the label. Prints negative (e.g. "-56.89"); parseFloat handles the
+            // sign. Without this, _wreComponentSumMismatch/_subTotalMismatch below
+            // never see the SWE component and false-flag an otherwise-correct
+            // Sub-Total (the real SWE MMbtu is a real, negative, printed quantity —
+            // not invented).
+            const _sweMmbtuM = ln.match(/Special\s+Weather\s+Event\s+(-?[\d,]+\.?\d*)/i);
+            if (_sweMmbtuM) _cur.sweMMbtu = parseFloat(_sweMmbtuM[1].replace(/,/g, ''));
             continue;
           }
 
@@ -7541,7 +7556,10 @@ const UTILITY_RULES = [
             }
           }
           if (b.mmbtu == null) {
-            const mparts = [b.triggerMMbtu, b.indexMMbtu].filter((v) => v != null);
+            // Fix (2026-09-21, WRE SWE-omitted-from-validation fix): symmetric with
+            // the dollar fallback above (which already includes b.sweCharge) — the
+            // MMbtu fallback was missing its SWE half.
+            const mparts = [b.triggerMMbtu, b.indexMMbtu, b.sweMMbtu].filter((v) => v != null);
             if (mparts.length > 0) {
               b.mmbtu = mparts.reduce((s, v) => s + v, 0);
               // Fix (2026-09-18, WRE usage-capture sweep, TASK 4): mark that this
@@ -7755,14 +7773,37 @@ const UTILITY_RULES = [
         // TriggerMMbtu+IndexMMbtu on 10/10 sites, within 0.01 MMbtu (2-decimal
         // print-rounding). Tolerance set to max(0.1 MMbtu, 3% of the sub-total) — 10x
         // that observed 0.01 rounding floor — so it won't false-flag a clean bill.
-        const _wreComponentSumMismatch = (subTotal, trigMmbtu, idxMmbtu) => {
+        // Fix (2026-09-21, WRE SWE-omitted-from-validation fix): accept a third,
+        // optional sweMmbtu param and fold it into the sum. The Special Weather
+        // Event line is a real third component (verified negative on the Jan 2026
+        // invoice: -56.89 MMbtu) that used to be silently excluded from this
+        // identity check, so a site WITH an SWE line always failed here even
+        // though Trigger+Index+SWE == Sub-Total exactly (169.55 + 508.49 +
+        // (-56.89) = 621.15 ≈ Sub-Total 621.14).
+        const _wreComponentSumMismatch = (subTotal, trigMmbtu, idxMmbtu, sweMmbtu) => {
           if (subTotal == null || (trigMmbtu == null && idxMmbtu == null)) return false;
-          const sum = (trigMmbtu != null ? trigMmbtu : 0) + (idxMmbtu != null ? idxMmbtu : 0);
+          const sum =
+            (trigMmbtu != null ? trigMmbtu : 0) + (idxMmbtu != null ? idxMmbtu : 0) + (sweMmbtu != null ? sweMmbtu : 0);
           const tolerance = Math.max(0.1, subTotal * 0.03);
           if (trigMmbtu != null && idxMmbtu != null) {
             return Math.abs(sum - subTotal) > tolerance;
           }
           // Only one component legible: a non-negative component can never exceed the total.
+          // Fix (2026-09-21, WRE decimal-dropout fix): before flagging, check
+          // whether the offending sum is a decimal-point OCR dropout — the
+          // component line reads e.g. "10474" for "104.74" while the Sub-Total's
+          // OWN line already parsed correctly WITH its decimal (verified: Inv
+          // 474908/Oct 2025 site #10, Index "10474" vs correct Sub-Total 104.74;
+          // Inv 469609/Sep 2025 site #10, Index "6557" vs correct Sub-Total
+          // 65.57). If sum/100 reconciles with the Sub-Total within the same
+          // tolerance, this is that known shape, not a real mismatch — do not
+          // flag. This mirrors the bare-digit repair heuristic already trusted
+          // for the Sub-Total itself (~7441-7521), applied here at the
+          // comparison point; it does not change blk.mmbtu (already correct),
+          // only suppresses the false-positive flag.
+          if (sum > subTotal + tolerance && Math.abs(sum / 100 - subTotal) <= tolerance) {
+            return false;
+          }
           return sum > subTotal + tolerance;
         };
         // Fix (2026-09-18, WRE usage-capture sweep, TASK 4): when blk.mmbtu was
@@ -7776,7 +7817,7 @@ const UTILITY_RULES = [
         // no independent verification at all.
         const _sumMismatch = blk._mmbtuFromComponentFallback
           ? false
-          : _wreComponentSumMismatch(blk.mmbtu, blk.triggerMMbtu, blk.indexMMbtu);
+          : _wreComponentSumMismatch(blk.mmbtu, blk.triggerMMbtu, blk.indexMMbtu, blk.sweMMbtu);
         // When mmbtu came from the component-sum fallback AND neither component
         // has a real rate+charge to run the math-based check above (i.e. Fix 3's
         // new tolerant-fallback rate capture, or a primary Trigger/Index rate,
@@ -7825,8 +7866,17 @@ const UTILITY_RULES = [
               blk.triggerRate != null &&
               blk.indexRate != null
             ) {
+              // Fix (2026-09-21, WRE SWE-omitted-from-validation fix): add the SWE
+              // charge directly (it is a flat charge already in dollars, not a
+              // rate*quantity component) — its printed rate column is unreliable/
+              // corrupted, so do NOT multiply it by any rate, only add the
+              // already-captured dollar figure. Without this, a site with an SWE
+              // line always failed this check even when Trigger+Index+SWE exactly
+              // reconciled with the printed Sub-Total.
               const _expected =
-                blk.triggerMMbtu * parseFloat(blk.triggerRate) + blk.indexMMbtu * parseFloat(blk.indexRate);
+                blk.triggerMMbtu * parseFloat(blk.triggerRate) +
+                blk.indexMMbtu * parseFloat(blk.indexRate) +
+                (blk.sweCharge || 0);
               const _deltaPct = (Math.abs(_expected - _subTotalCharge) / Math.abs(_subTotalCharge)) * 100;
               _subTotalMismatch = _deltaPct > 5 && Math.abs(_expected - _subTotalCharge) > 1;
             } else {
