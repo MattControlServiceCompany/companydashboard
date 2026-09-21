@@ -480,6 +480,11 @@ function egfxRefresh(projId) {
   let yearData = {}; // {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}
   let blYears = new Set();
   let bldgYearData = {}; // {bldgName: {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}}
+  // Per-building baseline monthly arrays for the HVAC End-Use Estimate (weather-independent
+  // 3-lowest-month baseload subtraction method — mirrors the Excel "HVAC End-Use Estimate" sheet).
+  // Indexed Jan(0)..Dec(11), keyed by building id. Do NOT reuse getBaseloadTrend()/m._reg here —
+  // that is the CDD/HDD regression method and will not match the Excel numbers.
+  let bldgHvac = {}; // {bldgId: {name, kwh:[12], gasTherms:[12], kwSum:[12], kwCount:[12]}}
 
   const _pfe = (v) => parseFloat(v) || 0;
   const _elecCommodityCost = (bill) => _pfe(bill.kwhCost) + _pfe(bill.kwCost) + _pfe(bill.facKWCost);
@@ -489,6 +494,14 @@ function egfxRefresh(projId) {
   bldgs.forEach((b) => {
     const bName = b.name || 'Unknown';
     if (!bldgYearData[bName]) bldgYearData[bName] = {};
+    if (!bldgHvac[b.id])
+      bldgHvac[b.id] = {
+        name: bName,
+        kwh: new Array(12).fill(0),
+        gasTherms: new Array(12).fill(0),
+        kwSum: new Array(12).fill(0),
+        kwCount: new Array(12).fill(0),
+      };
     (b.meters || []).forEach((m) => {
       if (m.baselineInclude === false) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
@@ -528,11 +541,23 @@ function egfxRefresh(projId) {
 
         if (isBaseline) {
           // Baseline data
+          const bh = bldgHvac[b.id];
           if (isElec) {
-            blKwh[mi] += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+            const _kwhVal = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+            blKwh[mi] += _kwhVal;
             blCost[mi] += _elecCommodityCost(bill);
+            bh.kwh[mi] += _kwhVal;
+            const _dKw = parseFloat(bill.demandKW) || 0;
+            if (_dKw > 0) {
+              bh.kwSum[mi] += _dKw;
+              bh.kwCount[mi]++;
+            }
           }
-          if (isGas) blGas[mi] += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+          if (isGas) {
+            const _gasVal = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+            blGas[mi] += _gasVal;
+            bh.gasTherms[mi] += _gasVal;
+          }
           if (isGas) blCost[mi] += _gasCommodityCost(bill);
           if (isPropane) {
             blPropane[mi] += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
@@ -1341,6 +1366,52 @@ function egfxRefresh(projId) {
     );
   }
 
+  // HVAC End-Use Estimate — one card per building, weather-independent 3-lowest-month
+  // baseload subtraction method (matches the Excel "HVAC End-Use Estimate" deliverable).
+  function _hvacEnduseCardsHtml() {
+    if (typeof computeHvacEnduse !== 'function') return '';
+    const bldgIds = Object.keys(bldgHvac);
+    if (!bldgIds.length) return '';
+    const cards = bldgIds
+      .map((bId) => {
+        const bh = bldgHvac[bId];
+        const kwArr = bh.kwSum.map((s, i) => (bh.kwCount[i] ? s / bh.kwCount[i] : 0));
+        const r = computeHvacEnduse(bh.kwh, kwArr, bh.gasTherms);
+        if (!r.elecValid && !r.gasValid) return '';
+        const pct1 = (v) => (v * 100).toFixed(1) + '%';
+        const rows = [];
+        if (r.gasValid) {
+          rows.push(
+            `<div><span style="color:var(--text2)">Gas heating:</span> <strong>${Math.round(r.heatingTherms).toLocaleString()} Therms</strong> (${pct1(r.heatingPct)} of gas use)</div>`,
+          );
+        }
+        if (r.elecValid) {
+          rows.push(
+            `<div><span style="color:var(--text2)">Electric cooling:</span> <strong>${Math.round(r.coolingKwh).toLocaleString()} kWh</strong> (${pct1(r.coolingPct)} of electric use)</div>`,
+          );
+        }
+        if (r.demandValid) {
+          rows.push(
+            `<div><span style="color:var(--text2)">Cooling-attributable demand:</span> <strong>${r.coolingDemandKw.toFixed(2)} kW</strong> (${pct1(r.coolingDemandPct)} of peak ${r.peakKw.toFixed(2)} kW)</div>`,
+          );
+        }
+        const baseNote = [];
+        if (r.elecValid) baseNote.push(`electric baseload ${r.baseloadElec.toFixed(2)} kWh/mo`);
+        if (r.gasValid) baseNote.push(`gas baseload ${r.baseloadGas.toFixed(2)} Therms/mo`);
+        if (r.demandValid) baseNote.push(`winter demand base ${r.winterDemandBase.toFixed(2)} kW`);
+        return `<div class="card" style="background:var(--s1);padding:14px;margin-bottom:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">🌡️ HVAC End-Use Estimate — ${_escHtml(bh.name)}</div>
+            <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text)">
+              ${rows.join('')}
+            </div>
+            <div style="font-size:10px;color:var(--text3);margin-top:8px">Baseload: ${baseNote.join(', ')}. This is a general estimate from billed usage, refined by BAS trend points where available.</div>
+          </div>`;
+      })
+      .filter(Boolean)
+      .join('');
+    return cards;
+  }
+
   const hasGas = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((g) => g > 0));
   const hasPropane = totalBlPropane > 0 || sortedYears.some((y) => yearData[y].propane.some((g) => g > 0));
 
@@ -1392,6 +1463,7 @@ function egfxRefresh(projId) {
           ${totalBlKwh > 0 ? _yoyHtml('Electric kW', '⚡', 'kW', 'kw', _blKwFromMap) : ''}
           ${hasGas ? _yoyHtml('Gas Therms', '🔥', 'therms', 'gas', blGasAvg) : ''}
           ${hasPropane ? _yoyHtml('Propane Gallons', '🛢️', 'gal', 'propane', blPropaneBl) : ''}
+          ${_hvacEnduseCardsHtml()}
           <div class="card" style="background:var(--s1);padding:14px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
