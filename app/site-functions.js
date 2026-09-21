@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.21.862',
+    date: '2026-09-21',
+    title: 'Utility bill CSV import: gas component detail, electric rates, and savings display',
+    items: [
+      {
+        type: 'feature',
+        text: 'CSV bill import now captures the Wood River Energy gas bill line-item breakdown, so a gas bill imported from a CSV file shows the same charge detail as one entered from a PDF.',
+      },
+      {
+        type: 'fix',
+        text: 'Electric bills imported from a CSV file now show correct $/kWh and $/kW rates everywhere rates are displayed (Bills table, Meter Performance, monthly rate charts). Previously these showed $0 for CSV-imported electric bills.',
+      },
+      {
+        type: 'fix',
+        text: 'Estimated/projected savings for a planned measure now display for projects that do not yet have a signed Service Agreement number (Spring Hill, JOCO, Baker). Actual bill-based savings still require a signed Service Agreement, as before.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.21.861',
     date: '2026-09-21',
     title: 'Equipment Matrix: setpoint mapping fix',
