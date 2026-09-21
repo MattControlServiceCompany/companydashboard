@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.21.861',
+    date: '2026-09-21',
+    title: 'Equipment Matrix: setpoint mapping fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Effective Cooling and Heating Setpoints now map to their own separate points instead of colliding with the Occupied Cooling/Heating Setpoints on the same internal point. A false collision warning that showed on Virtual Zone Temperature is also cleared.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.21.860',
     date: '2026-09-21',
     title: 'Utility bill import: Wood River gas OCR retry improvement',
