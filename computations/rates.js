@@ -27,15 +27,34 @@ function getStoredRate(bill, type) {
     case 'kwh': {
       var stored = parseFloat(bill.totalKwhRate);
       if (stored > 0) return stored;
-      var usage = parseFloat(bill.kWhConsumed) || parseFloat(bill.totalKwh) || 0;
-      var cost = parseFloat(bill.kwhCost) || 0;
+      var usage = parseFloat(bill.kWhConsumed) || parseFloat(bill.totalKwh) || parseFloat(bill.kwh) || 0;
+      // CSV-imported bills (BILL_SCHEMA.Electric, app/csv-import.js) use camelCase
+      // onPeakCost/offPeakCost instead of the PDF extractor's kwhCost — fall back to
+      // their sum so CSV-imported electric bills derive a real $/kWh (item 2026-09-21
+      // rate-calc-and-electric-components.md gap #2).
+      var cost =
+        parseFloat(bill.kwhCost) || (parseFloat(bill.onPeakCost) || 0) + (parseFloat(bill.offPeakCost) || 0) || 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'kw': {
       var stored = parseFloat(bill.totalKwRate);
       if (stored > 0) return stored;
-      var usage = parseFloat(bill.BilledKW) || parseFloat(bill.ActualKW) || parseFloat(bill.FacilitiesKW) || 0;
-      var cost = parseFloat(bill.kwCost) || 0;
+      var usage =
+        parseFloat(bill.BilledKW) ||
+        parseFloat(bill.ActualKW) ||
+        parseFloat(bill.FacilitiesKW) ||
+        parseFloat(bill.billedKW) ||
+        parseFloat(bill.demandKW) ||
+        0;
+      // CSV-imported bills store demand $ under camelCase demandCharge/facilitiesCharge/
+      // facKWCost/tdcCharge instead of the PDF extractor's kwCost — sum those as the
+      // fallback so CSV-imported electric bills derive a real $/kW.
+      var cost =
+        parseFloat(bill.kwCost) ||
+        (parseFloat(bill.demandCharge) || 0) +
+          (parseFloat(bill.facilitiesCharge || bill.facKWCost) || 0) +
+          (parseFloat(bill.tdcCharge) || 0) ||
+        0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {

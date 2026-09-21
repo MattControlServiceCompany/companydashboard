@@ -573,12 +573,15 @@ function getProjectSavingsByYM(projId) {
 function getBldgMeasureSavingsByMo(projId, bldgId) {
   // 2026-09-15 (SA-gate fix): String(x.id) === String(projId) matches the getMeterSavings
   // gate above — portal-export passes projId as a String while projects[].id are numbers,
-  // so a strict === here silently failed that caller. Also gate on the project's `sa`
-  // (Service Agreement #): no contract means no projected savings either, same rule as
-  // actual savings — a project with no SA must return the function's existing "nothing to
-  // show" shape (null), not phantom measure-based numbers.
+  // so a strict === here silently failed that caller.
+  // 2026-09-21 (SA-gate scope fix): the SA# (Service Agreement #) requirement was removed
+  // from this path. It belongs only to ACTUAL/bill-based savings (getMeterSavings, above),
+  // which need a contracted baseline to book real $ against. This function computes
+  // ESTIMATED/PROJECTED measure-based savings (a planned measure x its own rates) — that
+  // is independent of whether the project has a signed SA yet and must display regardless
+  // (Spring Hill, JOCO, Baker: sa="" but still need to show projected/estimated savings).
   const p = projects.find((x) => String(x.id) === String(projId));
-  if (!p || !p.savingsData || !p.sa) return null;
+  if (!p || !p.savingsData) return null;
   const measures = (p.savingsData.measures || []).filter((m) => m.bldgId === bldgId && m.selected !== false);
   if (!measures.length) return null;
   const monthlySavings = Array(12).fill(0);
