@@ -15743,7 +15743,20 @@ async function processPDF(file) {
           const worstMissing = Math.max(...retryBills.map((b) => countCriticalMissing(b, rule.name)));
           const totalMissing = retryBills.reduce((s, b) => s + countCriticalMissing(b, rule.name), 0);
           const missingRatio = retryBills.length > 0 ? totalMissing / retryBills.length : 0;
-          const retryWarranted = worstMissing >= 2 || missingRatio >= 0.1;
+          // Fix (fix/wre-retry-gate-widen, 2026-09-21): the worstMissing/missingRatio
+          // thresholds above starve the common Wood River Energy case — a 10-site
+          // consolidated invoice where exactly ONE site fails the MMBtu x rate =
+          // charge cross-check (energy-savings.js) and gets flagged. That's
+          // worstMissing=1 and a missingRatio that's usually well under 0.1 once an
+          // invoice has more than ~10 bills, so the retry that exists specifically to
+          // recover this case never fires. Any bill the first pass already flagged
+          // (_mmbtuRateMismatch / _manualReview / _manualReviewLabel) warrants a
+          // retry regardless of how small a fraction of the batch it is — OR it in
+          // alongside the existing thresholds rather than replacing them.
+          const _anyFlaggedForRetry = retryBills.some(
+            (b) => b._mmbtuRateMismatch === true || b._manualReview === true || !!b._manualReviewLabel,
+          );
+          const retryWarranted = worstMissing >= 2 || missingRatio >= 0.1 || _anyFlaggedForRetry;
           // Bug (eea98fd5 follow-up, retry/merge pipeline): baseline valid-bill
           // count captured BEFORE any retry-scale replacement runs, so the
           // "don't lose bills" guard a few lines below always compares against
@@ -15816,6 +15829,161 @@ async function processPDF(file) {
                 // point (processPDF awaits it above), so this phase gets its own
                 // 4-minute window rather than inheriting a stale/expired one.
                 _ocrStartTime = performance.now();
+                // Merge-time identity guard (2026-07-28, gas-bill-ocr-extraction TASK 2):
+                // only accept a field from `retry` when there's no active identity
+                // conflict between `orig` and `retry` (AccountNumber/MeterNumber
+                // disagree, or ServiceAddress shares no words) — if identity actively
+                // disagrees, skip the whole pair rather than merge possibly-misaligned
+                // data. Leaving a field null is safer than filling it from a different
+                // bill/site. Hoisted out of the per-candidate block (fix/wre-retry-gate-widen)
+                // so both the plain and Otsu-binarized candidates share one definition.
+                const _mergeIdNorm = (v) => (v || '').replace(/[\s-]/g, '').toLowerCase();
+                const _mergeAddrWords = (v) =>
+                  (v || '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9 ]/g, '')
+                    .split(/\s+/)
+                    .filter(Boolean);
+                const _mergeIdentityConflict = (orig, retry) => {
+                  const oa = _mergeIdNorm(orig.AccountNumber),
+                    ra = _mergeIdNorm(retry.AccountNumber);
+                  if (oa && ra && oa !== ra) return true;
+                  const om = _mergeIdNorm(orig.MeterNumber),
+                    rm = _mergeIdNorm(retry.MeterNumber);
+                  if (om && rm && om !== rm) return true;
+                  const ow = _mergeAddrWords(orig.ServiceAddress),
+                    rw = _mergeAddrWords(retry.ServiceAddress);
+                  if (ow.length > 0 && rw.length > 0) {
+                    const rwSet = new Set(rw);
+                    const overlap = ow.filter((w) => rwSet.has(w)).length / ow.length;
+                    if (overlap < 0.5) return true;
+                  }
+                  return false;
+                };
+                // Fix (fix/wre-retry-gate-widen, 2026-09-21): factored the evaluate/
+                // accept/merge sequence out of the per-scale loop so BOTH the plain
+                // hi-scale OCR text AND the new Otsu-binarized OCR text (added below)
+                // run through the exact same acceptance logic instead of duplicating
+                // it — the prior broken attempt at this fix (a34ace7, branch
+                // fix/wre-ocr-retry-enhance, DO NOT reuse) tried to duplicate this
+                // block per-candidate and left a `for` loop unclosed. Returns true if
+                // this candidate improved on `bestMissing` and was accepted.
+                const _tryAcceptRetryCandidate = (candidateFull) => {
+                  if (!candidateFull || candidateFull.trim().length <= 100) return false;
+                  // Guard (2322a12f): _fileHasMultiProviderSplit means this file
+                  // already produced a correct per-page split across DIFFERENT
+                  // providers/commodities (e.g. a Louisburg gas page + a page left
+                  // unmatched for Evergy). Re-detecting a rule from the combined
+                  // candidate text (all pages concatenated) can match a different
+                  // single-provider rule than the one that owns this file. When this
+                  // file is known multi-provider, the retry must stay on the SAME
+                  // rule that owned the original split — never switch providers.
+                  const retryRule = _fileHasMultiProviderSplit
+                    ? rule.detect(candidateFull)
+                      ? rule
+                      : null
+                    : UTILITY_RULES.find((r) => r.detect(candidateFull));
+                  if (!retryRule) return false;
+                  const retryBills2 = retryRule.extractAll
+                    ? retryRule.extractAll(candidateFull)
+                    : [retryRule.extract(candidateFull)];
+                  const retryValid = retryBills2.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
+                  const retryCheck = retryValid.length ? retryValid : retryBills2;
+                  const retryMissing = Math.max(...retryCheck.map((b) => countCriticalMissing(b, retryRule.name)));
+                  // Guard (eea98fd5 follow-up): recount retry quality with the SAME
+                  // lenient predicate (`_singleHasKeyField`) the first pass used, and
+                  // refuse the wholesale replace when it would leave the file with
+                  // fewer valid bills than the first pass already had — see the
+                  // eea98fd5/02-002364-00 Louisburg incident for why `retryValid.length`
+                  // alone is not a safe proxy for "no bills lost".
+                  const retryValidLenient = retryBills2.filter((b) => _singleHasKeyField(b));
+                  const retryWouldLoseBills = retryValidLenient.length < _origValidBillCount;
+                  if (!(retryMissing < bestMissing && !retryWouldLoseBills)) return false;
+                  bestText = candidateFull;
+                  bestMissing = retryMissing;
+                  bills = retryBills2;
+                  validBills = retryValidLenient;
+                  _singleDroppedBills = _flagDroppedBills(bills);
+                  window._pdfRawText = candidateFull;
+                  // Also merge: fill in any null fields from retry into original
+                  // (BY ARRAY INDEX, same pairing assumption as the wholesale-replace
+                  // guard above — protected the same way via _mergeIdentityConflict).
+                  if (retryCheck.length === retryBills.length) {
+                    for (let bi = 0; bi < retryBills.length; bi++) {
+                      const orig = retryBills[bi],
+                        retry = retryCheck[bi];
+                      if (!orig || !retry) continue;
+                      if (_mergeIdentityConflict(orig, retry)) continue; // identity disagrees — do not merge this pair
+                      // ── ACCEPTANCE GUARD (fix/wre-retry-gate-widen) ──
+                      // A NaturalGasMMbtu that a prior pass flagged
+                      // (orig._mmbtuRateMismatch === true, set by energy-savings.js's
+                      // MMBtu x rate = charge cross-check) may ONLY be replaced when
+                      // THIS retry candidate's OWN re-run of that same cross-check also
+                      // passed on the new OCR text (retry._mmbtuRateMismatch is not
+                      // true, and it actually produced a value). An unvalidated OCR
+                      // re-read must never silently overwrite a validated null — if no
+                      // candidate validates, the site stays flagged/null.
+                      const _retryMmbtuValidated =
+                        retry._mmbtuRateMismatch !== true &&
+                        retry.NaturalGasMMbtu !== null &&
+                        retry.NaturalGasMMbtu !== undefined &&
+                        retry.NaturalGasMMbtu !== '';
+                      for (const [k, v] of Object.entries(retry)) {
+                        // TASK 3 guard: never gap-fill a field that a validity check
+                        // already examined and deliberately nulled UNLESS this retry
+                        // candidate's own cross-check re-validated it (guard above).
+                        if (k === 'NaturalGasMMbtu' && orig._mmbtuRateMismatch === true && !_retryMmbtuValidated)
+                          continue;
+                        if (
+                          (orig[k] === null || orig[k] === undefined || orig[k] === '') &&
+                          v !== null &&
+                          v !== undefined &&
+                          v !== ''
+                        ) {
+                          orig[k] = v; // fill gap from retry
+                        }
+                      }
+                      if (orig._mmbtuRateMismatch === true && _retryMmbtuValidated) {
+                        // The retry candidate's own cross-check passed for this field —
+                        // the stale mismatch flag from the first pass no longer
+                        // describes the merged value; clear it so the manual-review
+                        // re-evaluation below can un-gate the bill.
+                        orig._mmbtuRateMismatch = false;
+                      }
+                      // Fix (2026-09-15, extraction-review-sweep): re-evaluate and clear
+                      // stale parseError/_manualReview flags once the merged bill
+                      // actually has real SITE-identifying or SITE-quantifying data
+                      // (never the shared invoice-level date fields — see 2026-09-15
+                      // correction note history for why BillingPeriodStart is excluded).
+                      const _mergedHasSiteData =
+                        orig.AccountNumber ||
+                        orig.MeterNumber ||
+                        orig.NaturalGasMMbtu ||
+                        orig.NaturalGasTherms ||
+                        orig.NaturalGasCCF ||
+                        orig.GasCharge ||
+                        orig.TotalCurrentCharges;
+                      // Guard: never clear a manual-review flag that TASK 3's rate/sum
+                      // cross-check (blk._mmbtuRateMismatch, energy-savings.js) set on
+                      // purpose because a printed rate didn't match a printed charge —
+                      // unless the retry candidate itself just cleared that flag above
+                      // via a validated recovery.
+                      if ((orig.parseError || orig._manualReview) && !orig._mmbtuRateMismatch && _mergedHasSiteData) {
+                        orig.parseError = false;
+                        orig._manualReview = false;
+                        orig._manualReviewLabel = undefined;
+                      }
+                    }
+                    // Recount after merge
+                    const mergedMissing = Math.max(...retryBills.map((b) => countCriticalMissing(b, rule.name)));
+                    if (mergedMissing < bestMissing) {
+                      bestMissing = mergedMissing;
+                      bills = retryBills.slice();
+                      validBills = bills.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
+                    }
+                  }
+                  return true;
+                };
                 for (const scale of RETRY_SCALES) {
                   if (bestMissing === 0) break;
                   statusMsg(
@@ -15832,10 +16000,20 @@ async function processPDF(file) {
                       ')...',
                   );
                   const retryTexts = [];
+                  // Fix (fix/wre-retry-gate-widen, 2026-09-21): a second OCR candidate
+                  // per retried page — the same hi-scale render, Otsu-binarized
+                  // (existing `binarizeCanvas`, ~13179) before OCR. WRE invoices are
+                  // 72-206dpi scans; a plain grayscale upscale can leave anti-aliased
+                  // edges that confuse Tesseract's digit segmentation on the small
+                  // MMBtu/rate columns, and binarizing sometimes reads where the plain
+                  // render does not (and vice versa) — try both, keep whichever the
+                  // parser's own cross-check actually validates.
+                  const retryTextsBin = [];
                   for (let i = 1; i <= maxPg; i++) {
                     if (!retryPages.has(i)) {
                       // Reuse existing text for pages that don't need retry
                       retryTexts.push(pageTexts[i - 1] || '');
+                      retryTextsBin.push(pageTexts[i - 1] || '');
                       continue;
                     }
                     let pg, canvas;
@@ -15852,6 +16030,7 @@ async function processPDF(file) {
                       // Treat a getPage/render timeout the same as "this page needs OCR
                       // retry but failed" — don't let it abort the whole retry batch.
                       retryTexts.push('');
+                      retryTextsBin.push('');
                       if (canvas) {
                         canvas.width = 0;
                         canvas.height = 0;
@@ -15869,6 +16048,26 @@ async function processPDF(file) {
                       if (e._replacementWorker) retryWorker = e._replacementWorker;
                       retryTexts.push('');
                     }
+                    // Otsu-binarize candidate: reuse the same hi-scale canvas, OCR the
+                    // thresholded copy separately. Failure here must never abort the
+                    // retry batch — fall back to an empty string for this page/candidate.
+                    let binCanvas = null;
+                    try {
+                      binCanvas = binarizeCanvas(canvas);
+                      const { result: binResult } = await recognizeWithTimeout(retryWorker, binCanvas, {
+                        rotateAuto: true,
+                      });
+                      retryTextsBin.push(binResult.data.text);
+                    } catch (e) {
+                      if (e && e._replacementWorker) retryWorker = e._replacementWorker;
+                      retryTextsBin.push('');
+                    } finally {
+                      if (binCanvas) {
+                        binCanvas.width = 0;
+                        binCanvas.height = 0;
+                        binCanvas = null;
+                      }
+                    }
                     // F2: release canvas backing store and PDF page after each retry-path page
                     canvas.width = 0;
                     canvas.height = 0;
@@ -15876,205 +16075,10 @@ async function processPDF(file) {
                     if (pg.cleanup) pg.cleanup();
                   }
                   const retryFull = retryTexts.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
-                  if (retryFull.trim().length > 100) {
-                    // Guard (2322a12f): _fileHasMultiProviderSplit means this file
-                    // already produced a correct per-page split across DIFFERENT
-                    // providers/commodities (e.g. a Louisburg gas page + a page
-                    // left unmatched for Evergy). Re-detecting a rule from the
-                    // combined retryFull text (all pages concatenated) can match
-                    // a different single-provider rule than the one that owns
-                    // this file (Evergy's detect() firing on the Evergy page
-                    // mixed in with the Louisburg page). That rule's extractAll
-                    // then runs its OWN page-splitting logic across the whole
-                    // combined text — including pages it doesn't own — and the
-                    // wholesale `bills = retryBills2` below replaces the correct
-                    // split with duplicate/wrong-commodity bills (2322a12f: a
-                    // Louisburg gas+Evergy electric 2-page PDF came back as two
-                    // Evergy electric bills with the same dates). When this file
-                    // is known multi-provider, the retry must stay on the SAME
-                    // rule that owned the original split — never switch providers.
-                    const retryRule = _fileHasMultiProviderSplit
-                      ? rule.detect(retryFull)
-                        ? rule
-                        : null
-                      : UTILITY_RULES.find((r) => r.detect(retryFull));
-                    if (retryRule) {
-                      const retryBills2 = retryRule.extractAll
-                        ? retryRule.extractAll(retryFull)
-                        : [retryRule.extract(retryFull)];
-                      const retryValid = retryBills2.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
-                      const retryCheck = retryValid.length ? retryValid : retryBills2;
-                      const retryMissing = Math.max(...retryCheck.map((b) => countCriticalMissing(b, retryRule.name)));
-                      // Guard (eea98fd5 follow-up): `retryValid` above uses a
-                      // STRICTER predicate (BillingPeriodStart/kWhConsumed only)
-                      // than the first pass's own `_singleHasKeyField` (which also
-                      // accepts a real charge field — WaterCharge/GasCharge/
-                      // TotalCurrentCharges — without a parsed period). A
-                      // retry-scale re-render can extract a commodity's charge
-                      // correctly while failing to parse THAT SAME page's billing-
-                      // period date row (or vice versa on a different commodity)
-                      // — that bill is real data, not noise, and would have
-                      // passed the first pass's own filter. Comparing only
-                      // `retryMissing` (the worst-case count among whatever
-                      // SURVIVED the strict filter) rewards a retry pass that
-                      // silently drops whole commodities/pages: fewer surviving
-                      // bills means fewer chances to be "missing" something, so
-                      // a fragmented retry can look artificially perfect. Recount
-                      // retry quality with the SAME lenient predicate the first
-                      // pass used, and refuse the wholesale replace when it would
-                      // leave the file with fewer valid bills than the first pass
-                      // already had — confirmed live on the Louisburg
-                      // eea98fd5/02-002364-00 6-page file: a 3.0x retry pass
-                      // parsed billing periods correctly for Gas/Sewer/Stormwater
-                      // but failed to detect the Water line at all, and a
-                      // SEPARATE account's whole 4-commodity page also lost its
-                      // period — `retryValid.length` (3) looked "0 missing" and
-                      // would otherwise have wholesale-replaced 8 good bills with
-                      // 7, silently dropping Water and an unrelated account's
-                      // entire bill set. This does not weaken `_singleHasKeyField`
-                      // itself (still the real validity check) — it only stops a
-                      // worse-count retry from overwriting a better-count first
-                      // pass.
-                      const retryValidLenient = retryBills2.filter((b) => _singleHasKeyField(b));
-                      const retryWouldLoseBills = retryValidLenient.length < _origValidBillCount;
-                      if (retryMissing < bestMissing && !retryWouldLoseBills) {
-                        bestText = retryFull;
-                        bestMissing = retryMissing;
-                        bills = retryBills2;
-                        // Fix (code review of 0440be6, should-fix): the accept decision
-                        // above (`retryWouldLoseBills`) is made against the LENIENT
-                        // predicate, but `validBills` used to be assigned from `retryValid`
-                        // — the STRICTER filter (BillingPeriodStart/kWhConsumed only). A
-                        // retry bill with a real charge (GasCharge/WaterCharge/
-                        // TotalCurrentCharges) but no parsed BillingPeriodStart passed the
-                        // lenient check that justified accepting this retry, then was
-                        // excluded from `validBills` anyway. `_singleDroppedBills` was also
-                        // a one-time PRE-retry snapshot, never recomputed after `bills` was
-                        // replaced — so that bill vanished from `finalBills` with no
-                        // parseError flag, silently. Use the same lenient predicate here,
-                        // and recompute the dropped/flagged set from the post-replace
-                        // `bills` so any bill that still fails `_singleHasKeyField` is
-                        // flagged for manual review instead of disappearing.
-                        validBills = retryValidLenient;
-                        _singleDroppedBills = _flagDroppedBills(bills);
-                        window._pdfRawText = retryFull;
-                      }
-                      // Also merge: fill in any null fields from retry into original.
-                      // Fix (2026-07-28, gas-bill-ocr-extraction TASK 2): this fills
-                      // `retryBills[bi]` from `retryCheck[bi]` purely BY ARRAY INDEX
-                      // across two independent OCR passes (this pass vs. the hi-res
-                      // retry pass). Root-caused ServiceAddress contamination on real
-                      // Wood River Energy invoices turned out to live in the
-                      // cross-bill-consensus step of `_postExtractionVerify` (see fix
-                      // there), not here — but this same index-only assumption is the
-                      // same defect CLASS the task called out, so guard it too: only
-                      // accept a field from `retry` when there's no active identity
-                      // conflict between `orig` and `retry` (AccountNumber/MeterNumber
-                      // disagree, or ServiceAddress shares no words) — if identity
-                      // actively disagrees, skip the whole pair rather than merge
-                      // possibly-misaligned data. Leaving a field null is safer than
-                      // filling it from a different bill/site.
-                      const _mergeIdNorm = (v) => (v || '').replace(/[\s-]/g, '').toLowerCase();
-                      const _mergeAddrWords = (v) =>
-                        (v || '')
-                          .toLowerCase()
-                          .replace(/[^a-z0-9 ]/g, '')
-                          .split(/\s+/)
-                          .filter(Boolean);
-                      const _mergeIdentityConflict = (orig, retry) => {
-                        const oa = _mergeIdNorm(orig.AccountNumber),
-                          ra = _mergeIdNorm(retry.AccountNumber);
-                        if (oa && ra && oa !== ra) return true;
-                        const om = _mergeIdNorm(orig.MeterNumber),
-                          rm = _mergeIdNorm(retry.MeterNumber);
-                        if (om && rm && om !== rm) return true;
-                        const ow = _mergeAddrWords(orig.ServiceAddress),
-                          rw = _mergeAddrWords(retry.ServiceAddress);
-                        if (ow.length > 0 && rw.length > 0) {
-                          const rwSet = new Set(rw);
-                          const overlap = ow.filter((w) => rwSet.has(w)).length / ow.length;
-                          if (overlap < 0.5) return true;
-                        }
-                        return false;
-                      };
-                      if (retryCheck.length === retryBills.length) {
-                        for (let bi = 0; bi < retryBills.length; bi++) {
-                          const orig = retryBills[bi],
-                            retry = retryCheck[bi];
-                          if (!orig || !retry) continue;
-                          if (_mergeIdentityConflict(orig, retry)) continue; // identity disagrees — do not merge this pair
-                          for (const [k, v] of Object.entries(retry)) {
-                            // TASK 3 guard: never gap-fill a field that a validity check
-                            // (e.g. the WRE MMbtu-vs-rate/component cross-check) already
-                            // examined and deliberately nulled — that null is a decision,
-                            // not a gap. Silently refilling it from a DIFFERENT OCR pass's
-                            // reading (which was never itself validated) is exactly the
-                            // "silently correct the number" behavior TASK 3 forbids.
-                            if (k === 'NaturalGasMMbtu' && orig._mmbtuRateMismatch === true) continue;
-                            if (
-                              (orig[k] === null || orig[k] === undefined || orig[k] === '') &&
-                              v !== null &&
-                              v !== undefined &&
-                              v !== ''
-                            ) {
-                              orig[k] = v; // fill gap from retry
-                            }
-                          }
-                          // Fix (2026-09-15, extraction-review-sweep): the gap-fill above
-                          // only fills fields that were null on `orig` — it never re-checks
-                          // the parseError/_manualReview flags a FIRST pass already stamped
-                          // (e.g. the b5951068/WRE "no usage" gate above, _singleHasKeyField
-                          // false at that time). When this retry pass supplies real usage or
-                          // charge data, that stale gate flag survived next to now-good data,
-                          // hiding a savable bill behind a manual-review block. Re-evaluate
-                          // and clear the stale flags once the merged bill actually has real
-                          // SITE data.
-                          // Correction (review NO-GO, 2026-09-15): the first version of this
-                          // guard used `_singleHasKeyField(orig)`, which also counts
-                          // `BillingPeriodStart` — on a Wood River Energy multi-site invoice
-                          // that field is stamped INVOICE-LEVEL onto every site block
-                          // (energy-savings.js ~6831-6868, shared across all sites),
-                          // including genuinely-unreadable ones. That let a site with NO
-                          // account, NO usage, and NO charge still pass `_singleHasKeyField`
-                          // (via BillingPeriodStart alone) and get un-gated with all-null
-                          // data — defeating the WRE "site block unreadable" gate. Require a
-                          // SITE-identifying or SITE-quantifying field instead — never the
-                          // shared invoice-level date fields.
-                          const _mergedHasSiteData =
-                            orig.AccountNumber ||
-                            orig.MeterNumber ||
-                            orig.NaturalGasMMbtu ||
-                            orig.NaturalGasTherms ||
-                            orig.NaturalGasCCF ||
-                            orig.GasCharge ||
-                            orig.TotalCurrentCharges;
-                          // Guard: never clear a manual-review flag that TASK 3's rate/sum
-                          // cross-check (blk._mmbtuRateMismatch, energy-savings.js) set on
-                          // PURPOSE because a printed rate didn't match a printed charge —
-                          // that flag means the data IS present but suspect, which is a
-                          // completely different condition than "no usage/charge at all",
-                          // and clearing it here would silently un-flag a genuine misread.
-                          if (
-                            (orig.parseError || orig._manualReview) &&
-                            !orig._mmbtuRateMismatch &&
-                            _mergedHasSiteData
-                          ) {
-                            orig.parseError = false;
-                            orig._manualReview = false;
-                            orig._manualReviewLabel = undefined;
-                          }
-                        }
-                        // Recount after merge
-                        const mergedMissing = Math.max(...retryBills.map((b) => countCriticalMissing(b, rule.name)));
-                        if (mergedMissing < bestMissing) {
-                          bestMissing = mergedMissing;
-                          bills = retryBills.slice();
-                          validBills = bills.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
-                        }
-                      }
-                      if (bestMissing === 0) break;
-                    }
-                  }
+                  const retryFullBin = retryTextsBin.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
+                  _tryAcceptRetryCandidate(retryFull);
+                  if (bestMissing > 0) _tryAcceptRetryCandidate(retryFullBin);
+                  if (bestMissing === 0) break;
                 }
               } finally {
                 // F1b: destroy the second PDF doc so its bitmaps are freed
