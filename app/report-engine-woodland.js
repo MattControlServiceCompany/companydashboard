@@ -88,7 +88,7 @@ var WD_TEXT = {
       start +
       ' – ' +
       end +
-      '). Monthly electric use, gas use, and demand are the billed values for each month; the annual demand figures (Metered kW, Billed kW) are the SUM of the 12 monthly values, not a peak or an average. Electric energy and demand costs are shown separately with their own rates, and the summary includes Site Energy Use Intensity (EUI, in kBtu per square foot per year) for benchmarking.'
+      '). Monthly electric use, gas use, and demand are the billed values for each month; the annual demand figures (Metered kW, Billed kW) are the total of the 12 monthly values. Electric energy and demand costs are shown separately with their own rates, and the summary includes Site Energy Use Intensity (EUI, in kBtu per square foot per year) for benchmarking.'
     );
   },
   hvacTitle: 'HVAC Cooling & Heating Load',
@@ -1296,12 +1296,14 @@ function collectWoodlandReportData(projId, buildingId) {
     o.annualHeatTherms = o.gas.reduce(function (s, v) {
       return s + (v || 0);
     }, 0);
-    o.peakDemandKw = Math.max.apply(
-      null,
-      o.kw.map(function (v) {
-        return v || 0;
-      }),
-    );
+    // 2026-09-22 fix: this was Math.max(...o.kw) — the single peak month (August, ~19.20 kW for
+    // Option B) mislabeled "Peak Demand kW Saved". An annual kW figure is the SUM of the 12
+    // monthly kW-saved values, same rule already applied to the Building Baseline Data table's
+    // Metered kW / Billed kW annual rows. Renamed field (was "peak Demand Kw", camelCase) so
+    // nothing reads this as a peak again by accident.
+    o.demandKwSaved = o.kw.reduce(function (s, v) {
+      return s + (v || 0);
+    }, 0);
   });
 
   // ---- Site path (Page 3): the SAME per-building record + baselineMaps the standard
@@ -2041,7 +2043,7 @@ function rptPageWoodlandOptions(n, d) {
     '<th style="width:16%">Option</th>' +
     '<th class="rpt-n" style="width:9%">Heat Therms Saved</th>' +
     '<th class="rpt-n" style="width:9%">Cool kWh Saved</th>' +
-    '<th class="rpt-n" style="width:9%">Peak Demand kW Saved</th>' +
+    '<th class="rpt-n" style="width:9%">Demand kW Saved</th>' +
     '<th class="rpt-n" style="width:22%">$ Saved: Gas / Electric / Demand</th>' +
     '<th class="rpt-n" style="width:12%">Total $ Saved</th>' +
     '<th class="rpt-n" style="width:12%">' +
@@ -2058,7 +2060,7 @@ function rptPageWoodlandOptions(n, d) {
   var sums = [
     { sum: 0, dec: 1 }, // Heat Therms Saved
     { sum: 0, dec: 0 }, // Cool kWh Saved
-    { sum: 0, dec: 2 }, // Peak Demand kW Saved
+    { sum: 0, dec: 2 }, // Demand kW Saved (sum of the 12 monthly values)
     { sum: 0, fmt: 'text', text: '', avgText: '' }, // $ Saved: Gas / Electric / Demand
     { sum: 0, dec: 2, fmt: 'c' }, // Total $ Saved
     { sum: 0, dec: 2, fmt: 'c' }, // Client Share
@@ -2072,7 +2074,7 @@ function rptPageWoodlandOptions(n, d) {
     var R = o.rates;
     sums[0].sum += o.annualHeatTherms;
     sums[1].sum += o.annualCoolKwh;
-    sums[2].sum += o.peakDemandKw;
+    sums[2].sum += o.demandKwSaved;
     sums[4].sum += o.annualTotal$;
     sums[5].sum += o.clientShare$;
     sums[6].sum += o.cscShare$;
@@ -2094,7 +2096,7 @@ function rptPageWoodlandOptions(n, d) {
       _wdN(o.annualCoolKwh) +
       '</td>' +
       '<td class="rpt-n">' +
-      _wdN(o.peakDemandKw, 2) +
+      _wdN(o.demandKwSaved, 2) +
       '</td><td class="rpt-n">' +
       _wdC(o.annualGas$) +
       ' / ' +
@@ -2981,7 +2983,7 @@ async function exportWoodlandReportToXlsx(data) {
     { width: 16 }, // Occ SP
     { width: 16 }, // Heat Therms Saved
     { width: 14 }, // Cool kWh Saved
-    { width: 18 }, // Peak Demand kW Saved
+    { width: 18 }, // Demand kW Saved
     { width: 12 }, // Gas $ Saved
     { width: 18 }, // Electric Energy $ Saved
     { width: 14 }, // Demand $ Saved
@@ -2995,7 +2997,7 @@ async function exportWoodlandReportToXlsx(data) {
     'Occ SP',
     'Heat Therms Saved',
     'Cool kWh Saved',
-    'Peak Demand kW Saved',
+    'Demand kW Saved',
     'Gas $ Saved',
     'Electric Energy $ Saved',
     'Demand $ Saved',
@@ -3011,7 +3013,7 @@ async function exportWoodlandReportToXlsx(data) {
       o.heatSP + '/' + o.coolSP,
       o.annualHeatTherms,
       o.annualCoolKwh,
-      o.peakDemandKw,
+      o.demandKwSaved,
       o.annualGas$,
       o.annualElec$,
       o.annualDem$,

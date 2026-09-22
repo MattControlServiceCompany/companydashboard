@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.876',
+    date: '2026-09-22',
+    title: 'Baseline + BAS Savings report page fit',
+    items: [
+      {
+        type: 'fix',
+        text: 'Baseline + BAS Savings Report: page 3 table fits the page with full column names; page 7 shows the total demand kW saved.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.875',
     date: '2026-09-22',
     title: 'Baseline & BAS Savings report fixes',

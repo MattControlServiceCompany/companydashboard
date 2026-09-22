@@ -45,7 +45,21 @@ function loadFn(file, fnName) {
   const re = new RegExp('function ' + fnName + '\\s*\\(');
   const m = re.exec(src);
   if (!m) throw new Error('not found: ' + fnName + ' in ' + file);
-  let i = src.indexOf('{', m.index);
+  // Find the parameter list's matching close-paren first (2026-09-22 fix: a function with a
+  // default-object param, e.g. `function rptPage(pageNum, title, bodyHTML, options = {})`, has
+  // its FIRST '{' inside that default value, not the function body — the old version's
+  // src.indexOf('{', m.index) grabbed that empty {} and truncated the extraction there).
+  let p = src.indexOf('(', m.index);
+  let pDepth = 0,
+    pEnd = p;
+  for (; pEnd < src.length; pEnd++) {
+    if (src[pEnd] === '(') pDepth++;
+    else if (src[pEnd] === ')') {
+      pDepth--;
+      if (pDepth === 0) break;
+    }
+  }
+  let i = src.indexOf('{', pEnd);
   let depth = 0,
     j = i;
   for (; j < src.length; j++) {
@@ -164,6 +178,151 @@ assert(
 );
 assert(!/MAX\(D/.test(ws1Src), 'Woodland xlsx Page 1 sheet: no MAX() formula on the kW Total cell');
 assert(!/\(peak\)/i.test(ws1Src), 'Woodland xlsx Page 1 sheet: no "(peak)" note on the kW Total cell');
+
+// ─── Page 7 "Demand kW Saved" (rptPageWoodlandOptions HTML + exportWoodlandReportToXlsx ws6) ────
+// 2026-09-22 fix: this column was Math.max(monthly kW saved) — the single August peak — mislabeled
+// "Peak Demand kW Saved". Rule: an annual kW figure is the SUM of the 12 monthly values.
+assert(!/peakDemandKw/.test(wdSrc), 'Woodland options: no peakDemandKw field name remains anywhere in the file');
+const demandKwSavedFormulaM =
+  /o\.demandKwSaved = o\.kw\.reduce\(function \(s, v\) \{\s*return s \+ \(v \|\| 0\);\s*\}, 0\);/.exec(wdSrc);
+assert(
+  !!demandKwSavedFormulaM,
+  'Woodland options: demandKwSaved is computed as a running SUM of the monthly kw[] array',
+);
+assert(
+  !/Math\.max\.apply\(\s*null,\s*o\.kw\.map/.test(wdSrc),
+  'Woodland options: no Math.max peak computation remains',
+);
+
+const optionsFnSrc = wdSrc.slice(
+  wdSrc.indexOf('function rptPageWoodlandOptions'),
+  wdSrc.indexOf('function _woodlandGroupedBarSVG'),
+);
+const optionHeaders = [...optionsFnSrc.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]);
+assert(optionHeaders.length > 0, 'Woodland options page: header cells found for scan');
+assert(
+  optionHeaders.every((h) => !/peak/i.test(h)),
+  'Woodland options page: no header cell contains "peak" (' + JSON.stringify(optionHeaders) + ')',
+);
+assert(optionHeaders.includes('Demand kW Saved'), 'Woodland options page: header reads exactly "Demand kW Saved"');
+assert(/_wdN\(o\.demandKwSaved, 2\)/.test(optionsFnSrc), 'Woodland options HTML: data cell renders o.demandKwSaved');
+
+const ws6HeaderRowM = /var hRow6 = ws6\.addRow\(\[([\s\S]*?)\]\);/.exec(wdSrc);
+assert(!!ws6HeaderRowM, 'Woodland xlsx sheet 6: header row array found');
+assert(ws6HeaderRowM && !/peak/i.test(ws6HeaderRowM[1]), 'Woodland xlsx sheet 6 header row: no cell contains "peak"');
+assert(
+  ws6HeaderRowM && /'Demand kW Saved'/.test(ws6HeaderRowM[1]),
+  'Woodland xlsx sheet 6 header row: "Demand kW Saved" present',
+);
+const ws6BodyM = /data\.options\.forEach\(function \(o\) \{\s*ws6\.addRow\(\[([\s\S]*?)\]\);/.exec(wdSrc);
+assert(
+  ws6BodyM && /o\.demandKwSaved,/.test(ws6BodyM[1]),
+  'Woodland xlsx sheet 6 row: reads o.demandKwSaved — the SAME field name the HTML page renders (single source of truth => HTML and xlsx agree)',
+);
+
+// Execute the REAL demandKwSaved formula (extracted verbatim above) against a synthetic 12-month
+// kw[] array whose August value (19.2) is deliberately the max but NOT the sum, then render the
+// REAL rptPageWoodlandOptions() HTML with that computed value — proving computation and rendering
+// both land on the sum, end to end, not just via source-text pattern matching.
+const wdOptionFns = [
+  loadFn(REPO + '/app/report-engine.js', 'rptPage'),
+  loadFn(REPO + '/app/report-engine-woodland.js', '_wdRoundHalfUp'),
+  loadFn(REPO + '/app/report-engine-woodland.js', '_wdN'),
+  loadFn(REPO + '/app/report-engine-woodland.js', '_wdC'),
+  loadFn(REPO + '/app/report-engine-woodland.js', '_rptTotalAvgRow'),
+  loadFn(REPO + '/app/report-engine-woodland.js', 'rptPageWoodlandOptions'),
+];
+function loadVarBlock(file, varName) {
+  const src = fs.readFileSync(file, 'utf8');
+  const re = new RegExp('var ' + varName + '\\s*=\\s*\\{');
+  const m = re.exec(src);
+  if (!m) throw new Error('not found: ' + varName + ' in ' + file);
+  let i = src.indexOf('{', m.index);
+  let depth = 0,
+    j = i;
+  for (; j < src.length; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}') {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  let end = j + 1;
+  if (src[end] === ';') end++;
+  return src.slice(m.index, end);
+}
+const wdTextBlock = loadVarBlock(REPO + '/app/report-engine-woodland.js', 'WD_TEXT');
+vm.runInContext(
+  'var RPT_PAGENUM_DIV = \'<div class="rpt-pg-footer-pagenum"></div>\';\n' +
+    wdTextBlock +
+    '\n\n' +
+    wdOptionFns.join('\n\n'),
+  sandbox,
+);
+const wdKwByMo = [10, 12, 8, 5, 3, 2, 4, 19.2, 15, 9, 11, 13]; // August (index 7) = 19.2 = the peak, not the sum
+const wdKwhByMo = [0, 0, 0, 50, 300, 900, 1200, 1100, 600, 100, 0, 0];
+const wdGasByMo = [50, 45, 30, 10, 2, 0, 0, 0, 1, 15, 35, 48];
+const wdOracleSum = wdKwByMo.reduce((a, v) => a + v, 0); // hand-computed, not the app's code
+// Execute the exact statement captured from the real source file above (demandKwSavedFormulaM[0]),
+// not a hand-retyped copy — a real regression in the app's formula would fail to match the regex
+// and demandKwSavedFormulaM would already be null, failing the assertion above before we get here.
+sandbox.__wdTestOption = { kw: wdKwByMo.slice() };
+vm.runInContext('(function (o) { ' + demandKwSavedFormulaM[0] + ' })(__wdTestOption);', sandbox);
+assert(
+  near(sandbox.__wdTestOption.demandKwSaved, wdOracleSum, 0.001),
+  'Woodland options: real demandKwSaved formula = SUM of monthly kw[] (' +
+    sandbox.__wdTestOption.demandKwSaved +
+    ' vs oracle ' +
+    wdOracleSum +
+    ')',
+);
+assert(
+  !near(sandbox.__wdTestOption.demandKwSaved, 19.2, 0.001),
+  'Woodland options: demandKwSaved is not just the August peak value (19.2)',
+);
+const wdOption = {
+  letter: 'B',
+  heatSP: 69,
+  coolSP: 73,
+  annualHeatTherms: wdGasByMo.reduce((a, v) => a + v, 0),
+  annualCoolKwh: wdKwhByMo.reduce((a, v) => a + v, 0),
+  demandKwSaved: sandbox.__wdTestOption.demandKwSaved,
+  annualGas$: 500,
+  annualElec$: 800,
+  annualDem$: 700,
+  annualTotal$: 2000,
+  clientShare$: 1400,
+  cscShare$: 600,
+  gas: wdGasByMo,
+  kwh: wdKwhByMo,
+  kw: wdKwByMo,
+  rates: {
+    gasSummer: 0.5,
+    gasWinter: 0.5,
+    elecEnergySummer: 0.09,
+    elecEnergyWinter: 0.08,
+    demandSummer: 12,
+    demandWinter: 8,
+  },
+  monthly: (() => {
+    const arr = new Array(12);
+    arr[0] = { gas$: 25, elec$: 0, dem$: 64, total$: 89, summer: false };
+    arr[7] = { gas$: 0, elec$: 99, dem$: 230.4, total$: 329.4, summer: true };
+    return arr;
+  })(),
+};
+const wdD = { cfg: { clientSharePct: 70 }, options: [wdOption], project: { client: 'Test Building' } };
+const optionsHTML = sandbox.rptPageWoodlandOptions(6, wdD);
+assert(
+  !/peak/i.test((optionsHTML.match(/<th[^>]*>[^<]*<\/th>/g) || []).join('')),
+  'Rendered page 7 HTML: no <th> header contains "peak"',
+);
+assert(
+  optionsHTML.includes('<td class="rpt-n">' + sandbox._wdN(wdOracleSum, 2) + '</td>'),
+  'Rendered page 7 HTML: Demand kW Saved data cell shows the SUM (' +
+    sandbox._wdN(wdOracleSum, 2) +
+    '), not the August peak',
+);
 
 function runSurfaces(label, em, gm, sqft, blMonths) {
   const eBills = (em.bills || []).slice().sort((a, c) => sandbox._parseISO(a.start) - sandbox._parseISO(c.start));

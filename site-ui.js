@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.22.875'; // Baseline + BAS Savings report: kW total fix, page 3 fits
+  var CH_VERSION = 'v2026.09.22.876'; // Baseline + BAS Savings report: page 3 fits, page 7 total kW
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

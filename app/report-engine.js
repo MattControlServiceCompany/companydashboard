@@ -5501,66 +5501,102 @@ function rptBuildBaselineDataTable(b, d, opts) {
   }
 
   // report-pass2 fix (2026-09-10): this table can carry up to 18 columns (Month + 7 Electric +
-  // 3 Gas + 3 Propane + 3 Water + Total Cost). With table-layout:auto and 6px/side cell padding,
-  // the browser let the table grow WIDER than the page's printable content area whenever a real
-  // building had enough columns (elec+gas is the common case), and the overflow — the trailing
-  // column(s), e.g. Gas $/Therm — was physically sliced off at the page edge in print (reviewer:
-  // "$0.7" instead of "$0.798"). table-layout:fixed with an explicit colgroup summing to 100%
-  // makes the table width mathematically bounded to the page, so no column can ever be cut off;
-  // the trade is that a value which doesn't fit its fixed column wraps instead (the existing
-  // '.rpt-table td{overflow-wrap:anywhere}' rule already provides that fallback). Also tightens
-  // font-size/padding for this table only (scoped via .rpt-bl-tight, not the shared .rpt-table-bl
-  // rule) so a full 18-column row still reads cleanly at the narrower per-column width.
+  // 3 Gas + 3 Propane + 3 Water + Total Cost). table-layout:fixed with an explicit colgroup
+  // makes the table width mathematically bounded to the page (CSS Table Layout spec: fixed
+  // layout scales every declared <col> width proportionally to fill the table, so exact-100%
+  // rounding isn't required — only the RATIOS between columns matter), so no column can ever be
+  // cut off at the page edge.
   //
-  // 2026-09-22 fix (still overflowing after the above): two causes the .rpt-bl-tight font-size
-  // pass alone never addressed. (1) box-sizing was left at the browser default (content-box), so
-  // each <col>'s fixed % width set only the CONTENT box — this table's 3px/side padding and 1px
-  // border were added ON TOP of every column's declared width, so a 10-18 column row rendered
-  // 60-150px wider than its 100%-summed colgroup, pushing "Electric Cost"/"$/Therm" and the bold
-  // Annual total past the page edge even though the colgroup math looked correct. (2) the header
-  // row's overflow fallback: '.rpt-table td{overflow-wrap:anywhere}' is a TD-only rule — <th>
-  // cells (e.g. "$/Therm", "Month") had NO break-as-last-resort at all, and _rptInjectUiPassOverrides
-  // additionally forces 'overflow-wrap:normal !important' on every .rpt-table-bl th (a fix for an
-  // unrelated table), so a header word too wide for its narrow column had no way to avoid
-  // clipping. Both are fixed here, scoped to .rpt-bl-tight only (this table's own class) so no
-  // other report table's sizing changes: box-sizing:border-box makes the colgroup's 100% actually
-  // bound the rendered table width, and a `.rpt-table-bl.rpt-bl-tight th` override (2-class
-  // selector — higher specificity than the 1-class rule it needs to beat, so it wins regardless
-  // of injection order) restores the same anywhere-wrap fallback TDs already had.
-  var _blDetailColCount = (_showElec ? 7 : 0) + (_showGas ? 3 : 0) + (_showProp ? 3 : 0) + (_showWater ? 3 : 0);
-  var _blMonthW = 6;
-  var _blTotalW = 7;
-  var _blDetailW = _blDetailColCount > 0 ? (100 - _blMonthW - _blTotalW) / _blDetailColCount : 0;
+  // 2026-09-22 fit fix (page 3 screenshot: "MON/TH", "ENERG/Y", "ELECTR/IC", "THERM/S",
+  // "$/THER/M", "TOTA/L", "METER/ED" all breaking mid-word; "$117,28[1]" / "$12,17[3]" clipped):
+  // root cause was two stacked bugs, both fixed here, scoped to .rpt-bl-tight only.
+  // (1) A prior fix (now removed) forced 'overflow-wrap:anywhere' on every .rpt-bl-tight th — a
+  // mid-word-break FALLBACK that fires whenever a header word doesn't fit its column, instead of
+  // fixing why it didn't fit. Removed: headers now only wrap at spaces / existing <br> tags
+  // (inherits word-break:keep-all/overflow-wrap:normal from _rptInjectUiPassOverrides' A1 rule),
+  // never mid-word.
+  // (2) every detail column got the SAME width regardless of content — "Electric Cost" (must fit
+  // the unsplittable word "ELECTRIC", ~5.0em wide) got the identical width as "kW Cost" (~3.6em),
+  // so the long-word columns were always the ones that broke. Column widths are now WEIGHTED by
+  // each column's own longest unsplittable header word or data value, in em, measured against
+  // Helvetica/Arial's published glyph-width table with a ~15% safety margin (_BL_COL_WEIGHT
+  // below) — not split evenly. Month (weight 4.3, sized for "Annual"/"MONTH") and Total Cost
+  // (weight 4.8, sized for "$117,281") get the same content-driven treatment as every other
+  // column, replacing the old fixed 6%/7% guesses.
+  // Verified by hand for the real Woodland Spring Middle table (12 columns: Month + 7 Electric +
+  // 3 Gas + Total Cost, the exact table in the reported screenshot) at the resulting 9px font —
+  // every column's allocated px width clears its longest word's required px width (word-em ×
+  // font-px + 6px padding + ~1px collapsed border) by 13-22px. Full per-column numbers in
+  // dashboardlogic.md's 2026-09-22 entry for this fix.
+  var _BL_COL_WEIGHT = {
+    kwh: 4.2,
+    meteredKw: 5.8, // "METERED" — widest single word in the table
+    billedKw: 4.2,
+    kwCost: 4.2,
+    energyCost: 4.9, // "ENERGY"
+    electricCost: 5.8, // "ELECTRIC" — widest single word in the table
+    perKwh: 4.8,
+    therms: 4.9, // "THERMS"
+    gasCost: 4.2,
+    perTherm: 5.1, // "$/THERM"
+    gallons: 5.8, // "GALLONS"
+    propCost: 4.2,
+    perGal: 4.8,
+    kgal: 3.6,
+    waterCost: 4.2,
+    perKgal: 4.4, // "$/KGAL"
+  };
+  var _blColWeights = [4.3]; // Month — sized for "Annual" / "MONTH"
+  if (_showElec)
+    _blColWeights.push(
+      _BL_COL_WEIGHT.kwh,
+      _BL_COL_WEIGHT.meteredKw,
+      _BL_COL_WEIGHT.billedKw,
+      _BL_COL_WEIGHT.kwCost,
+      _BL_COL_WEIGHT.energyCost,
+      _BL_COL_WEIGHT.electricCost,
+      _BL_COL_WEIGHT.perKwh,
+    );
+  if (_showGas) _blColWeights.push(_BL_COL_WEIGHT.therms, _BL_COL_WEIGHT.gasCost, _BL_COL_WEIGHT.perTherm);
+  if (_showProp) _blColWeights.push(_BL_COL_WEIGHT.gallons, _BL_COL_WEIGHT.propCost, _BL_COL_WEIGHT.perGal);
+  if (_showWater) _blColWeights.push(_BL_COL_WEIGHT.kgal, _BL_COL_WEIGHT.waterCost, _BL_COL_WEIGHT.perKgal);
+  _blColWeights.push(4.8); // Total Cost — sized for "$117,281"
+  var _blWeightSum = _blColWeights.reduce(function (a, w) {
+    return a + w;
+  }, 0);
+  // Fewer than 16 columns (Month + up to 14 detail + Total — every realistic commodity mix)
+  // fits at 9px with margin to spare (measured above). 16+ (all four commodities baselined at
+  // once — electric+gas+propane+water together — vanishingly rare) drops to 8px to hold the
+  // same margin at the narrower per-column share.
+  var _blFontPx = _blColWeights.length > 15 ? 8 : 9;
   function _blCol(w) {
     return '<col style="width:' + w.toFixed(2) + '%">';
   }
-  var blColgroup = '<colgroup>' + _blCol(_blMonthW);
-  if (_showElec) for (var _i = 0; _i < 7; _i++) blColgroup += _blCol(_blDetailW);
-  if (_showGas) for (var _j = 0; _j < 3; _j++) blColgroup += _blCol(_blDetailW);
-  if (_showProp) for (var _k = 0; _k < 3; _k++) blColgroup += _blCol(_blDetailW);
-  if (_showWater) for (var _l = 0; _l < 3; _l++) blColgroup += _blCol(_blDetailW);
-  blColgroup += _blCol(_blTotalW) + '</colgroup>';
+  var blColgroup =
+    '<colgroup>' +
+    _blColWeights
+      .map(function (w) {
+        return _blCol((w / _blWeightSum) * 100);
+      })
+      .join('') +
+    '</colgroup>';
 
   var blDataTable = blDataRows
     ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text);page-break-inside:avoid;break-inside:avoid">' +
       // 2026-09-22: font-size must be on th/td themselves — `.rpt-table-bl th/td{font-size:10px}`
       // (element-level rules) beat a size set on the <table>, so the cells never actually
-      // shrank and "Electric Cost"/"$/Therm" headers and the bold Annual "$110,423" overflowed
-      // their fixed 8.5% columns. box-sizing:border-box (2026-09-22) keeps this table's own
-      // padding/border inside its colgroup's 100%-summed widths instead of adding to them; the
-      // `.rpt-table-bl.rpt-bl-tight th` rule restores an anywhere-wrap fallback on headers (see
-      // comment above _blDetailColCount) so an unbreakable header word never clips instead of
-      // wrapping.
-      // _rptInjectUiPassOverrides() (unrelated fix, this file ~line 1922) injects
-      // '#reportPages .rpt-table-bl th{word-break:keep-all !important;overflow-wrap:normal
-      // !important}' into <head> at overlay-open time — an ID selector, which beats any
-      // class-only selector even with !important. The two rules below match that ID + add a
-      // second class, so they win on specificity (ID+2class+type > ID+1class+type) and restore
-      // wrapping for just this table's headers, in both the legacy overlay (#reportPages) and
-      // the V2 preview modal (#rptPreviewPages).
-      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px;font-size:8px;box-sizing:border-box}' +
-      '#reportPages .rpt-table-bl.rpt-bl-tight th,#rptPreviewPages .rpt-table-bl.rpt-bl-tight th' +
-      '{white-space:normal !important;overflow-wrap:anywhere !important;word-break:break-word !important}</style>' +
+      // shrank. box-sizing:border-box keeps this table's own padding/border inside its
+      // colgroup's declared widths instead of adding to them.
+      // 2026-09-22 fit fix: deliberately does NOT add an anywhere/break-word override for
+      // <th> here (a prior version did — that is what caused "MON/TH", "ELECTR/IC", etc.,
+      // mid-word breaks). _rptInjectUiPassOverrides()'s A1 rule (word-break:keep-all,
+      // overflow-wrap:normal, this file ~line 1922) is left standing for this table too, so
+      // headers wrap only at spaces / existing <br> tags. The weighted column widths
+      // (_BL_COL_WEIGHT above) are what make every header word actually fit, instead of
+      // needing a mid-word wrap fallback to hide an undersized column.
+      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px;font-size:' +
+      _blFontPx +
+      'px;box-sizing:border-box}</style>' +
       blStats +
       '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
       '<table class="rpt-table rpt-table-bl rpt-bl-tight" style="width:100%;table-layout:fixed">' +
