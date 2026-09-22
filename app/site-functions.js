@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.868',
+    date: '2026-09-22',
+    title: 'New Woodland Spring Middle baseline & savings report',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department: new Woodland Spring Middle School 7-page baseline & savings report — raw utility data, baseline + weather normalization, baseline summary, estimated HVAC heat/cool, BAS savings calc, all-options table, and options charts — exports to PDF, Word, and Excel.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.867',
     date: '2026-09-22',
     title: 'Calculators unified into one catalog',
