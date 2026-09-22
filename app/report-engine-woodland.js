@@ -734,15 +734,15 @@ function rptPageWoodlandBills(n, d) {
   }
 
   var body =
-    '<div class="rpt-su">Raw utility bills for the 12-month baseline period (' +
+    '<div class="rpt-su">The building\'s utility use and cost for the 12-month baseline period, ' +
     (d.elecBL
       ? WOODLAND_MO_FULL[parseInt(d.elecBL.months[0].split('-')[1], 10) - 1] + ' ' + d.elecBL.months[0].split('-')[0]
       : '—') +
-    ' – ' +
+    ' through ' +
     (d.elecBL
       ? WOODLAND_MO_FULL[parseInt(d.elecBL.months[11].split('-')[1], 10) - 1] + ' ' + d.elecBL.months[11].split('-')[0]
       : '—') +
-    "), read directly from each meter's stored monthly bills. Electric charges are split into Energy Cost (kWh charges) and Demand Cost (kW charges), each with its own effective rate; the annual row's rates are annual cost ÷ annual quantity.</div>" +
+    '. Electric cost is shown separately for energy (kilowatt-hours) and demand (peak kilowatts), with the effective rate for each. Natural gas is shown in therms with its effective rate.</div>' +
     '<h2>Electric — ' +
     (d.elecMeter ? 'Account ' + (d.elecMeter.account || '—') : 'No electric meter') +
     '</h2>' +
@@ -765,13 +765,11 @@ function rptPageWoodlandBaseline(n, d) {
   var bl = d.elecBL;
   var body = '';
   body +=
-    '<div class="rpt-su">The 12-month baseline period is ' +
-    (bl ? bl.months.length : 0) +
-    ' consecutive calendar months of billed usage, selected as the most recent full year of data available for this building: ' +
+    '<div class="rpt-su">The 12-month baseline period for this building is ' +
     (bl ? WOODLAND_MO_FULL[parseInt(bl.months[0].split('-')[1], 10) - 1] + ' ' + bl.months[0].split('-')[0] : '—') +
     ' through ' +
     (bl ? WOODLAND_MO_FULL[parseInt(bl.months[11].split('-')[1], 10) - 1] + ' ' + bl.months[11].split('-')[0] : '—') +
-    ". Weather normalization adjusts each month's predicted usage for that month's actual heating degree days (HDD) and cooling degree days (CDD), so the baseline reflects typical weather rather than one specific year's conditions.</div>";
+    ", the most recent full year of billing available. Each month's expected electric use is adjusted for that month's actual heating degree days (HDD) and cooling degree days (CDD), so the baseline reflects typical weather rather than one specific year's conditions.</div>";
 
   if (bl && bl.regrCoeffs) {
     var rc = bl.regrCoeffs;
@@ -877,7 +875,7 @@ function rptPageWoodlandBaseline(n, d) {
 
   body +=
     '<h2>Natural Gas Baseline</h2>' +
-    '<div class="rpt-su">Natural gas is billed under a Trigger-Fixed / Index (FOM) / SWE commodity structure (Wood River Energy) — driven by the monthly price index, not weather. The gas baseline uses the 12 billed Therms totals from the previous page directly, with no weather adjustment.</div>';
+    '<div class="rpt-su">Natural gas is billed under a Trigger-Fixed / Index (FOM) / SWE commodity structure (Wood River Energy), driven by the monthly price index rather than weather. The gas baseline is this building\'s 12 billed therm totals for the period, with no weather adjustment applied.</div>';
 
   return rptPage(n, 'Baseline Selection & Weather Normalization', body, {
     data: { project: d.project },
@@ -904,17 +902,15 @@ function rptPageWoodlandSummary(n, d) {
     ? WOODLAND_MO_FULL[parseInt(d.elecBL.months[11].split('-')[1], 10) - 1] + ' ' + d.elecBL.months[11].split('-')[0]
     : '—';
   var body =
-    '<div class="rpt-su">Building Baseline Data for the 12-month baseline period (' +
+    '<div class="rpt-su">A 12-month summary of the building\'s energy use, peak demand, and cost for the baseline period (' +
     start +
     ' – ' +
     end +
-    ") — the same table shown on this building's summary page in the site's reports. kWh, Therms, and demand (Actual/Billed kW, Annual = the 12-month PEAK, never a sum or average) are the raw billed values for each month, matching Page 1. Electric energy and demand costs are shown separately with their own rates, and the summary strip includes Site Energy Use Intensity (EUI, kBtu per square foot per year).</div>";
+    "). Monthly electric use, gas use, and demand are the billed values for each month; the annual demand figure is the period's peak, not a sum or average. Electric energy and demand costs are shown separately with their own rates, and the summary includes Site Energy Use Intensity (EUI, in kBtu per square foot per year) for benchmarking.</div>";
   var tbl = d.siteBuilding
     ? rptBuildBaselineDataTable(d.siteBuilding, { project: d.project, reportOptions: null }, { has: d.baselineHas })
     : '';
-  body +=
-    tbl ||
-    '<div class="rpt-su">No baseline month data is available for this building in the site\'s utility records.</div>';
+  body += tbl || '<div class="rpt-su">No baseline month data is available for this building.</div>';
   return rptPage(n, 'Baseline Summary', body, {
     data: { project: d.project },
     letterhead: false,
@@ -933,7 +929,7 @@ function rptPageWoodlandHVAC(n, d) {
     return '<div><div class="bl-stat-label">' + label + '</div><div class="bl-stat-val">' + val + '</div></div>';
   }
   var body =
-    "<div class=\"rpt-su\">This page splits the baseline into a cooling-attributable electric share and a heating share using only this building's own data. Cooling energy for each month = the electric regression's cooling-degree-day coefficient (Page 2) × that month's cooling degree days. Heating and cooling are compared on one energy scale (kBtu: Therms × 100, kWh × 3.412).</div>";
+    '<div class="rpt-su">The building\'s heating and cooling loads, estimated from a full year of billing and local weather. Cooling is carried by the electric service and rises with warmer weather; heating is carried by natural gas, with an electric heating contribution shown separately where present. Heating and cooling are compared on one common energy scale (kBtu: Therms × 100, kWh × 3.412) so their relative shares of the building\'s HVAC load can be seen side by side.</div>';
 
   var stats = [
     stat('Annual Electric Use (kWh)', _wdN(h.elecKwh || 0)),
@@ -960,7 +956,7 @@ function rptPageWoodlandHVAC(n, d) {
 
   if (h.coolKwh == null) {
     body +=
-      '<div class="rpt-su">Cooling load is not statistically separable from this building\'s baseline electric regression (the fitted model has no positive cooling-degree-day term), so no cooling / heating split is shown. The annual totals above are the billed baseline values from Page 1.</div>';
+      '<div class="rpt-su">Cooling load could not be separated from this building\'s overall electric use based on a full year of billing and weather data, so no cooling / heating split is shown below. The annual totals above are this building\'s billed baseline values.</div>';
     return rptPage(n, 'Estimated HVAC Cooling & Heating', body, {
       data: { project: d.project },
       letterhead: false,
@@ -1081,7 +1077,7 @@ function rptPageWoodlandBASCalc(n, d) {
       return z.complete;
     }).length;
     var body =
-      '<div class="rpt-su">Current zone setpoints read from the Equipment Matrix for this building (' +
+      '<div class="rpt-su">Current setpoints for each zone in this building (' +
       zones.length +
       ' zones, sheet ' +
       (ci + 1) +
@@ -1091,7 +1087,7 @@ function rptPageWoodlandBASCalc(n, d) {
       complete +
       ' of ' +
       chunk.length +
-      ' zones on this sheet expose both occupied setpoints.</div>' +
+      ' zones on this sheet have both occupied setpoints on record.</div>' +
       '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:34%">Zone</th><th class="rpt-n" style="width:12%">Occupied Heating</th><th class="rpt-n" style="width:12%">Occupied Cooling</th><th class="rpt-n" style="width:12%">Unoccupied Heating</th><th class="rpt-n" style="width:12%">Unoccupied Cooling</th><th style="width:18%">Status</th></tr></thead><tbody>' +
       rows +
       '</tbody></table>';
@@ -1105,19 +1101,19 @@ function rptPageWoodlandBASCalc(n, d) {
 
   // ---- Setpoints & Method sheet ----
   var body =
-    '<div class="rpt-su">This page shows the inputs to the BAS occupied-setpoint savings model — the proposed occupied setpoints for each option, the seasonal marginal rates used to dollarize savings, and the method — worked in full for Option ' +
+    '<div class="rpt-su">The proposed occupied setpoints for each option, the seasonal rates used to value the savings, and the calculation method, worked in full for Option ' +
     (optA ? optA.letter : 'A') +
     ' (' +
     (optA ? optA.heatSP + '°F / ' + optA.coolSP + '°F' : '') +
-    ') on the next page.</div>';
+    ') in the section that follows.</div>';
   if (!zones.length) {
     body +=
-      '<div class="rpt-su">Per-zone BAS point data is not available for this building; setpoints below are the proposed building-wide targets only.</div>';
+      '<div class="rpt-su">Zone-level setpoint data is not available for this building; the setpoints below are proposed building-wide targets.</div>';
   } else {
     body +=
-      '<div class="rpt-su">Current per-zone setpoints (' +
+      '<div class="rpt-su">Current setpoints for each of the building\'s ' +
       zones.length +
-      ' zones from the Equipment Matrix) are listed on the preceding sheet' +
+      ' zones are listed on the preceding sheet' +
       (zoneChunks.length > 1 ? 's' : '') +
       '; the targets below apply building-wide.</div>';
   }
@@ -1142,9 +1138,9 @@ function rptPageWoodlandBASCalc(n, d) {
     var R = optA.rates;
     body +=
       '<h2>Seasonal Marginal Rates (Calibration)</h2>' +
-      '<div class="rpt-su" style="font-size:10px">Rates are stored on each savings measure in the Energy Savings matrix; Option ' +
+      '<div class="rpt-su" style="font-size:10px">Option ' +
       optA.letter +
-      "'s are shown. Savings are dollarized at the seasonal MARGINAL rate, monthly, then summed — never blended, never a raw dollar delta.</div>" +
+      "'s seasonal utility rates are shown below. Savings are valued at the seasonal marginal rate each month, then summed for the year — not a single blended rate.</div>" +
       '<table class="rpt-table rpt-mp-dense"><thead><tr><th>Rate</th><th class="rpt-n">Summer (Jun–Sep)</th><th class="rpt-n">Winter (Oct–May)</th></tr></thead><tbody>' +
       '<tr><td>Natural gas ($/Therm)</td><td class="rpt-n">$' +
       R.gasSummer.toFixed(3) +
@@ -1172,7 +1168,7 @@ function rptPageWoodlandBASCalc(n, d) {
 
   // ---- Per-Month Detail & Result sheet ----
   var body2 =
-    '<div class="rpt-su" style="font-size:10px;margin-bottom:2px">Basis: 4% HVAC energy change per 1°F occupied setpoint shift, occupied hours only (3–5%/°F planning range). Monthly heating Therms, cooling kWh and demand kW saved are the BAS savings-model output stored on the measure.</div>';
+    '<div class="rpt-su" style="font-size:10px;margin-bottom:2px">Basis: a 4% change in HVAC energy per 1°F occupied setpoint shift, applied during occupied hours only (an industry planning range of 3–5% per °F). The monthly heating therms, cooling kWh, and demand kW saved below apply this basis to the building\'s own baseline usage.</div>';
   if (optA) {
     var rows = '';
     // Heat Therms / Cool kWh are shown at 2 decimal places — the SAME precision they're stored
@@ -1261,11 +1257,11 @@ function rptPageWoodlandBASCalc(n, d) {
 // =========================================================================
 function rptPageWoodlandOptions(n, d) {
   var body =
-    '<div class="rpt-su">Estimated projected savings from a setpoint-change ECM — not measured M&V. Each option raises occupied cooling setpoint and lowers occupied heating setpoint by 1°F relative to the prior option; savings are dollarized at the seasonal marginal rate, monthly, then summed. Shared-savings split assumes ' +
+    '<div class="rpt-su">Estimated, projected savings from an occupied-setpoint change, projected from a full year of billing and weather data, not savings measured after installation. Each option raises the occupied cooling setpoint and lowers the occupied heating setpoint by 1°F relative to the prior option; savings are valued at the seasonal marginal utility rate each month, then summed for the year. The shared-savings split below assumes ' +
     WOODLAND_CLIENT_SHARE_PCT +
-    '% client / ' +
+    '% to the client and ' +
     (100 - WOODLAND_CLIENT_SHARE_PCT) +
-    '% CSC of the annual $ saved (to be confirmed with the client) — not an install-cost/payback contract.</div>' +
+    '% to CSC of the annual dollars saved (to be confirmed), rather than a capital cost with payback period.</div>' +
     // 8 columns, widths sum to exactly 100% (table-layout:fixed truncates every column
     // proportionally when widths overrun). Option+Setpoint merged into one cell and the three
     // $ components merged into one "$ Saved: Gas / Electric / Demand" cell so Word's narrower
