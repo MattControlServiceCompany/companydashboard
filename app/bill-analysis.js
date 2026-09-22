@@ -19151,7 +19151,16 @@ function renderPDFFields(parsed, warnings) {
       if (parsed.Commodity === 'Gas' || _detectedComm === 'gas' || _detectedComm === 'kgs') {
         const gasRate = getExtractedRate(parsed, 'gas');
         if (gasRate > 0) {
-          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Therm</div><input class="ef-input" value="$${gasRate.toFixed(5)}/Therm" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+          // MMBtu-only bills (WRE) have no Therms/CCF — label the row $/MMBtu instead of
+          // $/Therm so the unit matches what getExtractedRate actually divided by (mirrors
+          // the save-time totalGasRate pattern at bill-analysis.js ~7738).
+          const _gasUnit =
+            !(parseFloat(parsed.NaturalGasTherms) > 0) &&
+            !(parseFloat(parsed.NaturalGasCCF) > 0) &&
+            parseFloat(parsed.NaturalGasMMbtu || parsed.naturalGasMMbtu) > 0
+              ? 'MMBtu'
+              : 'Therm';
+          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/${_gasUnit}</div><input class="ef-input" value="$${gasRate.toFixed(5)}/${_gasUnit}" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
         }
       }
       if (parsed.Commodity === 'Water' || _detectCommodity(parsed) === 'water') {
