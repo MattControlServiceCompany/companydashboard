@@ -27,6 +27,20 @@ function projHasContract(projId) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   resolveGasUsageTherms(b)
+   Canonical b.therms is only populated by saveBillRow()'s manual-
+   edit sync — CSV import never wrote it — so CSV-imported gas
+   bills computed usage as 0 here. Mirrors the fallback chain
+   report-engine-woodland.js already uses (naturalGasTherms, then
+   naturalGasMMbtu×10; 1 MMBtu = 10 Therms) so every gas usage
+   read in this file sees real therms regardless of import path.
+───────────────────────────────────────────────────────────── */
+function resolveGasUsageTherms(b) {
+  const pf = (v) => parseFloat(String(v == null ? '' : v).replace(/,/g, '')) || 0;
+  return pf(b.therms) || pf(b.naturalGasTherms) || pf(b.naturalGasMMbtu) * 10 || pf(b.usage) || 0;
+}
+
+/* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl)
    Unified savings function — single pass, populates both byYM
    and byCalMo, applies costSavOverrides to BOTH formats.
@@ -150,9 +164,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
         const ym = normMonth(b.start, b.end, incl, bills);
         if (!ym) return;
         const actUsage =
-          m.commodity === 'Gas'
-            ? parseFloat(b.therms || b.usage || 0)
-            : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
+          m.commodity === 'Gas' ? resolveGasUsageTherms(b) : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
         rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
       });
     }
@@ -339,9 +351,7 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
       const ym = normMonth(b.start, b.end, incl, bills);
       if (!ym) return;
       const actUsage =
-        m.commodity === 'Gas'
-          ? parseFloat(b.therms || b.usage || 0)
-          : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
+        m.commodity === 'Gas' ? resolveGasUsageTherms(b) : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
       rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
     });
   }

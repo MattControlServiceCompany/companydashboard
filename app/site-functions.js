@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.869',
+    date: '2026-09-22',
+    title: 'Fixed gas usage reading as 0 for CSV-imported bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data / Savings: gas usage now reads from the real bill field (naturalGasTherms/naturalGasMMbtu) instead of only the canonical therms field, so CSV-imported gas bills calculate real usage and savings instead of 0. Future CSV imports also write the canonical field directly.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.868',
     date: '2026-09-22',
     title: 'New Woodland Spring Middle baseline & savings report',

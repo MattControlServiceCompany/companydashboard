@@ -380,6 +380,20 @@ function parseBillCsv(text, fname) {
       }
     });
 
+    // Sync gas usage to canonical therms (Fix [therms-unit-2026-06-22] in saveBillRow(),
+    // mirrored here) so CSV-imported gas bills populate row.therms — the field
+    // computations/savings.js reads for measure-savings — not just naturalGasTherms/CCF.
+    // Priority: Therms (×1) > CCF (×1.037) > MMBtu (×10).
+    if (isGas) {
+      if (row.naturalGasTherms != null && row.naturalGasTherms !== '') {
+        row.therms = row.naturalGasTherms;
+      } else if (row.naturalGasCCF != null && row.naturalGasCCF !== '') {
+        row.therms = Math.round(parseFloat(row.naturalGasCCF) * 1.037 * 100) / 100;
+      } else if (row.naturalGasMMbtu != null && row.naturalGasMMbtu !== '') {
+        row.therms = Math.round(parseFloat(row.naturalGasMMbtu) * 10 * 100) / 100;
+      }
+    }
+
     parsed.push(row);
   });
 
