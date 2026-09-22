@@ -54,6 +54,13 @@ var WOODLAND_MO_FULL = [
 ];
 var WOODLAND_MO_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// Shared-savings split (Matt, 2026-09-22): the deal structure for this report is a shared-
+// savings split, not a capital install-cost-with-payback contract. Default 70% of annual $
+// savings to the client, 30% to CSC — a single editable constant, never hardcoded per-option.
+// implCost/payback stay on the measure record for other deal types; this report just doesn't
+// render them.
+var WOODLAND_CLIENT_SHARE_PCT = 70;
+
 function _wdDaysInMonth(ym) {
   var parts = (ym || '').split('-');
   var y = parseInt(parts[0], 10),
@@ -194,6 +201,14 @@ function _wdComputeHvacSplit(elecBL, gasBL, wxByYm) {
     coolPct: null,
     heatPct: null,
     coolSharePct: null,
+    // Electric heating (2026-09-22, Matt): heating is not only gas. When the electric
+    // baseline's dual-OLS regression has a positive HDD term (electric heat/reheat/fan
+    // energy), heatKwh = sum(round4(slopeHDD) x round0(HDD)) over the baseline months —
+    // independent of whether the cooling/CDD term is present. heatKwhPct is its share of
+    // total HVAC load on the same kBtu basis as heatPct/coolSharePct below.
+    slopeHDD: null,
+    heatKwh: null,
+    heatKwhPct: null,
     months: [],
   };
   var gasByYm = {};
@@ -210,11 +225,40 @@ function _wdComputeHvacSplit(elecBL, gasBL, wxByYm) {
     out.elecKwh += k;
   });
   var rc = elecBL.regrCoeffs;
+
+  // Electric heating share — computed first, independent of the cooling/CDD branch below,
+  // so it still renders even on a building whose regression has no usable CDD term.
+  var heatKwh = null;
+  if (rc && rc.type === 'dual' && rc.slopeHDD != null && rc.slopeHDD > 0) {
+    var slopeHDD4 = _wdRoundHalfUp(rc.slopeHDD, 4);
+    var heat = 0;
+    elecBL.months.forEach(function (ym) {
+      var wxh = (wxByYm && wxByYm[ym]) || { hdd: 0 };
+      var hddR = _wdRoundHalfUp(wxh.hdd || 0, 0);
+      heat += _wdRoundHalfUp(slopeHDD4 * hddR, 0);
+    });
+    out.slopeHDD = slopeHDD4;
+    out.heatKwh = heat;
+    heatKwh = heat;
+  }
+
   var slope = null;
   if (rc && rc.type === 'dual' && rc.slopeCDD != null) slope = rc.slopeCDD;
   else if (rc && rc.type === 'cdd' && rc.slope != null) slope = rc.slope;
   var slope4 = slope != null ? _wdRoundHalfUp(slope, 4) : null;
-  if (slope4 == null || slope4 <= 0) return out;
+  if (slope4 == null || slope4 <= 0) {
+    // No usable cooling term — still report the electric-heating share (on gas+elec-heat basis)
+    // if we found one above, since it doesn't depend on cooling being separable.
+    if (heatKwh != null) {
+      var gasKbtuNoCool = out.gasTherms * 100;
+      var heatKbtuNoCool = heatKwh * 3.412;
+      out.heatKwhPct =
+        gasKbtuNoCool + heatKbtuNoCool > 0
+          ? _wdRoundHalfUp((heatKbtuNoCool / (gasKbtuNoCool + heatKbtuNoCool)) * 100, 1)
+          : null;
+    }
+    return out;
+  }
   out.slopeCDD = slope4;
   var cool = 0;
   elecBL.months.forEach(function (ym) {
@@ -234,10 +278,16 @@ function _wdComputeHvacSplit(elecBL, gasBL, wxByYm) {
   });
   out.coolKwh = cool;
   out.coolPct = out.elecKwh > 0 ? _wdRoundHalfUp((cool / out.elecKwh) * 100, 1) : null;
+  // Total HVAC load on one kBtu basis: gas heating + electric heating (when present) + cooling.
+  // heatPct/coolSharePct/heatKwhPct all share this same denominator so the three shown shares
+  // sum to 100% of HVAC load — never invented, always the printed Therms/kWh x their kBtu factor.
   var gasKbtu = out.gasTherms * 100;
   var coolKbtu = cool * 3.412;
-  out.heatPct = gasKbtu + coolKbtu > 0 ? _wdRoundHalfUp((gasKbtu / (gasKbtu + coolKbtu)) * 100, 1) : null;
-  out.coolSharePct = out.heatPct != null ? _wdRoundHalfUp(100 - out.heatPct, 1) : null;
+  var heatKbtu = (heatKwh || 0) * 3.412;
+  var totalHvacKbtu = gasKbtu + coolKbtu + heatKbtu;
+  out.heatPct = totalHvacKbtu > 0 ? _wdRoundHalfUp((gasKbtu / totalHvacKbtu) * 100, 1) : null;
+  out.coolSharePct = totalHvacKbtu > 0 ? _wdRoundHalfUp((coolKbtu / totalHvacKbtu) * 100, 1) : null;
+  out.heatKwhPct = heatKwh != null && totalHvacKbtu > 0 ? _wdRoundHalfUp((heatKbtu / totalHvacKbtu) * 100, 1) : null;
   return out;
 }
 
@@ -443,8 +493,14 @@ function collectWoodlandReportData(projId, buildingId) {
     o.annualDem$ = _wdRoundHalfUp(totDem, 2);
     o.annualTotal$ = _wdRoundHalfUp(totAll, 2);
     o.installCost = o.implCost;
-    // Payback only when the measure carries an Implementation Cost — never invented.
+    // Payback only when the measure carries an Implementation Cost — never invented. Kept on
+    // the record (implCost stays a measure field for other deal types) but NOT rendered by this
+    // report — see WOODLAND_CLIENT_SHARE_PCT / clientShare$ / cscShare$ below.
     o.paybackYrs = o.installCost > 0 && o.annualTotal$ > 0 ? _wdRoundHalfUp(o.installCost / o.annualTotal$, 2) : null;
+    // Shared-savings split — client share rounds to the cent, CSC share is the remainder so the
+    // two always cross-foot to annualTotal$ exactly (never two independent roundings).
+    o.clientShare$ = _wdRoundHalfUp(o.annualTotal$ * (WOODLAND_CLIENT_SHARE_PCT / 100), 2);
+    o.cscShare$ = _wdRoundHalfUp(o.annualTotal$ - o.clientShare$, 2);
     o.annualCoolKwh = o.kwh.reduce(function (s, v) {
       return s + (v || 0);
     }, 0);
@@ -852,7 +908,7 @@ function rptPageWoodlandSummary(n, d) {
     start +
     ' – ' +
     end +
-    ") — the same table shown on this building's summary page in the site's reports. Each month is the building's weather-normalized baseline for that calendar month (the site's baseline convention); the raw billed values are on Page 1. Electric energy and demand costs are shown separately with their own rates, and the summary strip includes Site Energy Use Intensity (EUI, kBtu per square foot per year).</div>";
+    ") — the same table shown on this building's summary page in the site's reports. kWh, Therms, and demand (Actual/Billed kW, Annual = the 12-month PEAK, never a sum or average) are the raw billed values for each month, matching Page 1. Electric energy and demand costs are shown separately with their own rates, and the summary strip includes Site Energy Use Intensity (EUI, kBtu per square foot per year).</div>";
   var tbl = d.siteBuilding
     ? rptBuildBaselineDataTable(d.siteBuilding, { project: d.project, reportOptions: null }, { has: d.baselineHas })
     : '';
@@ -883,10 +939,18 @@ function rptPageWoodlandHVAC(n, d) {
     stat('Annual Electric Use (kWh)', _wdN(h.elecKwh || 0)),
     stat('Annual Gas Use (Therms)', _wdN(h.gasTherms || 0, 1)),
   ];
+  // Heating Therms (gas) — always shown when there's any gas baseline, independent of cooling.
+  if (h.gasTherms > 0) stats.push(stat('Heating Energy — Gas (Therms)', _wdN(h.gasTherms, 1)));
+  // Heating kWh (electric) — shown only when the electric baseline's regression has a positive
+  // HDD term (2026-09-22, Matt: heating is not only gas).
+  if (h.heatKwh != null) {
+    stats.push(stat('Heating Energy — Elec (kWh)', _wdN(h.heatKwh)));
+    if (h.heatKwhPct != null) stats.push(stat('Elec Heating Share of HVAC', h.heatKwhPct.toFixed(1) + '%'));
+  }
   if (h.coolKwh != null) {
     stats.push(stat('Estimated Cooling Energy (kWh)', _wdN(h.coolKwh)));
     stats.push(stat('Cooling Share of Electric Use', h.coolPct.toFixed(1) + '%'));
-    stats.push(stat('Heating Share of HVAC Load', h.heatPct.toFixed(1) + '%'));
+    stats.push(stat('Heating (Gas) Share of HVAC Load', h.heatPct.toFixed(1) + '%'));
     stats.push(stat('Cooling Share of HVAC Load', h.coolSharePct.toFixed(1) + '%'));
   }
   body +=
@@ -943,16 +1007,26 @@ function rptPageWoodlandHVAC(n, d) {
     rows +
     _rptTotalAvgRow(sums, 'TOTAL (Annual)', h.months.length || 1) +
     '</tbody></table>' +
-    '<div class="rpt-su" style="font-size:10px">Heating share = gas energy (' +
+    '<div class="rpt-su" style="font-size:10px">HVAC load shares are all on one kBtu basis (Therms × 100, kWh × 3.412), each divided by ' +
+    (h.heatKwh != null ? 'gas + electric-heating + cooling' : 'gas + cooling') +
+    ' energy: gas heating ' +
     _wdN(h.gasTherms, 1) +
     ' Therms × 100 = ' +
     _wdN(h.gasTherms * 100) +
-    ' kBtu) ÷ (gas energy + cooling energy ' +
+    ' kBtu' +
+    (h.heatKwh != null
+      ? '; electric heating ' + _wdN(h.heatKwh) + ' kWh × 3.412 = ' + _wdN(h.heatKwh * 3.412) + ' kBtu'
+      : '') +
+    '; cooling ' +
     _wdN(h.coolKwh) +
     ' kWh × 3.412 = ' +
     _wdN(h.coolKwh * 3.412) +
-    ' kBtu) = ' +
+    ' kBtu — gas heating share ' +
     h.heatPct.toFixed(1) +
+    '%' +
+    (h.heatKwhPct != null ? ', electric heating share ' + h.heatKwhPct.toFixed(1) + '%' : '') +
+    ', cooling share ' +
+    h.coolSharePct.toFixed(1) +
     '%. Non-cooling kWh = billed kWh − cooling kWh (lighting, plug loads, fans, and other year-round use).</div>';
 
   return rptPage(n, 'Estimated HVAC Cooling & Heating', body, {
@@ -1155,15 +1229,22 @@ function rptPageWoodlandBASCalc(n, d) {
       '<tr class="rpt-tot"><td style="padding:2px 6px">Annual $ saved</td><td class="rpt-n" style="padding:2px 6px">' +
       _wdC(optA.annualTotal$) +
       '</td></tr>' +
-      '<tr><td style="padding:2px 6px">Implementation cost (from the savings measure)</td><td class="rpt-n" style="padding:2px 6px">' +
-      (optA.installCost > 0 ? _wdC(optA.installCost) : '—') +
+      '<tr><td style="padding:2px 6px">Client share (' +
+      WOODLAND_CLIENT_SHARE_PCT +
+      '%)</td><td class="rpt-n" style="padding:2px 6px">' +
+      _wdC(optA.clientShare$) +
       '</td></tr>' +
-      '<tr class="rpt-tot"><td style="padding:2px 6px">Simple payback</td><td class="rpt-n" style="padding:2px 6px">' +
-      (optA.paybackYrs != null
-        ? _wdC(optA.installCost) + ' ÷ ' + _wdC(optA.annualTotal$) + ' = ' + optA.paybackYrs.toFixed(2) + ' years'
-        : '—') +
+      '<tr class="rpt-tot"><td style="padding:2px 6px">CSC share (' +
+      (100 - WOODLAND_CLIENT_SHARE_PCT) +
+      '%)</td><td class="rpt-n" style="padding:2px 6px">' +
+      _wdC(optA.cscShare$) +
       '</td></tr>' +
-      '</tbody></table>';
+      '</tbody></table>' +
+      '<div class="rpt-su" style="font-size:10px;margin-top:2px">Shared-savings structure — assumes a ' +
+      WOODLAND_CLIENT_SHARE_PCT +
+      '% client / ' +
+      (100 - WOODLAND_CLIENT_SHARE_PCT) +
+      '% CSC split of the annual $ saved (to be confirmed with the client), not an install-cost/payback contract.</div>';
   }
   pages.push(
     rptPage(pageNo++, 'BAS Savings Calculation — Per-Month Detail & Result', body2, {
@@ -1180,7 +1261,11 @@ function rptPageWoodlandBASCalc(n, d) {
 // =========================================================================
 function rptPageWoodlandOptions(n, d) {
   var body =
-    '<div class="rpt-su">Estimated projected savings from a setpoint-change ECM — not measured M&V. Each option raises occupied cooling setpoint and lowers occupied heating setpoint by 1°F relative to the prior option; savings are dollarized at the seasonal marginal rate, monthly, then summed. Implementation cost and payback come from each measure\'s own Implementation Cost field.</div>' +
+    '<div class="rpt-su">Estimated projected savings from a setpoint-change ECM — not measured M&V. Each option raises occupied cooling setpoint and lowers occupied heating setpoint by 1°F relative to the prior option; savings are dollarized at the seasonal marginal rate, monthly, then summed. Shared-savings split assumes ' +
+    WOODLAND_CLIENT_SHARE_PCT +
+    '% client / ' +
+    (100 - WOODLAND_CLIENT_SHARE_PCT) +
+    '% CSC of the annual $ saved (to be confirmed with the client) — not an install-cost/payback contract.</div>' +
     // 8 columns, widths sum to exactly 100% (table-layout:fixed truncates every column
     // proportionally when widths overrun). Option+Setpoint merged into one cell and the three
     // $ components merged into one "$ Saved: Gas / Electric / Demand" cell so Word's narrower
@@ -1193,8 +1278,12 @@ function rptPageWoodlandOptions(n, d) {
     '<th class="rpt-n" style="width:9%">Peak Demand kW Saved</th>' +
     '<th class="rpt-n" style="width:22%">$ Saved: Gas / Electric / Demand</th>' +
     '<th class="rpt-n" style="width:12%">Total $ Saved</th>' +
-    '<th class="rpt-n" style="width:14%">Install Cost</th>' +
-    '<th class="rpt-n" style="width:9%">Payback (yrs)</th>' +
+    '<th class="rpt-n" style="width:12%">Client Share (' +
+    WOODLAND_CLIENT_SHARE_PCT +
+    '%)</th>' +
+    '<th class="rpt-n" style="width:11%">CSC Share (' +
+    (100 - WOODLAND_CLIENT_SHARE_PCT) +
+    '%)</th>' +
     '</tr></thead><tbody>';
 
   // sums[3] (the combined $ column) is filled in AFTER the loop below — its Total/Average rows
@@ -1206,8 +1295,8 @@ function rptPageWoodlandOptions(n, d) {
     { sum: 0, dec: 2 }, // Peak Demand kW Saved
     { sum: 0, fmt: 'text', text: '', avgText: '' }, // $ Saved: Gas / Electric / Demand
     { sum: 0, dec: 2, fmt: 'c' }, // Total $ Saved
-    { sum: 0, dec: 2, fmt: 'c' }, // Install Cost
-    { sum: 0, dec: 2, fmt: 'text', text: '' }, // Payback — not summable
+    { sum: 0, dec: 2, fmt: 'c' }, // Client Share
+    { sum: 0, dec: 2, fmt: 'c' }, // CSC Share
   ];
   var gasSumAll = 0,
     elecSumAll = 0,
@@ -1219,7 +1308,8 @@ function rptPageWoodlandOptions(n, d) {
     sums[1].sum += o.annualCoolKwh;
     sums[2].sum += o.peakDemandKw;
     sums[4].sum += o.annualTotal$;
-    sums[5].sum += o.installCost;
+    sums[5].sum += o.clientShare$;
+    sums[6].sum += o.cscShare$;
     gasSumAll += o.annualGas$;
     elecSumAll += o.annualElec$;
     demSumAll += o.annualDem$;
@@ -1249,10 +1339,10 @@ function rptPageWoodlandOptions(n, d) {
       '<td class="rpt-n" style="font-weight:700">' +
       _wdC(o.annualTotal$) +
       '</td><td class="rpt-n">' +
-      (o.installCost > 0 ? _wdC(o.installCost) : '—') +
+      _wdC(o.clientShare$) +
       '</td>' +
       '<td class="rpt-n">' +
-      (o.paybackYrs != null ? o.paybackYrs.toFixed(2) : '—') +
+      _wdC(o.cscShare$) +
       '</td></tr>';
 
     // Show-your-work sub-rows: one peak-summer month (August) and one peak-winter month
@@ -1466,23 +1556,34 @@ function rptPageWoodlandCharts(n, d) {
       return '$' + Math.round(v).toLocaleString();
     },
   );
-  var paybackChart = _woodlandGroupedBarSVG(
+  var shareChart = _woodlandGroupedBarSVG(
     opts,
-    [{ key: 'paybackYrs', label: 'Simple Payback (yrs)', colorVar: 'var(--rpt-green)' }],
-    'Simple Payback by Option (Years)',
+    [
+      { key: 'clientShare$', label: 'Client Share (' + WOODLAND_CLIENT_SHARE_PCT + '%)', colorVar: 'var(--rpt-blue)' },
+      {
+        key: 'cscShare$',
+        label: 'CSC Share (' + (100 - WOODLAND_CLIENT_SHARE_PCT) + '%)',
+        colorVar: 'var(--rpt-eui-purple)',
+      },
+    ],
+    'Shared-Savings Split by Option — Client / CSC',
     function (v) {
-      return v.toFixed(1);
+      return '$' + Math.round(v).toLocaleString();
     },
   );
 
   var body =
-    '<div class="rpt-su">Side-by-side comparison of the three setpoint options: total annual dollar savings by end use, and simple payback in years.</div>' +
+    '<div class="rpt-su">Side-by-side comparison of the three setpoint options: total annual dollar savings by end use, and the shared-savings split (' +
+    WOODLAND_CLIENT_SHARE_PCT +
+    '% client / ' +
+    (100 - WOODLAND_CLIENT_SHARE_PCT) +
+    '% CSC, to be confirmed with the client).</div>' +
     '<div id="woodlandChartsPage">' +
     '<div style="margin:10px 0">' +
     dollarChart +
     '</div>' +
     '<div style="margin:10px 0">' +
-    paybackChart +
+    shareChart +
     '</div>' +
     '</div>';
 
@@ -2108,15 +2209,16 @@ async function exportWoodlandReportToXlsx(data) {
     styleAvgRow(avgR5);
     ws5.addRow([]);
     var annRow = ws5.addRow(['Annual $ saved', { formula: 'G' + totR5.number }]);
-    var costRow = ws5.addRow([
-      'Implementation cost (from the savings measure)',
-      optA.installCost > 0 ? optA.installCost : null,
+    var clientRow = ws5.addRow(['Client share (' + WOODLAND_CLIENT_SHARE_PCT + '%)', optA.clientShare$]);
+    var cscRow = ws5.addRow(['CSC share (' + (100 - WOODLAND_CLIENT_SHARE_PCT) + '%)', optA.cscShare$]);
+    styleTotalRow(cscRow);
+    ws5.addRow([
+      'Shared-savings split — assumes ' +
+        WOODLAND_CLIENT_SHARE_PCT +
+        '% client / ' +
+        (100 - WOODLAND_CLIENT_SHARE_PCT) +
+        '% CSC (to be confirmed with the client), not an install-cost/payback contract.',
     ]);
-    var pbRow = ws5.addRow([
-      'Simple payback (years)',
-      optA.installCost > 0 ? { formula: 'B' + costRow.number + '/B' + annRow.number } : null,
-    ]);
-    styleTotalRow(pbRow);
   }
 
   // ---- Sheet 6: Options A/B/C ----
@@ -2131,8 +2233,8 @@ async function exportWoodlandReportToXlsx(data) {
     { width: 18 }, // Electric Energy $ Saved
     { width: 14 }, // Demand $ Saved
     { width: 14 }, // Total $ Saved
-    { width: 16 }, // Install Cost
-    { width: 12 }, // Payback (yrs)
+    { width: 16 }, // Client Share
+    { width: 14 }, // CSC Share
   ];
   titleRow(ws6, 'Savings Options Comparison — A / B / C — ' + data.building.name);
   var hRow6 = ws6.addRow([
@@ -2145,8 +2247,8 @@ async function exportWoodlandReportToXlsx(data) {
     'Electric Energy $ Saved',
     'Demand $ Saved',
     'Total $ Saved',
-    'Install Cost',
-    'Payback (yrs)',
+    'Client Share (' + WOODLAND_CLIENT_SHARE_PCT + '%)',
+    'CSC Share (' + (100 - WOODLAND_CLIENT_SHARE_PCT) + '%)',
   ]);
   styleHeaderRow(hRow6);
   var firstDataRow6 = ws6.rowCount + 1;
@@ -2161,19 +2263,21 @@ async function exportWoodlandReportToXlsx(data) {
       o.annualElec$,
       o.annualDem$,
       o.annualTotal$,
-      o.installCost > 0 ? o.installCost : null,
-      o.paybackYrs != null ? o.paybackYrs : null,
+      o.clientShare$,
+      o.cscShare$,
     ]);
   });
   var lastDataRow6 = ws6.rowCount;
-  var cols6 = ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+  // C..K: Heat Therms .. CSC Share — every one of these columns is summable now that Client
+  // Share/CSC Share (both plain $ amounts) replaced Install Cost/Payback (the old K, Payback,
+  // was the only non-summable column, so the previous version stopped at J with a trailing null).
+  var cols6 = ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'];
   var totR6 = ws6.addRow([
     'TOTAL (All Options)',
     null,
     ...cols6.map(function (c) {
       return sumF(c, firstDataRow6, lastDataRow6);
     }),
-    null,
   ]);
   styleTotalRow(totR6);
   var avgR6 = ws6.addRow([
@@ -2182,7 +2286,6 @@ async function exportWoodlandReportToXlsx(data) {
     ...cols6.map(function (c) {
       return avgF(c, firstDataRow6, lastDataRow6);
     }),
-    null,
   ]);
   styleAvgRow(avgR6);
 
@@ -2199,15 +2302,22 @@ async function exportWoodlandReportToXlsx(data) {
   // (e.g. a paid tier, or hand-writing the xl/charts/chart1.xml OOXML part itself — a
   // significant, separately-scoped undertaking, not a one-line addition) — out of scope for this
   // fix pass per the plan's "no new export mechanism" decision. The data cells directly above
-  // (Option/Gas $/Electric $/Demand $/Payback) ARE plain values, so Matt can select them and
-  // insert his own native Excel chart in seconds if he wants one; the embedded PNGs below remain
-  // as the built-in visual.
+  // (Option/Gas $/Electric $/Demand $/Client Share/CSC Share) ARE plain values, so Matt can
+  // select them and insert his own native Excel chart in seconds if he wants one; the embedded
+  // PNGs below remain as the built-in visual.
   var ws7 = wb.addWorksheet('Page 7 - Charts');
-  ws7.columns = [{ width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }];
+  ws7.columns = [{ width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }];
   titleRow(ws7, 'Charts — Savings Options Comparison — ' + data.building.name);
-  ws7.addRow(['Option', 'Gas $ Saved', 'Electric Energy $ Saved', 'Demand $ Saved', 'Payback (yrs)']);
+  ws7.addRow([
+    'Option',
+    'Gas $ Saved',
+    'Electric Energy $ Saved',
+    'Demand $ Saved',
+    'Client Share (' + WOODLAND_CLIENT_SHARE_PCT + '%)',
+    'CSC Share (' + (100 - WOODLAND_CLIENT_SHARE_PCT) + '%)',
+  ]);
   data.options.forEach(function (o) {
-    ws7.addRow(['Option ' + o.letter, o.annualGas$, o.annualElec$, o.annualDem$, o.paybackYrs]);
+    ws7.addRow(['Option ' + o.letter, o.annualGas$, o.annualElec$, o.annualDem$, o.clientShare$, o.cscShare$]);
   });
   ws7.addRow([]);
   var chartAnchorRow = ws7.rowCount + 2;

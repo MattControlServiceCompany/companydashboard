@@ -5241,6 +5241,8 @@ function rptBuildBaselineDataTable(b, d, opts) {
   var _tKwh = 0,
     _tKw = 0,
     _tBkw = 0,
+    _pKw = 0, // 2026-09-22: annual demand is the PEAK monthly value, never a sum/average
+    _pBkw = 0,
     _tKwCost = 0,
     _tEnCost = 0,
     _tElecCost = 0;
@@ -5256,13 +5258,18 @@ function rptBuildBaselineDataTable(b, d, opts) {
     var gM = _bm.gasByMo[mi] || {};
     var pM = _bm.propaneByMo[mi] || {};
     var wM = _bm.waterByMo[mi] || {};
-    var kwh = eM.kwh || 0,
+    // Raw billed kWh (2026-09-22 fix) — never the weather-regression-predicted figure, so this
+    // table's Annual total matches the audit oracle and the Page-1 raw-bill sum, never a figure
+    // ~0.5% low from regression smoothing. Falls back to eM.kwh only if kwhBilled is absent
+    // (older/stubbed baselineMaps shape).
+    var kwh = eM.kwhBilled != null ? eM.kwhBilled : eM.kwh || 0,
       demKw = eM.demandKW || 0,
       bKw = eM.billedKW || 0;
     var kwCostTotal = (eM.kwCost || 0) + (eM.facKWCost || 0),
       enCost = eM.energyCost || 0;
     var elecCost = eM.commodityCost || eM.totalCost || 0;
-    var therms = gM.therms || 0,
+    // Raw billed Therms (2026-09-22 fix, same rationale as kwhBilled above).
+    var therms = gM.thermsBilled != null ? gM.thermsBilled : gM.therms || 0,
       gasCost = gM.cost || 0;
     var gal = pM.gallons || 0,
       propCost = pM.cost || 0;
@@ -5272,6 +5279,8 @@ function rptBuildBaselineDataTable(b, d, opts) {
     _tKwh += kwh;
     _tKw += demKw;
     _tBkw += bKw;
+    _pKw = Math.max(_pKw, demKw);
+    _pBkw = Math.max(_pBkw, bKw);
     _tKwCost += kwCostTotal;
     _tEnCost += enCost;
     _tElecCost += elecCost;
@@ -5348,9 +5357,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         $n(_tKwh) +
         '</td><td class="rpt-n">' +
-        (_tKw ? (_tKw / 12).toFixed(1) : '—') +
+        (_pKw ? _pKw.toFixed(1) + '<br><span style="font-size:7px;font-weight:400">(peak)</span>' : '—') +
         '</td><td class="rpt-n">' +
-        (_tBkw ? (_tBkw / 12).toFixed(1) : '—') +
+        (_pBkw ? _pBkw.toFixed(1) + '<br><span style="font-size:7px;font-weight:400">(peak)</span>' : '—') +
         '</td><td class="rpt-n">' +
         $c(_tKwCost) +
         '</td><td class="rpt-n">' +

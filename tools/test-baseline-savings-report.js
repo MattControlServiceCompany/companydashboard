@@ -480,6 +480,37 @@ ctx3.__d = d3;
 const html3 = run(ctx3, 'generateWoodlandReportHTML(__d)');
 assert(!html3.includes('1,384'), 'no $1,384 anywhere when the measure carries no implementation cost');
 
+// ─── 6. Shared-savings split (2026-09-22, Matt) replaces install cost / payback in the report ──
+console.log('\n--- 6. Financials: shared-savings split (client/CSC), no install cost or payback shown ---');
+d.options.forEach((o) => {
+  assert(
+    Math.abs(o.clientShare$ + o.cscShare$ - o.annualTotal$) < 0.005,
+    'Option ' + o.letter + ': clientShare$ + cscShare$ cross-foots to annualTotal$',
+  );
+  assert(
+    Math.abs(o.clientShare$ / o.annualTotal$ - 0.7) < 0.01,
+    'Option ' + o.letter + ': clientShare$ is ~70% of annualTotal$ (default split)',
+  );
+});
+assert(
+  !html.includes('Install Cost') && !html.includes('Simple payback'),
+  'report HTML has no Install Cost / Simple payback text',
+);
+assert(html.includes('Client Share') && html.includes('CSC Share'), 'report HTML shows Client Share / CSC Share');
+
+// ─── 7. HVAC: electric heating kWh line only when slopeHDD is positive ─────────────────────────
+console.log('\n--- 7. HVAC: electric heating (kWh) shown only when the regression supports it ---');
+if (d.hvac && d.hvac.heatKwh != null) {
+  assert(d.hvac.slopeHDD > 0, 'heatKwh present implies slopeHDD > 0');
+  assert(html.includes('Estimated Heating Energy — Electric (kWh)'), 'electric heating kWh line renders');
+} else {
+  console.log('  (this building/backup has no positive electric-heating HDD term — line correctly omitted)');
+  assert(
+    !html.includes('Estimated Heating Energy — Electric (kWh)'),
+    'electric heating kWh line absent when not applicable',
+  );
+}
+
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failures.length) {
   console.log('\nFailures:');
