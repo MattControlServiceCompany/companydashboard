@@ -1956,6 +1956,14 @@ function showReportOverlay(html, title) {
     var isSoo = !!(window._currentReportData && window._currentReportData._soo);
     saveBtn.style.display = isSoo ? 'none' : '';
   }
+  // Woodland report (2026-09-22): the 4th export surface (.xlsx, ExcelJS) only applies to this
+  // one report type — hide the button for every other report so it doesn't linger visible after
+  // a Woodland preview is closed and a different report type is opened in the same overlay.
+  var xlsxBtn = document.getElementById('rptXlsxBtn');
+  if (xlsxBtn) {
+    var isWoodland = !!(window._currentReportData && window._currentReportData._woodland);
+    xlsxBtn.style.display = isWoodland ? '' : 'none';
+  }
   // U2 / RC-A (2026-08-02, D-05): enforce the 10pt printed-text floor on the live DOM before
   // anything reads it. This is the ONE place report HTML enters the document, so every report
   // type and every downstream export (print-to-PDF, .doc, .docx — all of which serialize
@@ -8930,6 +8938,11 @@ async function exportReportToPDF() {
         : client + ' - ASHRAE 36 Audit Report ' + dateStr;
   } else if (data._soo) {
     filename = client + ' - Sequence of Operations ' + dateStr;
+  } else if (data._woodland) {
+    filename =
+      (data.building && data.building.name ? data.building.name : client) +
+      ' - Baseline & BAS Savings Report ' +
+      dateStr;
   } else {
     const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
     filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr;

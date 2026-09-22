@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.865',
+    date: '2026-09-22',
+    title: 'Woodland Spring Middle baseline + savings report',
+    items: [
+      {
+        type: 'feature',
+        text: 'Energy Department now has a 7-page Woodland Spring Middle Baseline + BAS Savings report, with PDF, Word, and 7-tab Excel export.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.864',
     date: '2026-09-22',
     title: 'Save All bill upload fixes',

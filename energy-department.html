@@ -33,7 +33,7 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=864" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=865" rel="stylesheet" />
     <script src="app/ch-auth.js"></script>
 
     <style id="site-ui-styles">
@@ -2385,6 +2385,16 @@
         font-weight: 700;
         border-top: 2px solid var(--rpt-table-tot-bdr);
         background: var(--rpt-table-tot-bg);
+      }
+      /* .rpt-avg (2026-09-22, Woodland report _rptTotalAvgRow helper): the Average row that
+         rides directly under every Total row (Coordinator constraint — every table needs BOTH).
+         Reuses the same total-row tokens at reduced weight/italic so it reads as a sibling of
+         the Total row, not a new visual language — no new color introduced. */
+      .rpt-table tr.rpt-avg td {
+        font-weight: 600;
+        font-style: italic;
+        background: var(--rpt-table-stripe);
+        border-top: 1px solid var(--rpt-table-tot-bdr);
       }
       .rpt-table-dark {
         background: var(--rpt-dtbl-bg);
@@ -8166,7 +8176,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=864" />
+    <link rel="stylesheet" href="feedback-widget.css?v=865" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -8777,6 +8787,21 @@
                       data-fb="energy.utility.performance-btn"
                     >
                       💡 Building Performance
+                    </button>
+                    <!-- Woodland Springs Middle 7-page Baseline + BAS Savings Report (2026-09-22):
+                         gated visible only for a building that has saved BAS savings options
+                         (project.savingsData.measures[] with a matching bldgId) — see
+                         renderUDDetail() in app/utility-data.js. Generic by implementation (not
+                         hardcoded to one building id), but only Woodland Springs Middle has this
+                         data today. -->
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="ud-woodland-report-btn"
+                      onclick="generateWoodlandReport(udSelProjId, udSelBldgId)"
+                      style="display: none"
+                      data-fb="energy.utility.woodland-report-btn"
+                    >
+                      📋 Baseline + Savings Report
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
@@ -15434,6 +15459,14 @@
         </div>
         <div style="display: flex; gap: 8px">
           <button id="rptSaveBtn" onclick="saveReportToHistory()" class="rpt-toolbar-btn">💾 Save</button>
+          <button
+            id="rptXlsxBtn"
+            onclick="exportWoodlandReportToXlsx(window._currentReportData)"
+            class="rpt-toolbar-btn"
+            style="display: none"
+          >
+            📊 Export to Excel
+          </button>
           <button onclick="exportReportToDocx()" class="rpt-toolbar-btn">📝 Export to Word</button>
           <button onclick="exportReportToPDF()" class="rpt-toolbar-btn rpt-toolbar-primary">📄 Export to PDF</button>
         </div>
@@ -15471,42 +15504,51 @@
       integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"
       crossorigin="anonymous"
     ></script>
+    <!-- ExcelJS — used ONLY by exportWoodlandReportToXlsx() (app/report-engine-woodland.js) for
+         cell fill colors, bold totals, and an embedded Page-7 chart PNG (worksheet.addImage()) —
+         capabilities the SheetJS community build above cannot write. SheetJS remains the only
+         xlsx library used everywhere else (import paths, unchanged). -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"
+      integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz"
+      crossorigin="anonymous"
+    ></script>
     <script
       src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
       integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG"
       crossorigin="anonymous"
     ></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=864"></script>
-    <script src="lib/formatting.js?v=864"></script>
-    <script src="lib/unit-conversion.js?v=864"></script>
-    <script src="lib/csv-parser.js?v=864"></script>
-    <script src="computations/rates.js?v=864"></script>
-    <script src="computations/regression.js?v=864"></script>
-    <script src="computations/normalization.js?v=864"></script>
-    <script src="computations/eui.js?v=864"></script>
-    <script src="computations/hvac-enduse.js?v=864"></script>
-    <script src="computations/pollution.js?v=864"></script>
-    <script src="computations/csc.js?v=864"></script>
-    <script src="computations/savings.js?v=864"></script>
-    <script src="computations/anomaly-detection.js?v=864"></script>
-    <script src="lib/perf-table.js?v=864"></script>
-    <script src="lib/shared-charts.js?v=864"></script>
-    <script src="computations/report-data.js?v=864"></script>
-    <script src="computations/data-quality.js?v=864"></script>
-    <script src="extraction/pdf-engine.js?v=864"></script>
-    <script src="app/sync-classification.js?v=864"></script>
-    <script src="app/db.js?v=864"></script>
-    <script src="app/sync-ui.js?v=864"></script>
-    <script src="app/core.js?v=864"></script>
-    <script src="app/energy-savings.js?v=864"></script>
-    <script src="app/bill-analysis.js?v=864"></script>
-    <script src="extraction/bill-validation.js?v=864"></script>
-    <script src="app/district-calendar.js?v=864"></script>
-    <script src="app/utility-data.js?v=864"></script>
-    <script src="app/pipeline-diagram.js?v=864"></script>
-    <script src="app/csv-import.js?v=864"></script>
-    <script src="app/meter-autocreate.js?v=864"></script>
+    <script src="lib/date-helpers.js?v=865"></script>
+    <script src="lib/formatting.js?v=865"></script>
+    <script src="lib/unit-conversion.js?v=865"></script>
+    <script src="lib/csv-parser.js?v=865"></script>
+    <script src="computations/rates.js?v=865"></script>
+    <script src="computations/regression.js?v=865"></script>
+    <script src="computations/normalization.js?v=865"></script>
+    <script src="computations/eui.js?v=865"></script>
+    <script src="computations/hvac-enduse.js?v=865"></script>
+    <script src="computations/pollution.js?v=865"></script>
+    <script src="computations/csc.js?v=865"></script>
+    <script src="computations/savings.js?v=865"></script>
+    <script src="computations/anomaly-detection.js?v=865"></script>
+    <script src="lib/perf-table.js?v=865"></script>
+    <script src="lib/shared-charts.js?v=865"></script>
+    <script src="computations/report-data.js?v=865"></script>
+    <script src="computations/data-quality.js?v=865"></script>
+    <script src="extraction/pdf-engine.js?v=865"></script>
+    <script src="app/sync-classification.js?v=865"></script>
+    <script src="app/db.js?v=865"></script>
+    <script src="app/sync-ui.js?v=865"></script>
+    <script src="app/core.js?v=865"></script>
+    <script src="app/energy-savings.js?v=865"></script>
+    <script src="app/bill-analysis.js?v=865"></script>
+    <script src="extraction/bill-validation.js?v=865"></script>
+    <script src="app/district-calendar.js?v=865"></script>
+    <script src="app/utility-data.js?v=865"></script>
+    <script src="app/pipeline-diagram.js?v=865"></script>
+    <script src="app/csv-import.js?v=865"></script>
+    <script src="app/meter-autocreate.js?v=865"></script>
     <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
          wired into this page's script list -- exportReportToDocx() (report-engine.js) calls
          _docxTranslatePages()/_docxAssemble() (docx-writer.js) and CSC_DOCX_SKELETON_B64
@@ -15516,32 +15558,33 @@
          the gap was never exercised end-to-end). Formal button wiring is plan Step 11; these two
          tags are the load-order prerequisite that step (and every step since 6) actually needs
          to function through the live app at all, not new report content. -->
-    <script src="app/docx-skeleton.js?v=864"></script>
-    <script src="app/docx-writer.js?v=864"></script>
-    <script src="app/report-engine.js?v=864"></script>
-    <script src="app/report-preview.js?v=864"></script>
-    <script src="app/calculators.js?v=864"></script>
-    <script src="app/ecm-calculators.js?v=864"></script>
-    <script src="app/equipment-matrix.js?v=864"></script>
+    <script src="app/docx-skeleton.js?v=865"></script>
+    <script src="app/docx-writer.js?v=865"></script>
+    <script src="app/report-engine.js?v=865"></script>
+    <script src="app/report-engine-woodland.js?v=865"></script>
+    <script src="app/report-preview.js?v=865"></script>
+    <script src="app/calculators.js?v=865"></script>
+    <script src="app/ecm-calculators.js?v=865"></script>
+    <script src="app/equipment-matrix.js?v=865"></script>
     <!-- soo-generator.js (SOO Phase 1, item 3f1415af): reads points/config flags via the
          EXISTING emGetNormalizedPoints/emComputeCompliance/emLoadEquipConfigFlags (equipment-
          matrix.js, loaded above). Format-correction pass (2026-09-13): renders the MASTER
          SEQUENCES OF OPERATION document's own Word format directly (Heading 1/Normal/bold-label
          runs), NOT the report-engine .rpt-page shell — soo-docx-skeleton.js supplies the
          master-doc-derived skeleton its own Word export splices into. -->
-    <script src="app/soo-docx-skeleton.js?v=864"></script>
-    <script src="app/soo-generator.js?v=864"></script>
-    <script src="app/graphics-setpoints.js?v=864"></script>
-    <script src="app/budget.js?v=864"></script>
-    <script src="app/hours.js?v=864"></script>
-    <script src="app/scorecard.js?v=864"></script>
-    <script src="app/portal-export.js?v=864"></script>
-    <script src="app/bas-trends.js?v=864"></script>
-    <script src="app/bas-alarms.js?v=864"></script>
-    <script src="app/pricing-estimator.js?v=864"></script>
-    <script src="app/agreement-engine.js?v=864"></script>
+    <script src="app/soo-docx-skeleton.js?v=865"></script>
+    <script src="app/soo-generator.js?v=865"></script>
+    <script src="app/graphics-setpoints.js?v=865"></script>
+    <script src="app/budget.js?v=865"></script>
+    <script src="app/hours.js?v=865"></script>
+    <script src="app/scorecard.js?v=865"></script>
+    <script src="app/portal-export.js?v=865"></script>
+    <script src="app/bas-trends.js?v=865"></script>
+    <script src="app/bas-alarms.js?v=865"></script>
+    <script src="app/pricing-estimator.js?v=865"></script>
+    <script src="app/agreement-engine.js?v=865"></script>
 
-    <script src="app/site-functions.js?v=864"></script>
+    <script src="app/site-functions.js?v=865"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -15713,14 +15756,14 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=864"></script>
-    <script src="feedback-widget.js?v=864"></script>
+    <script src="app/tooltips-help.js?v=865"></script>
+    <script src="feedback-widget.js?v=865"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"
       integrity="sha384-reiVBUvj2HgLgCZalqLFSMBVD9LdtiwGyybRGCq2AfP8Rgebz5DxEnwKp4FpagKV"
       crossorigin="anonymous"
     ></script>
-    <script src="lib/rich-text.js?v=864"></script>
+    <script src="lib/rich-text.js?v=865"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {
