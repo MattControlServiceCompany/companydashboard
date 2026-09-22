@@ -306,9 +306,17 @@ function getExtractedRate(parsed, type) {
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {
-      var usage = pf(parsed.NaturalGasTherms);
-      var cost = pf(parsed.GasCharge);
-      return usage > 0 && cost > 0 ? cost / usage : 0;
+      var cost = pf(parsed.GasCharge) || pf(parsed.gasCharge) || pf(parsed.thermCost) || pf(parsed.totalCost) || 0;
+      var usage = pf(parsed.NaturalGasTherms) || 0;
+      if (!usage) {
+        var ccf = pf(parsed.NaturalGasCCF) || 0;
+        if (ccf > 0) usage = Math.round(ccf * 1.037 * 100) / 100;
+      }
+      if (usage > 0 && cost > 0) return cost / usage;
+      // MMBtu fallback: WRE meters store usage as naturalGasMMbtu; divide charge by MMBtu
+      // so the result is $/MMBtu rather than $/Therm — mirrors getStoredRate('gas') above.
+      var mmbtu = pf(parsed.naturalGasMMbtu) || pf(parsed.NaturalGasMMbtu) || 0;
+      return mmbtu > 0 && cost > 0 ? cost / mmbtu : 0;
     }
     case 'propane': {
       var up = pf(parsed.UnitPrice);
