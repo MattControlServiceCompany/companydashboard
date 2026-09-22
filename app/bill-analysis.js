@@ -5912,15 +5912,36 @@ function _addressSimilarity(a, b) {
 // or, when the street name is unreadable on one side, same house number AND
 // agreeing WRE site tags (_tagSplit / _buildingNameScore). Never true from a
 // house number alone (Spring Hill has "300 S Webster" and "300 E South").
-function _sameSiteAddress(a, b) {
+//
+// Review round 3 (never guess between two real candidates): two real Spring
+// Hill sites sit on the SAME street one house number apart — Middle School
+// "Mid Schl So - 301 E South St" and Early Learning Academy "Mid Schl No -
+// 300 E South St". A single OCR digit swap (300<->301) made house numbers
+// equal and the street tokens are literally identical, so the round-2 helper
+// said "same site" for two different buildings. Two guards close that:
+//   1. Site tags must not CONTRADICT: when both addresses carry a WRE site
+//      tag, a token present on each side with no fuzzy counterpart on the
+//      other ("So" vs "No") is a different site, full stop (_tagsContradict).
+//   2. Ambiguity across siblings: `siblingAddrs` are the addresses of the
+//      OTHER meters in the same project. If any of them is OCR-confusable
+//      with `a` (_siteAddrConfusable: same fuzzy street name and a house
+//      number within one character edit), the street/number evidence cannot
+//      pick ONE site — return false and let the bill stay unrouted/needs-
+//      meter instead of binding it to whichever sibling came first. The
+//      on-file account numbers are what distinguish those siblings, and the
+//      incoming account is blank here by definition, so no address match may
+//      stand in for them.
+function _sameSiteAddress(a, b, siblingAddrs) {
   if (!a || !b) return false;
+  const ta = _tagSplit(a);
+  const tb = _tagSplit(b);
+  if (ta && tb && _tagsContradict(ta.tag, tb.tag)) return false;
+  if (Array.isArray(siblingAddrs) && siblingAddrs.some((o) => _siteAddrConfusable(a, o))) return false;
   const na = _normalizeAddr(a);
   const nb = _normalizeAddr(b);
   if (na && nb && na.length >= 6 && nb.length >= 6 && (na === nb || na.includes(nb) || nb.includes(na))) {
     return true;
   }
-  const ta = _tagSplit(a);
-  const tb = _tagSplit(b);
   const streetA = ta ? ta.streetPart : a;
   const streetB = tb ? tb.streetPart : b;
   const ia = _addrStreetIdentity(streetA);
@@ -5928,9 +5949,47 @@ function _sameSiteAddress(a, b) {
   if (!ia || !ib || Number(ia.num) !== Number(ib.num)) return false;
   const toksA = _addrStreetNameTokens(streetA);
   const toksB = _addrStreetNameTokens(streetB);
-  if (toksA.length && toksB.length) return _streetNameTokensFuzzyMatch(toksA, toksB);
+  if (toksA.length && toksB.length && _streetNameTokensFuzzyMatch(toksA, toksB)) return true;
+  // Street name unreadable (or garbled) on a side: same house number plus
+  // agreeing, non-contradicting site tags is still a positive signal.
   if (ta && tb) return _buildingNameScore(ta.tag, tb.tag) >= _WRE_MIN_NAME_SCORE;
   return false;
+}
+// True when each site tag carries a token the other side cannot fuzzy-match
+// ("Mid Schl So" vs "Mid Schl No", "High Schl" vs "Elem"). One-sided extras
+// (e.g. an OCR fragment on only one side) are not a contradiction.
+function _tagsContradict(tagA, tagB) {
+  const ta = _wreTokenize(tagA);
+  const tb = _wreTokenize(tagB);
+  if (!ta.length || !tb.length) return false;
+  const tokEq = (t, o) => _wreTagTokenCandidates(t).some((c) => _wreTokenFuzzyEq(c, o));
+  const leftA = ta.filter((t) => !tb.some((o) => tokEq(t, o)));
+  const leftB = tb.filter((o) => !ta.some((t) => tokEq(t, o)));
+  if (!leftA.length || !leftB.length) return false;
+  // Both sides have a leftover token. A CLEARLY different pair ("so"/"no"
+  // = 0.5, "high"/"elem" = 0) is a different site; a near-miss pair that only
+  // failed the 0.7 fuzz bar ("wilind"/"wdlnd" = 0.67, OCR noise on both
+  // sides of the same word) is not evidence of a different site.
+  const sim = (x, y) => 1 - _levenshtein(x, y) / Math.max(x.length, y.length);
+  return leftA.some((x) => leftB.every((y) => sim(x, y) < 0.6));
+}
+// Could OCR of `a` plausibly have come from site `o`? Same fuzzy street name
+// (or unreadable on a side) and house numbers within ONE character edit
+// ("300" vs "301", "17450" vs "17456"). Used only to detect ambiguity.
+function _siteAddrConfusable(a, o) {
+  if (!a || !o) return false;
+  const ta = _tagSplit(a);
+  const to = _tagSplit(o);
+  const streetA = ta ? ta.streetPart : a;
+  const streetO = to ? to.streetPart : o;
+  const ia = _addrStreetIdentity(streetA);
+  const io = _addrStreetIdentity(streetO);
+  if (!ia || !io) return false;
+  if (String(ia.num) !== String(io.num) && _levenshtein(String(ia.num), String(io.num)) > 1) return false;
+  const toksA = _addrStreetNameTokens(streetA);
+  const toksO = _addrStreetNameTokens(streetO);
+  if (toksA.length && toksO.length) return _streetNameTokensFuzzyMatch(toksA, toksO);
+  return true;
 }
 // Flexible account/meter number comparison that survives utility format changes.
 // Strips dashes, spaces, and leading zeros before comparing, then falls back
@@ -12078,11 +12137,20 @@ async function _checkDuplicates(bills, statusCb) {
       .toLowerCase();
   const assignedByAcct = Object.create(null); // { normalizedAccount -> entry[] }
   const assignedBills = []; // kept for fallback scan (see below)
+  // Per project: every meter's known site addresses (meter address + the
+  // service addresses on its saved bills) — the sibling set _sameSiteAddress
+  // uses to refuse an ambiguous address-only match (review round 3).
+  const projMeterAddrs = Object.create(null); // { projId -> [{ meter, addrs: [] }] }
   for (const p of projects) {
     const ud = utilityData[p.id];
     if (!ud) continue;
     for (const b of ud.buildings || []) {
       for (const m of b.meters || []) {
+        const _addrSet = new Set();
+        if (m.maddr) _addrSet.add(m.maddr);
+        for (const bill of m.bills || []) if (bill && bill.serviceAddress) _addrSet.add(bill.serviceAddress);
+        if (!projMeterAddrs[p.id]) projMeterAddrs[p.id] = [];
+        projMeterAddrs[p.id].push({ meter: m, comm: (m.commodity || '').toLowerCase(), addrs: [..._addrSet] });
         const acctKey = normAcct(m.account || '');
         for (const bill of m.bills || []) {
           const entry = {
@@ -12175,11 +12243,21 @@ async function _checkDuplicates(bills, statusCb) {
       // bill's own serviceAddress or the meter's address). A present-and-
       // different account is a hard veto regardless of address.
       const acctContradicts = !!(extAcct && existAcct && !acctMatch);
+      // Round 3: the OTHER meters' addresses in this project — a site match is
+      // refused when any of them is OCR-confusable with the incoming address
+      // (see _sameSiteAddress), so the bill is never bound to one of two
+      // look-alike siblings by an address the account numbers would decide.
+      // Only SAME-commodity meters are candidates for this bill (commMatch
+      // below) — a building's own electric meter is not a look-alike site.
+      const _abComm = (ab.meter.commodity || '').toLowerCase();
+      const _siblings = (projMeterAddrs[ab.projId] || [])
+        .filter((e) => e.meter !== ab.meter && (!e.comm || !_abComm || e.comm === _abComm))
+        .flatMap((e) => e.addrs);
       const siteMatch =
         !!invoiceMatch &&
         !acctContradicts &&
-        (_sameSiteAddress(ext.ServiceAddress, ab.bill.serviceAddress) ||
-          _sameSiteAddress(ext.ServiceAddress, ab.meter.maddr));
+        (_sameSiteAddress(ext.ServiceAddress, ab.bill.serviceAddress, _siblings) ||
+          _sameSiteAddress(ext.ServiceAddress, ab.meter.maddr, _siblings));
       const existComm = (ab.bill.commodity || ab.meter.commodity || '').toLowerCase();
       const commMatch = !extComm || !existComm || extComm === existComm;
       const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
