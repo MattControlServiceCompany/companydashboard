@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.874',
+    date: '2026-09-22',
+    title: 'Consistent baseline numbers everywhere',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data, Energy Graphics, header, and Baseline report now use the same baseline kWh, Therms, kW, cost, and EUI for a building.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.873',
     date: '2026-09-22',
     title: 'Generate Report, ASHRAE 36 Audit Report, and Utility Data Export',

@@ -287,7 +287,13 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       const _moMapR = isElec ? eM : m.commodity === 'Gas' ? gM : isPropane ? pM : wM;
       const blByCalMo = {};
       Object.entries(_moMapR).forEach(([mo, v]) => {
-        blByCalMo[mo] = isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane ? v.gallons : v.kgal;
+        blByCalMo[mo] = isElec
+          ? v.kwhPredicted
+          : m.commodity === 'Gas'
+            ? v.thermsPredicted
+            : isPropane
+              ? v.gallons
+              : v.kgal;
       });
       const hasBlCalMap = Object.keys(blByCalMo).length >= 3;
       const hasRegrP = allRows.some((r) => r.regrBaseline != null);
@@ -5276,18 +5282,18 @@ function rptBuildBaselineDataTable(b, d, opts) {
     var gM = _bm.gasByMo[mi] || {};
     var pM = _bm.propaneByMo[mi] || {};
     var wM = _bm.waterByMo[mi] || {};
-    // Raw billed kWh (2026-09-22 fix) — never the weather-regression-predicted figure, so this
-    // table's Annual total matches the audit oracle and the Page-1 raw-bill sum, never a figure
-    // ~0.5% low from regression smoothing. Falls back to eM.kwh only if kwhBilled is absent
-    // (older/stubbed baselineMaps shape).
-    var kwh = eM.kwhBilled != null ? eM.kwhBilled : eM.kwh || 0,
+    // Single source of truth (2026-09-22): eM.kwh / gM.therms are ALREADY the whole-bill BILLED
+    // figures (never the weather-regression-predicted values) — this table's Annual total
+    // matches the audit oracle and the Page-1 raw-bill sum by construction, no per-caller
+    // fallback needed. elecCost/gasCost are the ONE full billed totalCost field (never the
+    // energy-only commodityCost, which undercounts by excluding customer charge/tax).
+    var kwh = eM.kwh || 0,
       demKw = eM.demandKW || 0,
       bKw = eM.billedKW || 0;
     var kwCostTotal = (eM.kwCost || 0) + (eM.facKWCost || 0),
       enCost = eM.energyCost || 0;
-    var elecCost = eM.commodityCost || eM.totalCost || 0;
-    // Raw billed Therms (2026-09-22 fix, same rationale as kwhBilled above).
-    var therms = gM.thermsBilled != null ? gM.thermsBilled : gM.therms || 0,
+    var elecCost = eM.totalCost || 0;
+    var therms = gM.therms || 0,
       gasCost = gM.cost || 0;
     var gal = pM.gallons || 0,
       propCost = pM.cost || 0;
@@ -5375,9 +5381,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         $n(_tKwh) +
         '</td><td class="rpt-n">' +
-        (_pKw ? _pKw.toFixed(1) + '<br><span style="font-size:7px;font-weight:400">(peak)</span>' : '—') +
+        (_tKw ? _tKw.toFixed(1) : '—') +
         '</td><td class="rpt-n">' +
-        (_pBkw ? _pBkw.toFixed(1) + '<br><span style="font-size:7px;font-weight:400">(peak)</span>' : '—') +
+        (_tBkw ? _tBkw.toFixed(1) : '—') +
         '</td><td class="rpt-n">' +
         $c(_tKwCost) +
         '</td><td class="rpt-n">' +

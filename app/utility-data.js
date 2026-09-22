@@ -9933,7 +9933,10 @@ function renderPerfPane(pane, m, bills, incl) {
   const meterDataByMo = {};
   Object.entries(_moMap).forEach(([mo, v]) => {
     meterDataByMo[mo] = {
-      usage: isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane_p ? v.gallons : v.kgal,
+      // Expected/savings-comparison usage — regression-predicted, not the whole-bill billed
+      // figure (2026-09-22 single-source-of-truth rewrite: buildMoMap's kwh/therms are now the
+      // billed usage; the predicted value lives under kwhPredicted/thermsPredicted).
+      usage: isElec ? v.kwhPredicted : m.commodity === 'Gas' ? v.thermsPredicted : isPropane_p ? v.gallons : v.kgal,
       energyCost: isElec ? v.energyCost : 0,
       thermCost: m.commodity === 'Gas' || isPropane_p ? v.cost : 0,
       totalCost: v.totalCost ?? v.cost,

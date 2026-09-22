@@ -1811,23 +1811,31 @@ function _updateCompactHdrBaseline(projId) {
     (b.meters || []).forEach((m) => {
       if (m.baselineInclude === false) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
-      const blBills = _dashGetBaselineBills(m);
       const bl = m.baseline;
       if (bl && bl.months) bl.months.forEach((ym) => _blMonthSet.add(ym));
-      blBills.forEach((bill) => {
-        blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-        if (m.commodity === 'Gas') {
-          blTherms += parseFloat(bill.therms) || 0;
-        } else if (m.commodity === 'Propane') {
-          blPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-        } else {
-          blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-        }
-      });
+      // Single source of truth (2026-09-22): getMeterBaselineTotals wraps getNormRows +
+      // buildMoMap so this header strip reconciles to the same whole-bill BILLED kWh/Therms/$
+      // as the Project Baseline panel, Energy Graphics card, and Baseline report (never the
+      // day-prorated/regression-predicted figures, never the energy-only commodityCost, and
+      // gas usage goes through the therms/naturalGasTherms/naturalGasMMbtu/naturalGasCCF
+      // fallback chain so CSV-imported bills aren't silently zeroed).
+      const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+      const incl = m.inclusive !== false;
+      const blTot = getMeterBaselineTotals(m, bills, incl);
+      blCost += blTot.cost;
+      if (m.commodity === 'Gas') blTherms += blTot.therms;
+      else if (m.commodity === 'Propane') blPropane += blTot.gallons;
+      else blKwh += blTot.kwh;
+      // Fallback (no baseline set on this meter yet): raw all-bills sum, labeled "Total Cost"
+      // instead of "Baseline" below — not an audited baseline reconciliation figure.
       (m.bills || []).forEach((bill) => {
         totalCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
         if (m.commodity === 'Gas') {
-          totalTherms += parseFloat(bill.therms) || 0;
+          totalTherms +=
+            parseFloat(bill.therms) ||
+            parseFloat(bill.naturalGasTherms) ||
+            (parseFloat(bill.naturalGasMMbtu) || 0) * 10 ||
+            0;
         } else if (m.commodity === 'Propane') {
           totalPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
         } else {
@@ -1999,8 +2007,9 @@ function initDashboardTab(projId) {
         const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
         const blRows = allRows.filter((r) => bl.months.includes(r.ym));
         const { elecByMo: eM, gasByMo: gM, propaneByMo: pM } = buildMoMap(m, blRows, bills, incl);
+        // Full billed totalCost (2026-09-22), never the energy-only commodityCost.
         for (let mo = 0; mo < 12; mo++)
-          bldgMoBase[mo] += (eM[mo]?.commodityCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0);
+          bldgMoBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0);
         // Normalized actual savings per calendar month
         const savResult = getMeterSavings(m, bills, incl, projId, b.id);
         const savCalMo = savResult.byCalMo;
@@ -2029,10 +2038,18 @@ function initDashboardTab(projId) {
         });
         if (m.commodity === 'Gas') {
           blBills.forEach((bill) => {
-            blTherms += parseFloat(bill.therms) || 0;
+            blTherms +=
+              parseFloat(bill.therms) ||
+              parseFloat(bill.naturalGasTherms) ||
+              (parseFloat(bill.naturalGasMMbtu) || 0) * 10 ||
+              0;
           });
           _curBills.forEach((bill) => {
-            curTherms += parseFloat(bill.therms) || 0;
+            curTherms +=
+              parseFloat(bill.therms) ||
+              parseFloat(bill.naturalGasTherms) ||
+              (parseFloat(bill.naturalGasMMbtu) || 0) * 10 ||
+              0;
           });
         } else if (m.commodity === 'Propane') {
           blBills.forEach((bill) => {
@@ -2059,21 +2076,18 @@ function initDashboardTab(projId) {
         if (!isCalcCommodity(projId, m.commodity)) return;
         const blBills = _dashGetBaselineBills(m);
         if (blBills.length) hasBaseline = true;
-        blBills.forEach((bill) => {
-          if (m.commodity === 'Electric') {
-            blCost +=
-              (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + (parseFloat(bill.facKWCost) || 0);
-          } else {
-            blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-          }
-          if (m.commodity === 'Gas') {
-            blTherms += parseFloat(bill.therms) || 0;
-          } else if (m.commodity === 'Propane') {
-            blPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-          } else {
-            blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-          }
-        });
+        // Single source of truth (2026-09-22): getMeterBaselineTotals wraps getNormRows +
+        // buildMoMap so this table reconciles to the same whole-bill BILLED kWh/Therms/$ as the
+        // header strip, Project Baseline panel, Energy Graphics card, and Baseline report —
+        // never the energy-only commodityCost (kwhCost+kwCost+facKWCost, which drops customer
+        // charge/tax), never a gas fallback-less therms read.
+        const _blBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+        const _blIncl = m.inclusive !== false;
+        const blTot = getMeterBaselineTotals(m, _blBills, _blIncl);
+        blCost += blTot.cost;
+        if (m.commodity === 'Gas') blTherms += blTot.therms;
+        else if (m.commodity === 'Propane') blPropane += blTot.gallons;
+        else blKwh += blTot.kwh;
         const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         if (bills.length) {
           const lastEnd = bills[bills.length - 1].end;

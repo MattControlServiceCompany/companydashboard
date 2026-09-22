@@ -132,7 +132,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   const blByCalMo = {};
   const blDemKWByCalMo = {};
   Object.entries(_moMap).forEach(([mo, v]) => {
-    blByCalMo[mo] = isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane ? v.gallons : v.kgal;
+    blByCalMo[mo] = isElec ? v.kwhPredicted : m.commodity === 'Gas' ? v.thermsPredicted : isPropane ? v.gallons : v.kgal;
     if (isElec) blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
   });
   const hasBlCalMap = Object.keys(blByCalMo).length > 0;
@@ -407,7 +407,7 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
         m.baseline = _origBaseline;
         const _moMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo : wMo;
         Object.entries(_moMap).forEach(([mo, v]) => {
-          blByCalMo[mo] = isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane ? v.gallons : v.kgal;
+          blByCalMo[mo] = isElec ? v.kwhPredicted : m.commodity === 'Gas' ? v.thermsPredicted : isPropane ? v.gallons : v.kgal;
           if (isElec) blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
         });
       }

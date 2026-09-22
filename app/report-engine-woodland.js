@@ -2747,10 +2747,12 @@ async function exportWoodlandReportToXlsx(data) {
     for (var mi = 0; mi < 12; mi++) {
       var eM = (sbm.elecByMo || {})[mi] || {};
       var gM = (sbm.gasByMo || {})[mi] || {};
+      // eM.kwh / gM.therms are the whole-bill BILLED figures (2026-09-22 single-source rewrite);
+      // elecCostM is the ONE full billed totalCost field, never the energy-only commodityCost.
       var kwhM = eM.kwh || 0;
       var kwCostM = (eM.kwCost || 0) + (eM.facKWCost || 0);
       var enCostM = eM.energyCost || 0;
-      var elecCostM = eM.commodityCost || eM.totalCost || 0;
+      var elecCostM = eM.totalCost || 0;
       var thermsM = gM.therms || 0;
       var gasCostM = gM.cost || 0;
       var rn4 = ws3.rowCount + 1;
@@ -2770,12 +2772,13 @@ async function exportWoodlandReportToXlsx(data) {
       ]);
     }
     var lastDataRow4 = ws3.rowCount;
-    // Annual row — same convention as the site table: kW columns are the 12-month AVERAGE.
+    // Annual row (2026-09-22 single-source rewrite) — kW columns are the SUM of the 12 monthly
+    // billed kW values, never a peak or an average. Matches the site's Building Baseline Data table.
     var totR4 = ws3.addRow([
       'Annual',
       sumF('B', firstDataRow4, lastDataRow4),
-      avgF('C', firstDataRow4, lastDataRow4),
-      avgF('D', firstDataRow4, lastDataRow4),
+      sumF('C', firstDataRow4, lastDataRow4),
+      sumF('D', firstDataRow4, lastDataRow4),
       sumF('E', firstDataRow4, lastDataRow4),
       sumF('F', firstDataRow4, lastDataRow4),
       sumF('G', firstDataRow4, lastDataRow4),
@@ -2786,7 +2789,6 @@ async function exportWoodlandReportToXlsx(data) {
       sumF('L', firstDataRow4, lastDataRow4),
     ]);
     styleTotalRow(totR4);
-    ws3.getCell('C' + totR4.number).note = 'Annual = 12-month average kW (site convention), not a sum.';
     var A = totR4.number;
     ws3.addRow([]);
     ws3.addRow(['Square Feet', sqft]);

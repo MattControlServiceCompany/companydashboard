@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.22.873'; // Building and meter picker for reports/export
+  var CH_VERSION = 'v2026.09.22.874'; // Building and meter picker for reports/export
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

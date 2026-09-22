@@ -143,16 +143,16 @@ function buildMoMap(m, blRows, bills, incl) {
   Object.entries(_moAccum).forEach(([mo, entries]) => {
     const cnt = entries.length; // number of years contributing to this calendar month
     if (isElec) {
-      const kwh = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
-      // Raw billed kWh (never weather-regressed, never day-prorated) — 2026-09-22 baseline-table
-      // fix. `kwh` above stays regression-normalized for savings/comparison math; `kwhBilled` is
-      // the true billed total callers must use for the audit-oracle baseline number (site table).
-      // day-proration (r.usage / normUsage, above) fractionally splits a bill that straddles a
-      // calendar-month boundary between two months — correct for regression/EUI/savings math,
-      // but NOT what "raw billed kWh" means to a reader reconciling against the actual bills:
-      // that reader expects each whole bill assigned to ONE month (its end date's month — same
-      // rule as the raw-bill report page's _wdAssignedYm), so re-derive it from `bills` directly.
-      const kwhBilled =
+      // Single source of truth (2026-09-22 rewrite): `kwh` is the whole-bill BILLED usage —
+      // each whole bill assigned to ONE month by its end date (same rule as the raw-bill report
+      // page's _wdAssignedYm) — never weather-regressed, never day-prorated. This is what every
+      // baseline/audit-oracle reader (header strip, Project Baseline panel, Energy Graphics card,
+      // Baseline report table, xlsx export) must read for "the" monthly usage number, so they all
+      // reconcile to the same total. `kwhPredicted` (day-prorated across a bill's spanned months,
+      // then regression-normalized) is kept ONLY for the Normalized/weather-adjusted view and
+      // savings/comparison math — never as a usage source for the baseline number.
+      const kwhPredicted = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
+      const kwh =
         entries.reduce((s, e) => {
           const wholeBillSum = bills
             .filter((bl) => ((bl.end || bl.start || '') + '').slice(0, 7) === e.r.ym)
@@ -182,24 +182,40 @@ function buildMoMap(m, blRows, bills, incl) {
       const facKWCostSum =
         entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + (parseFloat(b.facKWCost) || 0), 0), 0) / cnt;
       const totalCost = entries.reduce((s, e) => s + e.r.cost, 0) / cnt;
+      // Whole-bill BILLED total cost (2026-09-22) — same whole-bill-by-end-date convention as
+      // `kwh` above, replacing the day-prorated `totalCost` (split-month math) as the ONE cost
+      // field every baseline/audit-oracle reader must use. Full bill cost (includes customer
+      // charge, tax, demand — everything on the invoice), never the energy-only commodityCost.
+      const totalCostBilled =
+        entries.reduce((s, e) => {
+          const wholeBillSum = bills
+            .filter((bl) => ((bl.end || bl.start || '') + '').slice(0, 7) === e.r.ym)
+            .reduce((ss, bl) => ss + (parseFloat(bl.totalCost) || 0), 0);
+          return s + wholeBillSum;
+        }, 0) / cnt;
       const normDays = entries.reduce((s, e) => s + e.r.normDays, 0) / cnt;
       elecByMo[mo] = {
         kwh,
-        kwhBilled,
+        kwhPredicted,
         demandKW,
         billedKW,
         facKW,
         kwCost,
         facKWCost,
         energyCost: kwhCostSum,
-        totalCost,
+        totalCost: totalCostBilled,
+        totalCostPredicted: totalCost,
         commodityCost: kwhCostSum + kwCostSum + facKWCostSum,
         normDays,
       };
     } else if (isGas) {
-      const therms = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
-      // Raw billed Therms (whole-bill-per-month, same convention as kwhBilled above) — 2026-09-22.
-      const thermsBilled =
+      // Single source of truth (2026-09-22 rewrite): `therms` is whole-bill BILLED usage —
+      // same convention as electric `kwh` above (whole bill assigned to ONE month by end date,
+      // with the existing therms/naturalGasTherms/naturalGasMMbtu/naturalGasCCF fallback chain
+      // so CSV-imported bills aren't zeroed). `thermsPredicted` (day-prorated) is kept only for
+      // the Normalized/weather view — never a usage source for the baseline number.
+      const thermsPredicted = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
+      const therms =
         entries.reduce((s, e) => {
           const wholeBillSum = bills
             .filter((bl) => ((bl.end || bl.start || '') + '').slice(0, 7) === e.r.ym)
@@ -214,14 +230,23 @@ function buildMoMap(m, blRows, bills, incl) {
             );
           return s + wholeBillSum;
         }, 0) / cnt;
-      const cost = entries.reduce((s, e) => s + (e.normUsage > 0 ? e.r.cost : 0), 0) / cnt;
+      // ONE gas cost field (2026-09-22): full billed totalCost (whole bill, invoice total),
+      // same convention as electric totalCost above — not the energy-only gasCharge/thermCost
+      // chain, so the Gas Cost shown here reconciles to the same Baseline $ as the header strip.
+      const cost =
+        entries.reduce((s, e) => {
+          const wholeBillSum = bills
+            .filter((bl) => ((bl.end || bl.start || '') + '').slice(0, 7) === e.r.ym)
+            .reduce((ss, bl) => ss + (parseFloat(bl.totalCost) || 0), 0);
+          return s + wholeBillSum;
+        }, 0) / cnt;
       const rate =
         entries.reduce(
           (s, e) =>
             s + (e.bfr.length > 0 ? e.bfr.reduce((ss, b) => ss + getStoredRate(b, 'gas'), 0) / e.bfr.length : 0),
           0,
         ) / cnt;
-      gasByMo[mo] = { therms, thermsBilled, cost, rate };
+      gasByMo[mo] = { therms, thermsPredicted, cost, rate };
     } else if (isPropane) {
       const gallons = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
       const cost = entries.reduce((s, e) => s + e.r.cost, 0) / cnt;
@@ -239,6 +264,44 @@ function buildMoMap(m, blRows, bills, incl) {
     }
   });
   return { elecByMo, gasByMo, waterByMo, propaneByMo };
+}
+
+// getMeterBaselineTotals — ONE source of truth for a meter's whole-bill baseline totals
+// (2026-09-22). Every "Baseline $ / kWh / Therms" reader (header strip, dashboard tab,
+// Project Baseline panel, Energy Graphics card, Baseline report, xlsx export) must call this
+// instead of re-summing bills independently — it wraps getNormRows + buildMoMap so every
+// caller gets the identical whole-bill BILLED usage/cost numbers (never day-prorated, never
+// weather-regression-predicted, never the energy-only commodityCost).
+function getMeterBaselineTotals(m, bills, incl) {
+  const empty = { kwh: 0, therms: 0, gallons: 0, kgal: 0, cost: 0, billedKW: 0, demandKW: 0, months: 0 };
+  const bl = m && m.baseline;
+  if (!bl || !bl.months || !bl.months.length) return empty;
+  const rows = bills && bills.length ? getNormRows(m, bills, incl, null) : [];
+  const blRows = rows.filter((r) => bl.months.includes(r.ym));
+  if (!blRows.length) return empty;
+  const map = buildMoMap(m, blRows, bills, incl);
+  const out = Object.assign({}, empty, { months: bl.months.length });
+  const isElec = m.commodity === 'Electric',
+    isGas = m.commodity === 'Gas',
+    isPropane = m.commodity === 'Propane';
+  for (let mo = 0; mo < 12; mo++) {
+    if (isElec && map.elecByMo[mo]) {
+      out.kwh += map.elecByMo[mo].kwh || 0;
+      out.cost += map.elecByMo[mo].totalCost || 0;
+      out.billedKW += map.elecByMo[mo].billedKW || 0;
+      out.demandKW = Math.max(out.demandKW, map.elecByMo[mo].demandKW || 0);
+    } else if (isGas && map.gasByMo[mo]) {
+      out.therms += map.gasByMo[mo].therms || 0;
+      out.cost += map.gasByMo[mo].cost || 0;
+    } else if (isPropane && map.propaneByMo[mo]) {
+      out.gallons += map.propaneByMo[mo].gallons || 0;
+      out.cost += map.propaneByMo[mo].cost || 0;
+    } else if (map.waterByMo[mo]) {
+      out.kgal += map.waterByMo[mo].kgal || 0;
+      out.cost += map.waterByMo[mo].cost || 0;
+    }
+  }
+  return out;
 }
 
 // ── Propane Normalization ──────────────────────────────────────────────

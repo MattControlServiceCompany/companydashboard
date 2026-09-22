@@ -169,7 +169,7 @@ function _buildBaselineDataHtml(b, projId) {
   MO_SHORT.forEach((_, i) => {
     const eb = eByMo[i];
     if (eb) {
-      totKwh += eb.kwh || 0;
+      totKwh += eb.kwhPredicted || 0;
       const kwVal = eb.demandKW || 0;
       if (kwVal > 0) {
         totKw += kwVal;
@@ -183,7 +183,7 @@ function _buildBaselineDataHtml(b, projId) {
     }
     const gb = gByMo[i];
     if (gb) {
-      totTherms += gb.therms || 0;
+      totTherms += gb.thermsPredicted || 0;
       totGasCost += gb.cost || 0;
     }
     const pb = pByMo[i];
@@ -215,7 +215,7 @@ function _buildBaselineDataHtml(b, projId) {
                   const eb = eByMo[i] || {};
                   const gb = gByMo[i] || {};
                   const pb = pByMo[i] || {};
-                  const kwh = eb.kwh || 0;
+                  const kwh = eb.kwhPredicted || 0; // Norm kWh column — weather-normalized, not billed
                   const kw = eb.demandKW || 0;
                   const bilKW = eb.billedKW || 0;
                   const facKW = eb.facKW || 0;
@@ -226,7 +226,7 @@ function _buildBaselineDataHtml(b, projId) {
                   const avgKw = kw > 0 && kwCost > 0 ? kwCost / kw : 0;
                   const days = eb.normDays || 30;
                   const lf = kw > 0 && kwh > 0 ? kwh / (kw * 24 * days) : 0;
-                  const therms = gb.therms || 0;
+                  const therms = gb.thermsPredicted || 0;
                   const gCost = gb.cost || 0;
                   const avgTherm = therms > 0 && gCost > 0 ? gCost / therms : 0;
                   const propGal = pb.gallons || 0;
