@@ -466,10 +466,19 @@ function getNormRows(m, bills, incl, weatherByYm) {
     bills.forEach((row) => {
       if (!row.start || !row.end) return;
       const totalDays = Math.max(1, parseInt(calcDays(row.start, row.end, incl)) || 1);
+      // Gas usage field chain (2026-09-22): `therms` is the canonical field, but bills saved by
+      // some import paths carry the value only in the extractor's own `naturalGasTherms` /
+      // `naturalGasMMbtu` (1 MMBtu = 10 Therms — same conversion app/csv-import.js applies).
+      // Reading only `therms` silently zeroed those months' usage in every baseline consumer
+      // (regression fit, buildMoMap, EUI). Same chain the Baseline & Savings report's raw
+      // bill page uses, so the site path and the report page agree on the same bill.
       const usage = isElec
         ? parseFloat(row.kwh) || 0
         : isGas
-          ? parseFloat(row.therms) || 0
+          ? parseFloat(row.therms) ||
+            parseFloat(row.naturalGasTherms) ||
+            (parseFloat(row.naturalGasMMbtu) || 0) * 10 ||
+            0
           : isSewer
             ? parseFloat(row.sewerUsage) || parseFloat(row.waterUsage) || 0
             : parseFloat(row.waterUsage) || 0;

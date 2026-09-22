@@ -5174,6 +5174,347 @@ function rptPageSetPoints(n, d) {
 
   return { html: resultPages.join(''), pageCount: resultPages.length };
 }
+// -----------------------------------------------------------------------
+// rptBuildBaselineDataTable(b, d)
+//
+// The "Building Baseline Data" table (stats strip: Sq Ft, Electric Use/SF, Utility Cost/SF,
+// Avg Electric Rate, Avg Gas Rate, Site EUI, Total Annual Utility Cost — then the monthly
+// Jan-Dec grid + Annual row, columns grouped by commodity). ONE source of truth, shared by
+// rptPageBuildingSummary (the per-building summary page of every standard report) and the
+// Baseline & Savings report's Baseline Summary page (app/report-engine-woodland.js).
+// Extracted verbatim from rptPageBuildingSummary (2026-09-22) — the summary page's output is
+// byte-identical to the pre-extraction inline block (proved by diffing all 24 summary pages
+// of the local backup before/after).
+//   b — a collectReportData() building record: commodities[], electric.kwhBl, gas.thermsBl,
+//       propane.galBl, sqft, baselineMaps.{elecByMo,gasByMo,propaneByMo,waterByMo}
+//   d — the report data object: d.project.id (isCalcCommodity), optional
+//       d.reportOptions.blCommodities overrides
+//   opts — optional. opts.has = {electric, gas, propane} overrides the commodity-presence
+//       gates below. The default gates read b.electric.kwhBl / b.gas.thermsBl / b.propane.galBl,
+//       which collectReportData scopes to the REPORT PERIOD (post-baseline months) — a building
+//       with a full 12-month gas baseline but no post-baseline gas bill yet would otherwise lose
+//       its Gas columns. The Baseline & Savings report (baseline-only, no report period) passes
+//       presence derived from b.baselineMaps instead. Omitted => exact pre-extraction behavior.
+// Returns the table HTML string, or '' when the building has no baseline month data.
+// -----------------------------------------------------------------------
+function rptBuildBaselineDataTable(b, d, opts) {
+  const $c = function (v) {
+    var val = Math.round(v || 0);
+    return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
+  };
+  const $n = function (v) {
+    return Math.round(v || 0).toLocaleString();
+  };
+  const _has = opts && opts.has ? opts.has : null;
+  const hasElec = _has
+    ? !!_has.electric
+    : b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0;
+  const hasGas = _has ? !!_has.gas : b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
+  const hasPropane = _has
+    ? !!_has.propane
+    : b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
+  var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var _bm = b.baselineMaps || { elecByMo: {}, gasByMo: {}, propaneByMo: {}, waterByMo: {} };
+
+  // -------------------------------------------------------------------
+  // Building Baseline Data table (Energy Dept styling, merged kW Cost, no Load %)
+  // -------------------------------------------------------------------
+  var _blCalcDefaults = {
+    electric: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Electric') : true,
+    gas: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Gas') : true,
+    propane: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Propane') : true,
+    water: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Water') : false,
+  };
+  var _opts = (d.reportOptions && d.reportOptions.blCommodities) || _blCalcDefaults;
+  var _showElec = hasElec && _opts.electric;
+  var _showGas = hasGas && _opts.gas;
+  var _showProp =
+    (hasPropane ||
+      (_bm &&
+        _bm.propaneByMo &&
+        Object.values(_bm.propaneByMo).some(function (v) {
+          return v && (v.gallons > 0 || v.cost > 0);
+        }))) &&
+    _opts.propane;
+  var _showWater = _opts.water && Object.keys(_bm.waterByMo).length > 0;
+  var blDataRows = '';
+  var _tKwh = 0,
+    _tKw = 0,
+    _tBkw = 0,
+    _tKwCost = 0,
+    _tEnCost = 0,
+    _tElecCost = 0;
+  var _tTherms = 0,
+    _tGasCost = 0,
+    _tGal = 0,
+    _tPropCost = 0,
+    _tWater = 0,
+    _tWaterCost = 0,
+    _tTotalCost = 0;
+  for (var mi = 0; mi < 12; mi++) {
+    var eM = _bm.elecByMo[mi] || {};
+    var gM = _bm.gasByMo[mi] || {};
+    var pM = _bm.propaneByMo[mi] || {};
+    var wM = _bm.waterByMo[mi] || {};
+    var kwh = eM.kwh || 0,
+      demKw = eM.demandKW || 0,
+      bKw = eM.billedKW || 0;
+    var kwCostTotal = (eM.kwCost || 0) + (eM.facKWCost || 0),
+      enCost = eM.energyCost || 0;
+    var elecCost = eM.commodityCost || eM.totalCost || 0;
+    var therms = gM.therms || 0,
+      gasCost = gM.cost || 0;
+    var gal = pM.gallons || 0,
+      propCost = pM.cost || 0;
+    var water = wM.kgal || 0,
+      waterCost = wM.cost || 0;
+    var totalCost = elecCost + gasCost + propCost + waterCost;
+    _tKwh += kwh;
+    _tKw += demKw;
+    _tBkw += bKw;
+    _tKwCost += kwCostTotal;
+    _tEnCost += enCost;
+    _tElecCost += elecCost;
+    _tTherms += therms;
+    _tGasCost += gasCost;
+    _tGal += gal;
+    _tPropCost += propCost;
+    _tWater += water;
+    _tWaterCost += waterCost;
+    _tTotalCost += totalCost;
+    var hasData =
+      _bm.elecByMo[mi] != null || _bm.gasByMo[mi] != null || _bm.propaneByMo[mi] != null || _bm.waterByMo[mi] != null;
+    if (!hasData) continue;
+    var costPerKwh = kwh > 0 ? enCost / kwh : 0;
+    blDataRows += '<tr><td>' + MO_SHORT[mi] + '</td>';
+    if (_showElec) {
+      blDataRows +=
+        '<td class="rpt-n">' +
+        (kwh ? $n(kwh) : '—') +
+        '</td>' +
+        '<td class="rpt-n">' +
+        (demKw ? demKw.toFixed(1) : '—') +
+        '</td>' +
+        '<td class="rpt-n">' +
+        (bKw ? bKw.toFixed(1) : '—') +
+        '</td>' +
+        '<td class="rpt-n">' +
+        (kwCostTotal ? $c(kwCostTotal) : '—') +
+        '</td>' +
+        '<td class="rpt-n">' +
+        (enCost ? $c(enCost) : '—') +
+        '</td>' +
+        '<td class="rpt-n">' +
+        (elecCost ? $c(elecCost) : '—') +
+        '</td>' +
+        '<td class="rpt-n">' +
+        (costPerKwh ? '$' + costPerKwh.toFixed(4) : '—') +
+        '</td>';
+    }
+    if (_showGas)
+      blDataRows +=
+        '<td class="rpt-n">' +
+        (therms ? $n(therms) : '—') +
+        '</td><td class="rpt-n">' +
+        (gasCost ? $c(gasCost) : '—') +
+        '</td><td class="rpt-n">' +
+        (gM.rate > 0 ? '$' + gM.rate.toFixed(4) : therms > 0 ? '$' + (gasCost / therms).toFixed(4) : '—') +
+        '</td>';
+    if (_showProp)
+      blDataRows +=
+        '<td class="rpt-n">' +
+        (gal ? $n(gal) : '—') +
+        '</td><td class="rpt-n">' +
+        (propCost ? $c(propCost) : '—') +
+        '</td><td class="rpt-n">' +
+        (gal > 0 ? '$' + (propCost / gal).toFixed(4) : '—') +
+        '</td>';
+    if (_showWater)
+      blDataRows +=
+        '<td class="rpt-n">' +
+        (water ? water.toFixed(1) : '—') +
+        '</td><td class="rpt-n">' +
+        (waterCost ? $c(waterCost) : '—') +
+        '</td><td class="rpt-n">' +
+        (water > 0 ? '$' + (waterCost / water).toFixed(2) : '—') +
+        '</td>';
+    blDataRows += '<td class="rpt-n">' + (totalCost ? $c(totalCost) : '—') + '</td></tr>';
+  }
+  if (blDataRows) {
+    blDataRows += '<tr class="rpt-tot"><td>Annual</td>';
+    if (_showElec) {
+      var _avgCpk = _tKwh > 0 ? _tElecCost / _tKwh : 0;
+      blDataRows +=
+        '<td class="rpt-n">' +
+        $n(_tKwh) +
+        '</td><td class="rpt-n">' +
+        (_tKw ? (_tKw / 12).toFixed(1) : '—') +
+        '</td><td class="rpt-n">' +
+        (_tBkw ? (_tBkw / 12).toFixed(1) : '—') +
+        '</td><td class="rpt-n">' +
+        $c(_tKwCost) +
+        '</td><td class="rpt-n">' +
+        $c(_tEnCost) +
+        '</td><td class="rpt-n">' +
+        $c(_tElecCost) +
+        '</td><td class="rpt-n">' +
+        (_avgCpk ? '$' + _avgCpk.toFixed(4) : '—') +
+        '</td>';
+    }
+    if (_showGas)
+      blDataRows +=
+        '<td class="rpt-n">' +
+        $n(_tTherms) +
+        '</td><td class="rpt-n">' +
+        $c(_tGasCost) +
+        '</td><td class="rpt-n">' +
+        (_tTherms > 0 ? '$' + (_tGasCost / _tTherms).toFixed(4) : '—') +
+        '</td>';
+    if (_showProp)
+      blDataRows +=
+        '<td class="rpt-n">' +
+        $n(_tGal) +
+        '</td><td class="rpt-n">' +
+        $c(_tPropCost) +
+        '</td><td class="rpt-n">' +
+        (_tGal > 0 ? '$' + (_tPropCost / _tGal).toFixed(4) : '—') +
+        '</td>';
+    if (_showWater)
+      blDataRows +=
+        '<td class="rpt-n">' +
+        _tWater.toFixed(1) +
+        '</td><td class="rpt-n">' +
+        $c(_tWaterCost) +
+        '</td><td class="rpt-n">' +
+        (_tWater > 0 ? '$' + (_tWaterCost / _tWater).toFixed(2) : '—') +
+        '</td>';
+    blDataRows += '<td class="rpt-n">' + $c(_tTotalCost) + '</td></tr>';
+  }
+  // Column group header row (commodity-colored)
+  var blGrpHdr = '<th rowspan="2" style="white-space:nowrap">Month</th>';
+  if (_showElec) blGrpHdr += '<th colspan="7" class="bl-grp bl-elec">Electric</th>';
+  if (_showGas) blGrpHdr += '<th colspan="3" class="bl-grp bl-gas">Gas</th>';
+  if (_showProp) blGrpHdr += '<th colspan="3" class="bl-grp bl-prop">Propane</th>';
+  if (_showWater) blGrpHdr += '<th colspan="3" class="bl-grp bl-water">Water</th>';
+  blGrpHdr +=
+    '<th rowspan="2" class="rpt-n bl-grp bl-total" style="white-space:normal;line-height:1.2">Total<br>Cost</th>';
+  // Detail column header row
+  var blHdr = '';
+  if (_showElec)
+    blHdr +=
+      '<th class="rpt-n bl-elec">kWh</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Actual<br>kW</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
+      '<th class="rpt-n bl-elec">$/kWh</th>';
+  if (_showGas)
+    blHdr +=
+      '<th class="rpt-n bl-gas">Therms</th><th class="rpt-n bl-gas" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n bl-gas">$/Therm</th>';
+  if (_showProp)
+    blHdr +=
+      '<th class="rpt-n bl-prop">Gallons</th><th class="rpt-n bl-prop" style="white-space:normal;line-height:1.2">Prop<br>Cost</th><th class="rpt-n bl-prop">$/Gal</th>';
+  if (_showWater)
+    blHdr +=
+      '<th class="rpt-n bl-water">kGal</th><th class="rpt-n bl-water" style="white-space:normal;line-height:1.2">Water<br>Cost</th><th class="rpt-n bl-water">$/kGal</th>';
+
+  // Statistics summary — light bordered grid for print-ready report
+  // D2#18/#19 fix (2026-09-09): clearer label wording, and Utility Cost/SF now formatted
+  // $#.## (2 decimals) — it was $c(Math.round(...)), which rounded a small per-sqft dollar
+  // value (typically $1-6) down to a whole dollar and lost almost all its precision.
+  var blStats = '';
+  if (blDataRows) {
+    var _statItems = [];
+    if (b.sqft > 0)
+      _statItems.push(
+        '<div><div class="bl-stat-label">Square Feet</div><div class="bl-stat-val">' +
+          b.sqft.toLocaleString() +
+          '</div></div>',
+      );
+    if (b.sqft > 0 && _tKwh > 0)
+      _statItems.push(
+        '<div><div class="bl-stat-label">Electric Use / SF (kWh)</div><div class="bl-stat-val">' +
+          (_tKwh / b.sqft).toFixed(2) +
+          '</div></div>',
+      );
+    if (b.sqft > 0 && _tTotalCost > 0)
+      _statItems.push(
+        '<div><div class="bl-stat-label">Utility Cost / SF</div><div class="bl-stat-val">$' +
+          (_tTotalCost / b.sqft).toFixed(2) +
+          '</div></div>',
+      );
+    if (_tKwh > 0 && _tElecCost > 0)
+      _statItems.push(
+        '<div><div class="bl-stat-label">Avg Electric Rate ($/kWh)</div><div class="bl-stat-val">$' +
+          (_tElecCost / _tKwh).toFixed(4) +
+          '</div></div>',
+      );
+    if (_tTherms > 0 && _tGasCost > 0)
+      _statItems.push(
+        '<div><div class="bl-stat-label">Avg Gas Rate ($/Therm)</div><div class="bl-stat-val">$' +
+          (_tGasCost / _tTherms).toFixed(4) +
+          '</div></div>',
+      );
+    var _totalKbtu = toKBtu(_tKwh, _tTherms, _tGal);
+    if (b.sqft > 0 && _totalKbtu > 0)
+      _statItems.push(
+        '<div><div class="bl-stat-label">Site EUI (kBtu/SF)</div><div class="bl-stat-val">' +
+          (_totalKbtu / b.sqft).toFixed(2) +
+          '</div></div>',
+      );
+    _statItems.push(
+      '<div><div class="bl-stat-label">Total Annual Utility Cost</div><div class="bl-stat-val">' +
+        $c(_tTotalCost) +
+        '</div></div>',
+    );
+    blStats = '<div class="rpt-bl-stats">' + _statItems.join('') + '</div>';
+  }
+
+  // report-pass2 fix (2026-09-10): this table can carry up to 18 columns (Month + 7 Electric +
+  // 3 Gas + 3 Propane + 3 Water + Total Cost). With table-layout:auto and 6px/side cell padding,
+  // the browser let the table grow WIDER than the page's printable content area whenever a real
+  // building had enough columns (elec+gas is the common case), and the overflow — the trailing
+  // column(s), e.g. Gas $/Therm — was physically sliced off at the page edge in print (reviewer:
+  // "$0.7" instead of "$0.798"). table-layout:fixed with an explicit colgroup summing to 100%
+  // makes the table width mathematically bounded to the page, so no column can ever be cut off;
+  // the trade is that a value which doesn't fit its fixed column wraps instead (the existing
+  // '.rpt-table td{overflow-wrap:anywhere}' rule already provides that fallback). Also tightens
+  // font-size/padding for this table only (scoped via .rpt-bl-tight, not the shared .rpt-table-bl
+  // rule) so a full 18-column row still reads cleanly at the narrower per-column width.
+  var _blDetailColCount = (_showElec ? 7 : 0) + (_showGas ? 3 : 0) + (_showProp ? 3 : 0) + (_showWater ? 3 : 0);
+  var _blMonthW = 7;
+  var _blTotalW = 8;
+  var _blDetailW = _blDetailColCount > 0 ? (100 - _blMonthW - _blTotalW) / _blDetailColCount : 0;
+  function _blCol(w) {
+    return '<col style="width:' + w.toFixed(2) + '%">';
+  }
+  var blColgroup = '<colgroup>' + _blCol(_blMonthW);
+  if (_showElec) for (var _i = 0; _i < 7; _i++) blColgroup += _blCol(_blDetailW);
+  if (_showGas) for (var _j = 0; _j < 3; _j++) blColgroup += _blCol(_blDetailW);
+  if (_showProp) for (var _k = 0; _k < 3; _k++) blColgroup += _blCol(_blDetailW);
+  if (_showWater) for (var _l = 0; _l < 3; _l++) blColgroup += _blCol(_blDetailW);
+  blColgroup += _blCol(_blTotalW) + '</colgroup>';
+
+  var blDataTable = blDataRows
+    ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text);page-break-inside:avoid;break-inside:avoid">' +
+      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px}.rpt-bl-tight{font-size:8.5px}</style>' +
+      blStats +
+      '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
+      '<table class="rpt-table rpt-table-bl rpt-bl-tight" style="width:100%;table-layout:fixed">' +
+      blColgroup +
+      '<thead><tr>' +
+      blGrpHdr +
+      '</tr><tr>' +
+      blHdr +
+      '</tr></thead><tbody>' +
+      blDataRows +
+      '</tbody></table></div>'
+    : '';
+
+  return blDataTable;
+}
+
 function rptPageBuildingSummary(n, d, b) {
   const $c = function (v) {
     var val = Math.round(v || 0);
@@ -5815,300 +6156,10 @@ function rptPageBuildingSummary(n, d, b) {
   }
 
   // -------------------------------------------------------------------
-  // Building Baseline Data table (Energy Dept styling, merged kW Cost, no Load %)
+  // Building Baseline Data table — shared builder rptBuildBaselineDataTable() (above), also
+  // used by the Baseline & Savings report's Baseline Summary page (report-engine-woodland.js).
   // -------------------------------------------------------------------
-  var _blCalcDefaults = {
-    electric: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Electric') : true,
-    gas: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Gas') : true,
-    propane: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Propane') : true,
-    water: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Water') : false,
-  };
-  var _opts = (d.reportOptions && d.reportOptions.blCommodities) || _blCalcDefaults;
-  var _showElec = hasElec && _opts.electric;
-  var _showGas = hasGas && _opts.gas;
-  var _showProp =
-    (hasPropane ||
-      (_bm &&
-        _bm.propaneByMo &&
-        Object.values(_bm.propaneByMo).some(function (v) {
-          return v && (v.gallons > 0 || v.cost > 0);
-        }))) &&
-    _opts.propane;
-  var _showWater = _opts.water && Object.keys(_bm.waterByMo).length > 0;
-  var blDataRows = '';
-  var _tKwh = 0,
-    _tKw = 0,
-    _tBkw = 0,
-    _tKwCost = 0,
-    _tEnCost = 0,
-    _tElecCost = 0;
-  var _tTherms = 0,
-    _tGasCost = 0,
-    _tGal = 0,
-    _tPropCost = 0,
-    _tWater = 0,
-    _tWaterCost = 0,
-    _tTotalCost = 0;
-  for (var mi = 0; mi < 12; mi++) {
-    var eM = _bm.elecByMo[mi] || {};
-    var gM = _bm.gasByMo[mi] || {};
-    var pM = _bm.propaneByMo[mi] || {};
-    var wM = _bm.waterByMo[mi] || {};
-    var kwh = eM.kwh || 0,
-      demKw = eM.demandKW || 0,
-      bKw = eM.billedKW || 0;
-    var kwCostTotal = (eM.kwCost || 0) + (eM.facKWCost || 0),
-      enCost = eM.energyCost || 0;
-    var elecCost = eM.commodityCost || eM.totalCost || 0;
-    var therms = gM.therms || 0,
-      gasCost = gM.cost || 0;
-    var gal = pM.gallons || 0,
-      propCost = pM.cost || 0;
-    var water = wM.kgal || 0,
-      waterCost = wM.cost || 0;
-    var totalCost = elecCost + gasCost + propCost + waterCost;
-    _tKwh += kwh;
-    _tKw += demKw;
-    _tBkw += bKw;
-    _tKwCost += kwCostTotal;
-    _tEnCost += enCost;
-    _tElecCost += elecCost;
-    _tTherms += therms;
-    _tGasCost += gasCost;
-    _tGal += gal;
-    _tPropCost += propCost;
-    _tWater += water;
-    _tWaterCost += waterCost;
-    _tTotalCost += totalCost;
-    var hasData =
-      _bm.elecByMo[mi] != null || _bm.gasByMo[mi] != null || _bm.propaneByMo[mi] != null || _bm.waterByMo[mi] != null;
-    if (!hasData) continue;
-    var costPerKwh = kwh > 0 ? enCost / kwh : 0;
-    blDataRows += '<tr><td>' + MO_SHORT[mi] + '</td>';
-    if (_showElec) {
-      blDataRows +=
-        '<td class="rpt-n">' +
-        (kwh ? $n(kwh) : '—') +
-        '</td>' +
-        '<td class="rpt-n">' +
-        (demKw ? demKw.toFixed(1) : '—') +
-        '</td>' +
-        '<td class="rpt-n">' +
-        (bKw ? bKw.toFixed(1) : '—') +
-        '</td>' +
-        '<td class="rpt-n">' +
-        (kwCostTotal ? $c(kwCostTotal) : '—') +
-        '</td>' +
-        '<td class="rpt-n">' +
-        (enCost ? $c(enCost) : '—') +
-        '</td>' +
-        '<td class="rpt-n">' +
-        (elecCost ? $c(elecCost) : '—') +
-        '</td>' +
-        '<td class="rpt-n">' +
-        (costPerKwh ? '$' + costPerKwh.toFixed(4) : '—') +
-        '</td>';
-    }
-    if (_showGas)
-      blDataRows +=
-        '<td class="rpt-n">' +
-        (therms ? $n(therms) : '—') +
-        '</td><td class="rpt-n">' +
-        (gasCost ? $c(gasCost) : '—') +
-        '</td><td class="rpt-n">' +
-        (gM.rate > 0 ? '$' + gM.rate.toFixed(4) : therms > 0 ? '$' + (gasCost / therms).toFixed(4) : '—') +
-        '</td>';
-    if (_showProp)
-      blDataRows +=
-        '<td class="rpt-n">' +
-        (gal ? $n(gal) : '—') +
-        '</td><td class="rpt-n">' +
-        (propCost ? $c(propCost) : '—') +
-        '</td><td class="rpt-n">' +
-        (gal > 0 ? '$' + (propCost / gal).toFixed(4) : '—') +
-        '</td>';
-    if (_showWater)
-      blDataRows +=
-        '<td class="rpt-n">' +
-        (water ? water.toFixed(1) : '—') +
-        '</td><td class="rpt-n">' +
-        (waterCost ? $c(waterCost) : '—') +
-        '</td><td class="rpt-n">' +
-        (water > 0 ? '$' + (waterCost / water).toFixed(2) : '—') +
-        '</td>';
-    blDataRows += '<td class="rpt-n">' + (totalCost ? $c(totalCost) : '—') + '</td></tr>';
-  }
-  if (blDataRows) {
-    blDataRows += '<tr class="rpt-tot"><td>Annual</td>';
-    if (_showElec) {
-      var _avgCpk = _tKwh > 0 ? _tElecCost / _tKwh : 0;
-      blDataRows +=
-        '<td class="rpt-n">' +
-        $n(_tKwh) +
-        '</td><td class="rpt-n">' +
-        (_tKw ? (_tKw / 12).toFixed(1) : '—') +
-        '</td><td class="rpt-n">' +
-        (_tBkw ? (_tBkw / 12).toFixed(1) : '—') +
-        '</td><td class="rpt-n">' +
-        $c(_tKwCost) +
-        '</td><td class="rpt-n">' +
-        $c(_tEnCost) +
-        '</td><td class="rpt-n">' +
-        $c(_tElecCost) +
-        '</td><td class="rpt-n">' +
-        (_avgCpk ? '$' + _avgCpk.toFixed(4) : '—') +
-        '</td>';
-    }
-    if (_showGas)
-      blDataRows +=
-        '<td class="rpt-n">' +
-        $n(_tTherms) +
-        '</td><td class="rpt-n">' +
-        $c(_tGasCost) +
-        '</td><td class="rpt-n">' +
-        (_tTherms > 0 ? '$' + (_tGasCost / _tTherms).toFixed(4) : '—') +
-        '</td>';
-    if (_showProp)
-      blDataRows +=
-        '<td class="rpt-n">' +
-        $n(_tGal) +
-        '</td><td class="rpt-n">' +
-        $c(_tPropCost) +
-        '</td><td class="rpt-n">' +
-        (_tGal > 0 ? '$' + (_tPropCost / _tGal).toFixed(4) : '—') +
-        '</td>';
-    if (_showWater)
-      blDataRows +=
-        '<td class="rpt-n">' +
-        _tWater.toFixed(1) +
-        '</td><td class="rpt-n">' +
-        $c(_tWaterCost) +
-        '</td><td class="rpt-n">' +
-        (_tWater > 0 ? '$' + (_tWaterCost / _tWater).toFixed(2) : '—') +
-        '</td>';
-    blDataRows += '<td class="rpt-n">' + $c(_tTotalCost) + '</td></tr>';
-  }
-  // Column group header row (commodity-colored)
-  var blGrpHdr = '<th rowspan="2" style="white-space:nowrap">Month</th>';
-  if (_showElec) blGrpHdr += '<th colspan="7" class="bl-grp bl-elec">Electric</th>';
-  if (_showGas) blGrpHdr += '<th colspan="3" class="bl-grp bl-gas">Gas</th>';
-  if (_showProp) blGrpHdr += '<th colspan="3" class="bl-grp bl-prop">Propane</th>';
-  if (_showWater) blGrpHdr += '<th colspan="3" class="bl-grp bl-water">Water</th>';
-  blGrpHdr +=
-    '<th rowspan="2" class="rpt-n bl-grp bl-total" style="white-space:normal;line-height:1.2">Total<br>Cost</th>';
-  // Detail column header row
-  var blHdr = '';
-  if (_showElec)
-    blHdr +=
-      '<th class="rpt-n bl-elec">kWh</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Actual<br>kW</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
-      '<th class="rpt-n bl-elec">$/kWh</th>';
-  if (_showGas)
-    blHdr +=
-      '<th class="rpt-n bl-gas">Therms</th><th class="rpt-n bl-gas" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n bl-gas">$/Therm</th>';
-  if (_showProp)
-    blHdr +=
-      '<th class="rpt-n bl-prop">Gallons</th><th class="rpt-n bl-prop" style="white-space:normal;line-height:1.2">Prop<br>Cost</th><th class="rpt-n bl-prop">$/Gal</th>';
-  if (_showWater)
-    blHdr +=
-      '<th class="rpt-n bl-water">kGal</th><th class="rpt-n bl-water" style="white-space:normal;line-height:1.2">Water<br>Cost</th><th class="rpt-n bl-water">$/kGal</th>';
-
-  // Statistics summary — light bordered grid for print-ready report
-  // D2#18/#19 fix (2026-09-09): clearer label wording, and Utility Cost/SF now formatted
-  // $#.## (2 decimals) — it was $c(Math.round(...)), which rounded a small per-sqft dollar
-  // value (typically $1-6) down to a whole dollar and lost almost all its precision.
-  var blStats = '';
-  if (blDataRows) {
-    var _statItems = [];
-    if (b.sqft > 0)
-      _statItems.push(
-        '<div><div class="bl-stat-label">Square Feet</div><div class="bl-stat-val">' +
-          b.sqft.toLocaleString() +
-          '</div></div>',
-      );
-    if (b.sqft > 0 && _tKwh > 0)
-      _statItems.push(
-        '<div><div class="bl-stat-label">Electric Use / SF (kWh)</div><div class="bl-stat-val">' +
-          (_tKwh / b.sqft).toFixed(2) +
-          '</div></div>',
-      );
-    if (b.sqft > 0 && _tTotalCost > 0)
-      _statItems.push(
-        '<div><div class="bl-stat-label">Utility Cost / SF</div><div class="bl-stat-val">$' +
-          (_tTotalCost / b.sqft).toFixed(2) +
-          '</div></div>',
-      );
-    if (_tKwh > 0 && _tElecCost > 0)
-      _statItems.push(
-        '<div><div class="bl-stat-label">Avg Electric Rate ($/kWh)</div><div class="bl-stat-val">$' +
-          (_tElecCost / _tKwh).toFixed(4) +
-          '</div></div>',
-      );
-    if (_tTherms > 0 && _tGasCost > 0)
-      _statItems.push(
-        '<div><div class="bl-stat-label">Avg Gas Rate ($/Therm)</div><div class="bl-stat-val">$' +
-          (_tGasCost / _tTherms).toFixed(4) +
-          '</div></div>',
-      );
-    var _totalKbtu = toKBtu(_tKwh, _tTherms, _tGal);
-    if (b.sqft > 0 && _totalKbtu > 0)
-      _statItems.push(
-        '<div><div class="bl-stat-label">Site EUI (kBtu/SF)</div><div class="bl-stat-val">' +
-          (_totalKbtu / b.sqft).toFixed(2) +
-          '</div></div>',
-      );
-    _statItems.push(
-      '<div><div class="bl-stat-label">Total Annual Utility Cost</div><div class="bl-stat-val">' +
-        $c(_tTotalCost) +
-        '</div></div>',
-    );
-    blStats = '<div class="rpt-bl-stats">' + _statItems.join('') + '</div>';
-  }
-
-  // report-pass2 fix (2026-09-10): this table can carry up to 18 columns (Month + 7 Electric +
-  // 3 Gas + 3 Propane + 3 Water + Total Cost). With table-layout:auto and 6px/side cell padding,
-  // the browser let the table grow WIDER than the page's printable content area whenever a real
-  // building had enough columns (elec+gas is the common case), and the overflow — the trailing
-  // column(s), e.g. Gas $/Therm — was physically sliced off at the page edge in print (reviewer:
-  // "$0.7" instead of "$0.798"). table-layout:fixed with an explicit colgroup summing to 100%
-  // makes the table width mathematically bounded to the page, so no column can ever be cut off;
-  // the trade is that a value which doesn't fit its fixed column wraps instead (the existing
-  // '.rpt-table td{overflow-wrap:anywhere}' rule already provides that fallback). Also tightens
-  // font-size/padding for this table only (scoped via .rpt-bl-tight, not the shared .rpt-table-bl
-  // rule) so a full 18-column row still reads cleanly at the narrower per-column width.
-  var _blDetailColCount = (_showElec ? 7 : 0) + (_showGas ? 3 : 0) + (_showProp ? 3 : 0) + (_showWater ? 3 : 0);
-  var _blMonthW = 7;
-  var _blTotalW = 8;
-  var _blDetailW = _blDetailColCount > 0 ? (100 - _blMonthW - _blTotalW) / _blDetailColCount : 0;
-  function _blCol(w) {
-    return '<col style="width:' + w.toFixed(2) + '%">';
-  }
-  var blColgroup = '<colgroup>' + _blCol(_blMonthW);
-  if (_showElec) for (var _i = 0; _i < 7; _i++) blColgroup += _blCol(_blDetailW);
-  if (_showGas) for (var _j = 0; _j < 3; _j++) blColgroup += _blCol(_blDetailW);
-  if (_showProp) for (var _k = 0; _k < 3; _k++) blColgroup += _blCol(_blDetailW);
-  if (_showWater) for (var _l = 0; _l < 3; _l++) blColgroup += _blCol(_blDetailW);
-  blColgroup += _blCol(_blTotalW) + '</colgroup>';
-
-  var blDataTable = blDataRows
-    ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text);page-break-inside:avoid;break-inside:avoid">' +
-      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px}.rpt-bl-tight{font-size:8.5px}</style>' +
-      blStats +
-      '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
-      '<table class="rpt-table rpt-table-bl rpt-bl-tight" style="width:100%;table-layout:fixed">' +
-      blColgroup +
-      '<thead><tr>' +
-      blGrpHdr +
-      '</tr><tr>' +
-      blHdr +
-      '</tr></thead><tbody>' +
-      blDataRows +
-      '</tbody></table></div>'
-    : '';
+  var blDataTable = rptBuildBaselineDataTable(b, d);
 
   // -------------------------------------------------------------------
   // Meter Performance table — uses shared buildMeterPerfTableHTML

@@ -133,7 +133,7 @@ function saveProjBaselineRates(projId) {
 
 function calcBldgDefaultRates(projId, bldgId) {
   const b = getUDBldg(projId, bldgId);
-  if (!b) return { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0 };
+  if (!b) return { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0, gasSummer: 0, gasWinter: 0 };
   const meters = b.meters || [];
   const elecM = meters.find((m) => m.commodity === 'Electric');
   const gasM = meters.find((m) => m.commodity === 'Gas');
@@ -150,6 +150,13 @@ function calcBldgDefaultRates(projId, bldgId) {
     winKwDemand = 0;
   let totalTherms = 0,
     totalGasCost = 0;
+  // Seasonal gas buckets (2026-09-22, Baseline & Savings report): same Jun-Sep / Oct-May
+  // split as the kWh buckets above, so a measure can carry a summer and a winter $/Therm.
+  // Consumers fall back to thermRate when either seasonal value is 0/absent.
+  let sumGasCost = 0,
+    sumTherms = 0,
+    winGasCost = 0,
+    winTherms = 0;
   if (elecM)
     (elecM.bills || []).forEach((bill) => {
       const mo = new Date(bill.start).getMonth();
@@ -177,8 +184,17 @@ function calcBldgDefaultRates(projId, bldgId) {
     });
   if (gasM)
     (gasM.bills || []).forEach((bill) => {
-      totalTherms += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
-      totalGasCost += parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
+      const th = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+      const gc = parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
+      totalTherms += th;
+      totalGasCost += gc;
+      if (SUMMER.includes(new Date(bill.start).getMonth())) {
+        sumTherms += th;
+        sumGasCost += gc;
+      } else {
+        winTherms += th;
+        winGasCost += gc;
+      }
     });
   const propaneM = meters.find((m) => m.commodity === 'Propane');
   let totalGallons = 0,
@@ -194,6 +210,8 @@ function calcBldgDefaultRates(projId, bldgId) {
     kwSummer: sumKwDemand > 0 ? Math.round((sumKwCost / sumKwDemand) * 100) / 100 : 0,
     kwWinter: winKwDemand > 0 ? Math.round((winKwCost / winKwDemand) * 100) / 100 : 0,
     thermRate: totalTherms > 0 ? Math.round((totalGasCost / totalTherms) * 1000) / 1000 : 0,
+    gasSummer: sumTherms > 0 ? Math.round((sumGasCost / sumTherms) * 1000) / 1000 : 0,
+    gasWinter: winTherms > 0 ? Math.round((winGasCost / winTherms) * 1000) / 1000 : 0,
     gallonRate: totalGallons > 0 ? Math.round((totalPropaneCost / totalGallons) * 1000) / 1000 : 0,
   };
 }
@@ -216,7 +234,16 @@ function addSavingsMeasure(projId) {
     incentive: 0,
     rates: firstBldg
       ? calcBldgDefaultRates(projId, firstBldg.id)
-      : { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0, gallonRate: 0 },
+      : {
+          kwhSummer: 0,
+          kwhWinter: 0,
+          kwSummer: 0,
+          kwWinter: 0,
+          thermRate: 0,
+          gasSummer: 0,
+          gasWinter: 0,
+          gallonRate: 0,
+        },
     kwh: Array(12).fill(0),
     kw: Array(12).fill(0),
     gas: Array(12).fill(0),
@@ -363,6 +390,8 @@ function renderSavingsMatrix(projId) {
                     <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwSummer',parseFloat(this.value)||0)"></div>
                     <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwWinter',parseFloat(this.value)||0)"></div>
                     <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${m.id}','thermRate',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${m.id}','gasSummer',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${m.id}','gasWinter',parseFloat(this.value)||0)"></div>
                     <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${m.id}','gallonRate',parseFloat(this.value)||0)"></div>
                   </div>
                   <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${m.id}')">Reset to Building Defaults</button>
@@ -1043,6 +1072,8 @@ function _renderSavingsContent(wrap, projId) {
                       <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${mid}','kwSummer',parseFloat(this.value)||0)"></div>
                       <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${mid}','kwWinter',parseFloat(this.value)||0)"></div>
                       <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${mid}','thermRate',parseFloat(this.value)||0)"></div>
+                      <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasSummer',parseFloat(this.value)||0)"></div>
+                      <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasWinter',parseFloat(this.value)||0)"></div>
                       <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${mid}','gallonRate',parseFloat(this.value)||0)"></div>
                     </div>
                     <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${mid}')">Reset to Building Defaults</button>
