@@ -1742,6 +1742,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.21.863',
+    date: '2026-09-21',
+    title: 'Equipment Matrix labels, gas rate preview, and Quick Start guide fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix setpoint check now says "ASHRAE 36" instead of "GL36", and the column that shows your current setting is now labeled "Current" instead of "Your Setting".',
+      },
+      {
+        type: 'fix',
+        text: 'Gas bill extraction preview now shows the correct $/Therm or $/MMBtu rate for bills billed in MMBtu (such as Wood River Energy) instead of a blank or wrong rate.',
+      },
+      {
+        type: 'fix',
+        text: 'Estimated/projected savings for a planned measure now display for projects that do not yet have a signed Service Agreement number. Actual bill-based savings still require a signed Service Agreement, as before.',
+      },
+      {
+        type: 'fix',
+        text: 'Quick Start guide overlay on Energy Department no longer blocks dropping a file onto the bill upload zone — dragging a file over the guide now closes it and lets the drop go through.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.21.862',
     date: '2026-09-21',
     title: 'Utility bill CSV import: gas component detail, electric rates, and savings display',
