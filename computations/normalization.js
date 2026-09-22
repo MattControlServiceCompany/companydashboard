@@ -144,6 +144,21 @@ function buildMoMap(m, blRows, bills, incl) {
     const cnt = entries.length; // number of years contributing to this calendar month
     if (isElec) {
       const kwh = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
+      // Raw billed kWh (never weather-regressed, never day-prorated) — 2026-09-22 baseline-table
+      // fix. `kwh` above stays regression-normalized for savings/comparison math; `kwhBilled` is
+      // the true billed total callers must use for the audit-oracle baseline number (site table).
+      // day-proration (r.usage / normUsage, above) fractionally splits a bill that straddles a
+      // calendar-month boundary between two months — correct for regression/EUI/savings math,
+      // but NOT what "raw billed kWh" means to a reader reconciling against the actual bills:
+      // that reader expects each whole bill assigned to ONE month (its end date's month — same
+      // rule as the raw-bill report page's _wdAssignedYm), so re-derive it from `bills` directly.
+      const kwhBilled =
+        entries.reduce((s, e) => {
+          const wholeBillSum = bills
+            .filter((bl) => ((bl.end || bl.start || '') + '').slice(0, 7) === e.r.ym)
+            .reduce((ss, bl) => ss + (parseFloat(bl.kwh) || 0), 0);
+          return s + wholeBillSum;
+        }, 0) / cnt;
       const demandKW =
         entries.reduce(
           (s, e) => s + (e.bfr.length ? Math.max(...e.bfr.map((b) => parseFloat(b.demandKW || 0))) : 0),
@@ -170,6 +185,7 @@ function buildMoMap(m, blRows, bills, incl) {
       const normDays = entries.reduce((s, e) => s + e.r.normDays, 0) / cnt;
       elecByMo[mo] = {
         kwh,
+        kwhBilled,
         demandKW,
         billedKW,
         facKW,
@@ -182,6 +198,22 @@ function buildMoMap(m, blRows, bills, incl) {
       };
     } else if (isGas) {
       const therms = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
+      // Raw billed Therms (whole-bill-per-month, same convention as kwhBilled above) — 2026-09-22.
+      const thermsBilled =
+        entries.reduce((s, e) => {
+          const wholeBillSum = bills
+            .filter((bl) => ((bl.end || bl.start || '') + '').slice(0, 7) === e.r.ym)
+            .reduce(
+              (ss, bl) =>
+                ss +
+                (parseFloat(bl.therms) ||
+                  parseFloat(bl.naturalGasTherms) ||
+                  (parseFloat(bl.naturalGasMMbtu) || 0) * 10 ||
+                  0),
+              0,
+            );
+          return s + wholeBillSum;
+        }, 0) / cnt;
       const cost = entries.reduce((s, e) => s + (e.normUsage > 0 ? e.r.cost : 0), 0) / cnt;
       const rate =
         entries.reduce(
@@ -189,7 +221,7 @@ function buildMoMap(m, blRows, bills, incl) {
             s + (e.bfr.length > 0 ? e.bfr.reduce((ss, b) => ss + getStoredRate(b, 'gas'), 0) / e.bfr.length : 0),
           0,
         ) / cnt;
-      gasByMo[mo] = { therms, cost, rate };
+      gasByMo[mo] = { therms, thermsBilled, cost, rate };
     } else if (isPropane) {
       const gallons = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
       const cost = entries.reduce((s, e) => s + e.r.cost, 0) / cnt;
@@ -466,6 +498,12 @@ function getNormRows(m, bills, incl, weatherByYm) {
     bills.forEach((row) => {
       if (!row.start || !row.end) return;
       const totalDays = Math.max(1, parseInt(calcDays(row.start, row.end, incl)) || 1);
+      // Gas usage field chain (2026-09-22): `therms` is the canonical field, but bills saved by
+      // some import paths carry the value only in the extractor's own `naturalGasTherms` /
+      // `naturalGasMMbtu` (1 MMBtu = 10 Therms — same conversion app/csv-import.js applies).
+      // Reading only `therms` silently zeroed those months' usage in every baseline consumer
+      // (regression fit, buildMoMap, EUI). Same chain the Baseline & Savings report's raw
+      // bill page uses, so the site path and the report page agree on the same bill.
       const usage = isElec
         ? parseFloat(row.kwh) || 0
         : isGas

@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.872',
+    date: '2026-09-22',
+    title: 'Finalized Baseline & BAS Savings report',
+    items: [
+      {
+        type: 'feature',
+        text: 'Baseline & BAS Savings report (Energy Department) is finalized — client-voice narration throughout, a peak-demand and raw-billed baseline table, absolute HVAC cooling kWh and heating therms figures, a 12-month BAS savings grid, and 70/30 shared-savings financials.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.871',
     date: '2026-09-22',
     title: 'Fixed gas Normalized tab, baseline, and Site EUI reading as 0',
