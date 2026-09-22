@@ -428,7 +428,7 @@ function rptPageWoodlandBills(n, d) {
     // Average column for demand kW should be an average of the 12 monthly demands, not a sum —
     // handled naturally since _rptTotalAvgRow divides every column's sum by n; for demand that
     // still reads as "average monthly demand kW", which is the meaningful figure for that column.
-    var totAvg = _rptTotalAvgRow(sums, 'TOTAL (Annual)', 12);
+    var totAvg = _rptTotalAvgRow(sums, 'TOTAL (Annual)', bl.rows.length || 1);
     return (
       '<table class="rpt-table rpt-table-compact rpt-mp-dense"><thead>' +
       head +
@@ -554,7 +554,7 @@ function rptPageWoodlandBaseline(n, d) {
     body +=
       '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:15%">Month</th><th class="rpt-n" style="width:5%">Days</th><th class="rpt-n" style="width:6%">HDD</th><th class="rpt-n" style="width:6%">CDD</th><th style="width:40%">Calculation</th><th class="rpt-n" style="width:14%">Predicted kWh</th><th class="rpt-n" style="width:14%">Actual kWh</th></tr></thead><tbody>' +
       rows +
-      _rptTotalAvgRow(sums, 'TOTAL (Annual)', 12) +
+      _rptTotalAvgRow(sums, 'TOTAL (Annual)', bl.months.length || 1) +
       '</tbody></table>';
   }
 
@@ -803,10 +803,16 @@ function rptPageWoodlandBASCalc(n, d) {
     '</tbody></table>';
   if (optA) {
     var rows = '';
+    // Precision note (Calc review, 2026-09-22): Heat Therms / Cool kWh are shown at 2 decimal
+    // places — the SAME precision they're stored at in the BAS savings-model data (confirmed
+    // lossless, not a display truncation) — so a reader multiplying the shown operand by the
+    // shown seasonal rate (Seasonal Marginal Rates table above) reproduces the shown Gas $ /
+    // Elec Energy $ Saved cell to the penny, and the row's Gas+Elec+Demand $ cells (summed
+    // left to right, matching mo.total$'s own gas$+elec$+dem$ order) reproduce Total $ Saved.
     var sums = [
-      { sum: 0, dec: 1 }, // heat therms
+      { sum: 0, dec: 2 }, // heat therms
       { sum: 0, dec: 2, fmt: 'c' }, // gas $
-      { sum: 0, dec: 0 }, // cool kwh
+      { sum: 0, dec: 2 }, // cool kwh
       { sum: 0, dec: 2, fmt: 'c' }, // elec $
       { sum: 0, dec: 2, fmt: 'c' }, // demand $
       { sum: 0, dec: 2, fmt: 'c' }, // total $
@@ -825,12 +831,12 @@ function rptPageWoodlandBASCalc(n, d) {
         (mo.summer ? ' (S)' : ' (W)') +
         '</td>' +
         '<td class="rpt-n">' +
-        _wdN(optA.gas[i] || 0, 1) +
+        _wdN(optA.gas[i] || 0, 2) +
         '</td><td class="rpt-n">' +
         _wdC(mo.gas$) +
         '</td>' +
         '<td class="rpt-n">' +
-        _wdN(optA.kwh[i] || 0) +
+        _wdN(optA.kwh[i] || 0, 2) +
         '</td><td class="rpt-n">' +
         _wdC(mo.elec$) +
         '</td>' +
@@ -846,7 +852,7 @@ function rptPageWoodlandBASCalc(n, d) {
       '</h2>' +
       '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:13%">Month (S/W = rate season)</th><th class="rpt-n" style="width:15%">Heat Therms Saved</th><th class="rpt-n" style="width:14%">Gas $ Saved</th><th class="rpt-n" style="width:15%">Cool kWh Saved</th><th class="rpt-n" style="width:15%">Elec Energy $ Saved</th><th class="rpt-n" style="width:14%">Demand $ Saved</th><th class="rpt-n" style="width:14%">Total $ Saved</th></tr></thead><tbody>' +
       rows +
-      _rptTotalAvgRow(sums, 'TOTAL (Annual)', 12) +
+      _rptTotalAvgRow(sums, 'TOTAL (Annual)', optA.monthly.length || 1) +
       '</tbody></table>' +
       '<h2 style="margin:4px 0 2px">Result</h2>' +
       '<table class="rpt-table rpt-mp-dense" style="margin:2px 0"><tbody>' +
@@ -957,34 +963,41 @@ function rptPageWoodlandOptions(n, d) {
     // (January), literally spelled out — Coordinator constraint 2.
     var aug = o.monthly[7],
       jan = o.monthly[0];
+    // Precision + order note (Calc review, 2026-09-22): every operand below is shown to the SAME
+    // decimal precision it's stored at (2dp for kWh/kW/Therms — confirmed lossless against the
+    // source BAS savings-model data, not a display truncation) and summed in the SAME left-to-
+    // right order the code uses for aug.total$/jan.total$ (gas, then electric, then demand) —
+    // both are required for a reader's hand computation to land on the printed total to the
+    // penny in every case (floating-point re-association at a landed-on-.xx5 boundary, e.g.
+    // Option C August, silently flips the last cent if the order doesn't match).
     body +=
       '<tr><td colspan="11" style="font-size:10px;font-style:italic;color:var(--rpt-page-text);border-top:none">' +
       'Show your work — August (peak summer): ' +
-      _wdN(o.kwh[7]) +
+      _wdN(o.gas[7], 2) +
+      ' Therms × $' +
+      WOODLAND_SEASONAL_RATES.gasSummer.toFixed(3) +
+      ' + ' +
+      _wdN(o.kwh[7], 2) +
       ' kWh × $' +
       WOODLAND_SEASONAL_RATES.elecEnergySummer.toFixed(4) +
       ' + ' +
       _wdN(o.kw[7], 2) +
       ' kW × $' +
       WOODLAND_SEASONAL_RATES.demandSummer.toFixed(3) +
-      ' + ' +
-      _wdN(o.gas[7], 1) +
-      ' Therms × $' +
-      WOODLAND_SEASONAL_RATES.gasSummer.toFixed(3) +
       ' = ' +
       _wdC(aug.total$) +
       ' &nbsp; | &nbsp; January (peak winter): ' +
-      _wdN(o.kwh[0]) +
+      _wdN(o.gas[0], 2) +
+      ' Therms × $' +
+      WOODLAND_SEASONAL_RATES.gasWinter.toFixed(3) +
+      ' + ' +
+      _wdN(o.kwh[0], 2) +
       ' kWh × $' +
       WOODLAND_SEASONAL_RATES.elecEnergyWinter.toFixed(4) +
       ' + ' +
       _wdN(o.kw[0], 2) +
       ' kW × $' +
       WOODLAND_SEASONAL_RATES.demandWinter.toFixed(3) +
-      ' + ' +
-      _wdN(o.gas[0], 1) +
-      ' Therms × $' +
-      WOODLAND_SEASONAL_RATES.gasWinter.toFixed(3) +
       ' = ' +
       _wdC(jan.total$) +
       '</td></tr>';
