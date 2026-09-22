@@ -8411,15 +8411,6 @@
                 >
                   <span class="s-ico">📊</span>EMS Leads
                 </button>
-                <button
-                  class="s-item"
-                  data-sidebar-id="calculators"
-                  data-fb="energy.sidebar.calculators"
-                  onclick="sv('calculators', this)"
-                  title="Energy Conservation Measure Calculators"
-                >
-                  <span class="s-ico">🧮</span>ECM Calculators
-                </button>
               </div>
             </div>
           </div>
@@ -13613,29 +13604,6 @@
               emsRenderAll(); // populate counts immediately on page load
             })();
           </script>
-          <!-- ECM CALCULATORS VIEW -->
-          <div id="view-calculators" class="view view-flex" data-ui-id="en-calculators" data-fb="energy.calculators">
-            <div
-              class="pg-hdr"
-              style="
-                flex-shrink: 0;
-                padding: 16px 20px 0;
-                border-bottom: 1px solid var(--border);
-                margin-bottom: 0;
-                padding-bottom: 14px;
-              "
-            >
-              <div>
-                <h1 class="pg-title">ECM <em>Calculator Library</em></h1>
-                <p class="pg-sub">
-                  Select a template to estimate energy savings from common HVAC and controls measures. Results include
-                  formula traces for transparency and reproducibility.
-                </p>
-              </div>
-            </div>
-            <div id="ecm-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
-          </div>
-
           <script>
             /* Synchronous view restore — runs before first paint to prevent flash.
                Only activates a view when localStorage/sessionStorage already has a
