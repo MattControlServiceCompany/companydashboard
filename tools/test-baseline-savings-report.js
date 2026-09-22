@@ -1,34 +1,31 @@
-// tools/test-baseline-savings-report.js — Baseline & Savings report regression gate (oracle A).
+// tools/test-baseline-savings-report.js — Baseline & BAS Savings report regression gate.
 // Run: node tools/test-baseline-savings-report.js [path-to-backup.json]
 //
-// Same pattern as test_eui_source_of_truth.js: loads the REAL app files into a Node vm sandbox
-// (no browser, no network) seeded from a local CompanyHub backup export, then runs the real
-// collectWoodlandReportData() / generateWoodlandReportHTML() and asserts:
+// Loads the REAL app files into a Node vm sandbox (no browser, no network) seeded from a local
+// CompanyHub backup export, then runs the real collectWoodlandReportData() /
+// generateWoodlandReportHTML() / wdCheckReportInputs() / wdApplySetpointOptions() and asserts:
 //
-//   1. Option annual $ totals equal the audited values to the cent — computed from the
-//      measures' OWN stored rates (kwhSummer/kwhWinter, kwSummer/kwWinter, gasSummer/gasWinter)
-//      and NOT from any constant in app/report-engine-woodland.js (the source is grepped for
-//      the retired constants).
-//   2. Page 3 is the SHARED site table — the report's Baseline Summary HTML contains the exact
-//      output of an actual recorded rptBuildBaselineDataTable() call (app/report-engine.js),
-//      fed by collectReportData()'s building record, never a parallel re-summation.
-//   3. Page 4 has no hardcoded cooling kWh / heating % — the cooling figure equals the sum of
-//      (rounded CDD coefficient x rounded monthly CDD) over the baseline months.
-//   4. Page 5 zone data: with zero Equipment Matrix rows for the building the documented
-//      fallback sentence renders and no zone table; with a SYNTHETIC matrix (fake zone names,
-//      never real client rows) the per-zone table renders one row per zone.
-//   5. Per-option install cost / payback come from m.implCost (null payback when 0).
+//   0. Source hygiene — no building-specific constants remain (rates, install cost, zone lists,
+//      client-share %); the xlsx exporter reads its narration from WD_TEXT (no duplicated prose).
+//   1. Canonical backup: option annual $ totals equal the audited values to the cent, COMPUTED
+//      from the measures' own stored quantities x rates (two rate scenarios, both computed).
+//   2. Page 3 is the SHARED site table (actual recorded rptBuildBaselineDataTable() output).
+//   3. Page 4 cooling kWh equals sum(round(CDD coefficient x CDD)) — nothing hardcoded.
+//   4. Page 5 zones: fallback sentence with no Equipment Matrix rows; zone table with a
+//      SYNTHETIC matrix.
+//   5-7. Payback/shares/electric-heating structural checks.
+//   8. SYNTHETIC building, complete inputs: wdApplySetpointOptions() writes A/B/C measures whose
+//      monthly quantities equal an independent hand recomputation; the guard passes; the report's
+//      annual $ equal the hand-computed monthly-then-summed dollars; rendered text carries no
+//      placeholder or internal-narration token.
+//   9. SYNTHETIC building, missing inputs: the guard names what is missing and where; no report
+//      renders (showReportOverlay is never called) via either entry point.
+//  10. Canonical backup: the in-site calculator, fed the memo's inputs, reproduces the stored
+//      (externally modelled) monthly arrays within 0.2% and the annual $ within $2.
 //
-// The audited totals belong to one specific project (matched by id) and are only asserted when
-// that project is present in the backup; otherwise sections 1/3 report "not applicable" and
-// the structural checks (2/4/5) still run on whichever building has A/B/C option measures.
-// SKIPS (exit 0) when no backup is found.
-//
-// Rate backfill note: the audited totals require gasSummer=0.327 / gasWinter=0.518 on the
-// three option measures (entered through the Energy Savings rate UI). If the backup's measures
-// do not carry them yet, the gate applies that backfill IN MEMORY (never writes the backup) and
-// says so loudly — the totals then prove the code path, and a re-exported backup after the UI
-// backfill will pass with no patch at all.
+// Rate/config backfill note (canonical backup only): that backup pre-dates the per-building
+// savings inputs (project.savingsData.basSetpoint) and the seasonal gas rates on the measures.
+// The gate applies them IN MEMORY (never writes the backup) and says so loudly.
 'use strict';
 
 const fs = require('fs');
@@ -48,6 +45,7 @@ function assert(cond, msg) {
     console.log('  FAIL: ' + msg);
   }
 }
+const near = (a, b, tol) => Math.abs(a - b) <= tol;
 
 // ─── Backup ────────────────────────────────────────────────────────────────────
 function findLatestBackup() {
@@ -67,55 +65,42 @@ console.log('Using backup: ' + backupPath);
 const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
 const J = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
 
-// ─── Locate the target: a building with "Option A/B/C h/c" savings measures ───
-const OPT_RE = /Option\s+([A-C])\s+(\d+)\s*\/\s*(\d+)/i;
-const projects = J(backup.en_projects) || [];
-let target = null;
-projects.forEach((p) => {
-  const ms = ((p.savingsData && p.savingsData.measures) || []).filter((m) => OPT_RE.test(m.desc || ''));
-  if (ms.length >= 3 && !target) target = { projId: p.id, bldgId: ms[0].bldgId, measures: ms };
-});
-if (!target) {
-  console.log('=== Baseline & Savings report gate: SKIPPED — no project in this backup has A/B/C option measures ===');
-  process.exit(0);
-}
-// Audited targets for the reference project (2026-09-22 — sum-of-rounded-cents convention,
-// identical to the pre-rebuild constants-based engine output). Only asserted for that project.
+// ─── Woodland memo inputs (2026-09-21 savings-calc memo) — the values the Manager enters in
+// the report's Inputs dialog; used here ONLY as in-memory backfill for the canonical backup. ──
+const OPT_RE = /Option\s+([A-Z])\s+(\d+)\s*\/\s*(\d+)/i;
 const AUDITED = {
   projId: 1781636180197,
-  totals: { A: 1816.15, B: 2144.77, C: 2473.72 },
-  gasSummer: 0.327,
-  gasWinter: 0.518,
-  implCost: 1384,
+  bldgId: 'b1781636210689',
+  // Measures' own stored rates (thermRate for both gas seasons) — the live-verified triple.
+  totalsThermRate: { A: 1816.15, B: 2144.8, C: 2473.72 },
+  // Seasonal gas 0.327/0.518 (audited workbook Note 4) — the workbook triple.
+  totalsSeasonal: { A: 1816.15, B: 2144.77, C: 2473.72 },
+  cfg: {
+    curOccHeat: 68,
+    curOccCool: 70,
+    pctPerDegF: 4,
+    occHeatSharePct: 38,
+    occCoolSharePct: 90,
+    zonesTotal: 87,
+    zonesActive: 73,
+    unoccNetTherms: 1800,
+    demandFloorKw: 200,
+    clientSharePct: 70,
+    rates: {
+      kwhSummer: 0.0485,
+      kwhWinter: 0.0363,
+      kwSummer: 11.683,
+      kwWinter: 5.598,
+      gasSummer: 0.327,
+      gasWinter: 0.518,
+    },
+    options: [
+      { letter: 'A', heatSP: 68, coolSP: 72 },
+      { letter: 'B', heatSP: 69, coolSP: 73 },
+      { letter: 'C', heatSP: 70, coolSP: 74 },
+    ],
+  },
 };
-const isAudited = String(target.projId) === String(AUDITED.projId);
-
-let backfilled = false;
-if (isAudited) {
-  target.measures.forEach((m) => {
-    m.rates = m.rates || {};
-    if (!(parseFloat(m.rates.gasSummer) > 0) || !(parseFloat(m.rates.gasWinter) > 0)) {
-      m.rates.gasSummer = AUDITED.gasSummer;
-      m.rates.gasWinter = AUDITED.gasWinter;
-      backfilled = true;
-    }
-    if (!(parseFloat(m.implCost) > 0)) {
-      m.implCost = AUDITED.implCost;
-      backfilled = true;
-    }
-  });
-  if (backfilled)
-    console.log(
-      'NOTE: measure rates/implCost backfilled IN MEMORY (gasSummer ' +
-        AUDITED.gasSummer +
-        ', gasWinter ' +
-        AUDITED.gasWinter +
-        ', implCost ' +
-        AUDITED.implCost +
-        ') — the backup does not carry them yet. Enter them in the Energy Savings rate UI and re-export to run this gate unpatched.',
-    );
-  backup.en_projects = JSON.stringify(projects);
-}
 
 // ─── vm sandbox (black-hole proxy for DOM) ─────────────────────────────────────
 function makeBlackHole() {
@@ -173,9 +158,18 @@ function buildCtx(extraKeys) {
   sandbox.TextDecoder = TextDecoder;
   sandbox.URL = URL;
   sandbox.Blob = Blob;
-  sandbox.showToast = () => {};
+  sandbox.__toasts = [];
+  sandbox.showToast = (msg) => sandbox.__toasts.push(String(msg));
   sandbox._mkbh = makeBlackHole;
   sandbox.__blTableCalls = [];
+  sandbox.__overlayCalls = [];
+  sandbox.__modalHtml = [];
+  // document.body.insertAdjacentHTML is the Inputs dialog's mount point — record it.
+  sandbox.document.body = {
+    insertAdjacentHTML: (pos, html) => sandbox.__modalHtml.push(html),
+    appendChild: () => {},
+    removeChild: () => {},
+  };
 
   const store = new Map();
   Object.keys(backup).forEach((k) =>
@@ -191,7 +185,6 @@ function buildCtx(extraKeys) {
       return store.size;
     },
   };
-  // Weather: the backup's own en_wdd_<zip> rows, else weather-data/<zip>.json.
   sandbox.DB = {
     get(k, d) {
       if (typeof k === 'string' && k.indexOf('en_wdd_') === 0) {
@@ -207,8 +200,6 @@ function buildCtx(extraKeys) {
       return d;
     },
     set: () => Promise.resolve(),
-    // "Ready" so emLoadMatrix() does not return its cold-cache null sentinel; sget() then
-    // reads DB.get (undefined for non-weather keys) and falls through to localStorage.
     isReady: () => true,
   };
   const ctx = vm.createContext(sandbox);
@@ -228,10 +219,10 @@ function buildCtx(extraKeys) {
     'app/energy-savings.js',
     'app/report-engine.js',
   ].forEach(load);
-  // Instrument the shared site table BEFORE the report engine loads so section 2 can prove the
-  // report's Page 3 is an ACTUAL recorded call's output (test_eui pattern).
   new vm.Script(
-    `(function(){ var _o = rptBuildBaselineDataTable; rptBuildBaselineDataTable = function(b, d, opts){ var r = _o(b, d, opts); __blTableCalls.push({ name: b && b.name, html: r }); return r; }; })();`,
+    `(function(){ var _o = rptBuildBaselineDataTable; rptBuildBaselineDataTable = function(b, d, opts){ var r = _o(b, d, opts); __blTableCalls.push({ name: b && b.name, html: r }); return r; };
+      showReportOverlay = function(html, title){ __overlayCalls.push({ html: html, title: title }); };
+      _injectPageNumbers = function(h){ return h; }; })();`,
     { filename: 'instrument' },
   ).runInContext(ctx);
   ['app/equipment-matrix.js', 'app/report-engine-woodland.js'].forEach(load);
@@ -253,9 +244,44 @@ function run(ctx, src) {
   }
   throw new Error('Too many self-heal retries');
 }
+const textOf = (html) =>
+  String(html)
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ');
+// Tokens that must never reach a client page: placeholders and internal/uncertainty narration.
+const FORBIDDEN = [
+  '?',
+  'null',
+  'NaN',
+  'undefined',
+  'to be confirmed',
+  'assum',
+  'estimat',
+  'uncertain',
+  'TBD',
+  'Equipment Matrix',
+  'the site',
+  'stored',
+  'read directly',
+];
+function assertClean(label, html) {
+  const txt = textOf(html);
+  FORBIDDEN.forEach((tok) => {
+    const idx = txt.toLowerCase().indexOf(tok.toLowerCase());
+    assert(
+      idx === -1,
+      label +
+        ': no "' +
+        tok +
+        '" in rendered text' +
+        (idx >= 0 ? ' — "' + txt.slice(Math.max(0, idx - 60), idx + 60).replace(/\s+/g, ' ') + '"' : ''),
+    );
+  });
+}
 
-// ─── 0. Source hygiene: retired constants are gone ─────────────────────────────
-console.log('\n--- 0. Source: no building-specific constants remain in app/report-engine-woodland.js ---');
+// ─── 0. Source hygiene ─────────────────────────────────────────────────────────
+console.log('\n--- 0. Source: no building-specific constants; xlsx narration comes from WD_TEXT ---');
 const src = fs.readFileSync(path.join(REPO, 'app', 'report-engine-woodland.js'), 'utf8');
 [
   'WOODLAND_SEASONAL_RATES',
@@ -263,251 +289,659 @@ const src = fs.readFileSync(path.join(REPO, 'app', 'report-engine-woodland.js'),
   'WOODLAND_ZONE_COUNTS',
   'WOODLAND_MONITOR_ONLY_ZONES',
   'WOODLAND_NONSTANDARD_STANDARD_ZONES',
+  'WOODLAND_CLIENT_SHARE_PCT',
   '185665',
   'heatPct = 72',
+  'to be confirmed',
+  'Trigger-Fixed',
 ].forEach((s) => assert(!src.includes(s), 'source must not contain "' + s + '"'));
-
-// ─── Run the real collector + renderer ─────────────────────────────────────────
-const ctx = buildCtx();
-run(ctx, 'udSelProjId = ' + JSON.stringify(target.projId) + ';');
-const d = run(
-  ctx,
-  'collectWoodlandReportData(' + JSON.stringify(target.projId) + ',' + JSON.stringify(target.bldgId) + ')',
+const xlsxSrc = src.slice(src.indexOf('async function exportWoodlandReportToXlsx'));
+assert(xlsxSrc.length > 1000, 'xlsx exporter located');
+['Shared-savings', 'Cooling load could not', 'Zone-level setpoint', 'gas baseline is', 'Basis:'].forEach((s) =>
+  assert(!xlsxSrc.includes(s), 'xlsx exporter has no duplicated narration literal "' + s + '" (reads WD_TEXT)'),
 );
-assert(d && d.options && d.options.length >= 3, 'collector returns >= 3 options');
-ctx.__d = d;
-const html = run(ctx, 'generateWoodlandReportHTML(__d)');
-
-// ─── 1. Audited totals from the measures' OWN rates ────────────────────────────
-console.log(
-  '\n--- 1. Option annual $ totals from stored measure rates (' +
-    (backfilled ? 'in-memory backfill applied' : 'no patch') +
-    ') ---',
+assert(
+  (xlsxSrc.match(/WD_TEXT\./g) || []).length >= 8,
+  'xlsx exporter references WD_TEXT (' + (xlsxSrc.match(/WD_TEXT\./g) || []).length + ' uses)',
 );
-d.options.forEach((o) => {
-  const r = o.rates;
-  console.log(
-    '  Option ' +
-      o.letter +
-      ': $' +
-      o.annualTotal$.toFixed(2) +
-      '  rates gas ' +
-      r.gasSummer +
-      '/' +
-      r.gasWinter +
-      ' kWh ' +
-      r.elecEnergySummer +
-      '/' +
-      r.elecEnergyWinter +
-      ' kW ' +
-      r.demandSummer +
-      '/' +
-      r.demandWinter +
-      '  implCost ' +
-      o.installCost +
-      ' payback ' +
-      o.paybackYrs,
+
+// ─── Locate the target in the backup ───────────────────────────────────────────
+const projects = J(backup.en_projects) || [];
+let target = null;
+projects.forEach((p) => {
+  const ms = ((p.savingsData && p.savingsData.measures) || []).filter(
+    (m) => (m.basOption && m.basOption.letter) || OPT_RE.test(m.desc || ''),
   );
-  assert(
-    r.elecEnergySummer > 0 && r.demandSummer > 0,
-    'Option ' + o.letter + ': electric rates come from m.rates (non-zero)',
-  );
+  if (ms.length >= 3 && !target) target = { projId: p.id, bldgId: ms[0].bldgId, measures: ms };
 });
-if (isAudited) {
+const isAudited = !!target && String(target.projId) === String(AUDITED.projId);
+
+if (target) {
+  // ─── Canonical: in-memory backfill (cfg + seasonal gas rates), announced ──────
+  const p = projects.find((x) => x.id === target.projId);
+  if (isAudited) {
+    p.savingsData.basSetpoint = p.savingsData.basSetpoint || {};
+    if (!p.savingsData.basSetpoint[target.bldgId]) {
+      // Scenario 1 keeps the measures' OWN rates: cfg rates mirror the thermRate they carry.
+      const thermRate = parseFloat(target.measures[0].rates.thermRate) || 0;
+      p.savingsData.basSetpoint[target.bldgId] = Object.assign({}, AUDITED.cfg, {
+        rates: Object.assign({}, AUDITED.cfg.rates, { gasSummer: thermRate, gasWinter: thermRate }),
+      });
+      console.log(
+        'NOTE: savings inputs (basSetpoint) backfilled IN MEMORY for the audited building — the backup pre-dates them. Enter them in the report Inputs dialog and re-export to run unpatched.',
+      );
+    }
+  }
+  const ctx = buildCtx({ en_projects: projects });
+  run(ctx, 'udSelProjId = ' + JSON.stringify(target.projId) + ';');
+  const chk = run(
+    ctx,
+    'wdCheckReportInputs(' + JSON.stringify(target.projId) + ',' + JSON.stringify(target.bldgId) + ')',
+  );
+  console.log('\n--- 1. Canonical backup: guard + option annual $ (computed from stored quantities x rates) ---');
+  assert(chk.ok, 'guard passes on the backfilled canonical data (missing: ' + JSON.stringify(chk.missing) + ')');
+  const d = run(
+    ctx,
+    'collectWoodlandReportData(' + JSON.stringify(target.projId) + ',' + JSON.stringify(target.bldgId) + ')',
+  );
+  assert(d && d.options && d.options.length >= 3, 'collector returns >= 3 options');
+  ctx.__d = d;
+  const html = run(ctx, 'generateWoodlandReportHTML(__d)');
   d.options.forEach((o) => {
-    const exp = AUDITED.totals[o.letter];
-    assert(
-      Math.abs(o.annualTotal$ - exp) < 0.005,
-      'Option ' + o.letter + ' annual total $' + o.annualTotal$.toFixed(2) + ' must equal audited $' + exp.toFixed(2),
+    const r = o.rates;
+    console.log(
+      '  Option ' +
+        o.letter +
+        ' (' +
+        o.heatSP +
+        '/' +
+        o.coolSP +
+        '): $' +
+        o.annualTotal$.toFixed(2) +
+        '  gas ' +
+        r.gasSummer.toFixed(4) +
+        '/' +
+        r.gasWinter.toFixed(4) +
+        ' kWh ' +
+        r.elecEnergySummer +
+        '/' +
+        r.elecEnergyWinter +
+        ' kW ' +
+        r.demandSummer +
+        '/' +
+        r.demandWinter,
     );
     assert(
-      o.paybackYrs != null && Math.abs(o.paybackYrs - +(AUDITED.implCost / exp).toFixed(2)) < 0.005,
-      'Option ' + o.letter + ' payback from m.implCost',
+      r.elecEnergySummer > 0 && r.demandSummer > 0,
+      'Option ' + o.letter + ': electric rates come from m.rates (non-zero)',
+    );
+    assert(
+      o.letter !== '?' && o.heatSP != null && o.coolSP != null,
+      'Option ' + o.letter + ': letter/setpoints resolved',
     );
   });
-} else console.log('  (not the audited project — cent-exact totals not applicable)');
+  if (isAudited) {
+    d.options.forEach((o) => {
+      const exp = AUDITED.totalsThermRate[o.letter];
+      assert(
+        near(o.annualTotal$, exp, 0.005),
+        'Option ' +
+          o.letter +
+          ' annual $' +
+          o.annualTotal$.toFixed(2) +
+          ' == live-verified $' +
+          exp.toFixed(2) +
+          ' (measure thermRate both seasons)',
+      );
+    });
+    // Scenario 2: seasonal gas rates on the measures (audited workbook Note 4).
+    const ctxS = buildCtx({ en_projects: projects });
+    run(ctxS, 'udSelProjId = ' + JSON.stringify(target.projId) + ';');
+    run(
+      ctxS,
+      `projects.find(function(p){ return String(p.id) === ${JSON.stringify(String(target.projId))}; }).savingsData.measures.forEach(function(m){ if (m.bldgId === ${JSON.stringify(target.bldgId)} && _wdOptionMeta(m)) { m.rates.gasSummer = ${AUDITED.cfg.rates.gasSummer}; m.rates.gasWinter = ${AUDITED.cfg.rates.gasWinter}; } });`,
+    );
+    const dS = run(
+      ctxS,
+      'collectWoodlandReportData(' + JSON.stringify(target.projId) + ',' + JSON.stringify(target.bldgId) + ')',
+    );
+    dS.options.forEach((o) => {
+      const exp = AUDITED.totalsSeasonal[o.letter];
+      assert(
+        near(o.annualTotal$, exp, 0.005),
+        'Option ' +
+          o.letter +
+          ' annual $' +
+          o.annualTotal$.toFixed(2) +
+          ' == audited workbook $' +
+          exp.toFixed(2) +
+          ' (gas 0.327/0.518)',
+      );
+    });
+  } else console.log('  (not the audited project — cent-exact totals not applicable)');
+  assertClean('canonical report', html);
 
-// ─── 2. Page 3 = the shared site table (actual recorded call) ──────────────────
-console.log('\n--- 2. Page 3 Baseline Summary reuses rptBuildBaselineDataTable() ---');
-const calls = ctx.__blTableCalls;
-assert(calls.length >= 1, 'rptBuildBaselineDataTable() was actually called by the report');
-const call = calls.find((c) => c.html && html.includes(c.html));
-assert(
-  !!call,
-  "Page 3 HTML contains a recorded rptBuildBaselineDataTable() output byte-for-byte (building '" +
-    (calls[0] && calls[0].name) +
-    "')",
-);
-assert(
-  html.includes('Building Baseline Data') && html.includes('Site EUI'),
-  'Page 3 carries the site table title and the Site EUI stat',
-);
-assert(!/Energy Use Intensity \(EUI\)<\/h2>/.test(html), 'no separate invented EUI-formula table remains');
-
-// ─── 3. Page 4 cooling from the regression, not a literal ──────────────────────
-console.log('\n--- 3. Page 4 HVAC split derived from the CDD regression ---');
-if (d.hvac && d.hvac.coolKwh != null) {
-  const recomputed = d.hvac.months.reduce((s, m) => s + Math.round(d.hvac.slopeCDD * m.cdd + 1e-9), 0);
+  // ─── 2. Page 3 = the shared site table (actual recorded call) ──────────────────
+  console.log('\n--- 2. Page 3 Baseline Summary reuses rptBuildBaselineDataTable() ---');
+  const calls = ctx.__blTableCalls;
+  assert(calls.length >= 1, 'rptBuildBaselineDataTable() was actually called by the report');
+  const call = calls.find((c) => c.html && html.includes(c.html));
   assert(
-    recomputed === d.hvac.coolKwh,
-    'coolKwh (' + d.hvac.coolKwh + ') equals sum of round(slopeCDD x CDD) (' + recomputed + ')',
+    !!call,
+    "Page 3 HTML contains a recorded rptBuildBaselineDataTable() output byte-for-byte (building '" +
+      (calls[0] && calls[0].name) +
+      "')",
   );
-  assert(d.hvac.heatPct > 0 && d.hvac.heatPct < 100, 'heating share in (0,100): ' + d.hvac.heatPct);
-  console.log(
-    '  coolKwh ' + d.hvac.coolKwh + ' (' + d.hvac.coolPct + '% of electric), heating share ' + d.hvac.heatPct + '%',
+  assert(
+    html.includes('Building Baseline Data') && html.includes('Site EUI'),
+    'Page 3 carries the site table title and the Site EUI stat',
   );
-} else {
-  assert(html.includes('not statistically separable'), 'no CDD term => documented fallback sentence renders');
+  assert(
+    html.includes('.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px;font-size:8.5px}'),
+    'Page 3 table cells carry the 8.5px cell font (header/total overflow fix)',
+  );
+
+  // ─── 3. Page 4 cooling from the regression, not a literal ──────────────────────
+  console.log('\n--- 3. Page 4 HVAC split derived from the CDD regression ---');
+  if (d.hvac && d.hvac.coolKwh != null) {
+    const recomputed = d.hvac.months.reduce((s, m) => s + Math.round(d.hvac.slopeCDD * m.cdd + 1e-9), 0);
+    assert(
+      recomputed === d.hvac.coolKwh,
+      'coolKwh (' + d.hvac.coolKwh + ') equals sum of round(slopeCDD x CDD) (' + recomputed + ')',
+    );
+    assert(d.hvac.heatPct > 0 && d.hvac.heatPct < 100, 'heating share in (0,100): ' + d.hvac.heatPct);
+    console.log(
+      '  coolKwh ' + d.hvac.coolKwh + ' (' + d.hvac.coolPct + '% of electric), heating share ' + d.hvac.heatPct + '%',
+    );
+  } else {
+    assert(html.includes(run(ctx, 'WD_TEXT.hvacNoSplit')), 'no CDD term => documented fallback sentence renders');
+  }
+
+  // ─── 4. Page 5 zones: fallback vs synthetic Equipment Matrix ───────────────────
+  console.log('\n--- 4. Page 5 zone setpoints: fallback (no EM rows) and synthetic-matrix table ---');
+  const emKey = 'en_eqmatrix_' + target.projId;
+  const zoneFallback = run(ctx, 'WD_TEXT.zoneFallback');
+  if (!backup[emKey]) {
+    assert(d.zones.length === 0, 'no Equipment Matrix rows => zones []');
+    assert(html.includes(zoneFallback), 'fallback sentence renders verbatim');
+    assert(!html.includes('Current Zone Setpoints'), 'no zone table without matrix rows');
+  } else console.log('  (backup has real matrix rows for this project — fallback branch not exercised here)');
+  const bName = run(ctx, 'getUDBldg(' + JSON.stringify(target.projId) + ',' + JSON.stringify(target.bldgId) + ').name');
+  const synth = {
+    rows: [
+      {
+        building: bName.toUpperCase(),
+        category: 'vav',
+        equipName: 'Test Zone 101',
+        points: [
+          { name: 'Zone Heating Setpoint', value: 68 },
+          { name: 'Zone Cooling Setpoint', value: 72 },
+          { name: 'Unoccupied Heating Setpoint', value: 60 },
+          { name: 'Unoccupied Cooling Setpoint', value: 85 },
+        ],
+      },
+      {
+        building: bName,
+        category: 'fcu',
+        equipName: 'Test Zone 102',
+        points: [{ name: 'Zone Heating Setpoint', value: 70 }],
+      },
+      {
+        building: 'Some Other Building',
+        category: 'vav',
+        equipName: 'Test Zone 999',
+        points: [
+          { name: 'Zone Heating Setpoint', value: 65 },
+          { name: 'Zone Cooling Setpoint', value: 75 },
+        ],
+      },
+    ],
+    importedAt: null,
+    buildings: [bName],
+  };
+  const ctx2 = buildCtx({ en_projects: projects, [emKey]: synth });
+  run(ctx2, 'udSelProjId = ' + JSON.stringify(target.projId) + ';');
+  run(
+    ctx2,
+    `(function(){ var _o = emGetNormalizedPoints; emGetNormalizedPoints = function(row){ var p = _o(row) || {}; if (row && row.points && p.zoneHtgSetpoint === undefined && p.zoneCoolSetpoint === undefined) { var m = { 'Zone Heating Setpoint':'zoneHtgSetpoint','Zone Cooling Setpoint':'zoneCoolSetpoint','Unoccupied Heating Setpoint':'zoneUnoccHtgSetpoint','Unoccupied Cooling Setpoint':'zoneUnoccCoolSetpoint' }; p = {}; row.points.forEach(function(pt){ if (m[pt.name]) p[m[pt.name]] = pt.value; }); } return p; }; })();`,
+  );
+  const d2 = run(
+    ctx2,
+    'collectWoodlandReportData(' + JSON.stringify(target.projId) + ',' + JSON.stringify(target.bldgId) + ')',
+  );
+  ctx2.__d = d2;
+  const html2 = run(ctx2, 'generateWoodlandReportHTML(__d)');
+  assert(
+    d2.zones.length === 2,
+    'case-insensitive building match yields exactly the 2 synthetic zones (got ' + d2.zones.length + ')',
+  );
+  assert(
+    d2.zones.some(
+      (z) =>
+        z.zone === 'Test Zone 101' &&
+        z.occHeat === 68 &&
+        z.occCool === 72 &&
+        z.unoccHeat === 60 &&
+        z.unoccCool === 85 &&
+        z.complete,
+    ),
+    'zone 101 setpoints resolved (occ 68/72, unocc 60/85)',
+  );
+  assert(
+    d2.zones.some((z) => z.zone === 'Test Zone 102' && z.complete === false),
+    'zone 102 flagged incomplete (missing occupied cooling)',
+  );
+  assert(
+    html2.includes('Current Zone Setpoints') && html2.includes('Test Zone 101') && !html2.includes('Test Zone 999'),
+    'zone table renders this building only',
+  );
+  assert(!html2.includes(zoneFallback), 'fallback sentence absent when zones exist');
+  const pages2 = (html2.match(/class="rpt-page/g) || []).length;
+  const pages1 = (html.match(/class="rpt-page/g) || []).length;
+  assert(pages2 === pages1 + 1, 'one extra physical page for the zone sheet (' + pages1 + ' -> ' + pages2 + ')');
+
+  // ─── 5. Payback null when the measure carries no implementation cost ───────────
+  console.log('\n--- 5. Install cost / payback come from the measure (never rendered) ---');
+  assert(
+    d.options.every((o) => o.installCost > 0 === (o.paybackYrs != null)),
+    'payback present only with an implementation cost',
+  );
+  assert(
+    !html.includes('Install Cost') && !html.includes('Simple payback'),
+    'report HTML has no Install Cost / Simple payback text',
+  );
+
+  // ─── 6. Shared-savings split from the stored input ──────────────────────────────
+  console.log('\n--- 6. Financials: shared-savings split from cfg.clientSharePct ---');
+  const pct = d.cfg.clientSharePct;
+  d.options.forEach((o) => {
+    assert(
+      near(o.clientShare$ + o.cscShare$, o.annualTotal$, 0.005),
+      'Option ' + o.letter + ': clientShare$ + cscShare$ cross-foots to annualTotal$',
+    );
+    assert(
+      near(o.clientShare$, o.annualTotal$ * (pct / 100), 0.005),
+      'Option ' + o.letter + ': clientShare$ = ' + pct + '% of annualTotal$',
+    );
+  });
+  assert(
+    html.includes('Client Share (' + pct + '%)') && html.includes('CSC Share (' + (100 - pct) + '%)'),
+    'report HTML shows Client/CSC Share with the stored %',
+  );
+
+  // ─── 7. HVAC: electric heating kWh line only when slopeHDD is positive ─────────
+  console.log('\n--- 7. HVAC: electric heating (kWh) shown only when the regression supports it ---');
+  if (d.hvac && d.hvac.heatKwh != null) {
+    assert(d.hvac.slopeHDD > 0, 'heatKwh present implies slopeHDD > 0');
+    assert(html.includes('Heating Energy — Elec (kWh)'), 'electric heating kWh line renders');
+  } else {
+    console.log('  (this building/backup has no positive electric-heating HDD term — line correctly omitted)');
+    assert(!html.includes('Heating Energy — Elec (kWh)'), 'electric heating kWh line absent when not applicable');
+  }
+
+  // ─── 10. In-site calculator vs the stored (externally modelled) arrays ─────────
+  if (isAudited) {
+    console.log('\n--- 10. In-site calculator (memo inputs, building bills) vs stored arrays / oracle $ ---');
+    ctx.__cfg = AUDITED.cfg;
+    const calc = run(
+      ctx,
+      `(function(){ var b = getUDBldg(${JSON.stringify(target.projId)}, ${JSON.stringify(target.bldgId)}); var bls = _wdBldgBaselines(b); return wdComputeSetpointOptions(__cfg, bls.elecBL, bls.gasBL); })()`,
+    );
+    let maxRel = 0;
+    calc.options.forEach((o) => {
+      const stored = target.measures.find((m) => (OPT_RE.exec(m.desc || '') || [])[1] === o.letter);
+      ['kwh', 'kw', 'gas'].forEach((k) => {
+        for (let i = 0; i < 12; i++) {
+          const a = o[k][i],
+            s = parseFloat(stored[k][i]) || 0;
+          // Both sides are stored at 2 decimals: a 0.01 difference on a 2.84-Therm month is
+          // rounding, not model drift — measure relative error only above that floor.
+          if (Math.abs(a - s) > 0.02) maxRel = Math.max(maxRel, Math.abs(a - s) / Math.max(1, Math.abs(s)));
+        }
+      });
+      // Dollars at the seasonal rates, monthly then summed (report convention).
+      const R = AUDITED.cfg.rates;
+      let tot = 0;
+      for (let i = 0; i < 12; i++) {
+        const s = [5, 6, 7, 8].includes(i);
+        tot += Math.round(o.gas[i] * (s ? R.gasSummer : R.gasWinter) * 100 + 1e-9) / 100;
+        tot += Math.round(o.kwh[i] * (s ? R.kwhSummer : R.kwhWinter) * 100 + 1e-9) / 100;
+        tot += Math.round(o.kw[i] * (s ? R.kwSummer : R.kwWinter) * 100 + 1e-9) / 100;
+      }
+      console.log(
+        '  Option ' +
+          o.letter +
+          ': in-site $' +
+          tot.toFixed(2) +
+          ' vs audited $' +
+          AUDITED.totalsSeasonal[o.letter].toFixed(2),
+      );
+      assert(
+        near(tot, AUDITED.totalsSeasonal[o.letter], 2),
+        'Option ' + o.letter + ' in-site annual $ within $2 of the audited total',
+      );
+    });
+    console.log('  max relative difference vs stored monthly arrays: ' + (maxRel * 100).toFixed(3) + '%');
+    assert(maxRel < 0.002, 'calculator reproduces the stored monthly arrays within 0.2%');
+  }
+} else console.log('\n(no building with A/B/C option measures in this backup — sections 1-7/10 not applicable)');
+
+// ─── 8. SYNTHETIC building, complete inputs → guard passes, arrays == hand recomputation ───
+console.log(
+  '\n--- 8. Synthetic building: Save & Compute writes A/B/C; quantities == hand recomputation; report clean ---',
+);
+const SID = 990000001;
+const SBID = 'bsynth1';
+const KWH = [40000, 40000, 40000, 50000, 60000, 70000, 80000, 90000, 80000, 60000, 45000, 40000];
+const KW = [200, 200, 200, 250, 300, 350, 400, 450, 400, 300, 220, 200];
+const THERMS = [3000, 2500, 2000, 1000, 500, 300, 300, 300, 400, 800, 1500, 2500];
+function mkBills() {
+  const e = [],
+    g = [];
+  for (let i = 0; i < 12; i++) {
+    const ym = '2025-' + String(i + 1).padStart(2, '0');
+    const last = new Date(2025, i + 1, 0).getDate();
+    e.push({
+      id: 'se' + i,
+      start: ym + '-01',
+      end: ym + '-' + last,
+      kwh: KWH[i],
+      billedKW: KW[i],
+      demandKW: KW[i],
+      kwhCost: KWH[i] * 0.05,
+      kwCost: KW[i] * 8,
+      totalCost: KWH[i] * 0.05 + KW[i] * 8,
+      numberOfDays: last,
+    });
+    g.push({
+      id: 'sg' + i,
+      start: ym + '-01',
+      end: ym + '-' + last,
+      therms: THERMS[i],
+      totalCost: THERMS[i] * 0.45,
+      numberOfDays: last,
+    });
+  }
+  return { e, g };
+}
+const MONTHS = Array.from({ length: 12 }, (_, i) => '2025-' + String(i + 1).padStart(2, '0'));
+function synthProject(withCfg) {
+  const { e, g } = mkBills();
+  const proj = {
+    id: SID,
+    name: 'Synthetic Test District',
+    client: 'Synthetic Client',
+    buildings: [],
+    savingsData: { measures: [], blRates: {} },
+  };
+  if (withCfg) proj.savingsData.basSetpoint = { [SBID]: JSON.parse(JSON.stringify(SCFG)) };
+  const ud = {
+    buildings: [
+      {
+        id: SBID,
+        name: 'Synthetic Test Building',
+        addr: '1 Test St',
+        sqft: 50000,
+        zip: '',
+        meters: [
+          {
+            id: 'sm-e',
+            commodity: 'Electric',
+            account: 'TEST-E',
+            inclusive: true,
+            baselineInclude: true,
+            billUnit: 'kWh',
+            baseline: { months: MONTHS.slice() },
+            bills: e,
+          },
+          {
+            id: 'sm-g',
+            commodity: 'Gas',
+            account: 'TEST-G',
+            inclusive: true,
+            baselineInclude: true,
+            billUnit: 'Therms',
+            baseline: { months: MONTHS.slice() },
+            bills: g,
+          },
+        ],
+      },
+    ],
+  };
+  return { proj, ud };
+}
+const SCFG = {
+  curOccHeat: 68,
+  curOccCool: 70,
+  pctPerDegF: 4,
+  occHeatSharePct: 40,
+  occCoolSharePct: 90,
+  zonesTotal: 10,
+  zonesActive: 8,
+  unoccNetTherms: 1000,
+  demandFloorKw: 200,
+  clientSharePct: 70,
+  rates: { kwhSummer: 0.05, kwhWinter: 0.04, kwSummer: 10, kwWinter: 5, gasSummer: 0.3, gasWinter: 0.5 },
+  options: [
+    { letter: 'A', heatSP: 68, coolSP: 72 },
+    { letter: 'B', heatSP: 69, coolSP: 73 },
+    { letter: 'C', heatSP: 70, coolSP: 74 },
+  ],
+};
+// Independent hand recomputation of the documented formula (plain arithmetic, no app code).
+function handCompute(cfg) {
+  const lo = (arr) =>
+    arr
+      .slice()
+      .sort((a, b) => a - b)
+      .slice(0, 3)
+      .reduce((s, v) => s + v, 0) / 3;
+  const eBase = lo(KWH),
+    gBase = lo(THERMS);
+  const cool = KWH.map((v) => Math.max(0, v - eBase));
+  const heat = THERMS.map((v) => Math.max(0, v - gBase));
+  const sumHeat = heat.reduce((s, v) => s + v, 0);
+  const act = cfg.zonesActive / cfg.zonesTotal;
+  const r2 = (x) => Math.round(x * 100 + 1e-9) / 100;
+  return cfg.options.map((o) => {
+    const pctC = (cfg.occCoolSharePct / 100) * act * (cfg.pctPerDegF / 100) * (o.coolSP - cfg.curOccCool);
+    const pctH = (cfg.occHeatSharePct / 100) * act * (cfg.pctPerDegF / 100) * (o.heatSP - cfg.curOccHeat);
+    const kwh = cool.map((c) => r2(c * pctC));
+    const gas = heat.map((h) => r2(cfg.unoccNetTherms * (h / sumHeat) - h * pctH));
+    const kw = KW.map((k, i) => ([5, 6, 7, 8].includes(i) ? r2(Math.max(0, k - cfg.demandFloorKw) * pctC) : 0));
+    let tot = 0;
+    for (let i = 0; i < 12; i++) {
+      const s = [5, 6, 7, 8].includes(i);
+      tot += r2(gas[i] * (s ? cfg.rates.gasSummer : cfg.rates.gasWinter));
+      tot += r2(kwh[i] * (s ? cfg.rates.kwhSummer : cfg.rates.kwhWinter));
+      tot += r2(kw[i] * (s ? cfg.rates.kwSummer : cfg.rates.kwWinter));
+    }
+    return { letter: o.letter, kwh, kw, gas, total: r2(tot) };
+  });
+}
+{
+  const { proj, ud } = synthProject(true);
+  const ctx8 = buildCtx({ en_projects: projects.concat([proj]), ['en_utility_' + SID]: ud });
+  run(ctx8, 'udSelProjId = ' + SID + '; udSelBldgId = ' + JSON.stringify(SBID) + ';');
+  // Before compute: the guard must name the un-computed options (cfg saved, measures absent).
+  const pre = run(ctx8, 'wdCheckReportInputs(' + SID + ',' + JSON.stringify(SBID) + ')');
+  assert(
+    !pre.ok && pre.missing.length === 3 && pre.missing.every((m) => /monthly savings/.test(m.label)),
+    'before compute: guard lists exactly the 3 un-computed options (' +
+      pre.missing.map((m) => m.label).join('; ') +
+      ')',
+  );
+  ctx8.__cfg = SCFG;
+  run(ctx8, 'wdApplySetpointOptions(' + SID + ',' + JSON.stringify(SBID) + ', JSON.parse(JSON.stringify(__cfg)))');
+  const post = run(ctx8, 'wdCheckReportInputs(' + SID + ',' + JSON.stringify(SBID) + ')');
+  assert(post.ok, 'after compute: guard passes (' + JSON.stringify(post.missing) + ')');
+  const measures = run(
+    ctx8,
+    'JSON.parse(JSON.stringify(_wdOptionMeasures(projects.find(function(p){return p.id===' +
+      SID +
+      '}), ' +
+      JSON.stringify(SBID) +
+      ')))',
+  );
+  assert(measures.length === 3, 'exactly 3 option measures written (' + measures.length + ')');
+  const hand = handCompute(SCFG);
+  hand.forEach((h) => {
+    const m = measures.find((x) => x.basOption && x.basOption.letter === h.letter);
+    assert(!!m, 'measure for option ' + h.letter + ' exists with basOption');
+    if (!m) return;
+    ['kwh', 'kw', 'gas'].forEach((k) => {
+      const same = m[k].length === 12 && m[k].every((v, i) => near(v, h[k][i], 0.005));
+      assert(
+        same,
+        'Option ' +
+          h.letter +
+          ' ' +
+          k +
+          ' == hand recomputation (' +
+          JSON.stringify(m[k]) +
+          ' vs ' +
+          JSON.stringify(h[k]) +
+          ')',
+      );
+    });
+    assert(
+      m.rates.gasSummer === 0.3 && m.rates.gasWinter === 0.5 && m.rates.kwhSummer === 0.05 && m.rates.kwSummer === 10,
+      'Option ' + h.letter + ' measure carries the dialog rates',
+    );
+    assert(
+      m.desc ===
+        'BAS Setpoint Option ' +
+          h.letter +
+          ' — ' +
+          SCFG.options.find((o) => o.letter === h.letter).heatSP +
+          '°F / ' +
+          SCFG.options.find((o) => o.letter === h.letter).coolSP +
+          '°F occupied',
+      'Option ' + h.letter + ' measure description',
+    );
+  });
+  // Hand-checkable worked example for Option A August (index 7): cooling = 90000 - 40000 = 50000
+  // kWh; pctC = 0.9 x 0.8 x 0.04 x 2 = 0.0576 -> 2880 kWh; demand (450-200) x 0.0576 = 14.4 kW.
+  const mA = measures.find((x) => x.basOption.letter === 'A');
+  assert(
+    mA && near(mA.kwh[7], 2880, 0.005) && near(mA.kw[7], 14.4, 0.005),
+    'Option A August: 2,880 kWh and 14.40 kW (worked example)',
+  );
+  // Option A January gas: baseload = mean of 3 lowest gas months = 300; heating Jan = 3000 - 300 =
+  // 2700; annual heating = 11,500; 1000 x (2700 / 11500) = 234.78 (no occupied-heat cost for A).
+  assert(mA && near(mA.gas[0], 234.78, 0.005), 'Option A January: 234.78 Therms (worked example)');
+  const d8 = run(ctx8, 'collectWoodlandReportData(' + SID + ',' + JSON.stringify(SBID) + ')');
+  hand.forEach((h) => {
+    const o = d8.options.find((x) => x.letter === h.letter);
+    assert(
+      o && o.annualTotal$ > 0 && near(o.annualTotal$, h.total, 0.005),
+      'Option ' +
+        h.letter +
+        ' report annual $' +
+        (o ? o.annualTotal$.toFixed(2) : '?') +
+        ' == hand $' +
+        h.total.toFixed(2) +
+        ' (monthly then summed)',
+    );
+  });
+  assert(
+    d8.options[0].annualTotal$ < d8.options[1].annualTotal$ && d8.options[1].annualTotal$ < d8.options[2].annualTotal$,
+    'A < B < C (cooling gain outweighs heating cost in the fixture)',
+  );
+  ctx8.__d = d8;
+  const html8 = run(ctx8, 'generateWoodlandReportHTML(__d)');
+  assertClean('synthetic report', html8);
+  const t8 = textOf(html8);
+  assert(
+    t8.includes('Basis: a 4.0% change in HVAC energy per 1°F') &&
+      t8.includes('8 of 10 zones') &&
+      t8.includes('1,000 Therms per year') &&
+      t8.includes('200 kW minimum'),
+    'basis sentence prints the stored inputs',
+  );
+  assert(
+    t8.includes('Shared-savings structure: 70% of the annual dollars saved to the client and 30% to CSC.'),
+    'shared-savings sentence prints the stored split',
+  );
+  assert(
+    t8.includes('68°F') && t8.includes('72°F') && /Current\s+68°F\s+70°F/.test(t8.replace(/\s+/g, ' ')),
+    'current + proposed setpoints table renders',
+  );
+  assert(!t8.includes('$0.00 / yr'), 'no zero-dollar option rows');
+  // Full entry point: Save & Generate renders through wdRenderReport when the guard passes.
+  run(ctx8, 'wdRenderReport(' + SID + ',' + JSON.stringify(SBID) + ')');
+  assert(
+    ctx8.__overlayCalls.length === 1 && ctx8.__overlayCalls[0].title.indexOf('Baseline & BAS Savings Report') > 0,
+    'wdRenderReport renders the report when inputs are complete',
+  );
+  assertClean('wdRenderReport output', ctx8.__overlayCalls[0].html);
 }
 
-// ─── 4. Page 5 zones: fallback vs synthetic Equipment Matrix ───────────────────
-console.log('\n--- 4. Page 5 zone setpoints: fallback (no EM rows) and synthetic-matrix table ---');
-const emKey = 'en_eqmatrix_' + target.projId;
-const hasRealEm = !!backup[emKey];
-if (!hasRealEm) {
-  assert(d.zones.length === 0, 'no Equipment Matrix rows => zones []');
+// ─── 9. SYNTHETIC building, missing inputs → guard fires, nothing renders ───────
+console.log('\n--- 9. Synthetic building: missing inputs block the report and are named ---');
+{
+  const { proj, ud } = synthProject(false);
+  const ctx9 = buildCtx({ en_projects: projects.concat([proj]), ['en_utility_' + SID]: ud });
+  run(ctx9, 'udSelProjId = ' + SID + '; udSelBldgId = ' + JSON.stringify(SBID) + ';');
+  const chk = run(ctx9, 'wdCheckReportInputs(' + SID + ',' + JSON.stringify(SBID) + ')');
   assert(
-    html.includes(
-      'Per-zone BAS point data is not available for this building; setpoints below are the proposed building-wide targets only.',
-    ),
-    'fallback sentence renders verbatim',
+    !chk.ok && chk.missing.some((m) => /Savings inputs/.test(m.label) && /Inputs/.test(m.where)),
+    'no saved inputs => guard names "Savings inputs" and where to set them',
   );
-  assert(!html.includes('Current Zone Setpoints'), 'no zone table without matrix rows');
-} else console.log('  (backup has real matrix rows for this project — fallback branch not exercised here)');
-// Synthetic matrix: fake zone names only. Points use the raw-name shape emGetNormalizedPoints
-// resolves; a zone with no occupied setpoints must be reported as incomplete, not dropped.
-const bName = run(
-  ctx,
-  'getUDBldg(' +
-    JSON.stringify(target.projId) +
-    ',' +
-    JSON.parse(JSON.stringify(JSON.stringify(target.bldgId))) +
-    ').name',
-);
-const synth = {
-  rows: [
-    {
-      building: bName.toUpperCase(),
-      category: 'vav',
-      equipName: 'Test Zone 101',
-      points: [
-        { name: 'Zone Heating Setpoint', value: 68 },
-        { name: 'Zone Cooling Setpoint', value: 72 },
-        { name: 'Unoccupied Heating Setpoint', value: 60 },
-        { name: 'Unoccupied Cooling Setpoint', value: 85 },
-      ],
-    },
-    {
-      building: bName,
-      category: 'fcu',
-      equipName: 'Test Zone 102',
-      points: [{ name: 'Zone Heating Setpoint', value: 70 }],
-    },
-    {
-      building: 'Some Other Building',
-      category: 'vav',
-      equipName: 'Test Zone 999',
-      points: [
-        { name: 'Zone Heating Setpoint', value: 65 },
-        { name: 'Zone Cooling Setpoint', value: 75 },
-      ],
-    },
-  ],
-  importedAt: null,
-  buildings: [bName],
-};
-const ctx2 = buildCtx({ [emKey]: synth });
-run(ctx2, 'udSelProjId = ' + JSON.stringify(target.projId) + ';');
-// The synthetic rows only need the resolver to map their names; if this build's point mapper
-// does not resolve these raw names, force the normalized points so the TABLE path is still
-// exercised (the resolver itself is the Equipment Matrix's own, tested elsewhere).
-run(
-  ctx2,
-  `(function(){ var _o = emGetNormalizedPoints; emGetNormalizedPoints = function(row){ var p = _o(row) || {}; if (row && row.points && p.zoneHtgSetpoint === undefined && p.zoneCoolSetpoint === undefined) { var m = { 'Zone Heating Setpoint':'zoneHtgSetpoint','Zone Cooling Setpoint':'zoneCoolSetpoint','Unoccupied Heating Setpoint':'zoneUnoccHtgSetpoint','Unoccupied Cooling Setpoint':'zoneUnoccCoolSetpoint' }; p = {}; row.points.forEach(function(pt){ if (m[pt.name]) p[m[pt.name]] = pt.value; }); } return p; }; })();`,
-);
-const d2 = run(
-  ctx2,
-  'collectWoodlandReportData(' + JSON.stringify(target.projId) + ',' + JSON.stringify(target.bldgId) + ')',
-);
-ctx2.__d = d2;
-const html2 = run(ctx2, 'generateWoodlandReportHTML(__d)');
-assert(
-  d2.zones.length === 2,
-  'case-insensitive building match yields exactly the 2 synthetic zones (got ' + d2.zones.length + ')',
-);
-assert(
-  d2.zones.some(
-    (z) =>
-      z.zone === 'Test Zone 101' &&
-      z.occHeat === 68 &&
-      z.occCool === 72 &&
-      z.unoccHeat === 60 &&
-      z.unoccCool === 85 &&
-      z.complete,
-  ),
-  'zone 101 setpoints resolved (occ 68/72, unocc 60/85)',
-);
-assert(
-  d2.zones.some((z) => z.zone === 'Test Zone 102' && z.complete === false),
-  'zone 102 flagged incomplete (missing occupied cooling)',
-);
-assert(
-  html2.includes('Current Zone Setpoints') && html2.includes('Test Zone 101') && !html2.includes('Test Zone 999'),
-  'zone table renders this building only',
-);
-assert(!html2.includes('Per-zone BAS point data is not available'), 'fallback sentence absent when zones exist');
-const pages2 = (html2.match(/class="rpt-page/g) || []).length;
-const pages1 = (html.match(/class="rpt-page/g) || []).length;
-assert(pages2 === pages1 + 1, 'one extra physical page for the zone sheet (' + pages1 + ' -> ' + pages2 + ')');
-
-// ─── 5. Install cost / payback from m.implCost ─────────────────────────────────
-console.log('\n--- 5. Install cost / payback come from the measure ---');
-const ctx3 = buildCtx();
-run(ctx3, 'udSelProjId = ' + JSON.stringify(target.projId) + ';');
-run(
-  ctx3,
-  `projects.find(function(p){ return String(p.id) === ${JSON.stringify(String(target.projId))}; }).savingsData.measures.forEach(function(m){ if (/Option\\s+[A-C]/i.test(m.desc || '')) m.implCost = 0; });`,
-);
-const d3 = run(
-  ctx3,
-  'collectWoodlandReportData(' + JSON.stringify(target.projId) + ',' + JSON.stringify(target.bldgId) + ')',
-);
-assert(
-  d3.options.every((o) => o.installCost === 0 && o.paybackYrs === null),
-  'implCost 0 => installCost 0 and payback null (no invented cost)',
-);
-ctx3.__d = d3;
-const html3 = run(ctx3, 'generateWoodlandReportHTML(__d)');
-assert(!html3.includes('1,384'), 'no $1,384 anywhere when the measure carries no implementation cost');
-
-// ─── 6. Shared-savings split (2026-09-22, Matt) replaces install cost / payback in the report ──
-console.log('\n--- 6. Financials: shared-savings split (client/CSC), no install cost or payback shown ---');
-d.options.forEach((o) => {
+  run(ctx9, 'generateWoodlandReport(' + SID + ',' + JSON.stringify(SBID) + ')');
+  assert(ctx9.__overlayCalls.length === 0, 'report button never renders a page while inputs are missing');
   assert(
-    Math.abs(o.clientShare$ + o.cscShare$ - o.annualTotal$) < 0.005,
-    'Option ' + o.letter + ': clientShare$ + cscShare$ cross-foots to annualTotal$',
+    ctx9.__modalHtml.length === 1 &&
+      /cannot be generated until these inputs are set/.test(ctx9.__modalHtml[0]) &&
+      /Savings inputs/.test(ctx9.__modalHtml[0]),
+    'report button opens the Inputs dialog listing the missing inputs',
   );
+  run(ctx9, 'wdRenderReport(' + SID + ',' + JSON.stringify(SBID) + ')');
   assert(
-    Math.abs(o.clientShare$ / o.annualTotal$ - 0.7) < 0.01,
-    'Option ' + o.letter + ': clientShare$ is ~70% of annualTotal$ (default split)',
+    ctx9.__overlayCalls.length === 0 && /Report blocked/.test(ctx9.__toasts.join('|')),
+    'wdRenderReport refuses and toasts the missing inputs',
   );
-});
-assert(
-  !html.includes('Install Cost') && !html.includes('Simple payback'),
-  'report HTML has no Install Cost / Simple payback text',
-);
-assert(html.includes('Client Share') && html.includes('CSC Share'), 'report HTML shows Client Share / CSC Share');
-
-// ─── 7. HVAC: electric heating kWh line only when slopeHDD is positive ─────────────────────────
-console.log('\n--- 7. HVAC: electric heating (kWh) shown only when the regression supports it ---');
-if (d.hvac && d.hvac.heatKwh != null) {
-  assert(d.hvac.slopeHDD > 0, 'heatKwh present implies slopeHDD > 0');
-  assert(html.includes('Estimated Heating Energy — Electric (kWh)'), 'electric heating kWh line renders');
-} else {
-  console.log('  (this building/backup has no positive electric-heating HDD term — line correctly omitted)');
+  // Partial inputs: one field blank, rates blank, one option without setpoints.
+  const partial = JSON.parse(JSON.stringify(SCFG));
+  partial.zonesTotal = null;
+  partial.rates.gasWinter = 0;
+  partial.options[2].coolSP = null;
+  ctx9.__partial = partial;
+  run(ctx9, '_wdSaveCfg(' + SID + ',' + JSON.stringify(SBID) + ', __partial)');
+  const chk2 = run(ctx9, 'wdCheckReportInputs(' + SID + ',' + JSON.stringify(SBID) + ')');
+  const labels = chk2.missing.map((m) => m.label).join(' | ');
   assert(
-    !html.includes('Estimated Heating Energy — Electric (kWh)'),
-    'electric heating kWh line absent when not applicable',
+    !chk2.ok &&
+      /Zones with room setpoints/.test(labels) &&
+      /Gas \$\/Therm — Winter/.test(labels) &&
+      /Option C occupied heating \/ cooling setpoints/.test(labels),
+    'partial inputs => each missing field is named (' + labels + ')',
+  );
+  run(ctx9, 'wdRenderReport(' + SID + ',' + JSON.stringify(SBID) + ')');
+  assert(ctx9.__overlayCalls.length === 0, 'still no report with partial inputs');
+  // Button flag: the header button carries the warning until inputs are complete.
+  run(
+    ctx9,
+    'document.__btn = { style: {} }; document.getElementById = function(id){ return id === "ud-woodland-report-btn" ? document.__btn : null; }; wdUpdateReportButton(' +
+      SID +
+      ',' +
+      JSON.stringify(SBID) +
+      ')',
+  );
+  const btn = run(ctx9, 'document.__btn');
+  assert(
+    btn.style.display === '' && /^⚠/.test(btn.textContent) && /Zones with room setpoints/.test(btn.title),
+    'building header button is visible and flagged ⚠ with the missing list in its tooltip',
+  );
+  // Baseline missing entirely: a building with no 12-month baseline is named too.
+  const { proj: p2, ud: ud2 } = synthProject(true);
+  ud2.buildings[0].meters[1].baseline.months = MONTHS.slice(0, 6);
+  const ctx9b = buildCtx({ en_projects: projects.concat([p2]), ['en_utility_' + SID]: ud2 });
+  run(ctx9b, 'udSelProjId = ' + SID + ';');
+  const chk3 = run(ctx9b, 'wdCheckReportInputs(' + SID + ',' + JSON.stringify(SBID) + ')');
+  assert(
+    chk3.missing.some((m) => /Gas meter with a 12-month baseline/.test(m.label)),
+    'gas baseline shorter than 12 months is named',
   );
 }
 

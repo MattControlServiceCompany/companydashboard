@@ -8787,12 +8787,12 @@
                     >
                       💡 Building Performance
                     </button>
-                    <!-- Woodland Springs Middle 7-page Baseline + BAS Savings Report (2026-09-22):
-                         gated visible only for a building that has saved BAS savings options
-                         (project.savingsData.measures[] with a matching bldgId) — see
-                         renderUDDetail() in app/utility-data.js. Generic by implementation (not
-                         hardcoded to one building id), but only Woodland Springs Middle has this
-                         data today. -->
+                    <!-- Baseline + BAS Savings Report (2026-09-22): visible for any building with
+                         a full-year meter baseline or saved setpoint options; label/flag set by
+                         wdUpdateReportButton() (app/report-engine-woodland.js) from renderUDDetail().
+                         Click opens the report Inputs dialog (savings inputs are stored per building
+                         on project.savingsData.basSetpoint) — the report renders only when every
+                         input is present. -->
                     <button
                       class="btn btn-ghost btn-sm"
                       id="ud-woodland-report-btn"

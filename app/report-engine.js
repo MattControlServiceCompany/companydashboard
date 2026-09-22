@@ -5525,7 +5525,11 @@ function rptBuildBaselineDataTable(b, d, opts) {
 
   var blDataTable = blDataRows
     ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text);page-break-inside:avoid;break-inside:avoid">' +
-      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px}.rpt-bl-tight{font-size:8.5px}</style>' +
+      // 2026-09-22: font-size must be on th/td themselves — `.rpt-table-bl th/td{font-size:10px}`
+      // (element-level rules) beat a size set on the <table>, so the cells never actually
+      // shrank and "Electric Cost"/"$/Therm" headers and the bold Annual "$110,423" overflowed
+      // their fixed 8.5% columns.
+      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px;font-size:8.5px}</style>' +
       blStats +
       '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
       '<table class="rpt-table rpt-table-bl rpt-bl-tight" style="width:100%;table-layout:fixed">' +
