@@ -177,6 +177,10 @@
         },
       ];
 
+      function _qsEscHandler(e) {
+        if (e.key === 'Escape') closeQuickStart();
+      }
+
       function openQuickStart() {
         var overlay = document.getElementById('qsOverlay');
         if (!overlay) return;
@@ -186,11 +190,14 @@
         overlay.onclick = function (e) {
           if (e.target === overlay) closeQuickStart();
         };
+        // Escape key must reliably dismiss the guide so it never traps keyboard/drag interaction.
+        document.addEventListener('keydown', _qsEscHandler);
       }
 
       function closeQuickStart() {
         var overlay = document.getElementById('qsOverlay');
         if (overlay) overlay.classList.remove('open');
+        document.removeEventListener('keydown', _qsEscHandler);
       }
 
       function qsNav(dir) {

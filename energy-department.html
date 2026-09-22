@@ -15673,7 +15673,22 @@
     <!-- ---------------------------------------------------
          QUICK START GUIDE OVERLAY
     --------------------------------------------------- -->
-    <div class="qs-overlay" id="qsOverlay">
+    <!-- 2026-09-21: dragover/drop on the overlay itself must not swallow a file drag meant for the
+         page underneath (e.g. the PDF/OCR #dropZone) — preventDefault stops the browser's default
+         "navigate to file" action, and closeQuickStart() removes the overlay immediately so the
+         browser re-targets the drop at whatever is actually under the cursor once released. -->
+    <div
+      class="qs-overlay"
+      id="qsOverlay"
+      ondragover="
+        event.preventDefault();
+        closeQuickStart();
+      "
+      ondrop="
+        event.preventDefault();
+        closeQuickStart();
+      "
+    >
       <div class="qs-modal" role="dialog" aria-modal="true" aria-label="Quick Start Guide">
         <div class="qs-hdr">
           <div class="qs-hdr-icon">🚀</div>
