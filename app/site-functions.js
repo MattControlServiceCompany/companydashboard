@@ -10185,12 +10185,6 @@ document.addEventListener('keydown', function (e) {
     histModal.style.display = 'none';
     return;
   }
-  // Report content picker modal uses .open class (not display)
-  var rptModal = document.getElementById('reportBldgModal');
-  if (rptModal && rptModal.classList.contains('open')) {
-    rptModal.classList.remove('open');
-    return;
-  }
   var closers = {
     projModal: typeof closeProjModal === 'function' ? closeProjModal : null,
     bldgModal: typeof closeBldgModal === 'function' ? closeBldgModal : null,
