@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.22.874'; // Building and meter picker for reports/export
+  var CH_VERSION = 'v2026.09.22.875'; // Baseline + BAS Savings report: kW total fix, page 3 fits
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

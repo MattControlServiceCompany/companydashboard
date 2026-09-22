@@ -135,6 +135,36 @@ assert(
   'HTML report: Annual kW row never labeled "(peak)"',
 );
 
+// 2026-09-22 regression gate: Woodland page 1 raw-bills table (rptPageWoodlandBills) had its
+// OWN separate "TOTAL (Annual)" kW cell bug — Math.max + a "(peak)" suffix — independent of
+// rptBuildBaselineDataTable above (different function, different table). Same rule: a Total
+// row is always a SUM of the 12 monthly billed kW, never a peak/max.
+const rptPageWoodlandBillsSrc = wdSrc.slice(
+  wdSrc.indexOf('function rptPageWoodlandBills'),
+  wdSrc.indexOf('function rptPageWoodlandBaseline'),
+);
+assert(!/\(peak\)/.test(rptPageWoodlandBillsSrc), 'Woodland page 1 HTML: Annual kW row never labeled "(peak)"');
+assert(
+  !/Math\.max\(sums\[2\]\.sum/.test(rptPageWoodlandBillsSrc),
+  'Woodland page 1 HTML: kW Total is not computed with Math.max',
+);
+assert(
+  /sums\[2\]\.sum \+= kw;/.test(rptPageWoodlandBillsSrc),
+  'Woodland page 1 HTML: kW Total accumulates as a running sum',
+);
+
+// Same rule for the Woodland xlsx export's Page 1 (Bills) sheet — ws1's Electric block.
+const ws1Src = wdSrc.slice(
+  wdSrc.indexOf('async function exportWoodlandReportToXlsx'),
+  wdSrc.indexOf("ws1.addRow(['Natural Gas']);"),
+);
+assert(
+  /sumF\('D', firstDataRow1, lastDataRow1\)/.test(ws1Src),
+  'Woodland xlsx Page 1 sheet: Billed kW Total is SUM(D...), not MAX(D...)',
+);
+assert(!/MAX\(D/.test(ws1Src), 'Woodland xlsx Page 1 sheet: no MAX() formula on the kW Total cell');
+assert(!/\(peak\)/i.test(ws1Src), 'Woodland xlsx Page 1 sheet: no "(peak)" note on the kW Total cell');
+
 function runSurfaces(label, em, gm, sqft, blMonths) {
   const eBills = (em.bills || []).slice().sort((a, c) => sandbox._parseISO(a.start) - sandbox._parseISO(c.start));
   const gBills = (gm.bills || []).slice().sort((a, c) => sandbox._parseISO(a.start) - sandbox._parseISO(c.start));

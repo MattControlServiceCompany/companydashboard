@@ -2101,7 +2101,11 @@ function initDashboardTab(projId) {
             curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
           }
           if (m.commodity === 'Gas') {
-            curTherms += parseFloat(bill.therms) || 0;
+            // Single source of truth (2026-09-22): same gas-usage helper the baseline uses
+            // (computations/savings.js resolveGasUsageTherms — therms/naturalGasTherms/
+            // naturalGasMMbtu/naturalGasCCF fallback chain) instead of a bare bill.therms read,
+            // so CSV-imported gas bills aren't silently zeroed in this "actual" EUI path.
+            curTherms += resolveGasUsageTherms(bill);
           } else if (m.commodity === 'Propane') {
             curPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
           } else {
@@ -2117,7 +2121,8 @@ function initDashboardTab(projId) {
             allCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
           }
           if (m.commodity === 'Gas') {
-            allTherms += parseFloat(bill.therms) || 0;
+            // Same single gas-usage helper as curTherms above.
+            allTherms += resolveGasUsageTherms(bill);
           } else if (m.commodity === 'Propane') {
             allPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
           } else {

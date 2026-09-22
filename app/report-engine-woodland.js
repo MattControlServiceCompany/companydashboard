@@ -84,11 +84,11 @@ var WD_TEXT = {
     "The natural gas baseline is the building's 12 billed therm totals for the period. Gas use follows heating demand; no weather adjustment is applied to the gas baseline.",
   summaryIntro: function (start, end) {
     return (
-      "A 12-month summary of the building's energy use, peak demand, and cost for the baseline period (" +
+      "A 12-month summary of the building's energy use, demand, and cost for the baseline period (" +
       start +
       ' – ' +
       end +
-      "). Monthly electric use, gas use, and demand are the billed values for each month; the annual demand figure is the period's peak, not a sum or average. Electric energy and demand costs are shown separately with their own rates, and the summary includes Site Energy Use Intensity (EUI, in kBtu per square foot per year) for benchmarking."
+      '). Monthly electric use, gas use, and demand are the billed values for each month; the annual demand figures (Metered kW, Billed kW) are the SUM of the 12 monthly values, not a peak or an average. Electric energy and demand costs are shown separately with their own rates, and the summary includes Site Energy Use Intensity (EUI, in kBtu per square foot per year) for benchmarking.'
     );
   },
   hvacTitle: 'HVAC Cooling & Heating Load',
@@ -1446,14 +1446,17 @@ function rptPageWoodlandBills(n, d) {
       : '<tr><th style="width:19%">Month</th><th class="rpt-n" style="width:8%">Days</th><th class="rpt-n" style="width:22%">Billed Therms</th><th class="rpt-n" style="width:22.5%">Total Cost</th><th class="rpt-n" style="width:28.5%">Effective $/Therm</th></tr>';
     var rowsHtml = '';
     // `sums` MUST have exactly one entry per non-label column, in order (Calc re-audit defect
-    // #1). Billed kW's Total cell is the ANNUAL PEAK (max), never a sum (defect #4); `avgSum`
-    // keeps the Average row a true mean. The two rate columns' Total cells are the ANNUAL
-    // effective rates (annual $ / annual quantity) — a real figure, not a sum of rates.
+    // #1). Billed kW's Total cell is the SUM of the 12 monthly billed kW values (2026-09-22
+    // fix — a Total row is never a peak/max; the single-source getMeterBaselineTotals() call
+    // below overrides this cell with the canonical billedKW total so this table always agrees
+    // with the Building Baseline Data table (page 3) and the xlsx export). The two rate
+    // columns' Total cells are the ANNUAL effective rates (annual $ / annual quantity) — a
+    // real figure, not a sum of rates.
     var sums = isElec
       ? [
           { sum: 0, dec: 0 }, // Days
           { sum: 0, dec: 0 }, // kWh
-          { sum: 0, avgSum: 0, dec: 2, suffix: ' (peak)' }, // kW — Total = MAX, Average = mean
+          { sum: 0, dec: 2 }, // kW — Total = SUM of monthly billed kW, Average = mean
           { sum: 0, dec: 2, fmt: 'c' }, // energy $
           { sum: 0, dec: 2, fmt: 'c' }, // demand $
           { sum: 0, dec: 2, fmt: 'c' }, // total $
@@ -1481,8 +1484,7 @@ function rptPageWoodlandBills(n, d) {
         var effKwh = kwh > 0 && energy$ > 0 ? energy$ / kwh : 0;
         var effKw = kw > 0 && demand$ > 0 ? demand$ / kw : 0;
         sums[1].sum += kwh;
-        sums[2].sum = Math.max(sums[2].sum, kw);
-        sums[2].avgSum += kw;
+        sums[2].sum += kw;
         sums[3].sum += energy$;
         sums[4].sum += demand$;
         sums[5].sum += cost;
@@ -1526,8 +1528,17 @@ function rptPageWoodlandBills(n, d) {
       }
     });
     if (isElec) {
+      // Single source of truth (2026-09-22): override the Total row's kW with the canonical
+      // getMeterBaselineTotals().billedKW figure — the SAME helper the header strip, Project
+      // Baseline panel, and page 3's Building Baseline Data table read — instead of trusting
+      // this table's own per-row accumulation to stay in sync. Falls back to the per-row sum
+      // above only if the meter/helper isn't available (should not happen in the report path).
+      if (meter && typeof getMeterBaselineTotals === 'function') {
+        var _blTot = getMeterBaselineTotals(meter, (meter.bills || []).slice(), meter.inclusive !== false);
+        if (_blTot && _blTot.billedKW > 0) sums[2].sum = _blTot.billedKW;
+      }
       sums[6].text = sums[1].sum > 0 && sums[3].sum > 0 ? '$' + (sums[3].sum / sums[1].sum).toFixed(4) : '—';
-      sums[7].text = sums[2].avgSum > 0 && sums[4].sum > 0 ? '$' + (sums[4].sum / sums[2].avgSum).toFixed(2) : '—';
+      sums[7].text = sums[2].sum > 0 && sums[4].sum > 0 ? '$' + (sums[4].sum / sums[2].sum).toFixed(2) : '—';
     } else {
       sums[3].text = sums[1].sum > 0 ? '$' + (sums[2].sum / sums[1].sum).toFixed(4) : '—';
     }
@@ -2513,13 +2524,14 @@ async function exportWoodlandReportToXlsx(data) {
       ]);
     });
     var lastDataRow1 = ws1.rowCount;
-    // Billed kW Total = ANNUAL PEAK (MAX), never a sum of monthly peaks. Rate totals = annual
-    // cost / annual quantity (a real effective rate, not a sum of rates).
+    // Billed kW Total = SUM of the 12 monthly billed kW values (2026-09-22 fix — never a peak/
+    // max). Matches the site's page 1 table and the Building Baseline Data sheet below. Rate
+    // totals = annual cost / annual quantity (a real effective rate, not a sum of rates).
     var totR1 = ws1.addRow([
       'TOTAL (Annual)',
       sumF('B', firstDataRow1, lastDataRow1),
       sumF('C', firstDataRow1, lastDataRow1),
-      { formula: 'MAX(D' + firstDataRow1 + ':D' + lastDataRow1 + ')' },
+      sumF('D', firstDataRow1, lastDataRow1),
       sumF('E', firstDataRow1, lastDataRow1),
       sumF('F', firstDataRow1, lastDataRow1),
       sumF('G', firstDataRow1, lastDataRow1),
@@ -2557,7 +2569,7 @@ async function exportWoodlandReportToXlsx(data) {
       },
     ]);
     styleTotalRow(totR1);
-    ws1.getCell('D' + totR1.number).note = 'Annual peak (MAX of the 12 monthly demand readings) — not a sum.';
+    ws1.getCell('D' + totR1.number).note = 'Sum of the 12 monthly billed kW readings — not a peak.';
     var avgR1 = ws1.addRow([
       'Average (per month)',
       avgF('B', firstDataRow1, lastDataRow1),

@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.875',
+    date: '2026-09-22',
+    title: 'Baseline & BAS Savings report fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Baseline + BAS Savings Report: the annual kW is the total of the monthly billed kW, and the page 3 table fits the page.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.874',
     date: '2026-09-22',
     title: 'Consistent baseline numbers everywhere',

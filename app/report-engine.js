@@ -5263,10 +5263,8 @@ function rptBuildBaselineDataTable(b, d, opts) {
   var _showWater = _opts.water && Object.keys(_bm.waterByMo).length > 0;
   var blDataRows = '';
   var _tKwh = 0,
-    _tKw = 0,
-    _tBkw = 0,
-    _pKw = 0, // 2026-09-22: annual demand is the PEAK monthly value, never a sum/average
-    _pBkw = 0,
+    _tKw = 0, // Annual Metered kW = SUM of the 12 monthly demandKW values, never a peak/average
+    _tBkw = 0, // Annual Billed kW = SUM of the 12 monthly billedKW values
     _tKwCost = 0,
     _tEnCost = 0,
     _tElecCost = 0;
@@ -5303,8 +5301,6 @@ function rptBuildBaselineDataTable(b, d, opts) {
     _tKwh += kwh;
     _tKw += demKw;
     _tBkw += bKw;
-    _pKw = Math.max(_pKw, demKw);
-    _pBkw = Math.max(_pBkw, bKw);
     _tKwCost += kwCostTotal;
     _tEnCost += enCost;
     _tElecCost += elecCost;
@@ -5436,7 +5432,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
   if (_showElec)
     blHdr +=
       '<th class="rpt-n bl-elec">kWh</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Actual<br>kW</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Metered<br>kW</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
@@ -5515,9 +5511,25 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // '.rpt-table td{overflow-wrap:anywhere}' rule already provides that fallback). Also tightens
   // font-size/padding for this table only (scoped via .rpt-bl-tight, not the shared .rpt-table-bl
   // rule) so a full 18-column row still reads cleanly at the narrower per-column width.
+  //
+  // 2026-09-22 fix (still overflowing after the above): two causes the .rpt-bl-tight font-size
+  // pass alone never addressed. (1) box-sizing was left at the browser default (content-box), so
+  // each <col>'s fixed % width set only the CONTENT box — this table's 3px/side padding and 1px
+  // border were added ON TOP of every column's declared width, so a 10-18 column row rendered
+  // 60-150px wider than its 100%-summed colgroup, pushing "Electric Cost"/"$/Therm" and the bold
+  // Annual total past the page edge even though the colgroup math looked correct. (2) the header
+  // row's overflow fallback: '.rpt-table td{overflow-wrap:anywhere}' is a TD-only rule — <th>
+  // cells (e.g. "$/Therm", "Month") had NO break-as-last-resort at all, and _rptInjectUiPassOverrides
+  // additionally forces 'overflow-wrap:normal !important' on every .rpt-table-bl th (a fix for an
+  // unrelated table), so a header word too wide for its narrow column had no way to avoid
+  // clipping. Both are fixed here, scoped to .rpt-bl-tight only (this table's own class) so no
+  // other report table's sizing changes: box-sizing:border-box makes the colgroup's 100% actually
+  // bound the rendered table width, and a `.rpt-table-bl.rpt-bl-tight th` override (2-class
+  // selector — higher specificity than the 1-class rule it needs to beat, so it wins regardless
+  // of injection order) restores the same anywhere-wrap fallback TDs already had.
   var _blDetailColCount = (_showElec ? 7 : 0) + (_showGas ? 3 : 0) + (_showProp ? 3 : 0) + (_showWater ? 3 : 0);
-  var _blMonthW = 7;
-  var _blTotalW = 8;
+  var _blMonthW = 6;
+  var _blTotalW = 7;
   var _blDetailW = _blDetailColCount > 0 ? (100 - _blMonthW - _blTotalW) / _blDetailColCount : 0;
   function _blCol(w) {
     return '<col style="width:' + w.toFixed(2) + '%">';
@@ -5534,8 +5546,21 @@ function rptBuildBaselineDataTable(b, d, opts) {
       // 2026-09-22: font-size must be on th/td themselves — `.rpt-table-bl th/td{font-size:10px}`
       // (element-level rules) beat a size set on the <table>, so the cells never actually
       // shrank and "Electric Cost"/"$/Therm" headers and the bold Annual "$110,423" overflowed
-      // their fixed 8.5% columns.
-      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px;font-size:8.5px}</style>' +
+      // their fixed 8.5% columns. box-sizing:border-box (2026-09-22) keeps this table's own
+      // padding/border inside its colgroup's 100%-summed widths instead of adding to them; the
+      // `.rpt-table-bl.rpt-bl-tight th` rule restores an anywhere-wrap fallback on headers (see
+      // comment above _blDetailColCount) so an unbreakable header word never clips instead of
+      // wrapping.
+      // _rptInjectUiPassOverrides() (unrelated fix, this file ~line 1922) injects
+      // '#reportPages .rpt-table-bl th{word-break:keep-all !important;overflow-wrap:normal
+      // !important}' into <head> at overlay-open time — an ID selector, which beats any
+      // class-only selector even with !important. The two rules below match that ID + add a
+      // second class, so they win on specificity (ID+2class+type > ID+1class+type) and restore
+      // wrapping for just this table's headers, in both the legacy overlay (#reportPages) and
+      // the V2 preview modal (#rptPreviewPages).
+      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px;font-size:8px;box-sizing:border-box}' +
+      '#reportPages .rpt-table-bl.rpt-bl-tight th,#rptPreviewPages .rpt-table-bl.rpt-bl-tight th' +
+      '{white-space:normal !important;overflow-wrap:anywhere !important;word-break:break-word !important}</style>' +
       blStats +
       '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
       '<table class="rpt-table rpt-table-bl rpt-bl-tight" style="width:100%;table-layout:fixed">' +
