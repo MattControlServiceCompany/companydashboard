@@ -2386,6 +2386,16 @@
         border-top: 2px solid var(--rpt-table-tot-bdr);
         background: var(--rpt-table-tot-bg);
       }
+      /* .rpt-avg (2026-09-22, Woodland report _rptTotalAvgRow helper): the Average row that
+         rides directly under every Total row (Coordinator constraint — every table needs BOTH).
+         Reuses the same total-row tokens at reduced weight/italic so it reads as a sibling of
+         the Total row, not a new visual language — no new color introduced. */
+      .rpt-table tr.rpt-avg td {
+        font-weight: 600;
+        font-style: italic;
+        background: var(--rpt-table-stripe);
+        border-top: 1px solid var(--rpt-table-tot-bdr);
+      }
       .rpt-table-dark {
         background: var(--rpt-dtbl-bg);
         color: var(--rpt-dtbl-text);
@@ -8777,6 +8787,21 @@
                       data-fb="energy.utility.performance-btn"
                     >
                       💡 Building Performance
+                    </button>
+                    <!-- Woodland Springs Middle 7-page Baseline + BAS Savings Report (2026-09-22):
+                         gated visible only for a building that has saved BAS savings options
+                         (project.savingsData.measures[] with a matching bldgId) — see
+                         renderUDDetail() in app/utility-data.js. Generic by implementation (not
+                         hardcoded to one building id), but only Woodland Springs Middle has this
+                         data today. -->
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="ud-woodland-report-btn"
+                      onclick="generateWoodlandReport(udSelProjId, udSelBldgId)"
+                      style="display: none"
+                      data-fb="energy.utility.woodland-report-btn"
+                    >
+                      📋 Baseline + Savings Report
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
@@ -15434,6 +15459,14 @@
         </div>
         <div style="display: flex; gap: 8px">
           <button id="rptSaveBtn" onclick="saveReportToHistory()" class="rpt-toolbar-btn">💾 Save</button>
+          <button
+            id="rptXlsxBtn"
+            onclick="exportWoodlandReportToXlsx(window._currentReportData)"
+            class="rpt-toolbar-btn"
+            style="display: none"
+          >
+            📊 Export to Excel
+          </button>
           <button onclick="exportReportToDocx()" class="rpt-toolbar-btn">📝 Export to Word</button>
           <button onclick="exportReportToPDF()" class="rpt-toolbar-btn rpt-toolbar-primary">📄 Export to PDF</button>
         </div>
@@ -15469,6 +15502,15 @@
     <script
       src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
       integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"
+      crossorigin="anonymous"
+    ></script>
+    <!-- ExcelJS — used ONLY by exportWoodlandReportToXlsx() (app/report-engine-woodland.js) for
+         cell fill colors, bold totals, and an embedded Page-7 chart PNG (worksheet.addImage()) —
+         capabilities the SheetJS community build above cannot write. SheetJS remains the only
+         xlsx library used everywhere else (import paths, unchanged). -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"
+      integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz"
       crossorigin="anonymous"
     ></script>
     <script
@@ -15519,6 +15561,7 @@
     <script src="app/docx-skeleton.js?v=862"></script>
     <script src="app/docx-writer.js?v=862"></script>
     <script src="app/report-engine.js?v=862"></script>
+    <script src="app/report-engine-woodland.js?v=862"></script>
     <script src="app/report-preview.js?v=862"></script>
     <script src="app/calculators.js?v=862"></script>
     <script src="app/ecm-calculators.js?v=862"></script>

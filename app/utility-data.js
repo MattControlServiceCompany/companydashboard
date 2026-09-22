@@ -2471,6 +2471,19 @@ function renderUDDetail(targetWrap) {
 
   if (hdr) hdr.style.display = 'flex';
   if (hdrTitle) hdrTitle.textContent = b.name;
+  // Woodland Springs Middle 7-page report (2026-09-22): only show the trigger button for a
+  // building that actually has saved BAS savings options — avoids UI clutter on every other
+  // building in every other project, self-gating rather than hardcoding a building id.
+  const woodlandBtn = document.getElementById('ud-woodland-report-btn');
+  if (woodlandBtn) {
+    const proj = projects.find((x) => x.id === udSelProjId);
+    const hasWoodlandMeasures = !!(
+      proj &&
+      proj.savingsData &&
+      (proj.savingsData.measures || []).some((m) => m.bldgId === b.id)
+    );
+    woodlandBtn.style.display = hasWoodlandMeasures ? '' : 'none';
+  }
   _bldgStatsPanelVis = false;
   _bldgPerfPanelVis = false;
   _bldgSavProjPanelVis = false;
