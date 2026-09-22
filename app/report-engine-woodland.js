@@ -1950,7 +1950,7 @@ async function exportWoodlandReportToXlsx(data) {
   }
   ws2.addRow([]);
   ws2.addRow([
-    'Natural gas: no weather regression fitted; the 12 billed monthly Therms totals (Page 1) are used directly.',
+    "Natural gas is billed under a Trigger-Fixed / Index (FOM) / SWE commodity structure (Wood River Energy), driven by the monthly price index rather than weather. The gas baseline is this building's 12 billed therm totals for the period, with no weather adjustment applied.",
   ]);
 
   // ---- Sheet 3: Baseline Summary (mirror of the site's Building Baseline Data table) ----
@@ -2046,7 +2046,7 @@ async function exportWoodlandReportToXlsx(data) {
     styleTotalRow(euiRow);
     ws3.addRow(['Total Annual Utility Cost', { formula: 'L' + A }]);
   } else {
-    ws3.addRow(["No baseline month data is available for this building in the site's utility records."]);
+    ws3.addRow(['No baseline month data is available for this building.']);
   }
 
   // ---- Sheet 4: HVAC (same inputs as Page 4) ----
@@ -2057,7 +2057,7 @@ async function exportWoodlandReportToXlsx(data) {
   var elecKwhRow = ws4.addRow(['Annual electric use (kWh)', hv.elecKwh || 0]);
   var gasThermsRow = ws4.addRow(['Annual gas use (Therms)', hv.gasTherms || 0]);
   if (hv.coolKwh != null) {
-    ws4.addRow(['CDD coefficient (kWh per cooling degree day, Page 2)', hv.slopeCDD]);
+    ws4.addRow(['Cooling energy per cooling degree day (kWh/CDD)', hv.slopeCDD]);
     ws4.addRow([]);
     var hRowH = ws4.addRow([
       'Month',
@@ -2110,7 +2110,7 @@ async function exportWoodlandReportToXlsx(data) {
   } else {
     ws4.addRow([]);
     ws4.addRow([
-      "Cooling load is not statistically separable from this building's baseline electric regression (no positive cooling-degree-day term); no split shown.",
+      "Cooling load could not be separated from this building's overall electric use based on a full year of billing and weather data, so no cooling / heating split is shown below. The annual totals above are this building's billed baseline values.",
     ]);
   }
 
@@ -2129,7 +2129,7 @@ async function exportWoodlandReportToXlsx(data) {
   var optA = data.options[0];
   var zones = data.zones || [];
   if (zones.length) {
-    ws5.addRow(['Current Zone Setpoints (Equipment Matrix, ' + zones.length + ' zones)']);
+    ws5.addRow(['Current Zone Setpoints (' + zones.length + ' zones)']);
     var hRowZ = ws5.addRow([
       'Zone',
       'Occupied Heating',
@@ -2151,7 +2151,7 @@ async function exportWoodlandReportToXlsx(data) {
     });
   } else {
     ws5.addRow([
-      'Per-zone BAS point data is not available for this building; setpoints below are the proposed building-wide targets only.',
+      'Zone-level setpoint data is not available for this building; the setpoints below are proposed building-wide targets.',
     ]);
   }
   ws5.addRow([]);
@@ -2209,11 +2209,11 @@ async function exportWoodlandReportToXlsx(data) {
     var cscRow = ws5.addRow(['CSC share (' + (100 - WOODLAND_CLIENT_SHARE_PCT) + '%)', optA.cscShare$]);
     styleTotalRow(cscRow);
     ws5.addRow([
-      'Shared-savings split — assumes ' +
+      'Shared-savings structure — assumes a ' +
         WOODLAND_CLIENT_SHARE_PCT +
         '% client / ' +
         (100 - WOODLAND_CLIENT_SHARE_PCT) +
-        '% CSC (to be confirmed with the client), not an install-cost/payback contract.',
+        '% CSC split of the annual $ saved (to be confirmed with the client), not an install-cost/payback contract.',
     ]);
   }
 
