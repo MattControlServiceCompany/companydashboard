@@ -630,7 +630,9 @@ var EM_POINT_MAP = [
       /outside\s+air\s+total\s+cfm\b/i,
       /economizer\s+outside\s+air\s+cfm/i,
     ],
-    negativePatterns: [/\b(low|high|alarm|normal|fault|status|reset|minimum|maximum)\b/i, /\bcalculated\b/i],
+    // fix/em-point-map-collisions-2: added "source" — "Outside Air CFM Source" is an
+    // enum/status field (which sensor is active), not a flow reading, and had no negative guard.
+    negativePatterns: [/\b(low|high|alarm|normal|fault|status|reset|minimum|maximum|source)\b/i, /\bcalculated\b/i],
     types: ['AI', 'BAI', 'BAV'],
     cats: ['ahu', 'doas'],
   },
@@ -678,8 +680,12 @@ var EM_POINT_MAP = [
     // existing effectiveCoolSetpoint entry (below) because this entry appears earlier in
     // EM_POINT_MAP (first-match-wins). "Effective Cooling Setpoint" now falls through to
     // effectiveCoolSetpoint so it stays distinct from the Occupied setpoint mapped here.
+    // fix/em-point-map-collisions-2: added "limit" — "Cooling Set Point Limit ANO" (50
+    // instances, MedAct FCU/RTU) is a configured limit/clamp value, not the live occupied
+    // setpoint; the generic /cooling.*setpoint/i pattern matched it as a substring, same bug
+    // class as the fixed Effective/Occupied case (v861) but a different unanticipated synonym.
     negativePatterns: [
-      /adjust|unoccupied|effective/i,
+      /adjust|unoccupied|effective|limit/i,
       /\b(bacnet\s*pid|integration|mismatch|alarm|remote|command|mcs|bas\b)\b/i,
       /supply\s+air/i,
     ],
@@ -800,16 +806,34 @@ var EM_POINT_MAP = [
     // supply-side airflow belongs to supplyFanCFM (cats: ahu). Also added /supply\s+air/ to
     // negativePatterns as belt-and-suspenders so "Supply Air Flow" never routes here even on
     // terminal rows where the broad /\bair\s*flow\b/i pattern would otherwise match.
-    patterns: [
-      /discharge airflow/i,
-      /disc airflow/i,
-      /zone airflow/i,
-      /\bair\s*flow\b/i,
-      /\bflow\s+(control\s*\/\s*)?input\b/i,
-    ],
+    // fix/em-point-map-collisions-2: removed /\bflow\s+(control\s*\/\s*)?input\b/i — it and
+    // /\bair\s*flow\b/i both matched "Air Flow" AND "Flow Control / Flow Input", two distinct
+    // real points co-occurring on the same VAV (828/1000+ VAV rows in JOCO data), colliding
+    // into one column. "Flow Control / Flow Input" now has its own column (flowControlInput,
+    // below).
+    patterns: [/discharge airflow/i, /disc airflow/i, /zone airflow/i, /\bair\s*flow\b/i],
     negativePatterns: [
       /set\s*point|setpoint|request|minimum|maximum/i,
       /\bsupply\s+air(?:\s*flow)?\b/i,
+      /\b(outdoor|outside|supply\s+fan|filter|switch|proof|loss|status|alarm|percentage|percent|chilled\s+water|condenser\s+water|hot\s+water)\b/i,
+    ],
+    types: ['AI'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'zone'],
+  },
+  {
+    col: 'flowControlInput',
+    label: 'Flow Control / Flow Input',
+    // fix/em-point-map-collisions-2: split out of dischargeAirflow (above). "Flow Control /
+    // Flow Input" is the raw flow-control-loop sensor input, a distinct real point from the
+    // calculated/reported "Air Flow" — both are present simultaneously on the same VAV.
+    // Splitting them into separate columns stops the collision (previously first-write-wins
+    // silently dropped whichever point lost the race) without changing ASHRAE-36 'discFlow'
+    // category compliance, which already treats 'flow control'/'flow input' as an alias
+    // group of the 'Air Flow' family (see EM_POINT_CATEGORIES discFlow, ~13870-13906) — that
+    // category still resolves via the dischargeAirflow column above when 'Air Flow' is present.
+    patterns: [/\bflow\s+(control\s*\/\s*)?input\b/i],
+    negativePatterns: [
+      /set\s*point|setpoint|request|minimum|maximum/i,
       /\b(outdoor|outside|supply\s+fan|filter|switch|proof|loss|status|alarm|percentage|percent|chilled\s+water|condenser\s+water|hot\s+water)\b/i,
     ],
     types: ['AI'],
@@ -1741,14 +1765,35 @@ var EM_POINT_MAP = [
   {
     col: 'exhaustFanStatus',
     label: 'Exhaust Fan Status',
+    // fix/em-point-map-collisions-2: removed the "enable" alternatives — "Exhaust Fan Enable"
+    // (schedule/interlock permission) is a distinct real point from "Exhaust Fan Status"
+    // (proof-of-flow feedback), co-occurring 51 instances each on the same EF unit (e.g.
+    // Household Hazardous Waste EF-1/2/3). "Exhaust Fan Run" kept as its own bare pattern
+    // since it indicates the fan is actually running (a status reading, not a permission).
     patterns: [
       /exhaust\s+fan\s+(run\s+)?(status|running|\bon\b|proof)/i,
       /\bef[-\s]?\d+\s+(run\s+)?status\b/i,
       /\bef\s+(run\s+)?status\b/i,
-      /exhaust\s+fan\s+\d+\s+(enable|status|run\s+status)\b/i,
-      /exhaust\s+fan\s+(enable|run)\b/i,
+      /exhaust\s+fan\s+\d+\s+(status|run\s+status)\b/i,
+      /exhaust\s+fan\s+run\b/i,
     ],
-    negativePatterns: [/\b(alarm|fault|diagnostic|disabled|enabled|vfd\s+status|speed|command|latched|failure)\b/i],
+    negativePatterns: [
+      /\b(alarm|fault|diagnostic|disabled|enabled|enable|vfd\s+status|speed|command|latched|failure)\b/i,
+    ],
+    types: ['BI', 'BO', 'BV', 'BAI', 'BAO', 'BAV'],
+    cats: ['ef', 'ahu', 'erv', 'doas'],
+  },
+  {
+    col: 'exhaustFanEnable',
+    label: 'Exhaust Fan Enable',
+    // fix/em-point-map-collisions-2: split out of exhaustFanStatus (above) — see comment there.
+    patterns: [
+      /exhaust\s+fan\s+enable/i,
+      /exhaust\s+fan\s+\d+\s+enable\b/i,
+      /\bef\s+enable\b/i,
+      /\bef[-\s]?\d+\s+enable\b/i,
+    ],
+    negativePatterns: [/\b(alarm|fault|diagnostic|disabled|status)\b/i],
     types: ['BI', 'BO', 'BV', 'BAI', 'BAO', 'BAV'],
     cats: ['ef', 'ahu', 'erv', 'doas'],
   },
@@ -1760,10 +1805,14 @@ var EM_POINT_MAP = [
   {
     col: 'supplyFanStatus',
     label: 'Supply Fan Status',
+    // fix/em-point-map-collisions-2: removed /supply\s+fan\s+command/i and
+    // /supply\s+fan\s+enable/i — "Supply Fan Enable" (schedule/interlock permission) and
+    // "Supply Fan Command" (calculated commanded state) are distinct real points from
+    // "Supply Fan Status" (physical proof-of-flow feedback), co-occurring on the same RTU
+    // (confirmed Household Hazardous Waste RTU-1 Office: Enable=On, Status=On simultaneously).
+    // Both now route to the new supplyFanEnable column (below).
     patterns: [
       /supply\s+fan\s+status/i,
-      /supply\s+fan\s+command/i,
-      /supply\s+fan\s+enable/i,
       /\bfan\s+status\b/i,
       // Phase 4 companion patterns:
       // Numbered fan status: "Supply Fan 1 Status", "Supply Fan 2 Status",
@@ -1780,10 +1829,28 @@ var EM_POINT_MAP = [
     // so "Supply Fan 1 VFD Status" is no longer blocked. Verified: all 7 bucket-A VFD names
     // route elsewhere (supplyFanSpeed, supplyFanAmps, exhaustFanSpeed, returnFanSpeed) before
     // reaching supplyFanStatus — no regression from narrowing.
+    // fix/em-point-map-collisions-2: added enable|command to the exclusion set (belt-and-
+    // suspenders now that both patterns are removed above).
     negativePatterns: [
       /alarm|fault|speed/i,
       /\bvfd\s+speed\b|\bvfd\s+fault\b/i,
-      /\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|latched|failure|disabled|enabled)\b/i,
+      /\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|latched|failure|disabled|enabled|enable|command)\b/i,
+      /RTU\s+(Disabled|Enabled)|Unit\s+(Disabled|Enabled)/i,
+    ],
+    types: ['BI', 'BO', 'BAI', 'BAO', 'BAV', 'BV'],
+    cats: ['ahu', 'rtu', 'furnace', 'fcu'],
+  },
+  {
+    col: 'supplyFanEnable',
+    label: 'Supply Fan Enable Command',
+    // fix/em-point-map-collisions-2: split out of supplyFanStatus (above) — see comment there.
+    // Label matches the existing EM_POINT_CATEGORIES 'sfEnable' canonical ASHRAE-36 name
+    // ("Supply Fan Enable Command", section 5.16, ~12803-12827) so emBuildColKeyToCatKey
+    // bridges this column to that already-separate compliance category automatically.
+    patterns: [/supply\s+fan\s+enable/i, /supply\s+fan\s+command/i, /supply\s+fan\s+\d+\s+enable\b/i],
+    negativePatterns: [
+      /alarm|fault|speed/i,
+      /\b(exhaust|ef-?\d+|relief|return\s+fan|smoke|evac|destratif|latched|failure|disabled|enabled|status)\b/i,
       /RTU\s+(Disabled|Enabled)|Unit\s+(Disabled|Enabled)/i,
     ],
     types: ['BI', 'BO', 'BAI', 'BAO', 'BAV', 'BV'],
