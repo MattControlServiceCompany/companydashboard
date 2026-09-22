@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.871',
+    date: '2026-09-22',
+    title: 'Fixed gas Normalized tab, baseline, and Site EUI reading as 0',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Department — Normalized tab, baseline usage, and Site EUI for gas meters now use the same therms reading as the Bills table, so meters billed in naturalGasTherms/MMBtu/CCF show real monthly usage, a real Therms/mo baseline, and a real chart instead of all zeros.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.870',
     date: '2026-09-22',
     title: 'Fixed blank gas usage display in Utility Data',

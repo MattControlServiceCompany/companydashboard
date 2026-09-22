@@ -469,7 +469,16 @@ function getNormRows(m, bills, incl, weatherByYm) {
       const usage = isElec
         ? parseFloat(row.kwh) || 0
         : isGas
-          ? parseFloat(row.therms) || 0
+          ? // Bug 2026-09-22: mirror computations/savings.js resolveGasUsageTherms()
+            // fallback chain — canonical row.therms is only populated by manual edits,
+            // so CSV-imported gas bills (naturalGasTherms/naturalGasMMbtu/naturalGasCCF)
+            // read as 0 here, zeroing the Normalized tab, baseline, and Site EUI.
+            parseFloat(row.therms) ||
+            parseFloat(row.naturalGasTherms) ||
+            parseFloat(row.naturalGasMMbtu) * 10 ||
+            parseFloat(row.naturalGasCCF) * 1.037 ||
+            parseFloat(row.usage) ||
+            0
           : isSewer
             ? parseFloat(row.sewerUsage) || parseFloat(row.waterUsage) || 0
             : parseFloat(row.waterUsage) || 0;
