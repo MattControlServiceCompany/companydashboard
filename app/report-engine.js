@@ -6,38 +6,53 @@ if (typeof toKBtu === 'undefined') {
 }
 
 // -----------------------------------------------------------------------
-// collectReportData(projId, buildingIds, reportDateStr, reportType)
+// _rptMeterEligible(projId, m) — the ONE eligibility rule for a meter to enter a report.
+// Returns '' when eligible, else a short user-facing reason. Used by collectReportData()
+// (the filter) AND the Generate Report picker (default-checked / disabled rows), so the two
+// can never disagree. Matt's #1 rule (2026-09-11): a meter excluded on the Utility Data tab
+// (baselineInclude:false) or whose commodity is off in the project's calc set must NEVER
+// render anywhere in the report, regardless of selection.
+// -----------------------------------------------------------------------
+function _rptMeterEligible(projId, m) {
+  if (m.baselineInclude === false) return 'excluded on Utility Data';
+  // Permissive fallback: if isCalcCommodity isn't loaded in this context, don't filter on
+  // commodity at all rather than throwing.
+  if (typeof isCalcCommodity === 'function' && !isCalcCommodity(projId, m.commodity))
+    return 'commodity not in project calc set';
+  return '';
+}
+
+// -----------------------------------------------------------------------
+// collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod, meterIds)
 //
 // Gathers ALL data needed for report generation into a single structured
 // object. Every report page template reads from this object — no page
 // template should access localStorage or compute savings directly.
 //
-// Adapted from the data-gathering portion of generatePerformanceReport().
+// buildingIds / meterIds: the user's selection from the Generate Report tree (null/empty =
+// every building / every eligible meter). Scope is applied ONCE, right here, by handing every
+// consumer below a building copy whose `meters` array holds only the eligible + selected
+// meters — aggBaseMoMapForBldgs, the gather loop, buildingsData, meterDetails, and the
+// quarterlyActuals recursion all inherit it. No consumer re-filters.
 // -----------------------------------------------------------------------
-function collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod) {
+function collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod, meterIds) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return null;
 
   let bldgs = getUDBldgs(projId);
   if (buildingIds && buildingIds.length) bldgs = bldgs.filter((b) => buildingIds.includes(String(b.id)));
-  // Matt's #1 rule (2026-09-11): a building with zero included meters (every meter
-  // baselineInclude:false, e.g. Maintenance Building) must NEVER render anywhere in the
-  // report, regardless of which caller/selection produced `bldgs` — "Select All" in the
-  // report modal, a saved template, or a caller that bypasses the modal entirely (a script/
-  // harness passing every project building id). Mirrors the report picker's own eligibility
-  // test verbatim (openReportModalV2, ~line 10525-10530, bHasIncludedCalcMeter) so a building
-  // the picker would leave unchecked by default is excluded exactly the same way here.
-  // Filtered ONCE, at the source, before any downstream use of `bldgs` in this function
-  // (totalSqft, baselineMoMap, buildingsData/d.buildings, setpoints, the quarterlyActuals
-  // recursion's building-id list) — no per-table patch needed, every consumer inherits it.
-  bldgs = bldgs.filter((b) =>
-    (b.meters || []).some((m) => {
-      if (m.baselineInclude === false) return false;
-      // Same permissive fallback as the picker: if isCalcCommodity isn't loaded in this
-      // context, don't filter on commodity at all rather than throwing.
-      return typeof isCalcCommodity !== 'function' || isCalcCommodity(projId, m.commodity);
-    }),
-  );
+  const _midSet = meterIds && meterIds.length ? new Set(meterIds.map(String)) : null;
+  bldgs = bldgs
+    .map((b) =>
+      Object.assign({}, b, {
+        meters: (b.meters || []).filter(
+          (m) => !_rptMeterEligible(projId, m) && (!_midSet || _midSet.has(String(m.id))),
+        ),
+      }),
+    )
+    // A building left with zero meters (every meter excluded, or none selected) never renders —
+    // "Select All", a saved template, or a harness passing every building id all get the same rule.
+    .filter((b) => b.meters.length);
   const useNormalized = p.baselineComparison === 'normalized';
   if (!bldgs.length) return null;
 
@@ -73,17 +88,13 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         });
       }
     }
+    // b.meters is already scoped (eligible + selected) at the top of this function.
     (b.meters || []).forEach((m) => {
-      if (m.baselineInclude === false) return;
       // Scope to energy commodities only (EUI/kBtu math below assumes Electric/Gas/Propane
       // units — Water/Sewer/Stormwater have no kBtu conversion and must never enter this
-      // baseline/post accumulation). WITHIN that energy set, honor the project's
-      // calcCommodities toggle (isCalcCommodity) instead of always assuming all three are on
-      // — matches the canonical gather pattern already used in core.js (baselineInclude +
-      // isCalcCommodity, no hardcoded array).
+      // baseline/post accumulation).
       const energyCommodities = ['Electric', 'Gas', 'Propane'];
       if (!energyCommodities.includes(m.commodity)) return;
-      if (typeof isCalcCommodity === 'function' && !isCalcCommodity(projId, m.commodity)) return;
       const bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
       const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
@@ -560,6 +571,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     return {
       id: b.id,
       name: b.name,
+      // The meters that actually entered this report for this building (scoped + gathered).
+      // Page templates that need the raw meter objects (Meter Performance) join on these ids
+      // instead of re-applying eligibility rules.
+      meterIds: bMeters.map((x) => x.m.id),
       sqft,
       type: bType,
       address: b.addr || '',
@@ -863,11 +878,14 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     });
     for (var _qi = 1; _qi < periodQuarter; _qi++) {
       try {
-        var _qd = collectReportData(projId, _qaBuildingIds, null, 'quarterly', {
-          quarter: _qi,
-          year: periodYear,
-          _noQuarterlyActuals: true,
-        });
+        var _qd = collectReportData(
+          projId,
+          _qaBuildingIds,
+          null,
+          'quarterly',
+          { quarter: _qi, year: periodYear, _noQuarterlyActuals: true },
+          meterIds,
+        );
         quarterlyActuals[_qi - 1] = _qd ? _qd.totals.savings : 0;
       } catch (e) {
         quarterlyActuals[_qi - 1] = 0;
@@ -6180,6 +6198,13 @@ function rptPageBuildingSummary(n, d, b) {
   if (_rptBldg && _rptBldg.meters) {
     var _rptProj = getUDProj(d.project.id);
     var _rptIncl = (_rptProj && _rptProj.inclMonths) || {};
+    // Only the meters collectReportData() actually gathered for this building (b.meterIds:
+    // eligible + user-selected + baseline >= 3 months) — the raw building's meter list is joined
+    // on id, never re-filtered here, so the picker's meter selection reaches this table too.
+    var _rptMeterIdSet = new Set((b.meterIds || []).map(String));
+    var _rptMeters = _rptBldg.meters.filter(function (meter) {
+      return _rptMeterIdSet.has(String(meter.id));
+    });
     // report-pass2 fix (2026-09-10, UX review): a building with a SECOND meter of the same
     // commodity (e.g. a stub/replacement meter with near-empty baseline) rendered as an
     // indistinguishable second "Electric Performance" block — the label only ever showed the
@@ -6188,21 +6213,10 @@ function rptPageBuildingSummary(n, d, b) {
     // append the meter's own identifier (meter/account number, else its service address) so each
     // block is attributable to a specific meter instead of looking like a duplicate.
     var _rptCommCounts = {};
-    _rptBldg.meters.forEach(function (meter) {
-      // 2026-09-10 (Q2 report fix, punch-list item 3): this section builds its own meter list
-      // straight from _rptBldg.meters instead of the pre-filtered allBldgMeters/bd.meterDetails
-      // collectReportData() already builds (which honors baselineInclude at line ~59) — so an
-      // excluded meter (e.g. HS ball-fields m1787758507080) rendered here anyway. Same
-      // baselineInclude===false check as the canonical gather loop.
-      if (meter.baselineInclude === false) return;
-      if (!isCalcCommodity(d.project.id, meter.commodity)) return;
-      if (!meter.baseline || !meter.baseline.months || meter.baseline.months.length < 3) return;
+    _rptMeters.forEach(function (meter) {
       _rptCommCounts[meter.commodity] = (_rptCommCounts[meter.commodity] || 0) + 1;
     });
-    _rptBldg.meters.forEach(function (meter) {
-      if (meter.baselineInclude === false) return;
-      if (!isCalcCommodity(d.project.id, meter.commodity)) return;
-      if (!meter.baseline || !meter.baseline.months || meter.baseline.months.length < 3) return;
+    _rptMeters.forEach(function (meter) {
       var mBills = (meter.bills || []).slice().sort(function (a, c) {
         return (a.start || '').localeCompare(c.start || '');
       });
@@ -6279,15 +6293,9 @@ function rptPageBuildingSummary(n, d, b) {
     label: 'Page ' + n + ' — ' + (b.name || 'Building'),
   });
 
-  // D2#14 fix (2026-09-09): user-facing toggle (rptOptIncludeBlTable, injected into the
-  // Generate Report modal by openReportModal) for whether the Building Baseline Data table
-  // renders at all. Defaults to included (!== false) so existing behavior is unchanged unless
-  // the user explicitly turns it off.
-  var _includeBlTable = !d.reportOptions || d.reportOptions.includeBlTable !== false;
-
   // If there is baseline data, render it on its own separate page to prevent
   // overflow clipping in the html2canvas PDF export (bug 9ff83f06).
-  if (blDataTable && _includeBlTable) {
+  if (blDataTable) {
     var blPageNum = n + 1;
     var blPageResult = rptPage(blPageNum, (b.name || 'Building') + ' — Baseline Data', blDataTable, {
       data: d,
@@ -10942,9 +10950,6 @@ function rptPageBoardSummary(n, d) {
 
 /* -- QUARTERLY / ANNUAL PERFORMANCE REPORTS -- */
 
-let _reportProjId = null,
-  _reportType = null;
-
 const REPORT_SECTIONS = [
   { key: 'boardSummary', label: 'Board Executive Summary', group: 'Executive' },
   { key: 'cover', label: 'Cover Page', group: 'Main' },
@@ -11066,45 +11071,21 @@ function openReportModalV2(projId) {
   html += '</div></div>';
   html += '</div>';
 
-  // Buildings
+  // Buildings & meters — shared scope tree (app/scope-tree.js). Building checked = any eligible
+  // meter; meter checked = eligible per _rptMeterEligible() (the same rule collectReportData()
+  // filters by). Ineligible meters stay visible but disabled with the reason, so the user sees
+  // why a meter is not in the report instead of a checkbox that silently does nothing.
   html += '<div style="margin-bottom:14px">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
-  html += '<span style="font-size:13px;font-weight:600;color:var(--text)">Buildings</span>';
+  html += '<span style="font-size:13px;font-weight:600;color:var(--text)">Buildings &amp; Meters</span>';
   html += '<div style="display:flex;gap:6px">';
   html +=
     '<button onclick="_rptV2SelectAll(\'bldg\',true)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--text);cursor:pointer">All</button>';
   html +=
     '<button onclick="_rptV2SelectAll(\'bldg\',false)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--text);cursor:pointer">None</button>';
   html += '</div></div>';
-  html += '<div style="display:flex;flex-direction:column;gap:3px;max-height:120px;overflow-y:auto">';
-  bldgs.forEach(function (b) {
-    // Fix (2026-09-10): default-check a building only if it has at least one meter that is
-    // both baseline-included AND a calc commodity for this project — same gather pattern used
-    // in collectReportData() (baselineInclude !== false + isCalcCommodity, no hardcoded list).
-    // A fully-excluded building (e.g. Maintenance Building, all calc meters baselineInclude:false)
-    // still appears in the list so the user can manually check it, but should not ride along by
-    // default. Do NOT remove excluded buildings from the list — only change the default checked state.
-    var bHasIncludedCalcMeter = (b.meters || []).some(function (m) {
-      if (m.baselineInclude === false) return false;
-      // Same permissive fallback as the collectReportData() gather loop (~line 68): if
-      // isCalcCommodity isn't loaded, don't filter on commodity at all.
-      return typeof isCalcCommodity !== 'function' || isCalcCommodity(projId, m.commodity);
-    });
-    html +=
-      '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">';
-    html +=
-      '<input type="checkbox" ' +
-      (bHasIncludedCalcMeter ? 'checked ' : '') +
-      'class="rptV2Bldg" data-bid="' +
-      b.id +
-      '" style="accent-color:var(--em);width:14px;height:14px">';
-    html += '<span style="font-size:12px;color:var(--text)">' + (b.name || 'Unnamed') + '</span>';
-    html +=
-      '<span style="font-size:10px;color:var(--text3);margin-left:auto">' +
-      (b.sqft ? parseInt(b.sqft).toLocaleString() + ' sf' : '') +
-      '</span>';
-    html += '</label>';
-  });
+  html += '<div id="rptV2Scope" style="max-height:220px;overflow-y:auto">';
+  html += scopeTreeHTML(_rptV2ScopeNodes(projId, bldgs));
   html += '</div></div>';
 
   // Report sections
@@ -11173,10 +11154,43 @@ function openReportModalV2(projId) {
   html += '</div></div>';
 
   document.getElementById('reportGenModalBody').innerHTML = html;
+  scopeTreeSync(document.getElementById('rptV2Scope'));
   var previewBtn = document.querySelector('#reportGenModal .modal-ftr .btn-em');
   if (previewBtn) previewBtn.disabled = false;
   document.getElementById('reportGenModal').classList.add('open');
   _rptV2TypeChanged();
+}
+
+// Node list for the Generate Report scope tree: one building per top-level row, its meters
+// underneath. Meter attrs.bid lets _rptV2ReadConfig() derive buildingIds from the checked
+// meters without walking the DOM.
+function _rptV2ScopeNodes(projId, bldgs) {
+  return bldgs.map(function (b) {
+    var kids = (b.meters || []).map(function (m) {
+      var reason = _rptMeterEligible(projId, m);
+      return {
+        id: m.id,
+        kind: 'meter',
+        label: meterLabel(m),
+        checked: !reason,
+        disabled: !!reason,
+        hint: reason,
+        attrs: { bid: b.id },
+      };
+    });
+    return {
+      id: b.id,
+      kind: 'bldg',
+      label: b.name || 'Unnamed',
+      sub: b.sqft ? parseInt(b.sqft).toLocaleString() + ' sf' : '',
+      checked: kids.some(function (k) {
+        return k.checked;
+      }),
+      hint: kids.length ? '' : 'no meters',
+      disabled: !kids.length,
+      children: kids,
+    };
+  });
 }
 
 function _rptV2TypeChanged() {
@@ -11204,8 +11218,11 @@ function _rptV2TypeChanged() {
 }
 
 function _rptV2SelectAll(group, checked) {
-  var cls = group === 'bldg' ? '.rptV2Bldg' : '.rptV2Sec';
-  document.querySelectorAll(cls).forEach(function (cb) {
+  if (group === 'bldg') {
+    scopeTreeSetAll(document.getElementById('rptV2Scope'), checked);
+    return;
+  }
+  document.querySelectorAll('.rptV2Sec').forEach(function (cb) {
     cb.checked = checked;
   });
 }
@@ -11263,13 +11280,11 @@ function _rptV2LoadTemplate(name) {
       cb.checked = tpl.sections.indexOf(key) >= 0;
     });
   }
-  // Apply buildings
-  if (tpl.buildingIds) {
-    document.querySelectorAll('.rptV2Bldg').forEach(function (cb) {
-      var bid = cb.getAttribute('data-bid');
-      cb.checked = tpl.buildingIds.indexOf(bid) >= 0;
-    });
-  }
+  // Apply scope: a template saved from the tree carries meterIds; one saved before the tree
+  // existed carries buildingIds only (= every eligible meter of those buildings).
+  var scope = document.getElementById('rptV2Scope');
+  if (tpl.meterIds) scopeTreeSetChecked(scope, 'meter', tpl.meterIds);
+  else if (tpl.buildingIds) scopeTreeSetChecked(scope, 'meter', tpl.buildingIds, 'bid');
 }
 
 function _rptV2ReadConfig() {
@@ -11278,10 +11293,11 @@ function _rptV2ReadConfig() {
   var quarter = parseInt(document.getElementById('rptV2Quarter').value);
   var startDate = document.getElementById('rptV2StartDate').value;
   var endDate = document.getElementById('rptV2EndDate').value;
-  var buildingIds = [];
-  document.querySelectorAll('.rptV2Bldg:checked').forEach(function (cb) {
-    buildingIds.push(cb.getAttribute('data-bid'));
-  });
+  // Scope from the tree: the checked meters, and the buildings that own at least one of them
+  // (a building whose meters are only partly checked is still in the report — for those meters).
+  var scope = document.getElementById('rptV2Scope');
+  var meterIds = scopeTreeChecked(scope, 'meter');
+  var buildingIds = scopeTreeChecked(scope, 'meter', 'bid');
   var sections = [];
   var sectionOrder = [];
   document.querySelectorAll('.rptV2Sec:checked').forEach(function (cb) {
@@ -11312,6 +11328,7 @@ function _rptV2ReadConfig() {
     startDate: startDate,
     endDate: endDate,
     buildingIds: buildingIds,
+    meterIds: meterIds,
     sections: sections,
     sectionOrder: sectionOrder,
     pollutionMode: pollutionMode,
@@ -11352,236 +11369,6 @@ function _deleteReportTemplate(projId, name) {
     return t.name !== name;
   });
   sset('en_report_templates_' + projId, templates);
-}
-
-function openReportModal(projId, type) {
-  _reportProjId = projId;
-  _reportType = type;
-  const bldgs = getUDBldgs(projId);
-  const list = document.getElementById('reportBldgList');
-  if (!bldgs.length) {
-    showToast('No buildings with utility data');
-    return;
-  }
-
-  // Populate building checkboxes
-  list.innerHTML = bldgs
-    .map(
-      (
-        b,
-      ) => `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--s2);cursor:pointer">
-          <input type="checkbox" checked data-bid="${b.id}" style="accent-color:var(--em);width:16px;height:16px">
-          <span style="font-size:13px;color:var(--text)">${b.name || 'Unnamed'}</span>
-          <span style="font-size:11px;color:var(--text3);margin-left:auto">${b.sqft ? parseInt(b.sqft).toLocaleString() + ' sf' : ''}</span>
-        </label>`,
-    )
-    .join('');
-
-  // Populate section checkboxes with group headers
-  const p = projects.find((x) => x.id === projId);
-  const savedSections = p && p.reportDefaults && p.reportDefaults.sections ? p.reportDefaults.sections : {};
-  const sectionList = document.getElementById('reportSectionList');
-  let lastGroup = null;
-  let sectionHTML = '';
-  REPORT_SECTIONS.forEach((sec) => {
-    if (sec.group !== lastGroup) {
-      sectionHTML += `<div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;padding:6px 8px 2px">${sec.group}</div>`;
-      lastGroup = sec.group;
-    }
-    const isChecked =
-      sec.key in savedSections ? (savedSections[sec.key] === false ? '' : 'checked') : sec.defaultOff ? '' : 'checked';
-    let emptyWarn = '';
-    if (sec.key === 'approvedChanges') {
-      const hasChanges = p && p.approvedChanges && p.approvedChanges.length > 0;
-      if (!hasChanges) emptyWarn = _rptV2WarnHtml(projId, 'docs', 'approved');
-    }
-    if (sec.key === 'setpoints') {
-      const hasSetpoints = p && p.setpoints && p.setpoints.length > 0;
-      if (!hasSetpoints) emptyWarn = _rptV2WarnHtml(projId, 'setpoints', null);
-    }
-    if (sec.key === 'contractProjection') {
-      if (!p || !p.start) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
-    }
-    if (sec.key === 'electricDetail') {
-      if (!_rptHasMeterWithBaseline(projId, 'Electric')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
-    }
-    if (sec.key === 'gasDetail') {
-      if (!_rptHasMeterWithBaseline(projId, 'Gas')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
-    }
-    if (sec.key === 'propaneDetail') {
-      if (!_rptHasMeterWithBaseline(projId, 'Propane')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
-    }
-    sectionHTML += `<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">
-            <input type="checkbox" ${isChecked} data-section="${sec.key}" style="accent-color:var(--em);width:14px;height:14px">
-            <span style="font-size:12px;color:var(--text)">${sec.label}</span>
-            ${emptyWarn}
-          </label>`;
-  });
-  sectionList.innerHTML = sectionHTML;
-
-  // D2#14 fix (2026-09-09): inject a master "Include Building Baseline Data table" toggle
-  // into the static Report Generation Settings panel (energy-department.html markup is
-  // off-limits to edit directly — this DOM-authored insertion keeps the change entirely in
-  // report-engine.js). Idempotent: only inserted once per page load; re-opening the modal
-  // does not duplicate it.
-  (function () {
-    var _blElecCb = document.getElementById('rptOptBlElectric');
-    var _blCommodityLabel = _blElecCb ? _blElecCb.closest('label') : null;
-    var _blHeadingDiv = _blCommodityLabel ? _blCommodityLabel.previousElementSibling : null;
-    if (_blHeadingDiv && !document.getElementById('rptOptIncludeBlTable')) {
-      var _toggleLabel = document.createElement('label');
-      _toggleLabel.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 8px 4px 0;cursor:pointer';
-      _toggleLabel.innerHTML =
-        '<input type="checkbox" id="rptOptIncludeBlTable" checked style="accent-color:var(--em);width:14px;height:14px">' +
-        '<span style="font-size:12px;color:var(--text);font-weight:600">Include Building Baseline Data table</span>';
-      _blHeadingDiv.parentNode.insertBefore(_toggleLabel, _blHeadingDiv);
-      var _blCommodityGroup = [
-        document.getElementById('rptOptBlElectric'),
-        document.getElementById('rptOptBlGas'),
-        document.getElementById('rptOptBlPropane'),
-        document.getElementById('rptOptBlWater'),
-      ];
-      var _syncBlCommodityState = function () {
-        var on = document.getElementById('rptOptIncludeBlTable').checked;
-        _blHeadingDiv.style.opacity = on ? '1' : '0.4';
-        _blCommodityGroup.forEach(function (cb) {
-          if (!cb) return;
-          cb.disabled = !on;
-          var lbl = cb.closest('label');
-          if (lbl) lbl.style.opacity = on ? '1' : '0.4';
-        });
-      };
-      document.getElementById('rptOptIncludeBlTable').addEventListener('change', _syncBlCommodityState);
-      _syncBlCommodityState();
-    }
-  })();
-
-  // Set modal title and defaults
-  document.querySelector('#reportBldgModal .modal-title').textContent =
-    type === 'quarterly' ? 'Generate Quarterly Report' : 'Generate Annual Report';
-
-  // Set report type radio
-  const radioVal = type === 'annual' ? 'annual' : 'quarterly';
-  const radio = document.querySelector(`input[name="reportType"][value="${radioVal}"]`);
-  if (radio) radio.checked = true;
-
-  // Default report date to today
-  const today = new Date();
-  document.getElementById('reportDateInput').value = today.toISOString().slice(0, 10);
-
-  document.getElementById('reportBldgModal').classList.add('open');
-}
-
-function _rptGoEdit(projId, tab) {
-  document.getElementById('reportBldgModal').classList.remove('open');
-  openDetail(projId);
-  requestAnimationFrame(function () {
-    const actualTab = tab === 'docs' ? 'docs' : tab;
-    const btn = document.querySelector('#pdTabBar button[data-tab="' + actualTab + '"]');
-    sPTab(actualTab, btn || null);
-    if (tab === 'docs') {
-      window._docsSubTab = 'approved';
-      renderDocsSubTab('approved', projId);
-    }
-    const labels = { docs: 'Approved Changes (Documents tab)', setpoints: 'Set Points & Schedules tab' };
-    showToast('Add data in the ' + (labels[tab] || tab) + ', then reopen Generate Report');
-  });
-}
-
-function rptSelectAll(checked) {
-  document.querySelectorAll('#reportSectionList input[type=checkbox]').forEach((cb) => (cb.checked = checked));
-}
-
-async function launchNewReport() {
-  // Get report type
-  const typeRadio = document.querySelector('input[name="reportType"]:checked');
-  const type = typeRadio ? typeRadio.value : 'quarterly';
-
-  // Get selected buildings
-  const bldgChecks = document.querySelectorAll('#reportBldgList input[type=checkbox]:checked');
-  const buildingIds = Array.from(bldgChecks).map((c) => c.dataset.bid);
-  if (!buildingIds.length) {
-    showToast('Select at least one building');
-    return;
-  }
-
-  // Get selected sections
-  const selectedSections = {};
-  document.querySelectorAll('#reportSectionList input[type=checkbox]').forEach((cb) => {
-    selectedSections[cb.dataset.section] = cb.checked;
-  });
-
-  // Save section preferences to project
-  const p = projects.find((x) => x.id === _reportProjId);
-  if (p) {
-    p.reportDefaults = { sections: selectedSections };
-    sset('en_projects', projects);
-  }
-
-  // Get report generation settings
-  var _blTableToggle = document.getElementById('rptOptIncludeBlTable');
-  var rptOpts = {
-    annualizePollution: !!(document.getElementById('rptOptAnnualizePollution') || {}).checked,
-    // D2#14: defaults to included (element absent, e.g. non-modal callers, counts as "on")
-    includeBlTable: _blTableToggle ? !!_blTableToggle.checked : true,
-    blCommodities: {
-      electric: !!(document.getElementById('rptOptBlElectric') || {}).checked,
-      gas: !!(document.getElementById('rptOptBlGas') || {}).checked,
-      propane: !!(document.getElementById('rptOptBlPropane') || {}).checked,
-      water: !!(document.getElementById('rptOptBlWater') || {}).checked,
-    },
-  };
-
-  // Get report date
-  const reportDate = document.getElementById('reportDateInput').value || null;
-
-  // Close modal
-  document.getElementById('reportBldgModal').classList.remove('open');
-
-  // Collect data and generate report
-  const data = collectReportData(_reportProjId, buildingIds, reportDate, type);
-  if (!data) {
-    showToast('Could not collect report data');
-    return;
-  }
-
-  // Attach report options for rendering
-  data.reportOptions = rptOpts;
-
-  // Load bill PDF thumbnails for Appendix D
-  if (selectedSections.appendixD !== false && data.rawBills && data.rawBills.length) {
-    showToast('Loading bill images...');
-    var _billsWithPdf = data.rawBills.filter(function (b) {
-      return b.pdfKey;
-    });
-    for (var _bi = 0; _bi < _billsWithPdf.length; _bi++) {
-      try {
-        var _pdfB64 = await pdfLoad(_billsWithPdf[_bi].pdfKey);
-        if (!_pdfB64) continue;
-        var _raw = atob(_pdfB64.split(',').pop());
-        var _arr = new Uint8Array(_raw.length);
-        for (var _ci = 0; _ci < _raw.length; _ci++) _arr[_ci] = _raw.charCodeAt(_ci);
-        var _pdf = await pdfjsLib.getDocument({ data: _arr, useWorkerFetch: false, isEvalSupported: false }).promise;
-        var _pg = await _pdf.getPage(1);
-        var _vp = _pg.getViewport({ scale: 0.5 });
-        var _canvas = document.createElement('canvas');
-        _canvas.width = _vp.width;
-        _canvas.height = _vp.height;
-        await _pg.render({ canvasContext: _canvas.getContext('2d'), viewport: _vp }).promise;
-        _billsWithPdf[_bi].pdfImage = _canvas.toDataURL('image/jpeg', 0.6);
-      } catch (_e) {
-        /* skip failed PDFs */
-      }
-    }
-  }
-
-  // Store for PDF export
-  window._currentReportData = data;
-
-  // Generate and show
-  const html = generateReportHTML(data, selectedSections);
-  const title = `${data.project.client} — ${data.period.label} ${type === 'quarterly' ? 'Quarterly' : 'Annual'} Report`;
-  showReportOverlay(html, title);
 }
 
 /* -- SESSION PERSISTENCE -- */
@@ -13381,10 +13168,21 @@ function _a36DisplayName(b) {
  * @param {number|string} projId
  * @returns {object|null}
  */
-function collectASHRAE36Data(projId, reportDate) {
+// buildingNames (optional): the ASHRAE 36 modal's building selection. Equipment rows carry a
+// building NAME (row.building), not an id, so the filter keys on the exact string the grouping
+// below uses. null/empty = every building (all non-modal callers: agreement, pricing estimator).
+function collectASHRAE36Data(projId, reportDate, buildingNames) {
   if (typeof emLoadMatrix !== 'function') return null;
   var matData = emLoadMatrix(projId);
   if (!matData || !matData.rows || !matData.rows.length) return null;
+  var _a36Rows = matData.rows;
+  if (buildingNames && buildingNames.length) {
+    var _a36Want = new Set(buildingNames.map(String));
+    _a36Rows = _a36Rows.filter(function (row) {
+      return _a36Want.has(String(row.building || 'Unknown Building'));
+    });
+  }
+  if (!_a36Rows.length) return null;
 
   var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
     // Coerce both sides to string to handle numeric id vs string projId mismatch
@@ -13397,7 +13195,7 @@ function collectASHRAE36Data(projId, reportDate) {
 
   // Group rows by building
   var bldgMap = {};
-  matData.rows.forEach(function (row) {
+  _a36Rows.forEach(function (row) {
     var bName = row.building || 'Unknown Building';
     if (!bldgMap[bName]) bldgMap[bName] = [];
     bldgMap[bName].push(row);
@@ -14049,7 +13847,7 @@ function collectASHRAE36Data(projId, reportDate) {
     _a36QualifyingBuildings[b.name] = true;
   });
   if (typeof emGetNormalizedPoints === 'function') {
-    matData.rows.forEach(function (row) {
+    _a36Rows.forEach(function (row) {
       var bName = row.building || 'Unknown Building';
       if (!_a36QualifyingBuildings[bName]) return; // same building set as compliance sections — no independent filter
       if (!_invByBuilding[bName]) _invByBuilding[bName] = { ashrae: 0, other: 0 };
@@ -21867,7 +21665,24 @@ function openASHRAE36ReportModal(projId, type) {
     '<input type="date" id="a36ReportDate" value="' +
     new Date().toISOString().slice(0, 10) +
     '" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px;width:180px">' +
-    '</div>' +
+    '</div>';
+
+  // Buildings — shared scope tree (app/scope-tree.js), one row per building name in the
+  // equipment matrix (the same key collectASHRAE36Data() groups by). Equipment rows have no
+  // meters, so building level is the right granularity here. Default = every building.
+  bodyHTML +=
+    '<div style="margin-bottom:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+    '<span style="font-size:13px;font-weight:600;color:var(--text)">Buildings</span>' +
+    '<div style="display:flex;gap:6px">' +
+    '<button onclick="scopeTreeSetAll(document.getElementById(\'a36Scope\'),true)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--text);cursor:pointer">All</button>' +
+    '<button onclick="scopeTreeSetAll(document.getElementById(\'a36Scope\'),false)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--text);cursor:pointer">None</button>' +
+    '</div></div>' +
+    '<div id="a36Scope" style="max-height:180px;overflow-y:auto">' +
+    scopeTreeHTML(_a36ScopeNodes(projId)) +
+    '</div></div>';
+
+  bodyHTML +=
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px">Sections to Include</div>';
 
@@ -21900,6 +21715,7 @@ function openASHRAE36ReportModal(projId, type) {
 
   var bodyEl = modal.querySelector('#ashrae36ReportModalBody');
   if (bodyEl) bodyEl.innerHTML = bodyHTML;
+  scopeTreeSync(document.getElementById('a36Scope'));
 
   // Store context for generate button
   modal._a36ProjId = projId;
@@ -21908,6 +21724,28 @@ function openASHRAE36ReportModal(projId, type) {
   modal.classList.add('open');
 }
 window.openASHRAE36ReportModal = openASHRAE36ReportModal;
+
+// Building rows for the ASHRAE 36 modal tree: unique row.building names from the equipment
+// matrix (sorted), each with its equipment count. All checked by default.
+function _a36ScopeNodes(projId) {
+  var matData = typeof emLoadMatrix === 'function' ? emLoadMatrix(projId) : null;
+  var counts = {};
+  ((matData && matData.rows) || []).forEach(function (row) {
+    var bName = row.building || 'Unknown Building';
+    counts[bName] = (counts[bName] || 0) + 1;
+  });
+  return Object.keys(counts)
+    .sort()
+    .map(function (bName) {
+      return {
+        id: bName,
+        kind: 'bldg',
+        label: bName,
+        sub: counts[bName] + ' equipment',
+        checked: true,
+      };
+    });
+}
 
 /**
  * generateASHRAE36Preview — called by the modal Generate button.
@@ -21920,7 +21758,12 @@ function generateASHRAE36Preview() {
 
   var dateInput = document.getElementById('a36ReportDate');
   var reportDate = dateInput && dateInput.value ? dateInput.value : null;
-  var data = collectASHRAE36Data(projId, reportDate);
+  var buildingNames = scopeTreeChecked(document.getElementById('a36Scope'), 'bldg');
+  if (!buildingNames.length) {
+    showToast('Select at least one building', 'warning');
+    return;
+  }
+  var data = collectASHRAE36Data(projId, reportDate, buildingNames);
   if (!data) {
     showToast('No equipment matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
     return;

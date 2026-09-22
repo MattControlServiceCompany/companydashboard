@@ -4519,162 +4519,84 @@ function _buildExportModalDOM() {
   document.body.appendChild(el);
 }
 
+// Export scope: project → building → meter, rendered by the shared scope tree
+// (app/scope-tree.js — the same component the Generate Report and ASHRAE 36 modals use).
+// Pre-check rules are unchanged: the hinted meter, else the hinted building's meters, else the
+// hinted project's meters. Parent rows derive checked/partial from their children.
 function _renderExportScopeTree(preProjId, preBldgId, preMeterId) {
   const tree = document.getElementById('exportScopeTree');
   if (!tree) return;
   const projs = sget('en_projects', []) || [];
 
-  let html = '';
+  const nodes = [];
   projs.forEach(function (p) {
     const bldgs = (utilityData[p.id] && utilityData[p.id].buildings) || [];
-    const projHasBills = bldgs.some(function (b) {
-      return (b.meters || []).some(function (m) {
-        return (m.bills || []).length;
-      });
-    });
-    if (!projHasBills) return;
-    const projChecked = preProjId && String(p.id) === String(preProjId) ? 'checked' : '';
-    html +=
-      '<div class="exp-proj" data-pid="' +
-      p.id +
-      '" style="margin-bottom:4px">' +
-      '<label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer">' +
-      '<input type="checkbox" class="exp-cb exp-cb-proj" data-pid="' +
-      p.id +
-      '" ' +
-      projChecked +
-      ' onchange="_exportScopeToggleProj(\'' +
-      p.id +
-      '\')"> ' +
-      '📁 ' +
-      (p.name || 'Project ' + p.id) +
-      '</label>' +
-      '<div style="padding-left:20px">';
+    const projChecked = !!(preProjId && String(p.id) === String(preProjId));
+    const bldgNodes = [];
     bldgs.forEach(function (b) {
       const meters = (b.meters || []).filter(function (m) {
         return (m.bills || []).length;
       });
       if (!meters.length) return;
-      const bldgChecked = preBldgId && b.id === preBldgId ? 'checked' : projChecked && !preBldgId ? 'checked' : '';
-      html +=
-        '<div class="exp-bldg" data-pid="' +
-        p.id +
-        '" data-bid="' +
-        b.id +
-        '" style="margin:3px 0">' +
-        '<label style="display:flex;align-items:center;gap:6px;font-weight:500;cursor:pointer">' +
-        '<input type="checkbox" class="exp-cb exp-cb-bldg" data-pid="' +
-        p.id +
-        '" data-bid="' +
-        b.id +
-        '" ' +
-        bldgChecked +
-        ' onchange="_exportScopeToggleBldg(\'' +
-        p.id +
-        "','" +
-        b.id +
-        '\')"> ' +
-        '🏢 ' +
-        (b.name || 'Building ' + b.id) +
-        '</label>' +
-        '<div style="padding-left:20px">';
-      meters.forEach(function (m) {
-        const billCount = (m.bills || []).length;
-        const meterChecked = preMeterId
-          ? String(m.id) === String(preMeterId)
-            ? 'checked'
-            : ''
-          : preBldgId && String(b.id) === String(preBldgId)
-            ? 'checked'
-            : bldgChecked
-              ? 'checked'
-              : '';
-        const commodityIcon =
-          m.commodity === 'Gas'
-            ? '🔥'
-            : m.commodity === 'Water'
-              ? '💧'
-              : m.commodity === 'Steam'
-                ? '♨️'
-                : m.commodity === 'Propane'
-                  ? '🛢️'
-                  : '⚡';
-        html +=
-          '<label class="exp-meter" data-pid="' +
-          p.id +
-          '" data-bid="' +
-          b.id +
-          '" data-mid="' +
-          m.id +
-          '" style="display:flex;align-items:center;gap:6px;cursor:pointer">' +
-          '<input type="checkbox" class="exp-cb exp-cb-meter" data-pid="' +
-          p.id +
-          '" data-bid="' +
-          b.id +
-          '" data-mid="' +
-          m.id +
-          '" ' +
-          meterChecked +
-          ' onchange="_exportScopeToggleMeter()"> ' +
-          commodityIcon +
-          ' ' +
-          meterLabel(m) +
-          ' <span style="color:var(--text3);font-size:11px">(' +
-          billCount +
-          ' bill' +
-          (billCount !== 1 ? 's' : '') +
-          ')</span>' +
-          '</label>';
+      const bldgChecked = preBldgId ? String(b.id) === String(preBldgId) : projChecked;
+      bldgNodes.push({
+        id: b.id,
+        kind: 'bldg',
+        label: '🏢 ' + (b.name || 'Building ' + b.id),
+        checked: bldgChecked,
+        attrs: { pid: p.id },
+        children: meters.map(function (m) {
+          const billCount = (m.bills || []).length;
+          const icon =
+            m.commodity === 'Gas'
+              ? '🔥'
+              : m.commodity === 'Water'
+                ? '💧'
+                : m.commodity === 'Steam'
+                  ? '♨️'
+                  : m.commodity === 'Propane'
+                    ? '🛢️'
+                    : '⚡';
+          return {
+            id: m.id,
+            kind: 'meter',
+            label: icon + ' ' + meterLabel(m),
+            sub: billCount + ' bill' + (billCount !== 1 ? 's' : ''),
+            checked: preMeterId ? String(m.id) === String(preMeterId) : bldgChecked,
+            attrs: { pid: p.id, bid: b.id },
+          };
+        }),
       });
-      html += '</div></div>';
     });
-    html += '</div></div>';
+    if (!bldgNodes.length) return;
+    nodes.push({
+      id: p.id,
+      kind: 'proj',
+      label: '📁 ' + (p.name || 'Project ' + p.id),
+      checked: projChecked,
+      children: bldgNodes,
+    });
   });
-  if (!html) html = '<div style="color:var(--text3);padding:8px">No bills found in any project.</div>';
-  tree.innerHTML = html;
+  tree.innerHTML = nodes.length
+    ? scopeTreeHTML(nodes, { onChange: '_refreshExportFieldsList' })
+    : '<div style="color:var(--text3);padding:8px">No bills found in any project.</div>';
+  scopeTreeSync(tree);
   _refreshExportFieldsList();
 }
 
-function _exportScopeToggleProj(pid) {
-  const proj = document.querySelector('.exp-cb-proj[data-pid="' + pid + '"]');
-  if (!proj) return;
-  const checked = proj.checked;
-  document
-    .querySelectorAll('.exp-cb-bldg[data-pid="' + pid + '"], .exp-cb-meter[data-pid="' + pid + '"]')
-    .forEach(function (cb) {
-      cb.checked = checked;
-    });
-  _refreshExportFieldsList();
-}
-function _exportScopeToggleBldg(pid, bid) {
-  const b = document.querySelector('.exp-cb-bldg[data-pid="' + pid + '"][data-bid="' + bid + '"]');
-  if (!b) return;
-  const checked = b.checked;
-  document.querySelectorAll('.exp-cb-meter[data-pid="' + pid + '"][data-bid="' + bid + '"]').forEach(function (cb) {
-    cb.checked = checked;
-  });
-  _refreshExportFieldsList();
-}
-function _exportScopeToggleMeter() {
-  _refreshExportFieldsList();
-}
 function _exportScopeSelectAll() {
-  document.querySelectorAll('#exportScopeTree .exp-cb').forEach(function (cb) {
-    cb.checked = true;
-  });
+  scopeTreeSetAll(document.getElementById('exportScopeTree'), true);
   _refreshExportFieldsList();
 }
 function _exportScopeSelectNone() {
-  document.querySelectorAll('#exportScopeTree .exp-cb').forEach(function (cb) {
-    cb.checked = false;
-  });
+  scopeTreeSetAll(document.getElementById('exportScopeTree'), false);
   _refreshExportFieldsList();
 }
 
 function _getExportSelectedBills() {
   const projs = sget('en_projects', []) || [];
   const selected = [];
-  document.querySelectorAll('#exportScopeTree .exp-cb-meter:checked').forEach(function (cb) {
+  document.querySelectorAll('#exportScopeTree .st-cb[data-kind="meter"]:checked').forEach(function (cb) {
     const pid = cb.getAttribute('data-pid');
     const bid = cb.getAttribute('data-bid');
     const mid = cb.getAttribute('data-mid');

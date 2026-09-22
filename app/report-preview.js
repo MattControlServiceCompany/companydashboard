@@ -40,7 +40,14 @@ function generateReportPreview() {
   }
 
   // Collect report data using existing engine
-  var data = collectReportData(config.projId, config.buildingIds, reportDateStr, reportType, selectedPeriod);
+  var data = collectReportData(
+    config.projId,
+    config.buildingIds,
+    reportDateStr,
+    reportType,
+    selectedPeriod,
+    config.meterIds,
+  );
   if (!data) {
     showToast('Could not collect report data — check that buildings have utility data', 'error');
     return;
@@ -471,6 +478,7 @@ function saveReportTemplate() {
     reportType: _reportConfig.reportType,
     sections: sections,
     buildingIds: _reportConfig.buildingIds,
+    meterIds: _reportConfig.meterIds,
     pollutionMode: _reportConfig.pollutionMode,
     savedAt: new Date().toISOString(),
   };
@@ -578,7 +586,14 @@ function _saveReportToHistory(config, filename) {
 // the storage event fires because the popup window saved changes to en_projects.
 function refreshReportPreview() {
   if (!_reportConfig) return;
-  var data = collectReportData(_reportConfig.projId, _reportConfig.buildingIds, null, _reportConfig.reportType);
+  var data = collectReportData(
+    _reportConfig.projId,
+    _reportConfig.buildingIds,
+    null,
+    _reportConfig.reportType,
+    null,
+    _reportConfig.meterIds,
+  );
   if (!data) {
     showToast('Could not refresh — check that buildings have data', 'error');
     return;
