@@ -9206,17 +9206,17 @@ function emShowComplianceDetail(rowId) {
 
     spHtml =
       '<div style="margin-bottom:16px">' +
-      '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">GL36 Setpoint Check</div>' +
+      '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">ASHRAE 36 Setpoint Check</div>' +
       '<div style="font-size:10px;color:var(--text3);margin-bottom:8px" ' +
-      'title="GL36 §3.1.1.1/Table 3.1.1.3 provides default setpoints. Designers may intentionally use different values; ' +
+      'title="ASHRAE 36 §3.1.1.1/Table 3.1.1.3 provides default setpoints. Designers may intentionally use different values; ' +
       'items marked Needs Review should be confirmed as intentional.">' +
-      'GL36 §3.1.1.1/Table 3.1.1.3 defaults. Deviations may be intentional (hover for details).' +
+      'ASHRAE 36 §3.1.1.1/Table 3.1.1.3 defaults. Deviations may be intentional (hover for details).' +
       '</div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
       '<thead><tr style="background:var(--s1)">' +
       '<th style="text-align:left;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">Check</th>' +
-      '<th style="text-align:right;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">Your Setting</th>' +
-      '<th style="text-align:right;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">GL36 Default</th>' +
+      '<th style="text-align:right;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">Current</th>' +
+      '<th style="text-align:right;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">ASHRAE 36 Default</th>' +
       '<th style="text-align:left;padding:4px 6px;border:1px solid var(--border);color:var(--text2)">Status</th>' +
       '</tr></thead><tbody>';
 
@@ -9258,7 +9258,7 @@ function emShowComplianceDetail(rowId) {
             '" ' +
             'style="font-size:10px;padding:1px 6px;background:var(--s2);border:1px solid var(--border);' +
             'color:var(--text2);border-radius:3px;cursor:pointer;margin-left:4px" ' +
-            'title="Mark this deviation as intentional (designer override per GL36 §3.1.1.1)">Mark as intentional</button>';
+            'title="Mark this deviation as intentional (designer override per ASHRAE 36 §3.1.1.1)">Mark as intentional</button>';
         }
       }
 
@@ -12149,7 +12149,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     // type:'select' — renderer not yet built (Phase 2.3). options/default stored here for later.
     {
       key: 'zoneType',
-      label: 'Zone Type (GL36 §3.1.1.1)',
+      label: 'Zone Type (ASHRAE 36 §3.1.1.1)',
       type: 'select',
       // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
       // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
@@ -12169,7 +12169,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -12183,7 +12183,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     // Phase 2 (setpoint-value-compliance): zone classification for GL36 §3.1.1.1 + §3.1.1.3.
     {
       key: 'zoneType',
-      label: 'Zone Type (GL36 §3.1.1.1)',
+      label: 'Zone Type (ASHRAE 36 §3.1.1.1)',
       type: 'select',
       // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
       // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
@@ -12203,7 +12203,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -12216,7 +12216,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     // Phase 2 (setpoint-value-compliance): zone classification for GL36 §3.1.1.1 + §3.1.1.3.
     {
       key: 'zoneType',
-      label: 'Zone Type (GL36 §3.1.1.1)',
+      label: 'Zone Type (ASHRAE 36 §3.1.1.1)',
       type: 'select',
       // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
       // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
@@ -12236,7 +12236,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -12263,7 +12263,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
   zone: [
     {
       key: 'zoneType',
-      label: 'Zone Type (GL36 §3.1.1.1)',
+      label: 'Zone Type (ASHRAE 36 §3.1.1.1)',
       type: 'select',
       // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
       // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
@@ -12283,7 +12283,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
@@ -12292,7 +12292,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
   fcu: [
     {
       key: 'zoneType',
-      label: 'Zone Type (GL36 §3.1.1.1)',
+      label: 'Zone Type (ASHRAE 36 §3.1.1.1)',
       type: 'select',
       // space-type-classifier-2026-07-29 §2.6: vocabulary extended with the new
       // EM_SPACE_TYPE_PATTERNS space types so Matt's manual tag (rule 1, explicit-always-
@@ -12312,7 +12312,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     {
       key: 'occupancyCat',
-      label: 'Occupancy Category (GL36 Table 3.1.1.3)',
+      label: 'Occupancy Category (ASHRAE 36 Table 3.1.1.3)',
       type: 'select',
       options: 'Object.keys(GL36_CO2_DEFAULTS)',
       default: 'office_space',
