@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.22.872'; // Energy Graphics tab export CSV
+  var CH_VERSION = 'v2026.09.22.873'; // Building and meter picker for reports/export
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

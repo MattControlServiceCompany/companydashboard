@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.873',
+    date: '2026-09-22',
+    title: 'Generate Report, ASHRAE 36 Audit Report, and Utility Data Export',
+    items: [
+      {
+        type: 'feature',
+        text: 'Generate Report, ASHRAE 36 Audit Report, and Utility Data Export now feature a checkbox tree — choose the buildings and meters to include in your export.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.872',
     date: '2026-09-22',
     title: 'Finalized Baseline & BAS Savings report',
