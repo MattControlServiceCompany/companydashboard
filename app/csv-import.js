@@ -787,8 +787,37 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       continue;
     }
     let raw = _billReadValue(row, c.entry);
+    // Gas usage columns (2026-09-22): fall back through the shared resolver
+    // when THIS bill's own field for the rendered column is empty but usage
+    // data exists in another gas-usage field on the same row — mirrors the
+    // condensed-view fix and the v869 calc-side fallback
+    // (computations/savings.js resolveGasUsageTherms). Display-only: reads
+    // `row`, never writes it, so the bill edit modal (showBillSplitPanel)
+    // and CSV export still see/export the raw stored field untouched.
+    // Already resolved directly into this column's own unit (c.entry.gasUnit),
+    // so it's excluded from the unit-toggle conversion below.
+    let _gasFallbackApplied = false;
+    if (
+      m.commodity === 'Gas' &&
+      c.entry.gasUnit &&
+      (raw === undefined || raw === null || raw === '' || raw === 'null') &&
+      typeof _gasUsageDisplay === 'function'
+    ) {
+      const resolved = _gasUsageDisplay(row, c.entry.gasUnit);
+      if (resolved) {
+        raw = resolved;
+        _gasFallbackApplied = true;
+      }
+    }
     // Apply unit conversion for usage quantity fields (Task 3)
-    if (_BILL_USAGE_KEYS.has(c.entry.key) && raw !== undefined && raw !== null && raw !== '' && !isNaN(raw)) {
+    if (
+      !_gasFallbackApplied &&
+      _BILL_USAGE_KEYS.has(c.entry.key) &&
+      raw !== undefined &&
+      raw !== null &&
+      raw !== '' &&
+      !isNaN(raw)
+    ) {
       raw = convertBillValue(parseFloat(raw), m);
     }
     const formatted = _billFormatValue(raw, c.entry);

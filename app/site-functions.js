@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.870',
+    date: '2026-09-22',
+    title: 'Fixed blank gas usage display in Utility Data',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data — gas usage now displays for meters whose bills store therms in naturalGasTherms or MMBtu; shown in the billed unit.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.869',
     date: '2026-09-22',
     title: 'Fixed gas usage reading as 0 for CSV-imported bills',

@@ -2970,6 +2970,57 @@ function renderMeterWorkspace() {
 //  - compute(row) returns the value to display
 //  - key is an alternative — read row[key] directly (for totalCost)
 const _pfBills = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+
+/* ─────────────────────────────────────────────────────────────
+   _gasUsageDisplay(r, unit) / _effectiveGasBillUnit(m)  (2026-09-22)
+   BUG: the Bills table's Gas usage columns read their own single field
+   directly (e.g. Usage (MMBtu) only read r.naturalGasMMbtu) with no
+   fallback, so a bill whose usage was captured in a DIFFERENT gas field
+   — e.g. a CSV-imported bill that only ever wrote naturalGasTherms (see
+   v869/computations/savings.js resolveGasUsageTherms) — rendered blank
+   even though real usage data existed on the row. v869 fixed this for
+   the SAVINGS calc only; this is the matching DISPLAY fix, reusing the
+   exact same resolver (single source of truth for gas usage fallback).
+
+   _gasUsageDisplay(r, unit) resolves a bill's usage in Therms basis via
+   resolveGasUsageTherms(r), then converts into whichever unit the
+   caller's column represents. Display-only — never writes to `r`.
+
+   _effectiveGasBillUnit(m) — getMeterBillUnit(m) trusts the meter's
+   stored billUnit blindly, picking exactly one usage column to show.
+   Some meters carry MIXED-source bill history (part CSV-imported —
+   Therms only — part OCR'd from a provider PDF — MMBtu/CCF native),
+   so the configured billUnit's own field can be the SPARSER one. When
+   more of a meter's own bills carry real native data in Therms than in
+   the meter's configured unit, Therms is the better-evidenced "as
+   billed" unit for this meter's actual history — show that column
+   instead of a column that's mostly empty. Meters with no such gap
+   (the overwhelming majority — pure OCR or pure CSV sourcing) are
+   unaffected: the comparison only flips when Therms coverage is
+   strictly greater.
+───────────────────────────────────────────────────────────── */
+function _gasUsageDisplay(r, unit) {
+  const thermsBasis = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(r || {}) : 0;
+  if (!thermsBasis) return 0;
+  if (unit === 'MMBtu') return thermsBasis / 10;
+  if (unit === 'CCF') return thermsBasis / 1.037;
+  return thermsBasis; // Therms
+}
+function _effectiveGasBillUnit(m) {
+  const configured = getMeterBillUnit(m);
+  const bills = (m && m.bills) || [];
+  if (!bills.length) return configured;
+  const nativeCount = (field) => bills.filter((b) => _pfBills(b[field]) > 0).length;
+  const nTherms = Math.max(nativeCount('therms'), nativeCount('naturalGasTherms'));
+  const nForConfigured =
+    configured === 'MMBtu'
+      ? nativeCount('naturalGasMMbtu')
+      : configured === 'CCF'
+        ? nativeCount('naturalGasCCF')
+        : nTherms; // Therms/MCF/DTh/BTU-configured meters compare against themselves — never overridden
+  return nTherms > nForConfigured ? 'Therms' : configured;
+}
+
 const CONDENSED_CATEGORIES = {
   Electric: [
     { label: 'Usage (kWh)', type: 'number', w: 110, compute: (r) => _pfBills(r.kwh) },
@@ -3035,20 +3086,20 @@ const CONDENSED_CATEGORIES = {
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
   Gas: [
-    { label: 'Usage (CCF)', type: 'number', w: 100, gasUnit: 'CCF', compute: (r) => _pfBills(r.naturalGasCCF) },
+    { label: 'Usage (CCF)', type: 'number', w: 100, gasUnit: 'CCF', compute: (r) => _gasUsageDisplay(r, 'CCF') },
     {
       label: 'Usage (Therms)',
       type: 'number',
       w: 110,
       gasUnit: 'Therms',
-      compute: (r) => _pfBills(r.naturalGasTherms),
+      compute: (r) => _gasUsageDisplay(r, 'Therms'),
     },
     {
       label: 'Usage (MMBtu)',
       type: 'number',
       w: 110,
       gasUnit: 'MMBtu',
-      compute: (r) => _pfBills(r.naturalGasMMbtu),
+      compute: (r) => _gasUsageDisplay(r, 'MMBtu'),
     },
     {
       label: 'Gas Cost $',
@@ -3374,7 +3425,10 @@ function renderBillsPane(pane, m, bills, incl) {
     // For Gas meters, only show the usage column that matches the meter's bill unit.
     // Bills store usage in either naturalGasCCF or naturalGasTherms depending on
     // what the utility actually bills in — show only the relevant column, not both.
-    const billUnit = isGas ? getMeterBillUnit(m) : null;
+    // _effectiveGasBillUnit (2026-09-22) overrides getMeterBillUnit's configured
+    // unit when a meter's own bills actually carry MORE native data in Therms —
+    // see its doc comment above CONDENSED_CATEGORIES.
+    const billUnit = isGas ? _effectiveGasBillUnit(m) : null;
     COL_FIELDS = CONDENSED_CATEGORIES[m.commodity]
       .filter((c) => {
         if (isGas && c.gasUnit === 'CCF' && billUnit !== 'CCF') return false;
@@ -3393,8 +3447,9 @@ function renderBillsPane(pane, m, bills, incl) {
   } else {
     // For Gas meters in detailed view, only show the usage column that matches
     // the meter's bill unit (Therms or CCF) — both exist in BILL_SCHEMA.Gas so
-    // we filter out the one that doesn't apply.
-    const _detailBillUnit = isGas ? getMeterBillUnit(m) : null;
+    // we filter out the one that doesn't apply. _effectiveGasBillUnit (2026-09-22)
+    // — see doc comment above CONDENSED_CATEGORIES.
+    const _detailBillUnit = isGas ? _effectiveGasBillUnit(m) : null;
     const schemaForTable = _billSchemaFor(m.commodity).filter((e) => {
       if (e.section) return false;
       if (TABLE_SKIP_KEYS.has(e.key)) return false;
