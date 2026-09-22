@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.864',
+    date: '2026-09-22',
+    title: 'Save All bill upload fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Save All now saves extracted bills to the correct meter instead of dropping them.',
+      },
+      {
+        type: 'fix',
+        text: 'Bills from sites that bill several buildings under one consolidated invoice no longer get falsely flagged as duplicates of each other.',
+      },
+      {
+        type: 'change',
+        text: 'A bill that cannot be matched to a meter is now held and marked NEEDS METER instead of being silently skipped, and the duplicate count shown after Save All is now accurate.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.21.863',
     date: '2026-09-21',
     title: 'Equipment Matrix labels, gas rate preview, and Quick Start guide fixes',
