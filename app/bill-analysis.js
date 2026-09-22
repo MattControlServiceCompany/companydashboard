@@ -10475,6 +10475,7 @@ function renderQueueResults() {
     if (old) {
       row.checked = old.checked;
       row._saved = old._saved || false;
+      row._held = old._held || false;
     }
   });
 
@@ -10715,6 +10716,13 @@ function renderQueueResults() {
       return '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
     } else if (row._saved) {
       return '<span style="color:var(--text3);font-size:10px">SAVED</span>';
+    } else if (row._held) {
+      // fix/save-all-persist-bills: saved to Saved Bills only — no meter took it
+      return (
+        '<span style="color:var(--amber);font-weight:700;font-size:10px" title="' +
+        _escHtml(_UNASSIGNED_DEST) +
+        '">&#9888; NEEDS METER</span>'
+      );
     } else if (dup) {
       const dupAct = dup.action;
       const actLabel =
@@ -11129,6 +11137,60 @@ function _fmtShortDate(dateStr) {
   return d.getMonth() + 1 + '/' + d.getDate();
 }
 
+// FIX (fix/save-all-persist-bills, 2026-09-21): window._pdfDupMap is keyed by
+// FLAT index across every file in the batch queue (see _checkDuplicates /
+// runExtractionQueue), but renderMultiBillUI / renderPDFFields index it with
+// the LOCAL index into window._pdfMultiBills (the active file's bills). For any
+// file after the first that mismatch showed the wrong bill's dup dot, the wrong
+// per-bill dup banner, and a banner count like "120 of 10 already exist" (all
+// 120 batch-wide dups vs. this file's 10 bills). This returns the dup map
+// re-keyed to the given bills list plus the flat offset, so display code counts
+// only THIS list's duplicates and action handlers can address the flat entry.
+// Outside the queue (single-file extraction) it is the identity mapping.
+function _pdfDupView(bills) {
+  const flat = window._pdfDupMap || {};
+  const q = window._pdfQueue;
+  const list = bills || [];
+  if (q && q.results && q.results.length && list.length) {
+    let offset = 0;
+    for (const r of q.results) {
+      const rb = r.bills || [];
+      const at = rb.indexOf(list[0]);
+      if (at >= 0) {
+        offset += at;
+        const map = {};
+        for (let i = 0; i < list.length; i++) {
+          if (flat[offset + i]) map[i] = flat[offset + i];
+        }
+        return { map, offset, queued: true };
+      }
+      offset += rb.length;
+    }
+  }
+  return { map: flat, offset: 0, queued: false };
+}
+// Per-bill dup banner actions (Overwrite / Merge / Skip / Compare) for the bill
+// at LOCAL index `bi` of window._pdfMultiBills. In queue mode the shared
+// handlers (overwriteDupBill etc.) read window._pdfDupMap by flat index, so
+// point _pdfMultiBills at the flat batch list first — the same swap
+// openQueueDupModal already does for the queue table's Resolve button.
+function _dupBannerAction(bi, action) {
+  const view = _pdfDupView(window._pdfMultiBills || []);
+  const flat = view.offset + bi;
+  if (view.queued) {
+    const allBills = [];
+    window._pdfQueue.results.forEach((r) => (r.bills || []).forEach((b) => allBills.push(b)));
+    window._pdfMultiBills = allBills;
+    window._pdfBillWarnings = allBills.map((b) => ({ warnings: b._warnings || [] }));
+  }
+  window._pdfMultiIdx = flat;
+  window._dupModalIdx = flat;
+  if (action === 'compare') openDupModal(flat);
+  else if (action === 'overwrite') overwriteDupBill();
+  else if (action === 'merge') mergeDupBill();
+  else skipDupBill();
+}
+
 function _getQueueDupInfo(row) {
   if (!window._pdfDupMap || !row.bill) return null;
   const q = window._pdfQueue;
@@ -11396,6 +11458,7 @@ async function saveQueuedBills() {
   let saved = 0,
     updated = 0,
     skipped = 0,
+    held = 0,
     failed = 0;
   const summaryEntries = [];
 
@@ -11471,8 +11534,17 @@ async function saveQueuedBills() {
       }
 
       if (dup && !dup.action) {
+        // Not written, and said so plainly (fix/save-all-persist-bills): name
+        // where the existing copy lives and what to click to change that.
         skipped++;
-        summaryEntries.push({ period, status: 'skipped', destination: 'unresolved duplicate', method: 'dup' });
+        summaryEntries.push({
+          period,
+          status: 'skipped',
+          destination: 'Not saved — already on ' + (dup.location || 'an existing record'),
+          reason:
+            'Duplicate. Use Save All (Overwrite) or Save Non-Empty (Merge) to update it, or Skip All Dups to dismiss.',
+          method: 'dup',
+        });
         continue;
       }
 
@@ -11544,14 +11616,50 @@ async function saveQueuedBills() {
       }
 
       // Fallback to _saveSinglePDFBill (project-scoped match)
+      if (row._held) {
+        // Already in Saved Bills from an earlier pass with no meter match and
+        // still no Destination pick — report it again, never store a 2nd copy.
+        held++;
+        summaryEntries.push({
+          period,
+          status: 'held',
+          destination: _UNASSIGNED_DEST,
+          reason: 'Still no meter match. Pick a Destination for this row, or assign it from Saved Bills.',
+          method: 'project',
+        });
+        continue;
+      }
       const prevB64 = pdfB64;
       try {
         pdfB64 = row.result.pdfB64;
         const ok = await _saveSinglePDFBill(row.bill, projId);
-        if (ok) {
+        if (_saveResultNeedsMeter(ok)) {
+          // FIX (fix/save-all-persist-bills): this used to be reported as
+          // "saved · project match" even though no meter received the bill.
+          // The row stays saveable (not _saved) so the user can pick a
+          // Destination and click Save All again; _held stops the fallback
+          // from pushing a second Saved Bills copy on that retry.
+          held++;
+          row._held = true;
+          summaryEntries.push({
+            period,
+            status: 'held',
+            destination: _saveResultDest(ok),
+            reason:
+              'Account "' +
+              (row.bill.AccountNumber || '—') +
+              '" did not match any meter. Pick a Destination for this row and save again, or assign it from Saved Bills.',
+            method: 'project',
+          });
+        } else if (ok) {
           saved++;
           row._saved = true;
-          summaryEntries.push({ period, status: 'saved', destination: 'project match', method: 'project' });
+          summaryEntries.push({
+            period,
+            status: 'saved',
+            destination: _saveResultDest(ok) || 'project match',
+            method: 'project',
+          });
         } else {
           failed++;
           summaryEntries.push({ period, status: 'failed', destination: 'no match found', method: '' });
@@ -11583,9 +11691,15 @@ async function saveQueuedBills() {
   const parts = [];
   if (saved > 0) parts.push(saved + ' saved');
   if (updated > 0) parts.push(updated + ' updated');
-  if (skipped > 0) parts.push(skipped + ' skipped');
+  if (skipped > 0) parts.push(skipped + ' skipped (duplicates)');
+  if (held > 0) parts.push(held + ' need a meter');
   if (failed > 0) parts.push(failed + ' failed');
-  showToast('Batch save: ' + parts.join(', ') + ' ✓');
+  // Only claim a clean ✓ when every selected bill actually landed somewhere.
+  const _allLanded = skipped === 0 && held === 0 && failed === 0;
+  showToast(
+    'Batch save: ' + parts.join(', ') + (_allLanded ? ' ✓' : ' — see the summary'),
+    _allLanded ? undefined : 'error',
+  );
   if (summaryEntries.length > 0) _showSaveSummary(summaryEntries);
 
   if (
@@ -11970,11 +12084,27 @@ async function _checkDuplicates(bills, statusCb) {
       const extInv = norm(ext.InvoiceNumber || ext.SaleNumber);
       const existInv = norm(ab.bill.invoiceNumber || ab.bill.saleNumber);
       const invoiceMatch = extInv && existInv && extInv === existInv;
+      // FIX (fix/save-all-persist-bills, 2026-09-21): a consolidated invoice
+      // (Wood River Energy bills 10 district sites under ONE invoice number,
+      // all with the same billing period) must never make site A's bill a
+      // "duplicate" of site B's already-saved bill. That is exactly what
+      // happened when the target meter had no bills yet: the account-keyed
+      // fast path found nothing, the full-scan fallback hit a SIBLING meter's
+      // bill via invoiceMatch + same period + same commodity, the bill was
+      // tagged an unresolved duplicate, and Save All skipped it — the meter
+      // stayed at 0 bills with no error. Invoice number is only identity when
+      // the two account numbers do not demonstrably disagree (present on both
+      // sides and failing _acctFuzzyMatch = a different site on the same invoice).
+      const acctContradicts = !!(extAcct && existAcct && !acctMatch);
       const existComm = (ab.bill.commodity || ab.meter.commodity || '').toLowerCase();
       const commMatch = !extComm || !existComm || extComm === existComm;
       const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
       const fuzzyPeriod = !periodMatch && periodClose(extStart, extEnd, ab.bill.start, ab.bill.end);
-      if ((acctMatch || meterMatch || invoiceMatch) && (periodMatch || fuzzyPeriod) && commMatch) {
+      if (
+        (acctMatch || meterMatch || (invoiceMatch && !acctContradicts)) &&
+        (periodMatch || fuzzyPeriod) &&
+        commMatch
+      ) {
         // Build diff fields
         const diffFields = _buildDiffFields(ext, ab.bill);
         dupMap[i] = {
@@ -12350,7 +12480,15 @@ async function _dupBulkAction(action) {
         errText = e && e.message ? e.message : String(e);
         console.error('[_dupBulkAction] _saveSinglePDFBill threw for bill', i, e);
       }
-      if (ok) {
+      if (_saveResultNeedsMeter(ok)) {
+        // fix/save-all-persist-bills: never report "saved" for a bill no meter received
+        status = 'held';
+        held++;
+        destination = _saveResultDest(ok);
+        bills[i]._batchSaved = true;
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = destination;
+      } else if (ok) {
         status = 'saved';
         saved++;
         bills[i]._batchSaved = true;
@@ -17065,8 +17203,9 @@ function renderMultiBillUI(bills, box) {
   const activeCommTab = _hasMultiComm ? window._pdfCommTab || _uniqueComms[0] : 'All';
   const filteredPeriods =
     activeCommTab === 'All' ? periods : periods.filter((p) => (bills[p.i].Commodity || 'Other') === activeCommTab);
-  // Duplicate map must be declared before the nav closure below reads it (TDZ)
-  const dupMap = window._pdfDupMap || {};
+  // Duplicate map must be declared before the nav closure below reads it (TDZ).
+  // Re-keyed to THIS bills list (fix/save-all-persist-bills) — see _pdfDupView.
+  const dupMap = _pdfDupView(bills).map;
   const _buildPill = (p) => {
     const active = p.i === idx;
     const bw = warnings[p.i]?.warnings || [];
@@ -17346,6 +17485,18 @@ function renderMultiBillUI(bills, box) {
   if (bottomBarEl && _isMultiAcctFile()) {
     bottomBarEl.style.display = 'none';
     bottomBarEl.innerHTML = '';
+    // FIX (fix/save-all-persist-bills, 2026-09-21): hiding this bar assumes the
+    // multi-building review panel is showing its own Save All. If that panel
+    // is not open (never opened on this render path, or the user closed it
+    // with Cancel), the review had NO save control at all. Outside the batch
+    // queue (which has its own "Save All (N)" in the file bar), open the panel
+    // so a working Save control is always present while bills are pending.
+    const _inQueue = !!(window._pdfQueue && window._pdfQueue.results && window._pdfQueue.results.length);
+    const _mbPanel = document.getElementById('pdfMultiBldgPanel');
+    const _pending = bills.some((b) => !b._mbSaved && !b._batchSaved);
+    if (!_inQueue && _mbPanel && _mbPanel.style.display === 'none' && _pending) {
+      showMultiBuildingReviewPanel();
+    }
   } else if (bottomBarEl) {
     bottomBarEl.style.display = 'block';
     const commodities = {};
@@ -17772,7 +17923,15 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
         errText = e && e.message ? e.message : String(e);
         console.error('[savePDFAllBills] _saveSinglePDFBill threw for bill', i, e);
       }
-      if (ok) {
+      if (_saveResultNeedsMeter(ok)) {
+        // fix/save-all-persist-bills: never report "saved" for a bill no meter received
+        held++;
+        status = 'held';
+        destination = _saveResultDest(ok);
+        bills[i]._batchSaved = true;
+        bills[i]._mbSaved = true;
+        bills[i]._mbSavedDest = destination;
+      } else if (ok) {
         saved++;
         status = 'saved';
         bills[i]._batchSaved = true;
@@ -18141,9 +18300,11 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
 }
 function renderPDFFields(parsed, warnings) {
   warnings = warnings || [];
-  // Duplicate field comparison data
+  // Duplicate field comparison data (dup map re-keyed to the active bills list —
+  // fix/save-all-persist-bills, see _pdfDupView)
   const _dupIdx = window._pdfMultiIdx || 0;
-  const _dupInfo = (window._pdfDupMap || {})[_dupIdx] || null;
+  const _dupView = _pdfDupView(window._pdfMultiBills || []);
+  const _dupInfo = _dupView.map[_dupIdx] || null;
   const _dupDiffSet = new Set((_dupInfo?.diffFields || []).map((d) => d.key));
   const _dupDiffMap = {};
   (_dupInfo?.diffFields || []).forEach((d) => {
@@ -19621,8 +19782,9 @@ function renderPDFFields(parsed, warnings) {
   // changed by a bulk action mid-flight). Fall through to a diagnostic banner if
   // the bill IS a duplicate but something stripped diffFields off the entry.
   let dupFieldBannerHtml = '';
-  const _liveDup = (window._pdfDupMap || {})[_dupIdx] || null;
-  const _anyDups = Object.keys(window._pdfDupMap || {}).length;
+  const _liveDupView = _pdfDupView(window._pdfMultiBills || []);
+  const _liveDup = _liveDupView.map[_dupIdx] || null;
+  const _anyDups = Object.keys(_liveDupView.map).length;
   if (_liveDup) {
     const diffs = Array.isArray(_liveDup.diffFields) ? _liveDup.diffFields : [];
     const diffCount = diffs.length;
@@ -19638,10 +19800,10 @@ function renderPDFFields(parsed, warnings) {
         <span style="color:var(--amber);font-weight:700;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px">DUPLICATE BILL &middot; ${diffCount} field${diffCount === 1 ? '' : 's'} differ${actLabel}</span>
         <span style="font-size:10px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px" title="${_liveDup.locationType === 'saved' ? 'Found in: Saved Bills' : 'Found in: ' + (_liveDup.location || 'meter bill data')}">${_dupLocLabel}</span>
         <div style="display:flex;gap:4px;flex-shrink:0;margin-left:auto">
-          <button onclick="window._pdfMultiIdx=${bi};window._dupModalIdx=${bi};overwriteDupBill()" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--red);cursor:pointer;font-weight:700">Overwrite</button>
-          <button onclick="window._pdfMultiIdx=${bi};window._dupModalIdx=${bi};mergeDupBill()" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(34,197,94,.5);background:rgba(34,197,94,.12);color:var(--green);cursor:pointer;font-weight:700">Merge</button>
-          <button onclick="window._pdfMultiIdx=${bi};window._dupModalIdx=${bi};skipDupBill()" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-weight:600">Skip</button>
-          <button onclick="openDupModal(${bi})" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(245,158,11,.5);background:transparent;color:var(--amber);cursor:pointer;font-weight:600" title="Compare fields side-by-side">Compare</button>
+          <button onclick="_dupBannerAction(${bi},'overwrite')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--red);cursor:pointer;font-weight:700">Overwrite</button>
+          <button onclick="_dupBannerAction(${bi},'merge')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(34,197,94,.5);background:rgba(34,197,94,.12);color:var(--green);cursor:pointer;font-weight:700">Merge</button>
+          <button onclick="_dupBannerAction(${bi},'skip')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-weight:600">Skip</button>
+          <button onclick="_dupBannerAction(${bi},'compare')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(245,158,11,.5);background:transparent;color:var(--amber);cursor:pointer;font-weight:600" title="Compare fields side-by-side">Compare</button>
         </div>
       </div>`;
   } else if (_anyDups > 0) {
@@ -19650,7 +19812,7 @@ function renderPDFFields(parsed, warnings) {
     // aren't here — and can jump to a known-dup bill. Without this, a user whose
     // selected pill happens to be non-dup sees nothing and assumes the feature is
     // broken.
-    const firstDupKey = Object.keys(window._pdfDupMap || {})[0];
+    const firstDupKey = Object.keys(_liveDupView.map)[0];
     dupFieldBannerHtml = `<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3);font-size:11px;color:var(--text2);display:flex;align-items:center;gap:8px">
         <span style="color:var(--accent);font-weight:700">&#9432;</span>
         <span style="flex:1">This bill is not a duplicate. ${_anyDups} other bill${_anyDups === 1 ? '' : 's'} in this extraction are duplicates.</span>
@@ -21180,6 +21342,16 @@ async function _saveSinglePDFBill(extracted, projId) {
   // degrades to the SAME "assign manually from Saved Bills tab" fallback
   // this function already uses below for the no-meter-match case — it does
   // not strand the bill, only the automatic meter-assignment step.
+  //
+  // FIX (fix/save-all-persist-bills, 2026-09-21): callers used to get a bare
+  // `true` whether the bill landed on a meter OR only in the unassigned Saved
+  // Bills list — so batch summaries reported "saved · project match" for a
+  // bill that never reached any meter (OCR-garbled WRE account numbers hit
+  // this every time). Return the string 'unassigned' (still truthy, so every
+  // existing `if (ok)` caller keeps working) when no meter received the bill,
+  // so callers can surface it instead of reporting a silent success.
+  let _landedOnMeter = false;
+  let _landedDest = ''; // "Project → Building → meter" label of where the bill actually landed
   try {
     if (proj) {
       const udProj = getUDProj(proj.id);
@@ -21286,6 +21458,14 @@ async function _saveSinglePDFBill(extracted, projId) {
         }
         // Run validation on the saved bill to persist _flags
         if (typeof runBillValidation === 'function') runBillValidation(targetMeter, dup || billRow);
+        _landedDest =
+          proj.name +
+          ' → ' +
+          ((targetBldg && targetBldg.name) || '') +
+          ' → ' +
+          (targetMeter.commodity || 'meter') +
+          ' · Acct ' +
+          (targetMeter.account || '—');
       }
       // Second try: single matching commodity meter
       if (!matched) {
@@ -21316,6 +21496,8 @@ async function _saveSinglePDFBill(extracted, projId) {
           // Run validation on the saved bill to persist _flags
           if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
           matched = true;
+          _landedDest =
+            proj.name + ' → ' + (b.name || '') + ' → ' + (m.commodity || 'meter') + ' · Acct ' + (m.account || '—');
         }
       }
       if (!matched) {
@@ -21327,6 +21509,19 @@ async function _saveSinglePDFBill(extracted, projId) {
           const created = _autoCreateMeterAndSaveBill(extracted, projId, billRow);
           if (created) {
             matched = true;
+            // Name the NEW meter so a batch summary never hides where an
+            // unrecognized account landed (fix/save-all-persist-bills). A
+            // landing in the "Unmatched Bills" sentinel building is NOT a
+            // real meter match — flag it so callers report it as held.
+            _landedDest =
+              (created.bldg && created.bldg._unmatchedSentinel ? _UNMATCHED_PREFIX : '') +
+              proj.name +
+              ' → ' +
+              ((created.bldg && (created.bldg.name || created.bldg.addr)) || 'Unmatched Bills') +
+              ' → NEW ' +
+              ((created.meter && created.meter.commodity) || 'meter') +
+              ' meter · Acct ' +
+              ((created.meter && created.meter.account) || '—');
           }
         }
         if (!matched) {
@@ -21339,7 +21534,10 @@ async function _saveSinglePDFBill(extracted, projId) {
           showToast('No meter match found — saved to Saved Bills. Assign from Saved Bills tab.');
         }
       }
-      if (matched) saveUtilityData(projId);
+      if (matched) {
+        saveUtilityData(projId);
+        _landedOnMeter = true;
+      }
     }
   } catch (e) {
     console.error(
@@ -21355,7 +21553,25 @@ async function _saveSinglePDFBill(extracted, projId) {
   if (totalCost > 0 && diff > 0.1 && !isGas && !isPropane) {
     console.warn('Bill validation: components $' + componentSum.toFixed(2) + ' vs total $' + totalCost.toFixed(2));
   }
-  return true;
+  return _landedOnMeter ? _landedDest || true : 'unassigned';
+}
+// _saveSinglePDFBill() return contract (fix/save-all-persist-bills):
+//   true / "Proj → Bldg → meter" string  -> landed on a real meter
+//   "unmatched:Proj → Unmatched Bills → NEW ..." -> landed on an auto-created
+//        meter in the Unmatched Bills sentinel building (no real meter matched)
+//   'unassigned'                          -> Saved Bills list only
+// All truthy, so legacy `if (ok)` callers keep working.
+const _UNMATCHED_PREFIX = 'unmatched:';
+const _UNASSIGNED_DEST = 'Saved Bills only — no meter matched. Open the Saved Bills tab to assign it to a meter.';
+function _saveResultNeedsMeter(ok) {
+  return ok === 'unassigned' || (typeof ok === 'string' && ok.indexOf(_UNMATCHED_PREFIX) === 0);
+}
+function _saveResultDest(ok) {
+  if (ok === 'unassigned') return _UNASSIGNED_DEST;
+  if (typeof ok === 'string' && ok.indexOf(_UNMATCHED_PREFIX) === 0) {
+    return ok.slice(_UNMATCHED_PREFIX.length) + ' — no existing meter matched; move it to the right meter.';
+  }
+  return typeof ok === 'string' ? ok : '';
 }
 
 function pdfUpdateBldgMeterOpts() {
@@ -21512,7 +21728,11 @@ function savePDFData() {
   }
   _saveSinglePDFBill(extracted, projId).then((ok) => {
     const proj = projId ? projects.find((p) => p.id === projId) : null;
-    if (ok) {
+    if (_saveResultNeedsMeter(ok)) {
+      window._pdfBillsSaved = true;
+      showToast(_saveResultDest(ok), 'error');
+      if (document.getElementById('savedBillsModal').classList.contains('open')) renderSavedBills();
+    } else if (ok) {
       window._pdfBillsSaved = true;
       showToast(proj ? 'Saved to ' + proj.name + ' ✓' : 'Saved to general database ✓');
       if (document.getElementById('savedBillsModal').classList.contains('open')) renderSavedBills();
