@@ -2529,6 +2529,14 @@
         font-size: 9px;
         padding: 2px 2px;
       }
+      /* Woodland Page 1 bill tables (2026-09-22): headers center (fix #4) while numbers sit
+         right — with only 2px pad the 5-column gas table cannot get every centered header to
+         overlap its right-aligned data at any column widths. An 8px right pad on numeric cells
+         (the default non-compact .rpt-table td pad is already 6px) pulls the numbers toward the
+         header center enough for every column. Widths in rptPageWoodlandBills() assume it. */
+      .rpt-table-compact td.rpt-n {
+        padding-right: 8px;
+      }
       .rpt-g {
         color: var(--rpt-green-dark);
         font-weight: 600;

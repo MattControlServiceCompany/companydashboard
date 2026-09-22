@@ -422,9 +422,21 @@ function rptPageWoodlandBills(n, d) {
     if (!bl || !bl.rows.length) {
       return '<div class="rpt-su">No baseline bill data found for this meter.</div>';
     }
+    // Layout audit (2026-09-22): .rpt-table-compact is table-layout:fixed, so without explicit
+    // widths every column gets an equal share (~90pt electric / ~108pt gas). Site rule (Matt's
+    // fix #4, 2026-08-03) CENTERS all <th> while numeric <td> are right-aligned, so in a wide
+    // Days column the short "DAYS" header sat ~30pt LEFT of its 2-3 digit data with zero
+    // overlap. Page 2's regression table already avoids this with explicit per-column widths
+    // (Days 5%); same approach here — a narrow Days column keeps the centered header over the
+    // right-aligned data. Widths are sized so EVERY centered header overlaps its right-aligned
+    // data (header-vs-data overlap is a fixed budget per table: sum over columns of
+    // headerW/2 + dataW + padRight - colW/2; the 5-column gas table only has ~14pt of it at the
+    // 2px compact padding, so `.rpt-table-compact td.rpt-n` carries an 8px right pad — see the
+    // CSS — and the widths below split the budget ~evenly). No values, classes, or alignment
+    // rules changed.
     var head = isElec
-      ? '<tr><th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">Billed kWh</th><th class="rpt-n">Demand kW</th><th class="rpt-n">Total Cost</th><th class="rpt-n">Effective $/kWh</th></tr>'
-      : '<tr><th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">Billed Therms</th><th class="rpt-n">Total Cost</th><th class="rpt-n">Effective $/Therm</th></tr>';
+      ? '<tr><th style="width:15%">Month</th><th class="rpt-n" style="width:6%">Days</th><th class="rpt-n" style="width:17%">Billed kWh</th><th class="rpt-n" style="width:17%">Demand kW</th><th class="rpt-n" style="width:22%">Total Cost</th><th class="rpt-n" style="width:23%">Effective $/kWh</th></tr>'
+      : '<tr><th style="width:19%">Month</th><th class="rpt-n" style="width:8%">Days</th><th class="rpt-n" style="width:22%">Billed Therms</th><th class="rpt-n" style="width:22.5%">Total Cost</th><th class="rpt-n" style="width:28.5%">Effective $/Therm</th></tr>';
     var rowsHtml = '';
     // Calc re-audit defect #1 (2026-09-22): `sums` MUST have exactly one entry per non-label
     // column (Days, then the rest) or every total/average cell shifts left under the wrong
