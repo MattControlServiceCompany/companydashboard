@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.866',
+    date: '2026-09-22',
+    title: 'Equipment Matrix: fixed point columns hiding each other',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix no longer hides Flow Control/Flow Input points behind the Air Flow column on VAV rows — Flow Control Input now gets its own column.',
+      },
+      {
+        type: 'fix',
+        text: 'Supply Fan Enable and Exhaust Fan Enable points now get their own columns instead of being mistaken for fan status points.',
+      },
+      {
+        type: 'fix',
+        text: 'Setpoint-limit and CFM-source points are no longer miscategorized into unrelated columns.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.865',
     date: '2026-09-22',
     title: 'Woodland Spring Middle baseline + savings report',
