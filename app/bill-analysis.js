@@ -5901,6 +5901,37 @@ function _addressSimilarity(a, b) {
   var maxLen = Math.max(na.length, nb.length);
   return maxLen === 0 ? 0 : 1 - _levenshtein(na, nb) / maxLen;
 }
+// Positive SITE identity from two service addresses (fix/save-all-persist-bills,
+// review finding 1). Used by _checkDuplicates when an invoice number matches but
+// the account numbers cannot decide (blank/garbled on either side — routine for
+// Wood River Energy OCR). A consolidated invoice bills many sites under one
+// number, so "same invoice + same period" is NOT the same bill; only a real
+// site match is. Signals, all reusing the matchers below this file already
+// trusts: identical normalized address; same house number AND fuzzy-equal
+// street-name tokens (_addrStreetNameTokens / _streetNameTokensFuzzyMatch);
+// or, when the street name is unreadable on one side, same house number AND
+// agreeing WRE site tags (_tagSplit / _buildingNameScore). Never true from a
+// house number alone (Spring Hill has "300 S Webster" and "300 E South").
+function _sameSiteAddress(a, b) {
+  if (!a || !b) return false;
+  const na = _normalizeAddr(a);
+  const nb = _normalizeAddr(b);
+  if (na && nb && na.length >= 6 && nb.length >= 6 && (na === nb || na.includes(nb) || nb.includes(na))) {
+    return true;
+  }
+  const ta = _tagSplit(a);
+  const tb = _tagSplit(b);
+  const streetA = ta ? ta.streetPart : a;
+  const streetB = tb ? tb.streetPart : b;
+  const ia = _addrStreetIdentity(streetA);
+  const ib = _addrStreetIdentity(streetB);
+  if (!ia || !ib || Number(ia.num) !== Number(ib.num)) return false;
+  const toksA = _addrStreetNameTokens(streetA);
+  const toksB = _addrStreetNameTokens(streetB);
+  if (toksA.length && toksB.length) return _streetNameTokensFuzzyMatch(toksA, toksB);
+  if (ta && tb) return _buildingNameScore(ta.tag, tb.tag) >= _WRE_MIN_NAME_SCORE;
+  return false;
+}
 // Flexible account/meter number comparison that survives utility format changes.
 // Strips dashes, spaces, and leading zeros before comparing, then falls back
 // to substring containment so e.g. "123456" matches "0123456-00" after stripping.
@@ -8253,7 +8284,7 @@ async function _mbSaveOneBill(bi, action) {
     _held.push(
       Object.assign(
         {
-          id: 'pb' + Date.now() + '_' + bi + '_review',
+          id: (bill._pdfBillsRecordId = 'pb' + Date.now() + '_' + bi + '_review'),
           savedAt: new Date().toISOString(),
           projId: _cProj,
           projName: (billMatch.proj && billMatch.proj.name) || 'General',
@@ -8286,7 +8317,7 @@ async function _mbSaveOneBill(bi, action) {
     _pdfBillsForReviewUnresolved.push(
       Object.assign(
         {
-          id: 'pb' + Date.now() + '_' + bi + '_review',
+          id: (bill._pdfBillsRecordId = 'pb' + Date.now() + '_' + bi + '_review'),
           savedAt: new Date().toISOString(),
           projId: billMatch.projId || null,
           projName: (billMatch.proj && billMatch.proj.name) || 'General',
@@ -8355,7 +8386,7 @@ async function _mbSaveOneBill(bi, action) {
     _pdfBillsForReview.push(
       Object.assign(
         {
-          id: 'pb' + Date.now() + '_' + bi + '_review',
+          id: (bill._pdfBillsRecordId = 'pb' + Date.now() + '_' + bi + '_review'),
           savedAt: new Date().toISOString(),
           projId: billMatch.projId || null,
           projName: (billMatch.proj && billMatch.proj.name) || 'General',
@@ -8487,6 +8518,9 @@ async function _mbSaveOneBill(bi, action) {
   // Coordinate saved state across the two review UIs — see comment on the
   // 'create' branch above for why both flags are stamped on every success path.
   bill._batchSaved = true;
+  // fix/save-all-persist-bills (review finding 3): a bill routed here after an
+  // earlier held attempt still has its Saved Bills copy — remove it.
+  _dropHeldSavedBillRecord(bill);
   return { status: 'saved', destination, projId: billMatch.projId };
 }
 window._mbSaveOneBill = _mbSaveOneBill;
@@ -9366,7 +9400,27 @@ function _saveBillToMatchedMeter(extracted, match) {
     liveMeter.account = extracted.AccountNumber;
   }
   saveUtilityData(match.projId);
+  // fix/save-all-persist-bills (review finding 3): a retry after a held
+  // attempt (manual Destination pick) must not leave the earlier Saved Bills
+  // copy behind — mirrors confirmAssignBill's filter-out-on-assign.
+  _dropHeldSavedBillRecord(extracted);
   return liveProj.name + ' → ' + liveBldg.name + ' → ' + (liveMeter.provider || liveMeter.meter || 'meter');
+}
+// Removes the en_pdf_bills record a held (no-meter) attempt left for this
+// extracted bill (stamped as bill._pdfBillsRecordId by _saveSinglePDFBill /
+// _mbSaveOneBill's review diversions). No-op when there is none. Synchronous:
+// sget/sset read and write the warm DB cache directly.
+function _dropHeldSavedBillRecord(bill) {
+  if (!bill || !bill._pdfBillsRecordId) return;
+  const id = bill._pdfBillsRecordId;
+  const list = sget('en_pdf_bills', []) || [];
+  const kept = list.filter((b) => b && b.id !== id);
+  if (kept.length !== list.length) sset('en_pdf_bills', kept);
+  delete bill._pdfBillsRecordId;
+  delete bill._held;
+  delete bill._heldDest;
+  delete bill._mbHeld;
+  delete bill._mbHeldReason;
 }
 
 // Compute a destination description for a bill without actually saving it. Used to
@@ -10727,9 +10781,11 @@ function renderQueueResults() {
       const dupAct = dup.action;
       const actLabel =
         dupAct === 'overwrite' ? ' \xb7 OW' : dupAct === 'merge' ? ' \xb7 MG' : dupAct === 'skip' ? ' \xb7 SK' : '';
-      const dupLocLabel = dup.locationType === 'saved' ? ' (Saved)' : ' (Meter)';
-      const dupTitle =
-        dup.locationType === 'saved'
+      const dupLocLabel = _isWeakDup(dup) ? ' (Address?)' : dup.locationType === 'saved' ? ' (Saved)' : ' (Meter)';
+      const dupTitle = _isWeakDup(dup)
+        ? 'Possible duplicate — matched by invoice + service address only (no account/meter number). Use Resolve to compare: ' +
+          (dup.location || '')
+        : dup.locationType === 'saved'
           ? 'Duplicate found in Saved Bills — not yet on any meter'
           : 'Duplicate found in meter bill data: ' + (dup.location || '');
       return (
@@ -11225,16 +11281,30 @@ function resolveAllQueueDups(action) {
   if (!window._pdfDupMap || !window._pdfQueueRows) return;
   const rows = window._pdfQueueRows;
   let count = 0;
+  let weak = 0;
   rows.forEach((row) => {
     const dup = row.bill ? _getQueueDupInfo(row) : null;
     if (dup) {
+      // fix/save-all-persist-bills (review finding 1): a dup matched by address
+      // only is never bulk-written — it needs a per-bill Resolve decision.
+      if (action !== 'skip' && _isWeakDup(dup)) {
+        weak++;
+        return;
+      }
       dup.action = action;
       count++;
     }
   });
   renderQueueResults();
   const labels = { overwrite: 'Overwrite', merge: 'Merge', skip: 'Skip' };
-  showToast((labels[action] || action) + ' set for ' + count + ' duplicate' + (count !== 1 ? 's' : ''));
+  showToast(
+    (labels[action] || action) +
+      ' set for ' +
+      count +
+      ' duplicate' +
+      (count !== 1 ? 's' : '') +
+      (weak ? ' — ' + weak + ' matched by address only; use Resolve on each' : ''),
+  );
 }
 
 function updateQueueBatchProj(val) {
@@ -11536,15 +11606,19 @@ async function saveQueuedBills() {
       if (dup && !dup.action) {
         // Not written, and said so plainly (fix/save-all-persist-bills): name
         // where the existing copy lives and what to click to change that.
-        skipped++;
         summaryEntries.push({
           period,
-          status: 'skipped',
-          destination: 'Not saved — already on ' + (dup.location || 'an existing record'),
-          reason:
-            'Duplicate. Use Save All (Overwrite) or Save Non-Empty (Merge) to update it, or Skip All Dups to dismiss.',
+          status: _isWeakDup(dup) ? 'held' : 'skipped',
+          destination: _isWeakDup(dup)
+            ? _WEAK_DUP_DEST + (dup.location || '')
+            : 'Not saved — already on ' + (dup.location || 'an existing record'),
+          reason: _isWeakDup(dup)
+            ? 'Matched by invoice + service address only — no account/meter number agreed. Use Resolve on this row.'
+            : 'Duplicate. Use Save All (Overwrite) or Save Non-Empty (Merge) to update it, or Skip All Dups to dismiss.',
           method: 'dup',
         });
+        if (_isWeakDup(dup)) held++;
+        else skipped++;
         continue;
       }
 
@@ -12092,19 +12166,25 @@ async function _checkDuplicates(bills, statusCb) {
       // fast path found nothing, the full-scan fallback hit a SIBLING meter's
       // bill via invoiceMatch + same period + same commodity, the bill was
       // tagged an unresolved duplicate, and Save All skipped it — the meter
-      // stayed at 0 bills with no error. Invoice number is only identity when
-      // the two account numbers do not demonstrably disagree (present on both
-      // sides and failing _acctFuzzyMatch = a different site on the same invoice).
+      // stayed at 0 bills with no error. Invoice number is NEVER identity by
+      // itself: it needs a POSITIVE site signal — the account numbers agree
+      // (acctMatch/meterMatch above), or, when an account is blank/garbled on
+      // either side (routine WRE OCR — _acctFuzzyMatch returns false for a
+      // blank, so "not contradicting" is meaningless there), the service
+      // addresses identify the SAME site (_sameSiteAddress against the stored
+      // bill's own serviceAddress or the meter's address). A present-and-
+      // different account is a hard veto regardless of address.
       const acctContradicts = !!(extAcct && existAcct && !acctMatch);
+      const siteMatch =
+        !!invoiceMatch &&
+        !acctContradicts &&
+        (_sameSiteAddress(ext.ServiceAddress, ab.bill.serviceAddress) ||
+          _sameSiteAddress(ext.ServiceAddress, ab.meter.maddr));
       const existComm = (ab.bill.commodity || ab.meter.commodity || '').toLowerCase();
       const commMatch = !extComm || !existComm || extComm === existComm;
       const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
       const fuzzyPeriod = !periodMatch && periodClose(extStart, extEnd, ab.bill.start, ab.bill.end);
-      if (
-        (acctMatch || meterMatch || (invoiceMatch && !acctContradicts)) &&
-        (periodMatch || fuzzyPeriod) &&
-        commMatch
-      ) {
+      if ((acctMatch || meterMatch || siteMatch) && (periodMatch || fuzzyPeriod) && commMatch) {
         // Build diff fields
         const diffFields = _buildDiffFields(ext, ab.bill);
         dupMap[i] = {
@@ -12115,7 +12195,10 @@ async function _checkDuplicates(bills, statusCb) {
           meter: ab.meter,
           hasPDF: ab.hasPDF,
           pdfKey: ab.pdfKey,
-          matchFields: { account: acctMatch, period: periodMatch, meter: meterMatch },
+          // `site`: matched by invoice + service address only (no account/meter
+          // number agreement). Save paths treat such a dup as WEAK — never
+          // auto-merged, held for an explicit Compare/Overwrite/Merge decision.
+          matchFields: { account: acctMatch, period: periodMatch, meter: meterMatch, site: !!siteMatch },
           diffFields,
           action: null, // null = user hasn't decided yet
           fieldSelections: {}, // per-field: true = use new, false = keep existing
@@ -12376,6 +12459,20 @@ async function _dupBulkAction(action) {
     // right after a bill is successfully saved (below) so a re-click here
     // skips it instead of duplicating it.
     if (bills[i]._batchSaved) {
+      if (bills[i]._held) {
+        // fix/save-all-persist-bills (review finding 2): see savePDFAllBills.
+        held++;
+        summaryEntries.push({
+          period:
+            (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
+            ' → ' +
+            (bills[i].BillingPeriodEnd || bills[i].DeliveryDate || '?'),
+          status: 'held',
+          destination: bills[i]._heldDest || _UNASSIGNED_DEST,
+          method: 'project',
+        });
+        continue;
+      }
       alreadyProcessed++;
       // NIT fix (86669b5f review round 2, item #4): savePDFAllBills already
       // pushed a matching row for its own _batchSaved guard; this one didn't,
@@ -12412,6 +12509,12 @@ async function _dupBulkAction(action) {
         dup.action = 'skip';
         status = 'skipped';
         skipped++;
+      } else if (_isWeakDup(dup)) {
+        // fix/save-all-persist-bills (review finding 1): an address-only dup is
+        // never written by a bulk action — Compare it, then decide per bill.
+        status = 'held';
+        held++;
+        destination = _WEAK_DUP_DEST + (dup.location || '');
       } else {
         dup.action = action;
         let ok = false;
@@ -12481,13 +12584,16 @@ async function _dupBulkAction(action) {
         console.error('[_dupBulkAction] _saveSinglePDFBill threw for bill', i, e);
       }
       if (_saveResultNeedsMeter(ok)) {
-        // fix/save-all-persist-bills: never report "saved" for a bill no meter received
+        // fix/save-all-persist-bills: never report "saved" for a bill no meter
+        // received. _batchSaved blocks a duplicate Saved Bills push on re-run;
+        // _held keeps it reporting HELD until it is really routed (finding 2);
+        // _mbSaved is NOT set so the review panel can still route it.
         status = 'held';
         held++;
         destination = _saveResultDest(ok);
         bills[i]._batchSaved = true;
-        bills[i]._mbSaved = true;
-        bills[i]._mbSavedDest = destination;
+        bills[i]._held = true;
+        bills[i]._heldDest = destination;
       } else if (ok) {
         status = 'saved';
         saved++;
@@ -17828,6 +17934,18 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
     // call); bills[i]._batchSaved is stamped after a successful non-dup save
     // (below) so re-running Save on the recovery click doesn't duplicate it.
     if (bills[i]._batchSaved) {
+      if (bills[i]._held) {
+        // fix/save-all-persist-bills (review finding 2): still not on a meter —
+        // keep saying so on every re-run, never "already saved".
+        held++;
+        summaryEntries.push({
+          period,
+          status: 'held',
+          destination: bills[i]._heldDest || _UNASSIGNED_DEST,
+          method: 'project',
+        });
+        continue;
+      }
       alreadyProcessed++;
       summaryEntries.push({ period, status: 'updated', destination: 'Already saved this session', method: 'cache' });
       continue;
@@ -17870,6 +17988,14 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
         failed++;
         status = 'failed';
       }
+    } else if (dup && _isWeakDup(dup)) {
+      // fix/save-all-persist-bills (review finding 1): a dup matched by
+      // invoice + service address only (no account/meter-number agreement)
+      // must never be auto-merged — a wrong site guess would write one site's
+      // usage onto another site's saved bill. Hold for an explicit decision.
+      held++;
+      status = 'held';
+      destination = _WEAK_DUP_DEST + (dup.location || '');
     } else if (dup) {
       // Duplicate with no user-chosen action yet — default to merge (Bug #135:
       // overwrite was clobbering user-corrected data; merge only fills empty
@@ -17924,13 +18050,14 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
         console.error('[savePDFAllBills] _saveSinglePDFBill threw for bill', i, e);
       }
       if (_saveResultNeedsMeter(ok)) {
-        // fix/save-all-persist-bills: never report "saved" for a bill no meter received
+        // fix/save-all-persist-bills: never report "saved" for a bill no meter
+        // received — see the matching comment in _dupBulkAction (finding 2).
         held++;
         status = 'held';
         destination = _saveResultDest(ok);
         bills[i]._batchSaved = true;
-        bills[i]._mbSaved = true;
-        bills[i]._mbSavedDest = destination;
+        bills[i]._held = true;
+        bills[i]._heldDest = destination;
       } else if (ok) {
         saved++;
         status = 'saved';
@@ -21119,7 +21246,10 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
 async function _saveSinglePDFBill(extracted, projId) {
   if (!extracted || !extracted.UtilityCompany) return false;
   const proj = projId ? projects.find((p) => p.id === projId) : null;
-  const pdfBills = (await sget('en_pdf_bills', [])) || [];
+  // A retry after a held attempt must replace, never duplicate, its Saved
+  // Bills record (fix/save-all-persist-bills, review finding 3).
+  const _priorHeldId = extracted._pdfBillsRecordId || null;
+  const pdfBills = ((await sget('en_pdf_bills', [])) || []).filter((b) => !_priorHeldId || !b || b.id !== _priorHeldId);
   const billId = 'pb' + Date.now();
   let hasPDF = false;
   let pdfKey = null;
@@ -21553,7 +21683,28 @@ async function _saveSinglePDFBill(extracted, projId) {
   if (totalCost > 0 && diff > 0.1 && !isGas && !isPropane) {
     console.warn('Bill validation: components $' + componentSum.toFixed(2) + ' vs total $' + totalCost.toFixed(2));
   }
-  return _landedOnMeter ? _landedDest || true : 'unassigned';
+  if (_landedOnMeter && !(_landedDest || '').startsWith(_UNMATCHED_PREFIX)) {
+    delete extracted._pdfBillsRecordId;
+    return _landedDest || true;
+  }
+  // Not on a real meter. Remember the Saved Bills record so a later successful
+  // routing can remove it (review finding 3), and clear projId on that record
+  // so it is actually LISTED in the Saved Bills tab (renderSavedBills hides
+  // records that carry a projId) — otherwise "assign it from Saved Bills" was
+  // advice about an invisible record.
+  extracted._pdfBillsRecordId = billId;
+  try {
+    const _list = (await sget('en_pdf_bills', [])) || [];
+    const _rec = _list.find((b) => b && b.id === billId);
+    if (_rec && _rec.projId) {
+      _rec._heldFromProjId = _rec.projId;
+      _rec.projId = null;
+      await sset('en_pdf_bills', _list);
+    }
+  } catch (e) {
+    console.warn('[_saveSinglePDFBill] could not expose held record in Saved Bills:', e);
+  }
+  return _landedOnMeter ? _landedDest : 'unassigned';
 }
 // _saveSinglePDFBill() return contract (fix/save-all-persist-bills):
 //   true / "Proj → Bldg → meter" string  -> landed on a real meter
@@ -21563,6 +21714,14 @@ async function _saveSinglePDFBill(extracted, projId) {
 // All truthy, so legacy `if (ok)` callers keep working.
 const _UNMATCHED_PREFIX = 'unmatched:';
 const _UNASSIGNED_DEST = 'Saved Bills only — no meter matched. Open the Saved Bills tab to assign it to a meter.';
+// A duplicate found by invoice number + service address only (no account or
+// meter-number agreement) — see _checkDuplicates matchFields.site.
+const _WEAK_DUP_DEST =
+  'Not saved — looks like a duplicate by address only. Use Compare, then Overwrite or Merge it, or Skip it. Existing: ';
+function _isWeakDup(dup) {
+  const mf = (dup && dup.matchFields) || {};
+  return !!mf.site && !mf.account && !mf.meter;
+}
 function _saveResultNeedsMeter(ok) {
   return ok === 'unassigned' || (typeof ok === 'string' && ok.indexOf(_UNMATCHED_PREFIX) === 0);
 }
