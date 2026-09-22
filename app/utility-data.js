@@ -2471,19 +2471,10 @@ function renderUDDetail(targetWrap) {
 
   if (hdr) hdr.style.display = 'flex';
   if (hdrTitle) hdrTitle.textContent = b.name;
-  // Woodland Springs Middle 7-page report (2026-09-22): only show the trigger button for a
-  // building that actually has saved BAS savings options — avoids UI clutter on every other
-  // building in every other project, self-gating rather than hardcoding a building id.
-  const woodlandBtn = document.getElementById('ud-woodland-report-btn');
-  if (woodlandBtn) {
-    const proj = projects.find((x) => x.id === udSelProjId);
-    const hasWoodlandMeasures = !!(
-      proj &&
-      proj.savingsData &&
-      (proj.savingsData.measures || []).some((m) => m.bldgId === b.id)
-    );
-    woodlandBtn.style.display = hasWoodlandMeasures ? '' : 'none';
-  }
+  // Baseline + BAS Savings Report button (2026-09-22): shown for a building with a full-year
+  // baseline or saved setpoint options, flagged ⚠ while any report input is missing — the
+  // visibility/flag logic lives with the report (wdUpdateReportButton, report-engine-woodland.js).
+  if (typeof wdUpdateReportButton === 'function') wdUpdateReportButton(udSelProjId, b.id);
   _bldgStatsPanelVis = false;
   _bldgPerfPanelVis = false;
   _bldgSavProjPanelVis = false;
