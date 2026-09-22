@@ -1639,74 +1639,11 @@ function hvacLoadCreateMeasure(projId) {
 
 /* ══════════════════════════════════════════════════════
          CALC TEMPLATES MODAL
+         Unified catalog: ECM_TEMPLATES (ecm-calculators.js) is the single
+         source of truth — 15 ECM calcs + solar + bas metadata entries.
       ══════════════════════════════════════════════════════ */
-const CALC_TEMPLATES = [
-  {
-    id: 'solar',
-    name: 'Solar',
-    icon: '☀️',
-    desc: 'PV array savings with configurable rate schedules, net metering, and Helioscope data',
-    status: 'ready',
-  },
-  {
-    id: 'bas',
-    name: 'BAS',
-    icon: '🏢',
-    desc: 'Building Automation savings using weather bin data, setpoints, and schedules. Upload temp/humidity CSV for your city.',
-    status: 'ready',
-  },
-  {
-    id: 'oa',
-    name: 'Outside Air',
-    icon: '🌬️',
-    desc: 'OA economizer and ventilation optimization savings',
-    status: 'coming',
-  },
-  {
-    id: 'lighting',
-    name: 'Lighting',
-    icon: '💡',
-    desc: 'LED retrofit savings with wattage reduction and controls',
-    status: 'coming',
-  },
-  {
-    id: 'weatherization',
-    name: 'Weatherization',
-    icon: '🏠',
-    desc: 'Envelope improvements — insulation, windows, air sealing',
-    status: 'coming',
-  },
-  {
-    id: 'thermal',
-    name: 'Thermal Storage',
-    icon: '❄️',
-    desc: 'Ice/chilled water storage for demand shifting',
-    status: 'coming',
-  },
-  {
-    id: 'battery',
-    name: 'Battery Storage',
-    icon: '🔋',
-    desc: 'Battery energy storage system sizing and demand reduction',
-    status: 'coming',
-  },
-  {
-    id: 'rtu',
-    name: 'RTU Replacement',
-    icon: '🔄',
-    desc: 'Rooftop unit replacement — efficiency upgrade savings',
-    status: 'coming',
-  },
-  {
-    id: 'peakdemand',
-    name: 'Peak Load Demand',
-    icon: '⚡',
-    desc: 'Demand response and peak load reduction strategies',
-    status: 'coming',
-  },
-];
 
-let _calcTemplateContext = null; // {projId, returnTo:'sv'|'ptab', targetMeasureId:null}
+let _calcTemplateContext = null; // {projId, returnTo:'sv'|'ptab', targetMeasureId:null, bldgId:null}
 
 /* Open calc templates targeted at a specific measure row */
 function openCalcForMeasure(projId, msrId, returnTo) {
@@ -1714,12 +1651,22 @@ function openCalcForMeasure(projId, msrId, returnTo) {
 }
 
 function openCalcTemplates(projId, returnTo, targetMeasureId) {
-  _calcTemplateContext = { projId, returnTo: returnTo || 'sv', targetMeasureId: targetMeasureId || null };
+  // Resolve the target measure's building once, so both the ECM "Add as Measure"
+  // flow and the BAS auto-populate can target the correct building instead of
+  // silently defaulting to the first building in the project.
+  let bldgId = null;
+  if (targetMeasureId) {
+    const sd = getProjSavingsData(projId);
+    const m = sd.measures.find((x) => x.id === targetMeasureId);
+    bldgId = m?.bldgId || null;
+  }
+  _calcTemplateContext = { projId, returnTo: returnTo || 'sv', targetMeasureId: targetMeasureId || null, bldgId };
   const wrap =
     _calcTemplateContext.returnTo === 'ptab'
       ? document.getElementById('ptab-savings')
       : document.getElementById('svDetailWrap');
   if (!wrap) return;
+  const catalog = Object.values(ECM_TEMPLATES);
   wrap.innerHTML = `
           <div style="padding:20px;overflow-y:auto;flex:1">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
@@ -1740,17 +1687,19 @@ function openCalcTemplates(projId, returnTo, targetMeasureId) {
                 : 'Select a calculator template to estimate energy savings. Results can be added as a new savings measure row.'
             }</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
-              ${CALC_TEMPLATES.map(
-                (t) => `
-                <button class="card" style="background:var(--s1);padding:18px;border:1px solid var(--border);cursor:${t.status === 'ready' ? 'pointer' : 'default'};text-align:left;transition:all .15s;opacity:${t.status === 'ready' ? '1' : '0.5'}" ${t.status === 'ready' ? `onclick="launchCalcTemplate('${t.id}',${projId})"` : ''}
-                  onmouseenter="if('${t.status}'==='ready')this.style.borderColor='var(--accent)'"
+              ${catalog
+                .map(
+                  (t) => `
+                <button class="card" style="background:var(--s1);padding:18px;border:1px solid var(--border);cursor:pointer;text-align:left;transition:all .15s" onclick="launchCalcTemplate('${t.id}',${projId})"
+                  onmouseenter="this.style.borderColor='var(--accent)'"
                   onmouseleave="this.style.borderColor='var(--border)'">
                   <div style="font-size:28px;margin-bottom:8px">${t.icon}</div>
                   <div style="font-size:14px;font-weight:700;margin-bottom:5px">${t.name}</div>
-                  <div style="font-size:12px;color:var(--text2);line-height:1.6">${t.desc}</div>
-                  ${t.status === 'coming' ? '<div style="font-size:10px;color:var(--amber);margin-top:8px;font-weight:600">Coming Soon</div>' : '<div style="font-size:10px;color:var(--em);margin-top:8px;font-weight:600">✓ Available</div>'}
+                  <div style="font-size:12px;color:var(--text2);line-height:1.6">${t.description}</div>
+                  <div style="font-size:10px;color:var(--em);margin-top:8px;font-weight:600">✓ Available</div>
                 </button>`,
-              ).join('')}
+                )
+                .join('')}
             </div>
           </div>`;
 }
@@ -1774,9 +1723,51 @@ function launchCalcTemplate(templateId, projId) {
     openSolarCalc(projId);
   } else if (templateId === 'bas') {
     openBASCalc(projId);
+  } else if (ECM_TEMPLATES[templateId]) {
+    openEcmCalcInline(templateId, projId);
   } else {
-    showToast(`${templateId.toUpperCase()} calculator coming soon`);
+    showToast(`${templateId.toUpperCase()} calculator not found`);
   }
+}
+
+/* Launch one of the 15 ECM_TEMPLATES calcs inline, in the same container
+   openBASCalc/openSolarCalc use, so the unified catalog is one door for
+   every calculator (full-page, not a modal). */
+function openEcmCalcInline(templateId, projId) {
+  if (!_calcTemplateContext) _calcTemplateContext = { projId, returnTo: 'sv' };
+  const wrap =
+    _calcTemplateContext.returnTo === 'ptab'
+      ? document.getElementById('ptab-savings')
+      : document.getElementById('svDetailWrap');
+  if (!wrap) return;
+  const hdrBtns = document.getElementById('svDetailHdrBtns');
+  if (hdrBtns) hdrBtns.style.display = 'none';
+  const bldgId = _calcTemplateContext.bldgId || null;
+  const bldg = bldgId && typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+
+  wrap.innerHTML = `<div id="ecm-inline-wrap" style="display:flex;flex-direction:column;height:100%"></div>`;
+  const container = document.getElementById('ecm-inline-wrap');
+
+  renderEcmCalculator(
+    templateId,
+    container,
+    null, // no saved values on first open
+    function onBack() {
+      openCalcTemplates(
+        _calcTemplateContext.projId,
+        _calcTemplateContext.returnTo,
+        _calcTemplateContext.targetMeasureId,
+      );
+    },
+    function onCalculate(tid, inputs, results) {
+      // Results are rendered inline by renderEcmResults (Save to Project + Add as Measure buttons)
+    },
+    { projId, buildingId: bldgId, buildingName: bldg?.name || null },
+  );
+  // renderEcmCalculator's own "← Back" button just fires onBack; make the label
+  // consistent with the rest of the calc-templates flow.
+  const backBtn = container.querySelector('#ecm-back-btn');
+  if (backBtn) backBtn.textContent = '← Templates';
 }
 
 /* ══════════════════════════════════════════════════════
@@ -3348,9 +3339,61 @@ function openBASCalc(projId) {
   const hdrBtns = document.getElementById('svDetailHdrBtns');
   if (hdrBtns) hdrBtns.style.display = 'none';
   const bc = p?.basCalc || {};
-  const sqft = bc.sqft || p?.sqft || 0;
+
+  // Auto-populate defaults from the target building — only on first open (no saved
+  // basCalc yet), so we never clobber a user's edited/saved inputs. Defaults only;
+  // every field stays editable. See docs/dashboardlogic.md 2026-09-22 entry.
+  const _bcAuto = {};
+  if (_calcTemplateContext.bldgId && !p?.basCalc) {
+    const bldg = typeof getUDBldg === 'function' ? getUDBldg(projId, _calcTemplateContext.bldgId) : null;
+    if (bldg) {
+      if (bldg.sqft) _bcAuto.sqft = parseFloat(bldg.sqft) || 0;
+
+      const meters = bldg.meters || [];
+      const hasGas = meters.some((m) => m.commodity === 'Gas');
+      const hasElec = meters.some((m) => m.commodity === 'Electric');
+      if (hasGas && hasElec)
+        _bcAuto.heatSrc = 4; // Both (Electric + Gas)
+      else if (hasGas)
+        _bcAuto.heatSrc = 3; // Gas (Therms) — bills carry therms, see hvacLoadCalc
+      else if (hasElec) _bcAuto.heatSrc = 2; // Electric
+
+      if (bldg.addr) {
+        const addrLower = String(bldg.addr).toLowerCase();
+        const match = BAS_CITIES.find((c) => {
+          const cityName = c.name.split(',')[0].trim().toLowerCase();
+          return cityName && addrLower.includes(cityName);
+        });
+        if (match) _bcAuto.city = match.id;
+      }
+
+      const spRecord = (p?.setpoints || []).find((r) => r.buildingId === bldg.id);
+      if (spRecord?.zones?.length) {
+        const avgOf = (key) => {
+          const vals = spRecord.zones.map((z) => parseFloat(z[key])).filter((v) => !isNaN(v));
+          return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+        };
+        const occCool = avgOf('occCool'),
+          unoccCool = avgOf('unoccCool'),
+          occHeat = avgOf('occHeat'),
+          unoccHeat = avgOf('unoccHeat');
+        if (occCool != null) _bcAuto.exCoolOcc = occCool;
+        if (unoccCool != null) _bcAuto.exCoolUnocc = unoccCool;
+        if (occHeat != null) _bcAuto.exHeatOcc = occHeat;
+        if (unoccHeat != null) _bcAuto.exHeatUnocc = unoccHeat;
+      }
+    }
+    // Calibration (Section D) is project-scoped only (hvacLoadEst has no per-building
+    // breakout today) — pre-fill when available, documented limitation otherwise.
+    if (p?.hvacLoadEst) {
+      if (p.hvacLoadEst.coolKwhTotal) _bcAuto.calCoolKwh = Math.round(p.hvacLoadEst.coolKwhTotal);
+      if (p.hvacLoadEst.heatKwhTotal) _bcAuto.calHeatKwh = Math.round(p.hvacLoadEst.heatKwhTotal);
+    }
+  }
+
+  const sqft = bc.sqft || _bcAuto.sqft || p?.sqft || 0;
   const cityOpts = BAS_CITIES.map(
-    (c) => `<option value="${c.id}" ${(bc.city || 4) === c.id ? 'selected' : ''}>${c.name}</option>`,
+    (c) => `<option value="${c.id}" ${(bc.city || _bcAuto.city || 4) === c.id ? 'selected' : ''}>${c.name}</option>`,
   ).join('');
   const hasMsr = !!_calcTemplateContext?.targetMeasureId;
   const msrLabel = hasMsr
@@ -3402,10 +3445,10 @@ function openBASCalc(projId) {
               <div class="f3">
                 <div class="fg"><label class="fl">Building SqFt</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${sqft}" placeholder="e.g. 50000"></div>
                 <div class="fg"><label class="fl">Heating Source</label><select class="fs bc-inp" id="bc-heatSrc">
-                  <option value="1" ${(bc.heatSrc || 2) == 1 ? 'selected' : ''}>1 — Gas (MCF)</option>
-                  <option value="2" ${(bc.heatSrc || 2) == 2 ? 'selected' : ''}>2 — Electric (kWh)</option>
-                  <option value="3" ${(bc.heatSrc || 2) == 3 ? 'selected' : ''}>3 — Gas (Therms)</option>
-                  <option value="4" ${(bc.heatSrc || 2) == 4 ? 'selected' : ''}>4 — Both (Electric + Gas)</option>
+                  <option value="1" ${(bc.heatSrc || _bcAuto.heatSrc || 2) == 1 ? 'selected' : ''}>1 — Gas (MCF)</option>
+                  <option value="2" ${(bc.heatSrc || _bcAuto.heatSrc || 2) == 2 ? 'selected' : ''}>2 — Electric (kWh)</option>
+                  <option value="3" ${(bc.heatSrc || _bcAuto.heatSrc || 2) == 3 ? 'selected' : ''}>3 — Gas (Therms)</option>
+                  <option value="4" ${(bc.heatSrc || _bcAuto.heatSrc || 2) == 4 ? 'selected' : ''}>4 — Both (Electric + Gas)</option>
                 </select></div>
                 <div class="fg"><label class="fl">% of VRF kWh</label><input class="fi bc-inp" id="bc-vrfPct" type="number" value="${bc.vrfPct || 0}" min="0" max="100" step="1"></div>
               </div>
@@ -3459,12 +3502,12 @@ function openBASCalc(projId) {
               <div class="card-hdr"><span class="card-title" style="color:var(--amber)">Existing Conditions</span></div>
               <div style="padding:14px">
                 <div class="f2">
-                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-exCoolOcc" type="number" value="${bc.exCoolOcc ?? 55}"></div>
-                  <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exCoolUnocc" type="number" value="${bc.exCoolUnocc ?? 70}"></div>
+                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-exCoolOcc" type="number" value="${bc.exCoolOcc ?? _bcAuto.exCoolOcc ?? 55}"></div>
+                  <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exCoolUnocc" type="number" value="${bc.exCoolUnocc ?? _bcAuto.exCoolUnocc ?? 70}"></div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-exHeatOcc" type="number" value="${bc.exHeatOcc ?? 70}"></div>
-                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exHeatUnocc" type="number" value="${bc.exHeatUnocc ?? 60}"></div>
+                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-exHeatOcc" type="number" value="${bc.exHeatOcc ?? _bcAuto.exHeatOcc ?? 70}"></div>
+                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exHeatUnocc" type="number" value="${bc.exHeatUnocc ?? _bcAuto.exHeatUnocc ?? 60}"></div>
                 </div>
                 <div class="fg"><label class="fl">OA Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-exOAShutoff">
                   <option value="no" ${(bc.exOAShutoff || 'no') === 'no' ? 'selected' : ''}>No</option>
@@ -3524,8 +3567,8 @@ function openBASCalc(projId) {
             <div style="padding:14px">
               <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Enter actual annual energy from utility analysis. Leave blank to skip calibration (factor = 1.0).</div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:end">
-                <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${bc.calCoolKwh || ''}"></div>
-                <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${bc.calHeatKwh || ''}"></div>
+                <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${bc.calCoolKwh || _bcAuto.calCoolKwh || ''}"></div>
+                <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${bc.calHeatKwh || _bcAuto.calHeatKwh || ''}"></div>
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
                   <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Cool Adj Factor</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-adjCool">1.000</div>
@@ -4024,7 +4067,7 @@ function bcAddAsMeasure(projId) {
     id: 'm' + Date.now(),
     selected: true,
     msrNum: sd.measures.length + 1 + '',
-    bldgId: bldgs[0]?.id || '',
+    bldgId: _calcTemplateContext?.bldgId || bldgs[0]?.id || '',
     desc: 'BAS HVAC Optimization — ' + cityName + ' — ' + (p.basCalc?.sqft || 0) + ' sf',
     kwh: r.kwhSavings.map((k) => Math.round(k)),
     kw: r.peakKwhSavings

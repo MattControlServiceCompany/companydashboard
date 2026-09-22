@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.867',
+    date: '2026-09-22',
+    title: 'Calculators unified into one catalog',
+    items: [
+      {
+        type: 'change',
+        text: 'Energy Department: calculators unified into one Energy Savings Calc Templates catalog (BAS, Solar, and all 15 ECM calculators); removed the duplicate ECM Calculators sidebar tab.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Savings Calc now auto-fills from the building you have open.',
+      },
+      {
+        type: 'feature',
+        text: 'ECM calculators can now be added as savings measures.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.866',
     date: '2026-09-22',
     title: 'Equipment Matrix: fixed point columns hiding each other',

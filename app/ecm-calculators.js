@@ -2351,6 +2351,27 @@ const ECM_TEMPLATES = {
       };
     },
   },
+
+  /* ── 16. SOLAR (custom full-page calc, no inputs[]/calculate() — routes to openSolarCalc) ── */
+  solar: {
+    id: 'solar',
+    name: 'Solar',
+    category: 'Renewables',
+    description: 'PV array savings with configurable rate schedules, net metering, and Helioscope data.',
+    icon: '☀️',
+    custom: true, // launchCalcTemplate opens the dedicated full-page view, not the generic ECM input form
+  },
+
+  /* ── 17. BAS (custom full-page calc, no inputs[]/calculate() — routes to openBASCalc) ── */
+  bas: {
+    id: 'bas',
+    name: 'BAS',
+    category: 'Controls',
+    description:
+      'Building Automation savings using weather bin data, setpoints, and schedules. Upload temp/humidity CSV for your city.',
+    icon: '🏢',
+    custom: true, // launchCalcTemplate opens the dedicated full-page view, not the generic ECM input form
+  },
 };
 
 /* ─── Project Rate Helper ────────────────────────────── */
@@ -2543,6 +2564,123 @@ function saveEcmToProject(projId, buildingId, buildingName, templateId, inputs, 
   return true;
 }
 
+/**
+ * Per-template map of which calculate() output ids feed the Energy Savings
+ * measure row's annual kWh / kW / gas(therms) / dollar totals.
+ * Verified against each template's outputs[] array (2026-09-22 consolidation).
+ * `fuelSwitch` covers templates where one output field is gas OR electric
+ * depending on a select input (vav_reheat.reheat_type, weatherization.heat_fuel).
+ */
+const ECM_MEASURE_FIELD_MAP = {
+  oa_dampers: { kwh: 'kwh_saved', gas: 'therms_saved', dollar: 'total_savings_dollar' },
+  rtu_replacement: { kwh: 'cooling_kwh_saved', gas: 'heating_therms_saved', dollar: 'total_savings_dollar' },
+  vfd_savings: { kwh: 'savings_kwh', dollar: 'annual_savings_dollar' },
+  chiller_replacement: { kwh: 'savings_kwh', kw: 'peak_kw_savings', dollar: 'total_savings_dollar' },
+  oa_erw: { kwh: 'cooling_savings_kwh', gas: 'heating_savings_therms', dollar: 'total_savings_dollar' },
+  solar_production: { kwh: 'year1_kwh', dollar: 'year1_savings_dollar' },
+  lighting_replacement: { kwh: 'total_savings_kwh', kw: 'demand_savings_kw', dollar: 'total_savings_dollar' },
+  occupancy_sensors: { kwh: 'savings_kwh', kw: 'demand_savings_kw', dollar: 'total_savings_dollar' },
+  pump_vfd: { kwh: 'savings_kwh', dollar: 'annual_savings_dollar' },
+  motor_premium: { kwh: 'savings_kwh', dollar: 'annual_savings_dollar' },
+  dcv: { kwh: 'cool_kwh_saved', gas: 'therms_saved', dollar: 'total_savings_dollar' },
+  vav_reheat: {
+    kwh: ['cool_kwh_saved', 'fan_kwh_saved'],
+    fuelSwitch: { input: 'reheat_type', field: 'reheat_saved_qty', gasWhen: 'gas', kwhWhen: 'electric' },
+    dollar: 'total_savings_dollar',
+  },
+  boiler_replacement: { gas: 'therms_saved', dollar: 'annual_savings_dollar' },
+  weatherization: {
+    kwh: 'cool_kwh_saved',
+    fuelSwitch: { input: 'heat_fuel', field: 'heat_qty', gasWhen: 'gas', kwhWhen: 'electric' },
+    dollar: 'total_savings_dollar',
+  },
+  fan_wall: { kwh: 'savings_kwh', dollar: 'annual_savings_dollar' },
+};
+
+/**
+ * Reduce one ECM calc's annual-total results into {kwhAnnual, kwAnnual, gasAnnual, dollarAnnual}
+ * using ECM_MEASURE_FIELD_MAP for the given template.
+ */
+function ecmResultsToAnnualTotals(templateId, inputs, results) {
+  const map = ECM_MEASURE_FIELD_MAP[templateId];
+  let kwhAnnual = 0,
+    kwAnnual = 0,
+    gasAnnual = 0,
+    dollarAnnual = 0;
+  if (!map) return { kwhAnnual, kwAnnual, gasAnnual, dollarAnnual };
+
+  const kwhFields = Array.isArray(map.kwh) ? map.kwh : map.kwh ? [map.kwh] : [];
+  kwhFields.forEach((f) => {
+    kwhAnnual += parseFloat(results[f]) || 0;
+  });
+  if (map.kw) kwAnnual += parseFloat(results[map.kw]) || 0;
+  if (map.gas) gasAnnual += parseFloat(results[map.gas]) || 0;
+  if (map.fuelSwitch) {
+    const fs = map.fuelSwitch;
+    const val = parseFloat(results[fs.field]) || 0;
+    if ((inputs || {})[fs.input] === fs.gasWhen) gasAnnual += val;
+    else kwhAnnual += val;
+  }
+  if (map.dollar) dollarAnnual += parseFloat(results[map.dollar]) || 0;
+
+  return { kwhAnnual, kwAnnual, gasAnnual, dollarAnnual };
+}
+
+/**
+ * "Add as Measure" — converts a completed ECM calc's annual totals into a flat
+ * monthly measure row (kwh[12]/kw[12]/gas[12], annual/12 distribution — same
+ * technique as hvacLoadCreateMeasure) and pushes it into the project's savings
+ * matrix, so the 15 ECM calcs behave like the BAS/Solar "Add as Measure" flow
+ * instead of only writing to the separate project.ecms array.
+ * @param {string|number} projId
+ * @param {string} bldgId — building to attribute the measure to
+ * @param {string} templateId
+ * @param {Object} inputs
+ * @param {Object} results — from calculateEcm()
+ * @returns {boolean} success
+ */
+function ecmAddAsMeasure(projId, bldgId, templateId, inputs, results) {
+  const tmpl = ECM_TEMPLATES[templateId];
+  const p = projects.find((x) => String(x.id) === String(projId));
+  if (!tmpl || !p) return false;
+
+  const { kwhAnnual, kwAnnual, gasAnnual } = ecmResultsToAnnualTotals(templateId, inputs, results);
+  if (kwhAnnual === 0 && kwAnnual === 0 && gasAnnual === 0) {
+    if (typeof showToast === 'function') showToast('No savings to add — check inputs');
+    return false;
+  }
+
+  const kwhMonthly = Array(12).fill(Math.round((kwhAnnual / 12) * 100) / 100);
+  const kwMonthly = Array(12).fill(Math.round((kwAnnual / 12) * 100) / 100);
+  const gasMonthly = Array(12).fill(Math.round((gasAnnual / 12) * 100) / 100);
+
+  const sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(projId) : null;
+  if (!sd) return false;
+  const bldg = bldgId && typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+
+  sd.measures.push({
+    id: 'm' + Date.now(),
+    selected: true,
+    msrNum: sd.measures.length + 1 + '',
+    bldgId: bldgId || '',
+    sqft: bldg ? parseFloat(bldg.sqft) || 0 : 0,
+    rates:
+      bldgId && typeof calcBldgDefaultRates === 'function'
+        ? calcBldgDefaultRates(projId, bldgId)
+        : { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0 },
+    desc: tmpl.name + (bldg ? ' — ' + bldg.name : ''),
+    kwh: kwhMonthly,
+    kw: kwMonthly,
+    gas: gasMonthly,
+    totalDollar: 0, // recalculated by calcProjSavingsMatrix
+    source: 'ecm_' + templateId,
+  });
+  sset('en_projects', projects);
+  if (typeof _svRecalcFrom === 'function') _svRecalcFrom(projId);
+  if (typeof showToast === 'function') showToast(`Measure "${tmpl.name}" added to savings matrix`);
+  return true;
+}
+
 /* ─── Calculate API ──────────────────────────────────── */
 
 /**
@@ -2570,50 +2708,6 @@ function calculateEcm(templateId, inputs) {
 }
 
 /* ─── Render API ─────────────────────────────────────── */
-
-/**
- * Render the ECM calculator picker grid into a container element.
- * @param {HTMLElement} container
- * @param {Function} onSelect — called with templateId when a card is clicked
- */
-// Global callback registry so onclick attributes can fire into the current context
-let _ecmPickerOnSelect = null;
-
-function _ecmPickerSelect(templateId) {
-  if (typeof _ecmPickerOnSelect === 'function') _ecmPickerOnSelect(templateId);
-}
-
-function renderEcmPicker(container, onSelect) {
-  _ecmPickerOnSelect = onSelect;
-
-  const cards = Object.values(ECM_TEMPLATES)
-    .map((t) => {
-      return `
-      <button class="ecm-picker-card card" onclick="_ecmPickerSelect('${t.id}')"
-        style="background:var(--s1);padding:18px;border:1px solid var(--border);cursor:pointer;text-align:left;
-               transition:border-color .15s;border-radius:8px;width:100%;"
-        onmouseenter="this.style.borderColor='var(--accent)'"
-        onmouseleave="this.style.borderColor='var(--border)'">
-        <div style="font-size:28px;margin-bottom:8px">${t.icon}</div>
-        <div style="font-size:14px;font-weight:700;margin-bottom:4px;color:var(--text)">${t.name}</div>
-        <div style="font-size:11px;color:var(--accent);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">${t.category}</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.6">${t.description}</div>
-        <div style="font-size:10px;color:var(--em);margin-top:8px;font-weight:600">Available</div>
-      </button>`;
-    })
-    .join('');
-
-  container.innerHTML = `
-    <div style="padding:20px">
-      <div style="margin-bottom:16px">
-        <h2 style="font-size:16px;font-weight:700;margin:0 0 4px">ECM Calculator Library</h2>
-        <p style="font-size:12px;color:var(--text2);margin:0">Select a template to estimate energy savings. Results include formula traces for transparency.</p>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">
-        ${cards}
-      </div>
-    </div>`;
-}
 
 /**
  * Render the input form for a template into a container element.
@@ -2874,17 +2968,18 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
     })
     .join('');
 
-  // Build the "Save to Project" footer if a project context is available
+  // Build the "Save to Project" + "Add as Measure" footer if a project context is available
   const saveBtnHtml =
     ctx && ctx.projId
       ? `<div style="padding:14px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
          <div style="flex:1;min-width:200px">
            <input type="text" id="ecm-save-notes" class="fi" placeholder="Notes (optional — e.g. 'RTU-3 and RTU-4')" style="width:100%;font-size:12px" />
          </div>
-         <button class="btn btn-em btn-sm" id="ecm-save-to-proj-btn" style="white-space:nowrap">
+         <button class="btn btn-ghost btn-sm" id="ecm-save-to-proj-btn" style="white-space:nowrap">
            Save to ${ctx.buildingName ? ctx.buildingName : 'Project'}
          </button>
          <span id="ecm-save-status" style="font-size:11px;color:var(--green);display:none">Saved!</span>
+         <button class="btn btn-em btn-sm" id="ecm-add-measure-btn" style="white-space:nowrap">+ Add as Savings Measure</button>
        </div>`
       : '';
 
@@ -2947,6 +3042,18 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
         }
       });
     }
+    // Wire "Add as Measure" button
+    const addMsrBtn = container.querySelector('#ecm-add-measure-btn');
+    if (addMsrBtn) {
+      addMsrBtn.addEventListener('click', () => {
+        const ok = ecmAddAsMeasure(ctx.projId, ctx.buildingId, templateId, inputs || {}, results);
+        if (ok) {
+          addMsrBtn.textContent = 'Added ✓';
+          addMsrBtn.disabled = true;
+          if (typeof closeCalcTemplate === 'function') closeCalcTemplate();
+        }
+      });
+    }
   }
 }
 
@@ -2993,72 +3100,8 @@ function _ecmToggleFormula(btn, outId) {
   btn.style.color = visible ? '' : 'var(--accent)';
 }
 
-/* ─── Main View Controller ───────────────────────────── */
-
-let _ecmActiveTemplate = null;
-// Current project context: { projId, buildingId, buildingName } or null
-let _ecmProjectContext = null;
-
-/**
- * Initialize the Calculators view. Called when the user navigates to view-calculators.
- * @param {Object|null} projectContext — optional { projId, buildingId, buildingName }
- *   Pass this when opening from a building context so inputs are auto-populated from bills
- *   and results can be saved back to the project.
- */
-function initEcmCalculatorsView(projectContext) {
-  const container = document.getElementById('ecm-view-body');
-  if (!container) return;
-
-  _ecmActiveTemplate = null;
-  _ecmProjectContext = projectContext || null;
-
-  function onSelect(templateId) {
-    _ecmActiveTemplate = templateId;
-    renderEcmCalculator(
-      templateId,
-      container,
-      null, // no saved values on first open
-      function onBack() {
-        // Return to picker, preserving context
-        _ecmActiveTemplate = null;
-        initEcmCalculatorsView(_ecmProjectContext);
-      },
-      function onCalculate(tid, inputs, results) {
-        // Results are rendered inline by renderEcmResults (with Save to Project button if ctx set)
-      },
-      _ecmProjectContext,
-    );
-  }
-
-  renderEcmPicker(container, onSelect);
-}
-
-/**
- * Open the Calculators view pre-scoped to a specific project/building.
- * Call this from the project UI to launch a calculator with auto-populated inputs.
- * @param {string|number} projId
- * @param {string} buildingId
- * @param {string} buildingName
- */
-function openEcmCalculatorForBuilding(projId, buildingId, buildingName) {
-  // Navigate to calculators view
-  if (typeof sv === 'function') {
-    sv('calculators');
-  }
-  // Set context and reinitialize after view is active
-  setTimeout(function () {
-    initEcmCalculatorsView({ projId: String(projId), buildingId: buildingId, buildingName: buildingName });
-  }, 50);
-}
-
-/* ─── Auto-init if navigating directly to calculators view ── */
-/* This handles the case where the sv() wrapper fails (e.g. local file:// CORS) */
-document.addEventListener('DOMContentLoaded', function () {
-  var lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
-  if (lastView === 'calculators') {
-    // Page was reloaded while on calculators view — init immediately
-    setTimeout(function () {
-      if (typeof initEcmCalculatorsView === 'function') initEcmCalculatorsView();
-    }, 150);
-  }
-});
+/* Main view controller (initEcmCalculatorsView, openEcmCalculatorForBuilding, and the
+   DOMContentLoaded auto-init) removed 2026-09-22 — the sidebar "ECM Calculators" tab
+   they served is gone; the 15 ECM calcs are now launched via the unified Calc Templates
+   picker (openCalcTemplates/launchCalcTemplate in calculators.js), which calls
+   renderEcmCalculator directly. */

@@ -896,9 +896,6 @@ function sv(id, btn) {
   if (id === 'district' && dcEvents.length) {
     dcRenderAll();
   }
-  if (id === 'calculators' && typeof initEcmCalculatorsView === 'function') {
-    initEcmCalculatorsView();
-  }
   if (id === 'ems' && typeof emsRenderAll === 'function') {
     emsRenderAll();
   }
