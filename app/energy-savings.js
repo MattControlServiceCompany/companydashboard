@@ -131,88 +131,25 @@ function saveProjBaselineRates(projId) {
   calcProjSavingsMatrix(projId);
 }
 
+// calcBldgDefaultRates(projId, bldgId) — thin wrapper around the ONE canonical
+// seasonal rate function (computations/rates.js computeSeasonalBldgRates).
+// Item 2026-09-23-rate-source: every surface that shows or uses a building's
+// seasonal marginal rate (this Energy Savings measure table, the Baseline +
+// BAS Savings Report Inputs prefill in app/report-engine-woodland.js, the BAS
+// Savings Calc / solar "Apply to Measure" fallback in app/calculators.js)
+// calls calcBldgDefaultRates so they all resolve the identical numbers off
+// the identical bill data — no per-surface re-derivation.
 function calcBldgDefaultRates(projId, bldgId) {
-  const b = getUDBldg(projId, bldgId);
-  if (!b) return { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0, gasSummer: 0, gasWinter: 0 };
-  const meters = b.meters || [];
-  const elecM = meters.find((m) => m.commodity === 'Electric');
-  const gasM = meters.find((m) => m.commodity === 'Gas');
-  const SUMMER = [5, 6, 7, 8];
-  let sumKwhCost = 0,
-    sumKwh = 0,
-    winKwhCost = 0,
-    winKwh = 0;
-  let sumKwCost = 0,
-    sumKwCount = 0,
-    sumKwDemand = 0,
-    winKwCost = 0,
-    winKwCount = 0,
-    winKwDemand = 0;
-  let totalTherms = 0,
-    totalGasCost = 0;
-  // Seasonal gas buckets (2026-09-22, Baseline & Savings report): same Jun-Sep / Oct-May
-  // split as the kWh buckets above, so a measure can carry a summer and a winter $/Therm.
-  // Consumers fall back to thermRate when either seasonal value is 0/absent.
-  let sumGasCost = 0,
-    sumTherms = 0,
-    winGasCost = 0,
-    winTherms = 0;
-  if (elecM)
-    (elecM.bills || []).forEach((bill) => {
-      const mo = new Date(bill.start).getMonth();
-      const kwh = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-      const kw = parseFloat(bill.demandKW) || parseFloat(bill.billedKW) || 0;
-      const kwhCost = parseFloat(bill.kwhCost) || 0;
-      const kwCost = parseFloat(bill.kwCost) || 0;
-      if (SUMMER.includes(mo)) {
-        sumKwhCost += kwhCost;
-        sumKwh += kwh;
-        if (kw > 0) {
-          sumKwCost += kwCost;
-          sumKwCount++;
-          sumKwDemand += kw;
-        }
-      } else {
-        winKwhCost += kwhCost;
-        winKwh += kwh;
-        if (kw > 0) {
-          winKwCost += kwCost;
-          winKwCount++;
-          winKwDemand += kw;
-        }
-      }
-    });
-  if (gasM)
-    (gasM.bills || []).forEach((bill) => {
-      const th = resolveGasUsageTherms(bill);
-      const gc = parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
-      totalTherms += th;
-      totalGasCost += gc;
-      if (SUMMER.includes(new Date(bill.start).getMonth())) {
-        sumTherms += th;
-        sumGasCost += gc;
-      } else {
-        winTherms += th;
-        winGasCost += gc;
-      }
-    });
-  const propaneM = meters.find((m) => m.commodity === 'Propane');
-  let totalGallons = 0,
-    totalPropaneCost = 0;
-  if (propaneM)
-    (propaneM.bills || []).forEach((bill) => {
-      totalGallons += parseFloat(bill.gallonsDelivered) || parseFloat(bill.usage) || 0;
-      totalPropaneCost += parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
-    });
+  if (typeof computeSeasonalBldgRates === 'function') return computeSeasonalBldgRates(projId, bldgId);
   return {
-    kwhSummer: sumKwh > 0 ? Math.round((sumKwhCost / sumKwh) * 10000) / 10000 : 0,
-    kwhWinter: winKwh > 0 ? Math.round((winKwhCost / winKwh) * 10000) / 10000 : 0,
-    kwSummer: sumKwDemand > 0 ? Math.round((sumKwCost / sumKwDemand) * 100) / 100 : 0,
-    kwWinter: winKwDemand > 0 ? Math.round((winKwCost / winKwDemand) * 100) / 100 : 0,
-    thermRate: totalTherms > 0 ? Math.round((totalGasCost / totalTherms) * 1000) / 1000 : 0,
-    gasSummer: sumTherms > 0 ? Math.round((sumGasCost / sumTherms) * 1000) / 1000 : 0,
-    gasWinter: winTherms > 0 ? Math.round((winGasCost / winTherms) * 1000) / 1000 : 0,
-    gallonRate: totalGallons > 0 ? Math.round((totalPropaneCost / totalGallons) * 1000) / 1000 : 0,
+    kwhSummer: 0,
+    kwhWinter: 0,
+    kwSummer: 0,
+    kwWinter: 0,
+    thermRate: 0,
+    gasSummer: 0,
+    gasWinter: 0,
+    gallonRate: 0,
   };
 }
 

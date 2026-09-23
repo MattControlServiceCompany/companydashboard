@@ -3658,6 +3658,18 @@ function solarAddAsMeasure(projId) {
   showToast('Solar measure added to savings matrix ✓');
 }
 
+// _svRatesOrCanonical(sd, projId, bldgId) — the user-saved Baseline Rates table
+// (Energy Savings tab, sd.blRates[bldgId]) if it has at least one nonzero rate, else the
+// ONE canonical seasonal rate function (calcBldgDefaultRates -> computeSeasonalBldgRates).
+// 2026-09-23-rate-source: calculators that write measures (solarApplyToMeasure,
+// bcApplyToMeasure) must never fall back to an empty {} and silently zero the $ savings.
+function _svRatesOrCanonical(sd, projId, bldgId) {
+  const saved = sd.blRates && sd.blRates[bldgId];
+  const savedHasRate =
+    saved && (saved.kwhSummer || saved.kwhWinter || saved.kwSummer || saved.kwWinter || saved.thermRate);
+  return savedHasRate ? saved : typeof calcBldgDefaultRates === 'function' ? calcBldgDefaultRates(projId, bldgId) : {};
+}
+
 function solarApplyToMeasure(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p || !p.solarCalc || !_calcTemplateContext?.targetMeasureId) return;
@@ -3672,8 +3684,12 @@ function solarApplyToMeasure(projId) {
   m.kwh = (sc.production || []).map((k) => Math.round(k));
   m.source = 'solar';
   if (!m.desc || m.desc.trim() === '') m.desc = `Solar PV — ${sc.arrayKw} kW Array`;
-  // Recalc dollar savings using baseline rates
-  const rates = sd.blRates[m.bldgId] || {};
+  // Recalc dollar savings using baseline rates — the user-saved Baseline Rates table
+  // (Energy Savings tab) if set, else the ONE canonical seasonal rate function
+  // (computations/rates.js computeSeasonalBldgRates, via calcBldgDefaultRates) so this
+  // never silently zeroes out when the Baseline Rates table hasn't been saved (2026-09-23,
+  // item 2026-09-23-rate-source).
+  const rates = _svRatesOrCanonical(sd, projId, m.bldgId);
   let total = 0;
   for (let mo = 0; mo < 12; mo++) {
     const isSummer = SUMMER_MOS.includes(mo);
@@ -4723,7 +4739,8 @@ function bcApplyToMeasure(projId) {
   m.source = 'bas';
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
   if (!m.desc || m.desc.trim() === '') m.desc = 'BAS HVAC Optimization — ' + cityName;
-  const rates = sd.blRates[m.bldgId] || {};
+  // Same fallback as solarApplyToMeasure above — see comment there (2026-09-23-rate-source).
+  const rates = _svRatesOrCanonical(sd, projId, m.bldgId);
   const SUMMER_MOS = [5, 6, 7, 8]; // Jun–Sep (0-indexed)
   let total = 0;
   for (let mo = 0; mo < 12; mo++) {

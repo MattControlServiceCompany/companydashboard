@@ -632,3 +632,202 @@ function resolveMeterRate(projId, meter, ym, opts) {
 
   return null;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   computeSeasonalBldgRates(projId, bldgId) — the ONE canonical seasonal
+   marginal rate function for a building.
+   Item: 2026-09-23-rate-source (single source of truth for utility rates).
+
+   Every surface that shows or uses a building's seasonal marginal utility
+   rate — the Energy Savings measure table (calcBldgDefaultRates, a thin
+   wrapper around this function), the Baseline & BAS Savings Report Inputs
+   dialog prefill, the BAS Savings Calc rate-card autofill, and the ECM
+   calculators' "Add as Measure" default — MUST call this function and MUST
+   NOT re-derive its own copy. Savings dollars are always (quantity saved) x
+   SEASONAL MARGINAL rate, monthly then summed, so the rate here is the same
+   per-bill implied rate (cost / usage, the exact charge fields) that
+   getStoredRate/getStoredKwRate already use everywhere else in the app —
+   never a different charge-field subset.
+
+   Season: Evergy Metro Jun-Sep = summer, Oct-May = winter (docket
+   23-EKCE-775-RTS + bill cross-check — see _EVERGY_METRO_SUMMER_MONTHS
+   above). A bill's calendar month is resolved with normMonth() — the same
+   majority-days-in-month resolver the missing-rate cascade and every
+   baseline table use — NOT a naive `new Date(bill.start).getMonth()`, which
+   misclassifies billing periods that straddle the season boundary (e.g. a
+   bill starting May 20 and ending June 19 is mostly June, but a naive
+   start-month read calls it May/winter — see the Woodland Spring Middle
+   2025-05-20 bill, which the utility itself bills at the SUMMER demand
+   rate).
+
+   Returns (0, never null, so every existing `|| 0` guard keeps working):
+     {
+       kwhSummer, kwhWinter,   // $/kWh, electric energy, mean of per-bill
+                                // getStoredRate(bill,'kwh') for bills in season
+       kwSummer, kwWinter,     // $/kW, electric demand, mean of per-bill
+                                // getStoredKwRate(bill) for bills in season
+       thermRate,              // $/Therm, gas — flat mean across all months
+                                // (gas has no confirmed seasonal tariff split
+                                // for the providers in use; gasSummer/
+                                // gasWinter below are additive detail only)
+       gasSummer, gasWinter,   // $/Therm, gas — seasonal mean, same bills as
+                                // thermRate, bucketed by season (0 when a
+                                // season has no gas bills)
+       gallonRate,             // $/Gallon, propane — flat mean, no seasonal
+                                // tariff for propane
+       months: {                // which bill months fed each bucket, for the
+         kwhSummer: [...ym],    // "which bill months it came from" label
+         kwhWinter: [...ym],    // every surface must show (plan step 3)
+         kwSummer: [...ym],
+         kwWinter: [...ym],
+         gas: [...ym],
+         propane: [...ym],
+       },
+     }
+───────────────────────────────────────────────────────────────────────── */
+function computeSeasonalBldgRates(projId, bldgId) {
+  var empty = {
+    kwhSummer: 0,
+    kwhWinter: 0,
+    kwSummer: 0,
+    kwWinter: 0,
+    thermRate: 0,
+    gasSummer: 0,
+    gasWinter: 0,
+    gallonRate: 0,
+    months: { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [] },
+  };
+  var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return empty;
+  var meters = b.meters || [];
+  var elecM = meters.find(function (m) {
+    return m.commodity === 'Electric';
+  });
+  var gasM = meters.find(function (m) {
+    return m.commodity === 'Gas';
+  });
+  var propaneM = meters.find(function (m) {
+    return m.commodity === 'Propane';
+  });
+
+  // One bill -> { ym, season, rate } for every bill with a positive rate from `rateFn`.
+  function billRates(meter, rateFn) {
+    var out = [];
+    (meter.bills || []).forEach(function (bill) {
+      var rate = rateFn(bill);
+      if (!(rate > 0)) return;
+      var ym = typeof normMonth === 'function' ? normMonth(bill.start, bill.end, {}, meter.bills) : null;
+      var season = ym ? _evergyMetroSeason(ym) : 'winter';
+      out.push({ ym: ym, season: season, rate: rate });
+    });
+    return out;
+  }
+
+  function mean(rows) {
+    if (!rows.length) return 0;
+    var sum = rows.reduce(function (s, r) {
+      return s + r.rate;
+    }, 0);
+    return sum / rows.length;
+  }
+
+  function seasonSplit(rows) {
+    return {
+      summer: rows.filter(function (r) {
+        return r.season === 'summer';
+      }),
+      winter: rows.filter(function (r) {
+        return r.season === 'winter';
+      }),
+    };
+  }
+
+  function yms(rows) {
+    return rows
+      .map(function (r) {
+        return r.ym;
+      })
+      .filter(Boolean);
+  }
+
+  var out = empty;
+  out.months = { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [] };
+
+  if (elecM) {
+    var kwhRows = billRates(elecM, function (bill) {
+      return getStoredRate(bill, 'kwh');
+    });
+    var kwRows = billRates(elecM, getStoredKwRate);
+    var kwhSplit = seasonSplit(kwhRows);
+    var kwSplit = seasonSplit(kwRows);
+    out.kwhSummer = Math.round(mean(kwhSplit.summer) * 10000) / 10000;
+    out.kwhWinter = Math.round(mean(kwhSplit.winter) * 10000) / 10000;
+    out.kwSummer = Math.round(mean(kwSplit.summer) * 100) / 100;
+    out.kwWinter = Math.round(mean(kwSplit.winter) * 100) / 100;
+    out.months.kwhSummer = yms(kwhSplit.summer);
+    out.months.kwhWinter = yms(kwhSplit.winter);
+    out.months.kwSummer = yms(kwSplit.summer);
+    out.months.kwWinter = yms(kwSplit.winter);
+  }
+
+  if (gasM) {
+    // Gas rate per bill: cost / resolveGasUsageTherms(bill) — deliberately NOT
+    // bill.totalGasRate (ensureBillRates's one-time-migration field). ensureBillRates has the
+    // same PascalCase-only usage gap resolveGasUsageTherms's own header comment documents for
+    // getStoredRate, PLUS a second, worse bug found while building this function (2026-09-23):
+    // for an MMBtu-only meter (naturalGasMMbtu, no NaturalGasTherms/NaturalGasCCF — e.g. Spring
+    // Hill High), ensureBillRates's usage detection is 0, so it falls to its MMBtu branch and
+    // stores cost/naturalGasMMbtu (a $/MMBtu number) in totalGasRate — but bill.therms is
+    // SEPARATELY, correctly canonicalized elsewhere to naturalGasMMbtu*10 (Therms-equivalent),
+    // so that stored totalGasRate is 10x too high relative to every other bill's real $/Therm
+    // (confirmed on Spring Hill High: March's totalGasRate correctly used NaturalGasTherms and
+    // reads $0.52/Therm, but June-Apr's used the MMBtu branch and read $3.32-$8.35/Therm — same
+    // meter, same rate schedule, 6-16x apart). Recomputing fresh via resolveGasUsageTherms here
+    // avoids trusting that stale/wrong-unit stored value; ensureBillRates itself is a separate,
+    // already-shipped one-time migration outside this item's scope — logged to the backlog
+    // instead of changed here.
+    var gasRows = billRates(gasM, function (bill) {
+      var cost =
+        parseFloat(bill.GasCharge) ||
+        parseFloat(bill.gasCharge) ||
+        parseFloat(bill.thermCost) ||
+        parseFloat(bill.totalCost) ||
+        0;
+      var usage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
+      return usage > 0 && cost > 0 ? cost / usage : 0;
+    });
+    var gasSplit = seasonSplit(gasRows);
+    out.gasSummer = Math.round(mean(gasSplit.summer) * 1000) / 1000;
+    out.gasWinter = Math.round(mean(gasSplit.winter) * 1000) / 1000;
+    out.thermRate = Math.round(mean(gasRows) * 1000) / 1000;
+    out.months.gas = yms(gasRows);
+  }
+
+  if (propaneM) {
+    var propaneRows = billRates(propaneM, function (bill) {
+      return getStoredRate(bill, 'propane');
+    });
+    out.gallonRate = Math.round(mean(propaneRows) * 1000) / 1000;
+    out.months.propane = yms(propaneRows);
+  }
+
+  return out;
+}
+
+// formatBillMonthsLabel(yms) — turns a list of 'YYYY-MM' strings into the plain-words
+// "which bill months this came from" label every rate surface must show (plan step 3).
+// e.g. ['2025-06','2025-07','2025-08','2025-09'] -> 'Jun 2025 – Sep 2025 (4 bills)'.
+var _RATE_MO_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatBillMonthsLabel(ymList) {
+  var list = (ymList || []).filter(Boolean).slice().sort();
+  if (!list.length) return 'no bills';
+  function label(ym) {
+    var parts = ym.split('-');
+    var mo = parseInt(parts[1], 10) - 1;
+    return (_RATE_MO_ABBR[mo] || ym) + ' ' + parts[0];
+  }
+  var first = label(list[0]);
+  var last = label(list[list.length - 1]);
+  var countLabel = list.length + (list.length === 1 ? ' bill' : ' bills');
+  return first === last ? first + ' (' + countLabel + ')' : first + ' – ' + last + ' (' + countLabel + ')';
+}
