@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.1',
+    date: '2026-09-23',
+    title: 'HVAC Load Estimate: autocalculate, Save, and exports',
+    items: [
+      {
+        type: 'feature',
+        text: 'HVAC Load Estimate: results now calculate automatically as you edit inputs, with a single Save button and a "Last saved" time. Added Excel, Word, and PDF export. The "Create Savings Measure from HVAC Load" card now computes Options A/B/C from the same setpoint engine as the Baseline + BAS Savings Report, instead of a typed percentage.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.882',
     date: '2026-09-22',
     title: 'Baseline & BAS Savings Report wording and layout fixes',
