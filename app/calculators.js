@@ -1694,7 +1694,7 @@ function openCalcTemplates(projId, returnTo, targetMeasureId) {
                   onmouseenter="this.style.borderColor='var(--accent)'"
                   onmouseleave="this.style.borderColor='var(--border)'">
                   <div style="font-size:28px;margin-bottom:8px">${t.icon}</div>
-                  <div style="font-size:14px;font-weight:700;margin-bottom:5px">${t.name}</div>
+                  <div style="font-size:14px;font-weight:700;margin-bottom:5px;color:var(--text)">${t.name}</div>
                   <div style="font-size:12px;color:var(--text2);line-height:1.6">${t.description}</div>
                   <div style="font-size:10px;color:var(--em);margin-top:8px;font-weight:600">✓ Available</div>
                 </button>`,

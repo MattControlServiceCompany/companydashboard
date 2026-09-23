@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.877',
+    date: '2026-09-22',
+    title: 'Calc template title color fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Savings: calc template titles are readable again.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.876',
     date: '2026-09-22',
     title: 'Baseline + BAS Savings report page fit',
