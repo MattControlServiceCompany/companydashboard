@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.8',
+    date: '2026-09-23',
+    title: 'Utility Data: fixed a wrong gas rate on bills reported in MMBtu',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Utility Data Bills table, gas bills reported in MMBtu (instead of Therms) were storing a $/MMBtu number in the same field every other bill uses for $/Therm, making that rate 6 to 16 times too high. Gas rates on every bill, including these, now compute from the same single usage calculation the rest of the site already uses, so the Bills table, Energy Savings, Report Inputs, and the BAS Savings Calc all show the same correct $/Therm rate.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.7',
     date: '2026-09-23',
     title: 'Equipment Matrix: Import Effective Schedules CSV',

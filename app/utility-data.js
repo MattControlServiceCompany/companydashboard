@@ -178,6 +178,57 @@ function loadUtilityData() {
     }
     DB.set(_ratesMigratedKey, '1');
   }
+  // One-time migration (2026-09-23, item 2026-09-23-gas-rate-fix): recompute bill.totalGasRate
+  // on EVERY gas bill via resolveGasUsageTherms(bill) — the same canonical usage resolver
+  // computeSeasonalBldgRates uses. The v2 migration above (en_utility_rates_backfilled_v2)
+  // already ran once on real data and, for MMBtu-only meters (naturalGasMMbtu, no
+  // NaturalGasTherms/NaturalGasCCF — e.g. WRE bills), wrote cost/naturalGasMMbtu — a raw $/MMBtu
+  // number — into totalGasRate, the same field every other bill on that meter uses for real
+  // $/Therm (confirmed 6-16x too high on Spring Hill High; see
+  // companyhub-single-rate-source-and-gas-mmbtu-bug.md). That stored value is gated behind
+  // en_utility_rates_backfilled_v2 and will not self-correct, so this recomputes every bill's
+  // totalGasRate fresh from its own usage + charge fields (never deletes a bill or any other
+  // field) so the Bills table's $/Therm column matches Energy Savings / Report Inputs / BAS
+  // Savings Calc, which already read gas rates through resolveGasUsageTherms.
+  // Bug (found 2026-09-23 verifying this same fix): initUtilityTool() -> loadUtilityData() runs
+  // on EVERY page load, including the very first load of a fresh browser/profile BEFORE any
+  // project data exists (or is restored) — utilityData is {} at that point. A migration that
+  // unconditionally does DB.set(gateKey,'1') after its scan loop (regardless of whether the loop
+  // found anything) permanently trips its own gate on that empty pass, so it silently never runs
+  // again once real data shows up (Restore, or Supabase sync landing later) — confirmed via
+  // headless test: Spring Hill High's MMBtu bills still showed the old 3.18-8.35 $/MMBtu-as-
+  // $/Therm values after a fresh-profile restore. Only set the gate once bills were actually
+  // scanned (billsScanned > 0), so an empty/pre-data pass retries on the next load instead of
+  // masking real data forever.
+  const _gasMMbtuRateFixedKey = 'en_utility_gas_mmbtu_rate_fixed_v1';
+  if (!DB.get(_gasMMbtuRateFixedKey)) {
+    let gasRateFixed = 0;
+    let billsScanned = 0;
+    for (const pid of Object.keys(utilityData)) {
+      const ud = utilityData[pid];
+      for (const b of ud.buildings || []) {
+        for (const mt of b.meters || []) {
+          for (const bill of mt.bills || []) {
+            billsScanned++;
+            const gasChg = parseFloat(bill.GasCharge) || parseFloat(bill.gasCharge) || parseFloat(bill.thermCost) || 0;
+            if (gasChg <= 0 || typeof resolveGasUsageTherms !== 'function') continue;
+            const usage = resolveGasUsageTherms(bill);
+            if (usage <= 0) continue;
+            const correct = (gasChg / usage).toFixed(5);
+            if (bill.totalGasRate !== correct) {
+              bill.totalGasRate = correct;
+              gasRateFixed++;
+            }
+          }
+        }
+      }
+    }
+    if (gasRateFixed > 0) {
+      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
+      console.log('[gas MMBtu rate fix] Recalculated totalGasRate on ' + gasRateFixed + ' bills (MMBtu-unit bug)');
+    }
+    if (billsScanned > 0) DB.set(_gasMMbtuRateFixedKey, '1');
+  }
   // One-time migration: backfill sewerUsage from matching water bills
   // where sewerUsage was empty/missing because bills were saved before the
   // May 14-15 2026 extraction fix that added sewer cross-fill logic.

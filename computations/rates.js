@@ -66,22 +66,15 @@ function getStoredRate(bill, type) {
         parseFloat(bill.thermCost) ||
         parseFloat(bill.totalCost) ||
         0;
-      // Bug de22533b: bill.therms is a synthetic, always-populated field
-      // (canonicalized from Therms/CCF/MMbtu at save time, see bill-analysis.js
-      // [therms-unit-2026-06-22]) — it shadowed the MMBtu fallback below for every
-      // WRE (MMBtu-only) bill because it's never falsy. Use only genuine raw usage
-      // fields here (NaturalGasTherms, or NaturalGasCCF converted) so MMBtu-only
-      // bills correctly fall through to the MMBtu branch instead.
-      var usage = parseFloat(bill.NaturalGasTherms) || 0;
-      if (!usage) {
-        var ccf = parseFloat(bill.NaturalGasCCF) || 0;
-        if (ccf > 0) usage = Math.round(ccf * 1.037 * 100) / 100;
-      }
-      if (usage > 0 && cost > 0) return cost / usage;
-      // MMBtu fallback: WRE meters store usage as naturalGasMMbtu; divide charge by MMBtu
-      // so the result is $/MMBtu rather than $/Therm.
-      var mmbtu = parseFloat(bill.naturalGasMMbtu) || parseFloat(bill.NaturalGasMMbtu) || 0;
-      return mmbtu > 0 && cost > 0 ? cost / mmbtu : 0;
+      // 2026-09-23 (item 2026-09-23-gas-rate-fix): route usage through the single canonical
+      // resolveGasUsageTherms() (computations/savings.js) instead of a second, duplicate
+      // PascalCase-only Therms/CCF check + a separate MMBtu-fallback that divided cost by raw
+      // naturalGasMMbtu (a $/MMBtu number, not $/Therm — see ensureBillRates below, the
+      // companyhub-single-rate-source-and-gas-mmbtu-bug.md wiki article). resolveGasUsageTherms
+      // already converts naturalGasMMbtu x10 to a Therms-equivalent, so this always returns
+      // $/Therm regardless of which usage field a bill actually carries.
+      var usage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
+      return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'propane': {
       var stored = parseFloat(bill.totalPropaneRate);
@@ -165,25 +158,18 @@ function ensureBillRates(bill) {
 
   // Gas: totalGasRate (use gasCharge/commodity cost, not total bill cost — bug d4c78f06)
   if (!pf(bill.totalGasRate)) {
-    // Bug de22533b: bill.therms is a synthetic, always-populated field (canonicalized
-    // from Therms/CCF/MMbtu at save time, see bill-analysis.js [therms-unit-2026-06-22])
-    // — it shadowed the MMBtu fallback below for every WRE (MMBtu-only) bill because
-    // it's never falsy. Use only genuine raw usage fields (NaturalGasTherms, or
-    // NaturalGasCCF converted) here so MMBtu-only bills fall through correctly.
-    var therms =
-      pf(bill.NaturalGasTherms) ||
-      (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
+    // 2026-09-23 (item 2026-09-23-gas-rate-fix): was a PascalCase-only Therms/CCF check with a
+    // separate MMBtu fallback that stored cost/naturalGasMMbtu — a $/MMBtu number — in this same
+    // field, mislabeled as $/Therm, for any MMBtu-only meter (e.g. WRE bills, no
+    // NaturalGasTherms/NaturalGasCCF). Confirmed 6-16x too high on Spring Hill High. Now routes
+    // through resolveGasUsageTherms(bill) — the same canonical Therms-usage resolver
+    // computeSeasonalBldgRates uses (computations/savings.js) — so this always writes a real
+    // $/Therm value, one usage definition, no duplicate math.
     var gasChg = pf(bill.GasCharge) || pf(bill.gasCharge) || pf(bill.thermCost);
-    if (therms > 0 && gasChg > 0) {
-      bill.totalGasRate = (gasChg / therms).toFixed(5);
+    var gasUsage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
+    if (gasUsage > 0 && gasChg > 0) {
+      bill.totalGasRate = (gasChg / gasUsage).toFixed(5);
       changed = true;
-    } else {
-      // MMBtu fallback: WRE meters store usage as naturalGasMMbtu — compute $/MMBtu
-      var mmbtu = pf(bill.naturalGasMMbtu) || pf(bill.NaturalGasMMbtu);
-      if (mmbtu > 0 && gasChg > 0) {
-        bill.totalGasRate = (gasChg / mmbtu).toFixed(5);
-        changed = true;
-      }
     }
   }
 

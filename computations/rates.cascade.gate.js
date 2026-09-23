@@ -48,6 +48,10 @@ function buildSandbox() {
     'computations/regression.js',
     'computations/normalization.js',
     'computations/rates.js',
+    // resolveGasUsageTherms (used by getStoredRate('gas') and ensureBillRates as of the
+    // 2026-09-23-gas-rate-fix item) lives in savings.js — load it so the gas-rate regression
+    // checks below exercise the REAL function, not a typeof-guard no-op.
+    'computations/savings.js',
   ].forEach((rel) => {
     vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), sandbox, { filename: rel });
   });
@@ -338,6 +342,67 @@ check('resolveMeterRate returns null (never a fabricated number) when every step
   };
   const r = sandbox.resolveMeterRate('proj-test', meter, '2026-07', { component: 'kwh', incl: {}, allMeters: [] });
   assert.strictEqual(r, null);
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   Gas $/Therm regression (item 2026-09-23-gas-rate-fix): ensureBillRates()
+   and getStoredRate('gas') must both resolve usage via resolveGasUsageTherms
+   — a raw $/MMBtu number must never be stored/returned as totalGasRate.
+   Synthetic fixtures only, no live/real bill data.
+   ═══════════════════════════════════════════════════════════════ */
+check('ensureBillRates: MMBtu-only bill (no NaturalGasTherms/CCF) writes a real $/Therm, not $/MMBtu', () => {
+  // 1 MMBtu = 10 Therms. 50 MMBtu = 500 Therms. $250 / 500 Therms = $0.50/Therm.
+  // The pre-fix code divided by raw MMBtu instead: $250 / 50 MMBtu = $5.00/Therm — 10x too high.
+  const bill = mkBill('2026-06-01', '2026-06-30', { naturalGasMMbtu: 50, GasCharge: 250 });
+  const changed = sandbox.ensureBillRates(bill);
+  assert.ok(changed, 'ensureBillRates should report a change');
+  assert.ok(
+    Math.abs(parseFloat(bill.totalGasRate) - 0.5) < 1e-4,
+    'totalGasRate=' + bill.totalGasRate + ' expected 0.5 ($/Therm, not $/MMBtu)',
+  );
+});
+
+check('ensureBillRates: Therms bill (NaturalGasTherms present) writes the same $/Therm math it always has', () => {
+  // naturalGasTherms (camelCase) mirrors PascalCase NaturalGasTherms — bill-analysis.js writes
+  // this mirror on EVERY saved bill regardless of extraction path (see resolveGasUsageTherms's
+  // own header comment in savings.js), so a real loaded bill always has it by the time
+  // ensureBillRates runs (app/utility-data.js loadUtilityData). PascalCase-only is not a shape
+  // any saved bill has in production.
+  const bill = mkBill('2026-03-01', '2026-03-31', { NaturalGasTherms: 500, naturalGasTherms: 500, GasCharge: 250 });
+  const changed = sandbox.ensureBillRates(bill);
+  assert.ok(changed, 'ensureBillRates should report a change');
+  assert.ok(
+    Math.abs(parseFloat(bill.totalGasRate) - 0.5) < 1e-4,
+    'totalGasRate=' + bill.totalGasRate + ' expected 0.5',
+  );
+});
+
+check(
+  'ensureBillRates: same underlying gas volume/cost gives the SAME $/Therm whether the bill reports Therms or MMBtu',
+  () => {
+    const thermsBill = mkBill('2026-01-01', '2026-01-31', {
+      NaturalGasTherms: 900,
+      naturalGasTherms: 900,
+      GasCharge: 450,
+    });
+    const mmbtuBill = mkBill('2026-02-01', '2026-02-28', { naturalGasMMbtu: 90, GasCharge: 450 }); // 90 MMBtu == 900 Therms
+    sandbox.ensureBillRates(thermsBill);
+    sandbox.ensureBillRates(mmbtuBill);
+    assert.ok(
+      Math.abs(parseFloat(thermsBill.totalGasRate) - parseFloat(mmbtuBill.totalGasRate)) < 1e-4,
+      'Therms-reported rate=' +
+        thermsBill.totalGasRate +
+        ' vs MMBtu-reported rate=' +
+        mmbtuBill.totalGasRate +
+        ' — must match (same meter/schedule/volume), not 6-16x apart',
+    );
+  },
+);
+
+check("getStoredRate('gas'): MMBtu-only bill with no stored totalGasRate live-computes real $/Therm", () => {
+  const bill = mkBill('2026-07-01', '2026-07-31', { naturalGasMMbtu: 20, GasCharge: 100 }); // 200 Therms, $100 -> $0.50/Therm
+  const rate = sandbox.getStoredRate(bill, 'gas');
+  assert.ok(Math.abs(rate - 0.5) < 1e-4, "getStoredRate('gas')=" + rate + ' expected 0.5');
 });
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)'));
