@@ -5449,7 +5449,12 @@ function rptBuildBaselineDataTable(b, d, opts) {
       $n(_tCdd) +
       '</td>';
     if (_showElec) {
-      var _avgCpk = _tKwh > 0 ? _tElecCost / _tKwh : 0;
+      // Energy-only $/kWh (2026-09-22 fix): every monthly row's $/kWh cell is energy cost only
+      // (costPerKwh = enCost/kwh above) — this Annual-row cell must use the SAME numerator
+      // (_tEnCost, not _tElecCost) so the column reads one consistent rate top to bottom. The
+      // blended (energy+demand) rate has its own distinctly-labeled stat box below
+      // ("Blended Electric Rate ($/kWh)"), which still reads _tElecCost/_tKwh.
+      var _avgCpk = _tKwh > 0 ? _tEnCost / _tKwh : 0;
       blDataRows +=
         '<td class="rpt-n">' +
         $n(_tKwh) +
@@ -5522,7 +5527,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
-      '<th class="rpt-n bl-elec">$/kWh</th>';
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>$/kWh</th>';
   if (_showGas)
     blHdr +=
       '<th class="rpt-n bl-gas">Therms</th><th class="rpt-n bl-gas" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n bl-gas">$/Therm</th>';
@@ -5605,7 +5610,10 @@ function rptBuildBaselineDataTable(b, d, opts) {
       );
     if (_tKwh > 0 && _tElecCost > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">Avg Electric Rate ($/kWh)</div><div class="bl-stat-val">$' +
+        // "Blended" (2026-09-22 fix): this is energy + demand cost divided by kWh — a
+        // deliberately different figure from the "Energy $/kWh" column in the table below
+        // (energy charges only). The two must never share a label (Calc re-audit).
+        '<div><div class="bl-stat-label">Blended Electric Rate ($/kWh)</div><div class="bl-stat-val">$' +
           (_tElecCost / _tKwh).toFixed(4) +
           '</div></div>',
       );
@@ -5682,7 +5690,11 @@ function rptBuildBaselineDataTable(b, d, opts) {
     kwCost: 43,
     energyCost: 53, // "ENERGY" header
     electricCost: 63, // "ELECTRIC" header
-    perKwh: 43,
+    // origin/main (a0f339a, merged 2026-09-23) relabeled this column's header from single-line
+    // "$/kWh" to 2-line "Energy / $/kWh" (Calc re-audit — this column is energy-only $/kWh,
+    // distinct from the "Blended Electric Rate" stat above) — its first line is now "ENERGY",
+    // the same word/width as the energyCost column, so it needs the same measured width.
+    perKwh: 53, // "ENERGY" (top line of the new 2-line "Energy / $/kWh" header)
     therms: 53, // "THERMS" header
     gasCost: 43, // Annual row's "$12,150"
     perTherm: 56, // "$/THERM" — widest single word

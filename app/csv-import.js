@@ -49,19 +49,14 @@ function _syncEmbedUDContext() {
 }
 
 function openCsvImportForMeter(mid) {
-  _syncEmbedUDContext();
   _csvImportMid = mid;
   _csvImportRows = [];
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  if (!b) {
-    showToast('Building context lost — re-select the meter and try again', 'warn');
-    return;
-  }
-  const m = b.meters.find((m) => m.id === mid);
-  if (!m) {
+  const ctx = resolveUDMeter(mid);
+  if (!ctx) {
     showToast('Meter not found — try re-selecting the meter', 'warn');
     return;
   }
+  const { m } = ctx;
 
   const isElec = m.commodity === 'Electric',
     isGas = m.commodity === 'Gas';
@@ -131,7 +126,7 @@ function processBillCsvFile(file) {
   reader.readAsText(file);
 }
 
-// Searches every project/building for a meter by id. Used as a fallback in parseBillCsv when
+// Searches every project/building for a meter by id. Used as a fallback in resolveUDMeter when
 // udSelProjId/udSelBldgId are stale or unset (e.g. the CSV modal was opened for a meter inside an
 // embedded project view, then a re-render elsewhere reset the active project/building globals
 // before the file was actually read). Returns { b, m } or null.
@@ -146,22 +141,33 @@ function _findMeterAcrossProjects(mid) {
   return null;
 }
 
-function parseBillCsv(text, fname) {
+// ONE shared meter-lookup helper for every meter-scoped Utility Data action (CSV import open/parse/
+// commit, bill delete, etc.) — do not re-implement this per button. Works from whichever Utility
+// Data view is currently open (standalone udDetailWrap or a project-embed proj-ud-body-N tab):
+// syncs udSelProjId/udSelBldgId from the active embed wrap, then falls back to a project-wide
+// search by meter id if the synced building doesn't contain it (covers a stale/detached embed wrap
+// left over from a building switch). Returns { b, m } or null — never throws.
+function resolveUDMeter(mid) {
   _syncEmbedUDContext();
   let b = getUDBldg(udSelProjId, udSelBldgId);
-  let m = b ? b.meters.find((mm) => mm.id === _csvImportMid) : null;
+  let m = b ? b.meters.find((mm) => mm.id === mid) : null;
   if (!m) {
-    // Project/building globals may be stale — fall back to a direct meter-id search.
-    const found = _findMeterAcrossProjects(_csvImportMid);
+    const found = _findMeterAcrossProjects(mid);
     if (found) {
       b = found.b;
       m = found.m;
     }
   }
-  if (!b || !m) {
+  return b && m ? { b, m } : null;
+}
+
+function parseBillCsv(text, fname) {
+  const ctx = resolveUDMeter(_csvImportMid);
+  if (!ctx) {
     showToast('Meter not found — close and re-open the import dialog for this meter', 'warn');
     return;
   }
+  const { b, m } = ctx;
   const isElec = m.commodity === 'Electric',
     isGas = m.commodity === 'Gas';
 
@@ -545,20 +551,12 @@ function importBillCsvRows() {
     showToast('Nothing to import — re-open the import dialog and choose a CSV', 'warn');
     return;
   }
-  _syncEmbedUDContext();
-  let b = getUDBldg(udSelProjId, udSelBldgId);
-  let m = b ? b.meters.find((mm) => mm.id === _csvImportMid) : null;
-  if (!m) {
-    const found = _findMeterAcrossProjects(_csvImportMid);
-    if (found) {
-      b = found.b;
-      m = found.m;
-    }
-  }
-  if (!b || !m) {
+  const ctx = resolveUDMeter(_csvImportMid);
+  if (!ctx) {
     showToast('Meter not found — close and re-open the import dialog for this meter', 'warn');
     return;
   }
+  const { b, m } = ctx;
   m.bills = m.bills || [];
 
   // Merge on exact start date — split-month bills (e.g. 2/1 and 2/15) are distinct rows
@@ -1000,13 +998,12 @@ function toggleChargeDetail(rowId) {
   if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 async function deleteBillRow(mid, rowId) {
-  _syncEmbedUDContext();
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  const m = b?.meters?.find((m) => m.id === mid);
-  if (!m) {
+  const ctx = resolveUDMeter(mid);
+  if (!ctx) {
     showToast('Meter not found — re-select the meter and try again', 'warn');
     return;
   }
+  const { m } = ctx;
   const _delRow = m.bills.find((r) => r.id === rowId);
   if (_delRow) {
     const period =

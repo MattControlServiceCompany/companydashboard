@@ -1469,6 +1469,273 @@ function aggBaseMoMapForBldgs(bldgs) {
   return moBase;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   "All Buildings" Project Baseline section (2026-09-22) — lists EVERY
+   building in the project, including buildings whose meters are all
+   baselineInclude:false and buildings with no bills at all. Every number
+   comes from getMeterBaselineTotals()/buildMoMap (computations/
+   normalization.js, the single source of truth) — no independent summing
+   math is introduced here, only aggregation of already-canonical per-meter
+   totals. baselineInclude:false excludes a meter from SAVINGS only — it
+   never hides the meter or building from this view.
+   ───────────────────────────────────────────────────────────── */
+const _UD_AB_MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// First non-empty meter baseline (>=3 months) found across the project — used
+// as the fallback baseline period for a meter that has no baseline of its own,
+// per the task spec: "if the meter has its own months, use those [otherwise]
+// compute their baseline ... over the project's baseline months".
+function _udProjBaselineMonthsFallback(bldgs) {
+  for (const b of bldgs) {
+    for (const m of b.meters || []) {
+      if (m.baseline && m.baseline.months && m.baseline.months.length >= 3) return m.baseline.months;
+    }
+  }
+  return null;
+}
+
+// Per-meter baseline totals for the All Buildings panel. Always calls
+// getMeterBaselineTotals() — the single source of truth — either against the
+// meter's own baseline.months, or (if it has none) a shallow clone carrying
+// the project's fallback months, never a hand-rolled sum.
+function _udMeterBaselineForAllBldgs(m, projectMonths) {
+  const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+  const incl = m.inclusive !== false;
+  const ownMonths = !!(m.baseline && m.baseline.months && m.baseline.months.length >= 3);
+  const usedProjectMonths = !ownMonths && !!projectMonths;
+  const effMeter =
+    ownMonths || !usedProjectMonths
+      ? m
+      : Object.assign({}, m, { baseline: Object.assign({}, m.baseline, { months: projectMonths }) });
+  const totals = getMeterBaselineTotals(effMeter, bills, incl);
+  const effMonths = ownMonths ? m.baseline.months.slice() : usedProjectMonths ? projectMonths.slice() : [];
+  let moMap = null;
+  if (bills.length && effMonths.length) {
+    const allRows = getNormRows(effMeter, bills, incl, null);
+    const blRows = allRows.filter((r) => effMonths.includes(r.ym));
+    if (blRows.length) moMap = buildMoMap(effMeter, blRows, bills, incl);
+  }
+  return {
+    m,
+    bills,
+    incl,
+    totals,
+    moMap,
+    effMonths,
+    ownMonths,
+    usedProjectMonths,
+    hasBills: bills.length > 0,
+    hasBaseline: !!(m.baseline && m.baseline.months && m.baseline.months.length >= 3),
+    included: m.baselineInclude !== false,
+    trust: getBaselineTrustState(m),
+  };
+}
+
+function _udBuildingSavingsStatus(meterDetails) {
+  if (!meterDetails.length || !meterDetails.some((d) => d.hasBills)) return { included: false, reason: 'no bills' };
+  if (!meterDetails.some((d) => d.included)) return { included: false, reason: 'excluded on Utility Data' };
+  if (!meterDetails.some((d) => d.included && d.hasBaseline)) return { included: false, reason: 'no baseline months' };
+  return { included: true, reason: null };
+}
+
+function _udBuildingFreezeState(meterDetails) {
+  const withBaseline = meterDetails.filter((d) => d.hasBaseline);
+  if (!withBaseline.length) return 'No baseline';
+  return withBaseline.every((d) => d.trust === 'frozen') ? 'Frozen' : 'Auto-inherited — not frozen';
+}
+
+function _udFmtPeriodLabel(meterDetails) {
+  const monthSets = meterDetails.map((d) => d.effMonths).filter((mm) => mm && mm.length);
+  if (!monthSets.length) return null;
+  const fmt = (ym) => {
+    const p = ym.split('-');
+    return _UD_AB_MN[parseInt(p[1], 10) - 1] + ' ' + p[0];
+  };
+  const flat = []
+    .concat(...monthSets)
+    .slice()
+    .sort();
+  const distinct = new Set(monthSets.map((mm) => mm.slice().sort().join(',')));
+  return { label: fmt(flat[0]) + ' – ' + fmt(flat[flat.length - 1]), mixed: distinct.size > 1 };
+}
+
+// Aggregates one building's meters (included AND excluded) into row totals.
+// Commodity sums are plain reduces over each meter's already-canonical
+// getMeterBaselineTotals() output — not a new baseline computation.
+function _udBuildingAllBaseline(b, projectMonths) {
+  const meterDetails = (b.meters || []).map((m) => _udMeterBaselineForAllBldgs(m, projectMonths));
+  const isElec = (d) => d.m.commodity === 'Electric';
+  const isGas = (d) => d.m.commodity === 'Gas';
+  const isProp = (d) => d.m.commodity === 'Propane';
+  const kwh = meterDetails.filter(isElec).reduce((s, d) => s + (d.totals.kwh || 0), 0);
+  const kw = meterDetails.filter(isElec).reduce((s, d) => s + (d.totals.billedKW || 0), 0);
+  const therms = meterDetails.filter(isGas).reduce((s, d) => s + (d.totals.therms || 0), 0);
+  const gallons = meterDetails.filter(isProp).reduce((s, d) => s + (d.totals.gallons || 0), 0);
+  const cost = meterDetails.reduce((s, d) => s + (d.totals.cost || 0), 0);
+  const monthCount = meterDetails.reduce((mx, d) => Math.max(mx, d.totals.months || 0), 0) || 12;
+  const kBtu = toKBtu(kwh, therms, gallons);
+  const sqft = parseFloat(b.sqft) || 0;
+  const eui = sqft > 0 && kBtu > 0 ? computeBaselineEUI(kBtu, monthCount, sqft) : 0;
+  return {
+    b,
+    meterDetails,
+    kwh,
+    kw,
+    therms,
+    cost,
+    eui,
+    status: _udBuildingSavingsStatus(meterDetails),
+    freeze: _udBuildingFreezeState(meterDetails),
+    period: _udFmtPeriodLabel(meterDetails),
+    hasAnyBills: meterDetails.some((d) => d.hasBills),
+  };
+}
+
+// Expand/collapse for the All Buildings table — a building row reveals its
+// meter rows; a meter row reveals its 12 baseline-month rows. Both levels
+// share this one toggle keyed by a data-udab-toggle id.
+function _udToggleAllBldgRow(id) {
+  document.querySelectorAll('[data-udab-toggle="' + id + '"]').forEach((r) => {
+    r.style.display = r.style.display === 'none' ? '' : 'none';
+  });
+}
+
+function _udMeterMonthRowsHtml(d, mrid) {
+  if (!d.moMap || !d.effMonths || !d.effMonths.length) return '';
+  const $f = (v, dd = 2) =>
+    v != null
+      ? '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: dd, maximumFractionDigits: dd })
+      : '—';
+  const $n = (v, dd = 0) =>
+    v != null ? v.toLocaleString('en-US', { minimumFractionDigits: dd, maximumFractionDigits: dd }) : '—';
+  return d.effMonths
+    .slice()
+    .sort()
+    .map((ym) => {
+      const p = ym.split('-');
+      const moIdx = parseInt(p[1], 10) - 1;
+      const e = d.moMap.elecByMo[moIdx],
+        g = d.moMap.gasByMo[moIdx];
+      const cost = e ? e.totalCost : g ? g.cost : null;
+      return `<tr data-udab-toggle="${mrid}" style="display:none">
+        <td style="padding:4px 10px 4px 46px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">${_UD_AB_MN[moIdx]} ${p[0]}</td>
+        <td style="padding:4px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--em2);border-bottom:1px solid var(--border)">${e ? $n(e.kwh) : ''}</td>
+        <td style="padding:4px 10px;text-align:right;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border)">${e ? $n(e.billedKW, 1) : ''}</td>
+        <td style="padding:4px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--warn);border-bottom:1px solid var(--border)">${g ? $n(g.therms) : ''}</td>
+        <td style="padding:4px 10px;text-align:right;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border)" colspan="4">${$f(cost)}</td>
+      </tr>`;
+    })
+    .join('');
+}
+
+function _udRenderAllBuildingsBaselineSection(rows, allTotals, includedTotals) {
+  const $f = (v, d = 0) =>
+    v != null ? '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+  const $n = (v, d = 0) =>
+    v != null ? v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+  const th =
+    'position:sticky;top:0;z-index:2;padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
+  const thL = th.replace('text-align:right', 'text-align:left');
+  const td = (color = 'var(--text)') =>
+    `padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap`;
+
+  const bldgRowsHtml = rows
+    .map((r, i) => {
+      const rid = 'udab' + i;
+      const statusColor = r.status.included ? 'var(--em)' : 'var(--text2)';
+      const statusText = _escHtml(
+        r.status.included
+          ? 'Included in savings'
+          : 'Not included in savings' + (r.status.reason ? ' (' + r.status.reason + ')' : ''),
+      );
+      const periodTxt = _escHtml(r.hasAnyBills && r.period ? r.period.label + (r.period.mixed ? ' (mixed)' : '') : '—');
+      const meterRows = r.meterDetails
+        .map((d, j) => {
+          const mrid = rid + '-m' + j;
+          const mLabel = _escHtml(
+            (d.m.name || d.m.id || d.m.commodity || 'Meter') +
+              ' — ' +
+              (d.m.commodity || '') +
+              (d.usedProjectMonths ? ' (using project baseline period)' : ''),
+          );
+          const mStatusTxt = _escHtml(d.included ? 'Included in savings' : 'Excluded on Utility Data');
+          const mFreezeTxt = _escHtml(
+            d.trust === 'frozen' ? 'Frozen' : d.hasBaseline ? 'Auto-inherited — not frozen' : 'No baseline',
+          );
+          const monthsHtml = _udMeterMonthRowsHtml(d, mrid);
+          return `<tr data-udab-toggle="${rid}" style="display:none">
+            <td colspan="9" style="padding:0;border:1px solid var(--border)">
+              <table style="width:100%;border-collapse:collapse;font-size:11px">
+                <tr style="cursor:pointer" onclick="_udToggleAllBldgRow('${mrid}')">
+                  <td style="padding:5px 10px 5px 28px;font-weight:600;border-bottom:1px solid var(--border)">▸ ${mLabel}</td>
+                  <td style="padding:5px 10px;text-align:right;font-family:var(--mono);color:var(--em2);border-bottom:1px solid var(--border)">${d.m.commodity === 'Electric' ? $n(d.hasBills ? d.totals.kwh : null) : ''}</td>
+                  <td style="padding:5px 10px;text-align:right;font-family:var(--mono);border-bottom:1px solid var(--border)">${d.m.commodity === 'Electric' ? $n(d.hasBills ? d.totals.billedKW : null, 1) : ''}</td>
+                  <td style="padding:5px 10px;text-align:right;font-family:var(--mono);color:var(--warn);border-bottom:1px solid var(--border)">${d.m.commodity === 'Gas' ? $n(d.hasBills ? d.totals.therms : null) : ''}</td>
+                  <td style="padding:5px 10px;text-align:right;font-family:var(--mono);border-bottom:1px solid var(--border)">${$f(d.hasBills ? d.totals.cost : null, 2)}</td>
+                  <td style="padding:5px 10px;border-bottom:1px solid var(--border)"></td>
+                  <td style="padding:5px 10px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">${mStatusTxt}</td>
+                  <td style="padding:5px 10px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)" colspan="2">${mFreezeTxt}</td>
+                </tr>
+                ${monthsHtml}
+              </table>
+            </td>
+          </tr>`;
+        })
+        .join('');
+      const bldgNameTxt = _escHtml(r.b.name || 'Building');
+      const noBillsTxt = _escHtml('No bills loaded');
+      const freezeTxt = _escHtml(r.hasAnyBills ? r.freeze : 'No baseline');
+      return `<tr style="cursor:pointer" onclick="_udToggleAllBldgRow('${rid}')">
+          <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border);background:var(--s2)">▸ ${bldgNameTxt}</td>
+          <td style="${td()}">${periodTxt}</td>
+          <td style="${td('var(--em2)')}">${$n(r.hasAnyBills ? r.kwh : null)}</td>
+          <td style="${td()}">${$n(r.hasAnyBills ? r.kw : null, 1)}</td>
+          <td style="${td('var(--warn)')}">${$n(r.hasAnyBills ? r.therms : null)}</td>
+          <td style="${td()}">${$f(r.hasAnyBills ? r.cost : null, 2)}</td>
+          <td style="${td('var(--violet)')}">${$n(r.hasAnyBills && r.eui ? r.eui : null, 1)}</td>
+          <td style="padding:6px 10px;text-align:left;font-size:11px;color:${statusColor};border:1px solid var(--border)">${r.hasAnyBills ? statusText : noBillsTxt}</td>
+          <td style="padding:6px 10px;text-align:left;font-size:11px;color:var(--text2);border:1px solid var(--border)">${freezeTxt}</td>
+        </tr>${meterRows}`;
+    })
+    .join('');
+
+  return `
+    <div style="padding:16px 18px 4px;font-size:13px;font-weight:800;font-family:var(--head);color:var(--em);border-top:1px solid var(--border);margin-top:6px">📋 All Buildings — Project Baseline</div>
+    <div style="padding:0 18px 8px;font-size:11px;color:var(--text2)">Every building in this project, including buildings not counted in savings. Click a row to expand meters, click a meter to expand its baseline months.</div>
+    <div style="overflow-x:auto;padding:0 18px 20px;max-height:520px;overflow-y:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
+      <thead><tr>
+        <th style="${thL}">Building</th>
+        <th style="${th}">Baseline Period</th>
+        <th style="${th}">kWh</th>
+        <th style="${th}">kW Total</th>
+        <th style="${th}">Therms</th>
+        <th style="${th}">Total Cost</th>
+        <th style="${th}">EUI (kBtu/sf/yr)</th>
+        <th style="${thL}">Savings Status</th>
+        <th style="${thL}">Baseline Freeze</th>
+      </tr></thead>
+      <tbody>${bldgRowsHtml}</tbody>
+      <tfoot>
+        <tr style="background:var(--s1)">
+          <td colspan="2" style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">All Buildings</td>
+          <td style="${td('var(--em2)')};font-weight:700">${$n(allTotals.kwh)}</td>
+          <td style="${td()};font-weight:700">${$n(allTotals.kw, 1)}</td>
+          <td style="${td('var(--warn)')};font-weight:700">${$n(allTotals.therms)}</td>
+          <td style="${td()};font-weight:700">${$f(allTotals.cost, 2)}</td>
+          <td colspan="3" style="border:1px solid var(--border)"></td>
+        </tr>
+        <tr style="background:var(--s1)">
+          <td colspan="2" style="padding:6px 10px;font-size:12px;font-weight:700;color:var(--em);border:1px solid var(--border)">Included in Savings</td>
+          <td style="${td('var(--em2)')};font-weight:700">${$n(includedTotals.kwh)}</td>
+          <td style="${td()};font-weight:700">${$n(includedTotals.kw, 1)}</td>
+          <td style="${td('var(--warn)')};font-weight:700">${$n(includedTotals.therms)}</td>
+          <td style="${td()};font-weight:700">${$f(includedTotals.cost, 2)}</td>
+          <td colspan="3" style="border:1px solid var(--border)"></td>
+        </tr>
+      </tfoot>
+    </table></div>`;
+}
+
 function renderUDProjAggPanel(content) {
   const proj = utilityData[udSelProjId];
   const bldgs = proj?.buildings || [];
@@ -1595,6 +1862,30 @@ function renderUDProjAggPanel(content) {
               <td style="${tdS('var(--warn)')}">${$n(g.therms, 0)}</td><td style="${tdS()}">${$f(g.cost, 2)}</td>
               <td style="${tdS('var(--em)')}">${$f(e.totalCost + g.cost, 2)}</td></tr>`;
     }).join('');
+
+    // All Buildings — every building in the project, including buildings with no
+    // bills or entirely baselineInclude:false meters (2026-09-22). Totals row
+    // "Included in Savings" reuses annKwh/annTherms/annTotal computed above (the
+    // existing, unchanged, included-only scope) so it can never diverge from the
+    // header strip / report / Energy Graphics numbers.
+    const _udProjMonthsFallback = _udProjBaselineMonthsFallback(bldgs);
+    const _udAllBldgRows = bldgs.map((b) => _udBuildingAllBaseline(b, _udProjMonthsFallback));
+    const _udAllTotals = {
+      kwh: _udAllBldgRows.reduce((s, r) => s + (r.kwh || 0), 0),
+      kw: _udAllBldgRows.reduce((s, r) => s + (r.kw || 0), 0),
+      therms: _udAllBldgRows.reduce((s, r) => s + (r.therms || 0), 0),
+      cost: _udAllBldgRows.reduce((s, r) => s + (r.cost || 0), 0),
+    };
+    const _udIncludedKW = allMeters
+      .filter((x) => x.isElec)
+      .reduce((s, x) => s + (getMeterBaselineTotals(x.m, x.bills, x.incl).billedKW || 0), 0);
+    const _udIncludedTotals = { kwh: annKwh, therms: annTherms, cost: annTotal, kw: _udIncludedKW };
+    const allBuildingsSectionHtml = _udRenderAllBuildingsBaselineSection(
+      _udAllBldgRows,
+      _udAllTotals,
+      _udIncludedTotals,
+    );
+
     content.innerHTML = `
             <div style="padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--border)">
               <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">📊 ${projName} — Project Baseline</div>
@@ -1622,7 +1913,8 @@ function renderUDProjAggPanel(content) {
               </tr></tfoot>
             </table></div>
             <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Utility Cost</div>
-            <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projBaselineChart"></canvas></div>`;
+            <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projBaselineChart"></canvas></div>
+            ${allBuildingsSectionHtml}`;
     requestAnimationFrame(() => {
       const elecVals = MN.map((_, mo) => elecByMo[mo]?.totalCost || 0);
       const gasVals = MN.map((_, mo) => gasByMo[mo]?.cost || 0);

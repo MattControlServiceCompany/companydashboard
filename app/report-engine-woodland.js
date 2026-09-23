@@ -68,7 +68,16 @@ var WD_TEXT = {
       start +
       ' through ' +
       end +
-      '. Electric cost is shown separately for energy (kilowatt-hours) and demand (peak kilowatts), with the effective rate for each. Natural gas is shown in therms with its effective rate.'
+      '. Electric cost is shown separately for energy (kilowatt-hours) and demand (peak kilowatts), with the effective rate for each: Energy $/kWh is the energy charge only; Demand $/kW is the demand charge only. Natural gas is shown in therms with its effective rate.'
+    );
+  },
+  demandFloorNote: function (demandFloorKw) {
+    return (
+      'This utility bills a minimum demand of ' +
+      _wdN(demandFloorKw, 0) +
+      " kW: in any month the building's actual peak demand falls below that minimum, Billed kW is set to " +
+      _wdN(demandFloorKw, 0) +
+      ' kW rather than the lower actual reading.'
     );
   },
   baselineIntro: function (start, end) {
@@ -77,7 +86,7 @@ var WD_TEXT = {
       start +
       ' through ' +
       end +
-      ", the most recent full year of billing available. Each month's expected electric use is adjusted for that month's actual heating degree days (HDD) and cooling degree days (CDD), so the baseline reflects typical weather rather than one specific year's conditions."
+      ", the most recent full year of billing available. Each month's expected electric use is adjusted for that month's actual heating degree days (HDD) and cooling degree days (CDD), so the baseline reflects typical weather rather than one specific year's conditions. Calendar Days below is the number of days in each calendar month, used to scale the regression; the Raw Utility Bill Data page shows each month's Billing Days, the utility's own meter-read cycle, which runs on a different schedule and does not match the calendar month exactly."
     );
   },
   gasBaseline:
@@ -89,6 +98,13 @@ var WD_TEXT = {
       ' – ' +
       end +
       '). Monthly electric use, gas use, and demand are the billed values for each month; the annual demand figures (Metered kW, Billed kW) are the total of the 12 monthly values. Electric energy and demand costs are shown separately with their own rates, and the summary includes Site Energy Use Intensity (EUI, in kBtu per square foot per year) for benchmarking.'
+    );
+  },
+  summaryFootnote: function (sqft) {
+    return (
+      'Square footage (' +
+      _wdN(sqft, 0) +
+      ' SF) is the figure on file for this building. Metered kW is the actual peak demand recorded by the meter each month; Billed kW is the demand the utility charged for that month. Site EUI (kBtu/SF) = annual energy in kBtu (electric kWh × 3.412 + gas Therms × 100) ÷ square feet; Electric Use / SF (kWh) = annual electric kWh ÷ square feet; Utility Cost / SF = annual total utility cost ÷ square feet. The Energy $/kWh figures above are the energy charge only; Blended Electric Rate ($/kWh) combines energy and demand charges into one figure and is higher than the energy-only rate — the two are different measures of electric cost and are not interchangeable.'
     );
   },
   hvacTitle: 'HVAC Cooling & Heating Load',
@@ -107,6 +123,8 @@ var WD_TEXT = {
       '; the targets below apply building-wide.'
     );
   },
+  basGlossary:
+    "The building's Building Automation System (BAS) is the control system that runs this building's heating and cooling schedules and setpoints; the pages that follow calculate the savings from changing its occupied setpoints.",
   methodIntro: function (letter, heatSP, coolSP) {
     return (
       'The current and proposed occupied setpoints for each option, the seasonal rates used to value the savings, and the calculation method, worked in full for Option ' +
@@ -115,18 +133,32 @@ var WD_TEXT = {
       heatSP +
       '°F / ' +
       coolSP +
-      '°F) in the section that follows.'
+      '°F) in the section that follows. Options B and C follow the identical calculation method with their own setpoints and rates, summarized on the Savings Options Comparison page.'
     );
   },
   ratesNote: function (letter) {
     return (
       'Option ' +
       letter +
-      "'s seasonal utility rates are shown below. Savings are valued at the seasonal marginal rate each month, then summed for the year — not a single blended rate."
+      "'s seasonal utility rates are shown below. Savings are valued at the seasonal marginal rate each month, then summed for the year — not a single blended rate. Options B and C use these same seasonal rates unless a different rate is entered specifically for that option."
     );
   },
   ratesTitle: function (letter) {
     return 'Seasonal Marginal Rates (Option ' + letter + ')';
+  },
+  actuatorCoverage: function (cfg) {
+    var excluded = Math.max(0, (parseFloat(cfg.zonesTotal) || 0) - (parseFloat(cfg.zonesActive) || 0));
+    return (
+      'This savings calculation applies to the ' +
+      _wdN(cfg.zonesActive, 0) +
+      ' of ' +
+      _wdN(cfg.zonesTotal, 0) +
+      ' zones in this building with a heating and cooling actuator. The remaining ' +
+      _wdN(excluded, 0) +
+      ' zone' +
+      (excluded === 1 ? '' : 's') +
+      ' do not have a heating and cooling actuator and are not included in this savings calculation; changing their setpoints would not change their energy use.'
+    );
   },
   // The savings basis — every number is the building's own stored input (wdCheckReportInputs
   // blocks the report when any is missing), never a literal.
@@ -150,7 +182,7 @@ var WD_TEXT = {
       _wdN(cfg.unoccNetTherms, 0) +
       ' Therms per year are included in every option. Demand savings apply the cooling reduction to billed demand above the ' +
       _wdN(cfg.demandFloorKw, 0) +
-      " kW minimum in the summer months. The monthly heating therms, cooling kWh, and demand kW saved below apply this basis to the building's own monthly baseline."
+      " kW minimum in the summer months. The monthly heating therms, cooling kWh, and demand kW saved below apply this basis to the building's own monthly baseline. The percent-per-degree factor, the occupied-hours shares, the actuator zone count, and the unoccupied setback total are this building's own BAS control settings and engineering inputs for this savings calculation. The unoccupied setback Therms are divided across the 12 months in proportion to each month's own heating load above the building's summer baseload — a cold-weather month with a large heating load receives a large share, and a summer month with no heating load receives none."
     );
   },
   clientShareLabel: function (cfg) {
@@ -171,7 +203,7 @@ var WD_TEXT = {
       _wdN(cfg.clientSharePct, 0) +
       '% of the annual dollars saved to the client and ' +
       _wdN(100 - cfg.clientSharePct, 0) +
-      '% to CSC.'
+      '% to CSC (Control Service Company).'
     );
   },
   optionsIntro: function (cfg) {
@@ -180,7 +212,7 @@ var WD_TEXT = {
       _wdN(cfg.clientSharePct, 0) +
       '% to the client and ' +
       _wdN(100 - cfg.clientSharePct, 0) +
-      '% to CSC of the annual dollars saved.'
+      '% to CSC of the annual dollars saved. Each option that raises the occupied heating setpoint further adds more occupied-hours heating energy, which is subtracted from the fixed annual unoccupied setback savings and reduces the net heating Therms saved; each option that raises the occupied cooling setpoint further increases cooling energy and demand savings. That is why Option B and Option C below save fewer heating Therms than Option A while saving more cooling kWh and more demand kW. Demand kW Saved is the sum of the summer months’ billed-demand reductions (see the sample calculations below each row), representing total demand-charge impact across the summer billing months rather than a single peak kW value. Option A’s full month-by-month calculation, with the method spelled out for every line, is shown on the preceding page; Options B and C follow the same method with their own setpoints and rates.'
     );
   },
   chartsIntro: function (cfg) {
@@ -192,6 +224,8 @@ var WD_TEXT = {
       '% CSC).'
     );
   },
+  nextSteps:
+    'To proceed, choose Option A, Option B, or Option C above, or contact CSC to request changes to the setpoints or the shared-savings split shown in this report. Once an option is chosen, CSC schedules the BAS setpoint change and confirms the effective date with the client. After the change is made, savings are checked against the building’s ongoing monthly utility billing.',
   hvacShares: function (h) {
     return (
       'HVAC load shares are all on one kBtu basis (Therms × 100, kWh × 3.412), each divided by ' +
@@ -214,7 +248,12 @@ var WD_TEXT = {
       (h.heatKwhPct != null ? ', electric heating share ' + h.heatKwhPct.toFixed(1) + '%' : '') +
       ', cooling share ' +
       h.coolSharePct.toFixed(1) +
-      '%. Non-cooling kWh = billed kWh − cooling kWh (lighting, plug loads, fans, and other year-round use).'
+      '%. Non-cooling kWh = billed kWh − cooling kWh (lighting, plug loads, fans, and other year-round use). ' +
+      'Cooling Share of Electric Use (' +
+      h.coolPct.toFixed(1) +
+      '%) divides cooling kWh by all billed electric kWh; Cooling Share of HVAC Load (' +
+      h.coolSharePct.toFixed(1) +
+      '%) divides the same cooling kWh by total HVAC load on the kBtu basis above. The two answer different questions — one electric-only, one whole-building HVAC — and are not directly comparable.'
     );
   },
 };
@@ -662,7 +701,7 @@ function _wdBuildMeterBaseline(m) {
         slopeHDD: reg.dual.slopeHDD,
         slopeCDD: reg.dual.slopeCDD,
       };
-      regrType = 'OLS / HDD + CDD (dual)';
+      regrType = 'Days + Heating Degree Days (HDD) + Cooling Degree Days (CDD)';
       r2 = reg.dual.r2;
     } else if (m.commodity === 'Electric' && reg.cdd && reg.cdd.r2 != null) {
       regrCoeffs = {
@@ -670,7 +709,7 @@ function _wdBuildMeterBaseline(m) {
         intercept: reg.cdd.intercept,
         slope: reg.cdd.slope,
       };
-      regrType = 'OLS / CDD';
+      regrType = 'Days + Cooling Degree Days (CDD)';
       r2 = reg.cdd.r2;
     } else if (reg.hdd && reg.hdd.r2 != null) {
       regrCoeffs = {
@@ -678,7 +717,7 @@ function _wdBuildMeterBaseline(m) {
         intercept: reg.hdd.intercept,
         slope: reg.hdd.slope,
       };
-      regrType = 'OLS / HDD';
+      regrType = 'Days + Heating Degree Days (HDD)';
       r2 = reg.hdd.r2;
     }
   }
@@ -793,6 +832,59 @@ function wdComputeSetpointOptions(cfg, elecBL, gasBL) {
 }
 window.wdComputeSetpointOptions = wdComputeSetpointOptions;
 
+// wdOptionAnnualDollar(o, rates) — the ONE place a setpoint option's monthly kWh/kW/Therms
+// quantities become a dollar total (quantity x seasonal rate, monthly then summed). Used by
+// wdApplySetpointOptions (the report's own "Save & Compute") and by any other caller that needs
+// to preview or persist the same option's dollar value (e.g. HVAC Load Estimation's Create
+// Savings Measure card, 2026-09-22) — never re-derive this loop elsewhere.
+function wdOptionAnnualDollar(o, rates) {
+  var R = _wdSeasonalRates(rates);
+  var tot = 0;
+  for (var i = 0; i < 12; i++) {
+    var s = _wdIsSummer(i);
+    tot += (o.kwh[i] || 0) * (s ? R.elecEnergySummer : R.elecEnergyWinter);
+    tot += (o.kw[i] || 0) * (s ? R.demandSummer : R.demandWinter);
+    tot += (o.gas[i] || 0) * (s ? R.gasSummer : R.gasWinter);
+  }
+  return tot;
+}
+window.wdOptionAnnualDollar = wdOptionAnnualDollar;
+
+// wdOptionDollarByMonth(o, rates) — the report's OWN $ rounding convention (round every monthly
+// component to the cent first, then sum the already-rounded cents — see the long comment on its
+// call site in collectWoodlandReportData). This is a DIFFERENT, deliberately more-reproducible
+// total than wdOptionAnnualDollar (which sums full-precision dollars and rounds once, and is
+// what feeds the Energy Savings matrix's m.totalDollar). Use this one whenever a caller needs a
+// number that must equal the printed Baseline + BAS Savings Report (e.g. HVAC Load Estimation's
+// Create Savings Measure preview) — never re-derive the rounding order.
+function wdOptionDollarByMonth(o, rates) {
+  var monthly = [],
+    totGas = 0,
+    totElec = 0,
+    totDem = 0,
+    totAll = 0;
+  for (var i = 0; i < 12; i++) {
+    var summer = _wdIsSummer(i);
+    var gas$ = _wdRoundHalfUp((o.gas[i] || 0) * (summer ? rates.gasSummer : rates.gasWinter), 2);
+    var elec$ = _wdRoundHalfUp((o.kwh[i] || 0) * (summer ? rates.elecEnergySummer : rates.elecEnergyWinter), 2);
+    var dem$ = _wdRoundHalfUp((o.kw[i] || 0) * (summer ? rates.demandSummer : rates.demandWinter), 2);
+    var total$ = _wdRoundHalfUp(gas$ + elec$ + dem$, 2);
+    monthly.push({ gas$: gas$, elec$: elec$, dem$: dem$, total$: total$, summer: summer });
+    totGas += gas$;
+    totElec += elec$;
+    totDem += dem$;
+    totAll += total$;
+  }
+  return {
+    monthly: monthly,
+    annualGas$: _wdRoundHalfUp(totGas, 2),
+    annualElec$: _wdRoundHalfUp(totElec, 2),
+    annualDem$: _wdRoundHalfUp(totDem, 2),
+    annualTotal$: _wdRoundHalfUp(totAll, 2),
+  };
+}
+window.wdOptionDollarByMonth = wdOptionDollarByMonth;
+
 // Writes each configured option's monthly quantities into an Energy Savings measure for this
 // building (upsert by option letter, keyed by m.basOption), applies the stored seasonal rates
 // to those measures, and removes option measures that are no longer configured. Measures
@@ -838,15 +930,7 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
       m.rates[f.key] = cfg.rates[f.key];
     });
     if (!(parseFloat(m.rates.thermRate) > 0)) m.rates.thermRate = cfg.rates.gasWinter;
-    var R = _wdSeasonalRates(m.rates);
-    var tot = 0;
-    for (var i = 0; i < 12; i++) {
-      var s = _wdIsSummer(i);
-      tot += o.kwh[i] * (s ? R.elecEnergySummer : R.elecEnergyWinter);
-      tot += o.kw[i] * (s ? R.demandSummer : R.demandWinter);
-      tot += o.gas[i] * (s ? R.gasSummer : R.gasWinter);
-    }
-    m.totalDollar = tot;
+    m.totalDollar = wdOptionAnnualDollar(o, m.rates);
     keep[m.id] = true;
   });
   sd.measures = sd.measures.filter(function (x) {
@@ -1232,52 +1316,24 @@ function collectWoodlandReportData(projId, buildingId) {
   var clientPct = cfg && cfg.clientSharePct != null ? parseFloat(cfg.clientSharePct) : null;
 
   // Dollarize each option with SEASONAL MARGINAL rates, monthly then summed (never blended,
-  // never a raw dollar delta) — the audit-corrected formula.
-  //
-  // Rounding methodology (Calc re-audit, 2026-09-22, defect #8 — Matt's hard reproducibility
-  // rule): every monthly $ component is rounded to the CENT (round-half-up) immediately, and
-  // every larger figure (a row's Total $, a column's annual Total, the report-wide annual $
-  // saved) is built by SUMMING those already-rounded cents values, never by rounding a
-  // full-precision sum once at the end. Concretely:
-  //   monthly total$  = round(gas$) + round(elec$) + round(dem$)         [row cross-foots]
-  //   annual Gas/Elec/Dem$ = sum of the 12 (already-rounded) monthly components
-  //   annual Total$   = sum of the 12 (already-rounded) monthly total$ values
-  // A reader who takes the PRINTED monthly Gas $/Elec $/Demand $ cells and adds them by hand
-  // reaches the PRINTED Total $ cell every time, and summing the 12 printed Total $ cells
-  // reaches the PRINTED annual total every time — by construction, not by coincidence.
+  // never a raw dollar delta) — the audit-corrected formula. wdOptionDollarByMonth is the ONE
+  // place this rounding methodology lives (Calc re-audit, 2026-09-22, defect #8 — Matt's hard
+  // reproducibility rule): every monthly $ component is rounded to the CENT (round-half-up)
+  // immediately, and every larger figure (a row's Total $, a column's annual Total, the
+  // report-wide annual $ saved) is built by SUMMING those already-rounded cents values, never by
+  // rounding a full-precision sum once at the end. A reader who takes the PRINTED monthly Gas
+  // $/Elec $/Demand $ cells and adds them by hand reaches the PRINTED Total $ cell every time,
+  // and summing the 12 printed Total $ cells reaches the PRINTED annual total every time — by
+  // construction, not by coincidence. Any other caller needing this report's own $ total (e.g.
+  // HVAC Load Estimation's Create Savings Measure preview, 2026-09-22) must call this same
+  // function, not re-derive the rounding order.
   options.forEach(function (o) {
-    var R = o.rates;
-    var monthly = [];
-    var totGas = 0,
-      totElec = 0,
-      totDem = 0,
-      totAll = 0;
-    for (var i = 0; i < 12; i++) {
-      var summer = _wdIsSummer(i);
-      var gasR = summer ? R.gasSummer : R.gasWinter;
-      var elecR = summer ? R.elecEnergySummer : R.elecEnergyWinter;
-      var demR = summer ? R.demandSummer : R.demandWinter;
-      var gas$ = _wdRoundHalfUp((o.gas[i] || 0) * gasR, 2);
-      var elec$ = _wdRoundHalfUp((o.kwh[i] || 0) * elecR, 2);
-      var dem$ = _wdRoundHalfUp((o.kw[i] || 0) * demR, 2);
-      var total$ = _wdRoundHalfUp(gas$ + elec$ + dem$, 2);
-      monthly.push({
-        gas$: gas$,
-        elec$: elec$,
-        dem$: dem$,
-        total$: total$,
-        summer: summer,
-      });
-      totGas += gas$;
-      totElec += elec$;
-      totDem += dem$;
-      totAll += total$;
-    }
-    o.monthly = monthly;
-    o.annualGas$ = _wdRoundHalfUp(totGas, 2);
-    o.annualElec$ = _wdRoundHalfUp(totElec, 2);
-    o.annualDem$ = _wdRoundHalfUp(totDem, 2);
-    o.annualTotal$ = _wdRoundHalfUp(totAll, 2);
+    var d = wdOptionDollarByMonth(o, o.rates);
+    o.monthly = d.monthly;
+    o.annualGas$ = d.annualGas$;
+    o.annualElec$ = d.annualElec$;
+    o.annualDem$ = d.annualDem$;
+    o.annualTotal$ = d.annualTotal$;
     o.installCost = o.implCost;
     // Payback only when the measure carries an Implementation Cost — never invented. Kept on
     // the record (implCost stays a measure field for other deal types) but NOT rendered by this
@@ -1443,8 +1499,8 @@ function rptPageWoodlandBills(n, d) {
     // .rpt-table-compact is table-layout:fixed; explicit widths keep every centered header
     // over its right-aligned data (widths sum to 100%).
     var head = isElec
-      ? '<tr><th style="width:14%">Month</th><th class="rpt-n" style="width:6%">Days</th><th class="rpt-n" style="width:11%">Billed kWh</th><th class="rpt-n" style="width:12%">Billed kW</th><th class="rpt-n" style="width:11.5%">Energy Cost</th><th class="rpt-n" style="width:11.5%">Demand Cost</th><th class="rpt-n" style="width:12%">Total Cost</th><th class="rpt-n" style="width:11%">Energy $/kWh</th><th class="rpt-n" style="width:11%">Demand $/kW</th></tr>'
-      : '<tr><th style="width:19%">Month</th><th class="rpt-n" style="width:8%">Days</th><th class="rpt-n" style="width:22%">Billed Therms</th><th class="rpt-n" style="width:22.5%">Total Cost</th><th class="rpt-n" style="width:28.5%">Effective $/Therm</th></tr>';
+      ? '<tr><th style="width:14%">Month</th><th class="rpt-n" style="width:8%;white-space:normal;line-height:1.2">Billing<br>Days</th><th class="rpt-n" style="width:11%">Billed kWh</th><th class="rpt-n" style="width:12%">Billed kW</th><th class="rpt-n" style="width:10.5%">Energy Cost</th><th class="rpt-n" style="width:10.5%">Demand Cost</th><th class="rpt-n" style="width:12%">Total Cost</th><th class="rpt-n" style="width:11%">Energy $/kWh</th><th class="rpt-n" style="width:11%">Demand $/kW</th></tr>'
+      : '<tr><th style="width:19%">Month</th><th class="rpt-n" style="width:11%;white-space:normal;line-height:1.2">Billing<br>Days</th><th class="rpt-n" style="width:20.5%">Billed Therms</th><th class="rpt-n" style="width:22.5%">Total Cost</th><th class="rpt-n" style="width:27%">Effective $/Therm</th></tr>';
     var rowsHtml = '';
     // `sums` MUST have exactly one entry per non-label column, in order (Calc re-audit defect
     // #1). Billed kW's Total cell is the SUM of the 12 monthly billed kW values (2026-09-22
@@ -1540,8 +1596,15 @@ function rptPageWoodlandBills(n, d) {
       }
       sums[6].text = sums[1].sum > 0 && sums[3].sum > 0 ? '$' + (sums[3].sum / sums[1].sum).toFixed(4) : '—';
       sums[7].text = sums[2].sum > 0 && sums[4].sum > 0 ? '$' + (sums[4].sum / sums[2].sum).toFixed(2) : '—';
+      // Average row rate cells (2026-09-22, cold-review fix): average = total $ / total units,
+      // the SAME method as the Total row directly above — for an effective rate the annual
+      // figure and the "average of the monthly rate" are the same number, so the Average row
+      // repeats the Total row's own value rather than leaving these two cells blank.
+      sums[6].avgText = sums[6].text;
+      sums[7].avgText = sums[7].text;
     } else {
       sums[3].text = sums[1].sum > 0 ? '$' + (sums[2].sum / sums[1].sum).toFixed(4) : '—';
+      sums[3].avgText = sums[3].text;
     }
     var totAvg = _rptTotalAvgRow(sums, 'TOTAL (Annual)', bl.rows.length || 1);
     return (
@@ -1557,6 +1620,7 @@ function rptPageWoodlandBills(n, d) {
   var body =
     '<div class="rpt-su">' +
     WD_TEXT.billsIntro(_wdMonthLabel(d.elecBL, 0), _wdMonthLabel(d.elecBL, 11)) +
+    (d.cfg && d.cfg.demandFloorKw > 0 ? ' ' + WD_TEXT.demandFloorNote(d.cfg.demandFloorKw) : '') +
     '</div>' +
     '<h2>Electric — ' +
     (d.elecMeter ? 'Account ' + (d.elecMeter.account || '—') : 'No electric meter') +
@@ -1606,13 +1670,18 @@ function rptPageWoodlandBaseline(n, d) {
     else eqn += ' + ' + rc4.slope.toFixed(4) + ' × CDD';
 
     body +=
-      '<h2>Electric Regression Model (' +
+      '<h2>Electric Use Regression Model (' +
       bl.regrType +
-      ', R² = ' +
-      bl.r2.toFixed(3) +
       ')</h2>' +
       '<div style="font-family:var(--rpt-mono);font-size:11px;background:var(--rpt-code-bg);border:1px solid var(--rpt-code-border);border-radius:3px;padding:5px 8px;margin:2px 0 8px;color:var(--rpt-code-text)">' +
       eqn +
+      '</div>' +
+      '<div class="rpt-su" style="font-size:10px">' +
+      "This equation is fit to the building's own 12 months of billed electric use and weather data (the Predicted kWh vs. Actual kWh columns below show the match). Its R² of " +
+      bl.r2.toFixed(3) +
+      ' means the equation accounts for ' +
+      (bl.r2 * 100).toFixed(1) +
+      '% of the month-to-month change in billed kWh over the baseline period; 1.000 would be a perfect match to every billed month.' +
       '</div>';
 
     var rows = '';
@@ -1677,7 +1746,7 @@ function rptPageWoodlandBaseline(n, d) {
         '</td></tr>';
     });
     body +=
-      '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:14%">Month</th><th class="rpt-n" style="width:6%">Days</th><th class="rpt-n" style="width:8%">HDD</th><th class="rpt-n" style="width:8%">CDD</th><th style="width:38%">Calculation</th><th class="rpt-n" style="width:13%">Predicted kWh</th><th class="rpt-n" style="width:13%">Actual kWh</th></tr></thead><tbody>' +
+      '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:14%">Month</th><th class="rpt-n" style="width:12%;white-space:normal;line-height:1.2">Calendar<br>Days</th><th class="rpt-n" style="width:8%">HDD</th><th class="rpt-n" style="width:8%">CDD</th><th style="width:32%">Calculation</th><th class="rpt-n" style="width:13%">Predicted kWh</th><th class="rpt-n" style="width:13%">Actual kWh</th></tr></thead><tbody>' +
       rows +
       _rptTotalAvgRow(sums, 'TOTAL (Annual)', bl.months.length || 1) +
       '</tbody></table>';
@@ -1709,6 +1778,13 @@ function rptPageWoodlandSummary(n, d) {
     ? rptBuildBaselineDataTable(d.siteBuilding, { project: d.project, reportOptions: null }, { has: d.baselineHas })
     : '';
   body += tbl || '<div class="rpt-su">No baseline month data is available for this building.</div>';
+  if (tbl) {
+    body +=
+      '<div class="rpt-su" style="font-size:10px">' +
+      WD_TEXT.summaryFootnote(d.building.sqft) +
+      (d.cfg && d.cfg.demandFloorKw > 0 ? ' ' + WD_TEXT.demandFloorNote(d.cfg.demandFloorKw) : '') +
+      '</div>';
+  }
   return rptPage(n, 'Baseline Summary', body, {
     data: { project: d.project },
     letterhead: false,
@@ -1879,7 +1955,13 @@ function rptPageWoodlandBASCalc(n, d) {
 
   // ---- Setpoints & Method sheet ----
   var cfg = d.cfg;
-  var body = '<div class="rpt-su">' + WD_TEXT.methodIntro(optA.letter, optA.heatSP, optA.coolSP) + '</div>';
+  var body =
+    '<div class="rpt-su">' +
+    WD_TEXT.basGlossary +
+    '</div>' +
+    '<div class="rpt-su">' +
+    WD_TEXT.methodIntro(optA.letter, optA.heatSP, optA.coolSP) +
+    '</div>';
   if (!zones.length) {
     body += '<div class="rpt-su">' + WD_TEXT.zoneFallback + '</div>';
   } else {
@@ -1934,6 +2016,7 @@ function rptPageWoodlandBASCalc(n, d) {
       '</td></tr>' +
       '</tbody></table>';
   }
+  body += '<h2>Actuator Coverage</h2><div class="rpt-su">' + WD_TEXT.actuatorCoverage(cfg) + '</div>';
   pages.push(
     rptPage(pageNo++, 'BAS Savings Calculation — Setpoints & Method', body, {
       data: { project: d.project },
@@ -1954,6 +2037,7 @@ function rptPageWoodlandBASCalc(n, d) {
       { sum: 0, dec: 2, fmt: 'c' }, // gas $
       { sum: 0, dec: 2 }, // cool kwh
       { sum: 0, dec: 2, fmt: 'c' }, // elec $
+      { sum: 0, dec: 2 }, // demand kW
       { sum: 0, dec: 2, fmt: 'c' }, // demand $
       { sum: 0, dec: 2, fmt: 'c' }, // total $
     ];
@@ -1963,8 +2047,9 @@ function rptPageWoodlandBASCalc(n, d) {
       sums[1].sum += mo.gas$;
       sums[2].sum += optA.kwh[i] || 0;
       sums[3].sum += mo.elec$;
-      sums[4].sum += mo.dem$;
-      sums[5].sum += mo.total$;
+      sums[4].sum += optA.kw[i] || 0;
+      sums[5].sum += mo.dem$;
+      sums[6].sum += mo.total$;
       rows +=
         '<tr><td>' +
         WOODLAND_MO_ABBR[i] +
@@ -1981,6 +2066,8 @@ function rptPageWoodlandBASCalc(n, d) {
         _wdC(mo.elec$) +
         '</td>' +
         '<td class="rpt-n">' +
+        _wdN(optA.kw[i] || 0, 2) +
+        '</td><td class="rpt-n">' +
         _wdC(mo.dem$) +
         '</td><td class="rpt-n" style="font-weight:600">' +
         _wdC(mo.total$) +
@@ -1990,7 +2077,7 @@ function rptPageWoodlandBASCalc(n, d) {
       '<h2 style="margin:4px 0 2px">Per-Month Calculation Grid — Option ' +
       optA.letter +
       '</h2>' +
-      '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:13%">Month (S/W = rate season)</th><th class="rpt-n" style="width:15%">Heat Therms Saved</th><th class="rpt-n" style="width:14%">Gas $ Saved</th><th class="rpt-n" style="width:15%">Cool kWh Saved</th><th class="rpt-n" style="width:15%">Elec Energy $ Saved</th><th class="rpt-n" style="width:14%">Demand $ Saved</th><th class="rpt-n" style="width:14%">Total $ Saved</th></tr></thead><tbody>' +
+      '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:12%">Month (S = Jun–Sep, W = Oct–May)</th><th class="rpt-n" style="width:13%">Heat Therms Saved</th><th class="rpt-n" style="width:12%">Gas $ Saved</th><th class="rpt-n" style="width:13%">Cool kWh Saved</th><th class="rpt-n" style="width:13%">Elec Energy $ Saved</th><th class="rpt-n" style="width:12%">Demand kW Saved</th><th class="rpt-n" style="width:12%">Demand $ Saved</th><th class="rpt-n" style="width:13%">Total $ Saved</th></tr></thead><tbody>' +
       rows +
       _rptTotalAvgRow(sums, 'TOTAL (Annual)', optA.monthly.length || 1) +
       '</tbody></table>' +
@@ -2120,7 +2207,7 @@ function rptPageWoodlandOptions(n, d) {
       jan = o.monthly[0];
     body +=
       '<tr><td colspan="8" style="font-size:10px;font-style:italic;color:var(--rpt-page-text);border-top:none">' +
-      'Show your work — August (peak summer): ' +
+      'Sample calculation — August (peak summer): ' +
       _wdN(o.gas[7], 2) +
       ' Therms × $' +
       R.gasSummer.toFixed(3) +
@@ -2350,6 +2437,10 @@ function rptPageWoodlandCharts(n, d) {
     '<div style="margin:10px 0">' +
     shareChart +
     '</div>' +
+    '</div>' +
+    '<h2>Next Steps</h2>' +
+    '<div class="rpt-su">' +
+    WD_TEXT.nextSteps +
     '</div>';
 
   return rptPage(n, 'Charts — Savings Options Comparison', body, { data: { project: d.project }, letterhead: false });
@@ -2493,7 +2584,7 @@ async function exportWoodlandReportToXlsx(data) {
     ws1.addRow(['Electric']);
     var hRow1 = ws1.addRow([
       'Month',
-      'Days',
+      'Billing Days',
       'Billed kWh',
       'Billed kW',
       'Energy Cost',
@@ -2579,15 +2670,18 @@ async function exportWoodlandReportToXlsx(data) {
       avgF('E', firstDataRow1, lastDataRow1),
       avgF('F', firstDataRow1, lastDataRow1),
       avgF('G', firstDataRow1, lastDataRow1),
-      null,
-      null,
+      // Average = total $ / total units, the SAME method as the Total row directly above
+      // (2026-09-22 cold-review fix) — repeats the Total row's own effective-rate cell rather
+      // than leaving these two cells blank.
+      { formula: 'H' + totR1.number },
+      { formula: 'I' + totR1.number },
     ]);
     styleAvgRow(avgR1);
     ws1.addRow([]);
   }
   if (data.gasBL && data.gasBL.rows.length) {
     ws1.addRow(['Natural Gas']);
-    var hRow2 = ws1.addRow(['Month', 'Days', 'Billed Therms', '', 'Total Cost', 'Eff. $/Therm']);
+    var hRow2 = ws1.addRow(['Month', 'Billing Days', 'Billed Therms', '', 'Total Cost', 'Eff. $/Therm']);
     styleHeaderRow(hRow2);
     var firstDataRow2 = ws1.rowCount + 1;
     data.gasBL.rows.forEach(function (r) {
@@ -2635,7 +2729,7 @@ async function exportWoodlandReportToXlsx(data) {
       avgF('C', firstDataRow2, lastDataRow2),
       null,
       avgF('E', firstDataRow2, lastDataRow2),
-      null,
+      { formula: 'F' + totR2.number },
     ]);
     styleAvgRow(avgR2);
   }
@@ -2669,7 +2763,7 @@ async function exportWoodlandReportToXlsx(data) {
     ws2.addRow(['Regression (' + data.elecBL.regrType + ', R2=' + data.elecBL.r2.toFixed(3) + ')']);
     ws2.addRow([eqnParts.join(' ')]);
     ws2.addRow([]);
-    var hRow3 = ws2.addRow(['Month', 'Days', 'HDD', 'CDD', 'Calculation', 'Predicted kWh', 'Actual kWh']);
+    var hRow3 = ws2.addRow(['Month', 'Calendar Days', 'HDD', 'CDD', 'Calculation', 'Predicted kWh', 'Actual kWh']);
     styleHeaderRow(hRow3);
     var firstDataRow3 = ws2.rowCount + 1;
     data.elecBL.months.forEach(function (ym) {
@@ -2761,7 +2855,7 @@ async function exportWoodlandReportToXlsx(data) {
       'kW Cost',
       'Energy Cost',
       'Electric Cost',
-      '$/kWh',
+      'Energy $/kWh',
       'Therms',
       'Gas Cost',
       '$/Therm',
@@ -2816,9 +2910,16 @@ async function exportWoodlandReportToXlsx(data) {
       sumF('E', firstDataRow4, lastDataRow4),
       sumF('F', firstDataRow4, lastDataRow4),
       sumF('G', firstDataRow4, lastDataRow4),
-      sumF('H', firstDataRow4, lastDataRow4),
+      sumF('H', firstDataRow4, lastDataRow4), // Energy Cost — the weather columns (B/C) shift this
+      // table's column letters +2 vs. origin/main's pre-degree-days scheme; H here IS main's old
+      // "F" (Energy Cost sum), not its old "H" ($/kWh formula) — see the monthly rows above,
+      // which already compute $/kWh as H/D (energy-only) at column J, matching origin/main's
+      // 2026-09-22 fix (energy cost ÷ kWh, not electric [energy+demand] cost ÷ kWh).
       sumF('I', firstDataRow4, lastDataRow4),
-      { formula: 'IF(D' + (lastDataRow4 + 1) + '>0,I' + (lastDataRow4 + 1) + '/D' + (lastDataRow4 + 1) + ',0)' },
+      // Energy-only $/kWh (2026-09-22 fix, translated to this table's +2-shifted columns): H is
+      // Energy Cost, matching each monthly row's own H/D formula above — NOT I (Electric Cost,
+      // energy + demand), which is the separately-labeled "Blended Electric Rate" stat below.
+      { formula: 'IF(D' + (lastDataRow4 + 1) + '>0,H' + (lastDataRow4 + 1) + '/D' + (lastDataRow4 + 1) + ',0)' },
       sumF('K', firstDataRow4, lastDataRow4),
       sumF('L', firstDataRow4, lastDataRow4),
       { formula: 'IF(K' + (lastDataRow4 + 1) + '>0,L' + (lastDataRow4 + 1) + '/K' + (lastDataRow4 + 1) + ',0)' },
@@ -2848,9 +2949,17 @@ async function exportWoodlandReportToXlsx(data) {
     ]);
     ws3.addRow([]);
     ws3.addRow(['Square Feet', sqft]);
+    // Letters translated to this table's +2-shifted (HDD/CDD) column scheme — see the totR4
+    // comment above for the mapping. J is the Annual row's own energy-only $/kWh formula cell
+    // (origin/main's 2026-09-23 fix); I/D below recomputes the separately-labeled blended
+    // (energy + demand) rate directly, matching origin/main's new stat row.
     ws3.addRow(['Electric Use / SF (kWh)', sqft > 0 ? { formula: 'D' + A + '/' + sqft } : null]);
     ws3.addRow(['Utility Cost / SF', sqft > 0 ? { formula: 'N' + A + '/' + sqft } : null]);
-    ws3.addRow(['Avg Electric Rate ($/kWh)', { formula: 'J' + A }]);
+    ws3.addRow(['Energy $/kWh (energy charges only)', { formula: 'J' + A }]);
+    ws3.addRow([
+      'Blended Electric Rate ($/kWh, energy + demand)',
+      { formula: 'IF(D' + A + '>0,I' + A + '/D' + A + ',0)' },
+    ]);
     ws3.addRow(['Avg Gas Rate ($/Therm)', { formula: 'M' + A }]);
     var euiRow = ws3.addRow([
       'Site EUI (kBtu/SF)',
@@ -2858,6 +2967,11 @@ async function exportWoodlandReportToXlsx(data) {
     ]);
     styleTotalRow(euiRow);
     ws3.addRow(['Total Annual Utility Cost', { formula: 'N' + A }]);
+    ws3.addRow([]);
+    ws3.addRow([
+      WD_TEXT.summaryFootnote(sqft) +
+        (data.cfg && data.cfg.demandFloorKw > 0 ? ' ' + WD_TEXT.demandFloorNote(data.cfg.demandFloorKw) : ''),
+    ]);
   } else {
     ws3.addRow(['No baseline month data is available for this building.']);
   }
@@ -2937,6 +3051,8 @@ async function exportWoodlandReportToXlsx(data) {
     { width: 14 },
   ];
   titleRow(ws5, 'BAS Savings Calculation — Setpoints, Method & Detail — ' + data.building.name);
+  ws5.addRow([WD_TEXT.basGlossary]);
+  ws5.addRow([]);
   var optA = data.options[0];
   var zones = data.zones || [];
   if (zones.length) {
@@ -2978,12 +3094,15 @@ async function exportWoodlandReportToXlsx(data) {
     ws5.addRow(['Electric energy ($/kWh)', RA.elecEnergySummer, RA.elecEnergyWinter]);
     ws5.addRow(['Electric demand ($/kW)', RA.demandSummer, RA.demandWinter]);
     ws5.addRow([]);
+    ws5.addRow([WD_TEXT.actuatorCoverage(data.cfg)]);
+    ws5.addRow([]);
     var hRow5 = ws5.addRow([
       'Month',
       'Heat Therms Saved',
       'Gas $ Saved',
       'Cool kWh Saved',
       'Elec Energy $ Saved',
+      'Demand kW Saved',
       'Demand $ Saved',
       'Total $ Saved',
     ]);
@@ -2991,10 +3110,19 @@ async function exportWoodlandReportToXlsx(data) {
     var firstDataRow5 = ws5.rowCount + 1;
     for (var i = 0; i < 12; i++) {
       var mo = optA.monthly[i];
-      ws5.addRow([WOODLAND_MO_ABBR[i], optA.gas[i] || 0, mo.gas$, optA.kwh[i] || 0, mo.elec$, mo.dem$, mo.total$]);
+      ws5.addRow([
+        WOODLAND_MO_ABBR[i],
+        optA.gas[i] || 0,
+        mo.gas$,
+        optA.kwh[i] || 0,
+        mo.elec$,
+        optA.kw[i] || 0,
+        mo.dem$,
+        mo.total$,
+      ]);
     }
     var lastDataRow5 = ws5.rowCount;
-    var cols5 = ['B', 'C', 'D', 'E', 'F', 'G'];
+    var cols5 = ['B', 'C', 'D', 'E', 'F', 'G', 'H'];
     var totR5 = ws5.addRow([
       'TOTAL (Annual)',
       ...cols5.map(function (c) {
@@ -3010,7 +3138,7 @@ async function exportWoodlandReportToXlsx(data) {
     ]);
     styleAvgRow(avgR5);
     ws5.addRow([]);
-    var annRow = ws5.addRow(['Annual $ saved', { formula: 'G' + totR5.number }]);
+    var annRow = ws5.addRow(['Annual $ saved', { formula: 'H' + totR5.number }]);
     ws5.addRow([WD_TEXT.basis(data.cfg)]);
     var clientRow = ws5.addRow([WD_TEXT.clientShareLabel(data.cfg), optA.clientShare$]);
     var cscRow = ws5.addRow([WD_TEXT.cscShareLabel(data.cfg), optA.cscShare$]);
@@ -3034,6 +3162,8 @@ async function exportWoodlandReportToXlsx(data) {
     { width: 14 }, // CSC Share
   ];
   titleRow(ws6, 'Savings Options Comparison — A / B / C — ' + data.building.name);
+  ws6.addRow([WD_TEXT.optionsIntro(data.cfg)]);
+  ws6.addRow([]);
   var hRow6 = ws6.addRow([
     'Option',
     'Occ SP',
@@ -3116,6 +3246,8 @@ async function exportWoodlandReportToXlsx(data) {
   data.options.forEach(function (o) {
     ws7.addRow(['Option ' + o.letter, o.annualGas$, o.annualElec$, o.annualDem$, o.clientShare$, o.cscShare$]);
   });
+  ws7.addRow([]);
+  ws7.addRow([WD_TEXT.nextSteps]);
   ws7.addRow([]);
   var chartAnchorRow = ws7.rowCount + 2;
   var chartsHost = document.getElementById('woodlandChartsPage');

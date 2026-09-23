@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.22.878'; // Gas rate prefill from bills and kW formatting
+  var CH_VERSION = 'v2026.09.23.1'; // HVAC Load Estimate: autocalculate, Save, Excel/Word/PDF export, setpoint savings
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
