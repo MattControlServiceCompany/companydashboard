@@ -210,24 +210,16 @@ function buildMoMap(m, blRows, bills, incl) {
       };
     } else if (isGas) {
       // Single source of truth (2026-09-22 rewrite): `therms` is whole-bill BILLED usage —
-      // same convention as electric `kwh` above (whole bill assigned to ONE month by end date,
-      // with the existing therms/naturalGasTherms/naturalGasMMbtu/naturalGasCCF fallback chain
-      // so CSV-imported bills aren't zeroed). `thermsPredicted` (day-prorated) is kept only for
+      // same convention as electric `kwh` above (whole bill assigned to ONE month by end date),
+      // read through the canonical resolveGasUsageTherms() (computations/savings.js) chain so
+      // CSV-imported bills aren't zeroed. `thermsPredicted` (day-prorated) is kept only for
       // the Normalized/weather view — never a usage source for the baseline number.
       const thermsPredicted = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
       const therms =
         entries.reduce((s, e) => {
           const wholeBillSum = bills
             .filter((bl) => ((bl.end || bl.start || '') + '').slice(0, 7) === e.r.ym)
-            .reduce(
-              (ss, bl) =>
-                ss +
-                (parseFloat(bl.therms) ||
-                  parseFloat(bl.naturalGasTherms) ||
-                  (parseFloat(bl.naturalGasMMbtu) || 0) * 10 ||
-                  0),
-              0,
-            );
+            .reduce((ss, bl) => ss + resolveGasUsageTherms(bl), 0);
           return s + wholeBillSum;
         }, 0) / cnt;
       // ONE gas cost field (2026-09-22): full billed totalCost (whole bill, invoice total),
@@ -561,25 +553,16 @@ function getNormRows(m, bills, incl, weatherByYm) {
     bills.forEach((row) => {
       if (!row.start || !row.end) return;
       const totalDays = Math.max(1, parseInt(calcDays(row.start, row.end, incl)) || 1);
-      // Gas usage field chain (2026-09-22): `therms` is the canonical field, but bills saved by
-      // some import paths carry the value only in the extractor's own `naturalGasTherms` /
-      // `naturalGasMMbtu` (1 MMBtu = 10 Therms — same conversion app/csv-import.js applies).
-      // Reading only `therms` silently zeroed those months' usage in every baseline consumer
-      // (regression fit, buildMoMap, EUI). Same chain the Baseline & Savings report's raw
-      // bill page uses, so the site path and the report page agree on the same bill.
+      // Gas usage field chain (2026-09-22): calls the canonical resolveGasUsageTherms()
+      // (computations/savings.js) — canonical row.therms is only populated by manual edits, so
+      // CSV-imported gas bills (naturalGasTherms/naturalGasMMbtu/naturalGasCCF) would read as 0
+      // here without it, zeroing the Normalized tab, baseline, and Site EUI. Same helper the
+      // Baseline & Savings report's raw bill page uses, so the site path and the report page
+      // agree on the same bill.
       const usage = isElec
         ? parseFloat(row.kwh) || 0
         : isGas
-          ? // Bug 2026-09-22: mirror computations/savings.js resolveGasUsageTherms()
-            // fallback chain — canonical row.therms is only populated by manual edits,
-            // so CSV-imported gas bills (naturalGasTherms/naturalGasMMbtu/naturalGasCCF)
-            // read as 0 here, zeroing the Normalized tab, baseline, and Site EUI.
-            parseFloat(row.therms) ||
-            parseFloat(row.naturalGasTherms) ||
-            parseFloat(row.naturalGasMMbtu) * 10 ||
-            parseFloat(row.naturalGasCCF) * 1.037 ||
-            parseFloat(row.usage) ||
-            0
+          ? resolveGasUsageTherms(row)
           : isSewer
             ? parseFloat(row.sewerUsage) || parseFloat(row.waterUsage) || 0
             : parseFloat(row.waterUsage) || 0;

@@ -1831,11 +1831,7 @@ function _updateCompactHdrBaseline(projId) {
       (m.bills || []).forEach((bill) => {
         totalCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
         if (m.commodity === 'Gas') {
-          totalTherms +=
-            parseFloat(bill.therms) ||
-            parseFloat(bill.naturalGasTherms) ||
-            (parseFloat(bill.naturalGasMMbtu) || 0) * 10 ||
-            0;
+          totalTherms += resolveGasUsageTherms(bill);
         } else if (m.commodity === 'Propane') {
           totalPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
         } else {
@@ -2038,18 +2034,10 @@ function initDashboardTab(projId) {
         });
         if (m.commodity === 'Gas') {
           blBills.forEach((bill) => {
-            blTherms +=
-              parseFloat(bill.therms) ||
-              parseFloat(bill.naturalGasTherms) ||
-              (parseFloat(bill.naturalGasMMbtu) || 0) * 10 ||
-              0;
+            blTherms += resolveGasUsageTherms(bill);
           });
           _curBills.forEach((bill) => {
-            curTherms +=
-              parseFloat(bill.therms) ||
-              parseFloat(bill.naturalGasTherms) ||
-              (parseFloat(bill.naturalGasMMbtu) || 0) * 10 ||
-              0;
+            curTherms += resolveGasUsageTherms(bill);
           });
         } else if (m.commodity === 'Propane') {
           blBills.forEach((bill) => {

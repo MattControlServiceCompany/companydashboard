@@ -626,6 +626,9 @@ if (target) {
   }
 } else console.log('\n(no building with A/B/C option measures in this backup — sections 1-7/10 not applicable)');
 
+// Hoisted so section 11's kW-comma-formatting check can reuse section 8's rendered Page 3 table.
+let ctx8;
+
 // ─── 8. SYNTHETIC building, complete inputs → guard passes, arrays == hand recomputation ───
 console.log(
   '\n--- 8. Synthetic building: Save & Compute writes A/B/C; quantities == hand recomputation; report clean ---',
@@ -761,7 +764,7 @@ function handCompute(cfg) {
 }
 {
   const { proj, ud } = synthProject(true);
-  const ctx8 = buildCtx({ en_projects: projects.concat([proj]), ['en_utility_' + SID]: ud });
+  ctx8 = buildCtx({ en_projects: projects.concat([proj]), ['en_utility_' + SID]: ud });
   run(ctx8, 'udSelProjId = ' + SID + '; udSelBldgId = ' + JSON.stringify(SBID) + ';');
   // Before compute: the guard must name the un-computed options (cfg saved, measures absent).
   const pre = run(ctx8, 'wdCheckReportInputs(' + SID + ',' + JSON.stringify(SBID) + ')');
@@ -943,6 +946,116 @@ console.log('\n--- 9. Synthetic building: missing inputs block the report and ar
     chk3.missing.some((m) => /Gas meter with a 12-month baseline/.test(m.label)),
     'gas baseline shorter than 12 months is named',
   );
+}
+
+// ─── 11. Regression: gas prefill non-zero on naturalGasTherms-only bills; kW comma formatting ──
+// (2026-09-22) Root cause: calcBldgDefaultRates() (app/energy-savings.js, feeds
+// report-engine-woodland.js's Inputs-dialog prefill) read bill.therms directly. Woodland's own
+// CSV-imported gas bills carry the value ONLY in naturalGasTherms (bill.therms is absent), so the
+// prefill silently computed $0.00/Therm for both seasons. Fixed by routing every gas-usage read
+// through the single canonical resolveGasUsageTherms() (computations/savings.js).
+console.log('\n--- 11. Gas $/Therm prefill non-zero on naturalGasTherms-only bills; Annual kW has commas ---');
+{
+  const GID = 990000003;
+  const GBID = 'bsynthgas1';
+  const SUMMER_THERMS = [0, 0, 0, 0, 0, 120, 140, 130, 110, 0, 0, 0]; // Jun-Sep only
+  const WINTER_THERMS = [900, 800, 700, 400, 200, 0, 0, 0, 0, 300, 600, 850];
+  const gBills = [];
+  for (let i = 0; i < 12; i++) {
+    const ym = '2025-' + String(i + 1).padStart(2, '0');
+    const last = new Date(2025, i + 1, 0).getDate();
+    const th = SUMMER_THERMS[i] + WINTER_THERMS[i];
+    gBills.push({
+      id: 'ngt' + i,
+      start: ym + '-01',
+      end: ym + '-' + last,
+      // Deliberately NO `therms` field — mirrors Woodland's real CSV-imported gas bills, which
+      // store the value only in naturalGasTherms (report-engine-woodland.js / calcBldgDefaultRates
+      // bug this section regression-guards).
+      naturalGasTherms: th,
+      totalCost: th * 0.6,
+      numberOfDays: last,
+    });
+  }
+  const gasProj = {
+    id: GID,
+    name: 'Synthetic Gas-Only Fixture',
+    client: 'Synthetic Client',
+    buildings: [],
+    savingsData: { measures: [], blRates: {} },
+  };
+  const gasUd = {
+    buildings: [
+      {
+        id: GBID,
+        name: 'Synthetic Gas Fixture Building',
+        addr: '1 Test St',
+        sqft: 20000,
+        zip: '',
+        meters: [
+          {
+            id: 'sm-ngt',
+            commodity: 'Gas',
+            account: 'TEST-NGT',
+            inclusive: true,
+            baselineInclude: true,
+            billUnit: 'Therms',
+            baseline: { months: MONTHS.slice() },
+            bills: gBills,
+          },
+        ],
+      },
+    ],
+  };
+  const ctx11 = buildCtx({ en_projects: projects.concat([gasProj]), ['en_utility_' + GID]: gasUd });
+  const rates11 = run(ctx11, 'calcBldgDefaultRates(' + GID + ',' + JSON.stringify(GBID) + ')');
+  assert(
+    rates11.gasSummer > 0,
+    'calcBldgDefaultRates: gasSummer prefill is non-zero on naturalGasTherms-only bills (' + rates11.gasSummer + ')',
+  );
+  assert(
+    rates11.gasWinter > 0,
+    'calcBldgDefaultRates: gasWinter prefill is non-zero on naturalGasTherms-only bills (' + rates11.gasWinter + ')',
+  );
+  const expSummerRate = SUMMER_THERMS.reduce((s, v) => s + v * 0.6, 0) / SUMMER_THERMS.reduce((s, v) => s + v, 0);
+  const expWinterRate = WINTER_THERMS.reduce((s, v) => s + v * 0.6, 0) / WINTER_THERMS.reduce((s, v) => s + v, 0);
+  assert(
+    near(rates11.gasSummer, expSummerRate, 0.001),
+    'gasSummer == cost/therms computed from the bills own naturalGasTherms (' +
+      rates11.gasSummer +
+      ' vs ' +
+      expSummerRate.toFixed(4) +
+      ')',
+  );
+  assert(
+    near(rates11.gasWinter, expWinterRate, 0.001),
+    'gasWinter == cost/therms computed from the bills own naturalGasTherms (' +
+      rates11.gasWinter +
+      ' vs ' +
+      expWinterRate.toFixed(4) +
+      ')',
+  );
+  run(ctx11, 'udSelProjId = ' + GID + ';');
+  const cfg11 = run(ctx11, '_wdDefaultCfg(' + GID + ',' + JSON.stringify(GBID) + ')');
+  assert(
+    cfg11.rates.gasSummer > 0 && cfg11.rates.gasWinter > 0,
+    'Inputs dialog prefill (_wdDefaultCfg): gas $/Therm summer/winter both non-zero (' +
+      cfg11.rates.gasSummer +
+      ', ' +
+      cfg11.rates.gasWinter +
+      ')',
+  );
+
+  // kW comma formatting — reuse section 8's synthetic building/report (Annual Metered/Billed kW
+  // sum to 3,470.0, which must render WITH a thousands separator, matching every other cell in
+  // the Building Baseline Data table (app/report-engine.js rptBuildBaselineDataTable Annual row)).
+  const html8Again = ctx8 && ctx8.__blTableCalls.length ? ctx8.__blTableCalls[ctx8.__blTableCalls.length - 1].html : '';
+  assert(html8Again.length > 0, 'Page 3 Building Baseline Data table was captured for the kW-formatting check');
+  assert(
+    /3,470\.0/.test(html8Again),
+    'Annual row Metered kW / Billed kW render WITH thousands separators ("3,470.0"), not "3470.0"',
+  );
+  assert(!/[^,\d]3470\.0\b/.test(html8Again), 'Annual row kW never renders the un-comma\'d "3470.0" form');
 }
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);

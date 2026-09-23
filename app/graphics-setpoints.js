@@ -562,7 +562,7 @@ function egfxRefresh(projId) {
             bh.kwCount[mi]++;
           }
           if (isGas) {
-            const _gasVal = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+            const _gasVal = resolveGasUsageTherms(bill);
             blGas[mi] += _gasVal;
             bh.gasSum[mi] += _gasVal;
             bh.gasCount[mi]++;
@@ -616,7 +616,7 @@ function egfxRefresh(projId) {
             byd.elecCost[mi] += costVal;
           }
           if (isGas) {
-            const gasVal = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+            const gasVal = resolveGasUsageTherms(bill);
             const gasCostVal = _gasCommodityCost(bill);
             yearData[yr].gas[mi] += gasVal;
             yearData[yr].cost[mi] += gasCostVal;

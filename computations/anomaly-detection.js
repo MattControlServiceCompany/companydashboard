@@ -207,7 +207,7 @@ function detectRateChanges(m, bills, incl) {
       usage = parseFloat(b.kwh || 0);
       cost = parseFloat(b.totalCost || 0);
     } else if (isGas) {
-      usage = parseFloat(b.therms || 0);
+      usage = resolveGasUsageTherms(b);
       cost = parseFloat(b.gasCharge || b.thermCost || b.totalCost || b.cost || 0);
     } else if (isPropane) {
       usage = parseFloat(b.gallonsDelivered || b.kwh || 0);

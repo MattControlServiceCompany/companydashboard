@@ -2445,12 +2445,14 @@ function getProjectRates(projId) {
         }
 
         if (isGas) {
-          // Gas bills store total cost in totalCost; therms in bill.therms, bill.units, or bill.kwh (generic field)
+          // Gas bills store total cost in totalCost; therms via resolveGasUsageTherms() (therms/
+          // naturalGasTherms/naturalGasMMbtu/naturalGasCCF/usage chain), with bill.units/bill.kwh
+          // as a last-resort generic-field fallback for older records that used neither.
           const _gasTotalCost = parseFloat(bill.totalCost) || 0;
           const _gasLineCost =
             (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.otherCost) || 0) + (parseFloat(bill.taxCost) || 0);
           const cost = _gasTotalCost > 0 ? _gasTotalCost : _gasLineCost;
-          const therms = parseFloat(bill.therms || bill.units || bill.kwh) || 0;
+          const therms = resolveGasUsageTherms(bill) || parseFloat(bill.units) || parseFloat(bill.kwh) || 0;
           if (cost > 0 && therms > 0) {
             gasCost += cost;
             gasTherms += therms;

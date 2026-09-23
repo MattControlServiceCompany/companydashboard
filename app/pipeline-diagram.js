@@ -387,7 +387,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
               const usage = isElec
                 ? parseFloat(b.kwh) || 0
                 : isGas
-                  ? parseFloat(b.therms) || 0
+                  ? resolveGasUsageTherms(b)
                   : parseFloat(b.gallons) || 0;
               const cost = parseFloat(b.totalCost) || 0;
               return s + (usage > 0 ? cost / usage : 0);
@@ -396,7 +396,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
               const usage = isElec
                 ? parseFloat(b.kwh) || 0
                 : isGas
-                  ? parseFloat(b.therms) || 0
+                  ? resolveGasUsageTherms(b)
                   : parseFloat(b.gallons) || 0;
               return usage > 0;
             }).length
