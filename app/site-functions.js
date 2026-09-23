@@ -1742,6 +1742,39 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.4',
+    date: '2026-09-23',
+    title: 'BAS Savings Calc: real weather data',
+    items: [
+      {
+        type: 'fix',
+        text: 'BAS Savings Calc (Energy Savings Measures, Calc Templates): the Location & Weather Data section now uses the same real Temperature Data and Humidity Data from the BAS Savings Calc Excel template that the workbook itself uses, instead of a synthetic weather generator that never reached hot-climate temperatures above 82.5F and produced no humidity data at all. Also fixes a latent-load unit mismatch (humidity data is in grains of moisture, not a ratio) and a calibration-factor double-count in the cooling/heating savings totals.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.3',
+    date: '2026-09-23',
+    title: 'Baseline & BAS Savings Report: Facilities kW cost breakout',
+    items: [
+      {
+        type: 'feature',
+        text: "Baseline & BAS Savings Report and its Excel export: Facilities kW (the utility's 12-month rolling-peak demand ratchet) is now its own usage column, separate from Billed kW. The Annual Electric Cost Reconciliation footnote breaks the electric total into Energy + Billed kW + Facilities kW + Other Charges so every dollar in the total is accounted for.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.2',
+    date: '2026-09-23',
+    title: 'Setpoint and schedule export',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix and BAS Savings Calc: new Setpoint & Schedule export button downloads an .xlsx with the existing and proposed heating/cooling setpoints and schedule for every piece of equipment in a building, ready to hand to a BAS technician.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.1',
     date: '2026-09-23',
     title: 'HVAC Load Estimate: autocalculate, Save, and exports',

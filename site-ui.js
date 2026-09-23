@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.1'; // HVAC Load Estimate: autocalculate, Save, Excel/Word/PDF export, setpoint savings
+  var CH_VERSION = 'v2026.09.23.4'; // BAS Savings Calc: real Excel weather data (Temperature/Humidity Data sheets) replaces synthetic weather generation
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
