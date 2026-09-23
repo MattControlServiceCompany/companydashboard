@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.7'; // Equipment Matrix: Import Effective Schedules CSV attaches existing occupied schedules to matching rows and fills the Setpoint & Schedule export
+  var CH_VERSION = 'v2026.09.23.8'; // Baseline & BAS Savings Report: Building Baseline Data table adds Month/Year labels and Heating/Cooling Degree Days columns, no abbreviated headers
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

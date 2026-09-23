@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.8',
+    date: '2026-09-23',
+    title: 'Baseline & BAS Savings Report: month, year, and degree days on the Building Baseline Data table',
+    items: [
+      {
+        type: 'feature',
+        text: 'Baseline & BAS Savings Report page 3 (Building Baseline Data table): each row now shows the month AND year (e.g. "Jan 2026"), and 2 new columns, Heating Degree Days and Cooling Degree Days, read from the same weather data as the rest of the report, with a count of how many of the 12 baseline months have degree-day coverage. New Baseline Start, Baseline End, and Baseline Length stats above the table.',
+      },
+      {
+        type: 'fix',
+        text: 'Table and column headers spelled out in full ("Metered" and "Electric", not "Meter" and "Elec") with no abbreviations, and re-measured column widths so every header fits with zero text overflow at the dense 12px font floor.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.7',
     date: '2026-09-23',
     title: 'Equipment Matrix: Import Effective Schedules CSV',
