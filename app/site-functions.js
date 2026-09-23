@@ -1742,13 +1742,24 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.22.879',
+    v: 'v2026.09.22.880',
     date: '2026-09-22',
     title: 'BAS Savings Calc autofill fix',
     items: [
       {
         type: 'fix',
         text: 'Energy Savings, BAS Savings Calc: Building SqFt, Heating Source, and Existing Conditions setpoints now autofill from that building’s own records every time the calc opens, instead of only on the very first open.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.22.879',
+    date: '2026-09-22',
+    title: 'Utility Data > Project Baseline: all-buildings table',
+    items: [
+      {
+        type: 'feature',
+        text: "Utility Data > Project Baseline: new All Buildings table lists every building's baseline (kWh, kW total, Therms, total cost, EUI), including buildings not included in savings, with an All Buildings total and an Included in Savings total.",
       },
     ],
   },
