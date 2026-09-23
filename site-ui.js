@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.22.878'; // Gas rate prefill from bills and kW formatting
+  var CH_VERSION = 'v2026.09.22.879'; // Project Baseline all-buildings table
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

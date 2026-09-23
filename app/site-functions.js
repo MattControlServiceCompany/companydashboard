@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.879',
+    date: '2026-09-22',
+    title: 'Utility Data > Project Baseline: all-buildings table',
+    items: [
+      {
+        type: 'feature',
+        text: "Utility Data > Project Baseline: new All Buildings table lists every building's baseline (kWh, kW total, Therms, total cost, EUI), including buildings not included in savings, with an All Buildings total and an Included in Savings total.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.878',
     date: '2026-09-22',
     title: 'Gas rate prefill and kW formatting',
