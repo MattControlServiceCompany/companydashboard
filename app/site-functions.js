@@ -1742,7 +1742,7 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.23.8',
+    v: 'v2026.09.23.9',
     date: '2026-09-23',
     title: 'Baseline & BAS Savings Report: month, year, and degree days on the Building Baseline Data table',
     items: [
@@ -1753,6 +1753,21 @@ var RELEASE_NOTES = [
       {
         type: 'fix',
         text: 'Table and column headers spelled out in full ("Metered" and "Electric", not "Meter" and "Elec") with no abbreviations, and re-measured column widths so every header fits with zero text overflow at the dense 12px font floor.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.8',
+    date: '2026-09-23',
+    title: 'Utility Data: Facilities kW fix for CSV-imported electric bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'CSV bill import for Electric meters (Utility Data tab) now fills in the Facilities kW quantity when a raw bill CSV leaves that column blank — computed from the meter’s own billed-demand history (12-month rolling peak), never a guessed value. Fixes Facilities kW and Facilities kW Cost showing blank or $0 on the Baseline Data table, Meter Data table, and the Baseline & BAS Savings Report after importing bills from CSV.',
+      },
+      {
+        type: 'fix',
+        text: 'CSV import now keeps the Facilities Charge dollar value in sync between its two field names (facilitiesCharge and facKWCost) so Facilities kW Cost always shows the real dollar figure regardless of which name the importing code path used, instead of only the minority of readers that check both names.',
       },
     ],
   },

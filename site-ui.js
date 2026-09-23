@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.8'; // Baseline & BAS Savings Report: Building Baseline Data table adds Month/Year labels and Heating/Cooling Degree Days columns, no abbreviated headers
+  var CH_VERSION = 'v2026.09.23.9'; // Baseline & BAS Savings Report: Building Baseline Data table adds Month/Year labels and Heating/Cooling Degree Days columns, no abbreviated headers
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

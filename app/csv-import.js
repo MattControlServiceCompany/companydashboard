@@ -386,6 +386,22 @@ function parseBillCsv(text, fname) {
       }
     });
 
+    // Sync facKWCost <-> facilitiesCharge (2026-09-23): BILL_SCHEMA.Electric documents
+    // 'facilitiesCharge' as the modern key with 'facKWCost' as its legacy fallbackKey, but the
+    // majority of the app's cost math (buildMoMap in computations/normalization.js,
+    // report-engine-woodland.js, report-engine.js, lib/perf-table.js, app/graphics-setpoints.js,
+    // app/core.js — grepped 2026-09-23) reads bill.facKWCost directly with no fallback. A CSV
+    // whose Facilities Charge $ column is named exactly "facilitiesCharge" (the schema key —
+    // e.g. the app's own CSV export re-imported) only lands in row.facilitiesCharge via the
+    // schema-exact pass above, leaving row.facKWCost null — every one of those direct readers
+    // then computes Facilities kW Cost as $0 even though the dollar value imported fine under
+    // the other name. Keep both fields in sync so every reader sees the real value regardless
+    // of which field name it happens to check.
+    if (isElec) {
+      if (row.facKWCost == null && row.facilitiesCharge != null) row.facKWCost = row.facilitiesCharge;
+      else if (row.facilitiesCharge == null && row.facKWCost != null) row.facilitiesCharge = row.facKWCost;
+    }
+
     // Sync gas usage to canonical therms (Fix [therms-unit-2026-06-22] in saveBillRow(),
     // mirrored here) so CSV-imported gas bills populate row.therms — the field
     // computations/savings.js reads for measure-savings — not just naturalGasTherms/CCF.
@@ -579,6 +595,17 @@ function importBillCsvRows() {
   });
 
   m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  // Facilities kW backfill (2026-09-23): CSV bill exports rarely print a distinct "Facilities
+  // kW" quantity — only the Facilities Charge $ — so a plain CSV import leaves facKW blank on
+  // every row (parseBillCsv above sets it to whatever the CSV had, which is null when the
+  // column is empty). Unlike the PDF/OCR path (bill-analysis.js), CSV rows have no rate-table
+  // to derive a quantity from, so without this pass Facilities kW and Facilities kW Cost stay
+  // blank/$0 everywhere downstream (Baseline Data, Bills, Meter Data, the Baseline & BAS
+  // Savings Report, and every seasonal $/kW rate that adds facKWCost to billed-kW cost) even
+  // though the bill's own facilitiesCharge $ imported fine. _backfillCsvFacilitiesKW fills only
+  // the missing quantity, computed from this meter's own billed/demand kW history — never a
+  // fabricated constant — and never overwrites a real facKW value already on the row.
+  _backfillCsvFacilitiesKW(m);
   // Run validation on all newly-imported/updated bills so _flags are persisted immediately
   if (typeof runBillValidation === 'function') {
     _csvImportRows.forEach((r) => {
@@ -602,6 +629,33 @@ function importBillCsvRows() {
     'Added ' + added + ' new billing period' + (added !== 1 ? 's' : '') + ' to ' + m.commodity + ' meter',
     '📥',
   );
+}
+
+// Facilities kW (12-month rolling-peak demand ratchet) backfill for CSV-imported Electric
+// bills — see call site in importBillCsvRows for why this exists. Fills bill.facKW, in place,
+// only where it is currently null/blank, with the max of billedKW (or demandKW as a fallback)
+// across this meter's own bills in the trailing 12 months up to and including that bill's own
+// start date — the same "rolling peak, never a sum" definition documented throughout
+// report-engine-woodland.js and app/utility-data.js. This is a floor, not a guess: a real
+// historical peak from before the earliest imported bill can be higher than what this window
+// can see, so an early month may still under-report until an actual bill/PDF supplies the true
+// value — but it is never fabricated and it is always at least the bill's own billed demand.
+function _backfillCsvFacilitiesKW(m) {
+  if (!m || m.commodity !== 'Electric' || !m.bills || !m.bills.length) return;
+  const pf = (v) => parseFloat(v) || 0;
+  const sorted = m.bills.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  sorted.forEach((bill, i) => {
+    if (pf(bill.facKW) > 0) return; // real value already present (CSV or prior PDF) — never overwrite
+    const windowStart = _parseISO(bill.start);
+    windowStart.setFullYear(windowStart.getFullYear() - 1);
+    let peak = 0;
+    for (let j = 0; j <= i; j++) {
+      const cand = sorted[j];
+      if (_parseISO(cand.start) < windowStart) continue;
+      peak = Math.max(peak, pf(cand.billedKW) || pf(cand.demandKW));
+    }
+    if (peak > 0) bill.facKW = peak;
+  });
 }
 
 const _CHARGE_QTY_PAIRS = {
