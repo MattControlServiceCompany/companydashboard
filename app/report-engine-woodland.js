@@ -2724,7 +2724,9 @@ async function exportWoodlandReportToXlsx(data) {
   // ---- Sheet 3: Baseline Summary (mirror of the site's Building Baseline Data table) ----
   var ws3 = wb.addWorksheet('Page 3 - Summary');
   ws3.columns = [
-    { width: 10 },
+    { width: 12 }, // Month — now "Jan 2024" (widened 2026-09-22, was 10)
+    { width: 8 }, // HDD (2026-09-22)
+    { width: 8 }, // CDD (2026-09-22)
     { width: 12 },
     { width: 11 },
     { width: 11 },
@@ -2740,9 +2742,19 @@ async function exportWoodlandReportToXlsx(data) {
   titleRow(ws3, 'Baseline Summary (Building Baseline Data) — ' + data.building.name);
   var sbm = (data.siteBuilding && data.siteBuilding.baselineMaps) || { elecByMo: {}, gasByMo: {} };
   var sqft = data.building.sqft || 0;
+  // Baseline calendar year per month (2026-09-22) — same b.blMonths convention as
+  // rptBuildBaselineDataTable (app/report-engine.js): sbm itself only keys by 0-11 month index.
+  var _blMonths3 = ((data.siteBuilding && data.siteBuilding.blMonths) || []).slice().sort();
+  var _moYear3 = {};
+  _blMonths3.forEach(function (ym) {
+    var _mi3 = parseInt(ym.split('-')[1], 10) - 1;
+    if (_moYear3[_mi3] == null) _moYear3[_mi3] = ym.split('-')[0];
+  });
   if (Object.keys(sbm.elecByMo || {}).length || Object.keys(sbm.gasByMo || {}).length) {
     var hRow4 = ws3.addRow([
       'Month',
+      'HDD',
+      'CDD',
       'kWh',
       'Actual kW',
       'Billed kW',
@@ -2757,6 +2769,8 @@ async function exportWoodlandReportToXlsx(data) {
     ]);
     styleHeaderRow(hRow4);
     var firstDataRow4 = ws3.rowCount + 1;
+    var _ddCovered3 = 0,
+      _ddMissing3 = [];
     for (var mi = 0; mi < 12; mi++) {
       var eM = (sbm.elecByMo || {})[mi] || {};
       var gM = (sbm.gasByMo || {})[mi] || {};
@@ -2768,20 +2782,27 @@ async function exportWoodlandReportToXlsx(data) {
       var elecCostM = eM.totalCost || 0;
       var thermsM = gM.therms || 0;
       var gasCostM = gM.cost || 0;
+      var hddM = eM.hdd != null ? eM.hdd : gM.hdd;
+      var cddM = eM.cdd != null ? eM.cdd : gM.cdd;
+      var moLabel4 = WOODLAND_MO_ABBR[mi] + (_moYear3[mi] ? ' ' + _moYear3[mi] : '');
+      if (hddM != null || cddM != null) _ddCovered3++;
+      else _ddMissing3.push(moLabel4);
       var rn4 = ws3.rowCount + 1;
       ws3.addRow([
-        WOODLAND_MO_ABBR[mi],
+        moLabel4,
+        hddM != null ? hddM : null,
+        cddM != null ? cddM : null,
         kwhM,
         eM.demandKW || 0,
         eM.billedKW || 0,
         kwCostM,
         enCostM,
         elecCostM,
-        { formula: 'IF(B' + rn4 + '>0,F' + rn4 + '/B' + rn4 + ',0)' },
+        { formula: 'IF(D' + rn4 + '>0,H' + rn4 + '/D' + rn4 + ',0)' },
         thermsM,
         gasCostM,
-        gM.rate > 0 ? gM.rate : { formula: 'IF(I' + rn4 + '>0,J' + rn4 + '/I' + rn4 + ',0)' },
-        { formula: 'G' + rn4 + '+J' + rn4 },
+        gM.rate > 0 ? gM.rate : { formula: 'IF(K' + rn4 + '>0,L' + rn4 + '/K' + rn4 + ',0)' },
+        { formula: 'I' + rn4 + '+L' + rn4 },
       ]);
     }
     var lastDataRow4 = ws3.rowCount;
@@ -2795,26 +2816,48 @@ async function exportWoodlandReportToXlsx(data) {
       sumF('E', firstDataRow4, lastDataRow4),
       sumF('F', firstDataRow4, lastDataRow4),
       sumF('G', firstDataRow4, lastDataRow4),
-      { formula: 'IF(B' + (lastDataRow4 + 1) + '>0,G' + (lastDataRow4 + 1) + '/B' + (lastDataRow4 + 1) + ',0)' },
+      sumF('H', firstDataRow4, lastDataRow4),
       sumF('I', firstDataRow4, lastDataRow4),
-      sumF('J', firstDataRow4, lastDataRow4),
-      { formula: 'IF(I' + (lastDataRow4 + 1) + '>0,J' + (lastDataRow4 + 1) + '/I' + (lastDataRow4 + 1) + ',0)' },
+      { formula: 'IF(D' + (lastDataRow4 + 1) + '>0,I' + (lastDataRow4 + 1) + '/D' + (lastDataRow4 + 1) + ',0)' },
+      sumF('K', firstDataRow4, lastDataRow4),
       sumF('L', firstDataRow4, lastDataRow4),
+      { formula: 'IF(K' + (lastDataRow4 + 1) + '>0,L' + (lastDataRow4 + 1) + '/K' + (lastDataRow4 + 1) + ',0)' },
+      sumF('N', firstDataRow4, lastDataRow4),
     ]);
     styleTotalRow(totR4);
     var A = totR4.number;
     ws3.addRow([]);
+    ws3.addRow([
+      'Baseline Start',
+      _blMonths3.length
+        ? WOODLAND_MO_ABBR[parseInt(_blMonths3[0].split('-')[1], 10) - 1] + ' ' + _blMonths3[0].split('-')[0]
+        : '—',
+    ]);
+    ws3.addRow([
+      'Baseline End',
+      _blMonths3.length
+        ? WOODLAND_MO_ABBR[parseInt(_blMonths3[_blMonths3.length - 1].split('-')[1], 10) - 1] +
+          ' ' +
+          _blMonths3[_blMonths3.length - 1].split('-')[0]
+        : '—',
+    ]);
+    ws3.addRow(['Baseline Length', _blMonths3.length ? _blMonths3.length + ' months' : '—']);
+    ws3.addRow([
+      'Degree Days',
+      _ddCovered3 + ' of 12 months' + (_ddMissing3.length ? ' (missing: ' + _ddMissing3.join(', ') + ')' : ''),
+    ]);
+    ws3.addRow([]);
     ws3.addRow(['Square Feet', sqft]);
-    ws3.addRow(['Electric Use / SF (kWh)', sqft > 0 ? { formula: 'B' + A + '/' + sqft } : null]);
-    ws3.addRow(['Utility Cost / SF', sqft > 0 ? { formula: 'L' + A + '/' + sqft } : null]);
-    ws3.addRow(['Avg Electric Rate ($/kWh)', { formula: 'H' + A }]);
-    ws3.addRow(['Avg Gas Rate ($/Therm)', { formula: 'K' + A }]);
+    ws3.addRow(['Electric Use / SF (kWh)', sqft > 0 ? { formula: 'D' + A + '/' + sqft } : null]);
+    ws3.addRow(['Utility Cost / SF', sqft > 0 ? { formula: 'N' + A + '/' + sqft } : null]);
+    ws3.addRow(['Avg Electric Rate ($/kWh)', { formula: 'J' + A }]);
+    ws3.addRow(['Avg Gas Rate ($/Therm)', { formula: 'M' + A }]);
     var euiRow = ws3.addRow([
       'Site EUI (kBtu/SF)',
-      sqft > 0 ? { formula: '(B' + A + '*3.412+I' + A + '*100)/' + sqft } : null,
+      sqft > 0 ? { formula: '(D' + A + '*3.412+K' + A + '*100)/' + sqft } : null,
     ]);
     styleTotalRow(euiRow);
-    ws3.addRow(['Total Annual Utility Cost', { formula: 'L' + A }]);
+    ws3.addRow(['Total Annual Utility Cost', { formula: 'N' + A }]);
   } else {
     ws3.addRow(['No baseline month data is available for this building.']);
   }

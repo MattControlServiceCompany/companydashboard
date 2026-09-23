@@ -749,8 +749,19 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     bd.meterDetails = [];
     // Store full baseline month maps for Building Baseline Data table
     bd.baselineMaps = { elecByMo: {}, gasByMo: {}, propaneByMo: {}, waterByMo: {} };
+    // bd.blMonths (2026-09-22): sorted, deduped union of every meter's actual baseline
+    // YYYY-MM months for this building — the only place a calendar-month index (0-11, as used
+    // by baselineMaps) can be mapped back to an actual calendar YEAR. rptBuildBaselineDataTable
+    // uses this to label each row "Jan 2024" instead of just "Jan", and to compute Baseline
+    // Start/End/Length and degree-day coverage. A building whose meters share one 12-month
+    // baseline (the normal case) yields exactly one year per calendar month; a rare multi-year
+    // baseline may have >12 entries, in which case the table uses the EARLIEST year per month
+    // (first match in the sorted list) — cosmetic label only, never affects the averaged
+    // baselineMaps figures themselves.
+    const _blMonthsSet = new Set();
     bMeters.forEach(({ m, bl, allRows, bills, incl }) => {
       if (!bl || !bl.months || bl.months.length < 3) return;
+      bl.months.forEach((ym) => _blMonthsSet.add(ym));
       const blR = allRows.filter((r) => bl.months.includes(r.ym));
       const maps = buildMoMap(m, blR, bills, incl);
       if (m.commodity === 'Electric') Object.assign(bd.baselineMaps.elecByMo, maps.elecByMo);
@@ -758,6 +769,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       else if (m.commodity === 'Propane') Object.assign(bd.baselineMaps.propaneByMo, maps.propaneByMo);
       else if (m.commodity === 'Water') Object.assign(bd.baselineMaps.waterByMo, maps.waterByMo);
     });
+    bd.blMonths = Array.from(_blMonthsSet).sort();
     bMeters.forEach(({ m, bl, allRows }) => {
       const reg = m._reg || (bl && bl.reg) || null;
       const blMonths = bl ? bl.months.slice().sort() : [];
@@ -1946,9 +1958,11 @@ function _rptInjectUiPassOverrides() {
     '#reportPages .rpt-table-bl th,#reportPages .rpt-table-bl th.bl-elec,' +
     '#reportPages .rpt-table-bl th.bl-gas,#reportPages .rpt-table-bl th.bl-prop,' +
     '#reportPages .rpt-table-bl th.bl-water,#reportPages .rpt-table-bl th.bl-total,' +
+    '#reportPages .rpt-table-bl th.bl-weather,' +
     '#rptPreviewPages .rpt-table-bl th,#rptPreviewPages .rpt-table-bl th.bl-elec,' +
     '#rptPreviewPages .rpt-table-bl th.bl-gas,#rptPreviewPages .rpt-table-bl th.bl-prop,' +
-    '#rptPreviewPages .rpt-table-bl th.bl-water,#rptPreviewPages .rpt-table-bl th.bl-total' +
+    '#rptPreviewPages .rpt-table-bl th.bl-water,#rptPreviewPages .rpt-table-bl th.bl-total,' +
+    '#rptPreviewPages .rpt-table-bl th.bl-weather' +
     '{border-color:var(--rpt-table-th-border) !important}' +
     '#reportPages .rpt-table-bl th.bl-grp,#rptPreviewPages .rpt-table-bl th.bl-grp' +
     '{border-bottom-color:var(--rpt-table-th-border) !important}' +
@@ -5247,6 +5261,28 @@ function rptBuildBaselineDataTable(b, d, opts) {
     : b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var _bm = b.baselineMaps || { elecByMo: {}, gasByMo: {}, propaneByMo: {}, waterByMo: {} };
+  // Baseline calendar year per month index (2026-09-22) — b.blMonths is the sorted, deduped
+  // union of every meter's actual baseline YYYY-MM months (set in collectReportData, above).
+  // baselineMaps itself only keys by calendar-month index (0-11, averaged across whatever years
+  // contributed), so this is the ONLY place the actual year for "Jan"/"Jun"/etc. comes from.
+  // First occurrence wins for a rare multi-year baseline where one calendar month appears in
+  // more than one year (b.blMonths is sorted ascending, so that's the earliest year) — cosmetic
+  // label only, never affects the averaged usage/cost figures.
+  var _blMonthsList = (b.blMonths || []).slice().sort();
+  var _moYear = {};
+  _blMonthsList.forEach(function (ym) {
+    var _mi = parseInt(ym.split('-')[1], 10) - 1;
+    if (_moYear[_mi] == null) _moYear[_mi] = ym.split('-')[0];
+  });
+  var blPeriodMonthCount = _blMonthsList.length;
+  var blPeriodStartLabel = _blMonthsList.length
+    ? MO_SHORT[parseInt(_blMonthsList[0].split('-')[1], 10) - 1] + ' ' + _blMonthsList[0].split('-')[0]
+    : '—';
+  var blPeriodEndLabel = _blMonthsList.length
+    ? MO_SHORT[parseInt(_blMonthsList[_blMonthsList.length - 1].split('-')[1], 10) - 1] +
+      ' ' +
+      _blMonthsList[_blMonthsList.length - 1].split('-')[0]
+    : '—';
 
   // -------------------------------------------------------------------
   // Building Baseline Data table (Energy Dept styling, merged kW Cost, no Load %)
@@ -5270,6 +5306,12 @@ function rptBuildBaselineDataTable(b, d, opts) {
     _opts.propane;
   var _showWater = _opts.water && Object.keys(_bm.waterByMo).length > 0;
   var blDataRows = '';
+  // Degree-day coverage (2026-09-22) — tracked across whichever month rows actually render below,
+  // so "N of M months" always matches the table's own row count, not a fixed 12.
+  var _ddCoveredMonths = [];
+  var _ddMissingMonths = [];
+  var _tHdd = 0,
+    _tCdd = 0;
   var _tKwh = 0,
     _tKw = 0, // Annual Metered kW = SUM of the 12 monthly demandKW values, never a peak/average
     _tBkw = 0, // Annual Billed kW = SUM of the 12 monthly billedKW values
@@ -5323,7 +5365,29 @@ function rptBuildBaselineDataTable(b, d, opts) {
       _bm.elecByMo[mi] != null || _bm.gasByMo[mi] != null || _bm.propaneByMo[mi] != null || _bm.waterByMo[mi] != null;
     if (!hasData) continue;
     var costPerKwh = kwh > 0 ? enCost / kwh : 0;
-    blDataRows += '<tr><td>' + MO_SHORT[mi] + '</td>';
+    // Month label now carries the actual baseline YEAR (2026-09-22) — "Jan" alone was ambiguous
+    // for any baseline that crosses a calendar-year boundary (the normal case: e.g. a Jul-Jun
+    // baseline has both a 2024 July and a 2025 June). Falls back to the bare month name if
+    // b.blMonths didn't resolve a year for this index (e.g. legacy callers that never set it).
+    var _moLabel = MO_SHORT[mi] + (_moYear[mi] ? ' ' + _moYear[mi] : '');
+    // Degree-day coverage: a month has HDD/CDD when either commodity's averaged weather lookup
+    // resolved one (both are computed from the SAME weatherByYm source in buildMoMap, so elec
+    // and gas normally agree; read whichever is present so a gas-only or electric-only building
+    // still gets a coverage read).
+    var _moHdd = eM.hdd != null ? eM.hdd : gM.hdd;
+    var _moCdd = eM.cdd != null ? eM.cdd : gM.cdd;
+    if (_moHdd != null || _moCdd != null) _ddCoveredMonths.push(_moLabel);
+    else _ddMissingMonths.push(_moLabel);
+    _tHdd += _moHdd || 0;
+    _tCdd += _moCdd || 0;
+    blDataRows +=
+      '<tr><td>' +
+      _moLabel +
+      '</td><td class="rpt-n">' +
+      (_moHdd != null ? $n(_moHdd) : '—') +
+      '</td><td class="rpt-n">' +
+      (_moCdd != null ? $n(_moCdd) : '—') +
+      '</td>';
     if (_showElec) {
       blDataRows +=
         '<td class="rpt-n">' +
@@ -5378,7 +5442,12 @@ function rptBuildBaselineDataTable(b, d, opts) {
     blDataRows += '<td class="rpt-n">' + (totalCost ? $c(totalCost) : '—') + '</td></tr>';
   }
   if (blDataRows) {
-    blDataRows += '<tr class="rpt-tot"><td>Annual</td>';
+    blDataRows +=
+      '<tr class="rpt-tot"><td>Annual</td><td class="rpt-n">' +
+      $n(_tHdd) +
+      '</td><td class="rpt-n">' +
+      $n(_tCdd) +
+      '</td>';
     if (_showElec) {
       var _avgCpk = _tKwh > 0 ? _tElecCost / _tKwh : 0;
       blDataRows +=
@@ -5429,6 +5498,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
   }
   // Column group header row (commodity-colored)
   var blGrpHdr = '<th rowspan="2" style="white-space:nowrap">Month</th>';
+  // Weather/degree-days group (2026-09-22) — HDD + CDD for every baseline month, ahead of the
+  // commodity columns since degree days aren't specific to any one commodity.
+  blGrpHdr += '<th colspan="2" class="bl-grp bl-weather">Degree Days</th>';
   if (_showElec) blGrpHdr += '<th colspan="7" class="bl-grp bl-elec">Electric</th>';
   if (_showGas) blGrpHdr += '<th colspan="3" class="bl-grp bl-gas">Gas</th>';
   if (_showProp) blGrpHdr += '<th colspan="3" class="bl-grp bl-prop">Propane</th>';
@@ -5436,15 +5508,18 @@ function rptBuildBaselineDataTable(b, d, opts) {
   blGrpHdr +=
     '<th rowspan="2" class="rpt-n bl-grp bl-total" style="white-space:normal;line-height:1.2">Total<br>Cost</th>';
   // Detail column header row
-  var blHdr = '';
+  var blHdr = '<th class="rpt-n bl-weather">HDD</th><th class="rpt-n bl-weather">CDD</th>';
   if (_showElec)
     blHdr +=
       '<th class="rpt-n bl-elec">kWh</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Metered<br>kW</th>' +
+      // "Metered"/"Electric" abbreviated to "Meter"/"Elec" (2026-09-22, with the Degree Days
+      // columns added) — same Cost-column abbreviation convention this table already uses for
+      // "Gas Cost"/"Prop Cost"/no full commodity name spelled out, not a new pattern.
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Meter<br>kW</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Elec<br>Cost</th>' +
       '<th class="rpt-n bl-elec">$/kWh</th>';
   if (_showGas)
     blHdr +=
@@ -5461,8 +5536,53 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // $#.## (2 decimals) — it was $c(Math.round(...)), which rounded a small per-sqft dollar
   // value (typically $1-6) down to a whole dollar and lost almost all its precision.
   var blStats = '';
+  var blCoverageNote = '';
   if (blDataRows) {
     var _statItems = [];
+    // Baseline Start / End / Length (2026-09-22) — b.blMonths-derived, so "N months" always
+    // matches the actual saved baseline range, not a hardcoded 12.
+    if (blPeriodMonthCount > 0) {
+      _statItems.push(
+        '<div><div class="bl-stat-label">Baseline Start</div><div class="bl-stat-val">' +
+          blPeriodStartLabel +
+          '</div></div>',
+      );
+      _statItems.push(
+        '<div><div class="bl-stat-label">Baseline End</div><div class="bl-stat-val">' +
+          blPeriodEndLabel +
+          '</div></div>',
+      );
+      _statItems.push(
+        '<div><div class="bl-stat-label">Baseline Length</div><div class="bl-stat-val">' +
+          blPeriodMonthCount +
+          ' month' +
+          (blPeriodMonthCount === 1 ? '' : 's') +
+          '</div></div>',
+      );
+    }
+    // Degree-day coverage (2026-09-22): "12 of 12 months" when every rendered baseline month has
+    // an HDD/CDD reading; colored var(--warn) — the same token this file already uses for other
+    // "data missing" notices (e.g. the Appendix meter table's "? Empty" cell) — when short, with
+    // the specific missing month(s) named below the stat strip rather than just flagged.
+    var _ddTotal = _ddCoveredMonths.length + _ddMissingMonths.length;
+    if (_ddTotal > 0) {
+      var _ddComplete = _ddMissingMonths.length === 0;
+      _statItems.push(
+        '<div><div class="bl-stat-label">Degree Days</div><div class="bl-stat-val"' +
+          (_ddComplete ? '' : ' style="color:var(--warn)"') +
+          '>' +
+          _ddCoveredMonths.length +
+          ' of ' +
+          _ddTotal +
+          ' months</div></div>',
+      );
+      if (!_ddComplete) {
+        blCoverageNote =
+          '<div style="font-size:9px;color:var(--warn);margin-top:2px">Missing degree days: ' +
+          _ddMissingMonths.join(', ') +
+          '</div>';
+      }
+    }
     if (b.sqft > 0)
       _statItems.push(
         '<div><div class="bl-stat-label">Square Feet</div><div class="bl-stat-val">' +
@@ -5505,7 +5625,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
         $c(_tTotalCost) +
         '</div></div>',
     );
-    blStats = '<div class="rpt-bl-stats">' + _statItems.join('') + '</div>';
+    blStats = '<div class="rpt-bl-stats">' + _statItems.join('') + '</div>' + blCoverageNote;
   }
 
   // report-pass2 fix (2026-09-10): this table can carry up to 18 columns (Month + 7 Electric +
@@ -5536,17 +5656,36 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // every column's allocated px width clears its longest word's required px width (word-em ×
   // font-px + 6px padding + ~1px collapsed border) by 13-22px. Full per-column numbers in
   // dashboardlogic.md's 2026-09-22 entry for this fix.
+  // Re-measured 2026-09-22 against the table's ACTUAL rendered font: _rptApplyMinFontFloor
+  // (this file, ~line 1192 — the site-wide 10pt-minimum-printed-text floor) forces every cell in
+  // this table UP to RPT_MIN_TEXT_PX (13.34px) at render time regardless of _blFontPx below
+  // (.rpt-table-bl was not marked '.rpt-mp-dense', so it got the normal floor, not the lower
+  // dense one) — the table was already running at 13.34px, not 9px, before this pass; the prior
+  // "verified at 9px" comment measured a font-size that never actually reached the screen. With
+  // the 2 unconditional Degree Days columns (HDD, CDD) added ahead of every commodity group, the
+  // sum of every column's real 13.34px minimum need measurably exceeded the table's own width
+  // (measured via a headless render: ~781px of real need vs. 718px available) — no column
+  // reweighting alone can fix a genuine total-budget shortfall. Fix has two parts: (1) this table
+  // now carries 'rpt-mp-dense' (below, on the wrapping div) so it floors to the lower 12px
+  // DENSE_MIN instead of 13.34px — the same opt-in this file already uses for other genuinely
+  // dense multi-page tables — closing ~90% of the gap on its own; (2) weights below are each
+  // column's own measured-at-13.34px need (headless-measured clientWidth + real overflow
+  // deficit), so what small margin remains after the font-floor change is spent where the real
+  // content actually needs it, not a flat per-column share. "Metered"/"Electric" shortened to
+  // "Meter"/"Elec" in the header (below) too.
   var _BL_COL_WEIGHT = {
-    kwh: 4.2,
-    meteredKw: 5.8, // "METERED" — widest single word in the table
-    billedKw: 4.2,
-    kwCost: 4.2,
-    energyCost: 4.9, // "ENERGY"
-    electricCost: 5.8, // "ELECTRIC" — widest single word in the table
-    perKwh: 4.8,
-    therms: 4.9, // "THERMS"
-    gasCost: 4.2,
-    perTherm: 5.1, // "$/THERM"
+    hdd: 5.2, // "HDD" header + values like "2,899" — shares the "Degree Days" group with cdd
+    cdd: 5.2, // "CDD" header + values like "2,544"
+    kwh: 5.1,
+    meteredKw: 5.1, // "METER" header vs. its own data — close call
+    billedKw: 5.4,
+    kwCost: 5.1,
+    energyCost: 6.1, // "ENERGY"
+    electricCost: 5.9, // Annual row's "$105,131"-class total drives this, not the "ELEC" header
+    perKwh: 5.4,
+    therms: 6.1, // "THERMS"
+    gasCost: 5.1,
+    perTherm: 6.4, // "$/THERM" — widest single word in the table
     gallons: 5.8, // "GALLONS"
     propCost: 4.2,
     perGal: 4.8,
@@ -5554,7 +5693,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
     waterCost: 4.2,
     perKgal: 4.4, // "$/KGAL"
   };
-  var _blColWeights = [4.3]; // Month — sized for "Annual" / "MONTH"
+  // Month — "Jan 2024" (8 chars, the baseline year added 2026-09-22) is now this table's longest
+  // single data value; sized accordingly rather than to the old bare "Jan"/"Annual".
+  var _blColWeights = [6.1, _BL_COL_WEIGHT.hdd, _BL_COL_WEIGHT.cdd]; // Month, HDD, CDD
   if (_showElec)
     _blColWeights.push(
       _BL_COL_WEIGHT.kwh,
@@ -5568,15 +5709,18 @@ function rptBuildBaselineDataTable(b, d, opts) {
   if (_showGas) _blColWeights.push(_BL_COL_WEIGHT.therms, _BL_COL_WEIGHT.gasCost, _BL_COL_WEIGHT.perTherm);
   if (_showProp) _blColWeights.push(_BL_COL_WEIGHT.gallons, _BL_COL_WEIGHT.propCost, _BL_COL_WEIGHT.perGal);
   if (_showWater) _blColWeights.push(_BL_COL_WEIGHT.kgal, _BL_COL_WEIGHT.waterCost, _BL_COL_WEIGHT.perKgal);
-  _blColWeights.push(4.8); // Total Cost — sized for "$117,281"
+  _blColWeights.push(6.2); // Total Cost — sized for "$117,281"
   var _blWeightSum = _blColWeights.reduce(function (a, w) {
     return a + w;
   }, 0);
-  // Fewer than 16 columns (Month + up to 14 detail + Total — every realistic commodity mix)
-  // fits at 9px with margin to spare (measured above). 16+ (all four commodities baselined at
-  // once — electric+gas+propane+water together — vanishingly rare) drops to 8px to hold the
-  // same margin at the narrower per-column share.
-  var _blFontPx = _blColWeights.length > 15 ? 8 : 9;
+  // Threshold lowered 2026-09-22 (was >15) when the 2 unconditional Degree Days columns
+  // (HDD, CDD) were added ahead of every commodity group: measured overflow at 9px on the real
+  // Woodland electric+gas table (14 columns: Month+HDD+CDD+7 Electric+3 Gas+Total) — the Annual
+  // row's wider dollar figures ("$117,281", "$105,131") and a few header words ("Metered kW",
+  // "Electric Cost") no longer cleared their column width once the same 100%-wide table had to
+  // share it across 2 more columns. >13 (was >15) drops to 8px a column-count sooner, restoring
+  // the same clearance margin the original fit-fix measured for a 12-column table.
+  var _blFontPx = _blColWeights.length > 13 ? 8 : 9;
   function _blCol(w) {
     return '<col style="width:' + w.toFixed(2) + '%">';
   }
@@ -5602,12 +5746,21 @@ function rptBuildBaselineDataTable(b, d, opts) {
       // headers wrap only at spaces / existing <br> tags. The weighted column widths
       // (_BL_COL_WEIGHT above) are what make every header word actually fit, instead of
       // needing a mid-word wrap fallback to hide an undersized column.
-      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px;font-size:' +
+      // Horizontal padding trimmed 3px->2px (2026-09-22, with the Degree Days columns added) —
+      // reclaims 2px per column side (28px total across 14 columns) toward the real 13.34px
+      // floor's column-width budget; vertical padding stays 3px for row readability.
+      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 2px;font-size:' +
       _blFontPx +
       'px;box-sizing:border-box}</style>' +
       blStats +
       '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
-      '<table class="rpt-table rpt-table-bl rpt-bl-tight" style="width:100%;table-layout:fixed">' +
+      // 'rpt-mp-dense' (2026-09-22, added with the Degree Days columns — see _BL_COL_WEIGHT
+      // comment above): scoped to the <table> itself (not blStats above, which has its own
+      // smaller/larger font sizing that must stay as designed) — opts this table into the lower
+      // 12px DENSE_MIN font floor (_rptApplyMinFontFloor, RPT_MULTIPAGE_TABLE_MIN_PX) instead of
+      // the normal 13.34px one, the same existing opt-in already used by Appendix B/D's dense
+      // multi-page tables.
+      '<table class="rpt-table rpt-table-bl rpt-bl-tight rpt-mp-dense" style="width:100%;table-layout:fixed">' +
       blColgroup +
       '<thead><tr>' +
       blGrpHdr +

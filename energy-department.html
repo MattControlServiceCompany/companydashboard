@@ -1917,6 +1917,11 @@
         --rpt-bl-green-bdr: #1e7a30;
         --rpt-bl-navy: #1b3a5c;
         --rpt-bl-navy-bdr: #152d49;
+        /* Weather/degree-days group header (2026-09-22) — same commodity-color convention as
+           blue/orange/amber/green/navy above, one new muted slate for the HDD/CDD columns
+           added to the Building Baseline Data table. */
+        --rpt-bl-slate: #5b6b7a;
+        --rpt-bl-slate-bdr: #44515c;
         --rpt-bl-stripe: #f2f2f2;
         --rpt-bl-tot-bg: #eef4f8;
         --rpt-bl-stat-border: #d9d9d9;
@@ -2451,6 +2456,10 @@
         letter-spacing: 0.5px;
         text-transform: uppercase;
         border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+      }
+      .rpt-table-bl th.bl-weather {
+        background: var(--rpt-bl-slate);
+        border-color: var(--rpt-bl-slate-bdr);
       }
       .rpt-table-bl th.bl-elec {
         background: var(--rpt-bl-blue);
