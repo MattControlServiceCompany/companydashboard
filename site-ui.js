@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.883'; // Equipment Matrix and BAS Savings Calc: setpoint and schedule export
+  var CH_VERSION = 'v2026.09.23.2'; // Equipment Matrix and BAS Savings Calc: setpoint and schedule export
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
