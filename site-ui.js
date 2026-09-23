@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.1'; // HVAC Load Estimate: autocalculate, Save, Excel/Word/PDF export, setpoint savings
+  var CH_VERSION = 'v2026.09.23.6'; // Equipment Matrix Raw View: new Unoccupied Heating/Cooling, Effective Heating/Cooling Setpoint, and Setpoint Adjustment (range) columns; toolbar buttons hardened against onclick injection
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

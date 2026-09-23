@@ -4037,6 +4037,25 @@ function emRenderMatrix(container, data, pid) {
     '<div id="em-table-wrap" class="em-table-wrap" style="flex:1;min-height:0"></div>' +
     '</div>';
 
+  // 2026-09-23: wire the 3 toolbar buttons that need pid (Clear All Data, Export
+  // Setpoints & Schedules, + Add Row) via addEventListener instead of an onclick
+  // string with pid interpolated into it — no values interpolated into onclick.
+  var _emClearAllBtn = document.getElementById('em-clear-all-btn');
+  if (_emClearAllBtn)
+    _emClearAllBtn.addEventListener('click', function () {
+      emClearAllData(pid);
+    });
+  var _emExportSpBtn = document.getElementById('em-export-setpoints-btn');
+  if (_emExportSpBtn)
+    _emExportSpBtn.addEventListener('click', function () {
+      emOpenSetpointExportDialog(pid);
+    });
+  var _emAddRowBtn = document.getElementById('em-add-row-btn');
+  if (_emAddRowBtn)
+    _emAddRowBtn.addEventListener('click', function () {
+      emAddManualRow(pid);
+    });
+
   emRenderTable(data, _emFilters);
   // Apply persisted zoom (no-op at 100% but sets up the style tag consistently)
   emSetZoom(0);
@@ -4407,13 +4426,13 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button id="em-delete-all-btn" class="btn btn-ghost btn-sm" onclick="emDeleteAllRows(\'' +
     pid +
     '\')" style="height:28px;font-size:11px;display:none;background:#fee2e2;border-color:#fca5a5;color:#b91c1c">Delete All</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="emClearAllData(\'' +
-    pid +
-    '\')" style="height:28px;font-size:11px;background:#b91c1c;border-color:#991b1b;color:#fff">Clear All Data</button>' +
+    // Escaping (2026-09-23): id="..." here so wiring is attached via addEventListener
+    // (see emRenderMatrix, right after this toolbar HTML is inserted) instead of
+    // interpolating pid into an onclick string — removes 3 injection points.
+    '<button id="em-clear-all-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px;background:#b91c1c;border-color:#991b1b;color:#fff">Clear All Data</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="emAddManualRow(\'' +
-    pid +
-    '\')" style="height:28px;font-size:11px">+ Add Row</button>' +
+    '<button id="em-export-setpoints-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">Export Setpoints &amp; Schedules</button>' +
+    '<button id="em-add-row-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">+ Add Row</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddCustomCol(\'' +
     pid +
     '\')" style="height:28px;font-size:11px">+ Column</button>' +
@@ -4559,6 +4578,75 @@ function emGetColDefs(projId) {
     }
     defs.push({ key: pm.col, label: pm.label, group: grp, width: 120, isLive: true });
   }
+
+  /* ── 2026-09-23 (owner: "why are we not showing the unoccupied set point
+     columns in the Equipment Matrix page and the effective and adjustments?")
+     zoneUnoccHtgSetpoint / zoneUnoccCoolSetpoint / effectiveHtgSetpoint /
+     effectiveCoolSetpoint already existed as EM_POINT_MAP columns above — read
+     from the SAME BAS Points source the Setpoint & Schedule export uses (see
+     emGetNormalizedPoints) — but sat scattered among ~180 other live-point
+     columns with abbreviated headers, which is why they read as "not shown."
+     Move them to sit immediately after the occupied heating setpoint column
+     and give them spelled-out headers FOR THE TABLE ONLY: the EM_POINT_MAP
+     entry's own .label is left untouched because emParseHeaderRow's enriched-
+     CSV import matches column headers against it exactly (see ~line 2028) —
+     renaming it here would silently break re-import of already-exported
+     enriched CSVs. Also adds one new computed column, Setpoint Adjustment
+     (range), reusing _emAdjustDisplay from the Setpoint & Schedule export
+     (same BAS points, same "?" for unknown — never a second parser). */
+  var _emOccHtgIdx = -1;
+  for (var ohi = 0; ohi < defs.length; ohi++) {
+    if (defs[ohi].key === 'zoneHtgSetpoint') {
+      _emOccHtgIdx = ohi;
+      break;
+    }
+  }
+  if (_emOccHtgIdx !== -1) {
+    var _emReorderKeys = [
+      'zoneUnoccHtgSetpoint',
+      'zoneUnoccCoolSetpoint',
+      'effectiveHtgSetpoint',
+      'effectiveCoolSetpoint',
+    ];
+    var _emReorderLabels = {
+      zoneUnoccHtgSetpoint: 'Unoccupied Heating Setpoint',
+      zoneUnoccCoolSetpoint: 'Unoccupied Cooling Setpoint',
+      effectiveHtgSetpoint: 'Effective Heating Setpoint',
+      effectiveCoolSetpoint: 'Effective Cooling Setpoint',
+    };
+    var _emMoved = [];
+    for (var rk = 0; rk < _emReorderKeys.length; rk++) {
+      var _rIdx = -1;
+      for (var di2 = 0; di2 < defs.length; di2++) {
+        if (defs[di2].key === _emReorderKeys[rk]) {
+          _rIdx = di2;
+          break;
+        }
+      }
+      if (_rIdx === -1) continue; // defensive: EM_POINT_MAP entry missing — never invent a column
+      var _emMovedDef = defs.splice(_rIdx, 1)[0];
+      _emMovedDef.label = _emReorderLabels[_emMovedDef.key]; // table-display override only
+      _emMovedDef.width = 170;
+      _emMovedDef.isSpDisplay = true; // emFormatCell: show literal "?" for missing, not "--"/"offline"
+      _emMoved.push(_emMovedDef);
+    }
+    // Setpoint Adjustment (range) — combines zoneHtgAdjust/zoneCoolAdjust (the existing
+    // granular Heating/Cooling Setpoint Adjust columns are left in place elsewhere in
+    // this list, unchanged) via the same _emAdjustDisplay the Setpoint & Schedule
+    // export's "Existing Adjustment" column already uses. Function is declared later
+    // in this file but hoisted, so it is callable here.
+    _emMoved.push({
+      key: 'spAdjustRange',
+      label: 'Setpoint Adjustment (range)',
+      group: defs[_emOccHtgIdx].group,
+      width: 170,
+      isSpAdjustRange: true,
+    });
+    // Splices above only removed items that were AFTER zoneHtgSetpoint in EM_POINT_MAP
+    // order, so _emOccHtgIdx still points at the occupied heating setpoint column.
+    defs.splice.apply(defs, [_emOccHtgIdx + 1, 0].concat(_emMoved));
+  }
+
   // Asset Details (hidden by default — enable via "Asset Details" toggle)
   // Serial #, Model #, Manufacturer, Size/Capacity are excluded from default view
   defs.push({ key: 'serial', label: 'Serial #', group: 'asset', width: 120 });
@@ -5911,6 +5999,12 @@ function emGetCellValByDef(row, def, edits) {
     // FIX 3a (1b74f531): Use explicit null/undefined check so 0 passes through (was falsy || '')
     var cv = row.checks && row.checks[checkCols[def.checkIdx]];
     return cv != null ? cv : '';
+  }
+  // 2026-09-23: computed "Setpoint Adjustment (range)" column — combines
+  // zoneHtgAdjust/zoneCoolAdjust via the same _emAdjustDisplay the Setpoint &
+  // Schedule export's "Existing Adjustment" column uses (never a second parser).
+  if (def.isSpAdjustRange) {
+    return _emAdjustDisplay(emGetNormalizedPoints(row));
   }
   if (def.isLive || def.isDynPoint) {
     // Milestone 1: read through normalized-points engine so new columns (e.g. rhZone)
@@ -9762,6 +9856,10 @@ function emGetCellVal(row, colIdx, edits) {
     var cv = row.checks && row.checks[checkCols[idx]];
     return cv != null ? cv : '';
   }
+  // 2026-09-23: mirrors emGetCellValByDef's isSpAdjustRange branch (see that function).
+  if (def.isSpAdjustRange) {
+    return _emAdjustDisplay(emGetNormalizedPoints(row));
+  }
   if (def.isLive || def.isDynPoint) {
     // Milestone 1: read through normalized-points engine (mirrors emGetCellValByDef)
     // FIX: Use explicit null/undefined check so 0 and '0' pass through (was falsy || '')
@@ -9786,6 +9884,13 @@ function emTogglePointDrawer(rowId) {
 }
 
 function emFormatCell(val, def, row) {
+  // 2026-09-23: the Unoccupied/Effective setpoint columns and the computed Setpoint
+  // Adjustment (range) column show a literal "?" for missing data (task spec: "Unknown
+  // = '?' (not blank, not a guessed value)") — bypass the generic '--' / offline-sentinel
+  // handling below (which is for the rest of the raw BAS point columns) and reuse the
+  // same _emSpDisplay/_emAdjustDisplay formatting the Setpoint & Schedule export uses.
+  if (def.isSpAdjustRange) return emHtmlEsc(String(val));
+  if (def.isSpDisplay) return emHtmlEsc(_emSpDisplay(val));
   if (val === null || val === undefined || val === '') return '--';
   var s = String(val);
   // Step 3 — offline sentinel display: WebCTRL "no data" markers render as muted "offline" label.
@@ -9972,6 +10077,496 @@ function emHandleExportCSV() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/* ── Setpoint & Schedule Export (2026-09-22, fixed 2026-09-23) ───────────────
+   Matt: "add to the site BAS Savings Calc the ability to look at the Equipment
+   Matrix BAS Points data and create an export in the Equipment Matrix with
+   the headings and example row" — exact 20 headings/order from the spec.
+   Existing.* columns are read from each equipment row's BAS Points (via
+   emGetNormalizedPoints — the same read API the Setpoint Value Compliance
+   Engine uses). Never invented — shows "?" when no BAS Points source exists.
+   Proposed.* columns:
+     - Occupied Heating/Cooling: the project's saved BAS Savings Calc option
+       (project.savingsData.basSetpoint[bldgId].options) when one is chosen
+       and has a saved value; otherwise the company standard default.
+     - Unoccupied Heating/Cooling, Adjustment Range, and the two schedule
+       columns have no per-project source anywhere in the app today (the BAS
+       Savings Calc option object only ever stores heatSP/coolSP) — they
+       always come from the company standard default below.
+   2026-09-23 fix (real-data test found every Proposed cell showing "?"):
+   the building join now matches on a normalized name (case, whitespace,
+   trailing "School") instead of an exact string, and every Proposed column
+   that has no project-specific source falls back to a named company
+   standard default instead of "?". See EM_SP_DEFAULTS / _emDeriveHeatingType
+   / _emComputeProposedSchedule below — ONE place for all of it.
+   Reachable from both the Equipment Matrix header and the BAS Savings Calc
+   (app/calculators.js openBASCalc → emOpenSetpointExportDialog).            */
+var EM_SETPOINT_EXPORT_HEADERS = [
+  'Building Name',
+  'Building location or equipment affected',
+  'Type of Equipment',
+  'Existing Occupied Heating',
+  'Existing Occupied Cooling',
+  'Existing Unoccupied Heating',
+  'Existing Unoccupied Cooling',
+  'Existing Adjustment',
+  'Existing Occupied Time Monday-Friday',
+  'Existing Occupied Start Time Monday-Friday',
+  'Existing Occupied Stop Time Monday-Friday',
+  'Existing Occupied Sat & Sun',
+  'Proposed Occupied Heating',
+  'Proposed Occupied Cooling',
+  'Proposed Unoccupied Heating',
+  'Proposed Unoccupied Cooling',
+  'Proposed Adjustment Range +-',
+  'Proposed Occupied Start Time Monday-Friday',
+  'Proposed Occupied Stop Time Monday-Friday',
+  'Proposed Occupied Sat & Sun',
+];
+
+/* ── Company standard Proposed defaults (2026-09-23) ──────────────────────────
+   ONE place for every default this export falls back to when no project-
+   specific proposed value exists (memory: SetptStd). Occupied heating 70°F /
+   occupied cooling 74°F for all equipment. Unoccupied setpoints depend on the
+   zone's heating source. Adjustment range is always +-2. */
+var EM_SP_DEFAULTS = {
+  occHeat: 70,
+  occCool: 74,
+  adjustRange: 2,
+  unocc: {
+    hydronic: { heat: 55, cool: 85 }, // gas-fired or hydronic hot water heat
+    electricReheat: { heat: 60, cool: 85 },
+    heatpump: { heat: 65, cool: 85 }, // electric heat, VRF, or heat pump
+  },
+};
+
+// Staff time added on each side of school hours to build the Proposed occupied
+// schedule — ONE named value (Matt's spec: "school hours plus 1.5 hours staff
+// time on EACH side").
+var EM_SP_STAFF_BUFFER_HOURS = 1.5;
+
+// No per-building school-hours field exists anywhere in the app today, so every
+// building uses this general default until one is added. Kept as its own
+// lookup (not inlined) so a future school-hours source can plug in without
+// touching the buffer math below. This is also Matt's own documented fallback
+// ("no school hours -> 6:00 AM / 5:00 PM") — it is exactly what this default
+// produces after the buffer is applied.
+var EM_SP_SCHOOL_HOURS_DEFAULT = { start: '07:30', end: '15:30' };
+function _emGetSchoolHours(bldgName) {
+  return EM_SP_SCHOOL_HOURS_DEFAULT;
+}
+
+// Formats minutes-since-midnight as the plain "H:MM" 24-hour clock style used
+// in Matt's own example row ("8:00", "15:05" — no AM/PM suffix).
+function _emFormatClockFromMinutes(mins) {
+  mins = ((mins % 1440) + 1440) % 1440;
+  var hh = Math.floor(mins / 60),
+    mm = mins % 60;
+  return hh + ':' + (mm < 10 ? '0' + mm : String(mm));
+}
+
+// Builds the Proposed occupied start/stop pair for a building: school hours
+// (from _emGetSchoolHours) minus/plus the staff buffer on each side. Example:
+// Woodland's real school hours (7:30 AM-3:30 PM) and the general default
+// (7:30 AM-3:30 PM) both produce 6:00 start / 17:00 stop.
+function _emComputeProposedSchedule(bldgName) {
+  var h = _emGetSchoolHours(bldgName);
+  var startParts = String(h.start).split(':');
+  var endParts = String(h.end).split(':');
+  var startMins = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
+  var endMins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
+  var bufferMins = EM_SP_STAFF_BUFFER_HOURS * 60;
+  return {
+    start: _emFormatClockFromMinutes(startMins - bufferMins),
+    stop: _emFormatClockFromMinutes(endMins + bufferMins),
+  };
+}
+
+// Derives which Proposed-unoccupied bucket a zone/equipment row falls into
+// from its EXISTING Equipment Matrix classification only — never a new data
+// source. 'known: false' means no classification signal was found; the
+// fallback bucket is used, and the site UI (never the exported file) flags
+// it "heating type not known — default used".
+// hasGas: whether the row's building has a Gas meter (see getUDBldgs) — used
+// ONLY to pick a more plausible fallback bucket for rows with zero zone-level
+// signal (an all-electric building cannot have gas/hydronic reheat); it never
+// overrides an actual zone-level point/name signal, so it does not change
+// `known` for those rows. Pass undefined when the building is not known
+// (caller falls back to the pre-existing hydronic default).
+function _emDeriveHeatingType(row, pts, hasGas) {
+  var cat = (row && row.category) || '';
+  var name = (row && row.equipName) || '';
+  if (cat === 'vrf' || /\bvrf\b|heat pump/i.test(name)) return { key: 'heatpump', known: true };
+  // 2026-09-23: a hot water valve at the zone (reheatValve) or AHU (heatingValve) is a direct
+  // hydronic-heat signal — both EM_POINT_MAP cols only match hot-water reheat/heating-coil
+  // points ('hot water valve'/'hw valve'/'heating valve' patterns), never electric or VRF.
+  if (_emHasPt(pts.reheatValve) || _emHasPt(pts.heatingValve)) return { key: 'hydronic', known: true };
+  var hsst = pts && pts.heatSourceSupplyTemp;
+  if (_emHasPt(hsst) && !isNaN(parseFloat(hsst))) return { key: 'hydronic', known: true }; // hot-water/hydronic supply temp point present at the zone
+  if (cat === 'hwp' || cat === 'furnace') return { key: 'hydronic', known: true }; // boiler plant / gas furnace
+  if (/electric.?reheat/i.test(name)) return { key: 'electricReheat', known: true };
+  // 2026-09-23: raw BAS point names not covered by an EM_POINT_MAP column still land in `pts`
+  // auto-keyed by emAutoColKey (e.g. "Electric Heat Stage 1" -> auto_electricHeatStage,
+  // "Gas Heat Stage 1" -> auto_gasHeatStage) — scan those instead of re-parsing row.pointsRaw
+  // (one point-normalization path, per emGetNormalizedPoints' own header comment).
+  var autoKeys = Object.keys(pts || {});
+  for (var aki = 0; aki < autoKeys.length; aki++) {
+    var ak = autoKeys[aki];
+    if (ak.indexOf('auto_') !== 0) continue;
+    if (/electric.*heat|resistance.*heat/i.test(ak)) return { key: 'electricReheat', known: true };
+    if (/gas.*heat|burner/i.test(ak)) return { key: 'hydronic', known: true };
+  }
+  // No zone-level signal found. An all-electric building (no Gas meter in Utility Data) cannot
+  // have gas/hydronic reheat, so fall back to the electric-reheat bucket instead of the blind
+  // hydronic default; still flagged known:false — this is a building-level default, not a
+  // per-zone read.
+  return { key: hasGas === false ? 'electricReheat' : 'hydronic', known: false };
+}
+function _emHasPt(v) {
+  return v !== undefined && v !== null && v !== '';
+}
+
+// Normalizes a building name for the Equipment Matrix <-> Utility Data join:
+// case, whitespace, and a trailing "School" ("Woodland Spring Middle School"
+// -> "woodland spring middle", matching Utility Data's "Woodland Spring
+// Middle"). Equipment Matrix rows carry no building id, so this join is
+// always by name.
+function _emNormBldgNameForJoin(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\s+school$/i, '');
+}
+
+// Displays a raw BAS point value as a plain number string, or '?' when the
+// point is missing/blank. Never invents a value — mirrors emComputeSetpointCompliance's
+// _toFloat guard (null in -> '?' out).
+function _emSpDisplay(v) {
+  if (v === null || v === undefined || v === '') return '?';
+  var n = parseFloat(v);
+  if (isNaN(n)) return '?';
+  var r = Math.round(n * 10) / 10;
+  return r % 1 === 0 ? String(r) : String(r);
+}
+
+// Combines heating/cooling setpoint ADJUST points into the single "Existing
+// Adjustment" column from Matt's spec. Shows '?' when neither point exists,
+// the shared value when both agree, or 'H:x / C:y' when they differ.
+function _emAdjustDisplay(pts) {
+  var h = pts.zoneHtgAdjust,
+    c = pts.zoneCoolAdjust;
+  var hv = h !== undefined && h !== null && h !== '' && !isNaN(parseFloat(h)) ? parseFloat(h) : null;
+  var cv = c !== undefined && c !== null && c !== '' && !isNaN(parseFloat(c)) ? parseFloat(c) : null;
+  if (hv === null && cv === null) return '?';
+  if (hv !== null && cv !== null) return hv === cv ? String(hv) : 'H:' + hv + ' / C:' + cv;
+  return hv !== null ? String(hv) : String(cv);
+}
+
+// Returns the sorted list of option letters (A/B/C…) that carry a saved
+// heating or cooling setpoint somewhere within the given building ids' BAS
+// Savings Calc inputs. Used to decide whether the export dialog needs an
+// option selector (spec: "if more than one option exists").
+function emGetSetpointExportOptions(pid, bldgIds) {
+  var sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(pid) : null;
+  var store = (sd && sd.basSetpoint) || {};
+  var ids = bldgIds && bldgIds.length ? bldgIds : Object.keys(store);
+  var letters = {};
+  ids.forEach(function (bid) {
+    var cfg = store[bid];
+    if (!cfg || !cfg.options) return;
+    cfg.options.forEach(function (o) {
+      if (
+        o &&
+        o.letter &&
+        ((o.heatSP !== null && o.heatSP !== undefined) || (o.coolSP !== null && o.coolSP !== undefined))
+      ) {
+        letters[o.letter] = true;
+      }
+    });
+  });
+  return Object.keys(letters).sort();
+}
+
+// Builds one export row (array of 20 cells, matching EM_SETPOINT_EXPORT_HEADERS
+// order) per Equipment Matrix row. bldgIdFilter restricts to one building
+// (matched by normalized name against Utility Data's building list — see
+// _emNormBldgNameForJoin); pass '' for all buildings in the project's matrix.
+// optionLetter selects which BAS Savings Calc option ('A'/'B'/'C'/...) supplies
+// the Proposed Occupied Heating/Cooling cells when it has a saved value; every
+// other Proposed cell always comes from the company standard default (see
+// EM_SP_DEFAULTS) since no project-specific source exists for them. The
+// returned array also carries a non-enumerable-in-JSON `.unknownHeatingCount`
+// count (rows whose heating type could not be classified) for the export
+// dialog's site-UI-only note — never written into the exported file.
+function emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) {
+  var data = emLoadMatrix(pid);
+  var rows = (data && data.rows) || [];
+  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
+  var nameToId = {};
+  var hasGasById = {}; // 2026-09-23: building-level Gas-meter presence, for _emDeriveHeatingType's fallback
+  bldgs.forEach(function (b) {
+    nameToId[_emNormBldgNameForJoin(b.name)] = b.id;
+    // undefined (not false) when the building has no meter records at all — absence of meter
+    // data is not evidence of an all-electric building, so it must not flip the fallback away
+    // from the pre-existing hydronic default (only an actual non-Gas meter list does that).
+    hasGasById[b.id] =
+      b.meters && b.meters.length
+        ? b.meters.some(function (m) {
+            return m.commodity === 'Gas';
+          })
+        : undefined;
+  });
+  var sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(pid) : null;
+  var spStore = (sd && sd.basSetpoint) || {};
+
+  var out = [];
+  out.unknownHeatingCount = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var bId = nameToId[_emNormBldgNameForJoin(row.building || '')];
+    if (bldgIdFilter && bId !== bldgIdFilter) continue;
+
+    var pts = emGetNormalizedPoints(row) || {};
+    var cfg = bId ? spStore[bId] : null;
+    var opt = null;
+    if (cfg && cfg.options && optionLetter) {
+      opt =
+        cfg.options.filter(function (o) {
+          return o && o.letter === optionLetter;
+        })[0] || null;
+    }
+
+    var heatType = _emDeriveHeatingType(row, pts, bId ? hasGasById[bId] : undefined);
+    if (!heatType.known) out.unknownHeatingCount++;
+    var unocc = EM_SP_DEFAULTS.unocc[heatType.key];
+    var sched = _emComputeProposedSchedule(row.building || '');
+    var propOccHeat =
+      opt && opt.heatSP !== null && opt.heatSP !== undefined
+        ? _emSpDisplay(opt.heatSP)
+        : String(EM_SP_DEFAULTS.occHeat);
+    var propOccCool =
+      opt && opt.coolSP !== null && opt.coolSP !== undefined
+        ? _emSpDisplay(opt.coolSP)
+        : String(EM_SP_DEFAULTS.occCool);
+
+    out.push([
+      row.building || '?',
+      row.location || row.equipName || '?',
+      emFormatEquipTypeLabel(row) || '?',
+      _emSpDisplay(pts.zoneHtgSetpoint),
+      _emSpDisplay(pts.zoneCoolSetpoint),
+      _emSpDisplay(pts.zoneUnoccHtgSetpoint),
+      _emSpDisplay(pts.zoneUnoccCoolSetpoint),
+      _emAdjustDisplay(pts),
+      '?', // Existing Occupied Time Monday-Friday — no schedule-time point in the BAS Points model
+      '?', // Existing Occupied Start Time Monday-Friday
+      '?', // Existing Occupied Stop Time Monday-Friday
+      '?', // Existing Occupied Sat & Sun
+      propOccHeat, // project option value, else company standard default (70)
+      propOccCool, // project option value, else company standard default (74)
+      String(unocc.heat), // company standard default by heating type — no project source exists
+      String(unocc.cool),
+      String(EM_SP_DEFAULTS.adjustRange), // always +-2 — no project source exists
+      sched.start, // school hours minus staff buffer — no project source exists
+      sched.stop, // school hours plus staff buffer — no project source exists
+      'None', // Sat & Sun — company standard default
+    ]);
+  }
+  return out;
+}
+
+// Writes the .xlsx using the site's existing SheetJS (XLSX global) library —
+// no new dependency. One sheet, headers + one row per zone/equipment.
+function emExportSetpointSchedule(pid, bldgIdFilter, optionLetter) {
+  if (typeof XLSX === 'undefined') {
+    if (typeof showToast === 'function') showToast('XLSX library not loaded', 'error');
+    return;
+  }
+  var dataRows = emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter);
+  if (!dataRows.length) {
+    if (typeof showToast === 'function') showToast('No equipment rows to export', 'error');
+    return;
+  }
+  var aoa = [EM_SETPOINT_EXPORT_HEADERS].concat(dataRows);
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Setpoints & Schedules');
+
+  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
+  var bName = bldgIdFilter
+    ? (
+        bldgs.filter(function (b) {
+          return b.id === bldgIdFilter;
+        })[0] || {}
+      ).name || 'building'
+    : 'all-buildings';
+  var safeName = String(bName)
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  var fname =
+    'setpoints-schedules-' + (safeName || 'export') + (optionLetter ? '-option-' + optionLetter : '') + '.xlsx';
+  XLSX.writeFile(wb, fname);
+  if (typeof showToast === 'function')
+    showToast('Exported ' + dataRows.length + ' row' + (dataRows.length === 1 ? '' : 's'));
+}
+
+// Opens the small dialog used by both the Equipment Matrix header button and
+// the BAS Savings Calc button. lockedBldgId (optional) pre-selects and, when
+// called from the BAS Calc, restricts the building picker to that building.
+function emOpenSetpointExportDialog(pid, lockedBldgId) {
+  var existing = document.getElementById('em-sp-export-modal');
+  if (existing) existing.remove();
+  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
+  var data = emLoadMatrix(pid);
+  // 2026-09-23 fix: normalized-name match (case, whitespace, trailing "School") so a building
+  // like "Woodland Spring Middle School" in the Equipment Matrix still lists and locks against
+  // Utility Data's "Woodland Spring Middle" — see _emNormBldgNameForJoin.
+  var matrixBldgNames = {};
+  ((data && data.rows) || []).forEach(function (r) {
+    if (r.building) matrixBldgNames[_emNormBldgNameForJoin(r.building)] = true;
+  });
+  var bldgOptsList = bldgs.filter(function (b) {
+    return matrixBldgNames[_emNormBldgNameForJoin(b.name)];
+  });
+
+  // The BAS Savings Calc passes lockedBldgId from Utility Data's building id. That resolves
+  // here whenever the Equipment Matrix's own row.building text normalized-matches the Utility
+  // Data building name (same normalization emBuildSetpointExportRows uses for the Proposed
+  // columns). When it still doesn't match at all, fail safe to "All buildings" rather than
+  // silently filtering every row out — and say so, so the mismatch is visible, not invisible.
+  var lockedBldgValid =
+    !!lockedBldgId &&
+    bldgOptsList.some(function (b) {
+      return b.id === lockedBldgId;
+    });
+  var lockedBldgUnresolvedName = null;
+  if (lockedBldgId && !lockedBldgValid) {
+    var lockedBldgRec = bldgs.filter(function (b) {
+      return b.id === lockedBldgId;
+    })[0];
+    lockedBldgUnresolvedName = lockedBldgRec ? lockedBldgRec.name : null;
+  }
+
+  var bldgOptsHtml =
+    '<option value="">All buildings</option>' +
+    bldgOptsList
+      .map(function (b) {
+        var sel = lockedBldgValid && b.id === lockedBldgId ? ' selected' : '';
+        return '<option value="' + emHtmlEsc(b.id) + '"' + sel + '>' + emHtmlEsc(b.name) + '</option>';
+      })
+      .join('');
+
+  var relevantIds = lockedBldgValid
+    ? [lockedBldgId]
+    : bldgOptsList.map(function (b) {
+        return b.id;
+      });
+  var optionLetters = emGetSetpointExportOptions(pid, relevantIds);
+  var optionField =
+    optionLetters.length > 1
+      ? '<div style="margin-top:10px"><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px">Proposed option</label>' +
+        '<select id="em-sp-export-option" style="font-size:12px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100%">' +
+        optionLetters
+          .map(function (l) {
+            return '<option value="' + emHtmlEsc(l) + '">Option ' + emHtmlEsc(l) + '</option>';
+          })
+          .join('') +
+        '</select></div>'
+      : '<input type="hidden" id="em-sp-export-option" value="' + emHtmlEsc(optionLetters[0] || '') + '">';
+
+  var html =
+    '<div id="em-sp-export-modal" class="modal-bg open" onclick="if(event.target===this)document.getElementById(\'em-sp-export-modal\').remove()">' +
+    '<div class="modal" style="width:420px">' +
+    '<div class="modal-hdr"><div class="modal-title">Export Setpoints &amp; Schedules</div>' +
+    '<button class="modal-x" onclick="document.getElementById(\'em-sp-export-modal\').remove()">&#10005;</button></div>' +
+    '<div class="modal-body">' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Existing columns come from each equipment\'s BAS Points in the Equipment Matrix; unknown values show "?". Proposed columns use the BAS Savings Calc option below when it has a saved value, otherwise the company standard default.</div>' +
+    '<div id="em-sp-export-note" style="font-size:11px;color:var(--text3);margin-bottom:10px"></div>' +
+    (lockedBldgUnresolvedName
+      ? '<div style="font-size:11px;color:#b45309;background:rgba(217,119,6,0.1);border:1px solid rgba(217,119,6,0.3);border-radius:4px;padding:6px 8px;margin-bottom:10px">"' +
+        emHtmlEsc(lockedBldgUnresolvedName) +
+        '" has no Equipment Matrix rows under a matching building name — showing all buildings in this project\'s matrix instead.</div>'
+      : '') +
+    '<div><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px">Building</label>' +
+    '<select id="em-sp-export-bldg" ' +
+    (lockedBldgValid ? 'disabled' : '') +
+    ' style="font-size:12px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100%">' +
+    bldgOptsHtml +
+    '</select></div>' +
+    optionField +
+    '</div>' +
+    '<div class="modal-ftr"><button class="btn btn-ghost" onclick="document.getElementById(\'em-sp-export-modal\').remove()">Cancel</button>' +
+    '<button class="btn btn-em" id="em-sp-export-go-btn">Export .xlsx</button></div>' +
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  // Bound here (not an inline onclick) so pid/lockedBldgId stay real JS values and never
+  // round-trip through an HTML attribute string (HTML-escaping a value does not make it safe
+  // inside an onclick="..." attribute — the browser decodes entities before the result is
+  // parsed as JS, so an escaped quote can still close the JS string it was meant to be inside).
+  var goBtn = document.getElementById('em-sp-export-go-btn');
+  if (goBtn) {
+    goBtn.addEventListener('click', function () {
+      emHandleSetpointExportSubmit(pid, lockedBldgValid ? lockedBldgId : null);
+    });
+  }
+  // Site-UI-only Proposed-source note (never written into the exported file) — refreshed
+  // whenever the building or option selection changes, bound via addEventListener for the
+  // same reason as goBtn above (no dynamic values in onclick strings).
+  var bldgSelEl = document.getElementById('em-sp-export-bldg');
+  var optSelEl = document.getElementById('em-sp-export-option');
+  function refreshNote() {
+    var noteEl = document.getElementById('em-sp-export-note');
+    if (!noteEl) return;
+    noteEl.textContent = _emSetpointExportNoteText(
+      pid,
+      lockedBldgValid ? lockedBldgId : bldgSelEl ? bldgSelEl.value : '',
+      optSelEl ? optSelEl.value : '',
+    );
+  }
+  refreshNote();
+  if (bldgSelEl) bldgSelEl.addEventListener('change', refreshNote);
+  if (optSelEl && optSelEl.tagName === 'SELECT') optSelEl.addEventListener('change', refreshNote);
+}
+
+// Builds the one plain-text line shown in the export dialog naming where the Proposed columns
+// come from for the current selection — never written into the exported file (item 3 of the
+// 2026-09-23 fix). Reuses emBuildSetpointExportRows as the single source of truth for the
+// heating-type-unknown count rather than duplicating that classification loop.
+function _emSetpointExportNoteText(pid, bldgIdFilter, optionLetter) {
+  var relevantIds = bldgIdFilter
+    ? [bldgIdFilter]
+    : (typeof getUDBldgs === 'function' ? getUDBldgs(pid) : []).map(function (b) {
+        return b.id;
+      });
+  var hasProjectValues = !!optionLetter && emGetSetpointExportOptions(pid, relevantIds).indexOf(optionLetter) !== -1;
+  var text = hasProjectValues
+    ? 'Proposed source: BAS Savings Calc option ' +
+      optionLetter +
+      ' for occupied heating and cooling; company standard defaults for the rest.'
+    : 'Proposed source: company standard defaults (no project-specific BAS Savings Calc values saved for this selection).';
+  var unknownCount = (emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) || []).unknownHeatingCount || 0;
+  if (unknownCount > 0) {
+    text +=
+      ' ' +
+      unknownCount +
+      ' equipment row' +
+      (unknownCount === 1 ? '' : 's') +
+      ': heating type not known — default used.';
+  }
+  return text;
+}
+
+function emHandleSetpointExportSubmit(pid, lockedBldgId) {
+  var bldgSel = document.getElementById('em-sp-export-bldg');
+  var optSel = document.getElementById('em-sp-export-option');
+  var bldgIdFilter = lockedBldgId || (bldgSel ? bldgSel.value : '');
+  var optionLetter = optSel ? optSel.value : '';
+  emExportSetpointSchedule(pid, bldgIdFilter, optionLetter);
+  var modal = document.getElementById('em-sp-export-modal');
+  if (modal) modal.remove();
 }
 
 function emAddManualRow(projId) {

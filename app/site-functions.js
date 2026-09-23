@@ -1742,6 +1742,69 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.6',
+    date: '2026-09-23',
+    title: 'Equipment Matrix: unoccupied and effective setpoint columns',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Raw View now shows Unoccupied Heating Setpoint, Unoccupied Cooling Setpoint, Effective Heating Setpoint, Effective Cooling Setpoint, and Setpoint Adjustment (range) right next to the occupied setpoint columns, with spelled-out headers, reading the same BAS Points data as the Setpoint & Schedule export. A missing point still shows "?", never a guessed value.',
+      },
+      {
+        type: 'change',
+        text: "Setpoint & Schedule export: the heating-type detection used for the Proposed Unoccupied defaults now also checks for a hot water valve point, an electric or gas heat stage point, and the building's Gas meter presence, in addition to the existing VRF/heat pump and hot-water-supply-temp signals — fewer rows fall back to the generic default.",
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix toolbar: the Clear All Data, + Add Row, and Export Setpoints & Schedules buttons no longer build their click handler by pasting the project ID into an onclick string.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.5',
+    date: '2026-09-23',
+    title: 'One rate source for Energy Savings, Report Inputs, and BAS Savings Calc',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Savings tab measure rates, the Baseline + BAS Savings Report Inputs prefill, and BAS Savings Calc / solar "Apply to Measure" now all read the same seasonal $/kWh, $/kW, and $/Therm rates from the same bills. Fixes gas $/Therm showing $0.00 on the Energy Savings tab for CSV-imported bills, and the Report Inputs dialog prefilling different electric rates than the Energy Savings tab for the same building.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.4',
+    date: '2026-09-23',
+    title: 'BAS Savings Calc: real weather data',
+    items: [
+      {
+        type: 'fix',
+        text: 'BAS Savings Calc (Energy Savings Measures, Calc Templates): the Location & Weather Data section now uses the same real Temperature Data and Humidity Data from the BAS Savings Calc Excel template that the workbook itself uses, instead of a synthetic weather generator that never reached hot-climate temperatures above 82.5F and produced no humidity data at all. Also fixes a latent-load unit mismatch (humidity data is in grains of moisture, not a ratio) and a calibration-factor double-count in the cooling/heating savings totals.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.3',
+    date: '2026-09-23',
+    title: 'Baseline & BAS Savings Report: Facilities kW cost breakout',
+    items: [
+      {
+        type: 'feature',
+        text: "Baseline & BAS Savings Report and its Excel export: Facilities kW (the utility's 12-month rolling-peak demand ratchet) is now its own usage column, separate from Billed kW. The Annual Electric Cost Reconciliation footnote breaks the electric total into Energy + Billed kW + Facilities kW + Other Charges so every dollar in the total is accounted for.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.2',
+    date: '2026-09-23',
+    title: 'Setpoint and schedule export',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix and BAS Savings Calc: new Setpoint & Schedule export button downloads an .xlsx with the existing and proposed heating/cooling setpoints and schedule for every piece of equipment in a building, ready to hand to a BAS technician.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.1',
     date: '2026-09-23',
     title: 'HVAC Load Estimate: autocalculate, Save, and exports',

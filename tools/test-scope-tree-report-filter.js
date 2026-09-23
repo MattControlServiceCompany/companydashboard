@@ -184,6 +184,7 @@ function buildCtx() {
     'app/scope-tree.js',
     'app/utility-data.js',
     'app/core.js',
+    'app/data/bas-weather-bins.js',
     'app/calculators.js',
     'app/energy-savings.js',
     'app/report-engine.js',

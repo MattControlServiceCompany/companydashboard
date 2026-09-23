@@ -4164,6 +4164,29 @@ function renderBillsPane(pane, m, bills, incl) {
     return;
   }
 
+  // Meter number fallback (item 5a, 2026-09-23): m.meter is the meter-level field, but some
+  // meters were created before a meter number was ever entered — the bills themselves usually
+  // carry one in bill.meterNumber (set at import/extraction time). Fall back to the most common
+  // non-empty bill.meterNumber across this meter's bills so the header isn't a bare '—' when
+  // the data actually has it; never writes m.meter, display-only.
+  const _bfMeterNo =
+    m.meter ||
+    (function () {
+      const counts = {};
+      (bills || []).forEach((b) => {
+        const v = (b.meterNumber || '').toString().trim();
+        if (v) counts[v] = (counts[v] || 0) + 1;
+      });
+      let best = '',
+        bestN = 0;
+      for (const k in counts) {
+        if (counts[k] > bestN) {
+          best = k;
+          bestN = counts[k];
+        }
+      }
+      return best;
+    })();
   // Sticky header (frozen) — billing count + controls
   const stickyHdrInner =
     '<div class="bills-sticky-left">' +
@@ -4176,7 +4199,7 @@ function renderBillsPane(pane, m, bills, incl) {
     '<div class="bills-sticky-sub">Acct: ' +
     (m.account || '—') +
     ' · Meter: ' +
-    (m.meter || '—') +
+    (_bfMeterNo || '—') +
     '</div>' +
     '</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
