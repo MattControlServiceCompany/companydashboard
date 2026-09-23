@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.7',
+    date: '2026-09-23',
+    title: 'Equipment Matrix: Import Effective Schedules CSV',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix has a new "Import Effective Schedules CSV" toolbar button that reads a WebCTRL Effective Schedules export, matches each control program to its Equipment Matrix row by building and equipment name, and attaches the occupied start/stop time. Shows how many rows matched and lists every unmatched row so none are silently dropped. The imported schedule appears in the Raw View / Export CSV as "Effective Schedule (Imported)" and fills the Existing Occupied Time/Start/Stop/Sat & Sun columns in the Setpoint & Schedule export instead of "?". The import date is stored and shown, since the source file is a one-day snapshot; weekends still fall back to the calendar default (unoccupied).',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.6',
     date: '2026-09-23',
     title: 'Equipment Matrix: unoccupied and effective setpoint columns',

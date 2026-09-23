@@ -3670,6 +3670,12 @@ function emMergeIntoMatrix(existingData, newRows) {
       var old = byId[nr.id];
       nr.notes = old.notes || nr.notes;
       nr.editedAt = old.editedAt || nr.editedAt;
+      // 2026-09-23 (item 5ar): keep an attached Effective Schedules import across future
+      // BAS Points CSV re-imports — same preservation pattern as notes/editedAt above.
+      nr.existingSchedule = old.existingSchedule || nr.existingSchedule;
+      nr.existingScheduleText = old.existingScheduleText || nr.existingScheduleText;
+      nr.existingScheduleImportedAt = old.existingScheduleImportedAt || nr.existingScheduleImportedAt;
+      nr.existingScheduleFileName = old.existingScheduleFileName || nr.existingScheduleFileName;
     }
     byId[nr.id] = nr;
   }
@@ -4055,6 +4061,11 @@ function emRenderMatrix(container, data, pid) {
     _emAddRowBtn.addEventListener('click', function () {
       emAddManualRow(pid);
     });
+  var _emImportSchedBtn = document.getElementById('em-import-schedules-btn');
+  if (_emImportSchedBtn)
+    _emImportSchedBtn.addEventListener('click', function () {
+      emTriggerEffectiveSchedulesImport(pid);
+    });
 
   emRenderTable(data, _emFilters);
   // Apply persisted zoom (no-op at 100% but sets up the style tag consistently)
@@ -4249,6 +4260,117 @@ function emCloseUploadModal(btn, resolvedMode) {
   if (btn) btn.textContent = resolvedMode === 'replace' ? 'Re-Import CSVs' : 'Import CSVs';
 }
 
+/* ── Effective Schedules CSV import — file picker + result modal (item 5ar) ──
+   The parsing/matching logic lives in emAttachEffectiveSchedules (near the
+   Setpoint & Schedule export, since it feeds that export); these three
+   functions are only the DOM wiring: a hidden file input, the FileReader
+   handoff, and a dismissible result modal that always lists unmatched rows
+   (memory: report unmatched rows in the UI, never silently drop them). */
+function emTriggerEffectiveSchedulesImport(pid) {
+  var resolvedPid = pid || window._emActivePid;
+  if (!resolvedPid) {
+    if (typeof showToast === 'function') showToast('No project selected', 'warn');
+    return;
+  }
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.csv';
+  input.style.display = 'none';
+  input.addEventListener('change', function () {
+    var file = input.files && input.files[0];
+    if (file) emHandleEffectiveSchedulesFile(resolvedPid, file);
+    if (input.parentNode) input.parentNode.removeChild(input);
+  });
+  document.body.appendChild(input);
+  input.click();
+}
+
+function emHandleEffectiveSchedulesFile(pid, file) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    var text = String(reader.result || '');
+    var result = emAttachEffectiveSchedules(pid, text, file.name);
+    emShowEffectiveSchedulesResult(result);
+    var data = emLoadMatrix(pid);
+    var tableWrap = document.getElementById('em-table-wrap');
+    var container = tableWrap ? tableWrap.parentNode : null;
+    if (data && container) emRenderMatrix(container, data, pid);
+  };
+  reader.onerror = function () {
+    if (typeof showToast === 'function') showToast('Could not read the Effective Schedules file', 'error');
+  };
+  reader.readAsText(file);
+}
+
+function emShowEffectiveSchedulesResult(result) {
+  var existing = document.getElementById('em-sched-result-backdrop');
+  if (existing) existing.parentNode.removeChild(existing);
+  var backdrop = document.createElement('div');
+  backdrop.id = 'em-sched-result-backdrop';
+  backdrop.style.cssText =
+    'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:9998;' +
+    'display:flex;align-items:flex-start;justify-content:center;padding-top:70px';
+  backdrop.addEventListener('click', function (e) {
+    if (e.target === backdrop) backdrop.parentNode.removeChild(backdrop);
+  });
+
+  var panel = document.createElement('div');
+  panel.style.cssText =
+    'background:var(--s1);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.28);' +
+    'width:560px;max-width:calc(100vw - 32px);z-index:9999;padding:20px;max-height:calc(100vh - 110px);overflow-y:auto';
+
+  var summary = result.error
+    ? emHtmlEsc(result.error)
+    : 'Matched ' +
+      result.matchedCount +
+      ' of ' +
+      result.totalCount +
+      ' control program' +
+      (result.totalCount === 1 ? '' : 's') +
+      ' to Equipment Matrix rows.';
+
+  var unmatchedHtml = '';
+  if (result.unmatched && result.unmatched.length) {
+    var unmatchedRowsHtml = result.unmatched
+      .map(function (u) {
+        return (
+          '<tr><td style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text)">' +
+          emHtmlEsc(u.building) +
+          '</td><td style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text)">' +
+          emHtmlEsc(u.controlProgram) +
+          '</td></tr>'
+        );
+      })
+      .join('');
+    unmatchedHtml =
+      '<div style="font-size:12px;font-weight:600;margin:10px 0 6px;color:var(--text)">Unmatched (' +
+      result.unmatched.length +
+      ') — no Equipment Matrix row found for this building + control program:</div>' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:8px"><thead><tr>' +
+      '<th style="text-align:left;padding:4px 8px;font-size:11px;color:var(--text3);border-bottom:1px solid var(--border)">Building</th>' +
+      '<th style="text-align:left;padding:4px 8px;font-size:11px;color:var(--text3);border-bottom:1px solid var(--border)">Control Program</th>' +
+      '</tr></thead><tbody>' +
+      unmatchedRowsHtml +
+      '</tbody></table>';
+  }
+
+  panel.innerHTML =
+    '<div style="font-size:15px;font-weight:700;margin-bottom:8px;color:var(--text)">Effective Schedules Import</div>' +
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:8px">' +
+    summary +
+    '</div>' +
+    unmatchedHtml +
+    '<button id="em-sched-result-close" class="btn btn-sm" style="height:28px;font-size:11px;margin-top:8px">Close</button>';
+
+  backdrop.appendChild(panel);
+  document.body.appendChild(backdrop);
+  var closeBtn = document.getElementById('em-sched-result-close');
+  if (closeBtn)
+    closeBtn.addEventListener('click', function () {
+      backdrop.parentNode.removeChild(backdrop);
+    });
+}
+
 /* ── PHASE 4: TOOLBAR & TABLE ── */
 
 /* ── emGetBldgCounts ─────────────────────────────────────────────────────────
@@ -4432,6 +4554,9 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button id="em-clear-all-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px;background:#b91c1c;border-color:#991b1b;color:#fff">Clear All Data</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
     '<button id="em-export-setpoints-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">Export Setpoints &amp; Schedules</button>' +
+    // Escaping (2026-09-23, item 5ar): id="..." here so wiring is attached via addEventListener
+    // (see emRenderMatrix) instead of interpolating pid into an onclick string.
+    '<button id="em-import-schedules-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">Import Effective Schedules CSV</button>' +
     '<button id="em-add-row-btn" class="btn btn-ghost btn-sm" style="height:28px;font-size:11px">+ Add Row</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddCustomCol(\'' +
     pid +
@@ -4547,6 +4672,9 @@ function emGetColDefs(projId) {
     { key: 'equipName', label: 'Equipment Name', group: 'id', width: 240 },
     // Milestone 2: renamed from "Control Program" — shows classified equipment type
     { key: 'category', label: 'Equipment Type', group: 'id', width: 130, isCategory: true },
+    // 2026-09-23 (item 5ar): the imported Effective Schedules CSV's occupied period for this
+    // row, when one was attached — see emAttachEffectiveSchedules / existingScheduleText.
+    { key: 'existingScheduleText', label: 'Effective Schedule (Imported)', group: 'id', width: 220 },
   ];
   for (var i = 0; i < checkCols14.length; i++) {
     var ck = checkCols14[i];
@@ -10240,6 +10368,183 @@ function _emNormBldgNameForJoin(name) {
     .replace(/\s+school$/i, '');
 }
 
+/* ── Effective Schedules CSV import (2026-09-23, item 5ar) ───────────────────
+   Matt: "we still need a way to upload the Effective Schedules CSV file into
+   like the Equipment Matrix or somewhere else so we can have that data in the
+   export." Source file is a WebCTRL "Effective Schedules" export: columns
+   Location (BACnet path to the control program), Control Program (equipment
+   name), Effective Schedule (multi-line text, one "Occupied from X to Y" /
+   "Unoccupied from X to Y" block per period, a ONE-DAY snapshot — the same
+   pattern applies every weekday in WebCTRL; the file says nothing about
+   weekends). Matching reuses the SAME building-name join as the Setpoint &
+   Schedule export (_emNormBldgNameForJoin) plus the location parser already
+   used for the BAS Points CSV import (emParseBACnetBuilding), joined to each
+   Equipment Matrix row's full Control Program string (row.equipName) by a
+   normalized (case/whitespace) exact match. Rows that cannot be matched are
+   NEVER silently dropped — emAttachEffectiveSchedules returns them so the
+   caller can show them on screen (memory: report unmatched rows in the UI).
+   Matched data is written onto the row itself (existingSchedule /
+   existingScheduleText / existingScheduleImportedAt / existingScheduleFileName)
+   so it saves with the project like any other row field, survives future BAS
+   Points CSV merges (see emMergeIntoMatrix), shows in the Raw View / Export
+   CSV table (see the existingScheduleText column in emGetColDefs), and fills
+   the Existing Occupied Time/Start/Stop/Sat & Sun columns in the Setpoint &
+   Schedule export (see emBuildSetpointExportRows) instead of "?". */
+
+// Normalizes a Control Program string for the join: case/whitespace only —
+// no trailing-word stripping (unlike building names, equipment names are not
+// expected to carry a suffix like "School").
+function _emNormEquipNameForJoin(name) {
+  return (name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Parses one WebCTRL Effective Schedules CSV export (header row: Location,
+// Control Program, Effective Schedule) using the same quoted-multiline-aware
+// parser the BAS Points CSV import uses (emParseCSVText already handles the
+// embedded newlines inside each Effective Schedule cell correctly). Column
+// order is detected by header name so a re-ordered export still parses.
+function emParseEffectiveSchedulesCSV(text) {
+  var rows = emParseCSVText(text || '');
+  if (!rows.length) return [];
+  var header = rows[0].map(function (h) {
+    return (h || '').trim().toLowerCase();
+  });
+  var locIdx = header.indexOf('location');
+  var cpIdx = header.indexOf('control program');
+  var schedIdx = header.indexOf('effective schedule');
+  if (locIdx === -1) locIdx = 0;
+  if (cpIdx === -1) cpIdx = 1;
+  if (schedIdx === -1) schedIdx = 2;
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r || (r.length === 1 && !r[0])) continue;
+    var controlProgram = (r[cpIdx] || '').trim();
+    if (!controlProgram) continue;
+    out.push({
+      location: (r[locIdx] || '').trim(),
+      controlProgram: controlProgram,
+      scheduleText: (r[schedIdx] || '').trim(),
+    });
+  }
+  return out;
+}
+
+// Parses one "Occupied from H:MM AM/PM to H:MM AM/PM" clock string into
+// minutes-since-midnight. Returns null on anything unparsable — never guesses.
+function _emParseClock12h(str) {
+  var m = /(\d{1,2}):(\d{2})\s*([AP])M/i.exec(str || '');
+  if (!m) return null;
+  var hh = parseInt(m[1], 10);
+  var mm = parseInt(m[2], 10);
+  if (isNaN(hh) || isNaN(mm)) return null;
+  var ap = m[3].toUpperCase();
+  if (ap === 'A') {
+    if (hh === 12) hh = 0;
+  } else if (hh !== 12) {
+    hh += 12;
+  }
+  return hh * 60 + mm;
+}
+
+// Scans an Effective Schedule cell's text for "Occupied from X to Y" blocks
+// (word-boundary "Occupied" — never matches inside "Unoccupied"). Most rows
+// have exactly one block; if more than one is present, the earliest start and
+// latest stop across all of them is used. Returns { hasOccupied: false } when
+// no Occupied block is found (the program is unoccupied all day).
+function _emParseScheduleBlock(text) {
+  var re = /\bOccupied from\s+(\d{1,2}:\d{2}\s*[AP]M)\s+to\s+(\d{1,2}:\d{2}\s*[AP]M)/gi;
+  var m,
+    minStart = null,
+    maxStop = null;
+  while ((m = re.exec(text || ''))) {
+    var s = _emParseClock12h(m[1]);
+    var e = _emParseClock12h(m[2]);
+    if (s === null || e === null) continue;
+    if (minStart === null || s < minStart) minStart = s;
+    if (maxStop === null || e > maxStop) maxStop = e;
+  }
+  if (minStart === null || maxStop === null) return { hasOccupied: false };
+  return {
+    hasOccupied: true,
+    startMin: minStart,
+    stopMin: maxStop,
+    startStr: _emFormatClockFromMinutes(minStart),
+    stopStr: _emFormatClockFromMinutes(maxStop),
+  };
+}
+
+// Parses + matches an Effective Schedules CSV against the project's saved
+// Equipment Matrix, writes the matched schedule onto each matching row, and
+// saves the matrix. Returns { matchedCount, totalCount, unmatched } — never
+// throws away unmatched rows; the caller must show them (emShowEffectiveSchedulesResult).
+function emAttachEffectiveSchedules(pid, csvText, fileName) {
+  var data = emLoadMatrix(pid);
+  if (!data || !data.rows || !data.rows.length) {
+    return {
+      matchedCount: 0,
+      totalCount: 0,
+      unmatched: [],
+      error: 'No Equipment Matrix rows for this project yet — import a BAS Points CSV first.',
+    };
+  }
+  var rows = data.rows;
+  var lookup = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var key = _emNormBldgNameForJoin(r.building || '') + '||' + _emNormEquipNameForJoin(r.equipName || '');
+    if (!lookup[key]) lookup[key] = [];
+    lookup[key].push(r);
+  }
+  var parsed = emParseEffectiveSchedulesCSV(csvText);
+  var importDate = new Date().toISOString().slice(0, 10);
+  var unmatched = [];
+  var matchedRowIds = {};
+  for (var j = 0; j < parsed.length; j++) {
+    var p = parsed[j];
+    var bldg = emParseBACnetBuilding(p.location);
+    var key = _emNormBldgNameForJoin(bldg) + '||' + _emNormEquipNameForJoin(p.controlProgram);
+    var matches = lookup[key];
+    if (!matches || !matches.length) {
+      unmatched.push({ location: p.location, controlProgram: p.controlProgram, building: bldg || '(unknown)' });
+      continue;
+    }
+    var block = _emParseScheduleBlock(p.scheduleText);
+    for (var k = 0; k < matches.length; k++) {
+      var row = matches[k];
+      if (block.hasOccupied) {
+        row.existingSchedule = {
+          startMin: block.startMin,
+          stopMin: block.stopMin,
+          startStr: block.startStr,
+          stopStr: block.stopStr,
+          rawText: p.scheduleText,
+        };
+        row.existingScheduleText = block.startStr + '-' + block.stopStr + ' Mon-Fri (imported ' + importDate + ')';
+      } else {
+        row.existingSchedule = { rawText: p.scheduleText };
+        row.existingScheduleText = 'No occupied period in source file (imported ' + importDate + ')';
+      }
+      row.existingScheduleImportedAt = importDate;
+      row.existingScheduleFileName = fileName || '';
+      matchedRowIds[row.id] = true;
+    }
+  }
+  data.effectiveSchedulesImport = {
+    fileName: fileName || '',
+    importedAt: importDate,
+    matchedCount: Object.keys(matchedRowIds).length,
+    totalCount: parsed.length,
+    unmatchedCount: unmatched.length,
+  };
+  emSaveMatrix(pid, data);
+  return {
+    matchedCount: Object.keys(matchedRowIds).length,
+    totalCount: parsed.length,
+    unmatched: unmatched,
+  };
+}
+
 // Displays a raw BAS point value as a plain number string, or '?' when the
 // point is missing/blank. Never invents a value — mirrors emComputeSetpointCompliance's
 // _toFloat guard (null in -> '?' out).
@@ -10351,6 +10656,12 @@ function emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) {
         ? _emSpDisplay(opt.coolSP)
         : String(EM_SP_DEFAULTS.occCool);
 
+    // 2026-09-23 (item 5ar): Existing Occupied Time/Start/Stop/Sat & Sun come from an
+    // imported Effective Schedules CSV when one was attached to this row (see
+    // emAttachEffectiveSchedules) — otherwise they stay '?' (never invented).
+    var esch = row.existingSchedule;
+    var eschHasTimes = !!(esch && esch.startStr && esch.stopStr);
+
     out.push([
       row.building || '?',
       row.location || row.equipName || '?',
@@ -10360,10 +10671,10 @@ function emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) {
       _emSpDisplay(pts.zoneUnoccHtgSetpoint),
       _emSpDisplay(pts.zoneUnoccCoolSetpoint),
       _emAdjustDisplay(pts),
-      '?', // Existing Occupied Time Monday-Friday — no schedule-time point in the BAS Points model
-      '?', // Existing Occupied Start Time Monday-Friday
-      '?', // Existing Occupied Stop Time Monday-Friday
-      '?', // Existing Occupied Sat & Sun
+      esch ? (eschHasTimes ? 'Yes' : 'No') : '?', // Existing Occupied Time Monday-Friday
+      eschHasTimes ? esch.startStr : '?', // Existing Occupied Start Time Monday-Friday
+      eschHasTimes ? esch.stopStr : '?', // Existing Occupied Stop Time Monday-Friday
+      esch ? 'None' : '?', // Existing Occupied Sat & Sun — imported file is a one-day snapshot; weekends fall back to the calendar default (unoccupied)
       propOccHeat, // project option value, else company standard default (70)
       propOccCool, // project option value, else company standard default (74)
       String(unocc.heat), // company standard default by heating type — no project source exists

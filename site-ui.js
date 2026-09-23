@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.6'; // Equipment Matrix Raw View: new Unoccupied Heating/Cooling, Effective Heating/Cooling Setpoint, and Setpoint Adjustment (range) columns; toolbar buttons hardened against onclick injection
+  var CH_VERSION = 'v2026.09.23.7'; // Equipment Matrix: Import Effective Schedules CSV attaches existing occupied schedules to matching rows and fills the Setpoint & Schedule export
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
