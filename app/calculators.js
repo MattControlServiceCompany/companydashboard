@@ -3411,6 +3411,7 @@ function openBASCalc(projId) {
             <h2 style="font-size:18px;font-weight:700;margin:0">🏢 BAS Savings Calc</h2>
             <div style="flex:1"></div>
             <button class="btn btn-ghost btn-sm" onclick="bcSaveInputs(${projId})">💾 Save</button>
+            <button class="btn btn-ghost btn-sm" id="bc-setpoint-export-btn">📤 Setpoint Export</button>
             ${
               hasMsr
                 ? `<button class="btn btn-em btn-sm" onclick="bcApplyToMeasure(${projId})">⚡ Apply to Measure ${msrLabel}</button>`
@@ -3606,6 +3607,11 @@ function openBASCalc(projId) {
   wrap.querySelectorAll('.bc-inp').forEach((inp) => {
     inp.addEventListener('input', () => _bcLiveCalc(projId));
     inp.addEventListener('change', () => _bcLiveCalc(projId));
+  });
+  // Setpoint export button — bound here (not an inline onclick) so the building id
+  // stays a real JS value and never round-trips through an HTML attribute string.
+  document.getElementById('bc-setpoint-export-btn')?.addEventListener('click', () => {
+    emOpenSetpointExportDialog(projId, _calcTemplateContext.bldgId || null);
   });
   _bcLiveCalc(projId);
 }

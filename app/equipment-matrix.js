@@ -4411,6 +4411,9 @@ function emRenderToolbar(data, pid, projBadge) {
     pid +
     '\')" style="height:28px;font-size:11px;background:#b91c1c;border-color:#991b1b;color:#fff">Clear All Data</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emOpenSetpointExportDialog(\'' +
+    pid +
+    '\')" style="height:28px;font-size:11px">Export Setpoints &amp; Schedules</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddManualRow(\'' +
     pid +
     '\')" style="height:28px;font-size:11px">+ Add Row</button>' +
@@ -9972,6 +9975,293 @@ function emHandleExportCSV() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/* ── Setpoint & Schedule Export (2026-09-22) ─────────────────────────────────
+   Matt: "add to the site BAS Savings Calc the ability to look at the Equipment
+   Matrix BAS Points data and create an export in the Equipment Matrix with
+   the headings and example row" — exact 20 headings/order from the spec.
+   Existing.* columns are read from each equipment row's BAS Points (via
+   emGetNormalizedPoints — the same read API the Setpoint Value Compliance
+   Engine uses). Proposed.* columns are read from the project's saved BAS
+   Savings Calc inputs (project.savingsData.basSetpoint[bldgId].options).
+   Any value with no source data shows "?" — never invented, never defaulted.
+   Reachable from both the Equipment Matrix header and the BAS Savings Calc
+   (app/calculators.js openBASCalc → emOpenSetpointExportDialog).            */
+var EM_SETPOINT_EXPORT_HEADERS = [
+  'Building Name',
+  'Building location or equipment affected',
+  'Type of Equipment',
+  'Existing Occupied Heating',
+  'Existing Occupied Cooling',
+  'Existing Unoccupied Heating',
+  'Existing Unoccupied Cooling',
+  'Existing Adjustment',
+  'Existing Occupied Time Monday-Friday',
+  'Existing Occupied Start Time Monday-Friday',
+  'Existing Occupied Stop Time Monday-Friday',
+  'Existing Occupied Sat & Sun',
+  'Proposed Occupied Heating',
+  'Proposed Occupied Cooling',
+  'Proposed Unoccupied Heating',
+  'Proposed Unoccupied Cooling',
+  'Proposed Adjustment Range +-',
+  'Proposed Occupied Start Time Monday-Friday',
+  'Proposed Occupied Stop Time Monday-Friday',
+  'Proposed Occupied Sat & Sun',
+];
+
+// Displays a raw BAS point value as a plain number string, or '?' when the
+// point is missing/blank. Never invents a value — mirrors emComputeSetpointCompliance's
+// _toFloat guard (null in -> '?' out).
+function _emSpDisplay(v) {
+  if (v === null || v === undefined || v === '') return '?';
+  var n = parseFloat(v);
+  if (isNaN(n)) return '?';
+  var r = Math.round(n * 10) / 10;
+  return r % 1 === 0 ? String(r) : String(r);
+}
+
+// Combines heating/cooling setpoint ADJUST points into the single "Existing
+// Adjustment" column from Matt's spec. Shows '?' when neither point exists,
+// the shared value when both agree, or 'H:x / C:y' when they differ.
+function _emAdjustDisplay(pts) {
+  var h = pts.zoneHtgAdjust,
+    c = pts.zoneCoolAdjust;
+  var hv = h !== undefined && h !== null && h !== '' && !isNaN(parseFloat(h)) ? parseFloat(h) : null;
+  var cv = c !== undefined && c !== null && c !== '' && !isNaN(parseFloat(c)) ? parseFloat(c) : null;
+  if (hv === null && cv === null) return '?';
+  if (hv !== null && cv !== null) return hv === cv ? String(hv) : 'H:' + hv + ' / C:' + cv;
+  return hv !== null ? String(hv) : String(cv);
+}
+
+// Returns the sorted list of option letters (A/B/C…) that carry a saved
+// heating or cooling setpoint somewhere within the given building ids' BAS
+// Savings Calc inputs. Used to decide whether the export dialog needs an
+// option selector (spec: "if more than one option exists").
+function emGetSetpointExportOptions(pid, bldgIds) {
+  var sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(pid) : null;
+  var store = (sd && sd.basSetpoint) || {};
+  var ids = bldgIds && bldgIds.length ? bldgIds : Object.keys(store);
+  var letters = {};
+  ids.forEach(function (bid) {
+    var cfg = store[bid];
+    if (!cfg || !cfg.options) return;
+    cfg.options.forEach(function (o) {
+      if (
+        o &&
+        o.letter &&
+        ((o.heatSP !== null && o.heatSP !== undefined) || (o.coolSP !== null && o.coolSP !== undefined))
+      ) {
+        letters[o.letter] = true;
+      }
+    });
+  });
+  return Object.keys(letters).sort();
+}
+
+// Builds one export row (array of 20 cells, matching EM_SETPOINT_EXPORT_HEADERS
+// order) per Equipment Matrix row. bldgIdFilter restricts to one building
+// (matched by name against Utility Data's building list); pass '' for all
+// buildings in the project's matrix. optionLetter selects which BAS Savings
+// Calc option ('A'/'B'/'C'/...) supplies the Proposed Occupied Heating/Cooling
+// cells; pass '' to leave those columns '?'.
+function emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) {
+  var data = emLoadMatrix(pid);
+  var rows = (data && data.rows) || [];
+  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
+  var nameToId = {};
+  bldgs.forEach(function (b) {
+    nameToId[b.name] = b.id;
+  });
+  var sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(pid) : null;
+  var spStore = (sd && sd.basSetpoint) || {};
+
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var bId = nameToId[row.building || ''];
+    if (bldgIdFilter && bId !== bldgIdFilter) continue;
+
+    var pts = emGetNormalizedPoints(row) || {};
+    var cfg = bId ? spStore[bId] : null;
+    var opt = null;
+    if (cfg && cfg.options && optionLetter) {
+      opt =
+        cfg.options.filter(function (o) {
+          return o && o.letter === optionLetter;
+        })[0] || null;
+    }
+
+    out.push([
+      row.building || '?',
+      row.location || row.equipName || '?',
+      emFormatEquipTypeLabel(row) || '?',
+      _emSpDisplay(pts.zoneHtgSetpoint),
+      _emSpDisplay(pts.zoneCoolSetpoint),
+      _emSpDisplay(pts.zoneUnoccHtgSetpoint),
+      _emSpDisplay(pts.zoneUnoccCoolSetpoint),
+      _emAdjustDisplay(pts),
+      '?', // Existing Occupied Time Monday-Friday — no schedule-time point in the BAS Points model
+      '?', // Existing Occupied Start Time Monday-Friday
+      '?', // Existing Occupied Stop Time Monday-Friday
+      '?', // Existing Occupied Sat & Sun
+      opt && opt.heatSP !== null && opt.heatSP !== undefined ? _emSpDisplay(opt.heatSP) : '?',
+      opt && opt.coolSP !== null && opt.coolSP !== undefined ? _emSpDisplay(opt.coolSP) : '?',
+      '?', // Proposed Unoccupied Heating — not captured by the BAS Savings Calc options today
+      '?', // Proposed Unoccupied Cooling
+      '?', // Proposed Adjustment Range +-
+      '?', // Proposed Occupied Start Time Monday-Friday
+      '?', // Proposed Occupied Stop Time Monday-Friday
+      '?', // Proposed Occupied Sat & Sun
+    ]);
+  }
+  return out;
+}
+
+// Writes the .xlsx using the site's existing SheetJS (XLSX global) library —
+// no new dependency. One sheet, headers + one row per zone/equipment.
+function emExportSetpointSchedule(pid, bldgIdFilter, optionLetter) {
+  if (typeof XLSX === 'undefined') {
+    if (typeof showToast === 'function') showToast('XLSX library not loaded', 'error');
+    return;
+  }
+  var dataRows = emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter);
+  if (!dataRows.length) {
+    if (typeof showToast === 'function') showToast('No equipment rows to export', 'error');
+    return;
+  }
+  var aoa = [EM_SETPOINT_EXPORT_HEADERS].concat(dataRows);
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Setpoints & Schedules');
+
+  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
+  var bName = bldgIdFilter
+    ? (
+        bldgs.filter(function (b) {
+          return b.id === bldgIdFilter;
+        })[0] || {}
+      ).name || 'building'
+    : 'all-buildings';
+  var safeName = String(bName)
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  var fname =
+    'setpoints-schedules-' + (safeName || 'export') + (optionLetter ? '-option-' + optionLetter : '') + '.xlsx';
+  XLSX.writeFile(wb, fname);
+  if (typeof showToast === 'function')
+    showToast('Exported ' + dataRows.length + ' row' + (dataRows.length === 1 ? '' : 's'));
+}
+
+// Opens the small dialog used by both the Equipment Matrix header button and
+// the BAS Savings Calc button. lockedBldgId (optional) pre-selects and, when
+// called from the BAS Calc, restricts the building picker to that building.
+function emOpenSetpointExportDialog(pid, lockedBldgId) {
+  var existing = document.getElementById('em-sp-export-modal');
+  if (existing) existing.remove();
+  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
+  var data = emLoadMatrix(pid);
+  var matrixBldgNames = {};
+  ((data && data.rows) || []).forEach(function (r) {
+    if (r.building) matrixBldgNames[r.building] = true;
+  });
+  var bldgOptsList = bldgs.filter(function (b) {
+    return matrixBldgNames[b.name];
+  });
+
+  // The BAS Savings Calc passes lockedBldgId from Utility Data's building id. That only
+  // resolves here if the Equipment Matrix's own row.building text exactly matches the Utility
+  // Data building name (the same join every other setpoint consumer — e.g.
+  // _wdLoadZoneSetpoints — uses; a name mismatch is a real, pre-existing data-quality gap, not
+  // something to paper over with a guess). When it doesn't match, fail safe to "All buildings"
+  // rather than silently filtering every row out (which previously produced a stuck, empty
+  // export with no visible reason) — and say so, so the mismatch is visible, not invisible.
+  var lockedBldgValid =
+    !!lockedBldgId &&
+    bldgOptsList.some(function (b) {
+      return b.id === lockedBldgId;
+    });
+  var lockedBldgUnresolvedName = null;
+  if (lockedBldgId && !lockedBldgValid) {
+    var lockedBldgRec = bldgs.filter(function (b) {
+      return b.id === lockedBldgId;
+    })[0];
+    lockedBldgUnresolvedName = lockedBldgRec ? lockedBldgRec.name : null;
+  }
+
+  var bldgOptsHtml =
+    '<option value="">All buildings</option>' +
+    bldgOptsList
+      .map(function (b) {
+        var sel = lockedBldgValid && b.id === lockedBldgId ? ' selected' : '';
+        return '<option value="' + emHtmlEsc(b.id) + '"' + sel + '>' + emHtmlEsc(b.name) + '</option>';
+      })
+      .join('');
+
+  var relevantIds = lockedBldgValid
+    ? [lockedBldgId]
+    : bldgOptsList.map(function (b) {
+        return b.id;
+      });
+  var optionLetters = emGetSetpointExportOptions(pid, relevantIds);
+  var optionField =
+    optionLetters.length > 1
+      ? '<div style="margin-top:10px"><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px">Proposed option</label>' +
+        '<select id="em-sp-export-option" style="font-size:12px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100%">' +
+        optionLetters
+          .map(function (l) {
+            return '<option value="' + emHtmlEsc(l) + '">Option ' + emHtmlEsc(l) + '</option>';
+          })
+          .join('') +
+        '</select></div>'
+      : '<input type="hidden" id="em-sp-export-option" value="' + emHtmlEsc(optionLetters[0] || '') + '">';
+
+  var html =
+    '<div id="em-sp-export-modal" class="modal-bg open" onclick="if(event.target===this)document.getElementById(\'em-sp-export-modal\').remove()">' +
+    '<div class="modal" style="width:420px">' +
+    '<div class="modal-hdr"><div class="modal-title">Export Setpoints &amp; Schedules</div>' +
+    '<button class="modal-x" onclick="document.getElementById(\'em-sp-export-modal\').remove()">&#10005;</button></div>' +
+    '<div class="modal-body">' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Existing columns come from each equipment\'s BAS Points in the Equipment Matrix. Proposed columns come from the BAS Savings Calc option below. Unknown values export as "?".</div>' +
+    (lockedBldgUnresolvedName
+      ? '<div style="font-size:11px;color:#b45309;background:rgba(217,119,6,0.1);border:1px solid rgba(217,119,6,0.3);border-radius:4px;padding:6px 8px;margin-bottom:10px">"' +
+        emHtmlEsc(lockedBldgUnresolvedName) +
+        '" has no Equipment Matrix rows under that exact building name — showing all buildings in this project\'s matrix instead. Proposed columns still need an exact name match to fill in.</div>'
+      : '') +
+    '<div><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px">Building</label>' +
+    '<select id="em-sp-export-bldg" ' +
+    (lockedBldgValid ? 'disabled' : '') +
+    ' style="font-size:12px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100%">' +
+    bldgOptsHtml +
+    '</select></div>' +
+    optionField +
+    '</div>' +
+    '<div class="modal-ftr"><button class="btn btn-ghost" onclick="document.getElementById(\'em-sp-export-modal\').remove()">Cancel</button>' +
+    '<button class="btn btn-em" id="em-sp-export-go-btn">Export .xlsx</button></div>' +
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  // Bound here (not an inline onclick) so pid/lockedBldgId stay real JS values and never
+  // round-trip through an HTML attribute string (HTML-escaping a value does not make it safe
+  // inside an onclick="..." attribute — the browser decodes entities before the result is
+  // parsed as JS, so an escaped quote can still close the JS string it was meant to be inside).
+  var goBtn = document.getElementById('em-sp-export-go-btn');
+  if (goBtn) {
+    goBtn.addEventListener('click', function () {
+      emHandleSetpointExportSubmit(pid, lockedBldgValid ? lockedBldgId : null);
+    });
+  }
+}
+
+function emHandleSetpointExportSubmit(pid, lockedBldgId) {
+  var bldgSel = document.getElementById('em-sp-export-bldg');
+  var optSel = document.getElementById('em-sp-export-option');
+  var bldgIdFilter = lockedBldgId || (bldgSel ? bldgSel.value : '');
+  var optionLetter = optSel ? optSel.value : '';
+  emExportSetpointSchedule(pid, bldgIdFilter, optionLetter);
+  var modal = document.getElementById('em-sp-export-modal');
+  if (modal) modal.remove();
 }
 
 function emAddManualRow(projId) {
