@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.883',
+    date: '2026-09-23',
+    title: 'Setpoint and schedule export',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix and BAS Savings Calc: new Setpoint & Schedule export button downloads an .xlsx with the existing and proposed heating/cooling setpoints and schedule for every piece of equipment in a building, ready to hand to a BAS technician.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.882',
     date: '2026-09-22',
     title: 'Baseline & BAS Savings Report wording and layout fixes',
