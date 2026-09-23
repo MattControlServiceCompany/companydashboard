@@ -5508,25 +5508,27 @@ function rptBuildBaselineDataTable(b, d, opts) {
   blGrpHdr +=
     '<th rowspan="2" class="rpt-n bl-grp bl-total" style="white-space:normal;line-height:1.2">Total<br>Cost</th>';
   // Detail column header row
-  var blHdr = '<th class="rpt-n bl-weather">HDD</th><th class="rpt-n bl-weather">CDD</th>';
+  // No abbreviated words (2026-09-22 owner fix): "HDD"/"CDD" replaced with the spelled-out
+  // "Heating"/"Cooling" (the group header above already reads "Degree Days", so the pair reads
+  // "Degree Days > Heating / Cooling" — no acronym anywhere). "Meter"/"Elec"/"Prop" (this table's
+  // prior abbreviations for Metered/Electric/Propane) spelled out in full below. Only kWh/kW/$
+  // stay short, per the site's unit-abbreviation allowance.
+  var blHdr = '<th class="rpt-n bl-weather">Heating</th><th class="rpt-n bl-weather">Cooling</th>';
   if (_showElec)
     blHdr +=
       '<th class="rpt-n bl-elec">kWh</th>' +
-      // "Metered"/"Electric" abbreviated to "Meter"/"Elec" (2026-09-22, with the Degree Days
-      // columns added) — same Cost-column abbreviation convention this table already uses for
-      // "Gas Cost"/"Prop Cost"/no full commodity name spelled out, not a new pattern.
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Meter<br>kW</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Metered<br>kW</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Elec<br>Cost</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
       '<th class="rpt-n bl-elec">$/kWh</th>';
   if (_showGas)
     blHdr +=
       '<th class="rpt-n bl-gas">Therms</th><th class="rpt-n bl-gas" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n bl-gas">$/Therm</th>';
   if (_showProp)
     blHdr +=
-      '<th class="rpt-n bl-prop">Gallons</th><th class="rpt-n bl-prop" style="white-space:normal;line-height:1.2">Prop<br>Cost</th><th class="rpt-n bl-prop">$/Gal</th>';
+      '<th class="rpt-n bl-prop">Gallons</th><th class="rpt-n bl-prop" style="white-space:normal;line-height:1.2">Propane<br>Cost</th><th class="rpt-n bl-prop">$/Gal</th>';
   if (_showWater)
     blHdr +=
       '<th class="rpt-n bl-water">kGal</th><th class="rpt-n bl-water" style="white-space:normal;line-height:1.2">Water<br>Cost</th><th class="rpt-n bl-water">$/kGal</th>';
@@ -5656,46 +5658,44 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // every column's allocated px width clears its longest word's required px width (word-em ×
   // font-px + 6px padding + ~1px collapsed border) by 13-22px. Full per-column numbers in
   // dashboardlogic.md's 2026-09-22 entry for this fix.
-  // Re-measured 2026-09-22 against the table's ACTUAL rendered font: _rptApplyMinFontFloor
-  // (this file, ~line 1192 — the site-wide 10pt-minimum-printed-text floor) forces every cell in
-  // this table UP to RPT_MIN_TEXT_PX (13.34px) at render time regardless of _blFontPx below
-  // (.rpt-table-bl was not marked '.rpt-mp-dense', so it got the normal floor, not the lower
-  // dense one) — the table was already running at 13.34px, not 9px, before this pass; the prior
-  // "verified at 9px" comment measured a font-size that never actually reached the screen. With
-  // the 2 unconditional Degree Days columns (HDD, CDD) added ahead of every commodity group, the
-  // sum of every column's real 13.34px minimum need measurably exceeded the table's own width
-  // (measured via a headless render: ~781px of real need vs. 718px available) — no column
-  // reweighting alone can fix a genuine total-budget shortfall. Fix has two parts: (1) this table
-  // now carries 'rpt-mp-dense' (below, on the wrapping div) so it floors to the lower 12px
-  // DENSE_MIN instead of 13.34px — the same opt-in this file already uses for other genuinely
-  // dense multi-page tables — closing ~90% of the gap on its own; (2) weights below are each
-  // column's own measured-at-13.34px need (headless-measured clientWidth + real overflow
-  // deficit), so what small margin remains after the font-floor change is spent where the real
-  // content actually needs it, not a flat per-column share. "Metered"/"Electric" shortened to
-  // "Meter"/"Elec" in the header (below) too.
+  // 2026-09-23 owner fix (no abbreviated header words — "Meter"/"Elec"/"Prop"/"HDD"/"CDD" spelled
+  // out to "Metered"/"Electric"/"Propane"/"Heating"/"Cooling"): re-measured from scratch via
+  // headless canvas measureText() against the table's real rendered font (400 12px Arial,
+  // Helvetica, sans-serif — the site's 12px DENSE_MIN floor, from this table's existing
+  // 'rpt-mp-dense' opt-in) instead of hand-tuned em estimates, after 2 hand-tuned passes failed
+  // to converge (Rule Zero — see dashboardlogic.md's 2026-09-23 entry for the full measurement
+  // trail). Horizontal cell padding trimmed 1px->0px (vertical stays 3px) to close a genuine
+  // total-budget shortfall (measured real need exceeded the table's 718px width at 1px padding).
+  // Weights below are each column's measured bare-minimum needPx (longest unsplittable header
+  // word, OR longest full un-wrapped data value including the Annual row — data cells don't
+  // wrap, unlike headers) plus a small hand-adjusted buffer moved from 8 columns that measured
+  // with margin to the 6 that didn't, re-verified headless to 0 overflow. propCost/gallons/
+  // perGal/kgal/waterCost/perKgal (no propane/water building was in this session's test data)
+  // measured the same way against representative sample values for the next building that has
+  // them.
   var _BL_COL_WEIGHT = {
-    hdd: 5.2, // "HDD" header + values like "2,899" — shares the "Degree Days" group with cdd
-    cdd: 5.2, // "CDD" header + values like "2,544"
-    kwh: 5.1,
-    meteredKw: 5.1, // "METER" header vs. its own data — close call
-    billedKw: 5.4,
-    kwCost: 5.1,
-    energyCost: 6.1, // "ENERGY"
-    electricCost: 5.9, // Annual row's "$105,131"-class total drives this, not the "ELEC" header
-    perKwh: 5.4,
-    therms: 6.1, // "THERMS"
-    gasCost: 5.1,
-    perTherm: 6.4, // "$/THERM" — widest single word in the table
-    gallons: 5.8, // "GALLONS"
-    propCost: 4.2,
-    perGal: 4.8,
-    kgal: 3.6,
-    waterCost: 4.2,
-    perKgal: 4.4, // "$/KGAL"
+    hdd: 56, // "HEATING" header
+    cdd: 59, // "COOLING"
+    kwh: 43, // Annual row's "739,249"
+    meteredKw: 62, // "METERED" header — this table's tightest single word
+    billedKw: 46,
+    kwCost: 43,
+    energyCost: 53, // "ENERGY" header
+    electricCost: 63, // "ELECTRIC" header
+    perKwh: 43,
+    therms: 53, // "THERMS" header
+    gasCost: 43, // Annual row's "$12,150"
+    perTherm: 56, // "$/THERM" — widest single word
+    gallons: 58, // "GALLONS" (not in this session's test data; measured against a representative sample)
+    propCost: 59, // "PROPANE" header
+    perGal: 35,
+    kgal: 33,
+    waterCost: 43,
+    perKgal: 43,
   };
-  // Month — "Jan 2024" (8 chars, the baseline year added 2026-09-22) is now this table's longest
-  // single data value; sized accordingly rather than to the old bare "Jan"/"Annual".
-  var _blColWeights = [6.1, _BL_COL_WEIGHT.hdd, _BL_COL_WEIGHT.cdd]; // Month, HDD, CDD
+  // Month — "Jan 2024"/"May 2025" (8 chars, the baseline year added 2026-09-22) is this table's
+  // longest single Month value; measured px need (2026-09-23), same as every other column above.
+  var _blColWeights = [53, _BL_COL_WEIGHT.hdd, _BL_COL_WEIGHT.cdd]; // Month, HDD, CDD
   if (_showElec)
     _blColWeights.push(
       _BL_COL_WEIGHT.kwh,
@@ -5709,7 +5709,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
   if (_showGas) _blColWeights.push(_BL_COL_WEIGHT.therms, _BL_COL_WEIGHT.gasCost, _BL_COL_WEIGHT.perTherm);
   if (_showProp) _blColWeights.push(_BL_COL_WEIGHT.gallons, _BL_COL_WEIGHT.propCost, _BL_COL_WEIGHT.perGal);
   if (_showWater) _blColWeights.push(_BL_COL_WEIGHT.kgal, _BL_COL_WEIGHT.waterCost, _BL_COL_WEIGHT.perKgal);
-  _blColWeights.push(6.2); // Total Cost — sized for "$117,281"
+  _blColWeights.push(51); // Total Cost — measured px need for "$117,281" (2026-09-23)
   var _blWeightSum = _blColWeights.reduce(function (a, w) {
     return a + w;
   }, 0);
@@ -5746,10 +5746,12 @@ function rptBuildBaselineDataTable(b, d, opts) {
       // headers wrap only at spaces / existing <br> tags. The weighted column widths
       // (_BL_COL_WEIGHT above) are what make every header word actually fit, instead of
       // needing a mid-word wrap fallback to hide an undersized column.
-      // Horizontal padding trimmed 3px->2px (2026-09-22, with the Degree Days columns added) —
-      // reclaims 2px per column side (28px total across 14 columns) toward the real 13.34px
-      // floor's column-width budget; vertical padding stays 3px for row readability.
-      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 2px;font-size:' +
+      // Horizontal padding trimmed 3px->2px (2026-09-22, Degree Days columns), then to 0
+      // (2026-09-23, no-abbreviations fix, measured need-vs-available: 730px real need vs. 718px
+      // available at 1px padding — 0px padding drops real need to 702px) — reclaims the last px
+      // of budget the 14-column table needs at the site's 12px DENSE_MIN floor; vertical padding
+      // stays 3px for row readability (only horizontal/text-width padding was under pressure).
+      '<style>.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 0;font-size:' +
       _blFontPx +
       'px;box-sizing:border-box}</style>' +
       blStats +

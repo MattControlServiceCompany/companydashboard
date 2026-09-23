@@ -2725,8 +2725,8 @@ async function exportWoodlandReportToXlsx(data) {
   var ws3 = wb.addWorksheet('Page 3 - Summary');
   ws3.columns = [
     { width: 12 }, // Month — now "Jan 2024" (widened 2026-09-22, was 10)
-    { width: 8 }, // HDD (2026-09-22)
-    { width: 8 }, // CDD (2026-09-22)
+    { width: 16 }, // Heating Degree Days (2026-09-22; spelled out in full, no HDD acronym — widened for the header text, xlsx columns aren't width-constrained like the HTML table)
+    { width: 16 }, // Cooling Degree Days (2026-09-22; spelled out in full, no CDD acronym)
     { width: 12 },
     { width: 11 },
     { width: 11 },
@@ -2753,8 +2753,8 @@ async function exportWoodlandReportToXlsx(data) {
   if (Object.keys(sbm.elecByMo || {}).length || Object.keys(sbm.gasByMo || {}).length) {
     var hRow4 = ws3.addRow([
       'Month',
-      'HDD',
-      'CDD',
+      'Heating Degree Days',
+      'Cooling Degree Days',
       'kWh',
       'Actual kW',
       'Billed kW',
