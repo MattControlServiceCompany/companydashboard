@@ -5682,21 +5682,31 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // measured the same way against representative sample values for the next building that has
   // them.
   var _BL_COL_WEIGHT = {
-    hdd: 56, // "HEATING" header
-    cdd: 59, // "COOLING"
-    kwh: 43, // Annual row's "739,249"
-    meteredKw: 62, // "METERED" header — this table's tightest single word
+    hdd: 55, // "HEATING" header
+    cdd: 58, // "COOLING"
+    kwh: 45, // Annual row's "739,249"
+    meteredKw: 61, // "METERED" header — this table's tightest single word
     billedKw: 46,
-    kwCost: 43,
+    kwCost: 45,
     energyCost: 53, // "ENERGY" header
-    electricCost: 63, // "ELECTRIC" header
+    electricCost: 62, // "ELECTRIC" header
     // origin/main (a0f339a, merged 2026-09-23) relabeled this column's header from single-line
     // "$/kWh" to 2-line "Energy / $/kWh" (Calc re-audit — this column is energy-only $/kWh,
     // distinct from the "Blended Electric Rate" stat above) — its first line is now "ENERGY",
-    // the same word/width as the energyCost column, so it needs the same measured width.
+    // the same word/width as the energyCost column, so it needs the same measured width. Its
+    // +10px growth over the pre-merge single-line "$/kWh" was paid for by giving back the small
+    // buffer hdd/cdd/meteredKw/electricCost had, and moving that same amount to Month/kwh/kwCost/
+    // gasCost below, which the dilution had pushed under. That first-pass reallocation still
+    // left hdd/cdd/meteredKw/electricCost/totalCost 1-3px short (headless re-check found 0
+    // slack anywhere else to steal from — every other column was already at its bare measured
+    // minimum). Fixed at the source instead: removed the 0.3px letter-spacing on
+    // .rpt-table-bl th (energy-department.html, scoped to only this table) to reclaim
+    // 2-2.4px per 7-8 letter header word, then restored hdd/cdd/meteredKw/electricCost to +1px
+    // over their prior post-swap value and totalCost below to close the last <1px each
+    // (re-verified headless: 0 overflow).
     perKwh: 53, // "ENERGY" (top line of the new 2-line "Energy / $/kWh" header)
     therms: 53, // "THERMS" header
-    gasCost: 43, // Annual row's "$12,150"
+    gasCost: 45, // Annual row's "$12,150"
     perTherm: 56, // "$/THERM" — widest single word
     gallons: 58, // "GALLONS" (not in this session's test data; measured against a representative sample)
     propCost: 59, // "PROPANE" header
@@ -5707,7 +5717,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
   };
   // Month — "Jan 2024"/"May 2025" (8 chars, the baseline year added 2026-09-22) is this table's
   // longest single Month value; measured px need (2026-09-23), same as every other column above.
-  var _blColWeights = [53, _BL_COL_WEIGHT.hdd, _BL_COL_WEIGHT.cdd]; // Month, HDD, CDD
+  var _blColWeights = [55, _BL_COL_WEIGHT.hdd, _BL_COL_WEIGHT.cdd]; // Month, HDD, CDD
   if (_showElec)
     _blColWeights.push(
       _BL_COL_WEIGHT.kwh,
@@ -5721,7 +5731,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
   if (_showGas) _blColWeights.push(_BL_COL_WEIGHT.therms, _BL_COL_WEIGHT.gasCost, _BL_COL_WEIGHT.perTherm);
   if (_showProp) _blColWeights.push(_BL_COL_WEIGHT.gallons, _BL_COL_WEIGHT.propCost, _BL_COL_WEIGHT.perGal);
   if (_showWater) _blColWeights.push(_BL_COL_WEIGHT.kgal, _BL_COL_WEIGHT.waterCost, _BL_COL_WEIGHT.perKgal);
-  _blColWeights.push(51); // Total Cost — measured px need for "$117,281" (2026-09-23)
+  _blColWeights.push(52); // Total Cost — measured px need for "$117,281" (2026-09-23)
   var _blWeightSum = _blColWeights.reduce(function (a, w) {
     return a + w;
   }, 0);

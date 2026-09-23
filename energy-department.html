@@ -2433,7 +2433,14 @@
         border-color: var(--rpt-bl-blue-border);
         font-size: 10px;
         text-transform: uppercase;
-        letter-spacing: 0.3px;
+        /* 2026-09-23: letter-spacing removed (was 0.3px) — this class is scoped to only this
+           14-column Building Baseline Data table (no other table uses .rpt-table-bl), and at the
+           dense-mode 12px font floor the table is genuinely out of horizontal budget (verified
+           headless: every column at or under its measured need, zero slack anywhere to
+           reallocate from). Dropping letter-spacing reclaims ~0.3px/char on every header word
+           (2-2.4px on the 7-8 letter words that were overflowing) without touching the no-
+           abbreviation wording (a86a107) or the site's shared 12px DENSE_MIN floor. */
+        letter-spacing: 0;
       }
       .rpt-table-bl td {
         border-color: var(--rpt-border);

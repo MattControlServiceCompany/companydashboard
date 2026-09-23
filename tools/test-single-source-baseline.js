@@ -383,8 +383,10 @@ function runSurfaces(label, em, gm, sqft, blMonths) {
   const d = { project: { id: 1 }, reportOptions: null };
   const opts = { has: { electric: true, gas: true, propane: false } };
   const reportHTML = sandbox.rptBuildBaselineDataTable(b, d, opts);
-  // Annual row cell order (elec+gas both shown): kWh, Actual kW, Billed kW, kW Cost, Energy Cost,
-  // Electric Cost, $/kWh, Therms, Gas Cost, $/Therm, Total Cost — pull all 11 cells in one shot.
+  // Annual row cell order (elec+gas both shown): Heating, Cooling (Degree Days columns, added
+  // 2026-09-22), kWh, Actual kW, Billed kW, kW Cost, Energy Cost, Electric Cost, Energy $/kWh,
+  // Therms, Gas Cost, $/Therm, Total Cost — pull all 13 cells in one shot. (Was 11 cells/indices
+  // 0/2/7/10 before the 2 Degree Days columns were added ahead of the commodity columns.)
   const annualRowM = /<tr class="rpt-tot"><td>Annual<\/td>((?:<td class="rpt-n">[^<]*<\/td>)+)<\/tr>/.exec(reportHTML);
   const annualCells = annualRowM
     ? [...annualRowM[1].matchAll(/<td class="rpt-n">([^<]*)<\/td>/g)].map((m) => m[1])
@@ -392,11 +394,11 @@ function runSurfaces(label, em, gm, sqft, blMonths) {
   const num = (s) => (s ? parseFloat(String(s).replace(/[$,]/g, '')) : null);
   const euiStatM = /Site EUI \(kBtu\/SF\)<\/div><div class="bl-stat-val">([\d.]+)<\/div>/.exec(reportHTML);
   const report = {
-    kwh: num(annualCells[0]),
-    // Billed kW (3rd cell) — the plan's "kW Total = SUM of the 12 monthly billed kW".
-    kwTotal: num(annualCells[2]),
-    therms: num(annualCells[7]),
-    cost: num(annualCells[10]),
+    kwh: num(annualCells[2]),
+    // Billed kW (5th cell) — the plan's "kW Total = SUM of the 12 monthly billed kW".
+    kwTotal: num(annualCells[4]),
+    therms: num(annualCells[9]),
+    cost: num(annualCells[12]),
     eui: euiStatM ? parseFloat(euiStatM[1]) : null,
   };
 
