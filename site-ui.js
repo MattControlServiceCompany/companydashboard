@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.8'; // Gas bill rates: fixed a stored $/Therm value that was actually $/MMBtu on Wood River Energy bills
+  var CH_VERSION = 'v2026.09.23.10'; // Gas bill rates: fixed a stored $/Therm value that was actually $/MMBtu on Wood River Energy bills
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -1742,13 +1742,43 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.23.8',
+    v: 'v2026.09.23.10',
     date: '2026-09-23',
     title: 'Utility Data: fixed a wrong gas rate on bills reported in MMBtu',
     items: [
       {
         type: 'fix',
         text: 'On the Utility Data Bills table, gas bills reported in MMBtu (instead of Therms) were storing a $/MMBtu number in the same field every other bill uses for $/Therm, making that rate 6 to 16 times too high. Gas rates on every bill, including these, now compute from the same single usage calculation the rest of the site already uses, so the Bills table, Energy Savings, Report Inputs, and the BAS Savings Calc all show the same correct $/Therm rate.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.9',
+    date: '2026-09-23',
+    title: 'Baseline & BAS Savings Report: month, year, and degree days on the Building Baseline Data table',
+    items: [
+      {
+        type: 'feature',
+        text: 'Baseline & BAS Savings Report page 3 (Building Baseline Data table): each row now shows the month AND year (e.g. "Jan 2026"), and 2 new columns, Heating Degree Days and Cooling Degree Days, read from the same weather data as the rest of the report, with a count of how many of the 12 baseline months have degree-day coverage. New Baseline Start, Baseline End, and Baseline Length stats above the table.',
+      },
+      {
+        type: 'fix',
+        text: 'Table and column headers spelled out in full ("Metered" and "Electric", not "Meter" and "Elec") with no abbreviations, and re-measured column widths so every header fits with zero text overflow at the dense 12px font floor.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.8',
+    date: '2026-09-23',
+    title: 'Utility Data: Facilities kW fix for CSV-imported electric bills',
+    items: [
+      {
+        type: 'fix',
+        text: 'CSV bill import for Electric meters (Utility Data tab) now fills in the Facilities kW quantity when a raw bill CSV leaves that column blank — computed from the meter’s own billed-demand history (12-month rolling peak), never a guessed value. Fixes Facilities kW and Facilities kW Cost showing blank or $0 on the Baseline Data table, Meter Data table, and the Baseline & BAS Savings Report after importing bills from CSV.',
+      },
+      {
+        type: 'fix',
+        text: 'CSV import now keeps the Facilities Charge dollar value in sync between its two field names (facilitiesCharge and facKWCost) so Facilities kW Cost always shows the real dollar figure regardless of which name the importing code path used, instead of only the minority of readers that check both names.',
       },
     ],
   },

@@ -194,6 +194,15 @@ function buildMoMap(m, blRows, bills, incl) {
           return s + wholeBillSum;
         }, 0) / cnt;
       const normDays = entries.reduce((s, e) => s + e.r.normDays, 0) / cnt;
+      // Degree days (2026-09-22): averaged across contributing years from getNormRows' own
+      // weather lookup (r.hdd/r.cdd, computed against weatherByYm — same source every other
+      // weather-aware reader uses). null when no weather is available for that calendar month
+      // in ANY contributing year, so the Baseline Data table's degree-day coverage check can
+      // tell "0 degree days" (a real cold/mild month) apart from "no weather data".
+      const _hddEntries = entries.filter((e) => e.r.hdd != null);
+      const _cddEntries = entries.filter((e) => e.r.cdd != null);
+      const hdd = _hddEntries.length ? _hddEntries.reduce((s, e) => s + e.r.hdd, 0) / _hddEntries.length : null;
+      const cdd = _cddEntries.length ? _cddEntries.reduce((s, e) => s + e.r.cdd, 0) / _cddEntries.length : null;
       elecByMo[mo] = {
         kwh,
         kwhPredicted,
@@ -207,6 +216,8 @@ function buildMoMap(m, blRows, bills, incl) {
         totalCostPredicted: totalCost,
         commodityCost: kwhCostSum + kwCostSum + facKWCostSum,
         normDays,
+        hdd,
+        cdd,
       };
     } else if (isGas) {
       // Single source of truth (2026-09-22 rewrite): `therms` is whole-bill BILLED usage —
@@ -238,7 +249,14 @@ function buildMoMap(m, blRows, bills, incl) {
             s + (e.bfr.length > 0 ? e.bfr.reduce((ss, b) => ss + getStoredRate(b, 'gas'), 0) / e.bfr.length : 0),
           0,
         ) / cnt;
-      gasByMo[mo] = { therms, thermsPredicted, cost, rate };
+      // Degree days (2026-09-22) — same averaged-from-getNormRows convention as elecByMo above,
+      // kept on gasByMo too so a gas-only building (no electric baseline) still has a source for
+      // the Baseline Data table's per-month HDD/CDD columns and coverage check.
+      const _gHddEntries = entries.filter((e) => e.r.hdd != null);
+      const _gCddEntries = entries.filter((e) => e.r.cdd != null);
+      const hdd = _gHddEntries.length ? _gHddEntries.reduce((s, e) => s + e.r.hdd, 0) / _gHddEntries.length : null;
+      const cdd = _gCddEntries.length ? _gCddEntries.reduce((s, e) => s + e.r.cdd, 0) / _gCddEntries.length : null;
+      gasByMo[mo] = { therms, thermsPredicted, cost, rate, hdd, cdd };
     } else if (isPropane) {
       const gallons = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
       const cost = entries.reduce((s, e) => s + e.r.cost, 0) / cnt;

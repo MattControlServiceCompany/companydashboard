@@ -1106,8 +1106,11 @@ console.log('\n--- 12. Forbidden jargon tokens; distinct energy-only vs. blended
   );
   // The two labeled figures must actually differ (energy-only < blended) on real data, not just
   // carry different names on the same number.
+  // 8 numeric tds precede the Energy $/kWh cell in the Annual row: Heating, Cooling (Degree
+  // Days columns, added 2026-09-22), kWh, Metered kW, Billed kW, kW Cost, Energy Cost,
+  // Electric Cost — was {6} before Degree Days existed.
   const energyOnlyM =
-    /Energy<br>\$\/kWh<\/th>[\s\S]*?<tr class="rpt-tot"><td>Annual<\/td>(?:<td class="rpt-n">[^<]*<\/td>){6}<td class="rpt-n">\$([\d.]+)<\/td>/.exec(
+    /Energy<br>\$\/kWh<\/th>[\s\S]*?<tr class="rpt-tot"><td>Annual<\/td>(?:<td class="rpt-n">[^<]*<\/td>){8}<td class="rpt-n">\$([\d.]+)<\/td>/.exec(
       html8Rate,
     );
   // Note: the label text itself contains a literal "$" (the "($/kWh)" parenthetical), so the

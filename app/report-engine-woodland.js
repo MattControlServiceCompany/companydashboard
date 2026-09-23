@@ -2963,7 +2963,9 @@ async function exportWoodlandReportToXlsx(data) {
   // the kW Cost (G) or Total Cost (N) formulas below, so there is no double-count.
   var ws3 = wb.addWorksheet('Page 3 - Summary');
   ws3.columns = [
-    { width: 10 },
+    { width: 12 }, // Month — now "Jan 2024" (widened 2026-09-22, was 10)
+    { width: 16 }, // Heating Degree Days (2026-09-22; spelled out in full, no HDD acronym — widened for the header text, xlsx columns aren't width-constrained like the HTML table)
+    { width: 16 }, // Cooling Degree Days (2026-09-22; spelled out in full, no CDD acronym)
     { width: 12 },
     { width: 11 },
     { width: 11 },
@@ -2981,9 +2983,19 @@ async function exportWoodlandReportToXlsx(data) {
   titleRow(ws3, 'Baseline Summary (Building Baseline Data) — ' + data.building.name);
   var sbm = (data.siteBuilding && data.siteBuilding.baselineMaps) || { elecByMo: {}, gasByMo: {} };
   var sqft = data.building.sqft || 0;
+  // Baseline calendar year per month (2026-09-22) — same b.blMonths convention as
+  // rptBuildBaselineDataTable (app/report-engine.js): sbm itself only keys by 0-11 month index.
+  var _blMonths3 = ((data.siteBuilding && data.siteBuilding.blMonths) || []).slice().sort();
+  var _moYear3 = {};
+  _blMonths3.forEach(function (ym) {
+    var _mi3 = parseInt(ym.split('-')[1], 10) - 1;
+    if (_moYear3[_mi3] == null) _moYear3[_mi3] = ym.split('-')[0];
+  });
   if (Object.keys(sbm.elecByMo || {}).length || Object.keys(sbm.gasByMo || {}).length) {
     var hRow4 = ws3.addRow([
       'Month',
+      'Heating Degree Days',
+      'Cooling Degree Days',
       'kWh',
       'Actual kW',
       'Billed kW',
@@ -3000,6 +3012,8 @@ async function exportWoodlandReportToXlsx(data) {
     ]);
     styleHeaderRow(hRow4);
     var firstDataRow4 = ws3.rowCount + 1;
+    var _ddCovered3 = 0,
+      _ddMissing3 = [];
     for (var mi = 0; mi < 12; mi++) {
       var eM = (sbm.elecByMo || {})[mi] || {};
       var gM = (sbm.gasByMo || {})[mi] || {};
@@ -3013,9 +3027,16 @@ async function exportWoodlandReportToXlsx(data) {
       var elecCostM = eM.totalCost || 0;
       var thermsM = gM.therms || 0;
       var gasCostM = gM.cost || 0;
+      var hddM = eM.hdd != null ? eM.hdd : gM.hdd;
+      var cddM = eM.cdd != null ? eM.cdd : gM.cdd;
+      var moLabel4 = WOODLAND_MO_ABBR[mi] + (_moYear3[mi] ? ' ' + _moYear3[mi] : '');
+      if (hddM != null || cddM != null) _ddCovered3++;
+      else _ddMissing3.push(moLabel4);
       var rn4 = ws3.rowCount + 1;
       ws3.addRow([
-        WOODLAND_MO_ABBR[mi],
+        moLabel4,
+        hddM != null ? hddM : null,
+        cddM != null ? cddM : null,
         kwhM,
         eM.demandKW || 0,
         eM.billedKW || 0,
@@ -3024,11 +3045,17 @@ async function exportWoodlandReportToXlsx(data) {
         kwCostM,
         enCostM,
         elecCostM,
-        { formula: 'IF(B' + rn4 + '>0,H' + rn4 + '/B' + rn4 + ',0)' },
+        // Energy-only $/kWh = Energy Cost (J) ÷ kWh (D) in this table's final 16-column layout
+        // (Month, HDD, CDD, kWh, Actual kW, Billed kW, Facilities kW, Facilities kW Cost, kW
+        // Cost, Energy Cost, Electric Cost, Energy $/kWh, Therms, Gas Cost, $/Therm, Total Cost)
+        // — the column that used to be "H" (Energy Cost) before the Facilities kW split (origin,
+        // 2026-09-23) inserted 2 more columns ahead of it. NOT Electric Cost (K, energy +
+        // demand), which is the separately-labeled "Blended Electric Rate" stat below.
+        { formula: 'IF(D' + rn4 + '>0,J' + rn4 + '/D' + rn4 + ',0)' },
         thermsM,
         gasCostM,
-        gM.rate > 0 ? gM.rate : { formula: 'IF(K' + rn4 + '>0,L' + rn4 + '/K' + rn4 + ',0)' },
-        { formula: 'I' + rn4 + '+L' + rn4 },
+        gM.rate > 0 ? gM.rate : { formula: 'IF(M' + rn4 + '>0,N' + rn4 + '/M' + rn4 + ',0)' },
+        { formula: 'K' + rn4 + '+N' + rn4 },
       ]);
     }
     var lastDataRow4 = ws3.rowCount;
@@ -3036,43 +3063,72 @@ async function exportWoodlandReportToXlsx(data) {
     // billed kW values, never a peak or an average. Matches the site's Building Baseline Data
     // table. Facilities kW Total (2026-09-23) = MAX — a 12-month rolling-peak ratchet, never a
     // sum (the same monthly figure repeats on the bill).
+    //
+    // Final 16-column layout after merging Degree Days (2026-09-22) with the Facilities kW split
+    // (origin/main, 2026-09-23): A Month, B HDD, C CDD, D kWh, E Actual kW, F Billed kW,
+    // G Facilities kW, H Facilities kW Cost, I kW Cost, J Energy Cost, K Electric Cost,
+    // L Energy $/kWh, M Therms, N Gas Cost, O $/Therm, P Total Cost. Every formula below
+    // references this final layout directly (not either side's pre-merge column letters).
     var totR4 = ws3.addRow([
       'Annual',
-      sumF('B', firstDataRow4, lastDataRow4),
-      sumF('C', firstDataRow4, lastDataRow4),
-      sumF('D', firstDataRow4, lastDataRow4),
-      { formula: 'MAX(E' + firstDataRow4 + ':E' + lastDataRow4 + ')' },
-      sumF('F', firstDataRow4, lastDataRow4),
-      sumF('G', firstDataRow4, lastDataRow4),
-      sumF('H', firstDataRow4, lastDataRow4),
-      sumF('I', firstDataRow4, lastDataRow4),
-      // Energy-only $/kWh (2026-09-22 fix): H is Energy Cost, matching each monthly row's own
-      // H/B formula above — NOT I (Electric Cost, energy + demand), which is a different,
-      // separately-labeled "Blended Electric Rate" figure added below.
-      { formula: 'IF(B' + (lastDataRow4 + 1) + '>0,H' + (lastDataRow4 + 1) + '/B' + (lastDataRow4 + 1) + ',0)' },
-      sumF('K', firstDataRow4, lastDataRow4),
-      sumF('L', firstDataRow4, lastDataRow4),
-      { formula: 'IF(K' + (lastDataRow4 + 1) + '>0,L' + (lastDataRow4 + 1) + '/K' + (lastDataRow4 + 1) + ',0)' },
-      sumF('N', firstDataRow4, lastDataRow4),
+      sumF('B', firstDataRow4, lastDataRow4), // HDD
+      sumF('C', firstDataRow4, lastDataRow4), // CDD
+      sumF('D', firstDataRow4, lastDataRow4), // kWh
+      sumF('E', firstDataRow4, lastDataRow4), // Actual kW
+      sumF('F', firstDataRow4, lastDataRow4), // Billed kW — SUM of the 12 monthly billed kW
+      { formula: 'MAX(G' + firstDataRow4 + ':G' + lastDataRow4 + ')' }, // Facilities kW ratchet
+      sumF('H', firstDataRow4, lastDataRow4), // Facilities kW Cost
+      sumF('I', firstDataRow4, lastDataRow4), // kW Cost
+      sumF('J', firstDataRow4, lastDataRow4), // Energy Cost
+      sumF('K', firstDataRow4, lastDataRow4), // Electric Cost
+      // Energy-only $/kWh = Energy Cost (J) ÷ kWh (D) — NOT Electric Cost (K, energy + demand),
+      // which is the separately-labeled "Blended Electric Rate" stat below.
+      { formula: 'IF(D' + (lastDataRow4 + 1) + '>0,J' + (lastDataRow4 + 1) + '/D' + (lastDataRow4 + 1) + ',0)' },
+      sumF('M', firstDataRow4, lastDataRow4), // Therms
+      sumF('N', firstDataRow4, lastDataRow4), // Gas Cost
+      { formula: 'IF(M' + (lastDataRow4 + 1) + '>0,N' + (lastDataRow4 + 1) + '/M' + (lastDataRow4 + 1) + ',0)' }, // $/Therm
+      { formula: 'K' + (lastDataRow4 + 1) + '+N' + (lastDataRow4 + 1) }, // Total Cost = Electric + Gas
     ]);
     styleTotalRow(totR4);
     var A = totR4.number;
     ws3.addRow([]);
+    ws3.addRow([
+      'Baseline Start',
+      _blMonths3.length
+        ? WOODLAND_MO_ABBR[parseInt(_blMonths3[0].split('-')[1], 10) - 1] + ' ' + _blMonths3[0].split('-')[0]
+        : '—',
+    ]);
+    ws3.addRow([
+      'Baseline End',
+      _blMonths3.length
+        ? WOODLAND_MO_ABBR[parseInt(_blMonths3[_blMonths3.length - 1].split('-')[1], 10) - 1] +
+          ' ' +
+          _blMonths3[_blMonths3.length - 1].split('-')[0]
+        : '—',
+    ]);
+    ws3.addRow(['Baseline Length', _blMonths3.length ? _blMonths3.length + ' months' : '—']);
+    ws3.addRow([
+      'Degree Days',
+      _ddCovered3 + ' of 12 months' + (_ddMissing3.length ? ' (missing: ' + _ddMissing3.join(', ') + ')' : ''),
+    ]);
+    ws3.addRow([]);
     ws3.addRow(['Square Feet', sqft]);
-    ws3.addRow(['Electric Use / SF (kWh)', sqft > 0 ? { formula: 'B' + A + '/' + sqft } : null]);
-    ws3.addRow(['Utility Cost / SF', sqft > 0 ? { formula: 'N' + A + '/' + sqft } : null]);
-    ws3.addRow(['Energy $/kWh (energy charges only)', { formula: 'J' + A }]);
+    // Column letters use this table's final 16-column layout — see the totR4 comment above for
+    // the full mapping (Degree Days + Facilities kW split merged together, 2026-09-23).
+    ws3.addRow(['Electric Use / SF (kWh)', sqft > 0 ? { formula: 'D' + A + '/' + sqft } : null]);
+    ws3.addRow(['Utility Cost / SF', sqft > 0 ? { formula: 'P' + A + '/' + sqft } : null]);
+    ws3.addRow(['Energy $/kWh (energy charges only)', { formula: 'L' + A }]);
     ws3.addRow([
       'Blended Electric Rate ($/kWh, energy + demand)',
-      { formula: 'IF(B' + A + '>0,I' + A + '/B' + A + ',0)' },
+      { formula: 'IF(D' + A + '>0,K' + A + '/D' + A + ',0)' },
     ]);
-    ws3.addRow(['Avg Gas Rate ($/Therm)', { formula: 'M' + A }]);
+    ws3.addRow(['Avg Gas Rate ($/Therm)', { formula: 'O' + A }]);
     var euiRow = ws3.addRow([
       'Site EUI (kBtu/SF)',
-      sqft > 0 ? { formula: '(B' + A + '*3.412+K' + A + '*100)/' + sqft } : null,
+      sqft > 0 ? { formula: '(D' + A + '*3.412+M' + A + '*100)/' + sqft } : null,
     ]);
     styleTotalRow(euiRow);
-    ws3.addRow(['Total Annual Utility Cost', { formula: 'N' + A }]);
+    ws3.addRow(['Total Annual Utility Cost', { formula: 'P' + A }]);
     ws3.addRow([]);
     ws3.addRow([
       WD_TEXT.summaryFootnote(sqft) +
