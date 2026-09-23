@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.6'; // Equipment Matrix Raw View: new Unoccupied Heating/Cooling, Effective Heating/Cooling Setpoint, and Setpoint Adjustment (range) columns; toolbar buttons hardened against onclick injection
+  var CH_VERSION = 'v2026.09.23.7'; // Fix Woodland Spring Middle Facilities kW / Facilities kW Cost: CSV bill import now backfills the missing Facilities kW ratchet quantity and keeps facKWCost/facilitiesCharge in sync
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
