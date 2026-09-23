@@ -3339,61 +3339,67 @@ function openBASCalc(projId) {
   const hdrBtns = document.getElementById('svDetailHdrBtns');
   if (hdrBtns) hdrBtns.style.display = 'none';
   const bc = p?.basCalc || {};
+  const bldgId = _calcTemplateContext.bldgId || null;
 
-  // Auto-populate defaults from the target building — only on first open (no saved
-  // basCalc yet), so we never clobber a user's edited/saved inputs. Defaults only;
-  // every field stays editable. See docs/dashboardlogic.md 2026-09-22 entry.
-  const _bcAuto = {};
-  if (_calcTemplateContext.bldgId && !p?.basCalc) {
-    const bldg = typeof getUDBldg === 'function' ? getUDBldg(projId, _calcTemplateContext.bldgId) : null;
-    if (bldg) {
-      if (bldg.sqft) _bcAuto.sqft = parseFloat(bldg.sqft) || 0;
+  // Auto-populate from the target building — runs on every open, not gated on
+  // whether a basCalc object already exists. A prior all-or-nothing gate
+  // (`!p?.basCalc`) meant any project that already had a basCalc — even one still
+  // holding nothing but shipped defaults (sqft 0, Electric heat, 55/70 setpoints),
+  // which is what most real projects had before this fix — never got auto-filled
+  // again. Per-field resolution below protects real user edits instead. See
+  // docs/dashboardlogic.md 2026-09-22 entry ("BAS Savings Calc real autofill fix").
+  const auto = bldgId && typeof chCalcAutofillFields === 'function' ? chCalcAutofillFields(projId, bldgId) : null;
 
-      const meters = bldg.meters || [];
-      const hasGas = meters.some((m) => m.commodity === 'Gas');
-      const hasElec = meters.some((m) => m.commodity === 'Electric');
-      if (hasGas && hasElec)
-        _bcAuto.heatSrc = 4; // Both (Electric + Gas)
-      else if (hasGas)
-        _bcAuto.heatSrc = 3; // Gas (Therms) — bills carry therms, see hvacLoadCalc
-      else if (hasElec) _bcAuto.heatSrc = 2; // Electric
-
-      if (bldg.addr) {
-        const addrLower = String(bldg.addr).toLowerCase();
-        const match = BAS_CITIES.find((c) => {
-          const cityName = c.name.split(',')[0].trim().toLowerCase();
-          return cityName && addrLower.includes(cityName);
-        });
-        if (match) _bcAuto.city = match.id;
-      }
-
-      const spRecord = (p?.setpoints || []).find((r) => r.buildingId === bldg.id);
-      if (spRecord?.zones?.length) {
-        const avgOf = (key) => {
-          const vals = spRecord.zones.map((z) => parseFloat(z[key])).filter((v) => !isNaN(v));
-          return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-        };
-        const occCool = avgOf('occCool'),
-          unoccCool = avgOf('unoccCool'),
-          occHeat = avgOf('occHeat'),
-          unoccHeat = avgOf('unoccHeat');
-        if (occCool != null) _bcAuto.exCoolOcc = occCool;
-        if (unoccCool != null) _bcAuto.exCoolUnocc = unoccCool;
-        if (occHeat != null) _bcAuto.exHeatOcc = occHeat;
-        if (unoccHeat != null) _bcAuto.exHeatUnocc = unoccHeat;
-      }
-    }
-    // Calibration (Section D) is project-scoped only (hvacLoadEst has no per-building
-    // breakout today) — pre-fill when available, documented limitation otherwise.
-    if (p?.hvacLoadEst) {
-      if (p.hvacLoadEst.coolKwhTotal) _bcAuto.calCoolKwh = Math.round(p.hvacLoadEst.coolKwhTotal);
-      if (p.hvacLoadEst.heatKwhTotal) _bcAuto.calHeatKwh = Math.round(p.hvacLoadEst.heatKwhTotal);
+  // City best-effort match from the building address — BAS_CITIES/TMY city list is
+  // BAS-calc-specific presentation data, so this stays local rather than in the
+  // shared helper (no other calc template has a location field today).
+  let autoCity = null;
+  if (bldgId) {
+    const bldg = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+    if (bldg?.addr) {
+      const addrLower = String(bldg.addr).toLowerCase();
+      const match = BAS_CITIES.find((c) => {
+        const cityName = c.name.split(',')[0].trim().toLowerCase();
+        return cityName && addrLower.includes(cityName);
+      });
+      if (match) autoCity = { value: match.id, source: 'building address' };
     }
   }
 
-  const sqft = bc.sqft || _bcAuto.sqft || p?.sqft || 0;
+  // Calibration (Section D) is project-scoped only (hvacLoadEst has no per-building
+  // breakout today) — pre-fill when available, documented limitation otherwise.
+  let autoCalCool = null,
+    autoCalHeat = null;
+  if (p?.hvacLoadEst) {
+    if (p.hvacLoadEst.coolKwhTotal)
+      autoCalCool = { value: Math.round(p.hvacLoadEst.coolKwhTotal), source: 'HVAC Load Estimation' };
+    if (p.hvacLoadEst.heatKwhTotal)
+      autoCalHeat = { value: Math.round(p.hvacLoadEst.heatKwhTotal), source: 'HVAC Load Estimation' };
+  }
+
+  // Resolve one field via the shared chResolveCalcField (app/calc-autofill.js): a
+  // real prior user edit always wins (explicitly touched this session, or a saved
+  // value that differs from the shipped default — evidence a human typed something).
+  // Otherwise autofill wins when available; otherwise the shipped default is used
+  // and flagged so the user knows it isn't building data.
+  const touched = new Set(bc.__userTouched || []);
+  const _bcResolve = (field, shippedDefault, autoResult) =>
+    chResolveCalcField(bc[field], shippedDefault, autoResult, touched, field);
+  const _bcHintSpan = chCalcFieldHintHTML;
+
+  const rSqft = _bcResolve('sqft', 0, auto?.sqft);
+  const rHeatSrc = _bcResolve('heatSrc', 2, auto?.heatSrc);
+  const rCity = _bcResolve('city', 4, autoCity);
+  const rExCoolOcc = _bcResolve('exCoolOcc', 55, auto?.exCoolOcc);
+  const rExCoolUnocc = _bcResolve('exCoolUnocc', 70, auto?.exCoolUnocc);
+  const rExHeatOcc = _bcResolve('exHeatOcc', 70, auto?.exHeatOcc);
+  const rExHeatUnocc = _bcResolve('exHeatUnocc', 60, auto?.exHeatUnocc);
+  const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
+  const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
+
+  const sqft = rSqft.value || p?.sqft || 0;
   const cityOpts = BAS_CITIES.map(
-    (c) => `<option value="${c.id}" ${(bc.city || _bcAuto.city || 4) === c.id ? 'selected' : ''}>${c.name}</option>`,
+    (c) => `<option value="${c.id}" ${rCity.value == c.id ? 'selected' : ''}>${c.name}</option>`,
   ).join('');
   const hasMsr = !!_calcTemplateContext?.targetMeasureId;
   const msrLabel = hasMsr
@@ -3443,13 +3449,13 @@ function openBASCalc(projId) {
             <div class="card-hdr"><span class="card-title">A — Building &amp; Equipment</span></div>
             <div style="padding:14px">
               <div class="f3">
-                <div class="fg"><label class="fl">Building SqFt</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${sqft}" placeholder="e.g. 50000"></div>
+                <div class="fg"><label class="fl">Building SqFt</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${sqft}" placeholder="e.g. 50000">${_bcHintSpan(rSqft.hint)}</div>
                 <div class="fg"><label class="fl">Heating Source</label><select class="fs bc-inp" id="bc-heatSrc">
-                  <option value="1" ${(bc.heatSrc || _bcAuto.heatSrc || 2) == 1 ? 'selected' : ''}>1 — Gas (MCF)</option>
-                  <option value="2" ${(bc.heatSrc || _bcAuto.heatSrc || 2) == 2 ? 'selected' : ''}>2 — Electric (kWh)</option>
-                  <option value="3" ${(bc.heatSrc || _bcAuto.heatSrc || 2) == 3 ? 'selected' : ''}>3 — Gas (Therms)</option>
-                  <option value="4" ${(bc.heatSrc || _bcAuto.heatSrc || 2) == 4 ? 'selected' : ''}>4 — Both (Electric + Gas)</option>
-                </select></div>
+                  <option value="1" ${rHeatSrc.value == 1 ? 'selected' : ''}>1 — Gas (MCF)</option>
+                  <option value="2" ${rHeatSrc.value == 2 ? 'selected' : ''}>2 — Electric (kWh)</option>
+                  <option value="3" ${rHeatSrc.value == 3 ? 'selected' : ''}>3 — Gas (Therms)</option>
+                  <option value="4" ${rHeatSrc.value == 4 ? 'selected' : ''}>4 — Both (Electric + Gas)</option>
+                </select>${_bcHintSpan(rHeatSrc.hint)}</div>
                 <div class="fg"><label class="fl">% of VRF kWh</label><input class="fi bc-inp" id="bc-vrfPct" type="number" value="${bc.vrfPct || 0}" min="0" max="100" step="1"></div>
               </div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr) repeat(3,auto);gap:10px;margin-top:8px;align-items:end">
@@ -3480,6 +3486,7 @@ function openBASCalc(projId) {
                 <select class="fs bc-inp" id="bc-city" style="width:200px;font-size:11px">${cityOpts}</select>
               </div>
             </div>
+            <div style="padding:0 14px 4px">${_bcHintSpan(rCity.hint)}</div>
             <div style="padding:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
               <div style="font-size:12px;color:var(--text2)" id="bc-weatherStatus">${bc.weatherOverride ? 'Using uploaded data (' + bc.weatherOverride.rowsParsed + ' rows)' : 'Using generated TMY data'}</div>
               <label class="btn btn-ghost btn-sm" style="cursor:pointer">
@@ -3502,12 +3509,12 @@ function openBASCalc(projId) {
               <div class="card-hdr"><span class="card-title" style="color:var(--amber)">Existing Conditions</span></div>
               <div style="padding:14px">
                 <div class="f2">
-                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-exCoolOcc" type="number" value="${bc.exCoolOcc ?? _bcAuto.exCoolOcc ?? 55}"></div>
-                  <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exCoolUnocc" type="number" value="${bc.exCoolUnocc ?? _bcAuto.exCoolUnocc ?? 70}"></div>
+                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-exCoolOcc" type="number" value="${rExCoolOcc.value}">${_bcHintSpan(rExCoolOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exCoolUnocc" type="number" value="${rExCoolUnocc.value}">${_bcHintSpan(rExCoolUnocc.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-exHeatOcc" type="number" value="${bc.exHeatOcc ?? _bcAuto.exHeatOcc ?? 70}"></div>
-                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exHeatUnocc" type="number" value="${bc.exHeatUnocc ?? _bcAuto.exHeatUnocc ?? 60}"></div>
+                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-exHeatOcc" type="number" value="${rExHeatOcc.value}">${_bcHintSpan(rExHeatOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exHeatUnocc" type="number" value="${rExHeatUnocc.value}">${_bcHintSpan(rExHeatUnocc.hint)}</div>
                 </div>
                 <div class="fg"><label class="fl">OA Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-exOAShutoff">
                   <option value="no" ${(bc.exOAShutoff || 'no') === 'no' ? 'selected' : ''}>No</option>
@@ -3567,8 +3574,8 @@ function openBASCalc(projId) {
             <div style="padding:14px">
               <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Enter actual annual energy from utility analysis. Leave blank to skip calibration (factor = 1.0).</div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:end">
-                <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${bc.calCoolKwh || _bcAuto.calCoolKwh || ''}"></div>
-                <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${bc.calHeatKwh || _bcAuto.calHeatKwh || ''}"></div>
+                <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${rCalCoolKwh.value}">${_bcHintSpan(rCalCoolKwh.hint)}</div>
+                <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${rCalHeatKwh.value}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
                   <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Cool Adj Factor</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-adjCool">1.000</div>
@@ -3602,12 +3609,29 @@ function openBASCalc(projId) {
 
         </div>`;
 
-  // Attach live-calc listeners
+  // Attach live-calc listeners — also marks the field as user-touched so a future
+  // open never lets autofill silently overwrite an edit the user just made, even
+  // before they click Save.
   wrap.querySelectorAll('.bc-inp').forEach((inp) => {
-    inp.addEventListener('input', () => _bcLiveCalc(projId));
-    inp.addEventListener('change', () => _bcLiveCalc(projId));
+    const field = inp.id.replace(/^bc-/, '');
+    inp.addEventListener('input', () => {
+      _bcMarkTouched(projId, field);
+      _bcLiveCalc(projId);
+    });
+    inp.addEventListener('change', () => {
+      _bcMarkTouched(projId, field);
+      _bcLiveCalc(projId);
+    });
   });
   _bcLiveCalc(projId);
+}
+
+function _bcMarkTouched(projId, field) {
+  const p = projects.find((x) => x.id === projId);
+  if (!p) return;
+  if (!p.basCalc) p.basCalc = {};
+  if (!Array.isArray(p.basCalc.__userTouched)) p.basCalc.__userTouched = [];
+  if (!p.basCalc.__userTouched.includes(field)) p.basCalc.__userTouched.push(field);
 }
 
 /* ── D. Calculation Engine ── */
