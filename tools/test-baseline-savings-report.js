@@ -863,8 +863,18 @@ function handCompute(cfg) {
     'basis sentence prints the stored inputs',
   );
   assert(
-    t8.includes('Shared-savings structure: 70% of the annual dollars saved to the client and 30% to CSC.'),
-    'shared-savings sentence prints the stored split',
+    t8.includes("this building's own BAS control settings and engineering inputs for this savings calculation"),
+    'basis sentence states where the percent-per-degree/shares/zone-count/setback inputs come from',
+  );
+  assert(
+    t8.includes('This savings calculation applies to the 8 of 10 zones') && t8.includes('remaining 2 zones'),
+    'actuator-coverage sentence prints the stored zone counts (8 active, 2 excluded of 10 total)',
+  );
+  assert(
+    t8.includes(
+      'Shared-savings structure: 70% of the annual dollars saved to the client and 30% to CSC (Control Service Company).',
+    ),
+    'shared-savings sentence prints the stored split and expands CSC on first use',
   );
   assert(
     t8.includes('68°F') && t8.includes('72°F') && /Current\s+68°F\s+70°F/.test(t8.replace(/\s+/g, ' ')),
@@ -1056,6 +1066,62 @@ console.log('\n--- 11. Gas $/Therm prefill non-zero on naturalGasTherms-only bil
     'Annual row Metered kW / Billed kW render WITH thousands separators ("3,470.0"), not "3470.0"',
   );
   assert(!/[^,\d]3470\.0\b/.test(html8Again), 'Annual row kW never renders the un-comma\'d "3470.0" form');
+}
+
+// ─── 12. Cold-review fix pass (2026-09-22): forbidden tokens, distinct rate labels ─────────────
+console.log('\n--- 12. Forbidden jargon tokens; distinct energy-only vs. blended rate labels ---');
+{
+  // (a) Forbidden internal/process/jargon tokens must never reach the client HTML — extends the
+  // section-8/9 assertClean() scan with the specific terms this fix pass removed.
+  const t8b = textOf(ctx8.__overlayCalls[0].html);
+  ['OLS', 'Show your work', '(dual)'].forEach((tok) => {
+    assert(!t8b.includes(tok), 'rendered report text does not contain internal/jargon term "' + tok + '"');
+  });
+  assert(t8b.includes('Building Automation System (BAS)'), 'BAS is expanded on first use');
+  assert(t8b.includes('CSC (Control Service Company)'), 'CSC is expanded on first use');
+  assert(t8b.includes('Sample calculation'), '"Sample calculation" replaces "Show your work"');
+
+  // (b) Forbidden tokens in the xlsx exporter's OWN source text (static scan — exportWoodlandReportToXlsx
+  // needs a real DOM/canvas for its chart images and is not executed in this vm sandbox; every
+  // narrative string it prints is asserted, above, to come from WD_TEXT, so the html8 scan already
+  // covers the shared text — this additionally guards against a literal re-introduced directly in
+  // the xlsx sheet-building code).
+  ['OLS', 'Show your work', "'$/kWh'", '"$/kWh"'].forEach((tok) => {
+    assert(!xlsxSrc.includes(tok), 'xlsx exporter source has no internal/jargon literal "' + tok + '"');
+  });
+
+  // (c) Distinct rate labels: the energy-only rate and the blended (energy+demand) rate must
+  // never share a label anywhere the shared Building Baseline Data table renders (Page 3).
+  const html8Rate = ctx8 && ctx8.__blTableCalls.length ? ctx8.__blTableCalls[ctx8.__blTableCalls.length - 1].html : '';
+  assert(html8Rate.length > 0, 'Page 3 Building Baseline Data table was captured for the rate-label check');
+  assert(html8Rate.includes('Energy<br>$/kWh'), 'Page 3 table header reads "Energy $/kWh" (energy-only, distinct)');
+  assert(
+    html8Rate.includes('Blended Electric Rate'),
+    'Page 3 stats strip reads "Blended Electric Rate" (energy + demand, distinct)',
+  );
+  assert(
+    !/(?<!Energy<br>)\$\/kWh<\/th>/.test(html8Rate),
+    'no bare "$/kWh" header remains once the Energy $/kWh column is labeled',
+  );
+  // The two labeled figures must actually differ (energy-only < blended) on real data, not just
+  // carry different names on the same number.
+  const energyOnlyM =
+    /Energy<br>\$\/kWh<\/th>[\s\S]*?<tr class="rpt-tot"><td>Annual<\/td>(?:<td class="rpt-n">[^<]*<\/td>){6}<td class="rpt-n">\$([\d.]+)<\/td>/.exec(
+      html8Rate,
+    );
+  // Note: the label text itself contains a literal "$" (the "($/kWh)" parenthetical), so the
+  // match must skip to the stat's own value cell rather than stopping at the label's own "$".
+  const blendedM = /Blended Electric Rate[\s\S]*?bl-stat-val">\$([\d.]+)/.exec(html8Rate);
+  if (energyOnlyM && blendedM) {
+    const eOnly = parseFloat(energyOnlyM[1]),
+      blended = parseFloat(blendedM[1]);
+    assert(
+      blended > eOnly,
+      'Blended Electric Rate ($' + blended + ') > Energy $/kWh (energy-only, $' + eOnly + ') — distinct values',
+    );
+  } else {
+    assert(false, 'could not locate both the Energy $/kWh Annual cell and the Blended Electric Rate stat to compare');
+  }
 }
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.22.879'; // Project Baseline all-buildings table
+  var CH_VERSION = 'v2026.09.22.882'; // Baseline & BAS Savings Report wording and layout fixes
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
