@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.882',
+    date: '2026-09-22',
+    title: 'Baseline & BAS Savings Report wording and layout fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'Baseline & BAS Savings Report: clearer labels (energy-only vs blended cost per kWh, billing days vs calendar days), a stated source for every savings assumption, an explanation of why Options B and C save fewer Therms, filled Average-row rates, and tighter page layout.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.881',
     date: '2026-09-22',
     title: 'Utility Data meter-select fix',

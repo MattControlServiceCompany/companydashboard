@@ -5380,7 +5380,12 @@ function rptBuildBaselineDataTable(b, d, opts) {
   if (blDataRows) {
     blDataRows += '<tr class="rpt-tot"><td>Annual</td>';
     if (_showElec) {
-      var _avgCpk = _tKwh > 0 ? _tElecCost / _tKwh : 0;
+      // Energy-only $/kWh (2026-09-22 fix): every monthly row's $/kWh cell is energy cost only
+      // (costPerKwh = enCost/kwh above) — this Annual-row cell must use the SAME numerator
+      // (_tEnCost, not _tElecCost) so the column reads one consistent rate top to bottom. The
+      // blended (energy+demand) rate has its own distinctly-labeled stat box below
+      // ("Blended Electric Rate ($/kWh)"), which still reads _tElecCost/_tKwh.
+      var _avgCpk = _tKwh > 0 ? _tEnCost / _tKwh : 0;
       blDataRows +=
         '<td class="rpt-n">' +
         $n(_tKwh) +
@@ -5445,7 +5450,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
-      '<th class="rpt-n bl-elec">$/kWh</th>';
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>$/kWh</th>';
   if (_showGas)
     blHdr +=
       '<th class="rpt-n bl-gas">Therms</th><th class="rpt-n bl-gas" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n bl-gas">$/Therm</th>';
@@ -5483,7 +5488,10 @@ function rptBuildBaselineDataTable(b, d, opts) {
       );
     if (_tKwh > 0 && _tElecCost > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">Avg Electric Rate ($/kWh)</div><div class="bl-stat-val">$' +
+        // "Blended" (2026-09-22 fix): this is energy + demand cost divided by kWh — a
+        // deliberately different figure from the "Energy $/kWh" column in the table below
+        // (energy charges only). The two must never share a label (Calc re-audit).
+        '<div><div class="bl-stat-label">Blended Electric Rate ($/kWh)</div><div class="bl-stat-val">$' +
           (_tElecCost / _tKwh).toFixed(4) +
           '</div></div>',
       );
@@ -5543,7 +5551,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
     kwCost: 4.2,
     energyCost: 4.9, // "ENERGY"
     electricCost: 5.8, // "ELECTRIC" — widest single word in the table
-    perKwh: 4.8,
+    perKwh: 4.9, // "ENERGY" (2-line "Energy / $/kWh" header, 2026-09-22 distinct-label fix)
     therms: 4.9, // "THERMS"
     gasCost: 4.2,
     perTherm: 5.1, // "$/THERM"
