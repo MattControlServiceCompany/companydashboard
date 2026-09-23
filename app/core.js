@@ -3343,7 +3343,15 @@ function renderProjUDBody(projId, bldgId) {
     body.innerHTML = '';
     // Move rendered content into the proj-ud-body so meter clicks resolve to this container
     while (tempDiv.firstChild) body.appendChild(tempDiv.firstChild);
-    // _udActiveWrap will be re-resolved by _resolveEmbedContext on each meter/tab click
+    // renderUDDetail(tempDiv) pointed window._udActiveWrap at the now-empty, id-less tempDiv
+    // (utility-data.js renderUDDetail always does `window._udActiveWrap = wrap`). Any action
+    // that reads _udActiveWrap.id before the next meter/tab click (e.g. the Bills-pane CSV/PDF
+    // import buttons, which use _syncEmbedUDContext() rather than resolving from the clicked
+    // element) would silently no-op on that id-less div and keep whatever building was
+    // selected before this building switch — surfaced as a false "Meter not found" toast.
+    // Repoint _udActiveWrap at the real, live body element immediately so it's correct even
+    // before any further click happens.
+    if (window._udActiveWrap === tempDiv) window._udActiveWrap = body;
   }
 }
 

@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.881',
+    date: '2026-09-22',
+    title: 'Utility Data meter-select fix',
+    items: [
+      {
+        type: 'fix',
+        text: 'Utility Data: fixed "Meter not found" appearing after switching buildings inside a project’s Utility Data tab, which could make every meter after the first look unselectable until the page was reloaded.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.880',
     date: '2026-09-22',
     title: 'BAS Savings Calc autofill fix',
