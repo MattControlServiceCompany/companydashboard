@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.22.878',
+    date: '2026-09-22',
+    title: 'Gas rate prefill and kW formatting',
+    items: [
+      {
+        type: 'feature',
+        text: "Baseline + BAS Savings Report: gas $/Therm input now fills in automatically from the building's gas bills.",
+      },
+      {
+        type: 'change',
+        text: 'Baseline + BAS Savings Report: annual kW values now display with thousands separators for readability.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.877',
     date: '2026-09-22',
     title: 'Calc template title color fix',
