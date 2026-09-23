@@ -156,11 +156,13 @@ function loadUtilityData() {
   const _ratesMigratedKey = 'en_utility_rates_backfilled_v2';
   if (!DB.get(_ratesMigratedKey)) {
     let ratesFilled = 0;
+    let billsScanned = 0;
     for (const pid of Object.keys(utilityData)) {
       const ud = utilityData[pid];
       for (const b of ud.buildings || []) {
         for (const mt of b.meters || []) {
           for (const bill of mt.bills || []) {
+            billsScanned++;
             // Clear old totalKwRate so it gets recalculated with facKWCost included
             if (bill.totalKwRate && (parseFloat(bill.facKWCost) || 0) > 0) {
               delete bill.totalKwRate;
@@ -176,7 +178,11 @@ function loadUtilityData() {
         '[rate backfill v2] Recalculated rates on ' + ratesFilled + ' bills (totalKwRate now includes facKWCost)',
       );
     }
-    DB.set(_ratesMigratedKey, '1');
+    // Guard (2026-09-23, item 2026-09-23-gas-rate-fix2): same gate-timing fix already applied to
+    // en_utility_gas_mmbtu_rate_fixed_v1 below — only set the gate once bills were actually
+    // scanned, so a pre-data pass (fresh profile, before Restore) retries next load instead of
+    // permanently masking real data.
+    if (billsScanned > 0) DB.set(_ratesMigratedKey, '1');
   }
   // One-time migration (2026-09-23, item 2026-09-23-gas-rate-fix): recompute bill.totalGasRate
   // on EVERY gas bill via resolveGasUsageTherms(bill) — the same canonical usage resolver
@@ -228,6 +234,76 @@ function loadUtilityData() {
       console.log('[gas MMBtu rate fix] Recalculated totalGasRate on ' + gasRateFixed + ' bills (MMBtu-unit bug)');
     }
     if (billsScanned > 0) DB.set(_gasMMbtuRateFixedKey, '1');
+  }
+  // One-time SECOND-PASS migration (2026-09-23, item 2026-09-23-gas-rate-fix2 — cold-review
+  // follow-up, NOT READY finding #2): en_utility_gas_mmbtu_rate_fixed_v1 above already ran
+  // once on real user data BEFORE the three buggy bill-SAVE paths in app/bill-analysis.js
+  // (confirmAutoAssign, _mbSaveOneBill, _saveBillToMatchedMeter) were fixed to route through
+  // the shared _computeGasRate() helper. Any MMBtu-only gas bill saved through one of those
+  // paths in the window between v1's gate tripping and this fix landing kept a wrong,
+  // 6-16x-too-high $/MMBtu-as-$/Therm totalGasRate — and v1's gate, already permanently set,
+  // will never re-run to catch it. This migration re-scans every bill (same billsScanned>0
+  // gate-timing guard as v1, so an empty/pre-Restore/pre-sync pass never trips the gate or
+  // calls saveUtilityData — it cannot sync a value computed before real data has landed) and
+  // recomputes totalGasRate ONLY on the MMBtu-only shape (naturalGasMMbtu present, no
+  // naturalGasTherms/naturalGasCCF — the exact bug signature) via resolveGasUsageTherms(),
+  // the one canonical usage resolver. NEVER overwrites a bill whose totalGasRate the user
+  // hand-edited — the Bill Edit modal and Value Correction Mode both stamp
+  // bill._userCorrected.totalGasRate = {original, at} (app/csv-import.js saveBillRow /
+  // submitValueCorrection) — those bills are skipped and logged in a report instead.
+  const _gasMMbtuRateFixedKeyV2 = 'en_utility_gas_mmbtu_rate_fixed_v2';
+  if (!DB.get(_gasMMbtuRateFixedKeyV2)) {
+    let gasRateFixedV2 = 0;
+    let billsScannedV2 = 0;
+    const _skippedManualV2 = [];
+    for (const pid of Object.keys(utilityData)) {
+      const ud = utilityData[pid];
+      for (const b of ud.buildings || []) {
+        for (const mt of b.meters || []) {
+          for (const bill of mt.bills || []) {
+            billsScannedV2++;
+            const mmbtuOnly =
+              (parseFloat(bill.naturalGasMMbtu) || parseFloat(bill.NaturalGasMMbtu) || 0) > 0 &&
+              !(parseFloat(bill.naturalGasTherms) || parseFloat(bill.NaturalGasTherms) || 0) &&
+              !(parseFloat(bill.naturalGasCCF) || parseFloat(bill.NaturalGasCCF) || 0);
+            if (!mmbtuOnly) continue;
+            if (bill._userCorrected && bill._userCorrected.totalGasRate) {
+              _skippedManualV2.push({
+                pid,
+                building: b.name || b.id,
+                meter: mt.name || mt.id || mt.commodity,
+                billEnd: bill.end,
+                storedRate: bill.totalGasRate,
+              });
+              continue;
+            }
+            const gasChg = parseFloat(bill.GasCharge) || parseFloat(bill.gasCharge) || parseFloat(bill.thermCost) || 0;
+            if (gasChg <= 0 || typeof resolveGasUsageTherms !== 'function') continue;
+            const usage = resolveGasUsageTherms(bill);
+            if (usage <= 0) continue;
+            const correct = (gasChg / usage).toFixed(5);
+            if (bill.totalGasRate !== correct) {
+              bill.totalGasRate = correct;
+              gasRateFixedV2++;
+            }
+          }
+        }
+      }
+    }
+    if (_skippedManualV2.length) {
+      console.warn(
+        '[gas MMBtu rate fix v2] Skipped ' + _skippedManualV2.length + ' hand-corrected bill(s) — left untouched:',
+      );
+      console.table(_skippedManualV2);
+      DB.set('en_gas_mmbtu_rate_fix_v2_skipped_report', JSON.stringify(_skippedManualV2));
+    }
+    if (gasRateFixedV2 > 0) {
+      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
+      console.log(
+        '[gas MMBtu rate fix v2] Recalculated totalGasRate on ' + gasRateFixedV2 + ' MMBtu-only bills (second pass)',
+      );
+    }
+    if (billsScannedV2 > 0) DB.set(_gasMMbtuRateFixedKeyV2, '1');
   }
   // One-time migration: backfill sewerUsage from matching water bills
   // where sewerUsage was empty/missing because bills were saved before the

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.11'; // BAS Savings Calc: VRF COP curve, "Both" heat-source gas split, rebate floor/toggle, company-standard defaults, Use Equipment Matrix Data button
+  var CH_VERSION = 'v2026.09.23.12'; // Utility Data: gas $/Therm rate fix now covers all 4 bill save paths + a second-pass migration for bills saved between the two fixes
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

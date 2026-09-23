@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.12',
+    date: '2026-09-23',
+    title: 'Utility Data: gas $/Therm rate fix now covers every bill save path',
+    items: [
+      {
+        type: 'fix',
+        text: 'The v2026.09.23.10 gas-rate fix corrected 1 of 4 places a gas bill can be saved to the Bills table. The other 3 (auto-assign confirm, multi-bill batch save, and auto-match-to-meter) still stored a $/MMBtu number in the $/Therm field for bills reported in MMBtu (Wood River Energy), 6 to 16 times too high. All 4 save paths now compute the rate the same single way.',
+      },
+      {
+        type: 'fix',
+        text: 'A second, one-time correction pass recalculates the $/Therm rate on any MMBtu-reported gas bill still showing the old, too-high value from before this fix — including bills saved in the short window after the first gas-rate fix went out. It never changes a rate you corrected by hand.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.11',
     date: '2026-09-23',
     title:
