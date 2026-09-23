@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.6',
+    date: '2026-09-23',
+    title: 'Equipment Matrix: unoccupied and effective setpoint columns',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Raw View now shows Unoccupied Heating Setpoint, Unoccupied Cooling Setpoint, Effective Heating Setpoint, Effective Cooling Setpoint, and Setpoint Adjustment (range) right next to the occupied setpoint columns, with spelled-out headers, reading the same BAS Points data as the Setpoint & Schedule export. A missing point still shows "?", never a guessed value.',
+      },
+      {
+        type: 'change',
+        text: "Setpoint & Schedule export: the heating-type detection used for the Proposed Unoccupied defaults now also checks for a hot water valve point, an electric or gas heat stage point, and the building's Gas meter presence, in addition to the existing VRF/heat pump and hot-water-supply-temp signals — fewer rows fall back to the generic default.",
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix toolbar: the Clear All Data, + Add Row, and Export Setpoints & Schedules buttons no longer build their click handler by pasting the project ID into an onclick string.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.5',
     date: '2026-09-23',
     title: 'One rate source for Energy Savings, Report Inputs, and BAS Savings Calc',

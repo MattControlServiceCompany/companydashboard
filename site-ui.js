@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.5'; // Energy Savings, Baseline + BAS Savings Report Inputs, and BAS Savings Calc now share one canonical seasonal rate function — gas $/Therm no longer shows 0
+  var CH_VERSION = 'v2026.09.23.6'; // Equipment Matrix Raw View: new Unoccupied Heating/Cooling, Effective Heating/Cooling Setpoint, and Setpoint Adjustment (range) columns; toolbar buttons hardened against onclick injection
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
