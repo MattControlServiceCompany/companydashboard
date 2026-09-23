@@ -405,12 +405,11 @@ function _wdMonthLabel(bl, i) {
   if (!ym) return '';
   return WOODLAND_MO_FULL[parseInt(ym.split('-')[1], 10) - 1] + ' ' + ym.split('-')[0];
 }
-// Gas usage field chain — identical to computations/normalization.js getNormRows so Page 1's
-// raw bill table and the site path (Page 3) read the same value off the same bill.
+// Gas usage field chain — delegates to the single canonical helper (computations/savings.js
+// resolveGasUsageTherms) so Page 1's raw bill table, the site path (Page 3), and the report's
+// Baseline + BAS Savings Report Inputs prefill all read the same value off the same bill.
 function _wdBillTherms(bill) {
-  return (
-    parseFloat(bill.therms) || parseFloat(bill.naturalGasTherms) || (parseFloat(bill.naturalGasMMbtu) || 0) * 10 || 0
-  );
+  return resolveGasUsageTherms(bill);
 }
 // Seasonal marginal rates from a savings measure's own m.rates (the fields the Energy Savings
 // matrix stores/edits). gasSummer/gasWinter are additive (2026-09-22): absent or 0 => thermRate,

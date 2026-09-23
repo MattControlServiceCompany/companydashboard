@@ -519,7 +519,7 @@ function _hvlRenderReverse(projId, bldgId) {
       const ym = normMonth(bill.start, bill.end, inclGas, allGasBills);
       if (!ym) return;
       const mo = parseInt(ym.split('-')[1]) - 1;
-      const therms = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+      const therms = resolveGasUsageTherms(bill);
       actualTherms[mo] = therms;
       avgThermRate[mo] = getStoredRate(bill, 'gas');
     });
@@ -1277,7 +1277,7 @@ function hvacLoadCalc(projId) {
           totalKw = Math.max(totalKw, parseFloat(bill.demandKW) || 0);
           _hvlElecByMo[mo] = (_hvlElecByMo[mo] || 0) + kwh;
         } else if (m.commodity === 'Gas') {
-          const therms = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+          const therms = resolveGasUsageTherms(bill);
           totalGas += therms;
           _hvlGasByMo[mo] = (_hvlGasByMo[mo] || 0) + therms;
         } else if (m.commodity === 'Propane') {

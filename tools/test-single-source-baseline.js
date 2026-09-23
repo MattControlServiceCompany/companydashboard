@@ -94,6 +94,10 @@ const regressionSrc = fs.readFileSync(REPO + '/computations/regression.js', 'utf
 const normalizationSrc = fs.readFileSync(REPO + '/computations/normalization.js', 'utf8');
 const euiSrc = fs.readFileSync(REPO + '/computations/eui.js', 'utf8');
 const ratesSrc = fs.readFileSync(REPO + '/computations/rates.js', 'utf8');
+// resolveGasUsageTherms (2026-09-22): the ONE canonical gas-usage-field-chain helper
+// (therms/naturalGasTherms/naturalGasMMbtu/naturalGasCCF/usage) — normalization.js's isGas
+// branch now calls it instead of duplicating the chain inline, so it must load here too.
+const savingsSrc = fs.readFileSync(REPO + '/computations/savings.js', 'utf8');
 
 vm.runInContext(
   stubs +
@@ -101,6 +105,8 @@ vm.runInContext(
     fns.join('\n\n') +
     '\n\n' +
     regressionSrc +
+    '\n\n' +
+    savingsSrc +
     '\n\n' +
     normalizationSrc +
     '\n\n' +

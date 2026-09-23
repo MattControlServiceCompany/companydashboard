@@ -5877,7 +5877,7 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel, bills, incl
         const usage = isElec
           ? parseFloat(b.kwh) || 0
           : isGasU
-            ? parseFloat(b.therms) || 0
+            ? resolveGasUsageTherms(b)
             : isPropaneU
               ? parseFloat(b.gallonsDelivered) || parseFloat(b.kwh) || 0
               : parseFloat(b.usage) || 0; // Bug #139: propane uses gallonsDelivered
@@ -7230,7 +7230,7 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric) {
       const usage = isElec
         ? parseFloat(b.kwh) || 0
         : isGasU
-          ? parseFloat(b.therms) || 0
+          ? resolveGasUsageTherms(b)
           : isPropaneBl
             ? parseFloat(b.gallonsDelivered) || parseFloat(b.kwh) || 0
             : parseFloat(b.usage) || 0;
@@ -10251,7 +10251,7 @@ function renderPerfPane(pane, m, bills, incl) {
       filteredPostRows.forEach((r) => {
         const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
         if (!bfr.length) return;
-        const actualTherms = bfr.reduce((s, b) => s + parseFloat(b.therms || b.usage || 0), 0);
+        const actualTherms = bfr.reduce((s, b) => s + resolveGasUsageTherms(b), 0);
         const thermCostAmt = bfr.reduce(
           (s, b) => s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0),
           0,
@@ -10999,7 +10999,7 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
       const usage = isElecB
         ? parseFloat(b.kwh) || 0
         : isGasB
-          ? parseFloat(b.therms) || 0
+          ? resolveGasUsageTherms(b)
           : isPropaneB
             ? parseFloat(b.gallonsDelivered) || parseFloat(b.kwh) || 0 // Bug #139: propane uses gallonsDelivered
             : parseFloat(b.usage) || 0;

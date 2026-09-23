@@ -184,7 +184,7 @@ function calcBldgDefaultRates(projId, bldgId) {
     });
   if (gasM)
     (gasM.bills || []).forEach((bill) => {
-      const th = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+      const th = resolveGasUsageTherms(bill);
       const gc = parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
       totalTherms += th;
       totalGasCost += gc;

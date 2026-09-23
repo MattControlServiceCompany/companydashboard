@@ -363,7 +363,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
         var ym = (bill.start || '').substring(0, 7);
         if (!last12YM.length || last12YM.includes(ym) || ymKeys.length === 0) {
           if (m.commodity === 'Electric') kwhLast += parseFloat(bill.kwh || bill.kWh) || 0;
-          else if (m.commodity === 'Gas') thermsLast += parseFloat(bill.therms) || 0;
+          else if (m.commodity === 'Gas') thermsLast += resolveGasUsageTherms(bill);
           // Bug #139: propane usage lives in gallonsDelivered, not gallons (see utility-data.js:5412)
           else if (m.commodity === 'Propane') propLast += parseFloat(bill.gallonsDelivered) || 0;
         }
@@ -374,7 +374,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
       (b.meters || []).forEach(function (m) {
         (m.bills || []).slice(-12).forEach(function (bill) {
           if (m.commodity === 'Electric') kwhLast += parseFloat(bill.kwh || bill.kWh) || 0;
-          else if (m.commodity === 'Gas') thermsLast += parseFloat(bill.therms) || 0;
+          else if (m.commodity === 'Gas') thermsLast += resolveGasUsageTherms(bill);
           else if (m.commodity === 'Propane') propLast += parseFloat(bill.gallonsDelivered) || 0;
         });
       });
@@ -395,7 +395,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
       (b.meters || []).forEach(function (m) {
         (m.bills || []).slice(-12).forEach(function (bill) {
           if (m.commodity === 'Electric') kwhY += parseFloat(bill.kwh || bill.kWh) || 0;
-          else if (m.commodity === 'Gas') thermsY += parseFloat(bill.therms) || 0;
+          else if (m.commodity === 'Gas') thermsY += resolveGasUsageTherms(bill);
           // Bug #139: propane usage lives in gallonsDelivered, not gallons (see utility-data.js:5412)
           else if (m.commodity === 'Propane') propY += parseFloat(bill.gallonsDelivered) || 0;
         });

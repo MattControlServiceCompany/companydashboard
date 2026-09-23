@@ -318,7 +318,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           if (!ym) return;
           const actUsage =
             m.commodity === 'Gas'
-              ? parseFloat(b2.therms || b2.usage || 0)
+              ? resolveGasUsageTherms(b2)
               : parseFloat(b2.waterUsage || b2.sewerUsage || b2.usage || 0);
           rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
         });
@@ -831,7 +831,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         end: bill.end || '',
         kwh: parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
         kw: parseFloat(bill.demandKW) || 0,
-        therms: parseFloat(bill.therms) || 0,
+        therms: resolveGasUsageTherms(bill),
         gallons: parseFloat(bill.gallonsDelivered) || 0,
         amount: parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0,
         billDate: bill.billDate || bill.end || '',
@@ -5229,6 +5229,14 @@ function rptBuildBaselineDataTable(b, d, opts) {
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
+  // One-decimal number WITH thousands separators (2026-09-22 fix) — the Annual row's summed
+  // kW figures (_tKw, _tBkw) can run into the thousands for a multi-meter building, but
+  // plain .toFixed(1) never inserts a comma ("3309.8"), unlike every other cell in this
+  // table (which routes through $n/$c, both toLocaleString-based). Monthly per-row kW cells
+  // stay on .toFixed(1) — a single month's demand/billed kW never reaches four digits.
+  const $n1 = function (v) {
+    return (v || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  };
   const _has = opts && opts.has ? opts.has : null;
   const hasElec = _has
     ? !!_has.electric
@@ -5377,9 +5385,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         $n(_tKwh) +
         '</td><td class="rpt-n">' +
-        (_tKw ? _tKw.toFixed(1) : '—') +
+        (_tKw ? $n1(_tKw) : '—') +
         '</td><td class="rpt-n">' +
-        (_tBkw ? _tBkw.toFixed(1) : '—') +
+        (_tBkw ? $n1(_tBkw) : '—') +
         '</td><td class="rpt-n">' +
         $c(_tKwCost) +
         '</td><td class="rpt-n">' +
