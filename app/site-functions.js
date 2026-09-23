@@ -1742,6 +1742,38 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.11',
+    date: '2026-09-23',
+    title:
+      'BAS Savings Calc: heating-source gas split, corrected VRF curve, rebate toggle, company-standard setpoint defaults',
+    items: [
+      {
+        type: 'fix',
+        text: 'Heating Source "4 — Both (Electric + Gas)" was routing 100% of the combined heating load into kWh and always showed 0 gas savings for that heating source. A new "Existing Heating Gas — Therms (from UA)" calibration input (Section D, shown only for Heating Source 4) now splits the load between kWh and gas by the share of gas heating, matching the reference workbook.',
+      },
+      {
+        type: 'fix',
+        text: "The VRF heat-pump COP curve used a flat, too-low efficiency value through 32.5°F, then jumped 15°F later than the reference workbook — understating VRF efficiency and overstating heating kWh for any building with a VRF percentage set. Corrected to match the workbook's efficiency curve.",
+      },
+      {
+        type: 'fix',
+        text: 'The Evergy rebate estimate no longer floors a negative Peak or Non-Peak savings figure at zero before applying the rebate rate, matching the reference workbook — a negative savings month can now show as a negative rebate line, instead of silently overstating the total.',
+      },
+      {
+        type: 'feature',
+        text: 'The Evergy rebate estimate is now hidden by default behind a "Show Evergy Rebate estimate" checkbox (Section E) — it is informational only and was never included in savings totals sent to a measure, but now says so and stays out of sight unless someone opts in.',
+      },
+      {
+        type: 'feature',
+        text: 'New "Use Equipment Matrix Data" button pulls averaged existing and proposed setpoints from the building\'s Equipment Matrix rows into Section C with one click, separate from the automatic Set Points autofill that already runs on open.',
+      },
+      {
+        type: 'fix',
+        text: "Shipped default setpoints (shown only when no building data exists yet) now follow the company standard — 70°F occupied heat / 74°F occupied cool / 85°F unoccupied cool for every heating source, and unoccupied heat by heating source (55°F gas, 60°F electric, 65°F Both/VRF) — instead of the calculator template's own placeholder values.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.10',
     date: '2026-09-23',
     title: 'Utility Data: fixed a wrong gas rate on bills reported in MMBtu',
