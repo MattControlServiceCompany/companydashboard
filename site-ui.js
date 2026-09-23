@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.4'; // BAS Savings Calc: real Excel weather data (Temperature/Humidity Data sheets) replaces synthetic weather generation
+  var CH_VERSION = 'v2026.09.23.5'; // Energy Savings, Baseline + BAS Savings Report Inputs, and BAS Savings Calc now share one canonical seasonal rate function — gas $/Therm no longer shows 0
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

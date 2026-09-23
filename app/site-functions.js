@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.5',
+    date: '2026-09-23',
+    title: 'One rate source for Energy Savings, Report Inputs, and BAS Savings Calc',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Savings tab measure rates, the Baseline + BAS Savings Report Inputs prefill, and BAS Savings Calc / solar "Apply to Measure" now all read the same seasonal $/kWh, $/kW, and $/Therm rates from the same bills. Fixes gas $/Therm showing $0.00 on the Energy Savings tab for CSV-imported bills, and the Report Inputs dialog prefilling different electric rates than the Energy Savings tab for the same building.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.4',
     date: '2026-09-23',
     title: 'BAS Savings Calc: real weather data',
