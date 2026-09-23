@@ -832,6 +832,59 @@ function wdComputeSetpointOptions(cfg, elecBL, gasBL) {
 }
 window.wdComputeSetpointOptions = wdComputeSetpointOptions;
 
+// wdOptionAnnualDollar(o, rates) — the ONE place a setpoint option's monthly kWh/kW/Therms
+// quantities become a dollar total (quantity x seasonal rate, monthly then summed). Used by
+// wdApplySetpointOptions (the report's own "Save & Compute") and by any other caller that needs
+// to preview or persist the same option's dollar value (e.g. HVAC Load Estimation's Create
+// Savings Measure card, 2026-09-22) — never re-derive this loop elsewhere.
+function wdOptionAnnualDollar(o, rates) {
+  var R = _wdSeasonalRates(rates);
+  var tot = 0;
+  for (var i = 0; i < 12; i++) {
+    var s = _wdIsSummer(i);
+    tot += (o.kwh[i] || 0) * (s ? R.elecEnergySummer : R.elecEnergyWinter);
+    tot += (o.kw[i] || 0) * (s ? R.demandSummer : R.demandWinter);
+    tot += (o.gas[i] || 0) * (s ? R.gasSummer : R.gasWinter);
+  }
+  return tot;
+}
+window.wdOptionAnnualDollar = wdOptionAnnualDollar;
+
+// wdOptionDollarByMonth(o, rates) — the report's OWN $ rounding convention (round every monthly
+// component to the cent first, then sum the already-rounded cents — see the long comment on its
+// call site in collectWoodlandReportData). This is a DIFFERENT, deliberately more-reproducible
+// total than wdOptionAnnualDollar (which sums full-precision dollars and rounds once, and is
+// what feeds the Energy Savings matrix's m.totalDollar). Use this one whenever a caller needs a
+// number that must equal the printed Baseline + BAS Savings Report (e.g. HVAC Load Estimation's
+// Create Savings Measure preview) — never re-derive the rounding order.
+function wdOptionDollarByMonth(o, rates) {
+  var monthly = [],
+    totGas = 0,
+    totElec = 0,
+    totDem = 0,
+    totAll = 0;
+  for (var i = 0; i < 12; i++) {
+    var summer = _wdIsSummer(i);
+    var gas$ = _wdRoundHalfUp((o.gas[i] || 0) * (summer ? rates.gasSummer : rates.gasWinter), 2);
+    var elec$ = _wdRoundHalfUp((o.kwh[i] || 0) * (summer ? rates.elecEnergySummer : rates.elecEnergyWinter), 2);
+    var dem$ = _wdRoundHalfUp((o.kw[i] || 0) * (summer ? rates.demandSummer : rates.demandWinter), 2);
+    var total$ = _wdRoundHalfUp(gas$ + elec$ + dem$, 2);
+    monthly.push({ gas$: gas$, elec$: elec$, dem$: dem$, total$: total$, summer: summer });
+    totGas += gas$;
+    totElec += elec$;
+    totDem += dem$;
+    totAll += total$;
+  }
+  return {
+    monthly: monthly,
+    annualGas$: _wdRoundHalfUp(totGas, 2),
+    annualElec$: _wdRoundHalfUp(totElec, 2),
+    annualDem$: _wdRoundHalfUp(totDem, 2),
+    annualTotal$: _wdRoundHalfUp(totAll, 2),
+  };
+}
+window.wdOptionDollarByMonth = wdOptionDollarByMonth;
+
 // Writes each configured option's monthly quantities into an Energy Savings measure for this
 // building (upsert by option letter, keyed by m.basOption), applies the stored seasonal rates
 // to those measures, and removes option measures that are no longer configured. Measures
@@ -877,15 +930,7 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
       m.rates[f.key] = cfg.rates[f.key];
     });
     if (!(parseFloat(m.rates.thermRate) > 0)) m.rates.thermRate = cfg.rates.gasWinter;
-    var R = _wdSeasonalRates(m.rates);
-    var tot = 0;
-    for (var i = 0; i < 12; i++) {
-      var s = _wdIsSummer(i);
-      tot += o.kwh[i] * (s ? R.elecEnergySummer : R.elecEnergyWinter);
-      tot += o.kw[i] * (s ? R.demandSummer : R.demandWinter);
-      tot += o.gas[i] * (s ? R.gasSummer : R.gasWinter);
-    }
-    m.totalDollar = tot;
+    m.totalDollar = wdOptionAnnualDollar(o, m.rates);
     keep[m.id] = true;
   });
   sd.measures = sd.measures.filter(function (x) {
@@ -1271,52 +1316,24 @@ function collectWoodlandReportData(projId, buildingId) {
   var clientPct = cfg && cfg.clientSharePct != null ? parseFloat(cfg.clientSharePct) : null;
 
   // Dollarize each option with SEASONAL MARGINAL rates, monthly then summed (never blended,
-  // never a raw dollar delta) — the audit-corrected formula.
-  //
-  // Rounding methodology (Calc re-audit, 2026-09-22, defect #8 — Matt's hard reproducibility
-  // rule): every monthly $ component is rounded to the CENT (round-half-up) immediately, and
-  // every larger figure (a row's Total $, a column's annual Total, the report-wide annual $
-  // saved) is built by SUMMING those already-rounded cents values, never by rounding a
-  // full-precision sum once at the end. Concretely:
-  //   monthly total$  = round(gas$) + round(elec$) + round(dem$)         [row cross-foots]
-  //   annual Gas/Elec/Dem$ = sum of the 12 (already-rounded) monthly components
-  //   annual Total$   = sum of the 12 (already-rounded) monthly total$ values
-  // A reader who takes the PRINTED monthly Gas $/Elec $/Demand $ cells and adds them by hand
-  // reaches the PRINTED Total $ cell every time, and summing the 12 printed Total $ cells
-  // reaches the PRINTED annual total every time — by construction, not by coincidence.
+  // never a raw dollar delta) — the audit-corrected formula. wdOptionDollarByMonth is the ONE
+  // place this rounding methodology lives (Calc re-audit, 2026-09-22, defect #8 — Matt's hard
+  // reproducibility rule): every monthly $ component is rounded to the CENT (round-half-up)
+  // immediately, and every larger figure (a row's Total $, a column's annual Total, the
+  // report-wide annual $ saved) is built by SUMMING those already-rounded cents values, never by
+  // rounding a full-precision sum once at the end. A reader who takes the PRINTED monthly Gas
+  // $/Elec $/Demand $ cells and adds them by hand reaches the PRINTED Total $ cell every time,
+  // and summing the 12 printed Total $ cells reaches the PRINTED annual total every time — by
+  // construction, not by coincidence. Any other caller needing this report's own $ total (e.g.
+  // HVAC Load Estimation's Create Savings Measure preview, 2026-09-22) must call this same
+  // function, not re-derive the rounding order.
   options.forEach(function (o) {
-    var R = o.rates;
-    var monthly = [];
-    var totGas = 0,
-      totElec = 0,
-      totDem = 0,
-      totAll = 0;
-    for (var i = 0; i < 12; i++) {
-      var summer = _wdIsSummer(i);
-      var gasR = summer ? R.gasSummer : R.gasWinter;
-      var elecR = summer ? R.elecEnergySummer : R.elecEnergyWinter;
-      var demR = summer ? R.demandSummer : R.demandWinter;
-      var gas$ = _wdRoundHalfUp((o.gas[i] || 0) * gasR, 2);
-      var elec$ = _wdRoundHalfUp((o.kwh[i] || 0) * elecR, 2);
-      var dem$ = _wdRoundHalfUp((o.kw[i] || 0) * demR, 2);
-      var total$ = _wdRoundHalfUp(gas$ + elec$ + dem$, 2);
-      monthly.push({
-        gas$: gas$,
-        elec$: elec$,
-        dem$: dem$,
-        total$: total$,
-        summer: summer,
-      });
-      totGas += gas$;
-      totElec += elec$;
-      totDem += dem$;
-      totAll += total$;
-    }
-    o.monthly = monthly;
-    o.annualGas$ = _wdRoundHalfUp(totGas, 2);
-    o.annualElec$ = _wdRoundHalfUp(totElec, 2);
-    o.annualDem$ = _wdRoundHalfUp(totDem, 2);
-    o.annualTotal$ = _wdRoundHalfUp(totAll, 2);
+    var d = wdOptionDollarByMonth(o, o.rates);
+    o.monthly = d.monthly;
+    o.annualGas$ = d.annualGas$;
+    o.annualElec$ = d.annualElec$;
+    o.annualDem$ = d.annualDem$;
+    o.annualTotal$ = d.annualTotal$;
     o.installCost = o.implCost;
     // Payback only when the measure carries an Implementation Cost — never invented. Kept on
     // the record (implCost stays a measure field for other deal types) but NOT rendered by this
