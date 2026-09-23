@@ -1190,7 +1190,17 @@ function _analyzeMeterBills(bills, m) {
     }
 
     for (const f of missingChecks) {
-      const v = b[f];
+      // Stale therms_warn fix (backlog c-49c53542, item 5a 2026-09-23): CSV-imported gas bills
+      // never write the legacy b.therms field — usage lives in naturalGasTherms/naturalGasCCF/
+      // naturalGasMMbtu instead (same reason resolveGasUsageTherms exists — see its doc comment
+      // in computations/savings.js). Reading b.therms directly here flagged EVERY verified gas
+      // bill as "missing" even though the Bills table displays real usage via that same
+      // fallback chain. Route the 'therms' missing-check through the one resolver so this flag
+      // agrees with what's on screen instead of re-checking a field CSV import never populates.
+      const v =
+        f === 'therms' && isGas && typeof resolveGasUsageTherms === 'function'
+          ? resolveGasUsageTherms(b) || null
+          : b[f];
       if (v === null || v === undefined || v === '') {
         rowFlags.push({ field: f, msg: 'Missing ' + f + ' — this field is typically present', level: 'warn' });
       }

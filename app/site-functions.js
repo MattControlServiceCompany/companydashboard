@@ -1742,6 +1742,39 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.3',
+    date: '2026-09-23',
+    title: 'Baseline & BAS Savings Report: Facilities kW cost breakout',
+    items: [
+      {
+        type: 'feature',
+        text: "Baseline & BAS Savings Report and its Excel export: Facilities kW (the utility's 12-month rolling-peak demand ratchet) is now its own usage column, separate from Billed kW. The Annual Electric Cost Reconciliation footnote breaks the electric total into Energy + Billed kW + Facilities kW + Other Charges so every dollar in the total is accounted for.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.2',
+    date: '2026-09-23',
+    title: 'Setpoint and schedule export',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix and BAS Savings Calc: new Setpoint & Schedule export button downloads an .xlsx with the existing and proposed heating/cooling setpoints and schedule for every piece of equipment in a building, ready to hand to a BAS technician.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.1',
+    date: '2026-09-23',
+    title: 'HVAC Load Estimate: autocalculate, Save, and exports',
+    items: [
+      {
+        type: 'feature',
+        text: 'HVAC Load Estimate: results now calculate automatically as you edit inputs, with a single Save button and a "Last saved" time. Added Excel, Word, and PDF export. The "Create Savings Measure from HVAC Load" card now computes Options A/B/C from the same setpoint engine as the Baseline + BAS Savings Report, instead of a typed percentage.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.22.882',
     date: '2026-09-22',
     title: 'Baseline & BAS Savings Report wording and layout fixes',
