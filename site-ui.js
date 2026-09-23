@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.7'; // Fix Woodland Spring Middle Facilities kW / Facilities kW Cost: CSV bill import now backfills the missing Facilities kW ratchet quantity and keeps facKWCost/facilitiesCharge in sync
+  var CH_VERSION = 'v2026.09.23.8'; // Fix Woodland Spring Middle Facilities kW / Facilities kW Cost: CSV bill import now backfills the missing Facilities kW ratchet quantity and keeps facKWCost/facilitiesCharge in sync
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
