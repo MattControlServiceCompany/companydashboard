@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.3',
+    date: '2026-09-23',
+    title: 'Baseline & BAS Savings Report: Facilities kW cost breakout',
+    items: [
+      {
+        type: 'feature',
+        text: "Baseline & BAS Savings Report and its Excel export: Facilities kW (the utility's 12-month rolling-peak demand ratchet) is now its own usage column, separate from Billed kW. The Annual Electric Cost Reconciliation footnote breaks the electric total into Energy + Billed kW + Facilities kW + Other Charges so every dollar in the total is accounted for.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.2',
     date: '2026-09-23',
     title: 'Setpoint and schedule export',

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.2'; // Equipment Matrix and BAS Savings Calc: setpoint and schedule export
+  var CH_VERSION = 'v2026.09.23.3'; // Baseline & BAS Savings report: Facilities kW as its own usage column with electric cost reconciliation
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
