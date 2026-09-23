@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.3'; // Baseline & BAS Savings report: Facilities kW as its own usage column with electric cost reconciliation
+  var CH_VERSION = 'v2026.09.23.4'; // BAS Savings Calc: real Excel weather data (Temperature/Humidity Data sheets) replaces synthetic weather generation
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

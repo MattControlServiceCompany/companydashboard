@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.4',
+    date: '2026-09-23',
+    title: 'BAS Savings Calc: real weather data',
+    items: [
+      {
+        type: 'fix',
+        text: 'BAS Savings Calc (Energy Savings Measures, Calc Templates): the Location & Weather Data section now uses the same real Temperature Data and Humidity Data from the BAS Savings Calc Excel template that the workbook itself uses, instead of a synthetic weather generator that never reached hot-climate temperatures above 82.5F and produced no humidity data at all. Also fixes a latent-load unit mismatch (humidity data is in grains of moisture, not a ratio) and a calibration-factor double-count in the cooling/heating savings totals.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.3',
     date: '2026-09-23',
     title: 'Baseline & BAS Savings Report: Facilities kW cost breakout',
