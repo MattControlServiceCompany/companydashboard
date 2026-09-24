@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.9'; // Savings tables now show a warning instead of a bare $0.00 when a month's rate is missing, on the Meter Performance table, Building Performance, and Project Performance screens
+  var CH_VERSION = 'v2026.09.24.10'; // Fixed Evergy RkVA rate: a detected mismatch now corrects the stored rate from the printed charge instead of keeping the misread value
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

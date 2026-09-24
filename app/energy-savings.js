@@ -4419,6 +4419,24 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       EERCharge: null,
       PTSCharge: null,
     };
+    // Map charge fields to the stored per-unit rate field on `result` (bug
+    // ade32899). result.<X>Rate is read from result._rates[chargeField].rate
+    // ABOVE this loop (~line 4231, via `_gr`/`_wavg`) — a one-time snapshot
+    // taken before this three-way verification runs. When the
+    // SINGLE-PART RATE AUTO-CORRECTION below replaces the stored rate in
+    // result._rates, that snapshot is stale unless this map is used to push
+    // the corrected value into the top-level field too.
+    const RATE_FIELD_MAP = {
+      FacilitiesCharge: 'FacilitiesRate',
+      BilledKWCharge: 'DemandRate',
+      TDCCharge: 'TDCRate',
+      RkVACharge: 'RkVARate',
+      EnergyOnPeakCharge: 'OnPeakRate',
+      EnergyOffPeakCharge: 'OffPeakRate',
+      ECACharge: 'ECARate',
+      EERCharge: 'EERRate',
+      PTSCharge: 'PTSRate',
+    };
     for (const [chargeField, ri] of Object.entries(result._rates)) {
       if (!ri || ri.rate <= 0) continue;
       const qtyField = QTY_MAP[chargeField];
@@ -4469,16 +4487,24 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         result['_part_mismatches_' + chargeField] = badParts;
       }
 
-      // ── SINGLE-PART RATE AUTO-CORRECTION (Bug aa94a957) ──
+      // ── SINGLE-PART RATE AUTO-CORRECTION (Bug aa94a957, fixed for ade32899) ──
       // When OCR reads a rate that doesn't match charge ÷ qty (e.g. $0.08266 instead
       // of $0.03266), derive the correct rate as charge / qty and replace it in _rates.
       // Only applies when: exactly one part, charge is known (>0), qty is known (>0),
-      // and the mismatch exceeds 5% of the charge. This avoids touching valid small
+      // and the mismatch exceeds 5% of the RATE. This avoids touching valid small
       // rounding errors while catching OCR digit-substitution errors like the above.
+      //
+      // ade32899: the tolerance used to be `diff / chargeVal` — dollars-per-kW
+      // divided by dollars, a unit mismatch that made the gate near-impossible
+      // to trip on small charges. Louisburg Rockville RkVA: ocr rate 0.883 vs
+      // derived 0.663 (33% off) on an $11.79 charge computed to 1.9% under the
+      // old formula and never corrected. Comparing the diff to the derived rate
+      // itself (a true percentage of the rate) is what the other rate cross-checks
+      // in this file compare against (see RATE_FROM_CHARGE_QTY's sanity ceiling).
       if (parts.length === 1 && chargeVal > 0 && parts[0].qty > 0 && badParts.length > 0) {
         const _ocr_rate = parts[0].rate;
         const _derived_rate = chargeVal / parts[0].qty;
-        const _pctDiff = Math.abs(_ocr_rate - _derived_rate) / chargeVal;
+        const _pctDiff = _derived_rate > 0 ? Math.abs(_ocr_rate - _derived_rate) / _derived_rate : Infinity;
         if (_pctDiff > 0.05) {
           // Replace the stale rate in _rates so downstream consumers use the correct value
           result._rates[chargeField] = Object.assign({}, ri, {
@@ -4492,10 +4518,25 @@ function _extractEvergy(t, acctOverride, addrOverride) {
             qty: parts[0].qty,
             reason: 'charge_div_qty',
           };
+          // ade32899: the top-level result.<X>Rate field was already snapshotted
+          // from the pre-correction _rates entry earlier in this function (~line
+          // 4231) — push the corrected value there too, or it silently keeps
+          // feeding the OCR-misread rate into saved bills and downstream math.
+          const _rateField = RATE_FIELD_MAP[chargeField];
+          if (_rateField) result[_rateField] = _derived_rate;
           // Clear the mismatch flags — the correction resolves them
           delete result['_rate_mismatch_' + chargeField];
           delete result['_part_mismatches_' + chargeField];
         }
+      } else if (parts.length === 1 && badParts.length > 0) {
+        // ade32899: single-part mismatch detected but charge or qty is missing,
+        // so the rate can't be derived and re-checked. Don't leave the
+        // known-bad OCR rate on the record for downstream math to trust —
+        // clear the top-level rate field and leave the mismatch flag in place
+        // so the bill still surfaces for review, the same as an undeliverable
+        // charge/qty elsewhere in this reconciliation.
+        const _rateField = RATE_FIELD_MAP[chargeField];
+        if (_rateField) result[_rateField] = null;
       }
 
       // For kW charges with a qty field: validate the extracted kW against the parts

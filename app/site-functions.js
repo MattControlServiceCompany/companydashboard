@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.10',
+    date: '2026-09-24',
+    title: 'Utility Data: fixed a wrong Evergy RkVA rate on one bill type',
+    items: [
+      {
+        type: 'fix',
+        text: 'On some Evergy electric bills, the bill reader could read a wrong RkVA per-unit rate (a single misread digit, such as $0.883 instead of the printed $0.663) even though it already flagged that the rate did not match the printed charge. It now corrects the stored rate to match the printed charge when this happens, so the wrong rate no longer feeds savings calculations.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.9',
     date: '2026-09-24',
     title: 'Utility Data: a missing rate now shows a warning, not a false $0.00',
